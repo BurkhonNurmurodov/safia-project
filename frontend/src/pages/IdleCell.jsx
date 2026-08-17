@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-  Info, Save, ChevronDown, RotateCcw, Flag,
+  Info, Save, ChevronDown, RotateCcw, Flag, Repeat2,
   Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
   FlaskConical, ClipboardList, Sparkles, Hourglass, Layers, UserRound, Boxes,
 } from "lucide-react";
@@ -13,6 +13,11 @@ import DayStepper from "../components/ui/DayStepper";
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { SkeletonBlock } from "../components/ui/Skeleton";
+// The «Perenaladka» tab's table is the SAME component the Setup-times «Fakt»
+// tab renders, over the same cell_perenaladka rows — an edit here is that edit.
+import PerenaladkaFactTable, {
+  usePerenaladkaFact, asIdleCell, useSortState, sortCmp,
+} from "../components/setup/PerenaladkaFactTable";
 import api from "../utils/api";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { cellName as pickCellName } from "../utils/cellName";
@@ -438,8 +443,13 @@ function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
   );
 }
 
-// The «Perenaladka» (changeover) view that used to be this page's second tab
-// lives on the Setup-times page now, as its «Fakt» tab (pages/SetupTimes.jsx).
+// This page has two tabs over the same day and the same cells:
+//   «Kutish»       — the per-category idle-time entry below (cell_ojidaniya)
+//   «Perenaladka»  — that day's changeover minutes (cell_perenaladka), the very
+//                    rows the Setup-times «Fakt» tab shows. Same table, same
+//                    endpoints, same query key: editing one edits the other.
+// Both tabs share ONE filter bar (day → brigadir → smena → lider → yacheyka),
+// so switching tabs keeps the operator exactly where they were.
 
 export default function IdleCell() {
   const { t, lang } = useLang();
@@ -447,10 +457,13 @@ export default function IdleCell() {
   // date deliberately NOT persisted: this is a data-entry page — a silently
   // restored stale day could direct entries to the wrong date.
   const [date, setDate] = useState(localTodayIso());
+  const [tab, setTab] = usePersistentState("idle_cell_tab", "ojidaniya"); // "ojidaniya" | "peren"
   const [shiftTab, setShiftTab] = usePersistentState("idle_cell_shift", "all"); // "all" | 1 | 2
   const [supervisorId, setSupervisorId] = usePersistentState("idle_cell_supervisor_id", null);
   const [leaderId, setLeaderId] = usePersistentState("idle_cell_leader_id", ""); // "" all · "none" leaderless · leader_id
   const [selectedCellIds, setSelectedCellIds] = usePersistentState("idle_cell_selected_cell_ids", []); // [] = show all of the supervisor's cells
+  const [factSort, onFactSort] = useSortState("idle_cell_peren_sort");
+  const isPeren = tab === "peren";
 
   const { data: supData } = useQuery({
     queryKey: ["idle-supervisors"],
@@ -465,9 +478,24 @@ export default function IdleCell() {
   const { data: cellsData, isFetching } = useQuery({
     queryKey: ["idle-cells", supervisorId, date],
     queryFn: () => api.get(`/api/idle-cell/cells?supervisor_id=${supervisorId}&date=${date}`).then((r) => r.data),
-    enabled: supervisorId != null,
+    enabled: !isPeren && supervisorId != null,
   });
-  const cells = cellsData?.cells ?? [];
+  // The changeover day ships every cell in scope at once; a null date keeps the
+  // query idle while the other tab is open.
+  const { cells: factAll, isLoading: factLoading } = usePerenaladkaFact(isPeren ? date : null);
+
+  // Unlike the Ojidaniya endpoint (scoped server-side by the picked brigadir),
+  // the fact payload is the caller's whole scope — narrow it here, and treat
+  // "no brigadir picked" as ALL brigadirs rather than an empty page.
+  const factCells = useMemo(() => {
+    let list = factAll.map(asIdleCell);
+    if (shiftTab !== "all") list = list.filter((c) => c.shift === shiftTab);
+    if (supervisorId != null) list = list.filter((c) => c.manager_id === supervisorId);
+    return list;
+  }, [factAll, shiftTab, supervisorId]);
+
+  // Both tabs feed the same leader → cell chain below.
+  const cells = isPeren ? factCells : (cellsData?.cells ?? []);
 
   // Leader narrows the supervisor's cells, and the cell picker below it only
   // offers what the leader filter left — the toolbar reads as one chain,
@@ -532,6 +560,17 @@ export default function IdleCell() {
   const narrowed = selectedCellIds.length > 0 || !!leaderId;
   const autoOpen = shownCells.length === 1 || (narrowed && shownCells.length <= 3);
 
+  // The changeover table sorts by its own header clicks; the same filtered set
+  // the Ojidaniya list would have shown.
+  const factRows = useMemo(() => {
+    if (!factSort.key) return shownCells;
+    const val = (c) => ({
+      cell: c.code, standard: c.standard ?? -1,
+      fact: c.entry?.minutes ?? -1, note: c.entry?.note || "",
+    }[factSort.key]);
+    return [...shownCells].sort(sortCmp(factSort, val));
+  }, [shownCells, factSort]);
+
   const emptyBox = (msg) => (
     <div
       className="rounded-2xl py-12 text-center text-sm"
@@ -543,18 +582,32 @@ export default function IdleCell() {
 
   return (
     <Layout title={t("idleCell.title")}>
+      {/* View switch — stays OUTSIDE the filter zone (platform rule). */}
+      <SegmentedToggle
+        asTabs
+        value={tab}
+        onChange={setTab}
+        options={[["ojidaniya", t("idleCell.tabOjidaniya")], ["peren", t("idleCell.tabPerenaladka")]]}
+        className="mb-3"
+      />
       <div
         className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
       >
-        {/* Date + the REQUIRED supervisor pick stay inline (the page is empty
-            until a supervisor is chosen — that control must never hide);
+        {/* Date + the supervisor pick stay inline (on the Kutish tab the page is
+            empty until a supervisor is chosen — that control must never hide);
             shift / leader / cells narrow the view from the panel as chips. */}
         <DayStepper value={date} onChange={setDate} />
         <StyledSelect
           value={supervisorId != null ? String(supervisorId) : ""}
           onChange={(v) => { setSupervisorId(v ? Number(v) : null); setLeaderId(""); setSelectedCellIds([]); }}
-          options={shiftSupervisors.map((s) => ({ value: String(s.id), label: s.name, title: s.name }))}
+          options={[
+            // The changeover tab loads every cell in scope at once, so "no
+            // brigadir" is a real answer there — an explicit option says so,
+            // instead of a placeholder that reads as "nothing chosen yet".
+            ...(isPeren ? [{ value: "", label: t("idleCell.allSupervisors") }] : []),
+            ...shiftSupervisors.map((s) => ({ value: String(s.id), label: s.name, title: s.name })),
+          ]}
           placeholder={t("idleCell.pickSupervisor")}
           searchable
           searchPlaceholder={t("idleCell.searchSupervisor")}
@@ -579,8 +632,11 @@ export default function IdleCell() {
             },
             // The brigadir's leaders, between shift and cells: each pick narrows
             // the next. Hidden when the unit has a single leader — a one-option
-            // filter is just noise.
-            ...(supervisorId != null && leaderOptions.length > 2 ? [{
+            // filter is just noise. The gate is "are there cells to narrow",
+            // not "is a brigadir picked": the changeover tab has its whole
+            // scope loaded with no brigadir chosen, and would otherwise offer
+            // no way at all to find one leader among a hundred rows.
+            ...(cells.length > 0 && leaderOptions.length > 2 ? [{
               key: "leader", icon: UserRound, label: t("idleCell.searchLeader"),
               active: leaderId !== "",
               display: leaderId !== "" ? (leaderOptions.find((o) => o.value === leaderId)?.label || "") : "",
@@ -592,7 +648,7 @@ export default function IdleCell() {
                   onChange={(v) => { setLeaderId(v); setSelectedCellIds([]); }} />
               ),
             }] : []),
-            ...(supervisorId != null && cells.length > 0 ? [{
+            ...(cells.length > 0 ? [{
               key: "cells", icon: Boxes, label: t("idleCell.allCells"),
               active: selectedCellIds.length > 0,
               display: selectedCellIds.length === 1
@@ -612,7 +668,22 @@ export default function IdleCell() {
         <span className="w-full md:w-auto md:ml-auto text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.testNote")}</span>
       </div>
 
-      {supervisorId == null ? (
+      {isPeren ? (
+        // Standard is read-only here (it is the Setup-times «Standart» register,
+        // which only an admin edits); Fakt and the optional note are typed in
+        // the row. No supervisor column — the bar above already names one, or
+        // says «all», and the leader still rides under the cell code.
+        <PerenaladkaFactTable
+          icon={Repeat2}
+          date={date}
+          rows={factRows}
+          totalCount={factAll.length}
+          isLoading={factLoading}
+          sort={factSort}
+          onSort={onFactSort}
+          showSupervisor={false}
+        />
+      ) : supervisorId == null ? (
         emptyBox(t("idleCell.pickSupervisorHint"))
       ) : isFetching ? (
         <div className="space-y-2">

@@ -8,15 +8,21 @@ Setup-times page API — three tabs, one router:
   column). Rows seeded once at startup (see startup.seed_setup_times); admins
   edit them from the page afterwards.
 * «Fakt» — the daily ACTUAL changeover minutes per cell (``cell_perenaladka``,
-  one row per cell+date, optional note), moved here from the Idle-cell page's
-  former «Perenaladka» tab. Manual upsert/delete plus the on-demand import of
-  the shift report's per-cell «Переналадка» history.
+  one row per cell+date, optional note). Manual upsert/delete plus the
+  on-demand import of the shift report's per-cell «Переналадка» history.
 * «Tahlil» — the raw material for the standard-vs-fact comparison: per cell,
   its standard and its dated fact entries over a range (the page aggregates).
 
+The «Fakt» data has TWO doors (user, 2026-08-17): this page's tab and the
+Idle-cell page's «Perenaladka» tab. They are the same rows — an edit on one
+surface IS the edit on the other — so the fact endpoints accept EITHER page
+key and union both pages' scope grants. The bulk sheet import stays behind
+"setup" alone: it is a Setup-times-only button, and one that can rewrite a
+whole month.
+
 Reads/writes of fact data are scoped to the caller's cells exactly like the
 Idle-cell page (admins/top-managers all, "all"-scope grants all, supervisors
-their unit, leaders their own) — via idle_cell._scoped_cells(page="setup").
+their unit, leaders their own) — via idle_cell._scoped_cells.
 """
 from collections import defaultdict
 from datetime import datetime
@@ -28,7 +34,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import identity
-from app.capabilities import page_cap
+from app.capabilities import page_cap, page_view_scope
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.database import get_db
 from app.models import Cell, CellPerenaladka, Manager, RoleProfile, SetupTime, SheetSource
@@ -39,6 +45,23 @@ from app.services.cell_lookup import by_verifix, resolve_verifix
 router = APIRouter(prefix="/api/setup-times", tags=["setup-times"])
 
 PAGE = "setup"
+# The Idle-cell page's «Perenaladka» tab renders the same fact rows; both page
+# keys open the fact endpoints, and the scope check reads both.
+IDLE_PAGE = "idle-cell"
+FACT_PAGES = (PAGE, IDLE_PAGE)
+
+
+def _fact_grant_page(db: Session, payload: dict) -> Optional[str]:
+    """Which page's view-grant let this caller write, or None when their role
+    natively opens one of the two doors. Asking about "setup" alone would alert
+    the admins on every legitimate Idle-cell entry — and name the wrong
+    capability in the DM when it did fire."""
+    if any(not page_grant_used(db, payload, p) for p in FACT_PAGES):
+        return None
+    for p in FACT_PAGES:
+        if page_view_scope(db, payload, p) is not None:
+            return p
+    return PAGE
 
 
 class SetupTimeIn(BaseModel):
@@ -192,6 +215,10 @@ def _fact_cell_meta(c: Cell, mgr: Optional[Manager], leader: Optional[str],
         "code": c.verifix_code,
         "name": {"uz": c.name_workshop_uz, "uz_cyrl": c.name_workshop_uz_cyrl,
                  "ru": c.name_workshop_ru, "en": c.name_workshop_en},
+        # leader_id as well as the name: the Idle-cell page filters its cell
+        # chain by id (two leaders may share a name), and that page renders
+        # this very payload in its «Perenaladka» tab.
+        "leader_id": c.leader_id,
         "leader": leader,
         "manager_id": c.manager_id,
         "supervisor": mgr.name if mgr else None,
@@ -204,14 +231,16 @@ def _fact_cell_meta(c: Cell, mgr: Optional[Manager], leader: Optional[str],
 def list_fact(
     date: str = Query(...),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(require_page(*FACT_PAGES)),
 ):
     """Every cell in the caller's scope with its fact entry for the date (null =
     not entered) plus its resolved standard — one payload, filtered client-side
-    like the Standart tab's register."""
+    like the Standart tab's register. Serves BOTH surfaces that show these rows
+    (this page's «Fakt» tab and Idle-cell's «Perenaladka» tab), so they cannot
+    disagree about what a day holds."""
     if not _valid_date(date):
         raise HTTPException(status_code=400, detail="Invalid date")
-    cells = _scoped_cells(db, payload, PAGE)
+    cells = _scoped_cells(db, payload, *FACT_PAGES)
     if not cells:
         return {"cells": []}
     ids = [c.id for c in cells]
@@ -245,14 +274,18 @@ class FactIn(BaseModel):
 def save_fact(
     body: FactIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(require_page(*FACT_PAGES)),
 ):
     """Create or update (upsert by cell+date) one cell's actual changeover
     minutes. The note is OPTIONAL; the minutes must be > 0 — a blank/0 value
-    means "not entered", which the UI expresses by DELETEing the row instead."""
+    means "not entered", which the UI expresses by DELETEing the row instead.
+
+    Stamping the writer is what makes the row a TYPED one: the sheet import
+    refuses to overwrite or clear anything it did not write itself, so a
+    brigadir's correction survives the next «Смена отчёт» Refresh."""
     if not _valid_date(body.date):
         raise HTTPException(status_code=400, detail="Invalid date")
-    allowed = {c.id for c in _scoped_cells(db, payload, PAGE)}
+    allowed = {c.id for c in _scoped_cells(db, payload, *FACT_PAGES)}
     if body.cell_id not in allowed:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
     minutes = max(0.0, float(body.minutes or 0))
@@ -274,14 +307,15 @@ def save_fact(
     p.entered_by_profile = who
     db.commit()
     db.refresh(p)
-    if page_grant_used(db, payload, PAGE):
+    grant_page = _fact_grant_page(db, payload)
+    if grant_page:
         diff = [(k, old[k] if old else None, v) for k, v in
                 (("minutes", minutes), ("note", note))
                 if old is None or old[k] != v]
         if diff:
             cell = db.query(Cell).filter_by(id=body.cell_id).first()
             alert_grant_use(
-                db, payload, page_cap(PAGE), "idle_cell.peren_saved",
+                db, payload, page_cap(grant_page), "idle_cell.peren_saved",
                 details=[("cell", cell.verifix_code if cell else f"#{body.cell_id}"),
                          ("date", body.date)],
                 changes=diff, native=False,
@@ -321,17 +355,17 @@ def refresh_fact(
 def delete_fact(
     entry_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(require_page(*FACT_PAGES)),
 ):
     """Clear one cell's fact entry (scope-checked)."""
     p = db.query(CellPerenaladka).filter(CellPerenaladka.id == entry_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Entry not found")
-    allowed = {c.id for c in _scoped_cells(db, payload, PAGE)}
+    allowed = {c.id for c in _scoped_cells(db, payload, *FACT_PAGES)}
     if p.cell_id not in allowed:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
     # Snapshot before the delete — the row is unreadable after commit.
-    via_grant = page_grant_used(db, payload, PAGE)
+    via_grant = _fact_grant_page(db, payload)
     if via_grant:
         cell = db.query(Cell).filter_by(id=p.cell_id).first()
         del_details = [("cell", cell.verifix_code if cell else f"#{p.cell_id}"),
@@ -341,7 +375,7 @@ def delete_fact(
     db.delete(p)
     db.commit()
     if via_grant:
-        alert_grant_use(db, payload, page_cap(PAGE), "idle_cell.peren_deleted",
+        alert_grant_use(db, payload, page_cap(via_grant), "idle_cell.peren_deleted",
                         details=del_details, changes=del_changes, native=False)
 
 

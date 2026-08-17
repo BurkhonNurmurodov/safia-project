@@ -21,13 +21,17 @@ import KPICard from "../components/ui/KPICard";
 import TrendChart from "../components/charts/TrendChart";
 import { useToast } from "../components/ui/Toast";
 import { SkeletonBlock } from "../components/ui/Skeleton";
-import CellLink from "../components/ui/CellLink";
+// The «Fakt» tab's table, and the number/colour/cell helpers all three tabs
+// share with the Idle-cell page's «Perenaladka» tab.
+import PerenaladkaFactTable, {
+  usePerenaladkaFact, fmtMin, localTodayIso, minColor, deltaColor, factColor,
+  pickName, useSortState, sortCmp, CellCol, MinPill,
+} from "../components/setup/PerenaladkaFactTable";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
-import { cellName } from "../utils/cellName";
 import { padChartFrom, listChartDays } from "../utils/chartRange";
 
 // ── i18n copy, 4 platform languages ──────────────────────────────────────────
@@ -51,17 +55,12 @@ const TXT = {
     saveFail: "Saqlab bo'lmadi. Qayta urining.",
     // Fakt tab
     secFact: "Kunlik fakt", searchPhFact: "Supervayzer yoki yacheyka…",
-    colStandard: "Standart (min)", colFact: "Fakt (min)", colNote: "Izoh",
-    leader: "Lider",
+    colStandard: "Standart (min)",
     shiftAll: "Hammasi", shift1: "1-smena", shift2: "2-smena",
-    factEditTitle: "Faktni kiritish",
-    fFactMinutes: "Fakt vaqti (min)", fFactNote: "Izoh (ixtiyoriy)",
-    factDelTitle: "Fakt yozuvini o'chirish",
-    factDelMsg: "{cell} yacheykasining {date} sanasidagi fakt yozuvi o'chiriladi. Davom etasizmi?",
     refresh: "Yangilash",
     refreshHint: "«Смена отчёт» jadvalidan yacheykalar bo'yicha perenaladka tarixini yuklash",
     refreshDone: "Jadvaldan yuklandi", refreshFail: "Yangilab bo'lmadi",
-    noCellsScope: "Sizning doirangizda yacheyka yo'q.",
+    refreshKept: "{n} ta qo'lda kiritilgan yozuv o'zgarmadi",
     // Tahlil tab
     kEntries: "Fakt yozuvlari", kEntriesSub: "{n} yacheyka hisobot berdi",
     kStd: "O'rtacha standart", kFact: "O'rtacha fakt", kDelta: "O'rtacha farq",
@@ -92,17 +91,12 @@ const TXT = {
     fCellCustom: "Ячейка (рўйхатда йўқ)", customCellOpt: "Бошқа ячейка…",
     saveFail: "Сақлаб бўлмади. Қайта уриниб кўринг.",
     secFact: "Кунлик факт", searchPhFact: "Супервайзер ёки ячейка…",
-    colStandard: "Стандарт (мин)", colFact: "Факт (мин)", colNote: "Изоҳ",
-    leader: "Лидер",
+    colStandard: "Стандарт (мин)",
     shiftAll: "Ҳаммаси", shift1: "1-смена", shift2: "2-смена",
-    factEditTitle: "Фактни киритиш",
-    fFactMinutes: "Факт вақти (мин)", fFactNote: "Изоҳ (ихтиёрий)",
-    factDelTitle: "Факт ёзувини ўчириш",
-    factDelMsg: "{cell} ячейкасининг {date} санасидаги факт ёзуви ўчирилади. Давом этасизми?",
     refresh: "Янгилаш",
     refreshHint: "«Смена отчёт» жадвалидан ячейкалар бўйича переналадка тарихини юклаш",
     refreshDone: "Жадвалдан юкланди", refreshFail: "Янгилаб бўлмади",
-    noCellsScope: "Сизнинг доирангизда ячейка йўқ.",
+    refreshKept: "{n} та қўлда киритилган ёзув ўзгармади",
     kEntries: "Факт ёзувлари", kEntriesSub: "{n} ячейка ҳисобот берди",
     kStd: "Ўртача стандарт", kFact: "Ўртача факт", kDelta: "Ўртача фарқ",
     kMatchedSub: "стандарти бор ячейкалар бўйича", vsStd: "стандартга нисбатан",
@@ -132,17 +126,12 @@ const TXT = {
     fCellCustom: "Ячейка (не из списка)", customCellOpt: "Другая ячейка…",
     saveFail: "Не удалось сохранить. Попробуйте ещё раз.",
     secFact: "Факт за день", searchPhFact: "Супервайзер или ячейка…",
-    colStandard: "Стандарт (мин)", colFact: "Факт (мин)", colNote: "Комментарий",
-    leader: "Лидер",
+    colStandard: "Стандарт (мин)",
     shiftAll: "Все", shift1: "1-я смена", shift2: "2-я смена",
-    factEditTitle: "Ввести факт",
-    fFactMinutes: "Фактическое время (мин)", fFactNote: "Комментарий (необязательно)",
-    factDelTitle: "Удалить запись факта",
-    factDelMsg: "Запись факта ячейки {cell} за {date} будет удалена. Продолжить?",
     refresh: "Обновить",
     refreshHint: "Загрузить историю переналадок по ячейкам из таблицы «Смена отчёт»",
     refreshDone: "Загружено из таблицы", refreshFail: "Не удалось обновить",
-    noCellsScope: "В вашей зоне нет ячеек.",
+    refreshKept: "{n} записей, введённых вручную, не изменены",
     kEntries: "Записей факта", kEntriesSub: "{n} ячеек с данными",
     kStd: "Средний стандарт", kFact: "Средний факт", kDelta: "Среднее отклонение",
     kMatchedSub: "по ячейкам со стандартом", vsStd: "к стандарту",
@@ -172,17 +161,12 @@ const TXT = {
     fCellCustom: "Cell (not on the list)", customCellOpt: "Custom cell…",
     saveFail: "Could not save. Try again.",
     secFact: "Daily fact", searchPhFact: "Supervisor or cell…",
-    colStandard: "Standard (min)", colFact: "Fact (min)", colNote: "Note",
-    leader: "Leader",
+    colStandard: "Standard (min)",
     shiftAll: "All", shift1: "Shift 1", shift2: "Shift 2",
-    factEditTitle: "Enter fact",
-    fFactMinutes: "Actual time (min)", fFactNote: "Note (optional)",
-    factDelTitle: "Delete fact entry",
-    factDelMsg: "The fact entry of cell {cell} for {date} will be deleted. Continue?",
     refresh: "Refresh",
     refreshHint: "Load the per-cell changeover history from the «Смена отчёт» sheet",
     refreshDone: "Loaded from the sheet", refreshFail: "Refresh failed",
-    noCellsScope: "No cells in your scope.",
+    refreshKept: "{n} manually entered rows left untouched",
     kEntries: "Fact entries", kEntriesSub: "{n} cells reported",
     kStd: "Avg standard", kFact: "Avg fact", kDelta: "Avg deviation",
     kMatchedSub: "across cells with a standard", vsStd: "vs standard",
@@ -196,38 +180,18 @@ const TXT = {
   },
 };
 
-// Traffic-light accent for the minutes pill: quick setups green, 3–5 amber,
-// longer red; missing values grey (platform status-color convention).
-const minColor = (v) =>
-  v == null ? "#94a3b8" : v < 3 ? "#22c55e" : v <= 5 ? "#eab308" : "#ef4444";
-// Fact-vs-standard traffic light: at/under the standard green, up to 20% over
-// amber, beyond red. No standard to compare against → the absolute scale above.
-const deltaColor = (delta, std) =>
-  delta == null ? "#94a3b8"
-  : delta <= 0 ? "#22c55e"
-  : std > 0 && delta <= std * 0.2 ? "#eab308"
-  : "#ef4444";
-const factColor = (v, std) =>
-  v == null ? "#94a3b8" : std == null || std <= 0 ? minColor(v) : deltaColor(v - std, std);
-const hexA = (hex, a) => {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-};
-const fmtMin = (v) => (v == null ? "—" : String(parseFloat(Number(v).toFixed(2))));
+// Number/colour/cell helpers live with the shared fact table (imported above),
+// so this page and the Idle-cell «Perenaladka» tab colour the same minute the
+// same way. Only what the other two tabs alone need stays here.
 const fmt1 = (v) => (v == null ? "—" : String(parseFloat(Number(v).toFixed(1))));
 const fmtSigned = (v) => (v == null ? "—" : (v > 0 ? "+" : "") + fmt1(v));
 
 const pad2 = (n) => String(n).padStart(2, "0");
-const localTodayIso = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-};
 const addDaysIso = (iso, n) => {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
-const fmtDMY = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "");
 const fmtDM = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 
 // The standard full-width modal text input (matches the Production/Concerns forms).
@@ -246,57 +210,12 @@ function ModalInput({ value, onChange, type = "text", className = "", ...rest })
 
 const EMPTY_DRAFT = { manager_id: null, supervisor: "", cell: "", minutes: "", sku: "", reason: "" };
 
-// Cell-registry helpers: pick the workshop name for the viewer language (falling
-// back across languages) and label a picker option "code — name".
+// Label a cell picker option "code — name" (`pickName` is the shared one).
 const CUSTOM_CELL = "__custom__";
-// Short {uz, uz_cyrl, ru, en} keys here — viewer language first, Russian next.
-const pickName = (obj, lang) => cellName(obj, lang, "");
 const cellOptLabel = (c, lang) => {
   const nm = pickName(c, lang);
   return nm ? `${c.code} — ${nm}` : c.code;
 };
-
-// Sortable-table state + toggle, persisted per key (asc → desc → off).
-function useSortState(storageKey, initial = { key: null, dir: "asc" }) {
-  const [sort, setSort] = usePersistentState(storageKey, initial);
-  const onSort = (k) => setSort((s) =>
-    s.key !== k ? { key: k, dir: "asc" } : s.dir === "asc" ? { key: k, dir: "desc" } : { key: null, dir: "asc" });
-  return [sort, onSort];
-}
-const sortCmp = (sort, val) => (a, b) => {
-  const va = val(a), vb = val(b);
-  const dir = sort.dir === "asc" ? 1 : -1;
-  if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
-  return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
-};
-
-// Code + muted workshop name — the one way a cell renders in ALL three tabs.
-// With a registry id the code is a CellLink to /cells/:id; free-typed cells
-// that match no registry row (cellId null) stay inert text.
-function CellCol({ code, name, lang, cellId }) {
-  const nm = pickName(name, lang);
-  return (
-    <>
-      <div className="font-mono tabular-nums" style={{ color: "var(--text-2)" }}>
-        <CellLink id={cellId}>{code}</CellLink>
-      </div>
-      {nm && (
-        <div className="text-[11px] leading-tight mt-0.5" style={{ color: "var(--text-4)" }}>{nm}</div>
-      )}
-    </>
-  );
-}
-
-function MinPill({ value, color }) {
-  return (
-    <span
-      className="inline-block min-w-[42px] text-center px-2 py-0.5 rounded-full text-[11px] font-semibold tabular-nums"
-      style={{ background: hexA(color, 0.13), color }}
-    >
-      {fmtMin(value)}
-    </span>
-  );
-}
 
 // Card + SectionHead wrapper for the analysis charts — same chrome as TableCard.
 function ChartCard({ icon, title, subtitle, right, children }) {
@@ -592,12 +511,12 @@ function StandardTab({ T, lang, tl }) {
 }
 
 // ─── «Fakt» tab — one day's actual changeover minutes per cell ───────────────
-// Same container and interaction model as the Standart register: a TableCard
-// whose rows are the caller's cells for the picked day, standard and fact side
-// by side, pencil-edit modal + trash per row. Bulk history comes in through the
-// «Смена отчёт» Refresh; manual entry is for corrections and gap-filling.
+// The table itself is components/setup/PerenaladkaFactTable — the SAME
+// component the Idle-cell page's «Perenaladka» tab renders, over the same rows.
+// This tab owns only its filters and the «Смена отчёт» Refresh, which stays
+// here alone: it is the bulk import, and a bulk import does not belong on a
+// page whose job is one brigadir typing one day.
 function FactTab({ T, lang, tl }) {
-  const qc = useQueryClient();
   const toast = useToast();
 
   // date deliberately NOT persisted: this is a data-entry surface — a silently
@@ -608,30 +527,19 @@ function FactTab({ T, lang, tl }) {
   const [shiftSel, setShiftSel] = usePersistentState("setup_fact_shift", "all");
   const [sort, onSort] = useSortState("setup_fact_sort");
 
-  const [modal, setModal] = useState(null);        // { cell, minutes, note }
-  const [confirmDel, setConfirmDel] = useState(null); // cell whose entry is deleted
+  const { cells: allCells, isLoading } = usePerenaladkaFact(date);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["setup-fact", date],
-    queryFn: () => api.get(`/api/setup-times/fact?date=${date}`).then((r) => r.data),
-  });
-  const allCells = data?.cells ?? [];
-
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["setup-fact"] });
-    qc.invalidateQueries({ queryKey: ["setup-analysis"] });
-  };
-  const saveMut = useMutation({
-    mutationFn: (body) => api.post("/api/setup-times/fact", body).then((r) => r.data),
-    onSuccess: () => { setModal(null); invalidate(); },
-  });
-  const delMut = useMutation({
-    mutationFn: (id) => api.delete(`/api/setup-times/fact/${id}`),
-    onSuccess: () => { setConfirmDel(null); invalidate(); },
-  });
+  const qc = useQueryClient();
   const refreshMut = useMutation({
     mutationFn: () => api.post("/api/setup-times/fact/refresh").then((r) => r.data),
-    onSuccess: (d) => { invalidate(); toast.success(`${T.refreshDone} (+${d.saved ?? 0})`); },
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ["setup-fact"] });
+      qc.invalidateQueries({ queryKey: ["setup-analysis"] });
+      // A skipped row is not a silent one: the sheet no longer overwrites what
+      // somebody typed, so the press says how many it left alone.
+      const kept = d.kept ? ` · ${T.refreshKept.replace("{n}", d.kept)}` : "";
+      toast.success(`${T.refreshDone} (+${d.saved ?? 0})${kept}`);
+    },
     onError: (e) => toast.error(e?.response?.data?.detail || T.refreshFail),
   });
 
@@ -659,32 +567,17 @@ function FactTab({ T, lang, tl }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allCells, search, supSel, shiftSel, sort, tl, lang]);
 
-  const filled = rows.filter((c) => c.entry).length;
-  const totalMin = rows.reduce((a, c) => a + (c.entry?.minutes || 0), 0);
-
-  const openEdit = (c) => setModal({
-    cell: c,
-    minutes: c.entry?.minutes != null ? String(c.entry.minutes) : "",
-    note: c.entry?.note || "",
-  });
-  const canSave = Number(String(modal?.minutes ?? "").replace(",", ".")) > 0;
-  const submit = () => saveMut.mutate({
-    cell_id: modal.cell.cell_id,
-    date,
-    minutes: Number(String(modal.minutes).replace(",", ".")),
-    note: modal.note.trim(),
-  });
-
   return (
     <>
-      <TableCard
+      <PerenaladkaFactTable
         icon={Repeat2}
         title={T.secFact}
-        right={
-          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-            {isLoading ? "…" : `${filled}/${rows.length} · ${fmtMin(totalMin)} ${T.minSuffix}`}
-          </span>
-        }
+        date={date}
+        rows={rows}
+        totalCount={allCells.length}
+        isLoading={isLoading}
+        sort={sort}
+        onSort={onSort}
         toolbar={
           <>
             <DayStepper value={date} onChange={setDate} />
@@ -708,141 +601,7 @@ function FactTab({ T, lang, tl }) {
             </Button>
           </>
         }
-      >
-        <thead>
-          <tr>
-            <Th icon={CircleUserRound} label={T.colSupervisor} k="supervisor" sort={sort} onSort={onSort} />
-            <Th icon={LayoutGrid} label={T.colCell} k="cell" sort={sort} onSort={onSort} />
-            <Th icon={Gauge} label={T.colStandard} k="standard" sort={sort} onSort={onSort} align="right" />
-            <Th icon={Timer} label={T.colFact} k="fact" sort={sort} onSort={onSort} align="right" />
-            <Th icon={MessageSquareText} label={T.colNote} k="note" sort={sort} onSort={onSort} />
-            <Th label="" />
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading &&
-            Array.from({ length: 8 }).map((_, i) => (
-              <tr key={i}>
-                {Array.from({ length: 6 }).map((_, j) => (
-                  <td key={j} className="px-3 py-2"><SkeletonBlock className="h-3 w-full" /></td>
-                ))}
-              </tr>
-            ))}
-          {!isLoading && rows.map((c) => (
-            <tr key={c.cell_id}>
-              <td className="px-3 py-2">
-                <div className="font-medium" style={{ color: c.supervisor ? "var(--text-1)" : "var(--text-4)" }}>
-                  {c.supervisor ? tl(c.supervisor) : "—"}
-                </div>
-                {c.leader && (
-                  <div className="text-[11px] leading-tight mt-0.5" style={{ color: "var(--text-4)" }} title={T.leader}>
-                    {tl(c.leader)}
-                  </div>
-                )}
-              </td>
-              <td className="px-3 py-2">
-                <CellCol code={c.code} name={c.name} lang={lang} cellId={c.cell_id} />
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums"
-                style={{ color: c.standard != null ? "var(--text-3)" : "var(--text-4)" }}>
-                {fmtMin(c.standard)}
-              </td>
-              <td className="px-3 py-2 text-right">
-                <MinPill value={c.entry?.minutes} color={factColor(c.entry?.minutes, c.standard)} />
-              </td>
-              <td className="px-3 py-2 whitespace-normal min-w-[160px] max-w-[300px] text-[11px] leading-snug"
-                style={{ color: c.entry?.note ? "var(--text-2)" : "var(--text-4)" }}>
-                {c.entry?.note || "—"}
-              </td>
-              <td className="px-3 py-2">
-                <span className="inline-flex items-center gap-1">
-                  <button title={T.edit} onClick={() => openEdit(c)}
-                    className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-accent)]"
-                    style={{ color: "var(--text-3)" }}>
-                    <Pencil size={13} />
-                  </button>
-                  {c.entry && (
-                    <button title={T.del} onClick={() => setConfirmDel(c)}
-                      className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-accent)]"
-                      style={{ color: "#ef4444" }}>
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </span>
-              </td>
-            </tr>
-          ))}
-          {!isLoading && rows.length === 0 && (
-            <tr>
-              <td colSpan={6} className="px-4 py-8 text-center" style={{ color: "var(--text-4)" }}>
-                {allCells.length === 0 ? T.noCellsScope : T.noMatch}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </TableCard>
-
-      {/* Enter / edit one cell's fact */}
-      {modal && (
-        <Modal
-          title={T.factEditTitle}
-          subtitle={`${cellOptLabel({ code: modal.cell.code, ...(modal.cell.name || {}) }, lang)} · ${fmtDMY(date)}`}
-          icon={<Repeat2 size={18} style={{ color: "var(--brand-text)" }} />}
-          onClose={() => setModal(null)}
-          dismissable={!saveMut.isPending}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setModal(null)} disabled={saveMut.isPending}>{T.cancel}</Button>
-              <Button onClick={submit} disabled={!canSave} loading={saveMut.isPending}>{T.save}</Button>
-            </>
-          }
-        >
-          {/* text + inputMode=decimal: the uz/ru iOS keypad types a comma, which
-              type=number silently rejects; submit normalizes it to a dot. */}
-          <FormField label={T.fFactMinutes} required>
-            <ModalInput
-              value={modal.minutes}
-              onChange={(v) => setModal((m) => ({ ...m, minutes: v }))}
-              inputMode="decimal"
-              className="tabular-nums"
-            />
-          </FormField>
-          {modal.cell.standard != null && (
-            <div className="text-xs" style={{ color: "var(--text-3)" }}>
-              {T.colStandard}: <span className="tabular-nums font-semibold">{fmtMin(modal.cell.standard)}</span>
-            </div>
-          )}
-          <FormField label={T.fFactNote}>
-            <textarea
-              value={modal.note}
-              onChange={(e) => setModal((m) => ({ ...m, note: e.target.value }))}
-              rows={3}
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-            />
-          </FormField>
-          {saveMut.isError && (
-            <div className="text-xs" style={{ color: "#ef4444" }}>
-              {saveMut.error?.response?.data?.detail || T.saveFail}
-            </div>
-          )}
-        </Modal>
-      )}
-
-      {/* Delete confirmation */}
-      {confirmDel && (
-        <ConfirmDialog
-          tone="danger"
-          title={T.factDelTitle}
-          message={T.factDelMsg.replace("{cell}", confirmDel.code).replace("{date}", fmtDMY(date))}
-          confirmLabel={T.del}
-          cancelLabel={T.cancel}
-          loading={delMut.isPending}
-          error={delMut.isError ? (delMut.error?.response?.data?.detail || T.saveFail) : null}
-          onCancel={() => setConfirmDel(null)}
-          onConfirm={() => delMut.mutate(confirmDel.entry.id)}
-        />
-      )}
+      />
       {toast.node}
     </>
   );

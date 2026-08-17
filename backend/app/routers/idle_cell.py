@@ -43,14 +43,18 @@ _VALID = set(IDLE_CATEGORIES)
 _NO_NS = {"Cat H"}
 
 
-def _scoped_cells(db: Session, payload: dict, page: str = PAGE) -> list[Cell]:
+def _scoped_cells(db: Session, payload: dict, *pages: str) -> list[Cell]:
     """Every cell the caller may see/enter, admins = all. Built generically so a
     future ``page.view.idle-cell`` grant to a supervisor/leader Just Works.
-    `page` = which page's "all"-scope grant widens the view — the Setup-times
-    router shares this helper for its «Fakt» endpoints with page="setup"."""
+    `pages` = which pages' "all"-scope grants widen the view, ANY of them. The
+    changeover («Perenaladka») data is reachable from two pages, so its call
+    sites pass both — a viewer granted "all" on either door sees every cell
+    through it, otherwise a grant on one page would be silently narrowed by the
+    other's absence."""
     role = payload.get("role")
+    page_list = pages or (PAGE,)
     q = db.query(Cell)
-    if role in ("admin", "top-manager") or page_scope_is_all(db, payload, page):
+    if role in ("admin", "top-manager") or any(page_scope_is_all(db, payload, p) for p in page_list):
         return q.all()
     if role == "leader":
         lpid = identity.viewer_leader_profile_id(db, payload)

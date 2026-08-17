@@ -86,15 +86,27 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
 
 def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:
     """Import the shift report's per-cell «Переналадка» minutes into
-    ``cell_perenaladka`` — the /idle-cell Perenaladka tab's historical data.
+    ``cell_perenaladka`` — the changeover fact both the Setup-times «Fakt» tab
+    and the Idle-cell «Perenaladka» tab read and write.
 
     Decisions (user, 2026-08-06): the sheet values ARE minutes; only the row of
     the brigadir who OWNS the cell counts (``Cell.manager_id``), a cell answered
-    on someone else's row is ignored; and the sheet wins over anything entered
-    on the page. NOT wipe-and-reload: a value > 0 upserts the (cell, date) row,
-    an explicit 0 deletes it (0 is never stored in this table), a blank changes
-    nothing — days/cells the sheet never answered keep their manual entries.
-    An existing note survives an overwrite (the sheet has no note column)."""
+    on someone else's row is ignored. NOT wipe-and-reload: a value > 0 upserts
+    the (cell, date) row, an explicit 0 deletes it (0 is never stored in this
+    table), a blank changes nothing — days/cells the sheet never answered keep
+    their manual entries. An existing note survives an overwrite (the sheet has
+    no note column).
+
+    **A TYPED value now wins (user, 2026-08-17)**, reversing the original
+    sheet-wins rule: the import may only overwrite or clear a row it wrote
+    itself (``entered_by_profile == "sheet-import"``), so it fills GAPS and
+    re-imports its own history. Since brigadirs and leaders enter the fact on
+    the page themselves, sheet-wins meant one person's Refresh silently
+    replaced another person's correction — with nothing on screen to say so.
+    ``save_fact`` stamps the writer's profile key on every manual save, which
+    is what makes the distinction reliable; a row with no writer at all is
+    treated as typed (protected), because only these two paths ever write here
+    and the import always stamps itself."""
     managers = db.query(Manager).all()
     alias = sheet_alias_map(db, (m.name for m in managers))
     by_canon = {m.name: m for m in managers}
@@ -122,9 +134,14 @@ def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:
             final[(c.id, iso)] = minutes
 
     existing = {(p.cell_id, p.date): p for p in db.query(CellPerenaladka).all()}
-    saved = cleared = 0
+    saved = cleared = kept = 0
     for (cell_id, iso), minutes in final.items():
         p = existing.get((cell_id, iso))
+        # Typed rows are the operator's answer for that day — the sheet neither
+        # overwrites nor clears them, it only fills what nobody has answered.
+        if p is not None and p.entered_by_profile != "sheet-import":
+            kept += 1
+            continue
         if minutes > 0:
             if p is not None and float(p.minutes or 0) == minutes:
                 continue   # already this value — nothing to win
@@ -134,7 +151,7 @@ def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:
             p.minutes = minutes
             p.entered_by_profile = "sheet-import"
             saved += 1
-        elif p is not None:   # explicit 0 in the sheet clears the entry
+        elif p is not None:   # explicit 0 in the sheet clears its own entry
             db.delete(p)
             cleared += 1
     db.commit()
@@ -145,12 +162,18 @@ def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:
     if foreign:
         print(f"[sheets] shift report perenaladka: {foreign} value(s) answered on a "
               f"non-owning brigadir's row — skipped (owning-brigadir rule)")
+    if kept:
+        print(f"[sheets] shift report perenaladka: {kept} cell-day(s) left alone — "
+              f"entered on the page, and a typed value wins over the sheet")
 
     return {
         "dates": len({iso for (_cid, iso) in final}),
         "cells": len({cid for (cid, _iso) in final}),
         "saved": saved,
         "cleared": cleared,
+        # Rows the sheet answered but did NOT touch because a person had typed
+        # one — surfaced so the Refresh toast can say what it skipped.
+        "kept": kept,
         "unknown_cells": sorted(unknown_codes),
     }
 
