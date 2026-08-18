@@ -342,15 +342,80 @@ def iter_requests(client: httpx.Client, size: int = 100,
         page += 1
 
 
+# Where an openapi document might live. Unauthenticated probing showed
+# /arc/openapi.json, /arc/docs and /base/openapi.json all answering 401 (i.e.
+# they EXIST behind the bearer) while everything else 404s — but a 401 is not a
+# promise, so each is tried and each outcome is reported.
+_SPEC_PATHS = (
+    "/arc/openapi.json",
+    "/arc/api/v1/openapi.json",
+    "/arc/api/openapi.json",
+    "/base/openapi.json",
+    "/openapi.json",
+)
+
+
+def fetch_spec(client: httpx.Client) -> tuple[Optional[dict], list[dict]]:
+    """Hunt for the API's openapi document, returning it and a record of every
+    attempt. The record is the point: a spec that never arrives leaves the
+    filter investigation blind, and «it didn't work» is not a diagnosis — the
+    status code per path is."""
+    attempts: list[dict] = []
+    found = None
+    for path in _SPEC_PATHS:
+        try:
+            doc = get_json(client, path)
+        except Exception as exc:                     # noqa: BLE001 - reported
+            attempts.append({"path": path, "ok": False, "error": str(exc)[:200]})
+            continue
+        if isinstance(doc, dict) and doc.get("paths"):
+            attempts.append({"path": path, "ok": True,
+                             "paths": len(doc.get("paths") or {})})
+            if found is None:
+                found = doc
+        else:
+            attempts.append({"path": path, "ok": False,
+                             "error": f"not an openapi document ({type(doc).__name__})"})
+    return found, attempts
+
+
 def fetch_openapi(client: httpx.Client) -> Optional[dict]:
     """The API's own openapi document — reference material for the admin
     /spec endpoint. Best-effort: any failure is a None, never an exception."""
     try:
-        doc = get_json(client, _OPENAPI_PATH)
-        return doc if isinstance(doc, dict) else None
+        doc, _ = fetch_spec(client)
+        return doc
     except Exception as exc:
         log.info("ARC openapi fetch skipped: %s", str(exc)[:200])
         return None
+
+
+def token_claims(client: httpx.Client) -> dict:
+    """The non-secret claims of OUR OWN access token — what the API believes
+    this account is. «Do we have full access?» is answered here first: a token
+    scoped to one branch or one role cannot be argued into holding more.
+    Values are reported only for small scalar claims, and never the token."""
+    try:
+        raw = _get_token(client)
+    except Exception as exc:                         # noqa: BLE001 - reported
+        return {"ok": False, "error": str(exc)[:200]}
+    try:
+        parts = raw.split(".")
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+    except Exception:
+        return {"ok": False, "error": "token payload is not readable JSON"}
+    if not isinstance(data, dict):
+        return {"ok": False, "error": "token payload is not an object"}
+    out = {"ok": True, "keys": sorted(data.keys()), "values": {}}
+    for k, v in data.items():
+        if isinstance(v, bool) or isinstance(v, (int, float)):
+            out["values"][k] = v
+        elif isinstance(v, str) and len(v) <= 64:
+            out["values"][k] = v
+        elif isinstance(v, list) and len(v) <= 12:
+            out["values"][k] = [x for x in v if isinstance(x, (str, int, bool)) and len(str(x)) <= 64]
+    return out
 
 
 # ── normalisation ───────────────────────────────────────────────────────────

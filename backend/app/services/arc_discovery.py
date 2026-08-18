@@ -6,18 +6,17 @@ halves of that can be true at once: the endpoint may take parameters we never
 send, and its DEFAULTS may already be a filter (a closed ticket, an archived
 one, a ticket older than N days can each be missing by default).
 
-Guessing parameter names is worthless here: the API is FastAPI, and FastAPI
-IGNORES a query parameter it does not declare — a wrong guess produces the
-same answer as no guess at all, silently. So the **openapi document is the
-only source of truth**, and the only honest measurement is the `total` the API
-reports for one parameter set versus another.
+The API is FastAPI, which VALIDATES a parameter it declares and silently
+IGNORES one it does not. That single fact shapes everything here:
 
-This module therefore does exactly two things:
-
-  1. READS the spec — every path the API exposes (there are endpoints we never
-     call) and, for the requests endpoint, every declared parameter with its
-     type, default and enum;
-  2. MEASURES — one cheap `size=1` call per candidate value, comparing `total`
+  1. READ the spec when it can be had — it names every parameter with its
+     type, default and enum, and every path the API exposes;
+  2. When it cannot (the document is behind the same bearer and may simply be
+     refused), fall back to the **existence oracle**: send each candidate name
+     with a deliberately wrong value, and read the answer — a 422 proves the
+     name is real, a 200 means it was ignored. A guess can therefore never
+     produce a false finding, only fail to find something;
+  3. MEASURE — one cheap `size=1` call per candidate value, comparing `total`
      against the untouched baseline. A value that RAISES the total is a filter
      we were missing; one that lowers it is a filter we now know how to use.
 
@@ -43,20 +42,84 @@ log = logging.getLogger(__name__)
 
 REQUESTS_PATH = arc_client._REQUESTS_PATH
 
-# Sibling endpoints worth a look even when the spec is unavailable: probing
-# found them alive (401 rather than 404) before any credential existed.
-_EXTRA_PATHS = (
-    "/arc/api/v1/requests/factory/stats",
-    "/arc/api/v1/requests/factory/export",
-)
-
 # A date bound low/high enough to mean «no bound», for parameters whose default
 # is a rolling window.
 _EPOCH = "2000-01-01"
 _HORIZON = "2100-01-01"
 
 # Never fire more than this many probe calls, whatever the spec declares.
-MAX_PROBES = 60
+MAX_PROBES = 140
+
+# ── the spec-free fallback ──────────────────────────────────────────────────
+# When the API refuses to hand over its openapi document we are not blind, just
+# slower. FastAPI VALIDATES a parameter it declares and IGNORES one it does
+# not, which turns a deliberately-wrong value into an existence oracle:
+#
+#     422 → the name IS a declared parameter (our value failed its type)
+#     200 → either undeclared, or declared as a free string
+#
+# So one garbage call per candidate name maps the surface, and only the names
+# that answered 422 are worth spending real values on. A guess can therefore
+# never produce a false positive — it can only fail to find something.
+_ORACLE_VALUE = "__probe__"
+
+# Names worth asking about, in the vocabulary such systems actually use
+# (English + the transliterated Russian an UZ/RU team would pick).
+_CANDIDATE_NAMES = (
+    "is_archived", "archived", "include_archived", "with_archived",
+    "all", "is_all", "show_all", "include_all",
+    "is_active", "active", "only_active", "is_closed", "include_closed", "closed",
+    "is_deleted", "include_deleted", "deleted", "is_finished", "include_finished",
+    "date_from", "from_date", "start_date", "created_from", "date_start", "begin_date",
+    "date_to", "to_date", "end_date", "created_to", "date_end",
+    "days", "period", "last_days", "months", "year",
+    "status", "statuses", "state", "normalized_status", "status_id",
+    "branch_id", "branch", "country_id", "category_id", "master_id", "client_id",
+    "search", "q", "query", "sort", "order", "order_by", "sort_by",
+)
+
+# The widening value to try once a name is proven to exist, by shape of name.
+def _value_for(name: str):
+    n = name.lower()
+    if any(k in n for k in ("archiv", "deleted", "closed", "finished", "all")):
+        return True
+    if any(k in n for k in ("active",)):
+        return False
+    if any(k in n for k in ("from", "start", "begin", "created_from")):
+        return _EPOCH
+    if any(k in n for k in ("_to", "end", "until")):
+        return _HORIZON
+    if n in ("days", "period", "last_days"):
+        return 3650
+    if n in ("months",):
+        return 120
+    return None
+
+
+# Fields normalize_item() already maps. Anything else the API sends is data we
+# receive and throw away — worth naming rather than discovering next year.
+_KNOWN_FIELDS = {
+    "id", "request_num", "branch_name", "branch_id", "country_id", "description",
+    "category", "deadline", "deadline_time", "master_name", "master_id", "status",
+    "normalized_status", "status_color", "is_overdue", "created_at", "cancelled_at",
+    "finished_at", "completed_at", "extra_phone", "latitude", "longitude",
+    "deny_reason", "sended_to_sap", "photo_report", "comment_report",
+    "document_url", "has_other_active_branch_requests",
+    "other_active_branch_requests_count", "client_name",
+}
+
+# Endpoints worth a knock even with no spec: a 200 says the route exists and
+# what it returns; a 404 closes the question.
+_CANDIDATE_PATHS = (
+    "/arc/api/v1/requests/factory/stats",
+    "/arc/api/v1/requests/factory/export",
+    "/arc/api/v1/requests/branch",
+    "/arc/api/v1/requests/all",
+    "/arc/api/v1/requests",
+    "/arc/api/v1/branches",
+    "/arc/api/v1/categories",
+    "/arc/api/v1/masters",
+)
 
 
 # ── spec reading ────────────────────────────────────────────────────────────
@@ -162,8 +225,9 @@ def run_probe(db, client: Optional[httpx.Client] = None) -> dict:
     try:
         meta = db.query(ArcSyncMeta).filter_by(id=1).first()
         spec = meta.spec if meta is not None else None
+        spec_attempts: list[dict] = []
         if not spec:
-            spec = arc_client.fetch_openapi(client)
+            spec, spec_attempts = arc_client.fetch_spec(client)
             if spec and meta is not None:
                 meta.spec = spec
                 meta.spec_fetched_at = datetime.now(timezone.utc)
@@ -173,18 +237,49 @@ def run_probe(db, client: Optional[httpx.Client] = None) -> dict:
         base = arc_client.probe_requests(client)
         baseline = base.get("total")
         trials: list[dict] = []
+        oracle: list[dict] = []
         spent = 1
 
-        for p in params:
-            for value in _candidates(p):
-                if spent >= MAX_PROBES:
+        if params:
+            # The spec named the parameters — spend the calls on VALUES.
+            for p in params:
+                for value in _candidates(p):
+                    if spent >= MAX_PROBES:
+                        break
+                    spent += 1
+                    res = arc_client.probe_requests(client, {p["name"]: value})
+                    total = res.get("total")
+                    trials.append({
+                        "param": p["name"], "value": value, "ok": res.get("ok"),
+                        "total": total, "error": res.get("error"),
+                        "delta": (total - baseline) if (total is not None and baseline is not None) else None,
+                    })
+        else:
+            # No spec. Map the surface with the existence oracle first: one
+            # garbage value per candidate name, where a 422 PROVES the name is
+            # a declared parameter. Only proven names then cost a real call, so
+            # a wrong guess is one wasted request and never a false finding.
+            for name in _CANDIDATE_NAMES:
+                if spent >= MAX_PROBES - 12:
                     break
                 spent += 1
-                res = arc_client.probe_requests(client, {p["name"]: value})
-                total = res.get("total")
+                res = arc_client.probe_requests(client, {name: _ORACLE_VALUE})
+                err = res.get("error") or ""
+                exists = (not res.get("ok")) and " 422 " in err
+                same = res.get("ok") and res.get("total") == baseline
+                oracle.append({"param": name, "exists": bool(exists),
+                               "ignored": bool(same), "total": res.get("total")})
+                if not exists:
+                    continue
+                value = _value_for(name)
+                if value is None or spent >= MAX_PROBES:
+                    continue
+                spent += 1
+                res2 = arc_client.probe_requests(client, {name: value})
+                total = res2.get("total")
                 trials.append({
-                    "param": p["name"], "value": value, "ok": res.get("ok"),
-                    "total": total, "error": res.get("error"),
+                    "param": name, "value": value, "ok": res2.get("ok"),
+                    "total": total, "error": res2.get("error"),
                     "delta": (total - baseline) if (total is not None and baseline is not None) else None,
                 })
 
@@ -201,23 +296,35 @@ def run_probe(db, client: Optional[httpx.Client] = None) -> dict:
             if not (combined.get("ok") and (combined.get("total") or 0) > (baseline or 0)):
                 winners = {}
 
+        # What else is reachable — a spec would have listed these; without one,
+        # knocking is the next best thing.
         extras = {}
-        for path in _EXTRA_PATHS:
+        for path in _CANDIDATE_PATHS:
             if spent >= MAX_PROBES:
                 break
             spent += 1
             extras[path] = arc_client.get_path(client, path, {"page": 1, "size": 1})
 
+        # Fields the API sends that we do not store — «all data possible» is
+        # about columns too, not only rows.
+        sample = base.get("sample") if isinstance(base.get("sample"), dict) else None
+        unknown_fields = sorted(set(sample) - _KNOWN_FIELDS) if sample else []
+
         report = {
             "ok": True,
             "at": datetime.now(timezone.utc).isoformat(),
             "spec_available": bool(spec),
+            "spec_attempts": spec_attempts,
             "baseline_total": baseline,
             "baseline_error": base.get("error"),
             "max_size": base.get("size"),
             "params": params,
             "paths": describe_paths(spec),
             "trials": trials,
+            "oracle": oracle,
+            "extras": extras,
+            "unknown_fields": unknown_fields,
+            "token": arc_client.token_claims(client),
             "combined_total": (combined or {}).get("total") if combined else None,
             "filters": winners,
             "calls": spent,
@@ -228,8 +335,8 @@ def run_probe(db, client: Optional[httpx.Client] = None) -> dict:
             # Only ever store a filter set we measured as an improvement.
             meta.filters = winners or None
             db.commit()
-        log.info("arc probe: baseline=%s combined=%s filters=%s calls=%s",
-                 baseline, report["combined_total"], winners, spent)
+        log.info("arc probe: baseline=%s combined=%s filters=%s spec=%s calls=%s",
+                 baseline, report["combined_total"], winners, bool(spec), spent)
         return report
     finally:
         if own_client:

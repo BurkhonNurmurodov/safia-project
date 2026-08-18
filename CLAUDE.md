@@ -480,6 +480,16 @@ pages, full walk nightly 03:15 + on Refresh + 60 s after boot) ·
   combination beats the baseline before storing it in `arc_sync_meta.filters`;
   every walk then sends that set. A first full sync with no stored measurement
   probes before walking. Nothing is stored when the defaults are already widest.
+  **The spec is often refused** (the panel now reports the status of all five
+  candidate paths), so there is a spec-free fallback that costs nothing in
+  correctness: FastAPI VALIDATES what it declares and IGNORES what it does not,
+  so one deliberately-wrong value per candidate name is an existence oracle —
+  a **422 proves the parameter is real**, a 200 means it was ignored. Only
+  proven names then cost a real measurement, so a guess can never produce a
+  false finding. The panel also shows our own token's claims (the account's
+  actual scope — the first thing to check against any «you have full access»
+  claim), fields the API sends that we do not store, and a direct knock on
+  eight sibling endpoints (`/stats`, `/export`, …).
 - **Derived state is defined ONCE** (`_derived()` in the router):
   `closed_at = coalesce(completed_at, finished_at)`, `is_open`, `due =
   coalesce(deadline_time, deadline)`, `late`, `overdue_now`, `hours_to_close`

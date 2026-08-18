@@ -8,7 +8,7 @@
 //
 // Admin-only, like the endpoints behind it.
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Radar, RefreshCw, ArrowDownUp, ListTree, SlidersHorizontal } from "lucide-react";
+import { Radar, RefreshCw, ArrowDownUp, ListTree, SlidersHorizontal, KeyRound, FileWarning, Boxes } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import { SkeletonBlock } from "../ui/Skeleton";
@@ -17,6 +17,7 @@ import { useLang } from "../../context/LangContext";
 import { hexA, C_DONE, C_OVERDUE, C_GREY } from "../../utils/arcStatus";
 
 const num = (v) => (v == null ? "—" : Number(v).toLocaleString("ru-RU"));
+const tplStr = (s, vars) => String(s || "").replace(/\{(\w+)\}/g, (m, k) => (vars[k] ?? m));
 
 function Stat({ label, value, tone }) {
   return (
@@ -188,6 +189,82 @@ export default function ApiPanel({ open, onClose, sync, onProbed }) {
                     })}
                   </tbody>
                 </table>
+              </div>
+            </Section>
+          )}
+
+          {/* why the API document never arrived — a status per path beats
+              «it didn't work» */}
+          {!data?.spec_available && report?.spec_attempts?.length > 0 && (
+            <Section icon={FileWarning} title={t("arc.api.specWhy")}>
+              <div className="text-[11px] font-mono space-y-0.5">
+                {report.spec_attempts.map((a) => (
+                  <div key={a.path} className="flex gap-2 min-w-0">
+                    <span className="truncate" style={{ color: "var(--text-2)" }}>{a.path}</span>
+                    <span className="flex-shrink-0" style={{ color: a.ok ? C_DONE : C_OVERDUE }}>
+                      {a.ok ? "ok" : (a.error || "—")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* parameters proven real by the 422 oracle (no spec needed) */}
+          {report?.oracle?.length > 0 && (
+            <Section icon={ListTree} title={t("arc.api.oracle")}>
+              {report.oracle.some((o) => o.exists) ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {report.oracle.filter((o) => o.exists).map((o) => (
+                    <span key={o.param} className="text-[11px] rounded-md px-2 py-0.5 font-mono"
+                      style={{ background: hexA(C_DONE, 0.12), color: C_DONE, border: `1px solid ${hexA(C_DONE, 0.4)}` }}>
+                      {o.param}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs" style={{ color: "var(--text-3)" }}>
+                  {tplStr(t("arc.api.oracleNone"), { n: report.oracle.length })}
+                </p>
+              )}
+            </Section>
+          )}
+
+          {/* what this account IS, according to the API's own token */}
+          {report?.token?.ok && (
+            <Section icon={KeyRound} title={t("arc.api.token")}>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(report.token.values || {}).map(([k, v]) => (
+                  <span key={k} className="text-[11px] rounded-md px-2 py-0.5 font-mono"
+                    style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}>
+                    {k}={String(v)}
+                  </span>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* fields the API sends that we throw away */}
+          {report?.unknown_fields?.length > 0 && (
+            <Section icon={Boxes} title={t("arc.api.unknownFields")}>
+              <p className="text-[11px] font-mono" style={{ color: "var(--text-2)" }}>
+                {report.unknown_fields.join(", ")}
+              </p>
+            </Section>
+          )}
+
+          {/* other endpoints — knocked on directly when there is no spec */}
+          {report?.extras && Object.keys(report.extras).length > 0 && (
+            <Section icon={Boxes} title={t("arc.api.otherEndpoints")}>
+              <div className="text-[11px] font-mono space-y-0.5 max-h-40 overflow-y-auto">
+                {Object.entries(report.extras).map(([path, r]) => (
+                  <div key={path} className="flex gap-2 min-w-0">
+                    <span className="truncate" style={{ color: "var(--text-2)" }}>{path}</span>
+                    <span className="flex-shrink-0" style={{ color: r?.ok ? C_DONE : C_GREY }}>
+                      {r?.ok ? `${r.kind}${r.total != null ? ` · ${num(r.total)}` : ""}` : (r?.error || "—")}
+                    </span>
+                  </div>
+                ))}
               </div>
             </Section>
           )}
