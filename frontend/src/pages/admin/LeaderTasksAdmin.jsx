@@ -207,6 +207,7 @@ export default function LeaderTasksAdmin() {
   // mutations were the inconsistent ones.
   const onErr = (e) => {
     const d = e?.response?.data?.detail;
+    if (d === "camera_needs_a_unit") { toast2.error(t("admin.ltasks.proofNeedsUnit")); return; }
     toast2.error(Array.isArray(d) ? d.map((x) => x?.msg || String(x)).join("; ")
       : (typeof d === "string" && d) || t("admin.ltasks.fail"));
   };
@@ -746,11 +747,12 @@ export default function LeaderTasksAdmin() {
   // their upload path entirely, and an admin flipping it has to know that
   // before they save, not after the first leader reports the bot "not
   // accepting" their photo.
-  const proofKindField = (value, onChange, mark) => {
+  const proofKindField = (value, onChange, mark, scope) => {
     const v = value?.proof_kind || "screenshot";
     return (
       <FormField label={withMark(t("admin.ltasks.proofKind"), mark)}
-        hint={t(`admin.ltasks.proofHint.${v}`)}>
+        hint={`${t(`admin.ltasks.proofHint.${v}`)}${
+          v === "camera" && scope ? ` ${t(`admin.ltasks.proofScope.${scope}`)}` : ""}`}>
         <SegmentedToggle fill value={v}
           onChange={(k) => onChange({ proof_kind: k })}
           options={[["screenshot", t("admin.ltasks.proofScreenshot")],
@@ -887,14 +889,6 @@ export default function LeaderTasksAdmin() {
       ? { date_check: (lead0 ? ov0?.date_check : cell0.date_check) ?? null,
           time_check: (lead0 ? ov0?.time_check : cell0.time_check) ?? null }
       : { date_check: task.date_check !== false, time_check: task.time_check !== false };
-    // Same seeding as the date rule, one level up: what these rows collect
-    // through, plus the raw value so Save knows whether anything is stored here.
-    const pkInh = anyFilter
-      ? (lead0 ? supPk(lead0.manager_id, task.id) : pkOf(task.id))
-      : undefined;
-    const pk0raw = anyFilter
-      ? ((lead0 ? ov0?.proof_kind : cell0.proof_kind) || null)
-      : (task.proof_kind || "screenshot");
     setCol({
       tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
       names: { ...names0 }, names0, criteria: criteria0, criteria0, when: "now",
@@ -902,7 +896,6 @@ export default function LeaderTasksAdmin() {
       date_check: dc0raw.date_check ?? dcInh.date_check,
       time_check: dc0raw.time_check ?? dcInh.time_check,
       dc0raw, dcInh,
-      proof_kind: pk0raw || pkInh, pk0raw, pkInh,
     });
   };
   const saveCol = () => {
@@ -911,7 +904,6 @@ export default function LeaderTasksAdmin() {
     saveWindow(col, col.win0, { task_id: col.tid, ...ids });
     saveDeadline(col, { deadline: col.deadline0 }, { task_id: col.tid, ...ids });
     saveDateRule(col, col.dc0raw, col.dcInh, { task_id: col.tid, ...ids });
-    saveProofKind(col, { proof_kind: col.pk0raw }, col.pkInh, { task_id: col.tid, ...ids });
     if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
       taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
   };
@@ -1114,7 +1106,7 @@ export default function LeaderTasksAdmin() {
           {nameFields(cell.names, (l, v) => setCell((c) => ({ ...c, names: { ...c.names, [l]: v } })), (l) => cellTask?.name?.[l] || "")}
           <FormField label={t("admin.ltasks.status")} required>{statusToggle(cell.enabled, (v) => setCell((c) => ({ ...c, enabled: v })))}</FormField>
           {numField(t("admin.ltasks.minMedia"), cell.min_media, (v) => setCell((c) => ({ ...c, min_media: v })), 20)}
-          {proofKindField(cell, (v) => setCell((c) => ({ ...c, ...v })))}
+          {proofKindField(cell, (v) => setCell((c) => ({ ...c, ...v })), null, "unit")}
           {numField(t("admin.ltasks.weight"), cell.weight, (v) => setCell((c) => ({ ...c, weight: v })), 100)}
           {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
           {windowField(cell, (v) => setCell((c) => ({ ...c, ...v })),
@@ -1155,7 +1147,7 @@ export default function LeaderTasksAdmin() {
           {dateRuleField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
             changedPill(dcMode(lcell) !== dcMode(lInh)))}
           {proofKindField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
-            changedPill((lcell.proof_kind || "screenshot") !== lInh.proof_kind))}
+            changedPill((lcell.proof_kind || "screenshot") !== lInh.proof_kind), "leader")}
           {deadlineField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.deadline,
             changedPill(ownText(lcell.deadline, lInh.deadline) !== ""))}
           <WhenBar when={lcell.when} setWhen={(v) => setLcell((c) => ({ ...c, when: v }))} nextDate={lcellNext} t={t} />
@@ -1208,8 +1200,14 @@ export default function LeaderTasksAdmin() {
               anyFilter ? "" : globalWinPh("win_to"))}
             {dateRuleField(col, (v) => setCol((c) => ({ ...c, ...v })),
               changedPill(anyFilter && dcMode(col) !== dcMode(col.dcInh)))}
-            {proofKindField(col, (v) => setCol((c) => ({ ...c, ...v })),
-              changedPill(anyFilter && (col.proof_kind || "screenshot") !== col.pkInh))}
+            {/* No proof-kind control here, on purpose. Unfiltered, this modal
+                writes the GLOBAL level — which every unit inherits — and that
+                is exactly how one test unit's camera setting reached every
+                leader on the platform (user, 2026-08-19). In-app capture is
+                enrolled per BRIGADIR or per LEADER, in their own cells, where
+                the scope of the change is what you clicked on. The backend
+                refuses a global camera too (CAMERA_IS_PILOT), so this is not
+                the only thing holding the line. */}
             {deadlineField(col, (v) => setCol((c) => ({ ...c, ...v })), "")}
             <div className="pt-1">
               {/* Examples are keyed per TASK — there is no per-row storage, so

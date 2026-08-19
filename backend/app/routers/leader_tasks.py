@@ -34,7 +34,7 @@ from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services import leader_ai, leader_bot
 from app.services.leader_tasks import (
-    CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
+    CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
     revert_audit, set_criteria, set_date_check, set_deadline, set_proof_kind,
@@ -733,11 +733,22 @@ def put_proof_kind(body: ProofKindIn, db: Session = Depends(get_db),
     server clock. Switching a task BACK to screenshots leaves any camera roll
     where it is — an answered task keeps its evidence — but the bot stops
     offering the camera and starts accepting files again.
+
+    While in-app capture is a pilot, enrolment must name a SUPERVISOR or a
+    LEADER: the global level is what every unit inherits, and writing camera
+    there is how one test unit's setting reached every leader on the platform.
     """
     if body.proof_kind is not None and body.proof_kind not in PROOF_KINDS:
         raise HTTPException(status_code=400, detail="unknown_proof_kind")
     if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
         raise HTTPException(status_code=404, detail="Unknown task")
+    # Enrolment must NAME a unit. See services.leader_tasks.CAMERA_IS_PILOT: a
+    # global camera is what every leader on the platform inherits, and that is
+    # not something a pilot gets to do by accident.
+    if (CAMERA_IS_PILOT and body.proof_kind == "camera"
+            and body.manager_id is None and body.leader_id is None
+            and body.manager_ids is None and body.leader_ids is None):
+        raise HTTPException(status_code=400, detail="camera_needs_a_unit")
 
     if body.leader_ids is not None or body.manager_ids is not None:
         if body.leader_ids is not None:

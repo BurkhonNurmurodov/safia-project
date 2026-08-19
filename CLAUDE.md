@@ -415,6 +415,17 @@ proof photos, so from **2026-08-19** a checklist task can declare that its proof
 is **TAKEN IN THE APP** instead of uploaded. The clock on such a photo is the
 SERVER's; the phone never authors it.
 
+- **Enrolment must NAME a unit.** While `leader_tasks.CAMERA_IS_PILOT` stands,
+  the GLOBAL level of the chain may only hold `screenshot` — camera is set on a
+  supervisor's cell (whole unit) or a leader's cell (that leader), and the
+  column/global modal carries no proof-kind control at all. This is not
+  cosmetic: the pilot's setting WAS written globally on 2026-08-19 and every
+  leader on the platform inherited it, five tasks each, mid-shift
+  (`startup.reset_leader_camera_pilot` is the one-shot that took it back to
+  zero — configuration only; photos, stamps and verdicts were untouched).
+  Enforced in `set_proof_kind` and again in the endpoint, because the endpoint
+  is reachable without the UI. Flip the constant on the day camera becomes the
+  platform default.
 - **`proof_kind` is the switch** — `screenshot` (send images to the bot chat,
   what every task did before and still does by default) or `camera`. Same
   global → supervisor → leader chain as `min_media`

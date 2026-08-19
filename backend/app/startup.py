@@ -877,6 +877,55 @@ def add_leader_task_proof_kind() -> None:
         db.close()
 
 
+# Versioned like the AI purge flag below, and for the same reason: it records
+# "this exact clean-up has been applied once". A future one needs a NEW key, or
+# the old mark makes it a no-op on every box that has booted.
+LEADER_CAMERA_RESET_FLAG = "leader_proof_camera_reset_v1"
+
+
+def reset_leader_camera_pilot() -> None:
+    """One-shot: take in-app camera capture back to OFF, everywhere.
+
+    Why (user, 2026-08-19): the pilot's `proof_kind` was set at the GLOBAL level
+    of the config chain, which is what every unit inherits — so five tasks of
+    every leader on the platform started showing the camera prompt instead of
+    accepting the photos they had always sent. A test feature reaching people
+    who were never in the test is worse than the feature being off.
+
+    Clears all three levels, not just the global one, because the spread's shape
+    is not knowable from here: an admin may have written supervisor or leader
+    rows through the same modal under a filter. Zero is the only state that is
+    certainly right, and re-enrolling one unit is a couple of taps in the
+    matrix — which, since `CAMERA_IS_PILOT`, is now the ONLY place it can be
+    done.
+
+    Destroys nothing else. Photos already shot keep their rows, their stamps and
+    their verdicts; this touches configuration only, so a task switched back on
+    finds its roll exactly where it was.
+    """
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_CAMERA_RESET_FLAG).first():
+            return
+        n = 0
+        for table, blank in (("leader_task_defs", "'screenshot'"),
+                             ("leader_task_settings", "NULL"),
+                             ("leader_task_leader_settings", "NULL")):
+            res = db.execute(text(
+                f"UPDATE {table} SET proof_kind = {blank} "
+                f"WHERE proof_kind = 'camera'"))
+            n += res.rowcount or 0
+        db.add(AppSetting(key=LEADER_CAMERA_RESET_FLAG, value="1"))
+        db.commit()
+        if n:
+            print(f"[startup] leader camera pilot: reset {n} proof_kind row(s) to screenshot")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] leader camera reset skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_ai_clocks() -> None:
     """2026-08-14: the model stops judging the date and starts transcribing it.
 

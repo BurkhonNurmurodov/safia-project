@@ -201,6 +201,15 @@ def resolve_deadline(*levels) -> str | None:
 # here, so in-app capture is only ever something an admin switched ON.
 PROOF_KINDS = ("screenshot", "camera")
 
+# In-app capture is a PILOT, and a pilot must not be switchable for the whole
+# company by one tap in the wrong modal. The global level of the chain is the
+# one every unit inherits, so while this flag stands it may only ever hold
+# "screenshot": camera is enrolled per SUPERVISOR or per LEADER, and nowhere
+# else. That is enforced here rather than only in the admin UI, because the
+# endpoint is reachable without it — and it is one constant to flip on the day
+# camera becomes the platform default.
+CAMERA_IS_PILOT = True
+
 
 def resolve_proof_kind(*levels) -> str:
     """How this task's proof is collected — first non-blank walking the levels
@@ -646,7 +655,8 @@ def set_proof_kind(db: Session, *, task_id: int, proof_kind: str | None,
     """Write HOW this task's proof is collected at one level of the chain.
     Blank clears that level and falls back to the level above; at the GLOBAL
     level blank is stored as "screenshot", because that level is the chain's
-    floor and has nothing left to inherit from.
+    floor and has nothing left to inherit from — and while `CAMERA_IS_PILOT`
+    stands, "screenshot" is the ONLY thing that level may hold.
 
     Applies at once and stages nothing, for the opposite reason to the criteria:
     this is the one field that changes what the leader is ASKED TO DO, so a
@@ -668,6 +678,14 @@ def set_proof_kind(db: Session, *, task_id: int, proof_kind: str | None,
     v = (proof_kind or "").strip() or None
     if v is not None and v not in PROOF_KINDS:
         raise ValueError(f"unknown proof kind {proof_kind!r}")
+    # The global level is every unit's inheritance. Writing camera there once
+    # put five tasks of every leader on the platform into a mode built for one
+    # test unit (user, 2026-08-19) — so while `CAMERA_IS_PILOT` stands, the
+    # floor of the chain can only be "screenshot" and enrolment has to name a
+    # supervisor or a leader.
+    if (CAMERA_IS_PILOT and v == "camera"
+            and manager_id is None and leader_id is None):
+        raise ValueError("camera_needs_a_unit")
 
     if leader_id is not None:
         row = db.query(LeaderTaskLeaderSetting).filter_by(
