@@ -10,7 +10,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import ErrorScreen from "../components/ui/ErrorScreen";
 import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
-import { enqueue, flush, pending } from "../utils/proofQueue";
+import { enqueue, flush, newKey, pending } from "../utils/proofQueue";
 
 /**
  * `/proof/camera` — where a leader SHOOTS a checklist proof.
@@ -38,6 +38,11 @@ import { enqueue, flush, pending } from "../utils/proofQueue";
  */
 
 const CLOCK_RESYNC_MS = 5 * 60 * 1000;
+// How often a queued shot is retried while the page is open. Short enough that
+// a leader who walked back into coverage sees the spinner clear before they
+// have finished reading the roll, long enough that a phone on a dead cell keeps
+// its battery.
+const RETRY_EVERY_MS = 20 * 1000;
 // A shot's own quality. 0.92 keeps small print (a gauge, a label, a serial)
 // legible for the reviewer; the server re-encodes to its own long edge anyway.
 const JPEG_Q = 0.92;
@@ -560,6 +565,9 @@ export default function ProofCamera() {
     setQueued(await pending(leaderId, taskId));
   }, [leaderId, taskId]);
 
+  // `client_key` is the SHOT's id, not the request's: every attempt at one photo
+  // sends the same one, which is what lets the server answer a re-send with the
+  // row it already wrote instead of putting the same picture on the roll twice.
   const upload = useCallback((item) => {
     const fd = new FormData();
     fd.append("leader", String(item.leader));
@@ -567,6 +575,7 @@ export default function ProofCamera() {
     fd.append("captured_ms", String(Math.round(item.capturedMs)));
     if (item.phoneMs) fd.append("phone_ms", String(Math.round(item.phoneMs)));
     if (item.slot != null) fd.append("slot", String(item.slot));
+    if (item.key) fd.append("client_key", String(item.key));
     fd.append("file", item.blob, "proof.jpg");
     return api.post("/api/leader-proof/photo", fd).then((r) => r.data);
   }, []);
@@ -580,17 +589,41 @@ export default function ProofCamera() {
 
   useEffect(() => { reloadQueue(); }, [reloadQueue]);
 
+  // `drain` closes over `toast` and `t`, both fresh objects on every render —
+  // and this page re-renders four times a SECOND to advance its clock. Held in
+  // a ref so the two effects below can be registered once and mean what they
+  // say. With `drain` in their deps they were torn down and re-run every
+  // 250 ms, and each re-run started another flush over the same queued rows:
+  // several uploads of one photo in flight together, each landing as its own
+  // row, which is how a leader's roll came back holding the same picture twice
+  // with the same burnt second on both copies.
+  const drainRef = useRef(drain);
+  useEffect(() => { drainRef.current = drain; }, [drain]);
+
   useEffect(() => {
-    const up = () => { setOnline(true); drain(); };
+    const up = () => { setOnline(true); drainRef.current(); };
     const down = () => setOnline(false);
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
-    if (navigator.onLine) drain();
+    if (navigator.onLine) drainRef.current();
     return () => {
       window.removeEventListener("online", up);
       window.removeEventListener("offline", down);
     };
-  }, [drain]);
+  }, []);
+
+  // The `online` event is not the only way a shot gets stuck. A connection that
+  // drops mid-upload and comes back a second later never fires it — the phone
+  // was "online" throughout — so a shot parked by that failure would sit in the
+  // queue until the page was opened again. While anything is queued, try again
+  // on a timer; re-sending costs nothing now that a shot carries its own id and
+  // the server answers a replay with the row it already wrote.
+  useEffect(() => {
+    if (!queued.length) return undefined;
+    const id = setInterval(
+      () => { if (navigator.onLine) drainRef.current(); }, RETRY_EVERY_MS);
+    return () => clearInterval(id);
+  }, [queued.length]);
 
   /* ── shoot ──────────────────────────────────────────────────────────────── */
   const capture = useCallback(() => {
@@ -611,6 +644,9 @@ export default function ProofCamera() {
       setShot({
         blob, url: URL.createObjectURL(blob), ms, phoneMs: Date.now(),
         ar: canvas.width / canvas.height,
+        // Minted with the picture, so a save that has to be retried — directly
+        // or later out of the offline queue — is still recognisably THIS shot.
+        key: newKey(),
       });
       setMode("review");
     }, "image/jpeg", JPEG_Q);
@@ -628,6 +664,7 @@ export default function ProofCamera() {
     const item = {
       leader: leaderId, task: taskId, slot: retakeSlot,
       capturedMs: shot.ms, phoneMs: shot.phoneMs, blob: shot.blob,
+      key: shot.key,
     };
     try {
       if (!navigator.onLine) throw Object.assign(new Error("offline"), { offline: true });
@@ -643,6 +680,10 @@ export default function ProofCamera() {
         return;
       }
       // Network, not refusal: the shot is kept whole and goes out on its own.
+      // It may already be stored — a connection that dies after the bytes land
+      // but before the answer comes back is indistinguishable from one that
+      // never carried them — so the queue re-sends it under the same `key` and
+      // the server recognises the replay rather than filing a second photo.
       await enqueue(item);
       await reloadQueue();
       toast.warning(t("proof.queued"));

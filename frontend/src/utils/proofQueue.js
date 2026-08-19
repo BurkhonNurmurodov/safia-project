@@ -62,9 +62,42 @@ function tx(mode, fn) {
   );
 }
 
-/** Park one shot. `item` = { leader, task, slot, capturedMs, phoneMs, blob }. */
+/**
+ * A shot's own id, minted ONCE before its first upload attempt and carried with
+ * the blob through the queue.
+ *
+ * It is what makes re-sending safe. A dropped connection looks identical from
+ * here whether the bytes never arrived or arrived and their answer died on the
+ * way back, so the page must re-send in both cases — and without an id the
+ * server had no way to tell the second attempt from a second photo, which is
+ * how one shot ended up on the roll twice, same picture, same burnt second.
+ *
+ * `crypto.randomUUID` is missing from the older Android WebViews Telegram still
+ * runs on, so this builds the id from `getRandomValues` where it exists and
+ * falls back to `Math.random` where it does not; the time prefix keeps even the
+ * weak path collision-free in practice, and a collision costs a dropped shot,
+ * so the fallback is never allowed to be the only source of uniqueness.
+ */
+export function newKey() {
+  const stamp = Date.now().toString(36);
+  const rnd = globalThis.crypto?.getRandomValues
+    ? Array.from(globalThis.crypto.getRandomValues(new Uint8Array(12)), (b) =>
+        b.toString(16).padStart(2, "0")).join("")
+    : `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  return `${stamp}-${rnd}`;
+}
+
+/**
+ * Park one shot.
+ * `item` = { leader, task, slot, capturedMs, phoneMs, blob, key }.
+ *
+ * A missing `key` is filled in here rather than refused: the id only has to be
+ * STABLE across the attempts of one shot, and a row parked without one has not
+ * been sent yet.
+ */
 export function enqueue(item) {
-  return tx("readwrite", (s) => s.add({ ...item, queuedAt: Date.now() }));
+  return tx("readwrite", (s) =>
+    s.add({ key: newKey(), ...item, queuedAt: Date.now() }));
 }
 
 /** Everything still waiting, oldest first — optionally for one task only. */
@@ -83,6 +116,11 @@ export function drop(id) {
   return tx("readwrite", (s) => s.delete(id));
 }
 
+// One flush at a time PER LEADER — see the note on re-sending below. Keyed
+// rather than global because one account may hold several leader profiles, and
+// a flush for one of them must never be handed back as the answer for another.
+const flushing = new Map();
+
 /**
  * Try to send everything queued for this leader, oldest FIRST.
  *
@@ -95,8 +133,22 @@ export function drop(id) {
  * being offline, and draining into a dead network would only burn the battery.
  * A 4xx is different: the server has answered, the shot will never be accepted,
  * and keeping it would block every shot behind it forever, so it is dropped.
+ *
+ * Re-sending is safe because every row carries its `key`: a shot the server
+ * already stored is answered with the row it wrote, not filed a second time.
+ * Two flushes overlapping (the page drains on mount AND on `online`) would
+ * otherwise hand the same rows to two uploads.
  */
 export async function flush(leader, send) {
+  const key = String(leader ?? "");
+  const running = flushing.get(key);
+  if (running) return running;
+  const run = _flush(leader, send).finally(() => { flushing.delete(key); });
+  flushing.set(key, run);
+  return run;
+}
+
+async function _flush(leader, send) {
   const rows = await pending(leader, null);
   let sent = 0;
   let last = null;

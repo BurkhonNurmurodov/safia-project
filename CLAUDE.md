@@ -494,6 +494,23 @@ SERVER's; the phone never authors it.
   roll, the task stays incomplete until the server has them, and Telegram's
   closing confirmation is armed while any are pending. A gap beyond
   `DEFERRED_AFTER_S` marks the row `deferred` — shown, never treated as a fault.
+- **One shot has ONE id, and the upload is idempotent** (`client_key`). A
+  connection that dies between the bytes landing here and the answer reaching
+  the phone is indistinguishable from one that never carried them, so the page
+  re-sends either way — and with no id the second POST was an ordinary new
+  photo: same picture, same burnt second, next free slot, the roll holding one
+  shot twice (reported from the pilot, 2026-08-19). The key is minted WITH the
+  picture (`proofQueue.newKey`), kept beside the blob in IndexedDB and sent on
+  every attempt; `save_photo` looks it up FIRST and answers a replay with the
+  row it already wrote — before burning or relaying, so a replay costs no
+  second channel post either. `uq_ltask_photo_client_key` (leader_id,
+  client_key) is the backstop for two attempts racing, and `flush` is
+  single-flight for the same reason. A NULL key behaves exactly as before, so
+  nothing that predates this moves; a key whose row was since deleted (a
+  retake, `clear_roll`) is a miss and writes a new row, which is the honest
+  floor. While anything is queued the page retries on a 20 s timer as well —
+  `online` never fires for a drop that lasted one second, and the shot would
+  otherwise sit in the queue until somebody reopened the page.
 - **Outside the photo window a shot is ACCEPTED and marked `late`** (user's
   ruling): the page warns before the shutter, and the deduction comes from the
   ordinary date machinery, not a new one.

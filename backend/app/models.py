@@ -1496,9 +1496,27 @@ class LeaderTaskPhoto(Base):
     # Phone clock − server clock at capture, seconds. Diagnostic only: nothing
     # is judged by it, but a fleet of phones suddenly hours off is worth seeing.
     skew_s      = Column(Integer, nullable=True)
+    # The PAGE's own id for the shot, minted before the first upload attempt and
+    # carried with the blob into the offline queue. It is what makes the upload
+    # idempotent, and the roll only reads right because of it: when the signal
+    # dies between the bytes landing here and the reply reaching the phone, the
+    # page cannot tell "never arrived" from "arrived, answer lost", so it re-
+    # sends — and without a key the second POST wrote a SECOND row holding the
+    # same picture with the same burnt stamp. NULL on rows written before this
+    # column existed and on any request that sends no key; Postgres ignores
+    # NULLs in a unique index, so those behave exactly as they always did.
+    client_key  = Column(String(64), nullable=True)
 
-    __table_args__ = (UniqueConstraint("day_id", "task_id", "slot",
-                                       name="uq_ltask_photo_slot"),)
+    __table_args__ = (
+        UniqueConstraint("day_id", "task_id", "slot", name="uq_ltask_photo_slot"),
+        # Per LEADER rather than per day: a shot queued across the day boundary
+        # is still the same shot, while two leaders' keys are none of each
+        # other's business — a collision between them must never cost anybody a
+        # photo. This is the backstop for two copies of one upload racing (the
+        # drain can fire from the mount effect and from `online` at the same
+        # moment); the lookup in save_photo handles the ordinary replay.
+        Index("uq_ltask_photo_client_key", "leader_id", "client_key", unique=True),
+    )
 
 
 class LeaderAiReview(Base):

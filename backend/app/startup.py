@@ -2734,3 +2734,37 @@ def add_worker_concern_sweep_columns() -> None:
         print(f"[startup] worker-concern sweep columns migration skipped: {exc}")
     finally:
         db.close()
+
+
+def add_leader_photo_client_key() -> None:
+    """2026-08-19: one camera shot may reach us twice, and only the PAGE can say
+    the two are one shot.
+
+    When the connection dies between the photo's bytes landing here and the
+    reply reaching the phone, the page cannot tell "never arrived" from
+    "arrived, answer lost" — both surface as a network error — so it keeps the
+    shot and re-sends it from the offline queue. Without a key the second POST
+    was an ordinary new photo: same picture, same burnt second, the next free
+    slot, and the leader's roll carrying the same proof twice (reported from the
+    pilot, 2026-08-19).
+
+    The key is minted once per shot before its first attempt and stored with the
+    blob, so every attempt carries the same one; the unique index is the
+    backstop for two attempts racing. NULL everywhere until a page sends one,
+    and Postgres ignores NULLs in a unique index, so old rows and any keyless
+    request behave exactly as they did.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_task_photos "
+            "ADD COLUMN IF NOT EXISTS client_key VARCHAR(64)"))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_ltask_photo_client_key "
+            "ON leader_task_photos (leader_id, client_key)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader photo client-key migration skipped: {exc}")
+    finally:
+        db.close()

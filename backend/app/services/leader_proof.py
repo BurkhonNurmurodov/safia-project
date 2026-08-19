@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageOps
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -254,7 +255,8 @@ def max_slots(min_media: int) -> int:
 
 def save_photo(db: Session, *, prof: RoleProfile, task_id: int, cfg: dict,
                data: bytes, captured_at: datetime, slot: int | None,
-               skew_s: int | None, relay) -> LeaderTaskPhoto:
+               skew_s: int | None, relay,
+               client_key: str | None = None) -> LeaderTaskPhoto:
     """Stamp one shot, archive it, and put it on the roll.
 
     `relay(bytes) -> (file_id, message_id)` is the archive-channel upload,
@@ -265,7 +267,29 @@ def save_photo(db: Session, *, prof: RoleProfile, task_id: int, cfg: dict,
     `slot=None` appends; a slot already on the roll is REPLACED, which is the
     retake. The replaced row goes, the channel post stays — the archive is the
     audit trail, exactly as it is for the bot's own reset.
+
+    **`client_key` makes this idempotent, and it has to be.** The page cannot
+    tell a request that never arrived from one that arrived and whose answer
+    died on the way back — both look like a dropped connection — so it re-sends
+    from the offline queue, and the same photo used to land twice on the roll
+    (same picture, same burnt second, two slots). The key is the page's own id
+    for that SHOT, minted once before the first attempt and kept with the blob,
+    so a replay is recognised here and answered with the row the first attempt
+    wrote. Checked before anything is burnt or relayed: a replay must not cost a
+    second channel post either. A row whose key was already consumed and then
+    deleted (a retake, `clear_roll`) is a miss and writes a new row — the same
+    thing that happens with no key at all, which is the honest floor.
     """
+    if client_key:
+        seen = (db.query(LeaderTaskPhoto)
+                .filter_by(leader_id=prof.id, task_id=task_id,
+                           client_key=client_key)
+                .first())
+        if seen:
+            logger.info("camera proof replay ignored: leader=%s task=%s key=%s",
+                        prof.id, task_id, client_key)
+            return seen
+
     day = open_day(db, prof, create=True)
     if day is None:
         raise ProofError("day_closed")
@@ -300,10 +324,25 @@ def save_photo(db: Session, *, prof: RoleProfile, task_id: int, cfg: dict,
         captured_at=captured_at, received_at=now, stamp=text,
         late=is_late(captured_at, day.date, win, cfg),
         deferred=(now - captured_at).total_seconds() > DEFERRED_AFTER_S,
-        skew_s=skew_s,
+        skew_s=skew_s, client_key=client_key,
     )
     db.add(row)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Two copies of one shot in flight at the same time — the drain can be
+        # started by the mount effect and by the `online` event within the same
+        # second — so both missed the lookup above and both got here. The unique
+        # index settles it; the loser answers with the winner's row rather than
+        # failing a save the leader already made.
+        db.rollback()
+        seen = (db.query(LeaderTaskPhoto)
+                .filter_by(leader_id=prof.id, task_id=task_id,
+                           client_key=client_key)
+                .first() if client_key else None)
+        if seen:
+            return seen
+        raise
     sync_entry(db, day, task_id, need)
     db.commit()
     return row

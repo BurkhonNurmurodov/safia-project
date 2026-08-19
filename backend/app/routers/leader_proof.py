@@ -12,6 +12,7 @@ put it in a link. Everything past that check is scoped by the resolved profile,
 never by the parameter.
 """
 import logging
+import re
 from datetime import datetime, timezone
 
 import requests
@@ -41,6 +42,11 @@ log = logging.getLogger(__name__)
 # a leader can hit by taking a picture.
 _MAX_UPLOAD = 12 * 1024 * 1024
 _JPEG_MAGIC = b"\xff\xd8\xff"
+
+# The page's per-shot idempotency key. Opaque, but bounded and charset-checked
+# before it reaches a query — it is client-supplied text going into a lookup and
+# a unique index, and nothing here has any use for a key that is not one.
+_KEY_OK = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 # ── who the caller is allowed to be ──────────────────────────────────────────
@@ -217,6 +223,7 @@ async def post_photo(
     captured_ms: int = Form(...),
     phone_ms: int | None = Form(None),
     slot: int | None = Form(None),
+    client_key: str | None = Form(None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
@@ -231,9 +238,20 @@ async def post_photo(
     a diagnostic and judged by nothing.
 
     `slot` present = retake that slot; absent = the next free one.
+
+    `client_key` is the page's id for the SHOT and makes this POST idempotent:
+    re-sending one the server already stored answers with the row it wrote
+    instead of adding a twin to the roll. Required in practice by the offline
+    queue, which cannot tell "never arrived" from "arrived, answer lost" and
+    must re-send either way. It is opaque here — never parsed, never trusted
+    for anything but equality.
     """
     prof = _own_leader(db, payload, leader)
     _, entry = _camera_cfg(db, prof, task)
+
+    key = (client_key or "").strip()
+    if key and (len(key) > 64 or not _KEY_OK.fullmatch(key)):
+        raise HTTPException(status_code=400, detail="bad_key")
 
     data = await file.read()
     if not data or len(data) > _MAX_UPLOAD:
@@ -258,6 +276,7 @@ async def post_photo(
         row = leader_proof.save_photo(
             db, prof=prof, task_id=task, cfg=entry, data=data,
             captured_at=captured, slot=slot, skew_s=skew, relay=_relay,
+            client_key=key or None,
         )
     except leader_proof.ProofError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
