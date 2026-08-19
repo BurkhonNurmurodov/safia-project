@@ -574,6 +574,57 @@ SERVER's; the phone never authors it.
 
 Related memory: `leader-camera-proof-pilot`.
 
+## Per-task submission (`per_task_close`)
+
+From **2026-08-19** a supervisor's unit can be switched from closing a DAY to
+closing each TASK. Set per SUPERVISOR — `LeaderUnitSetting.per_task_close`,
+`PUT /admin/leader-tasks/per-task`, the «Brigada sozlamalari» modal opened by
+tapping the brigadir's NAME in the ltasks matrix (a `1×1` chip marks an enrolled
+unit). Absent row = off, so nothing moves until an admin switches it.
+
+- **Deliberately NOT on the global → supervisor → leader task chain.** It is not
+  a property of a task, and a chain has a level that means "everybody" — which
+  is exactly how the camera setting reached every leader on the platform twice
+  on its first day.
+- **Filling a task and SUBMITTING it are two different acts.** Proofs, answers
+  and retakes save as they always did; «Vazifani yopish» is what locks the task
+  and hands it to the AI. The button is only offered once the task is complete
+  (Ha + all required photos, or Yo'q + reason) — Telegram has no disabled
+  button, so an unusable one is a button that silently does nothing.
+- **Closing is FINAL — for everyone.** No leader, no admin, no config change
+  reopens a closed task; switching the unit back to day mode does not either.
+  `leader_close.locked(entry, day)` is THE predicate and every writer consults
+  it (the bot's entry writer, the shared reset core, both camera writes). It
+  reads BOTH locks always, so outside this mode it answers exactly what it
+  always answered: an entry is frozen once its DAY is closed.
+- **One task, one review.** `leader_ai.queue_task` is the per-task door beside
+  `queue_report`, under the same rules (review floor, shift pause, "no photos ⇒
+  not reviewable") — a unit judged by two definitions of a submission would be
+  judged by neither. The lock is committed BEFORE the queue write: a queue
+  failure must never leave a task the leader was told they submitted editable.
+- **The day closes itself** when the last enabled task is closed
+  (`maybe_close_day`), stamping `completion` exactly as the button did. That is
+  what keeps the register, the score, the day report and disputes working with
+  no knowledge of this module. The report DM (leader + brigadir) fires then.
+- **The per-task `deadline` is ENFORCED here and ONLY here.** Blank falls
+  through to the day's filing deadline (`deadline_hhmm`), so every task has an
+  end. At it, `autoclose_due` submits whatever exists — a roll short of
+  `min_media` still goes to the AI and is judged as it stands — while a task
+  with NO answer is recorded not-done with the missed-deadline reason. Outside
+  per-task units the field stays informational, per the 2026-08-15 ruling.
+  The sweep runs on a 5-minute job AND on every `/tasks`: a deadline that bites
+  only when a scheduler happens to run is not a deadline.
+- **The menu carries a running score** — `leader_close.score_line` → «🎯 24/30 ·
+  ⏳ 2 tekshirilmoqda». Earned over the weight of REVIEWED tasks; a task waiting
+  on a verdict is in NEITHER number. A pending task counted as 0 would make the
+  score fall as the day went well, which teaches leaders to stop reading it.
+- Row marks come from `leader_close.task_state`: open · ✏️ draft · ⏳ pending ·
+  ✅ passed · ⚠️ failed. `_lt_pt_task_view` is the task's own screen (draft or
+  submitted); a submitted one offers nothing but the way back, because there is
+  nothing left that can be done to it.
+
+Related memory: `leader-per-task-submission`.
+
 ## Browser login (the second door)
 
 The app has two front doors into the **same** session. Telegram is the first:

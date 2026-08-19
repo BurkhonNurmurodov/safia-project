@@ -79,6 +79,7 @@ async def lifespan(app: FastAPI):
         add_leader_task_date_check, add_leader_task_time_check,
         add_leader_task_date_plus,
         add_leader_task_proof_kind, reset_leader_camera_pilot,
+        add_leader_entry_closed_at,
         add_leader_photo_client_key,
         add_leader_ai_clocks, sync_leader_ai_dates,
         add_leader_ai_resolution,
@@ -134,6 +135,7 @@ async def lifespan(app: FastAPI):
     add_leader_task_time_check()
     add_leader_task_date_plus()
     add_leader_task_proof_kind()
+    add_leader_entry_closed_at()
     # After the column exists — it rewrites values in it.
     reset_leader_camera_pilot()
     add_leader_photo_client_key()
@@ -200,6 +202,9 @@ async def lifespan(app: FastAPI):
     # queue drains itself (mirrored in passenger_wsgi.py).
     from app.services.leader_ai import register_drain_job
     register_drain_job()
+    # Per-task submission: close tasks whose deadline has gone by.
+    from app.services.leader_close import register_autoclose_job
+    register_autoclose_job()
     # Worker-concerns nightly sheet crawl + first-boot fill (mirrored in
     # passenger_wsgi.py).
     from app.services.worker_concerns import register_boot_jobs as register_wc_jobs

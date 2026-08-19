@@ -1266,6 +1266,59 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
     return added
 
 
+def queue_task(db: Session, day: LeaderTaskDay, entry: LeaderTaskEntry, *,
+               force: bool = False) -> int:
+    """Queue ONE task's proofs for review — the per-task submission door.
+
+    The whole-day `queue_report` cannot serve this: it queues every reviewable
+    task of a day at once, and the point of per-task submission is that a task
+    closed at 08:00 is judged at 08:00 while the rest of the day is still being
+    worked. Same rules as its sibling, deliberately — the review floor, the
+    shift pause, and "a task with no photos is not reviewable" all decide the
+    same way here, or a unit would be judged by two different definitions of
+    what counts as a submission.
+    """
+    floor = floor_date(db)
+    if floor and day.date < floor:
+        return 0
+    if not entry.done:
+        return 0                       # «Yo'q» has no proof to look at
+    mgr = db.query(Manager).filter_by(id=day.manager_id).first()
+    if not force and review_paused(mgr.shift if mgr else None):
+        return 0
+    if not db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).first():
+        return 0
+    ref = bot_ref(entry.id)
+    if db.query(LeaderAiReview).filter_by(ref=ref).first():
+        return 0
+    db.add(LeaderAiReview(
+        ref=ref, source="bot", date=day.date, task_id=entry.task_id,
+        leader_id=day.leader_id, manager_id=day.manager_id,
+        shift=mgr.shift if mgr else None, status="pending", flags=[],
+    ))
+    return 1
+
+
+def verdicts_for(db: Session, day: LeaderTaskDay) -> dict[int, LeaderAiReview]:
+    """task_id → the verdict on this day's entries, for the surfaces that print
+    a running score while the day is still open (the bot's per-task menu).
+
+    Keyed by task rather than by ref so the caller never has to know how a ref
+    is built; one query for the whole menu, because the alternative is thirteen.
+    """
+    entries = {e.id: e.task_id for e in
+               db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
+    if not entries:
+        return {}
+    refs = {bot_ref(eid): tid for eid, tid in entries.items()}
+    out: dict[int, LeaderAiReview] = {}
+    for rev in db.query(LeaderAiReview).filter(LeaderAiReview.ref.in_(list(refs))).all():
+        tid = refs.get(rev.ref)
+        if tid is not None:
+            out[tid] = rev
+    return out
+
+
 def _sheet_photos(task: dict) -> list[str]:
     return [p.strip() for p in (task.get("photo") or "").split(",")
             if "http" in p]

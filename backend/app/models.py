@@ -1411,6 +1411,15 @@ class LeaderTaskEntry(Base):
     done     = Column(Boolean, nullable=False)
     reason   = Column(Text, nullable=True)
     saved_at = Column(DateTime(timezone=True), server_default=func.now())
+    # PER-TASK submission only (see LeaderUnitSetting.per_task_close): when the
+    # leader closed THIS task. NULL = still a draft — the answer is saved, the
+    # photos are on the roll, and both can still be changed. Set = locked
+    # forever and handed to the AI on its own.
+    #
+    # Read through `leader_close.locked()`, never directly: on a unit that does
+    # not use per-task submission this column stays NULL and the DAY's own
+    # `closed_at` is what makes an entry immutable, exactly as before.
+    closed_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (UniqueConstraint("day_id", "task_id", name="uq_ltask_entry"),)
 
@@ -1447,6 +1456,27 @@ class LeaderTaskMedia(Base):
     file_id    = Column(String, nullable=False)
     message_id = Column(BigInteger, nullable=True)
     pos        = Column(Integer, nullable=False, default=0)
+
+
+class LeaderUnitSetting(Base):
+    """Per-supervisor settings for the in-bot checklist that belong to the UNIT
+    rather than to any one task.
+
+    `per_task_close` is the first: with it on, that supervisor's leaders never
+    close a DAY — they close each task on its own, which locks it irreversibly
+    and sends only that task's proofs to the AI. The day then closes itself when
+    the last enabled task is closed.
+
+    Deliberately NOT on the global → supervisor → leader task chain: it is not a
+    property of a task, and putting it there would let it be set at a level that
+    means "everybody" — which is exactly how the camera pilot reached every
+    leader on the platform twice (2026-08-19). An absent row means off, so a
+    unit is only ever in this mode because somebody switched it on.
+    """
+    __tablename__ = "leader_unit_settings"
+
+    manager_id     = Column(Integer, ForeignKey("managers.id"), primary_key=True)
+    per_task_close = Column(Boolean, nullable=False, default=False)
 
 
 class LeaderTaskPhoto(Base):

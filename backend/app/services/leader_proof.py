@@ -253,6 +253,22 @@ def max_slots(min_media: int) -> int:
 
 # ── writing ──────────────────────────────────────────────────────────────────
 
+def _task_locked(db: Session, day: LeaderTaskDay, task_id: int) -> bool:
+    """Has this task already been SUBMITTED on a per-task unit?
+
+    Checked on every write into the roll, not just when the page opens: the
+    whole promise of per-task submission is that a closed task cannot be
+    revised, and the camera page may have been sitting open since before the
+    close. Imported inside the call — leader_close reads this module.
+    """
+    from app.services.leader_close import locked
+    entry = (db.query(LeaderTaskEntry)
+             .filter_by(day_id=day.id, task_id=task_id).first())
+    return locked(entry, day)
+
+
+
+
 def save_photo(db: Session, *, prof: RoleProfile, task_id: int, cfg: dict,
                data: bytes, captured_at: datetime, slot: int | None,
                skew_s: int | None, relay,
@@ -293,6 +309,8 @@ def save_photo(db: Session, *, prof: RoleProfile, task_id: int, cfg: dict,
     day = open_day(db, prof, create=True)
     if day is None:
         raise ProofError("day_closed")
+    if _task_locked(db, day, task_id):
+        raise ProofError("task_closed")
 
     need = int(cfg.get("min_media") or 1)
     cap = max_slots(need)
@@ -359,6 +377,8 @@ def delete_photo(db: Session, *, prof: RoleProfile, photo: LeaderTaskPhoto,
     day = db.query(LeaderTaskDay).filter_by(id=photo.day_id).first()
     if not day or day.closed_at:
         raise ProofError("day_closed")
+    if _task_locked(db, day, photo.task_id):
+        raise ProofError("task_closed")
     need = int(cfg.get("min_media") or 1)
     if photo.slot < need:
         raise ProofError("required_slot")

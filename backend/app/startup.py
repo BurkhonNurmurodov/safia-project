@@ -917,6 +917,29 @@ def add_leader_task_proof_kind() -> None:
 LEADER_CAMERA_RESET_FLAG = "leader_proof_camera_reset_v1"
 
 
+def add_leader_entry_closed_at() -> None:
+    """2026-08-19: per-TASK submission — a checklist entry can be closed on its
+    own, not only as part of its day.
+
+    NULL means "still a draft", which is what every existing row is and what
+    every row on a unit outside this mode stays. Nothing is backfilled on
+    purpose: an entry inside an already-closed DAY is immutable through the
+    day's own `closed_at`, and `leader_close.locked()` reads both — so a
+    backfill would write millions of rows to restate a fact already true.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_task_entries "
+            "ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader entry closed_at migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def reset_leader_camera_pilot() -> None:
     """One-shot: take in-app camera capture back to OFF, everywhere.
 

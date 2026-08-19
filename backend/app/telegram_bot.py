@@ -24,7 +24,7 @@ from app.models import (
     TelegramUserRole, Translation,
 )
 from app.reg_token import make_reg_token
-from app.services import leader_ai, leader_proof
+from app.services import leader_ai, leader_close, leader_proof, leader_tasks
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
     effective_leader_config, expired_through, missed_reason, promote_due,
@@ -1838,6 +1838,74 @@ _LT_MESSAGES = {
         "relay_fail": "❌ Rasm qabul qilinmadi (arxiv kanaliga yuborib bo'lmadi). Keyinroq qayta urinib ko'ring yoki administratorga xabar bering.",
         "expired": "Sessiya eskirgan. /tasks buyrug'ini qaytadan yuboring.",
         "saved_toast": "✅ Saqlandi",
+        "pt_score": "\n\n\U0001F3AF {x}/{y} points",
+        "pt_pending": " \u00b7 \u23f3 {n} being checked",
+        "pt_menu_hint": "\n\nEach task is submitted on its own.",
+        "btn_close_task": "\U0001F512 Close the task",
+        "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Once closed you CANNOT add or change a photo. It goes straight to review.\n\nClose it?",
+        "task_closed_ok": "\U0001F512 Task closed and sent for review",
+        "task_locked_alert": "This task is closed \u2014 it cannot be changed.",
+        "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} photo(s) saved.",
+        "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Reason: {reason}",
+        "pt_draft_hint": "\n\nSaved. You can change it until you close it.",
+        "pt_need_more": "\n\nAt least {min} photo(s) are needed before closing.",
+        "pt_auto": "\n\n\u23f0 Closes automatically at {t}.",
+        "pt_closed_head": "\U0001F512 {task}\n\n",
+        "pt_state_pending": "\u23f3 Being checked\u2026",
+        "pt_state_passed": "\u2705 Accepted \u00b7 {w}/{w} points",
+        "pt_state_failed": "\u26a0\ufe0f Rejected \u00b7 0/{w} points",
+        "pt_state_undone": "\u274c Not done \u00b7 0/{w} points",
+        "pt_score": "\n\n\U0001F3AF {x}/{y} баллов",
+        "pt_pending": " \u00b7 \u23f3 проверяется: {n}",
+        "pt_menu_hint": "\n\nКаждая задача сдаётся отдельно.",
+        "btn_close_task": "\U0001F512 Закрыть задачу",
+        "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f После закрытия добавить или изменить фото БУДЕТ НЕЛЬЗЯ. Задача сразу уйдёт на проверку.\n\nЗакрыть?",
+        "task_closed_ok": "\U0001F512 Задача закрыта и отправлена на проверку",
+        "task_locked_alert": "Задача закрыта \u2014 изменить нельзя.",
+        "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 Сохранено {k}/{min} фото.",
+        "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Причина: {reason}",
+        "pt_draft_hint": "\n\nДанные сохранены. Пока не закроете \u2014 можно менять.",
+        "pt_need_more": "\n\nДля закрытия нужно минимум {min} фото.",
+        "pt_auto": "\n\n\u23f0 Автоматически закроется в {t}.",
+        "pt_closed_head": "\U0001F512 {task}\n\n",
+        "pt_state_pending": "\u23f3 Проверяется\u2026",
+        "pt_state_passed": "\u2705 Принято \u00b7 {w}/{w} баллов",
+        "pt_state_failed": "\u26a0\ufe0f Отклонено \u00b7 0/{w} баллов",
+        "pt_state_undone": "\u274c Не выполнено \u00b7 0/{w} баллов",
+        "pt_score": "\n\n\U0001F3AF {x}/{y} балл",
+        "pt_pending": " \u00b7 \u23f3 {n} та текширилмоқда",
+        "pt_menu_hint": "\n\nҲар бир вазифа алоҳида топширилади.",
+        "btn_close_task": "\U0001F512 Вазифани ёпиш",
+        "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Вазифа ёпилгандан кейин расм қўшиб ҳам, ўзгартириб ҳам БЎЛМАЙДИ. У дарҳол текширувга юборилади.\n\nЁпилсинми?",
+        "task_closed_ok": "\U0001F512 Вазифа ёпилди ва текширувга юборилди",
+        "task_locked_alert": "Бу вазифа ёпилган \u2014 ўзгартириб бўлмайди.",
+        "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} расм сақланди.",
+        "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Сабаб: {reason}",
+        "pt_draft_hint": "\n\nМаълумот сақланди. Ёпмагунингизча ўзгартиришингиз мумкин.",
+        "pt_need_more": "\n\nЁпиш учун камида {min} та расм керак.",
+        "pt_auto": "\n\n\u23f0 {t} да автоматик ёпилади.",
+        "pt_closed_head": "\U0001F512 {task}\n\n",
+        "pt_state_pending": "\u23f3 Текширилмоқда\u2026",
+        "pt_state_passed": "\u2705 Қабул қилинди \u00b7 {w}/{w} балл",
+        "pt_state_failed": "\u26a0\ufe0f Рад этилди \u00b7 0/{w} балл",
+        "pt_state_undone": "\u274c Бажарилмади \u00b7 0/{w} балл",
+        "pt_score": "\n\n\U0001F3AF {x}/{y} ball",
+        "pt_pending": " \u00b7 \u23f3 {n} ta tekshirilmoqda",
+        "pt_menu_hint": "\n\nHar bir vazifa alohida topshiriladi.",
+        "btn_close_task": "\U0001F512 Vazifani yopish",
+        "close_task_confirm": "\U0001F4CC {task}\n\n\u26a0\ufe0f Vazifa yopilgandan keyin rasm qo'shib ham, o'zgartirib ham BO'LMAYDI. U darhol tekshiruvga yuboriladi.\n\nYopilsinmi?",
+        "task_closed_ok": "\U0001F512 Vazifa yopildi va tekshiruvga yuborildi",
+        "task_locked_alert": "Bu vazifa yopilgan \u2014 o'zgartirib bo'lmaydi.",
+        "pt_draft_photos": "\U0001F4CC {task}\n\n\U0001F4F8 {k}/{min} rasm saqlandi.",
+        "pt_draft_reason": "\U0001F4CC {task}\n\n\U0001F4DD Sabab: {reason}",
+        "pt_draft_hint": "\n\nMa'lumot saqlandi. Yopmaguningizcha o'zgartirishingiz mumkin.",
+        "pt_need_more": "\n\nYopish uchun kamida {min} ta rasm kerak.",
+        "pt_auto": "\n\n\u23f0 {t} da avtomatik yopiladi.",
+        "pt_closed_head": "\U0001F512 {task}\n\n",
+        "pt_state_pending": "\u23f3 Tekshirilmoqda\u2026",
+        "pt_state_passed": "\u2705 Qabul qilindi \u00b7 {w}/{w} ball",
+        "pt_state_failed": "\u26a0\ufe0f Rad etildi \u00b7 0/{w} ball",
+        "pt_state_undone": "\u274c Bajarilmadi \u00b7 0/{w} ball",
         "camera_prompt": "📌 {task}\n\n📷 Bu vazifaning rasmi ILOVADA olinadi — quyidagi tugmani bosing.\n\n📸 {k}/{min} rasm olindi.",
         "camera_ready": "📌 {task}\n\n✅ {k}/{min} rasm olindi — vazifa bajarildi.\n\nRasmni almashtirish yoki qo'shish uchun tugmani bosing.",
         "camera_hours": "\n\n🕒 Tavsiya etilgan vaqt: {lo} — {hi}. Undan tashqarida olingan rasm «kech» deb belgilanadi.",
@@ -2170,6 +2238,104 @@ def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
         db.commit()
 
 
+def _lt_pt_close_btn(lang: str, pid: int, task_id: int, ready: bool):
+    """The submit button — offered ONLY when the task is finished.
+
+    Not offered-and-disabled: Telegram has no disabled button, so an unusable
+    one is a button that silently does nothing, and the leader is left deciding
+    whether they pressed it wrong or the bot is broken. Absent means "not yet",
+    and the line above it says what is still missing.
+    """
+    return _lt_btn(_lt(lang, "btn_close_task"), f"lt:tclose:{pid}:{task_id}") if ready else None
+
+
+def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
+                     msg_id: int | None, task_id: int, entry_cfg: dict,
+                     prof, day, shift: int | None) -> None:
+    """One task's own screen on a per-task unit: draft, or closed for good.
+
+    This is where the mode lives for the leader — the menu only lists tasks,
+    and everything they do to one happens here. Three shapes, and the buttons
+    are what tell them apart: a DRAFT offers the way to add or redo its proof
+    plus the close button once it is complete; a CLOSED task offers nothing but
+    the way back, because there is nothing left that can be done to it.
+    """
+    entry = (db.query(LeaderTaskEntry)
+             .filter_by(day_id=day.id, task_id=task_id).first()) if day else None
+    name = config_name(entry_cfg, lang)
+    need = int(entry_cfg.get("min_media") or 0)
+    weight = int(entry_cfg.get("weight") or 0)
+    kb = types.InlineKeyboardMarkup(row_width=1)
+
+    if entry is not None and entry.closed_at is not None:
+        rev = leader_ai.verdicts_for(db, day).get(task_id)
+        has_media = bool(db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).first())
+        state = leader_close.task_state(entry, rev, has_media)
+        key = {"pending": "pt_state_pending", "passed": "pt_state_passed",
+               "failed": "pt_state_failed"}.get(state, "pt_state_undone")
+        if not entry.done:
+            key = "pt_state_undone"
+        text = _lt(lang, "pt_closed_head").format(task=name) + \
+            _lt(lang, key).format(w=weight)
+        # The AI's own words, when it has any — the leader is entitled to read
+        # the reason a task they cannot change any more was rejected.
+        if rev is not None and getattr(rev, f"reason_{lang}", None):
+            text += "\n\n" + getattr(rev, f"reason_{lang}")[:400]
+        elif not entry.done and entry.reason:
+            text += "\n\n" + entry.reason[:400]
+        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
+        _lt_edit(chat_id, msg_id, text, kb)
+        return
+
+    # ── still a draft ───────────────────────────────────────────────────────
+    k = _lt_roll_count(db, prof, task_id) if entry_cfg.get("proof_kind") == "camera" \
+        else (db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).count()
+              if entry is not None else 0)
+    if entry is not None and not entry.done:
+        text = _lt(lang, "pt_draft_reason").format(task=name, reason=entry.reason or "")
+        ready = True
+    else:
+        text = _lt(lang, "pt_draft_photos").format(task=name, min=need or 1, k=k)
+        ready = entry is not None and k >= max(1, need)
+        if not ready:
+            text += _lt(lang, "pt_need_more").format(min=max(1, need))
+    text += _lt(lang, "pt_draft_hint")
+    text += _lt(lang, "pt_auto").format(
+        t=leader_close.task_deadline(entry_cfg, shift))
+
+    if entry_cfg.get("proof_kind") == "camera":
+        url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
+               f"?leader={pid}&task={task_id}")
+        kb.add(types.InlineKeyboardButton(_lt(lang, "btn_camera"),
+                                          web_app=types.WebAppInfo(url=url)))
+        # The camera page refuses a closed task, and a chat photo for a camera
+        # task is refused too — the capture row is what carries that refusal.
+        db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
+        db.add(LeaderTaskCapture(
+            telegram_id=tid, stage="camera", leader_id=pid, task_id=task_id,
+            chat_id=chat_id, message_id=msg_id, min_media=max(1, need), media=[],
+        ))
+        db.commit()
+    else:
+        kb.add(_lt_btn(_lt(lang, "btn_reset"), f"lt:rconf:{pid}:{task_id}"))
+    if btn := _lt_pt_close_btn(lang, pid, task_id, ready):
+        kb.add(btn)
+    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
+    _lt_edit(chat_id, msg_id, text, kb)
+
+
+def _lt_edit(chat_id: int, msg_id: int | None, text: str, kb) -> None:
+    """Edit in place when we own a message, else send a fresh one."""
+    if msg_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id,
+                                  reply_markup=kb)
+            return
+        except Exception:
+            pass
+    bot.send_message(chat_id, text, reply_markup=kb)
+
+
 def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
     """Re-draw the waiting camera prompt after the app saved or dropped a shot.
 
@@ -2192,11 +2358,23 @@ def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
         return
     need = int(entry.get("min_media") or 1)
     k, answered = _lt_camera_state(db, prof, task_id)
+    shift = _lt_shift(db, prof)
+    # On a per-task unit the message behind the camera is the TASK's screen, so
+    # the «Vazifani yopish» button has to appear on it the moment the roll is
+    # complete. Re-rendering the plain camera prompt instead would leave the
+    # leader with a finished task and no way to submit it without going back to
+    # the menu first — the one step this mode exists to remove.
+    per_task = leader_tasks_per_task(db, prof)
+    day = leader_proof.open_day(db, prof, create=False) if per_task else None
     for cap in caps:
         if not cap.message_id:
             continue
         lang = _get_lang(cap.telegram_id)
         try:
+            if per_task and day is not None:
+                _lt_pt_task_view(db, cap.telegram_id, leader_id, lang, cap.chat_id,
+                                 cap.message_id, task_id, entry, prof, day, shift)
+                continue
             bot.edit_message_text(
                 _lt_camera_text(lang, entry, config_name(entry, lang), need, k),
                 chat_id=cap.chat_id, message_id=cap.message_id,
@@ -2204,6 +2382,12 @@ def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
                                            can_reset=bool(k or answered)))
         except Exception:
             pass  # the message was deleted, or nothing changed — neither matters
+
+
+def leader_tasks_per_task(db, prof) -> bool:
+    """Is this leader's unit on per-task submission? One lookup, one name, so
+    every surface asks the question the same way."""
+    return leader_tasks.per_task_close(db, prof.manager_id if prof else None)
 
 
 def _lt_shift(db, prof) -> int:
@@ -2322,11 +2506,37 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
         cams = [t for t, c in cfg.items()
                 if c["enabled"] and c.get("proof_kind") == "camera"]
         shot = leader_proof.counts(db, day.id if day else None, cams)
+        per_task = leader_tasks_per_task(db, prof)
+        if per_task:
+            # The running score, and it is the only place the leader sees one
+            # before the day is over. Pending tasks are in NEITHER number and
+            # counted beside it: a verdict that has not arrived is not a zero,
+            # and a score that fell while the day went well would teach them to
+            # stop reading it.
+            x, y, waiting = leader_close.score_line(db, day, cfg)
+            text += _lt(lang, "pt_score").format(x=x, y=y)
+            if waiting:
+                text += _lt(lang, "pt_pending").format(n=waiting)
+            text += _lt(lang, "pt_menu_hint")
+            revs = leader_ai.verdicts_for(db, day) if day else {}
+            with_media = {r[0] for r in db.query(LeaderTaskMedia.entry_id)
+                          .filter(LeaderTaskMedia.entry_id.in_(
+                              [e.id for e in entries.values()] or [0]))
+                          .distinct().all()}
         for td_id, s in cfg.items():
             if not s["enabled"]:
                 continue
             e = entries.get(td_id)
-            if e:
+            if per_task:
+                st = leader_close.task_state(
+                    e, revs.get(td_id), bool(e and e.id in with_media))
+                mark = {"open": "", "draft": "✏️ ", "pending": "⏳ ",
+                        "passed": "✅ ", "failed": "⚠️ "}[st]
+                if st == "open" and s.get("proof_kind") == "camera":
+                    k = shot.get(td_id, 0)
+                    mark = f"📷 {k}/{s['min_media']} · " if k else "📷 "
+                label = f"{mark}{config_name(s, lang)}"
+            elif e:
                 label = f"{'✅ ' if e.done else '❌ '}{config_name(s, lang)}"
             elif s.get("proof_kind") == "camera":
                 k = shot.get(td_id, 0)
@@ -2336,7 +2546,11 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                 label = config_name(s, lang)
             kb.add(_lt_btn(label, f"lt:task:{pid}:{td_id}"))
         kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
-        kb.add(_lt_btn(_lt(lang, "btn_close_day"), f"lt:close:{pid}"))
+        # No «KUNNI YOPISH» in per-task mode: the day closes itself when the
+        # last task is submitted, so a button for it would be a second, weaker
+        # way to end a day that is already ending correctly.
+        if not per_task:
+            kb.add(_lt_btn(_lt(lang, "btn_close_day"), f"lt:close:{pid}"))
 
     if msg_id:
         try:
@@ -2383,6 +2597,8 @@ def _lt_save_entry(db, pid: int, task_id: int, done: bool,
         db.add(day)
         db.flush()
     old = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
+    if leader_close.locked(old, day):
+        return False          # submitted on a per-task unit — nothing may edit it
     if old:
         db.query(LeaderTaskMedia).filter_by(entry_id=old.id).delete()
         db.delete(old)
@@ -2417,6 +2633,8 @@ def _lt_reset_task(db, day: LeaderTaskDay | None, task_id: int) -> None:
     if not day:
         return
     e = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
+    if leader_close.locked(e, day):
+        return          # submitted on a per-task unit — nothing empties it
     if e:  # channel posts stay (audit trail); only our rows go
         db.query(LeaderTaskMedia).filter_by(entry_id=e.id).delete()
         db.delete(e)
@@ -2434,6 +2652,14 @@ def _lt_cmd(message: types.Message):
         if not profs:
             bot.send_message(message.chat.id, _lt(lang, "not_leader"))
             return
+        try:
+            # Per-task units have per-task deadlines, and a deadline that only
+            # bites when a scheduler happens to run is not one. The timer job
+            # does this too; whichever gets there first wins.
+            leader_close.autoclose_due(db)
+        except Exception:
+            logger.exception("per-task auto-close failed")
+            db.rollback()
         for p in profs:  # finalize any bygone open days before showing the menu
             _lt_autoclose(db, p, _lt_shift(db, p))
         if len(profs) == 1:
@@ -2520,6 +2746,19 @@ def _lt_callback(call: types.CallbackQuery):
                 return
             entries = _lt_entries(db, day)
             bot.answer_callback_query(call.id)
+            # On a per-task unit every task has a screen of its own — draft or
+            # submitted — and that screen is the only place work happens. It
+            # takes precedence over both branches below: the reset confirm is
+            # not a thing here (a draft is edited in place, a closed task is
+            # not edited at all), and the Ha/Yo'q question only survives for a
+            # task nobody has touched yet.
+            if leader_tasks_per_task(db, prof) and (
+                    task_id in entries
+                    or (cfg[task_id].get("proof_kind") == "camera"
+                        and _lt_roll_count(db, prof, task_id))):
+                _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
+                                 cfg[task_id], prof, day, shift)
+                return
             # Re-opening a camera task — answered or half-shot — lands on the
             # camera, which is also where the leader already is in their head.
             # Its «Qayta topshirish» lives on that prompt (`lt:crst`) rather
@@ -2549,6 +2788,49 @@ def _lt_callback(call: types.CallbackQuery):
                                           chat_id=chat_id, message_id=msg_id, reply_markup=kb)
                 except Exception:
                     pass
+            return
+
+        if action == "tclose":
+            # The confirm is not ceremony: this is the only irreversible thing a
+            # leader can do in the bot, and the sentence on it is what makes the
+            # difference between a submission and an accident.
+            task_id = int(parts[3])
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            e = _lt_entries(db, day).get(task_id)
+            if leader_close.locked(e, day):
+                bot.answer_callback_query(call.id, _lt(lang, "task_locked_alert"),
+                                          show_alert=True)
+                return
+            kb = types.InlineKeyboardMarkup()
+            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{pid}:{task_id}"),
+                   _lt_btn(_lt(lang, "btn_confirm"), f"lt:tcconf:{pid}:{task_id}"))
+            bot.answer_callback_query(call.id)
+            _lt_edit(chat_id, msg_id,
+                     _lt(lang, "close_task_confirm").format(task=config_name(cfg[task_id], lang)),
+                     kb)
+            return
+
+        if action == "tcconf":
+            task_id = int(parts[3])
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            e = _lt_entries(db, day).get(task_id)
+            if e is None or leader_close.locked(e, day):
+                bot.answer_callback_query(call.id, _lt(lang, "task_locked_alert"),
+                                          show_alert=True)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                return
+            leader_close.close_task(db, day=day, entry=e, cfg=cfg, actor=prof.name)
+            # The queue is worked by a daemon thread, exactly as the day close
+            # does it: the leader is holding an open callback and a review
+            # round-trip is seconds per photo.
+            leader_ai.run_async(discover_first=False)
+            _lt_clear(tid)
+            bot.answer_callback_query(call.id, _lt(lang, "task_closed_ok"))
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
             return
 
         if action == "rconf":
@@ -2673,6 +2955,13 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
             bot.answer_callback_query(call.id, _lt(lang, "saved_toast"))
+            # Per-task: saving is only half the job, so the leader lands back on
+            # the task with the close button in front of them rather than on a
+            # menu that looks finished.
+            if leader_tasks_per_task(db, prof):
+                _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
+                                 cfg[task_id], prof, _lt_day(db, pid, date), shift)
+                return
             _lt_menu(db, tid, pid, lang, chat_id, msg_id)
             return
 

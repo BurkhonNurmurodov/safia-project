@@ -183,6 +183,11 @@ export default function LeaderTasksAdmin() {
   const [confirm, setConfirm] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showExc, setShowExc] = useState(false);
+  // The open unit modal — { mid, per_task_close }. Settings that belong to a
+  // brigadir's UNIT rather than to any one task live here, reached by tapping
+  // the brigadir's name, because the matrix's cells are all (unit × task) and
+  // there is nowhere else a unit-wide setting could honestly sit.
+  const [unit, setUnit] = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["ltasks-config"],
@@ -249,6 +254,11 @@ export default function LeaderTasksAdmin() {
   // to be shot in the app for a whole shift. Nothing to re-judge: photos
   // already collected keep the clocks they were judged by.
   const pkMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/proof-kind", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
+  // Per-task submission is a property of the UNIT, so it rides its own endpoint
+  // addressed by supervisor alone — no task id, no level that could mean
+  // "everybody". Instant like the proof kind and for the same reason: it
+  // changes what the leader is asked to do.
+  const ptMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/per-task", b), onSuccess: () => { invalidate(); setUnit(null); ping(); }, onError: onErr });
   // Example proof photos live beside the criteria: instant like it (nothing
   // the leader sees changes), ids come from the live config so an upload or
   // delete re-renders the strip through the same invalidate.
@@ -1091,7 +1101,18 @@ export default function LeaderTasksAdmin() {
                               className="p-0.5 -ml-1 rounded transition-opacity hover:opacity-70 disabled:opacity-30 flex-shrink-0" style={{ color: "var(--text-3)" }}>
                               {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
-                            <span className="font-medium truncate">{tl(m.name)}</span>
+                            <button type="button" onClick={() => setUnit({ mid: m.id, per_task_close: !!m.per_task_close })}
+                              title={t("admin.ltasks.unitSettings")}
+                              className="font-medium truncate text-left hover:opacity-70 transition-opacity"
+                              style={{ textDecorationLine: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3, textDecorationColor: "var(--border-md)" }}>
+                              {tl(m.name)}
+                            </button>
+                            {m.per_task_close && (
+                              <span title={t("admin.ltasks.perTask")} className="flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-bold"
+                                style={{ background: "rgba(200,151,63,0.14)", color: "var(--brand)", border: "1px solid rgba(200,151,63,0.35)" }}>
+                                1×1
+                              </span>
+                            )}
                             {m.shift && <span className="px-1 py-0.5 rounded text-[10px] font-bold flex-shrink-0" style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}>S{m.shift}</span>}
                             {childWarn && !isOpen && <span title={t("admin.ltasks.childWarn")} className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: C_WARN }} />}
                           </span>
@@ -1303,6 +1324,36 @@ export default function LeaderTasksAdmin() {
               })}>{applyLabel()}</Button>
           </div>
           <WhenBar when={col.when} setWhen={(v) => setCol((c) => ({ ...c, when: v }))} nextDate={nextDates["1"]} t={t} />
+        </Modal>
+      )}
+
+      {/* Unit settings — what belongs to a brigadir's whole team */}
+      {unit && (
+        <Modal title={t("admin.ltasks.unitSettings")}
+          subtitle={tl(managers.find((m) => m.id === unit.mid)?.name || "")}
+          icon={<Users size={14} />} onClose={() => setUnit(null)}
+          footer={<>
+            <Button variant="secondary" onClick={() => setUnit(null)}>{t("admin.broadcast.cancel")}</Button>
+            <Button loading={ptMut.isPending}
+              onClick={() => ptMut.mutate({ manager_id: unit.mid, per_task_close: !!unit.per_task_close })}>
+              {t("admin.ltasks.save")}
+            </Button>
+          </>}>
+          <FormField label={t("admin.ltasks.perTask")}
+            hint={t(`admin.ltasks.perTaskHint.${unit.per_task_close ? "on" : "off"}`)}>
+            <SegmentedToggle fill value={!!unit.per_task_close}
+              onChange={(v) => setUnit((u) => ({ ...u, per_task_close: v }))}
+              options={[[false, t("admin.ltasks.perTaskOff")],
+                        [true, t("admin.ltasks.perTaskOn")]]} />
+          </FormField>
+          {/* Stated where the decision is made, not in a manual: it is the one
+              thing about this mode that cannot be taken back. */}
+          {unit.per_task_close && (
+            <p className="text-[11px] leading-snug rounded-lg px-2 py-1.5"
+              style={{ background: "rgba(234,179,8,0.10)", color: "var(--text-2)", border: "1px solid rgba(234,179,8,0.30)" }}>
+              {t("admin.ltasks.perTaskWarn")}
+            </p>
+          )}
         </Modal>
       )}
 

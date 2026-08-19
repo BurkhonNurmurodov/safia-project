@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
+    LeaderUnitSetting,
     AppSetting, LeaderTaskConfigAudit, LeaderTaskDef, LeaderTaskEntry,
     LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskPendingChange,
     LeaderTaskSetting, Manager, RoleProfile,
@@ -922,6 +923,51 @@ def compute_completion(settings: dict[int, dict], entries: list[LeaderTaskEntry]
         if e.done and e.task_id in enabled
     )
     return round(done / total * 100, 2)
+
+
+# ── per-UNIT settings ────────────────────────────────────────────────────────
+# Settings that belong to a supervisor's unit rather than to any one task. Kept
+# off the global → supervisor → leader task chain on purpose: none of these is a
+# property of a task, and a chain has a level that means "everybody".
+
+def per_task_close(db: Session, manager_id: int | None) -> bool:
+    """Does this unit close each task on its own instead of closing a day?
+
+    Absent row = False, so a unit is only ever in this mode because an admin
+    switched it on — the same floor rule the proof kind follows, and for the
+    same reason.
+    """
+    if not manager_id:
+        return False
+    row = db.query(LeaderUnitSetting).filter_by(manager_id=manager_id).first()
+    return bool(row and row.per_task_close)
+
+
+def per_task_units(db: Session) -> set[int]:
+    """Every unit in per-task mode, in one query — for readers that answer for
+    a whole page of leaders at once."""
+    return {m for (m,) in db.query(LeaderUnitSetting.manager_id)
+            .filter(LeaderUnitSetting.per_task_close.is_(True)).all()}
+
+
+def set_per_task_close(db: Session, *, manager_id: int, value: bool) -> None:
+    """Switch a unit into (or out of) per-task submission.
+
+    Applies at once and stages nothing, exactly like the proof kind and for the
+    same reason: it changes what the leader is asked to DO. Switching it ON
+    mid-day is safe — tasks already answered stay drafts and can still be closed
+    — and switching it OFF returns the unit to «Kunni yopish» with those drafts
+    intact. What is never undone is a task the leader already closed: that lock
+    is final by design, and no config change may reopen it.
+    """
+    row = db.query(LeaderUnitSetting).filter_by(manager_id=manager_id).first()
+    if not row:
+        if not value:
+            return                       # nothing stored, nothing to clear
+        row = LeaderUnitSetting(manager_id=manager_id)
+        db.add(row)
+    row.per_task_close = bool(value)
+    db.commit()
 
 
 def channel_chat_id(db: Session) -> str | None:

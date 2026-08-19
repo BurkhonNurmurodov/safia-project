@@ -745,6 +745,14 @@ export default function ProofCamera() {
       action={{ label: t("proof.gate.retry"), onClick: () => refetch() }}
       secondary={{ label: t("proof.gate.close"), onClick: () => tgApp()?.close?.() }} />;
   }
+  // A task the leader submitted is as shut as a closed day — and the page must
+  // say WHICH, because «kun yopilgan» on a task they closed themselves an hour
+  // ago reads as a fault in the app rather than the rule they just used.
+  if (data?.task_closed) {
+    return <ErrorScreen icon={Lock} tone="neutral" title={t("proof.gate.taskClosed")}
+      message={t("proof.gate.taskClosedMsg")}
+      action={{ label: t("proof.gate.close"), onClick: () => tgApp()?.close?.() }} />;
+  }
   if (dayClosed) {
     return <ErrorScreen icon={Lock} tone="neutral" title={t("proof.gate.dayClosed")}
       message={t("proof.gate.dayClosedMsg")}

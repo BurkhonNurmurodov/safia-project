@@ -37,7 +37,8 @@ from app.services.leader_tasks import (
     CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
-    revert_audit, set_criteria, set_date_check, set_deadline, set_proof_kind,
+    per_task_units, revert_audit, set_criteria, set_date_check, set_deadline,
+    set_per_task_close, set_proof_kind,
     set_time_check, set_window,
     write_change,
 )
@@ -72,6 +73,7 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         .all()
     )
     overrides = leader_overrides(db, [p.id for p in leaders])
+    per_task = per_task_units(db)
     # Example-proof photo ids per task — ids only, the bytes stream from
     # /admin/leader-tasks/examples/{id} when the modal actually shows them.
     examples: dict[int, list[int]] = {}
@@ -112,7 +114,8 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
             }
             for td in defs
         ],
-        "managers": [{"id": m.id, "name": m.name, "shift": m.shift} for m in managers],
+        "managers": [{"id": m.id, "name": m.name, "shift": m.shift,
+                      "per_task_close": m.id in per_task} for m in managers],
         "settings": {
             str(m.id): {str(t): s for t, s in effective_settings(db, m.id).items()}
             for m in managers
@@ -779,6 +782,38 @@ def put_proof_kind(body: ProofKindIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Unknown leader")
     set_proof_kind(db, task_id=body.task_id, proof_kind=body.proof_kind,
                    manager_id=body.manager_id, leader_id=body.leader_id)
+    return {"ok": True}
+
+
+class PerTaskIn(BaseModel):
+    """Per-task submission for ONE supervisor's unit.
+
+    Addressed by supervisor and nothing else — no task id, no global level. It
+    is a property of the unit, and the two things this feature has gone wrong on
+    so far were both a setting reaching a level that means "everybody".
+    """
+    manager_id: int
+    per_task_close: bool
+
+
+@router.put("/admin/leader-tasks/per-task")
+def put_per_task(body: PerTaskIn, db: Session = Depends(get_db),
+                 _: dict = Depends(verify_admin)):
+    """Switch a unit between closing a DAY and closing each TASK.
+
+    Applies at once. Switching ON mid-day is safe: answers already given stay
+    drafts and can still be closed one by one, and the day will close itself
+    when the last of them is. Switching OFF returns the unit to «Kunni yopish»
+    with those drafts intact.
+
+    What no switch ever undoes is a task the leader already closed — that lock
+    is final by design, and a config change that reopened submitted work would
+    be exactly the hole this mode exists to close.
+    """
+    if not db.query(Manager).filter_by(id=body.manager_id).first():
+        raise HTTPException(status_code=404, detail="Unknown supervisor")
+    set_per_task_close(db, manager_id=body.manager_id,
+                       value=bool(body.per_task_close))
     return {"ok": True}
 
 

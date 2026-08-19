@@ -182,6 +182,14 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
 
     photos = leader_proof.roll(db, day.id, task) if day else []
     need = int(entry.get("min_media") or 1)
+    # Per-task submission: a SUBMITTED task is as shut as a closed day, and the
+    # page has to say which of the two it is — «kun yopilgan» on a task the
+    # leader closed themselves an hour ago reads as a bug.
+    from app.models import LeaderTaskEntry
+    from app.services.leader_close import locked as _locked
+    task_entry = (db.query(LeaderTaskEntry)
+                  .filter_by(day_id=day.id, task_id=task).first()) if day else None
+    task_closed = bool(day and task_entry and task_entry.closed_at)
     cam_ids = [tid for tid, s in cfg.items()
                if s.get("enabled") and s.get("proof_kind") == "camera"]
     have = leader_proof.counts(db, day.id if day else None, cam_ids)
@@ -191,6 +199,7 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
         "server": {"iso": now.isoformat(), "ms": int(now.timestamp() * 1000)},
         "leader": {"id": prof.id, "name": prof.name},
         "day": {"date": date, "closed": closed, "shift": shift},
+        "task_closed": task_closed,
         "task": {
             "id": task,
             "name": config_name(entry, lang),
