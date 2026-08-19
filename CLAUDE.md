@@ -489,6 +489,19 @@ SERVER's; the phone never authors it.
   hard cap 6, and only they are deletable. Answering «Yo'q» or resetting a task
   retires its roll (`clear_roll`) so the menu can never show progress on a task
   recorded as failed.
+- **The camera prompt carries «Qayta topshirish» (user, 2026-08-19)** — the ONE
+  way to empty a camera task, and it supersedes the earlier rule that camera
+  tasks never offer a reset. The app edits a roll shot by shot (retake a
+  required slot, drop an extra) but cannot empty one, so a leader who shot the
+  wrong thing for an already-done task had no route back except an admin. It
+  shows only when there IS something to delete (a shot on the roll or an answer
+  recorded), confirms first (`lt:crst` → `lt:crok`, the confirm text says the
+  photos go), and lands back ON the emptied camera rather than the menu, since
+  the reason to reset is to shoot again. `_lt_reset_task` is THE reset core,
+  shared with the upload flow's «Qayta topshirish» so «empty» means one thing —
+  and it drops the roll whether or not an entry exists, because a half-shot
+  camera task holds shots and no entry and that is precisely the state a leader
+  resets from. Channel copies stay: the archive is the audit trail.
 - **Offline shooting is allowed** (`utils/proofQueue.js`, IndexedDB, flushed
   oldest-first on `online` and on open). Queued shots hold their slot in the
   roll, the task stays incomplete until the server has them, and Telegram's

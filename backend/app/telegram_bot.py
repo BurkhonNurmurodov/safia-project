@@ -1838,26 +1838,13 @@ _LT_MESSAGES = {
         "relay_fail": "❌ Rasm qabul qilinmadi (arxiv kanaliga yuborib bo'lmadi). Keyinroq qayta urinib ko'ring yoki administratorga xabar bering.",
         "expired": "Sessiya eskirgan. /tasks buyrug'ini qaytadan yuboring.",
         "saved_toast": "✅ Saqlandi",
-        "camera_prompt": "📌 {task}\n\n📷 This task's photo is taken IN THE APP — tap the button below.\n\n📸 {k}/{min} photos taken.",
-        "camera_ready": "📌 {task}\n\n✅ {k}/{min} photos taken — task done.\n\nTap the button to replace or add a photo.",
-        "camera_hours": "\n\n🕒 Expected hours: {lo} — {hi}. A shot taken outside them is marked «late».",
-        "btn_camera": "📷 Open the camera",
-        "camera_only": "📷 You cannot send a photo for this task.\n\nThe shot is taken in the app and its time is recorded automatically — tap «📷 Open the camera».",
-        "camera_prompt": "📌 {task}\n\n📷 Фото для этой задачи снимается В ПРИЛОЖЕНИИ — нажмите кнопку ниже.\n\n📸 Снято {k}/{min} фото.",
-        "camera_ready": "📌 {task}\n\n✅ Снято {k}/{min} фото — задача выполнена.\n\nЧтобы заменить или добавить фото, нажмите кнопку.",
-        "camera_hours": "\n\n🕒 Рекомендуемое время: {lo} — {hi}. Снимок вне этого промежутка помечается как «поздний».",
-        "btn_camera": "📷 Открыть камеру",
-        "camera_only": "📷 Для этой задачи фото отправить нельзя.\n\nСнимок делается в приложении, и время записывается автоматически — нажмите «📷 Открыть камеру».",
-        "camera_prompt": "📌 {task}\n\n📷 Бу вазифанинг расми ИЛОВАДА олинади — қуйидаги тугмани босинг.\n\n📸 {k}/{min} расм олинди.",
-        "camera_ready": "📌 {task}\n\n✅ {k}/{min} расм олинди — вазифа бажарилди.\n\nРасмни алмаштириш ёки қўшиш учун тугмани босинг.",
-        "camera_hours": "\n\n🕒 Тавсия этилган вақт: {lo} — {hi}. Ундан ташқарида олинган расм «кеч» деб белгиланади.",
-        "btn_camera": "📷 Камерани очиш",
-        "camera_only": "📷 Бу вазифага расм юбориб бўлмайди.\n\nРасм иловада олинади ва вақти автоматик ёзилади — «📷 Камерани очиш» тугмасини босинг.",
         "camera_prompt": "📌 {task}\n\n📷 Bu vazifaning rasmi ILOVADA olinadi — quyidagi tugmani bosing.\n\n📸 {k}/{min} rasm olindi.",
         "camera_ready": "📌 {task}\n\n✅ {k}/{min} rasm olindi — vazifa bajarildi.\n\nRasmni almashtirish yoki qo'shish uchun tugmani bosing.",
         "camera_hours": "\n\n🕒 Tavsiya etilgan vaqt: {lo} — {hi}. Undan tashqarida olingan rasm «kech» deb belgilanadi.",
         "btn_camera": "📷 Kamerani ochish",
         "camera_only": "📷 Bu vazifaga rasm yuborib bo'lmaydi.\n\nRasm ilovada olinadi va vaqti avtomatik yoziladi — «📷 Kamerani ochish» tugmasini bosing.",
+        "camera_reset_confirm": "📌 {task}\n\n🔄 Bu vazifaning barcha rasmlari va javobi o'chiriladi — qaytadan suratga olishingiz kerak bo'ladi.\n\nTasdiqlaysizmi?",
+        "reset_toast": "🔄 Tozalandi",
     },
     "uz_cyrl": {
         "not_leader": "Сиз лидер эмассиз.",
@@ -1888,6 +1875,13 @@ _LT_MESSAGES = {
         "relay_fail": "❌ Расм қабул қилинмади (архив каналига юбориб бўлмади). Кейинроқ қайта уриниб кўринг ёки администраторга хабар беринг.",
         "expired": "Сессия эскирган. /tasks буйруғини қайтадан юборинг.",
         "saved_toast": "✅ Сақланди",
+        "camera_prompt": "📌 {task}\n\n📷 Бу вазифанинг расми ИЛОВАДА олинади — қуйидаги тугмани босинг.\n\n📸 {k}/{min} расм олинди.",
+        "camera_ready": "📌 {task}\n\n✅ {k}/{min} расм олинди — вазифа бажарилди.\n\nРасмни алмаштириш ёки қўшиш учун тугмани босинг.",
+        "camera_hours": "\n\n🕒 Тавсия этилган вақт: {lo} — {hi}. Ундан ташқарида олинган расм «кеч» деб белгиланади.",
+        "btn_camera": "📷 Камерани очиш",
+        "camera_only": "📷 Бу вазифага расм юбориб бўлмайди.\n\nРасм иловада олинади ва вақти автоматик ёзилади — «📷 Камерани очиш» тугмасини босинг.",
+        "camera_reset_confirm": "📌 {task}\n\n🔄 Бу вазифанинг барча расмлари ва жавоби ўчирилади — қайтадан суратга олишингиз керак бўлади.\n\nТасдиқлайсизми?",
+        "reset_toast": "🔄 Тозаланди",
     },
     "ru": {
         "not_leader": "Вы не лидер.",
@@ -1918,6 +1912,13 @@ _LT_MESSAGES = {
         "relay_fail": "❌ Фото не принято (не удалось отправить в архивный канал). Попробуйте позже или сообщите администратору.",
         "expired": "Сессия устарела. Отправьте команду /tasks заново.",
         "saved_toast": "✅ Сохранено",
+        "camera_prompt": "📌 {task}\n\n📷 Фото для этой задачи снимается В ПРИЛОЖЕНИИ — нажмите кнопку ниже.\n\n📸 Снято {k}/{min} фото.",
+        "camera_ready": "📌 {task}\n\n✅ Снято {k}/{min} фото — задача выполнена.\n\nЧтобы заменить или добавить фото, нажмите кнопку.",
+        "camera_hours": "\n\n🕒 Рекомендуемое время: {lo} — {hi}. Снимок вне этого промежутка помечается как «поздний».",
+        "btn_camera": "📷 Открыть камеру",
+        "camera_only": "📷 Для этой задачи фото отправить нельзя.\n\nСнимок делается в приложении, и время записывается автоматически — нажмите «📷 Открыть камеру».",
+        "camera_reset_confirm": "📌 {task}\n\n🔄 Все фото и ответ по этой задаче будут удалены — снимать придётся заново.\n\nПодтверждаете?",
+        "reset_toast": "🔄 Сброшено",
     },
     "en": {
         "not_leader": "You're not a leader.",
@@ -1948,6 +1949,13 @@ _LT_MESSAGES = {
         "relay_fail": "❌ Photo not accepted (couldn't relay it to the archive channel). Try again later or tell an administrator.",
         "expired": "Session expired. Send /tasks again.",
         "saved_toast": "✅ Saved",
+        "camera_prompt": "📌 {task}\n\n📷 This task's photo is taken IN THE APP — tap the button below.\n\n📸 {k}/{min} photos taken.",
+        "camera_ready": "📌 {task}\n\n✅ {k}/{min} photos taken — task done.\n\nTap the button to replace or add a photo.",
+        "camera_hours": "\n\n🕒 Expected hours: {lo} — {hi}. A shot taken outside them is marked «late».",
+        "btn_camera": "📷 Open the camera",
+        "camera_only": "📷 You cannot send a photo for this task.\n\nThe shot is taken in the app and its time is recorded automatically — tap «📷 Open the camera».",
+        "camera_reset_confirm": "📌 {task}\n\n🔄 Every photo and the answer for this task will be deleted — you'll have to shoot them again.\n\nConfirm?",
+        "reset_toast": "🔄 Reset",
     },
 }
 
@@ -2083,25 +2091,48 @@ def _lt_camera_text(lang: str, entry: dict | None, task: str, need: int, k: int)
     return text
 
 
-def _lt_camera_kb(lang: str, pid: int, task_id: int) -> types.InlineKeyboardMarkup:
-    """The ONE way into a camera task: a web_app button, and a way back.
+def _lt_camera_kb(lang: str, pid: int, task_id: int,
+                  can_reset: bool = False) -> types.InlineKeyboardMarkup:
+    """The ONE way into a camera task: a web_app button, a reset, and a way back.
 
     Deliberately no «send photos» affordance anywhere near it — the whole point
     of the mode is that no file the leader produced is accepted, so the keyboard
     must not offer a second door that looks like it might work.
+
+    «Qayta topshirish» appears only once there is something to reset (a shot on
+    the roll, or an answer already recorded). A destructive button on an empty
+    task is a dead control, and this one is the leader's ONLY way out of a roll
+    they want to start over: the app can retake a required slot and drop an
+    extra, but nothing there empties a task, so a leader who shot the wrong
+    thing for a done task had no route back except an admin. It confirms first
+    (`lt:crst`) because it deletes evidence.
     """
     url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
            f"?leader={pid}&task={task_id}")
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(types.InlineKeyboardButton(_lt(lang, "btn_camera"),
                                       web_app=types.WebAppInfo(url=url)))
+    if can_reset:
+        kb.add(_lt_btn(_lt(lang, "btn_reset"), f"lt:crst:{pid}:{task_id}"))
     kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
     return kb
 
 
-def _lt_roll_count(db, prof, task_id: int) -> int:
+def _lt_camera_state(db, prof, task_id: int) -> tuple[int, bool]:
+    """(shots on the roll, an answer already recorded) for one camera task —
+    the two facts the prompt needs: the counter, and whether a reset has
+    anything to delete."""
     day = leader_proof.open_day(db, prof, create=False)
-    return len(leader_proof.roll(db, day.id, task_id)) if day else 0
+    if not day:
+        return 0, False
+    k = len(leader_proof.roll(db, day.id, task_id))
+    answered = bool(db.query(LeaderTaskEntry)
+                    .filter_by(day_id=day.id, task_id=task_id).first())
+    return k, answered
+
+
+def _lt_roll_count(db, prof, task_id: int) -> int:
+    return _lt_camera_state(db, prof, task_id)[0]
 
 
 def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
@@ -2116,7 +2147,7 @@ def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
     account is on one task at a time, whichever mode that task uses.
     """
     need = int(entry.get("min_media") or 1)
-    k = _lt_roll_count(db, prof, task_id)
+    k, answered = _lt_camera_state(db, prof, task_id)
     db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
     db.add(LeaderTaskCapture(
         telegram_id=tid, stage="camera", leader_id=pid, task_id=task_id,
@@ -2124,7 +2155,7 @@ def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
     ))
     db.commit()
     text = _lt_camera_text(lang, entry, config_name(entry, lang), need, k)
-    kb = _lt_camera_kb(lang, pid, task_id)
+    kb = _lt_camera_kb(lang, pid, task_id, can_reset=bool(k or answered))
     if msg_id:
         try:
             bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id,
@@ -2160,7 +2191,7 @@ def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
     if not entry:
         return
     need = int(entry.get("min_media") or 1)
-    k = _lt_roll_count(db, prof, task_id)
+    k, answered = _lt_camera_state(db, prof, task_id)
     for cap in caps:
         if not cap.message_id:
             continue
@@ -2169,7 +2200,8 @@ def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
             bot.edit_message_text(
                 _lt_camera_text(lang, entry, config_name(entry, lang), need, k),
                 chat_id=cap.chat_id, message_id=cap.message_id,
-                reply_markup=_lt_camera_kb(lang, leader_id, task_id))
+                reply_markup=_lt_camera_kb(lang, leader_id, task_id,
+                                           can_reset=bool(k or answered)))
         except Exception:
             pass  # the message was deleted, or nothing changed — neither matters
 
@@ -2369,6 +2401,29 @@ def _lt_save_entry(db, pid: int, task_id: int, done: bool,
     return True
 
 
+def _lt_reset_task(db, day: LeaderTaskDay | None, task_id: int) -> None:
+    """Empty ONE task — its answer, its media rows and its camera roll.
+
+    THE reset core, shared by the upload flow's «Qayta topshirish» and the
+    camera prompt's, so the two can never disagree about what «empty» means.
+    The roll is dropped whether or not an answer exists: a camera task below
+    `min_media` holds shots and no entry, and that half-shot state is exactly
+    what a leader resets from — clearing it only alongside an entry would leave
+    the menu counting «📷 2/3» on a task the leader just emptied.
+
+    The channel copies stay. The archive is the audit trail, same as for the
+    bot's own reset.
+    """
+    if not day:
+        return
+    e = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
+    if e:  # channel posts stay (audit trail); only our rows go
+        db.query(LeaderTaskMedia).filter_by(entry_id=e.id).delete()
+        db.delete(e)
+    leader_proof.clear_roll(db, day.id, task_id)
+    db.commit()
+
+
 @bot.message_handler(commands=["tasks"])
 def _lt_cmd(message: types.Message):
     tid = message.from_user.id
@@ -2465,12 +2520,10 @@ def _lt_callback(call: types.CallbackQuery):
                 return
             entries = _lt_entries(db, day)
             bot.answer_callback_query(call.id)
-            # A camera task never offers «Qayta topshirish»: its roll is edited
-            # shot by shot in the app (retake a slot, drop an extra), so a
-            # wholesale reset would be a bigger, more destructive action than
-            # anything the task actually needs. Re-opening it — answered or
-            # half-shot — lands on the camera, which is also where the leader
-            # already is in their head.
+            # Re-opening a camera task — answered or half-shot — lands on the
+            # camera, which is also where the leader already is in their head.
+            # Its «Qayta topshirish» lives on that prompt (`lt:crst`) rather
+            # than here, so the reset sits beside the counter it empties.
             if cfg[task_id].get("proof_kind") == "camera" and (
                     task_id in entries or _lt_roll_count(db, prof, task_id)):
                 _lt_open_camera(db, tid, pid, lang, chat_id, msg_id, task_id,
@@ -2503,15 +2556,44 @@ def _lt_callback(call: types.CallbackQuery):
             if closed:
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
-            entries = _lt_entries(db, day)
-            e = entries.get(task_id)
-            if e:  # channel posts stay (audit trail); only our rows go
-                db.query(LeaderTaskMedia).filter_by(entry_id=e.id).delete()
-                db.delete(e)
-                leader_proof.clear_roll(db, day.id if day else None, task_id)
-                db.commit()
+            _lt_reset_task(db, day, task_id)
             bot.answer_callback_query(call.id)
             _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            return
+
+        if action == "crst":  # camera task → confirm before emptying it
+            task_id = int(parts[3])
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            kb = types.InlineKeyboardMarkup()
+            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{pid}:{task_id}"),
+                   _lt_btn(_lt(lang, "btn_reset"), f"lt:crok:{pid}:{task_id}"))
+            bot.answer_callback_query(call.id)
+            try:
+                bot.edit_message_text(
+                    _lt(lang, "camera_reset_confirm").format(task=tname(task_id)),
+                    chat_id=chat_id, message_id=msg_id, reply_markup=kb)
+            except Exception:
+                pass
+            return
+
+        if action == "crok":
+            task_id = int(parts[3])
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            _lt_reset_task(db, day, task_id)
+            bot.answer_callback_query(call.id, _lt(lang, "reset_toast"))
+            # Land back ON the emptied camera, not on the menu: a leader resets
+            # a camera task in order to shoot it again, and the menu would make
+            # them find the same task a second time to do it.
+            tcfg = cfg.get(task_id)
+            if tcfg and tcfg["enabled"]:
+                _lt_open_camera(db, tid, pid, lang, chat_id, msg_id, task_id,
+                                tcfg, prof)
+            else:
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
             return
 
         if action == "yes":
