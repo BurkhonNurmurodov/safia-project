@@ -450,7 +450,10 @@ SERVER's; the phone never authors it.
   that never ran the migration behaves exactly as before. **Applies at once and
   never stages**: it is the one field that changes what the leader is asked to
   DO, and a staged version would offer an upload for a task whose proofs are
-  collected in the app for a whole shift. The pilot is unit **77 (shift 1)**.
+  collected in the app for a whole shift — so an admin switching a unit does it
+  when that unit's next shift is about to start, not mid-day. NOTHING names a
+  pilot unit in code: whichever supervisor is enrolled is the pilot, and a
+  filtered column save touching more than one row asks first, naming the count.
 - **A camera task has NO upload path, and that is the feature.** The bot answers
   «Ha» with a `web_app` button (`_lt_open_camera`), refuses every file sent to
   the chat while that task is open (`_lt_camera_no_upload`), and its menu row

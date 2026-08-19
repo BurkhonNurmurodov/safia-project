@@ -923,6 +923,26 @@ export default function LeaderTasksAdmin() {
       dc0raw, dcInh,
     });
   };
+  // The filter that armed this modal may be a whole SHIFT, not one brigadir —
+  // and this is the field that changes what a leader is asked to DO, in a
+  // feature that has already reached people who were never meant to have it.
+  // So a proof-kind change spanning more than one row states the count and
+  // waits for a yes; everything else on the modal saves as it always did.
+  const askSaveCol = () => {
+    const before = col.pk0raw || col.pkInh || "screenshot";
+    const after = col.proof_kind || "screenshot";
+    if (!anyFilter || after === before || applyN <= 1) { saveCol(); return; }
+    setConfirm({
+      title: t("admin.ltasks.proofKind"),
+      message: t(`admin.ltasks.proofConfirm.${applyScope.level === "leader" ? "leaders" : "units"}`)
+        .replace("{n}", applyN)
+        .replace("{mode}", t(`admin.ltasks.proofMode.${after}`)),
+      tone: "warning",
+      confirmLabel: t("admin.ltasks.save"),
+      onConfirm: () => { setConfirm(null); saveCol(); },
+    });
+  };
+
   const saveCol = async () => {
     const ids = colScope();
     const target = { task_id: col.tid, ...ids };
@@ -1194,8 +1214,8 @@ export default function LeaderTasksAdmin() {
             <Button variant="secondary" onClick={() => setCol(null)}>{t("admin.broadcast.cancel")}</Button>
             {/* Filtered down to nothing: there is no row for a name or a
                 definition-of-done to land on, so Save has no target. */}
-            <Button loading={taskMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending}
-              disabled={anyFilter && !applyN} onClick={saveCol}>{t("admin.ltasks.save")}</Button>
+            <Button loading={taskMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending || pkMut.isPending}
+              disabled={anyFilter && !applyN} onClick={askSaveCol}>{t("admin.ltasks.save")}</Button>
           </>}>
           {/* One scope statement for the whole modal — every field below it
               writes to the same rows, so it is said once, at the top, before
