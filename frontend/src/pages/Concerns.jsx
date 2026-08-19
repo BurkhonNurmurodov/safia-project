@@ -78,6 +78,12 @@ const LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"];
 // can still fall back to a comma-joined pair, hence the split.
 const splitResponsible = (s) => (s || "").split(",").map((x) => x.trim()).filter(Boolean);
 
+// Bucket key for a row that names nobody (only legacy rows can). It is a real
+// key, not a blank, because a blank is what the aggregator skips — and a row
+// with no holder is a gap somebody has to close, not a row to drop off the
+// board.
+const NO_RESP = "__none__";
+
 // Level → identity hue in the shared generic-first order (red → green → blue
 // as the concern climbs the chain — identity, not traffic-light). "leader" is
 // the step below the chain's opening level, so it stays neutral grey.
@@ -397,6 +403,53 @@ function Chart({ ready, height, ...rest }) {
 }
 
 // "No data" body for a chart card — centred in the slot the chart would fill.
+// One responsible holder on the analytics board: their chain-step badge, name
+// and total on the first line, the four-bucket status stack under it. Every bar
+// is scaled to the SAME max (the busiest holder's total), so widths stay
+// comparable straight down a list that is deliberately not cut to a top N.
+// Drawn natively rather than as an SVG axis because a badge is a chip, and an
+// ApexCharts category label can only ever be a string.
+function ResponsibleBar({ row, max, parts, levelLabel, unit }) {
+  const width = max ? (row.total / max) * 100 : 0;
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-2 mb-1">
+        {/* The badge says which step the person answers on — the same hue and
+            silhouette the register's level column uses, so one name reads the
+            same way on both surfaces. */}
+        {row.level ? (
+          <LevelChip level={row.level} label={levelLabel(row.level)} />
+        ) : (
+          <span
+            className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+            style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}
+          >
+            —
+          </span>
+        )}
+        <span className="flex-1 truncate text-xs" style={{ color: "var(--text-1)" }} title={row.title}>
+          {row.label}
+        </span>
+        <span className="text-xs font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
+          {row.total}
+        </span>
+      </div>
+      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
+        <div className="flex h-full rounded-full overflow-hidden" style={{ width: `${width}%` }}>
+          {parts.map((p) => (row[p.key] > 0 ? (
+            <div
+              key={p.key}
+              className="h-full"
+              style={{ background: p.color, width: `${(row[p.key] / row.total) * 100}%` }}
+              title={`${p.label}: ${row[p.key]} ${unit}`}
+            />
+          ) : null))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NoChart({ height, text }) {
   return (
     <div className="grid place-items-center text-xs flex-1" style={{ color: "var(--text-4)", minHeight: height }}>
@@ -969,7 +1022,7 @@ export default function Concerns() {
   }, [filtered, chartFiltered, chartStart, endDate]);
 
   // ── analytics-tab aggregates ────────────────────────────────────────────────
-  // Category / brigadir / level splits plus the age-vs-resolution histogram,
+  // Category / responsible-holder / level splits plus the age-vs-resolution histogram,
   // all built over the SAME fully filtered rows the headline charts use so both
   // tabs always tell one story. Keys and counts only — labels and colours are
   // mapped outside the memo (they depend on t()/tl(), which change identity
@@ -985,7 +1038,8 @@ export default function Concerns() {
       r.status === "done" ? "done" : isOverdue(r) ? "overdue" : r.status === "doing" ? "doing" : "todo";
 
     const byCategory = new Map();
-    const byBrigadir = new Map();
+    const byResponsible = new Map();    // the PERSON picked on the row, not their unit
+    const respLevel = new Map();        // that person → the step they answer on
     const byLevel = new Map();          // still-open rows only: who holds them now
 
     // Shared day buckets: 0–1 · 2–3 · 4–7 · 8–14 · 15+. Done rows contribute
@@ -1004,7 +1058,23 @@ export default function Concerns() {
     for (const r of filtered) {
       const b = bucketOf(r);
       push(byCategory, r.category, b);
-      push(byBrigadir, r.brigadir_name, b);
+      // Split per RESPONSIBLE HOLDER, not per unit: the board is read to find
+      // the PERSON who is behind, and that is whoever was picked on the step
+      // the concern currently sits on. A row names one holder; only rows
+      // written before the picker became mandatory can still carry a
+      // comma-joined pair, and every name in one is counted — the same "any of
+      // these names" reading the responsible filter uses, so the board and the
+      // filter can never disagree about whose row it is.
+      const rlv = LEVELS.includes(r.level) ? r.level : "supervisor";
+      const holders = splitResponsible(r.responsible_name);
+      if (!holders.length) push(byResponsible, NO_RESP, b);
+      for (const n of holders) {
+        push(byResponsible, n, b);
+        // Same tie-break as the responsible filter: a name somehow seen on two
+        // steps keeps the higher one, so one person is one row with one badge.
+        const prev = respLevel.get(n);
+        if (prev == null || LEVELS.indexOf(rlv) > LEVELS.indexOf(prev)) respLevel.set(n, rlv);
+      }
       if (r.status !== "done") {
         const lv = r.level || "supervisor";
         byLevel.set(lv, (byLevel.get(lv) || 0) + 1);
@@ -1021,9 +1091,15 @@ export default function Concerns() {
       .map(([key, g]) => ({ key, ...g }))
       .sort((a, b) => b.total - a.total || String(a.key).localeCompare(String(b.key)));
 
+    // The un-named bucket is a data gap, not a person. Sort is stable, so this
+    // only moves it past everybody else — it never outranks somebody actually
+    // carrying work, and it is never silently dropped either.
+    const responsible = rank(byResponsible)
+      .sort((a, b) => (a.key === NO_RESP ? 1 : 0) - (b.key === NO_RESP ? 1 : 0));
+
     return {
       categories: rank(byCategory),
-      brigadirs: rank(byBrigadir),
+      responsible, respLevel,
       levels: Object.fromEntries(byLevel),
       openTotal: [...byLevel.values()].reduce((s, n) => s + n, 0),
       ageDone, ageOpen,
@@ -1575,15 +1651,19 @@ export default function Concerns() {
     tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("concerns.itemsUnit")}` } },
   };
 
-  // 4 + 5 ─ horizontal status stacks by department and by brigadir. One builder,
-  // same four donut buckets, so the two boards are directly comparable.
-  const STACK_COLORS = [STATUS_COLOR.done, STATUS_COLOR.doing, CHART_TODO, CHART_OVERDUE];
-  const stackSeries = (rows) => [
-    { name: statusLabel("done"),        data: rows.map((r) => r.done) },
-    { name: statusLabel("doing"),       data: rows.map((r) => r.doing) },
-    { name: statusLabel("todo"),        data: rows.map((r) => r.todo) },
-    { name: t("concerns.chartOverdue"), data: rows.map((r) => r.overdue) },
+  // 4 + 5 ─ horizontal status stacks by department and by responsible holder.
+  // Same four donut buckets on both, so the two boards are directly comparable.
+  // ONE definition of the segments: the Apex series, its colour list and the
+  // native board's legend all read it, so a colour can never mean two things.
+  const STACK_PARTS = [
+    { key: "done",    label: statusLabel("done"),        color: STATUS_COLOR.done },
+    { key: "doing",   label: statusLabel("doing"),       color: STATUS_COLOR.doing },
+    { key: "todo",    label: statusLabel("todo"),        color: CHART_TODO },
+    { key: "overdue", label: t("concerns.chartOverdue"), color: CHART_OVERDUE },
   ];
+  const STACK_COLORS = STACK_PARTS.map((p) => p.color);
+  const stackSeries = (rows) =>
+    STACK_PARTS.map((p) => ({ name: p.label, data: rows.map((r) => r[p.key]) }));
   const stackOpts = (labels, max) => ({
     chart: { type: "bar", stacked: true, toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     theme: chartTheme,
@@ -1608,12 +1688,20 @@ export default function Concerns() {
   const catSeries = stackSeries(catRows);
   const catOpts = stackOpts(catRows.map((r) => categoryLabel(r.key)), catRows[0]?.total || 0);
 
-  // Brigadirs are capped at the ten busiest — the count is spelled out in the
-  // card subtitle so a truncated board never reads as the whole picture.
-  const BRIG_TOP = 10;
-  const brigRows = analytics.brigadirs.slice(0, BRIG_TOP);
-  const brigSeries = stackSeries(brigRows);
-  const brigOpts = stackOpts(brigRows.map((r) => shortOwner(r.key)), brigRows[0]?.total || 0);
+  // 5 ─ the same stack per RESPONSIBLE HOLDER, and EVERY holder in scope: this
+  // board is read to find the person who is behind, so a top-N cut hides
+  // exactly the people it exists to surface. That makes it far too long for an
+  // axis-labelled SVG — hence the native rows below, which is also what lets
+  // each name carry its chain-step badge, the second thing a reader needs
+  // about a name they may not recognise.
+  const respMax = analytics.responsible[0]?.total || 0;
+  const respRows = analytics.responsible.map((r) => ({
+    ...r,
+    // The un-named bucket keeps a neutral chip: it answers on no step.
+    level: r.key === NO_RESP ? null : (analytics.respLevel.get(r.key) || "supervisor"),
+    label: r.key === NO_RESP ? t("concerns.noResponsible") : shortOwner(r.key),
+    title: r.key === NO_RESP ? t("concerns.noResponsible") : tl(r.key),
+  }));
 
   // Per-row action buttons — one source for the desktop expanded row and the
   // expanded mobile card, so the two layouts always offer the same actions.
@@ -2105,38 +2193,59 @@ export default function Concerns() {
             </ChartCard>
           </div>
 
-          {/* Status stacks by department and by brigadir */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <ChartCard icon={Tag} title={t("concerns.chartByCategory")} subtitle={t("concerns.chartByCategorySub")}>
-              {isLoading ? (
-                <div className="p-4"><SkeletonChart className="h-52" /></div>
-              ) : catRows.length ? (
-                <div className="px-1 pt-1 pb-1">
-                  <Chart ready={chartsReady} height={stackHeight(catRows.length)} options={catOpts} series={catSeries} type="bar" />
-                </div>
-              ) : (
-                <NoChart height={220} text={t("concerns.noData")} />
-              )}
-            </ChartCard>
+          {/* Status stack by department */}
+          <ChartCard icon={Tag} title={t("concerns.chartByCategory")} subtitle={t("concerns.chartByCategorySub")}>
+            {isLoading ? (
+              <div className="p-4"><SkeletonChart className="h-52" /></div>
+            ) : catRows.length ? (
+              <div className="px-1 pt-1 pb-1">
+                <Chart ready={chartsReady} height={stackHeight(catRows.length)} options={catOpts} series={catSeries} type="bar" />
+              </div>
+            ) : (
+              <NoChart height={220} text={t("concerns.noData")} />
+            )}
+          </ChartCard>
 
-            <ChartCard
-              icon={UserRound}
-              title={t("concerns.chartByBrigadir")}
-              subtitle={analytics.brigadirs.length > BRIG_TOP
-                ? `${t("concerns.chartByBrigadirSub")} · ${t("concerns.topN")} ${BRIG_TOP}`
-                : t("concerns.chartByBrigadirSub")}
-            >
-              {isLoading ? (
-                <div className="p-4"><SkeletonChart className="h-52" /></div>
-              ) : brigRows.length ? (
-                <div className="px-1 pt-1 pb-1">
-                  <Chart ready={chartsReady} height={stackHeight(brigRows.length)} options={brigOpts} series={brigSeries} type="bar" />
+          {/* Status stack per responsible holder — everyone in scope, each name
+              badged with the step they answer on. Full width and columned,
+              because listing everybody is the point and a half-width single
+              column would run to several screens. */}
+          <ChartCard
+            icon={UserCheck}
+            title={t("concerns.chartByResp")}
+            subtitle={t("concerns.chartByRespSub").replace("{n}", String(respRows.length))}
+          >
+            {isLoading ? (
+              <div className="p-4"><SkeletonChart className="h-52" /></div>
+            ) : respRows.length ? (
+              <div className="p-4">
+                {/* The chart legend the native rows don't get for free — same
+                    four segments, same order, read from STACK_PARTS. */}
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-4">
+                  {STACK_PARTS.map((p) => (
+                    <span key={p.key} className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                      <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: p.color }} />
+                      {p.label}
+                    </span>
+                  ))}
                 </div>
-              ) : (
-                <NoChart height={220} text={t("concerns.noData")} />
-              )}
-            </ChartCard>
-          </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-3">
+                  {respRows.map((r) => (
+                    <ResponsibleBar
+                      key={r.key}
+                      row={r}
+                      max={respMax}
+                      parts={STACK_PARTS}
+                      levelLabel={levelLabel}
+                      unit={t("concerns.itemsUnit")}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <NoChart height={220} text={t("concerns.noData")} />
+            )}
+          </ChartCard>
 
           {/* How long things take: resolved spans vs the wait of what is open */}
           <ChartCard icon={Hourglass} title={t("concerns.chartAge")} subtitle={t("concerns.chartAgeSub")}>

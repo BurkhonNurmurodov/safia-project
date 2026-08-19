@@ -1328,7 +1328,18 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
 
     # The model no longer answers the date question; it hands over what it READ
     # and the window comparison happens here, on our own data.
-    rev.clocks = _clean_clocks(out.get("clocks"))
+    #
+    # For a proof shot in OUR camera the reading is not needed at all: the
+    # capture instant is the server's, recorded when the shutter fired, so the
+    # clocks are substituted rather than transcribed and the model is left
+    # judging only what it is better at — whether the task is actually done.
+    # They go into the SAME field in the same shape, deliberately: every date
+    # surface downstream (`date_flags` here, `sync_date_flags` on a window edit,
+    # the triage card's date rows, the day report) then reads a camera proof
+    # through the code it already has, and an admin who widens a window still
+    # gets every affected verdict re-derived for free.
+    served = _camera_clocks(db, rev)
+    rev.clocks = served if served is not None else _clean_clocks(out.get("clocks"))
     flags += date_flags(rev.clocks, rev.date, win, check=checked, times=timed)
     flags = [f for f in _FLAG_ORDER if f in set(flags)]
 
@@ -2181,6 +2192,24 @@ def date_flags(clocks: list[dict] | None, date: str,
     return [] if ok else ["date_mismatch"]
 
 
+def _camera_clocks(db: Session, rev: LeaderAiReview) -> list[dict] | None:
+    """Server-recorded capture times for a bot entry shot in the mini-app
+    camera — None for everything else, which is every sheet row, every
+    screenshot task and everything filed before the camera existed.
+
+    Imported inside the call because services/leader_proof imports this module
+    for the window comparison; the dependency only ever runs one way at import
+    time.
+    """
+    if rev.source != "bot":
+        return None
+    try:
+        from app.services.leader_proof import server_clocks
+        return server_clocks(db, int(rev.ref.split(":")[1]))
+    except Exception:
+        return None
+
+
 def clocks_text(clocks: list[dict] | None) -> str:
     """The clocks as the admin should read them — verbatim as they appeared on
     screen. What `image_date` used to hold, rebuilt from the structured form so
@@ -2662,12 +2691,10 @@ def auto_discover(db: Session) -> int:
     can reach is this week's reports, not the archive. It queues; the scheduled
     drain spends.
 
-    Sheet layer only, and that is not an oversight — `/api/leaders` merges bot
-    days for shift 2 alone (`leader_bot.MERGE_SHIFT`), so a shift-1 bot day is
-    a report no register, score or page anywhere in the platform displays.
-    Reviewing one would spend quota on a verdict with nothing to attach to and
-    would DM a supervisor a score they cannot open. If that merge rule ever
-    widens to shift 1, widen this with it.
+    Sheet layer only, and that is not an oversight: a bot day is queued for
+    review by the close that ends it (`queue_report`), so it never needs
+    discovering. This pass exists for the FORM, whose rows arrive by sync with
+    nothing to trigger on.
     """
     known = _existing_refs(db)
     floor = floor_date(db)

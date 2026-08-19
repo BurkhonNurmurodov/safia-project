@@ -1235,6 +1235,18 @@ class LeaderTaskDef(Base):
     # prove. NULL at the two override levels below = inherit; True everywhere is
     # what the platform did before this existed.
     time_check   = Column(Boolean, nullable=False, default=True)
+    # HOW the proof is collected. "screenshot" — the leader sends images to the
+    # bot chat, which is every task's behaviour and the platform's only mode
+    # before 2026-08-19. "camera" — the bot offers a mini-app button instead and
+    # the photo is TAKEN in our own camera page, which stamps it with the
+    # SERVER's clock: the leaders this was built for were editing the timestamp
+    # a third-party camera app wrote, and a stamp the phone can author proves
+    # nothing. A camera task therefore has no upload path at all — that is the
+    # whole point, so it must never become "camera, but you may also send a
+    # file". Same global → supervisor → leader chain as `min_media`; NULL at the
+    # two override levels below = inherit, and "screenshot" at this level is the
+    # floor, so nothing changes anywhere until an admin picks camera.
+    proof_kind   = Column(String(12), nullable=False, default="screenshot")
     # Virtual-default weight: a supervisor with no leader_task_settings row for
     # this task uses this (the seeded weights sum to 100, so untouched
     # supervisors never trip the ≠100 warning).
@@ -1273,6 +1285,10 @@ class LeaderTaskSetting(Base):
     # Per-supervisor "must the CLOCK be proven, or is the day enough". NULL =
     # inherit; False = date-only for this unit (see LeaderTaskDef.time_check).
     time_check   = Column(Boolean, nullable=True)
+    # Per-supervisor proof collection mode. NULL = inherit the global one. This
+    # is the level the camera pilot is switched on at (see
+    # LeaderTaskDef.proof_kind).
+    proof_kind   = Column(String(12), nullable=True)
 
     __table_args__ = (UniqueConstraint("manager_id", "task_id", name="uq_ltask_setting"),)
 
@@ -1309,6 +1325,9 @@ class LeaderTaskLeaderSetting(Base):
     # Per-leader "must the CLOCK be proven, or is the day enough". NULL =
     # inherit (see LeaderTaskDef.time_check for the three-way rule).
     time_check   = Column(Boolean, nullable=True)
+    # Per-leader proof collection mode. NULL = inherit the supervisor's
+    # effective one (see LeaderTaskDef.proof_kind).
+    proof_kind   = Column(String(12), nullable=True)
 
     __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
 
@@ -1402,6 +1421,59 @@ class LeaderTaskMedia(Base):
     file_id    = Column(String, nullable=False)
     message_id = Column(BigInteger, nullable=True)
     pos        = Column(Integer, nullable=False, default=0)
+
+
+class LeaderTaskPhoto(Base):
+    """One proof photo TAKEN in the mini-app camera (`proof_kind == "camera"`).
+
+    The roll a leader builds up for one (day, task) while the day is open: slot
+    0..N-1 are the required shots, anything above is an extra. A slot is
+    RETAKEN, never emptied — a required proof cannot be deleted back into a gap,
+    which is the one destructive move a stray tap could otherwise make. The row
+    is deleted only when its slot is retaken or an extra is removed; the archive
+    channel keeps every version, exactly as the bot flow's channel posts do.
+
+    Why a table of its own rather than more `LeaderTaskMedia` rows: those hang
+    off a LeaderTaskEntry, which only exists once the task is ANSWERED, and this
+    roll has to survive a leader who shot two of three photos and closed the
+    app. When the roll reaches `min_media` the entry is written and these rows
+    are mirrored into `leader_task_media` in slot order, so every existing
+    reader — dashboard rows, the media proxy, the AI reviewer, the day report —
+    keeps working with no knowledge of this table.
+
+    `captured_at` is the shot's own clock and the ONLY time anything is judged
+    by: it is the server's, handed to the page at open and advanced there by a
+    MONOTONIC counter, so editing the phone's clock (the abuse this whole
+    feature exists to stop) moves nothing. `received_at` is when the bytes
+    arrived — later than `captured_at` by minutes when the shot was taken with
+    no signal and flushed from the offline queue afterwards, which is what
+    `deferred` marks. `late` is the capture falling outside the task's photo
+    window; it is recorded here for the UI, while the DEDUCTION comes from the
+    ordinary date machinery (services/leader_ai.date_flags), which reads the
+    same instant out of `LeaderAiReview.clocks`.
+    """
+    __tablename__ = "leader_task_photos"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    day_id      = Column(Integer, ForeignKey("leader_task_days.id"), nullable=False, index=True)
+    leader_id   = Column(Integer, nullable=False, index=True)   # role_profiles.id
+    task_id     = Column(Integer, nullable=False)
+    slot        = Column(Integer, nullable=False, default=0)
+    file_id     = Column(String, nullable=False)                # archive-channel copy
+    message_id  = Column(BigInteger, nullable=True)
+    captured_at = Column(DateTime(timezone=True), nullable=False)
+    received_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Exactly the text burnt into the image, so what a reviewer reads on the
+    # picture and what the register prints can never drift apart.
+    stamp       = Column(String(40), nullable=True)
+    late        = Column(Boolean, nullable=False, default=False)
+    deferred    = Column(Boolean, nullable=False, default=False)
+    # Phone clock − server clock at capture, seconds. Diagnostic only: nothing
+    # is judged by it, but a fleet of phones suddenly hours off is worth seeing.
+    skew_s      = Column(Integer, nullable=True)
+
+    __table_args__ = (UniqueConstraint("day_id", "task_id", "slot",
+                                       name="uq_ltask_photo_slot"),)
 
 
 class LeaderAiReview(Base):

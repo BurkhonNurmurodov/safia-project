@@ -24,7 +24,7 @@ from app.models import (
     TelegramUserRole, Translation,
 )
 from app.reg_token import make_reg_token
-from app.services import leader_ai
+from app.services import leader_ai, leader_proof
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
     effective_leader_config, expired_through, missed_reason, promote_due,
@@ -1838,6 +1838,26 @@ _LT_MESSAGES = {
         "relay_fail": "❌ Rasm qabul qilinmadi (arxiv kanaliga yuborib bo'lmadi). Keyinroq qayta urinib ko'ring yoki administratorga xabar bering.",
         "expired": "Sessiya eskirgan. /tasks buyrug'ini qaytadan yuboring.",
         "saved_toast": "✅ Saqlandi",
+        "camera_prompt": "📌 {task}\n\n📷 This task's photo is taken IN THE APP — tap the button below.\n\n📸 {k}/{min} photos taken.",
+        "camera_ready": "📌 {task}\n\n✅ {k}/{min} photos taken — task done.\n\nTap the button to replace or add a photo.",
+        "camera_hours": "\n\n🕒 Expected hours: {lo} — {hi}. A shot taken outside them is marked «late».",
+        "btn_camera": "📷 Open the camera",
+        "camera_only": "📷 You cannot send a photo for this task.\n\nThe shot is taken in the app and its time is recorded automatically — tap «📷 Open the camera».",
+        "camera_prompt": "📌 {task}\n\n📷 Фото для этой задачи снимается В ПРИЛОЖЕНИИ — нажмите кнопку ниже.\n\n📸 Снято {k}/{min} фото.",
+        "camera_ready": "📌 {task}\n\n✅ Снято {k}/{min} фото — задача выполнена.\n\nЧтобы заменить или добавить фото, нажмите кнопку.",
+        "camera_hours": "\n\n🕒 Рекомендуемое время: {lo} — {hi}. Снимок вне этого промежутка помечается как «поздний».",
+        "btn_camera": "📷 Открыть камеру",
+        "camera_only": "📷 Для этой задачи фото отправить нельзя.\n\nСнимок делается в приложении, и время записывается автоматически — нажмите «📷 Открыть камеру».",
+        "camera_prompt": "📌 {task}\n\n📷 Бу вазифанинг расми ИЛОВАДА олинади — қуйидаги тугмани босинг.\n\n📸 {k}/{min} расм олинди.",
+        "camera_ready": "📌 {task}\n\n✅ {k}/{min} расм олинди — вазифа бажарилди.\n\nРасмни алмаштириш ёки қўшиш учун тугмани босинг.",
+        "camera_hours": "\n\n🕒 Тавсия этилган вақт: {lo} — {hi}. Ундан ташқарида олинган расм «кеч» деб белгиланади.",
+        "btn_camera": "📷 Камерани очиш",
+        "camera_only": "📷 Бу вазифага расм юбориб бўлмайди.\n\nРасм иловада олинади ва вақти автоматик ёзилади — «📷 Камерани очиш» тугмасини босинг.",
+        "camera_prompt": "📌 {task}\n\n📷 Bu vazifaning rasmi ILOVADA olinadi — quyidagi tugmani bosing.\n\n📸 {k}/{min} rasm olindi.",
+        "camera_ready": "📌 {task}\n\n✅ {k}/{min} rasm olindi — vazifa bajarildi.\n\nRasmni almashtirish yoki qo'shish uchun tugmani bosing.",
+        "camera_hours": "\n\n🕒 Tavsiya etilgan vaqt: {lo} — {hi}. Undan tashqarida olingan rasm «kech» deb belgilanadi.",
+        "btn_camera": "📷 Kamerani ochish",
+        "camera_only": "📷 Bu vazifaga rasm yuborib bo'lmaydi.\n\nRasm ilovada olinadi va vaqti avtomatik yoziladi — «📷 Kamerani ochish» tugmasini bosing.",
     },
     "uz_cyrl": {
         "not_leader": "Сиз лидер эмассиз.",
@@ -2039,6 +2059,121 @@ def _lt_counter_text(lang: str, entry: dict | None, task: str, need: int, k: int
     return text
 
 
+def _lt_camera_text(lang: str, entry: dict | None, task: str, need: int, k: int) -> str:
+    """The camera task's prompt — the message the leader comes back to.
+
+    Two states, not one: below `need` it asks for shots, at or above it says the
+    task is DONE. That second sentence is what makes the flow finishable without
+    a Save button — the leader has to be able to read, in the chat they started
+    from, that nothing further is expected of them.
+
+    The hours are printed as a RECOMMENDATION, never as a gate: a shot taken
+    outside them is accepted and marked late (the page says so before the
+    shutter, too). Printing them as a rule would be a lie about what happens,
+    and printing nothing would let a leader shoot at 21:00 believing it counted.
+    They are omitted entirely where the chain does not judge hours at all —
+    same rule as `_lt_counter_text`.
+    """
+    key = "camera_ready" if k >= need else "camera_prompt"
+    text = _lt(lang, key).format(task=task, min=need, k=k)
+    win = (entry or {}).get("window")
+    if (win and (entry or {}).get("date_check", True)
+            and (entry or {}).get("time_check", True)):
+        text += _lt(lang, "camera_hours").format(lo=win[0], hi=win[1])
+    return text
+
+
+def _lt_camera_kb(lang: str, pid: int, task_id: int) -> types.InlineKeyboardMarkup:
+    """The ONE way into a camera task: a web_app button, and a way back.
+
+    Deliberately no «send photos» affordance anywhere near it — the whole point
+    of the mode is that no file the leader produced is accepted, so the keyboard
+    must not offer a second door that looks like it might work.
+    """
+    url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
+           f"?leader={pid}&task={task_id}")
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton(_lt(lang, "btn_camera"),
+                                      web_app=types.WebAppInfo(url=url)))
+    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
+    return kb
+
+
+def _lt_roll_count(db, prof, task_id: int) -> int:
+    day = leader_proof.open_day(db, prof, create=False)
+    return len(leader_proof.roll(db, day.id, task_id)) if day else 0
+
+
+def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
+                    msg_id: int | None, task_id: int, entry: dict, prof) -> None:
+    """Show (or re-show) a camera task's prompt and mark this account as being
+    on it.
+
+    The capture row carries no media here — it exists so a photo sent to the
+    CHAT can be answered with "not this way, tap the button" instead of being
+    silently ignored, and so the API can find this message to re-draw its
+    counter when a shot lands. Same table as the upload flow on purpose: one
+    account is on one task at a time, whichever mode that task uses.
+    """
+    need = int(entry.get("min_media") or 1)
+    k = _lt_roll_count(db, prof, task_id)
+    db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
+    db.add(LeaderTaskCapture(
+        telegram_id=tid, stage="camera", leader_id=pid, task_id=task_id,
+        chat_id=chat_id, message_id=msg_id, min_media=need, media=[],
+    ))
+    db.commit()
+    text = _lt_camera_text(lang, entry, config_name(entry, lang), need, k)
+    kb = _lt_camera_kb(lang, pid, task_id)
+    if msg_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id,
+                                  reply_markup=kb)
+            return
+        except Exception:
+            pass
+    sent = bot.send_message(chat_id, text, reply_markup=kb)
+    cap = db.query(LeaderTaskCapture).filter_by(telegram_id=tid).first()
+    if cap:
+        cap.message_id = sent.message_id
+        db.commit()
+
+
+def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
+    """Re-draw the waiting camera prompt after the app saved or dropped a shot.
+
+    Called from the camera API (routers/leader_proof), which is why it takes a
+    session rather than opening one. The leader's eyes are in the mini-app, but
+    the message behind it is what they read the moment they close the camera —
+    leaving it at «0/3» after three shots is the most confusing thing this flow
+    could do. Every holder of the profile that has the prompt open is updated,
+    because one profile may be held by several accounts.
+    """
+    caps = (db.query(LeaderTaskCapture)
+            .filter_by(stage="camera", leader_id=leader_id, task_id=task_id).all())
+    if not caps:
+        return
+    prof = db.query(RoleProfile).filter_by(id=leader_id).first()
+    if not prof:
+        return
+    entry = effective_leader_config(db, prof, _lt_shift(db, prof)).get(task_id)
+    if not entry:
+        return
+    need = int(entry.get("min_media") or 1)
+    k = _lt_roll_count(db, prof, task_id)
+    for cap in caps:
+        if not cap.message_id:
+            continue
+        lang = _get_lang(cap.telegram_id)
+        try:
+            bot.edit_message_text(
+                _lt_camera_text(lang, entry, config_name(entry, lang), need, k),
+                chat_id=cap.chat_id, message_id=cap.message_id,
+                reply_markup=_lt_camera_kb(lang, leader_id, task_id))
+        except Exception:
+            pass  # the message was deleted, or nothing changed — neither matters
+
+
 def _lt_shift(db, prof) -> int:
     """The leader's shift (1 or 2) — their supervisor unit's shift. Drives the
     checklist day boundary; falls back to shift 1 (calendar day) when unset."""
@@ -2148,12 +2283,26 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
         kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
     else:
         text = _lt(lang, "menu_title").format(name=prof.name, date=date)
+        # Camera tasks say how far along their roll is, right in the menu. A
+        # task collected in the app has a state the chat cannot otherwise show —
+        # "two of three shot" looks exactly like "not started" — and that is the
+        # one state a leader must not be able to walk away from unaware.
+        cams = [t for t, c in cfg.items()
+                if c["enabled"] and c.get("proof_kind") == "camera"]
+        shot = leader_proof.counts(db, day.id if day else None, cams)
         for td_id, s in cfg.items():
             if not s["enabled"]:
                 continue
             e = entries.get(td_id)
-            mark = "✅ " if (e and e.done) else ("❌ " if e else "")
-            kb.add(_lt_btn(f"{mark}{config_name(s, lang)}", f"lt:task:{pid}:{td_id}"))
+            if e:
+                label = f"{'✅ ' if e.done else '❌ '}{config_name(s, lang)}"
+            elif s.get("proof_kind") == "camera":
+                k = shot.get(td_id, 0)
+                label = (f"📷 {k}/{s['min_media']} · {config_name(s, lang)}"
+                         if k else f"📷 {config_name(s, lang)}")
+            else:
+                label = config_name(s, lang)
+            kb.add(_lt_btn(label, f"lt:task:{pid}:{td_id}"))
         kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
         kb.add(_lt_btn(_lt(lang, "btn_close_day"), f"lt:close:{pid}"))
 
@@ -2206,6 +2355,11 @@ def _lt_save_entry(db, pid: int, task_id: int, done: bool,
         db.query(LeaderTaskMedia).filter_by(entry_id=old.id).delete()
         db.delete(old)
         db.flush()
+    if not done:
+        # «Yo'q» retires whatever the camera collected for this task: the answer
+        # is now "not done", and a roll left behind would show up as progress on
+        # a task recorded as failed the next time the menu counted it.
+        leader_proof.clear_roll(db, day.id, task_id)
     entry = LeaderTaskEntry(day_id=day.id, task_id=task_id, done=done, reason=reason)
     db.add(entry)
     db.flush()
@@ -2311,6 +2465,17 @@ def _lt_callback(call: types.CallbackQuery):
                 return
             entries = _lt_entries(db, day)
             bot.answer_callback_query(call.id)
+            # A camera task never offers «Qayta topshirish»: its roll is edited
+            # shot by shot in the app (retake a slot, drop an extra), so a
+            # wholesale reset would be a bigger, more destructive action than
+            # anything the task actually needs. Re-opening it — answered or
+            # half-shot — lands on the camera, which is also where the leader
+            # already is in their head.
+            if cfg[task_id].get("proof_kind") == "camera" and (
+                    task_id in entries or _lt_roll_count(db, prof, task_id)):
+                _lt_open_camera(db, tid, pid, lang, chat_id, msg_id, task_id,
+                                cfg[task_id], prof)
+                return
             if task_id in entries:
                 # already answered → confirm reset-for-resubmission
                 kb = types.InlineKeyboardMarkup()
@@ -2343,6 +2508,7 @@ def _lt_callback(call: types.CallbackQuery):
             if e:  # channel posts stay (audit trail); only our rows go
                 db.query(LeaderTaskMedia).filter_by(entry_id=e.id).delete()
                 db.delete(e)
+                leader_proof.clear_roll(db, day.id if day else None, task_id)
                 db.commit()
             bot.answer_callback_query(call.id)
             _lt_menu(db, tid, pid, lang, chat_id, msg_id)
@@ -2358,6 +2524,11 @@ def _lt_callback(call: types.CallbackQuery):
                 _lt_save_entry(db, pid, task_id, True, None, [])
                 bot.answer_callback_query(call.id, _lt(lang, "saved_toast"))
                 _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                return
+            if cfg[task_id].get("proof_kind") == "camera":
+                bot.answer_callback_query(call.id)
+                _lt_open_camera(db, tid, pid, lang, chat_id, msg_id, task_id,
+                                cfg[task_id], prof)
                 return
             db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
             db.add(LeaderTaskCapture(
@@ -2551,6 +2722,22 @@ def _lt_photo(message: types.Message):
                                     "animation", "video_note", "sticker"])
 def _lt_wrong_media(message: types.Message):
     bot.send_message(message.chat.id, _lt(_get_lang(message.from_user.id), "photos_only"))
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "camera",
+                     content_types=["photo", "video", "document", "audio",
+                                    "voice", "animation", "video_note", "sticker"])
+def _lt_camera_no_upload(message: types.Message):
+    """A camera task refuses every file, and SAYS SO.
+
+    This is the load-bearing half of the whole feature: the reason it exists is
+    that a photo the leader hands us can carry any timestamp they like, so there
+    must be no path — not even a forgiving one "just this once" — from a file in
+    the chat to a proof on the register. Silence would read as "sent, probably
+    fine"; the refusal names the button that does work.
+    """
+    bot.send_message(message.chat.id,
+                     _lt(_get_lang(message.from_user.id), "camera_only"))
 
 
 @bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "reason",

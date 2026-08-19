@@ -65,12 +65,19 @@ class CardError(RuntimeError):
 # ── Fonts ─────────────────────────────────────────────────────────────────────
 # Pillow bundles no scalable font, and its bitmap default can't draw Cyrillic —
 # which every label here needs. Find a real TTF on the box.
+# The macOS entries are for a developer box only — prod is Linux and finds
+# DejaVu in the first directory. Without them nothing that draws an image can be
+# run or looked at locally, which is how the proof stamp would have shipped
+# unseen.
 _FONT_DIRS = [
     "/usr/share/fonts", "/usr/local/share/fonts", os.path.expanduser("~/.fonts"),
     os.path.expanduser("~/.local/share/fonts"),
+    "/Library/Fonts", "/System/Library/Fonts/Supplemental",
+    os.path.expanduser("~/Library/Fonts"),
 ]
 _FONT_PREFS = ["DejaVuSans-Bold.ttf", "DejaVuSans.ttf", "LiberationSans-Bold.ttf",
-               "LiberationSans-Regular.ttf", "NotoSans-Bold.ttf", "NotoSans-Regular.ttf"]
+               "LiberationSans-Regular.ttf", "NotoSans-Bold.ttf", "NotoSans-Regular.ttf",
+               "Arial Bold.ttf", "Arial.ttf"]
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
 
 

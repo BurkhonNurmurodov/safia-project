@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, Calendar, CheckCircle, ChevronDown, ChevronRight, Clock,
-  History, ImagePlus, ListChecks, Radio, RotateCcw, Trash2, UserCog, Users, X,
+  AlertTriangle, Calendar, Camera, CheckCircle, ChevronDown, ChevronRight,
+  Clock, History, ImagePlus, ListChecks, Radio, RotateCcw, Trash2, UserCog,
+  Users, X,
 } from "lucide-react";
 import Modal from "../../components/ui/Modal";
 import { ProxyPhoto } from "../../components/leaders/ProofPhoto";
@@ -68,6 +69,18 @@ const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--bor
  * sits OUTSIDE the input, clear of whatever picker indicator the engine draws
  * inside the right edge.
  */
+/** A cell whose proofs are SHOT in the app rather than uploaded. The matrix is
+ *  read as a grid of weights, so the one thing that changes where the leader
+ *  answers has to be visible without opening anything. */
+function CamMark() {
+  return (
+    <Camera size={9} strokeWidth={2.6}
+      className="absolute left-1 top-1 pointer-events-none"
+      style={{ color: "var(--brand)" }} />
+  );
+}
+
+
 function TimeInput({ value, placeholder, onChange, clearTitle }) {
   return (
     <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -228,6 +241,13 @@ export default function LeaderTasksAdmin() {
   // — both materialise the SAME override row, and two concurrent inserts race
   // its unique key.
   const tcMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/time-check", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
+  // WHERE the leader answers this task — the bot chat, or the mini-app camera.
+  // Instant and never staged, unlike enabled/photos/weight: this is the one
+  // field that changes what the leader is asked to DO, and a staged version
+  // would leave the bot offering an upload for a task whose proofs are supposed
+  // to be shot in the app for a whole shift. Nothing to re-judge: photos
+  // already collected keep the clocks they were judged by.
+  const pkMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/proof-kind", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
   // Example proof photos live beside the criteria: instant like it (nothing
   // the leader sees changes), ids come from the live config so an upload or
   // delete re-renders the strip through the same invalidate.
@@ -326,7 +346,7 @@ export default function LeaderTasksAdmin() {
   ), [rows, leadSel]);
 
   const tname = (task) => task.name?.[lang] || task.name?.uz || `T${task.id}`;
-  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, win_from: null, win_to: null, deadline: null, date_check: null, time_check: null };
+  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, win_from: null, win_to: null, deadline: null, date_check: null, time_check: null, proof_kind: null };
   // The definition of done actually in force for a cell, walking the same
   // chain the backend reviewer walks: leader → supervisor → global.
   const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
@@ -371,6 +391,14 @@ export default function LeaderTasksAdmin() {
   const supDc = (mid, tid) => getCell(mid, tid).date_check ?? dcOf(tid);
   const tcOf = (tid) => tasks.find((x) => x.id === tid)?.time_check !== false;
   const supTc = (mid, tid) => getCell(mid, tid).time_check ?? tcOf(tid);
+  // ── how the proof is collected ────────────────────────────────────────────
+  // Same chain, a STRING, so "inherit" really is the blank the other text
+  // fields use — but the control is a two-way pick like the date rule, for the
+  // same reason: the values that matter are the switch itself, and a control
+  // whose "screenshot" and "unset" look identical is how a unit gets moved onto
+  // the camera by accident.
+  const pkOf = (tid) => tasks.find((x) => x.id === tid)?.proof_kind || "screenshot";
+  const supPk = (mid, tid) => getCell(mid, tid).proof_kind || pkOf(tid);
   const supTaskName = (mid, task) => getCell(mid, task.id).names?.[lang] || tname(task);
   // The name a leader INHERITS in one language: the supervisor's own rename
   // when they wrote one, else the global name (NOT NULL, so never blank).
@@ -395,6 +423,7 @@ export default function LeaderTasksAdmin() {
     deadline: leadDlPh(mid, tid),
     date_check: supDc(mid, tid),
     time_check: supTc(mid, tid),
+    proof_kind: supPk(mid, tid),
   });
 
   const sums = useMemo(() => {
@@ -439,6 +468,7 @@ export default function LeaderTasksAdmin() {
       deadline: ov?.deadline || inh.deadline,
       date_check: ov?.date_check ?? inh.date_check,
       time_check: ov?.time_check ?? inh.time_check,
+      proof_kind: ov?.proof_kind || inh.proof_kind,
     });
   };
   const openLeaderByIds = (p, tid) => { const task = tasks.find((x) => x.id === tid); if (task) { setShowExc(false); openLeaderCell(p, p.manager_id, task); } };
@@ -464,6 +494,19 @@ export default function LeaderTasksAdmin() {
     const v = draft?.deadline || "";
     if (v === (stored?.deadline || "")) return;
     dlMut.mutate({ ...ids, deadline: v });
+  };
+  // Same shape as the date rule's writer: the draft opens on the value IN
+  // FORCE, so a draft still equal to what this level inherits goes out as null
+  // ("keep inheriting") and only a divergence is stored. `inherited` is
+  // undefined at the GLOBAL level, which inherits from nothing.
+  const saveProofKind = async (draft, stored, inherited, ids) => {
+    const v = draft?.proof_kind || "screenshot";
+    const out = inherited === undefined ? v : (v === inherited ? null : v);
+    if (out === (stored?.proof_kind ?? null)) return true;
+    try {
+      await pkMut.mutateAsync({ ...ids, proof_kind: out });
+    } catch { return false; }
+    return true;
   };
   // The boolean twin of saveWindow, and skipped-when-unchanged for the same
   // reason: a write re-derives every verdict of that task, so a no-op save
@@ -508,6 +551,8 @@ export default function LeaderTasksAdmin() {
       { task_id: cell.tid, manager_id: cell.mid });
     saveDateRule(cell, getCell(cell.mid, cell.tid),
       { date_check: dcOf(cell.tid), time_check: tcOf(cell.tid) },
+      { task_id: cell.tid, manager_id: cell.mid });
+    saveProofKind(cell, getCell(cell.mid, cell.tid), pkOf(cell.tid),
       { task_id: cell.tid, manager_id: cell.mid });
     cellMut.mutate({
       manager_id: cell.mid, task_id: cell.tid, enabled: cell.enabled,
@@ -555,6 +600,7 @@ export default function LeaderTasksAdmin() {
         await dlMut.mutateAsync({ ...ids, deadline });
       // Not a throw — see saveDateRule — so the chain stops on the answer.
       if (!await saveDateRule(lcell, ov, inh, ids)) return;
+      if (!await saveProofKind(lcell, ov, inh.proof_kind, ids)) return;
     } catch { return; }
     leaderMut.mutate({
       ...ids,
@@ -695,6 +741,23 @@ export default function LeaderTasksAdmin() {
                   ["off", t("admin.ltasks.dateOff")]]} />
     </FormField>
   );
+  // WHERE the leader answers this task. Two modes, one pick, and the hint spells
+  // out what each one costs the leader — because switching to camera removes
+  // their upload path entirely, and an admin flipping it has to know that
+  // before they save, not after the first leader reports the bot "not
+  // accepting" their photo.
+  const proofKindField = (value, onChange, mark) => {
+    const v = value?.proof_kind || "screenshot";
+    return (
+      <FormField label={withMark(t("admin.ltasks.proofKind"), mark)}
+        hint={t(`admin.ltasks.proofHint.${v}`)}>
+        <SegmentedToggle fill value={v}
+          onChange={(k) => onChange({ proof_kind: k })}
+          options={[["screenshot", t("admin.ltasks.proofScreenshot")],
+                    ["camera", t("admin.ltasks.proofCamera")]]} />
+      </FormField>
+    );
+  };
   const nameFields = (names, setName, placeholderFor, markFor) =>
     LANGS.map((l) => (
       <FormField key={l} label={withMark(`${t("admin.ltasks.taskName")} (${LANG_LABELS[l]})`, markFor?.(l))}>
@@ -824,6 +887,14 @@ export default function LeaderTasksAdmin() {
       ? { date_check: (lead0 ? ov0?.date_check : cell0.date_check) ?? null,
           time_check: (lead0 ? ov0?.time_check : cell0.time_check) ?? null }
       : { date_check: task.date_check !== false, time_check: task.time_check !== false };
+    // Same seeding as the date rule, one level up: what these rows collect
+    // through, plus the raw value so Save knows whether anything is stored here.
+    const pkInh = anyFilter
+      ? (lead0 ? supPk(lead0.manager_id, task.id) : pkOf(task.id))
+      : undefined;
+    const pk0raw = anyFilter
+      ? ((lead0 ? ov0?.proof_kind : cell0.proof_kind) || null)
+      : (task.proof_kind || "screenshot");
     setCol({
       tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
       names: { ...names0 }, names0, criteria: criteria0, criteria0, when: "now",
@@ -831,6 +902,7 @@ export default function LeaderTasksAdmin() {
       date_check: dc0raw.date_check ?? dcInh.date_check,
       time_check: dc0raw.time_check ?? dcInh.time_check,
       dc0raw, dcInh,
+      proof_kind: pk0raw || pkInh, pk0raw, pkInh,
     });
   };
   const saveCol = () => {
@@ -839,6 +911,7 @@ export default function LeaderTasksAdmin() {
     saveWindow(col, col.win0, { task_id: col.tid, ...ids });
     saveDeadline(col, { deadline: col.deadline0 }, { task_id: col.tid, ...ids });
     saveDateRule(col, col.dc0raw, col.dcInh, { task_id: col.tid, ...ids });
+    saveProofKind(col, { proof_kind: col.pk0raw }, col.pkInh, { task_id: col.tid, ...ids });
     if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
       taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
   };
@@ -985,11 +1058,12 @@ export default function LeaderTasksAdmin() {
                             <td key={task.id}>
                               <button type="button"
                                 title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}%`}
-                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", win_from: c.win_from || "", win_to: c.win_to || "", date_check: supDc(m.id, task.id), time_check: supTc(m.id, task.id), when: "now" })}
+                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", win_from: c.win_from || "", win_to: c.win_to || "", date_check: supDc(m.id, task.id), time_check: supTc(m.id, task.id), proof_kind: supPk(m.id, task.id), when: "now" })}
                                 className="relative w-full h-9 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
                                 style={cellStyle(c)}>
                                 {c.weight}%
                                 {c.min_media > 1 && <MediaDots n={c.min_media} />}
+                                {supPk(m.id, task.id) === "camera" && <CamMark />}
                               </button>
                             </td>
                           );
@@ -1034,12 +1108,13 @@ export default function LeaderTasksAdmin() {
         <Modal title={t("admin.ltasks.cellTitle")} subtitle={tl(managers.find((m) => m.id === cell.mid)?.name || "")} icon={<ListChecks size={14} />} onClose={() => setCell(null)}
           footer={<>
             <Button variant="secondary" onClick={() => setCell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={cellMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending} onClick={saveCell}>{t("admin.ltasks.save")}</Button>
+            <Button loading={cellMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending || pkMut.isPending} onClick={saveCell}>{t("admin.ltasks.save")}</Button>
           </>}>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.supNameHint")}</p>
           {nameFields(cell.names, (l, v) => setCell((c) => ({ ...c, names: { ...c.names, [l]: v } })), (l) => cellTask?.name?.[l] || "")}
           <FormField label={t("admin.ltasks.status")} required>{statusToggle(cell.enabled, (v) => setCell((c) => ({ ...c, enabled: v })))}</FormField>
           {numField(t("admin.ltasks.minMedia"), cell.min_media, (v) => setCell((c) => ({ ...c, min_media: v })), 20)}
+          {proofKindField(cell, (v) => setCell((c) => ({ ...c, ...v })))}
           {numField(t("admin.ltasks.weight"), cell.weight, (v) => setCell((c) => ({ ...c, weight: v })), 100)}
           {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
           {windowField(cell, (v) => setCell((c) => ({ ...c, ...v })),
@@ -1056,7 +1131,7 @@ export default function LeaderTasksAdmin() {
           footer={<>
             {lcell.hasOv && <Button variant="danger" className="mr-auto" icon={<RotateCcw size={14} />} onClick={askReset}>{t("admin.ltasks.reset")}</Button>}
             <Button variant="secondary" onClick={() => setLcell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={leaderMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
+            <Button loading={leaderMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending || pkMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
           </>}>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.leaderHint")}</p>
           {/* Every field opens on the value in force and carries a «changed»
@@ -1079,6 +1154,8 @@ export default function LeaderTasksAdmin() {
             changedPill(ownText(lcell.win_from, lInh.win_from) !== "" || ownText(lcell.win_to, lInh.win_to) !== ""))}
           {dateRuleField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
             changedPill(dcMode(lcell) !== dcMode(lInh)))}
+          {proofKindField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
+            changedPill((lcell.proof_kind || "screenshot") !== lInh.proof_kind))}
           {deadlineField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.deadline,
             changedPill(ownText(lcell.deadline, lInh.deadline) !== ""))}
           <WhenBar when={lcell.when} setWhen={(v) => setLcell((c) => ({ ...c, when: v }))} nextDate={lcellNext} t={t} />
@@ -1131,6 +1208,8 @@ export default function LeaderTasksAdmin() {
               anyFilter ? "" : globalWinPh("win_to"))}
             {dateRuleField(col, (v) => setCol((c) => ({ ...c, ...v })),
               changedPill(anyFilter && dcMode(col) !== dcMode(col.dcInh)))}
+            {proofKindField(col, (v) => setCol((c) => ({ ...c, ...v })),
+              changedPill(anyFilter && (col.proof_kind || "screenshot") !== col.pkInh))}
             {deadlineField(col, (v) => setCol((c) => ({ ...c, ...v })), "")}
             <div className="pt-1">
               {/* Examples are keyed per TASK — there is no per-row storage, so
@@ -1188,6 +1267,11 @@ export default function LeaderTasksAdmin() {
                 // confusion the single control exists to avoid.
                 if (r.ov.date_check != null || r.ov.time_check != null)
                   chips.push(excChip(`${t("admin.ltasks.dateCheck")}: ${t(`admin.ltasks.dateMode.${dcMode(r.ov)}`)}`));
+                // Chipped for the same reason as the date rule, and with more
+                // reason: this one changes where the leader ANSWERS, so a
+                // leader singled out onto the camera must be findable here.
+                if (r.ov.proof_kind)
+                  chips.push(excChip(t(`admin.ltasks.proofMode.${r.ov.proof_kind}`)));
                 return (
                   <button key={`${r.p.id}-${r.tid}`} onClick={() => openLeaderByIds(r.p, r.tid)}
                     className="w-full text-left flex items-center gap-2 px-1 py-1.5 text-sm hover:bg-[var(--bg-inner)]" style={{ borderTop: "1px solid var(--border)" }}>

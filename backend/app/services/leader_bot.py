@@ -1,13 +1,18 @@
 """Bot-filled leader checklist days, reshaped as /leaders dashboard rows.
 
 The Google Form (→ leaders sheet → `leader_checklists`) and the in-bot /tasks
-checklist are two collection layers for the SAME daily checklist. Shift 2 files
-in the bot, so a shift-2 unit's day is served from here whenever the leader
-closed it in the bot, and from the sheet otherwise — the sheet stays as the
-history of everything filed before the bot took over.
+checklist are two collection layers for the SAME daily checklist. A unit's day
+is served from here whenever its leader CLOSED it in the bot, and from the sheet
+otherwise — the sheet stays as the history of everything filed before the bot
+took over.
 
-Shift 1 still files on the form, so its bot days (if any exist at all) are
-deliberately NOT merged: that page has to keep showing the sheet alone.
+The merge used to be shift 2 only (`MERGE_SHIFT = 2`): shift 1 filed on the
+form, so its bot days were hidden to keep that page showing the sheet alone.
+That rule was retired on 2026-08-19, when in-app camera proofs shipped — those
+are collected in the bot by construction, and a proof the platform demanded, in
+the mode the platform chose, that no register anywhere displays is worse than a
+duplicated row. The merge is now about the ACT, not the shift: a leader who
+closed a day in the bot filed it there.
 
 Only CLOSED days surface. An open day is a leader mid-checklist, not a
 submission — the same rule the dashboard has always applied.
@@ -18,12 +23,16 @@ from app.models import (
     LeaderTaskDay,
     LeaderTaskEntry,
     LeaderTaskMedia,
+    LeaderTaskPhoto,
     Manager,
     RoleProfile,
 )
 
-# The shift whose bot submissions replace the sheet row. Shift 1 is untouched.
-MERGE_SHIFT = 2
+# The shift whose bot submissions replace the sheet row. None = every shift
+# merges, which is what it means today; kept as a name rather than deleted
+# because the merge rule is read in two places and a bare `if False` in each
+# would be the second spelling of one decision.
+MERGE_SHIFT: int | None = None
 
 
 def closed_days(
@@ -43,7 +52,7 @@ def closed_days(
         q = q.filter(LeaderTaskDay.leader_id == leader_id)
     days = q.all()
     if not days or shift is None:
-        return days
+        return days   # MERGE_SHIFT is None today, so this is the normal path
     shifts = {
         m.id: m.shift
         for m in db.query(Manager).filter(Manager.id.in_({d.manager_id for d in days})).all()
@@ -75,6 +84,31 @@ def media_of(db: Session, entry_ids: list[int]) -> dict[int, list[int]]:
     return by_entry
 
 
+def captures_of(db: Session, days: list[LeaderTaskDay]) -> dict[tuple[int, int], list[dict]]:
+    """(day_id, task_id) → what the in-app camera recorded for each shot, in
+    slot order — empty for every screenshot task and everything filed before the
+    camera existed.
+
+    Shipped beside the media ids rather than folded into them: the reviewer
+    surfaces need to say «📷 taken in the app · 14:32:07», and the alternative
+    was re-deriving that per photo in three different places from a table those
+    pages otherwise never touch.
+    """
+    out: dict[tuple[int, int], list[dict]] = {}
+    ids = [d.id for d in days]
+    if not ids:
+        return out
+    for p in (db.query(LeaderTaskPhoto)
+              .filter(LeaderTaskPhoto.day_id.in_(ids))
+              .order_by(LeaderTaskPhoto.slot).all()):
+        out.setdefault((p.day_id, p.task_id), []).append({
+            "at": p.captured_at.isoformat() if p.captured_at else None,
+            "late": bool(p.late),
+            "deferred": bool(p.deferred),
+        })
+    return out
+
+
 def dashboard_rows(
     db: Session,
     days: list[LeaderTaskDay],
@@ -104,6 +138,7 @@ def dashboard_rows(
     }
     by_day = entries_of(db, days)
     by_entry = media_of(db, [e.id for es in by_day.values() for e in es])
+    caps = captures_of(db, days)
 
     rows = []
     for d in days:
@@ -131,6 +166,11 @@ def dashboard_rows(
                         "photo": "",
                         "reason": e.reason or "",
                         "media": by_entry.get(e.id, []),
+                        # Positionally aligned with `media` — both are built in
+                        # slot order (services/leader_proof.sync_entry rebuilds
+                        # the media rows from the roll on every change), so the
+                        # nth capture describes the nth photo.
+                        "cam": caps.get((d.id, e.task_id), []),
                     }
                     for e in sorted(by_day.get(d.id, []), key=lambda e: e.task_id)
                 ],
@@ -146,11 +186,12 @@ def visible_day(db: Session, day: LeaderTaskDay, payload: dict, *, sees_all: boo
     role = payload.get("role")
     if role == "admin":
         return True
-    # Everyone below admin only ever sees a bot day through a merged row, and
-    # only shift 2 merges — so a shift-1 day's photos stay unreachable for them.
-    mgr = db.query(Manager).filter_by(id=day.manager_id).first()
-    if not mgr or mgr.shift != MERGE_SHIFT:
-        return False
+    # Everyone below admin only ever sees a bot day through a merged row, so a
+    # day the merge rule does not carry has unreachable photos for them.
+    if MERGE_SHIFT is not None:
+        mgr = db.query(Manager).filter_by(id=day.manager_id).first()
+        if not mgr or mgr.shift != MERGE_SHIFT:
+            return False
     # Below that, mirror /api/leaders exactly: only supervisors and leaders are
     # narrowed, and a personal "see all" page grant lifts both.
     if not sees_all:

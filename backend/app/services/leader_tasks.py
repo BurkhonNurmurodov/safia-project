@@ -145,6 +145,9 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             # Same tri-state, same trap: None = inherit, False = this unit is
             # judged by the DAY alone (the hour is not compared to the window).
             "time_check": s.time_check if s else None,
+            # RAW: None = inherit the global collection mode. "camera" here is
+            # what enrols a whole unit in in-app capture.
+            "proof_kind": (s.proof_kind if s else None) or None,
         }
     return out
 
@@ -173,6 +176,7 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "deadline": r.deadline or None,
             "date_check": r.date_check,
             "time_check": r.time_check,
+            "proof_kind": r.proof_kind or None,
         }
     return out
 
@@ -190,6 +194,29 @@ def resolve_deadline(*levels) -> str | None:
         if v:
             return v
     return None
+
+
+# The two ways a proof can be collected. "screenshot" is the floor: a level
+# that says nothing, and a platform that never ran the migration, both land
+# here, so in-app capture is only ever something an admin switched ON.
+PROOF_KINDS = ("screenshot", "camera")
+
+
+def resolve_proof_kind(*levels) -> str:
+    """How this task's proof is collected — first non-blank walking the levels
+    narrowest-first (leader row, supervisor row, global def; any may be None).
+
+    A plain first-non-blank walk and not the tri-state boolean dance the date
+    rule needs: the values are strings, so "" / None is unambiguously "inherit"
+    and there is no falsy value that means something.
+    """
+    for row in levels:
+        if row is None:
+            continue
+        v = (getattr(row, "proof_kind", None) or "").strip()
+        if v in PROOF_KINDS:
+            return v
+    return "screenshot"
 
 
 def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict[int, dict]:
@@ -255,6 +282,10 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
             "time_check": leader_ai.resolve_time_check(r, s, td),
             "criteria": criteria,
             "deadline": resolve_deadline(r, s, td),
+            # WHERE the leader answers this task: the bot chat, or the mini-app
+            # camera. The bot branches on it, so it is resolved here with
+            # everything else the bot reads rather than looked up separately.
+            "proof_kind": resolve_proof_kind(r, s, td),
         }
     return out
 
@@ -311,6 +342,7 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                 "time_check": leader_ai.resolve_time_check(s, td),
                 "criteria": crit,
                 "deadline": resolve_deadline(s, td),
+                "proof_kind": resolve_proof_kind(s, td),
             }
         level = "supervisor" if manager is not None else "global"
 
@@ -340,6 +372,10 @@ def requirements_for(db: Session, *, prof=None, manager=None,
             "date_check": bool(c["date_check"]),
             "time_check": bool(c["time_check"]),
             "deadline": c["deadline"],
+            # WHERE this task is answered. The tab says it in words, because a
+            # leader who expects to send a file to the chat and finds no upload
+            # accepted has been left to guess.
+            "proof_kind": c.get("proof_kind") or "screenshot",
             "examples": examples.get(td.id, []),
         })
     total = sum(t["weight"] for t in tasks)
@@ -604,6 +640,68 @@ def set_deadline(db: Session, *, task_id: int, deadline: str | None,
     db.commit()
 
 
+def set_proof_kind(db: Session, *, task_id: int, proof_kind: str | None,
+                   manager_id: int | None = None,
+                   leader_id: int | None = None) -> None:
+    """Write HOW this task's proof is collected at one level of the chain.
+    Blank clears that level and falls back to the level above; at the GLOBAL
+    level blank is stored as "screenshot", because that level is the chain's
+    floor and has nothing left to inherit from.
+
+    Applies at once and stages nothing, for the opposite reason to the criteria:
+    this is the one field that changes what the leader is ASKED TO DO, so a
+    staged version would leave the bot offering an upload the reviewer no longer
+    accepts — or a camera button for a task the config says is a screenshot —
+    for a whole shift. It is also why it is never applied mid-answer: the bot
+    reads the live value at the moment it renders the task, and a task already
+    answered keeps whatever it was answered with (its photos are stored, not
+    re-collected).
+
+    Nothing to re-judge either: switching a task to camera does not change how
+    photos ALREADY collected are read — those keep the clocks they were judged
+    by. Only new shots get a server clock.
+
+    A level with no row yet is materialised with the values that level already
+    resolves to, the same rule as criteria/window/deadline, so writing this can
+    never silently change what else the task requires.
+    """
+    v = (proof_kind or "").strip() or None
+    if v is not None and v not in PROOF_KINDS:
+        raise ValueError(f"unknown proof kind {proof_kind!r}")
+
+    if leader_id is not None:
+        row = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+        if not row:
+            if v is None:
+                return  # nothing stored, nothing to clear
+            row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
+            db.add(row)
+    elif manager_id is not None:
+        row = db.query(LeaderTaskSetting).filter_by(
+            manager_id=manager_id, task_id=task_id).first()
+        if not row:
+            if v is None:
+                return
+            td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+            row = LeaderTaskSetting(
+                manager_id=manager_id, task_id=task_id, enabled=True,
+                min_media=1, weight=td.default_weight if td else 0,
+            )
+            db.add(row)
+    else:
+        row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+        if not row:
+            return
+        v = v or "screenshot"  # the floor of the chain is never "inherit"
+    row.proof_kind = v
+    # Same rule as the other side-endpoint fields: a leader row left overriding
+    # nothing goes, so the matrix's "overridden" mark keeps meaning something.
+    if leader_id is not None and _leader_row_bare(row):
+        db.delete(row)
+    db.commit()
+
+
 # ONE boundary, at the hour the night crew actually starts work: the day a
 # moment belongs to turns at 17:00, and the day it belongs to dies at
 # `deadline_hhmm` (09:00) — the twelve hours between are a day that is over but
@@ -835,7 +933,7 @@ def _leader_row_extras(row) -> bool:
     if row is None:
         return False
     if any((getattr(row, k, None) or "").strip()
-           for k in ("criteria", "win_from", "win_to", "deadline")):
+           for k in ("criteria", "win_from", "win_to", "deadline", "proof_kind")):
         return True
     # NOT a blank-string test: these are tri-state booleans whose whole point is
     # being False, and `or ""` would read an active exemption as "unset" — the

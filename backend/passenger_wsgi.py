@@ -80,6 +80,7 @@ try:
         add_leader_task_setting_names, add_leader_task_criteria,
         add_leader_task_windows, add_leader_task_deadlines,
         add_leader_task_date_check, add_leader_task_time_check,
+        add_leader_task_proof_kind,
         add_leader_ai_clocks, sync_leader_ai_dates,
         add_leader_ai_resolution,
         add_web_credential_password_enc,
@@ -135,6 +136,7 @@ try:
     add_leader_task_deadlines()
     add_leader_task_date_check()
     add_leader_task_time_check()
+    add_leader_task_proof_kind()
     add_leader_ai_resolution()
     # After add_leader_ai_resolution — the backfill reads reviewed rows.
     add_leader_ai_clocks()

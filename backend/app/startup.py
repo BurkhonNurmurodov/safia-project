@@ -848,6 +848,35 @@ def add_leader_task_time_check() -> None:
         db.close()
 
 
+def add_leader_task_proof_kind() -> None:
+    """2026-08-19: a task declares HOW its proof is collected — "screenshot"
+    (sent to the bot chat, what every task has always done) or "camera" (taken
+    in the mini-app, stamped with the server's clock).
+
+    Idempotent, and shaped like the date-check migration above: nullable columns
+    everywhere (all `ADD COLUMN IF NOT EXISTS` can do without rewriting the
+    table), then the GLOBAL level filled in, because that level is the chain's
+    floor and a NULL there would mean "inherit" with nothing left to inherit
+    from. `leader_tasks.resolve_proof_kind` reads NULL as "screenshot"
+    regardless, so a box that never ran this behaves exactly as before.
+    """
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            db.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS proof_kind VARCHAR(12)"))
+        db.execute(text(
+            "UPDATE leader_task_defs SET proof_kind = 'screenshot' "
+            "WHERE proof_kind IS NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task proof-kind migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_ai_clocks() -> None:
     """2026-08-14: the model stops judging the date and starts transcribing it.
 

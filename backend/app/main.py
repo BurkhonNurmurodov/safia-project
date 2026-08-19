@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
         add_leader_task_setting_names, add_leader_task_criteria,
         add_leader_task_windows, add_leader_task_deadlines,
         add_leader_task_date_check, add_leader_task_time_check,
+        add_leader_task_proof_kind,
         add_leader_ai_clocks, sync_leader_ai_dates,
         add_leader_ai_resolution,
         add_web_credential_password_enc,
@@ -128,6 +129,7 @@ async def lifespan(app: FastAPI):
     add_leader_task_deadlines()
     add_leader_task_date_check()
     add_leader_task_time_check()
+    add_leader_task_proof_kind()
     add_leader_ai_resolution()
     # After add_leader_ai_resolution — the backfill reads reviewed rows.
     add_leader_ai_clocks()
@@ -400,6 +402,10 @@ app.include_router(factories.router)
 app.include_router(broadcast.router)
 app.include_router(setup_times.router)
 app.include_router(leader_tasks.router, dependencies=_admin_guard)
+# The camera page's own endpoints: leader-scoped, never admin — a leader
+# shooting their own proof holds no admin capability, so this router must NOT
+# join the _admin_guard one above.
+app.include_router(leader_proof.router)
 # AI proof review for the leader checklist. Every route self-gates with
 # verify_admin (pilot), and lives under /api so the global dep covers it.
 app.include_router(leader_ai.router)

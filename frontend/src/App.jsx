@@ -103,6 +103,7 @@ const Arc = lazyWithReload(() => import("./pages/Arc"));
 const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceivers"));
 const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
+const ProofCamera = lazyWithReload(() => import("./pages/ProofCamera"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
 const Profile = lazyWithReload(() => import("./pages/Profile"));
@@ -481,6 +482,16 @@ function AppWithLang() {
               path="/broadcast-receivers"
               element={<AuthGate><BroadcastReceivers /></AuthGate>}
             />
+            {/* The in-app camera a leader shoots checklist proofs with, opened
+                from the bot's web_app button on a camera task. AUTH-ONLY and
+                deliberately not page-gated, like /leaders/report/:uid: the
+                leader filing the proof holds no /leaders grant, and a button
+                the platform told them to press must not land on "no access".
+                The backend scopes every read and write to the leader profiles
+                the calling account actually holds. Outside Layout because it
+                is a full-screen camera — a sidebar over a viewfinder would be
+                the only chrome on the platform nobody could use. */}
+            <Route path="/proof/camera" element={<AuthGate><ProofCamera /></AuthGate>} />
             {/* One broadcast's record — where every history row lands, and where
                 a completed send hands off to watching it. RequireAdmin matches
                 the backend: every /api/broadcast read is verify_admin, so a

@@ -34,11 +34,11 @@ from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services import leader_ai, leader_bot
 from app.services.leader_tasks import (
-    CHANNEL_SETTING_KEY, audit_list, cancel_pending, channel_chat_id,
+    CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
-    revert_audit, set_criteria, set_date_check, set_deadline, set_time_check,
-    set_window,
+    revert_audit, set_criteria, set_date_check, set_deadline, set_proof_kind,
+    set_time_check, set_window,
     write_change,
 )
 from app.services.name_map import relabel_supervisor, supervisor_match
@@ -103,6 +103,10 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 # "inherit" state at the levels below.
                 "date_check": td.date_check is not False,
                 "time_check": td.time_check is not False,
+                # HOW the proof is collected. Never null at this level either —
+                # it is the floor of the chain — so the matrix shows a plain
+                # two-way pick here and an "inherit" state below.
+                "proof_kind": td.proof_kind or "screenshot",
                 "examples": examples.get(td.id, []),
                 "default_weight": td.default_weight,
             }
@@ -693,6 +697,77 @@ def _write_date_rule(db: Session, body, *, setter, kw: str,
         raise HTTPException(status_code=404, detail="Unknown leader")
     setter(db, task_id=body.task_id, **{kw: value},
            manager_id=body.manager_id, leader_id=body.leader_id)
+    return {"ok": True}
+
+
+class ProofKindIn(BaseModel):
+    """Where this task's proof comes from — a file the leader sends to the bot
+    chat ("screenshot"), or a shot taken in the mini-app camera ("camera").
+
+    Addressed four ways like the date rule: global, one supervisor, one leader,
+    or a fan-out over the ids the matrix currently shows. `proof_kind` null
+    clears an override level and falls back to the one above; at the global
+    level it stores "screenshot", which is the chain's floor.
+    """
+    task_id: int
+    proof_kind: str | None = None
+    manager_id: int | None = None
+    leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.put("/admin/leader-tasks/proof-kind")
+def put_proof_kind(body: ProofKindIn, db: Session = Depends(get_db),
+                   _: dict = Depends(verify_admin)):
+    """Switch a task between chat uploads and the in-app camera.
+
+    Applies AT ONCE and stages nothing, unlike enabled/min_media/weight: this is
+    the one field that changes what the leader is asked to DO, and a staged
+    version would leave the bot offering an upload for a task whose proofs are
+    supposed to be shot in the app — or a camera button for a task the config
+    says is a screenshot — for a whole shift.
+
+    Nothing is re-judged and nothing is destroyed. Photos already collected keep
+    the clocks they were judged by; only shots taken after the switch get a
+    server clock. Switching a task BACK to screenshots leaves any camera roll
+    where it is — an answered task keeps its evidence — but the bot stops
+    offering the camera and starts accepting files again.
+    """
+    if body.proof_kind is not None and body.proof_kind not in PROOF_KINDS:
+        raise HTTPException(status_code=400, detail="unknown_proof_kind")
+    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+        raise HTTPException(status_code=404, detail="Unknown task")
+
+    if body.leader_ids is not None or body.manager_ids is not None:
+        if body.leader_ids is not None:
+            ids = [i for (i,) in db.query(RoleProfile.id).filter(
+                RoleProfile.id.in_(body.leader_ids),
+                RoleProfile.role == "leader").all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for lid in ids:
+                set_proof_kind(db, task_id=body.task_id,
+                               proof_kind=body.proof_kind, leader_id=lid)
+        else:
+            ids = [i for (i,) in db.query(Manager.id).filter(
+                Manager.id.in_(body.manager_ids),
+                Manager.archived.is_(False)).all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for mid in ids:
+                set_proof_kind(db, task_id=body.task_id,
+                               proof_kind=body.proof_kind, manager_id=mid)
+        return {"ok": True, "count": len(ids)}
+
+    if body.manager_id is not None and not db.query(Manager).filter_by(
+            id=body.manager_id).first():
+        raise HTTPException(status_code=404, detail="Unknown supervisor")
+    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
+            id=body.leader_id).first():
+        raise HTTPException(status_code=404, detail="Unknown leader")
+    set_proof_kind(db, task_id=body.task_id, proof_kind=body.proof_kind,
+                   manager_id=body.manager_id, leader_id=body.leader_id)
     return {"ok": True}
 
 

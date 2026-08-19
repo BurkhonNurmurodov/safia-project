@@ -298,12 +298,12 @@ def get_leaders(
     checklist rows; admins / shift-managers / top-managers see everything — as
     does anyone holding a personal ``page.view.leaders`` grant at "all".
 
-    **Two collection layers.** Shift 2 files the checklist in the bot, so a
-    shift-2 (leader, date) with a CLOSED bot day is served from the bot and its
-    sheet row is dropped; every other day still comes from the Google Form
-    sheet, which keeps the whole history. Shift 1 is sheet-only — the rule is
-    the ROW's shift, not the viewer's, so one (leader, date) reads the same to
-    everybody. See services/leader_bot.py.
+    **Two collection layers.** A (leader, date) with a CLOSED bot day is served
+    from the bot and its sheet row is dropped; every other day comes from the
+    Google Form sheet, which keeps the whole history. The rule is the ROW, not
+    the viewer, so one (leader, date) reads the same to everybody. It used to be
+    narrowed to shift 2 as well — that ended with in-app camera proofs, which
+    are collected in the bot whatever the shift. See services/leader_bot.py.
 
     **Wire shape.** Every task ships `photos` (a count), never the URL string
     the source row holds — see `_wire_task`. The modal that needs the links
@@ -450,8 +450,9 @@ def get_leaders(
             leader_bot.closed_days(db, manager_id=bot_manager_id, leader_id=bot_leader_id),
             sup_display=sup_display,
         )
-        # The bot layer is shift 2 only, which the window rule does not judge —
-        # but the keys are set anyway so both layers hand the client one shape.
+        # The filing-window rule judges SHEET rows: a bot day is filed by being
+        # closed, and the close is already refused once the window has shut. The
+        # keys are set anyway so both layers hand the client one shape.
         for b in bot_rows:
             b["rejected"] = False
             b["late_state"] = None
