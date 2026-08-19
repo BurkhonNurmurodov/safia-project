@@ -152,6 +152,29 @@ def _fetch_sheet_rows(sheet_id: str, tab: str, unformatted: bool = False) -> lis
 # clear of the next block while surviving an appended row after a gap.
 _BLOCK_GAP_TOLERANCE = 5
 
+# …but the blank count alone cannot see the boundary it is meant to stay clear
+# of. «Одам сони» carries its second block («June») five blank rows under the
+# first — one short of the break — so the scan walked straight into it, and
+# since a repeated name RESETS its dict, every brigadir listed in both blocks
+# was refilled from a block that holds no date columns at all: headcount 0 for
+# everyone except the three names unique to the first block, and therefore a
+# 👥 «sheet not loaded» cell on every day of the загрузка grid. Lowering the
+# tolerance would just restore the bug it was raised to fix (the spacer row
+# above «Ахмедова Муниса» dropping her and everyone below).
+#
+# The sheet marks the boundary itself, so read THAT instead: a data row always
+# carries a «Должность», while the next block announces itself with a month
+# title («Май» / «June», an empty Должность) followed by a repeat of the column
+# header (Должность spelled as its own value). Both tabs are laid out this way.
+_BLOCK_HEADER_LABEL = "должность"
+
+
+def _block_boundary(row) -> bool:
+    """True when a named row opens the NEXT block instead of continuing this
+    one — a month title or the repeated column header."""
+    post = str(row[1]).strip() if len(row) > 1 else ""
+    return not post or post.casefold() == _BLOCK_HEADER_LABEL
+
 
 def read_production_data(sheet_id: str, min_date: Optional[datetime] = None):
     """Read plan and actual production minutes from the Минут sheet."""
@@ -186,6 +209,8 @@ def read_production_data(sheet_id: str, min_date: Optional[datetime] = None):
                 if gap > _BLOCK_GAP_TOLERANCE:
                     break
             continue
+        if started and _block_boundary(row):
+            break
         started, gap = True, 0
         name = str(row[0]).strip()
         plan_data[name] = {}
@@ -228,6 +253,8 @@ def read_headcount_data(sheet_id: str, min_date: Optional[datetime] = None):
                 if gap > _BLOCK_GAP_TOLERANCE:
                     break
             continue
+        if started and _block_boundary(row):
+            break
         started, gap = True, 0
         name = str(row[0]).strip()
         hc_data[name] = {}
