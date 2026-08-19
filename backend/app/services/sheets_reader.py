@@ -563,6 +563,11 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
     Returns both halves of every category pair: the «тўхтаганда» totals (the wait
     stopped the cell) and the «тўхтамаганда» ones (it did not), each keyed by
     brigadir → date. Same rows, same categories — only the source column differs.
+
+    Within one (brigadir, date) a LATER row REPLACES an earlier one — the form is
+    filed once per shift, so a second row is a corrected refiling, not more
+    waiting. Same rule read_cell_perenaladka applies to the per-cell block of
+    these very rows.
     """
     rows = _fetch_sheet_rows(sheet_id, "Sheet1", unformatted=False)
 
@@ -577,7 +582,8 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
     downtime_by_cat_ns: dict[str, dict[str, dict[str, float]]] = {}
 
     if not rows:
-        return downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns, cat_names
+        return (downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns,
+                cat_names, 0)
     lay = _shift_layout(rows[0])
 
     def cell(row, i) -> str:
@@ -587,6 +593,20 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
     # silently dropping them is how a brigadir added to the form goes missing
     # from Ojidaniya for weeks, so count them and say so once at the end.
     unmatched: dict[str, int] = {}
+
+    # A brigadir files this form ONCE per shift, so a second row for the same
+    # (brigadir, date) is a CORRECTION — the answer they meant, not extra
+    # waiting. Adding the two together is what showed 11 minutes of Cat C on a
+    # day whose sheet row says 3 (an 8-minute first filing plus a 3-minute
+    # refiling), and those totals feed the загрузка KPIs, not only this page:
+    # every refiled day inflated equip_downtime, the idle flag and the net
+    # utilisation behind it. The LAST row therefore wins outright, which is the
+    # rule read_cell_perenaladka already applies to the per-cell block of these
+    # very rows — one sheet must not answer "was this form refiled?" two ways.
+    # Replacements are counted and reported, because dropping a number the
+    # operator can see in the sheet has to be visible somewhere.
+    resubmitted: dict[str, int] = {}
+    seen: set[tuple[str, str]] = set()
 
     for row in rows[1:]:
         if not row:
@@ -608,21 +628,28 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
             continue
         date_label = d.strftime("%d.%m.%Y")
 
+        if (name, date_label) in seen:
+            resubmitted[name] = resubmitted.get(name, 0) + 1
+        seen.add((name, date_label))
+
         for cats, totals, by_cat in (
             (lay.stopped, downtime_total, downtime_by_cat),
             (lay.not_stopped, downtime_total_ns, downtime_by_cat_ns),
         ):
-            totals.setdefault(name, {})
-            totals[name].setdefault(date_label, 0.0)
-            by_cat.setdefault(name, {})
-            by_cat[name].setdefault(date_label, {c: 0.0 for c in cat_names})
-
+            # Built from THIS row alone and assigned, never accumulated: on a
+            # refiling a blank cell means zero exactly as it does on a first
+            # filing, so the day reads as the last form the brigadir sent —
+            # nothing survives from the answer they replaced.
+            day = {c: 0.0 for c in cat_names}
+            total = 0.0
             for cat_name, col_idx in cats.items():
                 val = _shift_num(cell(row, col_idx))
                 if val is None:
                     continue
-                totals[name][date_label] += val
-                by_cat[name][date_label][cat_name] += val
+                total += val
+                day[cat_name] = val
+            totals.setdefault(name, {})[date_label] = total
+            by_cat.setdefault(name, {})[date_label] = day
 
     if unmatched:
         worst = sorted(unmatched.items(), key=lambda kv: -kv[1])
@@ -631,7 +658,14 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
               + " — their waiting time is NOT imported; add the spelling to the "
                 "supervisor's aliases or create the unit")
 
-    return downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns, cat_names
+    if resubmitted:
+        worst = sorted(resubmitted.items(), key=lambda kv: -kv[1])
+        print("[sheets] shift report: refiled form(s) replaced an earlier answer for "
+              + ", ".join(f"{n!r} ({c} day(s))" for n, c in worst)
+              + " — the last row for a (brigadir, date) is the one imported")
+
+    return (downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns,
+            cat_names, sum(resubmitted.values()))
 
 
 def read_cell_perenaladka(sheet_id: str, manager_names: set[str]):

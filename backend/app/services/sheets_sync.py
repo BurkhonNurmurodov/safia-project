@@ -60,7 +60,8 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
     # endpoints resolve those spellings back to the canonical Manager.name.
     manager_names = set(sheet_alias_map(db, (m.name for m in managers)).keys())
 
-    dt_total, dt_by_cat, dt_total_ns, dt_by_cat_ns, cat_names = read_downtime_data(sheet_id, manager_names)
+    (dt_total, dt_by_cat, dt_total_ns, dt_by_cat_ns,
+     cat_names, resubmitted) = read_downtime_data(sheet_id, manager_names)
 
     db.query(DowntimeData).delete()
 
@@ -81,7 +82,11 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
             count += 1
 
     db.commit()
-    return {"managers_synced": len(dt_total), "downtime_rows": count, "categories": cat_names}
+    # `resubmitted` = form rows the parser DISCARDED because a later filing for
+    # the same (brigadir, date) replaced them. Reported so a refiled day showing
+    # less waiting than the sheet's rows add up to has a stated reason.
+    return {"managers_synced": len(dt_total), "downtime_rows": count,
+            "categories": cat_names, "resubmitted": resubmitted}
 
 
 def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:

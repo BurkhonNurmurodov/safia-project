@@ -120,9 +120,13 @@ function SheetSourceEditor() {
     }
     if (name === "leaders") return t("admin.refreshDetail.leaders").replace("{n}", data.leader_rows ?? 0);
     if (name === "quality") return t("admin.refreshDetail.quality").replace("{n}", data.quality_rows ?? 0);
+    // A refiled day imports LESS than its rows add up to (the last form wins,
+    // see read_downtime_data) — say so, or the drop looks like lost data.
+    const refiled = data.resubmitted ?? 0;
     return t("admin.refreshDetail.shift")
       .replace("{n}", data.downtime_rows ?? 0)
-      .replace("{m}", data.managers_synced ?? 0);
+      .replace("{m}", data.managers_synced ?? 0)
+      + (refiled ? t("admin.refreshDetail.refiled").replace("{n}", refiled) : "");
   }
 
   /**
