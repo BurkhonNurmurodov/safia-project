@@ -216,7 +216,7 @@ function ShotImg({ id, className, alt = "", onAspect }) {
  * mark. Required and extra are visually distinct, because only extras can be
  * deleted and the strip is where that becomes obvious.
  */
-function Roll({ photos, queued, need, cap, active, onPick, onAdd, t }) {
+function Roll({ photos, queued, need, cap, active, onPick, onCancelRetake, onAdd, t }) {
   // Queued shots hold a slot of their own — a retake keeps the slot it names,
   // an append takes the next free one. Without this a leader who shot three
   // photos with no signal would look at a roll showing none of them, which is
@@ -245,24 +245,42 @@ function Roll({ photos, queued, need, cap, active, onPick, onAdd, t }) {
     <div className="flex items-center gap-2 overflow-x-auto px-3 py-2"
       style={{ scrollbarWidth: "none" }}>
       {slots.map((p, i) => {
+        // The slot under retake shows NO thumbnail. The old photo is still
+        // stored — a required slot is replaced, never emptied — but on screen
+        // it is the shot about to be taken that belongs here, and a green
+        // "done" tick beside the live viewfinder reads as the retake having
+        // already happened. It waits like an empty slot, in brand colour, and
+        // tapping it puts the old photo back.
+        const retaking = !!p && active === i;
         const isQueued = !p && waiting.has(i);
         return (
           <button
             key={i}
             type="button"
-            onClick={() => (p ? onPick(p) : null)}
+            onClick={() => (retaking ? onCancelRetake() : p ? onPick(p) : null)}
             disabled={!p}
-            aria-label={`${t("proof.slot")} ${i + 1}`}
+            aria-label={`${retaking ? t("proof.cancelRetake") : t("proof.slot")} ${i + 1}`}
             className="relative shrink-0 rounded-lg overflow-hidden grid place-items-center transition-colors"
             style={{
               width: 52, height: 52,
-              border: p ? "2px solid #22c55e"
+              border: retaking ? "2px dashed var(--brand)"
+                : p ? "2px solid #22c55e"
                 : isQueued ? "2px solid #eab308"
                 : `2px dashed ${active === i ? "var(--brand)" : "rgba(255,255,255,0.32)"}`,
-              background: "rgba(255,255,255,0.06)",
+              background: retaking ? "rgba(200,151,63,0.16)" : "rgba(255,255,255,0.06)",
             }}
           >
-            {p ? (
+            {retaking ? (
+              <>
+                <span className="text-sm font-bold" style={{ color: "var(--brand)" }}>
+                  {i + 1}
+                </span>
+                <span className="absolute right-0.5 bottom-0.5 rounded-full p-0.5"
+                  style={{ background: "var(--brand)" }}>
+                  <RotateCcw size={9} color="#1a1206" strokeWidth={3} />
+                </span>
+              </>
+            ) : p ? (
               <>
                 <ShotImg id={p.id} className="w-full h-full object-cover" />
                 <span className="absolute right-0.5 bottom-0.5 rounded-full p-0.5"
@@ -874,6 +892,7 @@ export default function ProofCamera() {
             <Roll photos={photos} queued={queued} need={need} cap={cap}
               active={retakeSlot} t={t}
               onPick={(p) => { setViewAR(0); setViewing(p); setMode("slot"); }}
+              onCancelRetake={() => setRetakeSlot(null)}
               onAdd={() => { setRetakeSlot(null); toast.info(t("proof.addHint")); }} />
             <div className="grid grid-cols-3 items-center px-4 pb-3 pt-1">
               <button type="button" onClick={() => setFacing((f) => (f === "user" ? "environment" : "user"))}
