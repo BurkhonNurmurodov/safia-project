@@ -11,7 +11,13 @@ const api = axios.create({
     for (const [key, value] of Object.entries(params)) {
       if (Array.isArray(value)) {
         value.forEach((v) => sp.append(key, v));
-      } else if (value !== null && value !== undefined) {
+      } else if (value !== null && value !== undefined && value !== "") {
+        // An empty string is a CLEARED filter, not a value. Sending `?shift=`
+        // makes FastAPI answer 422 ("Input should be a valid integer") on every
+        // typed Optional query param — a validation error nobody asked for, on
+        // a request that meant "no narrowing". Dropped exactly like
+        // null/undefined: a missing param and an empty one already read the
+        // same on every endpoint here.
         sp.append(key, value);
       }
     }
@@ -83,12 +89,56 @@ function isDeadWebSession(response, config) {
   return !String(config?.url || "").startsWith("/api/auth/web/");
 }
 
+// FastAPI answers a failed validation with `detail` as a LIST of Pydantic error
+// objects ({type, loc, msg, input}) — not the string every other error carries.
+// Roughly eighty call sites do `e?.response?.data?.detail || t("failed")` and
+// put the result straight into JSX, so ONE 422 renders an object as a React
+// child: "Minified React error #31", and the whole app drops into the
+// ErrorBoundary's "Nimadir xato ketdi" screen instead of showing why the save
+// failed. Flattening it HERE, at the one place every response passes through,
+// makes all of those call sites correct without touching any of them — and a
+// caller that genuinely wants the structure still has `data.detail_raw`.
+const fieldOf = (loc) =>
+  (Array.isArray(loc) ? loc : [])
+    // "body"/"query"/"path" name where the value came from and array indices
+    // name a position — neither is a field the operator can act on.
+    .filter((p) => !["body", "query", "path", "header", "cookie"].includes(p) && typeof p !== "number")
+    .join(".");
+
+export function detailToText(detail) {
+  if (detail == null || typeof detail === "string") return detail;
+  const items = Array.isArray(detail) ? detail : [detail];
+  const parts = items
+    .map((item) => {
+      if (item == null) return "";
+      if (typeof item !== "object") return String(item);
+      const msg = item.msg || item.message || item.detail;
+      if (!msg || typeof msg !== "string") {
+        try { return JSON.stringify(item); } catch { return String(item); }
+      }
+      const field = fieldOf(item.loc);
+      return field ? `${field}: ${msg}` : msg;
+    })
+    .filter(Boolean);
+  if (parts.length) return parts.join("; ");
+  try { return JSON.stringify(detail); } catch { return String(detail); }
+}
+
+function normalizeDetail(response) {
+  const data = response?.data;
+  if (!data || typeof data !== "object") return;
+  if (data.detail == null || typeof data.detail === "string") return;
+  data.detail_raw = data.detail;
+  data.detail = detailToText(data.detail);
+}
+
 api.interceptors.response.use(
   (response) =>
     isWebShieldResponse(response)
       ? retryAfterWebShield(response.config, response)
       : response,
   (error) => {
+    normalizeDetail(error.response);
     if (isWebShieldResponse(error.response)) {
       return retryAfterWebShield(error.config, error.response);
     }
