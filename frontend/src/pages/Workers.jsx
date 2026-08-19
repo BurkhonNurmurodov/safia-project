@@ -818,14 +818,14 @@ export default function Workers() {
               drive both charts — role set adds/removes the non-zagruzka roles,
               measure swaps the roster numbers for the ones who turned up. */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-            <ChartCard icon={PieChart} title={t("workers.roleShare")} info={t("workers.info.composition")}
+            <ChartCard icon={PieChart} title={t("workers.roleShare")} info={`${t("workers.info.composition")} ${t("workers.info.original")}`}
               right={<ModeSwitches {...switchProps} />}>
               {isLoading ? <SkeletonChart className="h-72" />
                 : roleTotals.some((n) => n > 0) ? <ReactApexChart key={modeKey} type="donut" series={roleTotals} options={donutOptions} height={330} />
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
             </ChartCard>
 
-            <ChartCard icon={TrendingUp} title={t("workers.attendanceTrend")} info={t("workers.info.trend")}
+            <ChartCard icon={TrendingUp} title={t("workers.attendanceTrend")} info={`${t("workers.info.trend")} ${t("workers.info.original")}`}
               right={<ModeSwitches {...switchProps} />}>
               {!trend ? <SkeletonChart className="h-72" />
                 : trend?.dates?.length ? (
@@ -845,7 +845,7 @@ export default function Workers() {
           </div>
 
           {/* Workforce treemap — full width, big & readable (one block per brigadir) */}
-          <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={t("workers.info.treemap")} className="mb-6"
+          <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={`${t("workers.info.treemap")} ${t("workers.info.original")}`} className="mb-6"
             right={<ModeSwitches {...switchProps} />}>
             {isLoading ? <SkeletonChart className="h-96" />
               : treePoints.length ? <ReactApexChart key={modeKey} type="treemap" series={treemapSeries} options={treemapOptions} height={560} />
@@ -853,14 +853,14 @@ export default function Workers() {
           </ChartCard>
 
           {/* Явка % — plan attainment (present ÷ штат) per brigadir, traffic-light (full width) */}
-          <ChartCard icon={BarChart3} title={t("workers.rosterVsPresent")} info={t("workers.info.rosterVsPresent")} className="mb-6">
+          <ChartCard icon={BarChart3} title={t("workers.rosterVsPresent")} info={`${t("workers.info.rosterVsPresent")} ${t("workers.info.original")}`} className="mb-6">
             {isLoading ? <SkeletonChart className="h-72" />
               : rvpRows.length ? <ReactApexChart type="bar" series={rvpSeries} options={rvpOptions} height={rvpH} />
               : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noOfficialMsg")} />}
           </ChartCard>
 
           {/* Attendance heatmap (full width) — same component as the fleet heatmap */}
-          <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")} className="mb-6"
+          <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={`${t("workers.info.heatmap")} ${t("workers.info.original")}`} className="mb-6"
             right={<ScopeSwitch scope={scope} setScope={setScope} t={t} />}>
             {isLoading ? <SkeletonChart className="h-72" />
               : heatManagers.length && heatDates.length

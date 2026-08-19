@@ -112,6 +112,47 @@ no correct way to render that.
   the register, tab order, the ONE global default tab, the «All» tab switch, and
   supervisor assignment.
 
+## Attendance charts read the ORIGINAL brigadir
+
+`/workers` answers ONE question — *of the people on this brigadir's own list,
+how many turned up* — so an approved people-exchange must not move the answer.
+It does, three ways: a → supervisor move reassigns the row to the receiving
+unit, a → task move zeroes the day (clock «X», hours 0) so every «came» filter
+reads a no-show, and a worker who cleared `MIN_MOVED_ZAGRUZKA_HOURS` on neither
+side of a transfer-time split loses their NAME off the row and vanishes from
+both rosters. All three are right for the загрузка — the borrower really did
+have those hands — and wrong here: exchanges are decided by supervisors and
+admins after the fact, so scoring the brigadir on them makes attendance a
+record of other people's paperwork.
+
+- `app/services/exchange_rewind.py` is THE definition. `original_rows(db, from,
+  to)` replays approved `people_exchange` documents backwards in memory —
+  `old_manager_id` per employee, plus the full `snapshot` the two hours-touching
+  paths already store — and returns `(names, rows)`. **Nothing is written**, and
+  nothing outside these charts reads it: the Staff page, the загрузка, the
+  exports and every KPI still show where a worker actually spent the day. Only
+  `verifix_code` is left alone (no chart here splits by cell).
+- **It is a NAME PARTITION, not a patch.** The caller excludes exactly `names`
+  from its SQL (`ex_only`) and counts `rows` in Python; the two sets are
+  disjoint, so `COUNT(DISTINCT worker_name)` totals merge by plain addition with
+  nothing double-counted. Adding count-level deltas to the SQL instead would
+  double a worker who holds two rows in a day. A name that also belongs to
+  someone the exchange never touched — a namesake, a day outside the document —
+  is passed through unchanged, which is what makes the partition safe.
+- `_original_scoped()` in `routers/workers.py` cuts those rows to the units and
+  days the SQL sees, **after** the rewind — a worker lent across shifts or plants
+  belongs to the one they clocked in on, so filtering on where the exchange left
+  them would drop precisely the rows this exists to recover. `_py_came` /
+  `_py_on_leave` / `_py_known_title` are exact twins of the SQL predicates
+  beside them; classify the exchanged half by one rule and everyone else by
+  another and the two halves stop adding up.
+- Both `/api/workers/headcount` and `/api/workers/trend` are on this basis, so
+  the whole page reads one way — heatmap, donut, treemap, trend and the
+  per-brigadir table. The charts say so (`workers.info.original`, appended to
+  the five info tooltips). `role_change` documents are deliberately NOT rewound:
+  they change a job title, i.e. which role column a present worker lands in,
+  never whether they came.
+
 ## Automatic proof verification (shift 1, from 13 Aug 2026)
 
 Leader-checklist proof photos are reviewed by Gemini. Since **2026-08-13** that

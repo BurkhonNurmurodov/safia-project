@@ -85,6 +85,33 @@ def _py_on_leave(hours, clock) -> bool:
             and str(clock or "").strip().startswith(LEAVE_MARKER))
 
 
+def _original_scoped(db: Session, date_from: date, date_to: date,
+                     shift: Optional[int], scoped, confirmed):
+    """The rewound rows (services/exchange_rewind) cut down to exactly the units
+    and days the SQL aggregations see, plus a `{manager_id: (name, shift)}` map
+    of the un-archived units.
+
+    The cut runs AFTER the rewind, never before it: a worker lent across shifts
+    or plants belongs to the one they clocked in on, so filtering on where the
+    exchange left them would drop precisely the rows this exists to recover."""
+    ex_names, ex_rows = original_rows(db, date_from, date_to)
+    if not ex_rows:
+        return ex_names, [], {}
+    meta = {mid: (nm, sft) for mid, nm, sft in db.query(
+        Manager.id, Manager.name, Manager.shift
+    ).filter(Manager.archived.is_(False)).all()}
+    scoped_set = set(scoped) if scoped is not None else None
+    keep = [
+        r for r in ex_rows
+        if r.manager_id in meta
+        and r.worker_name not in ("nan", "NaN", "")
+        and (not shift or meta[r.manager_id][1] == shift)
+        and (scoped_set is None or r.manager_id in scoped_set)
+        and (r.manager_id, r.date) in confirmed
+    ]
+    return ex_names, keep, meta
+
+
 def normalize_role(job_title: str) -> str:
     if not job_title or job_title in ("nan", "NaN", ""):
         return "Other"
@@ -135,61 +162,45 @@ def get_headcount(
     # disjoint name sets, so the COUNT(DISTINCT) totals merge by plain addition
     # with nothing double-counted. Nothing is written: the attendance record
     # itself still shows where each worker actually spent the day.
-    ex_names, ex_rows = original_rows(db, date_from, date_to)
+    ex_names, ex_rows, meta = _original_scoped(
+        db, date_from, date_to, shift, scoped, confirmed)
     ex_only = [Attendance.worker_name.notin_(list(ex_names))] if ex_names else []
 
     # Name sets, not counters: every SQL total below is a COUNT(DISTINCT
     # worker_name) and one worker can hold two rows (two job titles) in a day.
-    meta:       dict[int, tuple] = {}   # mgr → (name, shift), un-archived only
     ex_pair:    dict = {}               # mgr → date → bucket → {names}
     ex_roleday: dict = {}               # mgr → date → role → {"roster","came"} → {names}
     ex_period:  dict = {}               # mgr → role → {names present ≥ once}
     ex_all:     dict = {}               # mgr → {names}, came or not
     ex_hc:      dict = {}               # mgr → date → {names} matching CALC_ROWS_FILTER
-    if ex_rows:
-        meta = {mid: (nm, sft) for mid, nm, sft in db.query(
-            Manager.id, Manager.name, Manager.shift
-        ).filter(Manager.archived.is_(False)).all()}
-        # The same gates the queries below apply, but on the ORIGINAL unit — a
-        # worker lent across shifts belongs to the shift they came in on, so the
-        # filter has to run after the rewind, never before it.
-        scoped_set = set(scoped) if scoped is not None else None
-        for r in ex_rows:
-            if r.manager_id not in meta or r.worker_name in ("nan", "NaN", ""):
-                continue
-            if shift and meta[r.manager_id][1] != shift:
-                continue
-            if scoped_set is not None and r.manager_id not in scoped_set:
-                continue
-            if (r.manager_id, r.date) not in confirmed:
-                continue
-            came  = _py_came(r.hours_worked)
-            leave = _py_on_leave(r.hours_worked, r.clock_in_out)
-            known = _py_known_title(r.job_title)
-            role  = normalize_role(r.job_title or "")
-            day = ex_pair.setdefault(r.manager_id, {}).setdefault(r.date, {
-                k: set() for k in ("roster", "came", "on_leave",
-                                   "z_roster", "z_came", "z_on_leave")})
-            day["roster"].add(r.worker_name)
+    for r in ex_rows:
+        came  = _py_came(r.hours_worked)
+        leave = _py_on_leave(r.hours_worked, r.clock_in_out)
+        known = _py_known_title(r.job_title)
+        role  = normalize_role(r.job_title or "")
+        day = ex_pair.setdefault(r.manager_id, {}).setdefault(r.date, {
+            k: set() for k in ("roster", "came", "on_leave",
+                               "z_roster", "z_came", "z_on_leave")})
+        day["roster"].add(r.worker_name)
+        if came:
+            day["came"].add(r.worker_name)
+        if leave:
+            day["on_leave"].add(r.worker_name)
+        if known:
+            day["z_roster"].add(r.worker_name)
             if came:
-                day["came"].add(r.worker_name)
+                day["z_came"].add(r.worker_name)
             if leave:
-                day["on_leave"].add(r.worker_name)
-            if known:
-                day["z_roster"].add(r.worker_name)
-                if came:
-                    day["z_came"].add(r.worker_name)
-                if leave:
-                    day["z_on_leave"].add(r.worker_name)
-            rd = ex_roleday.setdefault(r.manager_id, {}).setdefault(r.date, {}).setdefault(
-                role, {"roster": set(), "came": set()})
-            rd["roster"].add(r.worker_name)
-            if came:
-                rd["came"].add(r.worker_name)
-                ex_period.setdefault(r.manager_id, {}).setdefault(role, set()).add(r.worker_name)
-            ex_all.setdefault(r.manager_id, set()).add(r.worker_name)
-            if known and came and not r.is_supervisor:
-                ex_hc.setdefault(r.manager_id, {}).setdefault(r.date, set()).add(r.worker_name)
+                day["z_on_leave"].add(r.worker_name)
+        rd = ex_roleday.setdefault(r.manager_id, {}).setdefault(r.date, {}).setdefault(
+            role, {"roster": set(), "came": set()})
+        rd["roster"].add(r.worker_name)
+        if came:
+            rd["came"].add(r.worker_name)
+            ex_period.setdefault(r.manager_id, {}).setdefault(role, set()).add(r.worker_name)
+        ex_all.setdefault(r.manager_id, set()).add(r.worker_name)
+        if known and came and not r.is_supervisor:
+            ex_hc.setdefault(r.manager_id, {}).setdefault(r.date, set()).add(r.worker_name)
 
     q = (
         db.query(
@@ -502,6 +513,15 @@ def get_role_trend(
     if not confirmed:
         return empty
 
+    # Same original-brigadir basis as the heatmap — see get_headcount. The trend
+    # sums the whole scope, so an exchange BETWEEN two units in view is a no-op
+    # here; what it recovers is the → task days that read as no-shows, the
+    # blanked split workers who left the roster entirely, and the people lent to
+    # a unit the current filters exclude.
+    ex_names, ex_rows, _ = _original_scoped(
+        db, date_from, date_to, shift, scoped, confirmed)
+    ex_only = [Attendance.worker_name.notin_(list(ex_names))] if ex_names else []
+
     q = (
         db.query(
             Attendance.date,
@@ -526,8 +546,23 @@ def get_role_trend(
     if scoped is not None:
         q = q.filter(Attendance.manager_id.in_(scoped))
 
+    q = q.filter(*ex_only)
     q = q.group_by(Attendance.date, Attendance.job_title).order_by(Attendance.date)
     rows = q.all()
+
+    # The exchanged names, counted in Python and appended in the SAME shape the
+    # query returns — (day, raw title, on-the-list, came) — so both halves go
+    # through one normalisation below. Keyed on the RAW job title, not the
+    # normalised role, because that is what the GROUP BY above does: two
+    # «Кондитер …» variants are two rows there and must stay two rows here.
+    ex_group: dict = {}
+    for r in ex_rows:
+        slot = ex_group.setdefault((r.date, r.job_title), {"roster": set(), "came": set()})
+        slot["roster"].add(r.worker_name)
+        if _py_came(r.hours_worked):
+            slot["came"].add(r.worker_name)
+    rows = list(rows) + [(d, jt, len(v["roster"]), len(v["came"]))
+                         for (d, jt), v in ex_group.items()]
 
     trend: dict[str, dict[str, int]] = {}          # came  — who turned up
     roster: dict[str, dict[str, int]] = {}         # on the list, came or not
