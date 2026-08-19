@@ -13,6 +13,7 @@ import UpdatePrompt from "./UpdatePrompt";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
+import { ScopedErrorBoundary } from "../ui/ErrorBoundary";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -579,7 +580,14 @@ export default function Layout({ children, title }) {
                 app ends. */}
             <div className="page-enter mx-auto w-full"
               style={{ maxWidth: "var(--content-max)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}>
-              {children}
+              {/* The innermost boundary, and the one that does the most work:
+                  a table, chart or modal that throws costs the CONTENT column
+                  and nothing else — the sidebar, the bell and the profile menu
+                  stay up, so the user is never stranded on a dead-end screen
+                  with a reload button as their only way out. */}
+              <ScopedErrorBoundary inline>
+                {children}
+              </ScopedErrorBoundary>
             </div>
           </main>
         </div>

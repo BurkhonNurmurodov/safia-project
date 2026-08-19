@@ -108,7 +108,7 @@ const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
 const Profile = lazyWithReload(() => import("./pages/Profile"));
 const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 import PageLoader from "./components/ui/PageLoader";
-import ErrorBoundary from "./components/ui/ErrorBoundary";
+import ErrorBoundary, { ScopedErrorBoundary } from "./components/ui/ErrorBoundary";
 import ErrorScreen from "./components/ui/ErrorScreen";
 import {
   ArrowUpCircle, SmartphoneNfc, UserPlus, Clock, UserX, WifiOff, AlertTriangle, Lock, ChevronRight,
@@ -405,6 +405,15 @@ function AppWithLang() {
           <DocumentTitle />
           <LogoutOverlay />
           <FindInPage />
+          {/* Scoped ABOVE the routes and BELOW the shell: a page that throws
+              is caught here, keeps the session alive, and clears itself the
+              moment the user navigates somewhere else — no reload, nothing
+              re-fetched. The boundary in App() below is the last resort for a
+              provider blowing up, which is the only failure this one cannot
+              reach. Outside Suspense on purpose, so a lazy chunk that rejects
+              past lazyWithReload's own recovery still lands on the card
+              instead of on a blank screen. */}
+          <ScopedErrorBoundary>
           <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* Registration is a Telegram flow — it needs the bot to sign the
@@ -487,6 +496,7 @@ function AppWithLang() {
             <Route path="*" element={<AuthGate><NotFound /></AuthGate>} />
           </Routes>
           </Suspense>
+          </ScopedErrorBoundary>
          </FactoryProvider>
         </FilterProvider>
       </BrowserRouter>

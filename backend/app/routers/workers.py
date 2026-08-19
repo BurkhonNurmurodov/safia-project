@@ -9,6 +9,7 @@ from app.permissions import require_page
 from app.models import Attendance, HeadcountData, HrDocument, Manager
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
+from app.services.exchange_rewind import original_rows
 from app.services.name_map import sheet_alias_map
 
 router = APIRouter(prefix="/api", tags=["workers"])
@@ -60,6 +61,30 @@ _ON_LEAVE = and_(
 ZAGRUZKA_ROLES = ("Konditer", "Fasovshik", "Zagatovitel", "Other")
 
 
+# ── Python twins of the four filters above ──────────────────────────────────
+# The charts on this page read the ORIGINAL brigadir (services/exchange_rewind),
+# and the rows that service rewinds are counted in Python instead of SQL. These
+# must answer exactly as their SQL originals — classify an exchanged worker by
+# one rule and everyone else by another and the two halves stop adding up.
+def _py_known_title(job_title) -> bool:
+    """_KNOWN_TITLES. Deliberately unstripped, like the SQL."""
+    if job_title is None:
+        return True
+    return (job_title.startswith(KONDITER_PREFIX)
+            or job_title in (FASOVSHIK, ZAGATOVITEL, "", "nan", "NaN"))
+
+
+def _py_came(hours) -> bool:
+    """_CAME."""
+    return hours is not None and hours > 0
+
+
+def _py_on_leave(hours, clock) -> bool:
+    """_ON_LEAVE."""
+    return ((hours is None or hours <= 0)
+            and str(clock or "").strip().startswith(LEAVE_MARKER))
+
+
 def normalize_role(job_title: str) -> str:
     if not job_title or job_title in ("nan", "NaN", ""):
         return "Other"
@@ -99,6 +124,73 @@ def get_headcount(
     if not confirmed:
         return []
 
+    # ── Original-brigadir basis ───────────────────────────────────────────────
+    # Every number on this page answers "of the people on THIS brigadir's list,
+    # how many turned up", so an approved exchange must not move the answer: a
+    # lent-out worker still counts on the unit they started the day on, and a
+    # → task move that zeroed their hours still reads as someone who came in.
+    # services/exchange_rewind replays those documents backwards in memory and
+    # hands back the affected NAMES plus their pre-exchange rows. Those names are
+    # excluded from every aggregation below and re-counted in Python — two
+    # disjoint name sets, so the COUNT(DISTINCT) totals merge by plain addition
+    # with nothing double-counted. Nothing is written: the attendance record
+    # itself still shows where each worker actually spent the day.
+    ex_names, ex_rows = original_rows(db, date_from, date_to)
+    ex_only = [Attendance.worker_name.notin_(list(ex_names))] if ex_names else []
+
+    # Name sets, not counters: every SQL total below is a COUNT(DISTINCT
+    # worker_name) and one worker can hold two rows (two job titles) in a day.
+    meta:       dict[int, tuple] = {}   # mgr → (name, shift), un-archived only
+    ex_pair:    dict = {}               # mgr → date → bucket → {names}
+    ex_roleday: dict = {}               # mgr → date → role → {"roster","came"} → {names}
+    ex_period:  dict = {}               # mgr → role → {names present ≥ once}
+    ex_all:     dict = {}               # mgr → {names}, came or not
+    ex_hc:      dict = {}               # mgr → date → {names} matching CALC_ROWS_FILTER
+    if ex_rows:
+        meta = {mid: (nm, sft) for mid, nm, sft in db.query(
+            Manager.id, Manager.name, Manager.shift
+        ).filter(Manager.archived.is_(False)).all()}
+        # The same gates the queries below apply, but on the ORIGINAL unit — a
+        # worker lent across shifts belongs to the shift they came in on, so the
+        # filter has to run after the rewind, never before it.
+        scoped_set = set(scoped) if scoped is not None else None
+        for r in ex_rows:
+            if r.manager_id not in meta or r.worker_name in ("nan", "NaN", ""):
+                continue
+            if shift and meta[r.manager_id][1] != shift:
+                continue
+            if scoped_set is not None and r.manager_id not in scoped_set:
+                continue
+            if (r.manager_id, r.date) not in confirmed:
+                continue
+            came  = _py_came(r.hours_worked)
+            leave = _py_on_leave(r.hours_worked, r.clock_in_out)
+            known = _py_known_title(r.job_title)
+            role  = normalize_role(r.job_title or "")
+            day = ex_pair.setdefault(r.manager_id, {}).setdefault(r.date, {
+                k: set() for k in ("roster", "came", "on_leave",
+                                   "z_roster", "z_came", "z_on_leave")})
+            day["roster"].add(r.worker_name)
+            if came:
+                day["came"].add(r.worker_name)
+            if leave:
+                day["on_leave"].add(r.worker_name)
+            if known:
+                day["z_roster"].add(r.worker_name)
+                if came:
+                    day["z_came"].add(r.worker_name)
+                if leave:
+                    day["z_on_leave"].add(r.worker_name)
+            rd = ex_roleday.setdefault(r.manager_id, {}).setdefault(r.date, {}).setdefault(
+                role, {"roster": set(), "came": set()})
+            rd["roster"].add(r.worker_name)
+            if came:
+                rd["came"].add(r.worker_name)
+                ex_period.setdefault(r.manager_id, {}).setdefault(role, set()).add(r.worker_name)
+            ex_all.setdefault(r.manager_id, set()).add(r.worker_name)
+            if known and came and not r.is_supervisor:
+                ex_hc.setdefault(r.manager_id, {}).setdefault(r.date, set()).add(r.worker_name)
+
     q = (
         db.query(
             Manager.id,
@@ -121,6 +213,7 @@ def get_headcount(
     if scoped is not None:
         q = q.filter(Manager.id.in_(scoped))
 
+    q = q.filter(*ex_only)
     q = q.group_by(Manager.id, Manager.name, Manager.shift, Attendance.job_title)
     rows = q.all()
 
@@ -133,6 +226,19 @@ def get_headcount(
         agg[mgr_id]["by_role"][role] = agg[mgr_id]["by_role"].get(role, 0) + cnt
         if role in ZAGRUZKA_ROLES:
             agg[mgr_id]["total"] += cnt
+    # …and the exchanged names, on the unit they started the day on. A unit that
+    # lent out everyone who came would not be in `agg` at all, so the entry is
+    # created rather than looked up — otherwise it silently drops off the page.
+    for mgr_id, roles in ex_period.items():
+        if mgr_id not in agg:
+            agg[mgr_id] = {"manager_id": mgr_id, "name": meta[mgr_id][0],
+                           "shift": meta[mgr_id][1], "total": 0,
+                           "by_role": {"Konditer": 0, "Fasovshik": 0,
+                                       "Zagatovitel": 0, "Other": 0}}
+        for role, names in roles.items():
+            agg[mgr_id]["by_role"][role] = agg[mgr_id]["by_role"].get(role, 0) + len(names)
+            if role in ZAGRUZKA_ROLES:
+                agg[mgr_id]["total"] += len(names)
 
     # Full-roster count per manager — every distinct worker who appears in the
     # verifix data for the period, any job title, including no-shows (hours 0).
@@ -149,11 +255,14 @@ def get_headcount(
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
         .filter(Manager.archived.is_(False))
     )
+    all_q = all_q.filter(*ex_only)
     if shift:
         all_q = all_q.filter(Manager.shift == shift)
     if manager_id:
         all_q = all_q.filter(Attendance.manager_id.in_(manager_id))
     total_all = dict(all_q.group_by(Attendance.manager_id).all())
+    for mgr_id, names in ex_all.items():
+        total_all[mgr_id] = total_all.get(mgr_id, 0) + len(names)
 
     # Per-day verifix HC (distinct workers present per confirmed day) — the number
     # official_hc is actually comparable to. `total` above counts unique workers
@@ -172,6 +281,7 @@ def get_headcount(
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
         .filter(Manager.archived.is_(False))
     )
+    daily_q = daily_q.filter(*ex_only)
     if shift:
         daily_q = daily_q.filter(Manager.shift == shift)
     if manager_id:
@@ -179,6 +289,10 @@ def get_headcount(
     daily_hc: dict[int, dict[date, int]] = {}
     for mgr_id, d, hc in daily_q.group_by(Attendance.manager_id, Attendance.date).all():
         daily_hc.setdefault(mgr_id, {})[d] = hc
+    for mgr_id, days in ex_hc.items():
+        slot = daily_hc.setdefault(mgr_id, {})
+        for d, names in days.items():
+            slot[d] = slot.get(d, 0) + len(names)
 
     # Roster vs came, per (manager, day) — THE attendance pair: how many people
     # were on the supervisor's list that day and how many of them turned up.
@@ -221,6 +335,7 @@ def get_headcount(
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
         .filter(Manager.archived.is_(False))
     )
+    roster_q = roster_q.filter(*ex_only)
     if shift:
         roster_q = roster_q.filter(Manager.shift == shift)
     if scoped is not None:
@@ -234,6 +349,19 @@ def get_headcount(
             "z_roster": z_r, "z_came": z_c,
             "z_absent": z_r - z_c, "z_on_leave": z_leave,
         }
+    # The exchanged names fold into the SAME cell — a day whose whole list was
+    # lent out has no SQL row left, so the cell is created when missing. Both
+    # «absent» figures are re-derived rather than added: they are differences,
+    # and adding two of them would double the gap.
+    for mgr_id, days in ex_pair.items():
+        for d, buckets in days.items():
+            cell = roster.setdefault(mgr_id, {}).setdefault(d, {
+                "roster": 0, "came": 0, "absent": 0, "on_leave": 0,
+                "z_roster": 0, "z_came": 0, "z_absent": 0, "z_on_leave": 0})
+            for k in ("roster", "came", "on_leave", "z_roster", "z_came", "z_on_leave"):
+                cell[k] += len(buckets[k])
+            cell["absent"]   = cell["roster"]   - cell["came"]
+            cell["z_absent"] = cell["z_roster"] - cell["z_came"]
 
     # The same roster/came pair, split by job title — the per-role, per-day
     # numbers behind the role donut, the trend's roster bands and the table's
@@ -256,6 +384,7 @@ def get_headcount(
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
         .filter(Manager.archived.is_(False))
     )
+    role_q = role_q.filter(*ex_only)
     if shift:
         role_q = role_q.filter(Manager.shift == shift)
     if scoped is not None:
@@ -270,6 +399,13 @@ def get_headcount(
         slot = role_sums.setdefault(mgr_id, {}).setdefault(role, {"roster": 0, "came": 0})
         slot["roster"] += r_cnt
         slot["came"]   += came_cnt
+    for mgr_id, days in ex_roleday.items():
+        for _d, roles in days.items():
+            for role, names in roles.items():
+                slot = role_sums.setdefault(mgr_id, {}).setdefault(
+                    role, {"roster": 0, "came": 0})
+                slot["roster"] += len(names["roster"])
+                slot["came"]   += len(names["came"])
 
     # Official HC per (manager name, day) — HeadcountData spells brigadirs in
     # either alphabet, so accept every known spelling and resolve rows back to
