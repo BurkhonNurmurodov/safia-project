@@ -1235,6 +1235,24 @@ class LeaderTaskDef(Base):
     # prove. NULL at the two override levels below = inherit; True everywhere is
     # what the platform did before this existed.
     time_check   = Column(Boolean, nullable=False, default=True)
+    # How many days AFTER the report day the proof's date may also be. 0 — only
+    # the report day itself, which is what every task did before this existed
+    # and what every task still resolves to unless an admin says otherwise.
+    #
+    # It exists because some proofs are dated by what they are ABOUT, not by
+    # when they were made: a work schedule filed on the 18th is the schedule
+    # FOR the 19th, so its only visible date is tomorrow's (T11, user
+    # 2026-08-19). Under the plain rule that is `date_mismatch` on every honest
+    # filing, and the only escapes were exempting the date entirely or giving
+    # the task a fake overnight window — one throws the check away, the other
+    # hides it in a field that means something else.
+    #
+    # Deliberately NOT expressible in `criteria`: `leader_ai._prompt` never
+    # tells the model which day the report is for, so a written "+1 kun" rule
+    # is a rule nothing can evaluate. The day question is the backend's, and
+    # this is where its answer widens. NULL at the two override levels below =
+    # inherit; 0 here is the chain's floor.
+    date_plus    = Column(Integer, nullable=False, default=0)
     # HOW the proof is collected. "screenshot" — the leader sends images to the
     # bot chat, which is every task's behaviour and the platform's only mode
     # before 2026-08-19. "camera" — the bot offers a mini-app button instead and
@@ -1285,6 +1303,10 @@ class LeaderTaskSetting(Base):
     # Per-supervisor "must the CLOCK be proven, or is the day enough". NULL =
     # inherit; False = date-only for this unit (see LeaderTaskDef.time_check).
     time_check   = Column(Boolean, nullable=True)
+    # Per-supervisor tolerance: how many days after the report day the proof's
+    # date may also be. NULL = inherit the global answer (see
+    # LeaderTaskDef.date_plus).
+    date_plus    = Column(Integer, nullable=True)
     # Per-supervisor proof collection mode. NULL = inherit the global one. This
     # is the level the camera pilot is switched on at (see
     # LeaderTaskDef.proof_kind).
@@ -1325,6 +1347,9 @@ class LeaderTaskLeaderSetting(Base):
     # Per-leader "must the CLOCK be proven, or is the day enough". NULL =
     # inherit (see LeaderTaskDef.time_check for the three-way rule).
     time_check   = Column(Boolean, nullable=True)
+    # Per-leader tolerance in days after the report day. NULL = inherit the
+    # supervisor's effective answer (see LeaderTaskDef.date_plus).
+    date_plus    = Column(Integer, nullable=True)
     # Per-leader proof collection mode. NULL = inherit the supervisor's
     # effective one (see LeaderTaskDef.proof_kind).
     proof_kind   = Column(String(12), nullable=True)

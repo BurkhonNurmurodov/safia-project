@@ -80,6 +80,7 @@ try:
         add_leader_task_setting_names, add_leader_task_criteria,
         add_leader_task_windows, add_leader_task_deadlines,
         add_leader_task_date_check, add_leader_task_time_check,
+        add_leader_task_date_plus,
         add_leader_task_proof_kind, reset_leader_camera_pilot,
         add_leader_ai_clocks, sync_leader_ai_dates,
         add_leader_ai_resolution,
@@ -136,6 +137,7 @@ try:
     add_leader_task_deadlines()
     add_leader_task_date_check()
     add_leader_task_time_check()
+    add_leader_task_date_plus()
     add_leader_task_proof_kind()
     # After the column exists — it rewrites values in it.
     reset_leader_camera_pilot()

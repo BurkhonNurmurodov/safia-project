@@ -848,6 +848,40 @@ def add_leader_task_time_check() -> None:
         db.close()
 
 
+def add_leader_task_date_plus() -> None:
+    """2026-08-19: a task may accept a proof dated up to N days AFTER the report
+    day — 0 (only the report day) everywhere until an admin says otherwise.
+
+    Some proofs are dated by what they are ABOUT rather than by when they were
+    made: a work schedule filed on the 18th is the schedule FOR the 19th. Under
+    the plain rule every honest filing of one is `date_mismatch`, and the only
+    two escapes were exempting the date entirely or giving the task a fake
+    overnight window — one throws the check away, the other hides it in a field
+    that means something else.
+
+    Idempotent, and shaped exactly like the date-check migration above: nullable
+    columns everywhere (all `ADD COLUMN IF NOT EXISTS` can do without rewriting
+    the table), then the GLOBAL level filled in, because that level is the
+    chain's floor and a NULL there would mean "inherit" with nothing left to
+    inherit from. `leader_ai.resolve_date_plus` reads NULL as 0 regardless, so a
+    box that never ran this judges dates exactly as before.
+    """
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            db.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS date_plus INTEGER"))
+        db.execute(text(
+            "UPDATE leader_task_defs SET date_plus = 0 WHERE date_plus IS NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task date-plus migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_task_proof_kind() -> None:
     """2026-08-19: a task declares HOW its proof is collected — "screenshot"
     (sent to the bot chat, what every task has always done) or "camera" (taken

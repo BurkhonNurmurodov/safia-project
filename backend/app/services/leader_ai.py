@@ -390,19 +390,55 @@ def resolve_time_check(*levels) -> bool:
     return True
 
 
+MAX_DATE_PLUS = 7          # a week; past that the report day means nothing
+
+
+def resolve_date_plus(*levels) -> int:
+    """How many days AFTER the report day this task's proof may also be dated.
+    The chain's rows narrowest first, same order and same NULL-inherit rule as
+    its two neighbours; NULL everywhere is 0, i.e. only the report day — what
+    every task did before this existed.
+
+    It answers a question the other two cannot: `date_check` decides whether the
+    day is asked about and `time_check` whether the hour is, but both then
+    compare against exactly one day. A proof dated by what it is ABOUT rather
+    than by when it was made — a work schedule filed the day before it applies —
+    fails that comparison on every honest filing, and the only escapes were
+    exempting the date entirely or writing a fake overnight window, which is the
+    same relaxation hidden inside a field that means something else.
+
+    Cannot use `resolve_deadline`'s "first non-blank" test either, for the twin
+    of `resolve_date_check`'s reason: the value at its most meaningful is 0, and
+    `if v` would skip an override that deliberately says "only the report day".
+    Clamped, because the number widens what passes and arrives from an endpoint
+    reachable without the UI.
+    """
+    for row in levels:
+        if row is None:
+            continue
+        v = getattr(row, "date_plus", None)
+        if v is not None:
+            try:
+                return max(0, min(MAX_DATE_PLUS, int(v)))
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
 def date_rule_for(db: Session, task_id: int, manager_id: int | None,
                   leader_id: int | None,
-                  shift: int | None) -> tuple[tuple[str, str], bool, bool]:
-    """The whole date rule for one row — (window, checked, timed) — in ONE chain
-    walk, resolved leader → supervisor → global → shift default.
+                  shift: int | None) -> tuple[tuple[str, str], bool, bool, int]:
+    """The whole date rule for one row — (window, checked, timed, plus) — in ONE
+    chain walk, resolved leader → supervisor → global → shift default.
 
-    The three facts always travel together: a window nobody compares against is
-    just a label, a comparison with no window has nothing to compare to, and a
+    The four facts always travel together: a window nobody compares against is
+    just a label, a comparison with no window has nothing to compare to, a
     window shown for a task whose hours are not judged is a rule the reader
-    cannot tell is dead. The per-row form; bulk readers preload the three config
-    tables and call `resolve_window`/`resolve_date_check`/`resolve_time_check`
-    directly (see routers/leader_ai `_hydrate` — this walk costs three queries a
-    row).
+    cannot tell is dead, and a day shown without its tolerance names one day
+    where two or more actually pass. The per-row form; bulk readers preload the
+    three config tables and call `resolve_window`/`resolve_date_check`/
+    `resolve_time_check`/`resolve_date_plus` directly (see routers/leader_ai
+    `_hydrate` — this walk costs three queries a row).
     """
     own = sup = None
     if leader_id:
@@ -414,7 +450,8 @@ def date_rule_for(db: Session, task_id: int, manager_id: int | None,
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
     return (resolve_window(shift, own, sup, td),
             resolve_date_check(own, sup, td),
-            resolve_time_check(own, sup, td))
+            resolve_time_check(own, sup, td),
+            resolve_date_plus(own, sup, td))
 
 
 def overnight(win: tuple[str, str]) -> bool:
@@ -424,7 +461,8 @@ def overnight(win: tuple[str, str]) -> bool:
 
 
 def date_window(date: str, shift: int | None,
-                win: tuple[str, str] | None = None) -> tuple[str, str]:
+                win: tuple[str, str] | None = None,
+                plus: int = 0) -> tuple[str, str]:
     """(from, to) as "YYYY-MM-DD HH:MM" — the window pinned onto a real day.
 
     `win` is the task's effective clock pair; without one the shift default is
@@ -432,15 +470,36 @@ def date_window(date: str, shift: int | None,
     that crosses midnight closes on the NEXT date, so both halves of a night are
     inside it — that is the whole reason the reviewer is shift-aware, since a
     bare calendar-date check flags a correct 02:00 photo every night.
+
+    `plus` (the task's date tolerance) moves the CLOSING date that many days on,
+    so the pair still spans everything that can pass. It is an outline, not the
+    rule: with a tolerance the accepted set is the window repeated on each
+    allowed day, not one continuous stretch — which is why every sentence that
+    prints a tolerated window also prints the day list beside it (`date_days`).
     """
     lo, hi = win or shift_window(shift)
-    if not overnight((lo, hi)):
+    span = max(0, int(plus or 0)) + (1 if overnight((lo, hi)) else 0)
+    if not span:
         return f"{date} {lo}", f"{date} {hi}"
     try:
-        nxt = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        end = (datetime.strptime(str(date)[:10], "%Y-%m-%d")
+               + timedelta(days=span)).strftime("%Y-%m-%d")
     except ValueError:
-        nxt = date
-    return f"{date} {lo}", f"{nxt} {hi}"
+        end = date
+    return f"{date} {lo}", f"{end} {hi}"
+
+
+def date_days(date: str, plus: int = 0) -> list[str]:
+    """The days a proof for `date` may be dated — the report day, then one per
+    day of the task's tolerance. ONE definition, so the judgement
+    (`clock_in_window`), the sentence (`date_prose`) and what the card prints as
+    expected can never name different days."""
+    try:
+        day = datetime.strptime(str(date)[:10], "%Y-%m-%d")
+    except ValueError:
+        return [str(date)[:10]]
+    return [(day + timedelta(days=k)).strftime("%Y-%m-%d")
+            for k in range(max(0, int(plus or 0)) + 1)]
 
 
 def _prompt(*, task: str, note: str, criteria: str,
@@ -2086,7 +2145,7 @@ def parse_clock(raw: str | None) -> list[tuple[int, int, int, int]] | None:
 
 def clock_in_window(clocks: list[dict] | None,
                     date: str, win: tuple[str, str],
-                    *, times: bool = True) -> bool | None:
+                    *, times: bool = True, plus: int = 0) -> bool | None:
     """Are ALL of a report's photo clocks inside the window? None = undecidable
     (no clock was read at all — that is `no_date`, a different answer).
 
@@ -2113,6 +2172,12 @@ def clock_in_window(clocks: list[dict] | None,
     * an entry with no day at all is not a failure, it is silence — it just
       cannot vote. All of them silent ⇒ None, and `date_flags` turns THAT into
       no flag rather than `no_date`.
+
+    `plus` (the task's date tolerance, `resolve_date_plus`) widens WHICH day
+    counts and nothing else: the report day plus that many days after it, each
+    judged by the very same hour rule. 0 — the default everywhere until an admin
+    says otherwise — leaves the two sets exactly the single days this compared
+    before it existed, which is what makes the field free to add.
     """
     if not clocks:
         return None
@@ -2121,22 +2186,28 @@ def clock_in_window(clocks: list[dict] | None,
     except ValueError:
         return None
     lo, hi = win
-    nxt = day + timedelta(days=1)
-    d0, d1 = (day.month, day.day), (nxt.month, nxt.day)
+    span = max(0, int(plus or 0))
+    # The days a proof may carry, and — for an overnight window — the mornings
+    # that belong to them. Sets, not two values: with no tolerance they hold one
+    # day each and this is the comparison it always was.
+    d0s = {((day + timedelta(days=k)).month, (day + timedelta(days=k)).day)
+           for k in range(span + 1)}
+    d1s = {((day + timedelta(days=k + 1)).month, (day + timedelta(days=k + 1)).day)
+           for k in range(span + 1)}
     over = overnight(win)
     if not times:
         days = [(int(c.get("month") or 0), int(c.get("day") or 0)) for c in clocks]
         seen = [d for d in days if 0 not in d]
         if not seen:
             return None          # nothing dated anything — nobody voted
-        return any(d == d0 or (over and d == d1) for d in seen)
+        return any(d in d0s or (over and d in d1s) for d in seen)
     for c in clocks:
         got = (int(c.get("month") or 0), int(c.get("day") or 0))
         clock = hhmm(c.get("time"))
         if not clock or got == (0, 0) or 0 in got:
             return False          # day unconfirmed — cannot be proven in-window
-        ok = (((got == d0 and clock >= lo) or (got == d1 and clock <= hi))
-              if over else (got == d0 and lo <= clock <= hi))
+        ok = (((got in d0s and clock >= lo) or (got in d1s and clock <= hi))
+              if over else (got in d0s and lo <= clock <= hi))
         if not ok:
             return False
     return True
@@ -2144,7 +2215,7 @@ def clock_in_window(clocks: list[dict] | None,
 
 def date_flags(clocks: list[dict] | None, date: str,
                win: tuple[str, str], *, check: bool = True,
-               times: bool = True) -> list[str]:
+               times: bool = True, plus: int = 0) -> list[str]:
     """THE date verdict. Derived, never stored — so it is always the answer for
     the window in force RIGHT NOW, and an admin who edits a window has every
     affected report corrected before the page finishes loading.
@@ -2179,14 +2250,21 @@ def date_flags(clocks: list[dict] | None, date: str,
     clocks, and turning it back off re-derives the strict answer from the same
     data. No Gemini call, no quota, no re-check run.
 
-    Both flags default to True — the old behaviour — deliberately: the three
-    callers (`review_one`, `sync_date_flags`, `date_prose`) all pass them
-    explicitly, and a fourth one added without them should keep judging dates
-    and clocks rather than quietly relax every task on the platform.
+    `plus` — the task's date tolerance — is the fourth input and the only one
+    that widens rather than narrows: the day may also be up to that many days
+    after the report's, for a proof dated by what it is ABOUT (a schedule filed
+    the day before it applies). It composes with both modes above, because it
+    changes WHICH day counts and never whether the question is asked.
+
+    All three keywords default to the old behaviour — checked, timed, no
+    tolerance — deliberately: the three callers (`review_one`, `sync_date_flags`,
+    `date_prose`) all pass them explicitly, and a fourth one added without them
+    should keep judging dates and clocks rather than quietly relax every task on
+    the platform.
     """
     if not check:
         return []
-    ok = clock_in_window(clocks, date, win, times=times)
+    ok = clock_in_window(clocks, date, win, times=times, plus=plus)
     if ok is None:
         return ["no_date"] if times else []
     return [] if ok else ["date_mismatch"]
