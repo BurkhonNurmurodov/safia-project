@@ -479,10 +479,17 @@ SERVER's; the phone never authors it.
   `camera=()`, which denies `getUserMedia` outright — no prompt, no actionable
   error. Microphone and geolocation stay fully denied, and `self` keeps every
   embedder out.
-- **The `/leaders` bot-day merge is no longer shift 2 only** (`leader_bot.MERGE_SHIFT`
-  is now `None`). Camera proofs are collected in the bot by construction, so a
-  merge narrowed to one shift would demand a proof in a mode the platform chose
-  and then display it nowhere.
+- **The `/leaders` bot-day merge gained ONE bounded exception** — `leader_bot.merges()`
+  is now THE rule and both readers (the register, the photo proxy) call it.
+  Shift 2 merges as it always did; a shift-1 unit merges only when it is
+  ENROLLED in camera capture (`camera_units()` — any task on camera at any level
+  of its chain) **and** the day is `MERGE_FROM` (2026-08-19) or later. Camera
+  proofs are collected in the bot by construction, so without this the platform
+  would demand a proof in a mode it chose and then display it nowhere; with the
+  two bounds, a shift-1 unit that never touches the camera reads exactly as
+  before, and enrolling one later cannot resurrect bot days it closed months
+  ago. Widening this to "every bot day" was tried first and reverted: it
+  silently rewrote the register for units that had nothing to do with the pilot.
 
 Related memory: `leader-camera-proof-pilot`.
 

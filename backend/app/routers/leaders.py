@@ -298,12 +298,13 @@ def get_leaders(
     checklist rows; admins / shift-managers / top-managers see everything — as
     does anyone holding a personal ``page.view.leaders`` grant at "all".
 
-    **Two collection layers.** A (leader, date) with a CLOSED bot day is served
-    from the bot and its sheet row is dropped; every other day comes from the
-    Google Form sheet, which keeps the whole history. The rule is the ROW, not
-    the viewer, so one (leader, date) reads the same to everybody. It used to be
-    narrowed to shift 2 as well — that ended with in-app camera proofs, which
-    are collected in the bot whatever the shift. See services/leader_bot.py.
+    **Two collection layers.** A (leader, date) with a CLOSED bot day that the
+    merge rule carries is served from the bot and its sheet row is dropped;
+    every other day comes from the Google Form sheet, which keeps the whole
+    history. The rule is the ROW, not the viewer, so one (leader, date) reads
+    the same to everybody. It is shift 2 — which files in the bot — plus units
+    enrolled in in-app camera capture, from the day that shipped. See
+    `leader_bot.merges`.
 
     **Wire shape.** Every task ships `photos` (a count), never the URL string
     the source row holds — see `_wire_task`. The modal that needs the links

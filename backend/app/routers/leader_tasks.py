@@ -930,7 +930,7 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
     """Every closed bot day plus what deleting it would take away (task
     answers, proof photos), and the units/leaders that actually filed — so the
     tab's pickers only ever offer values that match something."""
-    days = leader_bot.closed_days(db, shift=None)
+    days = leader_bot.closed_days(db, merged=False)
     profs = {
         p.id: p
         for p in db.query(RoleProfile)

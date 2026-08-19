@@ -78,6 +78,18 @@ const LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"];
 // can still fall back to a comma-joined pair, hence the split.
 const splitResponsible = (s) => (s || "").split(",").map((x) => x.trim()).filter(Boolean);
 
+// Compact person label. Names are stored "Lastname Firstname Patronymic
+// [O'g'li/Qizi]", so the initial comes from the SECOND word (the first name) —
+// never the last, which is a patronymic or the o'g'li/qizi suffix:
+// "Abduganiyev Izzatillo Gaybullo O'g'li" → "I. Abduganiyev". Single-word names
+// are left as-is. Only ever a DISPLAY form — search, sort and every filter list
+// still run on the full name.
+const shortPerson = (full) => {
+  const parts = full.split(/\s+/);
+  if (parts.length < 2) return full;
+  return `${parts[1][0].toUpperCase()}. ${parts[0]}`;
+};
+
 // Bucket key for a row that names nobody (only legacy rows can). It is a real
 // key, not a blank, because a blank is what the aggregator skips — and a row
 // with no holder is a gap somebody has to close, not a row to drop off the
@@ -567,20 +579,6 @@ export default function Concerns() {
     return parts.join(" ");
   };
 
-  // Compact owner label. Names are stored "Lastname Firstname Patronymic
-  // [O'g'li/Qizi]", so the initial comes from the SECOND word (the first
-  // name) — never the last, which is a patronymic or the o'g'li/qizi suffix:
-  // "Abduganiyev Izzatillo Gaybullo O'g'li" → "I. Abduganiyev". Single-word
-  // names are left as-is. The full name still drives search, sort and the
-  // filter list — this only shrinks the table display.
-  const shortOwner = (name) => {
-    const full = tl(name || "").trim();
-    if (!full) return "—";
-    const parts = full.split(/\s+/);
-    if (parts.length < 2) return full;
-    return `${parts[1][0].toUpperCase()}. ${parts[0]}`;
-  };
-
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
   // Period is a concrete date range picked with the same control as Leaders
   // (presets + calendar popover); defaults to the last 7 days.
@@ -722,6 +720,44 @@ export default function Concerns() {
     }).then((r) => r.data),
   });
   const rows = listResp?.data || [];
+
+  // Two different people can claim one short label: the same human is on the
+  // books twice as two separate units ("Suvonov Elshod" and "Suvonov Elshod
+  // OF"), and plain namesakes collide the same way. Both shrink to "E.
+  // Suvonov", and a board printing that name twice cannot be read at all — the
+  // reader cannot tell which unit is behind. So the short form is used only
+  // while it names exactly ONE person: a label claimed by two full names falls
+  // back to the FULL name for everybody holding it. Built over every name the
+  // page can print, so one person reads the same way on the board, in the
+  // table and in the detail modal.
+  const nameLabels = useMemo(() => {
+    const holders = new Map();                     // short label → full names
+    const add = (raw) => {
+      const full = tl(raw || "").trim();
+      if (!full) return;
+      const short = shortPerson(full);
+      const set = holders.get(short) || new Set();
+      set.add(full);
+      holders.set(short, set);
+    };
+    for (const r of rows) {
+      add(r.owner_name); add(r.brigadir_name); add(r.leader_name);
+      add(r.cell_leader_name); add(r.cell_supervisor_name); add(r.top_manager_name);
+      for (const n of splitResponsible(r.responsible_name)) add(n);
+    }
+    const out = new Map();
+    for (const [short, set] of holders) {
+      for (const full of set) out.set(full, set.size > 1 ? full : short);
+    }
+    return out;
+  }, [rows, tl]);
+
+  // Display-only person label — the collision-safe form of `shortPerson`.
+  const shortOwner = (name) => {
+    const full = tl(name || "").trim();
+    if (!full) return "—";
+    return nameLabels.get(full) || shortPerson(full);
+  };
 
   // Manager → shift map for the shift filter (rows only carry the brigadir's
   // manager id). Shares the header-drawer cache so it's effectively free.

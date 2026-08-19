@@ -6,13 +6,19 @@ is served from here whenever its leader CLOSED it in the bot, and from the sheet
 otherwise — the sheet stays as the history of everything filed before the bot
 took over.
 
-The merge used to be shift 2 only (`MERGE_SHIFT = 2`): shift 1 filed on the
-form, so its bot days were hidden to keep that page showing the sheet alone.
-That rule was retired on 2026-08-19, when in-app camera proofs shipped — those
-are collected in the bot by construction, and a proof the platform demanded, in
-the mode the platform chose, that no register anywhere displays is worse than a
-duplicated row. The merge is now about the ACT, not the shift: a leader who
-closed a day in the bot filed it there.
+**Which days merge** is `merges()`, and it is deliberately narrow. Shift 2 files
+in the bot, so it has always merged and still does. Shift 1 files on the Google
+Form, so its bot days stay hidden — with ONE exception added on 2026-08-19 for
+in-app camera proofs: a unit whose config puts any task on the mini-app camera
+collects that task in the bot by construction, and a proof the platform demanded,
+in the mode the platform chose, that no register anywhere displays is worse than
+a duplicated row.
+
+That exception is bounded twice, because it is a pilot and must not silently
+rewrite anybody else's register: only units actually enrolled in camera capture,
+and only days from `MERGE_FROM` on. A shift-1 unit that never touches the camera
+reads exactly as it did before, and enrolling one later cannot resurrect bot days
+it closed months ago.
 
 Only CLOSED days surface. An open day is a leader mid-checklist, not a
 submission — the same rule the dashboard has always applied.
@@ -21,43 +27,89 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     LeaderTaskDay,
+    LeaderTaskDef,
     LeaderTaskEntry,
+    LeaderTaskLeaderSetting,
     LeaderTaskMedia,
     LeaderTaskPhoto,
+    LeaderTaskSetting,
     Manager,
     RoleProfile,
 )
 
-# The shift whose bot submissions replace the sheet row. None = every shift
-# merges, which is what it means today; kept as a name rather than deleted
-# because the merge rule is read in two places and a bare `if False` in each
-# would be the second spelling of one decision.
-MERGE_SHIFT: int | None = None
+# The shift that has always filed in the bot, and whose days therefore replace
+# the sheet row.
+MERGE_SHIFT = 2
+
+# The day the camera exception opens. A unit enrolled in in-app capture merges
+# its bot days from here on — never the ones it closed before, which belong to
+# whatever regime it was under then.
+MERGE_FROM = "2026-08-19"
+
+
+def camera_units(db: Session) -> set[int]:
+    """Supervisor units with at least one task collected through the mini-app
+    camera — the only shift-1 units whose bot days merge.
+
+    Read from the CONFIG rather than from the photos, so a day whose every task
+    was answered «Yo'q» still belongs to an enrolled unit; the alternative
+    ("did this day produce camera photos") would hide exactly the day a
+    supervisor most wants to look at. Walks the two override levels; a GLOBAL
+    default of camera is a deliberate platform-wide rollout, and then every unit
+    is enrolled, which is the right answer at that point.
+    """
+    out: set[int] = set()
+    if (db.query(LeaderTaskDef)
+          .filter(LeaderTaskDef.proof_kind == "camera").first()):
+        return {m.id for m in db.query(Manager.id).all()} or set()
+    out |= {m for (m,) in db.query(LeaderTaskSetting.manager_id)
+            .filter(LeaderTaskSetting.proof_kind == "camera").distinct().all()}
+    lead_ids = [l for (l,) in db.query(LeaderTaskLeaderSetting.leader_id)
+                .filter(LeaderTaskLeaderSetting.proof_kind == "camera").distinct().all()]
+    if lead_ids:
+        out |= {m for (m,) in db.query(RoleProfile.manager_id)
+                .filter(RoleProfile.id.in_(lead_ids),
+                        RoleProfile.manager_id.isnot(None)).distinct().all()}
+    return out
+
+
+def merges(shift: int | None, manager_id: int | None, date: str | None,
+           cams: set[int]) -> bool:
+    """Does this closed bot day replace its (leader, date) sheet row?
+
+    THE merge rule, in one place: both readers below call it, so the register
+    and the photo proxy can never disagree about whether a day is visible.
+    """
+    if shift == MERGE_SHIFT:
+        return True
+    return (manager_id in cams) and str(date or "") >= MERGE_FROM
 
 
 def closed_days(
     db: Session,
     *,
-    shift: int | None = MERGE_SHIFT,
+    merged: bool = True,
     manager_id: int | None = None,
     leader_id: int | None = None,
 ) -> list[LeaderTaskDay]:
-    """Closed bot days, optionally narrowed to one unit / leader / shift.
-    `shift=None` lifts the shift filter (the admin clear tool wants every day
-    it could ever delete, whichever unit filed it)."""
+    """Closed bot days, optionally narrowed to one unit / leader.
+    `merged=False` lifts the merge rule (the admin clear tool wants every day it
+    could ever delete, whichever unit filed it and whether or not it shows)."""
     q = db.query(LeaderTaskDay).filter(LeaderTaskDay.closed_at.isnot(None))
     if manager_id is not None:
         q = q.filter(LeaderTaskDay.manager_id == manager_id)
     if leader_id is not None:
         q = q.filter(LeaderTaskDay.leader_id == leader_id)
     days = q.all()
-    if not days or shift is None:
-        return days   # MERGE_SHIFT is None today, so this is the normal path
+    if not days or not merged:
+        return days
     shifts = {
         m.id: m.shift
         for m in db.query(Manager).filter(Manager.id.in_({d.manager_id for d in days})).all()
     }
-    return [d for d in days if shifts.get(d.manager_id) == shift]
+    cams = camera_units(db)
+    return [d for d in days
+            if merges(shifts.get(d.manager_id), d.manager_id, d.date, cams)]
 
 
 def entries_of(db: Session, days: list[LeaderTaskDay]) -> dict[int, list[LeaderTaskEntry]]:
@@ -188,10 +240,10 @@ def visible_day(db: Session, day: LeaderTaskDay, payload: dict, *, sees_all: boo
         return True
     # Everyone below admin only ever sees a bot day through a merged row, so a
     # day the merge rule does not carry has unreachable photos for them.
-    if MERGE_SHIFT is not None:
-        mgr = db.query(Manager).filter_by(id=day.manager_id).first()
-        if not mgr or mgr.shift != MERGE_SHIFT:
-            return False
+    mgr = db.query(Manager).filter_by(id=day.manager_id).first()
+    if not merges(mgr.shift if mgr else None, day.manager_id, day.date,
+                  camera_units(db)):
+        return False
     # Below that, mirror /api/leaders exactly: only supervisors and leaders are
     # narrowed, and a personal "see all" page grant lifts both.
     if not sees_all:
