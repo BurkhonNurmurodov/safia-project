@@ -410,6 +410,11 @@ export default function LeaderTasksAdmin() {
     const ov = getOv(lid, tid);
     return { enabled: ov?.enabled ?? base.enabled, min_media: ov?.min_media ?? base.min_media, weight: ov?.weight ?? base.weight };
   };
+  // What a LEADER's proof mode resolves to — their own override, else the
+  // brigadir's, else global. The row's 📷 is read straight off this, so the
+  // matrix answers "will the bot offer this person the camera" without anyone
+  // having to open a modal and reason about inheritance.
+  const leadPk = (lid, mid, tid) => getOv(lid, tid)?.proof_kind || supPk(mid, tid);
   const leadTaskName = (lid, mid, task) => getOv(lid, task.id)?.names?.[lang] || supTaskName(mid, task);
   // What the leader modal INHERITS for its text fields, per field: names by
   // language, the definition of done, each window end, the deadline — the
@@ -1049,7 +1054,7 @@ export default function LeaderTasksAdmin() {
                           return (
                             <td key={task.id}>
                               <button type="button"
-                                title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}%`}
+                                title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}% · ${t(`admin.ltasks.proofMode.${supPk(m.id, task.id)}`)}`}
                                 onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", win_from: c.win_from || "", win_to: c.win_to || "", date_check: supDc(m.id, task.id), time_check: supTc(m.id, task.id), proof_kind: supPk(m.id, task.id), when: "now" })}
                                 className="relative w-full h-9 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
                                 style={cellStyle(c)}>
@@ -1073,12 +1078,13 @@ export default function LeaderTasksAdmin() {
                             return (
                               <td key={task.id}>
                                 <button type="button"
-                                  title={`${leadTaskName(p.id, m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}%${ov ? ` · ${t("admin.ltasks.overridden")}` : ""}`}
+                                  title={`${leadTaskName(p.id, m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}% · ${t(`admin.ltasks.proofMode.${leadPk(p.id, m.id, task.id)}`)}${ov ? ` · ${t("admin.ltasks.overridden")}` : ""}`}
                                   onClick={() => openLeaderCell(p, m.id, task)}
                                   className="relative w-full h-8 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
                                   style={{ ...cellStyle(c), boxShadow: ov ? OV_RING : undefined }}>
                                   {c.weight}%
                                   {c.min_media > 1 && <MediaDots n={c.min_media} />}
+                                  {leadPk(p.id, m.id, task.id) === "camera" && <CamMark />}
                                 </button>
                               </td>
                             );

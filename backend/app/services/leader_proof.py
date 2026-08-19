@@ -75,8 +75,12 @@ MAX_EDGE = 1600
 JPEG_QUALITY = 88
 
 # The stamp, in proportions of the image rather than pixels, so a 720p phone and
-# a 4K one get a mark that reads the same size.
-_STAMP_H = 0.036          # cap height as a share of image height
+# a 4K one get a mark that reads the same size. Both are shares of the SHORT
+# edge, and that is the fix for the mark that used to run off the picture: a
+# phone shoots portrait, so height is the LONG edge, and a size taken from it
+# put a ~950 px-wide stamp on a 900 px-wide photo — the seconds fell off the
+# right side of every proof. The short edge is the one both orientations share.
+_STAMP_H = 0.036          # cap height as a share of the image's SHORT edge
 _STAMP_PAD = 0.028        # inset from the bottom-left corner
 _STAMP_MIN_PX = 16
 
@@ -96,6 +100,32 @@ def stamp_text(when: datetime) -> str:
     "this time is whatever the phone said".
     """
     return f"Safia · {when.astimezone(TASHKENT).strftime('%d.%m.%Y  %H:%M:%S')}"
+
+
+def _fit_font(draw: ImageDraw.ImageDraw, text: str, w: int, h: int, pad: int):
+    """The stamp's font and its text box: a share of the SHORT edge, and never
+    wider than the picture it is drawn on.
+
+    Two rules, and the second is what makes the first safe. Sizing off the short
+    edge gives a portrait shot and a landscape one the same-looking mark.
+    Measuring the result and shrinking to fit is the guarantee: whatever font
+    the box happens to ship, however wide the date renders, the plate is drawn
+    INSIDE the photo — a stamp with its seconds cut off by the edge is a
+    timestamp nobody can read, which is the one thing this whole feature exists
+    to produce.
+    """
+    size = max(_STAMP_MIN_PX, int(min(w, h) * _STAMP_H))
+    avail = max(1, w - 2 * pad)
+    font = _ttf(size, bold=True)
+    box = draw.textbbox((0, 0), text, font=font)
+    for _ in range(4):                     # proportional guess, then a nudge
+        tw = box[2] - box[0]
+        if tw <= avail or size <= _STAMP_MIN_PX:
+            break
+        size = max(_STAMP_MIN_PX, min(size - 1, int(size * avail / tw)))
+        font = _ttf(size, bold=True)
+        box = draw.textbbox((0, 0), text, font=font)
+    return font, box
 
 
 def _luma(img: Image.Image, box: tuple[int, int, int, int]) -> float:
@@ -134,8 +164,10 @@ def burn(data: bytes, when: datetime) -> tuple[bytes, str]:
 
     w, h = img.size
     text = stamp_text(when)
+    draw = ImageDraw.Draw(img)
+    pad = int(min(w, h) * _STAMP_PAD)
     try:
-        font = _ttf(max(_STAMP_MIN_PX, int(h * _STAMP_H)), bold=True)
+        font, (l, t, r, b) = _fit_font(draw, text, w, h, pad)
     except Exception as exc:
         # No font ⇒ no stamp ⇒ NOTHING is stored. An unstamped camera photo is
         # indistinguishable from the third-party shots this feature exists to
@@ -143,10 +175,7 @@ def burn(data: bytes, when: datetime) -> tuple[bytes, str]:
         # loudly rather than keep a picture nobody can date.
         logger.error("proof stamp unavailable: %s", exc)
         raise ProofError("stamp_unavailable") from exc
-    draw = ImageDraw.Draw(img)
 
-    pad = int(min(w, h) * _STAMP_PAD)
-    l, t, r, b = draw.textbbox((0, 0), text, font=font)
     tw, th = r - l, b - t
     x, y = pad, h - pad - th
     # Sample a little wider than the glyphs: the outline and the eye both spill

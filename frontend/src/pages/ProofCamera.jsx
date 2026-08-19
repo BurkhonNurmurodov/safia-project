@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight, Camera, Check, Clock, ImageOff, Info, Loader2, Lock, RefreshCw,
@@ -84,15 +84,27 @@ function inWindow(ms, win) {
   return hi <= lo ? now >= lo || now <= hi : now >= lo && now <= hi;
 }
 
-/** The burnt-in mark, rendered in DOM. Sized off the frame it sits on so the
- *  preview and the stored file look the same at any resolution. */
-function StampMark({ text, boxH }) {
-  const size = Math.max(11, Math.round((boxH || 0) * 0.036));
+// The stamp's geometry, as shares of the picture's SHORT edge — the twin of
+// _STAMP_H / _STAMP_PAD in services/leader_proof.py, and it has to stay the
+// twin. Short edge, not height: a phone shoots portrait, so a mark sized off
+// the height came out half again too big and ran off the right of the photo.
+const STAMP_H = 0.036;
+const STAMP_PAD = 0.028;
+
+/** The burnt-in mark, drawn over the picture box in the same proportions the
+ *  server burns it into the file — so this is the mark, not an impression of
+ *  it. It rides on the PICTURE box, never on the screen area around it: those
+ *  two are only the same thing when the photo happens to fill the phone. */
+function StampMark({ text, boxW, boxH }) {
+  const base = Math.min(boxW || 0, boxH || 0);
+  const size = Math.max(11, Math.round(base * STAMP_H));
+  const pad = Math.max(4, Math.round(base * STAMP_PAD));
   return (
     <div
       className="pointer-events-none absolute font-bold tabular-nums"
       style={{
-        left: "2.8%", bottom: "2.8%",
+        left: pad, bottom: pad,
+        maxWidth: `calc(100% - ${pad * 2}px)`,
         fontSize: size, lineHeight: 1.15,
         padding: `${size * 0.3}px ${size * 0.42}px`,
         borderRadius: size * 0.34,
@@ -100,11 +112,33 @@ function StampMark({ text, boxH }) {
         background: "rgba(0,0,0,0.45)",
         textShadow: "0 0 3px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.9)",
         letterSpacing: "0.01em",
+        whiteSpace: "nowrap",
+        // The viewfinder is a hardware-composited layer in Telegram's WebView.
+        // An overlay with no layer of its own can end up beneath it, and a
+        // stamp the leader cannot see is a stamp they will not believe in.
+        zIndex: 5, transform: "translateZ(0)",
       }}
     >
       {text}
     </div>
   );
+}
+
+/** The box a picture of aspect `ar` occupies inside `w × h`, contained.
+ *
+ *  THE geometry of this page. The viewfinder used to be a full-bleed element
+ *  sized in percentages inside an auto-height grid row: the percentage
+ *  collapsed to the video's own intrinsic height, the box outgrew the visible
+ *  area, and the leader composed inside a vertical SLICE of the frame that was
+ *  actually being stored — with the stamp pushed below the clip, out of sight.
+ *  A box measured here in pixels cannot do that: what is inside it is the
+ *  photo, what is outside it never was. */
+function fitBox(w, h, ar) {
+  if (!w || !h || !ar) return { w: 0, h: 0 };
+  const byWidth = w / ar;
+  return byWidth <= h
+    ? { w: Math.round(w), h: Math.round(byWidth) }
+    : { w: Math.round(h * ar), h: Math.round(h) };
 }
 
 /**
@@ -116,7 +150,7 @@ function StampMark({ text, boxH }) {
  * the leader what they already took. The object URL is revoked on unmount; the
  * endpoint sets a long cache, so a re-mount is free.
  */
-function ShotImg({ id, className, alt = "" }) {
+function ShotImg({ id, className, alt = "", onAspect }) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -149,7 +183,15 @@ function ShotImg({ id, className, alt = "" }) {
       </div>
     );
   }
-  return <img src={url} alt={alt} className={className} />;
+  return (
+    <img src={url} alt={alt} className={className}
+      onLoad={(e) => {
+        const el = e.currentTarget;
+        if (onAspect && el.naturalWidth && el.naturalHeight) {
+          onAspect(el.naturalWidth / el.naturalHeight);
+        }
+      }} />
+  );
 }
 
 
@@ -268,7 +310,7 @@ export default function ProofCamera() {
   const offsetRef = useRef(null);          // serverMs − performance.now()
 
   const [mode, setMode] = useState("live");   // live | review | slot
-  const [shot, setShot] = useState(null);     // { url, blob, ms }
+  const [shot, setShot] = useState(null);     // { url, blob, ms, ar }
   const [viewing, setViewing] = useState(null);
   const [retakeSlot, setRetakeSlot] = useState(null);
   const [camErr, setCamErr] = useState(null);
@@ -278,7 +320,9 @@ export default function ProofCamera() {
   const [queued, setQueued] = useState([]);
   const [online, setOnline] = useState(navigator.onLine);
   const [clock, setClock] = useState(Date.now());
-  const [frameH, setFrameH] = useState(0);
+  const [frame, setFrame] = useState({ w: 0, h: 0 });   // the area on screen
+  const [camAR, setCamAR] = useState(0);                // the live stream's shape
+  const [viewAR, setViewAR] = useState(0);              // a stored shot's shape
   const [confirm, setConfirm] = useState(null);
   const [showRule, setShowRule] = useState(false);
 
@@ -368,7 +412,16 @@ export default function ProofCamera() {
     return main?.deviceId || null;
   }, []);
 
+  // One negotiation at a time. Opening the camera is a promise, and everything
+  // that can notice a dead viewfinder — the mount, a mode switch, coming back
+  // from the background, the Retry button — can fire while the first one is
+  // still in flight. A second getUserMedia there hands back a second live
+  // stream that nothing holds a reference to: the camera stays on after the
+  // page is closed, with no way left to stop it.
+  const startingRef = useRef(false);
   const startCamera = useCallback(async (want = facing) => {
+    if (startingRef.current) return;
+    startingRef.current = true;
     setCamErr(null);
     try {
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
@@ -398,6 +451,8 @@ export default function ProofCamera() {
     } catch (e) {
       setCamErr(e?.name === "NotAllowedError" ? "denied"
         : e?.name === "NotFoundError" ? "none" : "failed");
+    } finally {
+      startingRef.current = false;
     }
   }, [facing, pickLens]);
 
@@ -408,15 +463,76 @@ export default function ProofCamera() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, dayClosed, facing]);
 
-  /* ── the frame box, so the live stamp matches the burnt one ─────────────── */
-  useLayoutEffect(() => {
-    const el = frameRef.current;
-    if (!el) return undefined;
-    const ro = new ResizeObserver(() => setFrameH(el.clientHeight));
+  /**
+   * The <video> node, wired the moment it exists.
+   *
+   * A ref callback rather than an effect because the node and the stream are
+   * started by different clocks: the camera opens as soon as the task loads,
+   * while the element appears whenever React gets around to it. Handing the
+   * stream over HERE is what stops the two from missing each other — and it is
+   * the only reason a second shot is possible, because the element the leader
+   * comes back to after a save is not always the one they shot the first with.
+   */
+  const camWatch = useRef(null);
+  const setVideoEl = useCallback((el) => {
+    camWatch.current?.();
+    camWatch.current = null;
+    videoRef.current = el;
+    if (!el) return;
+    const sync = () => {
+      if (el.videoWidth && el.videoHeight) setCamAR(el.videoWidth / el.videoHeight);
+    };
+    el.addEventListener("loadedmetadata", sync);
+    el.addEventListener("resize", sync);   // a rotation changes the frame's shape
+    camWatch.current = () => {
+      el.removeEventListener("loadedmetadata", sync);
+      el.removeEventListener("resize", sync);
+    };
+    const s = streamRef.current;
+    if (s && el.srcObject !== s) { el.srcObject = s; el.play?.().catch(() => {}); }
+    sync();
+  }, []);
+
+  /** The viewfinder must be live whenever it is on screen. A WebView that was
+   *  backgrounded can end the track outright, and a dead track looks exactly
+   *  like a working camera pointed at something black. */
+  const ensureCamera = useCallback(() => {
+    if (mode !== "live" || !task || dayClosed) return;   // nothing to look through
+    if (camErr) return;                    // a refusal is not retried in a loop
+    const s = streamRef.current;
+    const alive = !!s && s.getVideoTracks().some((tr) => tr.readyState === "live");
+    if (!alive) { startCamera(facing); return; }
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.srcObject !== s) v.srcObject = s;
+    if (v.paused) v.play?.().catch(() => {});
+  }, [mode, task, dayClosed, camErr, facing, startCamera]);
+
+  useEffect(() => { ensureCamera(); }, [ensureCamera]);
+
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === "visible") ensureCamera(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [ensureCamera]);
+
+  /* ── the frame area, measured, so the picture box can be built from it ──── */
+  const frameWatch = useRef(null);
+  const setFrameEl = useCallback((el) => {
+    frameWatch.current?.disconnect();
+    frameWatch.current = null;
+    frameRef.current = el;
+    if (!el) return;
+    // Same numbers ⇒ same object: a ResizeObserver fires on subpixel noise, and
+    // a fresh object every time would re-render the viewfinder for nothing.
+    const measure = () => setFrame((f) => (
+      f.w === el.clientWidth && f.h === el.clientHeight
+        ? f : { w: el.clientWidth, h: el.clientHeight }));
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    setFrameH(el.clientHeight);
-    return () => ro.disconnect();
-  }, [mode]);
+    frameWatch.current = ro;
+    measure();
+  }, []);
 
   /* ── the offline queue ──────────────────────────────────────────────────── */
   const reloadQueue = useCallback(async () => {
@@ -471,7 +587,10 @@ export default function ProofCamera() {
     ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
       if (!blob) { toast.error(t("proof.captureFailed")); return; }
-      setShot({ blob, url: URL.createObjectURL(blob), ms, phoneMs: Date.now() });
+      setShot({
+        blob, url: URL.createObjectURL(blob), ms, phoneMs: Date.now(),
+        ar: canvas.width / canvas.height,
+      });
       setMode("review");
     }, "image/jpeg", JPEG_Q);
   }, [serverNow, facing, toast, t]);
@@ -571,6 +690,12 @@ export default function ProofCamera() {
   const late = task.date_check && task.time_check && !inWindow(clock, task.window);
   const stamp = stampText(mode === "review" && shot ? shot.ms : clock);
   const done = complete && !queued.length;
+  // The shape of the picture on screen, and the box it gets. ONE geometry for
+  // the viewfinder, the frozen shot and the stamp — so the frame the leader
+  // composes in is the frame that reaches the register.
+  const ar = (mode === "review" ? shot?.ar : mode === "slot" ? viewAR : camAR)
+    || camAR || 3 / 4;
+  const fit = fitBox(frame.w, frame.h, ar);
 
   return (
     <div className="fixed inset-0 flex flex-col select-none"
@@ -605,44 +730,62 @@ export default function ProofCamera() {
         </div>
       </header>
 
-      {/* Frame — viewfinder, frozen shot, or one already-taken photo. One box,
-          one stamp position, so the preview never disagrees with the file. */}
-      <div className="relative flex-1 min-h-0 grid place-items-center overflow-hidden">
-        <div ref={frameRef} className="relative w-full h-full grid place-items-center">
-          {mode === "live" ? (
-            <video ref={videoRef} playsInline muted autoPlay
-              className="w-full h-full object-contain"
-              style={{ transform: facing === "user" ? "scaleX(-1)" : undefined }} />
-          ) : mode === "review" && shot ? (
-            <img src={shot.url} alt="" className="w-full h-full object-contain" />
-          ) : viewing ? (
-            <ShotImg id={viewing.id} className="w-full h-full object-contain" />
+      {/* Frame — viewfinder, frozen shot, or one already-taken photo.
+
+          The picture box is built to the exact shape of what the camera
+          stores, so the viewfinder is not a crop of the file: what the leader
+          frames is what lands on the register, and the stamp sits on that same
+          box. It used to be a full-bleed element sized in percentages inside an
+          auto grid row — the box silently grew to the video's own height, the
+          leader saw a vertical slice of their shot, and the stamp was pushed
+          below the clip where nobody ever saw it. */}
+      <div ref={setFrameEl}
+        className="relative flex-1 min-h-0 overflow-hidden flex items-center justify-center">
+        <div className="relative overflow-hidden"
+          style={{ width: fit.w || "100%", height: fit.h || "100%" }}>
+          {/* The viewfinder stays MOUNTED in every state, hidden rather than
+              removed. Unmounting it for the review shot dropped the camera on
+              the floor: React built a fresh <video> on the way back to live,
+              nothing re-attached the stream to it, and the second shot was
+              being aimed at a black rectangle. */}
+          <video ref={setVideoEl} playsInline muted autoPlay
+            className="absolute inset-0 w-full h-full object-contain"
+            style={{
+              transform: facing === "user" ? "scaleX(-1)" : undefined,
+              visibility: mode === "live" ? "visible" : "hidden",
+            }} />
+          {mode === "review" && shot ? (
+            <img src={shot.url} alt=""
+              className="absolute inset-0 w-full h-full object-contain" />
+          ) : mode === "slot" && viewing ? (
+            <ShotImg id={viewing.id} onAspect={setViewAR}
+              className="absolute inset-0 w-full h-full object-contain" />
           ) : null}
 
-          {mode !== "slot" ? <StampMark text={stamp} boxH={frameH} /> : null}
-
-          {camErr && mode === "live" ? (
-            <div className="absolute inset-0 grid place-items-center p-6 text-center"
-              style={{ background: "rgba(11,13,16,0.94)" }}>
-              <div className="max-w-xs">
-                <div className="mx-auto mb-3 grid place-items-center rounded-2xl"
-                  style={{ width: 48, height: 48, background: "rgba(239,68,68,0.16)" }}>
-                  <Camera size={22} color="#ef4444" />
-                </div>
-                <div className="text-[15px] font-semibold mb-1.5">
-                  {t(`proof.cam.${camErr}`)}
-                </div>
-                <p className="text-[13px] leading-relaxed mb-4"
-                  style={{ color: "rgba(255,255,255,0.65)" }}>
-                  {t(`proof.cam.${camErr}Msg`)}
-                </p>
-                <Button size="lg" onClick={() => startCamera(facing)}>
-                  <RefreshCw size={16} /> {t("proof.cam.retry")}
-                </Button>
-              </div>
-            </div>
-          ) : null}
+          {mode !== "slot" ? <StampMark text={stamp} boxW={fit.w} boxH={fit.h} /> : null}
         </div>
+
+        {camErr && mode === "live" ? (
+          <div className="absolute inset-0 grid place-items-center p-6 text-center"
+            style={{ background: "rgba(11,13,16,0.94)" }}>
+            <div className="max-w-xs">
+              <div className="mx-auto mb-3 grid place-items-center rounded-2xl"
+                style={{ width: 48, height: 48, background: "rgba(239,68,68,0.16)" }}>
+                <Camera size={22} color="#ef4444" />
+              </div>
+              <div className="text-[15px] font-semibold mb-1.5">
+                {t(`proof.cam.${camErr}`)}
+              </div>
+              <p className="text-[13px] leading-relaxed mb-4"
+                style={{ color: "rgba(255,255,255,0.65)" }}>
+                {t(`proof.cam.${camErr}Msg`)}
+              </p>
+              <Button size="lg" onClick={() => startCamera(facing)}>
+                <RefreshCw size={16} /> {t("proof.cam.retry")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {/* Standing warnings. Both are ABOUT THE NEXT SHOT, so they sit on the
             viewfinder where the decision is made — not in a toast that is gone
@@ -668,7 +811,7 @@ export default function ProofCamera() {
           <>
             <Roll photos={photos} queued={queued} need={need} cap={cap}
               active={retakeSlot} t={t}
-              onPick={(p) => { setViewing(p); setMode("slot"); }}
+              onPick={(p) => { setViewAR(0); setViewing(p); setMode("slot"); }}
               onAdd={() => { setRetakeSlot(null); toast.info(t("proof.addHint")); }} />
             <div className="grid grid-cols-3 items-center px-4 pb-3 pt-1">
               <button type="button" onClick={() => setFacing((f) => (f === "user" ? "environment" : "user"))}
