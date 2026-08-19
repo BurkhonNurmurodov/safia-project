@@ -766,7 +766,7 @@ export default function LeaderTasksAdmin() {
     return (
       <FormField label={withMark(t("admin.ltasks.proofKind"), mark)}
         hint={`${t(`admin.ltasks.proofHint.${v}`)}${
-          v === "camera" && scope ? ` ${t(`admin.ltasks.proofScope.${scope}`)}` : ""}`}>
+          scope ? ` ${t(`admin.ltasks.proofScope.${scope}`).replace("{n}", applyN)}` : ""}`}>
         <SegmentedToggle fill value={v}
           onChange={(k) => onChange({ proof_kind: k })}
           options={[["screenshot", t("admin.ltasks.proofScreenshot")],
@@ -903,7 +903,18 @@ export default function LeaderTasksAdmin() {
       ? { date_check: (lead0 ? ov0?.date_check : cell0.date_check) ?? null,
           time_check: (lead0 ? ov0?.time_check : cell0.time_check) ?? null }
       : { date_check: task.date_check !== false, time_check: task.time_check !== false };
+    // Seeded like the date rule: under a filter, what the visible rows collect
+    // through, plus the RAW value so Save knows whether anything is stored at
+    // this level. Unfiltered there is nothing to seed — the control is not
+    // offered, because this modal would write the global level (see below).
+    const pkInh = anyFilter
+      ? (lead0 ? supPk(lead0.manager_id, task.id) : pkOf(task.id))
+      : undefined;
+    const pk0raw = anyFilter
+      ? ((lead0 ? ov0?.proof_kind : cell0.proof_kind) || null)
+      : null;
     setCol({
+      proof_kind: pk0raw || pkInh || "screenshot", pk0raw, pkInh,
       tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
       names: { ...names0 }, names0, criteria: criteria0, criteria0, when: "now",
       ...win0, win0, deadline: deadline0, deadline0,
@@ -920,6 +931,10 @@ export default function LeaderTasksAdmin() {
       await saveWindow(col, col.win0, target);
       await saveDeadline(col, { deadline: col.deadline0 }, target);
       if (!await saveDateRule(col, col.dc0raw, col.dcInh, target)) return;
+      // Only under a filter: unfiltered, `target` carries no ids and the write
+      // would land on the global level, which every unit inherits.
+      if (anyFilter && !await saveProofKind(col, { proof_kind: col.pk0raw },
+        col.pkInh, target)) return;
     } catch { return; }
     if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
       taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
@@ -1218,14 +1233,27 @@ export default function LeaderTasksAdmin() {
               anyFilter ? "" : globalWinPh("win_to"))}
             {dateRuleField(col, (v) => setCol((c) => ({ ...c, ...v })),
               changedPill(anyFilter && dcMode(col) !== dcMode(col.dcInh)))}
-            {/* No proof-kind control here, on purpose. Unfiltered, this modal
-                writes the GLOBAL level — which every unit inherits — and that
-                is exactly how one test unit's camera setting reached every
-                leader on the platform (user, 2026-08-19). In-app capture is
-                enrolled per BRIGADIR or per LEADER, in their own cells, where
-                the scope of the change is what you clicked on. The backend
+            {/* Proof kind appears here ONLY under a filter, where this modal
+                writes the rows the matrix is showing. Unfiltered it writes the
+                GLOBAL level — which every unit inherits — and that is exactly
+                how one test unit's camera setting reached every leader on the
+                platform (user, 2026-08-19). Rather than hide the control and
+                leave the admin clicking thirteen cells one at a time, the
+                control is present exactly when its scope is a named set, and
+                the sentence in its place says how to get there. The backend
                 refuses a global camera too (CAMERA_IS_PILOT), so this is not
                 the only thing holding the line. */}
+            {anyFilter ? (
+              proofKindField(col, (v) => setCol((c) => ({ ...c, ...v })),
+                changedPill((col.proof_kind || "screenshot") !== col.pkInh),
+                applyScope.level === "leader" ? "leaders" : "units")
+            ) : (
+              <FormField label={t("admin.ltasks.proofKind")}>
+                <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                  {t("admin.ltasks.proofNeedsFilter")}
+                </p>
+              </FormField>
+            )}
             {deadlineField(col, (v) => setCol((c) => ({ ...c, ...v })), "")}
             <div className="pt-1">
               {/* Examples are keyed per TASK — there is no per-row storage, so

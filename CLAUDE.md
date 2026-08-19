@@ -428,8 +428,12 @@ SERVER's; the phone never authors it.
   modals as a parallel `mutate()`.
 - **Enrolment must NAME a unit.** While `leader_tasks.CAMERA_IS_PILOT` stands,
   the GLOBAL level of the chain may only hold `screenshot` — camera is set on a
-  supervisor's cell (whole unit) or a leader's cell (that leader), and the
-  column/global modal carries no proof-kind control at all. This is not
+  supervisor's cell (whole unit), a leader's cell (that leader), or the task's
+  column modal **while the matrix is filtered**, where it writes exactly the
+  rows on screen. Unfiltered, that modal writes the global level, so the control
+  is not offered there and a sentence says to pick a brigadir in the filter
+  instead — the fast path for enrolling one unit's several camera tasks without
+  opening a modal per cell. This is not
   cosmetic: the pilot's setting WAS written globally on 2026-08-19 and every
   leader on the platform inherited it, five tasks each, mid-shift
   (`startup.reset_leader_camera_pilot` is the one-shot that took it back to
