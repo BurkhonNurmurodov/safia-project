@@ -198,7 +198,15 @@ below).
   window, resolved by `leader_ai.resolve_date_check` + `resolve_time_check`
   (NULL = inherit, NULL everywhere = the strict answer, so nothing changes until
   an admin picks something). Read them as ONE rule, always via
-  `date_rule_for` → `(window, checked, timed)`:
+  `date_rule_for` → `(window, checked, timed, plus)` — FOUR values since the
+  `date_plus` tolerance landed (`resolve_date_plus`, the count of days AFTER the
+  report's that a proof may be dated; 0 everywhere until a writer exists, and
+  there is no admin control for it yet). **Unpack all four**: two call sites
+  took three and every drain pass died on the first row with «too many values to
+  unpack (expected 3)» — no verdict, no retry burned, just a strip reading «0 of
+  375 checked · AI error». The four travel together through `date_flags`,
+  `date_prose`, `sync_date_flags` and both verdict payloads, or the sentence on
+  a card names a day the flag beside it did not judge:
   - `date_check T` + `time_check T` — **strict**: a SYSTEM clock (OS bar, phone
     status bar, camera stamp) must be readable and inside the window. The
     unchanged original.

@@ -1404,8 +1404,8 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     # the strict prompt forbids reading it), and the same values then judge what
     # came back. One walk, one answer, no chance of asking one question and
     # grading another.
-    win, checked, timed = date_rule_for(db, rev.task_id, rev.manager_id,
-                                        rev.leader_id, rev.shift)
+    win, checked, timed, plus = date_rule_for(db, rev.task_id, rev.manager_id,
+                                              rev.leader_id, rev.shift)
     prompt = _prompt(
         task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id),
         note=task_note(db, rev.task_id),
@@ -1452,7 +1452,8 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     # gets every affected verdict re-derived for free.
     served = _camera_clocks(db, rev)
     rev.clocks = served if served is not None else _clean_clocks(out.get("clocks"))
-    flags += date_flags(rev.clocks, rev.date, win, check=checked, times=timed)
+    flags += date_flags(rev.clocks, rev.date, win, check=checked, times=timed,
+                        plus=plus)
     flags = [f for f in _FLAG_ORDER if f in set(flags)]
 
     rev.flags = flags
@@ -2493,9 +2494,12 @@ _DATE_PROSE = {
 
 def date_prose(clocks: list[dict] | None, date: str,
                win: tuple[str, str], *, check: bool = True,
-               times: bool = True) -> dict[str, str]:
+               times: bool = True, plus: int = 0) -> dict[str, str]:
     """The date verdict as a sentence per language. Derived like the flag
-    itself, so the two can never disagree."""
+    itself, so the two can never disagree — which is why the tolerance is here
+    too: a sentence naming one day for a task that accepts three contradicts the
+    very flag it exists to explain. `{day}` is therefore the day LIST
+    (`date_days`), which with no tolerance is the single day it always was."""
     if not check:
         key = "not_required"
     elif not times:
@@ -2503,11 +2507,11 @@ def date_prose(clocks: list[dict] | None, date: str,
         # matched, or nothing on the screen was dated. They must not share a
         # sentence: one says the proof was verified, the other says the question
         # went unanswered and was let go.
-        got = clock_in_window(clocks, date, win, times=False)
+        got = clock_in_window(clocks, date, win, times=False, plus=plus)
         key = "day_none" if got is None else ("day_ok" if got else "day_bad")
-    elif not date_flags(clocks, date, win, check=check, times=times):
+    elif not date_flags(clocks, date, win, check=check, times=times, plus=plus):
         key = "ok"
-    elif clock_in_window(clocks, date, win) is None:
+    elif clock_in_window(clocks, date, win, plus=plus) is None:
         key = "no_date"
     elif any(not (c.get("day") and c.get("month")) for c in (clocks or [])):
         # "Read a clock but not a day" reads very differently from "wrong day",
@@ -2517,9 +2521,10 @@ def date_prose(clocks: list[dict] | None, date: str,
         key = "no_time"          # dated, but nothing says when it was taken
     else:
         key = "date_mismatch"
-    lo, hi = date_window(date, None, win)
+    lo, hi = date_window(date, None, win, plus)
     seen = clocks_text(clocks) or "—"
-    return {l: t.format(seen=seen, lo=lo, hi=hi, day=str(date)[:10])
+    return {l: t.format(seen=seen, lo=lo, hi=hi,
+                        day=", ".join(date_days(date, plus)))
             for l, t in _DATE_PROSE[key].items()}
 
 
@@ -2527,13 +2532,14 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     """Re-derive every written verdict's DATE flags from its stored clocks and
     the window in force now. Returns how many rows changed; commits once.
 
-    The date verdict has exactly FIVE inputs — the clocks (frozen at review
+    The date verdict has exactly SIX inputs — the clocks (frozen at review
     time), the report's day, the task's window, whether the task's chain asks the
-    date question at all, and whether it asks about the CLOCK or only the day —
-    and this runs whenever any of them can have moved: at boot, after a window
-    edit, after a date-check or time-check edit, after a sheet Refresh or a
-    discover (both re-stamp `date`), and when the AI overview is opened. There is
-    no sixth input, so there is no trigger left to forget.
+    date question at all, whether it asks about the CLOCK or only the day, and
+    the tolerance widening WHICH day counts — and this runs whenever any of them
+    can have moved: at boot, after a window edit, after a date-check, time-check
+    or tolerance edit, after a sheet Refresh or a discover (both re-stamp
+    `date`), and when the AI overview is opened. There is no seventh input, so
+    there is no trigger left to forget.
 
     It is kept a WRITE rather than a read-time overlay because `status`/`flags`
     are what ~20 queue, count, re-check and progress queries filter on in SQL;
@@ -2573,7 +2579,8 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
         kept = [f for f in (rev.flags or ()) if f not in _OWNED_FLAGS]
         want = set(kept) | set(date_flags(
             rev.clocks, rev.date, win, check=resolve_date_check(*levels),
-            times=resolve_time_check(*levels)))
+            times=resolve_time_check(*levels),
+            plus=resolve_date_plus(*levels)))
         flags = [f for f in _FLAG_ORDER if f in want]
         if flags == list(rev.flags or ()):
             continue

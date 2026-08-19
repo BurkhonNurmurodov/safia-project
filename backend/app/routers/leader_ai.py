@@ -195,7 +195,9 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
     revs = db.query(LeaderAiReview).filter(LeaderAiReview.ref.in_(refs.keys())).all()
     cfg = _task_cfg(db, revs)
     out = {str(refs[rev.ref]): _as_verdict(rev, _window(cfg, rev),
-                                          _date_check(cfg, rev), _time_check(cfg, rev))
+                                           _date_check(cfg, rev),
+                                           _time_check(cfg, rev),
+                                           _date_plus(cfg, rev))
            for rev in revs}
     return {"enabled": True, "tasks": out}
 
@@ -477,6 +479,14 @@ def _time_check(cfg, rev) -> bool:
     return leader_ai.resolve_time_check(*_levels(cfg, rev))
 
 
+def _date_plus(cfg, rev) -> int:
+    """And how many days AFTER the report's may the proof be dated? The fourth
+    of the four that travel together (services/leader_ai.date_rule_for): the
+    window, the two questions and this tolerance name ONE accepted set between
+    them, so a card printing three of them prints a rule nobody was judged by."""
+    return leader_ai.resolve_date_plus(*_levels(cfg, rev))
+
+
 def _label(cfg, rev) -> str:
     """LEVEL first, then language — the same precedence services/leader_ai
     `task_label` uses. Walking language-first would let the global `name_ru`
@@ -685,7 +695,8 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
         names = proj.get(rev.ref) or {}
         win = _window(cfg, rev)
         checked, timed = _date_check(cfg, rev), _time_check(cfg, rev)
-        lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
+        plus = _date_plus(cfg, rev)
+        lo, hi = leader_ai.date_window(rev.date, rev.shift, win, plus)
         out.append({
             "ref": rev.ref,
             "uid": uid,
@@ -717,7 +728,8 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             # unjudged clock is how a reviewer starts "correcting" verdicts nobody
             # made; printing one on a date-only task is the same mistake quieter.
             "expected": (None if not checked
-                         else f"{lo} — {hi}" if timed else str(rev.date)[:10]),
+                         else f"{lo} — {hi}" if timed
+                         else ", ".join(leader_ai.date_days(rev.date, plus))),
             "dateCheck": checked,
             "timeCheck": timed,
             "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
@@ -726,7 +738,8 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             # edit. Rendered beside `reason`, which now covers topic and proof
             # only.
             "dateReason": leader_ai.date_prose(rev.clocks, rev.date, win,
-                                               check=checked, times=timed),
+                                               check=checked, times=timed,
+                                               plus=plus),
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
             # the old card could only ever be taken on faith.
@@ -915,11 +928,11 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
         rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
-    win, checked, timed = leader_ai.date_rule_for(
+    win, checked, timed, plus = leader_ai.date_rule_for(
         db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
     if rev.status in ("ok", "flagged") and not body.force:
         return {"ok": True,
-                "task": _as_verdict(rev, win, checked, timed)}  # already judged; never re-spend
+                "task": _as_verdict(rev, win, checked, timed, plus)}  # already judged; never re-spend
 
     # An admin asking again IS the retry — give a burned-out row its attempts back.
     rev.attempts = 0
@@ -928,7 +941,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     except gemini.GeminiQuotaError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     db.refresh(rev)
-    return {"ok": True, "task": _as_verdict(rev, win, checked, timed)}
+    return {"ok": True, "task": _as_verdict(rev, win, checked, timed, plus)}
 
 
 def _report_target(db: Session, uid: str) -> dict:
@@ -978,12 +991,13 @@ def _refs_for_uid(db: Session, uid: str) -> dict[str, int]:
 
 
 def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
-                check: bool = True, times: bool = True) -> dict:
+                check: bool = True, times: bool = True, plus: int = 0) -> dict:
     # `win` is the task's effective photo window, `check` whether the date is
-    # judged at all and `times` whether the CLOCK is judged or only the day;
-    # callers that hold the preloaded config chain pass all three rather than
-    # making this re-walk the chain.
-    lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
+    # judged at all, `times` whether the CLOCK is judged or only the day, and
+    # `plus` how many days after the report's the proof may be dated; callers
+    # that hold the preloaded config chain pass all four rather than making this
+    # re-walk the chain.
+    lo, hi = leader_ai.date_window(rev.date, rev.shift, win, plus)
     return {
         "status": rev.status,
         "flags": rev.flags or [],
@@ -996,13 +1010,14 @@ def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
         # field: the window when hours are judged, the DAY alone when only the
         # day is, and NULL when the task is exempt (nothing was measured).
         "expected": (None if not check
-                     else f"{lo} — {hi}" if times else str(rev.date)[:10]),
+                     else f"{lo} — {hi}" if times
+                     else ", ".join(leader_ai.date_days(rev.date, plus))),
         "dateCheck": check,
         "timeCheck": times,
         "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
         "dateReason": leader_ai.date_prose(
             rev.clocks, rev.date, win or leader_ai.shift_window(rev.shift),
-            check=check, times=times),
+            check=check, times=times, plus=plus),
         "photos": rev.photos,
         "error": rev.error,
         "attempts": rev.attempts,
