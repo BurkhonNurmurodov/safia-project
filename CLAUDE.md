@@ -18,6 +18,7 @@ or copy-paste its markup into a page.
 | Confirm ("are you sure") dialog | `ConfirmDialog.jsx` | `tone="danger"` for deletions (red chip + red confirm), default warning (amber chip + brand confirm). Sits above form modals (z 100). Carries `role=dialog`, a focus trap, Escape-to-cancel and initial focus on the SAFE button. `error` renders the failure INSIDE the dialog — a mutation that fails must leave the dialog standing with the reason on it, never close and fire `alert()`. `challenge` (+ `challengeLabel`) demands the operator retype a string before confirm enables: use it for anything no undo can reach (full-DB restore → `RESTORE`, whole-day attendance wipe → the date). `cancelLabel` defaults to `common.cancel`. |
 | Transient action feedback (saved / sent / failed) | `Toast.jsx` | `<Toast>` controlled, or `useToast()` for the state+timer. Tones `success/error/warning/info`; errors persist until dismissed (you cannot re-read a toast that vanished). Portals to `document.body`, offsets by `--tg-safe-top`/`--tg-safe-bottom`, carries `role=status`. `position="bottom"` for dense editing surfaces. **NEVER `window.alert/confirm/prompt` — Telegram's iOS WebView silently suppresses them, so a failure becomes invisible on the primary device.** Never paste a fixed green `<div>`; never morph a Save button into its own status message. |
 | Comment thread on a record | `CommentsModal.jsx` (`CommentsModal` + `CommentsButton`) | THE chat thread. Point it at a resource exposing the four standard endpoints — `GET/POST {endpoint}`, `PUT/DELETE {endpoint}/{id}` — via `endpoint` + `queryKey` + `refreshKeys` (the list keys whose `comment_count` badge must re-count); `title`/`subtitle` name the record. Ownership is NEVER re-derived on the client: the backend serves `is_own` per message, because a message belongs to the authoring PROFILE and one account may hold several. `CommentsButton` is the table-cell trigger (count badge, gold once non-empty) — a Comments column on the table for `sm+`, the same button on the mobile card's footer row. A failed write raises an error toast; the thread scrolls to the newest message. Used by `/tasks` and `/concerns`. |
+| Camera proof capture | `pages/ProofCamera.jsx` | THE in-app camera, for checklist tasks whose `proof_kind` is `camera`. Never add a file-picker fallback to it — the whole point is that no file the leader produced is accepted. See the camera-proof section below. |
 | File upload | `UploadDropzone.jsx` (`UploadDropzone` + `FileStateList` + `useFileStates`) | One drag-drop model for every upload surface. Rejected files always render (a silent rejection reads as success); rows are keyed by generated id, not filename; result detail wraps on its own line; the bar carries progressbar ARIA; 100% flips to "processing" because parsing happens after transfer. `renderExtra(state)` is the seam for per-endpoint result detail — use it instead of forking the row markup. |
 | Button | `Button.jsx` | Variants `primary/secondary/danger/ghost/success`, sizes `sm/md/lg`; `loading` shows the spinner. `tint` gives the soft-tinted form (12% bg + coloured border/label) — **THE form for table-row actions**. Never hand-roll a chip with inline rgba + `onMouseEnter/onMouseLeave`: mouse events never fire on touch, so a destructive action stays stuck in its neutral rest state on a phone. Forwards refs. |
 | Segmented toggle + page view-tabs (min/hrs, P·A·P−A, view/mode switch, theme, Production/Staff tabs) | `SegmentedToggle.jsx` | Recessed-track pill: a `bg-inner` track (`rounded-xl`, `p-[3px]` inset, subtle `border`, no dividers) holding segments — the selected one is a brand-gold (`--brand`) pill with a white label, the rest transparent with muted `text-3`. This is ALSO the page-level "view tabs" template (Production view switch, Staff Workers/Requests) — same component, don't hand-roll a padded tab group. Outer height stays `size="md"` (default, 38px = `Button` lg / toolbar baseline) or `"sm"` (30px = `Button` md) so it aligns in toolbars. `options` = `[value,label]` tuples or `{value,label,title}` objects (label may be a node/icon). **THE template for EVERY toggle on the platform — any set of 2+ mutually-exclusive options (mode / view / period / type / status / tab / shift / theme switch), current and future. Never hand-roll a button group or padded tab bar; extend this with a prop if it lacks something.** For option sets that overflow on phones use the `scrollable` prop — NOT your own `overflow-x-auto` wrapper: a bare wrapper hides the scrollbar without replacing the affordance and leaves the selected segment off-screen, at which point nothing looks selected and the user cannot tell where they are. `scrollable` scrolls the active segment into view and adds edge fades. `asTabs` adds tablist/tab roles, `aria-selected` and arrow-key navigation when the toggle switches VIEWS. |
@@ -406,6 +407,84 @@ below).
 
 Related memory: `leader-ai-proof-review`, `leader-task-photo-window`,
 `leaders-shift1-submission-window`, `leader-task-requirements-tab`.
+
+## In-app camera proofs (`proof_kind`, `/proof/camera`)
+
+Leaders were editing the timestamp a third-party camera app wrote onto their
+proof photos, so from **2026-08-19** a checklist task can declare that its proof
+is **TAKEN IN THE APP** instead of uploaded. The clock on such a photo is the
+SERVER's; the phone never authors it.
+
+- **`proof_kind` is the switch** — `screenshot` (send images to the bot chat,
+  what every task did before and still does by default) or `camera`. Same
+  global → supervisor → leader chain as `min_media`
+  (`leader_tasks.resolve_proof_kind`, `set_proof_kind`, `PUT
+  /admin/leader-tasks/proof-kind`, the two-way pick in all three ltasks modals
+  plus a 📷 mark on the matrix cell). `screenshot` is the chain's floor, so a box
+  that never ran the migration behaves exactly as before. **Applies at once and
+  never stages**: it is the one field that changes what the leader is asked to
+  DO, and a staged version would offer an upload for a task whose proofs are
+  collected in the app for a whole shift. The pilot is unit **77 (shift 1)**.
+- **A camera task has NO upload path, and that is the feature.** The bot answers
+  «Ha» with a `web_app` button (`_lt_open_camera`), refuses every file sent to
+  the chat while that task is open (`_lt_camera_no_upload`), and its menu row
+  reads `📷` / `📷 k/N` / `✅`. Accepting a file "just this once" puts the
+  timestamp back in the leader's hands.
+- **The clock**: `/api/leader-proof/session` hands the page the server time once;
+  the page advances it with `performance.now()` (monotonic — a phone clock edit
+  moves nothing) and re-anchors every 5 min. The claimed instant is clamped
+  server-side to "not in the future" and "not before this checklist day began".
+  What the DEVICE thought the time was is stored as `skew_s` and judged by
+  nothing.
+- **The stamp is drawn on the server** (`services/leader_proof.burn`, Pillow,
+  the `downtime_card` font resolver): `Safia · DD.MM.YYYY  HH:MM:SS` Tashkent,
+  bottom-left, three layers — contrast plate, outline, adaptive fill — so it is
+  legible on any background. **No font ⇒ `stamp_unavailable` ⇒ nothing is
+  stored**: an unstamped camera photo is indistinguishable from the shots this
+  feature replaces.
+- **`leader_task_photos` is the roll** — per (day, task, slot), written the
+  moment a shot lands, so a leader who shot two of three and closed Telegram
+  comes back to two. At `min_media` the task IS done: `sync_entry` writes the
+  LeaderTaskEntry **in place** (the id is stable — `LeaderAiReview.ref` is built
+  from it) and rebuilds `leader_task_media` in slot order, which is what keeps
+  the dashboard rows, media proxy, AI reviewer and day report working with no
+  knowledge of this table. There is no Save button and none is wanted.
+- **Required slots are RETAKEN, never deleted**; extras go up to `min + 3`,
+  hard cap 6, and only they are deletable. Answering «Yo'q» or resetting a task
+  retires its roll (`clear_roll`) so the menu can never show progress on a task
+  recorded as failed.
+- **Offline shooting is allowed** (`utils/proofQueue.js`, IndexedDB, flushed
+  oldest-first on `online` and on open). Queued shots hold their slot in the
+  roll, the task stays incomplete until the server has them, and Telegram's
+  closing confirmation is armed while any are pending. A gap beyond
+  `DEFERRED_AFTER_S` marks the row `deferred` — shown, never treated as a fault.
+- **Outside the photo window a shot is ACCEPTED and marked `late`** (user's
+  ruling): the page warns before the shutter, and the deduction comes from the
+  ordinary date machinery, not a new one.
+- **The AI judges CONTENT only.** `review_one` substitutes server-recorded
+  clocks for the transcribed ones (`_camera_clocks` → `leader_proof.server_clocks`,
+  same shape, same field), so `date_flags`, `sync_date_flags`, the triage card
+  and the day report all read a camera proof through code they already have — an
+  out-of-window capture becomes `date_mismatch` deterministically, and an admin
+  widening a window still re-derives every affected verdict for free.
+- **The page** is `pages/ProofCamera.jsx` at `/proof/camera?leader=&task=` —
+  auth-only and NOT page-gated (like `/leaders/report/:uid`: the leader filing
+  the proof holds no `/leaders` grant), outside `Layout`, dark chrome. Three
+  states, one primary action each: viewfinder → shutter, review → Saqlash, full
+  roll → Tayyor. Rear main lens by default (label heuristics skip ultra/tele/
+  macro/depth), free flip, live stamp preview positioned exactly where the burnt
+  one lands. `?leader=` is typeable, so the backend checks it against the leader
+  profiles the calling account actually holds.
+- **`permissions-policy` now says `camera=(self)`** (`main.py`). It was
+  `camera=()`, which denies `getUserMedia` outright — no prompt, no actionable
+  error. Microphone and geolocation stay fully denied, and `self` keeps every
+  embedder out.
+- **The `/leaders` bot-day merge is no longer shift 2 only** (`leader_bot.MERGE_SHIFT`
+  is now `None`). Camera proofs are collected in the bot by construction, so a
+  merge narrowed to one shift would demand a proof in a mode the platform chose
+  and then display it nowhere.
+
+Related memory: `leader-camera-proof-pilot`.
 
 ## Browser login (the second door)
 

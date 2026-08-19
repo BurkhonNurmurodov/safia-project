@@ -23,7 +23,7 @@ from app import identity
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    LeaderTaskDay, LeaderTaskPhoto, Manager, RoleProfile, TelegramUserRole,
+    LeaderTaskDay, LeaderTaskPhoto, RoleProfile, TelegramUserRole,
 )
 from app.security import require_auth
 from app.routers.admin import _TG_API, _tg_file_meta
@@ -167,10 +167,12 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
     day = leader_proof.open_day(db, prof, create=False)
 
     from app.services.leader_tasks import effective_date
-    date = leader_tasks_date = effective_date(shift)
-    closed_day = (db.query(LeaderTaskDay)
-                  .filter_by(leader_id=prof.id, date=date).first())
-    closed = bool(closed_day and closed_day.closed_at)
+    date = effective_date(shift)
+    # `open_day` answers None for BOTH "no day yet" and "already closed", so the
+    # closed state is read separately — the page must be able to say which.
+    stored = (db.query(LeaderTaskDay)
+              .filter_by(leader_id=prof.id, date=date).first())
+    closed = bool(stored and stored.closed_at)
 
     photos = leader_proof.roll(db, day.id, task) if day else []
     need = int(entry.get("min_media") or 1)
@@ -182,7 +184,7 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
     return {
         "server": {"iso": now.isoformat(), "ms": int(now.timestamp() * 1000)},
         "leader": {"id": prof.id, "name": prof.name},
-        "day": {"date": leader_tasks_date, "closed": closed, "shift": shift},
+        "day": {"date": date, "closed": closed, "shift": shift},
         "task": {
             "id": task,
             "name": config_name(entry, lang),

@@ -339,7 +339,15 @@ class SecurityHeadersMiddleware:
         (b"content-security-policy", _CSP.encode()),
         (b"x-content-type-options", b"nosniff"),
         (b"referrer-policy", b"strict-origin-when-cross-origin"),
-        (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+        # Camera is allowed for THIS ORIGIN ONLY (`self`), and nothing else is.
+        # It has to be: /proof/camera takes checklist proof photos in the app
+        # precisely so the timestamp on them is the server's rather than one the
+        # leader's camera app wrote — and `camera=()` denies getUserMedia
+        # outright, no prompt, no error a user could act on. `self` keeps every
+        # embedder out: a mini-app iframe (web.telegram.org) still only gets the
+        # camera if Telegram's own `allow` attribute delegates it. Microphone and
+        # geolocation stay fully denied.
+        (b"permissions-policy", b"camera=(self), microphone=(), geolocation=()"),
     ]
 
     def __init__(self, app):

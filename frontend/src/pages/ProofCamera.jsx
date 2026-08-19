@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Camera, Check, Clock, Info, Loader2, RefreshCw,
+  ArrowRight, Camera, Check, Clock, ImageOff, Info, Loader2, Lock, RefreshCw,
   RotateCcw, SwitchCamera, Trash2, WifiOff, X,
 } from "lucide-react";
 import api from "../utils/api";
@@ -107,6 +107,52 @@ function StampMark({ text, boxH }) {
   );
 }
 
+/**
+ * One stored shot, fetched as a BLOB.
+ *
+ * Not a bare `<img src="/api/…">`: every request on this platform carries either
+ * the Telegram initData header or the web JWT, and an `<img>` sends neither — so
+ * the tag would render a broken thumbnail on a page whose whole job is showing
+ * the leader what they already took. The object URL is revoked on unmount; the
+ * endpoint sets a long cache, so a re-mount is free.
+ */
+function ShotImg({ id, className, alt = "" }) {
+  const [url, setUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let obj = "";
+    let alive = true;
+    setFailed(false);
+    setUrl("");
+    api.get(`/api/leader-proof/photo/${id}`, { responseType: "blob" })
+      .then((r) => {
+        if (!alive) return;
+        obj = URL.createObjectURL(r.data);
+        setUrl(obj);
+      })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
+  }, [id]);
+  if (failed) {
+    return (
+      <div className="w-full h-full grid place-items-center"
+        style={{ background: "rgba(255,255,255,0.06)" }}>
+        <ImageOff size={16} color="rgba(255,255,255,0.5)" />
+      </div>
+    );
+  }
+  if (!url) {
+    return (
+      <div className="w-full h-full grid place-items-center"
+        style={{ background: "rgba(255,255,255,0.06)" }}>
+        <Loader2 size={14} className="animate-spin" color="rgba(255,255,255,0.5)" />
+      </div>
+    );
+  }
+  return <img src={url} alt={alt} className={className} />;
+}
+
+
 /* ── the roll ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -116,17 +162,35 @@ function StampMark({ text, boxH }) {
  * deleted and the strip is where that becomes obvious.
  */
 function Roll({ photos, queued, need, cap, active, onPick, onAdd, t }) {
-  const slots = [];
-  for (let i = 0; i < Math.max(need, photos.length + (queued.length ? 1 : 0)); i += 1) {
-    slots.push(photos.find((p) => p.slot === i) || null);
+  // Queued shots hold a slot of their own — a retake keeps the slot it names,
+  // an append takes the next free one. Without this a leader who shot three
+  // photos with no signal would look at a roll showing none of them, which is
+  // the exact moment they would re-shoot everything.
+  const held = new Set(photos.map((p) => p.slot));
+  const waiting = new Map();
+  let next = 0;
+  for (const q of queued) {
+    let at = q.slot;
+    if (at == null) {
+      while (held.has(next) || waiting.has(next)) next += 1;
+      at = next;
+    }
+    if (!waiting.has(at)) waiting.set(at, q);
   }
+  const last = Math.max(
+    need,
+    ...photos.map((p) => p.slot + 1),
+    ...[...waiting.keys()].map((k) => k + 1),
+  );
+  const slots = [];
+  for (let i = 0; i < last; i += 1) slots.push(photos.find((p) => p.slot === i) || null);
   const extras = photos.filter((p) => p.slot >= need);
   const canAdd = photos.length + queued.length < cap;
   return (
     <div className="flex items-center gap-2 overflow-x-auto px-3 py-2"
       style={{ scrollbarWidth: "none" }}>
       {slots.map((p, i) => {
-        const isQueued = !p && queued.some((q) => q.slot === i);
+        const isQueued = !p && waiting.has(i);
         return (
           <button
             key={i}
@@ -145,8 +209,7 @@ function Roll({ photos, queued, need, cap, active, onPick, onAdd, t }) {
           >
             {p ? (
               <>
-                <img src={`/api/leader-proof/photo/${p.id}`} alt=""
-                  className="w-full h-full object-cover" loading="lazy" />
+                <ShotImg id={p.id} className="w-full h-full object-cover" />
                 <span className="absolute right-0.5 bottom-0.5 rounded-full p-0.5"
                   style={{ background: "#22c55e" }}>
                   <Check size={9} color="#06210f" strokeWidth={4} />
@@ -484,10 +547,26 @@ export default function ProofCamera() {
       secondary={{ label: t("proof.gate.close"), onClick: () => tgApp()?.close?.() }} />;
   }
   if (dayClosed) {
-    return <ErrorScreen code="🔒" tone="neutral" title={t("proof.gate.dayClosed")}
+    return <ErrorScreen icon={Lock} tone="neutral" title={t("proof.gate.dayClosed")}
       message={t("proof.gate.dayClosedMsg")}
       action={{ label: t("proof.gate.close"), onClick: () => tgApp()?.close?.() }} />;
   }
+
+  // The next camera task that still needs shots. `siblings` arrives ordered by
+  // task id — the same order as the bot menu — so "next" means the same thing
+  // in both places.
+  const nextTask = (data.siblings || [])
+    .find((sib) => sib.id !== task.id && sib.have < sib.min_media) || null;
+  const goTask = (id) => {
+    setViewing(null);
+    setRetakeSlot(null);
+    discardShot();
+    setTaskId(id);
+    // Keep the URL honest, so a reload lands on the task actually on screen.
+    const u = new URL(window.location.href);
+    u.searchParams.set("task", String(id));
+    window.history.replaceState(null, "", u.toString());
+  };
 
   const late = task.date_check && task.time_check && !inWindow(clock, task.window);
   const stamp = stampText(mode === "review" && shot ? shot.ms : clock);
@@ -537,8 +616,7 @@ export default function ProofCamera() {
           ) : mode === "review" && shot ? (
             <img src={shot.url} alt="" className="w-full h-full object-contain" />
           ) : viewing ? (
-            <img src={`/api/leader-proof/photo/${viewing.id}`} alt=""
-              className="w-full h-full object-contain" />
+            <ShotImg id={viewing.id} className="w-full h-full object-contain" />
           ) : null}
 
           {mode !== "slot" ? <StampMark text={stamp} boxH={frameH} /> : null}
@@ -622,7 +700,21 @@ export default function ProofCamera() {
                 : t("proof.needHint").replace("{n}", Math.max(0, need - photos.length - queued.length))}
             </p>
             {done ? (
-              <div className="px-4 pb-3">
+              <div className="px-4 pb-3 space-y-2">
+                {/* Going back to Telegram, finding the menu, tapping the next
+                    task, answering «Ha» and tapping the camera again is five
+                    taps to do the thing they are already here to do. The next
+                    unfinished camera task is offered where they finish the last
+                    one. */}
+                {nextTask ? (
+                  <Button size="lg" variant="secondary" className="w-full justify-between"
+                    onClick={() => goTask(nextTask.id)}>
+                    <span className="truncate">
+                      {t("proof.nextTask")}: {nextTask.name} ({nextTask.have}/{nextTask.min_media})
+                    </span>
+                    <ArrowRight size={16} />
+                  </Button>
+                ) : null}
                 <Button size="lg" variant="success" className="w-full"
                   onClick={() => tgApp()?.close?.()}>
                   <Check size={17} /> {t("proof.finish")}

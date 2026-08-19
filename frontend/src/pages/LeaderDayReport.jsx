@@ -58,6 +58,7 @@ const T_ALL = {
     gNone: "Tekshirilmagan",
     answerYes: "Bajarildi", answerNo: "Bajarilmadi", noAnswer: "Javob berilmagan",
     reason: "Sabab", weight: "Ulush", photos: "Dalil rasmlari",
+    shotInApp: "ilovada olingan", shotLate: "kech", shotDeferred: "keyin yuborilgan",
     aiVerdict: "AI xulosasi", window: "Ruxsat etilgan vaqt", onPhoto: "Rasmda",
     needDate: "Kerakli sana",
     errNote: "Bu rasmni yuklab bo'lmadi. Bu texnik nosozlik — baho pasaytirilmadi.",
@@ -102,6 +103,7 @@ const T_ALL = {
     gNone: "Текширилмаган",
     answerYes: "Бажарилди", answerNo: "Бажарилмади", noAnswer: "Жавоб берилмаган",
     reason: "Сабаб", weight: "Улуш", photos: "Далил расмлари",
+    shotInApp: "иловада олинган", shotLate: "кеч", shotDeferred: "кейин юборилган",
     aiVerdict: "AI хулосаси", window: "Рухсат этилган вақт", onPhoto: "Расмда",
     needDate: "Керакли сана",
     errNote: "Бу расмни юклаб бўлмади. Бу техник носозлик — баҳо пасайтирилмади.",
@@ -146,6 +148,7 @@ const T_ALL = {
     gNone: "Без проверки",
     answerYes: "Выполнено", answerNo: "Не выполнено", noAnswer: "Нет ответа",
     reason: "Причина", weight: "Вес", photos: "Фото-подтверждения",
+    shotInApp: "снято в приложении", shotLate: "поздно", shotDeferred: "отправлено позже",
     aiVerdict: "Заключение ИИ", window: "Допустимое время", onPhoto: "На фото",
     needDate: "Нужная дата",
     errNote: "Это фото не удалось загрузить. Это техническая ошибка — оценка не снижена.",
@@ -190,6 +193,7 @@ const T_ALL = {
     gNone: "Not checked",
     answerYes: "Done", answerNo: "Not done", noAnswer: "No answer",
     reason: "Reason", weight: "Weight", photos: "Proof photos",
+    shotInApp: "taken in the app", shotLate: "late", shotDeferred: "sent later",
     aiVerdict: "AI verdict", window: "Allowed window", onPhoto: "On the photo",
     needDate: "Required date",
     errNote: "This photo could not be fetched. That is a technical failure — nothing was deducted.",
@@ -243,6 +247,18 @@ function StateChip({ state, T, size = "sm" }) {
   );
 }
 
+/** HH:MM:SS in Tashkent out of the ISO instant the server recorded. Fixed
+ *  +05:00, like everywhere else here: the reader is on the factory floor, and
+ *  the browser's own zone is whatever the phone was last set to — which on this
+ *  particular feature is precisely the thing not to trust. */
+function clockOf(iso) {
+  if (!iso) return "";
+  const d = new Date(new Date(iso).getTime() + 5 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+}
+
+
 /* ── one task ──────────────────────────────────────────────────────────────
  * A rejected card opens with everything visible; a passed one collapses to a
  * single line. The evidence for a verdict nobody is contesting is noise on a
@@ -253,13 +269,17 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
   const st = taskState(t);
   const bad = st?.key === "rejected";
   const name = pick(t.name, lang);
+  // `cam` rides positionally with `media` (both built in slot order — see
+  // services/leader_bot.captures_of), so a shot taken in the app carries the
+  // instant the SERVER recorded and the two marks that instant can earn.
   const photos = useMemo(
     () => (t.media?.length
-      ? t.media.map((id) => ({ kind: "bot", id }))
+      ? t.media.map((id, i) => ({ kind: "bot", id, cam: t.cam?.[i] || null }))
       : (t.photo || "").split(",").map((s) => s.trim())
         .filter((s) => s.includes("http")).map((url) => ({ kind: "sheet", url }))),
-    [t.media, t.photo],
+    [t.media, t.photo, t.cam],
   );
+  const shotInApp = photos.some((p) => p.cam);
   const rev = t.review;
   const dateFlagged = (rev?.flags || []).some((f) => f === "no_date" || f === "date_mismatch");
 
@@ -301,6 +321,27 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
                 style={{ color: "var(--text-4)" }}>
                 <Camera size={11} className="inline mr-1" />{T.photos} ({photos.length})
               </p>
+              {/* Where the evidence came from. A proof SHOT in the app carries a
+                  time the leader could not author, and that is the single most
+                  useful thing a reviewer can know about it before opening it —
+                  so it is stated once for the set, not repeated per thumbnail. */}
+              {shotInApp && (
+                <p className="text-[10px] mb-1.5 flex items-center gap-1 flex-wrap"
+                  style={{ color: "var(--text-3)" }}>
+                  <span className="rounded px-1.5 py-px font-semibold"
+                    style={{ background: "rgba(200,151,63,0.14)", color: "var(--brand)",
+                             border: "1px solid rgba(200,151,63,0.35)" }}>
+                    📷 {T.shotInApp}
+                  </span>
+                  {photos.filter((p) => p.cam).map((p, i) => (
+                    <span key={i} className="tabular-nums">
+                      {clockOf(p.cam.at)}
+                      {p.cam.late ? ` ⚠︎${T.shotLate}` : ""}
+                      {p.cam.deferred ? ` ⇡${T.shotDeferred}` : ""}
+                    </span>
+                  ))}
+                </p>
+              )}
               {/* Thumbnails, not full-size: thirteen tasks of proof photos at
                   full width is megabytes down a phone connection, and the
                   photo is an index into the zoom view, not the evidence. */}

@@ -53,6 +53,7 @@ const TXT = {
     nextMorning: "ertalab",
     deadlineNote: "Muddat ma'lumot uchun ko'rsatiladi: baho faqat kunlik topshirish oynasi bo'yicha hisoblanadi.",
     proof: "Isbot", minPhotos: "kamida {n} ta rasm", noPhotos: "rasm talab qilinmaydi",
+    inApp: "Bu vazifaning rasmi botdagi «📷 Kamerani ochish» tugmasi orqali ILOVADA olinadi. Chatga rasm yuborib bo'lmaydi; sana va vaqt rasmga server soati bo'yicha avtomatik yoziladi.",
     criteria: "Talab", noCriteria: "Talab yozilmagan — AI faqat rasm vaqtini tekshiradi.",
     noCriteriaNoDate: "Talab yozilmagan — AI faqat rasm mavzusini tekshiradi.",
     photoWin: "Rasm: {from} – {to}", noDate: "Sana tekshirilmaydi",
@@ -76,6 +77,7 @@ const TXT = {
     nextMorning: "эрталаб",
     deadlineNote: "Муддат маълумот учун кўрсатилади: баҳо фақат кунлик топшириш ойнаси бўйича ҳисобланади.",
     proof: "Исбот", minPhotos: "камида {n} та расм", noPhotos: "расм талаб қилинмайди",
+    inApp: "Бу вазифанинг расми ботдаги «📷 Камерани очиш» тугмаси орқали ИЛОВАДА олинади. Чатга расм юбориб бўлмайди; сана ва вақт расмга сервер соати бўйича автоматик ёзилади.",
     criteria: "Талаб", noCriteria: "Талаб ёзилмаган — AI фақат расм вақтини текширади.",
     noCriteriaNoDate: "Талаб ёзилмаган — AI фақат расм мавзусини текширади.",
     photoWin: "Расм: {from} – {to}", noDate: "Сана текширилмайди",
@@ -99,6 +101,7 @@ const TXT = {
     nextMorning: "утра",
     deadlineNote: "Срок носит справочный характер: оценка считается только по дневному окну сдачи отчёта.",
     proof: "Доказательство", minPhotos: "минимум {n} фото", noPhotos: "фото не требуется",
+    inApp: "Фото для этой задачи снимается В ПРИЛОЖЕНИИ — кнопкой «📷 Открыть камеру» в боте. Отправить фото в чат нельзя; дата и время наносятся на снимок автоматически по часам сервера.",
     criteria: "Требование", noCriteria: "Требование не задано — ИИ проверяет только время фото.",
     noCriteriaNoDate: "Требование не задано — ИИ проверяет только тему фото.",
     photoWin: "Фото: {from} – {to}", noDate: "Дата не проверяется",
@@ -122,6 +125,7 @@ const TXT = {
     nextMorning: "next morning",
     deadlineNote: "The deadline is informational: the score is computed only against the day's filing window.",
     proof: "Proof", minPhotos: "at least {n} photo(s)", noPhotos: "no photo required",
+    inApp: "This task's photo is taken IN THE APP — with the «📷 Open the camera» button in the bot. No photo can be sent to the chat; the date and time are burnt in automatically from the server's clock.",
     criteria: "Requirement", noCriteria: "No requirement written — the AI checks only the photo time.",
     noCriteriaNoDate: "No requirement written — the AI checks only the photo subject.",
     photoWin: "Photo: {from} – {to}", noDate: "Date not checked",
@@ -207,6 +211,19 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
               {task.min_media > 0 ? fill(T.minPhotos, { n: task.min_media }) : T.noPhotos}
             </span>
           </div>
+          {/* WHERE this task is answered. Stated first, and as a sentence
+              rather than a chip in the row of facts below: a leader who expects
+              to send a file to the chat and finds the bot refusing it has been
+              left to guess, and that is a support call, not a misunderstanding
+              they can resolve alone. */}
+          {task.proof_kind === "camera" && (
+            <div className="mt-1.5 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[11px] leading-snug"
+              style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",
+                       border: "1px solid rgba(200,151,63,0.30)" }}>
+              <Camera size={12} className="flex-shrink-0 mt-px" style={{ color: "var(--brand)" }} />
+              <span>{T.inApp}</span>
+            </div>
+          )}
         </div>
       </header>
 
