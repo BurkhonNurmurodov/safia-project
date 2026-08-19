@@ -139,18 +139,19 @@ def _luma(img: Image.Image, box: tuple[int, int, int, int]) -> float:
 def burn(data: bytes, when: datetime) -> tuple[bytes, str]:
     """Return (stamped JPEG bytes, the text burnt in).
 
-    Three layers, because one is not enough on a real photo:
+    The mark is drawn ON the photo and blacks out none of it — no plate, no
+    box, by the operator's call (2026-08-19). Two layers carry it instead, and
+    both read what is underneath:
 
-    * a soft contrasting PLATE behind the text — the only thing that survives a
-      busy background (gravel, mesh, a stack of crates), where an outline alone
-      dissolves into the noise around it;
-    * a contrasting OUTLINE, which carries the glyphs across a hard edge running
-      right under the stamp — half on a white wall, half on a dark machine;
+    * a contrasting OUTLINE thick enough to hold the glyphs together over noise
+      — gravel, mesh, a stack of crates — and across a hard edge running right
+      under the stamp, half on a white wall, half on a dark machine;
     * a FILL picked from what is actually behind it: white over a dim workshop,
       near-black over a lit panel or a sheet of paper.
 
-    Together they make "visible on any background" a property of the drawing
-    rather than a hope about the photo.
+    Between them "visible on any background" stays a property of the drawing
+    rather than a hope about the photo, without a slab of black over the corner
+    of every proof.
     """
     try:
         img = Image.open(BytesIO(data))
@@ -187,14 +188,11 @@ def burn(data: bytes, when: datetime) -> tuple[bytes, str]:
     fill = (17, 17, 17) if bright else (255, 255, 255)
     halo = (255, 255, 255) if bright else (0, 0, 0)
 
-    plate = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(plate).rounded_rectangle(
-        (x - m, y - m, x + tw + m, y + th + m), radius=max(4, th // 3),
-        fill=(*halo, 110))
-    img = Image.alpha_composite(img.convert("RGBA"), plate).convert("RGB")
-    draw = ImageDraw.Draw(img)
+    # Heavier than it would need to be behind a plate: with nothing between the
+    # glyphs and the photo, the outline IS the legibility, so it is sized off
+    # the text rather than left at a token two pixels.
     draw.text((x - l, y - t), text, font=font, fill=fill,
-              stroke_width=max(2, th // 10), stroke_fill=halo)
+              stroke_width=max(2, th // 7), stroke_fill=halo)
 
     out = BytesIO()
     img.save(out, format="JPEG", quality=JPEG_QUALITY, optimize=True)

@@ -94,7 +94,12 @@ const STAMP_PAD = 0.028;
 /** The burnt-in mark, drawn over the picture box in the same proportions the
  *  server burns it into the file — so this is the mark, not an impression of
  *  it. It rides on the PICTURE box, never on the screen area around it: those
- *  two are only the same thing when the photo happens to fill the phone. */
+ *  two are only the same thing when the photo happens to fill the phone.
+ *
+ *  No plate behind it, matching the file: the stamp states the time, it does
+ *  not black out the corner of the evidence. What keeps it readable over a
+ *  bright wall or a lit panel is the dark halo around the glyphs — the DOM
+ *  twin of the outline Pillow strokes into the JPEG. */
 function StampMark({ text, boxW, boxH }) {
   const base = Math.min(boxW || 0, boxH || 0);
   const size = Math.max(11, Math.round(base * STAMP_H));
@@ -103,14 +108,17 @@ function StampMark({ text, boxW, boxH }) {
     <div
       className="pointer-events-none absolute font-bold tabular-nums"
       style={{
+        // No padding, so the text sits the same distance off the corner as the
+        // burnt one: the server measures that gap to the GLYPHS.
         left: pad, bottom: pad,
         maxWidth: `calc(100% - ${pad * 2}px)`,
         fontSize: size, lineHeight: 1.15,
-        padding: `${size * 0.3}px ${size * 0.42}px`,
-        borderRadius: size * 0.34,
         color: "#fff",
-        background: "rgba(0,0,0,0.45)",
-        textShadow: "0 0 3px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.9)",
+        background: "transparent",
+        textShadow: [
+          "0 0 2px rgba(0,0,0,0.95)", "0 0 4px rgba(0,0,0,0.9)",
+          "0 0 8px rgba(0,0,0,0.75)", "0 1px 2px rgba(0,0,0,0.95)",
+        ].join(", "),
         letterSpacing: "0.01em",
         whiteSpace: "nowrap",
         // The viewfinder is a hardware-composited layer in Telegram's WebView.
@@ -419,6 +427,7 @@ export default function ProofCamera() {
   // stream that nothing holds a reference to: the camera stays on after the
   // page is closed, with no way left to stop it.
   const startingRef = useRef(false);
+  const startCameraRef = useRef(null);
   const startCamera = useCallback(async (want = facing) => {
     if (startingRef.current) return;
     startingRef.current = true;
@@ -444,6 +453,17 @@ export default function ProofCamera() {
       }
       if (id) localStorage.setItem(`${LENS_KEY}.${want}`, id);
       streamRef.current = stream;
+      // The OS can take the camera back at any moment — an incoming call,
+      // another app, a WebView the system suspended. The element keeps showing
+      // the last frame it got, so a dead camera looks exactly like a working
+      // one until the leader presses the shutter and nothing happens. Take it
+      // back the instant it ends, while they are still on the viewfinder.
+      // (`stop()` never fires this, so re-opening cannot loop.)
+      stream.getVideoTracks().forEach((tr) => {
+        tr.addEventListener("ended", () => {
+          if (document.visibilityState === "visible") startCameraRef.current?.(want);
+        });
+      });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
@@ -455,6 +475,7 @@ export default function ProofCamera() {
       startingRef.current = false;
     }
   }, [facing, pickLens]);
+  startCameraRef.current = startCamera;
 
   useEffect(() => {
     if (!task || dayClosed) return undefined;

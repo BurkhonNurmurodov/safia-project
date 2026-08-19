@@ -460,10 +460,17 @@ SERVER's; the phone never authors it.
   nothing.
 - **The stamp is drawn on the server** (`services/leader_proof.burn`, Pillow,
   the `downtime_card` font resolver): `Safia · DD.MM.YYYY  HH:MM:SS` Tashkent,
-  bottom-left, three layers — contrast plate, outline, adaptive fill — so it is
-  legible on any background. **No font ⇒ `stamp_unavailable` ⇒ nothing is
-  stored**: an unstamped camera photo is indistinguishable from the shots this
-  feature replaces.
+  bottom-left, TWO layers — a heavy outline plus a fill picked from the
+  brightness underneath — so it is legible on any background **without a plate
+  behind it** (the operator's call, 2026-08-19: the mark states the time, it
+  does not black out the corner of the evidence). Its size comes from the
+  image's **SHORT edge** (`_fit_font`) and is then measured and shrunk until the
+  text provably fits the width: sizing off the height put a ~950 px mark on a
+  900 px-wide portrait photo — the shape every phone produces — and the seconds
+  ran off the right edge of every proof. `STAMP_H`/`STAMP_PAD` in
+  `ProofCamera.jsx` are the same two numbers and must stay the same two
+  numbers. **No font ⇒ `stamp_unavailable` ⇒ nothing is stored**: an unstamped
+  camera photo is indistinguishable from the shots this feature replaces.
 - **`leader_task_photos` is the roll** — per (day, task, slot), written the
   moment a shot lands, so a leader who shot two of three and closed Telegram
   comes back to two. At `min_media` the task IS done: `sync_entry` writes the
@@ -497,6 +504,21 @@ SERVER's; the phone never authors it.
   macro/depth), free flip, live stamp preview positioned exactly where the burnt
   one lands. `?leader=` is typeable, so the backend checks it against the leader
   profiles the calling account actually holds.
+  **Two rules the layout is built on, both bought the hard way.** (1) The
+  picture box is measured in PIXELS from the frame area and built to the
+  stream's own aspect (`fitBox`), so the viewfinder is the whole frame and never
+  a crop of it — it used to be a full-bleed element sized in percentages inside
+  an auto grid row, the percentage collapsed to the video's intrinsic height,
+  and the leader composed inside a vertical SLICE of the file with the stamp
+  pushed below the clip, invisible. Letterboxing beside a tall frame is the
+  correct outcome; cropping the file to fill the screen is not (the operator's
+  call). (2) The `<video>` stays MOUNTED in every state, hidden rather than
+  removed, and a ref callback (`setVideoEl`) hands the stream to whatever node
+  exists — unmounting it for the review shot left React building a fresh element
+  with no camera attached, so every shot after the first was aimed at a black
+  rectangle. `ensureCamera` re-binds on mode change, on `visibilitychange` and
+  on a track's `ended`; `startingRef` keeps two `getUserMedia` calls from
+  leaking a stream nothing can stop.
 - **`permissions-policy` now says `camera=(self)`** (`main.py`). It was
   `camera=()`, which denies `getUserMedia` outright — no prompt, no actionable
   error. Microphone and geolocation stay fully denied, and `self` keeps every
