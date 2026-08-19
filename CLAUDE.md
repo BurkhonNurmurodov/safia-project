@@ -415,6 +415,17 @@ proof photos, so from **2026-08-19** a checklist task can declare that its proof
 is **TAKEN IN THE APP** instead of uploaded. The clock on such a photo is the
 SERVER's; the phone never authors it.
 
+- **The ltasks modals write ONE row, so they write it ONE AT A TIME.** criteria,
+  window, deadline, the date rule and the proof kind all materialise the same
+  `leader_task_settings` / `leader_task_leader_settings` row, and a brigadir or
+  leader who has never been edited has none — fired together, two of them INSERT
+  it concurrently and one dies on the unique key while the modal reports
+  success. That is how the camera pilot's first unit saved and came back
+  screenshot (2026-08-19). `saveCell`, `saveLeaderCell` and `saveCol` are all
+  awaited chains now, and `leader_tasks._sup_row` is the materialiser that
+  re-reads the winner's row on an `IntegrityError` instead of failing — because
+  the endpoints are reachable without the UI. Never add a sixth writer to these
+  modals as a parallel `mutate()`.
 - **Enrolment must NAME a unit.** While `leader_tasks.CAMERA_IS_PILOT` stands,
   the GLOBAL level of the chain may only hold `screenshot` — camera is set on a
   supervisor's cell (whole unit) or a leader's cell (that leader), and the

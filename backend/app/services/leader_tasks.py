@@ -9,6 +9,7 @@ Base.metadata.create_all in both boot paths.
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -551,6 +552,42 @@ def set_time_check(db: Session, *, task_id: int, time_check: bool | None,
                     manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
 
 
+def _sup_row(db: Session, manager_id: int, task_id: int, *,
+             create: bool) -> "LeaderTaskSetting | None":
+    """This supervisor's row for this task, materialised on demand — and
+    surviving a concurrent materialisation of the same row.
+
+    Every side endpoint on this modal (criteria, window, deadline, the date
+    rule, the proof kind) writes THIS row, and a brigadir who has never been
+    edited has none. Two of them arriving together both INSERT it and one dies
+    on `uq_ltask_setting`, which the operator reads as "saved" while one of
+    their fields quietly did not. The admin now serialises its writes, but the
+    endpoints are reachable without it, so the loser re-reads the winner's row
+    and writes into that instead of failing.
+
+    Created with the values the level already resolves to, the same rule the
+    rest of the chain follows, so materialising it can never change what the
+    task requires.
+    """
+    row = (db.query(LeaderTaskSetting)
+           .filter_by(manager_id=manager_id, task_id=task_id).first())
+    if row or not create:
+        return row
+    td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+    row = LeaderTaskSetting(
+        manager_id=manager_id, task_id=task_id, enabled=True,
+        min_media=1, weight=td.default_weight if td else 0,
+    )
+    db.add(row)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        return (db.query(LeaderTaskSetting)
+                .filter_by(manager_id=manager_id, task_id=task_id).first())
+    return row
+
+
 def _set_chain_flag(db: Session, *, task_id: int, attr: str,
                     value: bool | None, manager_id: int | None = None,
                     leader_id: int | None = None, rejudge: bool = True) -> None:
@@ -581,17 +618,9 @@ def _set_chain_flag(db: Session, *, task_id: int, attr: str,
             row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
             db.add(row)
     elif manager_id is not None:
-        row = db.query(LeaderTaskSetting).filter_by(
-            manager_id=manager_id, task_id=task_id).first()
-        if not row:
-            if v is None:
-                return
-            td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
-            row = LeaderTaskSetting(
-                manager_id=manager_id, task_id=task_id, enabled=True,
-                min_media=1, weight=td.default_weight if td else 0,
-            )
-            db.add(row)
+        row = _sup_row(db, manager_id, task_id, create=v is not None)
+        if row is None:
+            return
     else:
         row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
         if not row:
@@ -696,17 +725,9 @@ def set_proof_kind(db: Session, *, task_id: int, proof_kind: str | None,
             row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
             db.add(row)
     elif manager_id is not None:
-        row = db.query(LeaderTaskSetting).filter_by(
-            manager_id=manager_id, task_id=task_id).first()
-        if not row:
-            if v is None:
-                return
-            td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
-            row = LeaderTaskSetting(
-                manager_id=manager_id, task_id=task_id, enabled=True,
-                min_media=1, weight=td.default_weight if td else 0,
-            )
-            db.add(row)
+        row = _sup_row(db, manager_id, task_id, create=v is not None)
+        if row is None:
+            return
     else:
         row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
         if not row:

@@ -483,8 +483,8 @@ export default function LeaderTasksAdmin() {
   // whatever the cell's own Save does — one button, two writes, because an
   // admin editing a cell does not care which field routes where.
   const saveCriteria = (draft, stored, ids) => {
-    if ((draft || "") === (stored || "")) return;
-    critMut.mutate({ ...ids, criteria: draft || "" });
+    if ((draft || "") === (stored || "")) return undefined;
+    return critMut.mutateAsync({ ...ids, criteria: draft || "" });
   };
 
   // Skipped when unchanged like the criteria — and for a sharper reason here:
@@ -493,13 +493,13 @@ export default function LeaderTasksAdmin() {
   const saveWindow = (draft, stored, ids) => {
     const from = draft?.win_from || "";
     const to = draft?.win_to || "";
-    if (from === (stored?.win_from || "") && to === (stored?.win_to || "")) return;
-    winMut.mutate({ ...ids, win_from: from, win_to: to });
+    if (from === (stored?.win_from || "") && to === (stored?.win_to || "")) return undefined;
+    return winMut.mutateAsync({ ...ids, win_from: from, win_to: to });
   };
   const saveDeadline = (draft, stored, ids) => {
     const v = draft?.deadline || "";
-    if (v === (stored?.deadline || "")) return;
-    dlMut.mutate({ ...ids, deadline: v });
+    if (v === (stored?.deadline || "")) return undefined;
+    return dlMut.mutateAsync({ ...ids, deadline: v });
   };
   // Same shape as the date rule's writer: the draft opens on the value IN
   // FORCE, so a draft still equal to what this level inherits goes out as null
@@ -548,20 +548,29 @@ export default function LeaderTasksAdmin() {
     return true;
   };
 
-  const saveCell = () => {
-    saveCriteria(cell.criteria, getCell(cell.mid, cell.tid).criteria,
-      { task_id: cell.tid, manager_id: cell.mid });
-    saveWindow(cell, getCell(cell.mid, cell.tid),
-      { task_id: cell.tid, manager_id: cell.mid });
-    saveDeadline(cell, getCell(cell.mid, cell.tid),
-      { task_id: cell.tid, manager_id: cell.mid });
-    saveDateRule(cell, getCell(cell.mid, cell.tid),
-      { date_check: dcOf(cell.tid), time_check: tcOf(cell.tid) },
-      { task_id: cell.tid, manager_id: cell.mid });
-    saveProofKind(cell, getCell(cell.mid, cell.tid), pkOf(cell.tid),
-      { task_id: cell.tid, manager_id: cell.mid });
+  // Every field of this modal lands on the SAME leader_task_settings row, and a
+  // brigadir who has never been edited has no row at all — so fired together,
+  // two of these INSERT it concurrently and one dies on the unique key. That is
+  // not theoretical: it is how the camera pilot's very first unit saved
+  // "successfully" and came back screenshot (user, 2026-08-19), and it is the
+  // trap the leader modal was already written around. One after another, each
+  // step skipping what is already stored, a failure stopping the chain — its
+  // own onError has raised the toast and the modal stays open, so a retry runs
+  // from live state.
+  const saveCell = async () => {
+    const stored = getCell(cell.mid, cell.tid);
+    const ids = { task_id: cell.tid, manager_id: cell.mid };
+    try {
+      await saveCriteria(cell.criteria, stored.criteria, ids);
+      await saveWindow(cell, stored, ids);
+      await saveDeadline(cell, stored, ids);
+      if (!await saveDateRule(cell, stored,
+        { date_check: dcOf(cell.tid), time_check: tcOf(cell.tid) }, ids)) return;
+      if (!await saveProofKind(cell, stored, pkOf(cell.tid), ids)) return;
+    } catch { return; }
     cellMut.mutate({
-      manager_id: cell.mid, task_id: cell.tid, enabled: cell.enabled,
+      ...ids,
+      enabled: cell.enabled,
       min_media: Number(cell.min_media) || 0, weight: Number(cell.weight) || 0,
       names: Object.fromEntries(LANGS.map((l) => [l, cell.names?.[l] || ""])),
       when: cell.when,
@@ -903,12 +912,15 @@ export default function LeaderTasksAdmin() {
       dc0raw, dcInh,
     });
   };
-  const saveCol = () => {
+  const saveCol = async () => {
     const ids = colScope();
-    saveCriteria(col.criteria, col.criteria0, { task_id: col.tid, ...ids });
-    saveWindow(col, col.win0, { task_id: col.tid, ...ids });
-    saveDeadline(col, { deadline: col.deadline0 }, { task_id: col.tid, ...ids });
-    saveDateRule(col, col.dc0raw, col.dcInh, { task_id: col.tid, ...ids });
+    const target = { task_id: col.tid, ...ids };
+    try {
+      await saveCriteria(col.criteria, col.criteria0, target);
+      await saveWindow(col, col.win0, target);
+      await saveDeadline(col, { deadline: col.deadline0 }, target);
+      if (!await saveDateRule(col, col.dc0raw, col.dcInh, target)) return;
+    } catch { return; }
     if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
       taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
   };
