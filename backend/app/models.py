@@ -649,8 +649,9 @@ class AttendanceBatchCell(Base):
     `manager_id` is the supervisor this cell's people count for ON THIS DAY —
     seeded from the cell registry and changed by dragging the row into another
     supervisor's section. `included` is the row's checkbox. Both start from the
-    registry (`Cell.manager_id` / `Cell.att_included`) and override it for this
-    date only; making a change permanent writes back to `cells` as well.
+    registry (`Cell.manager_id` / `Cell.att_included`). A MOVE overrides the
+    registry for this date only (making it permanent writes back to `cells`); a
+    TICK always writes back, so the next day starts from the last decision.
     """
     __tablename__ = "attendance_batch_cells"
     __table_args__ = (UniqueConstraint("batch_id", "verifix_code", name="uq_batch_cell_code"),)

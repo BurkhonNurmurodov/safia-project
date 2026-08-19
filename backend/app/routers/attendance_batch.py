@@ -106,9 +106,10 @@ def _name_key(name: Optional[str]) -> str:
 
 
 def _default_included(cell: Optional[Cell]) -> bool:
-    """Starting tick state for a cell on a new day: an explicit permanent
-    decision when one was made, otherwise "does it have a supervisor" — an
-    orphan cell must never silently land in somebody's numbers."""
+    """Starting tick state for a cell on a new day: the LAST tick the admin set
+    for it (every tick is remembered in `cells.att_included`), otherwise "does
+    it have a supervisor" — an orphan cell must never silently land in
+    somebody's numbers."""
     if cell is None:
         return False
     if cell.att_included is not None:
@@ -1068,9 +1069,11 @@ def update_cells(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
-    """Apply tick / move decisions for the day. `permanent` additionally writes
-    them into `cells` so every FUTURE day starts there too — the per-day state
-    is always written, the registry only when asked."""
+    """Apply tick / move decisions for the day. A TICK always writes itself into
+    `cells.att_included`, so every FUTURE day starts from the last decision
+    (that is the whole point of the checkbox — it does not change day to day).
+    A MOVE stays this-day-only until `permanent`, which also writes the
+    supervisor into the registry every other page reads."""
     d = _parse_date(body.date)
     batch = _batch_for(db, d)
     if not batch:
@@ -1097,11 +1100,19 @@ def update_cells(
             bc.included = bool(ch.included) and bc.manager_id is not None
         bc.pending = True
 
-        if body.permanent and bc.cell_id:
+        # The TICK is a standing preference, not a whim of one day: whatever the
+        # admin last decided about a cell is what every future day starts from,
+        # so the same 139 boxes are not re-ticked every morning. The SUPERVISOR
+        # is deliberately not written here — `cells.manager_id` owns the cell
+        # platform-wide, so a move stays this-day-only until «Doimiy qilish».
+        if bc.cell_id and (body.permanent or ch.included is not None):
             cell = db.query(Cell).filter(Cell.id == bc.cell_id).first()
             if cell:
-                cell.manager_id = bc.manager_id
-                cell.att_included = bool(bc.included)
+                if ch.included is not None:
+                    cell.att_included = bool(ch.included)
+                if body.permanent:
+                    cell.manager_id = bc.manager_id
+                    cell.att_included = bool(bc.included)
 
     db.commit()
     db.refresh(batch)

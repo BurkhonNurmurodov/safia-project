@@ -1098,6 +1098,51 @@ def migrate_attendance_batches() -> None:
         db.close()
 
 
+ATT_TICK_SEED_FLAG = "att_tick_seed_from_last_day_2026_08_19"
+
+
+def seed_att_included_from_last_day() -> None:
+    """2026-08-19: the «Davomat» tick became a standing preference — every tick
+    now writes `cells.att_included`, so a new day starts where the admin left
+    it instead of at "does the cell have a supervisor".
+
+    Ticks made BEFORE this change live only inside their own day's batch, so
+    the first day after this deploy would still open on the old default and all
+    ~139 boxes would have to be set once more. Seed the registry from the LAST
+    batch that mentions each cell — the same answer the new rule would have
+    given — and only where no permanent decision was ever recorded, so an
+    admin's explicit «Doimiy qilish» is never overwritten. Guarded by an
+    AppSetting flag so it runs exactly once; changing what it seeds needs a NEW
+    flag key."""
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=ATT_TICK_SEED_FLAG).first():
+            return
+        res = db.execute(text(
+            """
+            UPDATE cells c
+               SET att_included = s.included
+              FROM (
+                    SELECT DISTINCT ON (bc.cell_id) bc.cell_id, bc.included
+                      FROM attendance_batch_cells bc
+                      JOIN attendance_batches b ON b.id = bc.batch_id
+                     WHERE bc.cell_id IS NOT NULL
+                     ORDER BY bc.cell_id, b.date DESC, bc.id DESC
+                   ) s
+             WHERE c.id = s.cell_id
+               AND c.att_included IS NULL
+            """
+        ))
+        db.add(AppSetting(key=ATT_TICK_SEED_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] att tick seed: {res.rowcount} cell(s) from their last day")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] att tick seed skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_profile_columns() -> None:
     """Concerns re-key (shift-manager/supervisor rollout): a concern is owned by
     the leader's pre-created profile so it can be logged for a leader who hasn't
