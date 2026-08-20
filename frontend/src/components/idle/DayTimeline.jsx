@@ -89,7 +89,7 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
                 key={iv.id}
                 type="button"
                 onClick={() => onPick?.(iv)}
-                className="absolute rounded-md text-[10px] font-semibold overflow-hidden px-1 text-left transition-transform hover:z-10 focus-visible:z-10"
+                className="absolute rounded-md text-[10px] font-semibold overflow-hidden whitespace-nowrap px-1 text-left transition-transform hover:z-10 focus-visible:z-10"
                 style={{
                   left: `${pct(span[0])}%`,
                   width: `max(4px, ${w}%)`,
@@ -99,8 +99,18 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
                   border: `1px ${iv.stopped ? "solid" : "dashed"} ${color}`,
                   color: iv.stopped ? "#fff" : color,
                 }}
-                title={`${t("idleCell.category")} ${code} · ${iv.start} → ${iv.end} · ${fmtDur(iv.minutes, t)}${iv.stopped ? "" : ` · ${t("idleCell.notStopped")}`}\n${iv.note}`}
+                title={`${t("idleCell.category")} ${code} · ${iv.start} → ${iv.end} · ${fmtDur(iv.minutes, t)}${iv.stopped ? "" : ` · ${t("idleCell.notStopped")} · ${t("idleCell.notCounted")}`}\n${iv.note}`}
               >
+                {/* The CODE only, never the duration. `w` is a percentage of
+                    the window while a label costs PIXELS, and the two are not
+                    relatable: the same 18% bar is ~53px on a phone and the
+                    string it would have to hold grows with the window, so
+                    «D2 · 2 s 15 daq» clipped inside an 18px box and read
+                    «D2 · 2 s» — a 2h15 stop reported as 2h, on the chart whose
+                    whole job is measuring the stop. The duration is on the row
+                    underneath, in the hover title, and one tap away in the
+                    editor; a number that is sometimes wrong is worth less than
+                    no number. */}
                 {w > 7 ? code : ""}
               </button>
             );
@@ -132,8 +142,35 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
             );
           })}
         </div>
-        <div className="mt-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
-          {t("idleCell.unionBarLabel")}
+        {/* The chart draws four different marks and used to name only one of
+            them, in 10px uppercase, at the bottom — so the hollow bars (the
+            not-stopped ojidaniyas) were the one thing on screen with no way to
+            find out what it meant. Every mark is named here instead, and the
+            not-stopped swatch says in words why those minutes sit outside the
+            slate bar underneath. The overlap swatch appears only when the day
+            actually has one. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]" style={{ color: "var(--text-4)" }}>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="rounded-sm flex-shrink-0" style={{ width: 12, height: 8, background: "var(--text-3)" }} />
+            {t("idleCell.stopped")}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="rounded-sm flex-shrink-0" style={{ width: 12, height: 8, border: "1px dashed var(--text-3)" }} />
+            {t("idleCell.notStopped")} · {t("idleCell.notCounted")}
+          </span>
+          {bands.length > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="rounded-sm flex-shrink-0"
+                style={{ width: 12, height: 8, background: "rgba(234,179,8,0.14)", border: "1px solid rgba(234,179,8,0.45)" }}
+              />
+              {t("idleCell.overlapChip")}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1.5">
+            <span className="rounded-sm flex-shrink-0" style={{ width: 12, height: 8, background: "rgba(148,163,184,0.8)" }} />
+            {t("idleCell.unionBarLabel")}
+          </span>
         </div>
       </div>
     </div>

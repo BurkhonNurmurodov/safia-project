@@ -2,9 +2,10 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Info, ChevronDown, Flag, Repeat2, Plus, Trash2, Layers, UserRound, Boxes,
-  Layers2, Archive, GanttChartSquare, ListTree,
+  Layers2, Archive, ListTree, Play, FlaskConical,
 } from "lucide-react";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
+import CategoryLegendModal from "../components/ui/CategoryLegendModal";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -37,13 +38,15 @@ const localTodayIso = () => {
 };
 // Viewer language first, then Russian — the shared registry fallback.
 const cellName = (c, lang) => pickCellName(c, lang, "name_");
-// Stable per-cell hue so each verifix badge is visually distinct (identity, not
-// status) — solid mid-tone with white text reads in both themes.
-function hueFromString(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return h;
-}
+
+// The category's meaning, or "" when that code was never seeded. `t()` answers
+// with the KEY itself when a translation is missing, so the guard is what keeps
+// a literal "downtime.cat.X.label" off the screen — the same test Downtime.jsx
+// applies wherever it prints a category.
+const catLabel = (code, t) => {
+  const s = t(`downtime.cat.${code}.label`);
+  return s && !s.startsWith("downtime.cat.") ? s : "";
+};
 
 // Cell identity block: verifix badge + workshop name on line 1, the cell's
 // OWNING LEADER (role_profiles) muted underneath. Shared by both views so the
@@ -51,14 +54,20 @@ function hueFromString(s) {
 // than as a grouping level because leaders are ~1:1 with cells (93 leaders /
 // 108 cells) — grouping would put a heading over almost every single row.
 function CellIdent({ cell, t, tl, lang, nameCls = "text-xs", extra }) {
-  const hue = hueFromString(cell.verifix_code || "");
   const name = cellName(cell, lang);
   return (
     <span className="min-w-0 flex-1 flex flex-col gap-0.5">
       <span className="flex items-center gap-2 min-w-0">
+        {/* NEUTRAL, deliberately. The badge used to take a solid colour hashed
+            from the verifix code — identity, in intent. On a platform whose own
+            rule is that red and green are STATUS, a hash that paints 4811 red
+            and 8411 green beside a downtime figure reads as a traffic light
+            nobody set, and a reader scanning the list sees alarm where there is
+            only a different number. A code is an identity, so it gets the same
+            chrome as every other identity chip here. */}
         <span
-          className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0"
-          style={{ background: `hsl(${hue},55%,42%)`, color: "#fff" }}
+          className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0 tabular-nums"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
         >
           {cell.verifix_code}
         </span>
@@ -112,13 +121,23 @@ function LegacyRow({ entry, t, onDelete }) {
   );
 }
 
-// The two numbers that carry the whole point of the rebuild. The total is the
-// UNION of the stopped ranges; the second line appears only when ranges
-// actually overlapped, and says what the old minutes-only method would have
-// reported instead. A figure that silently changed would look like a bug —
+// The cell's day as a LEDGER rather than a restatement of the header figure:
+// what stopped the cell, what was recorded and deliberately left out of that,
+// and — when ranges overlapped — what the old minutes-only method would have
+// reported instead. A figure that silently changed would look like a bug, so
 // this one shows its own correction.
+//
+// The not-stopped line is the half the page never had. Those ojidaniyas are
+// entered for a reason and the backend has always counted them
+// (`not_stopped_count` / `not_stopped_sum_min`); nothing displayed them, so an
+// operator who filed one watched the total refuse to move with no statement
+// anywhere of why. It is a SUM of the entries, not a union — they may overlap
+// each other freely and none of it is downtime — which is exactly why it sits
+// in its own neutral line instead of being added to anything.
 function SummaryStrip({ summary, t }) {
   const overlap = summary?.overlap_min || 0;
+  const nsCount = summary?.not_stopped_count || 0;
+  const nsMin = summary?.not_stopped_sum_min || 0;
   return (
     <div
       className="px-3 py-2.5 flex flex-wrap items-baseline gap-x-4 gap-y-1"
@@ -132,6 +151,23 @@ function SummaryStrip({ summary, t }) {
           {summary?.stopped_union_min ? fmtDur(summary.stopped_union_min, t) : "—"}
         </span>
       </span>
+      {nsCount > 0 && (
+        <span className="flex items-baseline gap-2">
+          <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
+            <Play size={9} />{t("idleCell.notStopped")}
+          </span>
+          <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>
+            {fmtDur(nsMin, t)}
+          </span>
+          {/* --text-3, the strip's tone for a SENTENCE (as on the old-method
+              line below) rather than --text-4, which it reserves for the
+              uppercase captions. The rule that keeps these minutes out of the
+              total has to be readable to do its job. */}
+          <span className="text-[10px]" style={{ color: "var(--text-3)" }}>
+            · {t("idleCell.notCounted")}
+          </span>
+        </span>
+      )}
       {overlap > 0 && (
         <span className="flex items-baseline gap-2">
           <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide" style={{ color: "#eab308" }}>
@@ -151,16 +187,26 @@ function SummaryStrip({ summary, t }) {
   );
 }
 
-// ONE cell = one collapsible card, with two interchangeable bodies:
-//   view "category" — the 11 categories, each holding its own ojidaniyas
-//   view "timeline" — the day drawn to scale + one chronological log
-// The header, the totals, the add/edit modal and both delete flows are shared,
-// so the two tabs are genuinely two views of one thing and can never drift into
-// disagreeing about what the cell's day was.
-function CellCard({ cell, date, view, t, tl, lang, autoOpen, toast }) {
+// ONE cell = one collapsible card holding ONE body, in the order a reader
+// actually needs it: the day's ledger, then the day drawn to scale, then the
+// ojidaniyas themselves grouped under the categories they were filed against.
+//
+// It used to be two interchangeable bodies behind two page tabs — the same
+// events, the same header, the same totals, the same modal, drawn twice. That
+// is a LAYOUT choice presented as NAVIGATION: it asked the operator to make a
+// decision that had no consequence, on every visit, before reaching any data.
+// The timeline is a view of the list, so it sits with the list.
+//
+// The category scaffolding is gone with it. All eleven categories rendered for
+// every cell whether or not they held anything, so a day with two ojidaniyas
+// showed nine empty rows and pushed its own add button below the fold. Only
+// categories this cell actually used are drawn now — and they are drawn from
+// the DATA rather than from the CATS constant, which also means an entry filed
+// under a category the frontend does not know about appears instead of
+// vanishing.
+function CellCard({ cell, date, t, tl, lang, autoOpen, toast }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(autoOpen);
-  const [infoOpen, setInfoOpen] = useState(null);
   const [form, setForm] = useState(null);          // {interval, category} | null
   const [confirm, setConfirm] = useState(null);    // {kind, row} | null
   const [delErr, setDelErr] = useState("");        // failure shown ON the confirm
@@ -185,6 +231,23 @@ function CellCard({ cell, date, view, t, tl, lang, autoOpen, toast }) {
     for (const e of legacy) (m[e.category] ||= []).push(e);
     return m;
   }, [legacy]);
+
+  // The categories this cell actually used, in the canonical CATS order, with
+  // any name CATS does not know appended rather than dropped — the old render
+  // walked CATS and therefore drew nothing at all for such an entry, while the
+  // cell's total still counted it.
+  const groups = useMemo(() => {
+    const names = new Set();
+    for (const iv of intervals) names.add(iv.category);
+    for (const e of legacy) names.add(e.category);
+    const known = CATS.filter((c) => names.has(c.name));
+    const extra = [...names]
+      .filter((n) => !CATS.some((c) => c.name === n))
+      .map((n) => ({ code: String(n).replace(/^Cat\s*/i, ""), name: n }));
+    return [...known, ...extra];
+  }, [intervals, legacy]);
+
+  const entryCount = intervals.length + legacy.length;
 
   const del = useMutation({
     mutationFn: ({ kind, row }) =>
@@ -252,6 +315,21 @@ function CellCard({ cell, date, view, t, tl, lang, autoOpen, toast }) {
               {t("idleCell.legacyChip")}
             </span>
           )}
+          {/* How many ojidaniyas this cell holds, whatever they cost. Without
+              it a cell whose entries were all not-stopped collapsed to a bare
+              "—", which reads as "nothing was recorded" when it means "nothing
+              stopped the cell" — and the operator who filed them has no way to
+              tell the two apart without expanding every card. */}
+          {entryCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-[11px]"
+              style={{ color: "var(--text-4)" }}
+              title={t("idleCell.recordCount").replace("{n}", entryCount)}
+              aria-label={t("idleCell.recordCount").replace("{n}", entryCount)}
+            >
+              <ListTree size={11} />{entryCount}
+            </span>
+          )}
           {summary.stopped_union_min ? (
             <span style={{ color: "#ef4444", fontWeight: 700 }}>{fmtDur(summary.stopped_union_min, t)}</span>
           ) : (
@@ -262,67 +340,70 @@ function CellCard({ cell, date, view, t, tl, lang, autoOpen, toast }) {
 
       {open && (
         <>
-          <SummaryStrip summary={summary} t={t} />
+          {/* Nothing to summarise until something is filed — an empty ledger is
+              three dashes explaining themselves. */}
+          {entryCount > 0 && <SummaryStrip summary={summary} t={t} />}
 
-          {view === "timeline" ? (
-            <>
-              {intervals.length > 0 ? (
-                <DayTimeline
-                  intervals={intervals}
-                  summary={summary}
-                  t={t}
-                  onPick={(iv) => setForm({ interval: iv, category: iv.category })}
-                />
-              ) : (
-                <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
-                  {t("idleCell.noIntervals")}
-                </div>
-              )}
-              {intervals.map((iv) => rowFor(iv, true))}
-              {legacy.map((e) => (
-                <LegacyRow key={`l${e.id}`} entry={e} t={t} onDelete={(row) => { setDelErr(""); setConfirm({ kind: "legacy", row }); }} />
-              ))}
-            </>
+          {/* The chart earns its height once there are two ranges to relate to
+              each other; for a single ojidaniya the row underneath already says
+              everything the bar would, and on a phone that height is the whole
+              difference between one cell per screen and three. */}
+          {intervals.length > 1 && (
+            <DayTimeline
+              intervals={intervals}
+              summary={summary}
+              t={t}
+              onPick={(iv) => setForm({ interval: iv, category: iv.category })}
+            />
+          )}
+
+          {entryCount === 0 ? (
+            <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
+              {t("idleCell.noIntervals")}
+            </div>
           ) : (
-            CATS.map((cat, i) => {
+            groups.map((cat) => {
+              const idx = CATS.findIndex((c) => c.name === cat.name);
+              // Same positional hue IntervalRow and DayTimeline derive, unknown
+              // categories included — one category, one colour, on all three.
+              const color = CATEGORY_COLORS[(idx < 0 ? 0 : idx) % CATEGORY_COLORS.length];
               const Icon = iconFor(cat.code);
-              const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
               const rows = byCat[cat.name] || [];
               const legacyRows = legacyByCat[cat.name] || [];
               const catUnion = summary.by_category?.[cat.name]?.union_min || 0;
-              const showInfo = infoOpen === cat.code;
+              const label = catLabel(cat.code, t);
               return (
-                <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 min-h-[40px]">
-                    <Icon size={14} style={{ color, flexShrink: 0 }} />
-                    <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
-                      {t("idleCell.category")} {cat.code}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setInfoOpen((c) => (c === cat.code ? null : cat.code))}
-                      className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 -m-1.5"
-                      style={{ color: showInfo ? "var(--brand-text)" : "var(--text-3)", cursor: "pointer" }}
-                      aria-label={t(`downtime.cat.${cat.code}.label`)}
-                      aria-expanded={showInfo}
+                <div key={cat.name} style={{ borderTop: "1px solid var(--border)" }}>
+                  <div
+                    className="flex items-center gap-2 px-3 py-1.5 min-h-[40px]"
+                    style={{ background: "var(--bg-inner)" }}
+                  >
+                    {/* Letter chip for cross-referencing the Ojidaniya register,
+                        and the category's MEANING as the heading. "Kategoriya
+                        D2" is a lookup task the operator had to perform from
+                        memory or by tapping an ⓘ one category at a time; the
+                        letter alone is not a name. */}
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+                      style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}
                     >
-                      <Info size={16} />
-                    </button>
-                    <span className="ml-auto text-xs tabular-nums flex-shrink-0" style={{ color: catUnion ? "var(--text-1)" : "var(--text-4)", fontWeight: catUnion ? 600 : 400 }}>
+                      <Icon size={10} />{cat.code}
+                    </span>
+                    <span
+                      className="text-xs truncate min-w-0 flex-1"
+                      style={{ color: "var(--text-1)" }}
+                      title={label || `${t("idleCell.category")} ${cat.code}`}
+                    >
+                      {label || `${t("idleCell.category")} ${cat.code}`}
+                    </span>
+                    <span
+                      className="text-xs tabular-nums flex-shrink-0"
+                      style={{ color: catUnion ? "var(--text-1)" : "var(--text-4)", fontWeight: catUnion ? 600 : 400 }}
+                    >
                       {catUnion ? fmtDur(catUnion, t) : "—"}
                     </span>
                     {addBtn(cat.name, true)}
                   </div>
-                  {showInfo && (
-                    <div className="px-3 pb-2.5 pt-0.5 text-xs" style={{ background: "var(--bg-inner)" }}>
-                      <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>
-                        {t(`downtime.cat.${cat.code}.label`)}
-                      </div>
-                      <div style={{ color: "var(--text-3)", lineHeight: 1.5 }}>
-                        {t(`downtime.cat.${cat.code}.note`)}
-                      </div>
-                    </div>
-                  )}
                   {rows.map((iv) => rowFor(iv, false))}
                   {legacyRows.map((e) => (
                     <LegacyRow key={`l${e.id}`} entry={e} t={t} onDelete={(row) => { setDelErr(""); setConfirm({ kind: "legacy", row }); }} />
@@ -370,14 +451,14 @@ function CellCard({ cell, date, view, t, tl, lang, autoOpen, toast }) {
   );
 }
 
-// This page has three tabs over the same day and the same cells:
-//   «Kutish»       — the ojidaniyas grouped under their 11 categories
-//   «Vaqt chizig'i» — the SAME ojidaniyas drawn to scale on the day (test view)
-//   «Perenaladka»  — that day's changeover minutes (cell_perenaladka), the very
-//                    rows the Setup-times «Fakt» tab shows. Same table, same
-//                    endpoints, same query key: editing one edits the other.
-// All three share ONE filter bar (day → brigadir → smena → lider → yacheyka),
-// so switching tabs keeps the operator exactly where they were.
+// This page has TWO tabs, because it holds two datasets:
+//   «Kutish»      — the day's ojidaniyas (ledger + timeline + grouped list, all
+//                   in the card: see CellCard for why that stopped being a tab)
+//   «Perenaladka» — that day's changeover minutes (cell_perenaladka), the very
+//                   rows the Setup-times «Fakt» tab shows. Same table, same
+//                   endpoints, same query key: editing one edits the other.
+// Both share ONE filter bar (day → brigadir → smena → lider → yacheyka), so
+// switching tabs keeps the operator exactly where they were.
 export default function IdleCell() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -385,12 +466,19 @@ export default function IdleCell() {
   // date deliberately NOT persisted: this is a data-entry page — a silently
   // restored stale day could direct entries to the wrong date.
   const [date, setDate] = useState(localTodayIso());
-  const [tab, setTab] = usePersistentState("idle_cell_tab", "ojidaniya"); // "ojidaniya" | "timeline" | "peren"
+  const [tabSaved, setTab] = usePersistentState("idle_cell_tab", "ojidaniya");
+  // The retired «Vaqt chizig'i» tab is still in some operators' localStorage,
+  // and SegmentedToggle marks NOTHING as selected when `value` matches no
+  // option — with `asTabs` that also leaves every segment at tabIndex -1, i.e.
+  // a tablist no keyboard can reach. Fold the stale value here rather than
+  // writing over it in an effect: the read is the whole migration.
+  const tab = tabSaved === "peren" ? "peren" : "ojidaniya";
   const [shiftTab, setShiftTab] = usePersistentState("idle_cell_shift", "all"); // "all" | 1 | 2
   const [supervisorId, setSupervisorId] = usePersistentState("idle_cell_supervisor_id", null);
   const [leaderId, setLeaderId] = usePersistentState("idle_cell_leader_id", ""); // "" all · "none" leaderless · leader_id
   const [selectedCellIds, setSelectedCellIds] = usePersistentState("idle_cell_selected_cell_ids", []); // [] = show all of the supervisor's cells
   const [factSort, onFactSort] = useSortState("idle_cell_peren_sort");
+  const [legendOpen, setLegendOpen] = useState(false);
   const isPeren = tab === "peren";
 
   const { data: supData } = useQuery({
@@ -517,12 +605,11 @@ export default function IdleCell() {
       {/* View switch — stays OUTSIDE the filter zone (platform rule). */}
       <SegmentedToggle
         asTabs
-        scrollable
         value={tab}
         onChange={setTab}
+        ariaLabel={t("idleCell.title")}
         options={[
-          { value: "ojidaniya", label: (<span className="inline-flex items-center gap-1.5"><ListTree size={13} />{t("idleCell.tabOjidaniya")}</span>), title: t("idleCell.tabOjidaniya") },
-          { value: "timeline", label: (<span className="inline-flex items-center gap-1.5"><GanttChartSquare size={13} />{t("idleCell.tabTimeline")}</span>), title: t("idleCell.tabTimelineHint") },
+          { value: "ojidaniya", label: t("idleCell.tabOjidaniya"), title: t("idleCell.tabOjidaniya") },
           { value: "peren", label: t("idleCell.tabPerenaladka"), title: t("idleCell.tabPerenaladka") },
         ]}
         className="mb-3"
@@ -602,7 +689,28 @@ export default function IdleCell() {
             }] : []),
           ]}
         />
-        <span className="w-full md:w-auto md:ml-auto text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.testNote")}</span>
+        {/* The 11 category definitions, once for the page. They used to be
+            reachable only through a per-category ⓘ inside every cell card —
+            eleven triggers per cell, each opening one definition — which is
+            what made the letters look like the name of the thing. Reference
+            material belongs beside the page's controls, not multiplied down
+            its content. */}
+        <Button
+          size="lg"
+          variant="secondary"
+          icon={<Info size={14} />}
+          onClick={() => setLegendOpen(true)}
+          title={t("idleCell.catGuideBtn")}
+        >
+          {t("idleCell.catGuideBtn")}
+        </Button>
+        <span
+          className="w-full md:w-auto md:ml-auto text-xs inline-flex items-center gap-1.5"
+          style={{ color: "var(--text-4)" }}
+        >
+          <FlaskConical size={12} className="flex-shrink-0" />
+          {t("idleCell.testNote")}
+        </span>
       </div>
 
       {isPeren ? (
@@ -637,13 +745,19 @@ export default function IdleCell() {
               key={`${c.cell_id}-${date}`}
               cell={c}
               date={date}
-              view={tab === "timeline" ? "timeline" : "category"}
               t={t} tl={tl} lang={lang}
               autoOpen={autoOpen}
               toast={toast}
             />
           ))}
         </div>
+      )}
+      {legendOpen && (
+        <CategoryLegendModal
+          catNames={CATS.map((c) => c.name)}
+          catColors={CATS.map((_, i) => CATEGORY_COLORS[i % CATEGORY_COLORS.length])}
+          onClose={() => setLegendOpen(false)}
+        />
       )}
       {toast.node}
     </Layout>

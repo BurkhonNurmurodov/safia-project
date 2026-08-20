@@ -44,16 +44,33 @@ export default function IntervalRow({
           </span>
 
           {/* Did the cell stop for THIS one — the answer that decides whether
-              these minutes enter the day's total at all. */}
+              these minutes enter the day's total at all.
+              A not-stopped ojidaniya is a RECORDED FACT, not a lesser one: it
+              was entered for a reason and it keeps full contrast, its times and
+              its note. What changes is only that the chip SAYS it is out of the
+              total, in words — that rule used to live in a hover `title`, which
+              does not exist on the phone this page is used from, so the day's
+              figure looked like it had simply failed to add the row up. */}
           <span
             className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0"
             style={iv.stopped
               ? { background: "rgba(239,68,68,0.14)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.35)" }
-              : { background: "rgba(148,163,184,0.14)", color: "var(--text-3)", border: "1px solid rgba(148,163,184,0.35)" }}
+              : { background: "rgba(148,163,184,0.14)", color: "var(--text-2)", border: "1px solid rgba(148,163,184,0.35)" }}
             title={iv.stopped ? t("idleCell.stoppedHint") : t("idleCell.notCountedHint")}
           >
             {iv.stopped ? <Square size={9} /> : <Play size={9} />}
             {iv.stopped ? t("idleCell.stopped") : t("idleCell.notStopped")}
+            {/* Inherits the chip's colour on purpose. Set a step DOWNWARD (the
+                --text-4 this first shipped as) it measured ~1.8:1 on the chip's
+                own fill in the default dark theme, i.e. the clause explaining
+                why these minutes are out of the total faded out while the word
+                beside it stayed readable — the failure the clause exists to
+                prevent. The chip as a whole moved from --text-3 to --text-2
+                (~5.4:1 dark, ~8.6:1 light) for the same reason: a not-stopped
+                ojidaniya is recorded data, and legibility is what "visible"
+                means. Colour still separates the two answers — red fill and red
+                border for a stop, neutral slate for this. */}
+            {!iv.stopped && <span>· {t("idleCell.notCounted")}</span>}
           </span>
 
           {iv.next_day && (
