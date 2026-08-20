@@ -64,6 +64,7 @@ try:
         migrate_attendance_batches, seed_att_included_from_last_day,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
+        add_concern_level_since,
         add_concern_shift_manager, add_concern_category,
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
@@ -120,6 +121,7 @@ try:
     add_concern_profile_columns()
     add_concern_done_at()
     add_concern_level_columns()
+    add_concern_level_since()
     add_concern_shift_manager()
     add_concern_category()
     add_concern_owner_columns()

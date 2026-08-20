@@ -66,14 +66,21 @@ const cellNameOf = (r, cellMap, lang) => {
   const c = r?.ci != null ? cellMap[r.ci] : null;
   return cellLabelOf(c, lang) || r?.cn || r?.fc || "";
 };
-// The drill-down rows under an expanded name identify a cell by its VERIFIX
-// CODE, not its workshop name: the code is what the QA sheet, the «Виновная
-// ячейка» column and the brigadirs themselves say, and it fits the 240px column
-// without truncating — «Участок приготов. кекс. №2.1» does not. The name is kept
-// as the row's tooltip so nothing is lost.
+// Every place this page NAMES a cell in a row — the register's «Виновная
+// ячейка» column and the drill-down rows under an expanded name — identifies it
+// by its VERIFIX CODE, not its workshop name: the code is what the QA sheet and
+// the brigadirs themselves say, and it fits a narrow column without truncating —
+// «Участок приготов. кекс. №2.1» does not. The name is kept as the row's tooltip
+// so nothing is lost, and the detail modal still spells both out in full.
 const cellCodeOf = (r, cellMap) => {
   const c = r?.ci != null ? cellMap[r.ci] : null;
   return c?.verifix_code || r?.fc || r?.cn || "";
+};
+// A row's tooltip: code · workshop name, collapsing to one when they agree.
+const cellTitleOf = (r, cellMap, lang) => {
+  const code = cellCodeOf(r, cellMap);
+  const name = cellNameOf(r, cellMap, lang);
+  return name && name !== code ? `${code} · ${name}` : code;
 };
 // code · workshop name, collapsing to one when the row has only the code.
 const brkTitle = (k) => (k.name && k.name !== k.label ? `${k.label} · ${k.name}` : k.label);
@@ -1038,7 +1045,7 @@ export default function Quality() {
         case "product": return r.pr || "";
         case "type":    return L("type", r.t);
         case "cat":     return L("cat", r.c);
-        case "cell":    return cellNameOf(r, cellMap, lang);
+        case "cell":    return cellCodeOf(r, cellMap);
         case "brig":    return tl(who(r));
         case "ret":     return r.r ? "1" : "0";
         case "status":  return L("st", r.st);
@@ -1589,7 +1596,7 @@ export default function Quality() {
     { label: T.colProduct, get: (r) => r.pr || "" },
     { label: T.colType, get: (r) => L("type", r.t) },
     { label: T.colCat, get: (r) => (r.c ? L("cat", r.c) : "") },
-    { label: T.colCell, get: (r) => cellNameOf(r, cellMap, lang) },
+    { label: T.colCell, get: (r) => cellCodeOf(r, cellMap) },
     ...(!lockOwn ? [{ label: T.colBrig, get: (r) => tl(who(r)) }] : []),
     { label: T.colRet, get: (r) => (r.r ? T.yes : ""), ret: true },
     { label: T.colStatus, get: (r) => L("st", r.st), status: true },
@@ -2415,12 +2422,14 @@ export default function Quality() {
                       <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
                         {r.c ? <Chip color={CAT_COLORS[r.c] || C_NA}>{L("cat", r.c)}</Chip> : "—"}
                       </td>
-                      <td className="px-3 py-2 max-w-[170px] truncate" title={cellNameOf(r, cellMap, lang) || ""} style={{ color: "var(--text-3)" }}>
-                        {/* r.ci = cells.id when the fault code matched the
-                            registry; the link stops propagation so the row's
-                            own click (detail modal) doesn't also fire. */}
-                        {cellNameOf(r, cellMap, lang)
-                          ? <CellLink id={r.ci}>{cellNameOf(r, cellMap, lang)}</CellLink>
+                      <td className="px-3 py-2 max-w-[150px] truncate" title={cellTitleOf(r, cellMap, lang)} style={{ color: "var(--text-3)" }}>
+                        {/* The verifix code, hovered as the workshop name — see
+                            cellCodeOf. r.ci = cells.id when the fault code
+                            matched the registry; the link stops propagation so
+                            the row's own click (detail modal) doesn't also
+                            fire. */}
+                        {cellCodeOf(r, cellMap)
+                          ? <CellLink id={r.ci}>{cellCodeOf(r, cellMap)}</CellLink>
                           : "—"}
                       </td>
                       {!lockOwn && <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.b || "")} style={{ color: "var(--text-2)" }}>{tl(who(r)) || "—"}</td>}

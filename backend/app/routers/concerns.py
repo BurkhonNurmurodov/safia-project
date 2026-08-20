@@ -217,11 +217,16 @@ def _serialize(
     resolution_days = None
     if c.completion_date and c.entry_date:
         resolution_days = (c.completion_date - c.entry_date).days
-    # Minute-grained "время выполнения": created_at → done_at. NULL done_at
+    # The clock the "прошло времени" column counts from: the moment the concern
+    # reached the level it sits on now, so a handover hands over a fresh timer
+    # and no level is charged for time it did not hold the row. A concern that
+    # never moved has no stamp — created_at IS that instant.
+    held_since = c.level_since or c.created_at
+    # Minute-grained "время выполнения": held_since → done_at. NULL done_at
     # (still open, or done before the column existed) renders as "—".
     resolution_minutes = None
-    if c.done_at and c.created_at:
-        resolution_minutes = max(0, int((c.done_at - c.created_at).total_seconds() // 60))
+    if c.done_at and held_since:
+        resolution_minutes = max(0, int((c.done_at - held_since).total_seconds() // 60))
     level = _level(c)
     # Who answers for the concern right now — the level names a step in the
     # chain, this names the person on that step: leader → the leader the concern
@@ -281,6 +286,9 @@ def _serialize(
         "shift_manager_profile_id": c.shift_manager_profile_id,
         "shift_manager_name": c.shift_manager_name,
         "responsible_name": responsible,
+        # When the CURRENT level took the concern — what the elapsed timer of an
+        # open row counts from, and the elapsed cell's tooltip.
+        "level_since": held_since.isoformat() if held_since else None,
         "escalation_count": (esc_counts or {}).get(c.id, 0),
         # Size of the discussion thread — the badge on the Comments column.
         "comment_count": (comment_counts or {}).get(c.id, 0),
@@ -1005,6 +1013,8 @@ def create_concern(
         done_at=None,
         solution=None,
         created_by=int(payload["sub"]),
+        # A new concern arrives at its opening level right now.
+        level_since=func.now(),
         **tgt,
     )
     db.add(c)
@@ -1346,6 +1356,10 @@ def escalate_concern(
         raise HTTPException(status_code=400, detail="Invalid direction")
 
     c.level = new_level
+    # The move restarts the concern's clock: whoever receives it is measured
+    # from this instant, not from the day it was first raised. entry_date and
+    # created_at are untouched — they still carry the concern's whole life.
+    c.level_since = func.now()
     db.add(ConcernEscalation(
         concern_id=c.id,
         from_level=cur,

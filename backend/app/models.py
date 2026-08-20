@@ -1882,6 +1882,13 @@ class LeaderConcern(Base):
     # The handler at the current level AND everyone above it in the chain keep
     # edit rights; levels below turn read-only (see routers/concerns.py).
     level               = Column(String, nullable=False, server_default="supervisor")
+    # When the concern arrived at the level it currently sits on — stamped on
+    # every escalation step, up OR down. The "прошло времени" clock counts from
+    # here, so each level is measured on the time IT held the concern and a
+    # handover hands over a fresh timer. NULL on rows that never moved (and on
+    # anything predating the column) ⇒ falls back to created_at, which is the
+    # same instant. created_at / entry_date keep the concern's whole life.
+    level_since         = Column(DateTime(timezone=True), nullable=True)
     # Top-management is person-specific: the shift-manager picks ONE top-manager
     # profile on the last uplift step; only that person (plus admin) may act.
     # Cleared when the concern is sent back down.

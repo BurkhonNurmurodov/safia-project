@@ -1302,6 +1302,31 @@ def backfill_concern_units() -> None:
         db.close()
 
 
+def add_concern_level_since() -> None:
+    """Concerns "прошло времени": the clock restarts every time a concern moves
+    up or down the chain, so level_since carries the moment it reached the level
+    it sits on now. Backfilled from the concern's LAST escalation — that trail
+    row is exactly the instant of the move — and from created_at for rows that
+    never moved, so no timer renders empty."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS level_since TIMESTAMPTZ"
+        ))
+        db.execute(text(
+            "UPDATE leader_concerns lc SET level_since = COALESCE("
+            "  (SELECT MAX(e.created_at) FROM concern_escalations e "
+            "     WHERE e.concern_id = lc.id), lc.created_at) "
+            "WHERE lc.level_since IS NULL"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern level_since migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_level_columns() -> None:
     """Concern escalation rollout: ``level`` is who currently holds the concern
     (leader → supervisor → shift-manager → top-manager; every existing row is a

@@ -8,7 +8,7 @@ import {
   CalendarClock, UserRound, UserCheck, ShieldCheck, FileText, CircleDot, Clock,
   Hourglass, Gauge, TrendingUp, PieChart, Timer,
   Layers, ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
-  MessageSquare,
+  MessageSquare, Hash,
   Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
   Droplets, CalendarRange, Users, FlaskConical, Wheat,
 } from "lucide-react";
@@ -142,6 +142,10 @@ const fmtDate = (iso, lang) => {
 // the concerns table. Cells are rendered by a per-key switch (`listCell` below),
 // so the ColumnsPicker's hide/reorder comes for free.
 const COLS = [
+  // Position of the row in the register AS IT IS CURRENTLY SORTED AND FILTERED —
+  // a counter, not a property of the concern, so it never sorts (there is no
+  // "sort by the order you are already in") and it renumbers with every filter.
+  { key: "num",        labelKey: "concerns.colNum",        icon: Hash,          align: "center", sortable: false },
   { key: "date",       labelKey: "concerns.colDate",       icon: CalendarClock },
   { key: "cell",       labelKey: "concerns.colCell",       icon: LayoutGrid },
   { key: "category",   labelKey: "concerns.colCategory",   icon: Tag },
@@ -552,13 +556,21 @@ export default function Concerns() {
   // role again — theirs narrows to the concerns handed down to them.
   const myLevel = LEVELS.includes(role) ? role : null;
 
-  // Elapsed time for the "time since created" column. Done concerns show the
-  // tracked creation→done span; still-open ones count up from creation to now.
-  // Legacy done rows without a done_at timestamp stay blank.
+  // Elapsed time for the "O'tgan vaqt" column — counted from the moment the
+  // concern reached the level it sits on NOW (`level_since`), not from the day
+  // it was raised: every up/down move restarts the clock, so a level is only
+  // ever measured on the time it actually held the row. A concern that never
+  // moved has no stamp and falls back to created_at, the same instant. Done
+  // concerns show the tracked span the backend computed on the same basis;
+  // still-open ones count up to now. Legacy done rows without a done_at stay
+  // blank. (entry_date and its deadline are untouched — those carry the
+  // concern's whole life.)
+  const heldSince = (r) => r.level_since || r.created_at;
   const resolutionMinutes = (r) => {
     if (r.resolution_minutes != null) return r.resolution_minutes;
-    if (r.status !== "done" && r.created_at) {
-      return Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 60000));
+    const since = heldSince(r);
+    if (r.status !== "done" && since) {
+      return Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 60000));
     }
     return null;
   };
@@ -1194,11 +1206,21 @@ export default function Concerns() {
   const [colsLocal, setColsLocal] = useState(null);   // this session's edits win over the fetch
   const colCfg = useMemo(() => {
     // Reconcile the saved pref against the current catalog: drop keys that no
-    // longer exist, append new columns at the end, never let a locked one hide.
+    // longer exist, slot new columns in at their CATALOG position, never let a
+    // locked one hide. Position, not append: a column whose whole job is to be
+    // first (the row number) would otherwise land at the far right for everyone
+    // who ever touched the picker, which reads as a stray extra column.
     const saved = colsLocal ?? savedCols;
     const keys = COLS.map((c) => c.key);
     const savedOrder = Array.isArray(saved?.order) ? saved.order.filter((k) => keys.includes(k)) : [];
-    const order = [...savedOrder, ...keys.filter((k) => !savedOrder.includes(k))];
+    const order = [...savedOrder];
+    keys.forEach((k, i) => {
+      if (order.includes(k)) return;
+      // the nearest catalog neighbour that IS placed decides which side of it
+      // the newcomer sits on
+      const before = keys.slice(0, i).filter((p) => order.includes(p)).pop();
+      order.splice(before ? order.indexOf(before) + 1 : 0, 0, k);
+    });
     const hidden = Array.isArray(saved?.hidden)
       ? saved.hidden.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k))
       : [];
@@ -1766,8 +1788,16 @@ export default function Concerns() {
 
   // ONE cell per column key — the register's <td>s live here so the
   // ColumnsPicker's hide/reorder needs no markup change of its own.
-  const listCell = (key, r) => {
+  const listCell = (key, r, i) => {
     switch (key) {
+      // Row counter — muted, so it orients without competing with the data.
+      case "num":
+        return (
+          <td key={key} className="px-3 py-2.5 text-center font-mono text-[11px] tabular-nums"
+              style={{ color: "var(--text-4)" }}>
+            {i + 1}
+          </td>
+        );
       case "date":
         return (
           <td key={key} className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>
@@ -1872,11 +1902,14 @@ export default function Concerns() {
           </td>
         );
       }
-      // Time since creation: done rows show the creation→done span, open rows
-      // count up to now. Legacy done rows with no done_at timestamp show "—".
+      // Time at the CURRENT level: done rows show the tracked span, open rows
+      // count up to now, both from the last up/down move (see resolutionMinutes).
+      // The tooltip names that moment so a reset timer is never a mystery.
+      // Legacy done rows with no done_at timestamp show "—".
       case "resolution":
         return (
-          <td key={key} className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>
+          <td key={key} className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}
+              title={heldSince(r) ? `${t("concerns.heldSince")}: ${fmtDateTime(heldSince(r))}` : undefined}>
             {fmtResolution(resolutionMinutes(r))}
           </td>
         );
@@ -1915,7 +1948,7 @@ export default function Concerns() {
           {t("concerns.empty")}
         </div>
       )}
-      {!isLoading && sorted.map((r) => {
+      {!isLoading && sorted.map((r, i) => {
         const expanded = expandedId === r.id;
         // Deadline as a state, not arithmetic: days remaining until
         // entry_date + deadline_days, negative = overdue (matches the charts'
@@ -1938,9 +1971,17 @@ export default function Concerns() {
               background: expanded ? "var(--bg-inner)" : "var(--bg-card)",
             }}
           >
-            {/* date + inline-editable status (tap must not toggle the card) */}
+            {/* row number + date + inline-editable status (tap must not toggle
+                the card) — the counter is the same one the table shows, so a
+                concern read on a phone can be named to somebody looking at the
+                desktop register. */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{fmtDate(r.entry_date, lang)}</span>
+              <span className="flex items-baseline gap-1.5 min-w-0">
+                <span className="font-mono text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>
+                  {i + 1}.
+                </span>
+                <span className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>{fmtDate(r.entry_date, lang)}</span>
+              </span>
               <span className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                 <StatusSelect
                   status={r.status}
@@ -2022,7 +2063,8 @@ export default function Concerns() {
               )}
               {resolutionMinutes(r) != null && (
                 <MobField label={t("concerns.colResolution")}>
-                  <span className="inline-flex items-center gap-1 tabular-nums">
+                  <span className="inline-flex items-center gap-1 tabular-nums"
+                        title={heldSince(r) ? `${t("concerns.heldSince")}: ${fmtDateTime(heldSince(r))}` : undefined}>
                     <Timer size={12} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
                     {fmtResolution(resolutionMinutes(r))}
                   </span>
@@ -2364,7 +2406,8 @@ export default function Concerns() {
                 <tr>
                   {visibleCols.map((c) => (
                     <Th key={c.key} icon={c.icon} label={t(c.labelKey)} k={c.key}
-                        sort={sort} onSort={onSort} align={c.align} />
+                        sort={sort} onSort={c.sortable === false ? undefined : onSort}
+                        align={c.align} />
                   ))}
                 </tr>
               </thead>
@@ -2381,7 +2424,7 @@ export default function Concerns() {
                     {t("concerns.empty")}
                   </td></tr>
                 )}
-                {!isLoading && sorted.map((r) => {
+                {!isLoading && sorted.map((r, i) => {
                   const expanded = expandedId === r.id;
                   return (
                     <Fragment key={r.id}>
@@ -2391,7 +2434,7 @@ export default function Concerns() {
                         className="align-top cursor-pointer"
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
-                        {visibleCols.map((c) => listCell(c.key, r))}
+                        {visibleCols.map((c) => listCell(c.key, r, i))}
                       </tr>
                       {/* Every row is expandable — the action bar always carries
                           at least «Ko'rish», even for a viewer with no rights. */}
@@ -2824,6 +2867,14 @@ export default function Concerns() {
                   <Timer size={12} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
                   {fmtResolution(resolutionMinutes(viewRow))}
                 </span>
+                {/* The clock restarts on every up/down move, so the detail view
+                    names the moment it started rather than leaving the reader
+                    to wonder why an old concern shows a young timer. */}
+                {heldSince(viewRow) && (
+                  <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }}>
+                    {t("concerns.heldSince")}: {fmtDateTime(heldSince(viewRow))}
+                  </div>
+                )}
               </MobField>
             </div>
           </div>
