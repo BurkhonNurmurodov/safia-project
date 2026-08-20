@@ -178,12 +178,16 @@ export default function IntervalFormModal({
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <FormField label={t("idleCell.startTime")} required>
+          {/* alignTop on BOTH: the end field's hint makes its cell the taller
+              one, and a growing label would spend that height above the start
+              button instead of leaving the two on one line. */}
+          <FormField label={t("idleCell.startTime")} required alignTop>
             {timeButton("start", start, false)}
           </FormField>
           <FormField
             label={t("idleCell.endTime")}
             required
+            alignTop
             hint={!start ? t("idleCell.endNeedsStart") : undefined}
           >
             {timeButton("end", end, !start)}

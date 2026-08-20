@@ -18,12 +18,23 @@
  *   error – validation message shown under the control in status red, and the
  *           reason a form can attach an error to the field that caused it
  *           rather than dumping one paragraph below every field.
+ *   alignTop – for a side-by-side row where only SOME fields carry a hint or an
+ *           error. That line makes its own cell the tallest, and the growing
+ *           label hands the difference to the neighbour WITHOUT one — which
+ *           parks its control a whole hint below its partner's, and jolts it
+ *           the moment a validation error appears. `alignTop` puts the slack at
+ *           the BOTTOM of the cell instead, so the controls stay on one line.
+ *           Set it on EVERY field of such a row; labels there must be short
+ *           enough not to wrap, since that is the alignment it trades away.
  */
-export default function FormField({ label, required, hint, error, children }) {
+export default function FormField({ label, required, hint, error, alignTop, children }) {
   return (
     <div className="flex flex-col h-full">
       {label && (
-        <div className="text-[11px] uppercase tracking-wider mb-1 flex-1" style={{ color: "var(--text-3)" }}>
+        <div
+          className={`text-[11px] uppercase tracking-wider mb-1${alignTop ? "" : " flex-1"}`}
+          style={{ color: "var(--text-3)" }}
+        >
           {label}{required && <span style={{ color: "#ef4444" }}> *</span>}
         </div>
       )}
