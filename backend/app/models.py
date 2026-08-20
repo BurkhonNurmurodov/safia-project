@@ -513,6 +513,48 @@ class CellOjidaniya(Base):
     __table_args__ = (UniqueConstraint("cell_id", "date", "category", name="uq_cellojid_cell_date_cat"),)
 
 
+class CellOjidaniyaInterval(Base):
+    """One ojidaniya EVENT on a cell: a start -> end wall-clock range, its
+    category, whether the cell STOPPED working for it, and a required reason.
+    Several per (cell, date, category) — a cell may wait on the same cause more
+    than once in a day, and each stint is its own event with its own reason.
+
+    Supersedes the minutes-only :class:`CellOjidaniya` (kept read-only for rows
+    filed before 2026-08-20). Recording only a duration made overlapping causes
+    unrepresentable, so two categories waiting on the same stretch were added
+    together and the day's downtime was over-reported. With endpoints on record
+    the total is the UNION of the ranges — see ``services/idle_intervals.py``,
+    which is THE definition and the only place that arithmetic lives.
+
+    ``stopped`` is a property of THIS event (did the cell stop working for it),
+    not a second measure: only stopped ranges enter the union, a not-stopped one
+    is kept for its reason alone. Cat H is always stopped — it never had a
+    not-stopped half.
+
+    Times are wall clock "HH:MM" as picked. An ``end`` at or before ``start``
+    crossed midnight and is carried into the next day on read, so shift 2
+    (17:00 -> 09:00) needs no special case; ``end == start`` is rejected at the
+    API rather than becoming a silent 24-hour stop. The shift is a property of
+    the cell (its supervisor's), so it is derived on read, never stored.
+    ``entered_by_profile`` = "role:id" of the last writer."""
+    __tablename__ = "cell_ojidaniya_intervals"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id            = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    date               = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
+    category           = Column(String, nullable=False)                  # "Cat A" … "Cat I"
+    start              = Column(String(5), nullable=False)               # "HH:MM"
+    end                = Column(String(5), nullable=False)               # "HH:MM" (<= start ⇒ next day)
+    stopped            = Column(Boolean, nullable=False, default=True)   # did the cell stop for this one
+    note               = Column(Text, nullable=False)                    # REQUIRED reason
+    entered_by_profile = Column(String, nullable=True)                   # "role:id" of the last writer
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at         = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # No unique key: several ranges per (cell, date, category) is the point.
+    __table_args__ = (Index("ix_cellojint_cell_date", "cell_id", "date"),)
+
+
 class CellPerenaladka(Base):
     """Manual per-cell CHANGEOVER (перenaладка) minutes — the second tab of the
     same TEST page as :class:`CellOjidaniya`. ONE row per (cell, date): how many

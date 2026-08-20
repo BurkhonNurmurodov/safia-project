@@ -6,7 +6,10 @@ import { useLang } from "../../context/LangContext";
 // columns (hours | minutes) at 1-minute granularity, constrained to a valid
 // [lo, hi] minute window: the minutes wheel narrows at the boundary hours so a
 // time outside everyone's day can't be picked. `value` is an "HH:MM" string (or
-// "" for none); `onConfirm` returns the chosen "HH:MM".
+// "" for none); `onConfirm` returns the chosen "HH:MM". `title` names what is
+// being picked — the sheet is used by more than one flow now, and a header that
+// still said "transfer time" while an ojidaniya's END was being chosen was the
+// one label on screen describing a different task.
 
 const ROW_H  = 44;                          // px per row
 const VISIBLE = 5;                          // visible rows (odd → one centered)
@@ -100,7 +103,7 @@ function Wheel({ values, valueIndex, resetKey, onChange, ariaLabel }) {
   );
 }
 
-function WheelDialog({ lo, hi, value, onConfirm, onClose }) {
+function WheelDialog({ lo, hi, value, title, onConfirm, onClose }) {
   const { t } = useLang();
   const loH = Math.floor(lo / 60), hiH = Math.floor(hi / 60);
   // Hour values are kept in "extended" form (can exceed 23 for an overnight window
@@ -149,7 +152,7 @@ function WheelDialog({ lo, hi, value, onConfirm, onClose }) {
         {/* header */}
         <div className="px-5 py-3 text-center text-sm font-semibold border-b"
           style={{ color: "var(--text-1)", borderColor: "var(--border)" }}>
-          {t("staff.transferTimeToggle")}
+          {title || t("staff.transferTimeToggle")}
         </div>
 
         {/* wheels */}
@@ -190,11 +193,11 @@ function WheelDialog({ lo, hi, value, onConfirm, onClose }) {
   );
 }
 
-export default function TimeWheelPicker({ open, lo, hi, value, onConfirm, onClose }) {
+export default function TimeWheelPicker({ open, lo, hi, value, title, onConfirm, onClose }) {
   if (!open || lo == null || hi == null || hi < lo) return null;
   // Re-mounts fresh on each open (unmounted while closed) → state seeds from `value`.
   return createPortal(
-    <WheelDialog lo={lo} hi={hi} value={value} onConfirm={onConfirm} onClose={onClose} />,
+    <WheelDialog lo={lo} hi={hi} value={value} title={title} onConfirm={onConfirm} onClose={onClose} />,
     document.body,
   );
 }

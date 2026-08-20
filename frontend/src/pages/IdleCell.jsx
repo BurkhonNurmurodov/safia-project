@@ -1,9 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
-  Info, Save, ChevronDown, RotateCcw, Flag, Repeat2,
-  Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
-  FlaskConical, ClipboardList, Sparkles, Hourglass, Layers, UserRound, Boxes,
+  Info, ChevronDown, Flag, Repeat2, Plus, Trash2, Layers, UserRound, Boxes,
+  Layers2, Archive, GanttChartSquare, ListTree,
 } from "lucide-react";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
@@ -12,79 +11,29 @@ import StyledSelect from "../components/ui/StyledSelect";
 import DayStepper from "../components/ui/DayStepper";
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { useToast } from "../components/ui/Toast";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 // The «Perenaladka» tab's table is the SAME component the Setup-times «Fakt»
 // tab renders, over the same cell_perenaladka rows — an edit here is that edit.
 import PerenaladkaFactTable, {
   usePerenaladkaFact, asIdleCell, useSortState, sortCmp,
 } from "../components/setup/PerenaladkaFactTable";
+import IntervalFormModal from "../components/idle/IntervalFormModal";
+import IntervalRow from "../components/idle/IntervalRow";
+import DayTimeline from "../components/idle/DayTimeline";
+import { CATS, iconFor } from "../components/idle/categories";
 import api from "../utils/api";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { cellName as pickCellName } from "../utils/cellName";
+import { fmtDur } from "../utils/idleTime";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
-
-// Themed icon per category — mirrors CategoryLegendModal.jsx CAT_ICON.
-const CAT_ICON = {
-  A: Snowflake, B: Wrench, C: Container, D: Warehouse, D2: PackagePlus,
-  D3: Building2, E: Truck, F: FlaskConical, G: ClipboardList, H: Sparkles, I: Hourglass,
-};
-
-// Ojidaniya categories, A→Z order. MUST mirror backend IDLE_CATEGORIES. `code` is
-// the "downtime.cat.<code>.label"/".note" i18n suffix; `name` is what the backend
-// stores. Cat H has no "not stopped" half (its 2nd source column is a headcount).
-const CATS = [
-  { code: "A",  name: "Cat A" },
-  { code: "B",  name: "Cat B" },
-  { code: "C",  name: "Cat C" },
-  { code: "D",  name: "Cat D" },
-  { code: "D2", name: "Cat D2" },
-  { code: "D3", name: "Cat D3" },
-  { code: "E",  name: "Cat E" },
-  { code: "F",  name: "Cat F" },
-  { code: "G",  name: "Cat G" },
-  { code: "H",  name: "Cat H", noNs: true },
-  { code: "I",  name: "Cat I" },
-];
-
-// md+ keeps the 4-column grid; below md each category stacks (name row / labeled
-// number pair / full-width note) so the required note and Save stay on-screen.
-// The number columns are sized to fit the longest header word ("To'xtamaganda"),
-// which overflowed into the note column at 5rem.
-const GRID_COLS = "md:grid-cols-[minmax(150px,1.5fr)_7rem_7rem_minmax(180px,1.7fr)]";
-// Table chrome, mirroring DataTable.jsx: padded cells with a vertical rule between
-// columns. md+ only — below md the four cells stack into rows, where a left border
-// would cut across the stack.
-const COL_SEP = "md:[&>*:not(:first-child)]:border-l md:[&>*]:border-[var(--border)]";
-const HEAD_CELL = "px-3 py-2";
-const CELL = "px-3 py-1.5 min-w-0";
-// Inputs are 16px below md — iOS WebViews zoom the whole page when focusing
-// anything smaller.
-const INPUT_NUM = "w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs text-right outline-none tabular-nums";
-const INPUT_TXT = "w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs outline-none";
-const INPUT_STYLE = { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
-const MOBILE_LABEL = "md:hidden block text-[10px] font-semibold uppercase tracking-wide mb-0.5";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const localTodayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-};
-const fmtMin = (v) => {
-  const n = Number(v) || 0;
-  return n % 1 === 0 ? String(n) : n.toFixed(1);
-};
-const num = (v) => {
-  const n = Number(String(v ?? "").replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
-};
-// Telegram's on-screen keyboard shrinks the viewport after focus; recentre the
-// field once that resize settles (phones only — desktop clicks shouldn't jump).
-const focusIntoView = (e) => {
-  if (window.innerWidth >= 768) return;
-  const el = e.currentTarget;
-  setTimeout(() => el.scrollIntoView({ block: "center" }), 250);
 };
 // Viewer language first, then Russian — the shared registry fallback.
 const cellName = (c, lang) => pickCellName(c, lang, "name_");
@@ -126,338 +75,317 @@ function CellIdent({ cell, t, tl, lang, nameCls = "text-xs", extra }) {
   );
 }
 
-// One production cell = one collapsible accordion. Owns its per-category draft
-// inputs + last-saved snapshot; each category row saves independently.
-function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
+// A pre-2026-08-20 minutes-only entry: shown, deletable, never editable and
+// never added to the total. It has no start and no end, so there is no way to
+// tell which of its minutes another entry already counted — folding it in would
+// re-create the exact over-count this rebuild exists to remove. It says so on
+// the row rather than quietly sitting outside the sum.
+function LegacyRow({ entry, t, onDelete }) {
+  return (
+    <div className="flex items-start gap-2 px-3 py-2" style={{ borderTop: "1px dashed var(--border-md)" }}>
+      <Archive size={13} className="flex-shrink-0 mt-0.5" style={{ color: "var(--text-4)" }} />
+      <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span
+            className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+            style={{ background: "rgba(148,163,184,0.16)", color: "var(--text-3)" }}
+            title={t("idleCell.legacyHint")}
+          >
+            {t("idleCell.legacyChip")}
+          </span>
+          <span className="text-xs tabular-nums" style={{ color: "var(--text-2)" }}>
+            {t("idleCell.stopped")} {entry.stopped} · {t("idleCell.notStopped")} {entry.not_stopped}
+          </span>
+        </div>
+        <div className="text-[11px] leading-snug break-words" style={{ color: "var(--text-4)" }}>
+          {entry.note}
+        </div>
+      </div>
+      <Button
+        size="sm" variant="danger" tint icon={<Trash2 size={13} />}
+        className="min-h-[32px] min-w-[32px] flex-shrink-0"
+        aria-label={t("idleCell.deleteLegacy")}
+        title={t("idleCell.deleteLegacy")}
+        onClick={() => onDelete(entry)}
+      />
+    </div>
+  );
+}
+
+// The two numbers that carry the whole point of the rebuild. The total is the
+// UNION of the stopped ranges; the second line appears only when ranges
+// actually overlapped, and says what the old minutes-only method would have
+// reported instead. A figure that silently changed would look like a bug —
+// this one shows its own correction.
+function SummaryStrip({ summary, t }) {
+  const overlap = summary?.overlap_min || 0;
+  return (
+    <div
+      className="px-3 py-2.5 flex flex-wrap items-baseline gap-x-4 gap-y-1"
+      style={{ background: "var(--bg-inner)", borderTop: "1px solid var(--border)" }}
+    >
+      <span className="flex items-baseline gap-2">
+        <span className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
+          {t("idleCell.totalStopped")}
+        </span>
+        <span className="text-base font-bold tabular-nums" style={{ color: summary?.stopped_union_min ? "#ef4444" : "var(--text-3)" }}>
+          {summary?.stopped_union_min ? fmtDur(summary.stopped_union_min, t) : "—"}
+        </span>
+      </span>
+      {overlap > 0 && (
+        <span className="flex items-baseline gap-2">
+          <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide" style={{ color: "#eab308" }}>
+            <Layers2 size={10} />{t("idleCell.overlapChip")}
+          </span>
+          <span className="text-xs font-semibold tabular-nums" style={{ color: "#eab308" }}>
+            {fmtDur(overlap, t)}
+          </span>
+        </span>
+      )}
+      {overlap > 0 && (
+        <span className="basis-full text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+          {t("idleCell.oldMethodWouldSay").replace("{v}", fmtDur(summary.stopped_sum_min, t))}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ONE cell = one collapsible card, with two interchangeable bodies:
+//   view "category" — the 11 categories, each holding its own ojidaniyas
+//   view "timeline" — the day drawn to scale + one chronological log
+// The header, the totals, the add/edit modal and both delete flows are shared,
+// so the two tabs are genuinely two views of one thing and can never drift into
+// disagreeing about what the cell's day was.
+function CellCard({ cell, date, view, t, tl, lang, autoOpen, toast }) {
+  const qc = useQueryClient();
   const [open, setOpen] = useState(autoOpen);
-  const [infoOpen, setInfoOpen] = useState(null); // code of the category whose description is expanded
-  const [confirmCode, setConfirmCode] = useState(null); // code of the category pending a reset-to-0 confirm
-  const [rows, setRows] = useState(() => {
-    const init = {};
-    for (const cat of CATS) {
-      const e = (cell.entries || []).find((x) => x.category === cat.name);
-      init[cat.code] = {
-        stopped: e && Number(e.stopped) ? String(e.stopped) : "",
-        not_stopped: e && Number(e.not_stopped) ? String(e.not_stopped) : "",
-        note: e?.note || "",
-        id: e?.id ?? null,
-        saved: e ? { stopped: Number(e.stopped) || 0, not_stopped: Number(e.not_stopped) || 0, note: e.note || "" } : null,
-      };
-    }
-    return init;
-  });
+  const [infoOpen, setInfoOpen] = useState(null);
+  const [form, setForm] = useState(null);          // {interval, category} | null
+  const [confirm, setConfirm] = useState(null);    // {kind, row} | null
+  const [delErr, setDelErr] = useState("");        // failure shown ON the confirm
 
   // Only ever opens (never forces closed, so a manual collapse sticks); also
   // catches already-mounted cells when the cell filter narrows the list.
-  useEffect(() => {
-    if (autoOpen) setOpen(true);
-  }, [autoOpen]);
+  useEffect(() => { if (autoOpen) setOpen(true); }, [autoOpen]);
 
-  const setField = (code, field, val) =>
-    setRows((r) => ({ ...r, [code]: { ...r[code], [field]: val } }));
+  const intervals = cell.intervals || [];
+  const legacy = cell.legacy_entries || [];
+  const summary = cell.summary || {};
+  const overlapIds = useMemo(() => new Set(summary.overlap_ids || []), [summary]);
+  const refresh = () => qc.invalidateQueries({ queryKey: ["idle-cells"] });
 
-  // One button per cell: POST every dirty, filled-in category in parallel and
-  // fold each success back into its row's saved snapshot (allSettled so a single
-  // failing row doesn't discard the others' saves).
-  const saveMut = useMutation({
-    mutationFn: async (cats) => {
-      const settled = await Promise.allSettled(
-        cats.map((cat) =>
-          api
-            .post("/api/idle-cell", {
-              cell_id: cell.cell_id,
-              date,
-              category: cat.name,
-              stopped: num(rows[cat.code].stopped),
-              not_stopped: cat.noNs ? 0 : num(rows[cat.code].not_stopped),
-              note: rows[cat.code].note.trim(),
-            })
-            .then((r) => ({ code: cat.code, data: r.data })),
-        ),
-      );
-      const ok = settled.filter((s) => s.status === "fulfilled").map((s) => s.value);
-      if (!ok.length) throw new Error("save failed");
-      return ok;
-    },
-    onSuccess: (ok) =>
-      setRows((r) => {
-        const next = { ...r };
-        for (const { code, data } of ok) {
-          next[code] = {
-            stopped: data.stopped ? String(data.stopped) : "",
-            not_stopped: data.not_stopped ? String(data.not_stopped) : "",
-            note: data.note || "",
-            id: data.id,
-            saved: { stopped: data.stopped || 0, not_stopped: data.not_stopped || 0, note: data.note || "" },
-          };
-        }
-        return next;
-      }),
+  const byCat = useMemo(() => {
+    const m = {};
+    for (const iv of intervals) (m[iv.category] ||= []).push(iv);
+    return m;
+  }, [intervals]);
+  const legacyByCat = useMemo(() => {
+    const m = {};
+    for (const e of legacy) (m[e.category] ||= []).push(e);
+    return m;
+  }, [legacy]);
+
+  const del = useMutation({
+    mutationFn: ({ kind, row }) =>
+      api.delete(kind === "legacy" ? `/api/idle-cell/${row.id}` : `/api/idle-cell/intervals/${row.id}`),
+    onSuccess: () => { setConfirm(null); refresh(); toast.success(t("idleCell.deleted")); },
+    // The dialog stays standing with the reason ON it — a failure that closed
+    // its own dialog would leave the operator unable to tell a refusal from a
+    // deletion, which is the one thing a confirm exists to make unambiguous.
+    onError: (e) => setDelErr(e?.response?.data?.detail || t("idleCell.saveError")),
   });
 
-  // Reset one saved category back to 0 — deletes its persisted entry (the backend
-  // rejects a 0/0 save, so clearing = removing the row) and blanks the inputs.
-  const delMut = useMutation({
-    mutationFn: ({ id }) => api.delete(`/api/idle-cell/${id}`),
-    onSuccess: (_d, { code }) => {
-      setRows((r) => ({ ...r, [code]: { stopped: "", not_stopped: "", note: "", id: null, saved: null } }));
-      setConfirmCode(null);
-    },
-  });
-
-  // Per-category state: which rows are edited (dirty), fully filled (valid → saveable),
-  // or half-filled (incomplete → blocked, needs both minutes and a reason).
-  const rowStatus = useMemo(
-    () =>
-      CATS.map((cat) => {
-        const r = rows[cat.code];
-        const hasNote = r.note.trim().length > 0;
-        const hasMin = num(r.stopped) > 0 || (!cat.noNs && num(r.not_stopped) > 0);
-        const dirty =
-          !r.saved ||
-          num(r.stopped) !== r.saved.stopped ||
-          (!cat.noNs && num(r.not_stopped) !== r.saved.not_stopped) ||
-          r.note.trim() !== r.saved.note;
-        const valid = hasNote && hasMin;
-        return { cat, hasNote, hasMin, dirty, valid, incomplete: dirty && !valid && (hasNote || hasMin) };
-      }),
-    [rows],
+  const addBtn = (category, compact) => (
+    <Button
+      size={compact ? "sm" : "lg"}
+      variant={compact ? "secondary" : "primary"}
+      tint={compact || undefined}
+      icon={<Plus size={compact ? 13 : 15} />}
+      className={compact
+        ? "min-h-[32px] min-w-[32px] flex-shrink-0"
+        : "w-full md:w-auto min-h-[44px] md:min-h-0"}
+      aria-label={t("idleCell.addInterval")}
+      title={t("idleCell.addInterval")}
+      onClick={(e) => { e.stopPropagation(); setForm({ interval: null, category }); }}
+    >
+      {compact ? "" : t("idleCell.addInterval")}
+    </Button>
   );
-  const pendingCats = rowStatus.filter((s) => s.dirty && s.valid).map((s) => s.cat);
-  const incompleteCount = rowStatus.filter((s) => s.incomplete).length;
-  const hasDraft = pendingCats.length > 0 || incompleteCount > 0;
 
-  const sumStopped = CATS.reduce((a, c) => a + (rows[c.code].saved?.stopped || 0), 0);
-  const sumNs = CATS.reduce((a, c) => a + (rows[c.code].saved?.not_stopped || 0), 0);
+  const rowFor = (iv, showCategory) => (
+    <IntervalRow
+      key={iv.id}
+      iv={iv}
+      t={t}
+      showCategory={showCategory}
+      overlapping={overlapIds.has(iv.id)}
+      onEdit={(x) => setForm({ interval: x, category: x.category })}
+      onDelete={(x) => { setDelErr(""); setConfirm({ kind: "interval", row: x }); }}
+    />
+  );
 
   return (
-    // overflow-clip (not hidden) — clip doesn't create a scroll container, so the
-    // sticky save footer below can track the page scrollport.
-    <div className="rounded-xl overflow-clip" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 sm:gap-3 px-3 py-2 min-h-[44px] text-left">
         <ChevronDown
           size={16}
           style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
         />
-        {/* flex-1 inside CellIdent replaces the old ml-auto on the sums. */}
-        <CellIdent
-          cell={cell}
-          t={t}
-          tl={tl}
-          lang={lang}
-          nameCls="text-sm"
-          extra={hasDraft && (
+        <CellIdent cell={cell} t={t} tl={tl} lang={lang} nameCls="text-sm" />
+        <span className="flex items-center gap-2 flex-shrink-0 text-xs tabular-nums">
+          {summary.overlap_min > 0 && (
             <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ background: "#eab308" }}
-              title={t("idleCell.incompleteHint")}
-            />
+              className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+              style={{ background: "rgba(234,179,8,0.16)", color: "#eab308" }}
+              title={t("idleCell.overlapHint")}
+            >
+              <Layers2 size={10} />{fmtDur(summary.overlap_min, t)}
+            </span>
           )}
-        />
-        <span className="flex items-center gap-2 sm:gap-3 flex-shrink-0 text-xs tabular-nums">
-          {sumStopped + sumNs === 0 ? (
-            // Backend rejects 0/0 saves, so zero sums reliably mean "no entries
-            // yet" — a muted dash makes cells with real data pop out of the list.
-            <span style={{ color: "var(--text-4)" }}>—</span>
+          {legacy.length > 0 && (
+            <span
+              className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+              style={{ background: "rgba(148,163,184,0.16)", color: "var(--text-3)" }}
+              title={t("idleCell.legacyHint")}
+            >
+              {t("idleCell.legacyChip")}
+            </span>
+          )}
+          {summary.stopped_union_min ? (
+            <span style={{ color: "#ef4444", fontWeight: 700 }}>{fmtDur(summary.stopped_union_min, t)}</span>
           ) : (
-            <>
-              <span className="flex items-center gap-1" title={t("idleCell.stopped")}>
-                <span className="sm:hidden w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#ef4444" }} />
-                <span className="hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("idleCell.stopped")}</span>
-                <span style={{ color: sumStopped ? "#ef4444" : "var(--text-3)", fontWeight: 600 }}>{fmtMin(sumStopped)}</span>
-              </span>
-              <span className="flex items-center gap-1" title={t("idleCell.notStopped")}>
-                <span className="sm:hidden w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#94a3b8" }} />
-                <span className="hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("idleCell.notStopped")}</span>
-                <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmtMin(sumNs)}</span>
-              </span>
-            </>
+            <span style={{ color: "var(--text-4)" }}>—</span>
           )}
         </span>
       </button>
 
       {open && (
         <>
-          <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
-            <div className="md:min-w-[640px]">
-              <div
-                className={`hidden md:grid text-[10px] font-semibold uppercase tracking-wide ${COL_SEP} ${GRID_COLS}`}
-                style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
-              >
-                <div className={HEAD_CELL}>{t("idleCell.category")}</div>
-                <div className={`${HEAD_CELL} text-right`}>{t("idleCell.stopped")}</div>
-                <div className={`${HEAD_CELL} text-right`}>{t("idleCell.notStopped")}</div>
-                <div className={HEAD_CELL}>{t("idleCell.note")}</div>
-              </div>
-              {rowStatus.map(({ cat, incomplete, hasNote, hasMin }, i) => {
-                const Icon = CAT_ICON[cat.code] || Layers;
-                const catColor = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
-                const r = rows[cat.code];
-                const showInfo = infoOpen === cat.code;
-                const minErr = incomplete && !hasMin;
-                const noteErr = incomplete && !hasNote;
-                const minStyle = minErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE;
-                return (
-                  <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
-                    <div className={`grid grid-cols-2 ${COL_SEP} ${GRID_COLS}`}>
-                      <div className={`${CELL} col-span-2 md:col-span-1 flex items-center gap-1.5`}>
-                        <Icon size={14} style={{ color: catColor, flexShrink: 0 }} />
-                        <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
-                          {t("idleCell.category")} {cat.code}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setInfoOpen((c) => (c === cat.code ? null : cat.code))}
-                          className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 -m-1.5"
-                          style={{ color: showInfo ? "var(--brand-text)" : "var(--text-3)", cursor: "pointer" }}
-                          aria-label={t(`downtime.cat.${cat.code}.label`)}
-                          aria-expanded={showInfo}
-                        >
-                          <Info size={17} />
-                        </button>
+          <SummaryStrip summary={summary} t={t} />
+
+          {view === "timeline" ? (
+            <>
+              {intervals.length > 0 ? (
+                <DayTimeline
+                  intervals={intervals}
+                  summary={summary}
+                  t={t}
+                  onPick={(iv) => setForm({ interval: iv, category: iv.category })}
+                />
+              ) : (
+                <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
+                  {t("idleCell.noIntervals")}
+                </div>
+              )}
+              {intervals.map((iv) => rowFor(iv, true))}
+              {legacy.map((e) => (
+                <LegacyRow key={`l${e.id}`} entry={e} t={t} onDelete={(row) => { setDelErr(""); setConfirm({ kind: "legacy", row }); }} />
+              ))}
+            </>
+          ) : (
+            CATS.map((cat, i) => {
+              const Icon = iconFor(cat.code);
+              const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+              const rows = byCat[cat.name] || [];
+              const legacyRows = legacyByCat[cat.name] || [];
+              const catUnion = summary.by_category?.[cat.name]?.union_min || 0;
+              const showInfo = infoOpen === cat.code;
+              return (
+                <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 min-h-[40px]">
+                    <Icon size={14} style={{ color, flexShrink: 0 }} />
+                    <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
+                      {t("idleCell.category")} {cat.code}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setInfoOpen((c) => (c === cat.code ? null : cat.code))}
+                      className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 -m-1.5"
+                      style={{ color: showInfo ? "var(--brand-text)" : "var(--text-3)", cursor: "pointer" }}
+                      aria-label={t(`downtime.cat.${cat.code}.label`)}
+                      aria-expanded={showInfo}
+                    >
+                      <Info size={16} />
+                    </button>
+                    <span className="ml-auto text-xs tabular-nums flex-shrink-0" style={{ color: catUnion ? "var(--text-1)" : "var(--text-4)", fontWeight: catUnion ? 600 : 400 }}>
+                      {catUnion ? fmtDur(catUnion, t) : "—"}
+                    </span>
+                    {addBtn(cat.name, true)}
+                  </div>
+                  {showInfo && (
+                    <div className="px-3 pb-2.5 pt-0.5 text-xs" style={{ background: "var(--bg-inner)" }}>
+                      <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>
+                        {t(`downtime.cat.${cat.code}.label`)}
                       </div>
-                      {/* type=text + inputMode=decimal: the uz/ru iOS keypad types a
-                          comma, which type=number silently rejects; num() normalizes
-                          it. Also stops wheel/gesture scrolls from mutating values.
-                          The label IS the table cell (never md:contents — a
-                          display:contents box can't draw the column separator);
-                          below md the caption labels the input. */}
-                      <label className={`${CELL} flex flex-col justify-center`}>
-                        <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.stopped")}</span>
-                        <input
-                          type="text" inputMode="decimal"
-                          value={r.stopped}
-                          onChange={(e) => setField(cat.code, "stopped", e.target.value)}
-                          onFocus={focusIntoView}
-                          className={INPUT_NUM} style={minStyle}
-                        />
-                      </label>
-                      {cat.noNs ? (
-                        <div className={`${CELL} flex flex-col justify-center`}>
-                          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.notStopped")}</span>
-                          <div className="text-center text-xs py-1" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
-                        </div>
-                      ) : (
-                        <label className={`${CELL} flex flex-col justify-center`}>
-                          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.notStopped")}</span>
-                          <input
-                            type="text" inputMode="decimal"
-                            value={r.not_stopped}
-                            onChange={(e) => setField(cat.code, "not_stopped", e.target.value)}
-                            onFocus={focusIntoView}
-                            className={INPUT_NUM} style={minStyle}
-                          />
-                        </label>
-                      )}
-                      <div className={`${CELL} col-span-2 md:col-span-1 flex items-center gap-1.5`}>
-                        <input
-                          type="text"
-                          value={r.note}
-                          onChange={(e) => setField(cat.code, "note", e.target.value)}
-                          onFocus={focusIntoView}
-                          placeholder={t("idleCell.notePlaceholder")}
-                          className={`${INPUT_TXT} flex-1 min-w-0`}
-                          style={noteErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE}
-                        />
-                        {r.saved && (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmCode(cat.code)}
-                            className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 -m-1 transition-colors hover:bg-white/10"
-                            style={{ color: "var(--text-3)", cursor: "pointer" }}
-                            title={t("idleCell.clear")}
-                            aria-label={t("idleCell.clear")}
-                          >
-                            <RotateCcw size={15} />
-                          </button>
-                        )}
+                      <div style={{ color: "var(--text-3)", lineHeight: 1.5 }}>
+                        {t(`downtime.cat.${cat.code}.note`)}
                       </div>
                     </div>
-                    {showInfo && (
-                      <div className="px-3 pb-2.5 pt-1 text-xs" style={{ background: "var(--bg-inner)" }}>
-                        <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>
-                          {t(`downtime.cat.${cat.code}.label`)}
-                        </div>
-                        <div style={{ color: "var(--text-3)", lineHeight: 1.5 }}>
-                          {t(`downtime.cat.${cat.code}.note`)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          {/* Outside the h-scroller so it can't scroll away sideways; sticky so
-              Save + the incomplete hint stay visible while editing any of the
-              11 rows. Opaque bg — rows scroll underneath.
-              Negative bottom = Layout's <main> padding (p-4 / md:p-6): sticky
-              pins to the scrollport's CONTENT box, so bottom-0 left that padding
-              strip open under the bar (rows showing through it). Pulling the bar
-              down by exactly that much parks it flush with the screen edge —
-              which is also where Android draws its nav buttons, hence the
-              safe-area padding: flush with the SCREEN, clear of the SYSTEM. */}
+                  )}
+                  {rows.map((iv) => rowFor(iv, false))}
+                  {legacyRows.map((e) => (
+                    <LegacyRow key={`l${e.id}`} entry={e} t={t} onDelete={(row) => { setDelErr(""); setConfirm({ kind: "legacy", row }); }} />
+                  ))}
+                </div>
+              );
+            })
+          )}
+
           <div
-            className="sticky -bottom-4 md:-bottom-6 z-10 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-3 pt-2"
+            className="flex items-center justify-end px-3 pt-2"
             style={{
               borderTop: "1px solid var(--border)",
-              background: "var(--bg-card)",
               paddingBottom: "calc(0.75rem + var(--tg-safe-bottom, 0px))",
             }}
           >
-            {incompleteCount > 0 && (
-              <span className="text-xs" style={{ color: "#eab308" }}>{t("idleCell.incompleteHint")}</span>
-            )}
-            {/* Full-width 44px thumb target on phones; compact toolbar button on md+. */}
-            <Button
-              size="lg"
-              variant="primary"
-              className="w-full md:w-auto min-h-[44px] md:min-h-0 text-base md:text-sm"
-              disabled={!pendingCats.length}
-              loading={saveMut.isPending}
-              icon={<Save size={16} />}
-              onClick={() => saveMut.mutate(pendingCats)}
-            >
-              {pendingCats.length ? `${t("idleCell.save")} (${pendingCats.length})` : t("idleCell.save")}
-            </Button>
+            {addBtn("", false)}
           </div>
         </>
       )}
 
+      <IntervalFormModal
+        open={!!form}
+        onClose={() => setForm(null)}
+        cell={cell}
+        date={date}
+        interval={form?.interval || null}
+        initialCategory={form?.category || ""}
+        onSaved={(wasEdit) => { refresh(); toast.success(t(wasEdit ? "idleCell.updated" : "idleCell.saved")); }}
+      />
+
       <ConfirmDialog
-        open={confirmCode != null}
+        open={!!confirm}
         tone="danger"
-        title={t("idleCell.clearTitle")}
-        message={t("idleCell.clearConfirm")}
+        title={t(confirm?.kind === "legacy" ? "idleCell.deleteLegacyTitle" : "idleCell.deleteTitle")}
+        message={t(confirm?.kind === "legacy" ? "idleCell.deleteLegacyConfirm" : "idleCell.deleteConfirm")}
         confirmLabel={t("idleCell.delete")}
         cancelLabel={t("idleCell.cancel")}
-        loading={delMut.isPending}
-        onCancel={() => setConfirmCode(null)}
-        onConfirm={() => {
-          const id = rows[confirmCode]?.id;
-          if (id) delMut.mutate({ code: confirmCode, id });
-          else setConfirmCode(null);
-        }}
+        loading={del.isPending}
+        error={delErr || null}
+        onCancel={() => { setDelErr(""); setConfirm(null); }}
+        onConfirm={() => confirm && del.mutate(confirm)}
       />
     </div>
   );
 }
 
-// This page has two tabs over the same day and the same cells:
-//   «Kutish»       — the per-category idle-time entry below (cell_ojidaniya)
+// This page has three tabs over the same day and the same cells:
+//   «Kutish»       — the ojidaniyas grouped under their 11 categories
+//   «Vaqt chizig'i» — the SAME ojidaniyas drawn to scale on the day (test view)
 //   «Perenaladka»  — that day's changeover minutes (cell_perenaladka), the very
 //                    rows the Setup-times «Fakt» tab shows. Same table, same
 //                    endpoints, same query key: editing one edits the other.
-// Both tabs share ONE filter bar (day → brigadir → smena → lider → yacheyka),
+// All three share ONE filter bar (day → brigadir → smena → lider → yacheyka),
 // so switching tabs keeps the operator exactly where they were.
-
 export default function IdleCell() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
+  const toast = useToast({ position: "bottom" });
   // date deliberately NOT persisted: this is a data-entry page — a silently
   // restored stale day could direct entries to the wrong date.
   const [date, setDate] = useState(localTodayIso());
-  const [tab, setTab] = usePersistentState("idle_cell_tab", "ojidaniya"); // "ojidaniya" | "peren"
+  const [tab, setTab] = usePersistentState("idle_cell_tab", "ojidaniya"); // "ojidaniya" | "timeline" | "peren"
   const [shiftTab, setShiftTab] = usePersistentState("idle_cell_shift", "all"); // "all" | 1 | 2
   const [supervisorId, setSupervisorId] = usePersistentState("idle_cell_supervisor_id", null);
   const [leaderId, setLeaderId] = usePersistentState("idle_cell_leader_id", ""); // "" all · "none" leaderless · leader_id
@@ -481,7 +409,7 @@ export default function IdleCell() {
     enabled: !isPeren && supervisorId != null,
   });
   // The changeover day ships every cell in scope at once; a null date keeps the
-  // query idle while the other tab is open.
+  // query idle while another tab is open.
   const { cells: factAll, isLoading: factLoading } = usePerenaladkaFact(isPeren ? date : null);
 
   // Unlike the Ojidaniya endpoint (scoped server-side by the picked brigadir),
@@ -494,7 +422,7 @@ export default function IdleCell() {
     return list;
   }, [factAll, shiftTab, supervisorId]);
 
-  // Both tabs feed the same leader → cell chain below.
+  // All tabs feed the same leader → cell chain below.
   const cells = isPeren ? factCells : (cellsData?.cells ?? []);
 
   // Leader narrows the supervisor's cells, and the cell picker below it only
@@ -585,16 +513,21 @@ export default function IdleCell() {
       {/* View switch — stays OUTSIDE the filter zone (platform rule). */}
       <SegmentedToggle
         asTabs
+        scrollable
         value={tab}
         onChange={setTab}
-        options={[["ojidaniya", t("idleCell.tabOjidaniya")], ["peren", t("idleCell.tabPerenaladka")]]}
+        options={[
+          { value: "ojidaniya", label: (<span className="inline-flex items-center gap-1.5"><ListTree size={13} />{t("idleCell.tabOjidaniya")}</span>), title: t("idleCell.tabOjidaniya") },
+          { value: "timeline", label: (<span className="inline-flex items-center gap-1.5"><GanttChartSquare size={13} />{t("idleCell.tabTimeline")}</span>), title: t("idleCell.tabTimelineHint") },
+          { value: "peren", label: t("idleCell.tabPerenaladka"), title: t("idleCell.tabPerenaladka") },
+        ]}
         className="mb-3"
       />
       <div
         className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
       >
-        {/* Date + the supervisor pick stay inline (on the Kutish tab the page is
+        {/* Date + the supervisor pick stay inline (on the entry tabs the page is
             empty until a supervisor is chosen — that control must never hide);
             shift / leader / cells narrow the view from the panel as chips. */}
         <DayStepper value={date} onChange={setDate} />
@@ -696,10 +629,19 @@ export default function IdleCell() {
       ) : (
         <div className="space-y-2">
           {shownCells.map((c) => (
-            <CellAccordion key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} tl={tl} lang={lang} autoOpen={autoOpen} />
+            <CellCard
+              key={`${c.cell_id}-${date}`}
+              cell={c}
+              date={date}
+              view={tab === "timeline" ? "timeline" : "category"}
+              t={t} tl={tl} lang={lang}
+              autoOpen={autoOpen}
+              toast={toast}
+            />
           ))}
         </div>
       )}
+      {toast.node}
     </Layout>
   );
 }
