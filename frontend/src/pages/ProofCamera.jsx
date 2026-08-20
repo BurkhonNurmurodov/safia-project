@@ -46,14 +46,62 @@ const RETRY_EVERY_MS = 20 * 1000;
 // A shot's own quality. 0.92 keeps small print (a gauge, a label, a serial)
 // legible for the reviewer; the server re-encodes to its own long edge anyway.
 const JPEG_Q = 0.92;
-const LENS_KEY = "proof.camera.lens";
+// The chosen lens is remembered per facing so the second shot costs ONE
+// «Allow camera?» sheet instead of two. The key is VERSIONED: a phone that
+// pinned its ultra-wide under an older rule answers with that lens forever,
+// and a value already sitting in somebody's localStorage cannot be reached any
+// other way. Bump it whenever the rule below changes its mind.
+const LENS_KEY = "proof.camera.lens2";
+// The shape asked of every camera, in one place: it travels with the zoom
+// correction too, because applyConstraints REPLACES the set a track was opened
+// with and a lens fix must not quietly cost the resolution.
+const VIDEO_SIZE = { width: { ideal: 1920 }, height: { ideal: 1080 } };
 
+const FRONT_LENS = /front|face|user|selfie/i;
 // Lens words to avoid when a phone offers several rear cameras. An ultra-wide
-// bends straight lines and a macro cannot focus past 10 cm — both make a
-// workplace photo look like evidence of a different place. The MAIN camera is
-// the one none of these words describe.
-const AVOID_LENS = /(ultra|wide.?angle|tele|zoom|macro|depth|truedepth|infrared|ir\b)/i;
-const PREFER_LENS = /(back camera|rear camera|camera2 0|facing back)/i;
+// shoots the whole room and bends straight lines, a macro cannot focus past
+// 10 cm, a telephoto cannot step back — all three make a workplace photo look
+// like evidence of a different place. The MAIN camera is the one none of these
+// words describe.
+const AVOID_LENS = /(ultra|wide.?angle|tele|zoom|macro|depth|truedepth|infrared|monochrome|\bir\b)/i;
+// A FUSED rear camera — one device standing for two or three sensors. It is a
+// real camera, so it is never disqualified; it is only ever second choice,
+// because WHICH member it opens on is the phone's decision and on iOS that
+// decision is regularly the 0.5x.
+const FUSED_LENS = /(dual|triple|quad|virtual|multi)/i;
+// iOS names the plain 1x sensor «Back Camera»; Android's main one is index 0.
+const MAIN_LENS = /(back camera|rear camera|camera2 0)/i;
+
+/** How much a label looks like the camera a person means by «the camera». */
+function lensScore(label) {
+  const l = label || "";
+  return (MAIN_LENS.test(l) ? 6 : 0)
+    - (FUSED_LENS.test(l) ? 3 : 0)
+    - (AVOID_LENS.test(l) ? 10 : 0);
+}
+
+/** Pull a fused rear camera back onto its 1x lens.
+ *
+ *  0.5x is not a separate camera on every phone. Where the rear device is ONE
+ *  fused camera, Chrome reports a zoom range that starts BELOW 1 — 0.5 is the
+ *  ultra-wide member, 1 is the main sensor — and some builds open it at the
+ *  bottom of that range, on the very device the labels just called the main
+ *  one. No deviceId can correct that; only the zoom can. Moving it is a
+ *  constraint on a stream we already hold, not a second getUserMedia, so it
+ *  costs no «Allow camera?» sheet.
+ *
+ *  The range is the guard: a camera counting zoom in percent (min 100) or
+ *  carrying no ultra-wide (min 1) never enters the branch, and an iPhone —
+ *  which reports no zoom at all — falls straight through to its label-picked
+ *  lens. */
+async function useMainLens(track) {
+  try {
+    const z = track?.getCapabilities?.().zoom;
+    if (!z || !(z.min < 1) || !(z.max >= 1)) return;
+    if (track.getSettings?.().zoom === 1) return;
+    await track.applyConstraints({ ...VIDEO_SIZE, zoom: 1 });
+  } catch { /* a lens that will not move is still a lens */ }
+}
 
 const tgApp = () => window.Telegram?.WebApp;
 
@@ -427,20 +475,25 @@ export default function ProofCamera() {
   const pickLens = useCallback((list, want) => {
     const saved = localStorage.getItem(`${LENS_KEY}.${want}`);
     if (saved && list.some((d) => d.deviceId === saved)) return saved;
-    const side = list.filter((d) => {
-      const l = (d.label || "").toLowerCase();
-      return want === "environment"
-        ? !/front|face|user|selfie/.test(l)
-        : /front|face|user|selfie/.test(l);
-    });
+    // Labels are the only thing that tells an ultra-wide from the main sensor,
+    // and some WebViews leave them blank even after the grant. Choosing by
+    // POSITION there is how a phone gets pinned to its 0.5x lens — or its front
+    // one — for good: answer nothing, and keep the camera facingMode picked.
+    if (!list.some((d) => d.label)) return null;
+    const side = list.filter((d) => FRONT_LENS.test(d.label || "") === (want === "user"));
     const pool = side.length ? side : list;
-    // Modern phones expose three or four rear cameras. The plain one — no
-    // "ultra", no "tele", no "macro" — is the main sensor, and it is what a
-    // person means by "the camera".
-    const main = pool.find((d) => PREFER_LENS.test(d.label || ""))
-      || pool.find((d) => !AVOID_LENS.test(d.label || ""))
-      || pool[0];
-    return main?.deviceId || null;
+    // Modern phones expose three or four rear cameras and their labels are the
+    // only difference between them. SCORE every one and take the best, rather
+    // than the first that matches something: «facing back» describes the
+    // ultra-wide exactly as well as it describes the main sensor, so on a list
+    // that happens to name it first, first-match hands over the 0.5x.
+    let best = null;
+    let top = -Infinity;
+    for (const d of pool) {
+      const s = lensScore(d.label);
+      if (s > top) { top = s; best = d; }
+    }
+    return best?.deviceId || null;
   }, []);
 
   // One negotiation at a time. Opening the camera is a promise, and everything
@@ -484,7 +537,7 @@ export default function ProofCamera() {
       if (remembered && known.some((d) => d.deviceId === remembered)) {
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: { exact: remembered }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            video: { deviceId: { exact: remembered }, ...VIDEO_SIZE },
             audio: false,
           });
         } catch (e) {
@@ -498,20 +551,25 @@ export default function ProofCamera() {
         // First pass gets permission (labels are blank until it is granted),
         // then the device list becomes readable and the right lens chosen.
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: want }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: { facingMode: { ideal: want }, ...VIDEO_SIZE },
           audio: false,
         });
         const id = pickLens(await lenses(), want);
         if (id && stream.getVideoTracks()[0]?.getSettings?.().deviceId !== id) {
           stream.getTracks().forEach((tr) => tr.stop());
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            video: { deviceId: { exact: id }, ...VIDEO_SIZE },
             audio: false,
           });
         }
         if (id) localStorage.setItem(`${LENS_KEY}.${want}`, id);
       }
       streamRef.current = stream;
+      // A phone whose rear camera is ONE fused device can open it at 0.5x, and
+      // the labels above cannot see that: the device they picked really is the
+      // main camera, it is simply pointed at its widest member. Correct it on
+      // the stream, before the first frame the leader composes against.
+      await useMainLens(stream.getVideoTracks()[0]);
       // The OS can take the camera back at any moment — an incoming call,
       // another app, a WebView the system suspended. The element keeps showing
       // the last frame it got, so a dead camera looks exactly like a working

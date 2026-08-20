@@ -545,9 +545,8 @@ SERVER's; the phone never authors it.
   auth-only and NOT page-gated (like `/leaders/report/:uid`: the leader filing
   the proof holds no `/leaders` grant), outside `Layout`, dark chrome. Three
   states, one primary action each: viewfinder → shutter, review → Saqlash, full
-  roll → Tayyor. Rear main lens by default (label heuristics skip ultra/tele/
-  macro/depth), free flip, live stamp preview positioned exactly where the burnt
-  one lands. `?leader=` is typeable, so the backend checks it against the leader
+  roll → Tayyor. Rear main lens by default (see the 0.5x bullet below), free
+  flip, live stamp preview positioned exactly where the burnt one lands. `?leader=` is typeable, so the backend checks it against the leader
   profiles the calling account actually holds.
   **Two rules the layout is built on, both bought the hard way.** (1) The
   picture box is measured in PIXELS from the frame area and built to the
@@ -574,13 +573,36 @@ SERVER's; the phone never authors it.
   fresh WebView, so a leader is asked once per task by construction. What the
   page owns is how many sheets ONE open costs — and the original probe-then-
   correct pass cost two, because every `getUserMedia` call raises its own.
-  `startCamera` now opens the REMEMBERED lens (`proof.camera.lens.<facing>`) in
-  a single call, having first checked that id against `enumerateDevices` (which
+  `startCamera` now opens the REMEMBERED lens (`proof.camera.lens2.<facing>`)
+  in a single call, having first checked that id against `enumerateDevices` (which
   never prompts): an id the phone no longer has would prompt AND fail, i.e. two
   sheets to land where the plain path begins. A `NotAllowedError` re-throws
   instead of falling through — a refusal is the leader's answer, and re-asking
   with different constraints is a second sheet for the same «no». **Never split
   the open back into probe-then-correct**, and never add a third call.
+- **The main lens is chosen TWICE, because 0.5x arrives two different ways**
+  (user, 2026-08-20 — a pilot phone opened on the ultra-wide). A phone that
+  exposes each rear sensor as its own DEVICE is answered by label: `lensScore`
+  ranks the candidates (iOS «Back Camera» / Android «camera2 0» win; a fused
+  «Dual/Triple» device is second choice, because which member it opens on is
+  the phone's decision; ultra/tele/macro/depth lose outright) and the BEST one
+  is opened, never the first that matched something — «facing back» describes
+  the ultra-wide exactly as well as it describes the main sensor. A phone whose
+  rear camera is ONE fused device cannot be answered that way at all: the
+  device the labels picked really is the main camera, it is simply pointed at
+  its widest member. `useMainLens` therefore pulls the OPENED track to
+  `zoom: 1` whenever its capabilities report a range starting below 1 — an
+  `applyConstraints` on a stream already held, so no second `getUserMedia` and
+  no extra sheet, and it carries `VIDEO_SIZE` with it because
+  `applyConstraints` REPLACES the set the track was opened with. The range is
+  also the guard: zoom counted in percent (min 100) or a phone with no
+  ultra-wide (min 1) never enters the branch, and an iPhone reports no zoom at
+  all. Two more rules bought the same day: **blank labels answer NOTHING** —
+  some WebViews never fill them in even after the grant, and choosing by
+  POSITION there is how a phone gets pinned to its 0.5x lens, or its front one,
+  for good — and `LENS_KEY` is VERSIONED (`proof.camera.lens2`), because a lens
+  already remembered under an older rule is unreachable any other way. Bump the
+  key whenever the rule changes its mind.
 - **The `/leaders` bot-day merge gained ONE bounded exception** — `leader_bot.merges()`
   is now THE rule and both readers (the register, the photo proxy) call it.
   Shift 2 merges as it always did; a shift-1 unit merges only when it is
