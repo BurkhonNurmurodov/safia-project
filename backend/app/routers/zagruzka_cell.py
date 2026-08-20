@@ -22,7 +22,11 @@ tables instead of the per-supervisor sheet imports:
                                                      cell_attendance as a per-day
                                                      fallback for days the daily
                                                      sheet does not cover
-    equip_downtime downtime_data (sheet import)    cell_ojidaniya.stopped
+    equip_downtime downtime_data (sheet import)    the UNION of the STOPPED
+                                                     cell_ojidaniya_intervals
+                                                     ranges (legacy cell_ojidaniya
+                                                     minutes for a day filed
+                                                     before the interval model)
 
 The cell↔production join is ``Cell.sap_code`` → ``pp_daily.work_center``; the
 cell registry's SAP codes were normalised Cyrillic→Latin precisely so they match
@@ -35,8 +39,12 @@ Decisions taken with the user (2026-07-31), all deliberate:
     first version, which fed штатка in. O. SONI is the Production page's
     effective value: the per-day pin when the brigadir set one, else the derived
     ROUND(W × Q ÷ S), so the number here always matches the «Jamoa tarkibi» card.
-  * Ojidaniya = To'xtaganda (stopped) minutes only, excluding OJIDANIYA_ONLY_CATS
-    (Cat H / Cat I), mirroring the fleet page's rule.
+  * Ojidaniya = the UNION of the day's To'xtaganda (stopped) ranges, Cat H /
+    Cat I dropped BEFORE the union (2026-08-20; see the block that computes it).
+    A not-stopped range never counts, here or anywhere else.
+  * The unit's own figure is the HEADCOUNT-WEIGHTED mean of its cells',
+    (N1*T1 + ... + Nn*Tn) / (N1 + ... + Nn), where N is the people who actually
+    worked that cell that day — the user's formula, 2026-08-20.
   * A missing input is a plain zero, not a marker: no ojidaniya row for a day
     means downtime 0, exactly like a genuinely clean day.
   * Attendance rows are filtered by the same ``is_direct_role`` rule as the fleet
@@ -65,12 +73,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    Attendance, Cell, CellAttendance, CellOjidaniya, Manager,
-    PPDaily, PPDaySetting, PPProduct, PPWorkCenter, PPWorkCenterDaily,
+    Attendance, Cell, CellAttendance, CellOjidaniya, CellOjidaniyaInterval,
+    Manager, PPDaily, PPDaySetting, PPProduct, PPWorkCenter, PPWorkCenterDaily,
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
 from app.routers.production import _constants as _pp_constants, _unit_per_head
+from app.services import idle_intervals
 from app.services.kpi_calculator import compute_metrics, is_direct_role
 from app.services.pp_calc import _round_half_up
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
@@ -352,22 +361,97 @@ def cell_zagruzka(
         fallback_days.add(r.date)
         _keep(r, cid, r.date)
 
-    # ── Ojidaniya per (cell, date): stopped minutes, minus Cat H / Cat I ───────
+    # ── Ojidaniya per (cell, date): the UNION of the day's STOPPED ranges ─────
+    # An ojidaniya is a start→end EVENT (2026-08-20), so a cell's waiting time
+    # is the UNION of its ranges — every minute counted ONCE however many causes
+    # were filed over it. ``services/idle_intervals`` is THE definition and the
+    # only place that arithmetic lives; summing the ranges here instead would
+    # re-create precisely the over-count the interval model was built to kill
+    # (one 30-minute stop filed under two categories reading as 60).
+    #
+    # Cat H / Cat I are dropped BEFORE the union, never subtracted after it.
+    # They must not count against загрузка (the fleet rule, 2026-07-25) and they
+    # may overlap the categories that do, so subtracting their minutes from the
+    # total would also remove minutes a counted range was covering. The
+    # consequence is worth knowing and is therefore reported rather than hidden:
+    # the figure here is ≤ the «To'xtaganda» total /idle-cell prints for the
+    # same cell-day, and ``excluded_min`` is exactly the difference.
+    #
+    # A not-stopped range never enters anything ("we don't care about
+    # to'xtamaganda") — ``summarize`` drops it, so nothing here has to.
     idle_by_cell: dict[tuple[int, str], float] = defaultdict(float)
     idle_cats: dict[tuple[int, str], dict] = defaultdict(dict)
+    idle_meta: dict[tuple[int, str], dict] = {}
     iso_lo, iso_hi = date_from.isoformat(), date_to.isoformat()
+
+    iv_by_cell: dict[tuple[int, str], list] = defaultdict(list)
+    for iv in db.query(CellOjidaniyaInterval).filter(
+        CellOjidaniyaInterval.cell_id.in_(cell_ids),
+        CellOjidaniyaInterval.date >= iso_lo,
+        CellOjidaniyaInterval.date <= iso_hi,
+    ).all():
+        iv_by_cell[(iv.cell_id, iv.date)].append(iv)
+
+    for k, ivs in iv_by_cell.items():
+        counted = [
+            {"id": iv.id, "category": iv.category, "start": iv.start,
+             "end": iv.end, "stopped": bool(iv.stopped)}
+            for iv in ivs if iv.category not in OJIDANIYA_ONLY_CATS
+        ]
+        summary = idle_intervals.summarize(counted)
+        # What /idle-cell shows for this cell-day: the union over EVERY stopped
+        # category. The difference is what the загрузка rule leaves out, and an
+        # operator comparing the two pages is owed that number.
+        all_union = idle_intervals.union_minutes([
+            sp for sp in (idle_intervals.span(iv.start, iv.end)
+                          for iv in ivs if iv.stopped) if sp
+        ])
+        idle_by_cell[k] = float(summary["stopped_union_min"])
+        idle_cats[k] = {cat: c["union_min"]
+                        for cat, c in summary["by_category"].items()
+                        if c["union_min"]}
+        idle_meta[k] = {
+            "source": "intervals",
+            "events": summary["stopped_count"],
+            # What the pre-interval method would have reported, and by how much
+            # it over-reported. Shown on the page for the same reason
+            # /idle-cell shows it: a figure that silently changed reads as a bug.
+            "sum_min": summary["stopped_sum_min"],
+            "overlap_min": summary["overlap_min"],
+            "excluded_min": max(0, all_union - summary["stopped_union_min"]),
+            "all_cats_union_min": all_union,
+        }
+
+    # Days that predate the interval model keep their old numbers. The fallback
+    # is per (cell, DAY) and fires ONLY for a day holding no interval at all, so
+    # the two models are never mixed inside one day's arithmetic — a day filed
+    # under the new model is answered by the union alone, even when that union
+    # is 0 because every range on it was Cat H / Cat I.
+    legacy_keys: set[tuple[int, str]] = set()
     for e in db.query(CellOjidaniya).filter(
         CellOjidaniya.cell_id.in_(cell_ids),
         CellOjidaniya.date >= iso_lo,
         CellOjidaniya.date <= iso_hi,
     ).all():
-        if e.category in OJIDANIYA_ONLY_CATS:
+        k = (e.cell_id, e.date)
+        if k in iv_by_cell or e.category in OJIDANIYA_ONLY_CATS:
             continue
         mins = float(e.stopped or 0)
         if mins <= 0:
             continue
-        idle_by_cell[(e.cell_id, e.date)] += mins
-        idle_cats[(e.cell_id, e.date)][e.category] = mins
+        legacy_keys.add(k)
+        idle_by_cell[k] += mins
+        idle_cats[k][e.category] = mins
+        meta = idle_meta.setdefault(k, {
+            "source": "legacy", "events": 0, "sum_min": 0.0,
+            # With only durations on record an overlap is unrepresentable, so
+            # the over-count is unknown — null, never 0, which would claim the
+            # old figure was checked and found clean.
+            "overlap_min": None, "excluded_min": None,
+            "all_cats_union_min": None,
+        })
+        meta["events"] += 1
+        meta["sum_min"] += mins
 
     # ── Compute every (cell, date) through the fleet formula ──────────────────
     data: dict[str, dict[str, dict]] = {}
@@ -376,7 +460,7 @@ def cell_zagruzka(
     # real unit-level загрузка, not an average of per-cell percentages.
     roll: dict[date, dict] = {
         d: {"prod_plan": 0.0, "prod_actual": 0.0, "official_hc": 0.0,
-            "downtime_w": 0.0, "att": []} for d in dates
+            "downtime_w": 0.0, "downtime_n": 0.0, "att": []} for d in dates
     }
     collapsed_hc = 0   # cells blanked for a non-positive effective headcount
 
@@ -459,6 +543,13 @@ def cell_zagruzka(
                 "att_rows": len(att_rows),
                 "downtime": round(downtime, 2),
                 "downtime_by_cat": idle_cats.get((c.id, d.isoformat()), {}),
+                # Which model answered, what the old one would have said, and
+                # what the Cat H/I rule left out — the page prints it under the
+                # figure, because a corrected number arriving with no trace of
+                # the correction just looks like the number changed.
+                "downtime_meta": idle_meta.get((c.id, d.isoformat())),
+                # N as used in the unit's weighted mean, beside the T it weights.
+                "idle_weight_n": m.verifix_hc,
                 "avg_early_arrival": m.avg_early_arrival,
                 "adjusted_util": m.adjusted_util,
                 "after_idle_util": m.after_idle_util,
@@ -469,9 +560,23 @@ def cell_zagruzka(
             r["prod_plan"] += p_plan
             r["prod_actual"] += p_actual
             r["official_hc"] += hc
-            # Downtime is a per-person minute deduction, so rolling it up means
-            # weighting each cell's minutes by that cell's headcount (O. SONI).
-            r["downtime_w"] += downtime * hc
+            # Ojidaniya is a per-person minute deduction, so the unit's figure
+            # is the HEADCOUNT-WEIGHTED mean of its cells' totals —
+            # (N1*T1 + … + Nn*Tn) ÷ (N1 + … + Nn), the user's formula
+            # (2026-08-20). A plain average of the cells' minutes would let a
+            # two-person cell's long stop outweigh a twenty-person cell's short
+            # one, which is the opposite of how the loss was actually paid.
+            #
+            # N is the people who ACTUALLY worked the cell that day (the user's
+            # ruling): the direct-role attendance count that already drives this
+            # cell's own load, never the planned O. SONI. Nobody waits in a cell
+            # they did not come to, and a plan overstating a cell would pull the
+            # unit's deduction toward a stoppage those people never stood
+            # through. A cell with no attendance never reaches this line at all
+            # (the guards above), so it contributes to neither side of the mean.
+            n_idle = float(m.verifix_hc)
+            r["downtime_w"] += downtime * n_idle
+            r["downtime_n"] += n_idle
             r["att"] += att_rows
 
     # ── Totals row: the same formula over the summed inputs ───────────────────
@@ -493,7 +598,8 @@ def cell_zagruzka(
             prod_plan=r["prod_plan"],
             prod_actual=r["prod_actual"],
             official_hc=hc,
-            equip_downtime=(r["downtime_w"] / hc) if hc else 0.0,
+            equip_downtime=((r["downtime_w"] / r["downtime_n"])
+                            if r["downtime_n"] else 0.0),
             downtime_by_cat={},
         )
         totals[key] = {
@@ -508,6 +614,11 @@ def cell_zagruzka(
             "avg_early_arrival": m.avg_early_arrival,
             "verifix_labor": m.verifix_labor,
             "verifix_hc": m.verifix_hc,
+            # Σ N — the divisor of the weighted mean above. Published so the
+            # unit's deduction can be re-derived from the rows on screen
+            # instead of being taken on trust.
+            "idle_weight_n": r["downtime_n"],
+            "idle_weight_sum": round(r["downtime_w"], 2),
         }
         if m.verifix_hc == 0 or m.effective_hc is None or m.effective_hc <= 0:
             totals[key] = {"baseline_util": None, "net_util": None}
@@ -529,6 +640,18 @@ def cell_zagruzka(
             "verifix_hc": fm.verifix_hc,
             "avg_early_arrival": fm.avg_early_arrival,
         }
+
+    # ── Which ojidaniya model answered which day ─────────────────────────────
+    # Named for the same reason the attendance sources are: a day still counted
+    # by the retired minutes-only rows carries the over-count that model could
+    # not see, and nothing else on the page could tell it apart from a day the
+    # union corrected.
+    def _idle_days(keys) -> list[str]:
+        return [date.fromisoformat(iso).strftime("%d.%m.%Y")
+                for iso in sorted({iso for (_cid, iso) in keys})]
+
+    idle_overlap_min = sum(float(mt["overlap_min"] or 0) for mt in idle_meta.values())
+    idle_excluded_min = sum(float(mt["excluded_min"] or 0) for mt in idle_meta.values())
 
     return {
         "manager": {"id": mgr.id, "name": mgr.name, "shift": mgr.shift},
@@ -569,6 +692,17 @@ def cell_zagruzka(
                 "sheet": [d.strftime("%d.%m.%Y") for d in sorted(sheet_days)],
                 "cell_upload": [d.strftime("%d.%m.%Y") for d in sorted(fallback_days)],
             },
+            # The same question for ojidaniya: the start→end intervals (counted
+            # as a union) or the retired minutes-only rows (a plain sum, with
+            # an over-count nothing can measure).
+            "ojidaniya_sources": {
+                "intervals": _idle_days(iv_by_cell.keys()),
+                "legacy": _idle_days(legacy_keys),
+            },
+            # Across the range: what the old method double-counted, and the
+            # Cat H / Cat I minutes /idle-cell shows that загрузка never counts.
+            "ojidaniya_overlap_min": round(idle_overlap_min, 1),
+            "ojidaniya_excluded_min": round(idle_excluded_min, 1),
             # Cells dropped because partial attendance drove effective_hc ≤ 0.
             "collapsed_effective_hc": collapsed_hc,
             # A cell with no SAP code, or one whose code matches no configured

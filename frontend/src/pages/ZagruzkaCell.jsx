@@ -51,6 +51,31 @@ const num = (v, d = 0) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toFixed(d);
 const pct = (v) => (v === null || v === undefined ? "—" : `${Math.round(v * 100)}%`);
 
+/**
+ * The one line under an ojidaniya figure that says HOW it was counted.
+ *
+ * A cell's waiting time is the UNION of its stopped ranges, so this number is
+ * routinely smaller than the minutes that were filed — and a figure that
+ * silently shrank reads as a bug. So the correction is stated: what the old
+ * sum double-counted, what the Cat H / Cat I rule leaves out (which is exactly
+ * the gap against the «To'xtaganda» total on /idle-cell), and, for a day filed
+ * before the interval model existed, that it is still the old sum.
+ *
+ * Rendered as TEXT, never a `title` — Telegram's WebView has no hover, so a
+ * rule that lives in a tooltip does not exist on the primary device.
+ */
+function idleNote(inp, t) {
+  const m = inp?.downtime_meta;
+  if (!m) return null;
+  if (m.source === "legacy") return t("zcell.idleLegacy");
+  const parts = [];
+  if (m.overlap_min > 0)
+    parts.push(t("zcell.idleOverlap").replace("{n}", Math.round(m.overlap_min)));
+  if (m.excluded_min > 0)
+    parts.push(t("zcell.idleExcluded").replace("{n}", Math.round(m.excluded_min)));
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /** Heatmap card header — mirrors the fleet page's, minus the per-manager bits. */
 function HeatmapHeader({ payload, heatmapMode, setHeatmapMode, segments, fullscreen, onToggleFullscreen, t }) {
   const [showGuide, setShowGuide] = useState(false);
@@ -222,6 +247,12 @@ export default function ZagruzkaCell() {
 
   const dateOptions = useMemo(
     () => dates.map((d) => ({ value: d, label: d })), [dates]);
+
+  // The brigadir's own figures for the day the inputs table is showing. A day
+  // the roll-up collapsed carries only the two nulls, so the row is dropped
+  // rather than printed as a line of dashes pretending to be a unit total.
+  const unit = payload?.totals?.[inputDate];
+  const hasUnit = !!unit && unit.official_hc != null;
 
   function handleCellClick(name, d, _v, cell) {
     // No managerId: a cell has no comment thread, so this opens formula-only.
@@ -489,6 +520,7 @@ export default function ZagruzkaCell() {
                   const inp = payload.inputs?.[c]?.[inputDate];
                   const meta = cellMeta[c];
                   const net = payload.data?.[c]?.[inputDate]?.net_util;
+                  const idle = idleNote(inp, t);
                   return (
                     <tr key={c}>
                       <td className="px-3 py-2 truncate" style={{ color: "var(--text-1)" }} title={c}>
@@ -513,6 +545,11 @@ export default function ZagruzkaCell() {
                       <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{inp?.verifix_hc ?? "—"}</td>
                       <td className="px-3 py-2 text-right" style={{ color: inp?.downtime ? "#eab308" : "var(--text-3)" }}>
                         {num(inp?.downtime)}
+                        {idle && (
+                          <div className="text-[9px] leading-tight" style={{ color: "var(--text-3)" }}>
+                            {idle}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(inp?.avg_early_arrival, 1)}</td>
                       <td className="px-3 py-2 text-right font-semibold" style={{ color: "var(--text-1)" }}>{pct(net)}</td>
@@ -520,7 +557,45 @@ export default function ZagruzkaCell() {
                   );
                 })}
               </tbody>
+              {/* ── The brigadir's own row ──────────────────────────────────
+                   The unit figure the cells above roll up into. Its ojidaniya
+                   is the headcount-weighted mean of theirs, printed WITH its
+                   derivation (Σ(N×T) ÷ ΣN): a mean whose arithmetic cannot be
+                   checked against the rows directly beside it is a number the
+                   reader has to take on trust. N is the «Odam» column of each
+                   row, T its «Kutish». */}
+              {hasUnit && (
+                <tfoot>
+                  <tr className="border-t" style={{ background: "var(--bg-inner)", borderColor: "var(--border-md)" }}>
+                    <td className="px-3 py-2 font-semibold truncate" style={{ color: "var(--text-1)" }}>
+                      {t("zcell.unitRow")}
+                    </td>
+                    <td className="px-3 py-2 text-center" style={{ color: "var(--text-4)" }}>—</td>
+                    <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.prod_plan)}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.prod_actual)}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.official_hc)}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.verifix_labor)}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{unit.verifix_hc ?? "—"}</td>
+                    <td className="px-3 py-2 text-right font-semibold"
+                        style={{ color: unit.equip_downtime ? "#eab308" : "var(--text-3)" }}>
+                      {num(unit.equip_downtime, 1)}
+                      {unit.idle_weight_n > 0 && (
+                        <div className="text-[9px] leading-tight font-normal" style={{ color: "var(--text-3)" }}>
+                          {num(unit.idle_weight_sum)} ÷ {num(unit.idle_weight_n)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.avg_early_arrival, 1)}</td>
+                    <td className="px-3 py-2 text-right font-semibold" style={{ color: "var(--text-1)" }}>{pct(unit.net_util)}</td>
+                  </tr>
+                </tfoot>
+              )}
             </TableCard>
+            {/* Says what the weighted mean IS, once, under the table that shows
+                both of its inputs — not in a tooltip the phone cannot open. */}
+            <div className="text-[11px] mt-2 px-1" style={{ color: "var(--text-3)" }}>
+              {t("zcell.unitIdleNote")}
+            </div>
           </div>
         </>
       )}
@@ -567,6 +642,40 @@ export default function ZagruzkaCell() {
               )}
             </span>
           </div>
+          {/* Which ojidaniya model answered which day. A day still counted by
+              the retired minutes-only rows carries the over-count that model
+              could not see, and nothing else on the page tells it apart from a
+              day the union corrected. */}
+          {(() => {
+            const iv = diag.ojidaniya_sources?.intervals?.length ?? 0;
+            const lg = diag.ojidaniya_sources?.legacy?.length ?? 0;
+            return (
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1">
+                <span className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: iv ? "#22c55e" : lg ? "#eab308" : "var(--text-4)" }} />
+                <span style={{ color: "var(--text-3)" }}>{t("zcell.diagIdleSource")}:</span>
+                <span className="font-medium" style={{ color: "var(--text-2)" }}>
+                  {t("zcell.diagIdleIntervals").replace("{n}", iv)}
+                  {lg > 0 && <> · {t("zcell.diagIdleLegacy").replace("{n}", lg)}</>}
+                </span>
+              </div>
+            );
+          })()}
+          {/* The size of the correction, and the size of what the загрузка rule
+              leaves out — the two numbers that explain why this page and
+              /idle-cell can print different minutes for the same cell-day. */}
+          {(diag.ojidaniya_overlap_min > 0 || diag.ojidaniya_excluded_min > 0) && (
+            <div className="flex flex-wrap items-baseline gap-x-1 gap-y-1 text-[11px] py-1 pl-4"
+                 style={{ color: "var(--text-3)" }}>
+              {diag.ojidaniya_overlap_min > 0 && (
+                <span>{t("zcell.diagIdleOverlap").replace("{n}", Math.round(diag.ojidaniya_overlap_min))}</span>
+              )}
+              {diag.ojidaniya_overlap_min > 0 && diag.ojidaniya_excluded_min > 0 && <span>·</span>}
+              {diag.ojidaniya_excluded_min > 0 && (
+                <span>{t("zcell.diagIdleExcluded").replace("{n}", Math.round(diag.ojidaniya_excluded_min))}</span>
+              )}
+            </div>
+          )}
           {diag.collapsed_effective_hc > 0 && (
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1">
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#eab308" }} />
