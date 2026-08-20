@@ -39,6 +39,7 @@ from jwt import PyJWTError as JWTError
 from PIL import Image, ImageOps
 from pydantic import BaseModel
 from sqlalchemy import func, or_, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import web_auth
@@ -48,7 +49,7 @@ from app.config import settings
 from app.database import get_db
 from app.identity import (
     find_role_row, parse_profile_key, profile_display_name, profile_holders,
-    viewer_profile_key,
+    profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
 from app.models import (
@@ -83,6 +84,10 @@ _MANAGER_ID_REFS = [
     ("pp_uploads", "manager_id"),
     ("leader_concerns", "brigadir_manager_id"),
     ("leader_tasks", "supervisor_manager_id"),
+    # Filed leader checklists are the unit's history too. Without this line a
+    # unit whose ONLY record is its leaders' daily protocols read as empty, and
+    # deleting it took every one of those days down with the leader profiles.
+    ("leader_task_days", "manager_id"),
     ("role_profiles", "manager_id"),
 ]
 
@@ -270,6 +275,116 @@ def _release_leader_cells(db: Session, leader_id: int) -> None:
     """Unassign every cell owned by the profile (delete + role switch away from
     leader). The rows stay — cell metadata outlives its owner."""
     db.query(Cell).filter_by(leader_id=leader_id).update({"leader_id": None})
+
+
+# ── What a profile delete actually reaches ────────────────────────────────────
+#
+# A leader profile id travels far past `role_profiles`. FOUR tables carry a real
+# FK to it — cells, leader_task_leader_settings, leader_task_days, leader_tasks
+# — so while one of their rows stands the DELETE physically cannot land, and
+# Postgres raises the IntegrityError the profile page rendered as a bare
+# «Internal Server Error»: a dialog that says nothing about what is in the way.
+# The remaining tables carry the id with no constraint and would be left
+# pointing at a profile that no longer exists.
+#
+# Every table gets ONE of three treatments, and which one is a judgement about
+# the ROW, not about whether a constraint happens to exist:
+#
+#   CONFIG   per-leader overrides and half-finished bot state. They describe how
+#            this profile is treated, so they mean nothing without it → deleted.
+#   HISTORY  the filed checklist and everything the reviewer wrote about it. It
+#            CANNOT survive the profile (leader_task_days.leader_id is NOT NULL),
+#            so a delete destroys it — which is why the caller has to confirm
+#            over a count of it first, rather than discovering it afterwards.
+#   DETACH   rows that snapshot the leader's NAME (board tasks, concerns, late
+#            requests, the config audit trail). The id goes, the record stays
+#            readable — the same answer the role switch already gives them
+#            («{n} ta vazifa tarixda saqlanib qoladi»).
+
+_LEADER_CONFIG_REFS = [
+    ("leader_task_leader_settings", "leader_id"),   # FK — per-leader task overrides
+    ("leader_task_pending_changes", "leader_id"),   # edits scheduled for a profile that ends here
+    ("leader_task_captures",        "leader_id"),   # a bot capture left mid-flow
+]
+
+_LEADER_DETACH_REFS = [
+    ("leader_tasks",             "leader_profile_id"),  # FK — the /tasks board
+    ("leader_concerns",          "leader_profile_id"),
+    ("leader_late_requests",     "leader_profile_id"),
+    ("leader_task_config_audit", "leader_id"),
+]
+
+# Rows keyed by the canonical "role:id" profile key rather than by a role table.
+# They follow the profile for every role, and the browser login is the reason
+# this list is not optional: leaving the credential behind keeps a username
+# reserved and a password alive for an identity that no longer exists.
+_PROFILE_KEY_REFS = [
+    "web_credentials", "profile_photos", "profile_capabilities",
+    "profile_permissions", "ui_prefs",
+]
+
+
+def _leader_footprint(db: Session, leader_id: int) -> dict:
+    """What deleting this leader profile costs — destroyed first, detached
+    after. Only non-zero counts are returned, so the caller can test the dict
+    itself for "is there anything to warn about"."""
+    def n(table: str, col: str) -> int:
+        return db.execute(text(f"SELECT count(*) FROM {table} WHERE {col} = :lid"),
+                          {"lid": leader_id}).scalar() or 0
+
+    counts = {
+        "days":     n("leader_task_days", "leader_id"),
+        "photos":   n("leader_task_photos", "leader_id"),
+        "reviews":  n("leader_ai_reviews", "leader_id"),
+        "cells":    n("cells", "leader_id"),
+        "tasks":    n("leader_tasks", "leader_profile_id"),
+        "concerns": n("leader_concerns", "leader_profile_id"),
+    }
+    return {k: v for k, v in counts.items() if v}
+
+
+# The half of the footprint that no undo can reach.
+_LEADER_DESTROYS = ("days", "photos", "reviews")
+
+
+def _purge_leader_profile(db: Session, leader_id: int) -> None:
+    """Free a leader profile of every row that points at it, so `db.delete(p)`
+    can land. BOTH doors call this — the profile's own delete and the supervisor
+    cascade that takes its unit's leaders along — because a leader deleted from
+    the unit above hits exactly the same constraints."""
+    _release_leader_cells(db, leader_id)
+
+    def ex(sql: str) -> None:
+        db.execute(text(sql), {"lid": leader_id})
+
+    # The filed days, children first: media hangs off an entry, entries and
+    # photos off the day, and each of those three links is a FK of its own.
+    ex("DELETE FROM leader_task_media WHERE entry_id IN "
+       "(SELECT e.id FROM leader_task_entries e "
+       " JOIN leader_task_days d ON d.id = e.day_id WHERE d.leader_id = :lid)")
+    ex("DELETE FROM leader_task_entries WHERE day_id IN "
+       "(SELECT id FROM leader_task_days WHERE leader_id = :lid)")
+    ex("DELETE FROM leader_task_photos WHERE leader_id = :lid")
+    ex("DELETE FROM leader_task_days WHERE leader_id = :lid")
+    # And what the reviewer wrote about those days.
+    ex("DELETE FROM leader_ai_disputes WHERE leader_id = :lid")
+    ex("DELETE FROM leader_ai_reviews  WHERE leader_id = :lid")
+    ex("DELETE FROM leader_day_reports WHERE leader_id = :lid")
+
+    for table, col in _LEADER_CONFIG_REFS:
+        ex(f"DELETE FROM {table} WHERE {col} = :lid")
+    for table, col in _LEADER_DETACH_REFS:
+        ex(f"UPDATE {table} SET {col} = NULL WHERE {col} = :lid")
+
+
+def _purge_profile_key(db: Session, ptype: str, pid: int) -> None:
+    """Drop everything the profile owns by KEY — its browser login, avatar,
+    granted capabilities, page permissions and saved column layouts."""
+    key = profile_key(ptype, pid)
+    if not key:
+        return
+    for table in _PROFILE_KEY_REFS:
+        db.execute(text(f"DELETE FROM {table} WHERE profile_key = :k"), {"k": key})
 
 
 def _manager_has_data(db: Session, manager_id: int) -> bool:
@@ -1314,6 +1429,13 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
             impacts["concerns"] = concerns
         if tasks:
             impacts["tasks"] = tasks
+        if new_role == "supervisor":
+            # This is the one switch that DESTROYS the profile row: the identity
+            # moves into `managers`, so the filed checklist hanging off the old
+            # role_profiles id cannot come along (see `_purge_leader_profile`).
+            # Every other target keeps the row and only changes its role.
+            impacts.update({k: v for k, v in _leader_footprint(db, payload.pid).items()
+                            if k in _LEADER_DESTROYS})
     if ptype == "supervisor":
         if _manager_has_data(db, payload.pid):
             impacts["unit_archive"] = True
@@ -1415,13 +1537,17 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
                                                       manager_id=payload.pid).all():
                 for r in _bound_role_rows(db, "leader", lp.id):
                     _remove_role_row(db, r)
-                _release_leader_cells(db, lp.id)
+                _purge_leader_profile(db, lp.id)
+                _purge_profile_key(db, "leader", lp.id)
                 db.delete(lp)
             db.flush()
             db.delete(mgr)
     elif new_role == "supervisor":
         if ptype == "leader":
-            _release_leader_cells(db, p.id)
+            _purge_leader_profile(db, p.id)   # or the FKs below hold the row down
+        # NOT _purge_profile_key: this is the same PERSON continuing under a new
+        # role, so their browser login is re-pointed by the admin, not revoked
+        # from under them by a switch nobody said would sign them out.
         db.delete(p)  # the identity now lives in the managers row
 
     new_id = target_role_id if new_role == "supervisor" else target_profile.id
@@ -1436,8 +1562,16 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
 # ── Admin: delete / unassign ──────────────────────────────────────────────────
 
 @router.delete("/admin/{ptype}/{pid}")
-def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
+def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
+                         db: Session = Depends(get_db),
                          caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Delete one profile, taking its dependencies with it.
+
+    A leader profile that has ever filed a checklist cannot simply be dropped —
+    see the treatment table above `_purge_leader_profile`. When the delete would
+    destroy filed work, the first call answers 409 {"code": "confirm_required",
+    ...counts} and the caller re-sends it with ?confirm=1, so an admin is told
+    what the button costs BEFORE it costs it instead of after."""
     _deny_admin_profile(caller, ptype)
     if ptype not in PROFILE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid profile type")
@@ -1460,10 +1594,34 @@ def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
         for lp in db.query(RoleProfile).filter_by(role="leader", manager_id=pid).all():
             for r in _bound_role_rows(db, "leader", lp.id):
                 _remove_role_row(db, r)
-            _release_leader_cells(db, lp.id)
+            _purge_leader_profile(db, lp.id)
+            _purge_profile_key(db, "leader", lp.id)
             db.delete(lp)
+        _purge_profile_key(db, "supervisor", pid)
         db.delete(mgr)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # `_manager_has_data` lists the tables that make a unit HISTORY, not
+            # every table that references it: config the tab never asks about
+            # (cells, per-unit task settings, setup times) can still hold the
+            # row down. Archiving is the answer this endpoint already gives a
+            # unit it may not delete — far better than the 500 the raised
+            # constraint would otherwise become.
+            db.rollback()
+            mgr = db.query(Manager).filter_by(id=pid).first()
+            if not mgr:
+                raise
+            # The rollback took the binding removals with it — re-apply them, so
+            # an archive reached this way looks exactly like the one above.
+            for r in _bound_role_rows(db, "supervisor", pid):
+                _remove_role_row(db, r)
+            mgr.archived = True
+            db.commit()
+            alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
+                            details=[("role", tv("role.supervisor")), ("profile", mgr_name)],
+                            changes=[("status", None, tv("v.archived"))])
+            return {"ok": True, "archived": True}
         alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
                         details=[("role", tv("role.supervisor")), ("profile", mgr_name)])
         return {"ok": True, "archived": False}
@@ -1471,6 +1629,13 @@ def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
     p = db.query(RoleProfile).filter_by(id=pid).first()
     if not p or p.role != ptype:
         raise HTTPException(status_code=404, detail="Profile not found")
+
+    # Filed work dies with a leader profile and nothing brings it back, so the
+    # count is put in front of the admin before the delete, not in the log after.
+    footprint = _leader_footprint(db, pid) if ptype == "leader" else {}
+    if not confirm and any(footprint.get(k) for k in _LEADER_DESTROYS):
+        raise HTTPException(status_code=409,
+                            detail={"code": "confirm_required", **footprint})
 
     if ptype == "admin":
         holder = db.query(Admin).filter_by(profile_id=pid).first()
@@ -1486,7 +1651,8 @@ def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
             _remove_role_row(db, r)
 
     if ptype == "leader":
-        _release_leader_cells(db, pid)
+        _purge_leader_profile(db, pid)
+    _purge_profile_key(db, ptype, pid)
     p_name = p.name
     db.delete(p)
     db.commit()

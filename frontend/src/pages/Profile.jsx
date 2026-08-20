@@ -56,6 +56,20 @@ const TYPE_META = {
 const NAME_LANGS = ["uz_cyrl", "ru", "en"];
 const MIN_PW_LEN = 8;
 
+// What a profile takes with it, in the order the operator has to read it:
+// DESTROYED first (a leader's filed checklist cannot outlive the profile row),
+// then what only loses its owner and stays readable by its name snapshot.
+// Shared by the delete dialog and the role switch, which destroys the same
+// three when it moves a leader's identity into a `managers` row.
+const IMPACT_KEYS = [
+  ["days",     "admin.profiles.impactDays"],
+  ["photos",   "admin.profiles.impactPhotos"],
+  ["reviews",  "admin.profiles.impactReviews"],
+  ["cells",    "admin.profiles.impactCells"],
+  ["tasks",    "admin.profiles.switchImpactTasks"],
+  ["concerns", "admin.profiles.switchImpactConcerns"],
+];
+
 const inputCls = "mt-1 w-full rounded-xl px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--brand)]";
 const inputStyle = {
   background: "var(--input-bg)",
@@ -786,10 +800,15 @@ function EditCard({ ptype, item, data, notify, onDone }) {
       }
     },
     onError: (e, body) => {
-      const detail = e?.response?.data?.detail;
+      // `detail_raw`, not `detail`: api.js flattens every non-string detail to
+      // text for the ~80 call sites that render it directly, which turned this
+      // impacts OBJECT into a JSON string — so the check below never matched and
+      // the confirm dialog was replaced by a blob of JSON in the error line.
+      const res = e?.response?.data;
+      const detail = res?.detail_raw ?? res?.detail;
       if (detail?.code === "confirm_required") { setConfirmSwitch({ body, detail }); return; }
       setConfirmSwitch(null);
-      setFormError(typeof detail === "string" ? detail : t("admin.profiles.error"));
+      setFormError(typeof res?.detail === "string" ? res.detail : t("admin.profiles.error"));
     },
   });
 
@@ -1103,12 +1122,9 @@ function EditCard({ ptype, item, data, notify, onDone }) {
               .replace("{name}", item.name ?? "")
               .replace("{role}", t(ROLE_LABEL_KEYS[confirmSwitch.body.new_role]) || confirmSwitch.body.new_role)}
             <ul className="list-disc pl-4 space-y-1 mt-2">
-              {confirmSwitch.detail.concerns > 0 && (
-                <li>{t("admin.profiles.switchImpactConcerns").replace("{n}", confirmSwitch.detail.concerns)}</li>
-              )}
-              {confirmSwitch.detail.tasks > 0 && (
-                <li>{t("admin.profiles.switchImpactTasks").replace("{n}", confirmSwitch.detail.tasks)}</li>
-              )}
+              {IMPACT_KEYS.map(([field, key]) => confirmSwitch.detail[field] > 0 && (
+                <li key={field}>{t(key).replace("{n}", confirmSwitch.detail[field])}</li>
+              ))}
               {confirmSwitch.detail.unit_archive && (
                 <li>{t("admin.profiles.switchImpactUnitArchive")}</li>
               )}
@@ -1466,17 +1482,36 @@ function DangerCard({ ptype, item, onDone }) {
   const web = item.web || null;
   const [confirm, setConfirm] = useState(null); // "login" | "profile"
   const [actionError, setActionError] = useState("");
+  // The backend's 409 {"code":"confirm_required", ...counts}: a leader profile
+  // whose delete would destroy filed checklist days. Second step, not a nag —
+  // the first dialog cannot name a number it does not have.
+  const [impacts, setImpacts] = useState(null);
 
   const archivable = ptype === "supervisor" && !item.archived && item.has_data;
 
   const deleteMut = useMutation({
-    mutationFn: () => api.delete(`/api/profiles/admin/${ptype}/${item.id}`),
+    mutationFn: (confirmed = false) =>
+      api.delete(`/api/profiles/admin/${ptype}/${item.id}`,
+                 confirmed ? { params: { confirm: 1 } } : undefined),
     onSuccess: () => {
       setConfirm(null);
+      setImpacts(null);
       onDone();
       navigate("/admin/upload?tab=profiles");
     },
-    onError: (e) => setActionError(e?.response?.data?.detail || t("admin.profiles.error")),
+    onError: (e) => {
+      // `detail_raw` holds the structure; api.js flattens `detail` to text.
+      const res = e?.response?.data;
+      const detail = res?.detail_raw ?? res?.detail;
+      if (detail?.code === "confirm_required") {
+        setConfirm(null);
+        setActionError("");
+        setImpacts(detail);
+        return;
+      }
+      setActionError(typeof res?.detail === "string" ? res.detail
+                                                     : t("admin.profiles.error"));
+    },
   });
 
   const archiveMut = useMutation({
@@ -1566,6 +1601,34 @@ function DangerCard({ ptype, item, onDone }) {
         confirmLabel={archivable ? t("admin.profiles.archive") : t("admin.profiles.confirmDelete")}
         tone={archivable ? "warning" : "danger"}
         loading={deleteMut.isPending || archiveMut.isPending}
+      />
+
+      {/* Delete impacts (backend 409 confirm_required). What dies is listed
+          first and the name has to be retyped: filed checklist days, their
+          photos and every AI verdict on them go with the profile, and no undo
+          reaches any of it. */}
+      <ConfirmDialog
+        open={!!impacts}
+        tone="danger"
+        error={actionError}
+        onCancel={() => { setImpacts(null); setActionError(""); }}
+        onConfirm={() => { setActionError(""); deleteMut.mutate(true); }}
+        title={t("admin.profiles.deleteImpactTitle")}
+        message={impacts && (
+          <>
+            {t("admin.profiles.deleteImpactMsg").replace("{name}", tl(item.name) || "")}
+            <ul className="list-disc pl-4 space-y-1 mt-2">
+              {IMPACT_KEYS.map(([field, key]) => impacts[field] > 0 && (
+                <li key={field}>{t(key).replace("{n}", impacts[field])}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        challenge={tl(item.name) || item.name}
+        confirmLabel={t("admin.profiles.confirmDelete")}
+        cancelLabel={t("admin.users.cancel")}
+        loading={deleteMut.isPending}
+        zIndex={110}
       />
     </Card>
   );
