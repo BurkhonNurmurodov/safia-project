@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsUpDown,
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
-  LayoutGrid, FlaskConical,
+  LayoutGrid, FlaskConical, Filter,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -166,6 +166,24 @@ const cellDisplay = (c, lang) => {
     full: `${c.verifix_code || "—"}${nm ? " · " + nm : ""}`,
   };
 };
+
+// ONE row predicate for every filtered view of the day — the table, the KPI
+// cards and the role chips. `skipRoles` drops the job_titles clause: the chips
+// ARE that filter, so they must count against everything EXCEPT themselves.
+function matchesFilters(w, f, skipRoles = false) {
+  if (f.worker     && !w.worker_name?.toLowerCase().includes(f.worker.toLowerCase())) return false;
+  if (!skipRoles && f.job_titles.length && !f.job_titles.includes(w.job_title || "")) return false;
+  if (f.cells.length      && !f.cells.includes(w._cell?.full   || ""))               return false;
+  if (f.schedules.length  && !f.schedules.includes(w.schedule   || ""))              return false;
+  if (f.clock.length && !f.clock.includes(w.clock_in_out || "")) return false;
+  if (f.hours_min !== "" && (w.hours_worked      == null || w.hours_worked      < parseFloat(f.hours_min))) return false;
+  if (f.hours_max !== "" && (w.hours_worked      == null || w.hours_worked      > parseFloat(f.hours_max))) return false;
+  if (f.early_min !== "" && (w.early_arrival_min == null || w.early_arrival_min < parseFloat(f.early_min))) return false;
+  if (f.early_max !== "" && (w.early_arrival_min == null || w.early_arrival_min > parseFloat(f.early_max))) return false;
+  if (f.eff_min   !== "" && (w.effective_hours   == null || w.effective_hours   < parseFloat(f.eff_min)))   return false;
+  if (f.eff_max   !== "" && (w.effective_hours   == null || w.effective_hours   > parseFloat(f.eff_max)))   return false;
+  return true;
+}
 
 function isFilterActive(f) {
   return !!(f.worker || f.job_titles.length || f.schedules.length || f.clock.length ||
@@ -503,32 +521,49 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   // Only claim the column when at least one row actually matched — a day whose
   // two uploads don't overlap would otherwise render a full column of dashes.
   const showCellCol = useMemo(() => allWorkers.some(w => w._cell), [allWorkers]);
-  const totalWorkers = allWorkers.length;
-  const cameWorkers = useMemo(() => allWorkers.filter(hasWorked), [allWorkers]);
+  // ── What the numbers count ────────────────────────────────────────────────
+  // Every summary here describes the rows ON SCREEN, not the whole day: cards
+  // reading the unfiltered day sat directly above a table obeying the filters,
+  // and the two disagreed with nothing on screen saying why.
+  const workers = useMemo(
+    () => allWorkers.filter(w => matchesFilters(w, filters)),
+    [allWorkers, filters]
+  );
+  // The chips ARE the job_titles filter, so they count against every OTHER
+  // filter only. Counted off `workers`, picking one role would erase every
+  // other chip and leave no way back to a second one.
+  const chipBase = useMemo(
+    () => allWorkers.filter(w => matchesFilters(w, filters, true)),
+    [allWorkers, filters]
+  );
+
+  const totalWorkers = workers.length;
+  const cameWorkers = useMemo(() => workers.filter(hasWorked), [workers]);
   const cameToWorkCount = cameWorkers.length;
   // Count of workers who came to work, broken down by exact job_title,
   // sorted by count desc then title. Blank titles are skipped so each entry
   // maps cleanly onto the job_titles column filter.
   const roleCounts = useMemo(() => {
     const map = new Map();
-    for (const w of cameWorkers) {
+    for (const w of chipBase) {
+      if (!hasWorked(w)) continue;
       const title = w.job_title || "";
       if (!title) continue;
       map.set(title, (map.get(title) || 0) + 1);
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [cameWorkers]);
+  }, [chipBase]);
   const cameRatio = totalWorkers > 0 ? cameToWorkCount / totalWorkers : null;
   const zagruzkaWorkers = useMemo(
-    () => allWorkers.filter(isZagruzkaCalcWorker),
-    [allWorkers]
+    () => workers.filter(isZagruzkaCalcWorker),
+    [workers]
   );
   const zagruzkaCount    = zagruzkaWorkers.length;
-  // Denominator for the load card: everyone in a load role on the day, present
-  // or not — the same population the numerator is drawn from.
+  // Denominator for the load card: everyone in a load role among the rows on
+  // screen, present or not — the same population the numerator is drawn from.
   const zagruzkaRoleTotal = useMemo(
-    () => allWorkers.filter(isZagruzkaCalcRole).length,
-    [allWorkers]
+    () => workers.filter(isZagruzkaCalcRole).length,
+    [workers]
   );
   const totalWorkedHours = useMemo(() => sumHours(zagruzkaWorkers), [zagruzkaWorkers]);
   const avgWorkedHours   = zagruzkaCount ? totalWorkedHours / zagruzkaCount : null;
@@ -546,25 +581,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const distinctCells = useMemo(() =>
     [...new Set(allWorkers.map(w => w._cell?.full).filter(Boolean))].sort(),
     [allWorkers]);
-
-  // Apply all filters
-  const workers = useMemo(() => {
-    const f = filters;
-    return allWorkers.filter(w => {
-      if (f.worker     && !w.worker_name?.toLowerCase().includes(f.worker.toLowerCase())) return false;
-      if (f.job_titles.length && !f.job_titles.includes(w.job_title || ""))              return false;
-      if (f.cells.length      && !f.cells.includes(w._cell?.full   || ""))               return false;
-      if (f.schedules.length  && !f.schedules.includes(w.schedule   || ""))              return false;
-      if (f.clock.length && !f.clock.includes(w.clock_in_out || "")) return false;
-      if (f.hours_min !== "" && (w.hours_worked      == null || w.hours_worked      < parseFloat(f.hours_min))) return false;
-      if (f.hours_max !== "" && (w.hours_worked      == null || w.hours_worked      > parseFloat(f.hours_max))) return false;
-      if (f.early_min !== "" && (w.early_arrival_min == null || w.early_arrival_min < parseFloat(f.early_min))) return false;
-      if (f.early_max !== "" && (w.early_arrival_min == null || w.early_arrival_min > parseFloat(f.early_max))) return false;
-      if (f.eff_min   !== "" && (w.effective_hours   == null || w.effective_hours   < parseFloat(f.eff_min)))   return false;
-      if (f.eff_max   !== "" && (w.effective_hours   == null || w.effective_hours   > parseFloat(f.eff_max)))   return false;
-      return true;
-    });
-  }, [allWorkers, filters]);
 
   const activeFilter = isFilterActive(filters);
   function setF(key, val) { setFilters(f => ({ ...f, [key]: val })); }
@@ -627,10 +643,25 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     <div>
       {/* KPI header — always visible, hosts the collapse toggle */}
       <div className="px-3 pt-3 pb-3">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-            {t("staff.tabWorkers")}
-          </span>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+              {t("staff.tabWorkers")}
+            </span>
+            {/* The cards count the FILTERED rows, so they say so — a narrowed
+                total under an unlabelled header reads as the whole day's. */}
+            {activeFilter && (
+              <span
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium whitespace-nowrap flex-shrink-0"
+                style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--border-md)" }}
+              >
+                <Filter size={10} />
+                {t("staff.kpiFiltered")
+                  .replace("{n}", workers.length)
+                  .replace("{m}", allWorkers.length)}
+              </span>
+            )}
+          </div>
           <button
             onClick={() => setIsCollapsed(v => !v)}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] transition-colors"
