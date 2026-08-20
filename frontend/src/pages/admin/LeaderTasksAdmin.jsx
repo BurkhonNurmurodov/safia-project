@@ -2,8 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, Calendar, Camera, CheckCircle, ChevronDown, ChevronRight,
-  Clock, History, ImagePlus, ListChecks, Radio, RotateCcw, Trash2, UserCog,
-  Users, X,
+  Clock, History, ImagePlus, ListChecks, Radio, RotateCcw, Trash2, Type,
+  UserCog, Users, X,
 } from "lucide-react";
 import Modal from "../../components/ui/Modal";
 import { ProxyPhoto } from "../../components/leaders/ProofPhoto";
@@ -19,6 +19,7 @@ import { SkeletonBlock, SkeletonMatrix } from "../../components/ui/Skeleton";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import CriteriaTextsModal from "./CriteriaTextsModal";
 
 const C_ON = "#22c55e", C_OFF = "#94a3b8", C_WARN = "#eab308", C_BAD = "#ef4444";
 const LANGS = ["uz", "uz_cyrl", "ru", "en"];
@@ -183,6 +184,12 @@ export default function LeaderTasksAdmin() {
   const [confirm, setConfirm] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showExc, setShowExc] = useState(false);
+  // The bulk text editor: open flag, live save progress, and the failure it
+  // stays open to show. Its drafts live inside the modal — nothing is written
+  // until Save, so an abandoned open costs nothing.
+  const [showTexts, setShowTexts] = useState(false);
+  const [txtSave, setTxtSave] = useState(null);
+  const [txtErr, setTxtErr] = useState("");
   // The open unit modal — { mid, per_task_close }. Settings that belong to a
   // brigadir's UNIT rather than to any one task live here, reached by tapping
   // the brigadir's name, because the matrix's cells are all (unit × task) and
@@ -362,6 +369,60 @@ export default function LeaderTasksAdmin() {
   // chain the backend reviewer walks: leader → supervisor → global.
   const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
   const supCrit = (mid, tid) => getCell(mid, tid).criteria || critOf(tid);
+
+  // Every definition-of-done actually STORED, flattened for the bulk editor:
+  // the global level first (what every uncustomised row inherits), then the
+  // overrides that carry their own copy. The overrides have to be here — one
+  // left in capitals is invisible from the matrix, and fixing only the global
+  // texts would leave those units still shouting at their leaders.
+  const criteriaItems = useMemo(() => {
+    const out = [];
+    const push = (key, task, scope, text, extra) =>
+      out.push({ key, taskId: task.id, task: tname(task), scope, text, ...extra });
+    for (const task of tasks) push(`g${task.id}`, task, t("admin.ltasks.textsGlobal"), task.criteria || "", {});
+    for (const m of managers) for (const task of tasks) {
+      const text = settings[String(m.id)]?.[String(task.id)]?.criteria;
+      if (text) push(`m${m.id}-${task.id}`, task, tl(m.name), text, { managerId: m.id });
+    }
+    for (const p of leaders) for (const task of tasks) {
+      const text = leaderSettings[String(p.id)]?.[String(task.id)]?.criteria;
+      if (text) push(`l${p.id}-${task.id}`, task, tl(p.name), text, { leaderId: p.id });
+    }
+    return out;
+  }, [tasks, managers, leaders, settings, leaderSettings, lang]);
+
+  // Written one at a time, deliberately: these land on the SAME override rows
+  // the cell modals write, and two parallel inserts race the row's unique key
+  // (the lesson the camera pilot paid for on its first day). A failure stops
+  // the run and stays on the modal with the count that did land — the rest are
+  // still in the boxes, so pressing Save again finishes the job.
+  const saveTexts = async (list) => {
+    setTxtErr("");
+    setTxtSave({ done: 0, total: list.length });
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
+      try {
+        await api.put("/admin/leader-tasks/criteria", {
+          task_id: it.taskId,
+          ...(it.managerId ? { manager_id: it.managerId } : {}),
+          ...(it.leaderId ? { leader_id: it.leaderId } : {}),
+          criteria: it.text,
+        });
+      } catch (e) {
+        const d = e?.response?.data?.detail;
+        setTxtSave(null);
+        invalidate();
+        setTxtErr(t("admin.ltasks.textsErr").replace("{n}", i)
+          .replace("{e}", (typeof d === "string" && d) || t("admin.ltasks.fail")));
+        return;
+      }
+      setTxtSave({ done: i + 1, total: list.length });
+    }
+    setTxtSave(null);
+    setShowTexts(false);
+    invalidate();
+    toast2.success(t("admin.ltasks.textsDone").replace("{n}", list.length));
+  };
 
   // ── the proof-photo window ────────────────────────────────────────────────
   // Same chain, resolved per END (`k` is "win_from" or "win_to"), because both
@@ -1024,6 +1085,7 @@ export default function LeaderTasksAdmin() {
       <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={ListChecks} title={t("admin.ltasks.matrix")} right={
           <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" icon={<Type size={14} />} onClick={() => { setTxtErr(""); setShowTexts(true); }}>{t("admin.ltasks.texts")}</Button>
             <Button variant="ghost" size="sm" icon={<RotateCcw size={14} />} onClick={() => setShowExc(true)}>{t("admin.ltasks.tab.exc")}</Button>
             <Button variant="ghost" size="sm" icon={<History size={14} />} onClick={() => setShowHistory(true)}>{t("admin.ltasks.history")}</Button>
           </div>
@@ -1430,6 +1492,13 @@ export default function LeaderTasksAdmin() {
             </div>
           )}
         </Modal>
+      )}
+
+      {/* Every AI-requirement text at once — the answer to "all thirteen are
+          wrong in the same way", which the per-cell modals have no shape for. */}
+      {showTexts && (
+        <CriteriaTextsModal items={criteriaItems} saving={txtSave} error={txtErr}
+          onSave={saveTexts} onClose={() => { setShowTexts(false); setTxtErr(""); }} />
       )}
 
       {confirm && (

@@ -405,6 +405,19 @@ below).
   (reference material, no row scope). Day-detail task rows carry an ⓘ that
   jumps to that task's card. The old ⓘ table built from the hard-coded
   `TASK_DETAILS` is gone — never resurrect a config view from the seed.
+- **Because leaders READ the criteria, they are ordinary prose — and there is a
+  bulk editor for that.** «Matnlarni tuzatish» on the ltasks matrix header
+  (`pages/admin/CriteriaTextsModal.jsx` + `utils/textCase.js`) lists every
+  definition-of-done actually STORED — the global level plus each supervisor /
+  leader override, because an override left in capitals is invisible from the
+  matrix and fixing only the global texts leaves those units shouting. One
+  press rewrites SHOUTED text to sentence case: letter CASE only, never a word
+  or its order, a word already carrying a lowercase letter is untouched, and a
+  known acronym keeps its capitals («SAPDAN» → «SAPdan», while «IDORA» is left
+  an ordinary word — a prefix test alone wrecks every word starting ID/IT/AI).
+  It only DRAFTS; nothing is written until Save, and the writes then go through
+  the ordinary criteria endpoint ONE AT A TIME, the same rule (and the same
+  unique key) as the three ltasks modals.
 - **The per-task submission `deadline` ("HH:MM", same three tables + admin matrix
   field beside the window, `PUT /admin/leader-tasks/deadline`) is INFORMATIONAL
   (user, 2026-08-15)** — a bot entry is still judged by nothing but the day's
