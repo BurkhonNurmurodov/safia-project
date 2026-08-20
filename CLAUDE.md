@@ -642,8 +642,15 @@ SERVER's; the phone never authors it.
   outside the pilot fails the merge too and has always been reported, so
   "rehearsal" means only a day an admin explicitly declared practice. Refused
   for shift 2 — it files ONLY in the bot, so there is no fill-out row underneath
-  to fall back to. The AI still reviews rehearsal proofs: ✅/⚠️ in the bot menu
-  is the feedback the practice day exists for.
+  to fall back to. **Nothing from a rehearsal day reaches Gemini** (user,
+  2026-08-20): all three queue doors — `discover`, `queue_report`, `queue_task`
+  — refuse it, `undiscovered()` excludes it so «N tekshirilmagan» does not
+  promise rows the button never takes, and saving a window calls
+  `leader_ai.drop_rehearsal_pending`, which deletes what was queued in the hours
+  before the admin declared it (never-judged rows only — `reviewed_at IS NULL
+  AND resolution IS NULL`, the paused-shift purge's rule; `discover()` re-finds
+  every ref if the window is cleared). The one door left open is `force=True`,
+  the admin's per-task «check now» — same carve-out as the shift pause.
 
 Related memory: `leader-camera-proof-pilot`.
 

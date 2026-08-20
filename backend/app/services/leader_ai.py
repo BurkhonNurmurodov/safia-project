@@ -62,7 +62,7 @@ from app.models import (
     Manager,
     RoleProfile,
 )
-from app.services import gemini
+from app.services import gemini, leader_bot
 from app.services.name_map import leader_match, relabel_supervisor, supervisor_match
 
 log = logging.getLogger(__name__)
@@ -892,7 +892,10 @@ def discover(db: Session) -> int:
     A paused shift (`REVIEW_PAUSED_SHIFTS`) is not reviewable while the pause
     holds — skipped here rather than filtered at the drain, so the queue never
     fills with rows nothing will ever take out of it and the «N queued» figure
-    on the page keeps meaning what it says."""
+    on the page keeps meaning what it says. A REHEARSAL day
+    (`LeaderUnitSetting.bot_from`) is skipped for the same reason and one more:
+    its photos are a unit learning the buttons, they cost a Gemini call each,
+    and nothing on the platform will ever show what the model said about them."""
     known = _existing_refs(db)
     floor = floor_date(db)
     added = 0
@@ -904,6 +907,7 @@ def discover(db: Session) -> int:
     days = {d.id: d for d in days_q.all()}
     if days:
         shifts = {m.id: m.shift for m in db.query(Manager).all()}
+        rehearsing = leader_bot.bot_from_floors(db)
         with_media = {r[0] for r in db.query(LeaderTaskMedia.entry_id).distinct().all()}
         entries = (
             db.query(LeaderTaskEntry)
@@ -919,6 +923,9 @@ def discover(db: Session) -> int:
                 continue
             d = days[e.day_id]
             if review_paused(shifts.get(d.manager_id)):
+                continue
+            if leader_bot.training(shifts.get(d.manager_id), d.manager_id,
+                                   d.date, rehearsing):
                 continue
             db.add(LeaderAiReview(
                 ref=ref, source="bot", date=d.date, task_id=e.task_id,
@@ -1117,7 +1124,7 @@ def undiscovered(db: Session, *, date_from: str | None = None,
     # ── bot layer ────────────────────────────────────────────────────────────
     # Unit and leader are stamped on the day row, so nothing here needs matching.
     days_q = db.query(LeaderTaskDay.id, LeaderTaskDay.manager_id,
-                      LeaderTaskDay.leader_id).filter(
+                      LeaderTaskDay.leader_id, LeaderTaskDay.date).filter(
         LeaderTaskDay.closed_at.isnot(None))
     if floor:
         days_q = days_q.filter(LeaderTaskDay.date >= floor)
@@ -1125,11 +1132,15 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         days_q = days_q.filter(LeaderTaskDay.date >= date_from)
     if date_to:
         days_q = days_q.filter(LeaderTaskDay.date <= date_to)
-    days = {d: (m, l) for d, m, l in days_q.all()}
+    days = {d: (m, l, dt) for d, m, l, dt in days_q.all()}
 
     if days:
         # A day's shift is its unit's shift — the rule discovery stamps with.
         shifts = dict(db.query(Manager.id, Manager.shift).all())
+        # Rehearsal days are what `discover()` refuses to queue, so a census
+        # that counted them would promise «N unchecked» rows the button then
+        # never takes — and the figure would never come down.
+        rehearsing = leader_bot.bot_from_floors(db)
         entries = (
             db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id)
             .filter(LeaderTaskEntry.day_id.in_(
@@ -1145,7 +1156,9 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         for eid, day_id in entries:
             if bot_ref(eid) in known:
                 continue
-            mgr, ldr = days.get(day_id, (None, None))
+            mgr, ldr, when = days.get(day_id, (None, None, None))
+            if leader_bot.training(shifts.get(mgr), mgr, when, rehearsing):
+                continue
             out.append((f"bot:{day_id}", shifts.get(mgr), mgr, ldr))
 
     # ── sheet layer ──────────────────────────────────────────────────────────
@@ -1202,12 +1215,12 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
     the background drain is for. Matching is done for this row alone — a single
     fuzzy match is cheap, it is the batch of thousands that is not.
 
-    `force` overrides the shift pause (`REVIEW_PAUSED_SHIFTS`) and is passed by
-    exactly one caller: the admin's per-task «check now», where a person is
-    waiting on the answer for a photo they picked. Every other caller is the
-    system deciding by itself that a report should be judged — the bot's day
-    close, its auto-close of bygone days — and those are what the pause exists
-    to stop.
+    `force` overrides the shift pause (`REVIEW_PAUSED_SHIFTS`) and the rehearsal
+    window (`LeaderUnitSetting.bot_from`), and is passed by exactly one caller:
+    the admin's per-task «check now», where a person is waiting on the answer
+    for a photo they picked. Every other caller is the system deciding by itself
+    that a report should be judged — the bot's day close, its auto-close of
+    bygone days — and those are what both bounds exist to stop.
     """
     # Reports before the review floor are out of scope — see floor_date().
     floor = floor_date(db)
@@ -1219,6 +1232,13 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
     if day is not None:
         mgr = db.query(Manager).filter_by(id=day.manager_id).first()
         if not force and review_paused(mgr.shift if mgr else None):
+            return 0
+        # A rehearsal day: the unit is learning the bot while its fill-out row
+        # is still the record. Nothing displays a verdict on it, so buying one
+        # is a Gemini call spent on a photo nobody will ever be shown.
+        if not force and leader_bot.training(
+                mgr.shift if mgr else None, day.manager_id, day.date,
+                leader_bot.bot_from_floors(db)):
             return 0
         entries = db.query(LeaderTaskEntry).filter_by(
             day_id=day.id, done=True).all()
@@ -1266,6 +1286,39 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
     return added
 
 
+def drop_rehearsal_pending(db: Session, manager_id: int, bot_from: str | None) -> int:
+    """Take a newly-declared rehearsal window's work back OUT of the queue.
+
+    Closing the doors (`discover`, `queue_report`, `queue_task`) stops NEW rows;
+    it does nothing about the ones queued in the hours before an admin opened
+    the window — and those are precisely the ones this exists for, because a
+    unit is usually enrolled in the morning and declared a rehearsal once
+    somebody sees how the first tasks went. Left alone they would be spent on
+    Gemini and then displayed nowhere, which is the whole thing the window is
+    for.
+
+    **Only never-judged rows go**, the same rule as the paused-shift purge:
+    `reviewed_at IS NULL AND resolution IS NULL`. A verdict already written is
+    an answer somebody may have acted on, and a human ruling is that row's
+    terminal state. Nothing is lost either way — `discover()` re-finds every
+    one of these refs the moment the window is cleared or moved back.
+    """
+    if not bot_from:
+        return 0
+    n = (db.query(LeaderAiReview)
+         .filter(LeaderAiReview.source == "bot",
+                 LeaderAiReview.manager_id == manager_id,
+                 LeaderAiReview.date < bot_from,
+                 LeaderAiReview.reviewed_at.is_(None),
+                 LeaderAiReview.resolution.is_(None))
+         .delete(synchronize_session=False))
+    db.commit()
+    if n:
+        log.info("leader-ai: dropped %s queued row(s) for unit %s rehearsing "
+                 "until %s", n, manager_id, bot_from)
+    return int(n or 0)
+
+
 def queue_task(db: Session, day: LeaderTaskDay, entry: LeaderTaskEntry, *,
                force: bool = False) -> int:
     """Queue ONE task's proofs for review — the per-task submission door.
@@ -1274,9 +1327,9 @@ def queue_task(db: Session, day: LeaderTaskDay, entry: LeaderTaskEntry, *,
     task of a day at once, and the point of per-task submission is that a task
     closed at 08:00 is judged at 08:00 while the rest of the day is still being
     worked. Same rules as its sibling, deliberately — the review floor, the
-    shift pause, and "a task with no photos is not reviewable" all decide the
-    same way here, or a unit would be judged by two different definitions of
-    what counts as a submission.
+    shift pause, the rehearsal window, and "a task with no photos is not
+    reviewable" all decide the same way here, or a unit would be judged by two
+    different definitions of what counts as a submission.
     """
     floor = floor_date(db)
     if floor and day.date < floor:
@@ -1286,6 +1339,10 @@ def queue_task(db: Session, day: LeaderTaskDay, entry: LeaderTaskEntry, *,
     mgr = db.query(Manager).filter_by(id=day.manager_id).first()
     if not force and review_paused(mgr.shift if mgr else None):
         return 0
+    if not force and leader_bot.training(
+            mgr.shift if mgr else None, day.manager_id, day.date,
+            leader_bot.bot_from_floors(db)):
+        return 0                       # rehearsal — see queue_report
     if not db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).first():
         return 0
     ref = bot_ref(entry.id)

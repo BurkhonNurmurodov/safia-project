@@ -267,7 +267,18 @@ export default function LeaderTasksAdmin() {
   // "everybody". ONE request writes both, because they are one DB row: split in
   // two, a unit that has never been edited gets two concurrent INSERTs and one
   // of them dies on the primary key while the modal says «saved».
-  const ptMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/unit", b), onSuccess: () => { invalidate(); setUnit(null); ping(); }, onError: onErr });
+  // Opening a rehearsal window takes the day's already-queued proofs back out
+  // of the AI queue, so the press says how many — a silent drop of work the
+  // admin can see queued on the strip reads as the strip being wrong.
+  const ptMut = useMutation({
+    mutationFn: (b) => api.put("/admin/leader-tasks/unit", b).then((r) => r.data),
+    onSuccess: (d) => {
+      invalidate(); setUnit(null);
+      if (d?.dropped) toast2.success(t("admin.ltasks.botFromDropped").replace("{n}", d.dropped));
+      else ping();
+    },
+    onError: onErr,
+  });
   // Example proof photos live beside the criteria: instant like it (nothing
   // the leader sees changes), ids come from the live config so an upload or
   // delete re-renders the strip through the same invalidate.

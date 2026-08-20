@@ -823,8 +823,16 @@ def put_unit(body: UnitIn, db: Session = Depends(get_db),
 
     `bot_from` opens a REHEARSAL window: until that day the unit's leaders file
     in the bot to learn it while the register, the score and the day report keep
-    reading its Google-Form sheet row. It only moves which layer is read, so it
-    can be set, moved or cleared at any time.
+    reading its Google-Form sheet row, and NOTHING from those days is sent to
+    the AI. It only moves which layer is read, so it can be set, moved or
+    cleared at any time — and clearing it puts the days back in `discover()`'s
+    reach, since a ref is what makes a row known.
+
+    Anything already queued for the days the window now covers is dropped on the
+    way out: a unit is usually enrolled in the morning and declared a rehearsal
+    once somebody sees how the first tasks went, so by then the morning's proofs
+    are sitting `pending`. Only never-judged rows go — the same rule the
+    paused-shift purge follows.
 
     Refused for a shift-2 unit, because shift 2 files ONLY in the bot: there is
     no sheet row underneath it, so a rehearsal window there would not fall back
@@ -845,7 +853,8 @@ def put_unit(body: UnitIn, db: Session = Depends(get_db),
     set_unit_settings(db, manager_id=body.manager_id,
                       per_task_close=bool(body.per_task_close),
                       bot_from=bot_from)
-    return {"ok": True}
+    dropped = leader_ai.drop_rehearsal_pending(db, body.manager_id, bot_from)
+    return {"ok": True, "dropped": dropped}
 
 
 # ── Admin: example proof photos (AI reference images) ────────────────────────
