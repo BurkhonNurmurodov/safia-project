@@ -197,6 +197,8 @@ const t = {
     "idleCell.notCounted":        "hisobga kirmaydi",
     "idleCell.recordCount":       "{n} yozuv",
     "idleCell.catGuideBtn":       "Kategoriyalar",
+    "idleCell.colMinutes":        "Daqiqa",
+    "idleCell.legacyOnlyTimeline": "Bu kunda faqat eski yozuvlar bor. Ularda boshlanish va tugash vaqti yo'q, shuning uchun chizmada ko'rsatib bo'lmaydi — «Kutish» bo'limida ochib ko'ring.",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     // ── ARC — service-ticket register synced from the ARC API ──
     "nav.arc":                  "ARC",
@@ -3318,6 +3320,8 @@ const t = {
     "idleCell.notCounted":        "ҳисобга кирмайди",
     "idleCell.recordCount":       "{n} ёзув",
     "idleCell.catGuideBtn":       "Категориялар",
+    "idleCell.colMinutes":        "Дақиқа",
+    "idleCell.legacyOnlyTimeline": "Бу кунда фақат эски ёзувлар бор. Уларда бошланиш ва тугаш вақти йўқ, шунинг учун чизмада кўрсатиб бўлмайди — «Кутиш» бўлимида очиб кўринг.",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     // ── ARC — service-ticket register synced from the ARC API ──
     "nav.arc":                  "ARC",
@@ -6439,6 +6443,8 @@ const t = {
     "idleCell.notCounted":        "не в счёт",
     "idleCell.recordCount":       "записей: {n}",
     "idleCell.catGuideBtn":       "Категории",
+    "idleCell.colMinutes":        "Минуты",
+    "idleCell.legacyOnlyTimeline": "За этот день есть только старые записи. У них нет времени начала и окончания, поэтому на графике их показать нельзя — откройте вкладку «Ожидания».",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     // ── ARC — service-ticket register synced from the ARC API ──
     "nav.arc":                  "ARC",
@@ -9560,6 +9566,8 @@ const t = {
     "idleCell.notCounted":        "not counted",
     "idleCell.recordCount":       "entries: {n}",
     "idleCell.catGuideBtn":       "Categories",
+    "idleCell.colMinutes":        "Minutes",
+    "idleCell.legacyOnlyTimeline": "This day holds only old entries. They have no start and end time, so they cannot be drawn on the chart — open the «Idle time» tab to read them.",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     // ── ARC — service-ticket register synced from the ARC API ──
     "nav.arc":                  "ARC",
