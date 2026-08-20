@@ -568,6 +568,19 @@ SERVER's; the phone never authors it.
   `camera=()`, which denies `getUserMedia` outright — no prompt, no actionable
   error. Microphone and geolocation stay fully denied, and `self` keeps every
   embedder out.
+- **The «Allow camera?» sheet cannot be made permanent, so it is COUNTED.** The
+  grant belongs to Telegram's WebView, not to the page: there is no web API and
+  no Mini App API that says "always allow", and each `web_app` button opens a
+  fresh WebView, so a leader is asked once per task by construction. What the
+  page owns is how many sheets ONE open costs — and the original probe-then-
+  correct pass cost two, because every `getUserMedia` call raises its own.
+  `startCamera` now opens the REMEMBERED lens (`proof.camera.lens.<facing>`) in
+  a single call, having first checked that id against `enumerateDevices` (which
+  never prompts): an id the phone no longer has would prompt AND fail, i.e. two
+  sheets to land where the plain path begins. A `NotAllowedError` re-throws
+  instead of falling through — a refusal is the leader's answer, and re-asking
+  with different constraints is a second sheet for the same «no». **Never split
+  the open back into probe-then-correct**, and never add a third call.
 - **The `/leaders` bot-day merge gained ONE bounded exception** — `leader_bot.merges()`
   is now THE rule and both readers (the register, the photo proxy) call it.
   Shift 2 merges as it always did; a shift-1 unit merges only when it is

@@ -457,24 +457,60 @@ export default function ProofCamera() {
     setCamErr(null);
     try {
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
-      // First pass gets permission (labels are blank until it is granted), then
-      // the device list becomes readable and the right lens can be chosen.
-      let stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: want }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      const list = (await navigator.mediaDevices.enumerateDevices())
-        .filter((d) => d.kind === "videoinput");
-      setDevices(list);
-      const id = pickLens(list, want);
-      if (id && stream.getVideoTracks()[0]?.getSettings?.().deviceId !== id) {
-        stream.getTracks().forEach((tr) => tr.stop());
+      // ONE getUserMedia whenever this phone's lens is already known.
+      //
+      // Inside Telegram's WebView every getUserMedia call raises its own
+      // «Allow camera?» sheet, and the probe-then-correct pass below makes TWO
+      // of them: one to earn the labels, one to open the lens those labels
+      // named. Nothing in the platform can make that sheet stick — the grant
+      // belongs to the WebView, not to us — so the only number we control is
+      // how many times per open it appears, and a leader shooting five proofs
+      // was answering it ten times. The lens id was written down on the first
+      // successful open, so going straight for it costs ONE.
+      //
+      // It is CHECKED against the device list first, never trusted: an id this
+      // phone no longer has (a new device, an id WebKit rotated when the grant
+      // was revoked) would prompt and then fail, i.e. two sheets to end up
+      // where the plain path starts. `enumerateDevices` itself never prompts.
+      const lenses = async () => {
+        const list = (await navigator.mediaDevices.enumerateDevices())
+          .filter((d) => d.kind === "videoinput");
+        setDevices(list);          // the flip button reads this count
+        return list;
+      };
+      const remembered = localStorage.getItem(`${LENS_KEY}.${want}`);
+      const known = await lenses();
+      let stream = null;
+      if (remembered && known.some((d) => d.deviceId === remembered)) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: remembered }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            audio: false,
+          });
+        } catch (e) {
+          // A refusal is the leader's ANSWER, not a bad lens. Re-asking with
+          // different constraints is a second sheet for the same «no».
+          if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
+          localStorage.removeItem(`${LENS_KEY}.${want}`);
+        }
+      }
+      if (!stream) {
+        // First pass gets permission (labels are blank until it is granted),
+        // then the device list becomes readable and the right lens chosen.
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: { facingMode: { ideal: want }, width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false,
         });
+        const id = pickLens(await lenses(), want);
+        if (id && stream.getVideoTracks()[0]?.getSettings?.().deviceId !== id) {
+          stream.getTracks().forEach((tr) => tr.stop());
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            audio: false,
+          });
+        }
+        if (id) localStorage.setItem(`${LENS_KEY}.${want}`, id);
       }
-      if (id) localStorage.setItem(`${LENS_KEY}.${want}`, id);
       streamRef.current = stream;
       // The OS can take the camera back at any moment — an incoming call,
       // another app, a WebView the system suspended. The element keeps showing
