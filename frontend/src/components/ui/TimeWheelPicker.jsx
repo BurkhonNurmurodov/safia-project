@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { Keyboard, Clock } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 
 // Samsung-style wheel time picker, opened as a popup/bottom-sheet. Two snapping
@@ -10,6 +11,12 @@ import { useLang } from "../../context/LangContext";
 // being picked — the sheet is used by more than one flow now, and a header that
 // still said "transfer time" while an ojidaniya's END was being chosen was the
 // one label on screen describing a different task.
+//
+// The keyboard button in the action row swaps the wheels for two typed HH:MM
+// inputs (wall clock) judged against the SAME [lo, hi] window — a wall-clock
+// time before the window's start is read as next-day, exactly as the wheels
+// render it, so the two modes can never disagree about what is pickable.
+// Confirm stays disabled while the typed time is outside the window.
 
 const ROW_H  = 44;                          // px per row
 const VISIBLE = 5;                          // visible rows (odd → one centered)
@@ -122,6 +129,13 @@ function WheelDialog({ lo, hi, value, title, onConfirm, onClose }) {
   const [hour, setHour]     = useState(Math.floor(init / 60));
   const [minute, setMinute] = useState(init % 60);
 
+  // Manual (typed) entry — the wheels' equal twin, never a separate validator.
+  const [manual, setManual] = useState(false);
+  const [hStr, setHStr]     = useState("");
+  const [mStr, setMStr]     = useState("");
+  const hourRef = useRef(null);
+  const minRef  = useRef(null);
+
   // Minutes valid for the currently selected hour (narrowed at the boundaries).
   const minutes = useMemo(() => {
     const minM = hour === loH ? lo % 60 : 0;
@@ -140,6 +154,77 @@ function WheelDialog({ lo, hi, value, title, onConfirm, onClose }) {
   const hourIdx = Math.max(0, hours.indexOf(hour));
   const minIdx  = Math.max(0, minutes.indexOf(minute));
 
+  // Typed wall clock → extended minutes inside [lo, hi], or null. Mirrors the
+  // seed logic above: a wall-clock time before the window's start belongs to
+  // the next day.
+  const typedMin = useMemo(() => {
+    if (hStr === "" || mStr === "") return null;
+    const h = parseInt(hStr, 10), m = parseInt(mStr, 10);
+    if (!Number.isFinite(h) || h > 23 || !Number.isFinite(m) || m > 59) return null;
+    let x = h * 60 + m;
+    if (x < lo) x += 1440;
+    return x >= lo && x <= hi ? x : null;
+  }, [hStr, mStr, lo, hi]);
+
+  // A valid typed time IS the selection — switching back to the wheels lands
+  // on it, and Confirm needs no second code path.
+  useEffect(() => {
+    if (!manual || typedMin == null) return;
+    setHour(Math.floor(typedMin / 60));
+    setMinute(typedMin % 60);
+  }, [manual, typedMin]);
+
+  useEffect(() => {
+    if (!manual) return;
+    const id = setTimeout(() => { hourRef.current?.focus(); hourRef.current?.select(); }, 50);
+    return () => clearTimeout(id);
+  }, [manual]);
+
+  function toggleManual() {
+    if (!manual) { setHStr(pad2(hour % 24)); setMStr(pad2(minute)); }
+    setManual((v) => !v);
+  }
+
+  const hBad = hStr !== "" && parseInt(hStr, 10) > 23;
+  const mBad = mStr !== "" && parseInt(mStr, 10) > 59;
+  const rangeBad = !hBad && !mBad && hStr !== "" && mStr !== "" && typedMin == null;
+  const canConfirm = !manual || typedMin != null;
+
+  const wall = (x) => `${pad2(Math.floor(x / 60) % 24)}:${pad2(x % 60)}`;
+  const invalidMsg = t("ui.timeWheel.invalid").replace("{from}", wall(lo)).replace("{to}", wall(hi));
+
+  function confirm() {
+    const m = manual && typedMin != null ? typedMin : hour * 60 + minute;
+    onConfirm(`${pad2(Math.floor(m / 60) % 24)}:${pad2(m % 60)}`);
+  }
+
+  const timeInput = (ref, val, set, bad, ariaLabel, onFull) => (
+    <input
+      ref={ref}
+      value={val}
+      onChange={(e) => {
+        const v = e.target.value.replace(/\D/g, "").slice(0, 2);
+        set(v);
+        if (v.length === 2) onFull?.();
+      }}
+      onBlur={() => { if (val.length === 1) set("0" + val); }}
+      onKeyDown={(e) => { if (e.key === "Enter" && canConfirm) confirm(); }}
+      inputMode="numeric"
+      pattern="[0-9]*"
+      placeholder="00"
+      aria-label={ariaLabel}
+      aria-invalid={bad || rangeBad || undefined}
+      className="text-center rounded-xl outline-none"
+      style={{
+        width: 76, height: ROW_H + 12, fontSize: 26, fontWeight: 700,
+        background: "var(--bg-inner)",
+        border: `1px solid ${bad || rangeBad ? "#ef4444" : "var(--border-md)"}`,
+        color: "var(--text-1)", caretColor: "var(--brand)",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    />
+  );
+
   return (
     <div
       className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center"
@@ -155,36 +240,60 @@ function WheelDialog({ lo, hi, value, title, onConfirm, onClose }) {
           {title || t("staff.transferTimeToggle")}
         </div>
 
-        {/* wheels */}
-        <div className="relative px-6 py-5">
-          {/* center selection band */}
-          <div className="pointer-events-none absolute left-6 right-6"
-            style={{ top: "50%", transform: "translateY(-50%)", height: ROW_H, background: "var(--bg-inner)", borderRadius: 12 }} />
-          {/* top / bottom fade */}
-          <div className="pointer-events-none absolute left-0 right-0" style={{ top: 0, height: PAD + 20,
-            background: "linear-gradient(var(--bg-card), transparent)" }} />
-          <div className="pointer-events-none absolute left-0 right-0" style={{ bottom: 0, height: PAD + 20,
-            background: "linear-gradient(transparent, var(--bg-card))" }} />
-
-          <div className="relative flex items-stretch justify-center gap-1">
-            <Wheel values={hours.map(h => pad2(h % 24))} valueIndex={hourIdx} resetKey="h"
-              onChange={(i) => setHour(hours[i])} ariaLabel="hours" />
-            <div className="flex items-center text-2xl font-bold" style={{ color: "var(--text-1)" }}>:</div>
-            <Wheel values={minutes.map(pad2)} valueIndex={minIdx} resetKey={`m-${hour}`}
-              onChange={(i) => setMinute(minutes[i])} ariaLabel="minutes" />
+        {manual ? (
+          /* typed entry — same window, judged by typedMin above */
+          <div className="px-6 py-6">
+            <div className="flex items-center justify-center gap-1.5">
+              {timeInput(hourRef, hStr, setHStr, hBad, "hours",
+                () => { minRef.current?.focus(); minRef.current?.select(); })}
+              <div className="text-2xl font-bold" style={{ color: "var(--text-1)" }}>:</div>
+              {timeInput(minRef, mStr, setMStr, mBad, "minutes")}
+            </div>
+            {(hBad || mBad || rangeBad) && (
+              <p className="mt-3 text-[11px] text-center leading-snug" style={{ color: "#ef4444" }}>
+                {invalidMsg}
+              </p>
+            )}
           </div>
-        </div>
+        ) : (
+          /* wheels */
+          <div className="relative px-6 py-5">
+            {/* center selection band */}
+            <div className="pointer-events-none absolute left-6 right-6"
+              style={{ top: "50%", transform: "translateY(-50%)", height: ROW_H, background: "var(--bg-inner)", borderRadius: 12 }} />
+            {/* top / bottom fade */}
+            <div className="pointer-events-none absolute left-0 right-0" style={{ top: 0, height: PAD + 20,
+              background: "linear-gradient(var(--bg-card), transparent)" }} />
+            <div className="pointer-events-none absolute left-0 right-0" style={{ bottom: 0, height: PAD + 20,
+              background: "linear-gradient(transparent, var(--bg-card))" }} />
+
+            <div className="relative flex items-stretch justify-center gap-1">
+              <Wheel values={hours.map(h => pad2(h % 24))} valueIndex={hourIdx} resetKey="h"
+                onChange={(i) => setHour(hours[i])} ariaLabel="hours" />
+              <div className="flex items-center text-2xl font-bold" style={{ color: "var(--text-1)" }}>:</div>
+              <Wheel values={minutes.map(pad2)} valueIndex={minIdx} resetKey={`m-${hour}`}
+                onChange={(i) => setMinute(minutes[i])} ariaLabel="minutes" />
+            </div>
+          </div>
+        )}
 
         {/* actions */}
         <div className="flex gap-2 px-4 py-3 border-t" style={{ borderColor: "var(--border)" }}>
+          <button type="button" onClick={toggleManual}
+            aria-label={manual ? t("ui.timeWheel.wheel") : t("ui.timeWheel.manual")}
+            title={manual ? t("ui.timeWheel.wheel") : t("ui.timeWheel.manual")}
+            className="px-3 py-2.5 rounded-lg flex items-center justify-center"
+            style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
+            {manual ? <Clock size={16} /> : <Keyboard size={16} />}
+          </button>
           <button type="button" onClick={onClose}
             className="flex-1 text-xs font-medium py-2.5 rounded-lg"
             style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
             {t("staff.cancel")}
           </button>
-          <button type="button" onClick={() => onConfirm(`${pad2(hour % 24)}:${pad2(minute)}`)}
-            className="flex-1 text-xs font-semibold py-2.5 rounded-lg"
-            style={{ background: "var(--brand)", color: "#fff" }}>
+          <button type="button" disabled={!canConfirm} onClick={confirm}
+            className="flex-1 text-xs font-semibold py-2.5 rounded-lg disabled:cursor-not-allowed"
+            style={{ background: "var(--brand)", color: "#fff", opacity: canConfirm ? 1 : 0.5 }}>
             {t("staff.done")}
           </button>
         </div>
