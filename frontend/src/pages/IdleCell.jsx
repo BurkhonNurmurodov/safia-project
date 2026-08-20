@@ -403,7 +403,11 @@ export default function IdleCell() {
     [supervisors, shiftTab],
   );
 
-  const { data: cellsData, isFetching } = useQuery({
+  // `isPending`, never `isFetching`: a BACKGROUND refetch must leave the list
+  // standing. Swapping it for skeletons unmounts every CellCard, and `open`
+  // lives inside the card — so saving or deleting one ojidaniya (both call
+  // `refresh()`) silently collapsed the very cell being worked on.
+  const { data: cellsData, isPending: cellsPending } = useQuery({
     queryKey: ["idle-cells", supervisorId, date],
     queryFn: () => api.get(`/api/idle-cell/cells?supervisor_id=${supervisorId}&date=${date}`).then((r) => r.data),
     enabled: !isPeren && supervisorId != null,
@@ -618,7 +622,7 @@ export default function IdleCell() {
         />
       ) : supervisorId == null ? (
         emptyBox(t("idleCell.pickSupervisorHint"))
-      ) : isFetching ? (
+      ) : cellsPending ? (
         <div className="space-y-2">
           {/* h-14 = the collapsed row's real height now that the leader line
               sits under the cell name — the skeleton must not jump on load. */}
