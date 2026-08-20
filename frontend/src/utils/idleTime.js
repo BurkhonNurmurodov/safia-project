@@ -61,19 +61,52 @@ export function fmtDur(min, t) {
   return `${h} ${t("idleCell.hourShort")} ${m} ${t("idleCell.minShort")}`;
 }
 
-// Greedy lane packing for the timeline: an event goes in the first lane whose
-// last bar has already ended. Overlapping events therefore land on SEPARATE
-// rows, which is the whole point — the overlap becomes something you can see
-// rather than a discrepancy between two totals.
-export function packLanes(intervals) {
+// Lane packing for the timeline. A lane belongs to ONE key — the category —
+// and greedy packing happens only WITHIN that key, so a lane can hold several
+// bars but never two different categories.
+//
+// It used to pack globally: an event went into the first lane whose last bar
+// had ended, whatever it was. That is optimal for height and wrong for reading.
+// A row in a chart like this reads as a track — "this is what happened to X" —
+// so putting Cat A's 04:00 stop and Cat E's 10:00 stop on one line states a
+// relationship between them that does not exist, and leaves the reader
+// identifying every bar by hue alone. Rows are now stable, labelled, and mean
+// exactly one thing.
+//
+// Overlapping events still land on separate rows, which was always the point —
+// the overlap becomes something you can see rather than a discrepancy between
+// two totals. Two ranges of the SAME category that overlap simply give that
+// category a second lane.
+//
+//   keyOf – the value a lane may not mix (default: the ojidaniya's category)
+//   rank  – orders the keys; equal ranks fall back to the key's own collation
+// Returns [{ key, rows: [{ iv, span }] }] — one entry per LANE, so a key
+// needing two lanes appears twice, in order.
+export function packLanes(intervals, keyOf = (iv) => iv.category, rank = () => 0) {
   const rows = intervals
     .map((iv) => ({ iv, span: spanOf(iv.start, iv.end) }))
     .filter((r) => r.span)
     .sort((a, b) => a.span[0] - b.span[0] || a.span[1] - b.span[1]);
-  const lanes = [];
+
+  const byKey = new Map();
   for (const r of rows) {
-    const i = lanes.findIndex((lane) => lane[lane.length - 1].span[1] <= r.span[0]);
-    if (i === -1) lanes.push([r]); else lanes[i].push(r);
+    const k = keyOf(r.iv);
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(r);
+  }
+
+  const lanes = [];
+  const keys = [...byKey.keys()].sort(
+    (a, b) => (rank(a) - rank(b)) || String(a).localeCompare(String(b)),
+  );
+  for (const k of keys) {
+    const own = [];
+    for (const r of byKey.get(k)) {
+      const i = own.findIndex((lane) => lane.rows[lane.rows.length - 1].span[1] <= r.span[0]);
+      if (i === -1) own.push({ key: k, rows: [r] });
+      else own[i].rows.push(r);
+    }
+    lanes.push(...own);
   }
   return lanes;
 }

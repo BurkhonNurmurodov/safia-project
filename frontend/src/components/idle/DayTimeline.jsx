@@ -20,10 +20,31 @@ import { packLanes, overlapBands, timelineWindow, fmtHHMM, fmtDur, spanOf } from
 const LANE_H = 26;
 const BAR_H = 18;
 const UNION_H = 12;
+// The strip on the left that names each row's category. A track nobody can
+// read the name of just moves the identification problem from the bar to the
+// row, so the width is spent deliberately: enough for the widest code ("D2").
+const GUTTER = 34;
+
+// Everything the chart needs to know about a category name, including one the
+// frontend's registry has never heard of — the same positional hue the table
+// derives, so a category is one colour on both views.
+function catOf(name) {
+  const i = CATS.findIndex((c) => c.name === name);
+  return {
+    code: (i >= 0 ? CATS[i].code : String(name || "").replace(/^Cat\s*/i, "")) || "?",
+    color: CATEGORY_COLORS[(i < 0 ? 0 : i) % CATEGORY_COLORS.length],
+    rank: i < 0 ? CATS.length : i,
+  };
+}
 
 export default function DayTimeline({ intervals, summary, t, onPick }) {
   const win = useMemo(() => timelineWindow(intervals), [intervals]);
-  const lanes = useMemo(() => packLanes(intervals), [intervals]);
+  // One lane per category (a category whose own ranges overlap gets a second),
+  // in the canonical CATS order with unknown names after it.
+  const lanes = useMemo(
+    () => packLanes(intervals, (iv) => iv.category, (name) => catOf(name).rank),
+    [intervals],
+  );
   const bands = useMemo(() => overlapBands(intervals), [intervals]);
 
   if (!win) return null;
@@ -41,6 +62,11 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
 
   return (
     <div className="px-3 pt-2 pb-3">
+      {/* The plot area is inset by the label gutter, so the axis, the lanes and
+          the union bar all measure the same span — and the first hour label,
+          which is centred on its tick, finally has somewhere to sit instead of
+          being clipped by the card edge. */}
+      <div style={{ paddingLeft: GUTTER }}>
       {/* hour axis */}
       <div className="relative h-4 mb-1">
         {ticks.map((m) => (
@@ -55,6 +81,28 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
       </div>
 
       <div className="relative" style={{ height: lanes.length * LANE_H }}>
+        {/* Each row says whose track it is. Without it the reader is back to
+            telling a 1-minute bar from a 13-minute one by hue. */}
+        {lanes.map((lane, li) => {
+          const { code, color } = catOf(lane.key);
+          return (
+            <span
+              key={`lbl${li}`}
+              className="absolute flex items-center justify-end pr-1.5"
+              style={{ left: -GUTTER, width: GUTTER, top: li * LANE_H, height: LANE_H }}
+            >
+              {/* Same chip the table's Kategoriya cell prints — one category,
+                  one mark, on both views. "D2" is the widest code and measures
+                  ~23px against the 28px the gutter leaves. */}
+              <span
+                className="text-[10px] font-bold px-1 py-0.5 rounded leading-none"
+                style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}
+              >
+                {code}
+              </span>
+            </span>
+          );
+        })}
         {/* gridlines */}
         {ticks.map((m) => (
           <span
@@ -77,12 +125,11 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
             title={t("idleCell.overlapHint")}
           />
         ))}
-        {/* one row per lane; overlapping events cannot share a lane */}
+        {/* One row per CATEGORY lane — a lane never mixes two of them, and two
+            ranges that overlap still cannot share one. */}
         {lanes.map((lane, li) =>
-          lane.map(({ iv, span }) => {
-            const idx = CATS.findIndex((c) => c.name === iv.category);
-            const code = idx >= 0 ? CATS[idx].code : "?";
-            const color = CATEGORY_COLORS[(idx < 0 ? 0 : idx) % CATEGORY_COLORS.length];
+          lane.rows.map(({ iv, span }) => {
+            const { code, color } = catOf(iv.category);
             const w = ((span[1] - span[0]) / total) * 100;
             return (
               <button
@@ -142,6 +189,11 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
             );
           })}
         </div>
+      </div>
+      </div>
+      {/* The legend spans the full card width — it names marks, not moments,
+          so it is not part of the plot area and takes no gutter. */}
+      <div>
         {/* The chart draws four different marks and used to name only one of
             them, in 10px uppercase, at the bottom — so the hollow bars (the
             not-stopped ojidaniyas) were the one thing on screen with no way to
