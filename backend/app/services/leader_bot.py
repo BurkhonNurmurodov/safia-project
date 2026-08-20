@@ -20,6 +20,13 @@ and only days from `MERGE_FROM` on. A shift-1 unit that never touches the camera
 reads exactly as it did before, and enrolling one later cannot resurrect bot days
 it closed months ago.
 
+A unit may also carry its OWN, later floor — `LeaderUnitSetting.bot_from`, the
+day its bot filings start counting. A unit is enrolled on the day somebody has
+time to teach it, and the leaders spend that day learning where the buttons are;
+before the floor the bot day is a REHEARSAL, so the sheet row stays the record
+and `training()` says so to the one other reader that must agree — the day
+report, which would otherwise DM a score for a day the register does not show.
+
 Only CLOSED days surface. An open day is a leader mid-checklist, not a
 submission — the same rule the dashboard has always applied.
 """
@@ -33,6 +40,7 @@ from app.models import (
     LeaderTaskMedia,
     LeaderTaskPhoto,
     LeaderTaskSetting,
+    LeaderUnitSetting,
     Manager,
     RoleProfile,
 )
@@ -73,16 +81,54 @@ def camera_units(db: Session) -> set[int]:
     return out
 
 
+def bot_from_floors(db: Session) -> dict[int, str]:
+    """Per-unit "bot filings count from this day" floors, in one query.
+
+    Only units an admin actually opened a rehearsal window for are in the map;
+    everyone else falls through to `MERGE_FROM`, i.e. behaves as before.
+    """
+    return {m: (f or "").strip()
+            for m, f in db.query(LeaderUnitSetting.manager_id,
+                                 LeaderUnitSetting.bot_from).all()
+            if (f or "").strip()}
+
+
 def merges(shift: int | None, manager_id: int | None, date: str | None,
-           cams: set[int]) -> bool:
+           cams: set[int], floors: dict[int, str] | None = None) -> bool:
     """Does this closed bot day replace its (leader, date) sheet row?
 
     THE merge rule, in one place: both readers below call it, so the register
     and the photo proxy can never disagree about whether a day is visible.
+
+    `floors` is the per-unit rehearsal window. It can only ever move the day
+    LATER — `max` against `MERGE_FROM` — so a floor typed into the admin panel
+    cannot reach back past the pilot's own bound and pull months of bot days
+    into a register that has never shown them.
     """
     if shift == MERGE_SHIFT:
         return True
-    return (manager_id in cams) and str(date or "") >= MERGE_FROM
+    if manager_id not in cams:
+        return False
+    floor = (floors or {}).get(manager_id)
+    return str(date or "") >= (max(str(floor), MERGE_FROM) if floor else MERGE_FROM)
+
+
+def training(shift: int | None, manager_id: int | None, date: str | None,
+             floors: dict[int, str] | None = None) -> bool:
+    """Is this closed bot day a REHEARSAL — filed in the bot on a day whose
+    counted submission is still the sheet row?
+
+    Deliberately NOT `not merges(...)`. Every shift-1 unit outside the camera
+    pilot fails the merge too, and those days have always been reviewed and
+    reported; widening "rehearsal" to cover them would silence day reports
+    nobody asked to silence. True only for a day an admin explicitly declared
+    practice, and never for shift 2 — which files ONLY in the bot, so there is
+    no sheet row underneath it to fall back to.
+    """
+    if shift == MERGE_SHIFT:
+        return False
+    floor = (floors or {}).get(manager_id)
+    return bool(floor) and str(date or "") < str(floor)
 
 
 def closed_days(
@@ -108,8 +154,9 @@ def closed_days(
         for m in db.query(Manager).filter(Manager.id.in_({d.manager_id for d in days})).all()
     }
     cams = camera_units(db)
+    floors = bot_from_floors(db)
     return [d for d in days
-            if merges(shifts.get(d.manager_id), d.manager_id, d.date, cams)]
+            if merges(shifts.get(d.manager_id), d.manager_id, d.date, cams, floors)]
 
 
 def entries_of(db: Session, days: list[LeaderTaskDay]) -> dict[int, list[LeaderTaskEntry]]:
@@ -242,7 +289,7 @@ def visible_day(db: Session, day: LeaderTaskDay, payload: dict, *, sees_all: boo
     # day the merge rule does not carry has unreachable photos for them.
     mgr = db.query(Manager).filter_by(id=day.manager_id).first()
     if not merges(mgr.shift if mgr else None, day.manager_id, day.date,
-                  camera_units(db)):
+                  camera_units(db), bot_from_floors(db)):
         return False
     # Below that, mirror /api/leaders exactly: only supervisors and leaders are
     # narrowed, and a personal "see all" page grant lifts both.

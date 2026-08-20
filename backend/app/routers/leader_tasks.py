@@ -9,6 +9,7 @@ for the /leaders detail modal — page-access gated with the same row scoping as
 /api/leaders (supervisor → own unit, leader → own rows).
 """
 import logging
+import re
 from io import BytesIO
 
 import requests
@@ -38,7 +39,7 @@ from app.services.leader_tasks import (
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
     per_task_units, revert_audit, set_criteria, set_date_check, set_deadline,
-    set_per_task_close, set_proof_kind,
+    set_proof_kind, set_unit_settings, unit_bot_from_map,
     set_time_check, set_window,
     write_change,
 )
@@ -74,6 +75,7 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     )
     overrides = leader_overrides(db, [p.id for p in leaders])
     per_task = per_task_units(db)
+    bot_from = unit_bot_from_map(db)
     # Example-proof photo ids per task — ids only, the bytes stream from
     # /admin/leader-tasks/examples/{id} when the modal actually shows them.
     examples: dict[int, list[int]] = {}
@@ -115,7 +117,10 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
             for td in defs
         ],
         "managers": [{"id": m.id, "name": m.name, "shift": m.shift,
-                      "per_task_close": m.id in per_task} for m in managers],
+                      "per_task_close": m.id in per_task,
+                      # "" = no rehearsal window; before it the unit's bot days
+                      # are practice and its sheet row is what the register shows.
+                      "bot_from": bot_from.get(m.id) or ""} for m in managers],
         "settings": {
             str(m.id): {str(t): s for t, s in effective_settings(db, m.id).items()}
             for m in managers
@@ -785,35 +790,61 @@ def put_proof_kind(body: ProofKindIn, db: Session = Depends(get_db),
     return {"ok": True}
 
 
-class PerTaskIn(BaseModel):
-    """Per-task submission for ONE supervisor's unit.
+class UnitIn(BaseModel):
+    """Settings for ONE supervisor's unit — the whole row, in one request.
 
-    Addressed by supervisor and nothing else — no task id, no global level. It
-    is a property of the unit, and the two things this feature has gone wrong on
-    so far were both a setting reaching a level that means "everybody".
+    Addressed by supervisor and nothing else: no task id, no global level. These
+    are properties of the unit, and the two things this feature has gone wrong
+    on so far were both a setting reaching a level that means "everybody".
+
+    Both fields ride together because they are the same DB row: sent as two
+    requests to a unit that has never been edited, they race its primary key
+    and one of them dies while the panel reports success.
     """
     manager_id: int
     per_task_close: bool
+    # "YYYY-MM-DD", or "" for no rehearsal window.
+    bot_from: str = ""
 
 
-@router.put("/admin/leader-tasks/per-task")
-def put_per_task(body: PerTaskIn, db: Session = Depends(get_db),
-                 _: dict = Depends(verify_admin)):
-    """Switch a unit between closing a DAY and closing each TASK.
+@router.put("/admin/leader-tasks/unit")
+def put_unit(body: UnitIn, db: Session = Depends(get_db),
+             _: dict = Depends(verify_admin)):
+    """Write a unit's own settings: day-vs-task submission, and the day its bot
+    filings start counting.
 
-    Applies at once. Switching ON mid-day is safe: answers already given stay
-    drafts and can still be closed one by one, and the day will close itself
-    when the last of them is. Switching OFF returns the unit to «Kunni yopish»
-    with those drafts intact.
+    `per_task_close` applies at once. Switching ON mid-day is safe: answers
+    already given stay drafts and can still be closed one by one, and the day
+    will close itself when the last of them is. Switching OFF returns the unit
+    to «Kunni yopish» with those drafts intact. What no switch ever undoes is a
+    task the leader already closed — that lock is final by design, and a config
+    change that reopened submitted work would be exactly the hole per-task
+    submission exists to close.
 
-    What no switch ever undoes is a task the leader already closed — that lock
-    is final by design, and a config change that reopened submitted work would
-    be exactly the hole this mode exists to close.
+    `bot_from` opens a REHEARSAL window: until that day the unit's leaders file
+    in the bot to learn it while the register, the score and the day report keep
+    reading its Google-Form sheet row. It only moves which layer is read, so it
+    can be set, moved or cleared at any time.
+
+    Refused for a shift-2 unit, because shift 2 files ONLY in the bot: there is
+    no sheet row underneath it, so a rehearsal window there would not fall back
+    to the fill-out — it would empty the register. Checked here as well as in
+    the panel, since the endpoint is reachable without it.
     """
-    if not db.query(Manager).filter_by(id=body.manager_id).first():
+    mgr = db.query(Manager).filter_by(id=body.manager_id).first()
+    if not mgr:
         raise HTTPException(status_code=404, detail="Unknown supervisor")
-    set_per_task_close(db, manager_id=body.manager_id,
-                       value=bool(body.per_task_close))
+    bot_from = (body.bot_from or "").strip()
+    if bot_from and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", bot_from):
+        raise HTTPException(status_code=400, detail="bot_from must be YYYY-MM-DD")
+    if bot_from and mgr.shift == leader_bot.MERGE_SHIFT:
+        raise HTTPException(
+            status_code=400,
+            detail="Shift 2 files only in the bot — it has no fill-out to fall "
+                   "back to, so a rehearsal window would leave it with no data.")
+    set_unit_settings(db, manager_id=body.manager_id,
+                      per_task_close=bool(body.per_task_close),
+                      bot_from=bot_from)
     return {"ok": True}
 
 

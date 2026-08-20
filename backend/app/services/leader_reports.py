@@ -27,7 +27,7 @@ from app.models import (
     LeaderTaskDef, LeaderTaskEntry, LeaderTaskLeaderSetting, LeaderTaskSetting,
     Manager, RoleProfile,
 )
-from app.services import leader_ai
+from app.services import leader_ai, leader_bot
 
 log = logging.getLogger(__name__)
 
@@ -397,6 +397,16 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     if not leader_ai.in_auto_regime(date, shift):
         _park(db, key, uid, "outside the automatic regime")
         return False
+    # A REHEARSAL day: the unit is learning the bot while its Google-Form row
+    # is still the record (LeaderUnitSetting.bot_from). The register shows that
+    # sheet row and reports it on its own; a second DM scoring the practice run
+    # would name a number nothing on the page agrees with. Only BOT uids can be
+    # one — the sheet row filed the same day is the counted submission.
+    if uid.startswith("bot:") and leader_bot.training(
+            shift, row.get("manager_id"), date, leader_bot.bot_from_floors(db)):
+        _park(db, key, uid, "rehearsal day — the fill-out row is the record")
+        return False
+
     # A day the filing-window rule already voided scores 0 for a reason that
     # outranks anything the photos say. Reporting a verified 62% on it would
     # contradict the register in the one message meant to explain the register.

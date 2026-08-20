@@ -950,23 +950,57 @@ def per_task_units(db: Session) -> set[int]:
             .filter(LeaderUnitSetting.per_task_close.is_(True)).all()}
 
 
-def set_per_task_close(db: Session, *, manager_id: int, value: bool) -> None:
-    """Switch a unit into (or out of) per-task submission.
+def unit_bot_from(db: Session, manager_id: int | None) -> str | None:
+    """The day this unit's BOT filings start counting, or None.
 
-    Applies at once and stages nothing, exactly like the proof kind and for the
-    same reason: it changes what the leader is asked to DO. Switching it ON
-    mid-day is safe — tasks already answered stay drafts and can still be closed
-    — and switching it OFF returns the unit to «Kunni yopish» with those drafts
-    intact. What is never undone is a task the leader already closed: that lock
-    is final by design, and no config change may reopen it.
+    Before it the unit is rehearsing: leaders fill the checklist in the bot to
+    learn it and the sheet row stays the record. The merge rule reads the whole
+    map in one query (`leader_bot.bot_from_floors`) — this is the single-unit
+    reader, for the admin panel and for anything answering about one brigadir.
     """
+    if not manager_id:
+        return None
+    row = db.query(LeaderUnitSetting).filter_by(manager_id=manager_id).first()
+    return (row.bot_from or None) if row else None
+
+
+def unit_bot_from_map(db: Session) -> dict[int, str]:
+    """Every open rehearsal window, for readers answering a whole page at once."""
+    return {m: f for m, f in db.query(LeaderUnitSetting.manager_id,
+                                      LeaderUnitSetting.bot_from).all() if f}
+
+
+def set_unit_settings(db: Session, *, manager_id: int, per_task_close: bool,
+                      bot_from: str | None) -> None:
+    """Write a unit's settings — BOTH fields, in ONE call, on purpose.
+
+    They materialise the same `leader_unit_settings` row, and a unit that has
+    never been edited has none: fired as two requests, two of them INSERT it
+    concurrently and one dies on the primary key while the modal reports
+    success. That is the trap the five ltasks task fields already fell into
+    (2026-08-19); this row gets ONE writer instead of a second chance at it.
+
+    `per_task_close` applies at once and stages nothing, exactly like the proof
+    kind and for the same reason: it changes what the leader is asked to DO.
+    Switching it ON mid-day is safe — tasks already answered stay drafts and can
+    still be closed one by one — and switching it OFF returns the unit to «Kunni
+    yopish» with those drafts intact. What is never undone is a task the leader
+    already closed: that lock is final by design, and no config change may
+    reopen it.
+
+    `bot_from` moves only which layer is READ, so it is safe to set, clear or
+    move at any time and takes effect on the next page load — including
+    backwards, which un-does a rehearsal window opened by mistake.
+    """
+    bot_from = (bot_from or "").strip() or None
     row = db.query(LeaderUnitSetting).filter_by(manager_id=manager_id).first()
     if not row:
-        if not value:
+        if not per_task_close and not bot_from:
             return                       # nothing stored, nothing to clear
         row = LeaderUnitSetting(manager_id=manager_id)
         db.add(row)
-    row.per_task_close = bool(value)
+    row.per_task_close = bool(per_task_close)
+    row.bot_from = bot_from
     db.commit()
 
 

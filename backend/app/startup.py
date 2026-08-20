@@ -2861,3 +2861,31 @@ def add_leader_photo_client_key() -> None:
         print(f"[startup] leader photo client-key migration skipped: {exc}")
     finally:
         db.close()
+
+
+def add_leader_unit_bot_from() -> None:
+    """2026-08-20: a unit may rehearse in the bot before its filings count.
+
+    A supervisor's unit is switched into in-app camera capture on the day
+    somebody has time to teach it, and the leaders spend that day learning where
+    the buttons are. Without a floor, that first fumbling day IS the record: the
+    camera exception merges the unit's bot days from the moment it is enrolled,
+    so the practice run replaces the Google-Form row the unit actually filled in
+    properly, and the AI scores it.
+
+    `leader_unit_settings.bot_from` is the day the bot layer takes over for that
+    unit. NULL everywhere until an admin opens a window, and the merge rule
+    clamps it against `leader_bot.MERGE_FROM`, so a box that never ran this — or
+    a unit nobody set one on — behaves exactly as before. Idempotent.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_unit_settings "
+            "ADD COLUMN IF NOT EXISTS bot_from VARCHAR(10)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader unit bot-from migration skipped: {exc}")
+    finally:
+        db.close()

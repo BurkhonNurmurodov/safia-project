@@ -627,6 +627,23 @@ SERVER's; the phone never authors it.
   before, and enrolling one later cannot resurrect bot days it closed months
   ago. Widening this to "every bot day" was tried first and reverted: it
   silently rewrote the register for units that had nothing to do with the pilot.
+- **A unit may REHEARSE before its bot filings count** —
+  `LeaderUnitSetting.bot_from`, the day the bot layer takes over for that unit,
+  set in «Brigada sozlamalari» beside `per_task_close` (ONE endpoint, `PUT
+  /admin/leader-tasks/unit`, because they are ONE row and two parallel writes
+  race its key — the same trap the five ltasks task fields fell into). A unit is
+  enrolled in camera capture on the day somebody has time to teach it, and the
+  leaders spend that day learning where the buttons are; without a floor that
+  fumbling IS the record. Before it the register, the score and the day report
+  all keep reading the Google-Form row, and `leader_reports` PARKS the bot day's
+  report so no score DM contradicts the register. `merges()` clamps the floor
+  against `MERGE_FROM` (it can only ever move a day LATER, never resurrect one),
+  and `training()` is deliberately NOT `not merges(...)`: every shift-1 unit
+  outside the pilot fails the merge too and has always been reported, so
+  "rehearsal" means only a day an admin explicitly declared practice. Refused
+  for shift 2 — it files ONLY in the bot, so there is no fill-out row underneath
+  to fall back to. The AI still reviews rehearsal proofs: ✅/⚠️ in the bot menu
+  is the feedback the practice day exists for.
 
 Related memory: `leader-camera-proof-pilot`.
 

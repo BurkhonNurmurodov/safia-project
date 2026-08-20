@@ -2,8 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, Calendar, Camera, CheckCircle, ChevronDown, ChevronRight,
-  Clock, History, ImagePlus, ListChecks, Radio, RotateCcw, Trash2, Type,
-  UserCog, Users, X,
+  Clock, GraduationCap, History, ImagePlus, ListChecks, Radio, RotateCcw,
+  Trash2, Type, UserCog, Users, X,
 } from "lucide-react";
 import Modal from "../../components/ui/Modal";
 import { ProxyPhoto } from "../../components/leaders/ProofPhoto";
@@ -13,6 +13,7 @@ import Toast, { useToast } from "../../components/ui/Toast";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
+import DateRangePicker from "../../components/ui/DateRangePicker";
 import { FilterPanel, OptsFilter } from "../../components/ui/ColumnFilter";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock, SkeletonMatrix } from "../../components/ui/Skeleton";
@@ -261,11 +262,12 @@ export default function LeaderTasksAdmin() {
   // to be shot in the app for a whole shift. Nothing to re-judge: photos
   // already collected keep the clocks they were judged by.
   const pkMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/proof-kind", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
-  // Per-task submission is a property of the UNIT, so it rides its own endpoint
+  // Both unit settings are properties of the UNIT, so they ride one endpoint
   // addressed by supervisor alone — no task id, no level that could mean
-  // "everybody". Instant like the proof kind and for the same reason: it
-  // changes what the leader is asked to do.
-  const ptMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/per-task", b), onSuccess: () => { invalidate(); setUnit(null); ping(); }, onError: onErr });
+  // "everybody". ONE request writes both, because they are one DB row: split in
+  // two, a unit that has never been edited gets two concurrent INSERTs and one
+  // of them dies on the primary key while the modal says «saved».
+  const ptMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/unit", b), onSuccess: () => { invalidate(); setUnit(null); ping(); }, onError: onErr });
   // Example proof photos live beside the criteria: instant like it (nothing
   // the leader sees changes), ids come from the live config so an upload or
   // delete re-renders the strip through the same invalidate.
@@ -1163,7 +1165,7 @@ export default function LeaderTasksAdmin() {
                               className="p-0.5 -ml-1 rounded transition-opacity hover:opacity-70 disabled:opacity-30 flex-shrink-0" style={{ color: "var(--text-3)" }}>
                               {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
-                            <button type="button" onClick={() => setUnit({ mid: m.id, per_task_close: !!m.per_task_close })}
+                            <button type="button" onClick={() => setUnit({ mid: m.id, per_task_close: !!m.per_task_close, bot_from: m.bot_from || "" })}
                               title={t("admin.ltasks.unitSettings")}
                               className="font-medium truncate text-left hover:opacity-70 transition-opacity"
                               style={{ textDecorationLine: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3, textDecorationColor: "var(--border-md)" }}>
@@ -1173,6 +1175,16 @@ export default function LeaderTasksAdmin() {
                               <span title={t("admin.ltasks.perTask")} className="flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-bold"
                                 style={{ background: "rgba(200,151,63,0.14)", color: "var(--brand)", border: "1px solid rgba(200,151,63,0.35)" }}>
                                 1×1
+                              </span>
+                            )}
+                            {/* Rehearsing: the unit files in the bot to learn it while
+                                its fill-out row is still what the register counts. Marked
+                                on the matrix because it is invisible from the cells. */}
+                            {m.bot_from && (
+                              <span title={t("admin.ltasks.botFromChip").replace("{date}", m.bot_from)}
+                                className="inline-flex items-center gap-0.5 flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-bold"
+                                style={{ background: "rgba(234,179,8,0.14)", color: C_WARN, border: "1px solid rgba(234,179,8,0.35)" }}>
+                                <GraduationCap size={10} />{m.bot_from.slice(5).replace("-", ".")}
                               </span>
                             )}
                             {m.shift && <span className="px-1 py-0.5 rounded text-[10px] font-bold flex-shrink-0" style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}>S{m.shift}</span>}
@@ -1397,7 +1409,7 @@ export default function LeaderTasksAdmin() {
           footer={<>
             <Button variant="secondary" onClick={() => setUnit(null)}>{t("admin.broadcast.cancel")}</Button>
             <Button loading={ptMut.isPending}
-              onClick={() => ptMut.mutate({ manager_id: unit.mid, per_task_close: !!unit.per_task_close })}>
+              onClick={() => ptMut.mutate({ manager_id: unit.mid, per_task_close: !!unit.per_task_close, bot_from: unit.bot_from || "" })}>
               {t("admin.ltasks.save")}
             </Button>
           </>}>
@@ -1415,6 +1427,43 @@ export default function LeaderTasksAdmin() {
               style={{ background: "rgba(234,179,8,0.10)", color: "var(--text-2)", border: "1px solid rgba(234,179,8,0.30)" }}>
               {t("admin.ltasks.perTaskWarn")}
             </p>
+          )}
+
+          {/* Rehearsal window. A unit is switched into camera capture on the day
+              somebody has time to teach it, and that day the leaders are
+              learning where the buttons are — so the day the BOT starts
+              counting is a separate decision from the day the camera turns on.
+              Not offered on shift 2: it files only in the bot, and there is no
+              fill-out row underneath it to fall back to. */}
+          {mgrById.get(unit.mid)?.shift === 2 ? (
+            <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+              {t("admin.ltasks.botFromShift2")}
+            </p>
+          ) : (
+            <FormField label={t("admin.ltasks.botFrom")}
+              hint={unit.bot_from ? t("admin.ltasks.botFromHint.on").replace("{date}", unit.bot_from)
+                                  : t("admin.ltasks.botFromHint.off")}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <DateRangePicker single dateFrom={unit.bot_from || ""} dateTo={unit.bot_from || ""}
+                  setDateFrom={(v) => setUnit((u) => ({ ...u, bot_from: v || "" }))}
+                  setDateTo={() => {}} triggerClassName="px-3 py-2 text-sm" />
+                {(() => {
+                  const next = nextForShift(mgrById.get(unit.mid)?.shift);
+                  return next && unit.bot_from !== next ? (
+                    <Button size="md" variant="secondary"
+                      onClick={() => setUnit((u) => ({ ...u, bot_from: next }))}>
+                      {t("admin.ltasks.botFromNext")}
+                    </Button>
+                  ) : null;
+                })()}
+                {unit.bot_from && (
+                  <Button size="md" variant="ghost"
+                    onClick={() => setUnit((u) => ({ ...u, bot_from: "" }))}>
+                    {t("admin.ltasks.botFromClear")}
+                  </Button>
+                )}
+              </div>
+            </FormField>
           )}
         </Modal>
       )}

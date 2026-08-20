@@ -1467,16 +1467,28 @@ class LeaderUnitSetting(Base):
     and sends only that task's proofs to the AI. The day then closes itself when
     the last enabled task is closed.
 
-    Deliberately NOT on the global → supervisor → leader task chain: it is not a
-    property of a task, and putting it there would let it be set at a level that
-    means "everybody" — which is exactly how the camera pilot reached every
-    leader on the platform twice (2026-08-19). An absent row means off, so a
-    unit is only ever in this mode because somebody switched it on.
+    `bot_from` is the second: the day this unit's BOT filings start COUNTING.
+    Before it the unit is REHEARSING — its leaders fill the checklist in the bot
+    to learn it, while the register, the score and the day report all keep
+    reading the Google-Form sheet row for the same day. It exists because a unit
+    is switched into camera capture on the day somebody has time to teach it,
+    and that day's fumbling must not become the day's record. NULL = no
+    rehearsal window, which is every unit until an admin opens one.
+
+    Deliberately NOT on the global → supervisor → leader task chain: neither is
+    a property of a task, and putting them there would let one be set at a level
+    that means "everybody" — which is exactly how the camera pilot reached every
+    leader on the platform twice (2026-08-19). An absent row means off / no
+    rehearsal, so a unit is only ever in either state because somebody said so.
     """
     __tablename__ = "leader_unit_settings"
 
     manager_id     = Column(Integer, ForeignKey("managers.id"), primary_key=True)
     per_task_close = Column(Boolean, nullable=False, default=False)
+    # "YYYY-MM-DD" — read through `leader_bot.bot_from_floors()`, which is
+    # where the merge rule lives; a floor earlier than the camera pilot's own
+    # MERGE_FROM cannot resurrect bot days that predate it.
+    bot_from       = Column(String(10), nullable=True)
 
 
 class LeaderTaskPhoto(Base):
