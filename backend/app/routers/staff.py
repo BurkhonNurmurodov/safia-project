@@ -2442,8 +2442,9 @@ def withdraw_batch(
     db: Session = Depends(get_db),
 ):
     """Supervisor withdraws all their own pending requests in a batch."""
-    role  = caller.get("role")
-    tg_id = int(caller["sub"])
+    role    = caller.get("role")
+    role_id = caller.get("role_id")
+    tg_id   = int(caller["sub"])
     if role not in ("admin", "supervisor"):
         raise HTTPException(status_code=403, detail="Not authorised")
 
