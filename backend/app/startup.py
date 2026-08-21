@@ -643,10 +643,9 @@ def migrate_idle_interval_status() -> None:
             "CREATE INDEX IF NOT EXISTS ix_cellojint_date_status "
             "ON cell_ojidaniya_intervals (date, status)"))
         db.commit()
-        log.info("cell_ojidaniya_intervals: status columns ready")
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        log.exception("migrate_idle_interval_status failed")
+        print(f"[startup] idle-interval status migration skipped: {exc}")
     finally:
         db.close()
 

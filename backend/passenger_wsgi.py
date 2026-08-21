@@ -62,6 +62,7 @@ try:
         migrate_factories,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
+        migrate_idle_interval_status,
         migrate_attendance_batches, seed_att_included_from_last_day,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
@@ -119,6 +120,7 @@ try:
     add_cell_shift_times()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()
+    migrate_idle_interval_status()
     migrate_attendance_batches()
     seed_att_included_from_last_day()
     add_concern_profile_columns()
