@@ -31,7 +31,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Admin, Manager, RoleProfile, TelegramUser, TelegramUserRole,
+    Admin, Manager, ProfilePhoto, RoleProfile, TelegramUser, TelegramUserRole,
 )
 
 # Roles whose role_id IS already the profile id — the key needs no lookup.
@@ -226,6 +226,25 @@ def profile_display_name(db: Session, key: Optional[str]) -> Optional[str]:
         return m.name if m else None
     p = db.query(RoleProfile).filter_by(id=ref).first()
     return p.name if p else None
+
+
+def photo_versions(db: Session,
+                   keys: Optional[Iterable[Optional[str]]] = None) -> dict[str, int]:
+    """Avatar versions per profile, in ONE query.
+
+    The number is the photo's last-write second. The frontend keys its avatar
+    cache by it, so a replaced photo busts that cache by key and never by
+    guesswork, and a profile with no photo (absent here) is never asked for
+    bytes at all. ``keys=None`` answers for every profile that has one (the
+    admin register); a list narrows it to the rows a payload actually draws.
+    """
+    q = db.query(ProfilePhoto.profile_key, ProfilePhoto.updated_at)
+    if keys is not None:
+        wanted = {k for k in keys if k}
+        if not wanted:
+            return {}
+        q = q.filter(ProfilePhoto.profile_key.in_(wanted))
+    return {key: int(ts.timestamp()) if ts else 1 for key, ts in q.all()}
 
 
 def same_profile(a: Optional[str], b: Optional[str]) -> bool:

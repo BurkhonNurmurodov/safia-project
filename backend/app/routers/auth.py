@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.identity import photo_versions, profile_key, role_row_profile_key
 from app.models import Admin, Language, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -103,14 +104,36 @@ def _admin_profile_name(db: Session, admin_row: Admin | None) -> str | None:
     return p.name if p else None
 
 
-def _serialize_role(r: TelegramUserRole) -> dict:
+def _serialize_role(r: TelegramUserRole, key: str | None = None) -> dict:
     return {
         "id":        r.id,
         "role":      r.role,
         "role_id":   r.role_id,
         "full_name": r.full_name,
         "status":    r.status,
+        # The PROFILE this registration switches into — `role_id` is not it for
+        # leaders (that column holds the unit), so the key is resolved, never
+        # rebuilt on the client. `photo_ver` is filled in by _switcher_rows.
+        "profile_key": key,
+        "photo_ver":   None,
     }
+
+
+def _switcher_rows(db: Session, rows, first: list[dict] | None = None) -> list[dict]:
+    """The role-switcher payload: every profile the account can become, each
+    carrying its own avatar.
+
+    A profile is the same person wherever it is drawn, so the switcher shows the
+    same photo the header, the sidebar and /profile show. Without the key and
+    the version the menu had nothing to ask the photo endpoint with, and fell
+    back to initials on every row but the active one.
+    """
+    out = list(first or [])
+    out += [_serialize_role(r, role_row_profile_key(db, r, heal=False)) for r in rows]
+    vers = photo_versions(db, [e.get("profile_key") for e in out])
+    for e in out:
+        e["photo_ver"] = vers.get(e.get("profile_key"))
+    return out
 
 
 class WebAppLoginRequest(BaseModel):
@@ -186,7 +209,8 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
                     "language": (user.language if user else None) or admin_row.language or "uz"}
 
         admin_profile = {"id": ADMIN_ROLE_REF, "role": "admin", "role_id": None,
-                         "full_name": full_name, "status": "approved"}
+                         "full_name": full_name, "status": "approved",
+                         "profile_key": profile_key("admin", admin_row.profile_id)}
         approved = [r for r in visible if r.status == "approved"]
         valid_refs = {ADMIN_ROLE_REF} | {r.id for r in approved}
 
@@ -212,7 +236,7 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
             "token":       token,
             "telegram_id": telegram_id,
             "language":    user.language or "uz",
-            "roles":       [admin_profile] + [_serialize_role(r) for r in visible],
+            "roles":       _switcher_rows(db, visible, first=[admin_profile]),
             "active_role_ref": active_ref,
         }
 
@@ -255,7 +279,7 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
         "token":     token,
         "telegram_id": telegram_id,
         "language":  user.language or "uz",
-        "roles":     [_serialize_role(r) for r in roles if r.status != "rejected"],
+        "roles":     _switcher_rows(db, [r for r in roles if r.status != "rejected"]),
         "active_role_ref": active.id,
     }
 
@@ -403,7 +427,7 @@ def leave_role(role_ref: int, token: str = Depends(_oauth2), db: Session = Depen
 
     return {
         "ok": True,
-        "roles": [_serialize_role(r) for r in remaining if r.status != "rejected"],
+        "roles": _switcher_rows(db, [r for r in remaining if r.status != "rejected"]),
         "account_deleted": False,
         "token": response_token,
     }

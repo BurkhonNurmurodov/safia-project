@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app import web_auth
 from app.config import settings
 from app.database import get_db
-from app.identity import profile_display_name, viewer_profile_key
+from app.identity import photo_versions, profile_display_name, viewer_profile_key
 from app.models import Admin, TelegramUser, WebCredential
 
 log = logging.getLogger(__name__)
@@ -105,6 +105,10 @@ def web_login(body: LoginBody, request: Request, db: Session = Depends(get_db)):
         # profile this password was never issued for.
         "roles":           [],
         "active_role_ref": identity["role_ref"],
+        # The profile this session IS — the wallet keeps it beside the token so
+        # the header menu can draw every signed-in profile with its own avatar.
+        "profile_key":     cred.profile_key,
+        "photo_ver":       photo_versions(db, [cred.profile_key]).get(cred.profile_key),
         "web":             True,
         "web_login": {
             "username":      cred.username,
@@ -280,6 +284,8 @@ def web_session(payload: dict = Depends(_web_caller), db: Session = Depends(get_
         "language":    (user.language if user else None) or (admin.language if admin else None) or "uz",
         "roles":           [],
         "active_role_ref": identity["role_ref"],
+        "profile_key":     cred.profile_key,
+        "photo_ver":       photo_versions(db, [cred.profile_key]).get(cred.profile_key),
         "web":             True,
         "web_login": {
             "username":      cred.username,

@@ -94,13 +94,19 @@ export function findProfile(username) {
  * what the person typed, so re-adding a profile updates its row instead of
  * growing a second one.
  */
-export function saveProfile({ username, full_name, role, role_ref, token, remember }) {
+export function saveProfile({ username, full_name, role, role_ref, profile_key,
+                              photo_ver, token, remember }) {
   if (!username || !token) return null;
   const entry = {
     username,
     full_name: full_name || "",
     role: role || "",
     role_ref: role_ref ?? null,
+    // Who this row IS, and whether that profile has an avatar — the switcher
+    // draws each signed-in profile with its own photo, and the version is only
+    // a cache key, so a stale one still fetches the current bytes.
+    profile_key: profile_key || null,
+    photo_ver: photo_ver ?? null,
     token,
     remember: Boolean(remember),
   };

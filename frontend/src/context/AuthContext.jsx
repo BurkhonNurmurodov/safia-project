@@ -33,6 +33,8 @@ export function AuthProvider({ children }) {
       full_name: data.full_name,
       role: data.role,
       role_ref: data.active_role_ref,
+      profile_key: data.profile_key,
+      photo_ver: data.photo_ver,
       token,
       remember,
     });
@@ -191,6 +193,8 @@ export function AuthProvider({ children }) {
       full_name: data.full_name,
       role: data.role,
       role_ref: data.active_role_ref,
+      profile_key: data.profile_key,
+      photo_ver: data.photo_ver,
       token: data.token,
       remember,
     });

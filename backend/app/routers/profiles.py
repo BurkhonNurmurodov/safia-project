@@ -48,8 +48,8 @@ from app.capabilities import CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, require_cap
 from app.config import settings
 from app.database import get_db
 from app.identity import (
-    find_role_row, parse_profile_key, profile_display_name, profile_holders,
-    profile_key, viewer_profile_key,
+    find_role_row, parse_profile_key, photo_versions, profile_display_name,
+    profile_holders, profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
 from app.models import (
@@ -446,10 +446,7 @@ def admin_list_profiles(db: Session = Depends(get_db),
 
     # Avatar versions per profile — the frontend fetches bytes lazily and only
     # for rows that actually have a photo, so the list stays light.
-    photo_vers = {
-        key: int(ts.timestamp()) if ts else 1
-        for key, ts in db.query(ProfilePhoto.profile_key, ProfilePhoto.updated_at).all()
-    }
+    photo_vers = photo_versions(db)
 
     def web_state(key: str, bindings: list[dict]) -> Optional[dict]:
         cred = creds.get(key)

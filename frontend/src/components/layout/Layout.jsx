@@ -152,7 +152,8 @@ function UserProfile() {
                 onMouseEnter={e => { if (!isPending) e.currentTarget.style.background = "var(--bg-inner)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = ""; }}
               >
-                <ProfileAvatar name={rName} colorKey={r.full_name || ""} size={32} />
+                <ProfileAvatar name={rName} colorKey={r.full_name || ""}
+                               profileKey={r.profile_key} photoVer={r.photo_ver} size={32} />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{rName}</div>
                   <div className="text-[10px] truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
@@ -193,7 +194,8 @@ function UserProfile() {
                 onMouseEnter={e => { if (!switching) e.currentTarget.style.background = "var(--bg-inner)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = ""; }}
               >
-                <ProfileAvatar name={pName} colorKey={p.full_name || ""} size={32} />
+                <ProfileAvatar name={pName} colorKey={p.full_name || ""}
+                               profileKey={p.profile_key} photoVer={p.photo_ver} size={32} />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{pName}</div>
                   <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>
