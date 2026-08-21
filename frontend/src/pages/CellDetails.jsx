@@ -104,6 +104,18 @@ function fmtDate(iso, lang) {
   }
 }
 
+// "12 soat 30 daq" from a derived minute count. The register stores only the two
+// clocks — the length is always computed, never a column — so a null here just
+// means the pair is unusable (equal times), not that the hours are unknown.
+function fmtDur(min, t) {
+  if (min == null || !Number.isFinite(min) || min <= 0) return null;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m
+    ? t("admin.shiftTimes.durFmt").replace("{h}", h).replace("{m}", m)
+    : t("admin.shiftTimes.durFmtH").replace("{h}", h);
+}
+
 // One footprint line: label left, "N days · last <date> · extras" right,
 // muted "no data yet" when the table has nothing for this cell.
 function ActRow({ icon: Icon, label, parts, none }) {
@@ -249,6 +261,10 @@ export default function CellDetails() {
   const leader = data.leader;
   const factory = data.factory;
   const act = data.activity || {};
+  // Working hours come resolved from the server (own pair, or the shift default
+  // it inherits). Undefined on a backend that predates the register — the row
+  // then reads exactly like a cell whose hours nobody has set.
+  const hours = data.hours || null;
 
   const name = cellName(c, lang) || c.verifix_code;
   const factoryName = factory
@@ -358,6 +374,25 @@ export default function CellDetails() {
                 </InfoRow>
                 <InfoRow icon={Clock} label={t("profile.shift")}>
                   {sup?.shift != null ? sup.shift : <span style={{ color: "var(--text-4)" }}>—</span>}
+                </InfoRow>
+                <InfoRow icon={Timer} label={t("admin.shiftTimes.hoursLabel")}>
+                  {hours && hours.start && hours.end && hours.source !== "none" ? (
+                    <>
+                      <span className="font-mono">{hours.start} → {hours.end}</span>
+                      {fmtDur(hours.minutes, t) && (
+                        <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                          · {fmtDur(hours.minutes, t)}
+                        </span>
+                      )}
+                      <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-4)" }}>
+                        · {t(hours.source === "own"
+                            ? "admin.shiftTimes.srcOwn"
+                            : "admin.shiftTimes.srcDefault")}
+                      </span>
+                    </>
+                  ) : (
+                    <span style={{ color: "var(--text-4)" }}>{t("admin.shiftTimes.notSet")}</span>
+                  )}
                 </InfoRow>
                 <InfoRow icon={FactoryIcon} label={t("profile.factory")}>
                   {factoryName || <span style={{ color: "var(--text-4)" }}>—</span>}

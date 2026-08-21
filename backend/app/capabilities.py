@@ -125,6 +125,7 @@ CAP_CLEANUP           = "admin.cleanup"
 CAP_USERS_MANAGE      = "admin.users.manage"
 CAP_PROFILES_MANAGE   = "admin.profiles.manage"
 CAP_CELLS_MANAGE      = "admin.cells.manage"
+CAP_CELL_HOURS_MANAGE = "admin.cell_hours.manage"
 CAP_FACTORIES_MANAGE  = "admin.factories.manage"
 
 # Page-view grants: one per page key, ids built from the page so the catalog
@@ -169,6 +170,11 @@ CAPABILITIES = [
     {"key": CAP_USERS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "users",     "scoped": False, "page": None},
     {"key": CAP_PROFILES_MANAGE,   "group": "identity",   "pages": [],                 "tab": "profiles",  "scoped": False, "page": None},
     {"key": CAP_CELLS_MANAGE,      "group": "identity",   "pages": ["cells"],          "tab": None,        "scoped": False, "page": None},
+    # The cells' working start/end clock («Smena vaqtlari») — a plant-wide
+    # register with no unit dimension, so unscoped like the cells grant beside
+    # it. Nothing consumes these hours yet; the grant opens the tab that sets
+    # them and its per-shift defaults.
+    {"key": CAP_CELL_HOURS_MANAGE, "group": "identity",   "pages": [],                 "tab": "shifttimes", "scoped": False, "page": None},
     # Factories are a plant-wide register with no unit dimension of their own —
     # unscoped for the same reason profiles and cells are. The grant carries
     # real weight: reassigning a supervisor's factory moves that unit's numbers

@@ -461,7 +461,16 @@ class Cell(Base):
     = no leader — releasing a cell keeps the row so its metadata survives
     reassignment). manager_id is the primary owner link: a cell always belongs
     to a supervisor, with or without a leader. When a leader owns the cell its
-    supervisor follows that leader's unit (kept in sync in profiles.py)."""
+    supervisor follows that leader's unit (kept in sync in profiles.py).
+
+    2026-08-21: the cell also carries its working START and END clock. NULL =
+    inherit the shift default of its supervisor's shift (the AppSetting rows
+    cell_hours_shift_1 / cell_hours_shift_2); both-or-neither, a half-set pair
+    is rejected on write and read as "inherit". Values are Tashkent wall-clock
+    "HH:MM" strings, and ``shift_end <= shift_start`` means the window CROSSES
+    MIDNIGHT — the duration is always DERIVED, never stored. NOTHING consumes
+    these yet: they are a register only (no загрузка, no idle-cell, no
+    checklist, no attendance)."""
     __tablename__ = "cells"
 
     id           = Column(Integer, primary_key=True, autoincrement=True)
@@ -486,6 +495,10 @@ class Cell(Base):
     # made it permanent. Each upload day may still override it for that day
     # alone; this is only the starting state a new day inherits.
     att_included = Column(Boolean, nullable=True)
+    # 2026-08-21: the cell's own working hours, "HH:MM" Tashkent wall clock.
+    # NULL on BOTH = inherit the supervisor's shift default; see the docstring.
+    shift_start  = Column(String(5), nullable=True)
+    shift_end    = Column(String(5), nullable=True)
 
 
 class CellOjidaniya(Base):
@@ -1967,9 +1980,18 @@ class LeaderConcern(Base):
 
 
 class ConcernEscalation(Base):
-    """One uplift / send-back event on a concern — the escalation trail shown in
-    the history modal. ``reason`` is mandatory ("why I can't solve this");
-    ``target_name`` carries the chosen top-manager on shift-manager → top steps."""
+    """One uplift / send-back event on a concern — the trail the history modal
+    reads. ``reason`` is mandatory ("why I can't solve this").
+
+    A step is stored as a HANDOVER BETWEEN PEOPLE, not just between levels:
+    ``from_name`` is whoever held the concern before the move and ``target_name``
+    whoever receives it at ``to_level`` — both snapshotted at the instant of the
+    move, on EVERY step (they used to name only the top-manager, so the trail
+    could not answer "handed to whom?" for any other step, and a level whose
+    holder later changed rewrote its own history). Both are resolved through
+    ``routers/concerns._holder_name``, the one definition of who sits on a
+    level, so the trail and the row's responsible_name can never disagree.
+    Legacy rows carry NULL and render as a bare level chip."""
     __tablename__ = "concern_escalations"
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
@@ -1980,7 +2002,8 @@ class ConcernEscalation(Base):
     actor_telegram_id = Column(BigInteger, nullable=True)
     actor_name  = Column(String, nullable=True)                   # snapshot of the escalator's name
     actor_role  = Column(String, nullable=True)
-    target_name = Column(String, nullable=True)                   # chosen top-manager (top step only)
+    from_name   = Column(String, nullable=True)                   # who HELD it before this move
+    target_name = Column(String, nullable=True)                   # who RECEIVES it at to_level
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
 

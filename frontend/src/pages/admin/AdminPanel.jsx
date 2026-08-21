@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck,
-  Sliders, ChevronDown, X, AlertTriangle, Building2,
+  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -28,6 +28,7 @@ import LeaderTasksAdmin from "./LeaderTasksAdmin";
 import DbBackup from "./DbBackup";
 import DataSources from "./DataSources";
 import DisplaySettings from "./DisplaySettings";
+import ShiftTimes from "./ShiftTimes";
 
 /**
  * The admin panel shell.
@@ -77,6 +78,9 @@ export const ADMIN_NAV = [
 
   { id: "broadcast",    group: "tools",  Icon: Megaphone,      labelKey: "admin.tabBroadcast",    descKey: "admin.desc.broadcast" },
   { id: "ltasks",       group: "tools",  Icon: ListChecks,     labelKey: "admin.tabLtasks",       descKey: "admin.desc.ltasks" },
+  // The cells' working start/end register — per-shift defaults a cell inherits,
+  // its own pair overriding them. A register only: nothing scores off it yet.
+  { id: "shifttimes",   group: "tools",  Icon: Clock,          labelKey: "admin.tabShiftTimes",   descKey: "admin.desc.shifttimes" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // Split out of the old "data" tab, which was a junk drawer: a daily uploader
   // and two chart-colour editors for two OTHER pages, invisible below the fold
@@ -101,6 +105,7 @@ const VIEWS = {
   actions:      ActionHistory,
   broadcast:    Broadcast,
   ltasks:       LeaderTasksAdmin,
+  shifttimes:   ShiftTimes,
   translations: TranslationsEditor,
   display:      DisplaySettings,
   cleanup:      AttendanceCleanup,

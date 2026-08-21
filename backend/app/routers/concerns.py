@@ -205,6 +205,32 @@ def _has_leader(c: LeaderConcern) -> bool:
     return c.leader_profile_id is not None or c.leader_role_ref is not None
 
 
+def _holder_name(
+    c: LeaderConcern,
+    level: str,
+    sm_names: Optional[dict] = None,
+    owner_names: Optional[dict] = None,
+) -> Optional[str]:
+    """Who answers for the concern at ``level`` — the level names a STEP in the
+    chain, this names the PERSON on it: leader → the leader the concern was
+    logged against (resolved live, so renames stay current), supervisor → the
+    unit brigadir, shift-manager → the assigned manager (or that unit's shift's
+    manager(s)), top-manager → the specifically assigned one.
+
+    ONE definition, read by the row's ``responsible_name`` AND by the escalation
+    trail's from/to names, so the register and the history can never disagree
+    about who a concern was handed to."""
+    if level == "leader":
+        return (owner_names or {}).get(("leader", c.leader_profile_id)) or c.leader_name
+    if level == "supervisor":
+        return c.brigadir_name
+    if level == "shift-manager":
+        return c.shift_manager_name or (sm_names or {}).get(c.brigadir_manager_id)
+    if level == "top-manager":
+        return c.top_manager_name
+    return None
+
+
 def _serialize(
     c: LeaderConcern,
     ctx: Optional[dict] = None,
@@ -228,18 +254,9 @@ def _serialize(
     if c.done_at and held_since:
         resolution_minutes = max(0, int((c.done_at - held_since).total_seconds() // 60))
     level = _level(c)
-    # Who answers for the concern right now — the level names a step in the
-    # chain, this names the person on that step: leader → the leader the concern
-    # was logged against (the same identity the send-down hands it to, resolved
-    # live so renames stay current), supervisor → the brigadir, shift-manager →
-    # that unit's shift's manager(s), top-manager → the specifically assigned one.
-    responsible = (
-        ((owner_names or {}).get(("leader", c.leader_profile_id)) or c.leader_name)
-        if level == "leader"
-        else c.brigadir_name if level == "supervisor"
-        else (c.shift_manager_name or (sm_names or {}).get(c.brigadir_manager_id)) if level == "shift-manager"
-        else c.top_manager_name
-    )
+    # Who answers for the concern right now (see _holder_name — the same
+    # definition the escalation trail snapshots on every handover).
+    responsible = _holder_name(c, level, sm_names, owner_names)
     # Owner = whoever created the concern, resolved to their CURRENT profile
     # name (renames stay live); the concern_owner snapshot / legacy typed text
     # is the fallback, without a position.
@@ -1157,7 +1174,7 @@ def update_concern(
         db.commit()
 
     return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id),
-                      _sm_names(db), _owner_names(db, [c]), _cell_leaders(db),
+                      sm_names, owner_names, _cell_leaders(db),
                       _comment_counts(db, [c.id]))
 
 
@@ -1307,6 +1324,13 @@ def escalate_concern(
     if c.status == "done":
         raise HTTPException(status_code=400, detail="A resolved concern cannot be escalated")
 
+    # Who is handing the concern over — read BEFORE the branch below rewrites
+    # the shift-/top-manager columns, or a send-back would record the person it
+    # was handed TO as the one who handed it over.
+    sm_names = _sm_names(db)
+    owner_names = _owner_names(db, [c])
+    from_name = _holder_name(c, cur, sm_names, owner_names)
+
     idx = LEVEL_IDX.get(cur, 0)
     if body.direction == "up":
         if idx >= LEVEL_IDX["top-manager"]:
@@ -1368,7 +1392,13 @@ def escalate_concern(
         actor_telegram_id=int(payload["sub"]),
         actor_name=payload.get("full_name"),
         actor_role=payload.get("role"),
-        target_name=c.top_manager_name if new_level == "top-manager" else None,
+        # Both sides of the handover, by NAME and on every step — the trail's
+        # whole point is answering "to whom?", and a step recorded as
+        # "supervisor → shift-manager" answers it for nobody. Stamped now
+        # because holders rotate: resolving them at read time would rewrite
+        # the history of every concern the moment a unit changes hands.
+        from_name=from_name,
+        target_name=_holder_name(c, new_level, sm_names, owner_names),
     ))
     db.commit()
     db.refresh(c)
@@ -1418,31 +1448,89 @@ def _visible_concern(concern_id: int, payload: dict, db: Session) -> LeaderConce
     return c
 
 
+def _span_seconds(start, end) -> Optional[int]:
+    """Seconds between two stamps, or None when either is missing (legacy rows
+    predate created_at) — a missing span renders as nothing, never as zero."""
+    if not (start and end):
+        return None
+    return max(0, int((end - start).total_seconds()))
+
+
 @router.get("/{concern_id}/history")
 def concern_history(
     concern_id: int,
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
-    """Escalation trail for the history modal, newest first — readable by
-    anyone who can SEE the concern (scope-filtered, not edit-gated)."""
-    _visible_concern(concern_id, payload, db)
+    """The concern's WHOLE life, oldest first: raised (when, by whom, onto which
+    step), then every uplift and send-back with the person on BOTH sides of the
+    handover and how long the level it left actually held it, then the
+    resolution. Readable by anyone who can SEE the concern (scope-filtered, not
+    edit-gated) — a handover nobody can audit is a handover nobody trusts.
+
+    Creation and resolution are DERIVED from the concern row (created_at,
+    done_at), not stored twice: the trail table keeps only the moves, so the
+    timeline can never drift from the row it describes. ``kind`` names each
+    event; every one carries ``created_at``, so a client that only wants
+    timestamps needs to understand nothing else."""
+    c = _visible_concern(concern_id, payload, db)
     rows = db.query(ConcernEscalation).filter_by(concern_id=concern_id).order_by(
-        ConcernEscalation.id.desc()
+        ConcernEscalation.id.asc()
     ).all()
-    return [
-        {
+    sm_names = _sm_names(db)
+    owner_names = _owner_names(db, [c])
+    # The step the concern OPENED at — the first move's origin, or the one it
+    # still sits on when it never moved. Its holder comes from that same move's
+    # snapshot when there is one; only a never-moved row is resolved live.
+    opened_at = rows[0].from_level if rows else _level(c)
+    opened_holder = (rows[0].from_name if rows and rows[0].from_name
+                     else _holder_name(c, opened_at, sm_names, owner_names))
+
+    events = [{
+        "key": "created",
+        "kind": "created",
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "to_level": opened_at,
+        "target_name": opened_holder,
+        # Whoever raised it, resolved to their CURRENT profile name (renames
+        # stay live), falling back to the typed snapshot on legacy rows.
+        "actor_name": owner_names.get((c.owner_role, c.owner_profile_id)) or c.concern_owner,
+        "actor_role": c.owner_role,
+    }]
+
+    prev = c.created_at
+    for e in rows:
+        events.append({
+            "key": f"esc-{e.id}",
+            "kind": "move",
             "id": e.id,
+            "direction": ("down" if LEVEL_IDX.get(e.to_level, 0) < LEVEL_IDX.get(e.from_level, 0)
+                          else "up"),
             "from_level": e.from_level,
             "to_level": e.to_level,
+            "from_name": e.from_name,
+            "target_name": e.target_name,
             "reason": e.reason,
             "actor_name": e.actor_name,
             "actor_role": e.actor_role,
-            "target_name": e.target_name,
             "created_at": e.created_at.isoformat() if e.created_at else None,
-        }
-        for e in rows
-    ]
+            # How long the level it LEFT actually held it — the same basis as
+            # the register's elapsed column, one step back in time.
+            "held_seconds": _span_seconds(prev, e.created_at),
+        })
+        prev = e.created_at or prev
+
+    if c.done_at:
+        events.append({
+            "key": "resolved",
+            "kind": "resolved",
+            "created_at": c.done_at.isoformat(),
+            "to_level": _level(c),
+            "target_name": _holder_name(c, _level(c), sm_names, owner_names),
+            "solution": c.solution,
+            "held_seconds": _span_seconds(prev, c.done_at),
+        })
+    return events
 
 
 @router.delete("/{concern_id}", status_code=204)

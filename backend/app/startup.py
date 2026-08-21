@@ -657,6 +657,36 @@ def migrate_cell_in_load_column() -> None:
         db.close()
 
 
+def add_cell_shift_times() -> None:
+    """2026-08-21: cells gain their working START and END clock («Smena
+    vaqtlari» admin tab). Two nullable "HH:MM" columns — NULL on both means the
+    cell inherits the default of its supervisor's shift — plus the two platform
+    defaults themselves, stored as AppSetting rows "HH:MM-HH:MM".
+
+    The seeded pair (shift 1 = 08:00-20:00, shift 2 = 20:00-08:00) is a
+    PLACEHOLDER an admin is expected to confirm; it is inserted only when the
+    key is absent, so an admin's own value is never overwritten. That
+    insert-if-absent is naturally idempotent, so this needs no one-shot flag.
+    Runs after migrate_cell_in_load_column."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS shift_start VARCHAR(5)"))
+        db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS shift_end VARCHAR(5)"))
+        for key, val in (("cell_hours_shift_1", "08:00-20:00"),
+                         ("cell_hours_shift_2", "20:00-08:00")):
+            row = db.execute(text("SELECT 1 FROM app_settings WHERE key = :k"),
+                             {"k": key}).first()
+            if row is None:
+                db.execute(text("INSERT INTO app_settings (key, value) VALUES (:k, :v)"),
+                           {"k": key, "v": val})
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell shift times migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 DEFAULT_FACTORY_SETTING = "default_factory_id"
 FACTORY_ALL_TAB_SETTING = "factory_all_tab_enabled"
 
@@ -1323,6 +1353,41 @@ def add_concern_level_since() -> None:
     except Exception as exc:
         db.rollback()
         print(f"[startup] concern level_since migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def add_concern_escalation_names() -> None:
+    """Concern trail: store the handover as PEOPLE, not just levels. ``from_name``
+    is whoever held the concern before a move; ``target_name`` (already there,
+    but only ever filled on the top-manager step) now carries the receiver on
+    every step.
+
+    Legacy rows are backfilled only where the answer is actually on the concern
+    and cannot have drifted — the leader and the unit brigadir are snapshot
+    columns on ``leader_concerns``, so a past step to/from those two levels is
+    recoverable exactly. Shift- and top-management rotate per concern, so a
+    historic step to either is left NULL rather than stamped with today's
+    holder: an empty name renders as a bare level chip, an invented one is a
+    lie the trail exists to prevent."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE concern_escalations ADD COLUMN IF NOT EXISTS from_name VARCHAR"
+        ))
+        for col, lvl_col in (("from_name", "from_level"), ("target_name", "to_level")):
+            db.execute(text(
+                f"UPDATE concern_escalations e SET {col} = CASE "
+                f"  WHEN e.{lvl_col} = 'supervisor' THEN lc.brigadir_name "
+                f"  WHEN e.{lvl_col} = 'leader' THEN lc.leader_name END "
+                "FROM leader_concerns lc "
+                f"WHERE lc.id = e.concern_id AND e.{col} IS NULL "
+                f"  AND e.{lvl_col} IN ('supervisor', 'leader')"
+            ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern escalation names migration skipped: {exc}")
     finally:
         db.close()
 

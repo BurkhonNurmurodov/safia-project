@@ -27,7 +27,7 @@ from app.database import get_db
 from app.models import (
     AppSetting, LeaderAiReview, LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry,
     LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskMedia,
-    LeaderTaskSetting, Manager, RoleProfile,
+    LeaderTaskPhoto, LeaderTaskSetting, Manager, RoleProfile,
 )
 from app.permissions import page_allowed, require_page
 from app.security import require_auth
@@ -36,7 +36,8 @@ from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services import leader_ai, leader_bot
 from app.services.leader_tasks import (
     CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
-    effective_date, effective_settings, ensure_task_defs, leader_overrides,
+    effective_date, effective_leader_config, effective_settings, ensure_task_defs,
+    expired_through, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
     per_task_units, revert_audit, set_criteria, set_date_check, set_deadline,
     set_proof_kind, set_unit_settings, unit_bot_from_map,
@@ -1006,17 +1007,38 @@ def put_channel(body: ChannelIn, db: Session = Depends(get_db), _: dict = Depend
 # monitoring page: they list the raw submissions and delete the ones the admin
 # picked — test runs, wrong-day answers, a leader who filed for someone else.
 #
-# CLOSED days only, deliberately: an open day is a leader mid-checklist, and
-# pulling the table out from under a running /tasks flow would strand them. A
-# bygone open day auto-closes on that leader's next /tasks and becomes
-# deletable then.
+# The LIST also carries OPEN days, and that is the tab's second job. Every read
+# surface on the platform serves a closed day — the register (`leader_bot`), the
+# score, the day report, the AI queue, and this tab until 2026-08-21 — so a
+# checklist the leader filled but never closed was visible NOWHERE, and read
+# exactly like a leader who filed nothing at all. That state is reachable
+# without anyone doing anything wrong: `lt:cconf` refuses to close a day while
+# one enabled task has no answer, and a camera task writes its answer only once
+# the roll reaches `min_media`, so a leader one shot short of a three-photo task
+# is holding a day nothing will accept and nothing will show.
+#
+# DELETION stays closed-only regardless of what this lists: `delete_submissions`
+# re-filters `closed_at IS NOT NULL` itself, so an open day cannot be selected,
+# armed or dropped — pulling the table out from under a running /tasks flow
+# would strand the leader in it. A bygone open day auto-closes on that leader's
+# next /tasks (`_lt_autoclose`) and becomes deletable then.
 
 @router.get("/admin/leader-tasks/submissions")
 def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    """Every closed bot day plus what deleting it would take away (task
-    answers, proof photos), and the units/leaders that actually filed — so the
-    tab's pickers only ever offer values that match something."""
-    days = leader_bot.closed_days(db, merged=False)
+    """Every bot day plus what deleting it would take away (task answers, proof
+    photos), and the units/leaders that actually filed — so the tab's pickers
+    only ever offer values that match something.
+
+    A row is `open` when the leader has not submitted it. Those carry what the
+    day is still WAITING for — how many enabled tasks are answered, which ones
+    are not, and how many photos are already on the server for the unanswered
+    ones — because that last number is the whole difference between "they never
+    filed" and "they filed and the app is holding it".
+    """
+    closed = leader_bot.closed_days(db, merged=False)
+    open_days = (db.query(LeaderTaskDay)
+                 .filter(LeaderTaskDay.closed_at.is_(None)).all())
+    days = closed + open_days
     profs = {
         p.id: p
         for p in db.query(RoleProfile)
@@ -1029,12 +1051,30 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
     entry_ids = [e.id for es in by_day.values() for e in es]
     media_by_entry = leader_bot.media_of(db, entry_ids)
 
+    # ── what each OPEN day is still waiting for ──────────────────────────────
+    # The camera roll is read straight from `leader_task_photos`, not through
+    # the entries: a task short of `min_media` has no entry, and its shots are
+    # precisely the evidence that the leader did the work.
+    per_task = per_task_units(db)
+    open_ids = [d.id for d in open_days]
+    roll: dict[tuple[int, int], int] = {}
+    if open_ids:
+        for day_id, task_id in db.query(
+                LeaderTaskPhoto.day_id, LeaderTaskPhoto.task_id).filter(
+                LeaderTaskPhoto.day_id.in_(open_ids)).all():
+            roll[(day_id, task_id)] = roll.get((day_id, task_id), 0) + 1
+    # Config resolution is per LEADER, not per day: a leader who stopped using
+    # the bot leaves one open day per date behind them, and re-resolving the
+    # whole global → supervisor → leader chain for each would walk the override
+    # tables once per row.
+    cfg_cache: dict[int, dict] = {}
+
     rows = []
     for d in days:
         prof = profs.get(d.leader_id)
         mgr = mgrs.get(d.manager_id)
         entries = by_day.get(d.id, [])
-        rows.append({
+        row = {
             "id": d.id,
             "date": d.date,
             "leader_id": d.leader_id,
@@ -1047,7 +1087,33 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
             "media": sum(len(media_by_entry.get(e.id, [])) for e in entries),
             "completion": float(d.completion or 0),
             "closed_at": d.closed_at.isoformat() if d.closed_at else None,
-        })
+            "open": d.closed_at is None,
+        }
+        if d.closed_at is None:
+            shift = mgr.shift if mgr else None
+            if prof is not None and prof.id not in cfg_cache:
+                cfg_cache[prof.id] = effective_leader_config(db, prof, shift)
+            cfg = cfg_cache.get(d.leader_id) or {}
+            want = sorted(t for t, s in cfg.items() if s.get("enabled"))
+            answered = {e.task_id for e in entries}
+            missing = [t for t in want if t not in answered]
+            row.update({
+                "enabled": len(want),
+                "answered": sum(1 for t in want if t in answered),
+                "missing": missing,
+                # Shots already on the server for a task with no answer — a
+                # camera roll short of its minimum. Non-zero here means the
+                # leader filed and the platform is sitting on it.
+                "pending_media": sum(n for (di, ti), n in roll.items()
+                                     if di == d.id and ti in missing),
+                "per_task": d.manager_id in per_task,
+                "tasks_closed": sum(1 for e in entries if e.closed_at is not None),
+                # Past its own filing window: this one will auto-close (and go
+                # to the AI) the moment its leader next opens /tasks, so it is
+                # stuck rather than in progress.
+                "expired": str(d.date) <= expired_through(shift),
+            })
+        rows.append(row)
     rows.sort(key=lambda r: (str(r["date"]), r["leader"]), reverse=True)
 
     # Pickers, built from what's actually in the register.
@@ -1055,6 +1121,7 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
     lead_ids = {r["leader_id"] for r in rows}
     return {
         "rows": rows,
+        "open_count": sum(1 for r in rows if r["open"]),
         "supervisors": sorted(
             ({"id": i, "name": mgrs[i].name if i in mgrs else f"#{i}",
               "shift": mgrs[i].shift if i in mgrs else None} for i in sup_ids),

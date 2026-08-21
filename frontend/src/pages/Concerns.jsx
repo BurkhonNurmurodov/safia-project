@@ -294,6 +294,23 @@ function LevelChip({ level, label, title }) {
   );
 }
 
+// One side of a handover in the history timeline: the level step with the
+// PERSON who sat on it underneath. The name is the whole point of the trail —
+// a step reading "supervisor → shift-manager" answers "to whom?" for nobody.
+// Steps taken before the names were recorded pass none and render the chip
+// alone; an invented name is exactly what the trail exists to prevent.
+function HandoverSide({ level, label, name }) {
+  return (
+    <span className="inline-flex flex-col items-start gap-0.5 min-w-0">
+      <LevelChip level={level} label={label} />
+      <span className="text-[10px] px-1 truncate max-w-[9rem]"
+            style={{ color: name ? "var(--text-2)" : "var(--text-4)" }}>
+        {name || "—"}
+      </span>
+    </span>
+  );
+}
+
 // Category chip — a soft tinted pill with the department's identity hue (icon
 // tint chip convention). Renders "—" plainly when a legacy row has no category.
 function CategoryChip({ category, label }) {
@@ -1242,6 +1259,10 @@ export default function Concerns() {
   // ── mutations ───────────────────────────────────────────────────────────
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["concerns"] });
+    // The trail is the audit view of exactly these mutations, and the app-wide
+    // 60s staleTime would otherwise show a minute-old history to whoever just
+    // moved the concern — the one reader guaranteed to know it is wrong.
+    qc.invalidateQueries({ queryKey: ["concern-history"] });
   };
 
   const buildPayload = () => ({
@@ -1371,6 +1392,30 @@ export default function Concerns() {
     const localIso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     return `${fmtDate(localIso, lang)}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   };
+  // Clock alone — the register shows the entry DATE, and the exact minute a
+  // concern was raised belongs under it rather than in a tooltip nobody on a
+  // phone can open.
+  const fmtTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
+  // ── history timeline ──────────────────────────────────────────────────────
+  // One vocabulary for the trail's event kinds — icon, colour and title
+  // together, so a node can never be drawn in a colour that contradicts its
+  // label. Moves take the same two colours as the uplift / send-back row
+  // actions, so the history reads as the buttons that produced it.
+  const eventMeta = (e) => {
+    if (e.kind === "created")   return { icon: Plus,      color: "var(--text-3)",   title: t("concerns.evCreated") };
+    if (e.kind === "resolved")  return { icon: Check,     color: STATUS_COLOR.done, title: t("concerns.evResolved") };
+    if (e.direction === "down") return { icon: ArrowDown, color: "#f59e0b",         title: t("concerns.evSentBack") };
+    return { icon: ArrowUp, color: "#3b82f6", title: t("concerns.evUplifted") };
+  };
+  // "Held at «X» for 3 h 12 min" — ONE whole sentence per language (word order
+  // differs), never a concatenation of translated fragments.
+  const heldAtText = (level, mins) =>
+    t("concerns.heldAt").replace("{level}", levelLabel(level)).replace("{dur}", fmtResolution(mins));
 
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
@@ -1777,9 +1822,10 @@ export default function Concerns() {
       {r.can_deescalate && (
         <ActionBtn icon={ArrowDown} label={t("concerns.sendBack")} color="#f59e0b" onClick={() => openEscalate(r, "down")} />
       )}
-      {r.escalation_count > 0 && (
-        <ActionBtn icon={History} label={t("concerns.history")} onClick={() => setHistoryRow(r)} />
-      )}
+      {/* Always offered: the trail now opens with the moment the concern was
+          raised, so "created at 09:14 and never handed on" is an answer too —
+          and it is read-only, so every viewer who can see the row gets it. */}
+      <ActionBtn icon={History} label={t("concerns.history")} onClick={() => setHistoryRow(r)} />
       {r.can_delete && (
         <ActionBtn icon={Trash2} label={t("concerns.delete")} color="#ef4444" onClick={() => setConfirmDelete(r)} />
       )}
@@ -1800,8 +1846,17 @@ export default function Concerns() {
         );
       case "date":
         return (
-          <td key={key} className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}
+              title={r.created_at ? `${t("concerns.createdAt")}: ${fmtDateTime(r.created_at)}` : undefined}>
             {fmtDate(r.entry_date, lang)}
+            {/* The minute it was raised, under the filing day: "when was this
+                created?" is asked of every row that has been handed around,
+                and a tooltip is unreachable on the phone this runs on. */}
+            {r.created_at && (
+              <div className="text-[10px] tabular-nums mt-0.5" style={{ color: "var(--text-4)" }}>
+                {fmtTime(r.created_at)}
+              </div>
+            )}
           </td>
         );
       // Cell (the "Ячейка номер") + the leader currently assigned to it — the
@@ -1980,7 +2035,11 @@ export default function Concerns() {
                 <span className="font-mono text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>
                   {i + 1}.
                 </span>
-                <span className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>{fmtDate(r.entry_date, lang)}</span>
+                <span className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>
+                  {fmtDate(r.entry_date, lang)}
+                  {/* …and the minute it was raised, same as the table's date column. */}
+                  {r.created_at && <span className="tabular-nums">, {fmtTime(r.created_at)}</span>}
+                </span>
               </span>
               <span className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                 <StatusSelect
@@ -2812,7 +2871,16 @@ export default function Concerns() {
             {/* labelled facts — same order as the table columns */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-3 rounded-lg p-3"
                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-              <MobField label={t("concerns.colDate")}>{fmtDate(viewRow.entry_date, lang)}</MobField>
+              <MobField label={t("concerns.colDate")}>
+                {fmtDate(viewRow.entry_date, lang)}
+                {/* Raised at — the whole-life stamp, beside the filing day the
+                    deadline counts from. */}
+                {viewRow.created_at && (
+                  <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }}>
+                    {t("concerns.createdAt")}: {fmtDateTime(viewRow.created_at)}
+                  </div>
+                )}
+              </MobField>
               <MobField label={t("concerns.colCell")}>
                 {viewRow.cell_code ? <CellLink id={viewRow.cell_id}>{viewRow.cell_code}</CellLink> : "—"}
                 {viewRow.cell_leader_name && (
@@ -2881,8 +2949,11 @@ export default function Concerns() {
         </Modal>
       )}
 
-      {/* Escalation history modal — the trail lives here (not inline in the
-          table) so row heights stay uniform. */}
+      {/* The concern's whole life, oldest first: raised → every handover, with
+          the person on BOTH sides of it and how long the level it left held it
+          → resolved → where it sits now. It lives in its own modal (not inline
+          in the table) so row heights stay uniform, and it is read-only, so it
+          opens for every viewer who can see the row. */}
       {historyRow && (
         <Modal
           onClose={() => setHistoryRow(null)}
@@ -2898,35 +2969,118 @@ export default function Concerns() {
               <SkeletonBlock className="h-16 w-full" />
               <SkeletonBlock className="h-16 w-full" />
             </div>
-          ) : escHistory.length === 0 ? (
-            <div className="text-xs text-center py-6" style={{ color: "var(--text-4)" }}>
-              {t("concerns.historyEmpty")}
-            </div>
           ) : (
-            <div className="space-y-2">
-              {escHistory.map((e) => (
-                <div
-                  key={e.id}
-                  className="rounded-lg p-3 space-y-1.5"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
-                >
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <LevelChip level={e.from_level} label={levelLabel(e.from_level)} />
-                    <ArrowRight size={12} style={{ color: "var(--text-4)" }} />
-                    <LevelChip level={e.to_level} label={levelLabel(e.to_level)} />
-                    {e.target_name && (
-                      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{tl(e.target_name)}</span>
-                    )}
-                    <span className="ml-auto text-[10px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-                      {fmtDateTime(e.created_at)}
-                    </span>
+            <div>
+              {escHistory.map((e, i) => {
+                const meta = eventMeta(e);
+                const Icon = meta.icon;
+                // The rail stops at the last thing that actually happened —
+                // an open concern's "where it is now" node closes it instead.
+                const last = i === escHistory.length - 1 && historyRow.status === "done";
+                // A move is charged to the level it LEFT; a resolution to the
+                // level that solved it.
+                const spanLevel = e.kind === "move" ? e.from_level : e.to_level;
+                return (
+                  <div key={e.key} className="flex gap-2.5">
+                    <div className="flex flex-col items-center flex-shrink-0">
+                      <span className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                            style={{ background: `${meta.color}24`, color: meta.color }}>
+                        <Icon size={12} />
+                      </span>
+                      {!last && <span className="w-px flex-1 my-1" style={{ background: "var(--border)" }} />}
+                    </div>
+                    <div className="min-w-0 flex-1 pb-4">
+                      {/* WHEN — on every event, not just the moves: the moment
+                          a concern was raised is half of what a reader came
+                          here to find. */}
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs font-semibold" style={{ color: meta.color }}>{meta.title}</span>
+                        <span className="ml-auto text-[10px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+                          {fmtDateTime(e.created_at) || "—"}
+                        </span>
+                      </div>
+
+                      {/* TO WHOM — a move has both sides, a creation and a
+                          resolution only the one that held it. */}
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                        {e.kind === "move" && (
+                          <>
+                            <HandoverSide level={e.from_level} label={levelLabel(e.from_level)}
+                                          name={e.from_name ? shortOwner(e.from_name) : ""} />
+                            <ArrowRight size={12} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+                          </>
+                        )}
+                        <HandoverSide level={e.to_level} label={levelLabel(e.to_level)}
+                                      name={e.target_name ? shortOwner(e.target_name) : ""} />
+                      </div>
+
+                      {/* Why the holder could not solve it — mandatory on every move. */}
+                      {e.reason && (
+                        <div className="text-xs mt-1.5 whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
+                          {tl(e.reason)}
+                        </div>
+                      )}
+                      {e.solution && (
+                        <div className="text-xs mt-1.5 whitespace-pre-wrap break-words" style={{ color: "var(--text-2)" }}>
+                          <span className="font-semibold" style={{ color: STATUS_COLOR.done }}>
+                            {t("concerns.fieldSolution")}:{" "}
+                          </span>
+                          {tl(e.solution)}
+                        </div>
+                      )}
+
+                      {/* Who pressed the button, and how long the level it left
+                          actually held it. */}
+                      <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mt-1.5 text-[10px]"
+                           style={{ color: "var(--text-3)" }}>
+                        {e.actor_name && (
+                          <span>
+                            {t("concerns.actor")}: {shortOwner(e.actor_name)}
+                            {e.actor_role ? ` · ${roleLabel(e.actor_role)}` : ""}
+                          </span>
+                        )}
+                        {e.held_seconds != null && spanLevel && (
+                          <span className="tabular-nums">
+                            {heldAtText(spanLevel, Math.floor(e.held_seconds / 60))}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-xs" style={{ color: "var(--text-1)" }}>{tl(e.reason)}</div>
-                  {e.actor_name && (
-                    <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{tl(e.actor_name)}</div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
+
+              {/* Where the concern sits right now — a STATE, not an event, so
+                  it is drawn from the row rather than stored as history. */}
+              {historyRow.status !== "done" && (() => {
+                const lvl = historyRow.level || "supervisor";
+                const color = LEVEL_COLOR[lvl] || "var(--text-3)";
+                return (
+                  <div className="flex gap-2.5">
+                    <div className="flex flex-col items-center flex-shrink-0">
+                      <span className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                            style={{ background: `${color}24`, color }}>
+                        <Hourglass size={12} />
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs font-semibold" style={{ color }}>{t("concerns.evNow")}</span>
+                        <span className="ml-auto text-[10px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+                          {fmtDateTime(heldSince(historyRow)) || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                        <HandoverSide level={lvl} label={levelLabel(lvl)}
+                                      name={historyRow.responsible_name ? shortOwner(historyRow.responsible_name) : ""} />
+                      </div>
+                      <div className="mt-1.5 text-[10px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                        {heldAtText(lvl, resolutionMinutes(historyRow))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </Modal>

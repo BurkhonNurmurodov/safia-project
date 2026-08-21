@@ -24,6 +24,7 @@ or copy-paste its markup into a page.
 | Segmented toggle + page view-tabs (min/hrs, P·A·P−A, view/mode switch, theme, Production/Staff tabs) | `SegmentedToggle.jsx` | Recessed-track pill: a `bg-inner` track (`rounded-xl`, `p-[3px]` inset, subtle `border`, no dividers) holding segments — the selected one is a brand-gold (`--brand`) pill with a white label, the rest transparent with muted `text-3`. This is ALSO the page-level "view tabs" template (Production view switch, Staff Workers/Requests) — same component, don't hand-roll a padded tab group. Outer height stays `size="md"` (default, 38px = `Button` lg / toolbar baseline) or `"sm"` (30px = `Button` md) so it aligns in toolbars. `options` = `[value,label]` tuples or `{value,label,title}` objects (label may be a node/icon). **THE template for EVERY toggle on the platform — any set of 2+ mutually-exclusive options (mode / view / period / type / status / tab / shift / theme switch), current and future. Never hand-roll a button group or padded tab bar; extend this with a prop if it lacks something.** For option sets that overflow on phones use the `scrollable` prop — NOT your own `overflow-x-auto` wrapper: a bare wrapper hides the scrollbar without replacing the affordance and leaves the selected segment off-screen, at which point nothing looks selected and the user cannot tell where they are. `scrollable` scrolls the active segment into view and adds edge fades. `asTabs` adds tablist/tab roles, `aria-selected` and arrow-key navigation when the toggle switches VIEWS. |
 | Form label + control | `FormField.jsx` | Uppercase 11px label, red `*` when `required`. `hint` puts consequential copy ("this resets manual edits", "re-uploading replaces the day") UNDER the control at 11px/`--text-3` — never at `--text-4`, where the eye skips exactly the text that matters most. `error` attaches a validation message to the field that caused it instead of dumping one paragraph below every field. |
 | Text field that exists in all 4 languages | `LangTextInput.jsx` | Never stack one input per language. A `SegmentedToggle` of language tabs (uz · uz_cyrl · ru · en, **ru open by default**) over ONE input for the selected tab. Every language is optional; a blank tab shows the Russian text as its PLACEHOLDER (previewed, never saved) plus the `ui.langInput.ruFallback` hint, because Russian is what the UI falls back to. Tabs stay plain — no filled/empty markers. `placeholderFn(lang)` previews something computed (e.g. a transliteration) instead of the Russian text; `action` puts a per-tab button beside the input — use these to ADOPT the template rather than forking it into stacked inputs. |
+| Time of day (HH:MM) | `TimeField.jsx` | THE clock field. A native `<input type="time">` in the house control skin (`bg-inner`, border, `rounded-xl`, `px-3 py-2 text-sm`) plus a ghost ✕ that clears to `""`. **Blank means INHERIT or UNSET — never midnight**, so a blank field with an `inherit` string renders `ui.timeField.inherits` under it at 11px/`--text-3`: a blank native time input paints "--:--" and states nothing about the value actually in force, which is precisely the value the reader needs. `value`/`onChange` are plain "HH:MM" strings (the handler gets the string, not the event). Pairs of these follow the platform clock convention — Tashkent wall clock, `end <= start` ⇒ the window crosses midnight. Never hand-roll another `<input type="time">`; `TimeWheelPicker.jsx` stays the separate, window-BOUNDED picker (needs `lo`/`hi`, cannot express blank) for entering an event's clock inside a known range. |
 | Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
 | Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
 | Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. |
@@ -112,6 +113,47 @@ no correct way to render that.
 - Admin: `pages/admin/Factories.jsx` (`admin.factories.manage` capability) owns
   the register, tab order, the ONE global default tab, the «All» tab switch, and
   supervisor assignment.
+
+## Cell shift times (`/admin/upload?tab=shifttimes`)
+
+From **2026-08-21** a cell carries the clock it actually works —
+`cells.shift_start` / `cells.shift_end`, two nullable `VARCHAR(5)` "HH:MM"
+columns, edited on the admin «Smena vaqtlari» destination
+(`pages/admin/ShiftTimes.jsx`, capability `admin.cell_hours.manage`).
+
+- **It is a REGISTER and nothing more.** No KPI, no score, no validation reads
+  it: загрузка still divides by the flat 480/`pp_shift_min`, the idle-cell
+  ojidaniya pickers still accept any hour ("a bound guessed from a shift would
+  refuse honest data"), and the leader checklist still runs on its own five
+  per-shift constants. Wiring a consumer is a separate decision — **ask before
+  making these hours move a number**, because the moment one does, every cell
+  whose clock nobody has confirmed starts scoring against a placeholder.
+- **`services/cell_hours.py` is THE definition** — `defaults`, `resolve`,
+  `duration_min`, `crosses_midnight`. Duration is always DERIVED; there is no
+  minutes column, and a second place computing "how long is this cell's shift"
+  is how the two answers start disagreeing.
+- **Both-or-neither.** A cell has both clocks or neither; a half-set pair is
+  refused on write and reads as inherit. NULL = inherit the SHIFT default, and a
+  cell's shift is still its supervisor's — this adds a clock to a cell, never a
+  second shift dimension (`Manager.shift` stays the only one).
+- **The defaults are two `AppSetting` rows** (`cell_hours_shift_1` /
+  `cell_hours_shift_2`, value `"HH:MM-HH:MM"`), seeded once with a **placeholder**
+  08:00–20:00 / 20:00–08:00 that an admin is expected to confirm. Editing one
+  silently re-times every inheriting cell, so the Save confirms and names that
+  count. `startup.add_cell_shift_times` only ever inserts a MISSING key — it
+  must never overwrite a value an admin set.
+- **Clock convention, unchanged from everywhere else**: Tashkent wall clock,
+  `end <= start` ⇒ crosses midnight (+1440), `start == end` refused (the
+  `idle_cell` rule). The client's duration helper is a deliberate twin of
+  `duration_min` and must stay one.
+- Bulk editing is the **SELECTION**, not the filter: checkbox rows with
+  «select all visible» (the `Factories.jsx` model), a sticky bulk bar naming the
+  count, and a primary button that carries the count into its own label. The
+  ltasks "the filtered set IS the scope" model is deliberately NOT used here —
+  filters narrow to a brigadir's cells, but the two exceptions in that list are
+  exactly what an operator needs to drop.
+- Read surfaces: this tab and `/cells/:id` (the Ownership card's «Ish vaqti»
+  row, fed by `hours` on `GET /api/profiles/cells/{id}/details`).
 
 ## Attendance charts read the ORIGINAL brigadir
 
@@ -718,6 +760,44 @@ unit). Absent row = off, so nothing moves until an admin switches it.
   nothing left that can be done to it.
 
 Related memory: `leader-per-task-submission`.
+
+## An UNFINISHED bot day is visible («Tozalash» → «Yakunlanmagan»)
+
+Every read surface on the platform serves a CLOSED bot day — the `/leaders`
+register (`leader_bot.closed_days`), the score, the day report, the AI queue,
+and the admin «Tozalash» tab itself until **2026-08-21**. So a checklist a
+leader filled but never submitted was visible **nowhere**, and read exactly like
+a leader who filed nothing at all.
+
+That state is reachable without anybody doing anything wrong. `lt:cconf` refuses
+to close a day while one enabled task has no answer, and a **camera** task
+writes its answer only when the roll reaches `min_media` — so a leader one shot
+short of a three-photo task is holding a day that nothing will accept and
+nothing will show. The day then waits for `_lt_autoclose`, which runs only when
+**that leader** next opens `/tasks`; for shift 1 `expired_through` is yesterday,
+so nothing can auto-close today's day at all.
+
+- `GET /admin/leader-tasks/submissions` now returns open days too, each flagged
+  `open` and carrying what it is WAITING for: `enabled` / `answered`,
+  `missing` (the unanswered enabled task ids), `tasks_closed`, `per_task`,
+  `expired` (the same `date <= expired_through(shift)` predicate `_lt_autoclose`
+  uses) and — the one that matters — **`pending_media`**, the shots already on
+  the server for a task with no answer. Non-zero there is the difference
+  between "they never filed" and "they filed and the platform is sitting on it".
+- **Deletion stays closed-only and does not depend on what the list shows.**
+  `delete_submissions` re-filters `closed_at IS NOT NULL` itself, so an open day
+  can never be selected, armed or dropped — pulling the table out from under a
+  running `/tasks` flow would strand the leader in it.
+- The tab is now TWO views behind a `SegmentedToggle` (`components/leaders/BotDataClear.jsx`):
+  «Yuborilgan» is the delete tool, unchanged; «Yakunlanmagan» deletes nothing and
+  carries no delete controls at all — a greyed-out «O'chirish» reads as "not
+  yet", not as "never". The two registers are split BEFORE the page scope is
+  applied, so the `ScopeNotice` count describes the view being read.
+- Reading it: `pending_media > 0` ⇒ the leader shot proofs and the roll is short
+  of `min_media`; `answered < enabled` with no pending photos ⇒ tasks genuinely
+  unanswered; `answered == enabled` and still open ⇒ they simply never pressed
+  «KUNNI YOPISH». `expired` ⇒ it will close (and go to the AI) the moment that
+  leader reopens the bot.
 
 ## Browser login (the second door)
 

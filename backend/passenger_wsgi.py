@@ -58,13 +58,14 @@ try:
         backfill_leader_page_access, add_profiles_columns, migrate_cells_table,
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
+        add_cell_shift_times,
         migrate_factories,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
         migrate_attendance_batches, seed_att_included_from_last_day,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
-        add_concern_level_since,
+        add_concern_level_since, add_concern_escalation_names,
         add_concern_shift_manager, add_concern_category,
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
@@ -115,6 +116,7 @@ try:
     migrate_cells_leaders_columns()
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
+    add_cell_shift_times()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()
     migrate_attendance_batches()
@@ -123,6 +125,7 @@ try:
     add_concern_done_at()
     add_concern_level_columns()
     add_concern_level_since()
+    add_concern_escalation_names()
     add_concern_shift_manager()
     add_concern_category()
     add_concern_owner_columns()

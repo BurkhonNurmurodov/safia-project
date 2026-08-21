@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -55,13 +55,14 @@ async def lifespan(app: FastAPI):
         backfill_leader_page_access, add_profiles_columns, migrate_cells_table,
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
+        add_cell_shift_times,
         migrate_factories,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
         migrate_attendance_batches, seed_att_included_from_last_day,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
-        add_concern_level_since,
+        add_concern_level_since, add_concern_escalation_names,
         add_concern_shift_manager, add_concern_category,
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
@@ -108,6 +109,7 @@ async def lifespan(app: FastAPI):
     migrate_cells_leaders_columns()
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
+    add_cell_shift_times()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()
     migrate_attendance_batches()
@@ -116,6 +118,7 @@ async def lifespan(app: FastAPI):
     add_concern_done_at()
     add_concern_level_columns()
     add_concern_level_since()
+    add_concern_escalation_names()
     add_concern_shift_manager()
     add_concern_category()
     add_concern_owner_columns()
@@ -453,6 +456,10 @@ app.include_router(zagruzka_cell.router)
 # ARC service-ticket register — self-gates via require_page("arc")
 # (admin-only by default), so no admin guard here.
 app.include_router(arc.router)
+# Cells' working start/end clock («Smena vaqtlari» admin tab) — every route,
+# reads included, self-gates via require_cap(CAP_CELL_HOURS_MANAGE), so this is
+# grantable and needs no _admin_guard.
+app.include_router(cell_hours.router)
 
 
 @app.get("/health")

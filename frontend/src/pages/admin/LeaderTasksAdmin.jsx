@@ -13,6 +13,7 @@ import Toast, { useToast } from "../../components/ui/Toast";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
+import TimeField from "../../components/ui/TimeField";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import { FilterPanel, OptsFilter } from "../../components/ui/ColumnFilter";
 import { SectionHead } from "../../components/ui/DataTable";
@@ -62,15 +63,6 @@ function MediaDots({ n }) {
 const inputCls = "w-full px-3 py-2 rounded-xl text-sm outline-none";
 const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" };
 
-/**
- * A native time input WITH a way back to blank. Blank is a real value on these
- * fields — it means "inherit the level above" — but no engine gives it an
- * affordance: Chrome wants a Delete on the focused segment, and Telegram's iOS
- * wheel picker has no clear at all, so on the primary device a time set once
- * could never be unset. The ✕ shows only when the field holds a value, and it
- * sits OUTSIDE the input, clear of whatever picker indicator the engine draws
- * inside the right edge.
- */
 /** A cell whose proofs are SHOT in the app rather than uploaded. The matrix is
  *  read as a grid of weights, so the one thing that changes where the leader
  *  answers has to be visible without opening anything. */
@@ -79,23 +71,6 @@ function CamMark() {
     <Camera size={9} strokeWidth={2.6}
       className="absolute left-1 top-1 pointer-events-none"
       style={{ color: "var(--brand)" }} />
-  );
-}
-
-
-function TimeInput({ value, placeholder, onChange, clearTitle }) {
-  return (
-    <div className="flex items-center gap-1 flex-1 min-w-0">
-      <input type="time" value={value || ""} placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className={inputCls} style={inputStyle} />
-      {value ? (
-        <Button variant="ghost" tint size="lg" className="shrink-0"
-          style={{ paddingInline: 8 }} icon={<X size={14} />}
-          title={clearTitle} aria-label={clearTitle}
-          onClick={() => onChange("")} />
-      ) : null}
-    </div>
   );
 }
 
@@ -781,18 +756,19 @@ export default function LeaderTasksAdmin() {
   // When a proof photo for this task may have been taken. TWO inputs, both
   // optional: an empty end inherits the level above, and the placeholder shows
   // exactly what that end would then be — the same value the reviewer uses and
-  // the bot prints to the leader. Both go through the local TimeInput (there is
-  // no time template in components/ui; the date rule covers date pickers),
-  // styled like every other field in these modals so the row keeps the modal's
-  // baseline — and each end carries its own ✕ back to blank.
+  // the bot prints to the leader. Both go through the shared ui/TimeField, so
+  // the row keeps the modal's baseline and each end carries its own ✕ back to
+  // blank. `inherit` is deliberately NOT passed: the inherited value here is a
+  // PAIR, spelled out once under both ends below — a per-field caption would
+  // say the same thing twice and imply the two ends inherit separately.
   const windowField = (value, onChange, phFrom, phTo, mark) => (
     <FormField label={withMark(t("admin.ltasks.window"), mark)} hint={t("admin.ltasks.windowHint")}>
       <div className="flex items-center gap-2">
-        <TimeInput value={value?.win_from} placeholder={phFrom}
-          onChange={(v) => onChange({ win_from: v })} clearTitle={t("admin.ltasks.timeClear")} />
+        <TimeField className="flex-1" value={value?.win_from} placeholder={phFrom}
+          inherit={null} onChange={(v) => onChange({ win_from: v })} />
         <span className="text-xs shrink-0" style={{ color: "var(--text-3)" }}>—</span>
-        <TimeInput value={value?.win_to} placeholder={phTo}
-          onChange={(v) => onChange({ win_to: v })} clearTitle={t("admin.ltasks.timeClear")} />
+        <TimeField className="flex-1" value={value?.win_to} placeholder={phTo}
+          inherit={null} onChange={(v) => onChange({ win_to: v })} />
       </div>
       {/* A time input renders "--:--" when empty, which reads as broken rather
           than as inherited, so the inherited pair is spelled out under it. */}
@@ -805,12 +781,15 @@ export default function LeaderTasksAdmin() {
   // By when the task should be submitted — ONE clock, informational: it is
   // what the /leaders «Vazifalar» tab tells the leader, nothing scores against
   // it. Blank inherits the level above; blank everywhere and the tab prints
-  // the day's filing deadline instead, which the inherit line says.
+  // the day's filing deadline instead, which the inherit line says. That line
+  // stays local (TimeField's `inherit` is null) because it has TWO branches and
+  // the template can only express one: with nothing inherited it names the
+  // day's filing deadline, which is not "inherit {v}" at all.
   const deadlineField = (value, onChange, ph, mark) => (
     <FormField label={withMark(t("admin.ltasks.deadline"), mark)} hint={t("admin.ltasks.deadlineHint")}>
       <div className="flex items-center gap-2">
-        <TimeInput value={value?.deadline} placeholder={ph}
-          onChange={(v) => onChange({ deadline: v })} clearTitle={t("admin.ltasks.timeClear")} />
+        <TimeField className="flex-1" value={value?.deadline} placeholder={ph}
+          inherit={null} onChange={(v) => onChange({ deadline: v })} />
       </div>
       <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
         {ph ? t("admin.ltasks.deadlineInherit").replace("{t}", ph) : t("admin.ltasks.deadlineDay")}

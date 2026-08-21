@@ -72,6 +72,7 @@ export const CAP = {
   USERS_MANAGE:      "admin.users.manage",
   PROFILES_MANAGE:   "admin.profiles.manage",
   CELLS_MANAGE:      "admin.cells.manage",
+  CELL_HOURS_MANAGE: "admin.cell_hours.manage",
 };
 
 // Page-view grants are generated per page rather than listed, exactly as on the

@@ -52,6 +52,7 @@ from app.identity import (
     profile_holders, profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
+from app.services import cell_hours
 from app.models import (
     Admin, Cell, CellAttendance, CellOjidaniya, CellPerenaladka, Factory,
     LeaderConcern, LeaderTask, Manager, PPDaily, ProfilePhoto, RoleProfile,
@@ -1126,6 +1127,14 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
         prod = {"days": prod_days or 0,
                 "last": prod_last.isoformat() if prod_last else None}
 
+    # Working hours — the «Smena vaqtlari» register's read side. Resolved
+    # against the cell's SUPERVISOR's shift, because a cell inherits its plant
+    # and its shift from the unit running it and never carries one of its own.
+    # Displayed only: nothing on this page or anywhere else computes with them.
+    eff_start, eff_end, hours_source = cell_hours.resolve(
+        c.shift_start, c.shift_end, mgr.shift if mgr else None,
+        cell_hours.defaults(db))
+
     return {
         "cell": {
             "id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
@@ -1136,6 +1145,13 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
             "manager_id": c.manager_id, "leader_id": c.leader_id,
             "in_load": bool(c.in_load),
             "att_included": c.att_included,  # None = derived from supervisor
+        },
+        "hours": {
+            "start": eff_start, "end": eff_end,
+            "own_start": cell_hours.hhmm(c.shift_start),
+            "own_end": cell_hours.hhmm(c.shift_end),
+            "minutes": cell_hours.duration_min(eff_start, eff_end),
+            "source": hours_source,
         },
         "supervisor": ({"id": mgr.id, "name": mgr.name, "shift": mgr.shift,
                         "archived": bool(mgr.archived)} if mgr else None),
