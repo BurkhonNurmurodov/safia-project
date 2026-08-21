@@ -121,6 +121,7 @@ function SingleGrid({
   managerIds, commentedCells, isoOf, approvedCells,
   avgMode, onCycleAvg, cellTitle,
   rowLabel = "Brigadir", labelWidth = LABEL_W,
+  pinnedRow = null,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -432,6 +433,118 @@ function SingleGrid({
             );
           })}
         </tbody>
+
+        {/* ── The unit's own row ──────────────────────────────────────────
+            The supervisor the rows belong to, computed from the unit's summed
+            inputs rather than averaged out of the grid. It sits in the footer,
+            visually separated, and names itself: two percentages for one day
+            are only readable when each says which question it answers. */}
+        {pinnedRow?.data && (
+          <tfoot>
+            <tr>
+              <td
+                title={pinnedRow.hint || undefined}
+                style={{
+                  ...stickyNameBase,
+                  background:    "var(--bg-inner)",
+                  borderTop:     "2px solid var(--border-md)",
+                  textAlign:     "left",
+                  paddingLeft:   12,
+                  paddingRight:  8,
+                  fontSize:      12,
+                  fontWeight:    700,
+                  color:         "var(--text-1)",
+                  whiteSpace:    "nowrap",
+                  overflow:      "hidden",
+                  textOverflow:  "ellipsis",
+                  width:         labelWidth,
+                  maxWidth:      labelWidth,
+                  verticalAlign: "middle",
+                  height:        34,
+                }}
+              >
+                {tl(pinnedRow.label)}
+                {pinnedRow.note && (
+                  <div style={{
+                    fontSize: 10, fontWeight: 500, color: "var(--text-3)",
+                    overflow: "hidden", textOverflow: "ellipsis", marginTop: -1,
+                  }}>
+                    {pinnedRow.note}
+                  </div>
+                )}
+              </td>
+
+              {dates.map(d => {
+                const cell = pinnedRow.data[d];
+                const val  = mode === "planned" ? cell?.baseline_util : cell?.net_util;
+                const v    = val != null ? Math.round(val * 100) : -1;
+                const color = getSegmentColor(v, segs);
+                const colH  = noSel && hoveredCol === d;
+                return (
+                  <td
+                    key={`unit-${d}`}
+                    onMouseEnter={() => { if (noSel) setHoveredCol(d); }}
+                    onMouseLeave={() => { if (noSel) setHoveredCol(null); }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (selection) clearSel();
+                      else if (!color.noData) onCellClick(pinnedRow.label, d, v, cell);
+                    }}
+                    title={cellTitle?.(cell, pinnedRow.label, d)}
+                    style={{
+                      ...buildCellStyle({
+                        color, grayed: false,
+                        rowHovered: false, colHovered: colH, cellHovered: false,
+                        width: cellW,
+                      }),
+                      borderTop: "2px solid var(--border-md)",
+                    }}
+                  >
+                    <div style={{ position: "relative", display: "inline-block", lineHeight: 1 }}>
+                      {v < 0 ? <span style={{ opacity: 0.25 }}>—</span> : `${v}%`}
+                    </div>
+                  </td>
+                );
+              })}
+
+              {pads.map((_, i) => (
+                <td key={`unit-pad-${i}`} style={{
+                  width: cellW, minWidth: cellW, height: 34,
+                  border: "1px solid var(--border)",
+                  borderTop: "2px solid var(--border-md)",
+                  background: "var(--bg-card)",
+                }} />
+              ))}
+
+              {!isMobile && (() => {
+                // The same statistic the rows use, over the unit's own values —
+                // so the pinned column reads one way down the whole table.
+                const stat = rowStat(pinnedRow.label, mode, { [pinnedRow.label]: pinnedRow.data },
+                                     dates, avgMode, null);
+                const statColor = getSegmentColor(stat, segs);
+                return (
+                  <td style={{
+                    ...buildCellStyle({
+                      color: statColor, grayed: false,
+                      rowHovered: false, colHovered: false, cellHovered: false,
+                      width: AVG_W,
+                    }),
+                    ...stickyAvg,
+                    zIndex:     4,
+                    minWidth:   AVG_W,
+                    background: statColor.noData ? "var(--bg-card)" : statColor.bg,
+                    borderLeft: "2px solid var(--border-md)",
+                    borderTop:  "2px solid var(--border-md)",
+                    fontWeight: 700,
+                    cursor:     "default",
+                  }}>
+                    {stat !== null ? `${stat}%` : <span style={{ opacity: 0.25 }}>—</span>}
+                  </td>
+                );
+              })()}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );
@@ -458,6 +571,11 @@ export default function HeatmapChart({
   // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
   rowLabel = "Brigadir",
   labelWidth = LABEL_W,
+  // The UNIT the rows roll up into, as a footer row: `{ label, note, data }`,
+  // `data` keyed by date exactly like one row of `data`. It is measured from
+  // the unit's own inputs, never averaged out of the rows above — which is why
+  // it is a row of its own and carries a note saying what it is.
+  pinnedRow = null,
 }) {
   const { labelColor } = useChartTheme();
   const { t } = useLang();
@@ -492,7 +610,7 @@ export default function HeatmapChart({
     segs, selection, toggleSel, clearSel,
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
     avgMode, onCycleAvg: cycleAvg, cellTitle,
-    rowLabel, labelWidth,
+    rowLabel, labelWidth, pinnedRow,
   };
 
   return (

@@ -170,6 +170,13 @@ export default function ComparisonTable({
   // (the per-cell загрузка) turn it on — there "how did the whole unit do on
   // 06.08?" is the question the grid is actually asked.
   columnSummary = false,
+  // The UNIT the rows belong to, as its own footer row: `{ label, note, data }`
+  // where `data` is keyed by date exactly like one row of `data`. It is NOT a
+  // statistic over the rows above — it is measured, computed from the unit's
+  // own summed inputs — so it sits ABOVE the AVG row and carries its own note
+  // saying so. Two numbers for one day mean two different questions, and the
+  // reader has to be able to tell which is which without asking.
+  pinnedRow = null,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
@@ -363,6 +370,99 @@ export default function ComparisonTable({
             : (s.a !== null
                 ? <span style={{ fontSize: 11, fontWeight: 700, color: dColor.fg, whiteSpace: "nowrap" }}>{s.a}%</span>
                 : dash)}
+        </div>
+      </td>
+    );
+  }
+
+  // ── The unit's own row (optional) ────────────────────────────────────────────
+  // Read through the same calc factors as everything else, so switching a
+  // deduction off moves the unit row with the cells it sits under. Its values
+  // come from `pinnedRow.data`, never from the grid — that is the whole point:
+  // the unit is MEASURED from its own summed inputs, not averaged out of rows.
+  const unitVals = (() => {
+    if (!pinnedRow?.data || !dates.length) return null;
+    const per = dates.map(d => {
+      const cell = pinnedRow.data[d];
+      const p = cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
+      const aRaw = actualUtil(cell, factors);
+      const a = aRaw != null ? Math.round(aRaw * 100) : null;
+      return { p, a, d: (p !== null && a !== null) ? p - a : null, cell };
+    });
+    // The pinned summary follows `summaryMode` like every other row, so one
+    // header press moves the whole table to the same statistic.
+    let sum;
+    if (summaryMode === "avg") {
+      sum = { p: rowAvg(per.map(v => v.p)), a: rowAvg(per.map(v => v.a)), d: rowAvg(per.map(v => v.d)) };
+    } else {
+      const i = findExtremeIdx(per.map(v => v.d), per.map(v => v.p), summaryMode);
+      sum = i === null ? { p: null, a: null, d: null } : { p: per[i].p, a: per[i].a, d: per[i].d };
+    }
+    return { per, sum };
+  })();
+
+  // One unit cell — a data cell in every visible respect (same halves, same
+  // colours, same tap-for-the-formula), because it IS a measurement and not a
+  // summary. The A half opens the formula only: a roll-up has no (manager,
+  // date) of its own to hang a comment thread on.
+  function unitCell(v, d, key, extra = {}) {
+    const pColor = v.p !== null ? getColor(v.p, psegs) : { bg: "transparent", fg: "var(--text-4)" };
+    const aColor = v.d !== null ? getColor(v.d, dsegs) : { bg: "transparent", fg: "var(--text-4)" };
+    const dash = <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>;
+    const btn = (color) => ({
+      fontSize: 11, fontWeight: 700, color, whiteSpace: "nowrap",
+      background: "none", border: "none", padding: 0, cursor: d ? "pointer" : "default",
+    });
+    return (
+      <td key={key} colSpan={2} style={{
+        padding: 0, position: "relative",
+        border: "1px solid var(--border)",
+        height: 34, verticalAlign: "middle",
+        background: "var(--bg-card)",
+        ...extra,
+      }}>
+        <div style={{
+          position: "absolute", left: 0, top: 0, bottom: 0,
+          width: isDiff ? "0%" : "50%",
+          transition: `width ${DUR} ${EASE}`,
+          overflow: "hidden", background: pColor.bg,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          borderRight: "1px solid var(--border)", boxSizing: "border-box",
+        }}>
+          {v.p !== null
+            ? (d
+                ? <button
+                    onClick={() => setFormulaModal({
+                      title: `${t("zagruzka.planned")} (P) — ${shortDate(d)}`,
+                      value: `${v.p}%`,
+                      formula: `${pValueNumbers(v.cell) || "P = prod_plan ÷ (480 × headcount) × 100"}\n${t("fm.planOnlyNote")}`,
+                      inputs: pValueInputs(v.cell, t),
+                    })}
+                    style={btn(pColor.fg)}
+                  >{v.p}%</button>
+                : <span style={{ fontSize: 11, fontWeight: 700, color: pColor.fg }}>{v.p}%</span>)
+            : dash}
+        </div>
+        <div style={{
+          position: "absolute", right: 0, top: 0, bottom: 0,
+          width: isDiff ? "100%" : "50%",
+          transition: `width ${DUR} ${EASE}, background-color 250ms`,
+          overflow: "hidden", background: aColor.bg,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {(isDiff ? v.d : v.a) !== null
+            ? (d
+                ? <button
+                    onClick={() => setComment({
+                      managerName: pinnedRow.label, date: d, rawCell: v.cell,
+                      mode: "actual", formulaOnly: true,
+                    })}
+                    style={btn(aColor.fg)}
+                  >{isDiff ? `${v.d > 0 ? "+" : ""}${v.d}%` : `${v.a}%`}</button>
+                : <span style={{ fontSize: 11, fontWeight: 700, color: aColor.fg }}>
+                    {isDiff ? `${v.d > 0 ? "+" : ""}${v.d}%` : `${v.a}%`}
+                  </span>)
+            : dash}
         </div>
       </td>
     );
@@ -973,8 +1073,69 @@ export default function ComparisonTable({
               column, and driven by the same `summaryMode`: pressing the AVG
               header on the right cycles this row with it. The label is a second
               handle on that one control, not a second control. */}
-          {columnStats && (
+          {(unitVals || columnStats) && (
             <tfoot>
+              {/* The unit's own load — the row the cells above belong to,
+                  computed from the unit's summed inputs, not from them. It
+                  leads the footer because it is a measurement; the AVG row
+                  under it is a statistic over the grid, and the two answer
+                  different questions on the same day. */}
+              {unitVals && (
+              <tr>
+                <td
+                  title={pinnedRow.hint || undefined}
+                  style={{
+                    position: "sticky", left: 0, zIndex: 3,
+                    background: "var(--bg-inner)",
+                    borderRight: "2px solid var(--border-md)",
+                    borderTop: "2px solid var(--border-md)",
+                    textAlign: "left", paddingLeft: 12, paddingRight: 8,
+                    fontSize: 12, fontWeight: 700, color: "var(--text-1)",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    verticalAlign: "middle", height: 34,
+                    width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
+                  }}
+                >
+                  {tl(pinnedRow.label)}
+                  {pinnedRow.note && (
+                    <div style={{
+                      fontSize: 10, fontWeight: 500, color: "var(--text-3)",
+                      overflow: "hidden", textOverflow: "ellipsis", marginTop: -1,
+                    }}>
+                      {pinnedRow.note}
+                    </div>
+                  )}
+                </td>
+
+                {dates.map((d, i) => unitCell(
+                  unitVals.per[i],
+                  d,
+                  `unit-${d}`,
+                  {
+                    borderTop: "2px solid var(--border-md)",
+                    borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
+                  },
+                ))}
+
+                {pads.map((_, i) => (
+                  <td key={`unit-pad-${i}`} colSpan={2} style={{
+                    padding: 0, height: 34,
+                    border: "1px solid var(--border)",
+                    borderTop: "2px solid var(--border-md)",
+                    background: "var(--bg-card)",
+                  }} />
+                ))}
+
+                {!isMobile && unitCell(unitVals.sum, null, "unit-sum", {
+                  ...stickySum,
+                  zIndex: 4,
+                  borderLeft: "2px solid var(--border-md)",
+                  borderTop: "2px solid var(--border-md)",
+                })}
+              </tr>
+              )}
+
+              {columnStats && (
               <tr>
                 <td
                   onClick={() => setSummaryMode(m => SUMMARY_CYCLE[m])}
@@ -1024,6 +1185,7 @@ export default function ComparisonTable({
                   borderTop: "2px solid var(--border-md)",
                 })}
               </tr>
+              )}
             </tfoot>
           )}
         </table>
@@ -1051,7 +1213,7 @@ export default function ComparisonTable({
           rawCell={comment.rawCell}
           mode={comment.mode}
           onClose={() => setComment(null)}
-          formulaOnly={!allowComments}
+          formulaOnly={comment.formulaOnly ?? !allowComments}
           formulaCollapsible
         />
       )}

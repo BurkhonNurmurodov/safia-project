@@ -254,6 +254,23 @@ export default function ZagruzkaCell() {
   const unit = payload?.totals?.[inputDate];
   const hasUnit = !!unit && unit.official_hc != null;
 
+  // The same roll-up as a ROW on the two grids — the supervisor's own load
+  // across the whole period, beside the cells it was computed from. It is not
+  // the AVG row under it: that averages the percentages on screen, this runs
+  // the formula over the unit's summed трудоёмкость and headcount with the
+  // headcount-weighted ojidaniya (the new method). Dropped entirely when no
+  // day produced a number, so the grids never gain a row of dashes.
+  const unitRow = useMemo(() => {
+    const totals = payload?.totals;
+    if (!totals || !dates.some((d) => totals[d]?.net_util != null)) return null;
+    return {
+      label: payload?.manager?.name || t("zcell.unitRow"),
+      note: t("zcell.unitRowNote"),
+      hint: t("zcell.unitRowHint"),
+      data: totals,
+    };
+  }, [payload, dates, t]);
+
   function handleCellClick(name, d, _v, cell) {
     // No managerId: a cell has no comment thread, so this opens formula-only.
     setComment({ managerName: name, date: d, rawCell: cell, mode: heatmapMode });
@@ -319,10 +336,21 @@ export default function ZagruzkaCell() {
               onCalcFactorsChange={setCalcFactors}
               allowComments={false}
               columnSummary
+              pinnedRow={unitRow}
               rowLabel={t("zcell.colCell")}
               labelWidth={LABEL_W}
               onToggleFullscreen={() => setCompFullscreen(true)}
             />
+            {/* Says, in VISIBLE text, how the brigadir's row differs from the
+                AVG row directly under it. Telegram's WebView has no hover, so
+                the `hint` tooltip on the label does not exist on the phone —
+                the same reason the ojidaniya note under the inputs table is
+                printed rather than attached to a `title`. */}
+            {unitRow && (
+              <div className="text-[11px] mt-2 px-1" style={{ color: "var(--text-3)" }}>
+                {t("zcell.unitRowHint")}
+              </div>
+            )}
           </div>
 
           {/* Portaled to <body>: .page-enter's transform would otherwise become
@@ -345,7 +373,8 @@ export default function ZagruzkaCell() {
                   calcFactors={calcFactors}
                   onCalcFactorsChange={setCalcFactors}
                   allowComments={false}
-              columnSummary
+                  columnSummary
+                  pinnedRow={unitRow}
                   rowLabel={t("zcell.colCell")}
                   labelWidth={LABEL_W}
                   fullscreen
@@ -376,6 +405,7 @@ export default function ZagruzkaCell() {
               segments={segments}
               commentedCells={new Set()}
               approvedCells={null}
+              pinnedRow={unitRow}
               rowLabel={t("zcell.colCell")}
               labelWidth={LABEL_W}
               onCellClick={handleCellClick}
@@ -411,6 +441,7 @@ export default function ZagruzkaCell() {
                   segments={segments}
                   commentedCells={new Set()}
                   approvedCells={null}
+                  pinnedRow={unitRow}
                   rowLabel={t("zcell.colCell")}
                   labelWidth={LABEL_W}
                   onCellClick={handleCellClick}
