@@ -12,7 +12,6 @@ from jwt import PyJWTError as JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.capabilities import materialize_pending
 from app.config import settings
 from app.database import get_db
 from app.models import Admin, Language, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole
@@ -246,13 +245,6 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
     user.active_role_ref = active.id
     user.tg_name = tg_name or user.tg_name
     db.commit()
-
-    # A profile can be equipped with permissions before anybody claims it (see
-    # app/capabilities.materialize_pending). This is the funnel where a new
-    # holder first appears with a session, so it is where those waiting grants
-    # become real per-account rows — once, and only for an account that joined
-    # AFTER they were written.
-    materialize_pending(db, telegram_id)
 
     token = create_jwt(telegram_id, active.role, active.full_name, active.role_id, active.id)
     return {

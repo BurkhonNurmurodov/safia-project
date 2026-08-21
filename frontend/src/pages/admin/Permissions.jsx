@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   KeyRound, Check, Minus, Shield, ClipboardCheck, CalendarClock, UserCog, History,
-  LayoutGrid, Ban, Briefcase, Hourglass, Copy,
+  LayoutGrid, Ban, Briefcase, Copy,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -26,30 +26,31 @@ import { useAdminDirty } from "./AdminPanel";
 import CopyPermsModal from "./CopyPermsModal";
 
 /**
- * Per-ACCOUNT capabilities — the person-level half of the permission system.
+ * Individual permissions — the person-level half of the permission system.
  *
  * The Access tab answers "which PAGES may this ROLE open"; this answers "which
- * admin-only ACTIONS may this ONE Telegram account perform", so one supervisor
- * login can be made the factory's transfer handler without becoming an admin —
- * and without a co-holder of the same profile getting the power too.
+ * admin-only ACTIONS may this ONE target perform", so one unit can be made the
+ * factory's transfer handler without its people becoming admins.
  *
- * The picker is the shared CheckboxTree, same tree the Broadcast recipient
- * picker builds: role ▸ [shift [▸ supervisor]] ▸ profile ▸ Telegram user. A grant
- * belongs to the USER leaf, so the tree descends all the way to the individual
- * logins. Multi-select is the point: granting five people the same power is one
- * pass, and saving sends a DIFF so each keeps whatever else they already held.
+ * THE FIRST DECISION IS WHO THE TARGET IS, so it is the first control on the
+ * page: a switch above the tree, «Lavozimlar» or «Hisoblar».
  *
- * The PROFILE is a target too, listed first among its own accounts. Profiles
- * exist before anybody registers, so without it an unclaimed position was a dead
- * row wearing a "not registered" chip that an admin could do nothing about —
- * they had to wait for the person to appear and remember to come back. What
- * lands there reads differently, and the panel says so rather than relying on
- * anyone knowing:
- *   · a GRANT is pending — it waits for the next account to claim the profile,
- *     and deliberately does not touch anyone already holding it (equipping a
- *     filled position must never silently restore something that was revoked);
- *   · a DENY is permanent — every holder, now and future, because "this position
- *     does not see /staff" has to survive the person filling it changing.
+ *   · a LAVOZIM (profile / position) holds the permission itself. Whoever fills
+ *     the position wields it from the moment it is saved — all its current
+ *     holders, and everyone who holds it later — and an account that switches to
+ *     another profile leaves it behind, because nothing was ever written to that
+ *     login. This is the target for "whoever runs this unit approves its
+ *     documents", and it is the default: powers usually belong to the job.
+ *   · a HISOB (Telegram account) holds it personally, wherever it goes and
+ *     whatever it switches to. The exception, for when one login — not the
+ *     position — is the thing being trusted.
+ *
+ * The switch decides what the tree's leaves ARE, rather than mixing both kinds
+ * in one list: role ▸ [shift [▸ supervisor]] ▸ position, or the same descending
+ * one level further to the individual logins. Both come off the shared
+ * CheckboxTree builder the Broadcast recipient picker uses. Multi-select is the
+ * point: granting five units the same power is one pass, and saving sends a
+ * DIFF so each keeps whatever else it already held.
  *
  * The «Sahifalar» group is the same mechanism applied to PAGE ACCESS: one row
  * per page, so a page can be opened for ONE person without ticking their whole
@@ -70,6 +71,10 @@ import CopyPermsModal from "./CopyPermsModal";
  * the draft: the dialog writes on its own press (its own body is the review),
  * the server reads the source fresh, and a pending draft is named there and
  * excluded rather than silently travelling.
+ *
+ * A DENY reads the same way on both targets: permanent, never consumed. On a
+ * position it is the one that matters — "this job does not see /staff" has to
+ * survive the person filling it changing.
  *
  * Two deliberate omissions, enforced server-side too: this tab is itself never
  * grantable (handing out powers stays a real admin's job), and admin profiles
@@ -143,15 +148,23 @@ const ROW_INHERIT = "inherit";
 const ROW_GRANT   = "grant";
 const ROW_DENY    = "deny";
 
+// Which kind of target the tab is editing. Two namespaces, never mixed: a
+// profile key is "profile:<role>:<id>", an account key is a telegram id as a
+// string, and `isProfileTarget` tells them apart everywhere below.
+const AXIS_PROFILE = "profiles";
+const AXIS_USER    = "users";
+
 export default function Permissions() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
 
   const [search, setSearch]     = usePersistentState("perms_search", "");
-  // Leaf keys: a telegram id as a string, or "profile:<role>:<id>" for a
-  // PROFILE target. One flat list because the tree mixes them and an admin
-  // ticking a whole role means "everything under here".
+  // Which kind of target is being edited. Positions first: a permission usually
+  // belongs to the job, and the account axis is the deliberate exception.
+  const [axis, setAxis]         = usePersistentState("perms_axis", AXIS_PROFILE);
+  // Leaf keys of the CURRENT axis — a telegram id as a string, or
+  // "profile:<role>:<id>" for a position.
   const [selected, setSelected] = usePersistentState("perms_selected", []);
   // Explicit admin edits only: { capability: "own" | "all" | "deny" | null },
   // null = clear back to inherit. Anything untouched stays absent and is left
@@ -178,11 +191,13 @@ export default function Permissions() {
   const capabilities = data?.capabilities ?? [];
   const groups = data?.groups ?? [];
 
-  // role ▸ [shift [▸ supervisor]] ▸ profile (itself, then its accounts), straight
-  // off the shared Broadcast-picker builder so this reads identically. Every
-  // leaf carries a chip with the number of entries it already holds. `byKey` is
-  // the flat target lookup the matrix reads — one shape for both kinds of
-  // target, so nothing below has to branch on which it is.
+  const profileAxis = axis === AXIS_PROFILE;
+
+  // role ▸ [shift [▸ supervisor]] ▸ position, or the same descending one level
+  // further to the logins — straight off the shared Broadcast-picker builder so
+  // both read identically. Every leaf carries a chip with the number of entries
+  // it already holds. `byKey` covers BOTH kinds whatever the tree shows, so
+  // nothing below has to branch on which is selected.
   const { tree, byKey } = useMemo(() => {
     const blocks = data?.tree ?? [];
     const byKey = {};
@@ -205,18 +220,27 @@ export default function Permissions() {
       }
     }
     const chip = (n) => (entryCount(n) > 0 ? String(entryCount(n)) : undefined);
+    // On the positions axis the profile IS the leaf and its accounts are not
+    // listed at all: showing a login the current mode cannot write to is how an
+    // admin ticks a row and saves nothing they meant.
     const tree = buildRecipientGroups(
-      blocks, t, tl, t("admin.broadcast.notRegistered"), chip,
-      // The profile's own row. Labelled as the position rather than repeating
-      // the name that is already on the branch above it, so the two levels read
-      // as "this position" vs "this login" instead of the same name twice.
-      (p) => ({ label: t("admin.perms.profileTarget"), hint: chip(p) }),
+      blocks, t, tl, t("admin.broadcast.notRegistered"),
+      profileAxis ? undefined : chip,
+      profileAxis ? (p) => ({ only: true, hint: chip(p) }) : undefined,
     );
     return { tree, byKey };
-  }, [data, t, tl]);
+  }, [data, t, tl, profileAxis]);
 
   const allKeys = useMemo(() => collectLeafKeys(tree), [tree]);
-  const chosen = selected.map((k) => byKey[k]).filter(Boolean);
+  // Keys belonging to the axis on screen. `selected` is persisted across
+  // sessions and a deploy can change the default axis under it, so a stale key
+  // from the other namespace is filtered out rather than left to drive a panel
+  // whose tree shows nothing ticked.
+  const keys = useMemo(
+    () => selected.filter((k) => isProfileTarget(k) === profileAxis),
+    [selected, profileAxis],
+  );
+  const chosen = keys.map((k) => byKey[k]).filter(Boolean);
   const chosenProfiles = chosen.filter((c) => c.kind === "profile");
   const chosenUsers = chosen.filter((c) => c.kind === "user");
 
@@ -290,8 +314,20 @@ export default function Permissions() {
    * it had happened.
    */
   function requestSelection(next) {
-    if (dirty) { setPendingSel(next); return; }
+    if (dirty) { setPendingSel({ selected: next }); return; }
     setSelected(next);
+  }
+
+  /**
+   * Switching axis empties the selection: the two namespaces name different
+   * things, and carrying ticks across would leave the matrix editing targets
+   * the tree no longer shows. Same discard guard as any other selection change.
+   */
+  function requestAxis(next) {
+    if (next === axis) return;
+    if (dirty) { setPendingSel({ axis: next, selected: [] }); return; }
+    setAxis(next);
+    setSelected([]);
   }
 
   const grantCount = Object.values(draft).filter((v) => v != null && v !== ROW_DENY).length;
@@ -300,7 +336,7 @@ export default function Permissions() {
   const changeCount = grantCount + denyCount + revokeCount;
 
   async function save() {
-    if (!selected.length || !dirty) return;
+    if (!keys.length || !dirty) return;
     setSaving(true);
     try {
       const grants = Object.fromEntries(
@@ -308,8 +344,8 @@ export default function Permissions() {
       const denies = Object.entries(draft).filter(([, v]) => v === ROW_DENY).map(([k]) => k);
       const revokes = Object.entries(draft).filter(([, v]) => v == null).map(([k]) => k);
       await api.put("/admin/capabilities", {
-        keys:     selected.filter((k) => !isProfileTarget(k)).map(Number),
-        profiles: selected.filter(isProfileTarget).map(profileKeyOf),
+        keys:     keys.filter((k) => !isProfileTarget(k)).map(Number),
+        profiles: keys.filter(isProfileTarget).map(profileKeyOf),
         grants, denies, revokes,
       });
       qc.invalidateQueries({ queryKey: ["admin-capabilities"] });
@@ -319,7 +355,8 @@ export default function Permissions() {
       setDraft({});
       setConfirmSave(false);
       toast.success(
-        t("admin.perms.savedN").replace("{n}", changeCount).replace("{m}", selected.length),
+        t(profileAxis ? "admin.perms.savedNProfiles" : "admin.perms.savedN")
+          .replace("{n}", changeCount).replace("{m}", keys.length),
       );
     } catch (e) {
       // Was a borrowed generic word painted into the button for 3 seconds. On a
@@ -352,7 +389,8 @@ export default function Permissions() {
   const only = chosen.length === 1 ? chosen[0] : null;
   const headTitle = only
     ? only.name
-    : t("admin.perms.nSelected").replace("{n}", chosen.length);
+    : t(profileAxis ? "admin.perms.nSelectedProfiles" : "admin.perms.nSelected")
+        .replace("{n}", chosen.length);
   const headSub = only
     ? (only.kind === "profile"
         ? (only.holders
@@ -361,7 +399,7 @@ export default function Permissions() {
         : (only.posts && only.posts.length
             ? t("admin.perms.holds").replace("{names}", [...new Set(only.posts)].join(", "))
             : (only.username ? `@${only.username}` : "")))
-    : t("admin.perms.bulkHint");
+    : t(profileAxis ? "admin.perms.bulkHintProfiles" : "admin.perms.bulkHint");
 
   return (
     <div className="space-y-4">
@@ -467,23 +505,52 @@ export default function Permissions() {
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] items-start">
-          {/* User tree — role ▸ profile ▸ user, same template as the Broadcast picker */}
+          {/* Target tree — role ▸ [shift ▸ supervisor] ▸ position, descending one
+              level further to the logins on the accounts axis. Same template as the
+              Broadcast picker either way. */}
           <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead
-              icon={KeyRound}
-              title={t("admin.perms.peopleTitle")}
+              icon={profileAxis ? Briefcase : KeyRound}
+              title={t(profileAxis ? "admin.perms.profilesTitle" : "admin.perms.peopleTitle")}
               right={
                 <div className="flex items-center gap-1">
                   <span className="text-[11px] mr-1" style={{ color: "var(--text-4)" }}>
-                    {selected.length}/{allKeys.length}
+                    {keys.length}/{allKeys.length}
                   </span>
-                  <Button variant="ghost" size="sm" disabled={!selected.length}
+                  <Button variant="ghost" size="sm" disabled={!keys.length}
                           onClick={() => requestSelection([])}>
                     {t("admin.broadcast.clearAll")}
                   </Button>
                 </div>
               }
             />
+            {/* WHO the permission is written to — the first decision, so the
+                first control, above the tree it changes. Two targets that look
+                identical on the matrix below and mean entirely different things
+                once somebody changes job, which is why the line under it says
+                what each one does rather than trusting two nouns to carry it. */}
+            <div className="px-3 pt-3 pb-2.5 space-y-1.5"
+                 style={{ borderBottom: "1px solid var(--border)" }}>
+              <SegmentedToggle
+                fill
+                ariaLabel={t("admin.perms.axisLabel")}
+                value={axis}
+                onChange={requestAxis}
+                options={[
+                  { value: AXIS_PROFILE, label: (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Briefcase size={13} /> {t("admin.perms.axis.profiles")}
+                      </span>) },
+                  { value: AXIS_USER, label: (
+                      <span className="inline-flex items-center gap-1.5">
+                        <UserCog size={13} /> {t("admin.perms.axis.users")}
+                      </span>) },
+                ]}
+              />
+              <p className="text-[11px] leading-snug" style={{ color: "var(--text-4)" }}>
+                {t(profileAxis ? "admin.perms.axisHint.profiles" : "admin.perms.axisHint.users")}
+              </p>
+            </div>
             <div className="px-2 py-2 overflow-y-auto" style={{ maxHeight: 460 }}>
               {isLoading ? (
                 <div className="space-y-2 px-2 py-1">
@@ -492,10 +559,10 @@ export default function Permissions() {
               ) : (
                 <CheckboxTree
                   groups={tree}
-                  selected={selected}
+                  selected={keys}
                   onChange={requestSelection}
                   filter={search}
-                  emptyText={t("admin.perms.noPeople")}
+                  emptyText={t(profileAxis ? "admin.perms.noProfiles" : "admin.perms.noPeople")}
                 />
               )}
             </div>
@@ -505,8 +572,8 @@ export default function Permissions() {
           <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             {!chosen.length ? (
               <EmptyState
-                title={t("admin.perms.pickTitle")}
-                message={t("admin.perms.pickHint")}
+                title={t(profileAxis ? "admin.perms.pickTitleProfile" : "admin.perms.pickTitle")}
+                message={t(profileAxis ? "admin.perms.pickHintProfile" : "admin.perms.pickHint")}
                 showUploadLink={false}
                 height="h-64"
               />
@@ -543,21 +610,28 @@ export default function Permissions() {
                     </div>
                   }
                 />
-                {/* What a save will MEAN here, said before it is made rather than
-                    discovered afterwards: on a position, a grant waits for the
-                    next holder while a block binds every holder. Two sentences
-                    that no amount of control design could carry on its own. */}
-                {chosenProfiles.length > 0 && (
+                {/* WHO a save will reach, said before it is made rather than
+                    discovered afterwards. The matrix below is identical on both
+                    axes, so without this line the one fact that distinguishes
+                    them — whether the power stays with the job or leaves with
+                    the person — is nowhere on the screen doing the writing. */}
+                {(chosenProfiles.length > 0 || chosenUsers.length > 0) && (
                   <div
                     className="mx-4 mt-4 rounded-xl px-3 py-2.5 flex items-start gap-2.5"
-                    style={{ background: "#f9731714", border: "1px solid #f9731733" }}
+                    style={chosenProfiles.length
+                      ? { background: "#C8973F14", border: "1px solid #C8973F33" }
+                      : { background: "#a855f714", border: "1px solid #a855f733" }}
                   >
-                    <Hourglass size={14} className="flex-shrink-0 mt-0.5" style={{ color: "#f97316" }} />
+                    {chosenProfiles.length ? (
+                      <Briefcase size={14} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand)" }} />
+                    ) : (
+                      <UserCog size={14} className="flex-shrink-0 mt-0.5" style={{ color: "#a855f7" }} />
+                    )}
                     <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-2)" }}>
-                      {t(chosenUsers.length
-                        ? "admin.perms.mixedTargetsHint"
-                        : "admin.perms.profileTargetHint")
-                        .replace("{n}", chosenProfiles.length)}
+                      {t(chosenProfiles.length
+                        ? "admin.perms.profileTargetHint"
+                        : "admin.perms.userTargetHint")
+                        .replace("{n}", chosenProfiles.length || chosenUsers.length)}
                     </p>
                   </div>
                 )}
@@ -684,7 +758,12 @@ export default function Permissions() {
         message={t("admin.perms.discardMsg").replace("{n}", changeCount)}
         confirmLabel={t("admin.unsavedDiscard")}
         onCancel={() => setPendingSel(null)}
-        onConfirm={() => { setSelected(pendingSel); setDraft({}); setPendingSel(null); }}
+        onConfirm={() => {
+          if (pendingSel.axis) setAxis(pendingSel.axis);
+          setSelected(pendingSel.selected);
+          setDraft({});
+          setPendingSel(null);
+        }}
       />
 
       {/* The backend DMs every admin whenever a granted power is USED, yet the
@@ -701,9 +780,9 @@ export default function Permissions() {
         message={
           <>
             <p className="mb-2">
-              {t("admin.perms.confirmMsg")
+              {t(profileAxis ? "admin.perms.confirmMsgProfiles" : "admin.perms.confirmMsg")
                 .replace("{n}", grantCount + denyCount)
-                .replace("{m}", selected.length)}
+                .replace("{m}", keys.length)}
             </p>
             <ul className="space-y-0.5">
               {Object.entries(draft)

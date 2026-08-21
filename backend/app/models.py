@@ -2234,35 +2234,33 @@ class ProfileCapability(Base):
 
 
 class ProfilePermission(Base):
-    """One permission entry attached to a PROFILE instead of to a login.
+    """One permission entry attached to a PROFILE — the POSITION, not a login.
 
-    :class:`UserCapability` answers "what may this Telegram ACCOUNT do". This
-    answers the two questions an account-keyed table structurally cannot:
+    :class:`UserCapability` answers "what may this Telegram ACCOUNT do"; this
+    answers "what may WHOEVER RUNS THIS UNIT do". Both are read live on every
+    request (``capabilities.caller_caps``), and the admin Permissions tab picks
+    between them with a switch above the tree.
 
-      * **mode="grant" — a PENDING grant.** What the NEXT account to claim this
-        profile starts with. A profile exists before anybody registers (see
-        `pre-created profiles`), so an admin can equip a position in advance
-        instead of waiting for the person to appear and then remembering to go
-        back. Never consulted by a guard: it is COPIED into a real
-        :class:`UserCapability` row when a future holder first signs in, and the
-        row is consumed. Accounts that already held the profile when the entry
-        was written are deliberately untouched — the pending entry is about who
-        comes next, and an admin editing a position's defaults must never
-        silently re-open something a current holder had revoked.
+      * **mode="grant".** Every account holding the profile wields it from the
+        moment it is saved — including accounts that already held it — and an
+        account that switches to another profile leaves it behind, because
+        nothing is ever copied onto the login. That is the point: the power
+        belongs to the job. It also equips a position NOBODY has claimed yet
+        (profiles exist before their people register, see `pre-created
+        profiles`), with no second step when the person finally appears.
 
-      * **mode="deny" — a PERMANENT page block.** The one subtractive entry in
-        the whole permission system: it CLOSES a page the profile's role opens
-        on the Access matrix, for every account holding the profile, now and
-        forever after. Never copied, never consumed — "this position does not
-        see /staff" has to stay true when the person filling it changes. Only
-        the ``page.view.*`` family may be denied; role-native ACTIONS stay
-        purely additive, so no hardcoded authority check has to consult a deny
-        list.
+      * **mode="deny".** The one subtractive entry in the whole permission
+        system: it CLOSES a page the profile's role opens on the Access matrix,
+        for every account holding the profile. Only the ``page.view.*`` family
+        may be denied; role-native ACTIONS stay purely additive, so no hardcoded
+        authority check has to consult a deny list.
 
-    Resolution, most specific first (mirrored in ``capabilities.page_allowed``):
-    the account's own entry decides if it has one, else a profile deny closes
-    the page, else the role × page matrix. An account-level grant is therefore
-    the escape hatch from a profile deny for exactly one login.
+    Resolution (``capabilities.caller_caps`` / ``caller_denied_pages``): grants
+    union, with the account's own scope winning where both carry a capability;
+    for the subtractive half, the account entry decides if it has one, else a
+    profile deny closes the page, else the role × page matrix. An account-level
+    grant is therefore the escape hatch from a profile deny for exactly one
+    login.
     """
     __tablename__ = "profile_permissions"
 

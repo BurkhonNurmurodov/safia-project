@@ -712,18 +712,16 @@ def admin_update_page_access(
 def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     """The catalog plus every entry, as a role ▸ profile ▸ user tree.
 
-    Capabilities are granted per ACCOUNT, so the picker descends past the
-    profile to the individual logins that hold it — the same tree the Broadcast
-    recipient picker builds. Admin profiles are omitted; those accounts already
-    hold the whole catalog.
+    ONE tree serves both targets and the tab chooses which leaves it shows.
+    Profiles carry their own entries under ``perms`` (the POSITION's powers,
+    held by whoever fills it and left behind when they switch away); each
+    profile's accounts carry theirs under ``caps`` (handed to one login). It is
+    the same tree the Broadcast recipient picker builds. Admin profiles are
+    omitted; those accounts already hold the whole catalog.
 
-    Each profile ALSO carries its own entries under ``perms``, because a profile
-    is a target in its own right: it exists before anyone registers, so a
-    position can be equipped (a PENDING grant, inherited by the next account to
-    claim it) or have a page closed (a PERMANENT deny binding every holder)
-    while `users` is still empty. That is the case the old per-account-only tree
-    could not express at all — an unclaimed profile was a dead row with a "not
-    registered" chip and nothing an admin could do about it."""
+    A profile is listed whether or not anybody has claimed it — positions exist
+    before their people register, and equipping one in advance needs no second
+    step when the person finally appears."""
     from app.routers.broadcast import _profile_holders, _stored_names
 
     grants: dict[int, dict[str, str]] = {}
@@ -813,10 +811,11 @@ def admin_set_capabilities(
     is a harmless no-op (they already hold everything via the role check), so no
     special rejection is needed here.
 
-    The same three directions apply to both kinds of target, but they land
-    differently and the tab says so: on an ACCOUNT a grant takes effect on that
-    login's next request, while on a PROFILE it waits for the next account to
-    claim it. A deny is immediate either way."""
+    The same three directions apply to both kinds of target and land the same
+    way — on the target's next request. What differs is WHO the target is: an
+    account entry moves with one login, a profile entry stays with the position
+    and reaches every account acting as it, now and after the person
+    changes."""
     if not payload.keys and not payload.profiles:
         raise HTTPException(status_code=400, detail="No users selected")
 

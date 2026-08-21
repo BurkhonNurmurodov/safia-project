@@ -128,15 +128,21 @@ export const profileKeyOf = (targetKey) =>
  *   leafHint     – optional (user) => string|undefined; when given, its return
  *                  rides each USER leaf as a right-aligned chip (the Permissions
  *                  picker shows the count of grants that account holds)
- *   profileLeaf  – optional (profile) => { label, hint } | null. When given, the
- *                  PROFILE itself becomes a selectable leaf, listed first among
- *                  its own accounts. Broadcast leaves this off — you cannot DM a
- *                  position, only a person — but permissions can be attached to
- *                  one, and must be: a profile exists before anybody registers,
- *                  so without this an unclaimed profile is a dead row nothing
- *                  can be done to. Turning it on also means an unclaimed profile
- *                  stops being a disabled leaf and becomes a branch holding just
- *                  its own target, so the tree keeps one shape throughout.
+ *   profileLeaf  – optional (profile) => { label, hint, only } | null. When
+ *                  given, the PROFILE itself becomes a selectable target keyed
+ *                  `profile:<key>`. Broadcast leaves this off — you cannot DM a
+ *                  position, only a person — but a permission can be attached to
+ *                  one, and often should be: it belongs to the job rather than
+ *                  to whoever currently holds it.
+ *
+ *                  `only: true` makes the profile the LEAF and drops its
+ *                  accounts from the tree entirely — the shape the Permissions
+ *                  tab uses when it is editing positions, where listing the
+ *                  logins underneath would offer a target the current mode
+ *                  cannot write to. Without it the profile is listed FIRST among
+ *                  its own accounts, so both kinds sit in one tree. Either way
+ *                  an unclaimed profile stays selectable instead of being the
+ *                  disabled "not registered" leaf Broadcast shows.
  */
 export function buildRecipientGroups(tree, t, tl, noUsersLabel, leafHint, profileLeaf) {
   return (tree || []).map((block) => {
@@ -150,6 +156,18 @@ export function buildRecipientGroups(tree, t, tl, noUsersLabel, leafHint, profil
         hint: leafHint ? leafHint(u) : undefined,
       }));
       const self = profileLeaf ? profileLeaf(p) : null;
+      // Positions-only: the profile IS the leaf. It keeps the profile's own
+      // name — with no accounts under it there is no second level to tell apart,
+      // so a generic "position" label would just hide who it is.
+      if (self?.only) {
+        return {
+          ...pos,
+          key: profileTargetKey(p.key),
+          label: tl(p.name),
+          hint: self.hint,
+          sub: users.length ? undefined : noUsersLabel,
+        };
+      }
       if (self) {
         return {
           ...pos,

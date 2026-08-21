@@ -21,7 +21,6 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import web_auth
-from app.capabilities import materialize_pending
 from app.config import settings
 from app.database import get_db
 from app.identity import profile_display_name, viewer_profile_key
@@ -88,12 +87,6 @@ def web_login(body: LoginBody, request: Request, db: Session = Depends(get_db)):
     db.commit()
     log.info("WEB-LOGIN signin | login=%s | profile=%s | ip=%s",
              cred.username, cred.profile_key, ip)
-
-    # Same door, same rule: a browser session resolves to the very same account
-    # a Telegram login would, so pending profile grants must land here too —
-    # otherwise a person who only ever signs in at a desk would never receive
-    # what their position was equipped with.
-    materialize_pending(db, identity["telegram_id"])
 
     token = web_auth.create_web_jwt(identity, cred, body.remember)
     user = db.query(TelegramUser).filter_by(telegram_id=identity["telegram_id"]).first()

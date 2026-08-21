@@ -620,16 +620,22 @@ def _grantee_caller(call, capability: str) -> dict | None:
     case a grant was revoked between the send and the tap) and the audit trail
     records the role they actually acted as.
 
-    Capabilities are per-account, so the grant is a property of ``u.id`` itself;
-    we still attach one of the account's approved profiles so the staff core has
-    a role to scope "own" against."""
-    from app.capabilities import caps_for_user
+    A capability reaches this account through either axis — handed to the login
+    itself, or attached to a POSITION it holds — so both are checked, and the
+    profile that actually carries it is the one attached as the caller's role.
+    Picking any approved row instead would scope "own" against a position that
+    never held the grant, and the staff core's own re-check would then refuse a
+    tap the notification correctly offered."""
+    from app.capabilities import account_cap_scope, caps_for_profile
     u = call.from_user
     with SessionLocal() as db:
-        if capability not in caps_for_user(db, u.id):
+        if account_cap_scope(db, u.id, capability) is None:
             return None
-        r = db.query(TelegramUserRole).filter_by(
-            telegram_id=u.id, status="approved").order_by(TelegramUserRole.id).first()
+        rows = db.query(TelegramUserRole).filter_by(
+            telegram_id=u.id, status="approved").order_by(TelegramUserRole.id).all()
+        r = next((x for x in rows if x.profile_key
+                  and capability in caps_for_profile(db, x.profile_key)), None)
+        r = r or (rows[0] if rows else None)
         if r is None:
             return None
         return {"sub": str(u.id), "role": r.role, "role_id": r.role_id,
