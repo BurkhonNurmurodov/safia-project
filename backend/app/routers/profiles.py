@@ -238,9 +238,10 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
     longer listed (leader_id → NULL — cells are first-class rows now, their
     sap_code/workshop names survive reassignment), claim or create the rest.
     A code owned by ANOTHER leader is a 409 — cells are unique, reassign it
-    from its current owner first. A claimed/created cell inherits the leader's
-    supervisor unit; released rows keep their supervisor (a cell belongs to a
-    supervisor with or without a leader)."""
+    from its current owner first. EVERY cell the leader ends up owning — claimed,
+    created or simply kept — inherits the leader's supervisor unit; released rows
+    keep their supervisor (a cell belongs to a supervisor with or without a
+    leader)."""
     leader = db.query(RoleProfile).filter_by(id=leader_id).first()
     mgr_id = leader.manager_id if leader else None
     want: list[str] = []
@@ -252,6 +253,17 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
     for row in existing:
         if row.verifix_code not in want:
             row.leader_id = None
+        elif mgr_id and row.manager_id != mgr_id:
+            # A KEPT cell follows its leader's unit as well. Only claimed and
+            # created rows were stamped before, so moving a leader to another
+            # brigadir left every cell they kept naming the OLD one: the leader
+            # read as the new unit everywhere the unit comes from the profile
+            # (/leaders, /tasks), while `cells.manager_id` — the register's
+            # «Brigadir» column and every per-cell page scoped by it, /idle-cell
+            # included — went on answering with the supervisor they had left.
+            # The other two writers already treat the leader as authoritative
+            # (`_apply_cell_fields`, the create below); this is the third.
+            row.manager_id = mgr_id
     have = {row.verifix_code for row in existing}
     for code in want:
         if code in have:

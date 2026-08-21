@@ -538,7 +538,7 @@ export default function IdleCell() {
   const [legendOpen, setLegendOpen] = useState(false);
   const isPeren = tab === "peren";
 
-  const { data: supData } = useQuery({
+  const { data: supData, isError: supFailed } = useQuery({
     queryKey: ["idle-supervisors"],
     queryFn: () => api.get("/api/idle-cell/supervisors").then((r) => r.data),
   });
@@ -552,7 +552,7 @@ export default function IdleCell() {
   // standing. Swapping it for skeletons unmounts every CellCard, and `open`
   // lives inside the card — so saving or deleting one ojidaniya (both call
   // `refresh()`) silently collapsed the very cell being worked on.
-  const { data: cellsData, isPending: cellsPending } = useQuery({
+  const { data: cellsData, isPending: cellsPending, isError: cellsFailed } = useQuery({
     queryKey: ["idle-cells", supervisorId, date],
     queryFn: () => api.get(`/api/idle-cell/cells?supervisor_id=${supervisorId}&date=${date}`).then((r) => r.data),
     enabled: !isPeren && supervisorId != null,
@@ -614,6 +614,27 @@ export default function IdleCell() {
     if (!leaderOptions.some((o) => o.value === leaderId)) setLeaderId("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaderOptions]);
+
+  // The picked brigadir is ONE localStorage key for the whole browser, while
+  // the scope it is read against belongs to the PROFILE — so an admin who
+  // picked a unit and then switched into a supervisor profile came back holding
+  // an id that profile cannot see. The page answered «this brigadir has no
+  // cells» about a brigadir its own picker had already stopped showing: a
+  // statement about the data, made from a dead pointer. Drop an id the list
+  // does not offer, and adopt the list when it holds exactly one — which is
+  // what every supervisor and leader sees, so nobody picks themselves out of a
+  // list of one. The changeover tab keeps «all» as a real answer, so only the
+  // entry tabs adopt.
+  useEffect(() => {
+    if (!supData) return;                       // nothing to reconcile against yet
+    if (supervisorId != null && shiftSupervisors.some((s) => s.id === supervisorId)) return;
+    const only = !isPeren && shiftSupervisors.length === 1 ? shiftSupervisors[0].id : null;
+    if (supervisorId === only) return;
+    setSupervisorId(only);
+    setLeaderId("");
+    setSelectedCellIds([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supData, shiftSupervisors, isPeren]);
 
   // A new shift may exclude the picked supervisor — drop it if so.
   function onShift(v) {
@@ -787,6 +808,15 @@ export default function IdleCell() {
           onSort={onFactSort}
           showSupervisor={false}
         />
+      ) : supFailed || cellsFailed ? (
+        // A dead request is NOT an empty answer. Both of these used to fall
+        // through to «this brigadir has no cells» — the page reporting on data
+        // it never received.
+        emptyBox(t("common.loadFailed"))
+      ) : supData && supervisors.length === 0 ? (
+        // Nothing to pick: say so, instead of asking for a choice the picker
+        // cannot offer.
+        emptyBox(t("idleCell.empty"))
       ) : supervisorId == null ? (
         emptyBox(t("idleCell.pickSupervisorHint"))
       ) : cellsPending ? (
