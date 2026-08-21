@@ -37,13 +37,22 @@ function catOf(name) {
   };
 }
 
-export default function DayTimeline({ intervals, summary, t, onPick }) {
-  const win = useMemo(() => timelineWindow(intervals), [intervals]);
+export default function DayTimeline({ intervals, pending = [], summary, t, onPick }) {
+  // Requests waiting on a decision are DRAWN — a brigadir reading the day needs
+  // to see what is being claimed and where it would land — but they are drawn
+  // hatched and they enter nothing that measures: not the union bar, not the
+  // overlap bands, not the totals. Only the WINDOW counts them, so a pending
+  // range at the edge of the day is not pushed off the chart.
+  //
+  // Rejected rows are not here at all. This tab is the day as it was, and a
+  // refused claim was never part of it; it stays readable on «Kutish».
+  const shown = useMemo(() => [...intervals, ...pending], [intervals, pending]);
+  const win = useMemo(() => timelineWindow(shown), [shown]);
   // One lane per category (a category whose own ranges overlap gets a second),
   // in the canonical CATS order with unknown names after it.
   const lanes = useMemo(
-    () => packLanes(intervals, (iv) => iv.category, (name) => catOf(name).rank),
-    [intervals],
+    () => packLanes(shown, (iv) => iv.category, (name) => catOf(name).rank),
+    [shown],
   );
   const bands = useMemo(() => overlapBands(intervals), [intervals]);
 
@@ -131,6 +140,7 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
           lane.rows.map(({ iv, span }) => {
             const { code, color } = catOf(iv.category);
             const w = ((span[1] - span[0]) / total) * 100;
+            const waiting = iv.status === "pending";
             return (
               <button
                 key={iv.id}
@@ -142,11 +152,16 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
                   width: `max(4px, ${w}%)`,
                   top: li * LANE_H + (LANE_H - BAR_H) / 2,
                   height: BAR_H,
-                  background: iv.stopped ? color : "transparent",
-                  border: `1px ${iv.stopped ? "solid" : "dashed"} ${color}`,
-                  color: iv.stopped ? "#fff" : color,
+                  // Hatched in its own category hue, edged amber: it reads as
+                  // "this stretch is claimed, not yet counted" without
+                  // borrowing the solid fill that means confirmed downtime.
+                  background: waiting
+                    ? `repeating-linear-gradient(135deg, ${color} 0 3px, transparent 3px 7px)`
+                    : iv.stopped ? color : "transparent",
+                  border: `1px ${waiting || !iv.stopped ? "dashed" : "solid"} ${waiting ? "#eab308" : color}`,
+                  color: waiting ? "#eab308" : iv.stopped ? "#fff" : color,
                 }}
-                title={`${t("idleCell.category")} ${code} · ${iv.start} → ${iv.end} · ${fmtDur(iv.minutes, t)}${iv.stopped ? "" : ` · ${t("idleCell.notStopped")} · ${t("idleCell.notCounted")}`}\n${iv.note}`}
+                title={`${t("idleCell.category")} ${code} · ${iv.start} → ${iv.end} · ${fmtDur(iv.minutes, t)}${waiting ? ` · ${t("idleCell.stPending")} · ${t("idleCell.pendingNotCounted")}` : iv.stopped ? "" : ` · ${t("idleCell.notStopped")} · ${t("idleCell.notCounted")}`}\n${iv.note}`}
               >
                 {/* The CODE only, never the duration. `w` is a percentage of
                     the window while a label costs PIXELS, and the two are not
@@ -210,6 +225,18 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
             <span className="rounded-sm flex-shrink-0" style={{ width: 12, height: 8, border: "1px dashed var(--text-3)" }} />
             {t("idleCell.notStopped")} · {t("idleCell.notCounted")}
           </span>
+          {pending.length > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="rounded-sm flex-shrink-0"
+                style={{
+                  width: 12, height: 8, border: "1px dashed #eab308",
+                  background: "repeating-linear-gradient(135deg, var(--text-3) 0 2px, transparent 2px 5px)",
+                }}
+              />
+              {t("idleCell.pendingLegend")}
+            </span>
+          )}
           {bands.length > 0 && (
             <span className="inline-flex items-center gap-1.5">
               <span

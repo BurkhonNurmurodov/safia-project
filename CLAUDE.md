@@ -742,14 +742,38 @@ unit). Absent row = off, so nothing moves until an admin switches it.
   (`maybe_close_day`), stamping `completion` exactly as the button did. That is
   what keeps the register, the score, the day report and disputes working with
   no knowledge of this module. The report DM (leader + brigadir) fires then.
-- **The per-task `deadline` is ENFORCED here and ONLY here.** Blank falls
-  through to the day's filing deadline (`deadline_hhmm`), so every task has an
-  end. At it, `autoclose_due` submits whatever exists — a roll short of
-  `min_media` still goes to the AI and is judged as it stands — while a task
-  with NO answer is recorded not-done with the missed-deadline reason. Outside
-  per-task units the field stays informational, per the 2026-08-15 ruling.
-  The sweep runs on a 5-minute job AND on every `/tasks`: a deadline that bites
-  only when a scheduler happens to run is not a deadline.
+- **A task closes itself when its own time runs out, and `leader_close.closing_time`
+  is THE definition of when that is** — one function, because three surfaces
+  read it and three spellings would tell one leader three different hours: the
+  sweep that closes the task, the bot's `pt_auto` line on the draft view, and
+  the «Vazifalar» card (`closes_at`, served only for per-task units). The chain,
+  narrowest first: the per-task `deadline` where an admin set one → **the END of
+  the task's own submission range (`window`)**, which is what a task normally
+  carries (the user's ruling, 2026-08-21: a range is given to every task, so the
+  task closes when its range runs out instead of surviving until midnight) → the DAY's filing deadline (`deadline_hhmm`) for a task with neither, so
+  nothing is ever endless.
+  - **`date_check` / `time_check` do NOT gate this.** They answer whether the
+    clock transcribed off the PROOF is judged; this answers how long the task
+    accepts work. Gating on them would have made the feature silently do nothing
+    for exactly the units most likely to want it — the camera pilot, whose
+    proofs are dashboard screens in date-only mode. The fairness is bought by
+    SAYING the hour on both surfaces the leader reads, not by withholding it.
+  - **A range decides its own end date**; a bare clock still takes the shift
+    boundary from outside. `end <= start` ⇒ the range crosses midnight (the
+    `idle_cell` / `cell_hours` rule), which is right for 17:00→09:00 AND fixes a
+    shift-2 range that does not cross (17:00→23:00), where the old blanket
+    "+1 day for shift 2" pushed the close a full day late.
+  - At the hour, `autoclose_due` submits whatever exists — a roll short of
+    `min_media` still goes to the AI and is judged as it stands, and a DRAFT
+    (answered, never submitted) is submitted with its answer and photos intact,
+    because `force_answer` returns an existing entry rather than replacing it.
+    Only a task with NO answer is recorded not-done with the missed-deadline
+    reason.
+  - **Enforcement is per-task units ONLY.** `autoclose_due` is bounded to
+    `per_task_units` and the other two readers are per-task surfaces; outside
+    them the field stays informational, per the 2026-08-15 ruling. The sweep
+    runs on a 5-minute job AND on every `/tasks`: a deadline that bites only
+    when a scheduler happens to run is not a deadline.
 - **The menu carries a running score** — `leader_close.score_line` → «🎯 24/30 ·
   ⏳ 2 tekshirilmoqda». Earned over the weight of REVIEWED tasks; a task waiting
   on a verdict is in NEITHER number. A pending task counted as 0 would make the

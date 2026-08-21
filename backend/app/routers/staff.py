@@ -4349,6 +4349,17 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
     if db.query(DayApproval).filter_by(manager_id=manager_id, date=d).first():
         raise HTTPException(status_code=409, detail="Day is already closed")
 
+    # Undecided per-cell ojidaniya requests block the close. The brigadir IS
+    # their approver, so these are their own unfinished work — and closing over
+    # them would freeze entries nobody can ever answer, since the lock refuses
+    # the decision too. Lazy import: services.idle_lock deliberately does not
+    # import this router, and this is the only direction that could cycle.
+    from app.services import idle_lock
+    waiting = idle_lock.pending_requests_for(db, manager_id, d)
+    if waiting:
+        raise HTTPException(status_code=409,
+                            detail={"code": "idle_requests_pending", "count": waiting})
+
     closer_name = caller.get("full_name", "")
     db.add(DayApproval(
         manager_id=manager_id,

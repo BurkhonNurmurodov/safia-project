@@ -63,31 +63,71 @@ def closed_tasks(db: Session, day: LeaderTaskDay | None) -> set[int]:
 
 # ── when a task stops accepting work ─────────────────────────────────────────
 
-def task_deadline(cfg_entry: dict | None, shift: int | None) -> str:
-    """The clock at which this task auto-closes, "HH:MM".
+def closing_time(cfg_entry: dict | None,
+                 shift: int | None) -> tuple[str, str | None]:
+    """When this task stops accepting work — `(clock, the range it came from)`.
 
-    The per-task `deadline` where the chain has one; the DAY's filing deadline
-    where it does not — blank is almost everywhere, and a mode whose auto-close
-    only worked for hand-configured tasks would leave the rest of the checklist
-    with no end at all.
+    THE definition, in one place, because three surfaces read it: the sweep that
+    closes the task, the bot line that promises the leader when that will
+    happen, and the «Vazifalar» tab where they go to look the rule up. Three
+    spellings would tell one leader three different hours.
 
-    This is the first time that field is ENFORCED, and it is enforced only here:
-    the user's ruling of 2026-08-15 (it is informational) still stands for every
-    unit outside per-task mode, which is why no other caller reads it this way.
+    The chain, narrowest first:
+
+    1. the per-task `deadline`, where an admin set one — an explicit submission
+       time outranks anything derived;
+    2. **the END of the task's own submission range** (the `window`), which is
+       what a task normally carries. This is the answer the user asked for
+       (2026-08-21): a range is given to every task, so the task closes when its
+       range runs out rather than surviving until midnight;
+    3. the DAY's filing deadline, for a task with neither — a mode whose
+       auto-close only worked for hand-configured tasks would leave the rest of
+       the checklist with no end at all.
+
+    The second return value is the range's OPENING time when the clock was read
+    off a range, and None when it is a bare hour. `past_deadline` needs it to
+    tell 09:00-tomorrow from 09:00-today without guessing from the shift.
+
+    **`date_check` / `time_check` deliberately do NOT gate this.** They answer
+    whether the clock the AI transcribes off the PROOF is judged; this answers
+    how long the task accepts work. A task exempted from the date question is
+    still a task with a shift to be done in, and gating on those flags would
+    have made the feature silently do nothing for exactly the units most likely
+    to use it — the camera pilot, whose proofs are dashboard screens in
+    date-only mode. The fairness this protects is bought elsewhere, by SAYING
+    the hour: the bot prints it on the draft view (`pt_auto`) and the
+    «Vazifalar» tab prints it on the card, both straight from here.
+
+    Enforcement is still per-task units ONLY — `autoclose_due` is bounded to
+    `per_task_units`, and both other readers are per-task surfaces. The 2026-08-15
+    ruling (the deadline is informational) stands everywhere else.
     """
     own = leader_ai.hhmm((cfg_entry or {}).get("deadline"))
-    return own or leader_tasks.deadline_hhmm(shift)
+    if own:
+        return own, None
+    win = (cfg_entry or {}).get("window") or ()
+    if len(win) == 2:
+        lo, hi = leader_ai.hhmm(win[0]), leader_ai.hhmm(win[1])
+        if hi:
+            return hi, lo
+    return leader_tasks.deadline_hhmm(shift), None
+
+
+def task_deadline(cfg_entry: dict | None, shift: int | None) -> str:
+    """The clock at which this task auto-closes, "HH:MM" — what a human is
+    shown. `closing_time` carries the reasoning."""
+    return closing_time(cfg_entry, shift)[0]
 
 
 def past_deadline(cfg_entry: dict | None, shift: int | None, date: str,
                   now: datetime | None = None) -> bool:
-    """Has this task's own deadline gone by for the day it belongs to?
+    """Has this task's own closing time gone by for the day it belongs to?
 
     Anchored on the checklist DAY, not on the wall clock alone: shift 2's day
     opens at 17:00 and dies at 09:00 the next morning, so "is 08:00 past 09:00"
     is only answerable once you know which day's 09:00 is meant.
     """
-    hhmm = task_deadline(cfg_entry, shift)
+    hhmm, opens = closing_time(cfg_entry, shift)
     now = (now or datetime.now(timezone.utc)).astimezone(leader_proof.TASHKENT)
     try:
         h, m = (int(x) for x in hhmm.split(":"))
@@ -96,9 +136,19 @@ def past_deadline(cfg_entry: dict | None, shift: int | None, date: str,
     except (ValueError, AttributeError):
         return False
     due = day0.replace(hour=h, minute=m)
-    if shift == 2:
-        # The night shift's day is named for the evening it starts, and its
-        # deadline falls the following morning.
+    if opens is not None:
+        # A range says for ITSELF which day it ends on — `end <= start` is the
+        # platform's crossing-midnight rule (`idle_cell`, `cell_hours`), and it
+        # is right for both shifts: 17:00→09:00 lands on the morning after the
+        # evening its day is named for, 07:00→20:00 stays put, and a shift-2
+        # range that does NOT cross (17:00→23:00) correctly stays on its own
+        # evening — which the old blanket "+1 day for shift 2" got wrong.
+        if hhmm <= opens:
+            due += timedelta(days=1)
+    elif shift == 2:
+        # A bare clock carries no range, so the night shift's boundary still has
+        # to be applied from outside: its day is named for the evening it starts
+        # and its deadline falls the following morning.
         due += timedelta(days=1)
     return now >= due
 

@@ -357,6 +357,13 @@ def requirements_for(db: Session, *, prof=None, manager=None,
             }
         level = "supervisor" if manager is not None else "global"
 
+    # Does this subject's unit submit task by task? It decides whether the tab
+    # prints a per-task closing hour at all: outside that mode nothing closes a
+    # task on its own, and an hour on the card would promise an automation the
+    # unit does not have. Imported lazily — leader_close imports this module.
+    from app.services import leader_close
+    per_task = manager is not None and manager.id in per_task_units(db)
+
     examples: dict[int, list[int]] = {}
     for eid, tid in (db.query(LeaderTaskExample.id, LeaderTaskExample.task_id)
                      .order_by(LeaderTaskExample.id).all()):
@@ -383,6 +390,10 @@ def requirements_for(db: Session, *, prof=None, manager=None,
             "date_check": bool(c["date_check"]),
             "time_check": bool(c["time_check"]),
             "deadline": c["deadline"],
+            # The hour this task actually stops accepting work in per-task mode,
+            # straight from the sweep's own definition so the card and the
+            # closer can never name two different times. Null outside that mode.
+            "closes_at": leader_close.task_deadline(c, shift) if per_task else None,
             # WHERE this task is answered. The tab says it in words, because a
             # leader who expects to send a file to the chat and finds no upload
             # accepted has been left to guess.
@@ -398,6 +409,9 @@ def requirements_for(db: Session, *, prof=None, manager=None,
     return {
         "level": level,
         "shift": shift,
+        # The unit closes each task on its own, so the cards carry `closes_at`
+        # and the tab may say the closing is automatic.
+        "per_task": per_task,
         "subject": {
             "leader": prof.name if prof is not None else None,
             "leader_id": prof.id if prof is not None else None,

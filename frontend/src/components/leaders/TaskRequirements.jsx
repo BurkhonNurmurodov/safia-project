@@ -59,6 +59,8 @@ const TXT = {
     photoWin: "Rasm: {from} – {to}", noDate: "Sana tekshirilmaydi",
     dayOnly: "Sana kerak, vaqt shart emas",
     due: "Muddat: {t} gacha", dueDay: "{t} gacha · kun bo'yicha",
+    autoClose: "{t} da avtomatik yopiladi",
+    autoNote: "Bu brigadada har bir vazifa alohida yopiladi. Ko'rsatilgan vaqt kelganda vazifa avtomatik yuboriladi: nima to'plangan bo'lsa — shu, javob berilmagani esa bajarilmagan deb yoziladi.",
     examples: "Namuna",
     empty: "Faol vazifalar yo'q", emptyMsg: "Bu darajada barcha vazifalar o'chirilgan.",
     loadFail: "Yuklab bo'lmadi", retry: "Qayta urinish", photoFailed: "Rasm yuklanmadi",
@@ -83,6 +85,8 @@ const TXT = {
     photoWin: "Расм: {from} – {to}", noDate: "Сана текширилмайди",
     dayOnly: "Сана керак, вақт шарт эмас",
     due: "Муддат: {t} гача", dueDay: "{t} гача · кун бўйича",
+    autoClose: "{t} да автоматик ёпилади",
+    autoNote: "Бу бригадада ҳар бир вазифа алоҳида ёпилади. Кўрсатилган вақт келганда вазифа автоматик юборилади: нима тўпланган бўлса — шу, жавоб берилмагани эса бажарилмаган деб ёзилади.",
     examples: "Намуна",
     empty: "Фаол вазифалар йўқ", emptyMsg: "Бу даражада барча вазифалар ўчирилган.",
     loadFail: "Юклаб бўлмади", retry: "Қайта уриниш", photoFailed: "Расм юкланмади",
@@ -107,6 +111,8 @@ const TXT = {
     photoWin: "Фото: {from} – {to}", noDate: "Дата не проверяется",
     dayOnly: "Нужна дата, время не обязательно",
     due: "Срок: до {t}", dueDay: "до {t} · по дню",
+    autoClose: "Закроется автоматически в {t}",
+    autoNote: "В этой бригаде каждая задача закрывается отдельно. В указанное время задача отправляется автоматически: что собрано — то и уходит, а задача без ответа записывается как невыполненная.",
     examples: "Пример",
     empty: "Нет активных задач", emptyMsg: "На этом уровне все задачи отключены.",
     loadFail: "Не удалось загрузить", retry: "Повторить", photoFailed: "Фото не загрузилось",
@@ -131,6 +137,8 @@ const TXT = {
     photoWin: "Photo: {from} – {to}", noDate: "Date not checked",
     dayOnly: "Date required, time not",
     due: "Due: by {t}", dueDay: "by {t} · day rule",
+    autoClose: "Closes automatically at {t}",
+    autoNote: "In this unit each task is submitted on its own. At the hour shown the task closes automatically: whatever has been collected goes in as it stands, and a task with no answer is recorded not done.",
     examples: "Example",
     empty: "No active tasks", emptyMsg: "Every task is disabled at this level.",
     loadFail: "Could not load", retry: "Retry", photoFailed: "Photo failed to load",
@@ -170,7 +178,7 @@ function Tile({ icon: Icon, label, value, sub }) {
   );
 }
 
-function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, onZoom, flash }) {
+function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, perTask, onZoom, flash }) {
   const name = task.names?.[lang] || task.names?.uz || `T${task.id}`;
   const note = task.note?.[lang] || task.note?.uz || "";
   const criteria = (task.criteria || "").trim();
@@ -191,6 +199,7 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
   // two in the afternoon.
   const morning = (t) => shift === 2 && t && t < "17:00" ? ` (${T.nextMorning})` : "";
   const dueOwn = task.deadline;
+  const autoAt = perTask ? task.closes_at : null;
   return (
     <article id={`ltask-${task.id}`} className="rounded-2xl p-3.5 flex flex-col gap-3"
       style={{ background: "var(--bg-card)",
@@ -244,9 +253,17 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
           {timeOn ? fill(T.photoWin, { from: wFrom || "—", to: (wTo || "—") + morning(wTo) })
             : dateOn ? T.dayOnly : T.noDate}
         </Fact>
-        {dueOwn
-          ? <Fact icon={AlarmClock} tone="accent">{fill(T.due, { t: dueOwn + morning(dueOwn) })}</Fact>
-          : <Fact icon={AlarmClock}>{fill(T.dueDay, { t: filingTo + (filingOvernight ? ` (${T.nextMorning})` : "") })}</Fact>}
+        {/* In per-task mode the hour is not advice — it is when the task
+            submits itself, and it already folds the whole chain (an explicit
+            deadline, else the end of this task's own range, else the day's).
+            So it REPLACES both informational readings rather than sitting
+            beside them: two clocks on one card is how a leader picks the wrong
+            one. */}
+        {autoAt
+          ? <Fact icon={AlarmClock} tone="accent">{fill(T.autoClose, { t: autoAt + morning(autoAt) })}</Fact>
+          : dueOwn
+            ? <Fact icon={AlarmClock} tone="accent">{fill(T.due, { t: dueOwn + morning(dueOwn) })}</Fact>
+            : <Fact icon={AlarmClock}>{fill(T.dueDay, { t: filingTo + (filingOvernight ? ` (${T.nextMorning})` : "") })}</Fact>}
       </div>
 
       {task.examples?.length > 0 && (
@@ -317,6 +334,9 @@ export default function TaskRequirements({
   const shift = data?.shift;
   const shiftLabel = shift === 2 ? T.shift2 : T.shift1;
   const filing = data?.filing || {};
+  // The unit submits task by task, so the hour on each card is ENFORCED
+  // rather than informational — and the note under the tiles has to say so.
+  const perTask = !!data?.per_task;
   const filingTo = filing.to || "";
 
   const subject = (() => {
@@ -380,7 +400,7 @@ export default function TaskRequirements({
               </div>
               <p className="text-[11px] flex items-start gap-1.5" style={{ color: "var(--text-3)" }}>
                 <Info size={12} className="flex-shrink-0 mt-[2px]" />
-                <span>{T.deadlineNote}</span>
+                <span>{perTask ? T.autoNote : T.deadlineNote}</span>
               </p>
             </>
           )}
@@ -408,6 +428,7 @@ export default function TaskRequirements({
           {tasks.map((task) => (
             <TaskCard key={task.id} task={task} lang={lang} T={T} tl={tl} total={total}
               shift={shift} filingTo={filingTo} filingOvernight={!!filing.overnight}
+              perTask={perTask}
               onZoom={setZoom} flash={flash === task.id} />
           ))}
         </div>
