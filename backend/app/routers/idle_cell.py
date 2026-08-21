@@ -460,13 +460,23 @@ def _tell(db: Session, profile: Optional[str], nkey: str, params: dict) -> None:
 
     Lazy import and swallowed failures on purpose: ``routers.staff`` pulls in
     half the app, and a Telegram outage must never be the reason a confirmation
-    fails to save. The decision is the record; the message is about it."""
+    fails to save. The decision is the record; the message is about it.
+
+    **It commits.** ``notify_profile`` only ``db.add()``s the bell row and
+    documents that the caller commits — and every call here happens AFTER the
+    write's own commit, so without this the request-scoped session closes and
+    the bell row is rolled back. The DM would still go out, which is the worst
+    version of the bug: the person is pinged about something their
+    notifications list has no record of, and a profile nobody has claimed yet
+    (bell-only, no DM) is told nothing at all."""
     if not profile:
         return
     try:
         from app.routers.staff import notify_profile
         notify_profile(db, profile, nkey, params)
+        db.commit()
     except Exception:
+        db.rollback()
         log.exception("idle-cell: could not notify %s about %s", profile, nkey)
 
 
@@ -500,6 +510,13 @@ def create_interval(
 
     ctx = _decider(db, payload)
     decides = _may_decide(ctx, cell)
+    # A cell with no brigadir has nobody to ask. The row would be filed, shown
+    # to no one (every listing is keyed on a supervisor), decidable by no one,
+    # and would still sit in an admin's badge — so it is refused at the door
+    # rather than stranded, for the same reason a future date is.
+    if not decides and not getattr(cell, "manager_id", None):
+        raise HTTPException(status_code=400,
+                            detail="This cell has no brigadir to confirm the request")
     viewer = identity.viewer_profile_key(db, payload)
     now = datetime.now(timezone.utc)
 
@@ -592,6 +609,15 @@ def update_interval(
               "idle_request_new",
               {**_row_facts(e, cell),
                "leader_name": identity.profile_display_name(db, viewer) or "—"})
+    elif decides and was_pending and e.entered_by_profile != viewer:
+        # A confirmer's correction IS a decision, so it is announced like one.
+        # Without this the ONE approval path that runs through the edit form is
+        # silent, and the requester learns nothing — neither that they were
+        # accepted, nor that their times were rewritten under their name.
+        _tell(db, e.entered_by_profile, "idle_request_approved",
+              {**_row_facts(e, cell),
+               "decider_name": identity.profile_display_name(db, viewer) or "—",
+               "reason": ""})
 
     return _interval_json(e, _names_for(db, [e.entered_by_profile, e.decided_by_profile]),
                           _row_perm(e, viewer, decides, True))
@@ -736,8 +762,16 @@ def decide_all(
 
     by_id = {c.id: c for c in mine}
     if any(_by_own_grant(ctx, by_id.get(e.cell_id)) for e in rows):
+        # The batch spans several cells, so the alert names them all rather than
+        # whichever happened to sort first — an audit line reading "12 approved
+        # on cell 4311" when 11 of them were elsewhere is a misattribution, and
+        # this row is the record of a delegated power being used.
+        touched = sorted({(by_id.get(e.cell_id).verifix_code
+                           or f"#{e.cell_id}") for e in rows if by_id.get(e.cell_id)})
         _alert(db, payload, rows[0].cell_id, body.date, "idle_cell.interval_decided",
-               [("status", "pending", "approved"), ("count", None, str(len(rows)))])
+               [("status", "pending", "approved"),
+                ("count", None, str(len(rows))),
+                ("cell", None, ", ".join(touched))])
 
     decider_name = identity.profile_display_name(db, viewer) or "—"
     for profile, n in per_requester.items():
@@ -757,7 +791,11 @@ def pending_count(
     Answers 0 rather than 403 for somebody who decides nothing, so the page's
     own nav can poll it for every role that may open the page."""
     ctx = _decider(db, payload)
-    mine = [c.id for c in _scoped_cells(db, payload) if _may_decide(ctx, c)]
+    # Only cells a listing could actually SHOW: every view of this page is keyed
+    # on a supervisor, so an un-owned cell's request is unreachable and counting
+    # it would park a number on the badge that nothing can clear.
+    mine = [c.id for c in _scoped_cells(db, payload)
+            if c.manager_id and _may_decide(ctx, c)]
     if not mine:
         return {"count": 0}
     q = db.query(CellOjidaniyaInterval).filter(

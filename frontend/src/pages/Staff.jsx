@@ -3789,13 +3789,30 @@ function ApprovalsCalendar({ role, supervisors }) {
     qc.invalidateQueries({ queryKey: ["approved-cells"] });
     qc.invalidateQueries({ queryKey: ["daily-approval"] });
   };
+  // Telegram's iOS WebView silently suppresses window.confirm, so a
+  // confirm-gated calendar day did nothing at all on the primary device. Both
+  // decisions go through ConfirmDialog, which also keeps a refusal on screen —
+  // closing can now be REFUSED, when the unit still holds undecided per-cell
+  // ojidaniya requests.
+  const [ask, setAsk] = useState(null);   // {kind: "close"|"reopen", iso} | null
+  const [askErr, setAskErr] = useState("");
   const closeMut = useMutation({
     mutationFn: (date) => api.post("/api/staff/daily/close", { manager_id: effManagerId, date }),
-    onSuccess: invalidate,
+    onSuccess: () => { setAsk(null); setAskErr(""); invalidate(); },
+    onError: (e) => {
+      // `detail_raw` carries the structure; api.js flattened `detail` to text.
+      const raw = e?.response?.data?.detail_raw;
+      const d = e?.response?.data?.detail;
+      setAskErr(raw && typeof raw === "object" && raw.code === "idle_requests_pending"
+        ? t("daily.closeBlockedIdleN").replace("{n}", raw.count)
+        : (typeof d === "string" && d) || t("staff.saveFailed"));
+    },
   });
   const reopenMut = useMutation({
     mutationFn: (date) => api.post("/api/staff/approvals/reopen", { manager_id: effManagerId, date }),
-    onSuccess: invalidate,
+    onSuccess: () => { setAsk(null); setAskErr(""); invalidate(); },
+    // Never "" — an empty error renders nothing and the dialog just sits there.
+    onError: (e) => setAskErr(String(e?.response?.data?.detail || t("staff.saveFailed"))),
   });
 
   const cells = buildMonthCells(view.year, view.month);
@@ -3806,13 +3823,9 @@ function ApprovalsCalendar({ role, supervisors }) {
     if (!effManagerId || iso > todayIso) return;
     if (status === "open" && (role === "supervisor" || isAdmin)) {
       // Closing is final for the supervisor — confirm first
-      if (window.confirm(t("staff.apprCloseConfirm"))) {
-        closeMut.mutate(iso);
-      }
+      setAskErr(""); setAsk({ kind: "close", iso });
     } else if ((status === "closed" || status === "confirmed") && canReopen) {
-      if (window.confirm(t("staff.apprReopenConfirm"))) {
-        reopenMut.mutate(iso);
-      }
+      setAskErr(""); setAsk({ kind: "reopen", iso });
     }
   }
 
@@ -3905,6 +3918,19 @@ function ApprovalsCalendar({ role, supervisors }) {
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!ask}
+        onCancel={() => { setAskErr(""); setAsk(null); }}
+        onConfirm={() => (ask?.kind === "close" ? closeMut : reopenMut).mutate(ask.iso)}
+        title={t(ask?.kind === "close" ? "daily.closeDay" : "daily.reopenDay")}
+        message={t(ask?.kind === "close" ? "staff.apprCloseConfirm" : "staff.apprReopenConfirm")}
+        confirmLabel={t(ask?.kind === "close" ? "daily.closeDay" : "daily.reopenDay")}
+        cancelLabel={t("daily.cancel")}
+        loading={closeMut.isPending || reopenMut.isPending}
+        error={askErr || null}
+      />
+
       <div className="pb-16" />
     </div>
   );

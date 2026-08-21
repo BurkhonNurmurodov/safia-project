@@ -201,6 +201,7 @@ const t = {
     // ── Requests: a leader's ojidaniya is a proposal until the
     //    cell's brigadir confirms it; a closed day freezes the lot.
     "idleCell.stPending":          "Kutilmoqda",
+    "idleCell.noMatch":            "Bu filtrga mos yozuv yo'q",
     "idleCell.stApproved":         "Tasdiqlangan",
     "idleCell.stRejected":         "Rad etildi",
     "idleCell.pendingCountN":      "{n} kutilmoqda",
@@ -720,6 +721,7 @@ const t = {
     "daily.dayOpen":              "Kun ochiq",
     "daily.closeDay":             "Kunni yopish",
     "daily.closeBlockedIdleN":     "{n} ta kutish so'rovi hal qilinmagan — avval ularni tasdiqlang yoki rad eting",
+    "staff.saveFailed":            "Saqlab bo'lmadi. Qayta urining.",
     "daily.closeWarnTitle":       "Kun hali yopilmagan",
     "daily.closeWarnText":        "Ma'lumotlar ko'rinishi uchun kunni yopishingiz kerak. Kunni yopishdan oldin Xodimlar sahifasida barcha o'zgarishlarni yuboring. Yopilgandan so'ng o'zgarish kiritib bo'lmaydi.",
     "daily.adminOpenBanner":      "Brigadir bu kunni hali yopmagan",
@@ -3457,6 +3459,7 @@ const t = {
     // ── Requests: a leader's ojidaniya is a proposal until the
     //    cell's brigadir confirms it; a closed day freezes the lot.
     "idleCell.stPending":          "Кутилмоқда",
+    "idleCell.noMatch":            "Бу филтрга мос ёзув йўқ",
     "idleCell.stApproved":         "Тасдиқланган",
     "idleCell.stRejected":         "Рад этилди",
     "idleCell.pendingCountN":      "{n} кутилмоқда",
@@ -3976,6 +3979,7 @@ const t = {
     "daily.dayOpen":              "Кун очиқ",
     "daily.closeDay":             "Кунни ёпиш",
     "daily.closeBlockedIdleN":     "{n} та кутиш сўрови ҳал қилинмаган — аввал уларни тасдиқланг ёки рад этинг",
+    "staff.saveFailed":            "Сақлаб бўлмади. Қайта уриниб кўринг.",
     "daily.closeWarnTitle":       "Кун ҳали ёпилмаган",
     "daily.closeWarnText":        "Маълумотлар кўриниши учун кунни ёпишингиз керак. Кунни ёпишдан олдин Ходимлар саҳифасида барча ўзгаришларни юборинг. Ёпилгандан сўнг ўзгариш киритиб бўлмайди.",
     "daily.adminOpenBanner":      "Бригадир бу кунни ҳали ёпмаган",
@@ -6713,6 +6717,7 @@ const t = {
     // ── Requests: a leader's ojidaniya is a proposal until the
     //    cell's brigadir confirms it; a closed day freezes the lot.
     "idleCell.stPending":          "Ожидает",
+    "idleCell.noMatch":            "Нет записей по этому фильтру",
     "idleCell.stApproved":         "Подтверждено",
     "idleCell.stRejected":         "Отклонено",
     "idleCell.pendingCountN":      "{n} на подтверждении",
@@ -7232,6 +7237,7 @@ const t = {
     "daily.dayOpen":              "День открыт",
     "daily.closeDay":             "Закрыть день",
     "daily.closeBlockedIdleN":     "Не решено запросов на ожидание: {n} — сначала подтвердите или отклоните их",
+    "staff.saveFailed":            "Не удалось сохранить. Попробуйте ещё раз.",
     "daily.closeWarnTitle":       "День ещё не закрыт",
     "daily.closeWarnText":        "Чтобы данные отображались, нужно закрыть день. Перед закрытием отправьте все изменения на странице «Сотрудники». После закрытия внести изменения будет нельзя.",
     "daily.adminOpenBanner":      "Бригадир ещё не закрыл этот день",
@@ -9969,6 +9975,7 @@ const t = {
     // ── Requests: a leader's ojidaniya is a proposal until the
     //    cell's brigadir confirms it; a closed day freezes the lot.
     "idleCell.stPending":          "Waiting",
+    "idleCell.noMatch":            "No entries match this filter",
     "idleCell.stApproved":         "Confirmed",
     "idleCell.stRejected":         "Rejected",
     "idleCell.pendingCountN":      "{n} waiting",
@@ -10488,6 +10495,7 @@ const t = {
     "daily.dayOpen":              "Day open",
     "daily.closeDay":             "Close the day",
     "daily.closeBlockedIdleN":     "{n} idle-time requests are undecided — confirm or reject them first",
+    "staff.saveFailed":            "Could not save. Please try again.",
     "daily.closeWarnTitle":       "The day is not closed yet",
     "daily.closeWarnText":        "You need to close the day for the data to be shown. Submit all changes on the Staff page before closing the day — afterwards, you won't be able to.",
     "daily.adminOpenBanner":      "The supervisor hasn't closed this day yet",

@@ -218,15 +218,19 @@ function RequestCell({ r, t }) {
 // both things the reader can act on: re-open the day, or re-read a row somebody
 // else already answered.
 function errText(e, t) {
+  // The STRUCTURE lives on `detail_raw`: api.js's interceptor flattens every
+  // non-string `detail` to text and keeps the original there. Reading `detail`
+  // alone would find a JSON blob where the code should be — and print it.
+  const raw = e?.response?.data?.detail_raw;
   const d = e?.response?.data?.detail;
-  const code = typeof d === "object" && d ? d.code : null;
+  const code = raw && typeof raw === "object" ? raw.code : null;
   if (code === "day_closed") return t("idleCell.dayClosedErr");
   if (code === "already_decided") return t("idleCell.alreadyDecided");
   if (typeof d === "string" && d) return d;
   return t("idleCell.saveError");
 }
 
-function CellCard({ cell, date, supervisorId, view, sort, onSort, t, tl, lang, autoOpen, toast }) {
+function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, onSort, t, tl, lang, autoOpen, toast }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(autoOpen);
   const [form, setForm] = useState(null);          // {interval, category} | null
@@ -251,7 +255,13 @@ function CellCard({ cell, date, supervisorId, view, sort, onSort, t, tl, lang, a
   const legacy = cell.legacy_entries || [];
   const summary = cell.summary || {};
   const overlapIds = useMemo(() => new Set(summary.overlap_ids || []), [summary]);
-  const refresh = () => qc.invalidateQueries({ queryKey: ["idle-cells"] });
+  // The sidebar badge counts the very requests these buttons decide, so it is
+  // refreshed with them — otherwise it keeps advertising a queue the operator
+  // just cleared until its own 30s poll catches up.
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["idle-cells"] });
+    qc.invalidateQueries({ queryKey: ["idle-pending-count"] });
+  };
 
   // ONE row model for both record types, so the table has a single schema.
   // A legacy row is a pre-2026-08-20 minutes-only entry: it has no start and no
@@ -310,16 +320,22 @@ function CellCard({ cell, date, supervisorId, view, sort, onSort, t, tl, lang, a
     // No sort picked = the order the API sent (already start-ascending), with
     // the undated legacy records after it — i.e. chronological, which is what
     // the day reads as.
-    if (!sort?.key) return out;
+    // The status filter narrows what is LISTED, never what is counted: the
+    // header's totals stay the day's totals, so filtering to «Kutilmoqda»
+    // cannot be mistaken for the day having shrunk.
+    const shown = statusFilter === "all" ? out : out.filter((r) => r.status === statusFilter);
+    if (!sort?.key) return shown;
     const val = (r) => ({
       category: r.catOrder, status: r.statusOrder,
       start: r.startMin, end: r.endMin,
       minutes: r.minutes, note: r.note,
     }[sort.key]);
-    return [...out].sort(sortCmp(sort, val));
-  }, [intervals, requests, legacy, overlapIds, sort]);
+    return [...shown].sort(sortCmp(sort, val));
+  }, [intervals, requests, legacy, overlapIds, sort, statusFilter]);
 
-  const entryCount = rows.length;
+  // What the cell HOLDS, not what the filter is showing — the header states the
+  // day's totals, and those must not move because somebody narrowed the list.
+  const entryCount = intervals.length + requests.length + legacy.length;
 
   const del = useMutation({
     mutationFn: ({ kind, row }) =>
@@ -434,6 +450,13 @@ function CellCard({ cell, date, supervisorId, view, sort, onSort, t, tl, lang, a
             <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
               {t("idleCell.noIntervals")}
             </div>
+          ) : rows.length === 0 ? (
+            // The cell HAS entries; this filter just excludes all of them. Said
+            // differently from "nothing was filed", which is a different fact
+            // with a different remedy.
+            <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
+              {t("idleCell.noMatch")}
+            </div>
           ) : view === "timeline" ? (
             /* Bars and nothing else. The rows are one tab away and the header
                above already carries the totals, so repeating the log here would
@@ -450,7 +473,11 @@ function CellCard({ cell, date, supervisorId, view, sort, onSort, t, tl, lang, a
                 pending={pending}
                 summary={summary}
                 t={t}
-                onPick={(iv) => setForm({ interval: iv, category: iv.category })}
+                // The permission travels ON the row, so the bars obey the
+                // same rule the table does: never draw a control the API
+                // would refuse. An approved row, or any row on a closed day,
+                // opens nothing.
+                onPick={(iv) => iv.can_edit && setForm({ interval: iv, category: iv.category })}
               />
             ) : (
               <div className="px-3 py-6 text-center text-xs leading-snug" style={{ color: "var(--text-3)" }}>
@@ -673,7 +700,17 @@ function CellCard({ cell, date, supervisorId, view, sort, onSort, t, tl, lang, a
         date={date}
         interval={form?.interval || null}
         initialCategory={form?.category || ""}
-        onSaved={(wasEdit) => { refresh(); toast.success(t(wasEdit ? "idleCell.updated" : "idleCell.saved")); }}
+        canDecide={!!cell.can_decide}
+        // The toast names what the server actually did, not what was pressed:
+        // a leader's save lands in a queue, and «Saqlandi» would tell them it
+        // landed on the register.
+        onSaved={(wasEdit, status) => {
+          refresh();
+          toast.success(t(
+            status === "pending"
+              ? (wasEdit ? "idleCell.requestResent" : "idleCell.requestSent")
+              : (wasEdit ? "idleCell.updated" : "idleCell.saved")));
+        }}
       />
 
       {/* Refusing takes a reason, so it takes a form — and the failure stays ON
@@ -777,8 +814,14 @@ export default function IdleCell() {
   const [supervisorId, setSupervisorId] = usePersistentState("idle_cell_supervisor_id", null);
   const [leaderId, setLeaderId] = usePersistentState("idle_cell_leader_id", ""); // "" all · "none" leaderless · leader_id
   const [selectedCellIds, setSelectedCellIds] = usePersistentState("idle_cell_selected_cell_ids", []); // [] = show all of the supervisor's cells
+  const [statusFilter, setStatusFilter] = usePersistentState("idle_cell_req_status", "all"); // all|pending|approved|rejected
   const [factSort, onFactSort] = useSortState("idle_cell_peren_sort");
+  const qc = useQueryClient();
   const [legendOpen, setLegendOpen] = useState(false);
+  const [reopen, setReopen] = useState(false);      // «re-open the day» dialog
+  const [reopenErr, setReopenErr] = useState("");
+  const [dayBulk, setDayBulk] = useState(false);    // «confirm the whole day» dialog
+  const [dayBulkErr, setDayBulkErr] = useState("");
   const isPeren = tab === "peren";
 
   const { data: supData, isError: supFailed } = useQuery({
@@ -816,6 +859,43 @@ export default function IdleCell() {
 
   // All tabs feed the same leader → cell chain below.
   const cells = isPeren ? factCells : (cellsData?.cells ?? []);
+  // The day's lock and the size of the queue arrive with the ROWS — never from
+  // a second call to /api/staff/approvals/day, which is gated on a page a
+  // leader does not hold, so for the person this page exists for it would 403.
+  const day = cellsData?.day ?? null;
+  const pendingTotal = cellsData?.pending_total ?? 0;
+  const canDecideAny = (cellsData?.cells ?? []).some((c) => c.can_decide);
+
+  const refreshCells = () => qc.invalidateQueries({ queryKey: ["idle-cells"] });
+
+  // The ONE re-open door on the platform, reused as-is: a second endpoint would
+  // be a second way for the day's state to change without the Daily page or its
+  // notifications knowing.
+  const reopenMut = useMutation({
+    mutationFn: () => api.post("/api/staff/approvals/reopen", { manager_id: supervisorId, date }),
+    onSuccess: () => {
+      setReopen(false);
+      refreshCells();
+      qc.invalidateQueries({ queryKey: ["daily-approval"] });
+      qc.invalidateQueries({ queryKey: ["staff-approvals-calendar"] });
+      qc.invalidateQueries({ queryKey: ["approved-cells"] });
+      toast.success(t("idleCell.reopened"));
+    },
+    onError: (e) => setReopenErr(errText(e, t)),
+  });
+
+  const approveDay = useMutation({
+    mutationFn: () => api.post("/api/idle-cell/intervals/decide-all", {
+      date, supervisor_id: supervisorId,
+    }),
+    onSuccess: (r) => {
+      setDayBulk(false);
+      refreshCells();
+      qc.invalidateQueries({ queryKey: ["idle-pending-count"] });
+      toast.success(t("idleCell.decisionApprovedN").replace("{n}", r?.data?.count ?? pendingTotal));
+    },
+    onError: (e) => setDayBulkErr(errText(e, t)),
+  });
 
   // Leader narrows the supervisor's cells, and the cell picker below it only
   // offers what the leader filter left — the toolbar reads as one chain,
@@ -965,9 +1045,10 @@ export default function IdleCell() {
             their plant gets from `useFactorySection`. A one-option dropdown is
             not a choice, and offering it here would suggest there are other
             brigadirs whose day this page could be pointed at. */}
-        {/* Never past today: `staff.close_day` refuses a future date, so a row
-            filed there could never be locked with its day. */}
-        <DayStepper value={date} onChange={setDate} max={localTodayIso()} />
+        {/* `max` is left at its default (today) on purpose: `staff.close_day`
+            refuses a future date, so a row filed there could never be locked
+            with its day. The API refuses one too — this is the poka-yoke. */}
+        <DayStepper value={date} onChange={setDate} />
         {!locked && <StyledSelect
           value={supervisorId != null ? String(supervisorId) : ""}
           onChange={(v) => { setSupervisorId(v ? Number(v) : null); setLeaderId(""); setSelectedCellIds([]); }}
@@ -1049,6 +1130,29 @@ export default function IdleCell() {
                   render={(v) => cellOptions.find((o) => o.value === v)?.label || v} />
               ),
             }] : []),
+            // Request status — a SECTION of the panel, never a control of its
+            // own on the bar (the one-filter-zone rule). Offered only on the
+            // cell tabs, and only once the day actually holds a request:
+            // a filter over a distinction the day does not make is a control
+            // whose every option shows the same rows.
+            ...(!isPeren && (pendingTotal > 0 || statusFilter !== "all") ? [{
+              key: "reqStatus", icon: Hourglass, label: t("idleCell.statusFilter"),
+              active: statusFilter !== "all",
+              display: t({ pending: "idleCell.stPending", approved: "idleCell.stApproved",
+                           rejected: "idleCell.stRejected" }[statusFilter] || "idleCell.statusAll"),
+              onClear: () => setStatusFilter("all"),
+              render: ({ close }) => (
+                <PickFilter close={close}
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  opts={[
+                    { value: "all", label: t("idleCell.statusAll") },
+                    { value: "pending", label: t("idleCell.stPending") },
+                    { value: "approved", label: t("idleCell.stApproved") },
+                    { value: "rejected", label: t("idleCell.stRejected") },
+                  ]} />
+              ),
+            }] : []),
           ]}
         />
         {/* The 11 category definitions, once for the page. They used to be
@@ -1119,12 +1223,70 @@ export default function IdleCell() {
         emptyBox(t(isLeader && locked ? "idleCell.noOwnCells" : "idleCell.noCells"))
       ) : (
         <div className="space-y-2">
+          {/* The day's lock, stated once at the top rather than as an absence
+              of buttons the reader has to notice. It names who shut it and
+              when, because the next question is always "who do I ask" — and
+              for the people who may lift it, the answer is a button here
+              instead of a trip to the Daily page. */}
+          {day && !day.can_write && (
+            <div
+              className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl text-xs"
+              style={{
+                background: "rgba(100,116,139,0.14)",
+                border: "1px solid rgba(100,116,139,0.35)",
+                color: "var(--text-2)",
+              }}
+            >
+              <Lock size={14} style={{ color: "#94a3b8", flexShrink: 0 }} />
+              <span className="font-semibold">{t("idleCell.dayClosedTitle")}</span>
+              {day.closed_by && <span style={{ color: "var(--text-3)" }}>· {tl(day.closed_by)}</span>}
+              <span className="w-full sm:w-auto sm:ml-1" style={{ color: "var(--text-3)" }}>
+                {t("idleCell.dayClosedHint")}
+              </span>
+              {day.can_reopen && (
+                <Button
+                  size="sm" variant="secondary" tint icon={<Unlock size={13} />}
+                  className="ml-auto"
+                  onClick={() => { setReopenErr(""); setReopen(true); }}
+                >
+                  {t("idleCell.reopenDay")}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* The queue, for whoever can clear it. Absent when there is nothing
+              waiting — a banner that is always there is chrome, not a signal. */}
+          {day?.can_write && canDecideAny && pendingTotal > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl text-xs"
+              style={{
+                background: "rgba(234,179,8,0.12)",
+                border: "1px solid rgba(234,179,8,0.35)",
+                color: "var(--text-2)",
+              }}
+            >
+              <Hourglass size={14} style={{ color: "#eab308", flexShrink: 0 }} />
+              <span className="font-semibold">
+                {t("idleCell.pendingBannerN").replace("{n}", pendingTotal)}
+              </span>
+              <Button
+                size="sm" variant="success" tint icon={<Check size={13} />}
+                className="ml-auto"
+                onClick={() => { setDayBulkErr(""); setDayBulk(true); }}
+              >
+                {t("idleCell.approveAllN").replace("{n}", pendingTotal)}
+              </Button>
+            </div>
+          )}
+
           {shownCells.map((c) => (
             <CellCard
               key={`${c.cell_id}-${date}`}
               cell={c}
               date={date}
               supervisorId={supervisorId}
+              statusFilter={statusFilter}
               view={tab === "timeline" ? "timeline" : "table"}
               sort={rowSort}
               onSort={onRowSort}
@@ -1135,6 +1297,30 @@ export default function IdleCell() {
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={reopen}
+        title={t("idleCell.reopenTitle")}
+        message={t("staff.apprReopenConfirm")}
+        confirmLabel={t("idleCell.reopenDay")}
+        cancelLabel={t("idleCell.cancel")}
+        loading={reopenMut.isPending}
+        error={reopenErr || null}
+        onCancel={() => { setReopenErr(""); setReopen(false); }}
+        onConfirm={() => reopenMut.mutate()}
+      />
+
+      <ConfirmDialog
+        open={dayBulk}
+        title={t("idleCell.approveAllTitle")}
+        message={t("idleCell.approveAllConfirmN").replace("{n}", pendingTotal)}
+        confirmLabel={t("idleCell.approveAllN").replace("{n}", pendingTotal)}
+        cancelLabel={t("idleCell.cancel")}
+        loading={approveDay.isPending}
+        error={dayBulkErr || null}
+        onCancel={() => { setDayBulkErr(""); setDayBulk(false); }}
+        onConfirm={() => approveDay.mutate()}
+      />
+
       {legendOpen && (
         <CategoryLegendModal
           catNames={CATS.map((c) => c.name)}

@@ -120,6 +120,29 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   });
   const pendingCount = pendingData?.count ?? 0;
 
+  // Per-cell ojidaniya requests waiting on THIS viewer. A separate count from
+  // the Verifix one above because it answers a different question for a
+  // different person — a brigadir is not in BADGE_ROLES and would otherwise
+  // never learn that their unit's leaders are waiting on them. The endpoint
+  // answers 0 rather than 403 for somebody who decides nothing, so it is safe
+  // to poll for anyone who can open the page at all.
+  const canIdle = canAccessPage(auth?.role, "idle-cell", access, capPages, deniedPages);
+  const { data: idleData } = useQuery({
+    queryKey: ["idle-pending-count"],
+    queryFn: () => api.get("/api/idle-cell/requests/pending-count").then(r => r.data),
+    enabled: !!canIdle,
+    refetchInterval: 30_000,
+  });
+
+  // One map, so a link carries a badge by BEING in it — the old code tested
+  // `to === "/staff"` in three places, which is why a second badge could not
+  // exist without a fourth.
+  const BADGES = {
+    "/staff": showBadge ? pendingCount : 0,
+    "/idle-cell": idleData?.count ?? 0,
+  };
+  const badgeFor = (to) => BADGES[to] || 0;
+
   const withSearch = (path) => `${path}${location.search}`;
   const links = ALL_LINKS.filter(l =>
     l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages, deniedPages));
@@ -199,8 +222,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // on the icon, not row padding, so the full-width active pill and hover wash
   // stay flush; on the icon rail it drops to 0 to keep icons centered.
   const renderLink = ({ to, key, icon: Icon }, indent = false) => {
-    const isStaff = to === "/staff";
-    const badge = isStaff && showBadge && pendingCount > 0;
+    const badgeCount = badgeFor(to);
+    const badge = badgeCount > 0;
     return (
       <NavLink
         key={to}
@@ -248,7 +271,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
         {badge && expanded && (
           <span className="ml-auto flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
             style={{ background: "#ef4444", color: "#fff", minWidth: 18, textAlign: "center" }}>
-            {pendingCount}
+            {badgeCount}
           </span>
         )}
       </NavLink>
@@ -377,8 +400,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
             const activeInside = items.some(l => isLinkActive(l.to));
             // Pending Verifix work must stay visible with «Люди» collapsed —
             // the count bubbles up onto the group header.
-            const groupBadge = collapsed && showBadge && pendingCount > 0 &&
-              items.some(l => l.to === "/staff") ? pendingCount : 0;
+            const groupBadge = collapsed
+              ? items.reduce((n, l) => n + badgeFor(l.to), 0) : 0;
             const GroupIcon = g.icon;
 
             return (

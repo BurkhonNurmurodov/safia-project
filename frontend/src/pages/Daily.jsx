@@ -211,13 +211,36 @@ function SupervisorDaily() {
     qc.invalidateQueries({ queryKey: ["approved-cells"] });
   };
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [closeErr, setCloseErr] = useState("");
+  // Telegram's iOS WebView silently suppresses window.confirm, so on the
+  // platform's primary device a confirm-gated button simply does nothing. Both
+  // of these go through ConfirmDialog, which also lets a refusal stay on screen.
+  const [showReopen, setShowReopen] = useState(false);
+  const [reopenErr, setReopenErr] = useState("");
   const closeMut = useMutation({
     mutationFn: () => api.post("/api/staff/daily/close", { manager_id: managerId, date }),
-    onSuccess: () => { setShowCloseModal(false); invalidateApproval(); },
+    onSuccess: () => { setShowCloseModal(false); setCloseErr(""); invalidateApproval(); },
+    onError: (e) => {
+      // The STRUCTURE is on `detail_raw` — api.js flattens every non-string
+      // `detail` to text and keeps the original there, so testing `detail` for
+      // an object finds a JSON blob and prints it.
+      const raw = e?.response?.data?.detail_raw;
+      const d = e?.response?.data?.detail;
+      // The day cannot close over undecided per-cell ojidaniya requests — the
+      // brigadir is their approver, so the count is their own to-do, not an
+      // error about the day.
+      setCloseErr(raw && typeof raw === "object" && raw.code === "idle_requests_pending"
+        ? t("daily.closeBlockedIdleN").replace("{n}", raw.count)
+        : (typeof d === "string" && d) || t("staff.saveFailed"));
+    },
   });
   const reopenMut = useMutation({
     mutationFn: () => api.post("/api/staff/approvals/reopen", { manager_id: managerId, date }),
-    onSuccess: invalidateApproval,
+    onSuccess: () => { setShowReopen(false); setReopenErr(""); invalidateApproval(); },
+    // Never an empty string: `error={reopenErr || null}` would then render
+    // nothing and leave the dialog standing with no reason on it, which is the
+    // exact state it exists to prevent.
+    onError: (e) => setReopenErr(String(e?.response?.data?.detail || t("staff.saveFailed"))),
   });
 
   // ── Delete modal & toast state ─────────────────────────────────────────────
@@ -281,7 +304,7 @@ function SupervisorDaily() {
               </span>
               {canReopen && (
                 <button
-                  onClick={() => { if (window.confirm(t("staff.apprReopenConfirm"))) reopenMut.mutate(); }}
+                  onClick={() => { setReopenErr(""); setShowReopen(true); }}
                   disabled={reopenMut.isPending}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                   style={{ background: "var(--bg-card)", color: "var(--text-2)", border: "1px solid var(--border-md)", opacity: reopenMut.isPending ? 0.6 : 1 }}
@@ -292,7 +315,7 @@ function SupervisorDaily() {
             </>
           ) : ownDay ? (
             <button
-              onClick={() => setShowCloseModal(true)}
+              onClick={() => { setCloseErr(""); setShowCloseModal(true); }}
               disabled={closeMut.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
               style={{ background: "var(--brand)", color: "#fff" }}
@@ -307,7 +330,7 @@ function SupervisorDaily() {
               </span>
               {isAdmin && (
                 <button
-                  onClick={() => setShowCloseModal(true)}
+                  onClick={() => { setCloseErr(""); setShowCloseModal(true); }}
                   disabled={closeMut.isPending}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                   style={{ background: "var(--brand)", color: "#fff" }}
@@ -360,7 +383,7 @@ function SupervisorDaily() {
           </div>
           {(ownDay || isAdmin) && (
             <button
-              onClick={() => setShowCloseModal(true)}
+              onClick={() => { setCloseErr(""); setShowCloseModal(true); }}
               disabled={closeMut.isPending}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold"
               style={{ background: "var(--brand)", color: "#fff" }}
@@ -515,13 +538,26 @@ function SupervisorDaily() {
       {/* Close-the-day confirmation modal */}
       <ConfirmDialog
         open={showCloseModal}
-        onCancel={() => setShowCloseModal(false)}
+        onCancel={() => { setCloseErr(""); setShowCloseModal(false); }}
         onConfirm={() => closeMut.mutate()}
         title={t("daily.closeConfirmTitle")}
         message={t("daily.closeConfirmText")}
         confirmLabel={closeMut.isPending ? t("daily.closing") : t("daily.closeConfirmBtn")}
         cancelLabel={t("daily.cancel")}
         loading={closeMut.isPending}
+        error={closeErr || null}
+      />
+
+      <ConfirmDialog
+        open={showReopen}
+        onCancel={() => { setReopenErr(""); setShowReopen(false); }}
+        onConfirm={() => reopenMut.mutate()}
+        title={t("daily.reopenDay")}
+        message={t("staff.apprReopenConfirm")}
+        confirmLabel={t("daily.reopenDay")}
+        cancelLabel={t("daily.cancel")}
+        loading={reopenMut.isPending}
+        error={reopenErr || null}
       />
     </Layout>
   );

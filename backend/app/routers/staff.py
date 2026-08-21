@@ -4354,11 +4354,21 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
     # them would freeze entries nobody can ever answer, since the lock refuses
     # the decision too. Lazy import: services.idle_lock deliberately does not
     # import this router, and this is the only direction that could cycle.
+    #
+    # But only for a closer who can actually REACH that queue.
+    # `PAGE_ACCESS["idle-cell"]` is empty — the page opens per profile — so a
+    # brigadir whose leaders were granted it while they were not would be
+    # refused their day and sent to a page that 403s them: an instruction they
+    # cannot follow, and no admin action short of a grant would clear it. Where
+    # they can see the queue, the block is a to-do; where they cannot, it is a
+    # trap, so the close proceeds and the requests wait for the day to re-open.
+    from app.permissions import page_allowed
     from app.services import idle_lock
-    waiting = idle_lock.pending_requests_for(db, manager_id, d)
-    if waiting:
-        raise HTTPException(status_code=409,
-                            detail={"code": "idle_requests_pending", "count": waiting})
+    if page_allowed(db, caller, "idle-cell"):
+        waiting = idle_lock.pending_requests_for(db, manager_id, d)
+        if waiting:
+            raise HTTPException(status_code=409,
+                                detail={"code": "idle_requests_pending", "count": waiting})
 
     closer_name = caller.get("full_name", "")
     db.add(DayApproval(
