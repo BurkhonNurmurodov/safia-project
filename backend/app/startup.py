@@ -2889,3 +2889,101 @@ def add_leader_unit_bot_from() -> None:
         print(f"[startup] leader unit bot-from migration skipped: {exc}")
     finally:
         db.close()
+
+
+# The camera pilot's rehearsal floor, applied once (user, 2026-08-21).
+#
+# Enrolling a unit in in-app camera capture and declaring its first days a
+# REHEARSAL are two separate acts, and only the first one happened: from the
+# moment the pilot supervisor's tasks went to `camera`, `leader_bot.merges()`
+# counted the unit's bot days from `MERGE_FROM` (2026-08-19) on. So 20 Aug read
+# from the bot — the day the leaders were still learning where the buttons are —
+# instead of the Google-Form row they filled in properly, and the AI scored the
+# practice run (one leader at 10%). The unit's counted bot layer starts on
+# 2026-08-21, which is what `LeaderUnitSetting.bot_from` says; nobody could set
+# it retroactively from here without a shell, hence a one-shot.
+#
+# Versioned like every other one-shot in this file: the flag records "this exact
+# floor has been applied once". Moving the date needs a NEW key, or the old
+# "already ran" mark makes the new floor a no-op on every box that has booted.
+CAMERA_BOT_FROM_FLAG = "leader_camera_bot_from_2026_08_21_v1"
+CAMERA_BOT_FROM = "2026-08-21"
+
+
+def set_camera_pilot_bot_from() -> None:
+    """Declare the camera pilot's first days a rehearsal, once.
+
+    **Bounded three ways**, because a floor written on the wrong unit hides days
+    somebody's score depends on:
+
+    * only units enrolled in camera capture (`leader_bot.camera_units`) — the
+      pilot set, and the only shift-1 units whose bot days merge at all;
+    * never shift 2, which files ONLY in the bot: there is no sheet row
+      underneath it to fall back to, and the endpoint refuses a floor there for
+      the same reason;
+    * only a unit that actually HAS closed bot days inside the exposed window
+      (`MERGE_FROM` ≤ date < the floor) — i.e. a register currently showing
+      practice as the record. A unit enrolled later has none and is left alone,
+      so this cannot stamp a stale window on somebody else's matrix.
+
+    A floor already at or past the date is never lowered, and a GLOBAL camera
+    default (which enrols every unit at once) aborts the pass outright: 19 units
+    silently switched to the sheet is not a pilot fix.
+
+    Nothing is destroyed. `bot_from` moves only which LAYER is read, so the bot
+    days keep their photos, entries and verdicts and come back the moment an
+    admin moves the window in «Brigada sozlamalari». The queued-but-never-judged
+    AI rows for those days go the same way the endpoint sends them
+    (`drop_rehearsal_pending`) — they would otherwise cost a Gemini call each and
+    be displayed nowhere.
+    """
+    from app.models import LeaderTaskDay, LeaderTaskDef, LeaderUnitSetting
+    from app.services import leader_ai, leader_bot
+    from app.services.leader_tasks import set_unit_settings
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CAMERA_BOT_FROM_FLAG).first():
+            return
+        if db.query(LeaderTaskDef).filter(LeaderTaskDef.proof_kind == "camera").first():
+            # Camera at the GLOBAL level means every unit is "enrolled". Refuse,
+            # and deliberately write no flag, so the guard stays honest about
+            # never having run.
+            print("[startup] camera rehearsal floor skipped: camera is set globally")
+            return
+
+        cams = leader_bot.camera_units(db)
+        shifts = ({m.id: m.shift for m in
+                   db.query(Manager).filter(Manager.id.in_(cams)).all()} if cams else {})
+        touched: list[tuple[int, int]] = []
+        for mid in sorted(cams):
+            if shifts.get(mid) == leader_bot.MERGE_SHIFT:
+                continue
+            exposed = (db.query(LeaderTaskDay.id)
+                       .filter(LeaderTaskDay.manager_id == mid,
+                               LeaderTaskDay.closed_at.isnot(None),
+                               LeaderTaskDay.date >= leader_bot.MERGE_FROM,
+                               LeaderTaskDay.date < CAMERA_BOT_FROM)
+                       .first())
+            if not exposed:
+                continue
+            row = db.query(LeaderUnitSetting).filter_by(manager_id=mid).first()
+            if row and (row.bot_from or "") >= CAMERA_BOT_FROM:
+                continue
+            set_unit_settings(db, manager_id=mid,
+                              per_task_close=bool(row and row.per_task_close),
+                              bot_from=CAMERA_BOT_FROM)
+            touched.append((mid, leader_ai.drop_rehearsal_pending(
+                db, mid, CAMERA_BOT_FROM)))
+
+        db.add(AppSetting(key=CAMERA_BOT_FROM_FLAG, value="1"))
+        db.commit()
+        for mid, dropped in touched:
+            print(f"[startup] leader bot layer: unit {mid} counts from "
+                  f"{CAMERA_BOT_FROM}, earlier bot days are a rehearsal"
+                  + (f", {dropped} queued proof(s) dropped" if dropped else ""))
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] camera rehearsal floor skipped: {exc}")
+    finally:
+        db.close()

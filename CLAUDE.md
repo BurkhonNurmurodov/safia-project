@@ -651,6 +651,20 @@ SERVER's; the phone never authors it.
   AND resolution IS NULL`, the paused-shift purge's rule; `discover()` re-finds
   every ref if the window is cleared). The one door left open is `force=True`,
   the admin's per-task «check now» — same carve-out as the shift pause.
+  **Enrolment does not open the window — somebody must set it**, and on the
+  pilot's first unit nobody did: camera went on, `merges()` counted the unit's
+  bot days from `MERGE_FROM`, and 20 Aug read the practice run (a leader at
+  10%) instead of the Google-Form row the unit filed properly.
+  `startup.set_camera_pilot_bot_from` (flag
+  `leader_camera_bot_from_2026_08_21_v1`) is the one-shot that set the floor to
+  **2026-08-21** — bounded to camera-enrolled non-shift-2 units that actually
+  hold closed bot days inside the exposed window, never lowering a floor, and
+  aborting outright if camera is set globally. It writes config only: the bot
+  days keep their photos, entries and verdicts and reappear the moment an admin
+  moves the window. Moving the date needs a NEW flag key, same rule as the
+  review floor. **A day already reported keeps its DM** — a score that went out
+  before the floor moved cannot be recalled, and `build_report_row` still
+  renders a rehearsal day's bot report for anyone holding that link.
 
 Related memory: `leader-camera-proof-pilot`.
 
