@@ -464,6 +464,15 @@ export default function ShiftTimes() {
   const [sel, setSel] = useState([]);
   const selSet = useMemo(() => new Set(sel), [sel]);
   const visibleIds = useMemo(() => rows.map((c) => c.id), [rows]);
+  // A selection deliberately SURVIVES a filter change (filter to one brigadir,
+  // select, filter to the next, select again — then apply once). The cost is
+  // that «20 selected» can stand over 3 rows on screen, so the count of picks
+  // the current filter hides is stated wherever the selection is acted on.
+  const visibleIdSet = useMemo(() => new Set(visibleIds), [visibleIds]);
+  const selHidden = useMemo(
+    () => sel.filter((id) => !visibleIdSet.has(id)).length,
+    [sel, visibleIdSet],
+  );
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selSet.has(id));
   const toggleRow = (id) =>
     setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
@@ -504,6 +513,10 @@ export default function ShiftTimes() {
   const bulkShifts = useMemo(
     () => new Set(bulkCells.map((c) => c.shift).filter((x) => x != null)),
     [bulkCells]
+  );
+  const bulkHidden = useMemo(
+    () => (bulk ? bulk.ids.filter((id) => !visibleIdSet.has(id)).length : 0),
+    [bulk, visibleIdSet]
   );
 
   // Validation lands ON the field that caused it, never in the footer: a
@@ -942,6 +955,11 @@ export default function ShiftTimes() {
           <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
             {t("admin.shiftTimes.selected").replace("{n}", String(sel.length))}
           </span>
+          {selHidden > 0 && (
+            <span className="text-[11px] leading-snug" style={{ color: "#eab308" }}>
+              {t("admin.shiftTimes.selHidden").replace("{n}", String(selHidden))}
+            </span>
+          )}
           <div className="flex items-center gap-2 ml-auto flex-wrap">
             <Button size="lg" variant="primary" disabled={!canEdit} icon={<Clock size={14} />}
                     onClick={() => openBulk(sel)}>
@@ -1007,6 +1025,22 @@ export default function ShiftTimes() {
               </span>
             )}
           </div>
+
+          {/* The write scope is the SELECTION, not what is on screen — so a
+              pick the current filter hides is named here too, where the value
+              is actually about to be written. */}
+          {bulkHidden > 0 && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-xl"
+                 style={{
+                   background: "color-mix(in srgb, #eab308 10%, transparent)",
+                   border: "1px solid color-mix(in srgb, #eab308 35%, transparent)",
+                 }}>
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" style={{ color: "#eab308" }} />
+              <span className="text-[11px] leading-snug" style={{ color: "var(--text-2)" }}>
+                {t("admin.shiftTimes.selHidden").replace("{n}", String(bulkHidden))}
+              </span>
+            </div>
+          )}
 
           {/* Legitimate — a plant may well run both shifts to one clock — but
               worth naming, because the shifts are the reason the defaults are

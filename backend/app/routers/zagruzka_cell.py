@@ -389,6 +389,10 @@ def cell_zagruzka(
         CellOjidaniyaInterval.cell_id.in_(cell_ids),
         CellOjidaniyaInterval.date >= iso_lo,
         CellOjidaniyaInterval.date <= iso_hi,
+        # A leader's entry is a REQUEST until their brigadir confirms it. An
+        # unconfirmed one must not move a KPI: this page and /idle-cell read the
+        # same table, so they answer "approved only" the same way.
+        CellOjidaniyaInterval.status == "approved",
     ).all():
         iv_by_cell[(iv.cell_id, iv.date)].append(iv)
 

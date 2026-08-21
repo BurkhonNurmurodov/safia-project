@@ -121,6 +121,7 @@ CAP_REQUESTS_APPROVE  = "staff.requests.approve"
 CAP_ATTENDANCE_EDIT   = "staff.attendance.edit"
 CAP_ATTENDANCE_DELETE = "staff.attendance.delete"
 CAP_DAY_REOPEN        = "staff.day.reopen"
+CAP_IDLE_APPROVE      = "idle.requests.approve"
 CAP_CLEANUP           = "admin.cleanup"
 CAP_USERS_MANAGE      = "admin.users.manage"
 CAP_PROFILES_MANAGE   = "admin.profiles.manage"
@@ -163,6 +164,12 @@ SCOPED_PAGES = ("staff", "daily", "production", "concerns", "worker-concerns", "
 CAPABILITIES = [
     {"key": CAP_DOCUMENTS_APPROVE, "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
     {"key": CAP_REQUESTS_APPROVE,  "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
+    # Confirming a leader's per-cell ojidaniya. Scoped, because it is a unit's
+    # own queue — a grant covers the units the grantee already answers for, and
+    # the cell's OWN brigadir needs no grant at all. It lists the page because a
+    # capability implies page access: the request's Telegram card carries a
+    # deep link, and a grantee without the page would tap it into "no access".
+    {"key": CAP_IDLE_APPROVE,      "group": "requests",   "pages": ["idle-cell"],      "tab": None,        "scoped": True,  "page": None},
     {"key": CAP_ATTENDANCE_EDIT,   "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
     {"key": CAP_ATTENDANCE_DELETE, "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
     {"key": CAP_DAY_REOPEN,        "group": "attendance", "pages": ["staff", "daily"], "tab": None,        "scoped": True,  "page": None},

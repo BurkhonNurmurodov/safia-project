@@ -179,6 +179,33 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("День переоткрыт: {reopener_name}", "Дата: {date} — день снова открыт, данные скрыты до закрытия"),
         "en": ("Day re-opened by {reopener_name}", "Date: {date} — the day is open again, data is hidden until it is closed"),
     },
+    # Per-cell ojidaniya requests (/idle-cell). A leader proposes a wait; the
+    # cell's brigadir decides. The leader is told either way — a refusal
+    # somebody only discovers days later is how trust in a queue dies.
+    "idle_request_new": {
+        "uz": ("Yangi kutish so'rovi", "{cell} · {category} · {time} | Sana: {date} | Yubordi: {leader_name}"),
+        "uz_cyrl": ("Янги кутиш сўрови", "{cell} · {category} · {time} | Сана: {date} | Юборди: {leader_name}"),
+        "ru": ("Новый запрос на ожидание", "{cell} · {category} · {time} | Дата: {date} | Отправил(а): {leader_name}"),
+        "en": ("New idle-time request", "{cell} · {category} · {time} | Date: {date} | From: {leader_name}"),
+    },
+    "idle_request_approved": {
+        "uz": ("Kutish tasdiqlandi", "{cell} · {category} · {time} | Sana: {date} | Tasdiqladi: {decider_name}"),
+        "uz_cyrl": ("Кутиш тасдиқланди", "{cell} · {category} · {time} | Сана: {date} | Тасдиқлади: {decider_name}"),
+        "ru": ("Ожидание подтверждено", "{cell} · {category} · {time} | Дата: {date} | Подтвердил(а): {decider_name}"),
+        "en": ("Idle time confirmed", "{cell} · {category} · {time} | Date: {date} | Confirmed by: {decider_name}"),
+    },
+    "idle_request_rejected": {
+        "uz": ("Kutish rad etildi", "{cell} · {category} · {time} | Sana: {date} | Rad etdi: {decider_name} | Sabab: {reason}"),
+        "uz_cyrl": ("Кутиш рад этилди", "{cell} · {category} · {time} | Сана: {date} | Рад этди: {decider_name} | Сабаб: {reason}"),
+        "ru": ("Ожидание отклонено", "{cell} · {category} · {time} | Дата: {date} | Отклонил(а): {decider_name} | Причина: {reason}"),
+        "en": ("Idle time rejected", "{cell} · {category} · {time} | Date: {date} | Rejected by: {decider_name} | Reason: {reason}"),
+    },
+    "idle_requests_approved": {
+        "uz": ("{count} ta kutish tasdiqlandi", "Sana: {date} | Tasdiqladi: {decider_name}"),
+        "uz_cyrl": ("{count} та кутиш тасдиқланди", "Сана: {date} | Тасдиқлади: {decider_name}"),
+        "ru": ("Подтверждено ожиданий: {count}", "Дата: {date} | Подтвердил(а): {decider_name}"),
+        "en": ("{count} idle-time entries confirmed", "Date: {date} | Confirmed by: {decider_name}"),
+    },
     "verifix_uploaded": {
         "uz": ("Verifix ma'lumotlari yuklandi", "Sana: {date}. O'zgartirishlarni kiriting (xodim almashtirish, lavozim o'zgartirish, o'chirish) va kunni yoping."),
         "uz_cyrl": ("Verifix маълумотлари юкланди", "Сана: {date}. Ўзгартиришларни киритинг (ходим алмаштириш, лавозим ўзгартириш, ўчириш) ва кунни ёпинг."),
