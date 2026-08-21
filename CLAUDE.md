@@ -793,11 +793,18 @@ so nothing can auto-close today's day at all.
   carries no delete controls at all — a greyed-out «O'chirish» reads as "not
   yet", not as "never". The two registers are split BEFORE the page scope is
   applied, so the `ScopeNotice` count describes the view being read.
+- **In per-task («1×1») mode the decisive column is «Yuborilgan»**, not
+  «Javob». `maybe_close_day` waits on `entry.closed_at`, not on the entry
+  existing, so a leader can ANSWER all thirteen tasks, photograph every proof
+  and still hold a day nothing will show — the gap between the two counts is
+  the drafts. It renders «—» outside per-task mode, where one button submits
+  the whole day and a per-task count would name a step that unit does not have.
 - Reading it: `pending_media > 0` ⇒ the leader shot proofs and the roll is short
   of `min_media`; `answered < enabled` with no pending photos ⇒ tasks genuinely
-  unanswered; `answered == enabled` and still open ⇒ they simply never pressed
-  «KUNNI YOPISH». `expired` ⇒ it will close (and go to the AI) the moment that
-  leader reopens the bot.
+  unanswered; `answered == enabled` but `tasks_closed < enabled` ⇒ per-task
+  drafts, waiting on `autoclose_due` at the task deadline; `answered == enabled`
+  on a day-close unit ⇒ they simply never pressed «KUNNI YOPISH». `expired` ⇒ it
+  will close (and go to the AI) the moment that leader reopens the bot.
 
 ## Browser login (the second door)
 

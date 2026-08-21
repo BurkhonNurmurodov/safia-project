@@ -613,6 +613,44 @@ def migrate_cell_perenaladka() -> None:
     CellPerenaladka.__table__.create(bind=engine, checkfirst=True)
 
 
+def migrate_idle_interval_status() -> None:
+    """2026-08-21: an ojidaniya filed by a LEADER is a REQUEST until the cell's
+    brigadir or an admin confirms it — ``cell_ojidaniya_intervals`` gains
+    ``status`` plus who decided it, when, and why it was refused.
+
+    Every row that already exists is ``approved``: it was filed under the
+    direct-write rule this replaces, and back-dating it to "pending" would take
+    a day's downtime off the register and hand a brigadir a queue of entries
+    nobody ever meant to ask them about. The backfill therefore targets NULLs
+    only — it must never revisit a row an operator has since decided.
+
+    The table itself comes from ``create_all``, so only the columns are added
+    here. Idempotent; safe on a box that has already run it."""
+    db = SessionLocal()
+    try:
+        for ddl in (
+            "ALTER TABLE cell_ojidaniya_intervals ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'approved'",
+            "ALTER TABLE cell_ojidaniya_intervals ADD COLUMN IF NOT EXISTS decided_by_profile VARCHAR",
+            "ALTER TABLE cell_ojidaniya_intervals ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ",
+            "ALTER TABLE cell_ojidaniya_intervals ADD COLUMN IF NOT EXISTS decision_note TEXT",
+        ):
+            db.execute(text(ddl))
+        db.execute(text(
+            "UPDATE cell_ojidaniya_intervals SET status = 'approved' WHERE status IS NULL"))
+        db.execute(text(
+            "ALTER TABLE cell_ojidaniya_intervals ALTER COLUMN status SET NOT NULL"))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_cellojint_date_status "
+            "ON cell_ojidaniya_intervals (date, status)"))
+        db.commit()
+        log.info("cell_ojidaniya_intervals: status columns ready")
+    except Exception:
+        db.rollback()
+        log.exception("migrate_idle_interval_status failed")
+    finally:
+        db.close()
+
+
 def migrate_cell_supervisor_column() -> None:
     """2026-07-27: cells gain a direct supervisor link (manager_id → managers.id,
     nullable). A cell now belongs to a supervisor independently of its leader —

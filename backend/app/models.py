@@ -549,7 +549,21 @@ class CellOjidaniyaInterval(Base):
     (17:00 -> 09:00) needs no special case; ``end == start`` is rejected at the
     API rather than becoming a silent 24-hour stop. The shift is a property of
     the cell (its supervisor's), so it is derived on read, never stored.
-    ``entered_by_profile`` = "role:id" of the last writer."""
+
+    ``status`` is what makes a leader's entry a REQUEST (from 2026-08-21). A
+    leader files ``pending``; it becomes an ojidaniya only when the cell's own
+    brigadir or an admin confirms it, and only ``approved`` rows are ever fed to
+    ``services/idle_intervals.summarize`` or to the per-cell загрузка. A
+    ``rejected`` row is KEPT, with the reason on it: deleting a refusal would
+    read to the leader exactly like an entry they never filed. Everything filed
+    before this existed is ``approved`` — it was written under the direct-write
+    rule, and that is the only honest value for it.
+
+    ``entered_by_profile`` is therefore the REQUESTER and stops being rewritten
+    by whoever touched the row last: an approver's identity goes to
+    ``decided_by_profile``, so a row always names both people. That distinction
+    is load-bearing — "may this caller edit this row" is decided by comparing
+    the caller against the AUTHOR."""
     __tablename__ = "cell_ojidaniya_intervals"
 
     id                 = Column(Integer, primary_key=True, autoincrement=True)
@@ -560,12 +574,22 @@ class CellOjidaniyaInterval(Base):
     end                = Column(String(5), nullable=False)               # "HH:MM" (<= start ⇒ next day)
     stopped            = Column(Boolean, nullable=False, default=True)   # did the cell stop for this one
     note               = Column(Text, nullable=False)                    # REQUIRED reason
-    entered_by_profile = Column(String, nullable=True)                   # "role:id" of the last writer
+    entered_by_profile = Column(String, nullable=True)                   # "role:id" of the REQUESTER
+    # pending | approved | rejected — only "approved" is an ojidaniya.
+    status             = Column(String, nullable=False, server_default="approved", default="approved")
+    decided_by_profile = Column(String, nullable=True)                   # "role:id" of the confirmer
+    decided_at         = Column(DateTime(timezone=True), nullable=True)
+    decision_note      = Column(Text, nullable=True)                     # rejection reason; cleared on resend
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     updated_at         = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # No unique key: several ranges per (cell, date, category) is the point.
-    __table_args__ = (Index("ix_cellojint_cell_date", "cell_id", "date"),)
+    # The status index carries the day with it — every read of this table is
+    # "this cell-day, approved" or "this unit-day, still pending".
+    __table_args__ = (
+        Index("ix_cellojint_cell_date", "cell_id", "date"),
+        Index("ix_cellojint_date_status", "date", "status"),
+    )
 
 
 class CellPerenaladka(Base):

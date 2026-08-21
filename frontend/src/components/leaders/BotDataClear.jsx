@@ -152,6 +152,9 @@ const OPEN_TXT = {
       "Bu kunlar bazada bor, lekin lider ularni botda YOPMAGAN — shuning uchun ular hisobot ro'yxatida ham, AI navbatida ham ko'rinmaydi. " +
       "Kun faqat barcha vazifalarga javob berilgandan keyin yopiladi: kamerali vazifada kerakli rasm soni to'lmasa, javob yozilmaydi va «Kunni yopish» ishlamaydi.",
     thProgress: "Javob", thRoll: "Kutayotgan rasm", thState: "Holat", thOpened: "Sana",
+    thSubmitted: "Yuborilgan",
+    submittedHint: "1×1 rejimida har bir vazifa alohida yuboriladi. Javob berilgan, lekin yuborilmagan vazifa — qoralama: kun shu sababli yopilmaydi.",
+    draftHint: "Javob berilgan, lekin yuborilmagan: {n} ta",
     stStuck: "Muddati o'tgan", stActive: "Davom etmoqda",
     stStuckHint: "Lider botni keyingi marta ochganda avtomatik yopiladi",
     stActiveHint: "Kun hali davom etmoqda",
@@ -168,6 +171,9 @@ const OPEN_TXT = {
       "Бу кунлар базада бор, лекин лидер уларни ботда ЁПМАГАН — шунинг учун улар ҳисобот рўйхатида ҳам, AI навбатида ҳам кўринмайди. " +
       "Кун фақат барча вазифаларга жавоб берилгандан кейин ёпилади: камерали вазифада керакли расм сони тўлмаса, жавоб ёзилмайди ва «Кунни ёпиш» ишламайди.",
     thProgress: "Жавоб", thRoll: "Кутаётган расм", thState: "Ҳолат", thOpened: "Сана",
+    thSubmitted: "Юборилган",
+    submittedHint: "1×1 режимида ҳар бир вазифа алоҳида юборилади. Жавоб берилган, лекин юборилмаган вазифа — қоралама: кун шу сабабли ёпилмайди.",
+    draftHint: "Жавоб берилган, лекин юборилмаган: {n} та",
     stStuck: "Муддати ўтган", stActive: "Давом этмоқда",
     stStuckHint: "Лидер ботни кейинги марта очганда автоматик ёпилади",
     stActiveHint: "Кун ҳали давом этмоқда",
@@ -184,6 +190,9 @@ const OPEN_TXT = {
       "Эти дни есть в базе, но лидер НЕ ЗАКРЫЛ их в боте — поэтому их нет ни в списке отчётов, ни в очереди AI. " +
       "День закрывается только после ответа на все задачи: если в задаче с камерой не набрано нужное число фото, ответ не записывается и «Закрыть день» не срабатывает.",
     thProgress: "Ответы", thRoll: "Фото в ожидании", thState: "Статус", thOpened: "Дата",
+    thSubmitted: "Отправлено",
+    submittedHint: "В режиме 1×1 каждая задача отправляется отдельно. Задача с ответом, но неотправленная — черновик: именно поэтому день не закрывается.",
+    draftHint: "С ответом, но не отправлено: {n}",
     stStuck: "Срок истёк", stActive: "В процессе",
     stStuckHint: "Закроется автоматически, когда лидер снова откроет бота",
     stActiveHint: "День ещё идёт",
@@ -200,6 +209,9 @@ const OPEN_TXT = {
       "These days exist in the database, but the leader never CLOSED them in the bot — which is why they appear neither in the report register nor in the AI queue. " +
       "A day closes only once every task is answered: a camera task short of its required photo count writes no answer, so «Close the day» refuses.",
     thProgress: "Answered", thRoll: "Photos waiting", thState: "State", thOpened: "Date",
+    thSubmitted: "Submitted",
+    submittedHint: "In 1×1 mode each task is submitted on its own. A task that is answered but not submitted is a draft — which is exactly why the day will not close.",
+    draftHint: "Answered but not submitted: {n}",
     stStuck: "Past its window", stActive: "In progress",
     stStuckHint: "Closes automatically the next time the leader opens the bot",
     stActiveHint: "The day is still running",
@@ -230,6 +242,31 @@ function Chip({ color, icon, label, title }) {
     >
       {icon}
       {label}
+    </span>
+  );
+}
+
+/**
+ * How many of the day's tasks were actually SUBMITTED — the number that closes
+ * a day in per-task («1×1») mode, and the one an operator has no other way to
+ * see. Answering a task and submitting it are two different acts there:
+ * `maybe_close_day` waits on `entry.closed_at`, not on the entry existing, so a
+ * leader can answer all thirteen tasks, photograph every proof, and still hold
+ * a day nothing will show. The gap between «Javob» and this column IS that
+ * state, so the drafts are counted out loud rather than left to subtraction.
+ *
+ * Blank outside per-task mode: there the whole day is submitted by one button
+ * and a per-task count would describe a step that unit does not have.
+ */
+function SubmittedCell({ r, T }) {
+  if (!r.per_task) return <span style={{ color: "var(--text-4)" }}>—</span>;
+  const drafts = Math.max(0, (r.answered || 0) - (r.tasks_closed || 0));
+  return (
+    <span
+      title={drafts ? T.draftHint.replace("{n}", drafts) : T.submittedHint}
+      style={{ color: r.tasks_closed < r.enabled ? "#eab308" : "var(--text-1)" }}
+    >
+      {r.tasks_closed}/{r.enabled}
     </span>
   );
 }
@@ -524,7 +561,9 @@ export default function BotDataClear({ scope, onClearScope }) {
                       {r.pending_media > 0 && <RollChip n={r.pending_media} T={T} />}
                     </div>
                     <div className="text-[11px] mt-1.5 tabular-nums" style={{ color: "var(--text-4)" }}>
-                      {T.thProgress}: {r.answered}/{r.enabled} · {T.thMedia}: {r.media}
+                      {T.thProgress}: {r.answered}/{r.enabled}
+                      {r.per_task && ` · ${T.thSubmitted}: ${r.tasks_closed}/${r.enabled}`}
+                      {` · ${T.thMedia}: ${r.media}`}
                       {r.missing?.length > 0 && ` · ${T.missingN.replace("{n}", r.missing.length)}`}
                     </div>
                   </div>
@@ -556,6 +595,7 @@ export default function BotDataClear({ scope, onClearScope }) {
                   <Th label={T.thSup} k="supervisor" sort={sort} onSort={onSort} />
                   <Th label={T.thShift} align="center" />
                   <Th label={T.thProgress} align="center" />
+                  <Th label={T.thSubmitted} align="center" />
                   <Th label={T.thMedia} k="media" sort={sort} onSort={onSort} align="center" />
                   <Th label={T.thRoll} align="center" />
                   <Th label={T.thState} />
@@ -583,7 +623,7 @@ export default function BotDataClear({ scope, onClearScope }) {
             <tbody>
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={isOpenView ? 8 : 10} className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-4)" }}>
+                  <td colSpan={isOpenView ? 9 : 10} className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-4)" }}>
                     {T.noMatch}
                   </td>
                 </tr>
@@ -603,6 +643,9 @@ export default function BotDataClear({ scope, onClearScope }) {
                     <span style={{ color: r.missing?.length ? "#eab308" : "var(--text-1)" }}>
                       {r.answered}/{r.enabled}
                     </span>
+                  </td>
+                  <td className="px-3 py-2 text-center tabular-nums">
+                    <SubmittedCell r={r} T={T} />
                   </td>
                   <td className="px-3 py-2 text-center tabular-nums">{r.media}</td>
                   <td className="px-3 py-2 text-center tabular-nums">
