@@ -24,10 +24,18 @@ The daily-actual «Perenaladka» entry that used to be this page's second tab
 lives on the Setup-times page now (routers/setup_times.py «Fakt» endpoints);
 this router is Ojidaniya-only.
 
-Gated by the ``idle-cell`` page (admin-only by default, grantable later).
+Gated by the ``idle-cell`` page. ``PAGE_ACCESS["idle-cell"]`` stays EMPTY — the
+page opens for a supervisor and their leaders (from 2026-08-21) through
+per-profile ``page.view.idle-cell`` grants with "own" scope, never through a
+role tick, which would open it to every supervisor and leader on the platform
+at once.
+
 Reads/writes are scoped to the caller's cells — admins/top-managers see all, a
 ``page.view.idle-cell`` "all" grant sees all, supervisors/shift-managers their
-unit's cells, leaders their own."""
+unit's cells, leaders their own. The scope ladder is server-side and re-decided
+on every write, so the frontend's role-adaptive toolbar is a DISPLAY decision
+only: it removes controls whose every option the server would answer the same
+way, and can never widen what a caller reaches."""
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional
@@ -89,7 +97,41 @@ def _valid_date(s: str) -> bool:
         return False
 
 
-def _interval_json(e: CellOjidaniyaInterval) -> dict:
+def _names_for(db: Session, keys) -> dict:
+    """Resolve entry-author profile keys to display names, in ONE pair of
+    queries however many rows the day holds.
+
+    THREE roles write to this ledger now (2026-08-21): a leader filing their own
+    cell, the unit's brigadir correcting it, an admin filling a gap. A row that
+    does not say who filed it leaves the reader unable to tell their own
+    correction from the entry it corrected — and the entries are free-text
+    reasons, so there is nothing else on the row that identifies an author.
+    Read live from the profile, exactly like ``identity.profile_display_name``
+    (whose per-row form this batches), so a rename propagates instead of
+    leaving stale snapshots on old rows.
+
+    A key that resolves to nothing is simply absent from the map: an unknown
+    author must read as unknown, never as somebody else."""
+    mgr_ids, prof_ids, parsed = set(), set(), {}
+    for k in {k for k in keys if k}:
+        role, ref = identity.parse_profile_key(k)
+        if not role or not ref:
+            continue
+        parsed[k] = (role, ref)
+        (mgr_ids if role == "supervisor" else prof_ids).add(ref)
+    mgrs = {m.id: m.name for m in db.query(Manager).filter(
+        Manager.id.in_(mgr_ids)).all()} if mgr_ids else {}
+    profs = {p.id: p.name for p in db.query(RoleProfile).filter(
+        RoleProfile.id.in_(prof_ids)).all()} if prof_ids else {}
+    out = {}
+    for k, (role, ref) in parsed.items():
+        name = mgrs.get(ref) if role == "supervisor" else profs.get(ref)
+        if name:
+            out[k] = name
+    return out
+
+
+def _interval_json(e: CellOjidaniyaInterval, names: Optional[dict] = None) -> dict:
     """One ojidaniya event. ``minutes`` and ``next_day`` are DERIVED here rather
     than on the client so the midnight rule (end <= start ⇒ next day) has one
     definition; a range the client measured differently would show a duration
@@ -104,11 +146,12 @@ def _interval_json(e: CellOjidaniyaInterval) -> dict:
         "minutes": idle_intervals.duration(e.start, e.end),
         "next_day": idle_intervals.to_min(e.end) <= idle_intervals.to_min(e.start),
         "entered_by": e.entered_by_profile,
+        "entered_by_name": (names or {}).get(e.entered_by_profile),
         "updated_at": e.updated_at.isoformat() if e.updated_at else None,
     }
 
 
-def _legacy_json(e: CellOjidaniya) -> dict:
+def _legacy_json(e: CellOjidaniya, names: Optional[dict] = None) -> dict:
     """A pre-2026-08-20 minutes-only row. Read-only, and deliberately NOT folded
     into the union: with no start or end there is no way to know which of its
     minutes another entry already counted."""
@@ -119,6 +162,7 @@ def _legacy_json(e: CellOjidaniya) -> dict:
         "not_stopped": float(e.not_stopped or 0),
         "note": e.note or "",
         "entered_by": e.entered_by_profile,
+        "entered_by_name": (names or {}).get(e.entered_by_profile),
         "updated_at": e.updated_at.isoformat() if e.updated_at else None,
     }
 
@@ -177,22 +221,28 @@ def list_cells(
         return {"cells": []}
     ids = [c.id for c in cells]
 
-    by_cell: dict = defaultdict(list)
-    for e in db.query(CellOjidaniyaInterval).filter(
+    ivs = db.query(CellOjidaniyaInterval).filter(
         CellOjidaniyaInterval.cell_id.in_(ids),
         CellOjidaniyaInterval.date == date,
-    ).all():
-        by_cell[e.cell_id].append(_interval_json(e))
+    ).all()
+    legs = db.query(CellOjidaniya).filter(
+        CellOjidaniya.cell_id.in_(ids),
+        CellOjidaniya.date == date,
+    ).all()
+    # Both record types resolved together, so one day costs one pair of
+    # queries no matter how many authors the unit's cells have between them.
+    names = _names_for(db, [e.entered_by_profile for e in ivs + legs])
+
+    by_cell: dict = defaultdict(list)
+    for e in ivs:
+        by_cell[e.cell_id].append(_interval_json(e, names))
     # Chronological — an event log read in any other order stops being a log.
     for rows in by_cell.values():
         rows.sort(key=lambda r: (idle_intervals.to_min(r["start"]), r["end"]))
 
     legacy_by_cell: dict = defaultdict(list)
-    for e in db.query(CellOjidaniya).filter(
-        CellOjidaniya.cell_id.in_(ids),
-        CellOjidaniya.date == date,
-    ).all():
-        legacy_by_cell[e.cell_id].append(_legacy_json(e))
+    for e in legs:
+        legacy_by_cell[e.cell_id].append(_legacy_json(e, names))
 
     lids = {c.leader_id for c in cells if c.leader_id}
     leaders = {p.id: p.name for p in db.query(RoleProfile).filter(
@@ -276,7 +326,7 @@ def create_interval(
     _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_added",
            [("category", None, e.category), ("time", None, f"{e.start}–{e.end}"),
             ("note", None, e.note)])
-    return _interval_json(e)
+    return _interval_json(e, _names_for(db, [e.entered_by_profile]))
 
 
 @router.put("/intervals/{interval_id}")
@@ -306,7 +356,7 @@ def update_interval(
             zip(("category", "time", "stopped", "note"), old, new) if o != n]
     if diff:
         _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_edited", diff)
-    return _interval_json(e)
+    return _interval_json(e, _names_for(db, [e.entered_by_profile]))
 
 
 @router.delete("/intervals/{interval_id}", status_code=204)

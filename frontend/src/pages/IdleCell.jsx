@@ -28,6 +28,8 @@ import api from "../utils/api";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { cellName as pickCellName } from "../utils/cellName";
 import { fmtDur, toMin } from "../utils/idleTime";
+import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -222,6 +224,10 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, lang, autoOpen, toast
         endMin: toMin(iv.end) ?? -1,
         minutes: Math.round(iv.minutes || 0),
         note: iv.note || "",
+        // Who filed it. Three roles write to one day now — the cell's leader,
+        // their brigadir, an admin — so without this a correction and the entry
+        // it corrected are indistinguishable rows of free text.
+        enteredBy: iv.entered_by_name || "",
         nextDay: !!iv.next_day,
         overlapping: overlapIds.has(iv.id),
       })),
@@ -237,6 +243,7 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, lang, autoOpen, toast
         legacyStopped: Number(e.stopped) || 0,
         legacyNotStopped: Number(e.not_stopped) || 0,
         note: e.note || "",
+        enteredBy: e.entered_by_name || "",
         nextDay: false, overlapping: false,
       })),
     ];
@@ -441,6 +448,20 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, lang, autoOpen, toast
                               {t("idleCell.stopped")} {r.legacyStopped} · {t("idleCell.notStopped")} {r.legacyNotStopped}
                             </div>
                           )}
+                          {/* Metadata about the row, so it sits with the row's
+                              other prose rather than costing an eighth column
+                              on a table already past the width of a phone. At
+                              --text-3, not --text-4: legible is what makes an
+                              attribution worth printing. */}
+                          {r.enteredBy && (
+                            <div
+                              className="text-[11px] mt-0.5 flex items-center gap-1 min-w-0"
+                              style={{ color: "var(--text-3)" }}
+                            >
+                              <UserRound size={10} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+                              <span className="truncate">{t("idleCell.enteredBy")}: {tl(r.enteredBy)}</span>
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <span className="flex items-center justify-end gap-1">
@@ -521,6 +542,20 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, lang, autoOpen, toast
 export default function IdleCell() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
+  const { auth } = useAuth();
+  const { seesAllOn } = useCapabilities();
+  // The page opened beyond admins on 2026-08-21 — one supervisor and their
+  // leaders, by per-profile `page.view.idle-cell` grants. Their scope is
+  // decided server-side by `_scoped_cells` and re-decided on every write, so
+  // this flag changes DISPLAY only: it removes the controls whose every option
+  // the server would answer identically — a brigadir picker holding one unit, a
+  // shift filter over a list of one, a cell multi-select holding one cell. A
+  // control that cannot change the answer still asks the operator to consider
+  // it, and on a phone it costs the row that the day's data needs.
+  // Same spelling as Quality's locked view, so "sees only their own rows" has
+  // ONE definition on the platform.
+  const isLeader = auth?.role === "leader";
+  const locked = (auth?.role === "supervisor" || isLeader) && !seesAllOn("idle-cell");
   const toast = useToast({ position: "bottom" });
   // date deliberately NOT persisted: this is a data-entry page — a silently
   // restored stale day could direct entries to the wrong date.
@@ -628,13 +663,17 @@ export default function IdleCell() {
   useEffect(() => {
     if (!supData) return;                       // nothing to reconcile against yet
     if (supervisorId != null && shiftSupervisors.some((s) => s.id === supervisorId)) return;
-    const only = !isPeren && shiftSupervisors.length === 1 ? shiftSupervisors[0].id : null;
+    // «All brigadirs» is a real answer on the changeover tab — but not to a
+    // viewer whose scope IS one unit, where it would be the same list under a
+    // word implying breadth they do not have. So a locked viewer adopts on
+    // every tab; an admin keeps «all» there.
+    const only = (!isPeren || locked) && shiftSupervisors.length === 1 ? shiftSupervisors[0].id : null;
     if (supervisorId === only) return;
     setSupervisorId(only);
     setLeaderId("");
     setSelectedCellIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supData, shiftSupervisors, isPeren]);
+  }, [supData, shiftSupervisors, isPeren, locked]);
 
   // A new shift may exclude the picked supervisor — drop it if so.
   function onShift(v) {
@@ -646,6 +685,14 @@ export default function IdleCell() {
     setSelectedCellIds([]);
   }
 
+  // The unit behind a locked viewer's inert chip — the one fact the removed
+  // brigadir picker was carrying. Falls back to the only row in scope while the
+  // adopt effect is still settling, so the chip never blinks through «—».
+  const lockedUnit = useMemo(
+    () => supervisors.find((s) => s.id === supervisorId) || supervisors[0] || null,
+    [supervisors, supervisorId],
+  );
+
   const cellOptions = leaderCells.map((c) => ({
     value: String(c.cell_id),
     label: `${c.verifix_code}${cellName(c, lang) ? " · " + cellName(c, lang) : ""}`,
@@ -655,8 +702,12 @@ export default function IdleCell() {
   // Auto-open when there is exactly one visible cell, or the user explicitly
   // narrowed to a few — a large selection stays collapsed to keep the list
   // scannable. Picking a leader counts as narrowing (they own ~1 cell each).
+  // A leader's whole scope is one or two cells and they arrive to FILE, not to
+  // browse: landing on shut rows puts a tap between them and the add button on
+  // the one surface meant to be fast. Admins and brigadirs keep the browsing
+  // default — open only what was explicitly narrowed to.
   const narrowed = selectedCellIds.length > 0 || !!leaderId;
-  const autoOpen = shownCells.length === 1 || (narrowed && shownCells.length <= 3);
+  const autoOpen = shownCells.length === 1 || ((narrowed || isLeader) && shownCells.length <= 3);
 
   // The changeover table sorts by its own header clicks; the same filtered set
   // the Ojidaniya list would have shown.
@@ -700,9 +751,14 @@ export default function IdleCell() {
       >
         {/* Date + the supervisor pick stay inline (on the entry tabs the page is
             empty until a supervisor is chosen — that control must never hide);
-            shift / leader / cells narrow the view from the panel as chips. */}
+            shift / leader / cells narrow the view from the panel as chips.
+            A locked viewer never picks: their unit is adopted above and stated
+            as an inert chip in the panel, the same shape a supervisor pinned to
+            their plant gets from `useFactorySection`. A one-option dropdown is
+            not a choice, and offering it here would suggest there are other
+            brigadirs whose day this page could be pointed at. */}
         <DayStepper value={date} onChange={setDate} />
-        <StyledSelect
+        {!locked && <StyledSelect
           value={supervisorId != null ? String(supervisorId) : ""}
           onChange={(v) => { setSupervisorId(v ? Number(v) : null); setLeaderId(""); setSelectedCellIds([]); }}
           options={[
@@ -717,10 +773,21 @@ export default function IdleCell() {
           searchPlaceholder={t("idleCell.searchSupervisor")}
           triggerClassName="px-3 py-2 text-sm"
           className="w-full md:w-auto md:min-w-[180px]"
-        />
+        />}
         <FilterPanel
           sections={[
-            {
+            // Whose unit these numbers are — stated, never implied. Removing
+            // the picker without this would leave a day's totals on screen with
+            // nothing naming the unit they belong to.
+            ...(locked ? [{
+              key: "unit", icon: UserRound, static: true,
+              label: t("idleCell.pickSupervisor"),
+              display: lockedUnit ? tl(lockedUnit.name) : "—",
+            }] : []),
+            // Shift only ever filtered the BRIGADIR picker (a cell's shift is
+            // derived from its unit) — with one unit in scope it narrows
+            // nothing, so for a locked viewer it is a control that cannot act.
+            ...(locked ? [] : [{
               key: "shift", icon: Layers, label: t("idleCell.shiftAll"),
               active: shiftTab !== "all",
               display: shiftTab !== "all" ? (shiftTab === 1 ? t("idleCell.shift1") : t("idleCell.shift2")) : "",
@@ -733,7 +800,7 @@ export default function IdleCell() {
                   options={[["all", t("idleCell.shiftAll")], [1, t("idleCell.shift1")], [2, t("idleCell.shift2")]]}
                 />
               ),
-            },
+            }]),
             // The brigadir's leaders, between shift and cells: each pick narrows
             // the next. Hidden when the unit has a single leader — a one-option
             // filter is just noise. The gate is "are there cells to narrow",
@@ -752,7 +819,12 @@ export default function IdleCell() {
                   onChange={(v) => { setLeaderId(v); setSelectedCellIds([]); }} />
               ),
             }] : []),
-            ...(cells.length > 0 ? [{
+            // Was `cells.length > 0`. A multi-select over ONE cell offers the
+            // same list whichever way it is answered — which is exactly what a
+            // leader owning a single cell was handed. It stays visible while a
+            // selection is live, so a filter that IS narrowing the view can
+            // always be found and cleared.
+            ...(cellOptions.length > 1 || selectedCellIds.length > 0 ? [{
               key: "cells", icon: Boxes, label: t("idleCell.allCells"),
               active: selectedCellIds.length > 0,
               display: selectedCellIds.length === 1
@@ -789,7 +861,10 @@ export default function IdleCell() {
           style={{ color: "var(--text-4)" }}
         >
           <FlaskConical size={12} className="flex-shrink-0" />
-          {t("idleCell.testNote")}
+          {/* «does not replace the sheet import» answers a question only an
+              admin has. What a leader needs from this chip is that the page is
+              a trial — the rest is vocabulary from a job they do not do. */}
+          {t(locked ? "idleCell.testNoteShort" : "idleCell.testNote")}
         </span>
       </div>
 
@@ -815,10 +890,15 @@ export default function IdleCell() {
         emptyBox(t("common.loadFailed"))
       ) : supData && supervisors.length === 0 ? (
         // Nothing to pick: say so, instead of asking for a choice the picker
-        // cannot offer.
-        emptyBox(t("idleCell.empty"))
+        // cannot offer. To a LEADER the same state has a different cause and a
+        // different remedy — no cell is assigned to them, which their brigadir
+        // fixes on /cells — so it must not be reported as an empty brigadir
+        // list they were never shown.
+        emptyBox(t(isLeader ? "idleCell.noOwnCells" : "idleCell.empty"))
       ) : supervisorId == null ? (
-        emptyBox(t("idleCell.pickSupervisorHint"))
+        // A locked viewer has no picker to act on this, so the instruction
+        // would be an order they cannot follow.
+        emptyBox(t(locked ? "idleCell.empty" : "idleCell.pickSupervisorHint"))
       ) : cellsPending ? (
         <div className="space-y-2">
           {/* h-14 = the collapsed row's real height now that the leader line
@@ -826,7 +906,7 @@ export default function IdleCell() {
           {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-14 w-full rounded-xl" />)}
         </div>
       ) : shownCells.length === 0 ? (
-        emptyBox(t("idleCell.noCells"))
+        emptyBox(t(isLeader && locked ? "idleCell.noOwnCells" : "idleCell.noCells"))
       ) : (
         <div className="space-y-2">
           {shownCells.map((c) => (

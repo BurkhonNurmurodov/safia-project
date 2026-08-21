@@ -706,6 +706,20 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
     return () => ro.disconnect();
   });
 
+  // Nothing left to open. A view whose whole scope is fixed — a locked viewer
+  // pinned to one unit holding one cell — keeps only inert `static` chips, and
+  // a trigger that opens an empty panel reads as a broken control rather than
+  // as "there is nothing to narrow here". The chips still render: they are the
+  // scope, and dropping them would leave the toolbar silent about it.
+  if (real.length === 0) {
+    if (!statics.length) return null;
+    return (
+      <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center">
+        {statics.map(s => <FilterChip key={s.key} s={s} />)}
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Mobile: bottom sheet. Once chips carry the filter state, the trigger
