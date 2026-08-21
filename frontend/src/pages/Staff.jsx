@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsUpDown,
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
-  LayoutGrid, FlaskConical, Filter,
+  LayoutGrid, FlaskConical, Filter, Briefcase, Timer, AlarmClock, Gauge,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -30,7 +30,7 @@ import { fmtPct, fmtNum } from "../utils/formatters";
 import { cellName as pickCellName, exchangeCellSuffix } from "../utils/cellName";
 import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
 import { exportXlsx } from "../utils/exportXlsx";
-import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
+import { FilterPanel, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -590,6 +590,95 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
       return { ...f, job_titles: has ? f.job_titles.filter(x => x !== title) : [...f.job_titles, title] };
     });
   }
+  function setRng(minKey, maxKey, min, max) {
+    setFilters(f => ({ ...f, [minKey]: min, [maxKey]: max }));
+  }
+  const rngDisplay = (min, max) => `${min || "0"}–${max || "∞"}`;
+
+  // ── ONE filter zone for the table ──────────────────────────────────────────
+  // Every column filter is a section of the shared panel, and every active one
+  // surfaces as a chip on the bar. They used to be eight 10px slider icons
+  // living in the table's OWN header row: a thumb could barely hit them, half
+  // of them sat past the horizontal scroll on a phone, and nothing on screen
+  // said which of them was narrowing the day. Name search stays inline beside
+  // the panel — the template's rule for text filters.
+  const filterSections = [
+    {
+      key: "role", icon: Briefcase, label: t("staff.colRole"),
+      active: filters.job_titles.length > 0,
+      display: `${filters.job_titles.length} ${t("filter.selected2")}`,
+      onClear: () => setF("job_titles", []),
+      render: () => (
+        <OptsFilter searchable={distinctJobTitles.length > 8}
+          opts={distinctJobTitles} sel={filters.job_titles}
+          onChange={v => setF("job_titles", v)} render={o => tl(o) || o} />
+      ),
+    },
+    // Only offered on a day whose rows actually carry a cell — the column
+    // itself renders under the same condition.
+    ...(showCellCol ? [{
+      key: "cell", icon: LayoutGrid, label: t("staff.colCell"),
+      active: filters.cells.length > 0,
+      display: `${filters.cells.length} ${t("filter.selected2")}`,
+      onClear: () => setF("cells", []),
+      render: () => (
+        <OptsFilter searchable opts={distinctCells} sel={filters.cells}
+          onChange={v => setF("cells", v)} />
+      ),
+    }] : []),
+    {
+      key: "schedule", icon: Calendar, label: t("staff.colSchedule"),
+      active: filters.schedules.length > 0,
+      display: `${filters.schedules.length} ${t("filter.selected2")}`,
+      onClear: () => setF("schedules", []),
+      render: () => (
+        <OptsFilter searchable={distinctSchedules.length > 8}
+          opts={distinctSchedules} sel={filters.schedules}
+          onChange={v => setF("schedules", v)} />
+      ),
+    },
+    {
+      key: "clock", icon: Clock, label: t("staff.colClock"),
+      active: filters.clock.length > 0,
+      display: `${filters.clock.length} ${t("filter.selected2")}`,
+      onClear: () => setF("clock", []),
+      render: () => (
+        <OptsFilter searchable={distinctClockInOut.length > 8}
+          opts={distinctClockInOut} sel={filters.clock}
+          onChange={v => setF("clock", v)} />
+      ),
+    },
+    {
+      key: "hours", icon: Timer, label: t("staff.colHours"),
+      active: !!(filters.hours_min || filters.hours_max),
+      display: rngDisplay(filters.hours_min, filters.hours_max),
+      onClear: () => setRng("hours_min", "hours_max", "", ""),
+      render: () => (
+        <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
+          onMin={v => setF("hours_min", v)} onMax={v => setF("hours_max", v)} />
+      ),
+    },
+    {
+      key: "early", icon: AlarmClock, label: t("staff.colEarly"),
+      active: !!(filters.early_min || filters.early_max),
+      display: rngDisplay(filters.early_min, filters.early_max),
+      onClear: () => setRng("early_min", "early_max", "", ""),
+      render: () => (
+        <RngFilter minV={filters.early_min} maxV={filters.early_max}
+          onMin={v => setF("early_min", v)} onMax={v => setF("early_max", v)} />
+      ),
+    },
+    {
+      key: "eff", icon: Gauge, label: t("staff.colEffHours"),
+      active: !!(filters.eff_min || filters.eff_max),
+      display: rngDisplay(filters.eff_min, filters.eff_max),
+      onClear: () => setRng("eff_min", "eff_max", "", ""),
+      render: () => (
+        <RngFilter minV={filters.eff_min} maxV={filters.eff_max}
+          onMin={v => setF("eff_min", v)} onMax={v => setF("eff_max", v)} />
+      ),
+    },
+  ];
 
   const sortedWorkers = nameAsc !== null
     ? [...workers].sort((a, b) => nameAsc
@@ -641,6 +730,50 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
 
   return (
     <div>
+      {/* ── Filter zone: ONE row at the top, like every other page ────────────
+          Search inline on the left, every column filter inside the shared
+          panel, actives as chips. Nothing narrows this table from the header
+          row any more. */}
+      <div className="px-3 pt-3 flex items-center gap-2 flex-wrap">
+        <div className="flex-1 min-w-[180px]">
+          <SearchInput
+            value={filters.worker}
+            onChange={(v) => setF("worker", v)}
+            placeholder={t("staff.searchByName")}
+          />
+        </div>
+        <FilterPanel sections={filterSections} onClearAll={() => setFilters(INIT_FILTERS)} />
+        <Button
+          size="lg" tint icon={<Download size={14} />}
+          className="flex-shrink-0"
+          onClick={() => setShowExport(true)}
+          disabled={allWorkers.length === 0}
+          loading={exporting}
+        >
+          {exporting ? t("staff.sending") : t("staff.export")}
+        </Button>
+      </div>
+
+      {/* Export success toast — fixed top-right, outside normal flow */}
+      {exportDone && (
+        <div
+          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          style={{
+            position: "fixed",
+            top: 16,
+            right: 16,
+            zIndex: 9999,
+            background: "#22c55e",
+            color: "#fff",
+            maxWidth: 320,
+            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
+          }}
+        >
+          <CheckCircle size={15} style={{ flexShrink: 0 }} />
+          <span>{t("staff.exportToast")}</span>
+        </div>
+      )}
+
       {/* KPI header — always visible, hosts the collapse toggle */}
       <div className="px-3 pt-3 pb-3">
         <div className="flex items-center justify-between gap-2 mb-3">
@@ -739,7 +872,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
         )}
       </div>
 
-      {/* Collapsible body — toolbar + table + footer */}
+      {/* Collapsible body — table + footer (the filter row stays above it) */}
       <div
         style={{
           display: "grid",
@@ -748,52 +881,6 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
         }}
       >
         <div style={{ overflow: "hidden", minHeight: 0, opacity: isCollapsed ? 0 : 1, transition: "opacity 200ms ease" }}>
-      {/* Toolbar */}
-      <div className="px-3 py-2 border-b flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
-        <div className="flex-1">
-          <SearchInput
-            value={filters.worker}
-            onChange={(v) => setF("worker", v)}
-            placeholder={t("staff.searchByName")}
-            inputClassName="text-xs pl-8 pr-7 py-1.5"
-          />
-        </div>
-        {activeFilter && (
-          <button onClick={() => setFilters(INIT_FILTERS)}
-            className="text-xs px-2.5 py-1.5 rounded-lg flex-shrink-0"
-            style={{ color: "var(--text-4)", border: "1px solid var(--border-md)" }}>
-            {t("staff.clearFilters")}
-          </button>
-        )}
-        <button
-          onClick={() => setShowExport(true)} disabled={exporting || allWorkers.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0"
-          style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-bg)", opacity: allWorkers.length === 0 ? 0.5 : 1 }}
-        >
-          <Download size={12} /> {exporting ? t("staff.sending") : t("staff.export")}
-        </button>
-      </div>
-
-      {/* Export success toast — fixed top-right, outside normal flow */}
-      {exportDone && (
-        <div
-          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
-          style={{
-            position: "fixed",
-            top: 16,
-            right: 16,
-            zIndex: 9999,
-            background: "#22c55e",
-            color: "#fff",
-            maxWidth: 320,
-            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
-          }}
-        >
-          <CheckCircle size={15} style={{ flexShrink: 0 }} />
-          <span>{t("staff.exportToast")}</span>
-        </div>
-      )}
-
       {workers.length === 0 ? (
         <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>
           {activeFilter ? t("staff.noMatch") : t("staff.noData")}
@@ -803,11 +890,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
           <table className="w-full text-xs">
             <thead>
               <tr style={{ background: "var(--bg-inner)", borderColor: "var(--border)" }}>
-                <th className={thCls} style={{ borderColor: "var(--border)" }}>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
                   <div className="flex items-center gap-1">
-                    <ColFilter label={t("staff.colWorker")} active={!!filters.worker}>
-                      <TxtFilter value={filters.worker} onChange={v => setF("worker", v)} />
-                    </ColFilter>
+                    <span>{t("staff.colWorker")}</span>
                     <button
                       onClick={() => setNameAsc(p => p === null ? true : p ? false : null)}
                       style={{ opacity: nameAsc === null ? 0.4 : 1, lineHeight: 0, flexShrink: 0 }}
@@ -817,46 +902,15 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                     </button>
                   </div>
                 </th>
-                <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                  <ColFilter label={t("staff.colRole")} active={filters.job_titles.length > 0}>
-                    <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={v => setF("job_titles", v)} render={o => tl(o) || o} />
-                  </ColFilter>
-                </th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colRole")}</th>
                 {showCellCol && (
-                  <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                    <ColFilter label={t("staff.colCell")} active={filters.cells.length > 0}>
-                      <OptsFilter searchable opts={distinctCells} sel={filters.cells} onChange={v => setF("cells", v)} />
-                    </ColFilter>
-                  </th>
+                  <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colCell")}</th>
                 )}
-                <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                  <ColFilter label={t("staff.colSchedule")} active={filters.schedules.length > 0}>
-                    <OptsFilter opts={distinctSchedules} sel={filters.schedules} onChange={v => setF("schedules", v)} />
-                  </ColFilter>
-                </th>
-                <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                  <ColFilter label={t("staff.colClock")} active={filters.clock.length > 0}>
-                    <OptsFilter opts={distinctClockInOut} sel={filters.clock} onChange={v => setF("clock", v)} />
-                  </ColFilter>
-                </th>
-                <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                  <ColFilter label={t("staff.colHours")} active={!!(filters.hours_min || filters.hours_max)}>
-                    <RngFilter minV={filters.hours_min} maxV={filters.hours_max}
-                      onMin={v => setF("hours_min", v)} onMax={v => setF("hours_max", v)} />
-                  </ColFilter>
-                </th>
-                <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                  <ColFilter label={t("staff.colEarly")} active={!!(filters.early_min || filters.early_max)}>
-                    <RngFilter minV={filters.early_min} maxV={filters.early_max}
-                      onMin={v => setF("early_min", v)} onMax={v => setF("early_max", v)} />
-                  </ColFilter>
-                </th>
-                <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                  <ColFilter label={t("staff.colEffHours")} active={!!(filters.eff_min || filters.eff_max)}>
-                    <RngFilter minV={filters.eff_min} maxV={filters.eff_max}
-                      onMin={v => setF("eff_min", v)} onMax={v => setF("eff_max", v)} />
-                  </ColFilter>
-                </th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colSchedule")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colClock")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colHours")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colEarly")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colEffHours")}</th>
               </tr>
             </thead>
             <tbody>
