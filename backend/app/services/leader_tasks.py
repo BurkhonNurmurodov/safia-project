@@ -763,7 +763,7 @@ def set_proof_kind(db: Session, *, task_id: int, proof_kind: str | None,
 
 # ONE boundary, at the hour the night crew actually starts work: the day a
 # moment belongs to turns at 17:00, and the day it belongs to dies at
-# `deadline_hhmm` (09:00) — the twelve hours between are a day that is over but
+# `deadline_hhmm` (09:00) — the eight hours between are a day that is over but
 # not yet superseded, which is what `expired_through` names.
 #
 # 17:00 → 21:00 → 17:00 (user, 2026-08-14). It was moved to 21:00 on 2026-08-11
@@ -828,24 +828,24 @@ def filed_date(sheet_date: str, shift: int | None,
 
     The form's «Дата» cell is almost always the right answer for shift 1 (see the
     handover exception below) and the wrong one for shift 2 in BOTH directions.
-    That shift files between 21:00 and 09:00, so its
+    That shift files between 17:00 and 09:00, so its
     night carries two calendar dates and the cell holds whichever one the leader
     had in mind:
 
     * after midnight the form's own "today" stamps TOMORROW onto the night that
       started yesterday. The row lands on a day whose shift has not begun — at
-      14:00 the register showed "2-smena" reports for a shift opening at 21:00 —
+      14:00 the register showed "2-smena" reports for a shift opening at 17:00 —
       while the night it reports on reads as unfiled, and the bot day for the
       same (leader, date) no longer dedupes against it.
     * before midnight the leader writes tomorrow HIMSELF: a night that runs
-      21:00 → 09:00 spends nine of its twelve hours on the next date and gets
+      17:00 → 09:00 spends nine of its sixteen hours on the next date and gets
       called by it. A report filed at 22:26 on the 10th arrives dated the 11th —
-      a day whose filing window opens at 21:00 on the 11th, twenty-two hours
+      a day whose filing window opens at 17:00 on the 11th, eighteen hours
       after it was written — so the submission window (routers/leaders.py) voided
-      a checklist that was in fact filed ninety minutes into its own shift.
+      a checklist that was in fact filed five hours into its own shift.
 
     `day_of` settles which night a timestamp falls in; it names that night by the
-    21:00 it started at. So both spellings above are the SAME night, and this
+    17:00 it started at. So both spellings above are the SAME night, and this
     accepts either one, returning the date the rest of the app keys on:
 
     * shift 2 only — shift 1's calendar day is the form's date, full stop;
@@ -892,8 +892,8 @@ def filed_date(sheet_date: str, shift: int | None,
 # ── the submission deadline ──────────────────────────────────────────────────
 #
 # A day stops accepting entries long BEFORE effective_date rolls over to the
-# next one. Shift 2 files 21:00 → 09:00 next morning, so its checklist dies at
-# 09:00 while the attribution boundary above turns at 21:00 — twelve hours
+# next one. Shift 2 files 17:00 → 09:00 next morning, so its checklist dies at
+# 09:00 while the attribution boundary above turns at 17:00 — eight hours
 # later. Anything keyed to that boundary leaves a missed night editable all day.
 
 def deadline_hhmm(shift: int | None) -> str:

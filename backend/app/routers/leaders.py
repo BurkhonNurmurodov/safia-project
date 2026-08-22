@@ -109,9 +109,20 @@ def _json_response(payload) -> Response:
 # the missed day it is.
 #
 #   * shift 1 files DURING the day it reports on, 08:00 → 20:00.
-#   * shift 2 works and files across midnight, 21:00 on its own day → 09:00 the
+#   * shift 2 works and files across midnight, 17:00 on its own day → 09:00 the
 #     next morning. Both dated halves are on time; 09:00 is the deadline, so a
 #     night report filed at 11:00 is late exactly like an 07:00 shift-1 one.
+#
+# Shift 2's open was 21:00 until 2026-08-22 (user) — an hour that was never the
+# crew's. They are on the floor from 17:00, so the first four hours of every
+# night were filed into a window that had not opened yet and the day scored 0
+# for paperwork that was in fact early. This is the same correction the AI photo
+# window took on 2026-08-14 (services/leader_ai.SHIFT_WINDOW) and the hour the
+# day boundary itself turns at (leader_tasks.SHIFT2_START_HOUR): three rules
+# that all answer "when does a shift-2 night begin", now saying one thing.
+# Nothing is stored — the verdict is derived per request — so every past night
+# re-reads under the new hours, and it can only ever move one way: a day voided
+# for an 18:00 filing counts again, and no day that counted can start failing.
 #
 # Deliberately narrow, so the rule can only ever bite where it was meant to:
 #   * only days from that shift's WINDOW_FROM onwards — every earlier day keeps
@@ -124,22 +135,22 @@ def _json_response(payload) -> Response:
 #
 # The DAY a row belongs to is settled before this rule ever sees it, at sync
 # time, by services/leader_tasks.filed_date — a shift-2 row filed at 06:00 is
-# attributed to the night that started at 21:00, not to the calendar date the
+# attributed to the night that started at 17:00, not to the calendar date the
 # form stamped on it. Lateness is judged against that day, never against the
 # stamp, or a report would be voided for the very thing it was re-dated for.
 WINDOW_FROM = {1: "2026-08-06", 2: "2026-08-11"}   # first REPORTED day judged
 WINDOW = {
     # shift: (open, close, crosses_midnight)
     1: (time(8, 0), time(20, 0), False),   # both ends inclusive: 20:00:00 counts
-    2: (time(21, 0), time(9, 0), True),    # 21:00 → 09:00 next morning
+    2: (time(17, 0), time(9, 0), True),    # 17:00 → 09:00 next morning
 }
 # The CLOSE carries a wrap-up allowance; the open does not (user, 2026-08-11).
 # A leader filling the last answers as the shift hands over lands a minute or ten
 # past the hour — a real 20:09 report was voided for it — while a leader filing
 # BEFORE their shift opens has not done the work yet, which is the asymmetry the
-# user chose when shift 2 was kept strict at 21:00. Deliberately not folded into
-# WINDOW: 20:00 stays the deadline everyone is told, and this is the slack behind
-# it, not a later one to aim at.
+# user chose, and it is unchanged by the open moving to 17:00. Deliberately not
+# folded into WINDOW: 20:00 stays the deadline everyone is told, and this is the
+# slack behind it, not a later one to aim at.
 CLOSE_GRACE = timedelta(minutes=15)
 
 

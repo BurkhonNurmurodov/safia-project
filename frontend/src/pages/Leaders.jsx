@@ -107,7 +107,7 @@ const TXT = {
     voidChip: "Vaqtdan tashqari",
     voidTitle: "Hisobot o'z smenasining oynasida yuborilishi kerak ({win}) — bu hisobot qabul qilinmadi va kun 0% hisoblanadi",
     voidWin1: "1-smena: o'z kunida 08:00–20:00",
-    voidWin2: "2-smena: 21:00 dan ertasi kuni 09:00 gacha",
+    voidWin2: "2-smena: 17:00 dan ertasi kuni 09:00 gacha",
     aiTitle: "AI tekshiruvi",
     aiCheck: "Tekshirish",
     aiOk: "Tasdiqlandi",
@@ -271,7 +271,7 @@ const TXT = {
     voidChip: "Вақтдан ташқари",
     voidTitle: "Ҳисобот ўз сменасининг ойнасида юборилиши керак ({win}) — бу ҳисобот қабул қилинмади ва кун 0% ҳисобланади",
     voidWin1: "1-смена: ўз кунида 08:00–20:00",
-    voidWin2: "2-смена: 21:00 дан эртаси куни 09:00 гача",
+    voidWin2: "2-смена: 17:00 дан эртаси куни 09:00 гача",
     aiTitle: "AI текшируви",
     aiCheck: "Текшириш",
     aiOk: "Тасдиқланди",
@@ -435,7 +435,7 @@ const TXT = {
     voidChip: "Вне окна",
     voidTitle: "Отчёт должен быть отправлен в окно своей смены ({win}) — этот отчёт не засчитан, день считается за 0%",
     voidWin1: "1-я смена: в свой день с 08:00 до 20:00",
-    voidWin2: "2-я смена: с 21:00 до 09:00 следующего дня",
+    voidWin2: "2-я смена: с 17:00 до 09:00 следующего дня",
     aiTitle: "Проверка ИИ",
     aiCheck: "Проверить",
     aiOk: "Подтверждено",
@@ -599,7 +599,7 @@ const TXT = {
     voidChip: "Out of window",
     voidTitle: "A checklist must be filed inside its shift's window ({win}) — this one was not accepted, so the day scores 0%",
     voidWin1: "shift 1: on its own day, 08:00–20:00",
-    voidWin2: "shift 2: 21:00 through 09:00 the next morning",
+    voidWin2: "shift 2: 17:00 through 09:00 the next morning",
     aiTitle: "AI review",
     aiCheck: "Check now",
     aiOk: "Confirmed",
@@ -1042,7 +1042,7 @@ function LateChip({ days, T }) {
 // so the register never has to be read together with the «Kechikkanlar» tab to
 // know whether a day counts. The tooltip names the window the row missed, which
 // is not the same one for both shifts: shift 1 files inside its own day
-// (08:00–20:00), shift 2 across midnight (21:00 → 09:00).
+// (08:00–20:00), shift 2 across midnight (17:00 → 09:00).
 //
 //   void / rejected — filed outside the window and not opened: the day scores 0.
 //                     Red, because that is what it costs, and the row's own score

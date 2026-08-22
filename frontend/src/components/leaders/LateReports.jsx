@@ -56,8 +56,8 @@ const fmtDate = (iso, lang) => {
 };
 // The clock a card prints is the moment the checklist was FILED, and that is not
 // always a moment on the day it reports on — a night filed at 10:00 the morning
-// after belongs to the night before. A bare "22:26" beside a shift-2 day whose
-// window opens at 21:00 then reads as impossible, which is exactly how a
+// after belongs to the night before. A bare "07:12" beside a shift-2 day whose
+// window shuts at 09:00 the NEXT morning then reads as impossible, which is how a
 // correctly voided row gets mistaken for a bug. Print the date too whenever the
 // two disagree; numeric, so it needs no fifth translation of every month.
 const stamp = (ts, day) => {
@@ -69,7 +69,7 @@ const stamp = (ts, day) => {
 const TXT = {
   uz: {
     title: "Kechikkan hisobotlar",
-    rule: "Hisobot o'z smenasining oynasida yuborilishi kerak: 1-smena — o'z kunida 08:00–20:00, 2-smena — 21:00 dan ertasi kuni 09:00 gacha. Bu oraliqdan tashqarida kelgan kunlar shu yerda to'planadi.",
+    rule: "Hisobot o'z smenasining oynasida yuborilishi kerak: 1-smena — o'z kunida 08:00–20:00, 2-smena — 17:00 dan ertasi kuni 09:00 gacha. Bu oraliqdan tashqarida kelgan kunlar shu yerda to'planadi.",
     ruleSup: "Kunni ochishni so'rang — sababini yozib. Qarorni admin qabul qiladi.",
     ruleAdmin: "Brigadirlarning so'rovlarini shu yerda ko'rib chiqasiz. Ochilgan kun o'z natijasi bilan hisoblanadi va kechikkan deb belgilangan holda qoladi.",
     segAll: "Barchasi", segTodo: "Sizga kerak", segPending: "Kutilmoqda", segDone: "Tarix",
@@ -101,7 +101,7 @@ const TXT = {
   },
   uz_cyrl: {
     title: "Кечиккан ҳисоботлар",
-    rule: "Ҳисобот ўз сменасининг ойнасида юборилиши керак: 1-смена — ўз кунида 08:00–20:00, 2-смена — 21:00 дан эртаси куни 09:00 гача. Бу оралиқдан ташқарида келган кунлар шу ерда тўпланади.",
+    rule: "Ҳисобот ўз сменасининг ойнасида юборилиши керак: 1-смена — ўз кунида 08:00–20:00, 2-смена — 17:00 дан эртаси куни 09:00 гача. Бу оралиқдан ташқарида келган кунлар шу ерда тўпланади.",
     ruleSup: "Кунни очишни сўранг — сабабини ёзиб. Қарорни админ қабул қилади.",
     ruleAdmin: "Бригадирларнинг сўровларини шу ерда кўриб чиқасиз. Очилган кун ўз натижаси билан ҳисобланади ва кечиккан деб белгиланган ҳолда қолади.",
     segAll: "Барчаси", segTodo: "Сизга керак", segPending: "Кутилмоқда", segDone: "Тарих",
@@ -133,7 +133,7 @@ const TXT = {
   },
   ru: {
     title: "Опоздавшие отчёты",
-    rule: "Отчёт должен быть отправлен в окно своей смены: 1-я смена — в свой день с 08:00 до 20:00, 2-я смена — с 21:00 до 09:00 следующего дня. Дни, пришедшие вне этого окна, собираются здесь.",
+    rule: "Отчёт должен быть отправлен в окно своей смены: 1-я смена — в свой день с 08:00 до 20:00, 2-я смена — с 17:00 до 09:00 следующего дня. Дни, пришедшие вне этого окна, собираются здесь.",
     ruleSup: "Запросите открытие дня, указав причину. Решение принимает администратор.",
     ruleAdmin: "Здесь вы рассматриваете запросы бригадиров. Открытый день засчитывается со своим результатом и остаётся отмеченным как опоздавший.",
     segAll: "Все", segTodo: "Требует вас", segPending: "На решении", segDone: "История",
@@ -165,7 +165,7 @@ const TXT = {
   },
   en: {
     title: "Late reports",
-    rule: "A checklist must be filed inside its shift's window: shift 1 on its own day between 08:00 and 20:00, shift 2 from 21:00 through 09:00 the next morning. Days that arrived outside that window collect here.",
+    rule: "A checklist must be filed inside its shift's window: shift 1 on its own day between 08:00 and 20:00, shift 2 from 17:00 through 09:00 the next morning. Days that arrived outside that window collect here.",
     ruleSup: "Ask for a day to be opened, with a reason. An admin makes the decision.",
     ruleAdmin: "You review the supervisors' requests here. An opened day counts at its own score and stays flagged as late.",
     segAll: "All", segTodo: "Needs you", segPending: "Awaiting decision", segDone: "History",
