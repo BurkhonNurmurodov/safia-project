@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { UserX, AlertTriangle, Lock, FileQuestion, RotateCcw, Download } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { UserX, AlertTriangle, Lock, FileQuestion, RotateCcw, Download, Wrench } from "lucide-react";
 import api from "../../utils/api";
 import { exportXlsx } from "../../utils/exportXlsx";
 import { useLang } from "../../context/LangContext";
@@ -12,6 +12,7 @@ import DateRangePicker from "../../components/ui/DateRangePicker";
 import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 
 /**
  * «Yo'qolgan xodimlar» — workers an approved → supervisor exchange left on no
@@ -90,7 +91,11 @@ export default function LostWorkers() {
   const [state,    setState]    = useState("all");
   const [search,   setSearch]   = useState("");
   const [busy,     setBusy]     = useState(false);
+  const [confirm,  setConfirm]  = useState(false);
+  const [fixing,   setFixing]   = useState(false);
+  const [fixErr,   setFixErr]   = useState(null);
   const toast = useToast();
+  const qc = useQueryClient();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["admin-exchange-audit", dateFrom, dateTo],
@@ -125,6 +130,41 @@ export default function LostWorkers() {
 
   const hoursCell = (r) =>
     r.hours_worked != null ? Number(r.hours_worked).toFixed(2) : "—";
+
+  // Only rows the platform can put back faithfully: the batch still holds the
+  // source row, and the move was a plain one. A transfer-time split is not one
+  // whole row, so restoring it as one would credit the wrong unit.
+  const fixable = useMemo(
+    () => rows.filter((r) => r.state !== "no_batch" && !r.split),
+    [rows],
+  );
+
+  // Writes into CLOSED days by design (the operator's call): only the missing
+  // rows are added, the closure stands, and nobody is notified. Irreversible
+  // enough to demand the count be typed back.
+  async function runRepair() {
+    setFixing(true);
+    setFixErr(null);
+    try {
+      const { data: res } = await api.post("/api/admin/exchange-audit/repair", {
+        keys: fixable.map((r) => ({ date: r.date, worker_name: r.worker_name })),
+        date_from: dateFrom,
+        date_to: dateTo,
+      });
+      setConfirm(false);
+      await qc.invalidateQueries({ queryKey: ["admin-exchange-audit"] });
+      toast.success(
+        t("lostWorkers.fixDone")
+          .replace("{n}", res.restored)
+          .replace("{s}", res.skipped),
+        res.skipped ? 8000 : undefined,
+      );
+    } catch (e) {
+      setFixErr(e?.message || t("lostWorkers.fixFailed"));
+    } finally {
+      setFixing(false);
+    }
+  }
 
   // The file mirrors the screen: same period, same state filter, same search.
   // Headers travel WITH the request so the sheet is in the language the reader
@@ -244,6 +284,15 @@ export default function LostWorkers() {
             />
             <Button
               size="lg"
+              variant="primary"
+              icon={Wrench}
+              disabled={isLoading || fixable.length === 0}
+              onClick={() => { setFixErr(null); setConfirm(true); }}
+            >
+              {t("lostWorkers.fix").replace("{n}", fixable.length)}
+            </Button>
+            <Button
+              size="lg"
               variant="secondary"
               icon={Download}
               loading={busy}
@@ -346,6 +395,22 @@ export default function LostWorkers() {
       <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-4)" }}>
         {t("lostWorkers.footnote")}
       </p>
+      {confirm && (
+        <ConfirmDialog
+          open
+          tone="warning"
+          icon={Wrench}
+          title={t("lostWorkers.fixTitle")}
+          message={t("lostWorkers.fixMsg").replace("{n}", fixable.length)}
+          confirmLabel={t("lostWorkers.fixConfirm")}
+          challenge={String(fixable.length)}
+          challengeLabel={t("lostWorkers.fixChallenge")}
+          loading={fixing}
+          error={fixErr}
+          onCancel={() => setConfirm(false)}
+          onConfirm={runRepair}
+        />
+      )}
       {toast.node}
     </div>
   );

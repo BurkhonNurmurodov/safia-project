@@ -109,34 +109,50 @@ def _collect(db: Session, date_from: Optional[str], date_to: Optional[str]) -> d
     # second hop reports the unit they actually started on (the same rule
     # `exchange_rewind` replays by).
     claims: dict[tuple, dict] = {}
+    blanked: set = set()                # deliberately name-stripped, NOT lost
     docs_scanned = 0
     for doc in sorted(docs, key=lambda x: (x.date, x.id)):
         payload = doc.payload or {}
         if payload.get("target_type") != "supervisor" or not payload.get("target_manager_id"):
             continue
         docs_scanned += 1
+        split = bool(payload.get("transfer_time"))
         for emp in payload.get("employees") or []:
             name = (emp or {}).get("worker_name")
             if not name:
                 continue
+            # A below-min transfer-time split BLANKS the worker's own row on
+            # purpose (CLAUDE.md: cleared the bar on neither side ⇒ credited to
+            # nobody). Their name is off the roster because the platform decided
+            # it should be, not because an upload deleted them — reporting that
+            # as a loss would invite "repairing" a rule that is working.
+            if (emp.get("applied") or {}).get("task_blanked"):
+                blanked.add((doc.date, name))
+                continue
             key = (doc.date, name)
             if key in claims:
-                # Later hop: only the destination moves on.
-                claims[key]["target_id"] = payload["target_manager_id"]
-                claims[key]["hops"] += 1
+                # Later hop: the destination moves on, the origin does not.
+                claims[key]["target_id"]   = payload["target_manager_id"]
+                claims[key]["target_cell"] = payload.get("target_cell")
+                claims[key]["doc_id"]      = doc.id
+                claims[key]["split"]       = claims[key]["split"] or split
+                claims[key]["hops"]       += 1
                 continue
             claims[key] = {
-                "doc_id":     doc.id,
-                "date":       doc.date,
-                "sender_id":  emp.get("old_manager_id") or doc.manager_id,
-                "target_id":  payload["target_manager_id"],
-                "old_role":   emp.get("old_role") or None,
-                "old_cell":   emp.get("old_verifix_code"),
-                "split":      bool(payload.get("transfer_time")),
-                "created_by": doc.created_by_name,
-                "posted_by":  doc.approved_by_name,
-                "hops":       1,
+                "doc_id":      doc.id,
+                "date":        doc.date,
+                "sender_id":   emp.get("old_manager_id") or doc.manager_id,
+                "target_id":   payload["target_manager_id"],
+                "target_cell": payload.get("target_cell"),
+                "old_role":    emp.get("old_role") or None,
+                "old_cell":    emp.get("old_verifix_code"),
+                "split":       split,
+                "created_by":  doc.created_by_name,
+                "posted_by":   doc.approved_by_name,
+                "hops":        1,
             }
+    for key in blanked:
+        claims.pop(key, None)
     if not claims:
         return _empty(d_from, d_to, docs_scanned)
 
@@ -218,6 +234,7 @@ def _collect(db: Session, date_from: Optional[str], date_to: Optional[str]) -> d
             "sender_name":  mgr_names.get(c["sender_id"], str(c["sender_id"])),
             "target_id":    c["target_id"],
             "target_name":  mgr_names.get(c["target_id"], str(c["target_id"])),
+            "target_cell":  c["target_cell"],
             "sender_day":   s_day,
             "target_day":   _day(c["target_id"], d),
             "hops":         c["hops"],
@@ -410,3 +427,113 @@ def export_xlsx(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+
+
+# ─── Repair ──────────────────────────────────────────────────────────────────
+# Putting a lost worker back WHERE THE APPROVED DOCUMENT SAYS THEY BELONG — on
+# the receiving unit, in the destination cell — by re-inserting the row from the
+# batch the upload deleted it from.
+#
+# Deliberately NOT a re-projection of the sender's day. `_sync_manager` wipes
+# `(manager, date)` and rebuilds it from the batch's ticked cells, which would
+# also undo every other exchange, edit and split on that day. This writes ONE
+# row per named worker and touches nothing else.
+#
+# It writes into CLOSED days on purpose (the operator's explicit instruction,
+# 2026-08-22): a closed day is the normal state of a day old enough for this to
+# have happened to it, and re-opening one to fix it would swing the supervisor's
+# confirmed totals twice instead of once. The closure is left standing — only
+# the missing rows are added. NOTHING is notified: no supervisor DM, no bell, no
+# day-state change. Every insert is logged under `EXCHANGE-REPAIR` with its row
+# id, so the write is auditable and individually reversible.
+
+class RepairBody(BaseModel):
+    """The exact workers to restore, as (date, worker_name) pairs read off the
+    report. Deliberately explicit rather than "repair everything in the filter":
+    an operator repairs the rows they looked at, and a list computed minutes ago
+    cannot silently grow between the read and the write."""
+    keys: list[dict] = []
+    date_from: Optional[str] = None
+    date_to:   Optional[str] = None
+
+
+@router.post("/repair")
+def repair(
+    body: RepairBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(verify_admin),
+):
+    """Re-insert the named lost workers on their exchange's destination unit.
+
+    Idempotent: a worker who already carries a row for that date is reported
+    `already_present` and nothing is written. Refuses what it cannot do
+    faithfully — `no_batch` (no source row to copy) and `split` (a transfer-time
+    document's effect is not one whole row, and reproducing it without re-running
+    the split would credit the wrong unit the wrong hours).
+    """
+    wanted = {(k.get("date"), k.get("worker_name")) for k in body.keys
+              if k.get("date") and k.get("worker_name")}
+    if not wanted:
+        raise HTTPException(status_code=400, detail="keys is empty")
+
+    data  = _collect(db, body.date_from, body.date_to)
+    by_key = {(r["date"], r["worker_name"]): r for r in data["rows"]}
+
+    actor = payload.get("full_name") or payload.get("sub")
+    done, skipped = [], []
+    for d_iso, name in sorted(wanted):
+        r = by_key.get((d_iso, name))
+        if r is None:
+            # Not in the current report: already restored by an earlier press,
+            # or never lost. Either way there is nothing to write.
+            skipped.append({"date": d_iso, "worker_name": name, "reason": "already_present"})
+            continue
+        if r["state"] == "no_batch":
+            skipped.append({"date": d_iso, "worker_name": name, "reason": "no_batch"})
+            continue
+        if r["split"]:
+            skipped.append({"date": d_iso, "worker_name": name, "reason": "split"})
+            continue
+
+        d = datetime.strptime(d_iso, "%Y-%m-%d").date()
+        batch = db.query(AttendanceBatch).filter(AttendanceBatch.date == d).first()
+        br = db.query(AttendanceBatchRow).filter(
+            AttendanceBatchRow.batch_id == batch.id,
+            AttendanceBatchRow.worker_name == name,
+        ).first() if batch else None
+        if br is None:
+            skipped.append({"date": d_iso, "worker_name": name, "reason": "no_batch"})
+            continue
+
+        row = Attendance(
+            manager_id        = r["target_id"],
+            date              = d,
+            worker_name       = br.worker_name,
+            job_title         = br.job_title,
+            schedule          = br.schedule,
+            clock_in_out      = br.clock_in_out,
+            hours_worked      = br.hours_worked,
+            early_arrival_min = br.early_arrival_min,
+            # The destination cell the exchange named; the worker's own cell
+            # when the document predates cell-level moves (a legacy no-cell day).
+            verifix_code      = r["target_cell"] or br.verifix_code,
+        )
+        db.add(row)
+        db.flush()
+        log.warning(
+            "EXCHANGE-REPAIR restored attendance id=%s worker=%r date=%s "
+            "-> manager=%s cell=%s hours=%s doc=%s sender_day=%s by=%s",
+            row.id, name, d_iso, r["target_id"], row.verifix_code,
+            br.hours_worked, r["doc_id"], r["sender_day"], actor,
+        )
+        done.append({
+            "date": d_iso, "worker_name": name, "attendance_id": row.id,
+            "manager_id": r["target_id"], "manager_name": r["target_name"],
+            "verifix_code": row.verifix_code, "hours_worked": _f(br.hours_worked),
+        })
+
+    db.commit()
+    log.warning("EXCHANGE-REPAIR done by=%s restored=%d skipped=%d",
+                actor, len(done), len(skipped))
+    return {"restored": len(done), "skipped": len(skipped),
+            "rows": done, "skippedRows": skipped}
