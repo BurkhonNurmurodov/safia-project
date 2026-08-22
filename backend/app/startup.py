@@ -650,6 +650,44 @@ def migrate_idle_interval_status() -> None:
         db.close()
 
 
+IDLE_REQUESTS_AUTO_APPROVED_FLAG = "idle_requests_auto_approved_2026_08_22_v1"
+
+
+def approve_pending_idle_requests() -> None:
+    """2026-08-22: the approval step on /idle-cell is REMOVED — a leader's
+    ojidaniya counts the moment it is saved, and the unit's brigadir is told of
+    it instead of asked about it.
+
+    The request regime lived exactly one day (2026-08-21), and whatever it left
+    ``pending`` would now sit in a state nothing reads and nothing can decide:
+    the decide endpoints are gone, so those rows would be invisible to every
+    listing, absent from every total, and un-fixable by anyone. They were
+    honest entries that a brigadir simply had not got to, so they become
+    ``approved`` — the same answer «tasdiqlash hammasini» would have given.
+    ``rejected`` rows are NOT touched: a refusal somebody actually made stays a
+    refusal, visible with its reason.
+
+    Flag-guarded so it runs exactly once; the count is logged so the boot line
+    says what moved. Running it twice would be harmless (nothing writes
+    ``pending`` any more), but a flag keyed to the date records WHEN the rule
+    changed, which is what an auditor reading the table later needs."""
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=IDLE_REQUESTS_AUTO_APPROVED_FLAG).first():
+            return
+        res = db.execute(text(
+            "UPDATE cell_ojidaniya_intervals SET status = 'approved' WHERE status = 'pending'"))
+        moved = res.rowcount if res.rowcount is not None and res.rowcount >= 0 else 0
+        db.add(AppSetting(key=IDLE_REQUESTS_AUTO_APPROVED_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] idle-cell approval removed: {moved} pending request(s) approved")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] idle-cell pending auto-approve skipped: {exc}")
+    finally:
+        db.close()
+
+
 def migrate_cell_supervisor_column() -> None:
     """2026-07-27: cells gain a direct supervisor link (manager_id → managers.id,
     nullable). A cell now belongs to a supervisor independently of its leader —
@@ -3087,5 +3125,57 @@ def set_camera_pilot_bot_from() -> None:
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
         print(f"[startup] camera rehearsal floor skipped: {exc}")
+    finally:
+        db.close()
+
+
+# ── Ojidaniya source pilot: one unit reads its cells from 2026-08-21 ─────────
+IDLE_SOURCE_PILOT_FLAG = "idle_source_pilot_2026_08_21_v1"
+IDLE_SOURCE_PILOT_UNIT = 5
+IDLE_SOURCE_PILOT_FROM = "2026-08-21"
+
+
+def seed_idle_source_pilot() -> None:
+    """2026-08-22: the fleet загрузка may now read a unit's ojidaniya off its
+    own cells' interval model instead of the «Смена отчёт» row, per unit and
+    from a date (`services/idle_source.py`). The pilot is ONE supervisor
+    (manager 5, Suvonov Elshod OF, the same unit the per-cell test page is
+    locked to) from 2026-08-21 — the owner's decision, and the first date on
+    which that unit's leaders filed every ojidaniya as an interval.
+
+    INSERT-ONLY: it writes the row only when the unit has none, so an admin's
+    later edit on the «Kutish manbasi» tab (a different date, a switch back
+    to the sheet) is never overwritten by a restart. Guarded by an AppSetting
+    flag so it runs exactly once; moving the unit or the date needs a NEW
+    flag key, or the old "already ran" flag makes the change a no-op on every
+    box that has booted once."""
+    from app.models import IdleSourceSetting
+    from app.services.idle_source import SOURCE_CELLS
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=IDLE_SOURCE_PILOT_FLAG).first():
+            return
+        unit = db.query(Manager).filter_by(id=IDLE_SOURCE_PILOT_UNIT).first()
+        if not unit:
+            # A box without the unit (a fresh dev DB) writes no flag, so the
+            # guard stays honest about never having run.
+            print(f"[startup] idle source pilot: unit {IDLE_SOURCE_PILOT_UNIT} not found")
+            return
+        existing = (db.query(IdleSourceSetting)
+                    .filter_by(manager_id=IDLE_SOURCE_PILOT_UNIT).first())
+        if existing:
+            print("[startup] idle source pilot: row already set by an admin, left alone")
+        else:
+            db.add(IdleSourceSetting(manager_id=IDLE_SOURCE_PILOT_UNIT,
+                                     source=SOURCE_CELLS,
+                                     from_date=IDLE_SOURCE_PILOT_FROM))
+            print(f"[startup] idle source pilot: unit {IDLE_SOURCE_PILOT_UNIT} "
+                  f"reads its cells from {IDLE_SOURCE_PILOT_FROM}")
+        db.add(AppSetting(key=IDLE_SOURCE_PILOT_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] idle source pilot skipped: {exc}")
     finally:
         db.close()

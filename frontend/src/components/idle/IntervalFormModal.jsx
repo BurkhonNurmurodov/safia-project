@@ -36,11 +36,6 @@ import { useLang } from "../../context/LangContext";
 // what stops those shared minutes being counted twice.
 export default function IntervalFormModal({
   open, onClose, cell, date, interval = null, initialCategory = "", onSaved,
-  // Whether THIS save files a request or writes an ojidaniya outright. Handed
-  // down from the server's per-cell `can_decide` — never re-derived from the
-  // viewer's role here, which would be a second answer to a question the API
-  // has already answered for this exact cell.
-  canDecide = true,
 }) {
   const { t } = useLang();
   const editing = !!interval;
@@ -111,10 +106,10 @@ export default function IntervalFormModal({
         ? api.put(`/api/idle-cell/intervals/${interval.id}`, body).then((r) => r.data)
         : api.post("/api/idle-cell/intervals", body).then((r) => r.data);
     },
-    // The response says what actually happened, so the page can name it: a
-    // leader's save becomes a REQUEST, and a toast reading «Saqlandi» would be
-    // telling them their entry is on the register when it is in a queue.
-    onSuccess: (row) => { onSaved?.(editing, row?.status || "approved"); onClose(); },
+    // Every save lands on the register outright — a leader's too, since the
+    // approval step went (2026-08-22) — so the page needs only to know whether
+    // it was an edit or a new row.
+    onSuccess: () => { onSaved?.(editing); onClose(); },
     // The failure stays ON the dialog: a modal that closes on error takes the
     // reason with it, and the operator is left guessing whether it saved.
     onError: (e) => {
@@ -162,7 +157,7 @@ export default function IntervalFormModal({
               loading={save.isPending}
               onClick={() => save.mutate()}
             >
-              {t(canDecide ? "idleCell.save" : "idleCell.sendRequest")}
+              {t("idleCell.save")}
             </Button>
           </>
         }

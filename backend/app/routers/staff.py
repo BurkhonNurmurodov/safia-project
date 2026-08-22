@@ -179,32 +179,16 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("День переоткрыт: {reopener_name}", "Дата: {date} — день снова открыт, данные скрыты до закрытия"),
         "en": ("Day re-opened by {reopener_name}", "Date: {date} — the day is open again, data is hidden until it is closed"),
     },
-    # Per-cell ojidaniya requests (/idle-cell). A leader proposes a wait; the
-    # cell's brigadir decides. The leader is told either way — a refusal
-    # somebody only discovers days later is how trust in a queue dies.
+    # Per-cell ojidaniya entries (/idle-cell). A leader's entry counts the
+    # moment it is saved (from 2026-08-22 — no approval step); the cell's
+    # brigadir is TOLD of each one so the register is reviewed before the day
+    # is closed. The old approved/rejected/batch-approved templates went with
+    # the queue — nothing sends them.
     "idle_request_new": {
-        "uz": ("Yangi kutish so'rovi", "{cell} · {category} · {time} | Sana: {date} | Yubordi: {leader_name}"),
-        "uz_cyrl": ("Янги кутиш сўрови", "{cell} · {category} · {time} | Сана: {date} | Юборди: {leader_name}"),
-        "ru": ("Новый запрос на ожидание", "{cell} · {category} · {time} | Дата: {date} | Отправил(а): {leader_name}"),
-        "en": ("New idle-time request", "{cell} · {category} · {time} | Date: {date} | From: {leader_name}"),
-    },
-    "idle_request_approved": {
-        "uz": ("Kutish tasdiqlandi", "{cell} · {category} · {time} | Sana: {date} | Tasdiqladi: {decider_name}"),
-        "uz_cyrl": ("Кутиш тасдиқланди", "{cell} · {category} · {time} | Сана: {date} | Тасдиқлади: {decider_name}"),
-        "ru": ("Ожидание подтверждено", "{cell} · {category} · {time} | Дата: {date} | Подтвердил(а): {decider_name}"),
-        "en": ("Idle time confirmed", "{cell} · {category} · {time} | Date: {date} | Confirmed by: {decider_name}"),
-    },
-    "idle_request_rejected": {
-        "uz": ("Kutish rad etildi", "{cell} · {category} · {time} | Sana: {date} | Rad etdi: {decider_name} | Sabab: {reason}"),
-        "uz_cyrl": ("Кутиш рад этилди", "{cell} · {category} · {time} | Сана: {date} | Рад этди: {decider_name} | Сабаб: {reason}"),
-        "ru": ("Ожидание отклонено", "{cell} · {category} · {time} | Дата: {date} | Отклонил(а): {decider_name} | Причина: {reason}"),
-        "en": ("Idle time rejected", "{cell} · {category} · {time} | Date: {date} | Rejected by: {decider_name} | Reason: {reason}"),
-    },
-    "idle_requests_approved": {
-        "uz": ("{count} ta kutish tasdiqlandi", "Sana: {date} | Tasdiqladi: {decider_name}"),
-        "uz_cyrl": ("{count} та кутиш тасдиқланди", "Сана: {date} | Тасдиқлади: {decider_name}"),
-        "ru": ("Подтверждено ожиданий: {count}", "Дата: {date} | Подтвердил(а): {decider_name}"),
-        "en": ("{count} idle-time entries confirmed", "Date: {date} | Confirmed by: {decider_name}"),
+        "uz": ("Yangi kutish kiritildi", "{cell} · {category} · {time} | Sana: {date} | Kiritdi: {leader_name}"),
+        "uz_cyrl": ("Янги кутиш киритилди", "{cell} · {category} · {time} | Сана: {date} | Киритди: {leader_name}"),
+        "ru": ("Новое ожидание внесено", "{cell} · {category} · {time} | Дата: {date} | Внёс(ла): {leader_name}"),
+        "en": ("New idle time entered", "{cell} · {category} · {time} | Date: {date} | Entered by: {leader_name}"),
     },
     "verifix_uploaded": {
         "uz": ("Verifix ma'lumotlari yuklandi", "Sana: {date}. O'zgartirishlarni kiriting (xodim almashtirish, lavozim o'zgartirish, o'chirish) va kunni yoping."),
@@ -4349,26 +4333,11 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
     if db.query(DayApproval).filter_by(manager_id=manager_id, date=d).first():
         raise HTTPException(status_code=409, detail="Day is already closed")
 
-    # Undecided per-cell ojidaniya requests block the close. The brigadir IS
-    # their approver, so these are their own unfinished work — and closing over
-    # them would freeze entries nobody can ever answer, since the lock refuses
-    # the decision too. Lazy import: services.idle_lock deliberately does not
-    # import this router, and this is the only direction that could cycle.
-    #
-    # But only for a closer who can actually REACH that queue.
-    # `PAGE_ACCESS["idle-cell"]` is empty — the page opens per profile — so a
-    # brigadir whose leaders were granted it while they were not would be
-    # refused their day and sent to a page that 403s them: an instruction they
-    # cannot follow, and no admin action short of a grant would clear it. Where
-    # they can see the queue, the block is a to-do; where they cannot, it is a
-    # trap, so the close proceeds and the requests wait for the day to re-open.
-    from app.permissions import page_allowed
-    from app.services import idle_lock
-    if page_allowed(db, caller, "idle-cell"):
-        waiting = idle_lock.pending_requests_for(db, manager_id, d)
-        if waiting:
-            raise HTTPException(status_code=409,
-                                detail={"code": "idle_requests_pending", "count": waiting})
+    # Per-cell ojidaniya never blocks a close (from 2026-08-22): a leader's entry
+    # counts the moment it is saved, so nothing on /idle-cell can be pending.
+    # The close dialog asks the brigadir whether they have looked at what their
+    # leaders entered (`GET /api/idle-cell/day-summary`) — a question, not a
+    # gate — and the day's lock then freezes those rows with everything else.
 
     closer_name = caller.get("full_name", "")
     db.add(DayApproval(

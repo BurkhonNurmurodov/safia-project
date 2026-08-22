@@ -22,9 +22,10 @@ Two rules follow from that, and both are load-bearing:
   `routers/attendance_batch._require_open_day`, whose 409 shape this reuses so
   the frontend maps ONE `day_closed` code.
 
-`pending_requests_for` points the other way: it is what lets `POST
-/api/staff/daily/close` refuse a day that still holds undecided idle-cell
-requests, so closing can never bury a leader's request unanswered.
+Nothing points the other way any more. From 2026-08-22 a leader's entry counts
+the moment it is saved (there is no request to decide), so the day close no
+longer asks this module whether anything is still waiting — the brigadir is
+TOLD of each leader entry instead, and reviews the register before closing.
 """
 from datetime import date as date_t
 from typing import Optional, Union
@@ -34,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from app import identity
 from app.capabilities import CAP_DAY_REOPEN, cap_scope, profile_unit_ids
-from app.models import Cell, CellOjidaniyaInterval, Manager
+from app.models import Manager
 from app.services.day_state import day_state
 
 
@@ -42,12 +43,6 @@ def _as_date(d: Union[str, date_t]) -> date_t:
     """Callers hand us whatever they hold — the router has the ISO string it was
     given, `staff.close_day` has already parsed one."""
     return d if isinstance(d, date_t) else date_t.fromisoformat(d)
-
-
-def _as_iso(d: Union[str, date_t]) -> str:
-    """`cell_ojidaniya_intervals.date` is stored as ISO text, so the count below
-    compares strings — never a date object, which would match nothing."""
-    return d if isinstance(d, str) else d.isoformat()
 
 
 def _can_reopen(db: Session, payload: Optional[dict], manager_id: Optional[int]) -> bool:
@@ -116,21 +111,3 @@ def require_open(db: Session, manager_id: Optional[int], d_str: Union[str, date_
             "state": state,
         },
     )
-
-
-def pending_requests_for(db: Session, manager_id: Optional[int], d: Union[str, date_t]) -> int:
-    """Undecided idle-cell requests on this unit-day.
-
-    The unit is the CELL's (`Cell.manager_id`) — the same single place the plant
-    dimension hangs off — so a request follows whichever brigadir actually owns
-    the cell, not whoever filed it.
-    """
-    if not manager_id:
-        return 0
-    return db.query(CellOjidaniyaInterval).join(
-        Cell, Cell.id == CellOjidaniyaInterval.cell_id
-    ).filter(
-        Cell.manager_id == manager_id,
-        CellOjidaniyaInterval.date == _as_iso(d),
-        CellOjidaniyaInterval.status == "pending",
-    ).count()

@@ -62,8 +62,9 @@ try:
         migrate_factories,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
-        migrate_idle_interval_status,
+        migrate_idle_interval_status, approve_pending_idle_requests,
         migrate_attendance_batches, seed_att_included_from_last_day,
+        seed_idle_source_pilot,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_level_since, add_concern_escalation_names,
@@ -121,8 +122,10 @@ try:
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()
     migrate_idle_interval_status()
+    approve_pending_idle_requests()
     migrate_attendance_batches()
     seed_att_included_from_last_day()
+    seed_idle_source_pilot()
     add_concern_profile_columns()
     add_concern_done_at()
     add_concern_level_columns()

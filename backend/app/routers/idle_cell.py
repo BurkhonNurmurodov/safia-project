@@ -20,6 +20,18 @@ Rows filed before the change survive in ``cell_ojidaniya`` and are served as
 ``legacy_entries``: readable and deletable, never editable, and never added into
 the union — they carry no times, so nothing can de-duplicate them.
 
+**An entry COUNTS the moment it is saved** (from 2026-08-22). For one day a
+leader's ojidaniya was a REQUEST that the cell's brigadir had to confirm; that
+step is gone. Every row is written ``approved``, and what replaces the queue is
+a different split of who may do what: a leader FILES and never corrects — only
+the unit's brigadir, an admin/top-manager, or a ``CAP_IDLE_APPROVE`` grantee
+covering the unit may edit or delete an entry, the leader's own included — and
+the brigadir is TOLD of every entry a leader files (``idle_request_new``, the
+«Yangi kutish kiritildi» bell/DM), so the register is reviewed after the fact
+instead of gated before it. ``rejected`` rows from the request regime stay in
+the table exactly as they were: visible, read-only, deletable by the same
+people. Nothing is pending any more, so nothing blocks a day close.
+
 The daily-actual «Perenaladka» entry that used to be this page's second tab
 lives on the Setup-times page now (routers/setup_times.py «Fakt» endpoints);
 this router is Ojidaniya-only.
@@ -38,7 +50,7 @@ only: it removes controls whose every option the server would answer the same
 way, and can never widen what a caller reaches."""
 import logging
 from collections import defaultdict
-from datetime import date as date_t, datetime, timezone
+from datetime import date as date_t, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -52,6 +64,7 @@ from app.capabilities import (
 )
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
+from app.security import require_auth
 from app.services import idle_intervals, idle_lock
 from app import identity
 
@@ -102,28 +115,30 @@ def _valid_date(s: str) -> bool:
         return False
 
 
-# ── who may CONFIRM ──────────────────────────────────────────────────────────
-# A leader's ojidaniya is a REQUEST until somebody confirms it, so the page now
-# needs a second question beside "may this caller see the cell": may they DECIDE
-# on it.
+# ── who may CORRECT ──────────────────────────────────────────────────────────
+# An entry counts the moment it is saved, so the page's second question beside
+# "may this caller see the cell" is: may they CHANGE what is on it. A leader
+# files and is done; whoever answers for the unit corrects.
 #
 # It is deliberately NOT `_scoped_cells` membership. That ladder ends in an
 # unrestricted-by-unit fallback (`units is None` → every cell) which exists so a
 # role nobody listed cannot be locked out of a page they were granted — a
-# widening. Read decision rights off it and a guest holding a page grant would
-# be able to confirm every request on the platform. So the confirmer is named
+# widening. Read editing rights off it and a guest holding a page grant would
+# be able to rewrite every entry on the platform. So the editor is named
 # explicitly, the way `leaders._may_decide` names one:
 #
 #   • admin / top-manager                      — always
-#   • the supervisor whose unit owns the cell   — their own queue, no grant needed
-#   • a CAP_IDLE_APPROVE grantee covering it    — a delegated confirmer
+#   • the supervisor whose unit owns the cell   — their own register, no grant needed
+#   • a CAP_IDLE_APPROVE grantee covering it    — a delegated editor
 #
 # Everyone else — leaders, and shift-managers or "all"-grantees without the
-# capability — files requests, however much of the page they can see.
+# capability — adds entries, however much of the page they can see, and may
+# not touch one afterwards, their own included. `CAP_IDLE_APPROVE` keeps its
+# name from the request regime; what it grants now is this reach.
 
 
 def _decider(db: Session, payload: dict) -> dict:
-    """The caller's decision reach, resolved ONCE per request.
+    """The caller's editing reach, resolved ONCE per request.
 
     Built as a context rather than a per-cell question because both halves cost
     a query: a payload answering forty cells would otherwise pay for them forty
@@ -152,10 +167,11 @@ def _decider(db: Session, payload: dict) -> dict:
 
 
 def _may_decide(ctx: dict, cell: Optional[Cell]) -> bool:
-    """May this caller confirm/reject requests on this cell?
+    """May this caller edit/delete entries on this cell?
 
-    A cell with no supervisor (``manager_id`` NULL) has no brigadir to ask, so
-    only an admin can answer for it — never nobody, which would strand the row."""
+    A cell with no supervisor (``manager_id`` NULL) has no brigadir to answer
+    for it, so only an admin may correct it — never nobody, which would strand
+    the row."""
     if ctx.get("all"):
         return True
     mid = getattr(cell, "manager_id", None)
@@ -164,33 +180,26 @@ def _may_decide(ctx: dict, cell: Optional[Cell]) -> bool:
     return mid in ctx["own_units"] or mid in ctx["granted_units"]
 
 
-def _by_own_grant(ctx: dict, cell: Optional[Cell]) -> bool:
-    """True when a decision came from a DELEGATED power rather than from being
-    the cell's own brigadir — the only case worth waking every admin for. A
-    brigadir clearing their unit's ten requests is doing their job, and ten
-    admin DMs for it is how these alerts stop being read."""
-    mid = getattr(cell, "manager_id", None)
-    return not (mid and mid in ctx["own_units"])
-
-
-def _row_perm(e: CellOjidaniyaInterval, viewer_key: Optional[str],
-              may_decide: bool, day_open: bool) -> dict:
+def _row_perm(e: CellOjidaniyaInterval, may_decide: bool, day_open: bool) -> dict:
     """What this caller may do to THIS row — decided here, on the server, and
     shipped with the row.
 
     The client never re-derives it (the `is_own` rule the comment threads
-    follow): permission depends on authorship, status and the day's lock at
-    once, and a second spelling of that on the client is a second answer."""
+    follow): permission depends on the caller's reach, the row's status and the
+    day's lock at once, and a second spelling of that on the client is a second
+    answer.
+
+    Authorship is deliberately NOT a factor: a leader's own entry is theirs to
+    read, not to rework — once saved it belongs to the register, and the unit's
+    brigadir is who corrects it. A ``rejected`` row (left over from the request
+    regime) is read-only for everyone and may only be retired. ``can_decide``
+    is always False: there is no decision left to make, and the key survives
+    only so an older client finds the shape it expects."""
     status = e.status or "approved"
-    is_author = bool(viewer_key) and e.entered_by_profile == viewer_key
-    # A confirmer may correct anything while the day is open. The author may
-    # only touch their own row while it is still unanswered — once it is an
-    # ojidaniya it belongs to the register, not to whoever proposed it.
-    editable = may_decide or (is_author and status in ("pending", "rejected"))
     return {
-        "can_edit":   day_open and editable,
-        "can_delete": day_open and editable,
-        "can_decide": day_open and may_decide and status == "pending",
+        "can_edit":   day_open and may_decide and status != "rejected",
+        "can_delete": day_open and may_decide,
+        "can_decide": False,
     }
 
 
@@ -246,8 +255,9 @@ def _interval_json(e: CellOjidaniyaInterval, names: Optional[dict] = None,
         "entered_by": e.entered_by_profile,
         "entered_by_name": (names or {}).get(e.entered_by_profile),
         "updated_at": e.updated_at.isoformat() if e.updated_at else None,
-        # The request half. `entered_by` above is the REQUESTER; these name who
-        # answered them, so one row always carries both people.
+        # Status and the decision half survive for the rows the request regime
+        # left behind: a `rejected` row still shows who refused it and why. New
+        # rows are `approved` with nothing here — nobody decided them.
         "status": e.status or "approved",
         "decision_note": e.decision_note or None,
         "decided_by": e.decided_by_profile,
@@ -276,7 +286,7 @@ def _legacy_json(e: CellOjidaniya, names: Optional[dict] = None,
 
 
 def _cell_json(c: Cell, intervals: list, requests: list, legacy: list,
-               leader: Optional[str] = None, can_decide: bool = False,
+               leader: Optional[str] = None, can_manage: bool = False,
                can_add: bool = False) -> dict:
     return {
         "cell_id": c.id,
@@ -292,15 +302,16 @@ def _cell_json(c: Cell, intervals: list, requests: list, legacy: list,
         "leader_id": c.leader_id,
         "leader": leader,
         # `intervals` is APPROVED rows only, and `summary` is computed from
-        # exactly that list — which is the whole reason the split exists. A
-        # request nobody has answered is not downtime, so it must not reach the
+        # exactly that list. `requests` is what the request regime left behind
+        # — REJECTED rows, kept visible with their reason so a leader can tell
+        # a refusal from an entry they never filed — and it must not reach the
         # union, the overlap correction or the загрузка; keeping it in a second
         # list means no arithmetic anywhere had to learn what a status is.
         "intervals": intervals,
         "requests": requests,
-        "pending_count": sum(1 for r in requests if r.get("status") == "pending"),
         "legacy_entries": legacy,
-        "can_decide": can_decide,
+        # May this caller edit/delete entries on the cell (any author's).
+        "can_manage": can_manage,
         "can_add": can_add,
         # The whole ledger for this cell-day, computed in ONE place.
         "summary": idle_intervals.summarize(intervals),
@@ -348,24 +359,28 @@ def list_cells(
         CellOjidaniya.cell_id.in_(ids),
         CellOjidaniya.date == date,
     ).all()
-    # Every author AND every decider resolved together, so one day costs one
-    # pair of queries no matter how many people touched the unit's cells.
+    # Every author AND every decider (rejected rows still name one) resolved
+    # together, so one day costs one pair of queries no matter how many people
+    # touched the unit's cells.
     names = _names_for(db, [e.entered_by_profile for e in ivs + legs]
                        + [e.decided_by_profile for e in ivs])
 
-    # The day's lock and the caller's decision reach — both once per request,
+    # The day's lock and the caller's editing reach — both once per request,
     # then applied per row.
     day = idle_lock.day_info(db, supervisor_id, date, payload)
     day_open = day["can_write"]
     ctx = _decider(db, payload)
-    viewer_key = identity.viewer_profile_key(db, payload)
     by_id = {c.id: c for c in cells}
 
     approved_by_cell: dict = defaultdict(list)
     requests_by_cell: dict = defaultdict(list)
     for e in ivs:
         decide = _may_decide(ctx, by_id.get(e.cell_id))
-        row = _interval_json(e, names, _row_perm(e, viewer_key, decide, day_open))
+        row = _interval_json(e, names, _row_perm(e, decide, day_open))
+        # Anything not approved goes to the second list. After the 2026-08-22
+        # one-shot that is only ever `rejected`; routing by "not approved"
+        # rather than by "rejected" means a stray row can never vanish from
+        # both lists.
         (approved_by_cell if row["status"] == "approved" else requests_by_cell)[e.cell_id].append(row)
     # Chronological — an event log read in any other order stops being a log.
     for rows in list(approved_by_cell.values()) + list(requests_by_cell.values()):
@@ -374,7 +389,7 @@ def list_cells(
     legacy_by_cell: dict = defaultdict(list)
     for e in legs:
         # A legacy row has no author question to answer — it predates the
-        # request regime entirely — so only a confirmer may retire one.
+        # interval model entirely — so only a unit editor may retire one.
         legacy_by_cell[e.cell_id].append(
             _legacy_json(e, names, day_open and _may_decide(ctx, by_id.get(e.cell_id))))
 
@@ -386,13 +401,57 @@ def list_cells(
     out = [
         _cell_json(c, approved_by_cell.get(c.id, []), requests_by_cell.get(c.id, []),
                    legacy_by_cell.get(c.id, []), leaders.get(c.leader_id),
-                   can_decide=_may_decide(ctx, c), can_add=day_open)
+                   can_manage=_may_decide(ctx, c), can_add=day_open)
         for c in cells
     ]
     return {
         "day": day,
-        "pending_total": sum(c["pending_count"] for c in out),
         "cells": out,
+    }
+
+
+@router.get("/day-summary")
+def day_summary(
+    manager_id: int = Query(...),
+    date: str = Query(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """How much ojidaniya the unit's cells carry for one day, and how much of it
+    LEADERS filed — the two numbers the day-close dialog on Daily/Staff prints
+    («Bugun liderlar N ta kutish kiritdi — ko'rib chiqdingizmi?»).
+
+    Auth-only and unit-scoped, NOT page-gated: the brigadir closing their day
+    is very often somebody nobody granted `/idle-cell` to (the page opens per
+    profile), and the one fact they need before signing off — that a leader
+    entered downtime on their unit today — must not 403 on them. What they may
+    ask about is bounded the other way: an admin/top-manager any unit, a
+    supervisor only the unit(s) their own profile covers, everyone else nothing.
+
+    Counts APPROVED rows only, the same set every figure on the platform reads;
+    a rejected leftover is not downtime and is not counted here either."""
+    if not _valid_date(date):
+        raise HTTPException(status_code=400, detail="Invalid date")
+    role = payload.get("role")
+    if role not in ("admin", "top-manager"):
+        if role != "supervisor":
+            raise HTTPException(status_code=403, detail="Not allowed")
+        units = profile_unit_ids(db, identity.viewer_profile_key(db, payload)) or []
+        if manager_id not in units:
+            raise HTTPException(status_code=403, detail="Not your unit")
+
+    rows = db.query(CellOjidaniyaInterval).join(
+        Cell, Cell.id == CellOjidaniyaInterval.cell_id,
+    ).filter(
+        Cell.manager_id == manager_id,
+        CellOjidaniyaInterval.date == date,
+        CellOjidaniyaInterval.status == "approved",
+    ).all()
+    return {
+        "entries": len(rows),
+        "leader_entries": sum(1 for e in rows
+                              if (e.entered_by_profile or "").startswith("leader:")),
+        "cells": len({e.cell_id for e in rows}),
     }
 
 
@@ -455,12 +514,12 @@ def _cell_of(db: Session, cell_id: int) -> Optional[Cell]:
 
 
 def _tell(db: Session, profile: Optional[str], nkey: str, params: dict) -> None:
-    """Tell one person what happened to their request — bell row plus a DM to
+    """Tell one person what was entered on their unit — bell row plus a DM to
     every account holding that profile.
 
     Lazy import and swallowed failures on purpose: ``routers.staff`` pulls in
-    half the app, and a Telegram outage must never be the reason a confirmation
-    fails to save. The decision is the record; the message is about it.
+    half the app, and a Telegram outage must never be the reason an entry
+    fails to save. The entry is the record; the message is about it.
 
     **It commits.** ``notify_profile`` only ``db.add()``s the bell row and
     documents that the caller commits — and every call here happens AFTER the
@@ -500,33 +559,32 @@ def create_interval(
     a cell can genuinely be waiting on two causes at once, and the union is what
     keeps the shared minutes from being counted twice.
 
-    Whether this becomes an ojidaniya or a REQUEST is not the caller's to say:
-    somebody who could confirm it anyway is not made to ask themselves, and
-    everybody else files pending. The answer is the server's, because the
-    endpoint is reachable without the UI."""
+    The row counts from this moment, whoever files it. What differs by caller
+    is only who gets TOLD: an author who could not correct the entry themselves
+    (a leader) is filing onto somebody else's register, so that unit's brigadir
+    is notified of it; a brigadir or admin entering their own is not told about
+    their own work. The answer is the server's, because the endpoint is
+    reachable without the UI."""
     note, stopped, _ = _validate(body, db, payload)
     cell = _cell_of(db, body.cell_id)
     idle_lock.require_open(db, getattr(cell, "manager_id", None), body.date)
 
     ctx = _decider(db, payload)
     decides = _may_decide(ctx, cell)
-    # A cell with no brigadir has nobody to ask. The row would be filed, shown
-    # to no one (every listing is keyed on a supervisor), decidable by no one,
-    # and would still sit in an admin's badge — so it is refused at the door
-    # rather than stranded, for the same reason a future date is.
+    # A cell with no brigadir has nobody to review a leader's entry, and no
+    # listing could show it either (every view is keyed on a supervisor) — so
+    # it is refused at the door rather than counted where nobody can see or
+    # correct it, for the same reason a future date is.
     if not decides and not getattr(cell, "manager_id", None):
         raise HTTPException(status_code=400,
-                            detail="This cell has no brigadir to confirm the request")
+                            detail="This cell has no brigadir to review the entry")
     viewer = identity.viewer_profile_key(db, payload)
-    now = datetime.now(timezone.utc)
 
     e = CellOjidaniyaInterval(
         cell_id=body.cell_id, date=body.date, category=body.category,
         start=body.start, end=body.end, stopped=stopped, note=note,
         entered_by_profile=viewer,
-        status="approved" if decides else "pending",
-        decided_by_profile=viewer if decides else None,
-        decided_at=now if decides else None,
+        status="approved",
     )
     db.add(e)
     db.commit()
@@ -536,16 +594,16 @@ def create_interval(
             ("note", None, e.note)])
 
     if not decides and cell is not None and cell.manager_id:
-        # The unit's brigadir is the one being asked. Admins are deliberately
-        # not DMed per request: a chat carrying every cell's waits is a chat
+        # The unit's brigadir is the one who reviews it. Admins are deliberately
+        # not DMed per entry: a chat carrying every cell's waits is a chat
         # nobody reads.
         _tell(db, identity.profile_key("supervisor", cell.manager_id),
               "idle_request_new",
               {**_row_facts(e, cell),
                "leader_name": identity.profile_display_name(db, viewer) or "—"})
 
-    return _interval_json(e, _names_for(db, [e.entered_by_profile, e.decided_by_profile]),
-                          _row_perm(e, viewer, decides, True))
+    return _interval_json(e, _names_for(db, [e.entered_by_profile]),
+                          _row_perm(e, decides, True))
 
 
 @router.put("/intervals/{interval_id}")
@@ -557,7 +615,10 @@ def update_interval(
 ):
     """Correct one ojidaniya in place. The cell it belongs to is checked twice —
     the row's own cell and the body's — so an edit can never walk an entry into
-    a cell the caller may write to from one the caller may not read."""
+    a cell the caller may write to from one the caller may not read.
+
+    Status never moves here: the row was approved when it was saved and stays
+    so, and a rejected leftover is read-only (``_row_perm``)."""
     e = db.query(CellOjidaniyaInterval).filter(CellOjidaniyaInterval.id == interval_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Entry not found")
@@ -569,30 +630,15 @@ def update_interval(
     idle_lock.require_open(db, getattr(cell, "manager_id", None), e.date)
     ctx = _decider(db, payload)
     decides = _may_decide(ctx, cell)
-    viewer = identity.viewer_profile_key(db, payload)
-    perm = _row_perm(e, viewer, decides, True)
+    perm = _row_perm(e, decides, True)
     if not perm["can_edit"]:
-        # An approved ojidaniya belongs to the register: its author may read it,
-        # and the unit's brigadir is who corrects it.
-        raise HTTPException(status_code=403, detail="This entry is no longer yours to edit")
+        # An entry belongs to the register, not to whoever filed it: its author
+        # may read it, and the unit's brigadir is who corrects it.
+        raise HTTPException(status_code=403, detail="Only the unit's brigadir may edit this entry")
 
-    was_pending = (e.status or "approved") == "pending"
     old = (e.category, f"{e.start}–{e.end}", bool(e.stopped), e.note or "")
     e.category, e.start, e.end = body.category, body.start, body.end
     e.stopped, e.note = stopped, note
-    now = datetime.now(timezone.utc)
-    if decides:
-        # A confirmer's correction IS the confirmation — asking them to fix a
-        # row and then approve their own fix is a tap that means nothing.
-        e.status = "approved"
-        e.decision_note = None
-        e.decided_by_profile, e.decided_at = viewer, now
-    else:
-        # The author reworking their own row: it goes back to the queue, and the
-        # refusal that sent it back stops being displayed under it.
-        e.status = "pending"
-        e.decision_note = None
-        e.decided_by_profile, e.decided_at = None, None
     db.commit()
     db.refresh(e)
 
@@ -602,25 +648,8 @@ def update_interval(
     if diff:
         _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_edited", diff)
 
-    if not decides and not was_pending and cell is not None and cell.manager_id:
-        # A rejected row just came back as a fresh request — the brigadir is
-        # being asked again, so they are told again.
-        _tell(db, identity.profile_key("supervisor", cell.manager_id),
-              "idle_request_new",
-              {**_row_facts(e, cell),
-               "leader_name": identity.profile_display_name(db, viewer) or "—"})
-    elif decides and was_pending and e.entered_by_profile != viewer:
-        # A confirmer's correction IS a decision, so it is announced like one.
-        # Without this the ONE approval path that runs through the edit form is
-        # silent, and the requester learns nothing — neither that they were
-        # accepted, nor that their times were rewritten under their name.
-        _tell(db, e.entered_by_profile, "idle_request_approved",
-              {**_row_facts(e, cell),
-               "decider_name": identity.profile_display_name(db, viewer) or "—",
-               "reason": ""})
-
     return _interval_json(e, _names_for(db, [e.entered_by_profile, e.decided_by_profile]),
-                          _row_perm(e, viewer, decides, True))
+                          _row_perm(e, decides, True))
 
 
 @router.delete("/intervals/{interval_id}", status_code=204)
@@ -629,7 +658,7 @@ def delete_interval(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """Remove one ojidaniya (scope-checked)."""
+    """Remove one ojidaniya (scope-checked; unit editors only)."""
     e = db.query(CellOjidaniyaInterval).filter(CellOjidaniyaInterval.id == interval_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Entry not found")
@@ -638,9 +667,8 @@ def delete_interval(
     cell = _cell_of(db, e.cell_id)
     idle_lock.require_open(db, getattr(cell, "manager_id", None), e.date)
     ctx = _decider(db, payload)
-    viewer = identity.viewer_profile_key(db, payload)
-    if not _row_perm(e, viewer, _may_decide(ctx, cell), True)["can_delete"]:
-        raise HTTPException(status_code=403, detail="This entry is no longer yours to delete")
+    if not _row_perm(e, _may_decide(ctx, cell), True)["can_delete"]:
+        raise HTTPException(status_code=403, detail="Only the unit's brigadir may delete this entry")
     # Snapshot before the delete — the row is unreadable after commit.
     cell_id, date = e.cell_id, e.date
     changes = [("category", e.category, None), ("time", f"{e.start}–{e.end}", None),
@@ -648,163 +676,6 @@ def delete_interval(
     db.delete(e)
     db.commit()
     _alert(db, payload, cell_id, date, "idle_cell.interval_deleted", changes)
-
-
-class DecideIn(BaseModel):
-    status: str                       # "approved" | "rejected"
-    note: Optional[str] = None        # required, non-blank, when rejecting
-
-
-@router.post("/intervals/{interval_id}/decide")
-def decide_interval(
-    interval_id: int,
-    body: DecideIn,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """Confirm or refuse one request — the moment a proposal becomes an
-    ojidaniya, or stops being one.
-
-    A refusal always carries a reason and the row is KEPT with it: deleting a
-    refused request would read to the leader exactly like an entry they never
-    filed, and they would file it again."""
-    if body.status not in ("approved", "rejected"):
-        raise HTTPException(status_code=400, detail="Invalid decision")
-    e = db.query(CellOjidaniyaInterval).filter(CellOjidaniyaInterval.id == interval_id).first()
-    if not e:
-        raise HTTPException(status_code=404, detail="Entry not found")
-    if e.cell_id not in {c.id for c in _scoped_cells(db, payload)}:
-        raise HTTPException(status_code=403, detail="This cell is not in your scope")
-
-    cell = _cell_of(db, e.cell_id)
-    idle_lock.require_open(db, getattr(cell, "manager_id", None), e.date)
-    ctx = _decider(db, payload)
-    if not _may_decide(ctx, cell):
-        raise HTTPException(status_code=403, detail="You may not decide requests on this cell")
-    if (e.status or "approved") != "pending":
-        # Two people answered the same request. The first answer stands; the
-        # second is told so rather than silently overwriting it.
-        raise HTTPException(status_code=409, detail={"code": "already_decided",
-                                                    "status": e.status})
-    note = (body.note or "").strip()
-    if body.status == "rejected" and not note:
-        raise HTTPException(status_code=400, detail="A reason is required to reject")
-
-    viewer = identity.viewer_profile_key(db, payload)
-    e.status = body.status
-    e.decision_note = note or None
-    e.decided_by_profile = viewer
-    e.decided_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(e)
-
-    if _by_own_grant(ctx, cell):
-        _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_decided",
-               [("status", "pending", e.status), ("time", None, f"{e.start}–{e.end}"),
-                ("note", None, note or e.note or "")])
-
-    _tell(db, e.entered_by_profile,
-          "idle_request_approved" if body.status == "approved" else "idle_request_rejected",
-          {**_row_facts(e, cell),
-           "decider_name": identity.profile_display_name(db, viewer) or "—",
-           "reason": note})
-
-    return _interval_json(e, _names_for(db, [e.entered_by_profile, e.decided_by_profile]),
-                          _row_perm(e, viewer, True, True))
-
-
-class DecideAllIn(BaseModel):
-    date: str
-    supervisor_id: int
-    cell_id: Optional[int] = None
-
-
-@router.post("/intervals/decide-all")
-def decide_all(
-    body: DecideAllIn,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """Confirm every pending request the caller may decide — one cell's, or the
-    whole day's.
-
-    A brigadir's queue is a queue: ten taps for ten honest entries is how a
-    confirmation step turns into a rubber stamp nobody reads. Each requester is
-    told ONCE, with the count — never once per row."""
-    if not _valid_date(body.date):
-        raise HTTPException(status_code=400, detail="Invalid date")
-    cells = [c for c in _scoped_cells(db, payload) if c.manager_id == body.supervisor_id]
-    if body.cell_id:
-        cells = [c for c in cells if c.id == body.cell_id]
-    ctx = _decider(db, payload)
-    mine = [c for c in cells if _may_decide(ctx, c)]
-    if not mine:
-        return {"count": 0}
-    idle_lock.require_open(db, body.supervisor_id, body.date)
-
-    rows = db.query(CellOjidaniyaInterval).filter(
-        CellOjidaniyaInterval.cell_id.in_([c.id for c in mine]),
-        CellOjidaniyaInterval.date == body.date,
-        CellOjidaniyaInterval.status == "pending",
-    ).all()
-    if not rows:
-        return {"count": 0}
-
-    viewer = identity.viewer_profile_key(db, payload)
-    now = datetime.now(timezone.utc)
-    per_requester: dict = defaultdict(int)
-    for e in rows:
-        e.status = "approved"
-        e.decision_note = None
-        e.decided_by_profile, e.decided_at = viewer, now
-        per_requester[e.entered_by_profile] += 1
-    db.commit()
-
-    by_id = {c.id: c for c in mine}
-    if any(_by_own_grant(ctx, by_id.get(e.cell_id)) for e in rows):
-        # The batch spans several cells, so the alert names them all rather than
-        # whichever happened to sort first — an audit line reading "12 approved
-        # on cell 4311" when 11 of them were elsewhere is a misattribution, and
-        # this row is the record of a delegated power being used.
-        touched = sorted({(by_id.get(e.cell_id).verifix_code
-                           or f"#{e.cell_id}") for e in rows if by_id.get(e.cell_id)})
-        _alert(db, payload, rows[0].cell_id, body.date, "idle_cell.interval_decided",
-               [("status", "pending", "approved"),
-                ("count", None, str(len(rows))),
-                ("cell", None, ", ".join(touched))])
-
-    decider_name = identity.profile_display_name(db, viewer) or "—"
-    for profile, n in per_requester.items():
-        _tell(db, profile, "idle_requests_approved",
-              {"count": n, "decider_name": decider_name, "date": body.date})
-    return {"count": len(rows)}
-
-
-@router.get("/requests/pending-count")
-def pending_count(
-    date: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """How many requests are waiting on THIS caller — the sidebar's badge.
-
-    Answers 0 rather than 403 for somebody who decides nothing, so the page's
-    own nav can poll it for every role that may open the page."""
-    ctx = _decider(db, payload)
-    # Only cells a listing could actually SHOW: every view of this page is keyed
-    # on a supervisor, so an un-owned cell's request is unreachable and counting
-    # it would park a number on the badge that nothing can clear.
-    mine = [c.id for c in _scoped_cells(db, payload)
-            if c.manager_id and _may_decide(ctx, c)]
-    if not mine:
-        return {"count": 0}
-    q = db.query(CellOjidaniyaInterval).filter(
-        CellOjidaniyaInterval.cell_id.in_(mine),
-        CellOjidaniyaInterval.status == "pending",
-    )
-    if date and _valid_date(date):
-        q = q.filter(CellOjidaniyaInterval.date == date)
-    return {"count": q.count()}
 
 
 @router.delete("/{entry_id}", status_code=204)

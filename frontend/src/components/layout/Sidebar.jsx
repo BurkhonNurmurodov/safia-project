@@ -120,26 +120,13 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   });
   const pendingCount = pendingData?.count ?? 0;
 
-  // Per-cell ojidaniya requests waiting on THIS viewer. A separate count from
-  // the Verifix one above because it answers a different question for a
-  // different person — a brigadir is not in BADGE_ROLES and would otherwise
-  // never learn that their unit's leaders are waiting on them. The endpoint
-  // answers 0 rather than 403 for somebody who decides nothing, so it is safe
-  // to poll for anyone who can open the page at all.
-  const canIdle = canAccessPage(auth?.role, "idle-cell", access, capPages, deniedPages);
-  const { data: idleData } = useQuery({
-    queryKey: ["idle-pending-count"],
-    queryFn: () => api.get("/api/idle-cell/requests/pending-count").then(r => r.data),
-    enabled: !!canIdle,
-    refetchInterval: 30_000,
-  });
-
   // One map, so a link carries a badge by BEING in it — the old code tested
   // `to === "/staff"` in three places, which is why a second badge could not
-  // exist without a fourth.
+  // exist without a fourth. (The /idle-cell badge lived here until
+  // 2026-08-22; a leader's ojidaniya now counts on save, so there is no queue
+  // left to count.)
   const BADGES = {
     "/staff": showBadge ? pendingCount : 0,
-    "/idle-cell": idleData?.count ?? 0,
   };
   const badgeFor = (to) => BADGES[to] || 0;
 

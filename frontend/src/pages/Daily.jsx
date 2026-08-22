@@ -21,6 +21,7 @@ import SupervisorPerformance from "../components/ui/SupervisorPerformance";
 import CategoryLegendModal from "../components/ui/CategoryLegendModal";
 import DayStepper from "../components/ui/DayStepper";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
+import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
 import api from "../utils/api";
 import { exchangeCellSuffix } from "../utils/cellName";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
@@ -220,18 +221,11 @@ function SupervisorDaily() {
   const closeMut = useMutation({
     mutationFn: () => api.post("/api/staff/daily/close", { manager_id: managerId, date }),
     onSuccess: () => { setShowCloseModal(false); setCloseErr(""); invalidateApproval(); },
+    // Never an empty string — `error={closeErr || null}` would render nothing
+    // and leave the dialog standing with no reason on it.
     onError: (e) => {
-      // The STRUCTURE is on `detail_raw` — api.js flattens every non-string
-      // `detail` to text and keeps the original there, so testing `detail` for
-      // an object finds a JSON blob and prints it.
-      const raw = e?.response?.data?.detail_raw;
       const d = e?.response?.data?.detail;
-      // The day cannot close over undecided per-cell ojidaniya requests — the
-      // brigadir is their approver, so the count is their own to-do, not an
-      // error about the day.
-      setCloseErr(raw && typeof raw === "object" && raw.code === "idle_requests_pending"
-        ? t("daily.closeBlockedIdleN").replace("{n}", raw.count)
-        : (typeof d === "string" && d) || t("staff.saveFailed"));
+      setCloseErr((typeof d === "string" && d) || t("staff.saveFailed"));
     },
   });
   const reopenMut = useMutation({
@@ -535,13 +529,20 @@ function SupervisorDaily() {
         />
       )}
 
-      {/* Close-the-day confirmation modal */}
+      {/* Close-the-day confirmation modal. The second line — «leaders entered
+          N ojidaniya today, have you looked?» — is a question, not a gate: the
+          close proceeds on confirm whatever the answer. It mounts with the
+          dialog, so the day-summary is fetched only for a close being
+          considered. */}
       <ConfirmDialog
         open={showCloseModal}
         onCancel={() => { setCloseErr(""); setShowCloseModal(false); }}
         onConfirm={() => closeMut.mutate()}
         title={t("daily.closeConfirmTitle")}
-        message={t("daily.closeConfirmText")}
+        message={<>
+          {t("daily.closeConfirmText")}
+          <CloseDayIdleNote managerId={managerId} date={date} />
+        </>}
         confirmLabel={closeMut.isPending ? t("daily.closing") : t("daily.closeConfirmBtn")}
         cancelLabel={t("daily.cancel")}
         loading={closeMut.isPending}

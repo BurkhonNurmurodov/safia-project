@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck,
-  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock,
+  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -29,6 +29,7 @@ import DbBackup from "./DbBackup";
 import DataSources from "./DataSources";
 import DisplaySettings from "./DisplaySettings";
 import ShiftTimes from "./ShiftTimes";
+import IdleSource from "./IdleSource";
 
 /**
  * The admin panel shell.
@@ -81,6 +82,10 @@ export const ADMIN_NAV = [
   // The cells' working start/end register — per-shift defaults a cell inherits,
   // its own pair overriding them. A register only: nothing scores off it yet.
   { id: "shifttimes",   group: "tools",  Icon: Clock,          labelKey: "admin.tabShiftTimes",   descKey: "admin.desc.shifttimes" },
+  // Per-supervisor switch for WHERE a unit's ojidaniya minutes come from — the
+  // «Смена отчёт» sheet row (everybody's default) or the headcount-weighted
+  // per-cell interval model from a given date. The only place the rule shows.
+  { id: "idlesource",   group: "tools",  Icon: GitBranch,      labelKey: "admin.tabIdleSource",   descKey: "admin.desc.idlesource" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // Split out of the old "data" tab, which was a junk drawer: a daily uploader
   // and two chart-colour editors for two OTHER pages, invisible below the fold
@@ -106,6 +111,7 @@ const VIEWS = {
   broadcast:    Broadcast,
   ltasks:       LeaderTasksAdmin,
   shifttimes:   ShiftTimes,
+  idlesource:   IdleSource,
   translations: TranslationsEditor,
   display:      DisplaySettings,
   cleanup:      AttendanceCleanup,

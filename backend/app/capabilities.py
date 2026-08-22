@@ -127,6 +127,7 @@ CAP_USERS_MANAGE      = "admin.users.manage"
 CAP_PROFILES_MANAGE   = "admin.profiles.manage"
 CAP_CELLS_MANAGE      = "admin.cells.manage"
 CAP_CELL_HOURS_MANAGE = "admin.cell_hours.manage"
+CAP_IDLE_SOURCE_MANAGE = "admin.idle_source.manage"
 CAP_FACTORIES_MANAGE  = "admin.factories.manage"
 
 # Page-view grants: one per page key, ids built from the page so the catalog
@@ -164,11 +165,12 @@ SCOPED_PAGES = ("staff", "daily", "production", "concerns", "worker-concerns", "
 CAPABILITIES = [
     {"key": CAP_DOCUMENTS_APPROVE, "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
     {"key": CAP_REQUESTS_APPROVE,  "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
-    # Confirming a leader's per-cell ojidaniya. Scoped, because it is a unit's
-    # own queue — a grant covers the units the grantee already answers for, and
-    # the cell's OWN brigadir needs no grant at all. It lists the page because a
-    # capability implies page access: the request's Telegram card carries a
-    # deep link, and a grantee without the page would tap it into "no access".
+    # Per-cell ojidaniya (/idle-cell): a delegated EDITOR. Since 2026-08-22 a
+    # leader's entry counts the moment it is saved and the leader can never
+    # change it; the cell's OWN brigadir needs no grant to correct or delete
+    # it, and this grant hands the same reach to someone else for the units
+    # they already answer for. The key keeps its historical name. It lists
+    # the page because a capability implies page access.
     {"key": CAP_IDLE_APPROVE,      "group": "requests",   "pages": ["idle-cell"],      "tab": None,        "scoped": True,  "page": None},
     {"key": CAP_ATTENDANCE_EDIT,   "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
     {"key": CAP_ATTENDANCE_DELETE, "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
@@ -182,6 +184,11 @@ CAPABILITIES = [
     # it. Nothing consumes these hours yet; the grant opens the tab that sets
     # them and its per-shift defaults.
     {"key": CAP_CELL_HOURS_MANAGE, "group": "identity",   "pages": [],                 "tab": "shifttimes", "scoped": False, "page": None},
+    # Which source a unit's ojidaniya minutes come from (sheet row vs its own
+    # cells' intervals, from a date). A per-unit register with no row scope of
+    # its own — unscoped like the two beside it. The grant carries real weight:
+    # switching a unit changes its brigadir's KPI from the next day on.
+    {"key": CAP_IDLE_SOURCE_MANAGE, "group": "identity", "pages": [],                "tab": "idlesource", "scoped": False, "page": None},
     # Factories are a plant-wide register with no unit dimension of their own —
     # unscoped for the same reason profiles and cells are. The grant carries
     # real weight: reassigning a supervisor's factory moves that unit's numbers

@@ -8,6 +8,7 @@ from app.permissions import require_page
 from app.models import Manager, DowntimeData
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
+from app.services import idle_source
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -79,9 +80,63 @@ def get_downtime(
         cat_names_set.update((r.by_category or {}).keys())
         cat_names_set.update((r.by_category_ns or {}).keys())
 
+    # A unit switched to its CELLS (services/idle_source) answers every day
+    # from its from-date with the headcount-weighted mean of its cells' interval
+    # unions, and the sheet row for such a day is dropped first — present or
+    # not, the sheet is no longer a source for that unit. The day-close gate
+    # below is left exactly as it is: a switched day with nothing filed yet is
+    # simply "not reported", so a confirmed one reads as a real zero and an open
+    # one stays hidden, the same two answers the sheet model gives. A day with
+    # at least one approved range on some cell is the unit's report for it.
+    #
+    # `kpi_only` is honoured HERE for the derived figures (H/I dropped before
+    # the union for `total`, stripped from the breakdowns), so the
+    # subtract-after step in the loop below finds nothing left to subtract.
+    units = idle_source.cell_units(db)
+    switched, lo = idle_source.switched_in_range(
+        units, (m.id for m in managers), date_from, date_to)
+    derived_days: list[tuple[str, str]] = []      # (manager name, d_str) overridden
+    if switched:
+        derived = idle_source.unit_downtime(db, switched, lo, date_to)
+        by_id = {m.id: m for m in managers}
+        for mid in switched:
+            name = by_id[mid].name
+            for d_str in dates:
+                d_obj = datetime.strptime(d_str, "%d.%m.%Y").date()
+                if not idle_source.uses_cells(units, mid, d_obj):
+                    continue
+                for bucket in (dt_total, dt_by_cat, dt_total_ns, dt_by_cat_ns):
+                    bucket.get(name, {}).pop(d_str, None)
+                row = derived.get((mid, d_obj.isoformat()))
+                if not row or not row["cells_with_idle"]:
+                    continue
+                cats = dict(row["by_category"])
+                cats_ns = dict(row["by_category_ns"])
+                total = float(row["total"] if kpi_only else row["total_all"])
+                total_ns = float(row["total_ns"])
+                if kpi_only:
+                    cats = {k: v for k, v in cats.items() if k not in OJIDANIYA_ONLY_CATS}
+                    cats_ns = {k: v for k, v in cats_ns.items() if k not in OJIDANIYA_ONLY_CATS}
+                    # A weighted plain sum is linear, so the not-stopped total
+                    # without H/I is exactly the sum of the remaining categories.
+                    total_ns = float(sum(cats_ns.values()))
+                dt_total.setdefault(name, {})[d_str] = total
+                dt_by_cat.setdefault(name, {})[d_str] = cats
+                dt_total_ns.setdefault(name, {})[d_str] = total_ns
+                dt_by_cat_ns.setdefault(name, {})[d_str] = cats_ns
+                cat_names_set.update(cats.keys())
+                cat_names_set.update(cats_ns.keys())
+                derived_days.append((name, d_str))
+
     cat_names = sorted(cat_names_set)
     if kpi_only:
         cat_names = [c for c in cat_names if c not in OJIDANIYA_ONLY_CATS]
+    # A derived breakdown names only the categories that were filed; pad it to
+    # the page's column set so every row carries every column, as sheet rows do.
+    for name, d_str in derived_days:
+        for c in cat_names:
+            dt_by_cat[name][d_str].setdefault(c, 0.0)
+            dt_by_cat_ns[name][d_str].setdefault(c, 0.0)
 
     # Day-close state — here it decides only whether an unreported day counts as
     # a reported zero (see the loop below), not whether reported data is shown.
@@ -180,13 +235,23 @@ def get_downtime_seasonality(
                 "col_totals": [0.0] * 12, "col_totals_ns": [0.0] * 12,
                 "by_category": {}, "by_category_ns": {}}
 
+    # Units reading their CELLS from a date (services/idle_source): their
+    # sheet rows on and after that date are dropped and the derived per-day
+    # breakdown is added in their place. The year list also carries the year
+    # each switch starts in, or a unit switched before its first sheet row
+    # would have no year to pick.
+    units = idle_source.cell_units(db)
+    mgr_ids = [m.id for m in managers]
+    name_to_id = {m.name: m.id for m in managers}
+    switched_any = [mid for mid in mgr_ids if mid in units]
+
     # Years that actually hold shift reports for the scoped supervisors, newest
     # first — the card's year selector.
     years = sorted({
         int(d[-4:]) for (d,) in db.query(DowntimeData.date)
         .filter(DowntimeData.manager_name.in_(manager_names)).distinct().all()
         if d and len(d) >= 4 and d[-4:].isdigit()
-    }, reverse=True)
+    } | {units[mid].year for mid in switched_any}, reverse=True)
     if year is None:
         today_year = date.today().year
         year = today_year if today_year in years else (years[0] if years else today_year)
@@ -200,16 +265,11 @@ def get_downtime_seasonality(
     col_totals_ns = [0.0] * 12
     by_cat: dict[str, list[float]] = {}
     by_cat_ns: dict[str, list[float]] = {}
-    for r in dt_rows:
-        try:
-            m = int((r.date or "").split(".")[1]) - 1
-        except (IndexError, ValueError):
-            continue
-        if not 0 <= m <= 11:
-            continue
+
+    def _add(m: int, cats_stopped: dict, cats_ns: dict) -> None:
         for cats, cols, dest in (
-            (r.by_category or {}, col_totals, by_cat),
-            (r.by_category_ns or {}, col_totals_ns, by_cat_ns),
+            (cats_stopped or {}, col_totals, by_cat),
+            (cats_ns or {}, col_totals_ns, by_cat_ns),
         ):
             for cat, val in cats.items():
                 if kpi_only and cat in OJIDANIYA_ONLY_CATS:
@@ -217,6 +277,27 @@ def get_downtime_seasonality(
                 v = float(val or 0)
                 dest.setdefault(cat, [0.0] * 12)[m] += v
                 cols[m] += v
+
+    for r in dt_rows:
+        try:
+            d_obj = datetime.strptime(r.date or "", "%d.%m.%Y").date()
+        except ValueError:
+            continue
+        canon = alias.get(r.manager_name, r.manager_name)
+        mid = name_to_id.get(canon)
+        if mid is not None and idle_source.uses_cells(units, mid, d_obj):
+            continue                      # the cells answer this day, not the sheet
+        _add(d_obj.month - 1, r.by_category, r.by_category_ns)
+
+    y_lo, y_hi = date(year, 1, 1), date(year, 12, 31)
+    switched, lo = idle_source.switched_in_range(units, mgr_ids, y_lo, y_hi)
+    if switched:
+        derived = idle_source.unit_downtime(db, switched, lo, y_hi)
+        for (mid, iso), row in derived.items():
+            d_obj = date.fromisoformat(iso)
+            if not idle_source.uses_cells(units, mid, d_obj):
+                continue
+            _add(d_obj.month - 1, row["by_category"], row["by_category_ns"])
 
     return {
         "years": years,

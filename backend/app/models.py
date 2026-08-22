@@ -550,20 +550,20 @@ class CellOjidaniyaInterval(Base):
     API rather than becoming a silent 24-hour stop. The shift is a property of
     the cell (its supervisor's), so it is derived on read, never stored.
 
-    ``status`` is what makes a leader's entry a REQUEST (from 2026-08-21). A
-    leader files ``pending``; it becomes an ojidaniya only when the cell's own
-    brigadir or an admin confirms it, and only ``approved`` rows are ever fed to
-    ``services/idle_intervals.summarize`` or to the per-cell загрузка. A
-    ``rejected`` row is KEPT, with the reason on it: deleting a refusal would
-    read to the leader exactly like an entry they never filed. Everything filed
-    before this existed is ``approved`` — it was written under the direct-write
-    rule, and that is the only honest value for it.
+    ``status``: every entry is written ``approved`` — it counts the moment it
+    is saved (the one-day request regime of 2026-08-21 was removed on
+    2026-08-22; ``startup.approve_pending_idle_requests`` flipped what it left
+    ``pending``). Only ``approved`` rows are ever fed to
+    ``services/idle_intervals.summarize``, the per-cell загрузка or
+    ``services/idle_source``. A ``rejected`` row from that day is KEPT, with
+    the reason on it: deleting a refusal would read to the leader exactly like
+    an entry they never filed.
 
-    ``entered_by_profile`` is therefore the REQUESTER and stops being rewritten
-    by whoever touched the row last: an approver's identity goes to
-    ``decided_by_profile``, so a row always names both people. That distinction
-    is load-bearing — "may this caller edit this row" is decided by comparing
-    the caller against the AUTHOR."""
+    ``entered_by_profile`` is the AUTHOR and stops being rewritten by whoever
+    touched the row last; ``decided_by_profile`` names whoever refused a
+    leftover ``rejected`` row. A leader never edits or deletes their own entry
+    — the unit's brigadir, an admin or a grantee does — so the brigadir is
+    TOLD of each leader entry rather than asked about it."""
     __tablename__ = "cell_ojidaniya_intervals"
 
     id                 = Column(Integer, primary_key=True, autoincrement=True)
@@ -1568,6 +1568,31 @@ class LeaderUnitSetting(Base):
     # where the merge rule lives; a floor earlier than the camera pilot's own
     # MERGE_FROM cannot resurrect bot days that predate it.
     bot_from       = Column(String(10), nullable=True)
+
+
+class IdleSourceSetting(Base):
+    """Where a supervisor unit's ojidaniya minutes come from — per UNIT, dated.
+
+    ``sheet`` (the default, and what an absent row means) keeps today's rule:
+    the «Смена отчёт» row the brigadir types at end of shift. ``cells`` makes
+    the fleet figure the headcount-weighted mean of the unit's cells' interval
+    unions (``services/idle_source.py`` is THE definition) FROM ``from_date``
+    onward. The date is what keeps history honest: an admin flipping the toggle
+    moves the rule for the days ahead and never rewrites the days behind, and
+    after it the sheet is never read for that unit even where a row exists —
+    two sources answering one day is how a figure stops being explainable.
+
+    Per SUPERVISOR, like `LeaderUnitSetting`, and for the same reason it is not
+    on a global → unit chain: a level that means "everybody" is one mis-tap away
+    from switching every unit on the platform mid-shift. A `cells` row without
+    a from-date is refused on write and read as NOT switched.
+    """
+    __tablename__ = "idle_source_settings"
+
+    manager_id = Column(Integer, ForeignKey("managers.id"), primary_key=True)
+    source     = Column(String(10), nullable=False, server_default="sheet", default="sheet")
+    from_date  = Column(String(10), nullable=True)      # ISO "YYYY-MM-DD"
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class LeaderTaskPhoto(Base):

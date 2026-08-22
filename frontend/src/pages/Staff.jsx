@@ -18,6 +18,7 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TimeWheelPicker from "../components/ui/TimeWheelPicker";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
+import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
 import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
@@ -3791,21 +3792,18 @@ function ApprovalsCalendar({ role, supervisors }) {
   };
   // Telegram's iOS WebView silently suppresses window.confirm, so a
   // confirm-gated calendar day did nothing at all on the primary device. Both
-  // decisions go through ConfirmDialog, which also keeps a refusal on screen —
-  // closing can now be REFUSED, when the unit still holds undecided per-cell
-  // ojidaniya requests.
+  // decisions go through ConfirmDialog, which also keeps a refusal on screen.
+  // A close is never refused over a leader's ojidaniya any more (they count on
+  // save since 2026-08-22) — the dialog ASKS about them instead, below.
   const [ask, setAsk] = useState(null);   // {kind: "close"|"reopen", iso} | null
   const [askErr, setAskErr] = useState("");
   const closeMut = useMutation({
     mutationFn: (date) => api.post("/api/staff/daily/close", { manager_id: effManagerId, date }),
     onSuccess: () => { setAsk(null); setAskErr(""); invalidate(); },
+    // Never "" — an empty error renders nothing and the dialog just sits there.
     onError: (e) => {
-      // `detail_raw` carries the structure; api.js flattened `detail` to text.
-      const raw = e?.response?.data?.detail_raw;
       const d = e?.response?.data?.detail;
-      setAskErr(raw && typeof raw === "object" && raw.code === "idle_requests_pending"
-        ? t("daily.closeBlockedIdleN").replace("{n}", raw.count)
-        : (typeof d === "string" && d) || t("staff.saveFailed"));
+      setAskErr((typeof d === "string" && d) || t("staff.saveFailed"));
     },
   });
   const reopenMut = useMutation({
@@ -3924,7 +3922,13 @@ function ApprovalsCalendar({ role, supervisors }) {
         onCancel={() => { setAskErr(""); setAsk(null); }}
         onConfirm={() => (ask?.kind === "close" ? closeMut : reopenMut).mutate(ask.iso)}
         title={t(ask?.kind === "close" ? "daily.closeDay" : "daily.reopenDay")}
-        message={t(ask?.kind === "close" ? "staff.apprCloseConfirm" : "staff.apprReopenConfirm")}
+        // The close carries the «leaders entered N ojidaniya today» line — a
+        // question, never a gate. Mounted with the dialog, so the day-summary
+        // is fetched for the one day being closed, not for the whole month.
+        message={ask?.kind === "close" ? (<>
+          {t("staff.apprCloseConfirm")}
+          <CloseDayIdleNote managerId={effManagerId} date={ask.iso} />
+        </>) : t("staff.apprReopenConfirm")}
         confirmLabel={t(ask?.kind === "close" ? "daily.closeDay" : "daily.reopenDay")}
         cancelLabel={t("daily.cancel")}
         loading={closeMut.isPending || reopenMut.isPending}

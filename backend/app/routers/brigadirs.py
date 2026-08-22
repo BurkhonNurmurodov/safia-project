@@ -10,6 +10,7 @@ from app.models import Manager, Attendance, ProductionData, HeadcountData, Downt
 from app.services.day_state import confirmed_pairs
 from app.services.kpi_calculator import compute_metrics
 from app.services.factory_scope import empty_scope, scoped_manager_ids
+from app.services import idle_source
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -96,6 +97,35 @@ def build_metrics_list(
         dt_by_cat.setdefault(canon, {})[r.date] = {
             k: v for k, v in by_cat.items() if k not in OJIDANIYA_ONLY_CATS
         }
+
+    # A unit switched to its CELLS (services/idle_source) reads the
+    # headcount-weighted mean of its cells' interval unions from its from-date
+    # on, and the sheet row is OVERRIDDEN on every such day — present or not.
+    # A day with no derived figure (no counted attendance on any cell) is 0,
+    # never the sheet: after the from-date the sheet is not a source for that
+    # unit, and letting it answer the gaps would make one figure come from two
+    # places nobody can tell apart. Days before the from-date keep the sheet.
+    # H/I are already out of `total` (dropped before the union) and are
+    # stripped from the breakdown here, exactly as the sheet rows above.
+    units = idle_source.cell_units(db)
+    switched, lo = idle_source.switched_in_range(
+        units, (m.id for m in managers), date_from, date_to)
+    if switched:
+        derived = idle_source.unit_downtime(db, switched, lo, date_to)
+        by_id = {m.id: m for m in managers}
+        for mid in switched:
+            name = by_id[mid].name
+            for d_str in all_dates:
+                d_obj = datetime.strptime(d_str, "%d.%m.%Y").date()
+                if not idle_source.uses_cells(units, mid, d_obj):
+                    continue
+                row = derived.get((mid, d_obj.isoformat()))
+                dt_total.setdefault(name, {})[d_str] = float(row["total"]) if row else 0.0
+                dt_by_cat.setdefault(name, {})[d_str] = (
+                    {k: v for k, v in row["by_category"].items()
+                     if k not in OJIDANIYA_ONLY_CATS}
+                    if row else {}
+                )
 
     # Gate: only include days the supervisor has closed. When use_confirmed_only=True
     # (used for individual profile pages) we additionally require all requests to

@@ -4,7 +4,7 @@ import {
   Info, ChevronDown, Flag, Repeat2, Plus, Trash2, Layers, UserRound, Boxes,
   Layers2, Archive, Play, Square, Pencil, Sunrise, FlaskConical,
   GanttChartSquare, ListTree, Clock, Timer, MessageSquareText,
-  Check, X, Lock, Unlock, Hourglass,
+  Lock, Unlock,
 } from "lucide-react";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 import CategoryLegendModal from "../components/ui/CategoryLegendModal";
@@ -15,8 +15,6 @@ import StyledSelect from "../components/ui/StyledSelect";
 import DayStepper from "../components/ui/DayStepper";
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
-import Modal from "../components/ui/Modal";
-import FormField from "../components/ui/FormField";
 import RequestStateChip from "../components/ui/RequestStateChip";
 import { useToast } from "../components/ui/Toast";
 import { SkeletonBlock } from "../components/ui/Skeleton";
@@ -177,25 +175,17 @@ function StatusCell({ r, t }) {
   );
 }
 
-// The request state, UNDER the stopped/not-stopped answer — and only when there
-// is one to report. An approved row wears nothing: it is the quiet default, and
-// a chip on every row would leave none of them reading as "look at me". The
-// rejection's reason travels with the chip, because a refusal the leader cannot
-// read is one they will simply file again.
+// The refusal, UNDER the stopped/not-stopped answer — and only when there is
+// one to report. An ordinary row wears nothing: it counted the moment it was
+// saved, and a chip on every row would leave none of them reading as "look at
+// me". Rejected rows are leftovers of the approval step this page no longer
+// has (removed 2026-08-22); they stay readable, with their reason beside them,
+// because a row that vanished from both lists is a row nobody can explain.
 function RequestCell({ r, t }) {
-  if (r.kind === "legacy" || r.status === "approved") return null;
+  if (r.kind === "legacy" || r.status !== "rejected") return null;
   return (
     <div className="mt-1 flex flex-col gap-0.5 items-start">
-      <RequestStateChip
-        state={r.status}
-        size="xs"
-        label={t(r.status === "pending" ? "idleCell.stPending" : "idleCell.stRejected")}
-      />
-      {r.status === "pending" && (
-        <span className="text-[10px]" style={{ color: "var(--text-3)" }}>
-          {t("idleCell.pendingNotCounted")}
-        </span>
-      )}
+      <RequestStateChip state="rejected" size="xs" label={t("idleCell.stRejected")} />
     </div>
   );
 }
@@ -214,9 +204,8 @@ function RequestCell({ r, t }) {
 // two or three entries. As a column it is comparable with the rest, and the
 // whole day reads in start order by default.
 // One place that turns a refusal into a sentence. The API's `detail` is either a
-// string or an object carrying a `code`, and the two states worth naming are
-// both things the reader can act on: re-open the day, or re-read a row somebody
-// else already answered.
+// string or an object carrying a `code`, and the one state worth naming is the
+// one the reader can act on: re-open the day.
 function errText(e, t) {
   // The STRUCTURE lives on `detail_raw`: api.js's interceptor flattens every
   // non-string `detail` to text and keeps the original there. Reading `detail`
@@ -225,43 +214,30 @@ function errText(e, t) {
   const d = e?.response?.data?.detail;
   const code = raw && typeof raw === "object" ? raw.code : null;
   if (code === "day_closed") return t("idleCell.dayClosedErr");
-  if (code === "already_decided") return t("idleCell.alreadyDecided");
   if (typeof d === "string" && d) return d;
   return t("idleCell.saveError");
 }
 
-function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, onSort, t, tl, lang, autoOpen, toast }) {
+function CellCard({ cell, date, view, sort, onSort, t, tl, lang, autoOpen, toast, isLeader = false }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(autoOpen);
   const [form, setForm] = useState(null);          // {interval, category} | null
   const [confirm, setConfirm] = useState(null);    // {kind, row} | null
   const [delErr, setDelErr] = useState("");        // failure shown ON the confirm
-  const [reject, setReject] = useState(null);      // the row being refused | null
-  const [rejNote, setRejNote] = useState("");
-  const [rejErr, setRejErr] = useState("");
-  const [bulk, setBulk] = useState(false);         // «confirm all» dialog open
-  const [bulkErr, setBulkErr] = useState("");
 
   // Only ever opens (never forces closed, so a manual collapse sticks); also
   // catches already-mounted cells when the cell filter narrows the list.
   useEffect(() => { if (autoOpen) setOpen(true); }, [autoOpen]);
 
   const intervals = cell.intervals || [];
-  // Pending and rejected rows arrive in their OWN list, so nothing that
-  // computes a total ever sees them: `summary` is the server's answer over
-  // `intervals` alone. They rejoin here, at the point where the day is READ.
+  // Rejected rows arrive in their OWN list, so nothing that computes a total
+  // ever sees them: `summary` is the server's answer over `intervals` alone.
+  // They rejoin here, at the point where the day is READ.
   const requests = cell.requests || [];
-  const pending = useMemo(() => requests.filter((r) => r.status === "pending"), [requests]);
   const legacy = cell.legacy_entries || [];
   const summary = cell.summary || {};
   const overlapIds = useMemo(() => new Set(summary.overlap_ids || []), [summary]);
-  // The sidebar badge counts the very requests these buttons decide, so it is
-  // refreshed with them — otherwise it keeps advertising a queue the operator
-  // just cleared until its own 30s poll catches up.
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ["idle-cells"] });
-    qc.invalidateQueries({ queryKey: ["idle-pending-count"] });
-  };
+  const refresh = () => qc.invalidateQueries({ queryKey: ["idle-cells"] });
 
   // ONE row model for both record types, so the table has a single schema.
   // A legacy row is a pre-2026-08-20 minutes-only entry: it has no start and no
@@ -274,10 +250,9 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
       const i = CATS.findIndex((c) => c.name === name);
       return i < 0 ? CATS.length : i;
     };
-    // Pending first — the only rows anybody has to act on — then the register,
-    // then what was refused, then the undated legacy records.
-    const rank = (iv) => (iv.status === "pending" ? 0
-      : iv.status === "rejected" ? 2 : (iv.stopped ? 1 : 1.5));
+    // The register first, then what was refused, then the undated legacy
+    // records.
+    const rank = (iv) => (iv.status === "rejected" ? 2 : (iv.stopped ? 1 : 1.5));
     const out = [
       ...[...intervals, ...requests].map((iv) => ({
         kind: "interval", key: `i${iv.id}`, src: iv,
@@ -286,7 +261,9 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
         status: iv.status || "approved",
         decisionNote: iv.decision_note || "",
         decidedByName: iv.decided_by_name || "",
-        canEdit: !!iv.can_edit, canDelete: !!iv.can_delete, canDecide: !!iv.can_decide,
+        // Both travel ON the row from the server — never re-derived from the
+        // viewer's role here. A leader's own entry answers false to both.
+        canEdit: !!iv.can_edit, canDelete: !!iv.can_delete,
         start: iv.start, end: iv.end,
         startMin: toMin(iv.start) ?? -1,
         endMin: toMin(iv.end) ?? -1,
@@ -304,7 +281,7 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
         category: e.category, catOrder: catOrder(e.category),
         stopped: null, statusOrder: 3,
         status: "legacy", decisionNote: "", decidedByName: "",
-        canEdit: false, canDelete: !!e.can_delete, canDecide: false,
+        canEdit: false, canDelete: !!e.can_delete,
         start: "", end: "", startMin: -1, endMin: -1,
         // ONE expression feeds both the Minutes cell and the breakdown line
         // below the note. Rounding here and printing the raw float there put
@@ -320,21 +297,16 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
     // No sort picked = the order the API sent (already start-ascending), with
     // the undated legacy records after it — i.e. chronological, which is what
     // the day reads as.
-    // The status filter narrows what is LISTED, never what is counted: the
-    // header's totals stay the day's totals, so filtering to «Kutilmoqda»
-    // cannot be mistaken for the day having shrunk.
-    const shown = statusFilter === "all" ? out : out.filter((r) => r.status === statusFilter);
-    if (!sort?.key) return shown;
+    if (!sort?.key) return out;
     const val = (r) => ({
       category: r.catOrder, status: r.statusOrder,
       start: r.startMin, end: r.endMin,
       minutes: r.minutes, note: r.note,
     }[sort.key]);
-    return [...shown].sort(sortCmp(sort, val));
-  }, [intervals, requests, legacy, overlapIds, sort, statusFilter]);
+    return [...out].sort(sortCmp(sort, val));
+  }, [intervals, requests, legacy, overlapIds, sort]);
 
-  // What the cell HOLDS, not what the filter is showing — the header states the
-  // day's totals, and those must not move because somebody narrowed the list.
+  // Everything the cell HOLDS — the header states the day's totals over it.
   const entryCount = intervals.length + requests.length + legacy.length;
 
   const del = useMutation({
@@ -345,36 +317,6 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
     // its own dialog would leave the operator unable to tell a refusal from a
     // deletion, which is the one thing a confirm exists to make unambiguous.
     onError: (e) => setDelErr(errText(e, t)),
-  });
-
-  // ── deciding ───────────────────────────────────────────────────────────────
-  // A failed decision must leave the operator able to tell a refusal from a
-  // success, so every one of these reports through the toast (or, for reject,
-  // inside its own dialog) and nothing ever closes silently.
-  const decide = useMutation({
-    mutationFn: ({ id, status, note }) =>
-      api.post(`/api/idle-cell/intervals/${id}/decide`, { status, note }),
-    onSuccess: (_r, v) => {
-      setReject(null);
-      refresh();
-      toast.success(t(v.status === "approved" ? "idleCell.decisionApproved" : "idleCell.decisionRejected"));
-    },
-    onError: (e) => {
-      const msg = errText(e, t);
-      if (reject) setRejErr(msg); else toast.error(msg);
-    },
-  });
-
-  const approveAll = useMutation({
-    mutationFn: () => api.post("/api/idle-cell/intervals/decide-all", {
-      date, supervisor_id: cell.manager_id ?? supervisorId, cell_id: cell.cell_id,
-    }),
-    onSuccess: (r) => {
-      setBulk(false);
-      refresh();
-      toast.success(t("idleCell.decisionApprovedN").replace("{n}", r?.data?.count ?? pending.length));
-    },
-    onError: (e) => setBulkErr(errText(e, t)),
   });
 
   const addBtn = (
@@ -398,15 +340,6 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
         />
         <CellIdent cell={cell} t={t} tl={tl} lang={lang} nameCls="text-sm" />
         <span className="flex items-center gap-2 flex-shrink-0">
-          {/* A count, never a figure: pending minutes are not a fact about the
-              day yet, and printing them beside the totals would read as one. */}
-          {pending.length > 0 && (
-            <RequestStateChip
-              state="pending"
-              size="xs"
-              label={t("idleCell.pendingCountN").replace("{n}", pending.length)}
-            />
-          )}
           {summary.overlap_min > 0 && (
             <span
               className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums"
@@ -450,13 +383,6 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
             <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
               {t("idleCell.noIntervals")}
             </div>
-          ) : rows.length === 0 ? (
-            // The cell HAS entries; this filter just excludes all of them. Said
-            // differently from "nothing was filed", which is a different fact
-            // with a different remedy.
-            <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
-              {t("idleCell.noMatch")}
-            </div>
           ) : view === "timeline" ? (
             /* Bars and nothing else. The rows are one tab away and the header
                above already carries the totals, so repeating the log here would
@@ -467,16 +393,15 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
                start and no end, so it cannot be drawn at all; gate on what the
                chart can actually draw, not on the record count, or every day
                before the interval model began opens onto a blank card. */
-            intervals.length + pending.length > 0 ? (
+            intervals.length > 0 ? (
               <DayTimeline
                 intervals={intervals}
-                pending={pending}
                 summary={summary}
                 t={t}
                 // The permission travels ON the row, so the bars obey the
                 // same rule the table does: never draw a control the API
-                // would refuse. An approved row, or any row on a closed day,
-                // opens nothing.
+                // would refuse. A leader's own entry, or any row on a closed
+                // day, opens nothing.
                 onPick={(iv) => iv.can_edit && setForm({ interval: iv, category: iv.category })}
               />
             ) : (
@@ -583,9 +508,9 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
                               on a table already past the width of a phone. At
                               --text-3, not --text-4: legible is what makes an
                               attribution worth printing. */}
-                          {/* Why it came back. Kept beside the entry it refers
-                              to rather than in a toast that has since gone: a
-                              reason the leader cannot re-read is a request they
+                          {/* Why it was refused, back when refusing was a
+                              thing. Kept beside the entry it refers to: a
+                              reason the leader cannot re-read is an entry they
                               will simply file again unchanged. */}
                           {r.status === "rejected" && r.decisionNote && (
                             <div className="text-[11px] mt-0.5 leading-snug" style={{ color: "#ef4444" }}>
@@ -600,8 +525,8 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
                               <UserRound size={10} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
                               <span className="truncate">
                                 {t("idleCell.enteredBy")}: {tl(r.enteredBy)}
-                                {r.decidedByName && r.status !== "pending" && (
-                                  <> · {t(r.status === "rejected" ? "idleCell.rejectedBy" : "idleCell.decidedBy")} {tl(r.decidedByName)}</>
+                                {r.decidedByName && r.status === "rejected" && (
+                                  <> · {t("idleCell.rejectedBy")} {tl(r.decidedByName)}</>
                                 )}
                               </span>
                             </div>
@@ -614,31 +539,12 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
                             yet", which is a different and wrong story. */}
                         <td className="px-3 py-2">
                           <span className="flex items-center justify-end gap-1">
-                            {r.canDecide && (
-                              <>
-                                <Button
-                                  size="sm" variant="success" tint icon={<Check size={13} />}
-                                  className="min-h-[32px] min-w-[32px]"
-                                  loading={decide.isPending}
-                                  aria-label={t("idleCell.approve")}
-                                  title={t("idleCell.approve")}
-                                  onClick={() => decide.mutate({ id: r.src.id, status: "approved" })}
-                                />
-                                <Button
-                                  size="sm" variant="danger" tint icon={<X size={13} />}
-                                  className="min-h-[32px] min-w-[32px]"
-                                  aria-label={t("idleCell.reject")}
-                                  title={t("idleCell.reject")}
-                                  onClick={() => { setRejNote(""); setRejErr(""); setReject(r); }}
-                                />
-                              </>
-                            )}
                             {r.canEdit && (
                               <Button
                                 size="sm" variant="secondary" tint icon={<Pencil size={13} />}
                                 className="min-h-[32px] min-w-[32px]"
-                                aria-label={t(r.status === "rejected" ? "idleCell.fixAndResend" : "idleCell.editInterval")}
-                                title={t(r.status === "rejected" ? "idleCell.fixAndResend" : "idleCell.editInterval")}
+                                aria-label={t("idleCell.editInterval")}
+                                title={t("idleCell.editInterval")}
                                 onClick={() => setForm({ interval: r.src, category: r.category })}
                               />
                             )}
@@ -669,24 +575,17 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
             }}
           >
             {/* Said once per card, where the missing buttons are — not as a
-                `title` on each row, which Telegram's WebView never shows. */}
+                `title` on each row, which Telegram's WebView never shows. A
+                leader files and never corrects (their rows answer can_edit /
+                can_delete false), so the one sentence they need here is who
+                does. Gated on the server's `can_manage` as well as the role: a
+                leader holding the grant that covers their unit DOES get the
+                buttons, and the sentence would then be a lie. */}
             <span className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
               {!cell.can_add ? t("idleCell.dayClosedNoAdd")
-                : (!cell.can_decide && intervals.length > 0) ? t("idleCell.approvedReadOnly") : ""}
+                : (isLeader && !cell.can_manage && intervals.length > 0) ? t("idleCell.leaderCannotEdit") : ""}
             </span>
             <span className="ml-auto flex flex-wrap items-center gap-2">
-              {/* The brigadir's real job on this page is the queue, not the row:
-                  ten taps for ten honest entries is how a confirmation step
-                  turns into a rubber stamp. */}
-              {cell.can_decide && pending.length > 0 && (
-                <Button
-                  size="lg" variant="success" tint icon={<Check size={15} />}
-                  className="min-h-[44px] md:min-h-0"
-                  onClick={(e) => { e.stopPropagation(); setBulkErr(""); setBulk(true); }}
-                >
-                  {t("idleCell.approveAllN").replace("{n}", pending.length)}
-                </Button>
-              )}
               {cell.can_add && addBtn}
             </span>
           </div>
@@ -700,62 +599,12 @@ function CellCard({ cell, date, supervisorId, statusFilter = "all", view, sort, 
         date={date}
         interval={form?.interval || null}
         initialCategory={form?.category || ""}
-        canDecide={!!cell.can_decide}
-        // The toast names what the server actually did, not what was pressed:
-        // a leader's save lands in a queue, and «Saqlandi» would tell them it
-        // landed on the register.
-        onSaved={(wasEdit, status) => {
+        // A save lands on the register outright — a leader's included — so
+        // «Saqlandi» is the truth for everyone.
+        onSaved={(wasEdit) => {
           refresh();
-          toast.success(t(
-            status === "pending"
-              ? (wasEdit ? "idleCell.requestResent" : "idleCell.requestSent")
-              : (wasEdit ? "idleCell.updated" : "idleCell.saved")));
+          toast.success(t(wasEdit ? "idleCell.updated" : "idleCell.saved"));
         }}
-      />
-
-      {/* Refusing takes a reason, so it takes a form — and the failure stays ON
-          it, because a dialog that closed on error would leave the operator
-          unable to tell a refusal from a rejection that went through. */}
-      <Modal
-        open={!!reject}
-        onClose={() => setReject(null)}
-        title={t("idleCell.rejectTitle")}
-        subtitle={reject ? `${reject.category} · ${reject.start}–${reject.end}` : ""}
-        footer={<>
-          <Button variant="secondary" onClick={() => setReject(null)}>{t("idleCell.cancel")}</Button>
-          <Button
-            variant="danger"
-            loading={decide.isPending}
-            onClick={() => {
-              if (!rejNote.trim()) { setRejErr(t("idleCell.rejectReasonRequired")); return; }
-              decide.mutate({ id: reject.src.id, status: "rejected", note: rejNote.trim() });
-            }}
-          >
-            {t("idleCell.reject")}
-          </Button>
-        </>}
-      >
-        <FormField label={t("idleCell.rejectReason")} required hint={t("idleCell.rejectReasonHint")} error={rejErr || null}>
-          <textarea
-            value={rejNote}
-            onChange={(e) => { setRejNote(e.target.value); setRejErr(""); }}
-            rows={3}
-            className="w-full rounded-xl px-3 py-2 text-sm"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
-          />
-        </FormField>
-      </Modal>
-
-      <ConfirmDialog
-        open={bulk}
-        title={t("idleCell.approveAllTitle")}
-        message={t("idleCell.approveAllConfirmN").replace("{n}", pending.length)}
-        confirmLabel={t("idleCell.approveAllN").replace("{n}", pending.length)}
-        cancelLabel={t("idleCell.cancel")}
-        loading={approveAll.isPending}
-        error={bulkErr || null}
-        onCancel={() => { setBulkErr(""); setBulk(false); }}
-        onConfirm={() => approveAll.mutate()}
       />
 
       <ConfirmDialog
@@ -814,14 +663,11 @@ export default function IdleCell() {
   const [supervisorId, setSupervisorId] = usePersistentState("idle_cell_supervisor_id", null);
   const [leaderId, setLeaderId] = usePersistentState("idle_cell_leader_id", ""); // "" all · "none" leaderless · leader_id
   const [selectedCellIds, setSelectedCellIds] = usePersistentState("idle_cell_selected_cell_ids", []); // [] = show all of the supervisor's cells
-  const [statusFilter, setStatusFilter] = usePersistentState("idle_cell_req_status", "all"); // all|pending|approved|rejected
   const [factSort, onFactSort] = useSortState("idle_cell_peren_sort");
   const qc = useQueryClient();
   const [legendOpen, setLegendOpen] = useState(false);
   const [reopen, setReopen] = useState(false);      // «re-open the day» dialog
   const [reopenErr, setReopenErr] = useState("");
-  const [dayBulk, setDayBulk] = useState(false);    // «confirm the whole day» dialog
-  const [dayBulkErr, setDayBulkErr] = useState("");
   const isPeren = tab === "peren";
 
   const { data: supData, isError: supFailed } = useQuery({
@@ -859,12 +705,10 @@ export default function IdleCell() {
 
   // All tabs feed the same leader → cell chain below.
   const cells = isPeren ? factCells : (cellsData?.cells ?? []);
-  // The day's lock and the size of the queue arrive with the ROWS — never from
-  // a second call to /api/staff/approvals/day, which is gated on a page a
-  // leader does not hold, so for the person this page exists for it would 403.
+  // The day's lock arrives with the ROWS — never from a second call to
+  // /api/staff/approvals/day, which is gated on a page a leader does not hold,
+  // so for the person this page exists for it would 403.
   const day = cellsData?.day ?? null;
-  const pendingTotal = cellsData?.pending_total ?? 0;
-  const canDecideAny = (cellsData?.cells ?? []).some((c) => c.can_decide);
 
   const refreshCells = () => qc.invalidateQueries({ queryKey: ["idle-cells"] });
 
@@ -882,19 +726,6 @@ export default function IdleCell() {
       toast.success(t("idleCell.reopened"));
     },
     onError: (e) => setReopenErr(errText(e, t)),
-  });
-
-  const approveDay = useMutation({
-    mutationFn: () => api.post("/api/idle-cell/intervals/decide-all", {
-      date, supervisor_id: supervisorId,
-    }),
-    onSuccess: (r) => {
-      setDayBulk(false);
-      refreshCells();
-      qc.invalidateQueries({ queryKey: ["idle-pending-count"] });
-      toast.success(t("idleCell.decisionApprovedN").replace("{n}", r?.data?.count ?? pendingTotal));
-    },
-    onError: (e) => setDayBulkErr(errText(e, t)),
   });
 
   // Leader narrows the supervisor's cells, and the cell picker below it only
@@ -1130,29 +961,6 @@ export default function IdleCell() {
                   render={(v) => cellOptions.find((o) => o.value === v)?.label || v} />
               ),
             }] : []),
-            // Request status — a SECTION of the panel, never a control of its
-            // own on the bar (the one-filter-zone rule). Offered only on the
-            // cell tabs, and only once the day actually holds a request:
-            // a filter over a distinction the day does not make is a control
-            // whose every option shows the same rows.
-            ...(!isPeren && (pendingTotal > 0 || statusFilter !== "all") ? [{
-              key: "reqStatus", icon: Hourglass, label: t("idleCell.statusFilter"),
-              active: statusFilter !== "all",
-              display: t({ pending: "idleCell.stPending", approved: "idleCell.stApproved",
-                           rejected: "idleCell.stRejected" }[statusFilter] || "idleCell.statusAll"),
-              onClear: () => setStatusFilter("all"),
-              render: ({ close }) => (
-                <PickFilter close={close}
-                  value={statusFilter}
-                  onChange={setStatusFilter}
-                  opts={[
-                    { value: "all", label: t("idleCell.statusAll") },
-                    { value: "pending", label: t("idleCell.stPending") },
-                    { value: "approved", label: t("idleCell.stApproved") },
-                    { value: "rejected", label: t("idleCell.stRejected") },
-                  ]} />
-              ),
-            }] : []),
           ]}
         />
         {/* The 11 category definitions, once for the page. They used to be
@@ -1255,38 +1063,12 @@ export default function IdleCell() {
             </div>
           )}
 
-          {/* The queue, for whoever can clear it. Absent when there is nothing
-              waiting — a banner that is always there is chrome, not a signal. */}
-          {day?.can_write && canDecideAny && pendingTotal > 0 && (
-            <div
-              className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl text-xs"
-              style={{
-                background: "rgba(234,179,8,0.12)",
-                border: "1px solid rgba(234,179,8,0.35)",
-                color: "var(--text-2)",
-              }}
-            >
-              <Hourglass size={14} style={{ color: "#eab308", flexShrink: 0 }} />
-              <span className="font-semibold">
-                {t("idleCell.pendingBannerN").replace("{n}", pendingTotal)}
-              </span>
-              <Button
-                size="sm" variant="success" tint icon={<Check size={13} />}
-                className="ml-auto"
-                onClick={() => { setDayBulkErr(""); setDayBulk(true); }}
-              >
-                {t("idleCell.approveAllN").replace("{n}", pendingTotal)}
-              </Button>
-            </div>
-          )}
-
           {shownCells.map((c) => (
             <CellCard
               key={`${c.cell_id}-${date}`}
               cell={c}
               date={date}
-              supervisorId={supervisorId}
-              statusFilter={statusFilter}
+              isLeader={isLeader}
               view={tab === "timeline" ? "timeline" : "table"}
               sort={rowSort}
               onSort={onRowSort}
@@ -1307,18 +1089,6 @@ export default function IdleCell() {
         error={reopenErr || null}
         onCancel={() => { setReopenErr(""); setReopen(false); }}
         onConfirm={() => reopenMut.mutate()}
-      />
-
-      <ConfirmDialog
-        open={dayBulk}
-        title={t("idleCell.approveAllTitle")}
-        message={t("idleCell.approveAllConfirmN").replace("{n}", pendingTotal)}
-        confirmLabel={t("idleCell.approveAllN").replace("{n}", pendingTotal)}
-        cancelLabel={t("idleCell.cancel")}
-        loading={approveDay.isPending}
-        error={dayBulkErr || null}
-        onCancel={() => { setDayBulkErr(""); setDayBulk(false); }}
-        onConfirm={() => approveDay.mutate()}
       />
 
       {legendOpen && (
