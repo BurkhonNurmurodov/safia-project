@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck,
-  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch,
+  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -30,6 +30,7 @@ import DataSources from "./DataSources";
 import DisplaySettings from "./DisplaySettings";
 import ShiftTimes from "./ShiftTimes";
 import IdleSource from "./IdleSource";
+import LostWorkers from "./LostWorkers";
 
 /**
  * The admin panel shell.
@@ -86,6 +87,10 @@ export const ADMIN_NAV = [
   // «Смена отчёт» sheet row (everybody's default) or the headcount-weighted
   // per-cell interval model from a given date. The only place the rule shows.
   { id: "idlesource",   group: "tools",  Icon: GitBranch,      labelKey: "admin.tabIdleSource",   descKey: "admin.desc.idlesource" },
+  // READ-ONLY audit of workers an approved → supervisor exchange left on no
+  // roster (an upload wiped the receiving unit's day and nothing put them back).
+  // A report, not a repair: restoring a row moves that day's historical numbers.
+  { id: "lostworkers",  group: "tools",  Icon: UserX,          labelKey: "admin.tabLostWorkers",  descKey: "admin.desc.lostworkers" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // Split out of the old "data" tab, which was a junk drawer: a daily uploader
   // and two chart-colour editors for two OTHER pages, invisible below the fold
@@ -112,6 +117,7 @@ const VIEWS = {
   ltasks:       LeaderTasksAdmin,
   shifttimes:   ShiftTimes,
   idlesource:   IdleSource,
+  lostworkers:  LostWorkers,
   translations: TranslationsEditor,
   display:      DisplaySettings,
   cleanup:      AttendanceCleanup,

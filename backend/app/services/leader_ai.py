@@ -2509,6 +2509,49 @@ def clocks_text(clocks: list[dict] | None) -> str:
     )
 
 
+def _date_from_raw(raw: str) -> tuple[int, int] | None:
+    """(month, day) out of a verbatim transcription, by the SAME two readings
+    the rest of this module uses: the full clock first (`parse_clock`, anchored
+    on a time by design), then the clock-less date (`_date_only`).
+
+    ONE helper, because the write path and the repair pass below must recover
+    exactly the same dates out of the same string — two spellings would let a
+    stored verdict disagree with a freshly written one about a stamp they both
+    read.
+
+    None for a string carrying no date at all: a bare "17:06" stays day/month 0,
+    i.e. "seen, but the day cannot be proven", which is the honest answer and
+    the one `date_prose` already has a sentence for.
+    """
+    got = parse_clock(raw)
+    if got:
+        return got[0][0], got[0][1]
+    return _date_only(raw)
+
+
+def fill_clock_dates(clocks: list[dict] | None) -> list[dict] | None:
+    """Repair STORED clocks whose day/month never made it out of the model, from
+    the `raw` transcription sitting beside them. A NEW list when anything moved,
+    else None — the caller writes only on a move, and a JSONB column is marked
+    dirty by reassignment anyway.
+
+    Strictly a blank-filler: it never overwrites a day/month the model did give,
+    and never touches `raw`, `time` or `source`. What it fixes is the verdict
+    described on `_clean_clocks` — a proof rejected for a date printed on its
+    own face — and it fixes it for FREE, from the row itself, exactly like a
+    window edit: no image fetch, no Gemini call, no re-check run.
+    """
+    out: list[dict] = []
+    moved = False
+    for c in (clocks or []):
+        if isinstance(c, dict) and not (c.get("day") and c.get("month")):
+            if d := _date_from_raw(str(c.get("raw") or "")):
+                c = {**c, "month": d[0], "day": d[1]}
+                moved = True
+        out.append(c)
+    return out if moved else None
+
+
 def _clean_clocks(raw) -> list[dict]:
     """Normalise what the model returned. A generative model fills a schema
     approximately: it will send 32 for a day, "14:22:05" or "2:22 PM" for a
@@ -2539,12 +2582,29 @@ def _clean_clocks(raw) -> list[dict]:
                 t = f"{hh:02d}:{mi:02d}"
                 if not month:
                     month, day = m2, d2
-            elif not month:
-                # No clock anywhere in it — but a DATE may still be in there, and
-                # on a date-only task that is the whole answer. `parse_clock`
-                # cannot see it: it is anchored on a time by design.
-                if d := _date_only(str(c.get("raw") or "")):
-                    month, day = d
+        # The DATE is recovered from `raw` whenever it is missing — NOT only
+        # when the TIME also failed to parse, which is what the `if not t:` gate
+        # above used to be the only door to (user, 2026-08-22).
+        #
+        # The case it missed is the ordinary one: a model reads «13 авг. 2026 г.,
+        # 17:06:08» off a camera stamp, writes it verbatim into `raw` and a clean
+        # "17:06" into `time`, and leaves day/month at 0 — or puts the YEAR in
+        # `month`, which the range check above zeroes to the same thing. A good
+        # time meant the recovery never ran, so the entry kept day/month 0,
+        # `clock_in_window` could not place it on any day, and the verdict came
+        # back `date_mismatch` — "the day and month are not visible" printed
+        # directly beneath the very date the card was showing, on a photo taken
+        # six minutes into its own window.
+        #
+        # The transcription IS the model's answer; throwing it away because two
+        # integer fields beside it came back empty rejects an honest proof over
+        # a schema slip. Only ever fills a blank, and only from a date the model
+        # itself wrote down: `parse_clock` refuses a string whose stamps do not
+        # all parse, and `_date_only` needs a real date pattern or a month NAME,
+        # so a bare time still yields nothing.
+        if not month:
+            if d := _date_from_raw(str(c.get("raw") or "")):
+                month, day = d
         entry = {"raw": str(c.get("raw") or "").strip()[:120],
                  "month": month, "day": day, "time": t}
         if src := str(c.get("source") or "").strip()[:16]:
@@ -2703,6 +2763,16 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     re-stamp `date` AND `shift`), and when the AI overview is opened. There is no
     eighth input, so there is no trigger left to forget.
 
+    It also REPAIRS the first of those inputs on the way past
+    (`fill_clock_dates`): a stored clock whose day/month never made it out of
+    the model, while its `raw` transcription carries the date plainly, is
+    completed from that string. Not an eighth input — the same input, read
+    properly — and it rides here because this is already the door every free
+    re-derive comes through, so a corpus written under the old `_clean_clocks`
+    heals at the next boot with no Gemini call and no re-check run. A row a
+    human has ruled on is skipped by the query above and keeps its clocks
+    exactly as they were, decision and all.
+
     It is kept a WRITE rather than a read-time overlay because `status`/`flags`
     are what ~20 queue, count, re-check and progress queries filter on in SQL;
     deriving them per read would move all of that into memory for a number that
@@ -2738,13 +2808,23 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
                   sup_cfg.get((rev.manager_id, rev.task_id)),
                   defs.get(rev.task_id))
         win = resolve_window(rev.shift, *levels)
+        # Repair BEFORE deriving. A clock whose day/month never made it out of
+        # the model is not a row with a different answer — it is a row whose
+        # stored reading is incomplete next to the `raw` string that holds the
+        # date, and deriving from it produces `date_mismatch` on a proof that
+        # names its own day. Reassignment, not mutation: JSONB is only marked
+        # dirty when the attribute is set.
+        moved = False
+        if (fixed := fill_clock_dates(rev.clocks)) is not None:
+            rev.clocks = fixed
+            moved = True
         kept = [f for f in (rev.flags or ()) if f not in _OWNED_FLAGS]
         want = set(kept) | set(date_flags(
             rev.clocks, rev.date, win, check=resolve_date_check(*levels),
             times=resolve_time_check(*levels),
             plus=resolve_date_plus(*levels), shift=rev.shift))
         flags = [f for f in _FLAG_ORDER if f in want]
-        if flags == list(rev.flags or ()):
+        if flags == list(rev.flags or ()) and not moved:
             continue
         rev.flags = flags
         rev.status = "flagged" if flags else "ok"
