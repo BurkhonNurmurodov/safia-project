@@ -5,6 +5,9 @@ Replicates the math of the "Sheet1 ..." brigadir dashboards in the ABC Excel
 form. All inputs are plain Python values (the router pulls them from the pp_*
 tables); the engine has no DB dependency so it is trivially testable.
 
+Quantities are keyed by (``daily_key``, work center) — the SAP code where a line
+has one, a name-derived token where it has none (see :func:`daily_key`).
+
 Per-row (one row per catalog line = SAP code + work center + operation):
     total_labor  (Общ.трудоёмкость, col I) = labor_time * plan_qty   / 60   [minutes]
     actual_labor (col F)                    = labor_time * actual_qty / 60   [minutes]
@@ -41,6 +44,40 @@ DEFAULT_SHIFT_MIN = 480.0
 DEFAULT_PRODUCTIVE_MIN = 408.0
 
 
+# A catalog line with no SAP code is keyed by its NAME under this prefix. It
+# cannot collide with a SAP code (letter + digits) and the SAP join can never
+# produce one, so a synthetic key never reaches the «unknown SKU» list.
+LOCAL_PREFIX = "~"
+
+
+def daily_key(sap_code, name) -> str:
+    """The DURABLE identity of one catalog line's plan/fact quantities —
+    ``pp_daily.sap_code``.
+
+    A line with a SAP code is keyed by it, exactly as before. A code-less line
+    (the ABC form carries several: dough mixes, «Донат», …) is keyed by a
+    synthetic token built from its name, because:
+
+      • pp_daily has to survive a catalog re-import, which deletes and re-creates
+        every PPProduct row — so the row id is not a durable key; and
+      • several code-less lines share one Команда in the real form, so the pair
+        ("", work_center) would make them ONE row: type a ПЛАН on the dough mix
+        and every other code-less line on that team would silently take it too.
+
+    Renaming a code-less line therefore re-points which quantities it tracks,
+    the same way renaming a sap_code does.
+    """
+    code = (sap_code or "").strip()
+    if code:
+        return code
+    return LOCAL_PREFIX + " ".join((name or "").split()).lower()
+
+
+def is_local_key(key) -> bool:
+    """True for a key minted by :func:`daily_key` for a code-less line."""
+    return str(key or "").startswith(LOCAL_PREFIX)
+
+
 def _round_half_up(x: float) -> int:
     """Excel ROUND(x, 0): half away from zero. Inputs here are non-negative."""
     return int(math.floor(x + 0.5))
@@ -74,8 +111,9 @@ def compute_dashboard(
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
-    quantities:  {(sap_code, work_center): {plan_qty, actual_qty}}  (already
-                 override-resolved by the caller)
+    quantities:  {(daily_key, work_center): {plan_qty, actual_qty}}  (already
+                 override-resolved by the caller; the key is pp_daily.sap_code —
+                 see daily_key(), which a code-less line derives from its name)
     work_centers:[{code, shtatka, sort_order}, ...]
     wc_overrides:{code: {people, shtatka}} — per-DAY manual pins for the staffing
                  panel (pp_work_center_daily). A non-None штатка replaces W before
@@ -97,7 +135,8 @@ def compute_dashboard(
 
     for p in products:
         wc = p.get("work_center") or ""
-        q = quantities.get((p.get("sap_code"), wc), {})
+        key = daily_key(p.get("sap_code"), p.get("name"))
+        q = quantities.get((key, wc), {})
         plan_qty = _f(q.get("plan_qty"))
         actual_qty = _f(q.get("actual_qty"))
 
@@ -114,6 +153,9 @@ def compute_dashboard(
         rows.append({
             "id": p.get("id"),               # PPProduct id — lets the client edit this catalog line
             "sap_code": p.get("sap_code"),
+            # what pp_daily is keyed by for this line (= sap_code, unless the
+            # line has none) — the client echoes it back when overriding a qty
+            "qty_key": key,
             "name": p.get("name") or "",
             "work_center": wc,
             "labor_time": labor_f if has_labor else None,

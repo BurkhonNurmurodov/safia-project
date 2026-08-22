@@ -271,7 +271,15 @@ def _catalog_rows(content: bytes, sheet_name: str | None) -> tuple[str | None, l
 def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dict:
     """Parse a brigadir's catalog from a 'Sheet1 …' dashboard sheet:
     products (SKU, name, labor, work center) + work centers (штатка, capacity).
-    Junk rows (blank / '0' SAP code) are dropped. Reads .xlsx and .xlsb uploads."""
+    Reads .xlsx and .xlsb uploads.
+
+    **A line with NO SAP code is still a product.** The real form carries several
+    (dough mixes, «Донат», «пирог с творогом» …) — the brigadir works to them and
+    they belong on the page, so only the code is missing, not the row. Such a line
+    needs a name plus something to work with (a трудоёмкость or a Команда); a
+    stray note under the table has neither. A literal '0' code stays junk: it is
+    what a failed VLOOKUP leaves behind, not a product somebody wrote down.
+    The table ends after 5 consecutive rows with neither a code nor a name."""
     title, rows = _catalog_rows(content, sheet_name)
     if title is None:
         return {"products": [], "work_centers": [], "sheet": None}
@@ -288,20 +296,25 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
     blanks = 0
     for row in rows[header_i + 1:]:
         sku = _str(_get(row, CAT_SKU))
-        if not sku:
+        name = _str(_get(row, CAT_NAME))
+        if not sku and not name:
             blanks += 1
             if blanks > 4:
                 break
             continue
         blanks = 0
-        if sku == "0":          # junk row with no real SAP code
+        if sku == "0":          # junk row: a failed lookup, not a SAP code
             continue
         labor = _get(row, CAT_LABOR)
+        wc = _str(_get(row, CAT_WC))
+        has_labor = isinstance(labor, (int, float))
+        if not sku and not (has_labor or wc):
+            continue            # a bare caption under the table is not a product
         products.append({
             "sap_code": sku,
-            "name": _str(_get(row, CAT_NAME)),
-            "work_center": _str(_get(row, CAT_WC)),
-            "labor_time": (_num(labor) if isinstance(labor, (int, float)) else None),
+            "name": name,
+            "work_center": wc,
+            "labor_time": (_num(labor) if has_labor else None),
             "sort_order": order,
         })
         order += 1

@@ -52,7 +52,7 @@ from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
-from app.services.pp_calc import compute_dashboard, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
+from app.services.pp_calc import compute_dashboard, daily_key, is_local_key, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
@@ -313,9 +313,13 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         ignore_capacity=pinned_pm is not None,
     )
 
-    # SKUs present in the SAP snapshot but absent from the catalog
-    catalog_keys = {(p.sap_code, p.work_center) for p in products}
-    unknown = sorted({k for k in quantities if k not in catalog_keys})
+    # SKUs present in the SAP snapshot but absent from the catalog. A code-less
+    # line's key is synthetic (see daily_key) and can never come out of the SAP
+    # join, so an orphaned one is not an «unknown SKU» — listing it would print a
+    # code that exists nowhere but here.
+    catalog_keys = {(daily_key(p.sap_code, p.name), p.work_center) for p in products}
+    unknown = sorted({k for k in quantities
+                      if k not in catalog_keys and not is_local_key(k[0])})
 
     # Operation / phase code («Опер.») per (SKU, work center), surfaced from the
     # day's GLOBAL фаза upload (manager_id NULL) so the Positions table can show
@@ -340,7 +344,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     manual_op = {p.id: (p.op or "").strip() for p in products}
     for prow in result["rows"]:
         prow["op"] = (manual_op.get(prow.get("id"))
-                      or op_by_key.get((prow["sap_code"], prow["work_center"])))
+                      or op_by_key.get((prow["sap_code"] or "", prow["work_center"])))
 
     recon = db.query(PPReconciliation).filter(
         PPReconciliation.manager_id == manager_id, PPReconciliation.date == day).first()
@@ -679,7 +683,7 @@ def list_production_managers(
 
 class OverrideBody(BaseModel):
     date: str
-    sap_code: str
+    sap_code: str         # the row's `qty_key` = pp_daily.sap_code (see pp_calc.daily_key)
     work_center: str
     field: str            # 'plan' | 'actual'
     value: Optional[float]  # null clears the override
@@ -694,6 +698,12 @@ def set_override(
 ):
     if body.field not in ("plan", "actual"):
         raise HTTPException(status_code=400, detail="field must be 'plan' or 'actual'")
+    # The client sends the row's `qty_key`, which is the SAP code for a coded line
+    # and a name-derived token for a code-less one — never blank. A blank would
+    # write a row the dashboard then looks for under a different key, i.e. an edit
+    # that silently does nothing; fail loudly instead.
+    if not (body.sap_code or "").strip():
+        raise HTTPException(status_code=400, detail="sap_code is required")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
     # A leader edits Факт/ПЛАН on their own cells only — the read scope pins the
@@ -905,7 +915,9 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
     own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
         PPWorkCenter.manager_id == manager_id).all()} | {p.work_center for p in products}
-    catalog_skus = {p.sap_code for p in products}
+    # Only CODED lines can match a SAP order; the escape hatch below is "this
+    # brigadir has no catalog at all", not "no line of it carries a code".
+    catalog_skus = {p.sap_code for p in products if p.sap_code}
 
     # Join фаза operations → SKU, aggregate plan/actual by (SKU, work center).
     #   ПЛАН  = Σ «Кол-во операции» over the matching operations          (Excel col F)
@@ -917,7 +929,7 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
         if own_wcs and op["wc"] not in own_wcs:   # not this brigadir's work center
             continue
         sku = order_sku.get(op["order"])
-        if sku and (not catalog_skus or sku in catalog_skus):
+        if sku and (not products or sku in catalog_skus):
             a = faza_agg.setdefault((sku, op["wc"]), {"plan_qty": 0.0, "actual_qty": 0.0})
             a["plan_qty"] += op["plan"]
             a["actual_qty"] += order_deliv.get(op["order"], 0.0)
@@ -1162,8 +1174,8 @@ def get_raw(
                 rows = [r for r in rows if len(r) > 2 and r[2] in own_wcs]
         else:
             # zaga row: [order, sku, plant, ordqty, deliv, conf, date, name, status]
-            catalog_skus = {p.sap_code for p in products}
-            if catalog_skus or scope is not None:
+            catalog_skus = {p.sap_code for p in products if p.sap_code}
+            if products or scope is not None:
                 rows = [r for r in rows if len(r) > 1 and r[1] in catalog_skus]
     return {
         "present": True, "file_type": file_type, "date": day.isoformat(),
@@ -1182,8 +1194,8 @@ async def import_catalog(
     db: Session = Depends(get_db),
 ):
     """Replace a brigadir's catalog from an uploaded 'Sheet1 …' sheet: products
-    (SKU, name, labor, work center) + work-center штатка/capacity. Junk '0' rows
-    are dropped.
+    (SKU, name, labor, work center) + work-center штатка/capacity. A line with no
+    SAP code is imported too — see parse_catalog_workbook; junk '0' rows are dropped.
 
     Then re-derive pp_daily for every date whose raw SAP slices are stored, so
     a catalog imported AFTER the фаза/заголовок upload still produces numbers.
@@ -1202,7 +1214,7 @@ async def import_catalog(
 
     # Hand-pinned фаза values live only here (the sheet has no such column), so
     # carry them across the wipe by their (SKU, work centre) key.
-    kept_ops = {(p.sap_code, p.work_center): p.op
+    kept_ops = {(daily_key(p.sap_code, p.name), p.work_center): p.op
                 for p in db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
                 if p.op}
     db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
@@ -1210,7 +1222,8 @@ async def import_catalog(
         db.add(PPProduct(
             manager_id=manager_id, sap_code=p["sap_code"], name=p.get("name") or "",
             work_center=p.get("work_center") or "", labor_time=p.get("labor_time"),
-            op=kept_ops.get((p["sap_code"], p.get("work_center") or "")),
+            op=kept_ops.get((daily_key(p["sap_code"], p.get("name")),
+                             p.get("work_center") or "")),
             sort_order=i,
         ))
 
@@ -1296,21 +1309,24 @@ class CatalogCreateBody(BaseModel):
 @router.post("/admin/production/catalog")
 def admin_create_catalog(body: CatalogCreateBody,
                          _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
-    """Add a single catalog line (SKU) for a brigadir. sap_code + work_center are
-    the (NOT NULL) join key onto the daily SAP snapshot, so both are required; the
-    daily plan/fact rows join on that key at read time (no migration needed)."""
+    """Add a single catalog line for a brigadir. work_center is always required;
+    the SAP code is not — the ABC form carries code-less lines and so does this
+    catalog, but one of code / name must be there or the line identifies nothing.
+    The daily plan/fact rows join at read time on (daily_key, work_center), which
+    falls back to the name when there is no code (no migration needed)."""
     if not db.query(Manager).filter(Manager.id == body.manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {body.manager_id} not found")
     sap = (body.sap_code or "").strip()
     wc = (body.work_center or "").strip()
-    if not sap:
-        raise HTTPException(status_code=400, detail="sap_code cannot be empty")
+    name = (body.name or "").strip()
     if not wc:
         raise HTTPException(status_code=400, detail="work_center cannot be empty")
+    if not sap and not name:
+        raise HTTPException(status_code=400, detail="a line without a SAP code needs a name")
     max_sort = db.query(func.max(PPProduct.sort_order)).filter(
         PPProduct.manager_id == body.manager_id).scalar() or 0
     p = PPProduct(
-        manager_id=body.manager_id, sap_code=sap, name=(body.name or "").strip(),
+        manager_id=body.manager_id, sap_code=sap, name=name,
         work_center=wc, op=((body.op or "").strip() or None),
         labor_time=body.labor_time, sort_order=max_sort + 1,
     )
@@ -1339,14 +1355,16 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         p.labor_time = body.labor_time
     if body.name is not None:
         p.name = body.name
-    # sap_code + work_center are the (NOT NULL) join key onto the daily SAP
-    # snapshot, so reject blanks. Renaming them re-points which SKU/unit this
-    # catalog line tracks; the daily plan/fact rows join on the new key at read
-    # time (they are keyed by the SAP upload, not by this row), so no migration.
+    # work_center is the (NOT NULL) other half of the daily key, so it can never
+    # be blanked. The SAP code CAN — a code-less line is legitimate, and the key
+    # then falls back to the name (daily_key), so the line still has an identity.
+    # Re-pointing either one re-points which quantities this line tracks; the
+    # daily plan/fact rows join on the new key at read time (they are keyed by
+    # the SAP upload, not by this row), so no migration.
     if body.sap_code is not None:
         sap = body.sap_code.strip()
-        if not sap:
-            raise HTTPException(status_code=400, detail="sap_code cannot be empty")
+        if not sap and not (p.name or "").strip():
+            raise HTTPException(status_code=400, detail="a line without a SAP code needs a name")
         p.sap_code = sap
     if body.work_center is not None:
         wc = body.work_center.strip()
