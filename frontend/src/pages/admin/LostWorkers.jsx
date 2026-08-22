@@ -1,14 +1,17 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { UserX, AlertTriangle, Lock, FileQuestion, RotateCcw } from "lucide-react";
+import { UserX, AlertTriangle, Lock, FileQuestion, RotateCcw, Download } from "lucide-react";
 import api from "../../utils/api";
+import { exportXlsx } from "../../utils/exportXlsx";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import Button from "../../components/ui/Button";
 import SearchInput from "../../components/ui/SearchInput";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
+import { useToast } from "../../components/ui/Toast";
 
 /**
  * «Yo'qolgan xodimlar» — workers an approved → supervisor exchange left on no
@@ -86,6 +89,8 @@ export default function LostWorkers() {
   const [dateTo,   setDateTo]   = useState(() => new Date().toISOString().slice(0, 10));
   const [state,    setState]    = useState("all");
   const [search,   setSearch]   = useState("");
+  const [busy,     setBusy]     = useState(false);
+  const toast = useToast();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["admin-exchange-audit", dateFrom, dateTo],
@@ -120,6 +125,55 @@ export default function LostWorkers() {
 
   const hoursCell = (r) =>
     r.hours_worked != null ? Number(r.hours_worked).toFixed(2) : "—";
+
+  // The file mirrors the screen: same period, same state filter, same search.
+  // Headers travel WITH the request so the sheet is in the language the reader
+  // just read the table in — the backend has no viewer language of its own.
+  async function download() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const labels = {
+        date:         t("lostWorkers.colDate"),
+        worker_name:  t("lostWorkers.colWorker"),
+        job_title:    t("lostWorkers.colRole"),
+        verifix_code: t("lostWorkers.colCell"),
+        sender_name:  t("lostWorkers.colFrom"),
+        target_name:  t("lostWorkers.colTo"),
+        clock_in_out: t("lostWorkers.colClock"),
+        hours_worked: t("lostWorkers.colHours"),
+        state:        t("lostWorkers.colState"),
+        sender_day:   t("lostWorkers.colSenderDay"),
+        doc_id:       t("lostWorkers.colDoc"),
+        created_by:   t("lostWorkers.colCreatedBy"),
+        posted_by:    t("lostWorkers.colPostedBy"),
+      };
+      for (const st of STATES) labels[`state.${st}`] = t(`lostWorkers.state.${st}`);
+      const where = await exportXlsx("/api/admin/exchange-audit/export.xlsx", {
+        body: {
+          date_from: dateFrom, date_to: dateTo, state, q: search.trim(),
+          labels,
+          summary_labels: {
+            period:      t("lostWorkers.xlsPeriod"),
+            workers:     t("lostWorkers.statWorkers"),
+            hours:       t("lostWorkers.statHours"),
+            days:        t("lostWorkers.xlsDays"),
+            units:       t("lostWorkers.xlsUnits"),
+            recoverable: t("lostWorkers.state.recoverable"),
+            day_blocked: t("lostWorkers.state.day_blocked"),
+            no_batch:    t("lostWorkers.state.no_batch"),
+            exported:    t("lostWorkers.xlsExported"),
+          },
+        },
+        fallbackName: `lost_workers_${dateFrom}_${dateTo}.xlsx`,
+      });
+      toast.success(t(where === "download" ? "lostWorkers.dlDone" : "lostWorkers.dlSent"));
+    } catch (e) {
+      toast.error(e?.message || t("lostWorkers.dlFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -188,6 +242,16 @@ export default function LostWorkers() {
               scrollable
               className="ml-auto"
             />
+            <Button
+              size="lg"
+              variant="secondary"
+              icon={Download}
+              loading={busy}
+              disabled={isLoading || rows.length === 0}
+              onClick={download}
+            >
+              {t("lostWorkers.download")}
+            </Button>
           </div>
         }
         minWidth="1040px"
@@ -282,6 +346,7 @@ export default function LostWorkers() {
       <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-4)" }}>
         {t("lostWorkers.footnote")}
       </p>
+      {toast.node}
     </div>
   );
 }

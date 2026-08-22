@@ -42,9 +42,15 @@ the repair stays a separate, deliberate decision.
 import logging
 from collections import defaultdict
 from datetime import date as date_t, datetime, timedelta
+from io import BytesIO
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -53,6 +59,7 @@ from app.models import (
 )
 from app.routers.admin import verify_admin
 from app.services.day_state import day_state
+from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/admin/exchange-audit", tags=["exchange-audit"])
 
@@ -76,13 +83,7 @@ def _f(v) -> Optional[float]:
     return float(v) if v is not None else None
 
 
-@router.get("")
-def audit(
-    date_from: Optional[str] = Query(None, alias="from"),
-    date_to:   Optional[str] = Query(None, alias="to"),
-    db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
-):
+def _collect(db: Session, date_from: Optional[str], date_to: Optional[str]) -> dict:
     """Every worker an approved → supervisor exchange left on no roster.
 
     "On no roster" is deliberately the widest test there is: the name carries
@@ -253,3 +254,159 @@ def _empty(d_from, d_to, docs_scanned):
         "summary": {"workers": 0, "days": 0, "units": 0, "hours": 0.0,
                     "recoverable": 0, "day_blocked": 0, "no_batch": 0},
     }
+
+
+@router.get("")
+def audit(
+    date_from: Optional[str] = Query(None, alias="from"),
+    date_to:   Optional[str] = Query(None, alias="to"),
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    """The report the «Yo'qolgan xodimlar» tab renders."""
+    return _collect(db, date_from, date_to)
+
+
+# ─── Excel ───────────────────────────────────────────────────────────────────
+# The file mirrors the SCREEN: the same period, the same state filter, the same
+# search. A workbook that quietly carried more rows than the reader was looking
+# at is how an operator ends up repairing days they never reviewed.
+
+_HEAD_FONT = Font(bold=True, color="FFFFFF", size=10)
+_HEAD_FILL = PatternFill("solid", fgColor="C8973F")
+_BODY_FONT = Font(size=10)
+_LEFT   = Alignment(horizontal="left",   vertical="center")
+_RIGHT  = Alignment(horizontal="right",  vertical="center")
+_CENTER = Alignment(horizontal="center", vertical="center")
+
+# key → (header fallback, width, alignment kind)
+_COLS = [
+    ("date",         "Sana",           12, "text"),
+    ("worker_name",  "Xodim",          40, "text"),
+    ("job_title",    "Lavozim",        24, "text"),
+    ("verifix_code", "Yacheyka",       11, "text"),
+    ("sender_name",  "Kimdan",         26, "text"),
+    ("target_name",  "Kimga",          26, "text"),
+    ("clock_in_out", "Kelgan-ketgan",  22, "text"),
+    ("hours_worked", "Soat",           9,  "num"),
+    ("state",        "Holati",         18, "text"),
+    ("sender_day",   "Yuboruvchi kuni", 16, "text"),
+    ("doc_id",       "Hujjat",         10, "int"),
+    ("created_by",   "Yaratdi",        24, "text"),
+    ("posted_by",    "Tasdiqladi",     24, "text"),
+]
+
+
+def _xl_text(v):
+    """A worker name goes into a cell verbatim, so two guards: a control
+    character makes openpyxl raise (the whole export 500s), and a leading
+    = + - @ turns a name into a formula when the file opens."""
+    if v is None or not isinstance(v, str):
+        return v
+    v = ILLEGAL_CHARACTERS_RE.sub("", v)
+    if v[:1] in ("=", "+", "-", "@"):
+        v = "'" + v
+    return v
+
+
+class AuditExportBody(BaseModel):
+    """The page's own filter state, so the file is what the reader is looking
+    at. ``labels`` carries the headers in the viewer's language — the sheet is
+    read by the same person who read the screen, in the same words."""
+    date_from: Optional[str] = None
+    date_to:   Optional[str] = None
+    state:     str = "all"
+    q:         Optional[str] = None
+    labels:    dict[str, str] = {}
+    summary_labels: dict[str, str] = {}
+    caption:   Optional[str] = None
+
+
+def _matches(r: dict, state: str, q: str) -> bool:
+    if state != "all" and r["state"] != state:
+        return False
+    if not q:
+        return True
+    return any(q in str(r.get(k) or "").lower()
+               for k in ("worker_name", "sender_name", "target_name", "verifix_code", "date"))
+
+
+@router.post("/export.xlsx")
+def export_xlsx(
+    request: Request,
+    body: AuditExportBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(verify_admin),
+):
+    """Excel of the lost-worker report as filtered on the page. A browser
+    session downloads it; inside Telegram it lands in the caller's private
+    chat (app/xlsx_delivery.py)."""
+    data = _collect(db, body.date_from, body.date_to)
+    q = (body.q or "").strip().lower()
+    rows = [r for r in data["rows"] if _matches(r, body.state, q)]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Lost workers"
+
+    for i, (key, fallback, width, _kind) in enumerate(_COLS, 1):
+        c = ws.cell(row=1, column=i, value=_xl_text(body.labels.get(key) or fallback))
+        c.font, c.fill, c.alignment = _HEAD_FONT, _HEAD_FILL, _CENTER
+        ws.column_dimensions[get_column_letter(i)].width = width
+    ws.row_dimensions[1].height = 22
+    ws.freeze_panes = "A2"
+
+    for ri, r in enumerate(rows, 2):
+        for ci, (key, _f, _w, kind) in enumerate(_COLS, 1):
+            v = r.get(key)
+            if key == "state":
+                v = body.labels.get(f"state.{v}") or v
+            c = ws.cell(row=ri, column=ci, value=_xl_text(v) if kind == "text" else v)
+            c.font = _BODY_FONT
+            if kind == "num":
+                c.number_format = "0.00"
+                c.alignment = _RIGHT
+            elif kind == "int":
+                c.number_format = "0"
+                c.alignment = _RIGHT
+            else:
+                c.alignment = _LEFT
+    if rows:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(_COLS))}{len(rows) + 1}"
+
+    # A second sheet carrying the totals and the period. The counts on screen
+    # are the whole point of the report; a file holding only the rows makes the
+    # reader re-derive them, and «17 day-closed» is the number that decides
+    # whether any of this can be repaired today.
+    s = data["summary"]
+    L = body.summary_labels or {}
+    meta = wb.create_sheet("Info")
+    meta.column_dimensions["A"].width = 34
+    meta.column_dimensions["B"].width = 26
+    pairs = [
+        (L.get("period") or "Davr",           f'{data["from"]} — {data["to"]}'),
+        (L.get("workers") or "Yo'qolgan xodim",  s["workers"]),
+        (L.get("hours") or "Yo'qolgan soat",     s["hours"]),
+        (L.get("days") or "Kun",                 s["days"]),
+        (L.get("units") or "Brigada",            s["units"]),
+        (L.get("recoverable") or "Tiklash mumkin", s["recoverable"]),
+        (L.get("day_blocked") or "Kun yopiq",    s["day_blocked"]),
+        (L.get("no_batch") or "Manba yo'q",      s["no_batch"]),
+        (L.get("exported") or "Faylda qator",    len(rows)),
+    ]
+    for ri, (k, v) in enumerate(pairs, 1):
+        a = meta.cell(row=ri, column=1, value=_xl_text(k)); a.font = Font(bold=True, size=10); a.alignment = _LEFT
+        b = meta.cell(row=ri, column=2, value=_xl_text(v)); b.font = _BODY_FONT; b.alignment = _LEFT
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+
+    fname = f'yoqolgan_xodimlar_{data["from"]}_{data["to"]}.xlsx'
+    caption = body.caption or f'📄 {len(rows)} · {s["hours"]} h'
+    try:
+        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
