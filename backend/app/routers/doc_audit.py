@@ -121,13 +121,17 @@ def audit(
                 break
 
         approvals = [(ts, who) for a, ts, who in actions if a == "approved"]
+        # The WIDEST gap of any approval, not the first one. A document posted
+        # on time in June and re-posted in August applied itself to a June day
+        # from August — which is exactly the shape this flag exists to catch,
+        # and reading only `approvals[0]` would score it as on-time and report
+        # a clean zero over the very case that prompted the check.
         stale_by = None
         if doc.date and approvals:
-            first_ts, _who = approvals[0]
-            age = (first_ts.date() - doc.date).days
-            if age > STALE_APPROVE_DAYS:
+            worst = max((ts.date() - doc.date).days for ts, _w in approvals)
+            if worst > STALE_APPROVE_DAYS:
                 flags.append("stale")
-                stale_by = age
+                stale_by = worst
 
         # A single cancel-and-re-post is ORDINARY here: it is how operators force
         # a document to re-apply, and the 19.08 exchange in the original report
@@ -151,8 +155,10 @@ def audit(
             "status":       doc.status,
             "unit":         mgr_names.get(doc.manager_id, str(doc.manager_id)),
             "created_by":   doc.created_by_name,
-            "approved_by":  approvals[0][1] if approvals else None,
-            "approved_at":  approvals[0][0].isoformat() if approvals else None,
+            # The most recent approval — the act a reader is asking about.
+            "approved_by":  approvals[-1][1] if approvals else None,
+            "approved_at":  approvals[-1][0].isoformat() if approvals else None,
+            "approvals":    len(approvals),
             "age_days":     stale_by,
             "workers":      len((doc.payload or {}).get("employees") or []),
             "last_action":  last[0],

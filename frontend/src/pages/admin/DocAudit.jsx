@@ -228,7 +228,14 @@ export default function DocAudit() {
               <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>{r.date || "—"}</td>
               <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{tl(r.unit || "")}</td>
               <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-3)" }}>{r.workers}</td>
-              <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.approved_by || "") || "—"}</td>
+              <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
+                {tl(r.approved_by || "") || "—"}
+                {r.approvals > 1 && (
+                  <span className="ml-1 text-[10px] tabular-nums" style={{ color: "var(--text-4)" }}>
+                    ×{r.approvals}
+                  </span>
+                )}
+              </td>
               <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{fmt(r.approved_at)}</td>
               <td className="px-3 py-2 text-right tabular-nums"
                   style={{ color: r.age_days ? "#eab308" : "var(--text-4)" }}>
