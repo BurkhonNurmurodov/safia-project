@@ -155,6 +155,56 @@ columns, edited on the admin «Smena vaqtlari» destination
 - Read surfaces: this tab and `/cells/:id` (the Ownership card's «Ish vaqti»
   row, fed by `hours` on `GET /api/profiles/cells/{id}/details`).
 
+## Ojidaniya source per supervisor (`/admin/upload?tab=idlesource`)
+
+From **2026-08-22** a supervisor's ojidaniya minutes come from ONE of two
+sources, chosen per unit and dated: the «Смена отчёт» sheet row
+(`DowntimeData`, the default for everyone) or the per-cell interval model
+(`cell_ojidaniya_intervals`) **from a given day onward**. The pilot is
+**Suvonov Elshod OF (manager 5) from 2026-08-21**, seeded once by
+`startup.seed_idle_source_pilot` (insert-only, flag-guarded — an admin's later
+edit is never overwritten). Days before the from-date keep the sheet; history
+is never rewritten.
+
+- **`services/idle_source.py` is THE definition** — `cell_units`, `uses_cells`,
+  `unit_downtime`. The unit figure is the **headcount-weighted mean of its
+  cells**: `Σ(Nᵢ·Tᵢ) ÷ ΣNᵢ`, N = the people who ACTUALLY worked cell i that
+  day (direct-role attendance matched by `verifix_code`, the `verifix_hc`
+  rule), T = that cell's UNION of stopped ranges. **All** the unit's cells
+  count (`in_load` ignored, as on `/zagruzka-cell`); a cell with N = 0 is on
+  neither side; ΣN = 0 ⇒ no key ⇒ consumers read 0. Cat H/I are dropped
+  BEFORE the union for the KPI `total`; `total_all` keeps them for the
+  Ojidaniya page without `kpi_only`. Per-category minutes use the same weighted
+  rule per category (they may sum to more than the total when causes overlap);
+  the «To'xtamaganda» half is the weighted plain sum per category. Legacy
+  minutes-only rows are never read. All merging stays in `idle_intervals`.
+- **A switched day with no interval on any cell is 0 minutes** — no marker, no
+  sheet fallback. The override in `build_metrics_list` and `get_downtime`
+  writes the derived value EVEN WHEN it is absent, or the sheet row leaks back.
+- **Everywhere switches through the two doors**: `build_metrics_list`
+  (Overview, Zagruzka heatmap/comparison, brigadir profile, Daily performance
+  block, `/summary`) and `get_downtime` (+ seasonality) — which is what the
+  Daily donut, the bot `/ojidaniya` card and the weekly svodka read. Any new
+  consumer of ojidaniya minutes must go through one of them, never
+  `DowntimeData` directly. No source label on payloads (the user's call); the
+  50-min flag and the flat 480 base are unchanged; `/zagruzka-cell` stays the
+  untouched test twin (its reconciliation delta should read ~0 for a switched
+  unit).
+- **The approval step on `/idle-cell` is GONE (same day).** A leader's entry
+  counts the moment it is saved (status written `approved`); leaders cannot
+  edit or delete their own rows — only the unit's brigadir, an admin or a
+  `CAP_IDLE_APPROVE` grantee (now a delegated editor, same reach as before).
+  The brigadir is told per entry (`idle_request_new` → «Yangi kutish
+  kiritildi») and the close-day `ConfirmDialog` on Daily and Staff prints
+  «Bugun liderlar N ta kutish kiritdi — ko'rib chiqdingizmi?» from
+  `GET /api/idle-cell/day-summary`; closing the day IS the review, and it
+  still proceeds. Pending rows were auto-approved once
+  (`startup.approve_pending_idle_requests`); rejected rows stay rejected and
+  visible. `decide` / `decide-all` / `pending-count` and the sidebar badge no
+  longer exist, and `close_day` no longer gates on them.
+
+Related memory: `idle-source-switch`.
+
 ## Attendance charts read the ORIGINAL brigadir
 
 `/workers` answers ONE question — *of the people on this brigadir's own list,
