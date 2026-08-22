@@ -19,6 +19,12 @@ disputes — working with no knowledge of this module.
 Nothing here runs for a unit that was not switched on. `locked()` is the one
 predicate every writer consults, and outside this mode it answers exactly what
 it always answered: an entry is immutable once its DAY is closed.
+
+This module also owns the OTHER deadline close — the day-level one
+(`close_expired_days`, `sweep_expired_days`), which has nothing to do with
+per-task submission and everything to do with the same question: what happens
+to a checklist when its window shuts and nobody pressed anything. Both live
+here so "closing on a deadline" has one home and one sweep.
 """
 from __future__ import annotations
 
@@ -279,6 +285,161 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
     return done
 
 
+# ── the day-level deadline: closing a checklist nobody came back to ──────────
+#
+# A day-mode checklist has only ever closed itself when THAT leader personally
+# reopened /tasks. A leader who does not come back leaves the day open — and an
+# open day is a day every read surface on the platform agrees does not exist:
+# the register, the score, the day report and the AI queue all serve a CLOSED
+# day, so a checklist that was filled in but never submitted reads exactly like
+# a leader who filed nothing (which is what the «Tozalash» → «Yakunlanmagan»
+# view was built to expose).
+#
+# Shift 2 is where that bites hardest. Its window shuts at 09:00, hours after
+# the crew has gone home, and it files ONLY in the bot — there is no fill-out
+# row underneath to read instead, so an unclosed night is simply lost. From
+# 2026-08-22 the sweep closes those days on their own deadline and hands them
+# to the AI, with nobody present (the user's directive).
+#
+# Bounded to shift 2 on purpose — one tuple, widened deliberately. Shift 1 goes
+# on closing when its leader next opens /tasks, exactly as before.
+AUTOCLOSE_SHIFTS = (2,)
+
+
+def close_expired_days(db: Session, prof, shift: int,
+                       *, actor: str | None = None) -> int:
+    """Finalize this leader's expired open days. Returns how many closed.
+
+    THE definition of a day-level auto-close: the bot's /tasks entry
+    (`telegram_bot._lt_autoclose`) and the scheduled sweep both call it, because
+    a day closed by the timer and a day closed by the leader walking back in
+    have to BE the same day — same missed-deadline reason, same score, same
+    hand-off to the AI. Two spellings would mean a leader's score depended on
+    which of the two happened to reach the day first.
+
+    Any enabled task left unanswered once the submission window shut is recorded
+    as not-done carrying the missed-deadline reason; the day is then closed and
+    scored. A day still INSIDE its window is never touched — the leader closes
+    that one themselves.
+
+    The cutoff is the WINDOW, not the shift boundary. Shift 2 files until 09:00
+    while `effective_date` only rolls at 17:00, so a plain `date < today` test
+    would leave a missed night open — and editable — for the hours in between,
+    which is exactly the stretch nobody is at the factory to file it.
+    """
+    today = leader_tasks.effective_date(shift)
+    # Staged config due at this boundary, applied before anything is SCORED
+    # against it: a day closed by the sweep must be measured by the same
+    # checklist the leader would have been shown.
+    leader_tasks.promote_due(db, shift, today)
+    stale = (db.query(LeaderTaskDay)
+             .filter(LeaderTaskDay.leader_id == prof.id,
+                     LeaderTaskDay.date <= leader_tasks.expired_through(shift),
+                     LeaderTaskDay.closed_at.is_(None))
+             .all())
+    if not stale:
+        return 0
+
+    cfg = leader_tasks.effective_leader_config(db, prof)
+    now = datetime.now(timezone.utc)
+    reason = leader_tasks.missed_reason(shift)
+    for day in stale:
+        have = {e.task_id for e in
+                db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
+        for tid, s in cfg.items():
+            if s["enabled"] and tid not in have:
+                db.add(LeaderTaskEntry(day_id=day.id, task_id=tid,
+                                       done=False, reason=reason))
+        db.flush()
+        day.closed_at = now
+        day.completion = leader_tasks.compute_completion(
+            cfg, db.query(LeaderTaskEntry).filter_by(day_id=day.id).all())
+    db.commit()
+
+    # Auto-closed bygone days are submissions too — queue their photos, and ONLY
+    # theirs: one `queue_report` per day just closed, exactly the rule the manual
+    # close uses. `discover()` here would walk every report ever filed, so one
+    # forgotten day would re-queue the whole corpus.
+    #
+    # Wrapped: an AI hiccup must never leave a day looking unclosed. A day with
+    # nothing filed queues nothing (no done-with-media entry exists), so it
+    # closes at 0 and no report DM is sent — there is no verdict to report.
+    try:
+        n = sum(leader_ai.queue_report(db, day=day) for day in stale)
+        if n:
+            # The same record the manual close writes, so the hand-off gets the
+            # progress bar, the ETA and the detail view instead of a queue that
+            # silently grew.
+            leader_ai.note_auto_run(db, n, actor or prof.name)
+    except Exception:
+        logger.exception("day auto-close: could not queue leader %s's days "
+                         "for AI review", prof.id)
+        db.rollback()
+    return len(stale)
+
+
+def sweep_expired_days(db: Session) -> int:
+    """Close every expired open day on the shifts this is switched on for.
+
+    The counterpart of `autoclose_due` one level up: that one closes a TASK
+    whose own clock ran out, this one closes a DAY whose filing window shut. A
+    per-task unit reaches this only for a day its tasks somehow did not finish,
+    so the two never fight over the same row — `close_expired_days` writes an
+    entry only where none exists, and a closed day is skipped by both.
+
+    **A leader's shift comes from their OWN unit**, exactly as `_lt_shift` reads
+    it in the bot, not from the unit stamped on the day. The two agree for
+    everyone who has not moved, and for someone who has, the bot's door and this
+    one must not disagree about which hour their checklist dies at — one of the
+    two would then re-open a question the other had already answered.
+
+    Bounded to open days of the enrolled shifts, so the pass is a near-empty
+    index scan for the 287 minutes of the day when nothing is due.
+    """
+    if not AUTOCLOSE_SHIFTS:
+        return 0
+    units = [m.id for m in
+             db.query(Manager).filter(Manager.shift.in_(AUTOCLOSE_SHIFTS)).all()]
+    if not units:
+        return 0
+    profs = {p.id: p for p in db.query(RoleProfile)
+             .filter(RoleProfile.role == "leader",
+                     RoleProfile.manager_id.in_(units)).all()}
+    if not profs:
+        return 0
+    shifts = {m.id: m.shift for m in
+              db.query(Manager).filter(Manager.id.in_(units)).all()}
+    # One `expired_through` per shift rather than per day: it is a pure function
+    # of the clock, and the whole point is that every day of a shift dies at the
+    # same hour. The widest cutoff prunes the query; each leader is then held to
+    # their own.
+    cutoff = {sh: leader_tasks.expired_through(sh) for sh in set(shifts.values())}
+    if not cutoff:
+        return 0
+    open_by_leader = {
+        lid for (lid,) in db.query(LeaderTaskDay.leader_id)
+        .filter(LeaderTaskDay.closed_at.is_(None),
+                LeaderTaskDay.leader_id.in_(profs.keys()),
+                LeaderTaskDay.date <= max(cutoff.values()))
+        .distinct().all()
+    }
+    done = 0
+    for lid in open_by_leader:
+        prof = profs.get(lid)
+        if not prof:
+            continue
+        shift = shifts.get(prof.manager_id) or 1
+        try:
+            # `close_expired_days` applies that leader's own cutoff, so a day
+            # inside its window is still never touched by this pass.
+            done += close_expired_days(db, prof, shift,
+                                       actor=f"deadline · {prof.name}")
+        except Exception:
+            logger.exception("day auto-close sweep failed for leader %s", lid)
+            db.rollback()
+    return done
+
+
 # ── what the leader reads in the menu ────────────────────────────────────────
 
 def score_line(db: Session, day: LeaderTaskDay | None,
@@ -341,21 +502,33 @@ def task_state(entry: LeaderTaskEntry | None, rev, has_media: bool) -> str:
 
 
 def register_autoclose_job() -> None:
-    """Put the deadline sweep on the scheduler at boot.
+    """Put both deadline sweeps on the scheduler at boot.
 
-    Every 5 minutes, which is the resolution a per-task deadline deserves: the
-    leader is told «⏰ 14:00 da avtomatik yopiladi», and a task still editable at
-    14:20 makes that sentence a lie. Cheap when nothing is enrolled — the pass
-    returns on its first query if no unit is in per-task mode.
+    Every 5 minutes, which is the resolution a deadline deserves: the leader is
+    told «⏰ 14:00 da avtomatik yopiladi», and a task still editable at 14:20
+    makes that sentence a lie. Cheap when nothing is due — each pass returns on
+    its first query.
 
-    A safety net, not the only door: /tasks runs the same sweep whenever a
-    leader opens it, so a deadline bites even on a box whose scheduler died.
+    **A 5-minute sweep rather than a job pinned to the hour**, and that is the
+    point: the day close is due at shift 2's 09:00 (`expired_through`), but a
+    cron that fires once at 09:00 closes nothing if the box was restarting, and
+    nothing at all for a day it missed. This one asks "what is past its
+    deadline" every five minutes, so it lands within minutes of the hour, heals
+    a day the last outage skipped, and needs no timezone of its own.
+
+    A safety net, not the only door for the TASK sweep: /tasks runs
+    `autoclose_due` whenever a leader opens it, so a per-task deadline bites
+    even on a box whose scheduler died. The DAY sweep has no such twin — a
+    leader who never comes back is exactly the case it exists for — which is
+    why it must be the scheduler that owns it.
     """
     from app.scheduler import schedule_interval
     schedule_interval("leader-per-task-autoclose", _sweep, minutes=5)
 
 
 def _sweep() -> None:
+    """Both passes, independently: a failure in one must not skip the other,
+    and neither is a precondition of the other."""
     from app.database import SessionLocal
     with SessionLocal() as db:
         try:
@@ -364,4 +537,17 @@ def _sweep() -> None:
                 logger.info("per-task auto-close: closed %s task(s) on deadline", n)
         except Exception:
             logger.exception("per-task auto-close sweep failed")
+            db.rollback()
+        try:
+            n = sweep_expired_days(db)
+            if n:
+                logger.info("day auto-close: closed %s expired day(s) and sent "
+                            "them for review", n)
+                # The leader is not waiting on this one, but the report the
+                # brigadir reads is: kicking the drain here is the difference
+                # between a verified score at 09:05 and one at the next
+                # 20-minute tick.
+                leader_ai.run_async(discover_first=False)
+        except Exception:
+            logger.exception("day auto-close sweep failed")
             db.rollback()

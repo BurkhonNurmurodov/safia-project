@@ -2446,6 +2446,76 @@ def drop_paused_shift_reviews() -> None:
         db.close()
 
 
+# Named after the shift and the day it was decided, and versioned, for the same
+# reason every other one-shot here is: the flag records "this exact backfill has
+# been applied once". Widening it later (another shift, an earlier floor) needs
+# a NEW key, or the old mark makes the new backfill a no-op on every box that
+# has booted.
+LEADER_AI_SHIFT2_BACKLOG_FLAG = "leader_ai_shift2_backlog_2026_08_22_v1"
+
+
+def queue_shift2_backlog() -> None:
+    """Send shift 2's already-closed days to the AI, once.
+
+    Lifting the pause (services/leader_ai.REVIEW_PAUSED_SHIFTS) opens the doors
+    for days closed FROM NOW ON. It does nothing about the nights closed while
+    the pause held, and nothing periodic will find them either: the recurring
+    discovery pass is the sheet layer, and shift 2 files only in the bot. Those
+    days would sit reviewed-by-nobody forever unless an admin happened to press
+    «Tekshirish» — while shift 1 beside them is checked automatically.
+
+    The user's ruling (2026-08-22) is full parity from `AUTO_FROM`, so the floor
+    here is that same date and nothing earlier. Every bound that governs a live
+    close still governs this: `queue_report` honours the review floor, refuses a
+    rehearsal day, skips a ref already queued and only ever queues a task that
+    is done AND carries media. So it is insert-only, it is idempotent, and a
+    second run (a new flag key) would add exactly the rows the first could not.
+
+    **The cost is real and is the point of the flag**: this is a one-off Gemini
+    spend over every shift-2 night since 13 Aug, those nights re-score against
+    the verified number, and their reports go out late (the drain's sweep sends
+    newest-first, so today's report is never behind a fortnight-old one).
+    """
+    from app.models import LeaderTaskDay
+    from app.services import leader_ai
+
+    if leader_ai.review_paused(2):
+        # The pause is back on for shift 2 — queueing its backlog now would be
+        # the one thing the pause exists to stop. No flag written, so the guard
+        # stays honest about never having run.
+        return
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_AI_SHIFT2_BACKLOG_FLAG).first():
+            return
+        units = [m.id for m in db.query(Manager).filter(Manager.shift == 2).all()]
+        added = 0
+        if units:
+            days = (db.query(LeaderTaskDay)
+                    .filter(LeaderTaskDay.closed_at.isnot(None),
+                            LeaderTaskDay.manager_id.in_(units),
+                            LeaderTaskDay.date >= leader_ai.AUTO_FROM)
+                    .order_by(LeaderTaskDay.date).all())
+            for day in days:
+                added += leader_ai.queue_report(db, day=day)
+        db.add(AppSetting(key=LEADER_AI_SHIFT2_BACKLOG_FLAG, value="1"))
+        db.commit()
+        if added:
+            # The same record every other automatic hand-off writes, so the
+            # admin strip shows this as a run with a bar and an ETA instead of a
+            # queue that grew by a thousand rows overnight with no explanation.
+            leader_ai.note_auto_run(db, added, "shift 2 backlog")
+        print(f"[startup] leader-ai: shift 2 un-paused"
+              + (f", {added} backlog proof(s) queued for review" if added
+                 else ", no backlog to queue"))
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] leader-ai shift 2 backlog skipped: {exc}")
+    finally:
+        db.close()
+
+
 ROLE_PROFILES_FLAG = "role_profiles_backfilled_v1"
 
 

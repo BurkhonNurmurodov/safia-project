@@ -2732,21 +2732,30 @@ def uid_map(db: Session, revs: list) -> dict[str, str]:
 
 
 # ── the automatic regime ─────────────────────────────────────────────────────
-# From 13 Aug 2026, shift 1 does not wait for a human to agree with the AI: a
+# From 13 Aug 2026 a report does not wait for a human to agree with the AI: a
 # flagged proof marks its task not-done immediately, the whole day is checked
 # without anyone pressing anything, and the unit's brigadir and the leader are
-# told the verified score. Everything outside this window — every earlier day,
-# and shift 2 for good — keeps the original regime, where a flag is a note and
-# only a human `rejected` moves a number.
+# told the verified score. Everything before that day keeps the original
+# regime, where a flag is a note and only a human `rejected` moves a number.
+#
+# **Shift 2 joined on 2026-08-22** (user: full parity). It ran manual for eight
+# days — reviewed by nobody while REVIEW_PAUSED_SHIFTS held it, and before that
+# reviewed with a flag that cost nothing — and the two halves of the platform
+# have now been merged back: one date, both shifts, one set of consequences.
+# Because `AUTO_FROM` is the ONE floor and shift 2 was deliberately given no
+# floor of its own, every shift-2 day filed since 13 Aug is in the regime, and
+# its score is the verified one. That is the user's ruling and its cost is
+# real: nights already filed re-score, and their reports go out late.
 #
 # ONE predicate, because five surfaces have to agree about which reports it
 # covers (the score overlay, discovery, the drain's ordering, the report DM and
 # the day-report page). A second spelling of "is this automatic" would show a
 # leader a red badge on a day their score never moved, or the reverse.
 AUTO_FROM = "2026-08-13"        # first REPORTED day judged automatically
-AUTO_SHIFTS = (1,)              # shift 2 stays manual (user, 2026-08-14) — and
-                                # since the same day is not reviewed at all,
-                                # see REVIEW_PAUSED_SHIFTS below
+AUTO_SHIFTS = (1, 2)            # both shifts (user, 2026-08-22) — flags cost
+                                # points and the day report is DMed. Whether a
+                                # shift is LOOKED AT at all is the separate
+                                # REVIEW_PAUSED_SHIFTS below, now empty.
 
 # How far back the two RECURRING passes look — the Refresh's discovery and the
 # drain's report sweep. `AUTO_FROM` alone is a floor, not a window: it never
@@ -2792,29 +2801,26 @@ def _auto_clause():
                 func.coalesce(LeaderAiReview.shift, -1).in_(AUTO_SHIFTS))
 
 
-# ── the shift-2 pause ────────────────────────────────────────────────────────
-# Shift 2 is not reviewed by the machine AT ALL: nothing queues it, the drain
-# never picks it up, no Gemini quota is spent on it (user, 2026-08-14: "stop any
-# kind of auto ai review for the 2nd shift for now").
+# ── the shift pause (currently: nothing is paused) ───────────────────────────
+# Whose photos are LOOKED AT. Deliberately NOT a second spelling of
+# `AUTO_SHIFTS`, which says whose flags COST points — the pair is exactly why
+# this needed its own name, and the two have now been set independently twice.
 #
-# This is NOT a second spelling of `AUTO_SHIFTS`, and the pair is exactly why it
-# needed its own name: `AUTO_SHIFTS` says whose flags COST points, this says
-# whose photos are LOOKED AT. Shift 2 was already outside the automatic regime —
-# a flag on it was a note nobody's score felt — but closing a shift-2 day in the
-# bot still queued every proof that day carried, and the drain still paid for a
-# verdict on each. "Not consequential" was never "not running", and it is the
-# second one the user asked to stop.
+# Shift 2 was paused on 2026-08-14 ("stop any kind of auto ai review for the
+# 2nd shift for now"): nothing queued it, the drain never picked it up, no
+# Gemini quota was spent on it. **Lifted 2026-08-22** — closing a shift-2 day
+# in the bot sends it to the AI again, which is the whole of that shift's
+# review, because shift 2 files ONLY in the bot and there is no sheet Refresh
+# behind its proofs. This tuple is the one switch: every door already consults
+# it, so lifting the pause is not a hunt for call sites.
 #
-# ONE door stays open on purpose: the admin's per-task «Tekshirish» button
-# (`review_now`), which is a person pointing at one photo and waiting for the
-# answer. It reviews that row directly and never goes through the queue, so it
-# is not the machine working on its own — it is the only way to get a shift-2
-# verdict while the pause holds.
-#
-# Un-pausing is this tuple going back to `()`. The pause destroys nothing:
-# verdicts already written stand, and the queue rows it drops were never judged,
-# so `discover()` re-finds every one of them.
-REVIEW_PAUSED_SHIFTS = (2,)
+# Empty is the resting state and the code paths stay live for the next pause:
+# `paused_clause()` answers `false()`, `review_paused()` answers False for every
+# shift, and `startup.drop_paused_shift_reviews` returns without writing its
+# flag. Pausing a shift again is this tuple plus a NEW flag key there — the old
+# "already ran" mark would make the new pause a no-op on every box that has
+# booted once.
+REVIEW_PAUSED_SHIFTS: tuple[int, ...] = ()
 
 
 def review_paused(shift: int | None) -> bool:

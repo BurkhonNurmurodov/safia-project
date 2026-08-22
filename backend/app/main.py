@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI):
         wipe_cell_perenaladka_history,
         purge_leader_ai_history,
         drop_paused_shift_reviews,
+        queue_shift2_backlog,
     )
     add_last_seen_column()
     add_tg_name_column()
@@ -182,6 +183,9 @@ async def lifespan(app: FastAPI):
     # After the date sync, which is what settles a row's shift: the pause
     # cleanup reads it to decide what leaves the queue.
     drop_paused_shift_reviews()
+    # After the pause cleanup and the date sync it reads: the backlog is only
+    # queueable once a row's shift is settled, and only while nothing is paused.
+    queue_shift2_backlog()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()

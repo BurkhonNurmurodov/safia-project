@@ -27,7 +27,7 @@ from app.reg_token import make_reg_token
 from app.services import leader_ai, leader_close, leader_proof, leader_tasks
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
-    effective_leader_config, expired_through, missed_reason, promote_due,
+    effective_leader_config, promote_due,
 )
 from app.translit import transliterate as _to_uz_latin
 
@@ -2404,69 +2404,17 @@ def _lt_entries(db, day: LeaderTaskDay | None) -> dict[int, LeaderTaskEntry]:
 
 
 def _lt_autoclose(db, prof, shift: int) -> None:
-    """Finalize the leader's expired open days so nothing is silently lost. Any
-    enabled task left unanswered once the submission window shut is recorded as
-    not-done, carrying the missed-deadline reason, then the day is closed and
-    scored. A day still inside its window is never touched — the leader closes
-    that one themselves.
+    """Finalize this leader's expired open days on their way into the menu.
 
-    The cutoff is the WINDOW, not the shift boundary. Shift 2 files until 09:00
-    while effective_date only rolls at 21:00, so the old `date < today` test
-    left a missed night open — and editable — for the twelve hours in between,
-    which is exactly the stretch nobody is at the factory to file it."""
-    today = effective_date(shift)
-    promote_due(db, shift, today)  # apply staged config due at this boundary
-    stale = (
-        db.query(LeaderTaskDay)
-        .filter(
-            LeaderTaskDay.leader_id == prof.id,
-            LeaderTaskDay.date <= expired_through(shift),
-            LeaderTaskDay.closed_at.is_(None),
-        )
-        .all()
-    )
-    if not stale:
-        return
-    cfg = effective_leader_config(db, prof)
-    now = datetime.now(timezone.utc)
-    reason = missed_reason(shift)
-    for day in stale:
-        entries = _lt_entries(db, day)
-        for tid_, s in cfg.items():
-            if s["enabled"] and tid_ not in entries:
-                db.add(LeaderTaskEntry(day_id=day.id, task_id=tid_, done=False, reason=reason))
-        db.flush()
-        day.closed_at = now
-        day.completion = compute_completion(cfg, list(_lt_entries(db, day).values()))
-    db.commit()
-    if stale:
-        # Auto-closed bygone days are submissions too — queue their photos, and
-        # ONLY theirs: one `queue_report` per day just closed, for this leader,
-        # exactly the rule the manual close uses. Including the pause: a paused
-        # shift queues nothing here either (leader_ai.REVIEW_PAUSED_SHIFTS), so
-        # the day still closes and still scores, it is simply not sent to the
-        # machine.
-        #
-        # This used to call `discover()`, which walks every report ever filed.
-        # The caller is `/tasks`, so one leader opening their checklist with a
-        # forgotten day re-queued the WHOLE corpus — thousands of rows belonging
-        # to other leaders and other days — and the drain then spent quota
-        # re-judging them. Submitting your own day must cost your own day.
-        #
-        # Wrapped: an AI hiccup must never leave a day looking unclosed to the
-        # leader who is one line away from seeing the menu.
-        try:
-            n = 0
-            for day in stale:
-                n += leader_ai.queue_report(db, day=day)
-            if n:
-                # Same record the manual close writes, so the hand-off gets the
-                # bar and the detail view instead of a queue that silently grew.
-                leader_ai.note_auto_run(db, n, prof.name)
-        except Exception:
-            logger.exception("leader-tasks: could not queue auto-closed days "
-                             "for AI review (leader %s)", prof.id)
-            db.rollback()
+    The body moved to `leader_close.close_expired_days` on 2026-08-22, when the
+    scheduler gained a sweep that does the same thing for a leader who never
+    comes back (shift 2, whose window shuts at 09:00 long after the crew has
+    gone home). Two spellings of "close a bygone day" would mean a leader's
+    score depended on which door reached the day first — so there is one, and
+    this is the door that runs while somebody is waiting on the menu.
+    """
+    if leader_close.close_expired_days(db, prof, shift):
+        # Daemon thread: the leader is one line away from seeing their tasks.
         leader_ai.run_async(discover_first=False)
 
 

@@ -102,6 +102,7 @@ try:
         wipe_cell_perenaladka_history,
         purge_leader_ai_history,
         drop_paused_shift_reviews,
+        queue_shift2_backlog,
     )
     from app.telegram_bot import setup_webhook
 
@@ -189,6 +190,9 @@ try:
     # After the date sync, which is what settles a row's shift: the pause
     # cleanup reads it to decide what leaves the queue.
     drop_paused_shift_reviews()
+    # After the pause cleanup and the date sync it reads: the backlog is only
+    # queueable once a row's shift is settled, and only while nothing is paused.
+    queue_shift2_backlog()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()
