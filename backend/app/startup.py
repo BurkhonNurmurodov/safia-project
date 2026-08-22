@@ -1142,13 +1142,19 @@ def sync_leader_ai_dates() -> None:
 
     Runs at every boot (and from the window-edit, Refresh and overview paths):
     the date verdict is derived data, and this is what keeps the derivation and
-    the stored copy the same thing. See services/leader_ai.sync_date_flags."""
+    the stored copy the same thing. See services/leader_ai.sync_date_flags.
+
+    Since 2026-08-22 the same pass also COMPLETES a stored clock whose day and
+    month never made it out of the model while its `raw` transcription carried
+    them plainly (`leader_ai.fill_clock_dates`) — those verdicts read
+    `date_mismatch` against a date printed on the photo's own face, and they
+    correct themselves here at the next boot, still with no Gemini call."""
     db = SessionLocal()
     try:
         from .services.leader_ai import sync_date_flags
         n = sync_date_flags(db)
         if n:
-            print(f"[startup] leader-ai: {n} verdict(s) re-judged against the current window")
+            print(f"[startup] leader-ai: {n} verdict(s) re-derived (window + clock dates)")
     except Exception as exc:
         db.rollback()
         print(f"[startup] leader-ai date sync skipped: {exc}")

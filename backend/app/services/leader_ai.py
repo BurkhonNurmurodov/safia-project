@@ -2529,6 +2529,19 @@ def _date_from_raw(raw: str) -> tuple[int, int] | None:
     return _date_only(raw)
 
 
+def _clock_date(c: dict) -> tuple[int, int]:
+    """(month, day) off one clock entry, or (0, 0) for anything that is not a
+    real calendar date. THE validity gate — a generative model sends 32 for a
+    day and the YEAR for a month, and both must land on the same "day cannot be
+    proven" state a missing field does, or `clock_in_window` ends up comparing
+    against a date nobody printed."""
+    try:
+        day, month = int(c.get("day") or 0), int(c.get("month") or 0)
+    except (TypeError, ValueError):
+        return 0, 0
+    return (month, day) if 1 <= month <= 12 and 1 <= day <= 31 else (0, 0)
+
+
 def fill_clock_dates(clocks: list[dict] | None) -> list[dict] | None:
     """Repair STORED clocks whose day/month never made it out of the model, from
     the `raw` transcription sitting beside them. A NEW list when anything moved,
@@ -2544,10 +2557,16 @@ def fill_clock_dates(clocks: list[dict] | None) -> list[dict] | None:
     out: list[dict] = []
     moved = False
     for c in (clocks or []):
-        if isinstance(c, dict) and not (c.get("day") and c.get("month")):
+        if not isinstance(c, dict):
+            out.append(c)
+            continue
+        month, day = _clock_date(c)
+        if not month:
             if d := _date_from_raw(str(c.get("raw") or "")):
-                c = {**c, "month": d[0], "day": d[1]}
-                moved = True
+                month, day = d
+        if (month, day) != (c.get("month"), c.get("day")):
+            c = {**c, "month": month, "day": day}
+            moved = True
         out.append(c)
     return out if moved else None
 
@@ -2566,12 +2585,7 @@ def _clean_clocks(raw) -> list[dict]:
     for c in (raw or []):
         if not isinstance(c, dict):
             continue
-        try:
-            day, month = int(c.get("day") or 0), int(c.get("month") or 0)
-        except (TypeError, ValueError):
-            day = month = 0
-        if not (1 <= month <= 12 and 1 <= day <= 31):
-            day = month = 0
+        month, day = _clock_date(c)
         t = hhmm(c.get("time")) or ""
         if not t:
             # A time it could not normalise may still be readable in `raw`;
