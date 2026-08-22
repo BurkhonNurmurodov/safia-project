@@ -169,7 +169,14 @@ def _collect(db: Session, date_from: Optional[str], date_to: Optional[str]) -> d
     }
     lost_keys = [k for k in claims if k not in present]
     if not lost_keys:
-        return _empty(d_from, d_to, docs_scanned)
+        # Nothing is LOST any more — but rows an earlier restore wrote without
+        # their effective hours still need topping up, and returning the bare
+        # empty shape here would report 0 of them and disarm the button that
+        # fixes them. The count is the one thing this branch must still answer.
+        out = _empty(d_from, d_to, docs_scanned)
+        out["names"] = sorted(names)
+        out["summary"]["heal_pending"] = len(_heal_query(db, d_from, d_to, names))
+        return out
 
     # ── What the batch still holds for them (the recovery source) ────────────
     batch_ids = {
