@@ -57,7 +57,7 @@ const pct = (v) => (v === null || v === undefined ? "—" : `${Math.round(v * 10
  * A cell's waiting time is the UNION of its stopped ranges, so this number is
  * routinely smaller than the minutes that were filed — and a figure that
  * silently shrank reads as a bug. So the correction is stated: what the old
- * sum double-counted, what the Cat H / Cat I rule leaves out (which is exactly
+ * sum double-counted, what the Ojidaniya-only rule leaves out (which is exactly
  * the gap against the «To'xtaganda» total on /idle-cell), and, for a day filed
  * before the interval model existed, that it is still the old sum.
  *

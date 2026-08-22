@@ -39,8 +39,10 @@ Decisions taken with the user (2026-07-31), all deliberate:
     first version, which fed штатка in. O. SONI is the Production page's
     effective value: the per-day pin when the brigadir set one, else the derived
     ROUND(W × Q ÷ S), so the number here always matches the «Jamoa tarkibi» card.
-  * Ojidaniya = the UNION of the day's To'xtaganda (stopped) ranges, Cat H /
-    Cat I dropped BEFORE the union (2026-08-20; see the block that computes it).
+  * Ojidaniya = the UNION of the day's To'xtaganda (stopped) ranges, the
+    Ojidaniya-only categories dropped BEFORE the union (2026-08-20; see the
+    block that computes it). That list is `OJIDANIYA_ONLY_CATS` and today holds
+    Cat H alone — Cat I joined the загрузка on 2026-08-22.
     A not-stopped range never counts, here or anywhere else.
   * The unit's own figure is the HEADCOUNT-WEIGHTED mean of its cells',
     (N1*T1 + ... + Nn*Tn) / (N1 + ... + Nn), where N is the people who actually
@@ -369,7 +371,8 @@ def cell_zagruzka(
     # re-create precisely the over-count the interval model was built to kill
     # (one 30-minute stop filed under two categories reading as 60).
     #
-    # Cat H / Cat I are dropped BEFORE the union, never subtracted after it.
+    # The Ojidaniya-only categories (OJIDANIYA_ONLY_CATS — Cat H today) are
+    # dropped BEFORE the union, never subtracted after it.
     # They must not count against загрузка (the fleet rule, 2026-07-25) and they
     # may overlap the categories that do, so subtracting their minutes from the
     # total would also remove minutes a counted range was covering. The
@@ -430,7 +433,7 @@ def cell_zagruzka(
     # is per (cell, DAY) and fires ONLY for a day holding no interval at all, so
     # the two models are never mixed inside one day's arithmetic — a day filed
     # under the new model is answered by the union alone, even when that union
-    # is 0 because every range on it was Cat H / Cat I.
+    # is 0 because every range on it was Ojidaniya-only.
     legacy_keys: set[tuple[int, str]] = set()
     for e in db.query(CellOjidaniya).filter(
         CellOjidaniya.cell_id.in_(cell_ids),
@@ -548,9 +551,9 @@ def cell_zagruzka(
                 "downtime": round(downtime, 2),
                 "downtime_by_cat": idle_cats.get((c.id, d.isoformat()), {}),
                 # Which model answered, what the old one would have said, and
-                # what the Cat H/I rule left out — the page prints it under the
-                # figure, because a corrected number arriving with no trace of
-                # the correction just looks like the number changed.
+                # what the Ojidaniya-only rule left out — the page prints it
+                # under the figure, because a corrected number arriving with no
+                # trace of the correction just looks like the number changed.
                 "downtime_meta": idle_meta.get((c.id, d.isoformat())),
                 # N as used in the unit's weighted mean, beside the T it weights.
                 "idle_weight_n": m.verifix_hc,
@@ -704,7 +707,7 @@ def cell_zagruzka(
                 "legacy": _idle_days(legacy_keys),
             },
             # Across the range: what the old method double-counted, and the
-            # Cat H / Cat I minutes /idle-cell shows that загрузка never counts.
+            # Ojidaniya-only minutes /idle-cell shows that загрузка never counts.
             "ojidaniya_overlap_min": round(idle_overlap_min, 1),
             "ojidaniya_excluded_min": round(idle_excluded_min, 1),
             # Cells dropped because partial attendance drove effective_hc ≤ 0.

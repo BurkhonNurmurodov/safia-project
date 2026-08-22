@@ -155,6 +155,38 @@ columns, edited on the admin «Smena vaqtlari» destination
 - Read surfaces: this tab and `/cells/:id` (the Ownership card's «Ish vaqti»
   row, fed by `hours` on `GET /api/profiles/cells/{id}/details`).
 
+## Which ojidaniya categories the загрузка counts
+
+`sheets_reader.OJIDANIYA_ONLY_CATS` is **THE list** of categories that show on
+the Ojidaniya page and nowhere else. Every KPI door reads that one set —
+`build_metrics_list`, `/api/downtime`'s `kpi_only`, `idle_source`'s pre-union
+drop, `/zagruzka-cell` — so a category enters or leaves the загрузка on every
+surface at once. Never re-spell the rule at a call site: two lists is how the
+fleet page and the Daily donut start disagreeing about the same minutes.
+
+- From **2026-08-22** the set is **`{"Cat H"}`**. Cat I («Олдинги смена иши
+  тугашини кутиш» — waiting for the previous shift to finish) now COUNTS in the
+  загрузка by user directive: that wait is time the shift stood still, so it
+  belongs there like any other stoppage. `"Cat D4"` — the pre-rename key the
+  same category's rows were stored under by syncs taken on 2026-07-24/25 — left
+  with it, because counting one spelling while dropping the other would make a
+  day's idle depend on which afternoon it happened to be synced.
+- Cat H («Тозалаш» — cleaning) is what remains: planned work the shift does,
+  not a stoppage it suffered.
+- **Nothing is stored, so nothing needs a re-sync.** `equip_downtime` and the
+  category breakdowns are derived per request from `DowntimeData` /
+  `cell_ojidaniya_intervals`, so every historical day re-reads under the new
+  rule the moment the backend restarts — the fleet heatmap, the comparison, the
+  brigadir profile, the Daily donut, `/summary`, the bot `/ojidaniya` card and
+  the weekly svodka all move together. **Consequence to know: past загрузка
+  figures change.** Idle goes UP and net utilisation DOWN on every day that
+  carried Cat I minutes, and the 50-min idle flag may newly fire on them.
+- The Ojidaniya page's «Barchasi / Zagruzkada hisoblanadi» toggle is unchanged
+  and still says which scope is on screen; Cat H is now the only thing that
+  separates the two views.
+  `/zagruzka-cell`'s «Cat H: N daq hisobga olinmadi» note names the remaining
+  category, and its reconciliation delta shrinks accordingly.
+
 ## Ojidaniya source per supervisor (`/admin/upload?tab=idlesource`)
 
 From **2026-08-22** a supervisor's ojidaniya minutes come from ONE of two
@@ -172,9 +204,9 @@ is never rewritten.
   day (direct-role attendance matched by `verifix_code`, the `verifix_hc`
   rule), T = that cell's UNION of stopped ranges. **All** the unit's cells
   count (`in_load` ignored, as on `/zagruzka-cell`); a cell with N = 0 is on
-  neither side; ΣN = 0 ⇒ no key ⇒ consumers read 0. Cat H/I are dropped
-  BEFORE the union for the KPI `total`; `total_all` keeps them for the
-  Ojidaniya page without `kpi_only`. Per-category minutes use the same weighted
+  neither side; ΣN = 0 ⇒ no key ⇒ consumers read 0. The Ojidaniya-only
+  categories are dropped BEFORE the union for the KPI `total`; `total_all`
+  keeps them for the Ojidaniya page without `kpi_only`. Per-category minutes use the same weighted
   rule per category (they may sum to more than the total when causes overlap);
   the «To'xtamaganda» half is the weighted plain sum per category. Legacy
   minutes-only rows are never read. All merging stays in `idle_intervals`.

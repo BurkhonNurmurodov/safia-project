@@ -65,10 +65,24 @@ _MARK_STOPPED = ("тухтаганда", "to'xtaganda", "toxtaganda")
 # count against the загрузка KPIs — equip_downtime, after_idle/net util, the
 # idle flag, the Daily idle donut — so build_metrics_list strips them from both
 # the downtime total and the per-category breakdown (user directive 2026-07-25).
-# "Cat D4" is the pre-rename key Cat I data was stored under by syncs taken on
-# 2026-07-24/25; kept here so those rows stay excluded until the next
-# wipe-and-reload shift-report sync retires the old key.
-OJIDANIYA_ONLY_CATS = {"Cat H", "Cat I", "Cat D4"}
+#
+# THIS SET IS THE ONE DEFINITION. Every KPI door reads it — build_metrics_list,
+# /api/downtime's `kpi_only`, idle_source's pre-union drop, /zagruzka-cell — so
+# a category enters or leaves the загрузка everywhere at once. Never re-spell
+# the rule at a call site: two lists is how one page starts disagreeing with
+# another about the same minutes.
+#
+# Cat I («Олдинги смена иши тугашини кутиш» — waiting for the previous shift to
+# finish) LEFT this set on 2026-08-22 by user directive: that wait is time the
+# shift stood still, so it belongs in the загрузка like every other stoppage.
+# "Cat D4" is the pre-rename key the SAME category's data was stored under by
+# syncs taken on 2026-07-24/25, so it left with it — those rows are Cat I rows,
+# and counting one spelling while dropping the other would make a day's idle
+# depend on which afternoon it happened to be synced.
+#
+# Cat H («Тозалаш» — cleaning) is what remains: it is planned work the shift
+# does, not a stoppage it suffered.
+OJIDANIYA_ONLY_CATS = {"Cat H"}
 
 
 def get_client() -> gspread.Client:

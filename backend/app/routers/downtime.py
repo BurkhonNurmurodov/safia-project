@@ -89,9 +89,10 @@ def get_downtime(
     # one stays hidden, the same two answers the sheet model gives. A day with
     # at least one approved range on some cell is the unit's report for it.
     #
-    # `kpi_only` is honoured HERE for the derived figures (H/I dropped before
-    # the union for `total`, stripped from the breakdowns), so the
-    # subtract-after step in the loop below finds nothing left to subtract.
+    # `kpi_only` is honoured HERE for the derived figures (the
+    # Ojidaniya-only categories dropped before the union for `total`, stripped
+    # from the breakdowns), so the subtract-after step in the loop below finds
+    # nothing left to subtract.
     units = idle_source.cell_units(db)
     switched, lo = idle_source.switched_in_range(
         units, (m.id for m in managers), date_from, date_to)
@@ -118,7 +119,8 @@ def get_downtime(
                     cats = {k: v for k, v in cats.items() if k not in OJIDANIYA_ONLY_CATS}
                     cats_ns = {k: v for k, v in cats_ns.items() if k not in OJIDANIYA_ONLY_CATS}
                     # A weighted plain sum is linear, so the not-stopped total
-                    # without H/I is exactly the sum of the remaining categories.
+                    # without the Ojidaniya-only categories is exactly the sum
+                    # of the remaining ones.
                     total_ns = float(sum(cats_ns.values()))
                 dt_total.setdefault(name, {})[d_str] = total
                 dt_by_cat.setdefault(name, {})[d_str] = cats

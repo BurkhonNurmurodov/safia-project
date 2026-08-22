@@ -186,8 +186,9 @@ function SupervisorDaily() {
 
   const { data: downtime } = useQuery({
     queryKey: ["daily-downtime", managerId, date],
-    // kpi_only: Ojidaniya-page-only categories (Cat H/Тозалаш, Cat I) must not
-    // appear here — the donut and total must match the загрузка KPI's idle.
+    // kpi_only: Ojidaniya-page-only categories (Cat H/Тозалаш) must not appear
+    // here — the donut and total must match the загрузка KPI's idle. Cat I left
+    // that list on 2026-08-22, so it shows here and counts there.
     queryFn: () => api.get("/api/downtime", { params: { manager_id: managerId, date_from: date, date_to: date, kpi_only: 1 } }).then(r => r.data),
     enabled,
   });

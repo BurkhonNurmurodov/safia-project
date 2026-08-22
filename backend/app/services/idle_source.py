@@ -28,8 +28,9 @@ figure at all and the (unit, day) is simply ABSENT from the answer.
 
 ``Tᵢ`` is the UNION of the cell's stopped ranges, and every piece of that
 arithmetic lives in ``services/idle_intervals`` — this module only decides
-WHICH rows go in and how the cells are weighed together. Cat H / Cat I
-(`OJIDANIYA_ONLY_CATS`) are dropped BEFORE the union for the KPI figure,
+WHICH rows go in and how the cells are weighed together. The Ojidaniya-only
+categories (`OJIDANIYA_ONLY_CATS` — today Cat H alone; Cat I joined the
+загрузка on 2026-08-22) are dropped BEFORE the union for the KPI figure,
 never subtracted after it (they may overlap a counted category, and
 subtracting their minutes would also remove minutes a counted range was
 covering); the Ojidaniya page without `kpi_only` still shows them, so both
@@ -186,8 +187,9 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
              "end": iv.end, "stopped": bool(iv.stopped)}
             for iv in ivs
         ]
-        # H/I dropped BEFORE the union (never subtracted after it) for the KPI
-        # figure; the all-categories union is what /idle-cell itself prints.
+        # The Ojidaniya-only categories are dropped BEFORE the union (never
+        # subtracted after it) for the KPI figure; the all-categories union is
+        # what /idle-cell itself prints.
         counted = [r for r in rows if r["category"] not in OJIDANIYA_ONLY_CATS]
         s_kpi = idle_intervals.summarize(counted) if counted else None
         s_all = idle_intervals.summarize(rows)

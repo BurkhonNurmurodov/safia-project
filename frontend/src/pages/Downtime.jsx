@@ -72,8 +72,9 @@ export default function Downtime() {
   // Second axis, orthogonal to the halves above: WHICH categories count.
   // «загрузкада» (default) = only the categories the загрузка KPIs count, i.e.
   // the endpoint's kpi_only view; «hammasi» = every category the shift report
-  // has, including the Ojidaniya-only ones (Cat H / Cat I). Server-side so the
-  // totals, flags and shares below stay consistent with the picked scope.
+  // has, including the Ojidaniya-only ones (Cat H; Cat I joined the загрузка on
+  // 2026-08-22). Server-side so the totals, flags and shares below stay
+  // consistent with the picked scope.
   const [scope, setScope] = usePersistentState("downtime_scope", "zagruzka"); // "zagruzka" | "all"
   const kpiOnly = scope === "zagruzka";
   const totalKey   = ns ? "total_ns" : "total";

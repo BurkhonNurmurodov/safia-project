@@ -89,9 +89,12 @@ def build_metrics_list(
     for r in dt_rows:
         canon = alias.get(r.manager_name, r.manager_name)
         by_cat = r.by_category or {}
-        # Ojidaniya-only categories (Cat H/Тозалаш, Cat I/previous-shift wait)
-        # are analytics for the /downtime page alone — they must not depress
-        # the загрузка KPIs, so both the total and the breakdown lose them here.
+        # Ojidaniya-only categories (today: Cat H/Тозалаш — see
+        # OJIDANIYA_ONLY_CATS, which is the ONE list) are analytics for the
+        # /downtime page alone — they must not depress the загрузка KPIs, so
+        # both the total and the breakdown lose them here. Cat I (waiting for
+        # the previous shift to finish) left that list on 2026-08-22 and now
+        # counts here like any other stoppage.
         extra = sum(float(by_cat.get(c) or 0) for c in OJIDANIYA_ONLY_CATS)
         dt_total.setdefault(canon, {})[r.date] = max(float(r.total_minutes or 0) - extra, 0.0)
         dt_by_cat.setdefault(canon, {})[r.date] = {
@@ -105,8 +108,9 @@ def build_metrics_list(
     # never the sheet: after the from-date the sheet is not a source for that
     # unit, and letting it answer the gaps would make one figure come from two
     # places nobody can tell apart. Days before the from-date keep the sheet.
-    # H/I are already out of `total` (dropped before the union) and are
-    # stripped from the breakdown here, exactly as the sheet rows above.
+    # The Ojidaniya-only categories are already out of `total` (dropped
+    # before the union) and are stripped from the breakdown here, exactly as
+    # the sheet rows above.
     units = idle_source.cell_units(db)
     switched, lo = idle_source.switched_in_range(
         units, (m.id for m in managers), date_from, date_to)
