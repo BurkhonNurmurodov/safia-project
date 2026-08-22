@@ -1195,7 +1195,7 @@ async def import_catalog(
 ):
     """Replace a brigadir's catalog from an uploaded 'Sheet1 …' sheet: products
     (SKU, name, labor, work center) + work-center штатка/capacity. A line with no
-    SAP code is imported too — see parse_catalog_workbook; junk '0' rows are dropped.
+    SAP code is imported too, keyed by its name — see parse_catalog_workbook.
 
     Then re-derive pp_daily for every date whose raw SAP slices are stored, so
     a catalog imported AFTER the фаза/заголовок upload still produces numbers.
@@ -1213,7 +1213,8 @@ async def import_catalog(
         )
 
     # Hand-pinned фаза values live only here (the sheet has no such column), so
-    # carry them across the wipe by their (SKU, work centre) key.
+    # carry them across the wipe by the line's own key (daily_key + work centre),
+    # which is the SAP code unless the line has none.
     kept_ops = {(daily_key(p.sap_code, p.name), p.work_center): p.op
                 for p in db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
                 if p.op}

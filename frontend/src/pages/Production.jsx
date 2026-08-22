@@ -226,10 +226,13 @@ function CatalogFields({ draft, setDraft }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <Field label={t("production.col.sapCode")} hint={t("production.cat.codeOptional")}>
+        {/* only the code field carries a hint, so BOTH cells of the row take
+            `alignTop` — otherwise the hint's height pushes Команда's input a
+            line below its partner's (see FormField). */}
+        <Field label={t("production.col.sapCode")} hint={t("production.cat.codeOptional")} alignTop>
           <ModalInput value={draft.sap_code} onChange={setDraft("sap_code")} className="font-mono" />
         </Field>
-        <Field label={t("production.col.wc")} required>
+        <Field label={t("production.col.wc")} required alignTop>
           <ModalInput value={draft.work_center} onChange={setDraft("work_center")} className="font-mono" />
         </Field>
       </div>
