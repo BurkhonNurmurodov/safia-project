@@ -131,13 +131,10 @@ export default function LostWorkers() {
   const hoursCell = (r) =>
     r.hours_worked != null ? Number(r.hours_worked).toFixed(2) : "—";
 
-  // Only rows the platform can put back faithfully: the batch still holds the
-  // source row, and the move was a plain one. A transfer-time split is not one
-  // whole row, so restoring it as one would credit the wrong unit.
-  const fixable = useMemo(
-    () => rows.filter((r) => r.state !== "no_batch" && !r.split),
-    [rows],
-  );
+  // Everything except «no source» — there the platform kept no copy to restore
+  // from. A transfer-time split IS restorable: its document stored a snapshot,
+  // so the backend re-runs the original split and writes both halves.
+  const fixable = useMemo(() => rows.filter((r) => r.state !== "no_batch"), [rows]);
 
   // Writes into CLOSED days by design (the operator's call): only the missing
   // rows are added, the closure stands, and nobody is notified. Irreversible

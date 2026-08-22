@@ -52,6 +52,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
 from app.models import (
@@ -447,6 +448,134 @@ def export_xlsx(
 # day-state change. Every insert is logged under `EXCHANGE-REPAIR` with its row
 # id, so the write is auditable and individually reversible.
 
+def _restore_split(db: Session, d: date_t, name: str, r: dict, actor) -> dict:
+    """Put back a worker whose exchange carried a TRANSFER TIME.
+
+    A split day is not one row, so this cannot copy the batch row the way a
+    plain move can: the document divided the day at T and the two halves belong
+    to two different units. It therefore re-runs the ORIGINAL calculation —
+    ``staff._compute_split`` over the snapshot the document stored when it was
+    created — and writes exactly what ``_apply_split_exchange`` writes, so a
+    restored day is arithmetically identical to one that was never broken.
+    Re-deriving those hours here with a second formula is how the two halves
+    would stop adding up to the day the person actually worked.
+
+    Two rows may be involved and they are handled separately:
+      * the NAMED row, on whichever side won the bigger half (``plan["stay"]``);
+      * the nameless hours-only LEFTOVER on the other side, whose id the payload
+        recorded at apply time. It is recreated ONLY if that id no longer
+        resolves — the wipe took one unit's day, not both, so the surviving half
+        must not be written twice.
+
+    A `below_min` employee never reaches here: the audit drops `task_blanked`
+    keys, because that name was stripped by the rule working, not by the bug.
+    """
+    from app.routers.staff import _compute_split          # deferred: cycle
+
+    miss = lambda why: {"date": d.isoformat(), "worker_name": name, "reason": why}
+
+    doc = db.query(HrDocument).filter(HrDocument.id == r["doc_id"]).first()
+    if doc is None or doc.status != "approved":
+        return miss("doc_gone")
+    if r["hops"] > 1:
+        # A→B→C with a split in the chain: which half landed where depends on
+        # documents applied one after another over a row this one never saw.
+        return miss("multi_hop")
+
+    payload = doc.payload or {}
+    emp = next((e for e in payload.get("employees") or []
+                if (e or {}).get("worker_name") == name), None)
+    if emp is None:
+        return miss("doc_gone")
+    applied = emp.get("applied")
+    if not applied:
+        # An approved split document always records what it did. Without it
+        # there is no way to tell whether a leftover was ever written.
+        return miss("no_applied")
+
+    snap   = emp.get("snapshot") or {}
+    target = payload.get("target_manager_id")
+    sender = emp.get("old_manager_id") or doc.manager_id
+    plan   = _compute_split(snap, payload.get("transfer_time"), payload.get("return_time"))
+
+    if plan is None or applied.get("plain"):
+        # The document could not split this worker and fell back to a plain full
+        # move; restore it the same way — the whole snapshot, on the target.
+        row = Attendance(
+            manager_id=target, date=d, worker_name=name,
+            job_title=snap.get("job_title"), schedule=snap.get("schedule"),
+            clock_in_out=snap.get("clock_in_out"), hours_worked=snap.get("hours_worked"),
+            early_arrival_min=snap.get("early_arrival_min"),
+            effective_hours=snap.get("effective_hours"),
+            verifix_code=payload.get("target_cell") or emp.get("old_verifix_code"),
+        )
+        db.add(row); db.flush()
+        log.warning("EXCHANGE-REPAIR split(plain) id=%s worker=%r date=%s -> manager=%s "
+                    "hours=%s doc=%s by=%s", row.id, name, d, target,
+                    snap.get("hours_worked"), doc.id, actor)
+        return {"date": d.isoformat(), "worker_name": name, "attendance_id": row.id,
+                "manager_id": target, "manager_name": r["target_name"],
+                "verifix_code": row.verifix_code,
+                "hours_worked": _f(snap.get("hours_worked")), "side": "plain"}
+
+    if plan["stay"]:
+        # The home half won: the named row belongs to the SENDER, keeping its
+        # early arrival, and the after-T hours sit on the target as a leftover.
+        named = Attendance(
+            manager_id=sender, date=d, worker_name=name,
+            job_title=snap.get("job_title"), schedule=snap.get("schedule"),
+            clock_in_out=plan.get("home_clock") or f'{plan["C"]}-{plan["T"]}',
+            hours_worked=plan["part1"], effective_hours=plan["part1_eff"],
+            early_arrival_min=snap.get("early_arrival_min"),
+            verifix_code=emp.get("old_verifix_code"),
+        )
+        leftover_mgr, leftover_hrs = target, plan["part2"]
+        leftover_cell = payload.get("target_cell")
+        side, named_mgr = "stay", sender
+    else:
+        # The away half won: the named row moved to the TARGET carrying the
+        # after-T hours (early belongs to the unit it was earned on, so 0 here),
+        # and the before-T remainder stayed behind as the sender's leftover.
+        named = Attendance(
+            manager_id=target, date=d, worker_name=name,
+            job_title=snap.get("job_title"), schedule=snap.get("schedule"),
+            clock_in_out=plan.get("away_clock") or f'{plan["T"]}-{plan["O"]}',
+            hours_worked=plan["part2"], effective_hours=plan["part2"],
+            early_arrival_min=0,
+            verifix_code=payload.get("target_cell") or emp.get("old_verifix_code"),
+        )
+        leftover_mgr, leftover_hrs = sender, plan["part1_eff"]
+        leftover_cell = emp.get("old_verifix_code")
+        side, named_mgr = "move", target
+
+    db.add(named); db.flush()
+
+    # The other half. Its id was recorded when the document was applied; recreate
+    # it only if that row is really gone, or the surviving half doubles.
+    lid = applied.get("leftover_id")
+    alive = db.query(Attendance.id).filter(Attendance.id == lid).first() if lid else None
+    leftover_id = None
+    if leftover_hrs and leftover_hrs > 0 and alive is None:
+        lo = Attendance(manager_id=leftover_mgr, date=d, worker_name=None,
+                        hours_worked=leftover_hrs, verifix_code=leftover_cell)
+        db.add(lo); db.flush()
+        leftover_id = lo.id
+        emp["applied"] = {**applied, "leftover_id": lo.id}
+        flag_modified(doc, "payload")
+
+    log.warning(
+        "EXCHANGE-REPAIR split(%s) id=%s worker=%r date=%s -> manager=%s cell=%s "
+        "hours=%s | leftover id=%s manager=%s hours=%s (was %s) doc=%s by=%s",
+        side, named.id, name, d, named_mgr, named.verifix_code, named.hours_worked,
+        leftover_id, leftover_mgr, leftover_hrs, lid, doc.id, actor,
+    )
+    return {"date": d.isoformat(), "worker_name": name, "attendance_id": named.id,
+            "manager_id": named_mgr,
+            "manager_name": r["target_name"] if side == "move" else r["sender_name"],
+            "verifix_code": named.verifix_code, "hours_worked": _f(named.hours_worked),
+            "side": side, "leftover_id": leftover_id}
+
+
 class RepairBody(BaseModel):
     """The exact workers to restore, as (date, worker_name) pairs read off the
     report. Deliberately explicit rather than "repair everything in the filter":
@@ -491,11 +620,13 @@ def repair(
         if r["state"] == "no_batch":
             skipped.append({"date": d_iso, "worker_name": name, "reason": "no_batch"})
             continue
+        d = datetime.strptime(d_iso, "%Y-%m-%d").date()
+
         if r["split"]:
-            skipped.append({"date": d_iso, "worker_name": name, "reason": "split"})
+            out = _restore_split(db, d, name, r, actor)
+            (done if out.get("attendance_id") else skipped).append(out)
             continue
 
-        d = datetime.strptime(d_iso, "%Y-%m-%d").date()
         batch = db.query(AttendanceBatch).filter(AttendanceBatch.date == d).first()
         br = db.query(AttendanceBatchRow).filter(
             AttendanceBatchRow.batch_id == batch.id,
