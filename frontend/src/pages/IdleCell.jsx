@@ -25,9 +25,8 @@ import PerenaladkaFactTable, {
 } from "../components/setup/PerenaladkaFactTable";
 import IntervalFormModal from "../components/idle/IntervalFormModal";
 import DayTimeline from "../components/idle/DayTimeline";
-import { CATS, iconFor } from "../components/idle/categories";
+import { CATS, iconFor, catColor } from "../components/idle/categories";
 import api from "../utils/api";
-import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { cellName as pickCellName } from "../utils/cellName";
 import { fmtDur, toMin } from "../utils/idleTime";
 import { useAuth } from "../context/AuthContext";
@@ -431,9 +430,9 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, lang, autoOpen, toast
                 <tbody>
                   {rows.map((r) => {
                     const idx = CATS.findIndex((c) => c.name === r.category);
-                    // The positional hue DayTimeline derives too — one
-                    // category, one colour, on both views.
-                    const color = CATEGORY_COLORS[(idx < 0 ? 0 : idx) % CATEGORY_COLORS.length];
+                    // The canonical hue every ojidaniya surface derives —
+                    // one category, one colour, on every view.
+                    const color = catColor(r.category);
                     const code = idx >= 0 ? CATS[idx].code : String(r.category || "").replace(/^Cat\s*/i, "");
                     const Icon = iconFor(code);
                     const label = catLabel(code, t);
@@ -1094,7 +1093,7 @@ export default function IdleCell() {
       {legendOpen && (
         <CategoryLegendModal
           catNames={CATS.map((c) => c.name)}
-          catColors={CATS.map((_, i) => CATEGORY_COLORS[i % CATEGORY_COLORS.length])}
+          catColors={CATS.map((c) => catColor(c.name))}
           onClose={() => setLegendOpen(false)}
         />
       )}

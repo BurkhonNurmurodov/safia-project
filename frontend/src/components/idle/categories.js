@@ -2,6 +2,7 @@ import {
   Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
   FlaskConical, ClipboardList, Sparkles, Hourglass, Layers,
 } from "lucide-react";
+import { CATEGORY_COLORS } from "../../utils/chartPalette";
 
 // Ojidaniya categories, A→Z. MUST mirror the backend's IDLE_CATEGORIES.
 // `code` is the "downtime.cat.<code>.label" / ".note" i18n suffix; `name` is
@@ -31,3 +32,15 @@ export const CAT_ICON = {
 export const iconFor = (code) => CAT_ICON[code] || Layers;
 export const catByName = (name) => CATS.find((c) => c.name === name) || null;
 export const catIndex = (name) => CATS.findIndex((c) => c.name === name);
+
+// THE identity hue of an ojidaniya category, keyed by its canonical A→Z
+// position above — never by the position one page's own list happens to give
+// it. A page shows the categories its scope has, sorted by whatever that page
+// sorts by (the Daily donut by minutes, the Ojidaniya page by the response's
+// list, which the «загрузкада» toggle shortens), so a positional hue makes the
+// same Cat I red on one screen and cyan on the next. An unknown name keeps the
+// first slot, exactly as the timeline and the register already gave it.
+export const catColor = (name) => {
+  const i = catIndex(name);
+  return CATEGORY_COLORS[(i < 0 ? 0 : i) % CATEGORY_COLORS.length];
+};

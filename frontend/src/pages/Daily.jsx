@@ -24,7 +24,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
 import api from "../utils/api";
 import { exchangeCellSuffix } from "../utils/cellName";
-import { CATEGORY_COLORS } from "../utils/chartPalette";
+import { catColor } from "../components/idle/categories";
 import {
   AttendanceTable,
   DeleteWorkersModal,
@@ -47,13 +47,13 @@ function fmtMin(m, minLabel = "min", hrsLabel = "hrs") {
   return `${Math.floor(v / 60)} ${hrsLabel} ${v % 60} ${minLabel}`;
 }
 
-const DONUT_COLORS = CATEGORY_COLORS; // idle categories, shared generic-first order
-
 // ── Single-day picker ─────────────────────────────────────────────────────────
 
 // ── Idle-by-category donut ────────────────────────────────────────────────────
-// Same order everywhere (donut slices, legend, tooltip list) so slice colours and
-// the DONUT_COLORS index line up.
+// Biggest first, and the same order everywhere (donut slices, legend, tooltip
+// list). The COLOUR is not taken from that order: `catColor` keys it to the
+// category's canonical A→Z position, so Cat I is the hue it is on the Ojidaniya
+// page whether it is the day's largest wait or its smallest.
 const idleEntries = (byCategory) =>
   Object.entries(byCategory || {}).filter(([, v]) => (v || 0) > 0).sort((a, b) => b[1] - a[1]);
 
@@ -77,7 +77,7 @@ function IdleCatGuide({ byCategory }) {
       {open && (
         <CategoryLegendModal
           catNames={entries.map(([k]) => k)}
-          catColors={entries.map((_, i) => DONUT_COLORS[i % DONUT_COLORS.length])}
+          catColors={entries.map(([k]) => catColor(k))}
           onClose={() => setOpen(false)}
         />
       )}
@@ -104,7 +104,7 @@ function IdleDonut({ byCategory }) {
       redrawOnParentResize: false, redrawOnWindowResize: false,
     },
     labels,
-    colors: DONUT_COLORS,
+    colors: entries.map(([k]) => catColor(k)),
     legend: { position: "bottom", labels: { colors: theme === "dark" ? "#cbd5e1" : "#334155" } },
     dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
     stroke: { width: 0 },

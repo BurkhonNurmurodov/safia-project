@@ -1,6 +1,5 @@
 import { useMemo } from "react";
-import { CATEGORY_COLORS } from "../../utils/chartPalette";
-import { CATS } from "./categories";
+import { CATS, catColor } from "./categories";
 import { packLanes, overlapBands, timelineWindow, fmtHHMM, fmtDur, spanOf } from "../../utils/idleTime";
 
 // The cell's day drawn to scale — the view that makes the counting error
@@ -26,13 +25,14 @@ const UNION_H = 12;
 const GUTTER = 34;
 
 // Everything the chart needs to know about a category name, including one the
-// frontend's registry has never heard of — the same positional hue the table
-// derives, so a category is one colour on both views.
+// frontend's registry has never heard of — the hue comes from `catColor`, the
+// canonical one every ojidaniya surface reads, so a category is one colour on
+// every view.
 function catOf(name) {
   const i = CATS.findIndex((c) => c.name === name);
   return {
     code: (i >= 0 ? CATS[i].code : String(name || "").replace(/^Cat\s*/i, "")) || "?",
-    color: CATEGORY_COLORS[(i < 0 ? 0 : i) % CATEGORY_COLORS.length],
+    color: catColor(name),
     rank: i < 0 ? CATS.length : i,
   };
 }

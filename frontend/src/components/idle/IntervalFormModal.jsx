@@ -8,8 +8,7 @@ import StyledSelect from "../ui/StyledSelect";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import TimeWheelPicker from "../ui/TimeWheelPicker";
 import api from "../../utils/api";
-import { CATEGORY_COLORS } from "../../utils/chartPalette";
-import { CATS, iconFor, catByName } from "./categories";
+import { CATS, iconFor, catByName, catColor } from "./categories";
 import { DAY, toMin, fmtDur, durationOf, crossesMidnight } from "../../utils/idleTime";
 import { useLang } from "../../context/LangContext";
 
@@ -77,7 +76,7 @@ export default function IntervalFormModal({
   const longRun = minutes > 8 * 60;
 
   const catOptions = useMemo(
-    () => CATS.map((c, i) => {
+    () => CATS.map((c) => {
       const Icon = iconFor(c.code);
       const label = `${t("idleCell.category")} ${c.code}`;
       return {
@@ -85,7 +84,7 @@ export default function IntervalFormModal({
         title: `${label} · ${t(`downtime.cat.${c.code}.label`)}`,
         label: (
           <span className="flex items-center gap-2 min-w-0">
-            <Icon size={14} style={{ color: CATEGORY_COLORS[i % CATEGORY_COLORS.length], flexShrink: 0 }} />
+            <Icon size={14} style={{ color: catColor(c.name), flexShrink: 0 }} />
             <span className="flex-shrink-0">{label}</span>
             <span className="truncate text-[11px]" style={{ color: "var(--text-3)" }}>
               {t(`downtime.cat.${c.code}.label`)}

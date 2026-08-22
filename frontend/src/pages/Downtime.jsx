@@ -26,7 +26,7 @@ import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilt
 
 // Downtime-category identity colors — the shared generic-first order, one hue
 // per category index, shared by the merged bar chart, the doughnut and the chips.
-import { CATEGORY_COLORS as CAT_COLORS } from "../utils/chartPalette";
+import { catColor } from "../components/idle/categories";
 
 // ── date helpers for the seasonality card's weekly axis ──────────────────────
 // Local-calendar ISO stamps (never toISOString — that shifts UTC+5 back a day).
@@ -209,7 +209,7 @@ export default function Downtime() {
 
   // Toolbar multi-select mirror of that filter — same identity hue as the
   // doughnut slice, plus the category's meaning so the codes aren't a riddle.
-  const catOptions = catNames.map((cat, i) => {
+  const catOptions = catNames.map((cat) => {
     const code = cat.replace(/^Cat\s*/i, "");
     const meaning = t(`downtime.cat.${code}.label`);
     const full = cat + (meaning && !meaning.startsWith("downtime.cat.") ? ` — ${meaning}` : "");
@@ -222,7 +222,7 @@ export default function Downtime() {
         <span className="flex items-center gap-2 min-w-0">
           <span
             className="shrink-0 rounded-full"
-            style={{ width: 8, height: 8, background: CAT_COLORS[i % CAT_COLORS.length] }}
+            style={{ width: 8, height: 8, background: catColor(cat) }}
           />
           <span className="truncate">{full}</span>
         </span>
@@ -252,10 +252,14 @@ export default function Downtime() {
   const catTotals = catNames.map((cat) =>
     Math.round((data?.rows || []).reduce((s, r) => s + (r[catKey]?.[cat] || 0), 0))
   );
+  // One hue per category, canonical and scope-independent (`catColor`): the
+  // «загрузкада» toggle drops Cat H from this list, and a positional palette
+  // would slide every category after it onto its neighbour's colour.
+  const catHues = catNames.map(catColor);
   // Emphasise the selected slices by dimming the rest while a filter is active.
   const donutColors = filterActive
-    ? CAT_COLORS.map((c, i) => (selectedCats.includes(catNames[i]) ? c : `${c}33`))
-    : CAT_COLORS;
+    ? catHues.map((c, i) => (selectedCats.includes(catNames[i]) ? c : `${c}33`))
+    : catHues;
   // The centre counts whatever the doughnut is currently ABOUT. Desktop gets the
   // per-slice number from hover; a phone has no hover, so a selection that leaves
   // the fleet total sitting in the middle reads as "nothing happened" — the centre
@@ -348,7 +352,7 @@ export default function Downtime() {
   const trendSeries = [{ name: filterActive ? selectedCats.join(" + ") : t("downtime.totalDowntime"), data: trendValues }];
   // Single selected category paints the line in its doughnut colour.
   const trendColor = selectedCats.length === 1
-    ? (CAT_COLORS[catNames.indexOf(selectedCats[0])] || "#ef4444")
+    ? (catColor(selectedCats[0]) || "#ef4444")
     : "#ef4444";
   // Headroom above the tallest point, snapped to a clean 50-min step so labels never clip.
   const trendMax = Math.ceil((Math.max(50, ...(trendValues.length ? trendValues : [0])) * 1.15) / 50) * 50;
@@ -485,13 +489,6 @@ export default function Downtime() {
     return seasonMatrix(labels, colTotals, catCol);
   }, [seasonMode, seasonData, ns, catKey, data, dateFrom, dateTo, MONTHS]);
 
-  // Identity hue per category — the page's own order (donut, chips, bars), with
-  // the year's own category list as a fallback for a code the picked range lacks.
-  const catHue = (cat) => {
-    const i = catNames.indexOf(cat);
-    const j = i >= 0 ? i : (seasonData?.cat_names || []).indexOf(cat);
-    return CAT_COLORS[(j >= 0 ? j : 0) % CAT_COLORS.length];
-  };
   // "Cat A — Xoladilnikdan mahsulot kutish" (plain code when untranslated).
   const catFull = (cat) => {
     const meaning = t(`downtime.cat.${cat.replace(/^Cat\s*/i, "")}.label`);
@@ -503,7 +500,7 @@ export default function Downtime() {
     data: s.data,
     label: (
       <span className="flex items-center gap-2 min-w-0">
-        <span className="shrink-0 rounded-full" style={{ width: 8, height: 8, background: catHue(s.k) }} />
+        <span className="shrink-0 rounded-full" style={{ width: 8, height: 8, background: catColor(s.k) }} />
         <span className="truncate">{catFull(s.k)}</span>
       </span>
     ),
@@ -515,7 +512,7 @@ export default function Downtime() {
   const catChips = filterActive ? (
     <div className="flex items-center gap-1.5 flex-wrap justify-end">
       {selectedCats.map((cat) => {
-        const c = CAT_COLORS[catNames.indexOf(cat)] || "#888";
+        const c = catColor(cat) || "#888";
         return (
           <span
             key={cat}
@@ -700,7 +697,7 @@ export default function Downtime() {
               unitDayLabel={durLabels.day}
               unitHourLabel={durLabels.hour}
               unitMinLabel={durLabels.min}
-              catColors={CAT_COLORS}
+              catColors={catHues}
               chartTheme={chartTheme}
               gridColor={gridColor}
               labelColor={labelColor}
@@ -817,7 +814,7 @@ export default function Downtime() {
       {showCatGuide && (
         <CategoryLegendModal
           catNames={catNames}
-          catColors={CAT_COLORS}
+          catColors={catHues}
           onClose={() => setShowCatGuide(false)}
         />
       )}
