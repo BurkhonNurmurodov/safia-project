@@ -460,6 +460,38 @@ def overnight(win: tuple[str, str]) -> bool:
     return win[1] <= win[0]
 
 
+def window_offset(shift: int | None, win: tuple[str, str]) -> int:
+    """How many days after the REPORT day the task's window opens on — 0 or 1.
+
+    THE anchor. A shift's report day is not a calendar day: shift 2's «13.08»
+    runs 13.08 17:00 → 14.08 09:00, so an hour inside that night belongs to the
+    13th or to the 14th depending on nothing but which side of the shift's own
+    opening it falls on. A task window is written in those same shift hours, so
+    «00:00 — 02:00» on a night shift can only mean the small hours of the 14th —
+    00:00 on the 13th is not in that shift at all.
+
+    Pinning it to the report date instead produced a window no honest photo
+    could ever satisfy, and a proof stamped 14.08 01:41 was flagged
+    `date_mismatch` against «13.08 00:00 — 13.08 02:00» (user, 2026-08-22).
+
+    The rule, and it is the whole rule:
+
+        the window opens at the first `lo` of the shift, and closes at the next
+        `hi` at or after that opening.
+
+    So only an OVERNIGHT shift can push the opening a day on, and only for a
+    window that opens before the shift itself does. Shift 1's day IS the
+    calendar day and always answers 0 — including for a window somebody wrote to
+    cross midnight, whose closing side is still moved by `overnight()` exactly as
+    it always was. `date_window`, `date_days` and `clock_in_window` all read this
+    one function, so what the card prints and what the flag judges cannot drift.
+    """
+    s_lo, s_hi = shift_window(shift)
+    if not overnight((s_lo, s_hi)):
+        return 0
+    return 1 if win[0] < s_lo else 0
+
+
 def date_window(date: str, shift: int | None,
                 win: tuple[str, str] | None = None,
                 plus: int = 0) -> tuple[str, str]:
@@ -476,30 +508,48 @@ def date_window(date: str, shift: int | None,
     rule: with a tolerance the accepted set is the window repeated on each
     allowed day, not one continuous stretch — which is why every sentence that
     prints a tolerated window also prints the day list beside it (`date_days`).
+
+    The OPENING date moves too, by `window_offset` — a night shift's window
+    written in morning hours opens on the report day's tomorrow. Which is why
+    this takes the shift at all, and why the card can print a pair that starts
+    on a date the report is not filed under.
     """
     lo, hi = win or shift_window(shift)
-    span = max(0, int(plus or 0)) + (1 if overnight((lo, hi)) else 0)
+    off = window_offset(shift, (lo, hi))
+    span = off + max(0, int(plus or 0)) + (1 if overnight((lo, hi)) else 0)
     if not span:
         return f"{date} {lo}", f"{date} {hi}"
     try:
-        end = (datetime.strptime(str(date)[:10], "%Y-%m-%d")
-               + timedelta(days=span)).strftime("%Y-%m-%d")
+        day = datetime.strptime(str(date)[:10], "%Y-%m-%d")
+        start = (day + timedelta(days=off)).strftime("%Y-%m-%d")
+        end = (day + timedelta(days=span)).strftime("%Y-%m-%d")
     except ValueError:
-        end = date
-    return f"{date} {lo}", f"{end} {hi}"
+        start = end = str(date)[:10]
+    return f"{start} {lo}", f"{end} {hi}"
 
 
-def date_days(date: str, plus: int = 0) -> list[str]:
+def date_days(date: str, plus: int = 0, shift: int | None = None,
+              win: tuple[str, str] | None = None) -> list[str]:
     """The days a proof for `date` may be dated — the report day, then one per
     day of the task's tolerance. ONE definition, so the judgement
     (`clock_in_window`), the sentence (`date_prose`) and what the card prints as
-    expected can never name different days."""
+    expected can never name different days.
+
+    This is what the DATE-ONLY mode is judged by, and there a window that
+    REACHES into the next date carries the day with it: an overnight window
+    (17:00 → 09:00) always did, and since `window_offset` a night shift's
+    morning-hours window does too. Pass the pair and the answer names both days;
+    omit it and this is exactly the list it has always returned, which is what
+    keeps the two-argument callers correct."""
     try:
         day = datetime.strptime(str(date)[:10], "%Y-%m-%d")
     except ValueError:
         return [str(date)[:10]]
+    span = max(0, int(plus or 0))
+    if win is not None and (overnight(win) or window_offset(shift, win)):
+        span += 1
     return [(day + timedelta(days=k)).strftime("%Y-%m-%d")
-            for k in range(max(0, int(plus or 0)) + 1)]
+            for k in range(span + 1)]
 
 
 def _prompt(*, task: str, note: str, criteria: str,
@@ -1518,7 +1568,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     served = _camera_clocks(db, rev)
     rev.clocks = served if served is not None else _clean_clocks(out.get("clocks"))
     flags += date_flags(rev.clocks, rev.date, win, check=checked, times=timed,
-                        plus=plus)
+                        plus=plus, shift=rev.shift)
     flags = [f for f in _FLAG_ORDER if f in set(flags)]
 
     rev.flags = flags
@@ -2272,7 +2322,8 @@ def parse_clock(raw: str | None) -> list[tuple[int, int, int, int]] | None:
 
 def clock_in_window(clocks: list[dict] | None,
                     date: str, win: tuple[str, str],
-                    *, times: bool = True, plus: int = 0) -> bool | None:
+                    *, times: bool = True, plus: int = 0,
+                    shift: int | None = None) -> bool | None:
     """Are ALL of a report's photo clocks inside the window? None = undecidable
     (no clock was read at all — that is `no_date`, a different answer).
 
@@ -2305,6 +2356,23 @@ def clock_in_window(clocks: list[dict] | None,
     judged by the very same hour rule. 0 — the default everywhere until an admin
     says otherwise — leaves the two sets exactly the single days this compared
     before it existed, which is what makes the field free to add.
+
+    `shift` says which day the window's own hours belong to (`window_offset`):
+    on a night shift a window written in morning hours opens on the report day's
+    TOMORROW, because that is where those hours are in that shift. Without it a
+    «00:00 — 02:00» night task was compared against the small hours of the day
+    BEFORE its shift began — a window nothing filed inside the shift can satisfy.
+    It defaults to None, which reads as the calendar day and is exactly the
+    comparison this made before the anchor existed; every real caller passes the
+    row's own shift.
+
+    The two modes take it differently, and deliberately. Strict mode MOVES the
+    accepted day, because the hours are the rule and they sit on one date.
+    Date-only mode only ever WIDENS: the day comes off the screen there, a
+    shift-2 screen most often shows the report day, and shifting the accepted
+    day would newly reject the honest filings that mode exists to accept — so a
+    window that reaches into the next date adds it beside the report day rather
+    than replacing it.
     """
     if not clocks:
         return None
@@ -2314,27 +2382,38 @@ def clock_in_window(clocks: list[dict] | None,
         return None
     lo, hi = win
     span = max(0, int(plus or 0))
-    # The days a proof may carry, and — for an overnight window — the mornings
-    # that belong to them. Sets, not two values: with no tolerance they hold one
-    # day each and this is the comparison it always was.
-    d0s = {((day + timedelta(days=k)).month, (day + timedelta(days=k)).day)
-           for k in range(span + 1)}
-    d1s = {((day + timedelta(days=k + 1)).month, (day + timedelta(days=k + 1)).day)
-           for k in range(span + 1)}
+
+    # The days a proof may carry, `k` days on from the report's. Sets, not two
+    # values: with no tolerance each holds one day and this is the comparison it
+    # always was.
+    def _span_days(k0: int) -> set[tuple[int, int]]:
+        return {((day + timedelta(days=k0 + k)).month,
+                 (day + timedelta(days=k0 + k)).day) for k in range(span + 1)}
+
+    d0s, d1s = _span_days(0), _span_days(1)
     over = overnight(win)
+    off = window_offset(shift, win)
     if not times:
         days = [(int(c.get("month") or 0), int(c.get("day") or 0)) for c in clocks]
         seen = [d for d in days if 0 not in d]
         if not seen:
             return None          # nothing dated anything — nobody voted
-        return any(d in d0s or (over and d in d1s) for d in seen)
+        # The window is not a rule here; it only says whether the day AFTER the
+        # report's counts too. An overnight window has always reached it, and a
+        # night shift's morning-hours window reaches it the same way — so this
+        # ADDS that day, never trades the report's for it.
+        reach = over or bool(off)
+        return any(d in d0s or (reach and d in d1s) for d in seen)
+    # Strict: the hours ARE the rule, so they are compared on the date those
+    # hours belong to in this shift — the report day, or its tomorrow.
+    a0s, a1s = (d0s, d1s) if not off else (_span_days(off), _span_days(off + 1))
     for c in clocks:
         got = (int(c.get("month") or 0), int(c.get("day") or 0))
         clock = hhmm(c.get("time"))
         if not clock or got == (0, 0) or 0 in got:
             return False          # day unconfirmed — cannot be proven in-window
-        ok = (((got in d0s and clock >= lo) or (got in d1s and clock <= hi))
-              if over else (got in d0s and lo <= clock <= hi))
+        ok = (((got in a0s and clock >= lo) or (got in a1s and clock <= hi))
+              if over else (got in a0s and lo <= clock <= hi))
         if not ok:
             return False
     return True
@@ -2342,7 +2421,8 @@ def clock_in_window(clocks: list[dict] | None,
 
 def date_flags(clocks: list[dict] | None, date: str,
                win: tuple[str, str], *, check: bool = True,
-               times: bool = True, plus: int = 0) -> list[str]:
+               times: bool = True, plus: int = 0,
+               shift: int | None = None) -> list[str]:
     """THE date verdict. Derived, never stored — so it is always the answer for
     the window in force RIGHT NOW, and an admin who edits a window has every
     affected report corrected before the page finishes loading.
@@ -2383,15 +2463,20 @@ def date_flags(clocks: list[dict] | None, date: str,
     the day before it applies). It composes with both modes above, because it
     changes WHICH day counts and never whether the question is asked.
 
-    All three keywords default to the old behaviour — checked, timed, no
-    tolerance — deliberately: the three callers (`review_one`, `sync_date_flags`,
-    `date_prose`) all pass them explicitly, and a fourth one added without them
-    should keep judging dates and clocks rather than quietly relax every task on
-    the platform.
+    `shift` is the fifth and answers a different kind of question from the other
+    four: not whether the date is judged, but which DAY the window's hours sit
+    on (`window_offset`). It is not a relaxation and cannot be one — it moves
+    the window onto the date the shift actually runs those hours.
+
+    All four judgement keywords default to the old behaviour — checked, timed, no
+    tolerance, calendar day — deliberately: the three callers (`review_one`,
+    `sync_date_flags`, `date_prose`) all pass them explicitly, and a fourth one
+    added without them should keep judging dates and clocks rather than quietly
+    relax every task on the platform.
     """
     if not check:
         return []
-    ok = clock_in_window(clocks, date, win, times=times, plus=plus)
+    ok = clock_in_window(clocks, date, win, times=times, plus=plus, shift=shift)
     if ok is None:
         return ["no_date"] if times else []
     return [] if ok else ["date_mismatch"]
@@ -2567,7 +2652,8 @@ _DATE_PROSE = {
 
 def date_prose(clocks: list[dict] | None, date: str,
                win: tuple[str, str], *, check: bool = True,
-               times: bool = True, plus: int = 0) -> dict[str, str]:
+               times: bool = True, plus: int = 0,
+               shift: int | None = None) -> dict[str, str]:
     """The date verdict as a sentence per language. Derived like the flag
     itself, so the two can never disagree — which is why the tolerance is here
     too: a sentence naming one day for a task that accepts three contradicts the
@@ -2580,11 +2666,13 @@ def date_prose(clocks: list[dict] | None, date: str,
         # matched, or nothing on the screen was dated. They must not share a
         # sentence: one says the proof was verified, the other says the question
         # went unanswered and was let go.
-        got = clock_in_window(clocks, date, win, times=False, plus=plus)
+        got = clock_in_window(clocks, date, win, times=False, plus=plus,
+                              shift=shift)
         key = "day_none" if got is None else ("day_ok" if got else "day_bad")
-    elif not date_flags(clocks, date, win, check=check, times=times, plus=plus):
+    elif not date_flags(clocks, date, win, check=check, times=times, plus=plus,
+                        shift=shift):
         key = "ok"
-    elif clock_in_window(clocks, date, win, plus=plus) is None:
+    elif clock_in_window(clocks, date, win, plus=plus, shift=shift) is None:
         key = "no_date"
     elif any(not (c.get("day") and c.get("month")) for c in (clocks or [])):
         # "Read a clock but not a day" reads very differently from "wrong day",
@@ -2594,10 +2682,10 @@ def date_prose(clocks: list[dict] | None, date: str,
         key = "no_time"          # dated, but nothing says when it was taken
     else:
         key = "date_mismatch"
-    lo, hi = date_window(date, None, win, plus)
+    lo, hi = date_window(date, shift, win, plus)
     seen = clocks_text(clocks) or "—"
     return {l: t.format(seen=seen, lo=lo, hi=hi,
-                        day=", ".join(date_days(date, plus)))
+                        day=", ".join(date_days(date, plus, shift, win)))
             for l, t in _DATE_PROSE[key].items()}
 
 
@@ -2605,14 +2693,15 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     """Re-derive every written verdict's DATE flags from its stored clocks and
     the window in force now. Returns how many rows changed; commits once.
 
-    The date verdict has exactly SIX inputs — the clocks (frozen at review
-    time), the report's day, the task's window, whether the task's chain asks the
-    date question at all, whether it asks about the CLOCK or only the day, and
-    the tolerance widening WHICH day counts — and this runs whenever any of them
-    can have moved: at boot, after a window edit, after a date-check, time-check
-    or tolerance edit, after a sheet Refresh or a discover (both re-stamp
-    `date`), and when the AI overview is opened. There is no seventh input, so
-    there is no trigger left to forget.
+    The date verdict has exactly SEVEN inputs — the clocks (frozen at review
+    time), the report's day, its SHIFT (which decides the date the window's own
+    hours sit on, `window_offset`), the task's window, whether the task's chain
+    asks the date question at all, whether it asks about the CLOCK or only the
+    day, and the tolerance widening WHICH day counts — and this runs whenever any
+    of them can have moved: at boot, after a window edit, after a date-check,
+    time-check or tolerance edit, after a sheet Refresh or a discover (both
+    re-stamp `date` AND `shift`), and when the AI overview is opened. There is no
+    eighth input, so there is no trigger left to forget.
 
     It is kept a WRITE rather than a read-time overlay because `status`/`flags`
     are what ~20 queue, count, re-check and progress queries filter on in SQL;
@@ -2653,7 +2742,7 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
         want = set(kept) | set(date_flags(
             rev.clocks, rev.date, win, check=resolve_date_check(*levels),
             times=resolve_time_check(*levels),
-            plus=resolve_date_plus(*levels)))
+            plus=resolve_date_plus(*levels), shift=rev.shift))
         flags = [f for f in _FLAG_ORDER if f in want]
         if flags == list(rev.flags or ()):
             continue

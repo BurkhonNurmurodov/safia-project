@@ -285,6 +285,11 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
             "enabled": enabled, "min_media": min_media,
             "weight": weight, "names": names,
             "window": leader_ai.resolve_window(shift, r, s, td),
+            # The shift the window above was resolved AGAINST, carried with it:
+            # a night shift's window hours can sit on the report day's tomorrow
+            # (leader_ai.window_offset), so every reader that judges a clock by
+            # this window needs the shift in the same hand.
+            "shift": shift,
             # Resolved beside the window it governs: with either of these False
             # the window is not enforced, so no surface may present it as a
             # requirement — `date_check` False asks nothing about the day at all,

@@ -454,14 +454,20 @@ def is_late(when: datetime, date: str, win: tuple[str, str], cfg: dict) -> bool:
     """
     if not cfg.get("date_check", True) or not cfg.get("time_check", True):
         return False
-    return clock_ok(when, date, win) is False
+    return clock_ok(when, date, win, cfg.get("shift")) is False
 
 
-def clock_ok(when: datetime, date: str, win: tuple[str, str]) -> bool | None:
+def clock_ok(when: datetime, date: str, win: tuple[str, str],
+             shift: int | None = None) -> bool | None:
     """Does one server-recorded capture satisfy the window? Delegates to the
     reviewer's own comparison so a camera photo and a transcribed screenshot can
-    never be judged by two different readings of the same hours."""
-    return leader_ai.clock_in_window([as_clock(when)], date, win)
+    never be judged by two different readings of the same hours.
+
+    The shift travels with it for the same reason: it says which DAY the
+    window's hours belong to (leader_ai.window_offset), and a night shift's
+    01:41 shot marked late against the previous morning is the very bug that
+    comparison was fixed for."""
+    return leader_ai.clock_in_window([as_clock(when)], date, win, shift=shift)
 
 
 def as_clock(when: datetime) -> dict:

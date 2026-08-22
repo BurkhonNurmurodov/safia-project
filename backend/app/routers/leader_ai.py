@@ -729,7 +729,8 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             # made; printing one on a date-only task is the same mistake quieter.
             "expected": (None if not checked
                          else f"{lo} — {hi}" if timed
-                         else ", ".join(leader_ai.date_days(rev.date, plus))),
+                         else ", ".join(leader_ai.date_days(
+                             rev.date, plus, rev.shift, win))),
             "dateCheck": checked,
             "timeCheck": timed,
             "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
@@ -739,7 +740,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             # only.
             "dateReason": leader_ai.date_prose(rev.clocks, rev.date, win,
                                                check=checked, times=timed,
-                                               plus=plus),
+                                               plus=plus, shift=rev.shift),
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
             # the old card could only ever be taken on faith.
@@ -1011,13 +1012,15 @@ def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
         # day is, and NULL when the task is exempt (nothing was measured).
         "expected": (None if not check
                      else f"{lo} — {hi}" if times
-                     else ", ".join(leader_ai.date_days(rev.date, plus))),
+                     else ", ".join(leader_ai.date_days(
+                         rev.date, plus, rev.shift,
+                         win or leader_ai.shift_window(rev.shift)))),
         "dateCheck": check,
         "timeCheck": times,
         "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
         "dateReason": leader_ai.date_prose(
             rev.clocks, rev.date, win or leader_ai.shift_window(rev.shift),
-            check=check, times=times, plus=plus),
+            check=check, times=times, plus=plus, shift=rev.shift),
         "photos": rev.photos,
         "error": rev.error,
         "attempts": rev.attempts,

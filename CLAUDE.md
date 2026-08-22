@@ -330,6 +330,29 @@ number.
   **and `unreadable`** (the user's ruling). A technical `error` row is NOT a
   flag and never deducts: a dead Drive permission must not mass-fail a shift.
   Only a human `approved` lifts an automatic rejection; `requeried` does not.
+- **A photo window's hours are anchored to the SHIFT, not to the calendar
+  date** (user, 2026-08-22). `leader_ai.window_offset(shift, win)` is THE
+  anchor and `date_window`, `date_days` and `clock_in_window` all read it, so
+  what the card prints and what the flag judges cannot drift. Shift 2's «13.08»
+  runs 13.08 17:00 → 14.08 09:00, so an hour inside that night sits on the 13th
+  or the 14th depending on nothing but which side of the shift's own opening it
+  falls on — a window written «00:00 — 02:00» can only mean the small hours of
+  the **14th**. Pinning it to the report date instead is a window no honest
+  photo can ever satisfy, and a proof stamped 14.08 01:41 was flagged
+  `date_mismatch` against «13.08 00:00 — 13.08 02:00». The rule is one sentence:
+  **the window opens at the first `lo` of the shift and closes at the next `hi`
+  at or after that opening** — so only an OVERNIGHT shift can push the opening a
+  day on, and only for a window that opens before the shift does. Shift 1's day
+  IS the calendar day and always answers 0, including for a window somebody
+  wrote to cross midnight (whose closing side `overnight()` still moves, exactly
+  as before). Strict mode MOVES the accepted day; **date-only mode only ever
+  WIDENS** — the day comes off the screen there, a shift-2 screen most often
+  shows the report day, and shifting it would newly reject the honest filings
+  that mode exists to accept. **Consequence to know: shift-2 verdicts re-score.**
+  Nothing is stored, so the boot `sync_date_flags` re-derives every affected row
+  for free — a morning-hours window on a night task stops flagging correct
+  photos, and those tasks get their weight back with no Gemini call. No
+  corrected report is re-DMed, same as a window edit.
 - **The date question has THREE modes, not two** (user, 2026-08-17) — two
   nullable booleans on the same global → supervisor → leader chain as the photo
   window, resolved by `leader_ai.resolve_date_check` + `resolve_time_check`
