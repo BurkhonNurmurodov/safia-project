@@ -1201,8 +1201,11 @@ def update_concern(
     ):
         db.commit()
 
+    # Resolved here and not hoisted above: nothing earlier in this function
+    # needs them, and the bare names this line briefly carried belonged to
+    # `escalate_concern`, where locals of those names do exist.
     return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id),
-                      sm_names, owner_names, _cell_leaders(db),
+                      _sm_names(db), _owner_names(db, [c]), _cell_leaders(db),
                       _comment_counts(db, [c.id]))
 
 
