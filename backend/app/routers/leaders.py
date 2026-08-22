@@ -1008,37 +1008,112 @@ def _report_after_ruling(db: Session, d: LeaderAiDispute) -> bool:
     return leader_reports.resend_if_changed(db, uid) if uid else False
 
 
+# How much of the objection queue one read hands over. Cancelled and decided
+# rows accumulate forever while the work — `pending` — never does, so the cap
+# bounds the HISTORY, not the queue. Newest first, so what it drops is the
+# oldest settled row and never a decision anybody is waiting on.
+DISPUTE_CAP = 300
+
+
 @router.get("/leaders/disputes")
 def list_disputes(
     status: str | None = Query(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
 ):
-    """The disputes an admin has to rule on, newest first. Scoped like every
-    other read here: an admin sees all, a brigadir their own unit's."""
+    """The «Norozliklar» queue — every objection to an automatic rejection,
+    newest first, with the verdict it argues against carried beside it.
+
+    The ruling used to be reachable from exactly two places: an inline Telegram
+    card that scrolls out of the chat, and the day report of the one leader it
+    belongs to. An admin who missed the card had no list to work from and no
+    way to find the report holding the objection. This is that list.
+
+    It carries the AI's flags, its prose and the window it measured against,
+    because a decision made without them is a decision made by opening thirteen
+    reports to find the one in question — and every one of those facts comes
+    off the SAME helpers the day report reads, never re-derived here. Names are
+    the REGISTER's names (`_project`), so the page's supervisor and leader
+    filters reach these rows exactly as they reach the dashboard's.
+
+    Scoped like every other read on this page: an admin sees all, a brigadir
+    their own unit's. Reading is not deciding — `canDecide` is the admin's
+    alone and every write re-checks it.
+    """
     role = payload.get("role")
+    can_decide = _may_decide(payload)
     q = db.query(LeaderAiDispute)
     if status:
         q = q.filter(LeaderAiDispute.status == status)
-    if not (_may_decide(payload) or role in ("shift-manager", "top-manager")
+    if not (can_decide or role in ("shift-manager", "top-manager")
             or page_scope_is_all(db, payload, "leaders")):
         if role != "supervisor":
-            return {"items": [], "canDecide": False}
+            return {"items": [], "canDecide": False, "todo": 0}
         q = q.filter(LeaderAiDispute.manager_id == payload.get("role_id"))
-    rows = q.order_by(LeaderAiDispute.id.desc()).limit(300).all()
+    rows = q.order_by(LeaderAiDispute.id.desc()).limit(DISPUTE_CAP).all()
     uids = leader_reports.uids_of_refs(db, [r.ref for r in rows])
-    return {
-        "canDecide": _may_decide(payload),
-        "items": [{
+
+    # The verdict under objection. Local import: routers/leader_ai imports this
+    # module back for `supersede_dispute`.
+    from app.routers.leader_ai import (
+        _as_verdict, _date_check, _date_plus, _project, _task_cfg, _time_check,
+        _window,
+    )
+    revs = (db.query(LeaderAiReview)
+            .filter(LeaderAiReview.ref.in_({d.ref for d in rows})).all()) if rows else []
+    # Loaded off `rows`, not off `revs`: a verdict «stop and clear» deleted
+    # leaves its dispute standing, and that card still has to name its task.
+    cfg = _task_cfg(db, revs) if rows else None
+    verdicts = {r.ref: _as_verdict(r, _window(cfg, r), _date_check(cfg, r),
+                                   _time_check(cfg, r), _date_plus(cfg, r))
+                for r in revs}
+    shifts = {r.ref: r.shift for r in revs}
+    proj = _project(db, revs)
+
+    # Task names in all four languages — the card is read by the same people in
+    # the same four languages as the report behind it, and a unit that renamed
+    # a task must not read its old wording here.
+    names = leader_reports.names_for_pairs(
+        db, {(d.manager_id, d.leader_id) for d in rows}, (cfg[0] if cfg else {}))
+    mgr_shift = ({m.id: m.shift for m in db.query(Manager).all()} if rows else {})
+
+    # `_project` fills an unresolvable name with an em dash rather than a null,
+    # so read it as blank here — otherwise the placeholder wins over the name
+    # the dispute row stamped when it was filed.
+    def _named(v):
+        v = (v or "").strip()
+        return v if v and v != "\u2014" else None
+
+    items = []
+    for d in rows:
+        who = proj.get(d.ref) or {}
+        items.append({
             "id": d.id, "status": d.status, "date": d.date,
-            "taskId": d.task_id, "leader": d.leader_name,
-            "managerId": d.manager_id, "reason": d.reason,
+            "taskId": d.task_id,
+            "taskName": (names.get((d.manager_id, d.leader_id)) or {}).get(d.task_id),
+            # The register's spelling first; the row's own stamp is the floor
+            # for a verdict whose source row has since been deleted.
+            "leader": _named(who.get("leader")) or d.leader_name,
+            "leaderId": d.leader_id,
+            "supervisor": _named(who.get("supervisor")),
+            "managerId": d.manager_id,
+            "shift": shifts.get(d.ref) or mgr_shift.get(d.manager_id),
+            "reason": d.reason,
             "by": d.requested_by_name,
             "at": d.requested_at.isoformat() if d.requested_at else None,
             "decidedBy": d.decided_by_name,
             "decidedAt": d.decided_at.isoformat() if d.decided_at else None,
+            "note": d.decision_note,
             "uid": uids.get(d.ref),
-        } for d in rows],
+            "verdict": verdicts.get(d.ref),
+        })
+    return {
+        "canDecide": can_decide,
+        # What the tab badge counts: whose TURN it is. Only an admin rules on an
+        # objection, so for everybody else this is 0 — a badge on a brigadir's
+        # tab would count work they are not allowed to do and could never clear.
+        "todo": sum(1 for i in items if i["status"] == "pending") if can_decide else 0,
+        "items": items,
     }
 
 

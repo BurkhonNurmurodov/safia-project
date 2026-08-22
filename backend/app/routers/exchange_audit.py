@@ -248,16 +248,22 @@ def _collect(db: Session, date_from: Optional[str], date_to: Optional[str]) -> d
         })
 
     rows.sort(key=lambda r: (r["date"], r["sender_name"], r["worker_name"]), reverse=True)
+    # Already-restored rows still missing their effective hours. They are NOT
+    # losses and never appear in `rows` — a restored worker is on a roster
+    # again — so the count rides on the summary, where the button can see it.
+    heal_pending = len(_heal_query(db, d_from, d_to, names))
     return {
         "from": d_from.isoformat(),
         "to":   d_to.isoformat(),
         "docs_scanned": docs_scanned,
+        "names": sorted(names),
         "rows": rows,
         "summary": {
             "workers":     len(rows),
             "days":        len(days),
             "units":       len(units),
             "hours":       round(hours, 2),
+            "heal_pending": heal_pending,
             "recoverable": counts["recoverable"],
             "day_blocked": counts["day_blocked"],
             "no_batch":    counts["no_batch"],
@@ -268,9 +274,10 @@ def _collect(db: Session, date_from: Optional[str], date_to: Optional[str]) -> d
 def _empty(d_from, d_to, docs_scanned):
     return {
         "from": d_from.isoformat(), "to": d_to.isoformat(),
-        "docs_scanned": docs_scanned, "rows": [],
+        "docs_scanned": docs_scanned, "rows": [], "names": [],
         "summary": {"workers": 0, "days": 0, "units": 0, "hours": 0.0,
-                    "recoverable": 0, "day_blocked": 0, "no_batch": 0},
+                    "heal_pending": 0, "recoverable": 0, "day_blocked": 0,
+                    "no_batch": 0},
     }
 
 
@@ -448,6 +455,33 @@ def export_xlsx(
 # day-state change. Every insert is logged under `EXCHANGE-REPAIR` with its row
 # id, so the write is auditable and individually reversible.
 
+def _heal_query(db: Session, d_from: date_t, d_to: date_t, names):
+    """Restored rows still missing their «Samarali soatlar».
+
+    `effective_hours` is `hours_worked − early_arrival_min/60` — the batch row
+    carries it and `_sync_manager` copies it across, but the first version of
+    the plain restore below did not, so rows put back before v3.19.0 show a dash
+    in that column. It is a pure function of two columns already ON the row, so
+    the top-up needs no source and cannot disagree with anything.
+
+    Three guards keep it to exactly those rows. Only workers an exchange
+    actually named; only rows that HAVE both inputs — a no-show (`X`) has no
+    hours and a nameless split leftover has no early arrival, and NULL is the
+    right answer for both; and never a nameless row, which carries no name to
+    match on in the first place.
+    """
+    if not names:
+        return []
+    return db.query(Attendance).filter(
+        Attendance.date >= d_from,
+        Attendance.date <= d_to,
+        Attendance.worker_name.in_(list(names)),
+        Attendance.effective_hours.is_(None),
+        Attendance.hours_worked.isnot(None),
+        Attendance.early_arrival_min.isnot(None),
+    ).all()
+
+
 def _restore_split(db: Session, d: date_t, name: str, r: dict, actor) -> dict:
     """Put back a worker whose exchange carried a TRANSFER TIME.
 
@@ -602,13 +636,23 @@ def repair(
     """
     wanted = {(k.get("date"), k.get("worker_name")) for k in body.keys
               if k.get("date") and k.get("worker_name")}
-    if not wanted:
-        raise HTTPException(status_code=400, detail="keys is empty")
 
     data  = _collect(db, body.date_from, body.date_to)
     by_key = {(r["date"], r["worker_name"]): r for r in data["rows"]}
-
     actor = payload.get("full_name") or payload.get("sub")
+
+    # Top up rows an earlier press restored without their effective hours,
+    # before writing anything new — it is a pure re-derivation from two columns
+    # already on the row, so it can run unconditionally and cannot double.
+    healed = 0
+    for row in _heal_query(db, _parse_date(data["from"]), _parse_date(data["to"]),
+                           data.get("names") or []):
+        row.effective_hours = round(
+            float(row.hours_worked) - float(row.early_arrival_min) / 60.0, 4)
+        healed += 1
+        log.warning("EXCHANGE-REPAIR healed effective_hours id=%s worker=%r date=%s -> %s by=%s",
+                    row.id, row.worker_name, row.date, row.effective_hours, actor)
+
     done, skipped = [], []
     for d_iso, name in sorted(wanted):
         r = by_key.get((d_iso, name))
@@ -645,6 +689,10 @@ def repair(
             clock_in_out      = br.clock_in_out,
             hours_worked      = br.hours_worked,
             early_arrival_min = br.early_arrival_min,
+            # Copied, not re-derived — `_sync_manager` carries this straight
+            # across from the batch row and a restored row must be
+            # indistinguishable from a projected one.
+            effective_hours   = br.effective_hours,
             # The destination cell the exchange named; the worker's own cell
             # when the document predates cell-level moves (a legacy no-cell day).
             verifix_code      = r["target_cell"] or br.verifix_code,
@@ -664,7 +712,7 @@ def repair(
         })
 
     db.commit()
-    log.warning("EXCHANGE-REPAIR done by=%s restored=%d skipped=%d",
-                actor, len(done), len(skipped))
-    return {"restored": len(done), "skipped": len(skipped),
+    log.warning("EXCHANGE-REPAIR done by=%s restored=%d healed=%d skipped=%d",
+                actor, len(done), healed, len(skipped))
+    return {"restored": len(done), "healed": healed, "skipped": len(skipped),
             "rows": done, "skippedRows": skipped}

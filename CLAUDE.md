@@ -505,11 +505,30 @@ number.
   contain a `position:fixed` overlay).
 - **Disputes are the way back** (`leader_ai_disputes`): the unit's own brigadir
   objects with a mandatory reason from the report page, admins decide inline in
-  Telegram (`approvals.py` kind `leader_dispute` / code `ld`) or on the page.
-  `_settle_dispute` is THE decision core for both. Approving writes
-  `resolution="approved"` on the verdict — that is what restores the weight —
-  and the corrected score re-DMs itself. Authority mirrors the late-day flow and
-  is deliberately not grantable.
+  Telegram (`approvals.py` kind `leader_dispute` / code `ld`), on the page, or
+  from the «Norozliklar» QUEUE (below). `_settle_dispute` is THE decision core
+  for all of them. Approving writes `resolution="approved"` on the verdict —
+  that is what restores the weight — and the corrected score re-DMs itself.
+  Authority mirrors the late-day flow and is deliberately not grantable.
+- **The «Norozliklar» tab is the admin's list of them** (`GET
+  /leaders/disputes` → `components/leaders/Disputes.jsx`, beside
+  «Kechikkanlar» on `/leaders`, tab badge = pending, `?tab=disputes`
+  deep-links). Until it existed the ruling was reachable from exactly two
+  places — an inline Telegram card that scrolls out of the chat, and the day
+  report of the ONE leader it belongs to — so an admin who missed the card had
+  no list to work from and no way to find the report holding the objection.
+  **The card carries the VERDICT, not just the objection**: flags, the model's
+  prose and the window it measured against, all off the same `_as_verdict` /
+  `_window` / `_date_check` / `_time_check` / `_date_plus` helpers the day
+  report reads — a queue that re-derived the rule would show an admin a window
+  the leader was never judged by, and one that showed the reason alone would
+  get rulings made on wording. Photos deliberately stay one tap away on the
+  report, where the whole day can be read. Names come from `_project` (the
+  REGISTER's spelling), so the page scope bar reaches these rows exactly as it
+  reaches the dashboard's; whatever the scope hides is counted in a
+  `ScopeNotice` rather than dropped. Scoped like every other read here — admin
+  all, brigadir their own unit — and `todo` is 0 for anyone who cannot rule, so
+  a brigadir never carries a badge they are unable to clear.
 - **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
   the «Qarorni bekor qilish» button under the dispute box on the report page).
   Deciding is one tap and an ADMIN's own filing IS the approval, so the wrong

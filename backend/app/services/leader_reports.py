@@ -221,23 +221,20 @@ def day_report(db: Session, uid: str) -> dict | None:
     }
 
 
-def _name_chain(db: Session, manager_id: int | None, leader_id: int | None,
-                defs: dict) -> dict[int, dict[str, str]]:
-    """task id → its name in all four languages, resolved leader → supervisor
-    → global.
+def _resolve_names(defs: dict, own: dict, sup: dict) -> dict[int, dict[str, str]]:
+    """THE name rule: task id → its name in all four languages, resolved
+    leader → supervisor → global.
 
     **Precedence is LEVEL first, then language** — the same rule the triage
     queue uses. Resolving language-first lets a global `name_ru` beat the
     supervisor's own `name_uz`, so a task renamed for one unit would show its
     old wording to exactly the people who renamed it.
 
-    One preload for the whole report: the per-row form costs three queries a
-    task, which is thirty-nine for a page nobody is waiting on twice.
+    Takes the three levels already loaded, so the one-report reader and the
+    many-reports reader below can share this without either re-spelling the
+    precedence — two spellings is how one surface starts printing a wording
+    the unit it belongs to never read.
     """
-    own = {r.task_id: r for r in db.query(LeaderTaskLeaderSetting)
-           .filter_by(leader_id=leader_id).all()} if leader_id else {}
-    sup = {r.task_id: r for r in db.query(LeaderTaskSetting)
-           .filter_by(manager_id=manager_id).all()} if manager_id else {}
 
     def pick(src, lang: str) -> str | None:
         if src is None:
@@ -257,6 +254,45 @@ def _name_chain(db: Session, manager_id: int | None, leader_id: int | None,
                          or pick(defs.get(tid), lang) or f"#{tid}")
         out[tid] = row
     return out
+
+
+def _name_chain(db: Session, manager_id: int | None, leader_id: int | None,
+                defs: dict) -> dict[int, dict[str, str]]:
+    """The one-report form: two queries for this report's two override levels.
+
+    One preload for the whole report — the per-row form costs three queries a
+    task, which is thirty-nine for a page nobody is waiting on twice.
+    """
+    own = {r.task_id: r for r in db.query(LeaderTaskLeaderSetting)
+           .filter_by(leader_id=leader_id).all()} if leader_id else {}
+    sup = {r.task_id: r for r in db.query(LeaderTaskSetting)
+           .filter_by(manager_id=manager_id).all()} if manager_id else {}
+    return _resolve_names(defs, own, sup)
+
+
+def names_for_pairs(db: Session, pairs, defs: dict) -> dict:
+    """(manager_id, leader_id) → the same map, for a LIST of reports.
+
+    A queue spanning many units — the disputes tab — would otherwise pay
+    `_name_chain`'s two queries per row; this pays two for the whole page, and
+    resolves through the same `_resolve_names`, so a queue card and the day
+    report behind it can never name one task two different things.
+    """
+    pairs = {(m, l) for m, l in pairs}
+    mids = {m for m, _ in pairs if m}
+    lids = {l for _, l in pairs if l}
+    sup_all: dict[int, dict] = {}
+    own_all: dict[int, dict] = {}
+    if mids:
+        for r in (db.query(LeaderTaskSetting)
+                  .filter(LeaderTaskSetting.manager_id.in_(mids)).all()):
+            sup_all.setdefault(r.manager_id, {})[r.task_id] = r
+    if lids:
+        for r in (db.query(LeaderTaskLeaderSetting)
+                  .filter(LeaderTaskLeaderSetting.leader_id.in_(lids)).all()):
+            own_all.setdefault(r.leader_id, {})[r.task_id] = r
+    return {(m, l): _resolve_names(defs, own_all.get(l) or {}, sup_all.get(m) or {})
+            for m, l in pairs}
 
 
 def _dispute_out(d) -> dict:

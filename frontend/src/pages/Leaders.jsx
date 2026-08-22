@@ -25,6 +25,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import BotDataClear from "../components/leaders/BotDataClear";
 import LateReports from "../components/leaders/LateReports";
+import Disputes from "../components/leaders/Disputes";
 import TaskRequirements from "../components/leaders/TaskRequirements";
 import AiTriage, { AiCalibration } from "../components/leaders/AiTriage";
 import AiRecheck from "../components/leaders/AiRecheck";
@@ -73,7 +74,7 @@ const TXT = {
   uz: {
     title: "Lider nazorati", shift1: "1-smena", shift2: "2-smena",
     tabMonitor: "Monitoring", tabTasks: "Vazifalar", tabClear: "Ma'lumotlarni tozalash", srcBot: "Bot orqali",
-    tabLate: "Kechikkanlar", reasonLbl: "Sabab",
+    tabLate: "Kechikkanlar", tabDisputes: "Norozliklar", reasonLbl: "Sabab",
     pendChip: "So'rov yuborilgan", pendTitle: "Kunni ochish so'ralgan — admin qarori kutilmoqda",
     lateOkChip: "Kechikkan — qabul qilingan", lateOkTitle: "Kechikkan hisobot: {by} ochgan, kun o'z natijasi bilan hisoblanadi",
     avgSuccess: "O'rtacha muvaffaqiyat", timePeriod: "Davr", shift: "Smena",
@@ -237,7 +238,7 @@ const TXT = {
   uz_cyrl: {
     title: "Лидер назорати", shift1: "1-смена", shift2: "2-смена",
     tabMonitor: "Мониторинг", tabTasks: "Вазифалар", tabClear: "Маълумотларни тозалаш", srcBot: "Бот орқали",
-    tabLate: "Кечикканлар", reasonLbl: "Сабаб",
+    tabLate: "Кечикканлар", tabDisputes: "Норозликлар", reasonLbl: "Сабаб",
     pendChip: "Сўров юборилган", pendTitle: "Кунни очиш сўралган — админ қарори кутилмоқда",
     lateOkChip: "Кечиккан — қабул қилинган", lateOkTitle: "Кечиккан ҳисобот: {by} очган, кун ўз натижаси билан ҳисобланади",
     avgSuccess: "Ўртача муваффақият", timePeriod: "Давр", shift: "Смена",
@@ -401,7 +402,7 @@ const TXT = {
   ru: {
     title: "Контроль лидеров", shift1: "Смена 1", shift2: "Смена 2",
     tabMonitor: "Мониторинг", tabTasks: "Задачи", tabClear: "Очистка данных", srcBot: "Из бота",
-    tabLate: "Опоздавшие", reasonLbl: "Причина",
+    tabLate: "Опоздавшие", tabDisputes: "Возражения", reasonLbl: "Причина",
     pendChip: "Запрос отправлен", pendTitle: "Запрошено открытие дня — ждём решения администратора",
     lateOkChip: "Опоздал — засчитан", lateOkTitle: "Опоздавший отчёт: открыл(а) {by}, день засчитан со своим результатом",
     avgSuccess: "Средний успех", timePeriod: "Период", shift: "Смена",
@@ -565,7 +566,7 @@ const TXT = {
   en: {
     title: "Leader Monitoring", shift1: "Shift 1", shift2: "Shift 2",
     tabMonitor: "Monitoring", tabTasks: "Tasks", tabClear: "Clear data", srcBot: "Filed in bot",
-    tabLate: "Late reports", reasonLbl: "Reason",
+    tabLate: "Late reports", tabDisputes: "Objections", reasonLbl: "Reason",
     pendChip: "Request sent", pendTitle: "Opening this day was requested — awaiting an admin decision",
     lateOkChip: "Late — accepted", lateOkTitle: "Late report: opened by {by}; the day counts at its own score",
     avgSuccess: "Average Success", timePeriod: "Period", shift: "Shift",
@@ -1878,6 +1879,9 @@ export default function Leaders() {
   // asks, an admin decides).
   const showClearTab = isAdmin;
   const showLateTab = isAdmin || auth?.role === "supervisor";
+  // The two roles the objection flow is made of: the brigadir who files one and
+  // the admin who rules on it. Everyone else reads the outcome on the report.
+  const showDisputesTab = isAdmin || auth?.role === "supervisor";
 
   // ── AI proof review ────────────────────────────────────────────────────────
   // The RESULT of a review is for every viewer of this page; the reviewer's
@@ -1917,7 +1921,8 @@ export default function Leaders() {
   // «Vazifalar» is reference material for every viewer of the page — a leader
   // reads their own chain, a supervisor their unit's, everyone else follows
   // the filters — so it is never role-gated.
-  const tabOk = { monitor: true, tasks: true, clear: showClearTab, late: showLateTab, ai: isAdmin };
+  const tabOk = { monitor: true, tasks: true, clear: showClearTab, late: showLateTab,
+                  disputes: showDisputesTab, ai: isAdmin };
   const tab = tabOk[tabSaved] ? tabSaved : "monitor";
 
   // The queue's own feed: the tab badge needs the count before the tab is ever
@@ -1929,6 +1934,18 @@ export default function Leaders() {
     enabled: showLateTab,
   });
   const lateTodo = lateData?.todo ?? 0;
+
+  // The objections queue, on the same pattern: the tab badge needs the count
+  // before the tab is ever opened, and Disputes reads the SAME query key, so
+  // the two share one request and can never disagree about what is waiting.
+  // `todo` is the server's answer to «whose turn» — 0 for anyone who cannot
+  // rule, so a brigadir never carries a badge they are unable to clear.
+  const { data: dispData } = useQuery({
+    queryKey: ["leader-disputes"],
+    queryFn: () => api.get("/api/leaders/disputes").then((r) => r.data),
+    enabled: showDisputesTab,
+  });
+  const dispTodo = dispData?.todo ?? 0;
 
   // The admin's Telegram card links here with ?tab=late — a decision is one tap
   // from the DM. Deliberately once per mount: the deep link opens the tab, and
@@ -2900,6 +2917,21 @@ export default function Leaders() {
               </span>
             ),
           }] : []),
+          // Same to-do logic, beside the queue it reads like: the badge is what
+          // is left to RULE ON, so it is 0 for a brigadir, who files objections
+          // but never settles them.
+          ...(showDisputesTab ? [{
+            value: "disputes",
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                {T.tabDisputes}
+                {dispTodo > 0 && (
+                  <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
+                    style={{ background: "#eab308", color: "#1a1a1a" }}>{dispTodo}</span>
+                )}
+              </span>
+            ),
+          }] : []),
           // Same to-do logic as «Kechikkan»: the badge is what is left to
           // decide, so an admin who works the queue watches it reach zero.
           ...(isAdmin ? [{
@@ -2973,6 +3005,16 @@ export default function Leaders() {
         {pageChrome}
         <LateReports canDecide={!!lateData?.can_decide}
           scope={scope} onClearScope={clearScope} />
+      </Layout>
+    );
+  }
+
+  if (tab === "disputes") {
+    return (
+      <Layout title={pageTitle}>
+        {headerBar}
+        {pageChrome}
+        <Disputes scope={scope} onClearScope={clearScope} />
       </Layout>
     );
   }

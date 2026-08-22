@@ -135,6 +135,10 @@ export default function LostWorkers() {
   // from. A transfer-time split IS restorable: its document stored a snapshot,
   // so the backend re-runs the original split and writes both halves.
   const fixable = useMemo(() => rows.filter((r) => r.state !== "no_batch"), [rows]);
+  // Rows an earlier press restored WITHOUT their effective hours. They are not
+  // losses, so they are not in `rows` — the count rides on the summary.
+  const healPending = sum.heal_pending || 0;
+  const actionable = fixable.length + healPending;
 
   // Writes into CLOSED days by design (the operator's call): only the missing
   // rows are added, the closure stands, and nobody is notified. Irreversible
@@ -153,6 +157,7 @@ export default function LostWorkers() {
       toast.success(
         t("lostWorkers.fixDone")
           .replace("{n}", res.restored)
+          .replace("{h}", res.healed ?? 0)
           .replace("{s}", res.skipped),
         res.skipped ? 8000 : undefined,
       );
@@ -283,10 +288,10 @@ export default function LostWorkers() {
               size="lg"
               variant="primary"
               icon={Wrench}
-              disabled={isLoading || fixable.length === 0}
+              disabled={isLoading || actionable === 0}
               onClick={() => { setFixErr(null); setConfirm(true); }}
             >
-              {t("lostWorkers.fix").replace("{n}", fixable.length)}
+              {t("lostWorkers.fix").replace("{n}", actionable)}
             </Button>
             <Button
               size="lg"
@@ -398,9 +403,12 @@ export default function LostWorkers() {
           tone="warning"
           icon={Wrench}
           title={t("lostWorkers.fixTitle")}
-          message={t("lostWorkers.fixMsg").replace("{n}", fixable.length)}
+          message={
+            t("lostWorkers.fixMsg").replace("{n}", fixable.length) +
+            (healPending ? " " + t("lostWorkers.fixMsgHeal").replace("{h}", healPending) : "")
+          }
           confirmLabel={t("lostWorkers.fixConfirm")}
-          challenge={String(fixable.length)}
+          challenge={String(actionable)}
           challengeLabel={t("lostWorkers.fixChallenge")}
           loading={fixing}
           error={fixErr}
