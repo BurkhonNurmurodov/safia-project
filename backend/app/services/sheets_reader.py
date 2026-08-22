@@ -18,8 +18,8 @@ _gc: Optional[gspread.Client] = None
 #
 # Cat H is the sheet's «Категория H (Тозалаш)» — cleaning. Cat I is «Категория
 # I» (Oldingi smena ishi tugashini kutish — waiting for the previous shift to
-# finish). Cat I briefly shipped as "Cat D4" on 2026-07-24; renamed to the
-# sheet's own letter 2026-07-25 (user asked for «Category I» by name).
+# finish). Both are keyed by the sheet's own letter, as every category here is:
+# a key that does not match its column is a key nobody can look up.
 #
 # Cat H has no «тўхтамаганда» half: its second column is «Нечта одам
 # тозалади?», a people-count rather than minutes, so it must never be summed
@@ -75,10 +75,6 @@ _MARK_STOPPED = ("тухтаганда", "to'xtaganda", "toxtaganda")
 # Cat I («Олдинги смена иши тугашини кутиш» — waiting for the previous shift to
 # finish) LEFT this set on 2026-08-22 by user directive: that wait is time the
 # shift stood still, so it belongs in the загрузка like every other stoppage.
-# "Cat D4" is the pre-rename key the SAME category's data was stored under by
-# syncs taken on 2026-07-24/25, so it left with it — those rows are Cat I rows,
-# and counting one spelling while dropping the other would make a day's idle
-# depend on which afternoon it happened to be synced.
 #
 # Cat H («Тозалаш» — cleaning) is what remains: it is planned work the shift
 # does, not a stoppage it suffered.

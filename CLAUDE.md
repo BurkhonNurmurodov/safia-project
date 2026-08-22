@@ -167,10 +167,7 @@ fleet page and the Daily donut start disagreeing about the same minutes.
 - From **2026-08-22** the set is **`{"Cat H"}`**. Cat I («Олдинги смена иши
   тугашини кутиш» — waiting for the previous shift to finish) now COUNTS in the
   загрузка by user directive: that wait is time the shift stood still, so it
-  belongs there like any other stoppage. `"Cat D4"` — the pre-rename key the
-  same category's rows were stored under by syncs taken on 2026-07-24/25 — left
-  with it, because counting one spelling while dropping the other would make a
-  day's idle depend on which afternoon it happened to be synced.
+  belongs there like any other stoppage.
 - Cat H («Тозалаш» — cleaning) is what remains: planned work the shift does,
   not a stoppage it suffered.
 - **Nothing is stored, so nothing needs a re-sync.** `equip_downtime` and the
