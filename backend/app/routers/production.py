@@ -1299,7 +1299,7 @@ def admin_catalog(manager_id: int = Query(...), _: dict = Depends(_verify_admin)
 
 class CatalogCreateBody(BaseModel):
     manager_id: int
-    sap_code: str
+    sap_code: Optional[str] = ""     # blank = a code-less line (then `name` carries it)
     name: Optional[str] = ""
     work_center: str
     op: Optional[str] = None

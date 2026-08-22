@@ -226,7 +226,7 @@ function CatalogFields({ draft, setDraft }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <Field label={t("production.col.sapCode")} required>
+        <Field label={t("production.col.sapCode")} hint={t("production.cat.codeOptional")}>
           <ModalInput value={draft.sap_code} onChange={setDraft("sap_code")} className="font-mono" />
         </Field>
         <Field label={t("production.col.wc")} required>
@@ -949,15 +949,20 @@ export default function Production() {
   const noSapData = !loading && rows.length > 0 &&
     (totals.total_plan_labor || 0) === 0 && (totals.total_actual_labor || 0) === 0;
 
+  // `qty_key` is what pp_daily is keyed by for this line — the SAP code, or a
+  // name-derived token for a code-less line (several of those can share one
+  // Команда, so keying them by a blank code would make them one row).
   const saveOverride = (row, field) => (value) =>
-    override.mutate({ date, sap_code: row.sap_code, work_center: row.work_center, field, value });
+    override.mutate({ date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center, field, value });
 
   // One renderer per column so the picker can hide/reorder freely — each case
   // is the exact cell markup the table previously hard-coded in SAP order.
   const posCell = (key, r, vyp, wc) => {
     switch (key) {
       case "sap_code":
-        return <td key={key} className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>{r.sap_code}</td>;
+        // a line without a SAP code is a real position (dough mixes, unlisted
+        // pastries) — mark the gap the same way the «Опер.» column does
+        return <td key={key} className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>{r.sap_code || "—"}</td>;
       case "op":
         return <td key={key} className="px-3 py-2 text-center font-mono" style={{ color: "var(--text-3)" }}>{r.op ?? "—"}</td>;
       case "name":
@@ -1072,12 +1077,15 @@ export default function Production() {
     setCatDraft({ sap_code: "", name: "", labor_time: "", work_center: "", op: "" });
     setCreateOpen(true);
   };
+  // Команда is always required; the SAP code is not — a line without one is
+  // identified by its name (the backend keys its plan/fact by that name).
   const canSubmitCreate =
-    (catDraft.sap_code?.trim() ?? "") !== "" && (catDraft.work_center?.trim() ?? "") !== "";
+    (catDraft.work_center?.trim() ?? "") !== "" &&
+    ((catDraft.sap_code?.trim() ?? "") !== "" || (catDraft.name?.trim() ?? "") !== "");
   const saveCatCreate = () => {
     const sap = catDraft.sap_code.trim();
     const wc = catDraft.work_center.trim();
-    if (!sap || !wc) return;                         // sap_code + work_center are required
+    if (!wc || (!sap && !catDraft.name.trim())) return;
     const laborRaw = String(catDraft.labor_time).trim();
     const labor = laborRaw === "" ? null : Number(laborRaw.replace(",", "."));
     createCatalog.mutate(
@@ -1095,8 +1103,10 @@ export default function Production() {
   const saveCatEdit = () => {
     const r = editRow;
     if (!r) return;
-    // Send only changed fields; sap_code/name/work_center never blanked. `op` is
-    // optional, so a cleared box IS sent — it un-pins the фаза for this line.
+    // Send only changed fields; name/work_center are never blanked. A cleared SAP
+    // code IS sent when the line has a name to identify it by — code-less lines
+    // are legitimate. `op` is optional, so a cleared box is always sent — it
+    // un-pins the фаза for this line.
     const body = {};
     const sap = catDraft.sap_code.trim();
     const name = catDraft.name.trim();
@@ -1104,7 +1114,7 @@ export default function Production() {
     const op = (catDraft.op ?? "").trim();
     const laborRaw = String(catDraft.labor_time).trim();
     const labor = laborRaw === "" ? null : Number(laborRaw.replace(",", "."));
-    if (sap && sap !== (r.sap_code ?? "")) body.sap_code = sap;
+    if (sap !== (r.sap_code ?? "") && (sap || name)) body.sap_code = sap;
     if (name && name !== (r.name ?? "")) body.name = name;
     if (wc && wc !== (r.work_center ?? "")) body.work_center = wc;
     if (op !== (r.op ?? "")) body.op = op;

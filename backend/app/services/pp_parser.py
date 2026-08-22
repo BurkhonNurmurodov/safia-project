@@ -275,11 +275,14 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
 
     **A line with NO SAP code is still a product.** The real form carries several
     (dough mixes, «Донат», «пирог с творогом» …) — the brigadir works to them and
-    they belong on the page, so only the code is missing, not the row. Such a line
-    needs a name plus something to work with (a трудоёмкость or a Команда); a
-    stray note under the table has neither. A literal '0' code stays junk: it is
-    what a failed VLOOKUP leaves behind, not a product somebody wrote down.
-    The table ends after 5 consecutive rows with neither a code nor a name."""
+    they belong on the page, so only the code is missing, not the row. A '0' in
+    the code cell is read the same way: it is what a failed lookup leaves behind,
+    never a code, and the row is then judged on its content like any other
+    code-less one.
+
+    A row is a product when it carries a SAP code, or — code-less — a name PLUS
+    something to work with (a трудоёмкость or a Команда). A spacer, a caption or
+    a stray note has neither, and 5 such rows in a row end the table."""
     title, rows = _catalog_rows(content, sheet_name)
     if title is None:
         return {"products": [], "work_centers": [], "sheet": None}
@@ -297,19 +300,17 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
     for row in rows[header_i + 1:]:
         sku = _str(_get(row, CAT_SKU))
         name = _str(_get(row, CAT_NAME))
-        if not sku and not name:
+        labor = _get(row, CAT_LABOR)
+        wc = _str(_get(row, CAT_WC))
+        has_labor = isinstance(labor, (int, float))
+        if sku == "0":                      # a failed lookup, not a code
+            sku = ""
+        if not sku and not (name and (has_labor or wc)):
             blanks += 1
             if blanks > 4:
                 break
             continue
         blanks = 0
-        if sku == "0":          # junk row: a failed lookup, not a SAP code
-            continue
-        labor = _get(row, CAT_LABOR)
-        wc = _str(_get(row, CAT_WC))
-        has_labor = isinstance(labor, (int, float))
-        if not sku and not (has_labor or wc):
-            continue            # a bare caption under the table is not a product
         products.append({
             "sap_code": sku,
             "name": name,

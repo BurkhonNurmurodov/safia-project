@@ -83,7 +83,7 @@ from app.routers.brigadirs import build_metrics_list
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
 from app.services.kpi_calculator import compute_metrics, is_direct_role
-from app.services.pp_calc import _round_half_up
+from app.services.pp_calc import _round_half_up, daily_key
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
 router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
@@ -202,7 +202,8 @@ def cell_zagruzka(
 
     # ── Trudoyomkost: Σ labor_time × qty ÷ 60, per (work centre, date) ─────────
     # labor_time lives on the catalog line (per SAP code + WC + operation); the
-    # quantity is per (SAP code, WC, date). Same grain and the same override
+    # quantity is per (daily key, WC, date). Same grain, the same key (a code-less
+    # line is keyed by its name — pp_calc.daily_key) and the same override
     # resolution as the Production dashboard, so the numbers agree with it.
     labor_by_wc_sap: dict[tuple[str, str], float] = defaultdict(float)
     products_missing_labor: set[str] = set()
@@ -212,9 +213,9 @@ def cell_zagruzka(
         if p.work_center not in wanted_wcs:
             continue
         if p.labor_time is None:
-            products_missing_labor.add(f"{p.work_center}/{p.sap_code}")
+            products_missing_labor.add(f"{p.work_center}/{p.sap_code or p.name}")
             continue
-        labor_by_wc_sap[(p.work_center, p.sap_code)] += float(p.labor_time)
+        labor_by_wc_sap[(p.work_center, daily_key(p.sap_code, p.name))] += float(p.labor_time)
 
     plan_min: dict[tuple[str, date], float] = defaultdict(float)
     actual_min: dict[tuple[str, date], float] = defaultdict(float)
