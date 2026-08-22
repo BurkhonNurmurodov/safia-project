@@ -224,6 +224,11 @@ async def lifespan(app: FastAPI):
     # Per-task submission: close tasks whose deadline has gone by.
     from app.services.leader_close import register_autoclose_job
     register_autoclose_job()
+
+    # The day-reconciliation watch: DMs admins when the platform stops showing
+    # someone the uploaded file says worked (services/attendance_reconcile).
+    from app.services.attendance_watch import register_watch as register_reconcile_watch
+    register_reconcile_watch()
     # Worker-concerns nightly sheet crawl + first-boot fill (mirrored in
     # passenger_wsgi.py).
     from app.services.worker_concerns import register_boot_jobs as register_wc_jobs

@@ -60,6 +60,7 @@ from app.models import (
 )
 from app.routers.admin import verify_admin
 from app.services.day_state import day_state
+from app.services import attendance_reconcile
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/admin/exchange-audit", tags=["exchange-audit"])
@@ -297,6 +298,28 @@ def audit(
 ):
     """The report the «Yo'qolgan xodimlar» tab renders."""
     return _collect(db, date_from, date_to)
+
+
+@router.get("/reconcile")
+def reconcile(
+    date_from: Optional[str] = Query(None, alias="from"),
+    date_to:   Optional[str] = Query(None, alias="to"),
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    """The GENERAL check: everyone the uploaded file says worked, against
+    everyone the platform can still show — for every date in the range.
+
+    The report above finds only workers an exchange document NAMED, so it is
+    blind to a cell unticked after a save, a deleted supervisor day, or a day
+    closed before its cells were projected. This asks the same question without
+    caring which of them happened. See `services/attendance_reconcile`.
+    """
+    d_to   = _parse_date(date_to) or date_t.today()
+    d_from = _parse_date(date_from) or (d_to - timedelta(days=DEFAULT_DAYS))
+    if d_from > d_to:
+        raise HTTPException(status_code=400, detail="from is after to")
+    return attendance_reconcile.scan(db, d_from, d_to)
 
 
 # ─── Excel ───────────────────────────────────────────────────────────────────

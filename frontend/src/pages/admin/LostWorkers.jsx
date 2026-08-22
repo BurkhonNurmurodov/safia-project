@@ -13,6 +13,8 @@ import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import ReconcileView from "./ReconcileView";
+import { usePersistentState } from "../../hooks/usePersistentState";
 
 /**
  * «Yo'qolgan xodimlar» — workers an approved → supervisor exchange left on no
@@ -86,6 +88,9 @@ export default function LostWorkers() {
   const { t } = useLang();
   const { tl } = useTranslit();
 
+  // Which question is on screen. Both ask "who is missing"; the exchange one
+  // is narrow and repairable, the reconciliation one is general.
+  const [view, setView] = usePersistentState("lostworkers_view", "exchange");
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgo(180));
   const [dateTo,   setDateTo]   = useState(() => new Date().toISOString().slice(0, 10));
   const [state,    setState]    = useState("all");
@@ -217,8 +222,34 @@ export default function LostWorkers() {
     }
   }
 
+  const viewTabs = (
+    <SegmentedToggle
+      value={view}
+      onChange={setView}
+      asTabs
+      options={[
+        { value: "exchange", label: t("lostWorkers.viewExchange") },
+        { value: "all",      label: t("lostWorkers.viewAll") },
+      ]}
+      ariaLabel={t("lostWorkers.title")}
+    />
+  );
+
+  if (view === "all") {
+    return (
+      <div className="space-y-4">
+        {viewTabs}
+        <ReconcileView
+          dateFrom={dateFrom} dateTo={dateTo}
+          setDateFrom={setDateFrom} setDateTo={setDateTo}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {viewTabs}
       <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
         {t("lostWorkers.intro")}
       </p>

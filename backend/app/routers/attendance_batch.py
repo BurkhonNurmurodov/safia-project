@@ -1508,6 +1508,25 @@ def save(
         batch.saved_by_name = _admin_name(payload)
     db.commit()
 
+    # Did this save leave anybody behind? A projection wipes each target's
+    # (manager, date) and rebuilds it from the ticked cells, which is exactly
+    # how a row written by something else — an approved exchange, an earlier
+    # save of an untick — gets dropped with nothing put back. Ask straight away,
+    # while the person who pressed Save is still here: the 12-hourly watch would
+    # otherwise be the first to notice, up to half a day later.
+    # Read-only and best-effort, AFTER the commit, so it can never affect
+    # attendance that is already correct.
+    lost = []
+    try:
+        from app.services import attendance_reconcile
+        lost = [r for r in attendance_reconcile.missing_for_day(db, d)
+                if r["reason"] == "lost"]
+        if lost:
+            log.warning("ATTENDANCE-RECONCILE save on %s left %d worker(s) on no roster: %s",
+                        d, len(lost), ", ".join(r["worker_name"] for r in lost[:10]))
+    except Exception:
+        log.exception("post-save reconcile failed for %s", d)
+
     # Notification is best-effort and deliberately AFTER the commit: a Telegram
     # hiccup must never roll back attendance that is already correct.
     notified = []
@@ -1535,5 +1554,8 @@ def save(
         "skipped":  skipped,
         "notified": notified,
         "rows":     sum(i["rows"] for i in written),
+        # Anyone this save left on no roster at all. Surfaced on the tab that
+        # caused it rather than only in a log nobody reads.
+        "lost":     lost,
     }
     return out
