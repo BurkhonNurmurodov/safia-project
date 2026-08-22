@@ -1109,16 +1109,22 @@ def undiscovered(db: Session, *, date_from: str | None = None,
     would promise rows the button then never queues.
 
     Narrowed by DATE only. Each row comes back carrying its own
-    `(report_key, shift, manager_id, leader_id)`, so the caller narrows by WHO
-    in memory and tallies the very same rows per dimension for the pickers —
-    one scan, and no way for the summary and the option lists to disagree about
-    what is out there.
+    `(report_key, shift, manager_id, leader_id, task_id)`, so the caller narrows
+    by WHO — and by WHICH TASK — in memory and tallies the very same rows per
+    dimension for the pickers — one scan, and no way for the summary and the
+    option lists to disagree about what is out there.
 
-    Returns `{"rows": [(key, shift, manager_id, leader_id), …], "approx": bool}`.
+    The task id is on the tuple for the same reason the other three are: the
+    re-check modal filters by task, and a census that could not say which task
+    a never-queued row belongs to would report one number under the bar and let
+    the button queue another.
+
+    Returns `{"rows": [(key, shift, manager_id, leader_id, task_id), …],
+    "approx": bool}`.
     """
     floor = floor_date(db)
     known = _existing_refs(db)
-    out: list[tuple[str, int | None, int | None, int | None]] = []
+    out: list[tuple[str, int | None, int | None, int | None, int | None]] = []
     approx = False
 
     # ── bot layer ────────────────────────────────────────────────────────────
@@ -1142,7 +1148,8 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         # never takes — and the figure would never come down.
         rehearsing = leader_bot.bot_from_floors(db)
         entries = (
-            db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id)
+            db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id,
+                     LeaderTaskEntry.task_id)
             .filter(LeaderTaskEntry.day_id.in_(
                         days_q.with_entities(LeaderTaskDay.id).scalar_subquery()),
                     LeaderTaskEntry.done.is_(True),
@@ -1153,13 +1160,13 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         if len(entries) > CENSUS_CAP:
             approx = True
             entries = entries[:CENSUS_CAP]
-        for eid, day_id in entries:
+        for eid, day_id, task_id in entries:
             if bot_ref(eid) in known:
                 continue
             mgr, ldr, when = days.get(day_id, (None, None, None))
             if leader_bot.training(shifts.get(mgr), mgr, when, rehearsing):
                 continue
-            out.append((f"bot:{day_id}", shifts.get(mgr), mgr, ldr))
+            out.append((f"bot:{day_id}", shifts.get(mgr), mgr, ldr, task_id))
 
     # ── sheet layer ──────────────────────────────────────────────────────────
     rows_q = db.query(LeaderChecklist)
@@ -1197,11 +1204,12 @@ def undiscovered(db: Session, *, date_from: str | None = None,
             for tk in (r.tasks or []):
                 if not tk.get("done") or not _sheet_photos(tk):
                     continue
-                ref = sheet_ref(r, int(tk.get("id") or 0))
+                tid = int(tk.get("id") or 0)
+                ref = sheet_ref(r, tid)
                 if ref in known:
                     continue
                 out.append((report_key(ref), info.get("shift"),
-                            info.get("id"), who.get("id")))
+                            info.get("id"), who.get("id"), tid or None))
 
     return {"rows": out, "approx": approx}
 
@@ -1640,10 +1648,10 @@ def _active_run_scope(db: Session) -> dict | None:
     on dates nobody asked about, while the bar read "5 of 222 · 2%" beside
     "19,998 left". The who-filters would land in exactly the same trap.
 
-    Returns `{"date_from","date_to","shift","manager_id","leader_id"}` with the
-    keys that are set, None for a run carrying no narrowing at all (that IS the
-    whole corpus) and for one already drained, so a confinement can never
-    outlive its work.
+    Returns `{"date_from","date_to","shift","manager_id","leader_id",
+    "task_ids"}` with the keys that are set, None for a run carrying no
+    narrowing at all (that IS the whole corpus) and for one already drained, so
+    a confinement can never outlive its work.
     """
     import json
 
@@ -1662,6 +1670,12 @@ def _active_run_scope(db: Session) -> dict | None:
         "date_from": run.get("from"), "date_to": run.get("to"),
         "shift": run.get("shift"), "manager_id": run.get("manager"),
         "leader_id": run.get("leader"),
+        # A LIST, unlike the other four — the modal's task pick is a set of
+        # checkboxes, so the run either names some tasks or names none at all.
+        # `_start_run` writes None for "every task"; an empty list would read as
+        # narrowing here and then filter nothing below, which is the one shape
+        # that lets a confined run quietly spend outside its slice.
+        "task_ids": run.get("tasks") or None,
     }
     return scope if any(v is not None and v != "" for v in scope.values()) else None
 
@@ -1781,8 +1795,8 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
     `quota` marks a run cut short by the free tier so the UI can say so.
 
     Confined to the active run's slice when there is one (`_active_run_scope`)
-    — dates and, since the modal offers them, shift / brigadir / leader. EVERY
-    caller drains through here, the timer included: a periodic firing that
+    — dates and, since the modal offers them, shift / brigadir / leader / task.
+    EVERY caller drains through here, the timer included: a periodic firing that
     ignored the confinement would undo it twenty minutes into the run.
 
     `beat(done, errors)` — optional, called after every row so a watcher can
@@ -1817,6 +1831,8 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
             q = q.filter(LeaderAiReview.manager_id == scope["manager_id"])
         if scope["leader_id"] is not None:
             q = q.filter(LeaderAiReview.leader_id == scope["leader_id"])
+        if scope["task_ids"]:
+            q = q.filter(LeaderAiReview.task_id.in_(scope["task_ids"]))
     # The automatic regime goes FIRST, and in the order the user asked for:
     # oldest day first, one leader finished before the next is started, tasks in
     # catalog order. It is not cosmetic — a day's report DM is sent when its

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
 import Modal from "../ui/Modal";
@@ -66,6 +66,12 @@ const TXT = {
     range: "Sana oralig'i",
     rangeHint: "Bo'sh qoldirilsa — butun tarix.",
     fShift: "Smena", fSup: "Brigadir", fLeader: "Lider",
+    fTasks: "Vazifalar",
+    tHint: "Faqat belgilangan vazifalar qayta tekshiriladi.",
+    tAll: "Hammasi", tNone: "Hech biri",
+    tAllOn: "Barcha vazifalar",
+    tPicked: "{n} ta vazifa tanlandi",
+    tNoneHint: "Kamida bitta vazifa belgilang.",
     allShifts: "Hammasi", allSups: "Barcha brigadirlar", allLeaders: "Barcha liderlar",
     search: "Qidirish…",
     slice: "Tanlangan",
@@ -115,6 +121,12 @@ const TXT = {
     range: "Сана оралиғи",
     rangeHint: "Бўш қолдирилса — бутун тарих.",
     fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер",
+    fTasks: "Вазифалар",
+    tHint: "Фақат белгиланган вазифалар қайта текширилади.",
+    tAll: "Ҳаммаси", tNone: "Ҳеч бири",
+    tAllOn: "Барча вазифалар",
+    tPicked: "{n} та вазифа танланди",
+    tNoneHint: "Камида битта вазифа белгиланг.",
     allShifts: "Ҳаммаси", allSups: "Барча бригадирлар", allLeaders: "Барча лидерлар",
     search: "Қидириш…",
     slice: "Танланган",
@@ -164,6 +176,12 @@ const TXT = {
     range: "Период",
     rangeHint: "Пусто — вся история.",
     fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер",
+    fTasks: "Задачи",
+    tHint: "Перепроверяются только отмеченные задачи.",
+    tAll: "Все", tNone: "Снять все",
+    tAllOn: "Все задачи",
+    tPicked: "выбрано задач: {n}",
+    tNoneHint: "Отметьте хотя бы одну задачу.",
     allShifts: "Все", allSups: "Все бригадиры", allLeaders: "Все лидеры",
     search: "Поиск…",
     slice: "Выбрано",
@@ -213,6 +231,12 @@ const TXT = {
     range: "Date range",
     rangeHint: "Leave empty for all history.",
     fShift: "Shift", fSup: "Supervisor", fLeader: "Leader",
+    fTasks: "Tasks",
+    tHint: "Only the ticked tasks are re-checked.",
+    tAll: "All", tNone: "None",
+    tAllOn: "All tasks",
+    tPicked: "{n} tasks selected",
+    tNoneHint: "Tick at least one task.",
     allShifts: "Both", allSups: "All supervisors", allLeaders: "All leaders",
     search: "Search…",
     slice: "Selected",
@@ -383,15 +407,25 @@ export default function AiRecheck({ errorCount = 0 }) {
   const [shift, setShift] = useState(null);
   const [manager, setManager] = useState(null);   // Manager.id
   const [leader, setLeader] = useState(null);     // RoleProfile.id
+  // WHICH TASKS. `null` is "every task" and is NOT the same value as the full
+  // list: the catalog only arrives with the first response, and a state that
+  // started as an empty array would spend that moment meaning «none ticked».
+  // Ticking the last one back on collapses to `null` again, so the request,
+  // the run record and the confirm all see one shape for "everything".
+  const [tasks, setTasks] = useState(null);       // number[] | null
   const [confirm, setConfirm] = useState(null);   // { n } once the count is in
   const [confirmErr, setConfirmErr] = useState(null);
+
+  // The task pick on the wire. Kept beside the state rather than derived down
+  // with the other option lists, because the summary request is keyed by it.
+  const taskParam = tasks == null ? null : (tasks.length ? tasks.join(",") : "none");
 
   // What this slice actually holds, and the option lists for narrowing it —
   // ONE request, keyed by every filter, so the summary can never describe a
   // wider set than the button will queue and no option is ever a dead end.
   const { data: slice, isFetching: sliceLoading } = useQuery({
     queryKey: ["leader-ai-range", range.from || "", range.to || "",
-               shift ?? "", manager ?? "", leader ?? ""],
+               shift ?? "", manager ?? "", leader ?? "", taskParam ?? ""],
     enabled: open,
     queryFn: () => api.get("/api/leader-ai/range", {
       params: {
@@ -399,6 +433,11 @@ export default function AiRecheck({ errorCount = 0 }) {
         shift: shift ?? undefined,
         manager_id: manager ?? undefined,
         leader_id: leader ?? undefined,
+        // Comma-separated, and «none» spelled out: an empty parameter would be
+        // dropped as blank by the interceptor and read as "all", i.e. the
+        // summary would describe the whole range while the button is refusing
+        // to run. Nothing ticked has to COUNT as nothing.
+        tasks: taskParam ?? undefined,
       },
     }).then((r) => r.data),
   });
@@ -412,7 +451,7 @@ export default function AiRecheck({ errorCount = 0 }) {
   // tap produces, since it is the state the form reaches by touching nothing
   // but the scope.
   const wholeCorpus = scope === "all" && !range.from && !range.to
-    && shift == null && manager == null && leader == null;
+    && shift == null && manager == null && leader == null && tasks == null;
   // `unchecked` only ADDS work — nothing is overwritten, so it earns none of
   // the destructive framing below: no typed challenge, no "cannot be undone",
   // and a verb that says what it does rather than what it replaces. Reusing one
@@ -424,7 +463,11 @@ export default function AiRecheck({ errorCount = 0 }) {
     date_from: range.from || null,
     date_to: range.to || null,
     shift, manager_id: manager, leader_id: leader,
-  }), [scope, range, shift, manager, leader]);
+    // `null` for every task; a LIST otherwise, empty included — the server
+    // filters an empty pick as "none" rather than skipping it, which is the
+    // only safe direction for a control whose empty state is one tap away.
+    task_ids: tasks,
+  }), [scope, range, shift, manager, leader, tasks]);
 
   // Name of a pick, taken from the option list — and from `picked` when the
   // other filters have starved it out of that list, so a selected brigadir is
@@ -437,6 +480,35 @@ export default function AiRecheck({ errorCount = 0 }) {
   const shiftN = (s) => (facets.shift || []).find((o) => o.v === s)?.n;
   const managerName = nameOf("manager", manager);
   const leaderName = nameOf("leader", leader);
+
+  // The task catalog, exactly as the server ships it: EVERY task, in task-number
+  // order, each with what the current slice holds for it. Zero-count rows stay
+  // in place (dimmed) rather than dropping out — the operator finds «task 8» by
+  // reading down the numbers, and a list that reshuffles itself between two date
+  // presses is one nobody can aim.
+  //
+  // HELD in state rather than read straight off the response, because the
+  // summary query is keyed by the pick itself: every tick starts a refetch, and
+  // react-query hands back `undefined` while a new key is in flight. Read
+  // directly, the whole list would blink out from under the finger that ticked
+  // it. The rows stay; only their counts wait for the answer.
+  const [taskOpts, setTaskOpts] = useState([]);
+  useEffect(() => {
+    if (slice?.facets?.task) setTaskOpts(slice.facets.task);
+  }, [slice]);
+  const taskLoading = !taskOpts.length && sliceLoading;
+  const allTaskIds = taskOpts.map((o) => o.v);
+  const pickedTasks = tasks ?? allTaskIds;
+  const allTasksOn = tasks == null;
+  const noTasks = tasks != null && tasks.length === 0;
+  const toggleTask = (id) => {
+    const cur = tasks ?? allTaskIds;
+    const next = cur.includes(id) ? cur.filter((v) => v !== id)
+      : [...cur, id].sort((a, b) => a - b);
+    // Back to every task ⇒ back to `null`, so re-ticking the last box leaves
+    // the form in the same state as never having touched it.
+    setTasks(next.length === allTaskIds.length ? null : next);
+  };
 
   /** `[«All …», …live options]`, busiest first (the server sorts), with the
    *  CURRENT pick forced in even at zero. A list that silently drops what is
@@ -459,10 +531,13 @@ export default function AiRecheck({ errorCount = 0 }) {
   // The slice in words, for the last gate. The confirm printed a count and a
   // warning but never WHAT it was about to re-check — and a narrowed run is
   // exactly the case where "1 240 verdicts?" needs saying out loud.
+  const taskBit = allTasksOn ? null
+    : `${T.fTasks}: ${pickedTasks.slice(0, 6).join(", ")}`
+      + (pickedTasks.length > 6 ? ` +${pickedTasks.length - 6}` : "");
   const sliceBits = [
     (range.from || range.to) ? `${range.from || "…"} – ${range.to || "…"}` : null,
     shift != null ? `S${shift}` : null,
-    managerName, leaderName,
+    managerName, leaderName, taskBit,
   ].filter(Boolean);
 
   const countMut = useMutation({
@@ -534,7 +609,11 @@ export default function AiRecheck({ errorCount = 0 }) {
           footer={
             <>
               <Button variant="secondary" onClick={() => setOpen(false)}>{T.cancel}</Button>
-              <Button loading={countMut.isPending}
+              {/* An empty task pick is a real state (one tap on «none»), and
+                  it can only ever queue nothing — so the button says no here
+                  rather than opening a confirm about zero rows. The reason
+                  sits on the field that caused it. */}
+              <Button loading={countMut.isPending} disabled={noTasks}
                 onClick={() => { setConfirmErr(null); countMut.mutate(); }}>
                 {additive ? T.unGo : T.go}
               </Button>
@@ -601,11 +680,94 @@ export default function AiRecheck({ errorCount = 0 }) {
             </FormField>
           </div>
 
+          {/* ── WHICH TASKS ──────────────────────────────────────────────────
+              The axis the org chain cannot reach, and the commonest reason to
+              re-check anything: ONE task's definition of done was rewritten.
+              Without it, re-earning those verdicts meant re-checking all
+              thirteen tasks of every report in the range and paying for the
+              twelve nobody touched.
+
+              Checkboxes rather than a multi-select trigger: the pick is a SET
+              over a fixed, small catalog, it is read as a whole ("which of the
+              thirteen"), and a closed dropdown would hide the very thing the
+              confirm is about to spend on. Every task carries what this slice
+              holds for it, from the same column the filter tests. */}
+          {/* Mounted BEFORE its options arrive, like the two selects above:
+              the catalog only lands with the first response, and a field that
+              appears a moment later pushes the summary — the thing the operator
+              is reading — down the modal under their thumb. It goes away only
+              once the answer is in and there is genuinely nothing to offer. */}
+          {(taskOpts.length > 0 || taskLoading) && (
+            <FormField label={T.fTasks} hint={T.tHint}
+              error={noTasks ? T.tNoneHint : undefined}>
+              <div className="rounded-xl overflow-hidden"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+                <div className="flex items-center gap-2 px-2.5 py-1.5"
+                  style={{ borderBottom: "1px solid var(--border)" }}>
+                  <span className="text-[11px] tabular-nums"
+                    style={{ color: allTasksOn ? "var(--text-3)" : "var(--text-1)" }}>
+                    {allTasksOn ? T.tAllOn : fmt(T.tPicked, pickedTasks.length)}
+                  </span>
+                  {/* Both directions, always: «none» then one tick is how you
+                      aim at a single task, and it is two taps instead of
+                      twelve. */}
+                  <div className="ml-auto flex items-center gap-2 text-[11px]">
+                    <button type="button" onClick={() => setTasks(null)}
+                      className="underline underline-offset-2"
+                      style={{ color: allTasksOn ? "var(--text-4)" : "var(--brand)" }}>
+                      {T.tAll}
+                    </button>
+                    <button type="button" onClick={() => setTasks([])}
+                      className="underline underline-offset-2"
+                      style={{ color: noTasks ? "var(--text-4)" : "var(--text-3)" }}>
+                      {T.tNone}
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-44 overflow-y-auto p-1 flex flex-col">
+                  {taskLoading && [0, 1, 2, 3].map((i) => (
+                    <div key={i} className="h-6 mx-1.5 my-0.5 rounded animate-pulse"
+                      style={{ background: "var(--border)" }} />
+                  ))}
+                  {taskOpts.map((o) => {
+                    const on = pickedTasks.includes(o.v);
+                    return (
+                      <label key={o.v} title={o.label}
+                        className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs"
+                        style={{ color: on ? "var(--text-2)" : "var(--text-4)" }}>
+                        <input type="checkbox" checked={on}
+                          onChange={() => toggleTask(o.v)}
+                          style={{ accentColor: "var(--brand)" }} />
+                        <span className="w-5 text-[11px] tabular-nums text-right flex-shrink-0"
+                          style={{ color: "var(--text-4)" }}>{o.v}</span>
+                        <span className="truncate flex-1">{o.label}</span>
+                        {/* A count of zero is left in place and said out loud:
+                            a ticked task with nothing behind it is why the
+                            total is smaller than expected. */}
+                        <span className="tabular-nums text-[11px] flex-shrink-0"
+                          style={{ color: o.n ? "var(--text-3)" : "var(--text-4)" }}>
+                          {o.n.toLocaleString()}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </FormField>
+          )}
+
           {/* What the chosen slice actually holds. Sits directly under the
               filters because that is where the doubt is: the dry-run count
-              below tells you the PRICE, this tells you what you are buying. */}
-          <RangeSummary T={T} data={slice} isFetching={sliceLoading}
-            additive={additive} />
+              below tells you the PRICE, this tells you what you are buying.
+
+              Withheld while no task is ticked: the slice is empty for a reason
+              the summary cannot name, and its «no proof photos in this range»
+              would blame the DATES for a state one tap on «none» produced. The
+              reason stays on the field that caused it. */}
+          {!noTasks && (
+            <RangeSummary T={T} data={slice} isFetching={sliceLoading}
+              additive={additive} />
+          )}
 
           <ul className="mt-1 flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-4)" }}>
             <li>· {T.resolved}</li>

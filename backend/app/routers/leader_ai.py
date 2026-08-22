@@ -53,7 +53,7 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import gemini, leader_ai
+from app.services import gemini, leader_ai, leader_tasks
 from app.services.name_map import (
     leader_match, relabel_supervisor, supervisor_match, unit_display_names,
 )
@@ -1209,7 +1209,7 @@ def run(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
 def _narrow(q, *, date_from: str | None = None, date_to: str | None = None,
             shift: int | None = None, manager_id: int | None = None,
-            leader_id: int | None = None):
+            leader_id: int | None = None, task_ids: list[int] | None = None):
     """Apply the re-check modal's scope to a `LeaderAiReview` query.
 
     ONE definition, used by every surface that has to agree about what a run
@@ -1225,6 +1225,13 @@ def _narrow(q, *, date_from: str | None = None, date_to: str | None = None,
     therefore belongs to no leader and no brigadir: it is reachable under «All»
     and nowhere else, which is the honest answer rather than padding it onto
     somebody who may not own it.
+
+    `task_ids` is a SET, not a single pick, because the errand it serves is
+    "task 8's definition of done changed" and tasks come in groups — so the
+    modal offers checkboxes and this takes the list. `None` means every task; an
+    EMPTY list means none, and is filtered as such rather than skipped. That
+    direction is deliberate: a request that ticked nothing must queue nothing,
+    never the whole corpus.
     """
     if date_from:
         q = q.filter(LeaderAiReview.date >= date_from)
@@ -1236,11 +1243,14 @@ def _narrow(q, *, date_from: str | None = None, date_to: str | None = None,
         q = q.filter(LeaderAiReview.manager_id == manager_id)
     if leader_id is not None:
         q = q.filter(LeaderAiReview.leader_id == leader_id)
+    if task_ids is not None:
+        q = q.filter(LeaderAiReview.task_id.in_(task_ids))
     return q
 
 
 def _narrow_labels(db: Session, shift: int | None, manager_id: int | None,
-                   leader_id: int | None) -> list[str]:
+                   leader_id: int | None,
+                   task_ids: list[int] | None = None) -> list[str]:
     """Human names for an active narrowing, resolved ONCE when the run starts.
 
     The progress strip has to say what a run covers, and it polls every few
@@ -1257,6 +1267,16 @@ def _narrow_labels(db: Session, shift: int | None, manager_id: int | None,
     if leader_id is not None:
         p = db.query(RoleProfile.name).filter(RoleProfile.id == leader_id).scalar()
         out.append(p or f"#{leader_id}")
+    # Last, because it is the narrowest — the caption reads in the same
+    # coarse-to-fine order the modal's controls do.
+    if task_ids:
+        # NUMBERS, not names. A task's wording can run to a full sentence and
+        # differ per unit, and this caption sits in a strip beside a date range
+        # and two people's names — «#3, #8» is what an operator recognises and
+        # what fits. A long pick is summarised rather than wrapped.
+        ids = sorted(task_ids)
+        head = ", ".join(f"#{i}" for i in ids[:4])
+        out.append(head if len(ids) <= 4 else f"{head} +{len(ids) - 4}")
     return out
 
 
@@ -1271,6 +1291,16 @@ class RecheckIn(BaseModel):
     shift: int | None = Field(None, ge=1, le=2)
     manager_id: int | None = Field(None, ge=1)
     leader_id: int | None = Field(None, ge=1)
+    # WHICH TASKS, as a set — the axis the who-filters could not reach. The
+    # commonest reason to re-check anything is that ONE task's definition of
+    # done was rewritten, and without this the only way to re-earn those
+    # verdicts was to re-check all thirteen tasks of every report in the range
+    # and pay for the twelve nobody touched.
+    #
+    # None = every task. An empty list is honoured as "none" (see `_narrow`),
+    # so a client that sends its checkboxes with nothing ticked queues nothing
+    # rather than the corpus.
+    task_ids: list[int] | None = None
     # Which verdicts to throw away and re-earn. "flagged" is the cheap, useful
     # default: a stricter reviewer mostly changes its mind about rows it already
     # doubted, and re-running those costs a fraction of the corpus.
@@ -1314,10 +1344,17 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
 
+    # Normalised ONCE, on the model, so the query, the run record, the caption
+    # and the log line all read the same pick. Junk ids are dropped rather than
+    # matched: they can only come from a stale client, and `.in_()` over a
+    # thousand duplicates is a slower way of asking the same question.
+    if body.task_ids is not None:
+        body.task_ids = sorted({t for t in body.task_ids if t > 0})
+
     def _scoped(q):
         return _narrow(q, date_from=body.date_from, date_to=body.date_to,
                        shift=body.shift, manager_id=body.manager_id,
-                       leader_id=body.leader_id)
+                       leader_id=body.leader_id, task_ids=body.task_ids)
 
     # A paused shift (leader_ai.REVIEW_PAUSED_SHIFTS) is excluded from both
     # branches below — re-queueing rows the drain refuses to take would leave
@@ -1347,7 +1384,8 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
                  admin.get("telegram_id"), n, found,
                  body.date_from or "*", body.date_to or "*",
                  " · ".join(_narrow_labels(db, body.shift, body.manager_id,
-                                           body.leader_id)) or "all")
+                                           body.leader_id,
+                                           body.task_ids)) or "all")
         leader_ai.run_async(discover_first=False)
         return {"ok": True, "requeued": n, "found": found,
                 "paused": paused_pick, "counts": leader_ai.counts(db)}
@@ -1375,7 +1413,8 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
              admin.get("telegram_id"), n, body.scope,
              body.date_from or "*", body.date_to or "*",
              " · ".join(_narrow_labels(db, body.shift, body.manager_id,
-                                       body.leader_id)) or "everyone",
+                                       body.leader_id,
+                                       body.task_ids)) or "everyone",
              # Said out loud, not inferred from a smaller number than expected.
              f" — {held} held back, shift "
              f"{'/'.join(map(str, leader_ai.REVIEW_PAUSED_SHIFTS))} paused" if held else "")
@@ -1425,7 +1464,12 @@ def _start_run(db: Session, total: int, body: "RecheckIn", admin: dict) -> None:
         "shift": body.shift,
         "manager": body.manager_id,
         "leader": body.leader_id,
-        "narrow": _narrow_labels(db, body.shift, body.manager_id, body.leader_id),
+        # Normalised to None when it names every task or none: the drain reads
+        # a truthy list as a confinement, so an empty one would mark the run
+        # "narrowed" and then narrow nothing.
+        "tasks": body.task_ids or None,
+        "narrow": _narrow_labels(db, body.shift, body.manager_id, body.leader_id,
+                                 body.task_ids),
         "by": (admin.get("full_name") or str(admin.get("telegram_id") or "admin"))[:120],
     })
     row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
@@ -1542,6 +1586,7 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
                   shift: int | None = Query(None, ge=1, le=2),
                   manager_id: int | None = Query(None, ge=1),
                   leader_id: int | None = Query(None, ge=1),
+                  tasks: str | None = Query(None, pattern=r"^(none|\d+(,\d+)*)$"),
                   db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     """What the chosen SLICE actually holds, and how much of it is already
     checked — plus the option lists for narrowing it further.
@@ -1552,9 +1597,12 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
     a given scope would queue — a number with no denominator, which tells you
     the price but not what you are buying.
 
-    The slice is dates AND who (`shift` / `manager_id` / `leader_id`), because
-    that is what the modal now offers; every number below moves with all five,
-    so the summary can never describe a wider set than the button will queue.
+    The slice is dates, who (`shift` / `manager_id` / `leader_id`) and WHICH
+    TASKS (`tasks`, a comma-separated set — one repeated query parameter would
+    have to survive a client's array serialisation, and this one is read by
+    exactly one caller), because that is what the modal now offers; every number
+    below moves with all of them, so the summary can never describe a wider set
+    than the button will queue.
 
     Two units, because both are real and they are not interchangeable:
 
@@ -1578,9 +1626,16 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
     if not gemini.available():
         return {"enabled": False}
 
+    # A pick naming every task in the catalog is no narrowing at all — kept as
+    # None so the counts, the run record and the drain all see one shape for
+    # "everything" no matter which control produced it.
+    catalog = leader_tasks.ensure_task_defs(db)
+    task_ids = _task_pick(tasks, catalog)
+
     def _scoped(q):
         return _narrow(q, date_from=date_from, date_to=date_to, shift=shift,
-                       manager_id=manager_id, leader_id=leader_id)
+                       manager_id=manager_id, leader_id=leader_id,
+                       task_ids=task_ids)
 
     # ── rows: exact, one aggregate ───────────────────────────────────────────
     by_status = dict(
@@ -1641,7 +1696,7 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
     # themselves on the timer, these wait for someone to press the button.
     census = leader_ai.undiscovered(db, date_from=date_from, date_to=date_to)
     fresh = _who(census["rows"], shift=shift, manager_id=manager_id,
-                 leader_id=leader_id)
+                 leader_id=leader_id, task_ids=task_ids)
     for key, *_ in fresh:
         per_report.setdefault(key, []).append("new")
     rows["new"] = len(fresh)
@@ -1668,19 +1723,46 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
         "enabled": True,
         "from": date_from, "to": date_to,
         "shift": shift, "managerId": manager_id, "leaderId": leader_id,
+        "tasks": task_ids,
         "reports": {"total": len(per_report), "checked": checked,
                     "partial": partial, "unchecked": unchecked,
                     "approx": approx},
         "rows": rows,
         "openFlags": open_flags,
         "facets": _range_facets(db, date_from, date_to, shift,
-                                manager_id, leader_id, census["rows"]),
+                                manager_id, leader_id, task_ids,
+                                census["rows"], catalog),
     }
 
 
+def _task_pick(raw: str | None, catalog) -> list[int] | None:
+    """The `tasks=3,8` query parameter as a list of ids, or None for "all".
+
+    Three answers, and the third is why this is spelled out rather than left to
+    an empty string: absent = every task, a list = those tasks, and the literal
+    «none» = no task at all, which is the operator having unticked everything.
+    A blank parameter could not carry that — the client drops empty query values
+    (`utils/api.js`), so «none» would arrive as «all» and the summary would
+    describe the whole range under a button that is refusing to run.
+
+    Ids outside the catalog are DROPPED rather than passed through: they can
+    only come from a stale client, they would match nothing, and a filter that
+    silently matches nothing is indistinguishable on screen from a range with no
+    work in it. A pick naming every task collapses to None, so one shape means
+    "everything" no matter which control produced it.
+    """
+    if not raw:
+        return None
+    if raw == "none":
+        return []
+    known = {td.id for td in catalog}
+    ids = sorted({int(p) for p in raw.split(",")} & known)
+    return None if ids and len(ids) == len(known) else ids
+
+
 def _who(census_rows, *, shift=None, manager_id=None, leader_id=None,
-         skip: str | None = None):
-    """Narrow census rows by unit/leader/shift, optionally ignoring ONE
+         task_ids=None, skip: str | None = None):
+    """Narrow census rows by unit/leader/shift/task, optionally ignoring ONE
     dimension.
 
     `skip` is what lets a picker count itself out, the same rule the SQL facets
@@ -1690,12 +1772,17 @@ def _who(census_rows, *, shift=None, manager_id=None, leader_id=None,
     """
     out = []
     for row in census_rows:
-        sh, mgr, ldr = row[1], row[2], row[3]
+        sh, mgr, ldr, task = row[1], row[2], row[3], row[4]
         if shift is not None and skip != "shift" and sh != shift:
             continue
         if manager_id is not None and skip != "manager" and mgr != manager_id:
             continue
         if leader_id is not None and skip != "leader" and ldr != leader_id:
+            continue
+        # `task_ids` is a list and an EMPTY one means "nothing ticked", so it is
+        # tested for None rather than for truth — the same rule `_narrow` gives
+        # the SQL side, and the two halves of one count have to agree.
+        if task_ids is not None and skip != "task" and task not in task_ids:
             continue
         out.append(row)
     return out
@@ -1703,15 +1790,17 @@ def _who(census_rows, *, shift=None, manager_id=None, leader_id=None,
 
 def _range_facets(db: Session, date_from: str | None, date_to: str | None,
                   shift: int | None, manager_id: int | None,
-                  leader_id: int | None, census_rows) -> dict:
-    """Option lists for the shift / brigadir / leader pickers, with counts.
+                  leader_id: int | None, task_ids: list[int] | None,
+                  census_rows, catalog) -> dict:
+    """Option lists for the shift / brigadir / leader / task pickers, with
+    counts.
 
-    Three grouped aggregates, no projection pass: `shift`, `manager_id` and
-    `leader_id` are stamped on the row at discovery, so the count beside a name
-    is computed from the very column the filter tests. That self-consistency is
-    the point — the number the operator reads beside «Aripova M.» is exactly
-    how many proof rows picking her will reach, never an estimate from a
-    different resolution path.
+    Four grouped aggregates, no projection pass: `shift`, `manager_id`,
+    `leader_id` and `task_id` are stamped on the row at discovery, so the count
+    beside a name is computed from the very column the filter tests. That
+    self-consistency is the point — the number the operator reads beside
+    «Aripova M.» is exactly how many proof rows picking her will reach, never an
+    estimate from a different resolution path.
 
     Each dimension is counted against every OTHER active filter but not against
     itself, the same rule the triage panel follows: counting a dimension
@@ -1729,7 +1818,7 @@ def _range_facets(db: Session, date_from: str | None, date_to: str | None,
     # Leaving it out made every list empty on a range nobody had discovered yet
     # — dead controls over a set the summary was, by then, correctly reporting
     # as full of unchecked reports.
-    IDX = {"shift": 1, "manager": 2, "leader": 3}
+    IDX = {"shift": 1, "manager": 2, "leader": 3, "task": 4}
 
     def _tally(col, dim, **fixed):
         rows = (_narrow(db.query(col, func.count(LeaderAiReview.id)),
@@ -1737,7 +1826,7 @@ def _range_facets(db: Session, date_from: str | None, date_to: str | None,
                 .filter(col.isnot(None)).group_by(col).all())
         n_by_v = {v: n for v, n in rows}
         for row in _who(census_rows, shift=shift, manager_id=manager_id,
-                        leader_id=leader_id, skip=dim):
+                        leader_id=leader_id, task_ids=task_ids, skip=dim):
             v = row[IDX[dim]]
             if v is not None:
                 n_by_v[v] = n_by_v.get(v, 0) + 1
@@ -1745,11 +1834,21 @@ def _range_facets(db: Session, date_from: str | None, date_to: str | None,
                       key=lambda o: (-o["n"], str(o["v"])))
 
     shifts = _tally(LeaderAiReview.shift, "shift",
-                    manager_id=manager_id, leader_id=leader_id)
+                    manager_id=manager_id, leader_id=leader_id,
+                    task_ids=task_ids)
     mgrs = _tally(LeaderAiReview.manager_id, "manager",
-                  shift=shift, leader_id=leader_id)
+                  shift=shift, leader_id=leader_id, task_ids=task_ids)
     ldrs = _tally(LeaderAiReview.leader_id, "leader",
-                  shift=shift, manager_id=manager_id)
+                  shift=shift, manager_id=manager_id, task_ids=task_ids)
+    # The task list is the one facet that ships its EMPTY options too, and it
+    # is ordered by task number rather than busiest-first. Both are because it
+    # is rendered as a fixed column of checkboxes: an operator looking for
+    # «task 8» reads down the numbers, and a row that vanishes when the count
+    # hits zero is a list that rearranges itself under the thumb between two
+    # date presses. A task with nothing to re-check says «0» in place.
+    counted = {o["v"]: o["n"] for o in _tally(
+        LeaderAiReview.task_id, "task",
+        shift=shift, manager_id=manager_id, leader_id=leader_id)}
 
     # The CURRENT pick is looked up even when the other filters starved it to
     # zero rows — a picker that cannot name what is selected shows an empty
@@ -1763,6 +1862,12 @@ def _range_facets(db: Session, date_from: str | None, date_to: str | None,
 
     return {
         "shift": shifts,
+        # Labelled from the GLOBAL catalog, not per unit. A supervisor may
+        # rename a task for their own leaders, but this pick crosses units by
+        # construction — one row here can stand for six wordings, and the
+        # catalog name is the one an admin configured them all from.
+        "task": [{"v": td.id, "n": counted.get(td.id, 0),
+                  "label": _first_name(td) or f"#{td.id}"} for td in catalog],
         # Relabelled by the same map the register and the queue print, so one
         # person is not two names across two screens.
         "manager": [{**o, "label": relabel_supervisor(mgr_names.get(o["v"]))
@@ -1861,8 +1966,12 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     lo, hi = run.get("from"), run.get("to")
     r_shift, r_mgr, r_ldr = (run.get("shift"), run.get("manager"),
                              run.get("leader"))
+    # `or None` for the same reason the drain reads it that way: an empty list
+    # would filter every row out and leave the bar reading 0 of a run that is
+    # working fine.
+    r_tasks = run.get("tasks") or None
     slice_kw = dict(date_from=lo, date_to=hi, shift=r_shift,
-                    manager_id=r_mgr, leader_id=r_ldr)
+                    manager_id=r_mgr, leader_id=r_ldr, task_ids=r_tasks)
 
     done = _narrow(
         db.query(LeaderAiReview)
@@ -1881,7 +1990,7 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     # The global figure still ships, as `pendingAll`. The queue outside this
     # run is real, it is what Stop would clear, and dropping it from the payload
     # would only move the surprise later.
-    if lo or hi or r_shift or r_mgr or r_ldr:
+    if lo or hi or r_shift or r_mgr or r_ldr or r_tasks:
         pending_run = _narrow(
             db.query(LeaderAiReview)
             .filter(LeaderAiReview.status.in_(("pending", "error")),
