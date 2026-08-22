@@ -79,7 +79,7 @@ const TXT = {
     pace: "Tekshiruv navbat bilan, fonda bajariladi — darrov emas.",
     count: "{n} ta xulosa qayta tekshiriladi",
     countNone: "Bu oraliqda qayta tekshiriladigan xulosa yo'q",
-    pausedNone: "2-smenaning AI tekshiruvi hozircha to'xtatilgan — bu smena navbatga qo'yilmaydi.",
+    pausedNone: "Tanlangan smenaning AI tekshiruvi hozircha to'xtatilgan — bu smena navbatga qo'yilmaydi.",
     counting: "Hisoblanmoqda…",
     cancel: "Bekor qilish",
     confirmTitle: "{n} ta xulosa qayta tekshirilsinmi?",
@@ -134,7 +134,7 @@ const TXT = {
     pace: "Текширув навбат билан, фонда бажарилади — дарров эмас.",
     count: "{n} та хулоса қайта текширилади",
     countNone: "Бу оралиқда қайта текшириладиган хулоса йўқ",
-    pausedNone: "2-сменанинг AI текшируви ҳозирча тўхтатилган — бу смена навбатга қўйилмайди.",
+    pausedNone: "Танланган сменанинг AI текшируви ҳозирча тўхтатилган — бу смена навбатга қўйилмайди.",
     counting: "Ҳисобланмоқда…",
     cancel: "Бекор қилиш",
     confirmTitle: "{n} та хулоса қайта текширилсинми?",
@@ -189,7 +189,7 @@ const TXT = {
     pace: "Проверка идёт очередью в фоне — не мгновенно.",
     count: "Будет перепроверено: {n}",
     countNone: "В этом периоде нечего перепроверять",
-    pausedNone: "ИИ-проверка 2-й смены пока остановлена — эта смена в очередь не ставится.",
+    pausedNone: "ИИ-проверка выбранной смены пока остановлена — эта смена в очередь не ставится.",
     counting: "Считаем…",
     cancel: "Отмена",
     confirmTitle: "Перепроверить заключений: {n}?",
@@ -244,7 +244,7 @@ const TXT = {
     pace: "The re-check drains in the background, in batches — not instantly.",
     count: "{n} verdicts will be re-checked",
     countNone: "Nothing to re-check in this range",
-    pausedNone: "AI review is paused for shift 2 — nothing is queued for it.",
+    pausedNone: "AI review is paused for the selected shift — nothing is queued for it.",
     counting: "Counting…",
     cancel: "Cancel",
     confirmTitle: "Re-check {n} verdicts?",
@@ -551,6 +551,11 @@ export default function AiRecheck({ errorCount = 0 }) {
         // A paused shift says so. The facet counts the operator picked from
         // show its rows sitting right there, so «nothing to check» would read
         // as a bug in the count rather than as the answer.
+        //
+        // The copy names no shift NUMBER on purpose: which shifts are paused is
+        // one tuple in services/leader_ai.py (empty since 2026-08-22, when
+        // shift 2 was un-paused), and a message that hard-codes «shift 2» tells
+        // the next pause a lie the backend has no way to correct.
         showToast(d.paused ? T.pausedNone
           : (additive ? T.unNone : T.countNone), "info");
         return;

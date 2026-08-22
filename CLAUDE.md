@@ -275,37 +275,53 @@ record of other people's paperwork.
   they change a job title, i.e. which role column a present worker lands in,
   never whether they came.
 
-## Automatic proof verification (shift 1, from 13 Aug 2026)
+## Automatic proof verification (BOTH shifts, from 13 Aug 2026)
 
 Leader-checklist proof photos are reviewed by Gemini. Since **2026-08-13** that
-review is **automatic and consequential for shift 1**: nobody presses anything,
-and a flagged proof costs its task immediately. Everything before that date keeps
-the original regime, where a flag is a note and only a human `rejected` moves a
-number — and **shift 2 is not reviewed by the machine at all** (see the pause
-below).
+review is **automatic and consequential**: nobody presses anything, and a
+flagged proof costs its task immediately. Everything before that date keeps the
+original regime, where a flag is a note and only a human `rejected` moves a
+number.
 
-- **Shift 2's review is PAUSED** (user, 2026-08-14) —
-  `leader_ai.REVIEW_PAUSED_SHIFTS = (2,)`, `review_paused(shift)` and
-  `paused_clause()` as its SQL twin. Nothing queues a paused shift (`discover`,
-  `queue_report`, and therefore both bot day-close doors), the drain refuses it
-  where the quota is actually spent, and every «queued» figure excludes it —
-  `_start_run`'s total, `/progress`, `/recheck`, `/retry` — because a queue
-  number nothing works through parks the strip at «40 queued» forever.
-  `should_chain` MUST exclude it too, or a pass with unreachable "work left"
-  chains a new drain every 5 seconds around the clock. This is deliberately NOT
-  the same predicate as `AUTO_SHIFTS`: that one says whose flags COST points,
-  this says whose photos are LOOKED AT — shift 2 was already outside the
-  automatic regime, yet every bot close still queued its proofs and paid for a
-  verdict on each. **One human door stays open**: the admin's per-task «check
-  now» (`review_now` → `queue_report(force=True)`), which reviews the row
-  directly and never touches the queue. Un-pausing is the tuple going back to
-  `()`; nothing was destroyed, because `startup.drop_paused_shift_reviews` only
-  dropped NEVER-JUDGED rows (`reviewed_at IS NULL AND resolution IS NULL`) and
-  `discover()` re-finds every one of them. That cleanup is flag-guarded and its
-  key names the shifts — **changing `REVIEW_PAUSED_SHIFTS` needs a NEW flag
-  key**, same lesson as the review floor.
+- **Shift 2 joined on 2026-08-22 (user), at full parity.** Two switches moved
+  together and they answer different questions, which is the whole reason they
+  have separate names:
+  `leader_ai.REVIEW_PAUSED_SHIFTS = ()` — whose photos are LOOKED AT — and
+  `AUTO_SHIFTS = (1, 2)` — whose flags COST points. Shift 2 had been paused
+  since 2026-08-14 and outside the automatic regime before that, so it was the
+  one shift running on neither. **Consequences to know:** closing a shift-2 bot
+  day now sends it straight to the AI (that close is the whole of shift 2's
+  review — it files ONLY in the bot, so there is no sheet Refresh behind its
+  proofs); flags deduct; the day report DMs the leader and the brigadir; and
+  because `AUTO_FROM` is the ONE floor and shift 2 was deliberately given no
+  floor of its own, **every shift-2 day filed since 13 Aug is in the regime and
+  re-scores to its verified number**. `startup.queue_shift2_backlog` (flag
+  `leader_ai_shift2_backlog_2026_08_22_v1`) is the one-shot that queues those
+  already-closed nights — nothing periodic would have found them, because the
+  recurring discovery pass is the SHEET layer. It is insert-only and rides every
+  bound a live close rides (review floor, rehearsal window, ref dedupe, done +
+  media only), so re-running it under a new key adds exactly the rows the first
+  pass could not. Reports go out newest-first, so today's is never stuck behind
+  a fortnight-old one.
+- **The pause machinery stays live and is the resting state, not dead code.**
+  `review_paused(shift)` and `paused_clause()` (its SQL twin) answer for an
+  empty tuple — `false()` and False — so with nothing paused every door is open.
+  To pause a shift again: put it back in the tuple AND give
+  `startup.drop_paused_shift_reviews` a **NEW flag key**, or the old "already
+  ran" mark makes the new pause a no-op on every box that has booted once (same
+  lesson as the review floor). While a pause holds, nothing queues that shift
+  (`discover`, `queue_report`, both bot day-close doors), the drain refuses it,
+  and every «queued» figure must exclude it — `_start_run`'s total, `/progress`,
+  `/recheck`, `/retry` — because a queue number nothing works through parks the
+  strip at «40 queued» forever. `should_chain` MUST exclude it too, or a pass
+  with unreachable "work left" chains a new drain every 5 seconds around the
+  clock. One human door stays open even then: the admin's per-task «check now»
+  (`review_now` → `queue_report(force=True)`), which reviews the row directly
+  and never touches the queue. The `AiRecheck` «paused» toast names no shift
+  NUMBER, for the same reason — the tuple is the truth, the copy must not
+  contradict it.
 - **ONE predicate owns the boundary**: `leader_ai.in_auto_regime(date, shift)`
-  (`AUTO_FROM = "2026-08-13"`, `AUTO_SHIFTS = (1,)`), with `_auto_clause()` as
+  (`AUTO_FROM = "2026-08-13"`, `AUTO_SHIFTS = (1, 2)`), with `_auto_clause()` as
   its SQL twin. Five surfaces read it — the score overlay, discovery, the
   drain's ordering, the report DM and the day-report page. A second spelling of
   "is this automatic" would show a leader a red badge on a day whose score never
@@ -876,9 +892,37 @@ That state is reachable without anybody doing anything wrong. `lt:cconf` refuses
 to close a day while one enabled task has no answer, and a **camera** task
 writes its answer only when the roll reaches `min_media` — so a leader one shot
 short of a three-photo task is holding a day that nothing will accept and
-nothing will show. The day then waits for `_lt_autoclose`, which runs only when
-**that leader** next opens `/tasks`; for shift 1 `expired_through` is yesterday,
-so nothing can auto-close today's day at all.
+nothing will show.
+
+**For shift 2 that wait is over (2026-08-22, user).** The day-level auto-close
+used to have ONE door — `_lt_autoclose`, which runs only when *that leader*
+next opens `/tasks` — so a leader who never came back left the day open
+forever. `leader_close.close_expired_days` is now THE definition of that close
+and both doors call it: the bot's, and a scheduled sweep
+(`sweep_expired_days`). Two spellings would mean a leader's score depended on
+which door reached the day first.
+
+- **The sweep rides the existing 5-minute job** (`leader_close._sweep`, beside
+  the per-task `autoclose_due`) rather than a cron pinned to the hour. It asks
+  "what is past its deadline", so it lands within minutes of shift 2's 09:00
+  (`expired_through`), heals a day an outage skipped, and needs no timezone of
+  its own. It kicks the drain on a close, so the verified score lands at ~09:05
+  rather than on the next 20-minute tick.
+- **`AUTOCLOSE_SHIFTS = (2,)` is the bound** — one tuple, widened deliberately.
+  Shift 2 is where it bites: its window shuts at 09:00, hours after the crew
+  has gone home, and it files ONLY in the bot, so an unclosed night is simply
+  lost. Shift 1 goes on closing when its leader next opens `/tasks`, unchanged
+  — and for shift 1 `expired_through` is yesterday, so nothing can auto-close
+  today's day at all.
+- **The deadline itself did NOT move** (the user's call): shift 2 still files
+  until 09:00 (`deadline_hhmm`), and the sweep fires at that same hour rather
+  than cutting an hour off what leaders are told they have.
+- **A leader's shift comes from their OWN unit**, exactly as `_lt_shift` reads
+  it, never from the unit stamped on the day — the two doors must not disagree
+  about which hour a checklist dies at.
+- A day with nothing filed still closes at 0 and queues NOTHING (no
+  done-with-media entry exists), so it sends no report DM: there is no verdict
+  to report.
 
 - `GET /admin/leader-tasks/submissions` now returns open days too, each flagged
   `open` and carrying what it is WAITING for: `enabled` / `answered`,
