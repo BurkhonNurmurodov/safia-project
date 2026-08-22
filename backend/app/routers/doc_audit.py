@@ -22,8 +22,10 @@ shapes. None of them is an error by itself; each is a question worth asking:
                 what happened in June's case, and is now refused outright at
                 `_approve_doc` — so new ones cannot appear; the flag exists to
                 surface the ones already in the data.
-  ``flapped``   approved and cancelled more than once. A document whose effect
-                went on and off repeatedly has rewritten its day each time.
+  ``flapped``   approved THREE or more times. A single cancel-and-re-post is
+                ordinary — it is how an operator forces a re-apply — so the bar
+                is deliberately high: at two, this flagged every document in the
+                register and drowned the two flags that mean something.
 
 Read-only. It writes nothing and changes no document: it answers what happened,
 and the decision about any row stays a separate, deliberate act.
@@ -127,7 +129,13 @@ def audit(
                 flags.append("stale")
                 stale_by = age
 
-        if len(approvals) > 1 or sum(1 for a, _t, _w in actions if a == "cancelled") > 1:
+        # A single cancel-and-re-post is ORDINARY here: it is how operators force
+        # a document to re-apply, and the 19.08 exchange in the original report
+        # shows the pattern four seconds apart. Flagging it marked 158 documents
+        # out of 158 — an alarm that fires on normal work teaches people to
+        # ignore the two flags that matter. Only a document rewritten its day
+        # THREE times or more is worth a second look.
+        if len(approvals) >= 3:
             flags.append("flapped")
 
         if not flags:

@@ -4112,6 +4112,12 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
     # after the commit instead of one per document. Built before mutation, so
     # deleted rows are still readable.
     grant_rows: list[tuple] = []
+    # Exchange notifications are fired AFTER the commit, never inside the loop.
+    # A Telegram DM is not transactional: sent mid-transaction it survives a
+    # rollback, so a batch that fails half-way notifies people about approvals
+    # that never happened — and does it again on every retry.
+    pending_notify: list[tuple] = []
+    refused: list[dict] = []
 
     def _grant_row(doc, old_key, new_key):
         if _doc_via_grant(doc, caller, db):
@@ -4124,10 +4130,22 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
         if body.action == "approve":
             if doc.status == "rejected" or not _can_approve_doc(doc, caller, db):
                 continue
+            try:
+                _approve_doc(doc, caller, db)
+            except (StaleDocument, ExchangeTargetNoData) as exc:
+                # One un-postable document must not abort the batch. Raising here
+                # rolled the WHOLE transaction back — so nothing was saved, while
+                # every Telegram DM already sent for the documents processed
+                # before it had gone out for real, and each retry re-sent them.
+                refused.append({
+                    "doc_id": doc.id,
+                    "date":   doc.date.isoformat() if doc.date else None,
+                    "reason": exc.detail.get("code") if isinstance(exc.detail, dict) else "refused",
+                })
+                continue
+            # Recorded only once the approval actually stuck.
             _grant_row(doc, "v.draft", "v.approved")
-            _approve_doc(doc, caller, db)
-            if doc.doc_type == "people_exchange":
-                _notify_exchange(db, doc, "approved", int(caller["sub"]))
+            pending_notify.append((doc, "approved"))
             resolved.append((doc.id, "approved"))
         elif body.action == "cancel":
             if not _can_approve_doc(doc, caller, db):
@@ -4135,7 +4153,7 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
             _grant_row(doc, "v.approved", "v.draft")
             _cancel_doc(doc, caller, db)
             if doc.doc_type == "people_exchange":
-                _notify_exchange(db, doc, "cancelled", int(caller["sub"]))
+                pending_notify.append((doc, "cancelled"))
         elif body.action == "delete":
             is_creator = _is_doc_creator(doc, caller)
             if doc.status == "approved":
@@ -4163,6 +4181,23 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
         done += 1
 
     db.commit()
+
+    # Now that the batch is durable, tell people about it. Best-effort: a
+    # Telegram hiccup must never undo approvals that are already saved.
+    for doc, event in pending_notify:
+        if doc.doc_type != "people_exchange":
+            continue
+        try:
+            _notify_exchange(db, doc, event, int(caller["sub"]))
+        except Exception:
+            logger.exception("bulk %s: notification failed for doc %s", body.action, doc.id)
+    if pending_notify:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("bulk %s: could not persist notifications", body.action)
+
     if grant_rows:
         alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.bulk",
                         details=[("count", len(grant_rows))],
@@ -4175,7 +4210,7 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
                 edit_admin_notices("hr_document", str(doc_id), outcome, name)
         except Exception:
             pass
-    return {"ok": True, "affected": done}
+    return {"ok": True, "affected": done, "refused": refused}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
