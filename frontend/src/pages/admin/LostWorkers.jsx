@@ -80,7 +80,7 @@ function isoDaysAgo(n) {
 
 export default function LostWorkers() {
   const { t } = useLang();
-  const tl = useTranslit();
+  const { tl } = useTranslit();
 
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgo(180));
   const [dateTo,   setDateTo]   = useState(() => new Date().toISOString().slice(0, 10));
