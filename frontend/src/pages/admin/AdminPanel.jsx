@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck,
-  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX,
+  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, FileClock,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -31,6 +31,7 @@ import DisplaySettings from "./DisplaySettings";
 import ShiftTimes from "./ShiftTimes";
 import IdleSource from "./IdleSource";
 import LostWorkers from "./LostWorkers";
+import DocAudit from "./DocAudit";
 
 /**
  * The admin panel shell.
@@ -91,6 +92,9 @@ export const ADMIN_NAV = [
   // roster (an upload wiped the receiving unit's day and nothing put them back).
   // A report, not a repair: restoring a row moves that day's historical numbers.
   { id: "lostworkers",  group: "tools",  Icon: UserX,          labelKey: "admin.tabLostWorkers",  descKey: "admin.desc.lostworkers" },
+  // Cross-document HR history: rejected-then-approved, posted long after the
+  // document's own date, or repeatedly approved/cancelled. Read-only.
+  { id: "docaudit",     group: "tools",  Icon: FileClock,      labelKey: "admin.tabDocAudit",     descKey: "admin.desc.docaudit" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
   // Split out of the old "data" tab, which was a junk drawer: a daily uploader
   // and two chart-colour editors for two OTHER pages, invisible below the fold
@@ -118,6 +122,7 @@ const VIEWS = {
   shifttimes:   ShiftTimes,
   idlesource:   IdleSource,
   lostworkers:  LostWorkers,
+  docaudit:     DocAudit,
   translations: TranslationsEditor,
   display:      DisplaySettings,
   cleanup:      AttendanceCleanup,

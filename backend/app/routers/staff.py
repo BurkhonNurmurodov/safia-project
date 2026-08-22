@@ -3863,11 +3863,51 @@ def reapply_task_exchanges(db: Session, manager_id: int, d: date) -> int:
     return applied
 
 
+# How old a document's DATE may be and still be posted. Approving a stale draft
+# is not a paperwork detail: it APPLIES the document, rewriting a day whose
+# attendance was uploaded, confirmed and counted weeks ago — and every
+# lost-worker incident traced on 2026-08-22 came from exactly that shape, an
+# exchange landing on a unit-day long after the upload that built it.
+#
+# On 2026-08-22 a backlog of June drafts was posted in one burst, silently
+# moving workers across June days. This is the stop: one bound, checked in
+# `_approve_doc`, so EVERY door inherits it — the API, the bulk action and the
+# Telegram ✅ button — instead of three places that have to agree.
+#
+# A draft older than this is not deleted and not rejected; it simply cannot be
+# posted any more. Raise the number here if a genuinely old correction has to
+# go through.
+STALE_APPROVE_DAYS = 14
+
+
+class StaleDocument(HTTPException):
+    """A document whose date is too far in the past to post."""
+
+    def __init__(self, doc_date, age_days: int):
+        super().__init__(status_code=409, detail={
+            "code": "doc_too_old",
+            "date": doc_date.isoformat() if doc_date else None,
+            "age_days": age_days,
+            "max_age_days": STALE_APPROVE_DAYS,
+            "message": (f"Hujjat sanasi {age_days} kun oldin "
+                        f"({doc_date}). {STALE_APPROVE_DAYS} kundan eski hujjatni "
+                        f"tasdiqlab bo'lmaydi — u o'sha kungi davomatni qayta yozadi."),
+        })
+
+
 def _approve_doc(doc: HrDocument, caller: dict, db: Session):
     if doc.status == "approved":
         return
     if doc.status == "rejected":
         raise HTTPException(status_code=409, detail="Rejected documents cannot be posted")
+    # Stale drafts cannot be posted — see STALE_APPROVE_DAYS. Checked before any
+    # effect is applied, so a refused document is left exactly as it was.
+    if doc.date:
+        age = (date.today() - doc.date).days
+        if age > STALE_APPROVE_DAYS:
+            logger.warning("DOC-STALE refused approve of #%s (%s, %s days old) by %s",
+                           doc.id, doc.date, age, caller.get("full_name") or caller.get("sub"))
+            raise StaleDocument(doc.date, age)
     # A → supervisor exchange must not land in a unit whose verifix data for the
     # date isn't uploaded yet — that unit's eventual upload would wipe the
     # transferred rows. Creation already enforces this; re-check here for drafts

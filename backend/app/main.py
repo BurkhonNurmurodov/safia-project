@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -485,6 +485,10 @@ app.include_router(idle_source.router)
 # receiving unit's day. Under /api/*, so the global initData guard covers it;
 # the single route is admin-gated by verify_admin.
 app.include_router(exchange_audit.router)
+# Cross-document HR history audit («Hujjatlar tarixi») — READ-ONLY: which
+# documents were revived after rejection, posted long after their own date, or
+# repeatedly approved/cancelled. Admin-gated per route by verify_admin.
+app.include_router(doc_audit.router)
 
 
 @app.get("/health")
