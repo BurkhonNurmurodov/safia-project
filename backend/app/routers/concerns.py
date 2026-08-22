@@ -267,6 +267,11 @@ def _serialize(
     )
     out = {
         "id": c.id,
+        # The register number the «№» column prints: assigned in creation order,
+        # a property of the concern rather than of the view (see models.py).
+        # `id` is the floor for any row the backfill has not reached — an honest
+        # number beats a blank cell.
+        "seq": c.seq or c.id,
         "leader_profile_id": c.leader_profile_id,
         "leader_role_ref": c.leader_role_ref,
         "leader_name": c.leader_name,
@@ -1014,9 +1019,16 @@ def create_concern(
     owner_role, owner_profile_id, owner_snapshot = _creator_identity(db, payload)
     entry = body.entry_date or date.today()
 
+    # The register number, handed out in creation order and never reused. Read
+    # inside the request (concerns are raised a handful of times a day, so two
+    # inserts racing for the same number is a cosmetic tie, while a unique
+    # constraint would turn that tie into a refused filing).
+    next_seq = (db.query(func.max(LeaderConcern.seq)).scalar() or 0) + 1
+
     # A brand-new concern always opens at "todo": setting status is the
     # responsible holder's call, and the creator isn't that person.
     c = LeaderConcern(
+        seq=next_seq,
         cell_code=cell,
         category=category,
         concern_owner=(owner_snapshot or "").strip() or "—",

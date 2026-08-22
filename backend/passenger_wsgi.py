@@ -69,6 +69,7 @@ try:
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_level_since, add_concern_escalation_names,
         add_concern_shift_manager, add_concern_category,
+        add_concern_seq,
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
         add_task_comment_author_ref, add_notification_recipient_profile,
@@ -133,6 +134,7 @@ try:
     add_concern_escalation_names()
     add_concern_shift_manager()
     add_concern_category()
+    add_concern_seq()
     add_concern_owner_columns()
     add_task_comment_author_ref()
     add_leader_submission_columns()

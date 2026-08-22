@@ -1330,6 +1330,51 @@ def add_concern_category() -> None:
         db.close()
 
 
+def add_concern_seq() -> None:
+    """2026-08-22: the concerns «№» is a REGISTER NUMBER, not a row counter.
+
+    It used to print the row's position in the table as it happened to be sorted
+    and filtered, so with the default date-desc sort the NEWEST concern read as
+    "1", and the same row changed its number the moment anybody touched a
+    filter. A number that describes the view cannot name the concern.
+
+    ``seq`` numbers the concerns once, in the order they were raised, and every
+    new one takes max+1. The backfill only ever fills NULLs and continues after
+    the highest number already handed out, so it is idempotent and can never
+    renumber a concern somebody has already quoted.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS seq INTEGER"
+        ))
+        db.commit()
+        # Read the high-water mark FIRST: an interrupted backfill (or rows
+        # created by a process that already had the column) must keep their
+        # numbers, and the rest continue after them.
+        base = db.execute(text(
+            "SELECT COALESCE(MAX(seq), 0) FROM leader_concerns")).scalar() or 0
+        # created_at is stamped by the server at insert, so this IS the order the
+        # concerns were raised in; id breaks ties and carries any row whose stamp
+        # predates the column (sorted first — such a row is an early one).
+        db.execute(text(
+            "UPDATE leader_concerns c SET seq = r.rn + :base FROM ("
+            "  SELECT id, row_number() OVER (ORDER BY created_at NULLS FIRST, id) AS rn"
+            "  FROM leader_concerns WHERE seq IS NULL"
+            ") r WHERE c.id = r.id"
+        ), {"base": base})
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_leader_concerns_seq "
+            "ON leader_concerns (seq)"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern seq migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_done_at() -> None:
     """Concerns "время выполнения" column: done_at is the exact moment a concern
     flipped to done (completion_date is only day-grained, so minutes need a real

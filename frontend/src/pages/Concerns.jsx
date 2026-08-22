@@ -138,14 +138,26 @@ const fmtDate = (iso, lang) => {
   return `${d}-${mn}, ${y}`;                                 // 2-iyul, 2026 / 2-июл, 2026
 };
 
+// The concern's register number — assigned by the backend in creation order and
+// carried on the row, so it is the same number on every screen. `id` is the
+// floor for a row written before the number existed (the backend serves the
+// same fallback): an honest number beats a blank cell in a column whose whole
+// job is to name the row.
+const concernNo = (r) => r.seq ?? r.id;
+
 // Register column catalog — the ONE source of order, labels and header icons for
 // the concerns table. Cells are rendered by a per-key switch (`listCell` below),
 // so the ColumnsPicker's hide/reorder comes for free.
 const COLS = [
-  // Position of the row in the register AS IT IS CURRENTLY SORTED AND FILTERED —
-  // a counter, not a property of the concern, so it never sorts (there is no
-  // "sort by the order you are already in") and it renumbers with every filter.
-  { key: "num",        labelKey: "concerns.colNum",        icon: Hash,          align: "center", sortable: false },
+  // The concern's REGISTER NUMBER (`seq`, handed out by the backend in creation
+  // order) — a property of the concern, not of the view: it survives every sort,
+  // filter and period, so a row can be named to somebody looking at a different
+  // screen. It therefore SORTS (that ordering is "oldest raised first", which
+  // nothing else on the table offers — the date sort reads entry_date, the day
+  // somebody filled the form in), and a filtered register shows gaps. It used to
+  // be the row's position in the current view, which made the newest concern
+  // "1" under the default date-desc sort and renumbered everything on a filter.
+  { key: "num",        labelKey: "concerns.colNum",        icon: Hash,          align: "center", hintKey: "concerns.colNumHint" },
   { key: "date",       labelKey: "concerns.colDate",       icon: CalendarClock },
   { key: "cell",       labelKey: "concerns.colCell",       icon: LayoutGrid },
   { key: "category",   labelKey: "concerns.colCategory",   icon: Tag },
@@ -1182,6 +1194,7 @@ export default function Concerns() {
     if (!sort.key) return filtered;
     const val = (r) => {
       switch (sort.key) {
+        case "num":      return concernNo(r);
         case "date":     return r.entry_date || "";
         case "cell":     return (r.cell_code || "").toLowerCase();
         case "category": return categoryLabel(r.category || "");
@@ -1198,7 +1211,7 @@ export default function Concerns() {
     const dir = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
       const va = val(a), vb = val(b);
-      if (sort.key === "comments") return (va - vb) * dir;
+      if (sort.key === "comments" || sort.key === "num") return (va - vb) * dir;
       if (sort.key === "deadline" || sort.key === "resolution") {   // blanks always sink
         const an = va == null, bn = vb == null;
         if (an && bn) return 0;
@@ -1834,14 +1847,15 @@ export default function Concerns() {
 
   // ONE cell per column key — the register's <td>s live here so the
   // ColumnsPicker's hide/reorder needs no markup change of its own.
-  const listCell = (key, r, i) => {
+  const listCell = (key, r) => {
     switch (key) {
-      // Row counter — muted, so it orients without competing with the data.
+      // The concern's own number — quiet, but readable enough to be quoted:
+      // this is how one row is named to somebody looking at another screen.
       case "num":
         return (
           <td key={key} className="px-3 py-2.5 text-center font-mono text-[11px] tabular-nums"
-              style={{ color: "var(--text-4)" }}>
-            {i + 1}
+              style={{ color: "var(--text-3)" }}>
+            {concernNo(r)}
           </td>
         );
       case "date":
@@ -2003,7 +2017,7 @@ export default function Concerns() {
           {t("concerns.empty")}
         </div>
       )}
-      {!isLoading && sorted.map((r, i) => {
+      {!isLoading && sorted.map((r) => {
         const expanded = expandedId === r.id;
         // Deadline as a state, not arithmetic: days remaining until
         // entry_date + deadline_days, negative = overdue (matches the charts'
@@ -2026,14 +2040,14 @@ export default function Concerns() {
               background: expanded ? "var(--bg-inner)" : "var(--bg-card)",
             }}
           >
-            {/* row number + date + inline-editable status (tap must not toggle
-                the card) — the counter is the same one the table shows, so a
+            {/* the concern's number + date + inline-editable status (tap must
+                not toggle the card) — the same number the table shows, so a
                 concern read on a phone can be named to somebody looking at the
                 desktop register. */}
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-baseline gap-1.5 min-w-0">
-                <span className="font-mono text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>
-                  {i + 1}.
+                <span className="font-mono text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>
+                  {concernNo(r)}.
                 </span>
                 <span className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>
                   {fmtDate(r.entry_date, lang)}
@@ -2466,6 +2480,7 @@ export default function Concerns() {
                   {visibleCols.map((c) => (
                     <Th key={c.key} icon={c.icon} label={t(c.labelKey)} k={c.key}
                         sort={sort} onSort={c.sortable === false ? undefined : onSort}
+                        hint={c.hintKey ? t(c.hintKey) : undefined}
                         align={c.align} />
                   ))}
                 </tr>
@@ -2483,7 +2498,7 @@ export default function Concerns() {
                     {t("concerns.empty")}
                   </td></tr>
                 )}
-                {!isLoading && sorted.map((r, i) => {
+                {!isLoading && sorted.map((r) => {
                   const expanded = expandedId === r.id;
                   return (
                     <Fragment key={r.id}>
@@ -2493,7 +2508,7 @@ export default function Concerns() {
                         className="align-top cursor-pointer"
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
-                        {visibleCols.map((c) => listCell(c.key, r, i))}
+                        {visibleCols.map((c) => listCell(c.key, r))}
                       </tr>
                       {/* Every row is expandable — the action bar always carries
                           at least «Ko'rish», even for a viewer with no rights. */}
@@ -2840,7 +2855,7 @@ export default function Concerns() {
         <Modal
           onClose={() => setViewRow(null)}
           title={t("concerns.viewTitle")}
-          subtitle={`${fmtDate(viewRow.entry_date, lang)}${viewRow.cell_code ? ` · ${viewRow.cell_code}` : ""}`}
+          subtitle={`${t("concerns.colNum")}${concernNo(viewRow)} · ${fmtDate(viewRow.entry_date, lang)}${viewRow.cell_code ? ` · ${viewRow.cell_code}` : ""}`}
           icon={<Eye size={16} />}
           footer={
             <Button variant="secondary" onClick={() => setViewRow(null)}>{t("concerns.cancel")}</Button>

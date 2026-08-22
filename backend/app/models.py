@@ -1960,6 +1960,15 @@ class LeaderConcern(Base):
     __tablename__ = "leader_concerns"
 
     id                  = Column(Integer, primary_key=True, autoincrement=True)
+    # The concern's REGISTER NUMBER — the «№» column. Handed out in creation
+    # order (max+1) and never reused, so the number is a property of the CONCERN
+    # and not of the view: one row is «42» to its leader, to its brigadir and to
+    # an admin, under every sort, filter and period. A deleted concern leaves its
+    # number unused rather than renumbering everything raised after it — a number
+    # that shifts under rows nobody touched cannot be used to name a row. NULL
+    # only until the one-shot backfill runs (startup.add_concern_seq); readers
+    # fall back to `id`, never to a blank.
+    seq                 = Column(Integer, nullable=True, index=True)
     # Ownership key: the owning leader's role_profiles.id. Profiles exist for
     # every leader (claimed or not), so this is the stable canonical owner.
     leader_profile_id   = Column(Integer, nullable=True, index=True)
