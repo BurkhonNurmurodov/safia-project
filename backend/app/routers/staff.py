@@ -418,11 +418,15 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Опасение передано на уровень «{level_label}»", "«{concern}»\n\n📝 Причина: {reason}\n✍️ Кто: {actor_name}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
         "en": ("A concern moved to {level_label}", "“{concern}”\n\n📝 Reason: {reason}\n✍️ By: {actor_name}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
+    # The resolution note leads the body for the same reason the move reason does
+    # on concern_moved: "X closed it" without HOW is a line nobody can act on,
+    # and the note is mandatory at every door that flips a concern to done.
+    # Legacy notices carry no solution param, so the row simply drops out.
     "concern_resolved": {
-        "uz": ("{actor_name} xavotirni hal qildi", "«{concern}»\n\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни ҳал қилди", "«{concern}»\n\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
-        "ru": ("{actor_name} закрыл(а) опасение", "«{concern}»\n\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
-        "en": ("{actor_name} resolved a concern", "“{concern}”\n\n👤 Leader: {leader_name}\n📅 Date: {date}"),
+        "uz": ("{actor_name} xavotirni hal qildi", "«{concern}»\n\n📝 Yechim: {solution}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни ҳал қилди", "«{concern}»\n\n📝 Ечим: {solution}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} закрыл(а) опасение", "«{concern}»\n\n📝 Решение: {solution}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} resolved a concern", "“{concern}”\n\n📝 Solution: {solution}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_reopened": {
         "uz": ("{actor_name} xavotirni qayta ochdi", "«{concern}»\n\n👤 Lider: {leader_name}\n📅 Sana: {date}"),

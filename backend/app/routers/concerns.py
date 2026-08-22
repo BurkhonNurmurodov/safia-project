@@ -1134,6 +1134,18 @@ def update_concern(
     was_status, was_text = c.status, c.concern_text
     was_deadline = c.deadline_days
 
+    # Closing a concern requires saying HOW it was closed. The note is not a
+    # formality: it is the whole content of the DM the brigadir, the cell's
+    # leader and the holder receive, and a resolution with nothing under it is
+    # indistinguishable from a status pill somebody tapped by accident. The page
+    # asks for one at every door; this is the same rule at the endpoint, which is
+    # reachable without it. Bounded to the FLIP into done and to blanking a note
+    # that exists, so a legacy done row that never carried one stays editable.
+    if body.status == "done" and not (body.solution or "").strip() and (
+        was_status != "done" or c.solution
+    ):
+        raise HTTPException(status_code=400, detail="A resolution note is required")
+
     # Ownership (leader/brigadir) and the creator identity are never reassigned
     # on edit — only the concern fields change. Cell + category are only touched
     # when the payload carries a value, so the minimal inline status-change PUT
@@ -1180,6 +1192,10 @@ def update_concern(
             "leader_name": c.leader_name or _cell_leader_name(db, c.cell_code),
             "date": c.entry_date,
             "concern": _snippet(c.concern_text),
+            # Only concern_resolved prints it, and _render_body drops the row
+            # whole when it is blank — so the reopen/edit DMs and every notice
+            # stored before this param existed render exactly as they did.
+            "solution": _snippet(c.solution or ""),
         },
         int(payload["sub"]), set(),
     ):

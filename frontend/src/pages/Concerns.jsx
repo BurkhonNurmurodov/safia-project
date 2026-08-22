@@ -1468,6 +1468,10 @@ export default function Concerns() {
     if (!form.cell_code) return setFormError(t("concerns.cellRequired"));
     if (!form.category) return setFormError(t("concerns.categoryRequired"));
     if (!form.concern_text.trim()) return setFormError(t("concerns.textRequired"));
+    // The modal is the third door into "done" (the two status pills prompt for
+    // the note themselves) and used to ask for nothing — closing a concern says
+    // how it was closed here too, or the DM that goes out names no resolution.
+    if (form.status === "done" && !form.solution.trim()) return setFormError(t("concerns.noteRequired"));
     saveMutation.mutate();
   }
 
@@ -2716,11 +2720,12 @@ export default function Concerns() {
                       triggerClassName="px-3 py-2 text-sm w-full"
                     />
                   </Field>
-                  <Field label={t("concerns.fieldSolution")}>
+                  <Field label={t("concerns.fieldSolution")} required>
                     <textarea
                       value={form.solution}
                       onChange={(e) => setForm((f) => ({ ...f, solution: e.target.value }))}
                       rows={2}
+                      placeholder={t("concerns.noteHint")}
                       className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
                       style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
                     />
