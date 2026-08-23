@@ -2640,3 +2640,94 @@ class ArcSyncMeta(Base):
     probe           = Column(JSONB, nullable=True)
     probe_at        = Column(DateTime(timezone=True), nullable=True)
     filters         = Column(JSONB, nullable=True)
+
+
+class ActionLog(Base):
+    """THE register of everything that happens on this platform.
+
+    Six partial trails existed before this one — capability uses (grant-authorised
+    actions only, and it returns early for admins), the capability grant audit,
+    HR document history, the ltasks config audit, concern escalations, and a
+    presence heartbeat that says a person was in the app but never what they did.
+    Between them, an admin uploading attendance, closing a day, restoring the
+    database or revealing a browser password left no queryable trace anywhere.
+
+    This table is the one place that answers "what happened, who did it, and what
+    changed". It is APPEND-ONLY: no endpoint deletes from it, and there is no
+    purge tool. At the platform's real rate (a few hundred changes a day) that is
+    ~100k rows a year, which Postgres does not notice.
+
+    Two writers feed it, deliberately:
+
+      * ``ActionLogMiddleware`` records an AUTOMATIC row for every mutating
+        HTTP request (POST/PUT/PATCH/DELETE) under /api and /admin — actor,
+        category, action key, outcome, duration. Nothing has to be remembered
+        for a new endpoint to be covered, which is precisely the discipline
+        ``capability_uses`` lacked.
+      * ``action_log.enrich()``, called from inside the handlers that know
+        something the request line cannot say: the unit's NAME, the day, the
+        old→new values, the operator's reason. It fills in the SAME row.
+        ``enriched`` says which rows got that treatment, so a thin row is never
+        displayed as if it were a rich one.
+
+    Bot taps (``source="bot"``) and scheduled jobs (``source="system"``) call
+    ``action_log.record()`` directly — they never pass through an HTTP route a
+    middleware could see, and an auto-close at 09:00 is as much an action as a
+    button press.
+
+    Every label is a KEY (``category``, ``action``), never a translated string:
+    the tab renders per viewer language through one 4-language table, exactly
+    like the capability-use DMs. Names of people, units and targets ARE
+    snapshotted — a rename must not silently rewrite what the log says happened.
+    """
+    __tablename__ = "action_logs"
+
+    id            = Column(BigInteger, primary_key=True, autoincrement=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    # ── what ──────────────────────────────────────────────────────────────────
+    category      = Column(String, nullable=False, index=True)   # action_log.CATEGORIES
+    action        = Column(String, nullable=False, index=True)   # "attendance.day_closed"
+    outcome       = Column(String, nullable=False, index=True)   # done|refused|denied|error
+    source        = Column(String, nullable=False, index=True)   # telegram|web|bot|system
+
+    # ── who ───────────────────────────────────────────────────────────────────
+    # BOTH keys: the profile is the person (one person may hold two accounts),
+    # the account is what actually authenticated. capability_uses keys only by
+    # account, which cannot answer "everything this person did".
+    actor_profile_key = Column(String, nullable=True, index=True)
+    actor_telegram_id = Column(BigInteger, nullable=True, index=True)
+    actor_name    = Column(String, nullable=True)                # snapshot
+    actor_role    = Column(String, nullable=True)                # snapshot
+    via_capability = Column(String, nullable=True)               # acted through a grant
+    ghost         = Column(Boolean, nullable=False, server_default=text("false"))
+
+    # ── on what ───────────────────────────────────────────────────────────────
+    target_kind   = Column(String, nullable=True, index=True)    # day|document|profile|cell|task…
+    target_id     = Column(String, nullable=True, index=True)
+    target_name   = Column(String, nullable=True)                # snapshot
+    unit_id       = Column(Integer, nullable=True, index=True)   # managers.id
+    unit_name     = Column(String, nullable=True)                # snapshot
+    day           = Column(Date, nullable=True, index=True)      # business date acted on
+
+    # ── the detail ────────────────────────────────────────────────────────────
+    details       = Column(JSONB, nullable=True)   # [[label_key, value], …]
+    changes       = Column(JSONB, nullable=True)   # [[field_key, old, new], …]
+    reason        = Column(Text, nullable=True)    # operator's own words
+    enriched      = Column(Boolean, nullable=False, server_default=text("false"))
+
+    # ── the request it rode in on ─────────────────────────────────────────────
+    method        = Column(String, nullable=True)
+    path          = Column(String, nullable=True)
+    status        = Column(Integer, nullable=True)
+    duration_ms   = Column(Integer, nullable=True)
+    ip            = Column(String, nullable=True)
+    app_version   = Column(String, nullable=True)
+
+    __table_args__ = (
+        # The register's own reading order, and the two filters that always ride
+        # with it: a day of one category, and everything one person ever did.
+        Index("ix_action_logs_at_desc", created_at.desc()),
+        Index("ix_action_logs_cat_at", "category", created_at.desc()),
+        Index("ix_action_logs_actor_at", "actor_profile_key", created_at.desc()),
+    )

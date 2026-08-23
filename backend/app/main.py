@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
         add_cell_shift_times,
+        create_action_log, report_unclassified_routes,
         migrate_factories,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
@@ -114,6 +115,7 @@ async def lifespan(app: FastAPI):
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     add_cell_shift_times()
+    create_action_log()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()
     migrate_idle_interval_status()
@@ -237,6 +239,11 @@ async def lifespan(app: FastAPI):
     # catch-up (mirrored in passenger_wsgi.py; skips without credentials).
     from app.services.arc_sync import register_boot_jobs as register_arc_jobs
     register_arc_jobs()
+
+    # Say out loud which mutating routes the action register cannot classify.
+    # They are still recorded (under «other»), so nothing is lost silently —
+    # this is what keeps ONE list from quietly going stale.
+    report_unclassified_routes(app)
     yield
     shutdown_scheduler()
 
@@ -284,6 +291,15 @@ app.add_middleware(
 # header. Must wrap the route handlers so its ContextVar is visible inside them.
 from app.notify_ctx import GhostModeMiddleware  # noqa: E402
 app.add_middleware(GhostModeMiddleware)
+
+# The action register: one row for every mutating request, automatically.
+# Added AFTER GhostModeMiddleware, so it wraps it — deliberate. Ghost Mode is a
+# request-scoped flag, and a flag that rides the request must never be able to
+# silence the audit OF that request, so this middleware reads the ghost header
+# itself (recording it as a column) instead of consulting a ContextVar that is
+# already reset by the time it finishes. See app/services/action_log.py.
+from app.services.action_log import ActionLogMiddleware  # noqa: E402
+app.add_middleware(ActionLogMiddleware)
 
 
 class NoStoreAPIMiddleware:
@@ -489,6 +505,9 @@ app.include_router(exchange_audit.router)
 # documents were revived after rejection, posted long after their own date, or
 # repeatedly approved/cancelled. Admin-gated per route by verify_admin.
 app.include_router(doc_audit.router)
+# The action register — every change on the platform, by category. Admin-only
+# and read-only: there is no delete or purge route anywhere in it.
+app.include_router(logs.router)
 
 
 @app.get("/health")

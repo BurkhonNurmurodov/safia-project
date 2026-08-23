@@ -3300,3 +3300,89 @@ def seed_idle_source_pilot() -> None:
         print(f"[startup] idle source pilot skipped: {exc}")
     finally:
         db.close()
+
+
+def create_action_log() -> None:
+    """2026-08-23: the ONE action register («Jurnal» admin tab).
+
+    `Base.metadata.create_all` already creates `action_logs` on a fresh box;
+    this adds the columns and indexes to a database that predates the table, and
+    is the place any later column goes. Append-only by design: nothing here — and
+    no endpoint anywhere — ever deletes a row.
+
+    The three composite indexes are the register's own reading order and the two
+    filters that always ride with it (a day of one category; everything one
+    person ever did). Without them the tab table-scans the whole history to
+    render its first page.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS action_logs (
+                id BIGSERIAL PRIMARY KEY,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                category VARCHAR NOT NULL,
+                action VARCHAR NOT NULL,
+                outcome VARCHAR NOT NULL,
+                source VARCHAR NOT NULL,
+                actor_profile_key VARCHAR,
+                actor_telegram_id BIGINT,
+                actor_name VARCHAR,
+                actor_role VARCHAR,
+                via_capability VARCHAR,
+                ghost BOOLEAN NOT NULL DEFAULT false,
+                target_kind VARCHAR,
+                target_id VARCHAR,
+                target_name VARCHAR,
+                unit_id INTEGER,
+                unit_name VARCHAR,
+                day DATE,
+                details JSONB,
+                changes JSONB,
+                reason TEXT,
+                enriched BOOLEAN NOT NULL DEFAULT false,
+                method VARCHAR,
+                path VARCHAR,
+                status INTEGER,
+                duration_ms INTEGER,
+                ip VARCHAR,
+                app_version VARCHAR
+            )
+        """))
+        for stmt in (
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_at_desc ON action_logs (created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_cat_at ON action_logs (category, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_actor_at ON action_logs (actor_profile_key, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_action ON action_logs (action)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_outcome ON action_logs (outcome)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_source ON action_logs (source)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_unit ON action_logs (unit_id)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_day ON action_logs (day)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_target ON action_logs (target_kind, target_id)",
+            "CREATE INDEX IF NOT EXISTS ix_action_logs_tid ON action_logs (actor_telegram_id)",
+        ):
+            db.execute(text(stmt))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] action log migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def report_unclassified_routes(app) -> None:
+    """Name every mutating route the action-log table does not classify.
+
+    The register's coverage rests on ONE list (``action_log.ROUTES``), and the
+    only thing that keeps one list complete is the app saying out loud when a
+    route has fallen out of it. Such a route is still RECORDED — under
+    «other» — so nothing is ever lost silently; this is what makes it visible.
+    """
+    try:
+        from app.services.action_log import unmatched_routes
+        missing = unmatched_routes(app)
+        if missing:
+            print(f"[startup] ACTION-LOG: {len(missing)} unclassified mutating route(s): "
+                  + ", ".join(missing[:20]) + ("…" if len(missing) > 20 else ""))
+    except Exception as exc:
+        print(f"[startup] action log route check skipped: {exc}")
