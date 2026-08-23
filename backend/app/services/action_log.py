@@ -341,6 +341,8 @@ _SKIP = (
 )
 
 _PREFIXES = ("/api/", "/admin/")
+# Reached from a browser before any token exists (see the middleware).
+_WEB_PATHS = ("/api/auth/web/",)
 _METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
 
@@ -405,6 +407,30 @@ def unmatched_routes(app) -> list[str]:
 
 # ── the actor ─────────────────────────────────────────────────────────────────
 
+def _client_ip(headers: dict, scope) -> Optional[str]:
+    """The caller's address, from a source the caller cannot author.
+
+    NEVER the first element of ``X-Forwarded-For``. The origin nginx sets that
+    header with ``$proxy_add_x_forwarded_for``, which APPENDS the real peer to
+    whatever arrived — so element [0] is always the client's own text. Reading
+    it would mean the one field in this register meant to place a person is
+    written by that person, and an 8 KB header would land verbatim in a table
+    that is never purged and rides in every database dump.
+
+    In trust order: Cloudflare's own header (the edge overwrites it), nginx's
+    ``X-Real-IP`` (set from ``$remote_addr``, overwriting any client value),
+    then the ASGI peer — which uvicorn has already resolved for us, since the
+    unit runs ``--proxy-headers --forwarded-allow-ips=127.0.0.1``. Truncated,
+    because a header is attacker-sized and a column is not.
+    """
+    for name in (b"cf-connecting-ip", b"x-real-ip"):
+        v = headers.get(name, b"").decode("latin-1").strip()
+        if v:
+            return v[:64]
+    peer = (scope.get("client") or (None, None))[0]
+    return str(peer)[:64] if peer else None
+
+
 def _decode(scope) -> tuple[Optional[dict], bool, Optional[str]]:
     """(jwt payload, ghost-requested, client ip) off a raw ASGI scope.
 
@@ -414,8 +440,7 @@ def _decode(scope) -> tuple[Optional[dict], bool, Optional[str]]:
     """
     headers = {k.lower(): v for k, v in scope.get("headers", [])}
     ghost = headers.get(b"x-ghost-mode") == b"1"
-    fwd = headers.get(b"x-forwarded-for", b"").decode("latin-1").split(",")[0].strip()
-    ip = fwd or (scope.get("client") or (None, None))[0]
+    ip = _client_ip(headers, scope)
     auth = headers.get(b"authorization", b"")
     if not auth.startswith(b"Bearer "):
         return None, ghost, ip
@@ -783,8 +808,13 @@ class ActionLogMiddleware:
         payload, ghost, ip = _decode(scope)
         category, action = classify(method, path)
         row: dict[str, Any] = {
-            "category": category, "action": action, "source":
-                "web" if (payload or {}).get("web") else "telegram",
+            "category": category, "action": action,
+            # The token says "web" for an authenticated browser session — but a
+            # sign-in and a forgotten password arrive BEFORE there is a token,
+            # and those are precisely the browser rows an admin goes looking
+            # for. The path answers for them.
+            "source": "web" if ((payload or {}).get("web")
+                                or path.startswith(_WEB_PATHS)) else "telegram",
             "ghost": ghost, "ip": ip, "method": method, "path": path,
             "actor_role": (payload or {}).get("role"),
             "actor_name": (payload or {}).get("full_name"),

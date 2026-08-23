@@ -38,7 +38,7 @@ from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
-from sqlalchemy import String, cast, func, or_
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -118,13 +118,31 @@ class _F:
         if self.source and except_ != "source":
             query = query.filter(ActionLog.source.in_(self.source))
         if self.actor and except_ != "actor":
-            # One control, two keys. A person is their PROFILE (they may hold
+            # One control, one person. A person is their PROFILE — they may hold
             # two Telegram accounts, and "everything Aripova did" must return
-            # both), but a row whose profile could not be resolved — a legacy
-            # unbound admin, a stale leader JWT — is still theirs by account,
-            # and dropping it would make the log look like it missed something.
-            query = query.filter(or_(ActionLog.actor_profile_key == self.actor,
-                                     cast(ActionLog.actor_telegram_id, String) == self.actor))
+            # both — but some of their rows carry no profile key at all (a
+            # legacy unbound admin, a stale leader JWT, a resolution that
+            # failed), and dropping those would make the register look like it
+            # missed work it actually recorded.
+            #
+            # So a profile pick also claims the un-keyed rows of the ACCOUNTS
+            # that profile was seen acting from. Bare `telegram_id == actor`
+            # would over-claim in the other direction: it would hand back rows
+            # belonging to a DIFFERENT profile the same account also holds.
+            if ":" in self.actor:
+                tids = select(ActionLog.actor_telegram_id).where(
+                    ActionLog.actor_profile_key == self.actor,
+                    ActionLog.actor_telegram_id.isnot(None)).distinct()
+                query = query.filter(or_(
+                    ActionLog.actor_profile_key == self.actor,
+                    and_(ActionLog.actor_profile_key.is_(None),
+                         ActionLog.actor_telegram_id.in_(tids))))
+            else:
+                # A numeric key is only ever offered when NO profile was ever
+                # resolved for that account, so the account IS the identity.
+                query = query.filter(
+                    and_(ActionLog.actor_profile_key.is_(None),
+                         cast(ActionLog.actor_telegram_id, String) == self.actor))
         if self.unit_id and except_ != "unit":
             query = query.filter(ActionLog.unit_id == self.unit_id)
         if self.enriched == "auto" and except_ != "enriched":
@@ -241,7 +259,11 @@ def summary(
 
     scoped = f.apply(db.query(ActionLog))
     total = scoped.with_entities(func.count(ActionLog.id)).scalar() or 0
-    denied = (f.apply(db.query(func.count(ActionLog.id)), except_="outcome")
+    # Every filter applies, the outcome one included. The tile is rendered as a
+    # SHARE of `total` ("15 of 100 — denied"), and two numbers taken from
+    # different row sets cannot be read as a ratio: with Outcome = «done»
+    # selected it would otherwise print 15 denied above a table holding none.
+    denied = (f.apply(db.query(func.count(ActionLog.id)))
               .filter(ActionLog.outcome.in_(("denied", "refused", "error"))).scalar() or 0)
     actors = (scoped.with_entities(
         func.count(func.distinct(func.coalesce(
@@ -283,13 +305,38 @@ def facets(
     and the payload says so (`actions_narrowed`), because a shortened list must
     never be mistaken for missing data.
     """
-    actors = (f.apply(db.query(
-        func.coalesce(ActionLog.actor_profile_key,
-                      cast(ActionLog.actor_telegram_id, String)).label("key"),
+    # ONE ROW PER PERSON. Grouping on coalesce(profile, account) alone splits
+    # somebody whose profile resolved for most of their rows and not for the
+    # rest into two entries carrying the same name — «Aripova · 40» beside
+    # «Aripova · 3», neither of which is the answer to "what did Aripova do".
+    # So the un-keyed rows of an account are folded into the profile that
+    # account was seen acting as, matching exactly what `_F.apply` selects.
+    #
+    # No LIMIT. The list is already bounded by the window (as `units` and
+    # `actions` beside it are), and the picker searches — while a silent cap
+    # would let the client drop a pick that fell off the end and quietly show
+    # the reader everybody's actions in place of one person's.
+    raw = (f.apply(db.query(
+        ActionLog.actor_profile_key.label("pk"),
+        ActionLog.actor_telegram_id.label("tid"),
         func.max(ActionLog.actor_name).label("name"),
         func.max(ActionLog.actor_role).label("role"),
         func.count(ActionLog.id).label("n")), except_="actor")
-        .group_by("key").order_by(func.count(ActionLog.id).desc()).limit(300).all())
+        .group_by(ActionLog.actor_profile_key, ActionLog.actor_telegram_id).all())
+
+    owner = {tid: pk for pk, tid, _n, _r, _c in raw if pk and tid}
+    folded: dict[str, dict] = {}
+    for pk, tid, name, role, n in raw:
+        key = pk or owner.get(tid) or (str(tid) if tid else None)
+        if not key:
+            continue
+        e = folded.setdefault(key, {"key": key, "name": name, "role": role, "count": 0})
+        e["count"] += n
+        # A profile-keyed row's name/role is the better label: an un-keyed row
+        # may predate the binding that gave the person their current post.
+        if pk:
+            e["name"], e["role"] = name or e["name"], role or e["role"]
+    actors = sorted(folded.values(), key=lambda a: -a["count"])
 
     units = (f.apply(db.query(ActionLog.unit_id, func.max(ActionLog.unit_name),
                               func.count(ActionLog.id)), except_="unit")
@@ -303,8 +350,7 @@ def facets(
                .order_by(func.count(ActionLog.id).desc()).all())
 
     return {
-        "actors": [{"key": k, "name": n, "role": r, "count": c}
-                   for k, n, r, c in actors if k],
+        "actors": actors,
         "units": [{"id": i, "name": n, "count": c} for i, n, c in units],
         "actions": [{"key": a, "category": cat, "count": c} for a, cat, c in actions],
         "actions_narrowed": bool(f.category),

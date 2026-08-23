@@ -320,7 +320,13 @@ export function LogDetail({ r }) {
   ].filter(Boolean);
 
   return (
-    <div className="px-3 py-3 space-y-3" style={{ background: "var(--bg-inner)" }}>
+    // `whitespace-normal` is load-bearing, not decoration: TableCard sets
+    // `whitespace-nowrap` on the <table> element and white-space INHERITS, so
+    // without this reset every `break-words` below is inert and a danger row's
+    // reason renders as one endless line the reader has to scroll sideways
+    // through. Reset here rather than passing `wrap` to TableCard, which would
+    // relax the whole register to fix one panel.
+    <div className="px-3 py-3 space-y-3 whitespace-normal" style={{ background: "var(--bg-inner)" }}>
       {facts.length > 0 && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-4)" }}>
@@ -476,7 +482,7 @@ export default function LogTable({
     if (!rows.length) {
       return (
         <tr>
-          <td colSpan={cols.length} className="px-3 py-6">{empty}</td>
+          <td colSpan={cols.length} className="px-3 py-6 whitespace-normal">{empty}</td>
         </tr>
       );
     }

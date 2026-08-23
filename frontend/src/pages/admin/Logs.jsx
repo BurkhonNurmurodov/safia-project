@@ -60,6 +60,9 @@ const LEVELS = ["", "rich", "auto"];
 // The workbook's own columns (backend `_COLS`), so the sheet's headers are the
 // ones the reader saw on screen. Not the same list as any one table view: the
 // export is deliberately the full record.
+// Backend column key → the dictionary key the table already localises.
+const EXPORT_COL_T = { actor: "who", actor_role: "role" };
+
 const EXPORT_COLS = [
   "date", "time", "category", "action", "actor", "actor_role", "source",
   "outcome", "unit", "target", "day", "changes", "reason", "path", "status",
@@ -403,7 +406,13 @@ export default function Logs() {
       // keys only, so every label it prints comes from here.
       const fieldKeys = [...new Set(rows.flatMap((r) => (r.changes || []).map((c) => c.f)))];
       const labels = {
-        ...Object.fromEntries(EXPORT_COLS.map((k) => [`col.${k}`, t(`logs.col.${k}`)])),
+        // The backend names two columns differently from the table's own
+        // dictionary (`actor`/`actor_role` vs `who`/`role`). Mapped, and routed
+        // through `labelOf`, because a bare t() miss returns the KEY — and the
+        // backend treats that truthy string as a valid header, so the workbook
+        // shipped a column literally titled "logs.col.actor" in every language.
+        ...Object.fromEntries(EXPORT_COLS.map(
+          (k) => [`col.${k}`, labelOf(t, "logs.col.", EXPORT_COL_T[k] || k)])),
         ...Object.fromEntries((sum?.categories || []).map((c) => [`cat.${c.key}`, labelOf(t, "logs.cat.", c.key)])),
         ...Object.fromEntries(OUTCOMES.map((k) => [`out.${k}`, labelOf(t, "logs.out.", k)])),
         ...Object.fromEntries(SOURCES.map((k) => [`src.${k}`, labelOf(t, "logs.src.", k)])),

@@ -995,6 +995,79 @@ which door reached the day first.
   on a day-close unit ⇒ they simply never pressed «KUNNI YOPISH». `expired` ⇒ it
   will close (and go to the AI) the moment that leader reopens the bot.
 
+## The action register (`/admin/upload?tab=logs`)
+
+From **2026-08-23** every change on the platform lands in ONE append-only table,
+`action_logs`, read on the admin «Jurnal» destination. Six partial trails existed
+before it — `capability_uses` (grant-authorised actions only, and it returns
+early for admins), `capability_audit`, `hr_document_history`,
+`leader_task_config_audit`, `concern_escalations`, and the `user_activity`
+heartbeat that says a person was in the app and nothing about what they touched.
+Between them an admin uploading attendance, closing a day, deleting a profile,
+restoring the database or revealing a browser password left **no queryable trace
+anywhere**. All six survive unchanged beside this one; nothing was retired.
+
+- **`services/action_log.py` is THE definition** — the writer, the middleware and
+  the route table. Two writers, deliberately:
+  `ActionLogMiddleware` records an AUTOMATIC row for every POST/PUT/PATCH/DELETE
+  under `/api` and `/admin` (actor, category, action, outcome, duration), so a
+  new endpoint is covered the moment it exists — the discipline `capability_uses`
+  lacked; and `enrich()`, called INSIDE a handler, fills the SAME row with what
+  only the handler knows (unit name, business day, old→new, the operator's
+  reason). One request is always exactly one line. `enriched` marks the rows that
+  got the second treatment, so **a thin row is never displayed as a rich one**.
+  `enrich()` never raises and is a **no-op outside a recorded request** — call it
+  unconditionally. Its ARGUMENT expressions are not protected, so never build one
+  from an instance a commit or delete has already expired.
+- **`ROUTES` is THE list** — (method, path) → (category, action) for all 189
+  mutating routes, first-match-wins so **specific must precede generic** (the
+  three `/api/profiles/admin/cells/*` routes sit in the identity block for
+  exactly this reason). An unmatched route still gets a row, under «other», AND
+  is named at boot by `report_unclassified_routes(app)`: one list stays complete
+  only if the app says out loud when something falls out of it. Five telemetry
+  paths are excluded on purpose (activity ping, ui-prefs, boot/crash report,
+  `/bot/webhook` — the envelope, whose handlers record themselves).
+- **Bot taps and jobs use the direct door.** `record_bot()` = a PERSON acted in
+  Telegram (day close, task close, approvals, registration, the broadcast
+  composer); `record_system()` = a scheduled job did (the 09:00 auto-close, the
+  AI drain, report sends, syncs). A job writes **one row per pass, never one per
+  item**, and nothing on a tick where nothing happened.
+- **14 categories**, in rail order: attendance · documents · identity · sessions
+  · org · leader_config · leader_review · shopfloor · collab · comms ·
+  sync_export · config · danger · other.
+- **Keys, never sentences.** `category` and `action` are keys; the tab renders
+  them through `logs.*` in all four languages, and an untranslated key is
+  prettified rather than printed raw. Names of people, units and targets ARE
+  snapshotted — a rename must not rewrite what the log says happened.
+- **Never a second place a secret is readable.** The Gemini key records its
+  LENGTH; `/admin/settings` masks any key naming a key/token/secret/password;
+  the web-login block records the username and the event, never the password —
+  including on `reveal`, which is itself an event worth a row. The register rides
+  in every `db-dump`, so anything unbounded (a name list, a file body) belongs as
+  a COUNT.
+- **`ip` comes from `cf-connecting-ip` → `x-real-ip` → the ASGI peer, never
+  `X-Forwarded-For[0]`** — nginx APPENDS the real peer to whatever the client
+  sent, so element 0 is the caller's own text and the one field meant to place a
+  person would be written by that person. Truncated to 64 chars.
+- **Ghost Mode is recorded, not obeyed** (a column). A flag that rides the
+  request must never let the audited request silence its own audit — the rule
+  `capability_alerts` already states.
+- **Append-only, forever.** No delete route, no purge tool, no retention job. At
+  a few hundred changes a day that is ~100k rows a year. A `db-restore` replaces
+  the table like any other and writes one row describing itself.
+- Admin-only and NOT grantable: no capability exists for it, so
+  `capTabs.includes(capKey ?? id)` can never admit a grantee — the `permissions`
+  model. All five endpoints in `routers/logs.py` carry `verify_admin`.
+- Reading it: the CATEGORY RAIL is the spine, not a filter — its counts are
+  computed with every filter applied EXCEPT the category, because its job is
+  telling the reader where the rest of the activity is. **Table COLUMNS follow
+  the selected category** (one `COLUMNS` map + one per-key `cell()` switch); a
+  row expands IN PLACE, never into a modal, because the reader is scanning a
+  sequence. New rows never arrive under the reader's hands — they wait behind a
+  «N new» button. Colour on this page means STATUS only: the four outcomes own
+  the traffic light and the categories are separated by ICON, so a category chip
+  can never be mistaken for a verdict.
+
 ## Browser login (the second door)
 
 The app has two front doors into the **same** session. Telegram is the first:
