@@ -17,11 +17,15 @@ import EmptyState from "../../components/ui/EmptyState";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { FilterPanel, OptsFilter, PickFilter } from "../../components/ui/ColumnFilter";
-import CategoryRail from "../../components/admin/logs/CategoryRail";
-import LogTable from "../../components/admin/logs/LogTable";
+// Sibling parts live under `components/admin/actionlog/`, NOT `.../logs/`:
+// frontend/.gitignore carries a bare `logs/` rule (for runtime log folders),
+// which matches a directory of that name at ANY depth — a components folder
+// called `logs` builds locally and ships nothing.
+import CategoryRail from "../../components/admin/actionlog/CategoryRail";
+import LogTable from "../../components/admin/actionlog/LogTable";
 import {
   GREEN, RED, fmtDay, labelOf, num, timeAgo, tpl,
-} from "../../components/admin/logs/taxonomy";
+} from "../../components/admin/actionlog/taxonomy";
 
 /**
  * «Jurnal» — the register of everything anybody does on this platform.
