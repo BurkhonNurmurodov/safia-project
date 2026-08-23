@@ -28,7 +28,7 @@ from datetime import date as date_t, timedelta
 
 from app.database import SessionLocal
 from app.models import AppSetting
-from app.services import attendance_reconcile
+from app.services import action_log, attendance_reconcile
 
 log = logging.getLogger(__name__)
 
@@ -108,11 +108,28 @@ def run_watch() -> int:
         # Telegram stack and this module is imported by the scheduler at boot.
         from app.telegram_bot import bot, _admin_ids
         text = _message(fresh, len(lost))
+        sent = 0
         for admin_id in _admin_ids():
             try:
                 bot.send_message(admin_id, text, parse_mode="HTML")
+                sent += 1
             except Exception:
                 log.exception("reconcile watch: could not DM admin %s", admin_id)
+        # The register learns what the DM said. Only a pass that actually FOUND
+        # something new writes a row — the timer fires twice a day and a line
+        # saying "nothing was lost" every twelve hours is how a register stops
+        # being read. `day` is the most recent affected date, so the row sorts
+        # beside the attendance work that caused it.
+        days = sorted({r["date"] for r in fresh})
+        action_log.record_system(
+            "attendance", "attendance.reconcile_alert", db=db,
+            target_kind="day", target_id=days[-1] if days else None,
+            day=days[-1] if days else None,
+            details=[("workers", len(fresh)), ("total", len(lost)),
+                     ("from_date", days[0] if days else None),
+                     ("to_date", days[-1] if days else None),
+                     ("sent", sent)],
+        )
         return len(fresh)
     except Exception:
         log.exception("attendance reconcile watch failed")

@@ -53,7 +53,7 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import gemini, leader_ai, leader_tasks
+from app.services import action_log, gemini, leader_ai, leader_tasks
 from app.services.name_map import (
     leader_match, relabel_supervisor, supervisor_match, unit_display_names,
 )
@@ -804,6 +804,12 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
 
     who = (admin.get("full_name") or admin.get("username")
            or str(admin.get("telegram_id") or "admin"))[:160]
+    # WHAT the machine found is half the ruling: «approved» means nothing
+    # without the flag it overruled, and the flags go with the verdict when the
+    # row is re-derived later.
+    was = rev.resolution
+    lines = [("leader", rev.leader_id), ("task", rev.task_id),
+             ("verdict", ", ".join(str(f) for f in (rev.flags or [])) or "clean")]
 
     # A ruling written here overrules whatever a dispute decided on the same
     # verdict, so the dispute row retires with it — otherwise the day report
@@ -819,6 +825,11 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
         supersede_dispute(db, rev.ref, None, who)
         db.commit()
         log.info("leader-ai: %s reopened %s", who, rev.ref)
+        action_log.enrich(
+            target_kind="verdict", target_id=rev.ref, unit_id=rev.manager_id,
+            day=rev.date, details=lines,
+            changes=[("status", was or "open", "open")],
+        )
         return {"ok": True, "ref": rev.ref, "resolution": None,
                 "reported": _rescore_day(db, rev),
                 "counts": leader_ai.counts(db)}
@@ -830,6 +841,11 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
     supersede_dispute(db, rev.ref, body.resolution, who)
     db.commit()
     log.info("leader-ai: %s ruled %s on %s", who, rev.resolution, rev.ref)
+    action_log.enrich(
+        target_kind="verdict", target_id=rev.ref, unit_id=rev.manager_id,
+        day=rev.date, reason=rev.resolution_note, details=lines,
+        changes=[("status", was or "open", rev.resolution)],
+    )
 
     if body.resolution in ("rejected", "requeried"):
         _notify_leader(db, rev)
@@ -932,6 +948,14 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     win, checked, timed, plus = leader_ai.date_rule_for(
         db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
     if rev.status in ("ok", "flagged") and not body.force:
+        # No call was made and no quota spent — the register says so, or the row
+        # reads as a review that produced the same answer twice.
+        action_log.enrich(
+            target_kind="verdict", target_id=ref, unit_id=rev.manager_id,
+            day=rev.date,
+            details=[("leader", rev.leader_id), ("task", rev.task_id),
+                     ("report", body.uid), ("note", "cached")],
+        )
         return {"ok": True,
                 "task": _as_verdict(rev, win, checked, timed, plus)}  # already judged; never re-spend
 
@@ -942,6 +966,15 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     except gemini.GeminiQuotaError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     db.refresh(rev)
+    action_log.enrich(
+        target_kind="verdict", target_id=ref, unit_id=rev.manager_id,
+        day=rev.date,
+        details=[("leader", rev.leader_id), ("task", rev.task_id),
+                 ("report", body.uid), ("status", rev.status),
+                 ("verdict", ", ".join(str(f) for f in (rev.flags or []))
+                  or "clean")]
+                + ([("mode", "force")] if body.force else []),
+    )
     return {"ok": True, "task": _as_verdict(rev, win, checked, timed, plus)}
 
 
@@ -1094,6 +1127,7 @@ def set_model(body: ModelIn, db: Session = Depends(get_db),
                                    f"{', '.join(gemini.MODELS)}")
 
     row = db.query(AppSetting).filter_by(key=gemini.MODEL_SETTING).first()
+    was = (row.value or "") if row is not None else ""
     if row is None:
         db.add(AppSetting(key=gemini.MODEL_SETTING, value=name))
     else:
@@ -1104,6 +1138,10 @@ def set_model(body: ModelIn, db: Session = Depends(get_db),
     gemini.invalidate_model_cache()
     log.info("leader-ai: %s set the model to %s",
              admin.get("telegram_id"), name)
+    action_log.enrich(
+        target_kind="setting", target_id=gemini.MODEL_SETTING,
+        changes=[("model", was or "default", name)],
+    )
     return {"ok": True, "model": gemini.active_model(),
             "modelSource": gemini.model_source()}
 
@@ -1142,6 +1180,10 @@ def set_key(body: ApiKeyIn, db: Session = Depends(get_db),
             db.commit()
         gemini.invalidate_key_cache()
         log.info("leader-ai: %s CLEARED the Gemini API key", who)
+        # THAT it changed, never what it is. A secret in the action register is
+        # a secret in every export of that register.
+        action_log.enrich(target_kind="setting", target_id=gemini.KEY_SETTING,
+                          details=[("key", "cleared")])
         return {"ok": True, "configured": False}
 
     sealed = seal_password(raw)
@@ -1156,6 +1198,9 @@ def set_key(body: ApiKeyIn, db: Session = Depends(get_db),
     # Length only. A key in the log is a key in a rotated logfile nobody thinks
     # to shred, and this file is read by everyone debugging the bot.
     log.info("leader-ai: %s set a Gemini API key (%s chars)", who, len(raw))
+    # Same rule as the log line above: the length, and nothing else.
+    action_log.enrich(target_kind="setting", target_id=gemini.KEY_SETTING,
+                      details=[("key", "set"), ("size", len(raw))])
 
     # Arm the periodic drain, which boot DECLINED to schedule because there was
     # no key yet — and a key set from this form is precisely the case where
@@ -1207,6 +1252,11 @@ def run(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
     leader_ai.run_async(discover_first=False)
+    # Drain-only by design: it moves the queue and adds nothing to it, which is
+    # exactly the fact the register has to carry — the strip's numbers would
+    # otherwise be read as this press having submitted them.
+    action_log.enrich(target_kind="batch", target_id="drain",
+                      details=[("scope", "queued"), ("count", 0)])
     return {"ok": True, "queued": 0, "counts": leader_ai.counts(db)}
 
 
@@ -1320,6 +1370,22 @@ class RecheckIn(BaseModel):
     dry_run: bool = False
 
 
+def _scope_lines(db: Session, body: "RecheckIn") -> list[tuple]:
+    """What a run was pointed AT, in the same words the log line uses.
+
+    A run is only readable afterwards through its scope: «1,222 queued» says
+    nothing about whether somebody re-checked one brigadir's week or the whole
+    corpus, and those are the two things an admin needs to tell apart when the
+    quota is gone.
+    """
+    lines = [("scope", body.scope),
+             ("period", f"{body.date_from or '*'} … {body.date_to or '*'}")]
+    labels = _narrow_labels(db, body.shift, body.manager_id, body.leader_id,
+                            body.task_ids)
+    lines.append(("target", " · ".join(labels) if labels else "all"))
+    return lines
+
+
 @router.post("/recheck")
 def recheck(body: RecheckIn, db: Session = Depends(get_db),
             admin: dict = Depends(verify_admin)):
@@ -1380,6 +1446,14 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
                                             ~leader_ai.paused_clause())
         ).count()
         if body.dry_run:
+            # Nothing was queued and nothing spent — but somebody asked what it
+            # would cost, and that is the press that precedes every big run.
+            action_log.enrich(
+                target_kind="batch", target_id="recheck",
+                details=_scope_lines(db, body) + [("count", n),
+                                                  ("added", found),
+                                                  ("mode", "dry_run")],
+            )
             return {"ok": True, "requeued": n, "found": found, "dryRun": True,
                     "paused": paused_pick}
         _start_run(db, n, body, admin)
@@ -1390,6 +1464,10 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
                                            body.leader_id,
                                            body.task_ids)) or "all")
         leader_ai.run_async(discover_first=False)
+        action_log.enrich(
+            target_kind="batch", target_id="recheck", unit_id=body.manager_id,
+            details=_scope_lines(db, body) + [("count", n), ("added", found)],
+        )
         return {"ok": True, "requeued": n, "found": found,
                 "paused": paused_pick, "counts": leader_ai.counts(db)}
 
@@ -1406,7 +1484,13 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
     q = q.filter(~leader_ai.paused_clause())
 
     if body.dry_run:
-        return {"ok": True, "requeued": q.count(), "dryRun": True,
+        would = q.count()
+        action_log.enrich(
+            target_kind="batch", target_id="recheck",
+            details=_scope_lines(db, body) + [("count", would),
+                                              ("mode", "dry_run")],
+        )
+        return {"ok": True, "requeued": would, "dryRun": True,
                 "paused": paused_pick}
 
     n = q.update({"status": "pending", "attempts": 0}, synchronize_session=False)
@@ -1422,6 +1506,14 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
              f" — {held} held back, shift "
              f"{'/'.join(map(str, leader_ai.REVIEW_PAUSED_SHIFTS))} paused" if held else "")
     leader_ai.run_async(discover_first=False)
+    # A re-check DESTROYS verdicts and re-spends on them, so the count is the
+    # headline of the row, and `skipped` says out loud what a paused shift held
+    # back rather than leaving a smaller number to be inferred.
+    action_log.enrich(
+        target_kind="batch", target_id="recheck", unit_id=body.manager_id,
+        details=_scope_lines(db, body) + [("count", n)]
+                + ([("skipped", held)] if held else []),
+    )
     return {"ok": True, "requeued": n, "paused": paused_pick,
             "counts": leader_ai.counts(db)}
 
@@ -1888,6 +1980,123 @@ def _range_facets(db: Session, date_from: str | None, date_to: str | None,
     }
 
 
+# ── how fast the drain is ACTUALLY going ─────────────────────────────────────
+#
+# The ETA used to be the run's own average — `left ÷ (done ÷ (now − started))`.
+# That divides the work by the whole LIFE of the run, and a run's life is mostly
+# not spent reviewing: a spent quota parks it until Google's cap rolls over, a
+# push to `main` restarts the unit mid-drain, and a pass that cannot chain waits
+# on the 20-minute timer. So a backfill the drain would finish in four hours
+# read as «about 4 d left» — twenty of the previous twenty-five hours had been
+# waiting, and an average cannot tell waiting from working.
+#
+# The pace is therefore measured over the RECENT past instead, off the verdict
+# timestamps themselves, and it answers two different questions:
+#
+#   wall   = (n−1) ÷ (now − oldest sampled verdict)
+#            Verdicts per second including every pause inside the window AND the
+#            gap since the last one. That trailing gap is the load-bearing part:
+#            a drain that stops makes its own ETA grow, minute by minute,
+#            instead of freezing at a pace it is no longer keeping — and when it
+#            resumes, the window slides forward and the number recovers inside
+#            one batch.
+#
+#   active = k ÷ Σ(gaps ≤ _PACE_ACTIVE_GAP_S)
+#            The same verdicts, counting only the stretches where one actually
+#            followed another — i.e. what the remaining rows COST, as opposed to
+#            when they will land. "Four hours of work spread over four days" is
+#            two facts, and an operator deciding whether to wait or to go and
+#            raise the quota needs both of them.
+#
+# Neither is extrapolated from a handful of rows: under `_PACE_MIN` samples
+# there is no number at all, because an ETA off the first verdict swings by
+# hours and teaches people to ignore the number for good.
+#
+# Nothing here models rows JOINING the run (`grew`). They arrive in STEPS — a
+# sheet Refresh, a day-close, a backlog one-shot — and a step read as a rate is
+# a worse lie than the one this replaces. The strip says «+N joined» instead,
+# which is the honest form of that fact.
+_PACE_SAMPLE = 60          # verdicts in the trailing window
+_PACE_MIN = 4              # below this the window says nothing
+_PACE_ACTIVE_GAP_S = 180   # a longer gap is the drain not working, not slow work
+# Past this the drain is not working at all and «47 d» is noise wearing the
+# costume of an estimate. The drain line directly under it already says which
+# state it is in, which is the actionable half.
+_PACE_MAX_ETA_S = 30 * 86400
+
+
+def _pace(db: Session, started: datetime, slice_kw: dict, left: int) -> dict | None:
+    """The two paces above, and what they were measured from.
+
+    Reads at most `_PACE_SAMPLE` timestamps, scoped to the run exactly as every
+    other number on the strip is — a run narrowed to one brigadir must not be
+    timed by verdicts written for somebody else, or its ETA describes a drain
+    it is not watching.
+    """
+    if left <= 0:
+        return None
+    rows = (
+        _narrow(
+            db.query(LeaderAiReview.reviewed_at)
+            .filter(LeaderAiReview.reviewed_at.isnot(None),
+                    LeaderAiReview.reviewed_at >= started),
+            **slice_kw,
+        )
+        .order_by(LeaderAiReview.reviewed_at.desc())
+        .limit(_PACE_SAMPLE)
+        .all()
+    )
+    # Oldest → newest. A column stored `timezone=True` still comes back naive
+    # from some drivers; a naive stamp subtracted from an aware `now` raises,
+    # and the whole poll would 500 over a formatting detail.
+    stamps = sorted(
+        (r[0] if r[0].tzinfo else r[0].replace(tzinfo=timezone.utc))
+        for r in rows if r[0] is not None
+    )
+    if len(stamps) < _PACE_MIN:
+        return None
+    now = datetime.now(timezone.utc)
+    span = (now - stamps[0]).total_seconds()
+    if span <= 0:
+        return None
+
+    # (n−1), not n: the window opens ON the oldest sample, so the verdicts it
+    # actually contains are the ones after it. Counting the boundary event would
+    # make the wall pace beat the active pace on a drain with no gaps at all,
+    # and then "of that, N is real work" would print a number LARGER than the
+    # ETA it is a part of.
+    wall = (len(stamps) - 1) / span
+
+    active_s = 0.0
+    active_n = 0
+    for a, b in zip(stamps, stamps[1:]):
+        d = (b - a).total_seconds()
+        if 0 < d <= _PACE_ACTIVE_GAP_S:
+            active_s += d
+            active_n += 1
+    active = (active_n / active_s) if active_n and active_s > 0 else None
+
+    eta_s = left / wall if wall > 0 else None
+    if eta_s is not None and eta_s > _PACE_MAX_ETA_S:
+        eta_s = None
+    # `active` can only be ≥ `wall` — dropping the idle stretches raises the
+    # rate — so this is never the longer of the two, which is what lets the
+    # strip print it beside the headline without contradicting it.
+    work_s = left / active if active else None
+
+    return {
+        "etaS": round(eta_s) if eta_s is not None else None,
+        "workS": round(work_s) if work_s is not None else None,
+        "n": len(stamps),
+        "spanS": round(span),
+        "perMin": round(wall * 60, 2),
+        "activePerMin": round(active * 60, 2) if active else None,
+        # Share of the measured window in which nothing was produced — the one
+        # number that says WHY the two figures differ.
+        "idlePct": round(max(0.0, 1 - active_s / span) * 100),
+    }
+
+
 @router.get("/progress")
 def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     """How far the current run has got. Polled by the page while a run is live.
@@ -2031,6 +2240,10 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     # row can die on `error` after its attempts run out and never be judged, and
     # a bar that waits for it would hang at 97% forever.
     finished = pending_run == 0
+    # THE ETA (see `_pace`): measured over the pace the drain is keeping NOW,
+    # never averaged across every hour the run spent parked on a spent quota.
+    # Skipped on the poll that ends the run — there is nothing left to time.
+    pace = None if finished else _pace(db, started, slice_kw, pending_run)
     if finished:
         db.delete(row)
         db.commit()
@@ -2050,6 +2263,12 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         "pending": pending_run,
         "pendingAll": pending,
         "startedAt": run["started_at"],
+        # How long it has left, and how much of that is work rather than
+        # waiting. Always PRESENT (null when there is not enough to say), so a
+        # client can tell "no estimate" from "this backend predates the field"
+        # and never falls back to the average that made a four-hour queue read
+        # as four days.
+        "pace": pace,
         "scope": run.get("scope"),
         "from": run.get("from"),
         "to": run.get("to"),
@@ -2080,6 +2299,10 @@ def kick(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
     leader_ai.run_async(discover_first=False)
+    # Queues nothing by construction — it only starts the drain earlier than
+    # the timer would.
+    action_log.enrich(target_kind="batch", target_id="drain",
+                      details=[("scope", "queued"), ("count", 0)])
     return {"ok": True, "drain": _drain_state(db)}
 
 
@@ -2132,6 +2355,13 @@ def cancel_run(db: Session = Depends(get_db), admin: dict = Depends(verify_admin
     db.commit()
     log.info("LEADER-AI queue cleared by %s: %s deleted, %s restored",
              admin.get("telegram_id"), deleted, restored)
+    # Stopping is a real change, not a pause: never-judged rows are gone (and
+    # re-discoverable) while re-checked ones went back to the verdict they had.
+    action_log.enrich(
+        target_kind="batch", target_id="run",
+        details=[("scope", "all"), ("count", deleted + restored),
+                 ("removed", deleted), ("changed", restored)],
+    )
     return {"ok": True, "deleted": deleted, "restored": restored,
             "cleared": deleted + restored, "counts": leader_ai.counts(db)}
 
@@ -2214,6 +2444,11 @@ def clear_history(body: ClearIn, db: Session = Depends(get_db),
 
     n = q.count()
     if body.dry_run:
+        action_log.enrich(
+            target_kind="batch", target_id="history",
+            details=[("scope", body.scope), ("count", n),
+                     ("mode", "dry_run")],
+        )
         return {"ok": True, "deleted": n, "resolved": resolved_hit,
                 "dryRun": True, "floor": leader_ai.floor_date(db)}
 
@@ -2232,6 +2467,19 @@ def clear_history(body: ClearIn, db: Session = Depends(get_db),
              " · ".join(_narrow_labels(db, body.shift, body.manager_id,
                                        body.leader_id)) or "everyone",
              "included" if body.include_resolved else "kept", floor or "none")
+    # Irreversible, and the FLOOR is the half that makes it permanent: without
+    # it discovery re-inserts everything just deleted. Both go on the row.
+    action_log.enrich(
+        target_kind="batch", target_id="history", unit_id=body.manager_id,
+        details=[("scope", body.scope), ("count", n),
+                 ("period", f"{body.date_from or '*'} … {body.date_to or '*'}"),
+                 ("target", " · ".join(_narrow_labels(
+                     db, body.shift, body.manager_id, body.leader_id))
+                     or "all"),
+                 ("from_date", floor or "—"),
+                 ("verdict", "resolved included" if body.include_resolved
+                  else "resolved kept")],
+    )
     return {"ok": True, "deleted": n, "floor": floor,
             "counts": leader_ai.counts(db)}
 
@@ -2567,4 +2815,8 @@ def retry(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     )
     db.commit()
     leader_ai.run_async(discover_first=False)
+    # Rows that had given up and are now queued again — the count IS the scope
+    # here, since the errand is «everything that errored».
+    action_log.enrich(target_kind="batch", target_id="retry",
+                      details=[("scope", "error"), ("count", n)])
     return {"ok": True, "reset": n}

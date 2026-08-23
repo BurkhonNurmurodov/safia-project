@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import KaizenTask, KaizenSyncMeta
 from app.permissions import require_page
-from app.services import notion_kaizen as nk
+from app.services import action_log, notion_kaizen as nk
 
 router = APIRouter(prefix="/api/kaizen", tags=["kaizen"])
 
@@ -87,7 +87,7 @@ def refresh_kaizen(
         raise HTTPException(status_code=502, detail=f"Notion sync failed: {exc}")
 
     # Full replace — the snapshot mirrors Notion exactly each time.
-    db.query(KaizenTask).delete()
+    removed = db.query(KaizenTask).delete()
     for t in tasks:
         db.add(KaizenTask(
             project=t["project"],
@@ -109,4 +109,9 @@ def refresh_kaizen(
     meta.last_synced = nk.now_utc()
     db.commit()
 
+    action_log.enrich(
+        target_kind="batch", target_id="kaizen",
+        details=[("source", "notion"), ("rows", len(tasks)),
+                 ("removed", removed or 0)],
+    )
     return {"ok": True, "count": len(tasks), "last_synced": meta.last_synced.isoformat()}

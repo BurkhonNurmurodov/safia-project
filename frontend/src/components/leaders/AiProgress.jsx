@@ -47,6 +47,8 @@ const TXT = {
     title: "AI tekshiruvi ketmoqda",
     count: "{n} tadan {d} tasi tekshirildi",
     nLeft: "{n} ta qoldi", eta: "taxminan {t} qoldi", etaSoon: "tugay deb qoldi",
+    etaWork: "≈{t} sof tekshiruv ishi",
+    etaBasis: "Oxirgi {n} ta xulosa bo'yicha: kutishlar bilan {r}/daq, sof tekshiruvda {a}/daq — shu oraliqning {i}% i bo'sh o'tdi (AI limiti, qayta ishga tushish, 20 daqiqalik taymer).",
     joined: "+{n} ta qo'shildi",
     outside: "oraliqdan tashqarida {n}",
     stop: "To'xtatish", done: "Tekshiruv tugadi",
@@ -72,6 +74,8 @@ const TXT = {
     title: "AI текшируви кетмоқда",
     count: "{n} тадан {d} таси текширилди",
     nLeft: "{n} та қолди", eta: "тахминан {t} қолди", etaSoon: "тугай деб қолди",
+    etaWork: "≈{t} соф текширув иши",
+    etaBasis: "Охирги {n} та хулоса бўйича: кутишлар билан {r}/дақ, соф текширувда {a}/дақ — шу оралиқнинг {i}% и бўш ўтди (AI лимити, қайта ишга тушиш, 20 дақиқалик таймер).",
     joined: "+{n} та қўшилди",
     outside: "оралиқдан ташқарида {n}",
     stop: "Тўхтатиш", done: "Текширув тугади",
@@ -97,6 +101,8 @@ const TXT = {
     title: "Идёт проверка ИИ",
     count: "проверено {d} из {n}",
     nLeft: "осталось {n}", eta: "осталось примерно {t}", etaSoon: "почти готово",
+    etaWork: "≈{t} самой проверки",
+    etaBasis: "По последним {n} выводам: {r}/мин с учётом пауз, {a}/мин во время самой проверки — простой {i}% этого отрезка (лимит ИИ, перезапуски, 20-минутный таймер).",
     joined: "+{n} добавлено",
     outside: "вне периода: {n}",
     stop: "Остановить", done: "Проверка завершена",
@@ -122,6 +128,8 @@ const TXT = {
     title: "AI review running",
     count: "{d} of {n} checked",
     nLeft: "{n} left", eta: "about {t} left", etaSoon: "almost done",
+    etaWork: "≈{t} of actual reviewing",
+    etaBasis: "From the last {n} verdicts: {r}/min including the waits, {a}/min while actually reviewing — idle {i}% of that stretch (quota, restarts, the 20-minute timer).",
     joined: "+{n} joined",
     outside: "{n} outside this range",
     stop: "Stop", done: "Review finished",
@@ -147,6 +155,12 @@ const TXT = {
 
 const fmt = (s, v) => String(s).replace(/\{n\}/g, v).replace(/\{t\}/g, v);
 
+/** `fmt` for a template with more than one slot — the ETA's derivation names
+ *  four numbers, and a sentence that carries four facts cannot be built by
+ *  substituting the same value into every brace. */
+const fmtv = (s, vars) =>
+  String(s).replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ""));
+
 /** The same substitution, but returning NODES — so a template whose emphasised
  *  number sits in the middle in one language and at the front in another keeps
  *  its `<b>` attached to the number rather than to a position. */
@@ -156,22 +170,74 @@ const fill = (s, vars) =>
     return <Fragment key={i}>{k ? vars[k] : piece}</Fragment>;
   });
 
-/** Remaining time from the rate actually observed, not a guess. Null until
- *  enough has happened to mean anything — an ETA off the first verdict swings
- *  by hours and teaches people to ignore the number. */
-function etaText(p, T) {
-  if (!p.startedAt || p.done < 3) return null;
-  const elapsed = (Date.now() - new Date(p.startedAt).getTime()) / 1000;
-  if (elapsed < 5) return null;
-  const left = Math.max(0, p.total - p.done);
-  if (!left) return null;
-  const secs = Math.round(left / (p.done / elapsed));
-  if (secs < 60) return T.etaSoon;
-  if (secs < 3600) return fmt(T.eta, `${Math.round(secs / 60)} ${T.m}`);
-  // Days past two: the drain is batch-capped and timer-paced, so a real
-  // backfill genuinely lands here — and "83.2 h" is a number nobody converts.
-  if (secs < 172800) return fmt(T.eta, `${(secs / 3600).toFixed(1)} ${T.h}`);
-  return fmt(T.eta, `${Math.round(secs / 86400)} ${T.d}`);
+/** ONE duration ladder, shared by the ETA and by the work figure beside it —
+ *  two numbers of the same kind printed by two different rules is how the
+ *  smaller of them ends up looking like the larger. Days past two because the
+ *  drain is quota-paced and a real backfill genuinely lands there, and "83.2 h"
+ *  is a number nobody converts. */
+const etaDur = (secs, T) =>
+  secs < 3600 ? `${Math.max(1, Math.round(secs / 60))} ${T.m}`
+    : secs < 172800 ? `${(secs / 3600).toFixed(1)} ${T.h}`
+      : `${Math.round(secs / 86400)} ${T.d}`;
+
+/** How long is left — measured by the SERVER over the pace the drain is
+ *  actually keeping (`_pace` in `routers/leader_ai.py`), not by this component
+ *  over the run's lifetime average.
+ *
+ *  The average was the bug. It divides the queue by every hour the run has
+ *  existed, and a run mostly does not exist reviewing: it waits on a spent
+ *  quota, it dies with the unit on a deploy, it sits out the 20-minute timer.
+ *  A queue four hours of drain deep read «about 4 d left» — which is not an
+ *  overestimate so much as an answer to a question nobody asked, and a number
+ *  that wrong twice teaches the operator to stop reading the strip.
+ *
+ *  So the server ships two figures and this renders the pair as one sentence:
+ *  when it will be DONE (the headline, pauses and all) and how much of that is
+ *  actual reviewing. They are printed together only when they disagree — on a
+ *  drain running clean they are the same number, and the same number twice is
+ *  clutter on a strip that already wraps to three lines on a phone.
+ */
+function etaBits(p, T) {
+  const pace = p.pace;
+  let secs = null;
+  if (pace === undefined) {
+    // A payload from a backend that predates `pace` — the frontend deploys as
+    // a file swap and the backend as a restart, so the two are briefly out of
+    // step. `pace: null` is PRESENT and means "no estimate"; only a missing
+    // key falls back, so a deliberate silence is never overruled by the old
+    // average.
+    if (!p.startedAt || p.done < 3) return null;
+    const elapsed = (Date.now() - new Date(p.startedAt).getTime()) / 1000;
+    const left = Math.max(0, p.total - p.done);
+    if (elapsed < 5 || !left) return null;
+    secs = Math.round(left / (p.done / elapsed));
+  } else if (pace) {
+    secs = pace.etaS;
+  }
+
+  const text = secs == null ? null
+    : secs < 60 ? T.etaSoon
+      : fmt(T.eta, etaDur(secs, T));
+
+  // The work figure earns its place in exactly two states: the drain is
+  // stalling enough that the wait dwarfs the work (and the operator's decision
+  // is "raise the quota" rather than "wait"), or there is no wall-clock answer
+  // at all, where "how much work is left" is the only honest thing left to say.
+  const workS = pace?.workS ?? null;
+  const showWork = workS != null && (
+    secs == null ? workS >= 300 : secs >= 1800 && secs > workS * 1.5);
+  const work = showWork ? fmt(T.etaWork, etaDur(workS, T)) : null;
+  if (!text && !work) return null;
+
+  // What the estimate was measured from, for the reader who wants to know
+  // whether to believe it. A title only — the strip states, the hover explains.
+  const title = pace
+    ? fmtv(T.etaBasis, {
+      n: pace.n, r: pace.perMin,
+      a: pace.activePerMin ?? pace.perMin, i: pace.idlePct ?? 0,
+    })
+    : null;
+  return { text, work, title };
 }
 
 const dur = (s, T) =>
@@ -484,7 +550,7 @@ export default function AiProgress({ showIdle = false }) {
   }
 
   const pct = Math.min(100, Math.round((p.done / Math.max(1, p.total)) * 100));
-  const eta = etaText(p, T);
+  const eta = etaBits(p, T);
 
   return (
     <>
@@ -535,7 +601,19 @@ export default function AiProgress({ showIdle = false }) {
             <><span>·</span>
             <span>{fmt(T.joined, p.grew.toLocaleString())}</span></>
           )}
-          {eta && <><span>·</span><span>{eta}</span></>}
+          {eta && (
+            <><span>·</span>
+            <span title={eta.title || undefined}>{eta.text || eta.work}</span>
+            {/* Both, when they are two different facts: «2 d left» is when the
+                queue empties, «≈4.3 h of actual reviewing» is what it costs.
+                An operator staring at the first one cannot tell whether to
+                wait it out or go and raise the quota; the gap between them is
+                the whole answer. */}
+            {eta.text && eta.work && (
+              <><span>·</span>
+              <span title={eta.title || undefined}>{eta.work}</span></>
+            )}</>
+          )}
           {/* Queued rows on dates this run does not cover. The bar is scoped to
               the run now, which is the only way its percentage and its ETA can
               agree with its remainder — but silently dropping the rest of the

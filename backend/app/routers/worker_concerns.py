@@ -40,6 +40,7 @@ from app.models import (AppSetting, Cell, Manager, RoleProfile, WorkerConcern,
                         WorkerConcernSheetState, WorkerConcernSyncMeta)
 from app.permissions import require_page
 from app.capabilities import page_scope_is_all
+from app.services import action_log
 from app.services.factory_scope import factory_of_managers, resolve_factory, viewer_factory_id
 from app.services.name_map import leader_is, supervisor_match
 from app.services.worker_concerns import STALE_AFTER, start_sync_thread
@@ -549,6 +550,22 @@ class WcExportFilters(BaseModel):
     sort: str = "date_desc"
 
 
+def _scope_line(f: "WcExportFilters") -> str:
+    """The narrowings that produced the file, as one sentence — only the ones
+    actually applied, so «who pulled what data» reads at a glance."""
+    parts = []
+    for key in ("date_from", "date_to", "factory", "q"):
+        v = getattr(f, key, None)
+        if v:
+            parts.append(f"{key}={v}")
+    for key in ("manager_id", "leader", "cell", "status"):
+        vals = getattr(f, key, None) or []
+        if vals:
+            parts.append(f"{key}={','.join(str(v) for v in vals)}")
+    parts.append(f"sort={f.sort}")
+    return " · ".join(parts)[:1000]
+
+
 class WcExportBody(BaseModel):
     """Presentation comes from the page (labels, sheet names, meta lines —
     already in the viewer's language); the data is re-queried HERE, because the
@@ -744,7 +761,14 @@ def export_excel(
         fname += ".xlsx"
     caption = body.caption or f"📊 {body.title}"
     try:
-        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+        data = bio.read()
+        resp = deliver_xlsx(request, payload, fname, data, caption)
+        action_log.enrich(
+            target_kind="report", target_id=fname, target_name=body.title,
+            details=[("file", fname), ("rows", len(reg_rows)), ("size", len(data)),
+                     ("workers", len(workers)), ("scope", _scope_line(f))],
+        )
+        return resp
     except HTTPException:
         raise
     except Exception as e:
@@ -765,6 +789,13 @@ def refresh(
         raise HTTPException(status_code=409, detail="Sync is already running")
     if not start_sync_thread():
         raise HTTPException(status_code=409, detail="Sync is already running")
+    # The crawl runs in a thread, so the rows it will bring are not knowable
+    # here; the mode and what the register held when it was asked for are.
+    action_log.enrich(
+        target_kind="batch", target_id="worker_concerns",
+        details=[("source", "drive"), ("state", "started"),
+                 ("total", (meta.row_count if meta else 0) or 0)],
+    )
     return {"status": "started"}
 
 
@@ -798,9 +829,15 @@ def set_thresholds(
                             detail="Expected 0 < yellow < green ≤ 100")
     row = db.query(AppSetting).filter_by(key=BANDS_SETTING).first()
     value = json.dumps({"green": body.green, "yellow": body.yellow})
+    was = row.value if row else None
     if row:
         row.value = value
     else:
         db.add(AppSetting(key=BANDS_SETTING, value=value))
     db.commit()
+    action_log.enrich(
+        target_kind="threshold", target_id=BANDS_SETTING,
+        details=[("key", BANDS_SETTING)],
+        changes=[("threshold", was, value)],
+    )
     return {"green": body.green, "yellow": body.yellow}

@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import ArcRequest, ArcSyncMeta
-from app.services import arc_client, arc_discovery
+from app.services import action_log, arc_client, arc_discovery
 from app.services.arc_client import ArcAuthError, ArcTransientError, configured
 
 log = logging.getLogger(__name__)
@@ -255,6 +255,20 @@ def run_sync(mode: str = "full") -> dict:
         db.commit()
         log.info("arc sync (%s): %s pages, %s tickets seen, remote total %s, %s newly missing",
                  mode, pages_seen, len(seen), remote_total, missing_marked)
+        # One register row per pass that actually MIRRORED something. A quick
+        # pass that read no ticket (a transient 200 with an empty page, an
+        # account scoped out from under us) writes nothing: the point of the
+        # row is "the mirror moved", and a line every fifteen minutes saying it
+        # did not is exactly the noise that makes a register unreadable. The
+        # two early returns above (`not_configured`, `already_running`) never
+        # reach here, and a failed pass leaves its reason on `meta.message`.
+        if seen:
+            action_log.record_system(
+                "sync_export", "sync.arc_pass", db=db,
+                details=[("mode", mode), ("rows", len(seen)),
+                         ("total", remote_total), ("pages", pages_seen),
+                         ("missing", missing_marked)],
+            )
         return {"status": "ok", "mode": mode, "pages": pages_seen,
                 "seen": len(seen), "remote_total": remote_total,
                 "missing": missing_marked}

@@ -37,6 +37,7 @@ from app.models import (
 )
 from app.capabilities import page_scope_is_all
 from app.permissions import require_page
+from app.services import action_log
 from app.routers.auth import ADMIN_ROLE_REF
 # Shared notification helpers: _notify writes a single bell row; notify_profile
 # addresses the PERSON — one bell row on the profile plus a DM to every account
@@ -380,6 +381,14 @@ def create_task(
 
     db.commit()
     db.refresh(t)
+    action_log.enrich(
+        target_kind="task", target_id=t.id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
+        day=t.due_date,
+        details=[("leader", prof.name), ("text", t.task_text),
+                 ("deadline", str(t.due_date)), ("priority", t.priority),
+                 ("comment", comment_count)],
+    )
     return _serialize(t, comment_count, payload, db, live_name=prof.name)
 
 
@@ -401,10 +410,20 @@ def update_task(
     _assert_can_edit_core(db, payload, t)
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
+    was_text, was_due = t.task_text, t.due_date
     t.task_text = body.task_text.strip()
     t.due_date = body.due_date
     db.commit()
     db.refresh(t)
+    action_log.enrich(
+        target_kind="task", target_id=t.id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
+        day=t.due_date,
+        details=[("leader", t.leader_name)],
+        changes=[c for c in (("text", was_text, t.task_text),
+                             ("deadline", str(was_due), str(t.due_date)))
+                 if c[1] != c[2]],
+    )
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
     return _serialize(t, count, payload, db)
 
@@ -419,12 +438,23 @@ def delete_task(
     _assert_can_edit_core(db, payload, t)
     owner = _owned_by(t)
     gone = t.priority if t.status != "done" else None
+    # Snapshot before the delete — the row is unreadable after commit.
+    was = {"id": t.id, "text": _snippet(t.task_text), "leader": t.leader_name,
+           "unit": t.supervisor_manager_id, "unit_name": t.supervisor_name,
+           "day": t.due_date, "status": t.status, "priority": t.priority}
     _lock_leader_queue(db, t.leader_profile_id)
-    db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).delete()
+    dropped = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).delete()
     db.delete(t)
     db.flush()
     _close_ranks_behind(db, owner, gone)
     db.commit()
+    action_log.enrich(
+        target_kind="task", target_id=was["id"], target_name=was["text"],
+        unit_id=was["unit"], unit_name=was["unit_name"], day=was["day"],
+        details=[("leader", was["leader"]), ("text", was["text"]),
+                 ("status", was["status"]), ("priority", was["priority"]),
+                 ("deadline", str(was["day"])), ("comment", dropped or 0)],
+    )
 
 
 # ── status ────────────────────────────────────────────────────────────────────
@@ -477,6 +507,13 @@ def set_status(
         db.commit()
         db.refresh(t)
 
+    action_log.enrich(
+        target_kind="task", target_id=t.id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
+        day=t.due_date,
+        details=[("leader", t.leader_name), ("text", _snippet(t.task_text))],
+        changes=[("status", old, t.status)] if t.status != old else None,
+    )
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
     return _serialize(t, count, payload, db)
 
@@ -527,6 +564,14 @@ def set_priority(
         db.commit()
         db.refresh(t)
 
+    action_log.enrich(
+        target_kind="task", target_id=t.id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
+        day=t.due_date,
+        details=[("leader", t.leader_name), ("mode", body.mode),
+                 ("count", n)],
+        changes=[("priority", old_p, t.priority)] if t.priority != old_p else None,
+    )
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
     return _serialize(t, count, payload, db)
 
@@ -634,6 +679,12 @@ def add_task_comment(
 
     db.commit()
     db.refresh(c)
+    action_log.enrich(
+        target_kind="comment", target_id=c.id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
+        day=t.due_date,
+        details=[("task_id", t.id), ("leader", t.leader_name), ("text", c.text)],
+    )
     return _serialize_comment(c, payload, db)
 
 
@@ -658,12 +709,20 @@ def edit_task_comment(
 ):
     if not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Comment text is required")
-    _get_visible_task(task_id, payload, db)
+    t = _get_visible_task(task_id, payload, db)
     c = _get_own_comment(task_id, comment_id, payload, db)
+    was = c.text
     c.text = body.text.strip()
     c.edited_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(c)
+    action_log.enrich(
+        target_kind="comment", target_id=c.id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
+        day=t.due_date,
+        details=[("task_id", t.id), ("leader", t.leader_name)],
+        changes=[("text", was, c.text)],
+    )
     return _serialize_comment(c, payload, db)
 
 
@@ -674,7 +733,14 @@ def delete_task_comment(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("tasks")),
 ):
-    _get_visible_task(task_id, payload, db)
+    t = _get_visible_task(task_id, payload, db)
     c = _get_own_comment(task_id, comment_id, payload, db)
+    gone_id, gone_text = c.id, c.text
     db.delete(c)
     db.commit()
+    action_log.enrich(
+        target_kind="comment", target_id=gone_id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
+        day=t.due_date,
+        details=[("task_id", t.id), ("leader", t.leader_name), ("text", gone_text)],
+    )

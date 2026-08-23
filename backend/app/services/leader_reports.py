@@ -27,7 +27,7 @@ from app.models import (
     LeaderTaskDef, LeaderTaskEntry, LeaderTaskLeaderSetting, LeaderTaskSetting,
     Manager, RoleProfile,
 )
-from app.services import leader_ai, leader_bot
+from app.services import action_log, leader_ai, leader_bot
 
 log = logging.getLogger(__name__)
 
@@ -403,6 +403,15 @@ def _park(db: Session, key: str | None, uid: str, why: str) -> None:
                            rejected_sent=0, tasks_total=0, sends=0))
     db.commit()
     log.info("leader-ai: day report parked (%s) for %s", why, uid)
+    # A day deliberately NOT reported is a decision, and the reason is the only
+    # thing that makes «why did nobody hear about this day» answerable later.
+    # Written once per key ever — the early return above means a parked day is
+    # never parked twice.
+    action_log.record_system(
+        "leader_review", "report.parked", db=db,
+        target_kind="report", target_id=uid, reason=why,
+        details=[("key", key)],
+    )
 
 
 def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
@@ -473,6 +482,9 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     first = led is None or (led.sends or 0) == 0
     if not first and led.score_sent == score and led.rejected_sent == counts["rejected"]:
         return False
+    # Read BEFORE the ledger below is overwritten — a correction's whole point
+    # is the number it replaced, and after `led.score_sent = score` it is gone.
+    prev_score = None if first else led.score_sent
 
     mgr = (db.query(Manager).filter_by(id=row["manager_id"]).first()
            if row.get("manager_id") else None)
@@ -534,6 +546,21 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     log.info("leader-ai: day report %s for %s (%s) score=%s rejected=%s",
              "sent" if first else "corrected", row.get("leader"), date,
              score, counts["rejected"])
+    # One row per report that actually went out — after the commit, so the
+    # score recorded is the score the ledger now holds. Every path that decides
+    # NOT to send has already returned above, so this cannot log a DM nobody
+    # received.
+    action_log.record_system(
+        "leader_review", "report.sent", db=db,
+        target_kind="report", target_id=uid, target_name=row.get("leader"),
+        unit_id=row.get("manager_id"), unit_name=row.get("supervisor"),
+        day=date,
+        details=[("leader", row.get("leader") or "—"), ("shift", shift),
+                 ("score", score), ("tasks", counts["total"]),
+                 ("flagged", counts["rejected"]),
+                 ("mode", "first" if first else "corrected")],
+        changes=None if first else [("score", prev_score, score)],
+    )
     return True
 
 

@@ -60,7 +60,7 @@ from app.models import (
 )
 from app.routers.admin import verify_admin
 from app.services.day_state import day_state
-from app.services import attendance_reconcile
+from app.services import action_log, attendance_reconcile
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/admin/exchange-audit", tags=["exchange-audit"])
@@ -460,7 +460,16 @@ def export_xlsx(
     fname = f'yoqolgan_xodimlar_{data["from"]}_{data["to"]}.xlsx'
     caption = body.caption or f'📄 {len(rows)} · {s["hours"]} h'
     try:
-        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+        blob = bio.read()
+        resp = deliver_xlsx(request, payload, fname, blob, caption)
+        action_log.enrich(
+            target_kind="report", target_id=fname,
+            details=[("file", fname), ("rows", len(rows)), ("size", len(blob)),
+                     ("from_date", data["from"]), ("to_date", data["to"]),
+                     ("state", body.state),
+                     ("scope", (body.q or "").strip() or "no search")],
+        )
+        return resp
     except HTTPException:
         raise
     except Exception as e:
@@ -684,6 +693,7 @@ def repair(
                     row.id, row.worker_name, row.date, row.effective_hours, actor)
 
     done, skipped = [], []
+    docs: set = set()          # the exchange documents the restored rows came from
     for d_iso, name in sorted(wanted):
         r = by_key.get((d_iso, name))
         if r is None:
@@ -698,6 +708,8 @@ def repair(
 
         if r["split"]:
             out = _restore_split(db, d, name, r, actor)
+            if out.get("attendance_id"):
+                docs.add(r["doc_id"])
             (done if out.get("attendance_id") else skipped).append(out)
             continue
 
@@ -735,6 +747,7 @@ def repair(
             row.id, name, d_iso, r["target_id"], row.verifix_code,
             br.hours_worked, r["doc_id"], r["sender_day"], actor,
         )
+        docs.add(r["doc_id"])
         done.append({
             "date": d_iso, "worker_name": name, "attendance_id": row.id,
             "manager_id": r["target_id"], "manager_name": r["target_name"],
@@ -744,5 +757,14 @@ def repair(
     db.commit()
     log.warning("EXCHANGE-REPAIR done by=%s restored=%d healed=%d skipped=%d",
                 actor, len(done), healed, len(skipped))
+    doc_ids = sorted(str(x) for x in docs if x is not None)
+    action_log.enrich(
+        target_kind="document",
+        target_id=doc_ids[0] if len(doc_ids) == 1 else None,
+        details=[("count", len(done)), ("changed", healed),
+                 ("skipped", len(skipped)),
+                 ("document", ", ".join(doc_ids) or "—"),
+                 ("from_date", data["from"]), ("to_date", data["to"])],
+    )
     return {"restored": len(done), "healed": healed, "skipped": len(skipped),
             "rows": done, "skippedRows": skipped}

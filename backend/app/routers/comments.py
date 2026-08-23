@@ -11,6 +11,7 @@ from app import identity
 from app.config import settings
 from app.database import get_db
 from app.models import Comment
+from app.services import action_log
 
 router = APIRouter(prefix="/api", tags=["comments"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
@@ -95,6 +96,11 @@ def create_comment(
     db.add(c)
     db.commit()
     db.refresh(c)
+    action_log.enrich(
+        target_kind="comment", target_id=c.id,
+        unit_id=c.manager_id, day=c.date,
+        details=[("date", str(c.date)), ("text", c.text)],
+    )
     return _serialize(c, user, db)
 
 
@@ -110,9 +116,16 @@ def update_comment(
         raise HTTPException(status_code=404, detail="Comment not found")
     if not _is_author(c, user, db):
         raise HTTPException(status_code=403, detail="Not your comment")
+    was = c.text
     c.text = payload.text
     db.commit()
     db.refresh(c)
+    action_log.enrich(
+        target_kind="comment", target_id=c.id,
+        unit_id=c.manager_id, day=c.date,
+        details=[("date", str(c.date))],
+        changes=[("text", was, c.text)],
+    )
     return _serialize(c, user, db)
 
 
@@ -127,5 +140,11 @@ def delete_comment(
         raise HTTPException(status_code=404, detail="Comment not found")
     if not _is_author(c, user, db):
         raise HTTPException(status_code=403, detail="Not your comment")
+    cid, mid, cday, ctext = c.id, c.manager_id, c.date, c.text
     db.delete(c)
     db.commit()
+    action_log.enrich(
+        target_kind="comment", target_id=cid,
+        unit_id=mid, day=cday,
+        details=[("date", str(cday)), ("text", ctext)],
+    )

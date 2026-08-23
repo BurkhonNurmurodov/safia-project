@@ -10,6 +10,7 @@ from jwt import PyJWTError as JWTError
 from app.config import settings
 from app.database import get_db
 from app.models import Notification
+from app.services import action_log
 from app.translit import transliterate
 # Notification text is template-based: rows store a template key + raw params and
 # the renderer lives with the templates in routers.staff. Importing it here lets
@@ -135,6 +136,14 @@ def create_notification(
     db.add(n)
     db.commit()
     db.refresh(n)
+    action_log.enrich(
+        target_kind="notification", target_id=n.id, target_name=n.title,
+        details=[
+            ("title", n.title), ("type", n.type), ("text", n.body),
+            ("audience", "everyone" if n.recipient_telegram_id is None
+                         else f"tg:{n.recipient_telegram_id}"),
+        ],
+    )
     return {"id": n.id, "title": n.title}
 
 
@@ -147,5 +156,12 @@ def delete_notification(
     n = db.query(Notification).filter(Notification.id == notif_id).first()
     if not n:
         raise HTTPException(status_code=404, detail="Notification not found")
+    nid, ntitle, ntype = n.id, n.title, n.type
+    naudience = ("everyone" if n.recipient_telegram_id is None
+                 else f"tg:{n.recipient_telegram_id}")
     db.delete(n)
     db.commit()
+    action_log.enrich(
+        target_kind="notification", target_id=nid, target_name=ntitle,
+        details=[("title", ntitle), ("type", ntype), ("audience", naudience)],
+    )

@@ -40,6 +40,7 @@ from app.models import (
 from pydantic import BaseModel
 from app.routers.admin import oauth2_scheme, verify_admin
 from app.scheduler import schedule_at, schedule_interval, unschedule
+from app.services import action_log
 from app.upload_guard import validate_broadcast_media
 
 logger = logging.getLogger(__name__)
@@ -1063,6 +1064,19 @@ def register_scheduled_broadcasts() -> None:
         logger.exception("Could not register scheduled broadcasts")
 
 
+def _audience(names, total: int | None = None) -> str:
+    """Who a mass DM actually went to, as one readable line.
+
+    The stored `target_keys` are raw telegram ids — technically the audience and
+    humanly nothing. A register entry saying «12 people: Aripova M., Karimov A.,
+    +10» answers the question the ids cannot."""
+    names = [str(n) for n in names if n]
+    total = len(names) if total is None else total
+    head = ", ".join(names[:6])
+    rest = total - min(len(names), 6)
+    return f"{total}: {head}" + (f", +{rest}" if rest > 0 else "")
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/send")
@@ -1158,6 +1172,14 @@ async def send_broadcast(
     db.commit()
     db.refresh(row)
 
+    log_details = [
+        ("audience", _audience(list(recipients.values()))),
+        ("count", len(recipients)),
+        ("mode", mode),
+        ("text", plain[:300]),
+        ("files", (1 if kind else 0) + len(media_items)),
+    ]
+
     if when:
         # The row is already the durable record; the timer is a convenience
         # rebuilt at every boot. If arming fails the send is still covered by
@@ -1165,9 +1187,18 @@ async def send_broadcast(
         schedule_at(_job_id(row.id), when, fire_scheduled_broadcast, (row.id,))
         logger.info("Broadcast %s scheduled for %s (%s recipients)",
                     row.id, when.isoformat(), len(recipients))
+        action_log.enrich(
+            target_kind="broadcast", target_id=row.id,
+            details=log_details + [("state", "scheduled"),
+                                   ("start", when.isoformat())],
+        )
         return {"id": row.id, "recipients": len(recipients),
                 "scheduled_at": when.isoformat()}
 
+    action_log.enrich(
+        target_kind="broadcast", target_id=row.id,
+        details=log_details + [("state", "sending")],
+    )
     if mode == "rich":
         threading.Thread(
             target=_run_broadcast_rich,
@@ -1320,6 +1351,13 @@ async def test_broadcast(
         raise HTTPException(status_code=502, detail=_failure_reason(exc)) from exc
 
     logger.info("BROADCAST test sent to %s (mode=%s, degraded=%s)", sender_tid, mode, degraded)
+    action_log.enrich(
+        target_kind="broadcast", target_id=f"test:{sender_tid}",
+        details=[("audience", "self"), ("count", 1), ("mode", mode),
+                 ("text", _plain[:300]),
+                 ("files", (1 if kind else 0) + len(media_items)),
+                 ("state", "degraded" if degraded else "ok")],
+    )
     return {"ok": True, "degraded": degraded}
 
 
@@ -1383,6 +1421,12 @@ def retry_broadcast(bid: int, db: Session = Depends(get_db),
     if not updated:
         raise HTTPException(status_code=409, detail="Broadcast is still sending")
 
+    action_log.enrich(
+        target_kind="broadcast", target_id=bid,
+        details=[("audience", _audience([n for _tid, n in failed_subset])),
+                 ("count", len(failed_subset)), ("mode", row.mode),
+                 ("total", row.recipient_total), ("state", "retrying")],
+    )
     runner = _run_broadcast_rich if row.mode == "rich" else _run_broadcast
     threading.Thread(target=runner, args=(bid,), kwargs={"claimed": True},
                      daemon=True).start()
@@ -1415,6 +1459,15 @@ def cancel_scheduled_broadcast(bid: int, db: Session = Depends(get_db),
     # between, the fired job finds a non-'scheduled' row and does nothing.
     unschedule(_job_id(bid))
     logger.info("Scheduled broadcast %s canceled", bid)
+    action_log.enrich(
+        target_kind="broadcast", target_id=bid,
+        details=[("audience", _audience([n for _tid, n in (row.recipients or [])],
+                                        row.recipient_total)),
+                 ("count", row.recipient_total), ("mode", row.mode),
+                 ("start", row.scheduled_at.isoformat() if row.scheduled_at else None),
+                 ("text", (row.text_plain or "")[:300])],
+        changes=[("status", "scheduled", "canceled")],
+    )
     return {"id": bid, "status": "canceled"}
 
 
@@ -1590,6 +1643,13 @@ def send_draft(
         except Exception:
             logger.warning("Broadcast result edit failed for admin %s", admin_tid, exc_info=True)
 
+    action_log.enrich(
+        target_kind="broadcast", target_id=row.id,
+        details=[("audience", _audience(list(recipients.values()))),
+                 ("count", total), ("mode", "copy"),
+                 ("sent", sent), ("failed", failed),
+                 ("text", (draft.preview_text or "")[:300])],
+    )
     return {"sent": sent, "failed": failed, "total": total, "failed_names": failed_names}
 
 
@@ -1631,6 +1691,7 @@ def add_custom_emoji(body: _EmojiIn, db: Session = Depends(get_db),
     if label and len(label) > 40:
         label = label[:40]
     row = db.query(CustomEmoji).filter_by(emoji_id=eid).first()
+    was = (row.fallback, row.label) if row else None
     if row:
         row.fallback = fallback
         row.label = label
@@ -1640,6 +1701,14 @@ def add_custom_emoji(body: _EmojiIn, db: Session = Depends(get_db),
         db.add(row)
     db.commit()
     db.refresh(row)
+    action_log.enrich(
+        target_kind="broadcast", target_id=row.id, target_name=row.label or row.fallback,
+        details=[("type", "emoji"), ("code", row.emoji_id),
+                 ("mode", "edited" if was else "added")],
+        changes=[c for c in (("value", was[0] if was else None, row.fallback),
+                             ("name", was[1] if was else None, row.label))
+                 if c[1] != c[2]],
+    )
     return _emoji_dict(row)
 
 
@@ -1648,8 +1717,14 @@ def delete_custom_emoji(emoji_row_id: int, db: Session = Depends(get_db),
                         _: dict = Depends(verify_broadcast_admin)):
     row = db.query(CustomEmoji).filter_by(id=emoji_row_id).first()
     if row:
+        gone = (row.id, row.emoji_id, row.fallback, row.label)
         db.delete(row)
         db.commit()
+        action_log.enrich(
+            target_kind="broadcast", target_id=gone[0], target_name=gone[3] or gone[2],
+            details=[("type", "emoji"), ("code", gone[1]), ("value", gone[2]),
+                     ("name", gone[3])],
+        )
     return {"ok": True}
 
 

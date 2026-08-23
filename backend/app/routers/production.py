@@ -51,6 +51,7 @@ from app.capabilities import page_scope_is_all
 from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
+from app.services import action_log
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import compute_dashboard, daily_key, is_local_key, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
@@ -631,7 +632,16 @@ def export_positions(
     fname = f"{day_h} ABC форма {mgr_name}.xlsx" if mgr_name else f"{day_h} ABC форма.xlsx"
     caption = f"📊 {title_word}" + (f" — {mgr_name}" if mgr_name else "") + f"  •  {day_h}"
     try:
-        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+        blob = bio.read()
+        resp = deliver_xlsx(request, payload, fname, blob, caption)
+        action_log.enrich(
+            target_kind="report", target_id=fname, target_name=mgr_name or None,
+            unit_id=mid, unit_name=mgr_name or None, day=day,
+            details=[("file", fname), ("rows", len(rows)), ("size", len(blob)),
+                     ("date", str(day)), ("cells", len(wcs)),
+                     ("language", lang)],
+        )
+        return resp
     except HTTPException:
         raise
     except Exception as e:
@@ -723,10 +733,18 @@ def set_override(
         db.add(row)
 
     if body.field == "plan":
-        row.plan_override = body.value
+        was, row.plan_override = row.plan_override, body.value
     else:
-        row.actual_override = body.value
+        was, row.actual_override = row.actual_override, body.value
     db.commit()
+    action_log.enrich(
+        target_kind="override", target_id=f"{mid}:{day}:{body.sap_code}:{body.work_center}",
+        target_name=body.sap_code, unit_id=mid, day=day,
+        details=[("date", str(day)), ("sap_code", body.sap_code),
+                 ("work_center", body.work_center)],
+        changes=[("plan" if body.field == "plan" else "fact",
+                  float(was) if was is not None else None, body.value)],
+    )
     return _build_dashboard(db, mid, day, scope)
 
 
@@ -766,6 +784,7 @@ def set_wc_override(
         PPWorkCenterDaily.work_center == code,
     ).first()
 
+    was = (row.people, row.shtatka) if row else (None, None)
     if body.people is None and body.shtatka is None:
         if row:
             db.delete(row)
@@ -775,6 +794,14 @@ def set_wc_override(
         db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
                                  people=body.people, shtatka=body.shtatka))
     db.commit()
+    action_log.enrich(
+        target_kind="staffing", target_id=f"{mid}:{day}:{code}", target_name=code,
+        unit_id=mid, day=day,
+        details=[("date", str(day)), ("work_center", code)],
+        changes=[c for c in (("workers", was[0], body.people),
+                             ("staffing", was[1], body.shtatka))
+                 if c[1] != c[2]],
+    )
     return _build_dashboard(db, mid, day)
 
 
@@ -831,11 +858,18 @@ def save_staffing(
 
     existing = {o.work_center: o for o in db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == mid, PPWorkCenterDaily.date == day).all()}
+    # ONE log line per save, so the register carries the whole «Odamlar soni»
+    # press instead of one row per cell: the per-cell old→new rides as changes.
+    cell_changes: list[tuple] = []
     for r in body.rows:
         code = (r.work_center or "").strip()
         if not code:
             continue
         row = existing.get(code)
+        prev = (row.people, row.shtatka) if row else (None, None)
+        if prev != (r.people, r.shtatka):
+            cell_changes.append((code, f"{prev[0]}/{prev[1]}",
+                                 f"{r.people}/{r.shtatka}"))
         if r.people is None and r.shtatka is None:
             if row:
                 db.delete(row)
@@ -847,6 +881,7 @@ def save_staffing(
 
     ds = db.query(PPDaySetting).filter(
         PPDaySetting.manager_id == mid, PPDaySetting.date == day).first()
+    was_pm = float(ds.productive_min) if ds and ds.productive_min is not None else None
     if pm is None:
         if ds:
             db.delete(ds)
@@ -856,6 +891,14 @@ def save_staffing(
         db.add(PPDaySetting(manager_id=mid, date=day, productive_min=pm))
 
     db.commit()
+    action_log.enrich(
+        target_kind="staffing", target_id=f"{mid}:{day}",
+        unit_id=mid, day=day,
+        details=[("date", str(day)), ("count", len(cell_changes)),
+                 ("cells", len(body.rows))],
+        changes=(cell_changes +
+                 ([("minutes", was_pm, pm)] if was_pm != pm else [])),
+    )
     return _build_dashboard(db, mid, day)
 
 
@@ -879,12 +922,22 @@ def save_reconciliation(
     day = _parse_date(body.date)
     row = db.query(PPReconciliation).filter(
         PPReconciliation.manager_id == mid, PPReconciliation.date == day).first()
+    was = dict(row.data or {}) if row else {}
     if not row:
         row = PPReconciliation(manager_id=mid, date=day, data=body.data or {})
         db.add(row)
     else:
         row.data = body.data or {}
     db.commit()
+    now = row.data or {}
+    action_log.enrich(
+        target_kind="staffing", target_id=f"{mid}:{day}",
+        unit_id=mid, day=day,
+        details=[("date", str(day)), ("type", "reconciliation"),
+                 ("count", len(now))],
+        changes=[(k, was.get(k), now.get(k))
+                 for k in sorted(set(was) | set(now)) if was.get(k) != now.get(k)],
+    )
     return {"ok": True, "data": row.data}
 
 
@@ -1117,6 +1170,16 @@ async def upload_phase(
             db, mid, day, mode, faza_ops=faza_ops, order_sku=order_sku,
             order_deliv=order_deliv)
     db.commit()
+    action_log.enrich(
+        target_kind="batch", target_id=f"pp:{day}",
+        unit_id=manager_id, day=day,
+        details=[("date", str(day)), ("mode", mode),
+                 ("files", ", ".join(n for n, _c in blobs)),
+                 ("type", "+".join(t for t, on in (("faza", faza_present),
+                                                   ("zaga", zaga_present)) if on)),
+                 ("rows", total_rows), ("count", len(targets)),
+                 ("total", len(faza_ops) if faza_present else 0)],
+    )
     return {
         "status": "ok", "date": day.isoformat(), "mode": mode,
         "brigadirs": len(targets), "rows_written": total_rows,
@@ -1218,7 +1281,7 @@ async def import_catalog(
     kept_ops = {(daily_key(p.sap_code, p.name), p.work_center): p.op
                 for p in db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
                 if p.op}
-    db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
+    replaced = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
     for i, p in enumerate(parsed["products"]):
         db.add(PPProduct(
             manager_id=manager_id, sap_code=p["sap_code"], name=p.get("name") or "",
@@ -1247,6 +1310,14 @@ async def import_catalog(
 
     filled = _backfill_manager(db, manager_id)
     db.commit()
+    action_log.enrich(
+        target_kind="catalog", target_id=manager_id, unit_id=manager_id,
+        details=[("file", file.filename), ("name", parsed["sheet"]),
+                 ("added", len(parsed["products"])), ("removed", replaced or 0),
+                 ("work_center", f"+{wc_added} / ~{wc_updated}"),
+                 ("note", f"backfilled {filled['days']} day(s), "
+                          f"{filled['rows']} row(s)")],
+    )
     return {
         "status": "ok", "manager_id": manager_id, "sheet": parsed["sheet"],
         "products": len(parsed["products"]),
@@ -1279,11 +1350,20 @@ def admin_update_work_center(wc_id: int, body: WorkCenterBody,
     w = db.query(PPWorkCenter).filter(PPWorkCenter.id == wc_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="work center not found")
+    was = (w.shtatka, float(w.capacity) if w.capacity is not None else None)
     if body.shtatka is not None:
         w.shtatka = body.shtatka
     if body.capacity is not None:
         w.capacity = body.capacity
     db.commit()
+    now = (w.shtatka, float(w.capacity) if w.capacity is not None else None)
+    action_log.enrich(
+        target_kind="catalog", target_id=w.id, target_name=w.code,
+        unit_id=w.manager_id,
+        details=[("work_center", w.code)],
+        changes=[c for c in (("staffing", was[0], now[0]),
+                             ("capacity", was[1], now[1])) if c[1] != c[2]],
+    )
     return {"ok": True}
 
 
@@ -1334,6 +1414,13 @@ def admin_create_catalog(body: CatalogCreateBody,
     db.add(p)
     db.commit()
     db.refresh(p)
+    action_log.enrich(
+        target_kind="catalog", target_id=p.id, target_name=p.sap_code or p.name,
+        unit_id=p.manager_id,
+        details=[("sap_code", p.sap_code or None), ("product", p.name or None),
+                 ("work_center", p.work_center), ("phase", p.op),
+                 ("minutes", float(p.labor_time) if p.labor_time is not None else None)],
+    )
     return {"ok": True, "id": p.id}
 
 
@@ -1352,6 +1439,9 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="product not found")
+    was = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
+           "phase": p.op, "enabled": p.active,
+           "minutes": float(p.labor_time) if p.labor_time is not None else None}
     if body.labor_time is not None:
         p.labor_time = body.labor_time
     if body.name is not None:
@@ -1379,6 +1469,15 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     if body.active is not None:
         p.active = body.active
     db.commit()
+    now = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
+           "phase": p.op, "enabled": p.active,
+           "minutes": float(p.labor_time) if p.labor_time is not None else None}
+    action_log.enrich(
+        target_kind="catalog", target_id=p.id, target_name=p.sap_code or p.name,
+        unit_id=p.manager_id,
+        details=[("sap_code", p.sap_code or None), ("work_center", p.work_center)],
+        changes=[(k, was[k], now[k]) for k in now if was[k] != now[k]],
+    )
     return {"ok": True}
 
 
@@ -1392,8 +1491,20 @@ def admin_delete_catalog(prod_id: int,
     p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="product not found")
+    # Snapshot before the delete — the row is unreadable after commit.
+    gone = {"id": p.id, "unit": p.manager_id, "sap_code": p.sap_code,
+            "product": p.name, "work_center": p.work_center, "phase": p.op,
+            "minutes": float(p.labor_time) if p.labor_time is not None else None}
     db.delete(p)
     db.commit()
+    action_log.enrich(
+        target_kind="catalog", target_id=gone["id"],
+        target_name=gone["sap_code"] or gone["product"], unit_id=gone["unit"],
+        details=[("sap_code", gone["sap_code"] or None),
+                 ("product", gone["product"] or None),
+                 ("work_center", gone["work_center"]), ("phase", gone["phase"]),
+                 ("minutes", gone["minutes"])],
+    )
     return {"ok": True}
 
 
@@ -2103,6 +2214,7 @@ def trudoyomkost_call_notify(
         Manager.archived.is_(False),
     )}
     sent = []
+    called: list[str] = []      # «who was called for how many», for the register
     for i, item in enumerate(req.items):
         mgr = by_id.get(item.manager_id)
         if mgr is None or item.workers < 0:
@@ -2122,5 +2234,16 @@ def trudoyomkost_call_notify(
         db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
                                   workers=item.workers, sent_by=actor))
         sent.append(mgr.id)
+        called.append(f"{mgr.name}: {item.workers} ({target})")
     db.commit()
+    action_log.enrich(
+        target_kind="notification", target_id=f"call:{req.date or ''}",
+        unit_id=sent[0] if len(sent) == 1 else None,
+        unit_name=by_id[sent[0]].name if len(sent) == 1 else None,
+        day=targets.get(0),
+        details=[("sent", len(sent)), ("audience", "; ".join(called)),
+                 ("workers", sum(i.workers for i in req.items
+                                 if i.manager_id in sent)),
+                 ("value", f"{eff}%")],
+    )
     return {"sent": len(sent), "manager_ids": sent}

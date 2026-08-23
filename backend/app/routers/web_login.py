@@ -25,6 +25,7 @@ from app.config import settings
 from app.database import get_db
 from app.identity import photo_versions, profile_display_name, viewer_profile_key
 from app.models import Admin, TelegramUser, WebCredential
+from app.services import action_log
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +90,13 @@ def web_login(body: LoginBody, request: Request, db: Session = Depends(get_db)):
              cred.username, cred.profile_key, ip)
 
     token = web_auth.create_web_jwt(identity, cred, body.remember)
+    # The login NAME and the profile it belongs to — never the secret that
+    # opened it, in details, changes or reason.
+    action_log.enrich(
+        target_kind="weblogin", target_id=cred.profile_key,
+        target_name=identity["full_name"],
+        details=[("login", cred.username), ("role", identity["role"])],
+    )
     user = db.query(TelegramUser).filter_by(telegram_id=identity["telegram_id"]).first()
     admin = db.query(Admin).filter_by(telegram_id=identity["telegram_id"]).first()
 
@@ -151,6 +159,15 @@ def web_forgot(body: ForgotBody, request: Request, db: Session = Depends(get_db)
                  cred.username, cred.profile_key, ip, sent)
         if not sent:
             log.warning("web forgot: no holder received the reset for %s", cred.username)
+        action_log.enrich(
+            target_kind="weblogin", target_id=cred.profile_key,
+            details=[("login", cred.username), ("sent", bool(sent))],
+        )
+    else:
+        # The answer to the caller is identical either way; the register still
+        # says which name was tried, because that is what an audit is for.
+        action_log.enrich(target_kind="weblogin",
+                          details=[("username", username), ("status", "unknown")])
     return {"ok": True}
 
 
@@ -235,6 +252,11 @@ def change_password(body: ChangePasswordBody, payload: dict = Depends(_any_calle
     db.commit()
     log.info("WEB-LOGIN self_change | login=%s | profile=%s | via=%s",
              cred.username, cred.profile_key, "web" if is_web else "telegram")
+    action_log.enrich(
+        target_kind="weblogin", target_id=cred.profile_key,
+        details=[("login", cred.username),
+                 ("source", "web" if is_web else "telegram")],
+    )
 
     if not is_web:
         return {"ok": True}

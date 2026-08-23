@@ -58,6 +58,7 @@ from app.models import (
 from app.capabilities import page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
+from app.services import action_log
 from app.services.factory_scope import factory_manager_ids, resolve_factory
 # Reuse the shared notification helpers: notify_profile addresses a PERSON (one
 # bell row on the profile + a DM to every account holding it), _notify is the
@@ -1106,6 +1107,15 @@ def create_concern(
     if sent:
         db.commit()
 
+    action_log.enrich(
+        target_kind="concern", target_id=c.id, target_name=snippet,
+        unit_id=c.brigadir_manager_id, unit_name=c.brigadir_name,
+        day=entry,
+        details=[("id", c.seq), ("cell", c.cell_code), ("category", c.category),
+                 ("level", _level(c)), ("leader", c.leader_name),
+                 ("date", str(entry)), ("deadline", c.deadline_days),
+                 ("text", snippet)],
+    )
     return _serialize(c, _viewer_ctx(db, payload), sm_names=_sm_names(db),
                       owner_names=_owner_names(db, [c]), cell_leaders=_cell_leaders(db),
                       comment_counts=_comment_counts(db, [c.id]))
@@ -1133,6 +1143,12 @@ def update_concern(
     # itself would announce an "edit" every time somebody ticked a checkbox.
     was_status, was_text = c.status, c.concern_text
     was_deadline = c.deadline_days
+    # The register's own before-picture: the three fields above plus everything
+    # else this handler may rewrite, so the log's diff is the whole save.
+    was_row = {"cell": c.cell_code, "category": c.category, "status": c.status,
+               "text": c.concern_text, "deadline": c.deadline_days,
+               "date": str(c.entry_date) if c.entry_date else None,
+               "note": c.solution}
 
     # Closing a concern requires saying HOW it was closed. The note is not a
     # formality: it is the whole content of the DM the brigadir, the cell's
@@ -1200,6 +1216,19 @@ def update_concern(
         int(payload["sub"]), set(),
     ):
         db.commit()
+
+    now_row = {"cell": c.cell_code, "category": c.category, "status": c.status,
+               "text": c.concern_text, "deadline": c.deadline_days,
+               "date": str(c.entry_date) if c.entry_date else None,
+               "note": c.solution}
+    action_log.enrich(
+        target_kind="concern", target_id=c.id, target_name=_snippet(c.concern_text),
+        unit_id=c.brigadir_manager_id, unit_name=c.brigadir_name,
+        day=c.entry_date,
+        details=[("id", c.seq), ("cell", c.cell_code), ("level", _level(c))],
+        changes=[(k, was_row[k], now_row[k]) for k in now_row
+                 if was_row[k] != now_row[k]],
+    )
 
     # Resolved here and not hoisted above: nothing earlier in this function
     # needs them, and the bare names this line briefly carried belonged to
@@ -1410,6 +1439,7 @@ def escalate_concern(
     else:
         raise HTTPException(status_code=400, detail="Invalid direction")
 
+    to_name = _holder_name(c, new_level, sm_names, owner_names)
     c.level = new_level
     # The move restarts the concern's clock: whoever receives it is measured
     # from this instant, not from the day it was first raised. entry_date and
@@ -1429,7 +1459,7 @@ def escalate_concern(
         # because holders rotate: resolving them at read time would rewrite
         # the history of every concern the moment a unit changes hands.
         from_name=from_name,
-        target_name=_holder_name(c, new_level, sm_names, owner_names),
+        target_name=to_name,
     ))
     db.commit()
     db.refresh(c)
@@ -1462,6 +1492,14 @@ def escalate_concern(
     if sent:
         db.commit()
 
+    action_log.enrich(
+        target_kind="concern", target_id=c.id, target_name=_snippet(c.concern_text),
+        unit_id=c.brigadir_manager_id, unit_name=c.brigadir_name,
+        day=c.entry_date,
+        details=[("id", c.seq), ("cell", c.cell_code), ("mode", body.direction)],
+        changes=[("level", cur, new_level), ("target", from_name, to_name)],
+        reason=reason,
+    )
     return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id),
                       _sm_names(db), _owner_names(db, [c]), _cell_leaders(db),
                       _comment_counts(db, [c.id]))
@@ -1577,13 +1615,26 @@ def delete_concern(
     if payload.get("role") == "leader":
         raise HTTPException(status_code=403, detail="Leaders cannot delete concerns")
     _assert_can_edit(payload, c, db)
+    # What is being destroyed, read before the row becomes unreadable.
+    gone = {"id": c.id, "seq": c.seq, "cell": c.cell_code, "category": c.category,
+            "level": _level(c), "status": c.status, "unit": c.brigadir_manager_id,
+            "unit_name": c.brigadir_name, "day": c.entry_date,
+            "text": _snippet(c.concern_text)}
     # The thread has no meaning without the concern it hangs off, and the id is
     # reusable — an orphaned row would surface under a future concern.
-    db.query(LeaderConcernComment).filter(
+    dropped = db.query(LeaderConcernComment).filter(
         LeaderConcernComment.concern_id == c.id
     ).delete(synchronize_session=False)
     db.delete(c)
     db.commit()
+    action_log.enrich(
+        target_kind="concern", target_id=gone["id"], target_name=gone["text"],
+        unit_id=gone["unit"], unit_name=gone["unit_name"], day=gone["day"],
+        details=[("id", gone["seq"]), ("cell", gone["cell"]),
+                 ("category", gone["category"]), ("level", gone["level"]),
+                 ("status", gone["status"]), ("text", gone["text"]),
+                 ("comment", dropped or 0)],
+    )
 
 
 # ── comments ─────────────────────────────────────────────────────────────────
@@ -1686,6 +1737,11 @@ def add_concern_comment(
     )
     db.commit()
     db.refresh(row)
+    action_log.enrich(
+        target_kind="comment", target_id=row.id, target_name=_snippet(c.concern_text),
+        unit_id=c.brigadir_manager_id, unit_name=c.brigadir_name, day=c.entry_date,
+        details=[("concern", c.seq), ("cell", c.cell_code), ("text", row.text)],
+    )
     return _serialize_comment(row, payload, db)
 
 
@@ -1712,12 +1768,21 @@ def edit_concern_comment(
 ):
     if not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Comment text is required")
-    _visible_concern(concern_id, payload, db)
+    parent = _visible_concern(concern_id, payload, db)
     c = _own_comment(concern_id, comment_id, payload, db)
+    was = c.text
     c.text = body.text.strip()
     c.edited_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(c)
+    action_log.enrich(
+        target_kind="comment", target_id=c.id,
+        target_name=_snippet(parent.concern_text),
+        unit_id=parent.brigadir_manager_id, unit_name=parent.brigadir_name,
+        day=parent.entry_date,
+        details=[("concern", parent.seq), ("cell", parent.cell_code)],
+        changes=[("text", was, c.text)],
+    )
     return _serialize_comment(c, payload, db)
 
 
@@ -1728,7 +1793,16 @@ def delete_concern_comment(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
-    _visible_concern(concern_id, payload, db)
+    parent = _visible_concern(concern_id, payload, db)
     c = _own_comment(concern_id, comment_id, payload, db)
+    gone_id, gone_text = c.id, c.text
     db.delete(c)
     db.commit()
+    action_log.enrich(
+        target_kind="comment", target_id=gone_id,
+        target_name=_snippet(parent.concern_text),
+        unit_id=parent.brigadir_manager_id, unit_name=parent.brigadir_name,
+        day=parent.entry_date,
+        details=[("concern", parent.seq), ("cell", parent.cell_code),
+                 ("text", gone_text)],
+    )

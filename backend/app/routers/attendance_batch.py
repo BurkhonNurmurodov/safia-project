@@ -51,6 +51,7 @@ from app.models import (
     AttendanceUploadFile, Cell, DailySubmission, EditRequest, HrDocument, Manager,
 )
 from app.routers.admin import verify_admin
+from app.services import action_log
 from app.services.attendance_sheet import AttendanceSheetError, parse_attendance_workbook
 from app.services.day_state import day_state
 from app.services.kpi_calculator import is_direct_role
@@ -67,6 +68,12 @@ DATE_LIMIT = 180
 
 # Row fields an admin may edit by hand.
 EDITABLE_FIELDS = ("worker_name", "job_title", "schedule", "clock_in_out", "hours_worked")
+
+# Row field → the action-register label it is written under, so an edit reads
+# "hours 8 → 4" in the log rather than naming a column of this table.
+_LOG_FIELDS = {
+    "worker_name": "worker", "job_title": "title", "hours_worked": "hours",
+}
 
 # Fields a file supplies for a worker — snapshotted into `file_values` when an
 # admin edit outranks a newer file, so the newer numbers stay recoverable.
@@ -912,6 +919,12 @@ async def upload(
         "brigadirs":      sum(len(v) for v in matched.values()),
         "unmatched":      unmatched,
     }
+    action_log.enrich(
+        target_kind="batch", target_id=batch.id, target_name=f.filename, day=d,
+        details=[("file", f.filename), ("date", str(d)),
+                 ("rows", len(parsed["rows"])), ("added", rows_added),
+                 ("cells", len(added) + len(replaced))],
+    )
     return result
 
 
@@ -939,6 +952,7 @@ def remove_upload(
     ).first()
     if not up:
         raise HTTPException(status_code=404, detail="Yuklama topilmadi")
+    up_name = up.filename          # snapshot: the row goes away below
 
     rows = db.query(AttendanceBatchRow).filter(
         AttendanceBatchRow.batch_id == batch.id,
@@ -1003,6 +1017,11 @@ def remove_upload(
     if not batch.cells:
         db.delete(batch)
         db.commit()
+        action_log.enrich(
+            target_kind="batch", target_id=upload_id, target_name=up_name, day=d,
+            details=[("file", up_name), ("date", str(d)),
+                     ("rows", rows_deleted), ("cells", len(dropped_cells))],
+        )
         return {**_legacy_payload(db, d),
                 "removed": {"rows_deleted": rows_deleted, "cells_removed": sorted(dropped_cells),
                             "manual_rows_kept": kept_manual, "skipped_managers": skipped}}
@@ -1016,6 +1035,11 @@ def remove_upload(
         "manual_rows_kept": kept_manual,
         "skipped_managers": skipped,
     }
+    action_log.enrich(
+        target_kind="batch", target_id=upload_id, target_name=up_name, day=d,
+        details=[("file", up_name), ("date", str(d)),
+                 ("rows", rows_deleted), ("cells", len(dropped_cells))],
+    )
     return out
 
 
@@ -1043,8 +1067,14 @@ def discard(
             Attendance.manager_id == mid, Attendance.date == d,
         ).delete(synchronize_session=False)
 
+    batch_id, cell_count = batch.id, len(batch.cells)
     db.delete(batch)
     db.commit()
+    action_log.enrich(
+        target_kind="batch", target_id=batch_id, day=d,
+        details=[("date", str(d)), ("cells", cell_count),
+                 ("skipped", len(skipped))],
+    )
     return {"date": d.isoformat(), "skipped_managers": skipped}
 
 
@@ -1083,6 +1113,7 @@ def update_cells(
 
     by_code = {bc.verifix_code: bc for bc in batch.cells}
     valid_managers = {m.id for m in db.query(Manager.id).all()}
+    before = {bc.verifix_code: (bc.manager_id, bool(bc.included)) for bc in batch.cells}
 
     for ch in body.changes:
         bc = by_code.get(ch.verifix_code)
@@ -1114,7 +1145,26 @@ def update_cells(
                     cell.manager_id = bc.manager_id
                     cell.att_included = bool(bc.included)
 
+    decided = []
+    for ch in body.changes:
+        bc = by_code.get(ch.verifix_code)
+        old_mid, old_inc = before.get(ch.verifix_code, (None, False))
+        if bc is None or (old_mid, old_inc) == (bc.manager_id, bool(bc.included)):
+            continue
+        decided.append((
+            ch.verifix_code,
+            f"{old_mid or '-'} / {'on' if old_inc else 'off'}",
+            f"{bc.manager_id or '-'} / {'on' if bc.included else 'off'}",
+        ))
+
     db.commit()
+    action_log.enrich(
+        target_kind="batch", target_id=batch.id, day=d,
+        details=[("date", str(d)), ("cells", len(body.changes)),
+                 ("changed", len(decided)),
+                 ("scope", "permanent" if body.permanent else "day")],
+        changes=decided,
+    )
     db.refresh(batch)
     return _batch_payload(db, batch, d)
 
@@ -1185,7 +1235,14 @@ def add_row(
     db.add(row)
     db.flush()
     _stage(batch, [body.verifix_code])
+    row_id, worker, hours = row.id, row.worker_name, row.hours_worked
     db.commit()
+    action_log.enrich(
+        target_kind="worker", target_id=row_id, target_name=worker,
+        unit_id=manager_id, day=d,
+        details=[("worker", worker), ("cell", body.verifix_code),
+                 ("date", str(d)), ("hours", hours)],
+    )
     db.refresh(batch)
     return _batch_payload(db, batch, d)
 
@@ -1206,6 +1263,7 @@ def edit_row(
     _require_open_day(db, manager_id, d)
 
     patch = body.model_dump(exclude_unset=True)
+    was = {f: getattr(row, f) for f in EDITABLE_FIELDS}
     touched = False
     for field in EDITABLE_FIELDS:
         if field not in patch:
@@ -1233,7 +1291,17 @@ def edit_row(
     row.file_values = None          # the admin has now spoken again
     _recompute_row(row)
     _stage(batch, [row.verifix_code])
+    row_id, worker, code = row.id, row.worker_name, row.verifix_code
+    edits = [(_LOG_FIELDS.get(f, f), was[f], getattr(row, f))
+             for f in EDITABLE_FIELDS
+             if f in patch and was[f] != getattr(row, f)]
     db.commit()
+    action_log.enrich(
+        target_kind="worker", target_id=row_id, target_name=worker,
+        unit_id=manager_id, day=d,
+        details=[("worker", worker), ("cell", code), ("date", str(d))],
+        changes=edits,
+    )
     db.refresh(batch)
     return _batch_payload(db, batch, d)
 
@@ -1258,6 +1326,7 @@ def revert_row(
     _require_open_day(db, manager_id, d)
 
     fv = row.file_values
+    was = {f: getattr(row, f) for f in FILE_FIELDS}
     for k in FILE_FIELDS:
         if k in fv:
             setattr(row, k, fv[k])
@@ -1265,7 +1334,16 @@ def revert_row(
     row.edited = False
     _recompute_row(row)
     _stage(batch, [row.verifix_code])
+    row_id, worker, code = row.id, row.worker_name, row.verifix_code
+    edits = [(_LOG_FIELDS.get(f, f), was[f], getattr(row, f))
+             for f in FILE_FIELDS if was[f] != getattr(row, f)]
     db.commit()
+    action_log.enrich(
+        target_kind="worker", target_id=row_id, target_name=worker,
+        unit_id=manager_id, day=d,
+        details=[("worker", worker), ("cell", code), ("date", str(d))],
+        changes=edits,
+    )
     db.refresh(batch)
     return _batch_payload(db, batch, d)
 
@@ -1285,11 +1363,18 @@ def delete_row(
     manager_id = _owner_of(batch, row.verifix_code)
     _require_open_day(db, manager_id, d)
     code = row.verifix_code
+    worker, hours = row.worker_name, row.hours_worked
 
     db.delete(row)
     db.flush()
     _stage(batch, [code])
     db.commit()
+    action_log.enrich(
+        target_kind="worker", target_id=row_id, target_name=worker,
+        unit_id=manager_id, day=d,
+        details=[("worker", worker), ("cell", code), ("date", str(d)),
+                 ("hours", hours)],
+    )
     db.refresh(batch)
     return _batch_payload(db, batch, d)
 
@@ -1311,6 +1396,7 @@ def delete_cell_day(
         raise HTTPException(status_code=404, detail=f"Yacheyka topilmadi: {verifix_code}")
 
     _require_open_day(db, bc.manager_id, d)
+    owner_id, cell_id = bc.manager_id, bc.cell_id     # snapshots: `bc` is deleted below
 
     deleted = db.query(AttendanceBatchRow).filter(
         AttendanceBatchRow.batch_id == batch.id,
@@ -1322,6 +1408,11 @@ def delete_cell_day(
     _apply_removal(db, batch, d)
     db.delete(bc)
     db.commit()
+    action_log.enrich(
+        target_kind="cell", target_id=cell_id or verifix_code,
+        target_name=verifix_code, unit_id=owner_id, day=d,
+        details=[("cell", verifix_code), ("date", str(d)), ("rows", deleted)],
+    )
     db.refresh(batch)
     out = _batch_payload(db, batch, d)
     out["rows_deleted"] = deleted
@@ -1348,6 +1439,8 @@ def delete_supervisor_day(
     if not mgr:
         raise HTTPException(status_code=404, detail="Brigadir topilmadi")
     _require_open_day(db, manager_id, d)
+    unit_name = mgr.name                # snapshot, before the commit expires it
+    cells_removed = 0
 
     rows_deleted = db.query(Attendance).filter(
         Attendance.manager_id == manager_id, Attendance.date == d,
@@ -1366,6 +1459,7 @@ def delete_supervisor_day(
     if batch:
         doomed = [bc for bc in batch.cells if bc.manager_id == manager_id]
         codes = [bc.verifix_code for bc in doomed]
+        cells_removed = len(doomed)
         if codes:
             db.query(AttendanceBatchRow).filter(
                 AttendanceBatchRow.batch_id == batch.id,
@@ -1381,6 +1475,12 @@ def delete_supervisor_day(
     else:
         out = _legacy_payload(db, d)
     out["rows_deleted"] = rows_deleted
+    action_log.enrich(
+        target_kind="unit", target_id=manager_id, target_name=unit_name,
+        unit_id=manager_id, unit_name=unit_name, day=d,
+        details=[("unit", unit_name), ("date", str(d)),
+                 ("rows", rows_deleted), ("cells", cells_removed)],
+    )
     return out
 
 
@@ -1558,4 +1658,15 @@ def save(
         # caused it rather than only in a log nobody reads.
         "lost":     lost,
     }
+    one = written[0] if len(written) == 1 else None
+    action_log.enrich(
+        target_kind="batch", target_id=batch.id, day=d,
+        unit_id=one["manager_id"] if one else None,
+        unit_name=one["manager_name"] if one else None,
+        details=[("date", str(d)),
+                 ("rows", sum(i["rows"] for i in written)),
+                 ("count", len(written))]
+        + ([("unit", one["manager_name"])] if one else [])
+        + ([("skipped", len(skipped))] if skipped else []),
+    )
     return out

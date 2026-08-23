@@ -22,6 +22,7 @@ from app.capabilities import CAP_FACTORIES_MANAGE, require_cap
 from app.database import get_db
 from app.models import AppSetting, Factory, Manager
 from app.security import require_auth
+from app.services import action_log
 from app.services.factory_scope import (
     DEFAULT_FACTORY_SETTING, FACTORY_ALL_TAB_SETTING,
     all_tab_enabled, default_factory_id, list_factories, serialize,
@@ -58,6 +59,14 @@ class SettingsIn(BaseModel):
 
 class ReorderIn(BaseModel):
     order: list[int]
+
+
+def _fname(f: Optional[Factory]) -> Optional[str]:
+    """Display name for the log, ru-first — the same fallback every DB-held
+    name uses. Snapshotted at the moment of the action, never re-derived."""
+    if not f:
+        return None
+    return f.name_ru or f.name_uz or f.name_en or f.name_uz_cyrl or f.code
 
 
 def _get(db: Session, factory_id: int) -> Factory:
@@ -144,6 +153,10 @@ def create_factory(body: FactoryIn, db: Session = Depends(get_db), _: dict = Dep
     db.add(f)
     db.commit()
     db.refresh(f)
+    action_log.enrich(
+        target_kind="factory", target_id=f.id, target_name=_fname(f),
+        details=[("code", f.code), ("name", _fname(f))],
+    )
     return serialize(f)
 
 
@@ -151,6 +164,9 @@ def create_factory(body: FactoryIn, db: Session = Depends(get_db), _: dict = Dep
 def update_factory(factory_id: int, body: FactoryIn,
                    db: Session = Depends(get_db), _: dict = Depends(_admin)):
     f = _get(db, factory_id)
+    old = {"code": f.code, "name": f.name_ru, "name_uz": f.name_uz,
+           "name_uz_cyrl": f.name_uz_cyrl, "name_en": f.name_en,
+           "sort_order": f.sort_order, "archived": bool(f.archived)}
     code = (body.code or "").strip()
     if not code:
         raise HTTPException(status_code=400, detail="code required")
@@ -166,7 +182,15 @@ def update_factory(factory_id: int, body: FactoryIn,
         f.sort_order = body.sort_order
     if body.archived is not None:
         f.archived = bool(body.archived)
+    new = {"code": f.code, "name": f.name_ru, "name_uz": f.name_uz,
+           "name_uz_cyrl": f.name_uz_cyrl, "name_en": f.name_en,
+           "sort_order": f.sort_order, "archived": bool(f.archived)}
     db.commit()
+    action_log.enrich(
+        target_kind="factory", target_id=factory_id, target_name=_fname(f),
+        details=[("code", new["code"])],
+        changes=[(k, old[k], new[k]) for k in old if old[k] != new[k]],
+    )
     return serialize(f)
 
 
@@ -177,6 +201,7 @@ def delete_factory(factory_id: int, db: Session = Depends(get_db), _: dict = Dep
     would orphan every row those units own on six pages.
     """
     f = _get(db, factory_id)
+    name, code = _fname(f), f.code
     held = db.query(Manager).filter(Manager.factory_id == factory_id).count()
     if held:
         raise HTTPException(
@@ -191,6 +216,10 @@ def delete_factory(factory_id: int, db: Session = Depends(get_db), _: dict = Dep
         db.delete(row)
     db.delete(f)
     db.commit()
+    action_log.enrich(
+        target_kind="factory", target_id=factory_id, target_name=name,
+        details=[("code", code)],
+    )
     return None
 
 
@@ -201,14 +230,15 @@ def reorder(body: ReorderIn, db: Session = Depends(get_db), _: dict = Depends(_a
     for i, fid in enumerate(body.order):
         db.query(Factory).filter(Factory.id == fid).update({"sort_order": i})
     db.commit()
+    action_log.enrich(target_kind="factory",
+                      details=[("count", len(body.order))])
     return {"ok": True}
 
 
 @router.put("/assign/managers")
 def assign_managers(body: AssignIn, db: Session = Depends(get_db), _: dict = Depends(_admin)):
     """Move supervisor units between factories (bulk)."""
-    if body.factory_id is not None:
-        _get(db, body.factory_id)
+    target = _get(db, body.factory_id) if body.factory_id is not None else None
     ids = [int(m) for m in body.manager_ids or []]
     if not ids:
         return {"ok": True, "moved": 0}
@@ -218,6 +248,11 @@ def assign_managers(body: AssignIn, db: Session = Depends(get_db), _: dict = Dep
         .update({"factory_id": body.factory_id}, synchronize_session=False)
     )
     db.commit()
+    action_log.enrich(
+        target_kind="factory", target_id=body.factory_id,
+        target_name=_fname(target),
+        details=[("factory", _fname(target) or "—"), ("count", moved)],
+    )
     return {"ok": True, "moved": moved}
 
 
@@ -229,6 +264,8 @@ def save_settings(body: SettingsIn, db: Session = Depends(get_db), _: dict = Dep
     pages that each open on a different plant is exactly the confusion this
     feature exists to remove.
     """
+    before_default = default_factory_id(db)
+    before_all = all_tab_enabled(db)
     if body.default_factory is not None:
         raw = str(body.default_factory).strip()
         if raw != "all":
@@ -251,6 +288,15 @@ def save_settings(body: SettingsIn, db: Session = Depends(get_db), _: dict = Dep
         else:
             db.add(AppSetting(key=FACTORY_ALL_TAB_SETTING, value=val))
     db.commit()
+    after_default, after_all = default_factory_id(db), all_tab_enabled(db)
+    fmt = lambda v: "all" if v is None else str(v)
+    diff = []
+    if after_default != before_default:
+        diff.append(("factory", fmt(before_default), fmt(after_default)))
+    if after_all != before_all:
+        diff.append(("all_tab", before_all, after_all))
+    action_log.enrich(target_kind="setting", target_id=DEFAULT_FACTORY_SETTING,
+                      changes=diff)
     return {
         "default_factory": (
             str(default_factory_id(db)) if default_factory_id(db) is not None else "all"

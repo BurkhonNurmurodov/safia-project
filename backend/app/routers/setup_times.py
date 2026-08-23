@@ -40,6 +40,7 @@ from app.database import get_db
 from app.models import Cell, CellPerenaladka, Manager, RoleProfile, SetupTime, SheetSource
 from app.permissions import require_page
 from app.routers.idle_cell import _scoped_cells
+from app.services import action_log
 from app.services.cell_lookup import by_verifix, resolve_verifix
 
 router = APIRouter(prefix="/api/setup-times", tags=["setup-times"])
@@ -156,8 +157,11 @@ def create_setup_time(
     _require_admin(payload)
     if not (body.cell or "").strip():
         raise HTTPException(status_code=422, detail="cell is required")
-    if body.manager_id is not None and not db.query(Manager).filter_by(id=body.manager_id).first():
-        raise HTTPException(status_code=404, detail="Manager not found")
+    mgr = None
+    if body.manager_id is not None:
+        mgr = db.query(Manager).filter_by(id=body.manager_id).first()
+        if not mgr:
+            raise HTTPException(status_code=404, detail="Manager not found")
     r = SetupTime(
         manager_id=body.manager_id,
         supervisor=(body.supervisor or "").strip(),
@@ -168,6 +172,13 @@ def create_setup_time(
     )
     db.add(r)
     db.commit()
+    action_log.enrich(
+        target_kind="setup", target_id=r.id, target_name=r.cell,
+        unit_id=r.manager_id, unit_name=(mgr.name if mgr else r.supervisor or None),
+        details=[("cell", r.cell),
+                 ("minutes", float(r.minutes) if r.minutes is not None else None),
+                 ("product", r.sku or None), ("reason", r.reason or None)],
+    )
     return {"status": "ok", "id": r.id}
 
 
@@ -285,9 +296,13 @@ def save_fact(
     brigadir's correction survives the next «Смена отчёт» Refresh."""
     if not _valid_date(body.date):
         raise HTTPException(status_code=400, detail="Invalid date")
-    allowed = {c.id for c in _scoped_cells(db, payload, *FACT_PAGES)}
+    scoped = _scoped_cells(db, payload, *FACT_PAGES)
+    allowed = {c.id for c in scoped}
     if body.cell_id not in allowed:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    # The scope query already carried the cell object — no second lookup to name
+    # the cell in the register.
+    cell_code = next((c.verifix_code for c in scoped if c.id == body.cell_id), None)
     minutes = max(0.0, float(body.minutes or 0))
     if minutes <= 0:
         raise HTTPException(status_code=400, detail="Enter the changeover minutes")
@@ -307,6 +322,15 @@ def save_fact(
     p.entered_by_profile = who
     db.commit()
     db.refresh(p)
+    action_log.enrich(
+        target_kind="setup", target_id=p.id, target_name=cell_code,
+        day=body.date,
+        details=[("cell", cell_code or f"#{body.cell_id}"), ("date", body.date),
+                 ("mode", "edited" if old else "added")],
+        changes=[(k, old[k] if old else None, v) for k, v in
+                 (("minutes", minutes), ("note", note))
+                 if old is None or old[k] != v],
+    )
     grant_page = _fact_grant_page(db, payload)
     if grant_page:
         diff = [(k, old[k] if old else None, v) for k, v in
@@ -348,6 +372,13 @@ def refresh_fact(
             db, payload, page_cap(PAGE), "idle_cell.peren_refreshed",
             details=[("l.count", f"+{result.get('saved', 0)} / −{result.get('cleared', 0)}")],
         )
+    action_log.enrich(
+        target_kind="batch", target_id="cell_perenaladka",
+        details=[("source", "shift_report"), ("added", result.get("saved", 0)),
+                 ("removed", result.get("cleared", 0)),
+                 ("skipped", result.get("kept", 0)),
+                 ("cells", result.get("cells", 0))],
+    )
     return {"status": "ok", **result}
 
 
@@ -361,22 +392,26 @@ def delete_fact(
     p = db.query(CellPerenaladka).filter(CellPerenaladka.id == entry_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Entry not found")
-    allowed = {c.id for c in _scoped_cells(db, payload, *FACT_PAGES)}
+    scoped = _scoped_cells(db, payload, *FACT_PAGES)
+    allowed = {c.id for c in scoped}
     if p.cell_id not in allowed:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
     # Snapshot before the delete — the row is unreadable after commit.
     via_grant = _fact_grant_page(db, payload)
-    if via_grant:
-        cell = db.query(Cell).filter_by(id=p.cell_id).first()
-        del_details = [("cell", cell.verifix_code if cell else f"#{p.cell_id}"),
-                       ("date", str(p.date))]
-        del_changes = [("minutes", float(p.minutes or 0), None),
-                       ("note", p.note or "", None)]
+    code = next((c.verifix_code for c in scoped if c.id == p.cell_id), None)
+    del_details = [("cell", code or f"#{p.cell_id}"), ("date", str(p.date))]
+    del_changes = [("minutes", float(p.minutes or 0), None),
+                   ("note", p.note or "", None)]
+    gone_id, gone_day = p.id, p.date
     db.delete(p)
     db.commit()
     if via_grant:
         alert_grant_use(db, payload, page_cap(via_grant), "idle_cell.peren_deleted",
                         details=del_details, changes=del_changes, native=False)
+    action_log.enrich(
+        target_kind="setup", target_id=gone_id, target_name=code,
+        day=gone_day, details=del_details, changes=del_changes,
+    )
 
 
 # ── «Tahlil» tab — standard vs fact over a range ─────────────────────────────
@@ -432,6 +467,11 @@ def update_setup_time(
     if not r:
         raise HTTPException(status_code=404, detail="Row not found")
     fields = body.model_dump(exclude_unset=True)
+    # Snapshot before the writes: the row IS the diff, and after the assignments
+    # there is nothing left to compare against.
+    before = {"unit": r.manager_id, "name": r.supervisor, "cell": r.cell,
+              "minutes": float(r.minutes) if r.minutes is not None else None,
+              "reason": r.reason, "product": r.sku}
     if "manager_id" in fields:
         mid = fields["manager_id"]
         if mid is not None and not db.query(Manager).filter_by(id=mid).first():
@@ -451,6 +491,15 @@ def update_setup_time(
     if "sku" in fields:
         r.sku = (fields["sku"] or "").strip()
     db.commit()
+    after = {"unit": r.manager_id, "name": r.supervisor, "cell": r.cell,
+             "minutes": float(r.minutes) if r.minutes is not None else None,
+             "reason": r.reason, "product": r.sku}
+    action_log.enrich(
+        target_kind="setup", target_id=r.id, target_name=r.cell,
+        unit_id=r.manager_id,
+        details=[("cell", r.cell)],
+        changes=[(k, before[k], after[k]) for k in after if before[k] != after[k]],
+    )
     return {"status": "ok"}
 
 
@@ -464,6 +513,18 @@ def delete_setup_time(
     r = db.query(SetupTime).filter_by(id=row_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Row not found")
+    # What is being destroyed, snapshotted before the row becomes unreadable.
+    gone = {"id": r.id, "cell": r.cell, "unit": r.manager_id,
+            "name": r.supervisor,
+            "minutes": float(r.minutes) if r.minutes is not None else None,
+            "reason": r.reason, "product": r.sku}
     db.delete(r)
     db.commit()
+    action_log.enrich(
+        target_kind="setup", target_id=gone["id"], target_name=gone["cell"],
+        unit_id=gone["unit"], unit_name=gone["name"] or None,
+        details=[("cell", gone["cell"]), ("minutes", gone["minutes"]),
+                 ("product", gone["product"] or None),
+                 ("reason", gone["reason"] or None)],
+    )
     return {"status": "ok"}

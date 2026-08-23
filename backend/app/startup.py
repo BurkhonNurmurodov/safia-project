@@ -1190,6 +1190,29 @@ def add_leader_ai_resolution() -> None:
         db.close()
 
 
+def add_leader_ai_reviewed_index() -> None:
+    """2026-08-23: the progress strip started asking WHEN rows were judged.
+
+    `/leader-ai/progress` is polled every four seconds for as long as a backfill
+    takes, and two of its queries now sort or count on `reviewed_at`: the run's
+    `done`, and the trailing sample the ETA is measured from (`_pace`). Without
+    an index both walk the table on every poll — cheap today, and quietly worse
+    every month the corpus grows, which is exactly the shape of cost nobody goes
+    looking for. Idempotent."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_leader_ai_reviews_reviewed_at "
+            "ON leader_ai_reviews (reviewed_at)"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader-ai reviewed_at index skipped: {exc}")
+    finally:
+        db.close()
+
+
 def migrate_attendance_batches() -> None:
     """2026-08-01: the single-file «Davomat» upload.
 

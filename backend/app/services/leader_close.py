@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     LeaderTaskDay, LeaderTaskEntry, LeaderTaskMedia, Manager, RoleProfile,
 )
-from app.services import leader_ai, leader_proof, leader_tasks
+from app.services import action_log, leader_ai, leader_proof, leader_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -278,9 +278,30 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
                 continue
             entry = force_answer(db, day=day, task_id=tid, cfg_entry=s, shift=shift)
             db.commit()
+            # Read here, not after the close: `close_task` commits, which
+            # expires the instance, so the same two reads would then cost a
+            # re-SELECT. `locked()` loads it on the next line either way.
+            eid, was_done = entry.id, bool(entry.done)
             if close_task(db, day=day, entry=entry, cfg=cfg,
                           actor=f"deadline · {prof.name}"):
                 done += 1
+                # A submission nobody pressed anything for. It locks a task
+                # forever and hands it to the AI, so it has to be as visible in
+                # the register as the leader's own «Vazifani yopish» — one row
+                # per task ACTUALLY closed, which is why it sits inside the
+                # `if`: the 5-minute sweep is otherwise a no-op and must write
+                # nothing on the ticks where nothing was due.
+                action_log.record_system(
+                    "leader_review", "checklist.task_autoclosed", db=db,
+                    target_kind="task", target_id=eid,
+                    target_name=prof.name,
+                    unit_id=day.manager_id, day=day.date,
+                    details=[("leader", prof.name), ("task_id", tid),
+                             ("shift", shift),
+                             ("deadline", task_deadline(s, shift)),
+                             ("state", "done" if was_done else "not_done")],
+                    reason="deadline",
+                )
         maybe_close_day(db, day, cfg)
     return done
 
@@ -343,6 +364,7 @@ def close_expired_days(db: Session, prof, shift: int,
     cfg = leader_tasks.effective_leader_config(db, prof)
     now = datetime.now(timezone.utc)
     reason = leader_tasks.missed_reason(shift)
+    closed: list[tuple] = []
     for day in stale:
         have = {e.task_id for e in
                 db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
@@ -354,7 +376,29 @@ def close_expired_days(db: Session, prof, shift: int,
         day.closed_at = now
         day.completion = leader_tasks.compute_completion(
             cfg, db.query(LeaderTaskEntry).filter_by(day_id=day.id).all())
+        # Snapshotted HERE, while the instances are loaded: the commit below
+        # expires them, and re-reading four columns per day to describe the
+        # work would make the audit trail cost a query round for every close.
+        closed.append((day.id, day.manager_id, day.date,
+                       round(float(day.completion or 0))))
     db.commit()
+
+    # The register learns what the deadline did — one row per day actually
+    # closed, written AFTER the commit so nothing is announced that did not
+    # land. Both doors reach this (the bot's /tasks entry and the scheduled
+    # sweep) and both are the platform acting, not the leader: nobody pressed
+    # anything, and a score that moved with no button behind it is precisely
+    # the change an operator later cannot explain.
+    deadline = leader_tasks.deadline_hhmm(shift)
+    for did, mid, dday, score in closed:
+        action_log.record_system(
+            "leader_review", "checklist.day_autoclosed", db=db,
+            target_kind="day", target_id=did, target_name=prof.name,
+            unit_id=mid or prof.manager_id, day=dday,
+            details=[("leader", prof.name), ("shift", shift),
+                     ("score", score), ("deadline", deadline)],
+            reason="deadline",
+        )
 
     # Auto-closed bygone days are submissions too — queue their photos, and ONLY
     # theirs: one `queue_report` per day just closed, exactly the rule the manual

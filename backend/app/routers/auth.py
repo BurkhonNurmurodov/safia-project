@@ -16,6 +16,7 @@ from app.config import settings
 from app.database import get_db
 from app.identity import photo_versions, profile_key, role_row_profile_key
 from app.models import Admin, Language, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole
+from app.services import action_log
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -204,6 +205,10 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
 
         if not visible:
             token = create_jwt(telegram_id, "admin", full_name)
+            action_log.enrich(
+                target_kind="user", target_id=telegram_id, target_name=full_name,
+                details=[("status", "approved"), ("role", "admin")],
+            )
             return {"status": "approved", "role": "admin", "full_name": full_name,
                     "token": token, "telegram_id": telegram_id,
                     "language": (user.language if user else None) or admin_row.language or "uz"}
@@ -228,6 +233,10 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
 
         token = create_jwt(telegram_id, active_role, active_name, active_role_id,
                            None if active_ref == ADMIN_ROLE_REF else active_ref)
+        action_log.enrich(
+            target_kind="user", target_id=telegram_id, target_name=active_name,
+            details=[("status", "approved"), ("role", active_role)],
+        )
         return {
             "status":      "approved",
             "role":        active_role,
@@ -243,6 +252,9 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
     user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
 
     if not user:
+        action_log.enrich(target_kind="user", target_id=telegram_id,
+                          target_name=tg_name,
+                          details=[("status", "not_registered")])
         return {"status": "not_registered"}
 
     roles = (
@@ -252,6 +264,9 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
         .all()
     )
     if not roles:
+        action_log.enrich(target_kind="user", target_id=telegram_id,
+                          target_name=tg_name,
+                          details=[("status", "not_registered")])
         return {"status": "not_registered"}
 
     approved = [r for r in roles if r.status == "approved"]
@@ -259,7 +274,15 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
 
     if not approved:
         if pending:
+            action_log.enrich(
+                target_kind="user", target_id=telegram_id,
+                target_name=pending[-1].full_name,
+                details=[("status", "pending"), ("role", pending[-1].role)],
+            )
             return {"status": "pending", "full_name": pending[-1].full_name}
+        action_log.enrich(target_kind="user", target_id=telegram_id,
+                          target_name=tg_name,
+                          details=[("status", "rejected")])
         return {"status": "rejected"}
 
     # Active role: the one last used, as long as it is still approved
@@ -271,6 +294,11 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
     db.commit()
 
     token = create_jwt(telegram_id, active.role, active.full_name, active.role_id, active.id)
+    action_log.enrich(
+        target_kind="user", target_id=telegram_id, target_name=active.full_name,
+        details=[("status", "approved"), ("role", active.role)],
+        unit_id=active.role_id if active.role in ("supervisor", "leader") else None,
+    )
     return {
         "status":    "approved",
         "role":      active.role,
@@ -313,6 +341,12 @@ def switch_role(body: SwitchRoleBody, token: str = Depends(_oauth2), db: Session
             db.commit()
         full_name = _admin_profile_name(db, admin_row) or "Admin"
         new_token = create_jwt(telegram_id, "admin", full_name)
+        action_log.enrich(
+            target_kind="profile",
+            target_id=profile_key("admin", admin_row.profile_id),
+            target_name=full_name,
+            changes=[("role", payload.get("role"), "admin")],
+        )
         return {
             "token":     new_token,
             "role":      "admin",
@@ -339,6 +373,12 @@ def switch_role(body: SwitchRoleBody, token: str = Depends(_oauth2), db: Session
         db.commit()
 
     new_token = create_jwt(telegram_id, target.role, target.full_name, target.role_id, target.id)
+    action_log.enrich(
+        target_kind="profile", target_id=profile_key(target.role, target.role_id),
+        target_name=target.full_name,
+        details=[("profile", target.full_name)],
+        changes=[("role", payload.get("role"), target.role)],
+    )
     return {
         "token":     new_token,
         "role":      target.role,
@@ -370,16 +410,24 @@ def set_language(body: SetLanguageBody, token: str = Depends(_oauth2), db: Sessi
     # telegram_users row, so their language lives on the admins row instead —
     # _get_user_lang reads both, so the bot DMs them in this language too.
     persisted = False
+    before = None
     user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
     if user:
+        before = user.language
         user.language = lang
         persisted = True
     admin = db.query(Admin).filter_by(telegram_id=telegram_id).first()
     if admin:
+        before = before or admin.language
         admin.language = lang
         persisted = True
     if persisted:
         db.commit()
+    action_log.enrich(
+        target_kind="user", target_id=telegram_id,
+        target_name=payload.get("full_name"),
+        changes=[("language", before, lang)],
+    )
     return {"ok": True, "language": lang, "persisted": persisted}
 
 
@@ -394,6 +442,7 @@ def leave_role(role_ref: int, token: str = Depends(_oauth2), db: Session = Depen
     if not target:
         raise HTTPException(status_code=404, detail="Role not found")
 
+    left_role, left_name = target.role, target.full_name
     db.delete(target)
     db.query(RegistrationNotice).filter_by(role_ref=role_ref).delete()
 
@@ -410,6 +459,11 @@ def leave_role(role_ref: int, token: str = Depends(_oauth2), db: Session = Depen
             db.delete(user)
         db.query(RegistrationNotice).filter_by(target_telegram_id=telegram_id).delete()
         db.commit()
+        action_log.enrich(
+            target_kind="user", target_id=telegram_id, target_name=left_name,
+            details=[("role", left_role), ("profile", left_name),
+                     ("mode", "account_deleted")],
+        )
         return {"ok": True, "roles": [], "account_deleted": True}
 
     approved = [r for r in remaining if r.status == "approved"]
@@ -425,6 +479,11 @@ def leave_role(role_ref: int, token: str = Depends(_oauth2), db: Session = Depen
             user.active_role_ref = None
     db.commit()
 
+    action_log.enrich(
+        target_kind="user", target_id=telegram_id, target_name=left_name,
+        details=[("role", left_role), ("profile", left_name),
+                 ("count", len(remaining))],
+    )
     return {
         "ok": True,
         "roles": _switcher_rows(db, [r for r in remaining if r.status != "rejected"]),
@@ -471,6 +530,8 @@ def send_start_hint(body: SendStartHintBody):
         bot.send_message(telegram_id, messages.get(body.language, messages["uz"]))
     except Exception:
         pass
+    action_log.enrich(target_kind="user", target_id=telegram_id,
+                      details=[("language", body.language)])
     return {"ok": True}
 
 
@@ -483,10 +544,15 @@ def delete_me(token: str = Depends(_oauth2), db: Session = Depends(get_db)):
     user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
     if user:
         lang = user.language or "uz"
-        db.query(TelegramUserRole).filter_by(telegram_id=telegram_id).delete()
+        dropped = db.query(TelegramUserRole).filter_by(telegram_id=telegram_id).delete()
         db.query(RegistrationNotice).filter_by(target_telegram_id=telegram_id).delete()
         db.delete(user)
         db.commit()
+        action_log.enrich(
+            target_kind="user", target_id=telegram_id,
+            target_name=payload.get("full_name"),
+            details=[("count", dropped)],
+        )
         # Send a message with /start so the user can tap it to re-register
         try:
             from app.telegram_bot import bot

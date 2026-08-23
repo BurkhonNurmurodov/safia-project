@@ -31,6 +31,7 @@ from app.models import Cell, CellAttendance, Manager, RoleProfile
 from app.capabilities import page_scope_is_all, profile_unit_ids
 from app.permissions import require_page
 from app import identity
+from app.services import action_log
 
 router = APIRouter(prefix="/api/cell-attendance", tags=["cell-attendance"])
 
@@ -230,9 +231,19 @@ def save_load_registry(
         raise HTTPException(status_code=404, detail="Unknown cell in changes")
 
     updated = 0
+    touched = []
     for c in cells:
         if bool(c.in_load) != wanted[c.id]:
+            touched.append((c.id, c.verifix_code, bool(c.in_load), wanted[c.id]))
             c.in_load = wanted[c.id]
             updated += 1
     db.commit()
+    one = touched[0] if len(touched) == 1 else None
+    action_log.enrich(
+        target_kind="cell",
+        target_id=one[0] if one else None,
+        target_name=one[1] if one else None,
+        details=[("cells", len(wanted)), ("changed", updated)],
+        changes=[(code or f"#{cid}", old, new) for cid, code, old, new in touched],
+    )
     return {"updated": updated}

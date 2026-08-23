@@ -42,6 +42,7 @@ from app.models import (
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
     TelegramUserRole,
 )
+from app.services import action_log
 from app.services.day_state import confirmed_pairs, day_state
 from app.xlsx_delivery import deliver_xlsx
 
@@ -1570,6 +1571,7 @@ def admin_update(body: DirectUpdateBody, caller=Depends(_require_staff), db: Ses
     if not row:
         raise HTTPException(status_code=404, detail="Attendance record not found")
 
+    row_id = row.id      # snapshot: the commit below expires the instance
     original = {
         "job_title":    row.job_title   or "",
         "schedule":     row.schedule    or "",
@@ -1592,12 +1594,21 @@ def admin_update(body: DirectUpdateBody, caller=Depends(_require_staff), db: Ses
         )
     db.commit()
     if changes:
+        unit = unit_name(db, body.manager_id)
+        diff = [(f, original.get(f), v) for f, v in changes.items()]
         alert_grant_use(
             db, caller, CAP_ATTENDANCE_EDIT, "attendance.edit",
-            details=[("unit", unit_name(db, body.manager_id)),
+            details=[("unit", unit),
                      ("worker", body.worker_name),
                      ("date", body.attend_date)],
-            changes=[(f, original.get(f), v) for f, v in changes.items()],
+            changes=diff,
+        )
+        action_log.enrich(
+            target_kind="worker", target_id=row_id, target_name=body.worker_name,
+            unit_id=body.manager_id, unit_name=unit, day=d,
+            details=[("unit", unit), ("worker", body.worker_name),
+                     ("date", body.attend_date)],
+            changes=diff,
         )
     return {"ok": True}
 
@@ -1623,6 +1634,7 @@ def admin_delete(body: AdminDeleteBody, caller=Depends(_require_staff), db: Sess
     if not row:
         raise HTTPException(status_code=404, detail="Attendance record not found")
 
+    row_id = row.id      # snapshot: the row is gone after the delete below
     original = {
         "job_title":    row.job_title   or "",
         "schedule":     row.schedule    or "",
@@ -1636,12 +1648,21 @@ def admin_delete(body: AdminDeleteBody, caller=Depends(_require_staff), db: Sess
     )
     db.delete(row)
     db.commit()
+    unit = unit_name(db, body.manager_id)
+    diff = [(f, v, None) for f, v in original.items()]
     alert_grant_use(
         db, caller, CAP_ATTENDANCE_DELETE, "attendance.delete",
-        details=[("unit", unit_name(db, body.manager_id)),
+        details=[("unit", unit),
                  ("worker", body.worker_name),
                  ("date", body.attend_date)],
-        changes=[(f, v, None) for f, v in original.items()],
+        changes=diff,
+    )
+    action_log.enrich(
+        target_kind="worker", target_id=row_id, target_name=body.worker_name,
+        unit_id=body.manager_id, unit_name=unit, day=d,
+        details=[("unit", unit), ("worker", body.worker_name),
+                 ("date", body.attend_date)],
+        changes=diff,
     )
     return {"ok": True}
 
@@ -1792,12 +1813,33 @@ def bulk_delete_attendance(
     db.commit()
     print(f"[bulk-delete] commit OK")
     if direct and affected:
+        unit = unit_name(db, manager_id)
         alert_grant_use(
             db, caller, CAP_ATTENDANCE_DELETE, "attendance.bulk_delete",
-            details=[("unit", unit_name(db, manager_id)),
+            details=[("unit", unit),
                      ("date", body.attend_date),
                      ("count", affected)],
             changes=deleted_rows,
+        )
+        action_log.enrich(
+            target_kind="batch", target_id=admin_batch_id,
+            unit_id=manager_id, unit_name=unit, day=d,
+            details=[("unit", unit), ("date", body.attend_date),
+                     ("count", affected)],
+            changes=deleted_rows,
+        )
+    elif pending_admin_batch:
+        # The supervisor branch deletes nothing — it FILES a batch of delete
+        # requests, so this row must not read as a deletion that happened.
+        _b_id, _b_mid, _b_date, _b_sup, _b_names = pending_admin_batch
+        action_log.enrich(
+            action="attendance.request_filed",
+            target_kind="batch", target_id=_b_id,
+            unit_id=manager_id, day=d,
+            details=[("date", body.attend_date), ("count", affected),
+                     ("workers", ", ".join(_b_names[:10])
+                      + (f" +{len(_b_names) - 10}" if len(_b_names) > 10 else "")),
+                     ("status", "pending")],
         )
     # A replaced batch's old requests were just rejected — clear its admin message.
     if body.replace_batch_id:
@@ -1927,14 +1969,23 @@ def create_request(body: CreateRequestBody, caller=Depends(_require_staff), db: 
         admin_dm=False,            # admins get the rich approve/reject message instead
     )
 
+    req_id = req.id      # snapshot: the commit below expires the instance
     db.commit()
+    action_log.enrich(
+        target_kind="request", target_id=req_id, target_name=body.worker_name,
+        unit_id=manager_id, day=d,
+        details=[("worker", body.worker_name), ("date", body.attend_date),
+                 ("mode", body.action), ("status", "pending")],
+        changes=[(f, (body.original or {}).get(f), v)
+                 for f, v in changes.items() if not f.startswith("_")],
+    )
     # Admins get an approve/reject button-message with the full request detail.
     try:
         from app.approvals import send_edit_request_to_admins
         send_edit_request_to_admins(db, req)
     except Exception:
         pass
-    return {"id": req.id}
+    return {"id": req_id}
 
 
 # ── Pending count ──────────────────────────────────────────────────────────────
@@ -2116,7 +2167,8 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
                              for f, v in req_changes.items() if not f.startswith("_")]
     else:
         alert_changes = None
-    alert_details = [("unit", unit_name(db, req.manager_id)),
+    unit = unit_name(db, req.manager_id)
+    alert_details = [("unit", unit),
                      ("supervisor", req.supervisor_name),
                      ("worker", req.worker_name),
                      ("date", str(req.date))]
@@ -2124,6 +2176,14 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
         alert_details.insert(0, ("request", tv("v.request_delete")))
     alert_grant_use(db, caller, CAP_REQUESTS_APPROVE, f"request.{action}",
                     details=alert_details, changes=alert_changes)
+    action_log.enrich(
+        target_kind="request", target_id=req_id, target_name=req.worker_name,
+        unit_id=req.manager_id, unit_name=unit, day=req.date,
+        details=[("unit", unit), ("brigadir", req.supervisor_name),
+                 ("worker", req.worker_name), ("date", str(req.date)),
+                 ("mode", "delete" if req_changes.get("_action") == "delete" else "edit")],
+        changes=(alert_changes or []) + [("status", "pending", action)],
+    )
     # Edit every admin's Telegram approve/reject message with the outcome,
     # whoever decided (this runs for both the web app and the Telegram tap).
     try:
@@ -2157,8 +2217,17 @@ def withdraw_request(req_id: int, caller=Depends(_require_staff), db: Session = 
     ):
         raise HTTPException(status_code=403, detail="Not your request")
 
+    was_delete = (req.changes or {}).get("_action") == "delete"
+    w_name, w_mid, w_date = req.worker_name, req.manager_id, req.date
     req.status = "rejected"
     db.commit()
+    action_log.enrich(
+        target_kind="request", target_id=req_id, target_name=w_name,
+        unit_id=w_mid, day=w_date,
+        details=[("worker", w_name), ("date", str(w_date)),
+                 ("mode", "delete" if was_delete else "edit")],
+        changes=[("status", "pending", "withdrawn")],
+    )
     try:
         from app.approvals import edit_admin_notices
         edit_admin_notices("edit_request", str(req_id), "rejected", caller.get("full_name", ""))
@@ -2254,7 +2323,17 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
         include_supervisor=True,
     )
 
+    u_name, u_mid, u_date = req.worker_name, req.manager_id, req.date
     db.commit()
+    action_log.enrich(
+        target_kind="request", target_id=req_id, target_name=u_name,
+        unit_id=u_mid, day=u_date,
+        details=[("worker", u_name), ("date", str(u_date)),
+                 ("mode", "delete" if is_delete else "edit")],
+        changes=[("status", "approved", "undone")]
+                + [(f, changes.get(f), original.get(f))
+                   for f in changes if not f.startswith("_")],
+    )
     return {"ok": True}
 
 
@@ -2345,11 +2424,18 @@ def export_attendance(request: Request, body: ExportBody, caller=Depends(_requir
     caption  = f"📊 Attendance — {body.attend_date}  •  {manager_name}  •  {len(body.rows)} workers"
 
     try:
-        return deliver_xlsx(request, caller, filename, buf.read(), caption, chat_id=tg_id)
+        resp = deliver_xlsx(request, caller, filename, buf.read(), caption, chat_id=tg_id)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+    action_log.enrich(
+        target_kind="day", target_id=f"{body.manager_id}:{body.attend_date}",
+        unit_id=body.manager_id, unit_name=manager_name, day=body.attend_date,
+        details=[("unit", manager_name), ("date", body.attend_date),
+                 ("rows", len(body.rows)), ("file", filename)],
+    )
+    return resp
 
 
 # ── Batch-level request endpoints ─────────────────────────────────────────────
@@ -2413,7 +2499,22 @@ def _process_batch(batch_token: str, action: str, caller: dict, db: Session, ids
             if att_row:
                 db.delete(att_row)
 
+    # Snapshot before the commit expires the instances — the register must not
+    # cost one re-SELECT per request in the batch.
+    b_mids  = {r.manager_id for r in reqs}
+    b_days  = {r.date for r in reqs}
+    b_names = [r.worker_name for r in reqs]
+
     db.commit()
+    action_log.enrich(
+        target_kind="batch", target_id=batch_token,
+        unit_id=next(iter(b_mids)) if len(b_mids) == 1 else None,
+        day=next(iter(b_days)) if len(b_days) == 1 else None,
+        details=[("count", len(reqs)),
+                 ("workers", ", ".join(b_names[:10])
+                  + (f" +{len(b_names) - 10}" if len(b_names) > 10 else ""))],
+        changes=[("status", "pending", action)],
+    )
     try:
         from app.approvals import edit_admin_notices
         edit_admin_notices("edit_batch", str(batch_token), action, processor_name)
@@ -2477,10 +2578,22 @@ def withdraw_batch(
     if not reqs:
         raise HTTPException(status_code=404, detail="No pending requests found in batch")
 
+    w_mids  = {r.manager_id for r in reqs}
+    w_days  = {r.date for r in reqs}
+    w_names = [r.worker_name for r in reqs]
     for req in reqs:
         req.status = "rejected"
 
     db.commit()
+    action_log.enrich(
+        target_kind="batch", target_id=batch_id,
+        unit_id=next(iter(w_mids)) if len(w_mids) == 1 else None,
+        day=next(iter(w_days)) if len(w_days) == 1 else None,
+        details=[("count", len(reqs)),
+                 ("workers", ", ".join(w_names[:10])
+                  + (f" +{len(w_names) - 10}" if len(w_names) > 10 else ""))],
+        changes=[("status", "pending", "withdrawn")],
+    )
     try:
         from app.approvals import edit_admin_notices
         name = caller.get("full_name", "")
@@ -2676,6 +2789,41 @@ def _doc_alert_details(db: Session, doc: HrDocument) -> list:
         names = ", ".join(emps[:10]) + (f" +{len(emps) - 10}" if len(emps) > 10 else "")
         details.append(("workers", f"{len(emps)}: {names}"))
     return details
+
+
+def _doc_log_fields(doc: HrDocument, changes: list | None = None) -> dict:
+    """Action-log identification of an HR document — `action_log.enrich(**…)`.
+
+    Costs no query: ``supervisor_name`` is the unit's name snapshotted when the
+    document was filed and the employees ride in the payload. Call it BEFORE a
+    delete — a removed row's attributes cannot be read back after the commit.
+    A → supervisor exchange also states the move itself (old_unit → new_unit),
+    which is the one fact the status transition alone never carries.
+    """
+    payload = doc.payload or {}
+    emps = [(e.get("worker_name") or "").strip()
+            for e in payload.get("employees") or []]
+    emps = [e for e in emps if e]
+    unit = doc.supervisor_name
+    details = [("doc_type", doc.doc_type), ("unit", unit or "—"),
+               ("date", str(doc.date))]
+    if payload.get("target_type"):
+        details.append(("target", _exchange_target_label(payload)))
+    if payload.get("new_role"):
+        details.append(("role", payload["new_role"]))
+    if emps:
+        details.append(("workers", f"{len(emps)}: " + ", ".join(emps[:10])
+                                   + (f" +{len(emps) - 10}" if len(emps) > 10 else "")))
+    chg = list(changes or [])
+    if payload.get("target_type") == "supervisor":
+        # old_unit → new_unit, as ONE old→new row: `changes` is already that table.
+        chg.append(("unit", unit, payload.get("target_manager_name")))
+    return {
+        "target_kind": "document", "target_id": doc.id,
+        "target_name": emps[0] if len(emps) == 1 else None,
+        "unit_id": doc.manager_id, "unit_name": unit,
+        "day": doc.date, "details": details, "changes": chg,
+    }
 
 
 def _record_history(db: Session, doc: HrDocument, action: str, caller: dict, detail: dict | None = None):
@@ -3465,8 +3613,14 @@ def delete_exchange_task(body: TaskDeleteBody, caller=Depends(_require_staff), d
     t = db.query(ExchangeTask).filter(ExchangeTask.name == name).first()
     if not t or not t.active:
         raise HTTPException(status_code=404, detail="Task not found")
+    task_id = t.id
     t.active = False
     db.commit()
+    action_log.enrich(
+        target_kind="task", target_id=task_id, target_name=name,
+        details=[("task", name)],
+        changes=[("enabled", True, False)],
+    )
     return {"ok": True}
 
 
@@ -3665,8 +3819,11 @@ def create_document(body: DocCreateBody, caller=Depends(_require_staff), db: Ses
     # no notifications/approval-requests to anyone (notify + broadcast are gated).
     if notifications_suppressed():
         _approve_doc(doc, caller, db)
+        log = _doc_log_fields(doc, [("status", None, "approved")])
         db.commit()
+        action_log.enrich(**log)
         return {"id": doc.id, "status": doc.status}
+    log = _doc_log_fields(doc, [("status", None, "draft")])
     _notify_all_parties(
         db, manager_id,
         "new_role_change",
@@ -3678,6 +3835,7 @@ def create_document(body: DocCreateBody, caller=Depends(_require_staff), db: Ses
         admin_dm=False,            # admins get the rich approve/reject message instead
     )
     db.commit()
+    action_log.enrich(**log)
     try:
         from app.approvals import send_hr_document_to_admins
         send_hr_document_to_admins(db, doc)
@@ -3723,10 +3881,14 @@ def _create_people_exchange(db: Session, caller: dict, body: "DocCreateBody",
     # Ghost Mode: apply immediately, silently — no approval step, no pings.
     if notifications_suppressed():
         _approve_doc(doc, caller, db)
+        log = _doc_log_fields(doc, [("status", None, "approved")])
         db.commit()
+        action_log.enrich(**log)
         return {"id": doc.id, "status": doc.status}
+    log = _doc_log_fields(doc, [("status", None, "draft")])
     _notify_exchange(db, doc, "created", int(caller["sub"]), admin_dm=False)
     db.commit()
+    action_log.enrich(**log)
     try:
         from app.approvals import send_hr_document_to_admins
         send_hr_document_to_admins(db, doc)
@@ -3799,7 +3961,9 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
         _record_history(db, doc, "edited", caller, {
             "target": _exchange_target_label(payload), "employee_count": len(payload["employees"]),
         })
+        log = _doc_log_fields(doc)
         db.commit()
+        action_log.enrich(**log)
         return {"ok": True}
 
     # ── role_change ──
@@ -3813,7 +3977,9 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
     _record_history(db, doc, "edited", caller, {
         "new_role": body.new_role, "employee_count": len(body.employees),
     })
+    log = _doc_log_fields(doc)
     db.commit()
+    action_log.enrich(**log)
     return {"ok": True}
 
 
@@ -3990,7 +4156,9 @@ def approve_document(doc_id: int, caller=Depends(_require_staff), db: Session = 
     _approve_doc(doc, caller, db)
     if doc.doc_type == "people_exchange":
         _notify_exchange(db, doc, "approved", int(caller["sub"]))
+    log = _doc_log_fields(doc, [("status", "draft", "approved")])
     db.commit()
+    action_log.enrich(**log)
     alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.approved",
                     details=_doc_alert_details(db, doc),
                     changes=[("status", tv("v.draft"), tv("v.approved"))],
@@ -4014,7 +4182,9 @@ def reject_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
         raise HTTPException(status_code=403, detail="Not authorised to reject this document")
     via_grant = _doc_reject_via_grant(doc, caller, db)
     _reject_document(doc, caller, db)
+    log = _doc_log_fields(doc, [("status", "draft", "rejected")])
     db.commit()
+    action_log.enrich(**log)
     alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.rejected",
                     details=_doc_alert_details(db, doc),
                     changes=[("status", tv("v.draft"), tv("v.rejected"))],
@@ -4038,7 +4208,9 @@ def cancel_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
     _cancel_doc(doc, caller, db)
     if doc.doc_type == "people_exchange":
         _notify_exchange(db, doc, "cancelled", int(caller["sub"]))
+    log = _doc_log_fields(doc, [("status", "approved", "draft")])
     db.commit()
+    action_log.enrich(**log)
     alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.cancelled",
                     details=_doc_alert_details(db, doc),
                     changes=[("status", tv("v.approved"), tv("v.draft"))],
@@ -4071,7 +4243,11 @@ def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
             raise HTTPException(status_code=403, detail="Not allowed to reject this document")
         via_grant = _doc_reject_via_grant(doc, caller, db)
         _reject_document(doc, caller, db)
+        log = _doc_log_fields(doc, [("status", "draft", "rejected")])
         db.commit()
+        # Deleting a DRAFT rejects it — the register must say what happened,
+        # not what the button was called.
+        action_log.enrich(action="document.rejected", **log)
         alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.rejected",
                         details=_doc_alert_details(db, doc),
                         changes=[("status", tv("v.draft"), tv("v.rejected"))],
@@ -4085,8 +4261,10 @@ def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
     elif caller.get("role") not in ("admin", "shift-manager") and not is_creator:
         raise HTTPException(status_code=403, detail="Not allowed to delete this document")
 
+    log = _doc_log_fields(doc, [("status", doc.status, None)])
     db.delete(doc)
     db.commit()
+    action_log.enrich(**log)
     if grant_alert:
         alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.deleted",
                         details=grant_alert[0], changes=grant_alert[1],
@@ -4202,6 +4380,14 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
         alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.bulk",
                         details=[("count", len(grant_rows))],
                         changes=grant_rows, native=False)
+    # ONE row for the whole toolbar press, naming the operation and the count —
+    # never one per document.
+    action_log.enrich(
+        target_kind="batch",
+        target_id=",".join(str(i) for i in body.ids[:20]),
+        details=[("mode", body.action), ("count", done),
+                 ("skipped", max(len(body.ids) - done, 0))],
+    )
     if resolved:
         try:
             from app.approvals import edit_admin_notices
@@ -4437,6 +4623,14 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
     db.commit()
 
     state, _, counts = day_state(db, manager_id, d)
+    left = counts["pending_requests"] + counts["draft_docs"]
+    action_log.enrich(
+        target_kind="day", target_id=f"{manager_id}:{body.date}",
+        unit_id=manager_id, unit_name=unit_name(db, manager_id), day=d,
+        details=[("date", body.date), ("state", state)]
+                + ([("pending", left)] if left else []),
+        changes=[("status", "open", "closed")],
+    )
     return {
         "ok": True, "state": state, "manager_id": manager_id, "date": body.date,
         "pending_requests": counts["pending_requests"] + counts["draft_docs"],
@@ -4456,6 +4650,9 @@ def reopen_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session =
 
     existing = db.query(DayApproval).filter_by(manager_id=body.manager_id, date=d).first()
     if existing:
+        # Snapshot before the delete: the row that says who closed this day is
+        # about to be gone, and the register becomes its only remaining trace.
+        closer = existing.approved_by_name
         db.delete(existing)
         _notify_all_parties(
             db, body.manager_id,
@@ -4466,9 +4663,16 @@ def reopen_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session =
             include_supervisor=True,
         )
         db.commit()
+        unit = unit_name(db, body.manager_id)
         alert_grant_use(db, caller, CAP_DAY_REOPEN, "day.reopened",
-                        details=[("unit", unit_name(db, body.manager_id)),
-                                 ("date", body.date)])
+                        details=[("unit", unit), ("date", body.date)])
+        action_log.enrich(
+            target_kind="day", target_id=f"{body.manager_id}:{body.date}",
+            unit_id=body.manager_id, unit_name=unit, day=d,
+            details=[("unit", unit), ("date", body.date),
+                     ("closed_by", closer or "—")],
+            changes=[("status", "closed", "open")],
+        )
     return {"ok": True, "state": "open", "manager_id": body.manager_id, "date": body.date}
 
 

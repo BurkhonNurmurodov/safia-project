@@ -65,7 +65,7 @@ from app.capabilities import (
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.security import require_auth
-from app.services import idle_intervals, idle_lock
+from app.services import action_log, idle_intervals, idle_lock
 from app import identity
 
 router = APIRouter(prefix="/api/idle-cell", tags=["idle-cell"])
@@ -592,6 +592,17 @@ def create_interval(
     _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_added",
            [("category", None, e.category), ("time", None, f"{e.start}–{e.end}"),
             ("note", None, e.note)])
+    action_log.enrich(
+        target_kind="interval", target_id=e.id,
+        target_name=getattr(cell, "verifix_code", None),
+        unit_id=getattr(cell, "manager_id", None), day=e.date,
+        details=[("cell", getattr(cell, "verifix_code", None) or f"#{e.cell_id}"),
+                 ("date", e.date), ("category", e.category),
+                 ("start", e.start), ("end", e.end),
+                 ("minutes", idle_intervals.duration(e.start, e.end)),
+                 ("state", "stopped" if e.stopped else "not_stopped")],
+        reason=e.note,
+    )
 
     if not decides and cell is not None and cell.manager_id:
         # The unit's brigadir is the one who reviews it. Admins are deliberately
@@ -647,6 +658,14 @@ def update_interval(
             zip(("category", "time", "stopped", "note"), old, new) if o != n]
     if diff:
         _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_edited", diff)
+    action_log.enrich(
+        target_kind="interval", target_id=e.id,
+        target_name=getattr(cell, "verifix_code", None),
+        unit_id=getattr(cell, "manager_id", None), day=e.date,
+        details=[("cell", getattr(cell, "verifix_code", None) or f"#{e.cell_id}"),
+                 ("date", e.date)],
+        changes=diff, reason=e.note,
+    )
 
     return _interval_json(e, _names_for(db, [e.entered_by_profile, e.decided_by_profile]),
                           _row_perm(e, decides, True))
@@ -671,11 +690,20 @@ def delete_interval(
         raise HTTPException(status_code=403, detail="Only the unit's brigadir may delete this entry")
     # Snapshot before the delete — the row is unreadable after commit.
     cell_id, date = e.cell_id, e.date
+    gone_id, gone_note = e.id, e.note or ""
     changes = [("category", e.category, None), ("time", f"{e.start}–{e.end}", None),
                ("note", e.note or "", None)]
     db.delete(e)
     db.commit()
     _alert(db, payload, cell_id, date, "idle_cell.interval_deleted", changes)
+    action_log.enrich(
+        target_kind="interval", target_id=gone_id,
+        target_name=getattr(cell, "verifix_code", None),
+        unit_id=getattr(cell, "manager_id", None), day=date,
+        details=[("cell", getattr(cell, "verifix_code", None) or f"#{cell_id}"),
+                 ("date", date)],
+        changes=changes, reason=gone_note,
+    )
 
 
 @router.delete("/{entry_id}", status_code=204)
@@ -698,9 +726,18 @@ def delete_legacy(
     if not _may_decide(_decider(db, payload), cell):
         raise HTTPException(status_code=403, detail="Only the unit's brigadir may retire a legacy row")
     cell_id, date = e.cell_id, str(e.date)
+    gone_id, gone_cat, gone_note = e.id, e.category, e.note or ""
     changes = [("stopped", float(e.stopped or 0), None),
                ("not_stopped", float(e.not_stopped or 0), None),
                ("note", e.note or "", None)]
     db.delete(e)
     db.commit()
     _alert(db, payload, cell_id, date, "idle_cell.deleted", changes)
+    action_log.enrich(
+        target_kind="interval", target_id=gone_id,
+        target_name=getattr(cell, "verifix_code", None),
+        unit_id=getattr(cell, "manager_id", None), day=date,
+        details=[("cell", getattr(cell, "verifix_code", None) or f"#{cell_id}"),
+                 ("date", date), ("category", gone_cat), ("type", "legacy")],
+        changes=changes, reason=gone_note,
+    )

@@ -24,7 +24,7 @@ from app.models import (
     TelegramUserRole, Translation,
 )
 from app.reg_token import make_reg_token
-from app.services import leader_ai, leader_close, leader_proof, leader_tasks
+from app.services import action_log, leader_ai, leader_close, leader_proof, leader_tasks
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
     effective_leader_config, promote_due,
@@ -773,6 +773,11 @@ def _language(call: types.CallbackQuery):
         return
 
     _state.setdefault(tid, {})["language"] = lang
+    # Same action the web app records as `identity.language_changed`; the tap
+    # carries no session yet, so the actor is the bare account until they
+    # register.
+    action_log.record_bot(None, tid, "identity", "identity.language_changed",
+                          details=[("language", lang)])
     bot.answer_callback_query(call.id)
 
     # Edit the language-selection message to remove its buttons
@@ -1006,6 +1011,7 @@ def _webapp_data(message: types.Message):
             db.add(user)
         db.flush()
         pending_role_ref = role_row.id
+        claimed_key = role_row.profile_key
         if not is_admin and user.phone:
             # New registration → require a fresh contact. Clearing the stale
             # phone (kept from a prior registration) makes _awaiting_contact()
@@ -1015,6 +1021,21 @@ def _webapp_data(message: types.Message):
             # restart wiped the in-memory _state.
             user.phone = None
         db.commit()
+        # A claim on a pre-created profile: the register says who asked for
+        # which identity, whether or not an admin ever decides it. An admin's
+        # own claim lands `approved` in the same breath, and the changes row is
+        # what says which of the two happened.
+        action_log.record_bot(
+            db, tid, "identity", "registration.claimed",
+            actor_name=full_name, actor_role=role,
+            target_kind="profile", target_id=claimed_key or role_id,
+            target_name=full_name,
+            unit_id=role_id if role in ("supervisor", "leader") else None,
+            unit_name=(full_name if role == "supervisor"
+                       else supervisor if role == "leader" else None),
+            details=[("role", role), ("language", lang)],
+            changes=[("status", None, new_status)],
+        )
 
     if is_admin:
         bot.send_message(tid, _msg(lang, "admin_role_added"), reply_markup=_dashboard_kb(lang))
@@ -1109,7 +1130,16 @@ def _adminreg_pick(call: types.CallbackQuery):
             user.phone = None   # same fresh-contact reset as the web flow above
         db.flush()
         pending_ref = role_row.id
+        claimed_name = p.name
         db.commit()
+        action_log.record_bot(
+            db, tid, "identity", "registration.claimed",
+            actor_name=claimed_name,
+            target_kind="profile", target_id=f"admin:{pid}",
+            target_name=claimed_name,
+            details=[("role", "admin")],
+            changes=[("status", None, "pending")],
+        )
 
     _state.setdefault(tid, {})["pending_role_ref"] = pending_ref
     bot.answer_callback_query(call.id)
@@ -1177,6 +1207,18 @@ def _contact(message: types.Message):
         # notices for the user's other pending roles stay untouched.
         db.query(RegistrationNotice).filter_by(role_ref=role_row.id).delete()
         _notify_admins_of_registration(db, tid, admin_text, role_ref=role_row.id)
+        # Sharing the contact is what turns a claim into a request admins can
+        # decide — the phone itself stays out of the register.
+        action_log.record_bot(
+            db, tid, "identity", "registration.submitted",
+            actor_name=role_row.full_name, actor_role=role_row.role,
+            target_kind="profile", target_id=role_row.profile_key or role_row.id,
+            target_name=role_row.full_name,
+            unit_id=role_row.role_id if role_row.role in ("supervisor", "leader") else None,
+            unit_name=(role_row.full_name if role_row.role == "supervisor"
+                       else supervisor),
+            details=[("role", role_row.role)],
+        )
     _state.pop(tid, None)
 
 
@@ -1445,6 +1487,25 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
     return True
 
 
+def _reg_facts(role_ref: int) -> dict:
+    """Who and what a pending role request names, for the action register.
+
+    Taken before the decision runs: a winning admin claim DELETES its role row
+    (so a stale row can never mint an admin JWT), and a log line that had to
+    read the row afterwards would lose the very claim it exists to record.
+    Never raises — the audit must not be able to block the decision."""
+    try:
+        with SessionLocal() as db:
+            r = db.query(TelegramUserRole).filter_by(id=role_ref).first()
+            if r is None:
+                return {}
+            return {"name": r.full_name, "role": r.role,
+                    "user": r.telegram_id, "profile": r.profile_key}
+    except Exception:
+        logger.debug("action log: registration facts unavailable", exc_info=True)
+        return {}
+
+
 def _caller_name(call: types.CallbackQuery) -> str:
     """Display name for the admin who tapped a button — their claimed profile
     name; the Telegram account name only covers unbound legacy admins."""
@@ -1477,12 +1538,27 @@ def _approval_callback(call: types.CallbackQuery):
 
     if code == "reg":
         try:
-            ok = decide_registration(int(ref), status, decided_by=_caller_name(call))
+            who = _caller_name(call)
+            # Snapshot BEFORE the decision: approving an admin claim deletes the
+            # role row outright, so afterwards there is nothing left to name.
+            facts = _reg_facts(int(ref))
+            ok = decide_registration(int(ref), status, decided_by=who)
         except Exception:
             logger.exception("registration callback failed: %s", call.data)
             bot.answer_callback_query(call.id, "Xatolik yuz berdi", show_alert=True)
             return
         if ok:
+            action_log.record_bot(
+                None, call.from_user.id, "identity",
+                "identity.role_approved" if status == "approved"
+                else "identity.role_rejected",
+                actor_name=who, actor_role="admin",
+                target_kind="profile",
+                target_id=facts.get("profile") or ref,
+                target_name=facts.get("name"),
+                details=[("role", facts.get("role")), ("user", facts.get("user"))],
+                changes=[("status", "pending", status)],
+            )
             bot.answer_callback_query(call.id, "✅ Tasdiqlandi" if status == "approved" else "❌ Rad etildi")
         else:
             bot.answer_callback_query(call.id, "Bu so'rov allaqachon ko'rib chiqilgan", show_alert=True)
@@ -1757,8 +1833,12 @@ def _broadcast_callback(call: types.CallbackQuery):
     lang = _get_lang(tid)
     if call.data == "bc:cancel":
         with SessionLocal() as db:
-            db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).delete()
+            dropped = db.query(BroadcastDraft).filter_by(
+                admin_telegram_id=tid).delete()
             db.commit()
+            if dropped:
+                action_log.record_bot(db, tid, "comms", "broadcast.draft_discarded",
+                                      actor_role="admin", target_kind="broadcast")
         try:
             bot.edit_message_text(_msg(lang, "bc_cancelled"), chat_id=call.message.chat.id,
                                   message_id=call.message.message_id)
@@ -1777,7 +1857,16 @@ def _broadcast_callback(call: types.CallbackQuery):
         d.status = "awaiting_recipients"
         d.warn_message_id = call.message.message_id
         token = d.token
+        count = len(d.message_ids or [])
         db.commit()
+        # The send itself is an HTTP call the middleware already records; this
+        # is the composer handing the draft over to the recipient picker.
+        action_log.record_bot(
+            db, tid, "comms", "broadcast.draft_composed",
+            actor_role="admin", target_kind="broadcast", target_id=token,
+            details=[("count", count)],
+            changes=[("status", "awaiting_continue", "awaiting_recipients")],
+        )
 
     url = f"{settings.webapp_url.rstrip('/')}/broadcast-receivers?d={token}"
     kb = types.InlineKeyboardMarkup()
@@ -2590,6 +2679,26 @@ def _lt_reset_task(db, day: LeaderTaskDay | None, task_id: int) -> None:
     db.commit()
 
 
+def _lt_log(db, tid: int, prof, date: str, action: str, **kw) -> None:
+    """One action-register row for what a leader just did in the checklist bot.
+
+    The checklist is the one place a leader changes the record from Telegram,
+    and none of it passes an HTTP route the action-log middleware can see — so
+    it records itself. The unit is named by ID alone: the menu never loads the
+    brigadir's name, and an audit row must not buy one with an extra query on
+    the path a leader is waiting on.
+
+    Never raises. A closed day that failed to log is a gap in the register; a
+    close that failed because of the register is a lost shift.
+    """
+    try:
+        action_log.record_bot(db, tid, "leader_review", action,
+                              actor_name=prof.name, actor_role="leader",
+                              unit_id=prof.manager_id, day=date, **kw)
+    except Exception:
+        logger.debug("action log: checklist row failed (%s)", action, exc_info=True)
+
+
 @bot.message_handler(commands=["tasks"])
 def _lt_cmd(message: types.Message):
     tid = message.from_user.id
@@ -2772,6 +2881,11 @@ def _lt_callback(call: types.CallbackQuery):
                 _lt_menu(db, tid, pid, lang, chat_id, msg_id)
                 return
             leader_close.close_task(db, day=day, entry=e, cfg=cfg, actor=prof.name)
+            _lt_log(db, tid, prof, date, "checklist.task_closed",
+                    target_kind="task", target_id=task_id,
+                    target_name=tname(task_id),
+                    details=[("leader", prof.name)],
+                    changes=[("status", "draft", "closed")])
             # The queue is worked by a daemon thread, exactly as the day close
             # does it: the leader is holding an open callback and a review
             # round-trip is seconds per photo.
@@ -2787,6 +2901,10 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
             _lt_reset_task(db, day, task_id)
+            if day:  # no day ⇒ nothing existed ⇒ nothing was emptied
+                _lt_log(db, tid, prof, date, "checklist.task_reset",
+                        target_kind="task", target_id=task_id,
+                        target_name=tname(task_id))
             bot.answer_callback_query(call.id)
             _lt_menu(db, tid, pid, lang, chat_id, msg_id)
             return
@@ -2814,6 +2932,11 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
             _lt_reset_task(db, day, task_id)
+            if day:
+                _lt_log(db, tid, prof, date, "checklist.task_reset",
+                        target_kind="task", target_id=task_id,
+                        target_name=tname(task_id),
+                        details=[("proof_kind", "camera")])
             bot.answer_callback_query(call.id, _lt(lang, "reset_toast"))
             # Land back ON the emptied camera, not on the menu: a leader resets
             # a camera task in order to shoot it again, and the menu would make
@@ -2833,7 +2956,11 @@ def _lt_callback(call: types.CallbackQuery):
                 return
             need = cfg.get(task_id, {}).get("min_media", 1)
             if need <= 0:  # no proof required — save instantly
-                _lt_save_entry(db, pid, task_id, True, None, [])
+                if _lt_save_entry(db, pid, task_id, True, None, []):
+                    _lt_log(db, tid, prof, date, "checklist.task_answered",
+                            target_kind="task", target_id=task_id,
+                            target_name=tname(task_id),
+                            details=[("status", "done"), ("photos", 0)])
                 bot.answer_callback_query(call.id, _lt(lang, "saved_toast"))
                 _lt_menu(db, tid, pid, lang, chat_id, msg_id)
                 return
@@ -2886,13 +3013,18 @@ def _lt_callback(call: types.CallbackQuery):
             if not cap or cap.leader_id != pid or cap.task_id != task_id:
                 bot.answer_callback_query(call.id, _lt(lang, "expired"), show_alert=True)
                 return
+            # The answer's shape is read off the capture BEFORE it is deleted
+            # below — the audit row is written after the save, by which time
+            # this row is gone.
             if cap.stage == "photos":
                 media = [(p[0], p[1]) for p in (cap.media or [])]
                 if len(media) < cap.min_media:
                     bot.answer_callback_query(call.id)
                     return
+                done, why, shots = True, None, len(media)
                 ok = _lt_save_entry(db, pid, task_id, True, None, media)
             elif cap.stage == "confirm_reason":
+                done, why, shots = False, cap.reason or "", 0
                 ok = _lt_save_entry(db, pid, task_id, False, cap.reason or "", [])
             else:
                 bot.answer_callback_query(call.id)
@@ -2902,6 +3034,12 @@ def _lt_callback(call: types.CallbackQuery):
             if not ok:
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
+            _lt_log(db, tid, prof, date, "checklist.task_answered",
+                    target_kind="task", target_id=task_id,
+                    target_name=tname(task_id),
+                    details=[("status", "done" if done else "not_done"),
+                             ("photos", shots)],
+                    reason=why or None)
             bot.answer_callback_query(call.id, _lt(lang, "saved_toast"))
             # Per-task: saving is only half the job, so the leader lands back on
             # the task with the close button in front of them rather than on a
@@ -2947,6 +3085,14 @@ def _lt_callback(call: types.CallbackQuery):
             day.closed_at = datetime.now(timezone.utc)
             day.completion = compute_completion(cfg, list(entries.values()))
             db.commit()
+            # The single most consequential thing a leader does in Telegram:
+            # the day is now the record, and nothing reopens it.
+            _lt_log(db, tid, prof, date, "checklist.day_closed",
+                    target_kind="day", target_id=day.id, target_name=prof.name,
+                    details=[("leader", prof.name), ("shift", shift),
+                             ("tasks", len(entries)),
+                             ("score", round(float(day.completion or 0)))],
+                    changes=[("status", "open", "closed")])
             # ── the bot's automatic review door ───────────────────────────────
             # PAUSED FOR SHIFT 2 (user, 2026-08-14). This is where a bot-filed
             # day used to become reviewable — there is no sheet Refresh behind

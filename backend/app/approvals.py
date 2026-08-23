@@ -24,6 +24,7 @@ from datetime import date
 from app.config import settings
 from app.database import SessionLocal
 from app.models import ApprovalNotice, Attendance, Manager, TelegramUserRole
+from app.services import action_log
 
 logger = logging.getLogger(__name__)
 
@@ -590,6 +591,128 @@ def forget_notices(kind: str, ref) -> None:
         db.commit()
 
 
+# ── The action register ───────────────────────────────────────────────────────
+# An inline tap decides a real request and passes no HTTP route the action-log
+# middleware can see, so every decision records itself here — under the SAME
+# action key the web endpoint carries, so "who approved this, and what did it
+# say" reads identically whether it was settled in a DM or in the panel.
+#
+# Best-effort throughout: each helper wraps its own body, because a decision
+# that has already committed must never fail on the row that describes it.
+
+def _tid(caller: dict) -> int | None:
+    """The tapping account's Telegram id off a staff caller dict."""
+    try:
+        return int(caller.get("sub"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _unit_name(db, manager_id) -> str | None:
+    """Snapshot of the unit's name for an audit row. Never raises."""
+    try:
+        mgr = db.query(Manager).filter_by(id=manager_id).first() if manager_id else None
+        return mgr.name if mgr else None
+    except Exception:
+        return None
+
+
+def _log_edit_request(db, caller: dict, req_id: int, status: str) -> None:
+    try:
+        from app.models import EditRequest
+        req = db.query(EditRequest).filter_by(id=req_id).first()
+        unit_id = req.manager_id if req else None
+        action_log.record_bot(
+            db, _tid(caller), "attendance",
+            "attendance.request_approved" if status == "approved"
+            else "attendance.request_rejected",
+            actor_name=caller.get("full_name"), actor_role=caller.get("role"),
+            target_kind="request", target_id=req_id,
+            target_name=req.worker_name if req else None,
+            unit_id=unit_id, unit_name=_unit_name(db, unit_id),
+            day=req.date if req else None,
+            details=[("worker", req.worker_name), ("brigadir", req.supervisor_name)]
+            if req else None,
+            changes=[("status", "pending", status)],
+        )
+    except Exception:
+        logger.debug("action log: edit-request decision not recorded", exc_info=True)
+
+
+def _log_edit_batch(db, caller: dict, batch_token, status: str, count: int) -> None:
+    try:
+        from app.models import EditRequest
+        from app.routers.staff import _batch_id_filter
+        # Any row of the batch names the unit and the day — they are the same
+        # for every request in it, which is what makes it a batch.
+        req = db.query(EditRequest).filter(_batch_id_filter(batch_token)).first()
+        unit_id = req.manager_id if req else None
+        action_log.record_bot(
+            db, _tid(caller), "attendance",
+            "attendance.request_batch_approved" if status == "approved"
+            else "attendance.request_batch_rejected",
+            actor_name=caller.get("full_name"), actor_role=caller.get("role"),
+            target_kind="batch", target_id=batch_token,
+            unit_id=unit_id, unit_name=_unit_name(db, unit_id),
+            day=req.date if req else None,
+            details=[("count", count),
+                     ("brigadir", req.supervisor_name if req else None)],
+            changes=[("status", "pending", status)],
+        )
+    except Exception:
+        logger.debug("action log: edit-batch decision not recorded", exc_info=True)
+
+
+def _log_hr_document(db, caller: dict, doc, status: str) -> None:
+    try:
+        employees = (doc.payload or {}).get("employees") or []
+        action_log.record_bot(
+            db, _tid(caller), "documents",
+            "document.approved" if status == "approved" else "document.rejected",
+            actor_name=caller.get("full_name"), actor_role=caller.get("role"),
+            target_kind="document", target_id=doc.id,
+            unit_id=doc.manager_id,
+            unit_name=doc.supervisor_name or _unit_name(db, doc.manager_id),
+            day=doc.date,
+            details=[("doc_type", doc.doc_type), ("workers", len(employees))],
+            changes=[("status", "draft", status)],
+        )
+    except Exception:
+        logger.debug("action log: HR-document decision not recorded", exc_info=True)
+
+
+def _log_leader_late(db, call, req, status: str, decided_by: str) -> None:
+    try:
+        action_log.record_bot(
+            db, call.from_user.id, "leader_review", "lateday.decided",
+            actor_name=decided_by, actor_role="admin",
+            target_kind="lateday", target_id=req.id, target_name=req.leader_name,
+            unit_id=req.manager_id, unit_name=_unit_name(db, req.manager_id),
+            day=req.date,
+            details=[("leader", req.leader_name)],
+            changes=[("status", "pending", status)],
+            reason=req.reason,
+        )
+    except Exception:
+        logger.debug("action log: late-day decision not recorded", exc_info=True)
+
+
+def _log_leader_dispute(db, call, d, status: str, decided_by: str) -> None:
+    try:
+        action_log.record_bot(
+            db, call.from_user.id, "leader_review", "dispute.decided",
+            actor_name=decided_by, actor_role="admin",
+            target_kind="dispute", target_id=d.id, target_name=d.leader_name,
+            unit_id=d.manager_id, unit_name=_unit_name(db, d.manager_id),
+            day=d.date,
+            details=[("leader", d.leader_name), ("task_id", d.task_id)],
+            changes=[("status", "pending", status)],
+            reason=d.reason,
+        )
+    except Exception:
+        logger.debug("action log: dispute ruling not recorded", exc_info=True)
+
+
 # ── Callback handling (Telegram tap → shared staff core) ──────────────────────
 
 def _display_name(u) -> str:
@@ -738,6 +861,7 @@ def _decide_edit_request(req_id: int, status: str, caller: dict) -> None:
             if e.status_code in (404, 409):
                 raise AlreadyHandled()
             raise
+        _log_edit_request(db, caller, req_id, status)
 
 
 def _decide_edit_batch(batch_token: str, status: str, caller: dict) -> None:
@@ -745,11 +869,12 @@ def _decide_edit_batch(batch_token: str, status: str, caller: dict) -> None:
     from app.routers.staff import _process_batch
     with SessionLocal() as db:
         try:
-            _process_batch(batch_token, status, caller, db)
+            n = _process_batch(batch_token, status, caller, db)
         except HTTPException as e:
             if e.status_code in (404, 409):
                 raise AlreadyHandled()
             raise
+        _log_edit_batch(db, caller, batch_token, status, n)
 
 
 def _decide_leader_late(req_id: int, status: str, call) -> None:
@@ -770,6 +895,7 @@ def _decide_leader_late(req_id: int, status: str, call) -> None:
             raise AlreadyHandled()   # withdrawn, or another admin got there first
         decided_by = _display_name(call.from_user)
         decide_late_request(db, req, status, decided_by, call.from_user.id)
+        _log_leader_late(db, call, req, status, decided_by)
     edit_admin_notices("leader_late", req_id, status, decided_by)
 
 
@@ -793,6 +919,7 @@ def _decide_leader_dispute(dispute_id: int, status: str, call) -> None:
             raise AlreadyHandled()   # withdrawn, or another admin got there first
         decided_by = _display_name(call.from_user)
         _settle_dispute(db, d, status, decided_by, call.from_user.id)
+        _log_leader_dispute(db, call, d, status, decided_by)
         _notify_dispute_decided(db, d, status, decided_by)
         _report_after_ruling(db, d)
     edit_admin_notices("leader_dispute", dispute_id, status, decided_by)
@@ -862,4 +989,5 @@ def _decide_hr_document(doc_id: int, status: str, call) -> None:
                 raise AlreadyHandled()
             raise
         db.commit()
+        _log_hr_document(db, caller, doc, status)
     edit_admin_notices("hr_document", doc_id, status, caller.get("full_name"))

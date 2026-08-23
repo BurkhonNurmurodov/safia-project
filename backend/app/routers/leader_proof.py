@@ -28,7 +28,7 @@ from app.models import (
 )
 from app.security import require_auth
 from app.routers.admin import _TG_API, _tg_file_meta
-from app.services import leader_proof
+from app.services import action_log, leader_proof
 from app.services.leader_tasks import (
     channel_chat_id, config_name, effective_leader_config,
 )
@@ -294,6 +294,17 @@ async def post_photo(
     photos = leader_proof.roll(db, row.day_id, task)
     need = int(entry.get("min_media") or 1)
     _nudge_bot(db, prof, task)
+
+    lines = [("leader", prof.name), ("task", task), ("slot", row.slot),
+             ("photos", f"{len(photos)}/{need}")]
+    if row.late:
+        lines.append(("late", True))
+    if row.deferred:
+        lines.append(("deferred", True))
+    action_log.enrich(
+        target_kind="photo", target_id=row.id, target_name=prof.name,
+        unit_id=prof.manager_id, day=day.date if day else None, details=lines,
+    )
     return {"photo": _photo_wire(row),
             "photos": [_photo_wire(p) for p in photos],
             "complete": len(photos) >= need,
@@ -309,14 +320,23 @@ def drop_photo(photo_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="not_found")
     prof = _own_leader(db, payload, row.leader_id)
     _, entry = _camera_cfg(db, prof, row.task_id)
+    # Snapshotted before the delete: the row is gone by the time we enrich.
+    day_id, task_id, slot = row.day_id, row.task_id, row.slot
     try:
         leader_proof.delete_photo(db, prof=prof, photo=row, cfg=entry)
     except leader_proof.ProofError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
-    photos = leader_proof.roll(db, row.day_id, row.task_id)
-    _nudge_bot(db, prof, row.task_id)
+    photos = leader_proof.roll(db, day_id, task_id)
+    _nudge_bot(db, prof, task_id)
+    need = int(entry.get("min_media") or 1)
+    action_log.enrich(
+        target_kind="photo", target_id=photo_id, target_name=prof.name,
+        unit_id=prof.manager_id,
+        details=[("leader", prof.name), ("task", task_id), ("slot", slot),
+                 ("photos", f"{len(photos)}/{need}")],
+    )
     return {"photos": [_photo_wire(p) for p in photos],
-            "complete": len(photos) >= int(entry.get("min_media") or 1)}
+            "complete": len(photos) >= need}
 
 
 @router.get("/api/leader-proof/photo/{photo_id}")

@@ -22,7 +22,7 @@ from app.permissions import page_allowed, require_page
 from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
-from app.services import leader_ai, leader_bot, leader_reports
+from app.services import action_log, leader_ai, leader_bot, leader_reports
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -289,11 +289,24 @@ def put_leader_tiers(
         raise HTTPException(status_code=400, detail="Cutoffs must be strictly descending")
 
     row = db.query(AppSetting).filter_by(key=TIER_KEY).first()
+    # The cutoffs in force until this request — already in hand, so the register
+    # can say which band moved rather than only where it landed.
+    try:
+        prev = json.loads(row.value) if row is not None and row.value else {}
+    except (TypeError, ValueError):
+        prev = {}
     if row is None:
         row = AppSetting(key=TIER_KEY, value="")
         db.add(row)
     row.value = json.dumps(cuts)
     db.commit()
+    action_log.enrich(
+        target_kind="tier", target_id=TIER_KEY,
+        details=[("threshold",
+                  ", ".join(f"{k} {cuts[k]}" for k in TIER_DEFAULTS))],
+        changes=[(k, prev.get(k), cuts[k]) for k in TIER_DEFAULTS
+                 if prev.get(k) != cuts[k]],
+    )
     return {**cuts, "can_edit": True}
 
 
@@ -836,6 +849,14 @@ def file_dispute(
             logger.exception("leader-dispute: admin card failed for %s", d.id)
     logger.info("leader-dispute: %s filed by %s on %s task %s (%s)",
                 d.status, who, uid, task_id, reason[:80])
+    # An admin's own filing IS the ruling, so the row says which of the two
+    # happened — «pending» and «approved» are different events here.
+    action_log.enrich(
+        target_kind="dispute", target_id=d.id, target_name=d.leader_name,
+        unit_id=d.manager_id, day=d.date, reason=reason,
+        details=[("leader", d.leader_name), ("task", task_id),
+                 ("status", d.status), ("report", uid)],
+    )
     return {"ok": True, "status": d.status,
             "report": leader_reports.day_report(db, uid)}
 
@@ -890,6 +911,14 @@ def decide_dispute(
     who = payload.get("full_name") or ""
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
     _settle_dispute(db, d, status, who, tid)
+    # The brigadir's own words are what the ruling answered, so they travel with
+    # it — a decision recorded without the objection cannot be read later.
+    action_log.enrich(
+        target_kind="dispute", target_id=d.id, target_name=d.leader_name,
+        unit_id=d.manager_id, day=d.date, reason=d.reason,
+        details=[("leader", d.leader_name), ("task", d.task_id)],
+        changes=[("status", "pending", status)],
+    )
     try:
         from app.approvals import _notify_dispute_decided, edit_admin_notices
         _notify_dispute_decided(db, d, status, who)
@@ -956,6 +985,14 @@ def undo_dispute(
     d.decided_at = datetime.now(timezone.utc)
     db.commit()
 
+    # The score moved twice, so both moves have to stay on the record: WHAT the
+    # ruling was is the whole content of an undo.
+    action_log.enrich(
+        target_kind="dispute", target_id=d.id, target_name=d.leader_name,
+        unit_id=d.manager_id, day=d.date, reason=d.reason,
+        details=[("leader", d.leader_name), ("task", d.task_id)],
+        changes=[("status", was, "cancelled"), ("verdict", was, "open")],
+    )
     try:
         from app.approvals import _notify_dispute_decided
         _notify_dispute_decided(db, d, "cancelled", who)
@@ -1148,24 +1185,42 @@ def set_task_override(
            or str(payload.get("sub") or "admin"))[:160]
     row = db.query(LeaderTaskOverride).filter_by(uid=uid, task_id=task_id).first()
 
+    leader = str(body.get("leader") or "").strip()[:160] or None
     if done is None:
+        was = row.done if row is not None else None
         if row is not None:
             db.delete(row)
             db.commit()
         logger.info("leader-override: %s cleared %s task %s", who, uid, task_id)
+        action_log.enrich(
+            target_kind="task", target_id=task_id, target_name=leader,
+            day=date,
+            details=([("leader", leader)] if leader else []) + [
+                ("task", task_id), ("report", uid), ("override", "cleared")],
+            changes=([("done", was, None)] if was is not None else None),
+        )
         return {"ok": True, "override": None}
 
+    was = row.done if row is not None else None
     if row is None:
         row = LeaderTaskOverride(uid=uid, task_id=task_id)
         db.add(row)
     row.date = date
-    row.leader = str(body.get("leader") or "").strip()[:160] or None
+    row.leader = leader
     row.done = done
     row.set_by = who
     row.set_at = datetime.now(timezone.utc)
     db.commit()
     logger.info("leader-override: %s ruled task %s on %s -> %s",
                 who, task_id, uid, "done" if done else "not done")
+    # An admin overruling the leader's own answer is the one write here that
+    # changes a score by hand, so the previous ruling rides with the new one.
+    action_log.enrich(
+        target_kind="task", target_id=task_id, target_name=leader, day=date,
+        details=([("leader", leader)] if leader else []) + [
+            ("task", task_id), ("report", uid)],
+        changes=[("done", was, done)],
+    )
     return {"ok": True, "override": {"done": row.done, "by": row.set_by,
                                      "at": row.set_at.isoformat()}}
 
@@ -1408,6 +1463,15 @@ def request_late_open(
     db.commit()
     db.refresh(req)
 
+    # Same rule as a dispute: an admin filing one has approved it, and the row
+    # must not read as though a decision were still outstanding.
+    action_log.enrich(
+        target_kind="day", target_id=key, target_name=it["leader"],
+        unit_id=it["manager_id"], unit_name=it.get("unit"), day=it["date"],
+        reason=reason,
+        details=[("leader", it["leader"]), ("status", req.status)],
+    )
+
     if is_admin:
         _notify_leader_opened(db, req)
     else:
@@ -1440,7 +1504,17 @@ def decide_late_open(
         raise HTTPException(status_code=404, detail="No such request")
 
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    was = req.status
     changed = decide_late_request(db, req, status, payload.get("full_name"), tid)
+    # `changed` False = a second admin tapped the same card; the ruling stands
+    # and the register says the request was already in that state.
+    action_log.enrich(
+        target_kind="day", target_id=req.id, target_name=req.leader_name,
+        unit_id=req.manager_id, day=req.date, reason=req.reason,
+        details=[("leader", req.leader_name), ("status", req.status)]
+                + ([] if changed else [("note", "no_change")]),
+        changes=[("status", was, status)] if changed else None,
+    )
     if changed:
         # Every admin's DM card gets the outcome and loses its buttons, whichever
         # surface the decision came from.
@@ -1470,8 +1544,17 @@ def cancel_late_open(
     if not (_may_decide(payload) or mine):
         raise HTTPException(status_code=403, detail="Not your request")
 
+    # Read off the row before it goes: after the delete these attributes have
+    # no row behind them.
+    who_for, day_for = req.leader_name, req.date
+    unit_for, why = req.manager_id, req.reason
     db.delete(req)
     db.commit()
+    action_log.enrich(
+        target_kind="day", target_id=req_id, target_name=who_for,
+        unit_id=unit_for, day=day_for, reason=why,
+        details=[("leader", who_for), ("status", "cancelled")],
+    )
     try:
         from app.approvals import edit_admin_notices
         edit_admin_notices("leader_late", req_id, "cancelled", payload.get("full_name"))

@@ -32,7 +32,7 @@ from app.models import (
     RoleProfile, SheetSource, AppSetting, TelegramUser, TelegramUserRole,
     EditRequest, HrDocument, DayApproval, DailySubmission, LeaderSyncMeta,
 )
-from app.services import leader_ai
+from app.services import action_log, leader_ai
 from app.services.verifix_parser import parse_verifix_file
 from app.services.sheets_sync import (
     sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet, sync_quality_sheet,
@@ -87,6 +87,7 @@ async def upload_verifix(
     db: Session = Depends(get_db),
 ):
     results = []
+    landed = []          # (unit id, unit name, date, rows, file) per file that stuck
     for f in files:
         content = await f.read()
         try:
@@ -103,6 +104,7 @@ async def upload_verifix(
         if not manager:
             results.append({"file": f.filename, "status": "error", "detail": f"Manager ID {mgr_id} not found"})
             continue
+        mgr_name = manager.name      # snapshot, before the commit below expires it
 
         db.query(Attendance).filter(
             Attendance.manager_id == mgr_id,
@@ -136,7 +138,28 @@ async def upload_verifix(
 
         db.commit()
         results.append({"file": f.filename, "status": "ok", "rows_inserted": inserted})
+        landed.append((mgr_id, mgr_name, date, inserted, f.filename))
 
+    days = {x[2] for x in landed}
+    units = {(x[0], x[1]) for x in landed}
+    day = next(iter(days)) if len(days) == 1 else None
+    unit = next(iter(units)) if len(units) == 1 else None
+    details = [("files", len(files)), ("count", len(landed)),
+               ("rows", sum(x[3] for x in landed))]
+    if len(landed) == 1:
+        details.append(("file", landed[0][4]))
+    if unit:
+        details.append(("unit", unit[1]))
+    if day:
+        details.append(("date", str(day)))
+    action_log.enrich(
+        target_kind="day",
+        target_id=f"{unit[0]}:{day}" if (unit and day) else None,
+        target_name=unit[1] if unit else None,
+        unit_id=unit[0] if unit else None,
+        unit_name=unit[1] if unit else None,
+        day=day, details=details,
+    )
     return {"results": results}
 
 
@@ -215,6 +238,18 @@ def delete_attendance(
         changes=[(r["manager_name"], r["rows_deleted"], None)
                  for r in results if r["status"] == "ok"],
     )
+    ok = [r for r in results if r["status"] == "ok"]
+    one = ok[0] if len(ok) == 1 else None
+    action_log.enrich(
+        target_kind="unit" if one else "day",
+        target_id=one["manager_id"] if one else None,
+        target_name=one["manager_name"] if one else None,
+        unit_id=one["manager_id"] if one else None,
+        unit_name=one["manager_name"] if one else None,
+        day=d,
+        details=[("date", body.date), ("count", len(ok)), ("rows", total_rows)],
+        changes=[(r["manager_name"], r["rows_deleted"], None) for r in ok],
+    )
     return {"date": body.date, "rows_deleted": total_rows, "results": results}
 
 
@@ -238,6 +273,7 @@ def update_sheet_source(
     _: dict = Depends(verify_admin),
 ):
     src = db.query(SheetSource).filter(SheetSource.name == name).first()
+    old_id = src.sheet_id if src else None
     if not src:
         src = SheetSource(name=name, sheet_id=payload["sheet_id"])
         db.add(src)
@@ -245,7 +281,24 @@ def update_sheet_source(
         src.sheet_id = payload["sheet_id"]
     db.commit()
     db.refresh(src)
+    action_log.enrich(
+        target_kind="setting", target_id=name, target_name=name,
+        details=[("source", name)],
+        changes=[("value", old_id, src.sheet_id)],
+    )
     return src
+
+
+def _log_sheet_refresh(name: str, result: Optional[dict] = None, **extra) -> None:
+    """Name the sheet a Refresh actually pulled, for the action register."""
+    det = [("source", name)]
+    rows = sum(v for k, v in (result or {}).items()
+               if k.endswith("_rows") and isinstance(v, int))
+    if rows:
+        det.append(("rows", rows))
+    det += [(k, v) for k, v in extra.items() if v]
+    action_log.enrich(target_kind="setting", target_id=name, target_name=name,
+                      details=det)
 
 
 @router.post("/refresh-sheet/{name}")
@@ -261,10 +314,12 @@ def refresh_sheet(
     try:
         if name == "source":
             result = sync_source_sheet(src.sheet_id, db)
+            _log_sheet_refresh(name, result)
             return {"status": "ok", "sheet": name, **result}
 
         if name == "shift_report":
             result = sync_shift_report_sheet(src.sheet_id, db)
+            _log_sheet_refresh(name, result)
             return {"status": "ok", "sheet": name, **result}
 
         if name == "leaders":
@@ -319,16 +374,31 @@ def refresh_sheet(
                     caller.get("full_name") or caller.get("username") or "",
                 )
             leader_ai.run_async(discover_first=False)
+            _log_sheet_refresh(name, result, queued=queued)
             return {"status": "ok", "sheet": name, "ai_queued": queued, **result}
 
         if name == "quality":
             result = sync_quality_sheet(src.sheet_id, db)
+            _log_sheet_refresh(name, result)
             return {"status": "ok", "sheet": name, **result}
 
+        _log_sheet_refresh(name)
         return {"status": "ok", "sheet": name}
 
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to sync sheet: {e}")
+
+
+# A settings value goes into the action register verbatim, so anything that
+# smells like a credential is masked there — an audit trail must not become
+# the second place a key is readable.
+_SECRET_HINTS = ("key", "token", "secret", "password")
+
+
+def _log_value(key: str, value):
+    if any(h in (key or "").lower() for h in _SECRET_HINTS):
+        return "•••" if value else value
+    return value
 
 
 @router.get("/settings")
@@ -343,13 +413,26 @@ def update_settings(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
+    changed = []
     for key, value in payload.items():
         row = db.query(AppSetting).filter(AppSetting.key == key).first()
+        new = str(value)
         if row:
-            row.value = str(value)
+            old = row.value
+            row.value = new
+            if old != new:
+                changed.append((key, _log_value(key, old), _log_value(key, new)))
         else:
-            db.add(AppSetting(key=key, value=str(value)))
+            db.add(AppSetting(key=key, value=new))
+            changed.append((key, None, _log_value(key, new)))
     db.commit()
+    action_log.enrich(
+        target_kind="setting",
+        target_id=changed[0][0] if len(changed) == 1 else None,
+        target_name=changed[0][0] if len(changed) == 1 else None,
+        details=[("count", len(changed))],
+        changes=changed,
+    )
     return {"status": "ok"}
 
 
@@ -420,6 +503,10 @@ def update_user_role(
         raise HTTPException(status_code=404, detail="Role not found")
 
     old = {"role": role_row.role, "role_id": role_row.role_id, "status": role_row.status}
+    # Snapshots for the register — both rows expire on the commit below.
+    user_label = user.full_name or user.tg_name or f"#{user.telegram_id}"
+    account_id = user.telegram_id
+    profile_name = role_row.full_name
 
     # Role / unit reassignment (no status change) is applied directly here.
     if payload.role is not None:
@@ -470,6 +557,12 @@ def update_user_role(
             changes=alert_changes,
         )
 
+    action_log.enrich(
+        target_kind="user", target_id=account_id, target_name=user_label,
+        details=[("user", user_label), ("profile", profile_name),
+                 ("role", payload.role or old["role"]), ("id", account_id)],
+        changes=alert_changes,
+    )
     return {"ok": True}
 
 
@@ -562,6 +655,7 @@ def add_user_role(
 
     telegram_id = user.telegram_id
     lang = user.language or "uz"
+    user_label = user.full_name or user.tg_name or f"#{telegram_id}"
     db.commit()
 
     # Deliver any bell rows queued to this supervisor profile while it was
@@ -587,6 +681,12 @@ def add_user_role(
                  ("role", tv("role." + payload.role)),
                  ("profile", full_name)],
         changes=[("status", None, tv("v.approved"))],
+    )
+    action_log.enrich(
+        target_kind="user", target_id=telegram_id, target_name=user_label,
+        details=[("user", user_label), ("role", payload.role),
+                 ("profile", full_name), ("id", telegram_id)],
+        changes=[("status", None, "approved")],
     )
     return {"ok": True}
 
@@ -616,6 +716,8 @@ def delete_user_role(
                      ("profile", role_row.full_name)]
 
     telegram_id = user.telegram_id
+    user_label = user.full_name or user.tg_name or f"#{telegram_id}"
+    role_key, profile_name = role_row.role, role_row.full_name
     db.delete(role_row)
 
     remaining = db.query(TelegramUserRole).filter(
@@ -642,6 +744,13 @@ def delete_user_role(
     alert_grant_use(db, caller, CAP_USERS_MANAGE, "user.role_removed",
                     details=alert_details,
                     changes=[("status", tv("v.approved"), None)])
+    action_log.enrich(
+        target_kind="user", target_id=telegram_id, target_name=user_label,
+        details=[("user", user_label), ("role", role_key),
+                 ("profile", profile_name), ("id", telegram_id)]
+        + ([("status", "account_deleted")] if user_deleted else []),
+        changes=[("status", "approved", None)],
+    )
     return {"ok": True, "user_deleted": user_deleted}
 
 
@@ -661,6 +770,7 @@ def delete_user(
     # VALID_ROLES has no "admin", so no user-role endpoint can mint one.
     if caller.get("role") != "admin" and db.query(Admin).filter_by(telegram_id=telegram_id).first():
         raise HTTPException(status_code=403, detail="Only an admin can remove an admin account")
+    user_label = user.full_name or user.tg_name or f"#{telegram_id}"
     alert_details = [("user", user.full_name or user.tg_name or f"#{telegram_id}"),
                      ("account", telegram_id)]
     roles_removed = db.query(TelegramUserRole).filter_by(telegram_id=telegram_id).delete()
@@ -674,6 +784,11 @@ def delete_user(
     alert_details.append(("count", roles_removed))
     alert_grant_use(db, caller, CAP_USERS_MANAGE, "user.deleted",
                     details=alert_details)
+    action_log.enrich(
+        target_kind="user", target_id=telegram_id, target_name=user_label,
+        details=[("user", user_label), ("id", telegram_id),
+                 ("count", roles_removed)],
+    )
     return {"ok": True}
 
 
@@ -698,7 +813,21 @@ def admin_update_page_access(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
+    before = get_page_access(db)
     pages = set_page_access(db, payload.pages)
+    # A CELL is one (page, role) tick, so the count the register shows is the
+    # number of ticks that actually moved — not the number of pages sent.
+    moved = {p: (sorted(set(before.get(p) or ()) ^ set(pages.get(p) or ())))
+             for p in set(before) | set(pages)}
+    moved = {p: v for p, v in moved.items() if v}
+    action_log.enrich(
+        target_kind="page",
+        details=[("changed", sum(len(v) for v in moved.values())),
+                 ("page", len(moved))],
+        changes=[(p, ", ".join(sorted(before.get(p) or ())) or None,
+                  ", ".join(sorted(pages.get(p) or ())) or None)
+                 for p in sorted(moved)],
+    )
     return {"status": "ok", "pages": pages}
 
 
@@ -854,6 +983,17 @@ def admin_set_capabilities(
             db, payload.profiles, payload.grants, payload.revokes, payload.denies,
             actor_name=actor_name, actor_telegram_id=actor_id,
         )
+    entries = [(cap, None, scope) for cap, scope in sorted(payload.grants.items())]
+    entries += [(cap, None, "deny") for cap in sorted(payload.denies)]
+    entries += [(cap, None, "inherit") for cap in sorted(payload.revokes)]
+    action_log.enrich(
+        target_kind="capability",
+        details=[("count", len(payload.keys) + len(payload.profiles)),
+                 ("user", len(payload.keys)), ("profile", len(payload.profiles)),
+                 ("added", len(payload.grants) + len(payload.denies)),
+                 ("removed", len(payload.revokes))],
+        changes=entries,
+    )
     return {"status": "ok", "caps": caps, "profiles": profile_caps}
 
 
@@ -963,6 +1103,15 @@ def admin_copy_capabilities(
         "%d entries, %d removed",
         payload.source_key or payload.source_profile, len(dest_keys),
         len(dest_profiles), actor_name, len(grants) + len(denies), removed,
+    )
+    action_log.enrich(
+        target_kind="capability",
+        target_id=payload.source_key or payload.source_profile,
+        details=[("source", payload.source_key or payload.source_profile),
+                 ("target", len(dest_keys) + len(dest_profiles)),
+                 ("user", len(dest_keys)), ("profile", len(dest_profiles)),
+                 ("count", len(grants) + len(denies)),
+                 ("removed", removed)],
     )
     return {
         "status":  "ok",
@@ -1200,6 +1349,12 @@ def _send_db_dump(tg_id: int, include_drops: bool) -> None:
         size  = stats["bytes"]
         log.info("db-dump: %s tables, %s rows, %s for tg=%s",
                  stats["tables"], stats["rows"], _human_bytes(size), tg_id)
+        # What was actually dumped. The endpoint hands this off to a background
+        # task, so the numbers only exist here; `enrich` is a no-op if the
+        # request row has already been written.
+        action_log.enrich(details=[("file", base), ("size", _human_bytes(size)),
+                                   ("tables", stats["tables"]),
+                                   ("rows", stats["rows"])])
 
         caption = (f"🗄 Full database dump\n"
                    f"{stats['tables']} tables · {stats['rows']:,} rows · {_human_bytes(size)}\n"
@@ -1276,6 +1431,10 @@ def admin_db_dump(
     """Dump the whole database and DM it to the caller as a .sql.gz file."""
     tg_id = int(caller["sub"])
     background.add_task(_send_db_dump, tg_id, body.include_drops)
+    action_log.enrich(
+        target_kind="database", target_id="dump",
+        details=[("mode", "with_drops" if body.include_drops else "data_only")],
+    )
     return {"ok": True}
 
 
@@ -1339,6 +1498,7 @@ async def admin_db_restore(
     fd, tmp_path = tempfile.mkstemp(prefix="safia_restore_", suffix=".bin")
     try:
         head = b""
+        written = 0
         with os.fdopen(fd, "wb") as out:
             for f in ordered:
                 while True:
@@ -1348,6 +1508,7 @@ async def admin_db_restore(
                     if not head:
                         head = chunk[:4]
                     out.write(chunk)
+                    written += len(chunk)
         if not head:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
         gzipped = validate_db_dump(ordered[0].filename, head)
@@ -1359,4 +1520,10 @@ async def admin_db_restore(
         raise
 
     background.add_task(_run_db_restore, tg_id, tmp_path, gzipped)
+    action_log.enrich(
+        target_kind="database", target_id="restore",
+        target_name=ordered[0].filename,
+        details=[("file", ordered[0].filename), ("files", len(ordered)),
+                 ("size", _human_bytes(written))],
+    )
     return {"ok": True, "parts": len(ordered)}

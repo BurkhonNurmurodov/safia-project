@@ -23,7 +23,7 @@ from app.capabilities import CAP_IDLE_SOURCE_MANAGE, require_cap
 from app.capability_alerts import alert_grant_use, unit_name
 from app.database import get_db
 from app.models import IdleSourceSetting, Manager
-from app.services import idle_source
+from app.services import action_log, idle_source
 from app.services.factory_scope import list_factories, serialize
 
 router = APIRouter(prefix="/api/admin/idle-source", tags=["idle-source"])
@@ -117,5 +117,16 @@ def put_unit(manager_id: int, body: SourceIn, db: Session = Depends(get_db),
             details=[("unit", unit_name(db, manager_id))],
             changes=[("source", fmt(before), fmt(after))],
         )
+    diff = []
+    if before[0] != after[0]:
+        diff.append(("source", before[0], after[0]))
+    if before[1] != after[1]:
+        diff.append(("from_date", before[1] or "—", after[1] or "—"))
+    action_log.enrich(
+        target_kind="unit", target_id=manager_id, target_name=m.name,
+        unit_id=manager_id, unit_name=m.name,
+        details=[("source", after[0]), ("from_date", after[1] or "—")],
+        changes=diff,
+    )
     facs = {f.id: f for f in list_factories(db, include_archived=True)}
     return {"ok": True, "unit": _row(m, row, facs.get(m.factory_id))}

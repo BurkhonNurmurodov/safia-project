@@ -52,7 +52,7 @@ from app.identity import (
     profile_holders, profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
-from app.services import cell_hours
+from app.services import action_log, cell_hours
 from app.models import (
     Admin, Cell, CellAttendance, CellOjidaniya, CellPerenaladka, Factory,
     LeaderConcern, LeaderTask, Manager, PPDaily, ProfilePhoto, RoleProfile,
@@ -589,6 +589,13 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
                         details=[("role", tv("role.supervisor")), ("name", name),
                                  ("shift", payload.shift),
                                  ("verifix_code", payload.verifix_id)])
+        action_log.enrich(
+            target_kind="profile", target_id=profile_key("supervisor", payload.verifix_id),
+            target_name=name, unit_id=payload.verifix_id, unit_name=name,
+            details=[("role", "supervisor"), ("name", name),
+                     ("shift", payload.shift),
+                     ("verifix_code", payload.verifix_id)],
+        )
         return {"ok": True, "id": payload.verifix_id}
 
     if role == "shift-manager":
@@ -627,6 +634,18 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
             create_details.append(("cells", ", ".join(payload.cells)))
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.created",
                     details=create_details)
+    log_details = [("role", role), ("name", name)]
+    if role == "shift-manager":
+        log_details.append(("shift", payload.shift))
+    if role == "leader":
+        log_details.append(("unit", unit_name(db, payload.manager_id)))
+        if payload.cells:
+            log_details.append(("cells", ", ".join(payload.cells)))
+    action_log.enrich(
+        target_kind="profile", target_id=profile_key(role, p.id), target_name=name,
+        unit_id=payload.manager_id if role == "leader" else None,
+        details=log_details,
+    )
     return {"ok": True, "id": p.id}
 
 
@@ -996,6 +1015,7 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+    action_log.enrich(details=[("rows", len(rows)), ("file", fname)])
     if not isinstance(delivered, dict):
         return delivered
     return {"ok": True, "rows": len(rows)}
@@ -1012,10 +1032,14 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
     row = Cell(verifix_code=code)
     _apply_cell_fields(db, row, payload)
     db.add(row)
-    cell_details = [("cell", code), ("unit", unit_name(db, row.manager_id))]
+    unit = unit_name(db, row.manager_id)
+    mid = row.manager_id
+    cell_details = [("cell", code), ("unit", unit)]
     db.commit()
     alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.created",
                     details=cell_details)
+    action_log.enrich(target_kind="cell", target_id=row.id, target_name=code,
+                      unit_id=mid, unit_name=unit, details=cell_details)
     return {"ok": True, "id": row.id}
 
 
@@ -1055,6 +1079,11 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.updated",
                         details=[("cell", old["verifix_code"])],
                         changes=diff)
+    action_log.enrich(
+        target_kind="cell", target_id=cid, target_name=new["verifix_code"],
+        unit_id=new["manager_id"],
+        details=[("cell", old["verifix_code"])], changes=diff,
+    )
     return {"ok": True, "id": cid}
 
 
@@ -1064,12 +1093,15 @@ def admin_delete_cell(cid: int, db: Session = Depends(get_db),
     row = db.query(Cell).filter_by(id=cid).first()
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
-    cell_details = [("cell", row.verifix_code),
-                    ("unit", unit_name(db, row.manager_id))]
+    code, mid = row.verifix_code, row.manager_id
+    unit = unit_name(db, mid)
+    cell_details = [("cell", code), ("unit", unit)]
     db.delete(row)
     db.commit()
     alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.deleted",
                     details=cell_details)
+    action_log.enrich(target_kind="cell", target_id=cid, target_name=code,
+                      unit_id=mid, unit_name=unit, details=cell_details)
     return {"ok": True}
 
 
@@ -1252,6 +1284,13 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
                             details=[("role", tv("role.supervisor")),
                                      ("profile", old["name"])],
                             changes=diff)
+        nv = dict(new_vals)
+        action_log.enrich(
+            target_kind="profile", target_id=profile_key("supervisor", new_id),
+            target_name=nv["name"], unit_id=new_id, unit_name=nv["name"],
+            details=[("role", "supervisor"), ("profile", old["name"])],
+            changes=diff,
+        )
         return {"ok": True, "id": new_id}
 
     p = db.query(RoleProfile).filter_by(id=pid).first()
@@ -1289,6 +1328,11 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
                         details=[("role", tv("role." + ptype)),
                                  ("profile", old["name"])],
                         changes=diff)
+    action_log.enrich(
+        target_kind="profile", target_id=profile_key(ptype, pid),
+        target_name=new_vals["name"], unit_id=new_vals["manager_id"],
+        details=[("role", ptype), ("profile", old["name"])], changes=diff,
+    )
     return {"ok": True, "id": pid}
 
 
@@ -1581,6 +1625,14 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
                     details=[("profile", name),
                              ("count", len(approved_rows))],
                     changes=[("role", tv("role." + ptype), tv("role." + new_role))])
+    action_log.enrich(
+        target_kind="profile", target_id=profile_key(new_role, new_id),
+        target_name=name,
+        unit_id=new_id if new_role == "supervisor" else (
+            payload.manager_id if new_role == "leader" else None),
+        details=[("profile", name), ("count", len(approved_rows))],
+        changes=[("role", ptype, new_role)],
+    )
     return {"ok": True, "role": new_role, "id": new_id}
 
 
@@ -1614,6 +1666,12 @@ def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
             alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
                             details=[("role", tv("role.supervisor")), ("profile", mgr_name)],
                             changes=[("status", None, tv("v.archived"))])
+            action_log.enrich(
+                target_kind="profile", target_id=profile_key("supervisor", pid),
+                target_name=mgr_name, unit_id=pid, unit_name=mgr_name,
+                details=[("role", "supervisor"), ("profile", mgr_name)],
+                changes=[("status", None, "archived")],
+            )
             return {"ok": True, "archived": True}
         # No history: take the unit's leader profiles (and their bindings) along.
         for lp in db.query(RoleProfile).filter_by(role="leader", manager_id=pid).all():
@@ -1646,9 +1704,20 @@ def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
             alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
                             details=[("role", tv("role.supervisor")), ("profile", mgr_name)],
                             changes=[("status", None, tv("v.archived"))])
+            action_log.enrich(
+                target_kind="profile", target_id=profile_key("supervisor", pid),
+                target_name=mgr_name, unit_id=pid, unit_name=mgr_name,
+                details=[("role", "supervisor"), ("profile", mgr_name)],
+                changes=[("status", None, "archived")],
+            )
             return {"ok": True, "archived": True}
         alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
                         details=[("role", tv("role.supervisor")), ("profile", mgr_name)])
+        action_log.enrich(
+            target_kind="profile", target_id=profile_key("supervisor", pid),
+            target_name=mgr_name, unit_id=pid, unit_name=mgr_name,
+            details=[("role", "supervisor"), ("profile", mgr_name)],
+        )
         return {"ok": True, "archived": False}
 
     p = db.query(RoleProfile).filter_by(id=pid).first()
@@ -1683,6 +1752,13 @@ def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
                     details=[("role", tv("role." + ptype)), ("profile", p_name)])
+    log_details = [("role", ptype), ("profile", p_name)]
+    if ptype == "leader":
+        log_details += [(k, v) for k, v in footprint.items() if v]
+    action_log.enrich(
+        target_kind="profile", target_id=profile_key(ptype, pid),
+        target_name=p_name, details=log_details,
+    )
     return {"ok": True}
 
 
@@ -1706,6 +1782,10 @@ def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_d
             raise HTTPException(status_code=400, detail="Cannot remove the last admin")
         db.delete(holder)
         db.commit()
+        action_log.enrich(
+            target_kind="profile", target_id=profile_key("admin", payload.pid),
+            details=[("role", "admin"), ("user", payload.telegram_id)],
+        )
         return {"ok": True}
 
     row = db.query(TelegramUserRole).filter_by(id=payload.role_ref).first()
@@ -1714,10 +1794,16 @@ def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_d
     alert_details = [("role", tv("role." + row.role)),
                      ("profile", row.full_name),
                      ("account", row.telegram_id)]
+    left_role, left_name, left_tid = row.role, row.full_name, row.telegram_id
     _remove_role_row(db, row)
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.unassigned",
                     details=alert_details)
+    action_log.enrich(
+        target_kind="profile", target_id=profile_key(payload.ptype, payload.pid),
+        target_name=left_name,
+        details=[("role", left_role), ("profile", left_name), ("user", left_tid)],
+    )
     return {"ok": True}
 
 
@@ -1829,6 +1915,12 @@ def admin_set_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
     web_auth.audit(action.split(".")[1], caller, name, username, f"dm_sent={sent}")
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, action,
                     details=[("profile", name), ("login", username)])
+    # One route, two acts — the row says which. The password itself never
+    # enters details, changes or reason: only the NAME of the login does.
+    action_log.enrich(
+        action=action, target_kind="weblogin", target_id=key, target_name=name,
+        details=[("profile", name), ("login", username), ("sent", bool(sent))],
+    )
     return {"ok": True, "username": username, "sent": sent,
             "web": _web_state(db, cred, key)}
 
@@ -1863,8 +1955,15 @@ def admin_reveal_web_login(payload: WebLoginPayload, db: Session = Depends(get_d
     password = web_auth.open_password(cred.password_enc)
     # Audited like every other credential event — reading one is the only way to
     # use a login without touching it, so the trail has to record it too.
-    web_auth.audit("revealed", caller, profile_display_name(db, key) or "",
+    pname = profile_display_name(db, key) or ""
+    web_auth.audit("revealed", caller, pname,
                    cred.username, "known" if password else "unavailable")
+    # WHO asked and WHOSE login — never the password, not even partially.
+    action_log.enrich(
+        target_kind="weblogin", target_id=key, target_name=pname,
+        details=[("profile", pname), ("login", cred.username),
+                 ("status", "known" if password else "unavailable")],
+    )
     return {"ok": True, "username": cred.username, "password": password}
 
 
@@ -1910,6 +2009,12 @@ def admin_bulk_web_login(payload: WebLoginBulkPayload, db: Session = Depends(get
     if created:
         alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "weblogin.bulk",
                         details=[("count", len(created))])
+    # ONE row for the batch, with the counts — never one per login minted.
+    action_log.enrich(
+        target_kind="weblogin",
+        details=[("total", len(payload.profile_keys)), ("count", len(created)),
+                 ("skipped", len(skipped)), ("no_holder", len(no_holder))],
+    )
     return {"ok": True, "created": created, "skipped": skipped, "no_holder": no_holder}
 
 
@@ -1930,7 +2035,8 @@ def admin_rename_web_login(payload: WebLoginPayload, db: Session = Depends(get_d
         raise HTTPException(status_code=409, detail="username_taken")
 
     old = cred.username
-    web_auth.audit("renamed", caller, profile_display_name(db, key) or "", old,
+    pname = profile_display_name(db, key) or ""
+    web_auth.audit("renamed", caller, pname, old,
                    f"new_login={username}")
     cred.username = username
     # Sessions carry the username as their handle, so a rename must re-key them
@@ -1939,6 +2045,10 @@ def admin_rename_web_login(payload: WebLoginPayload, db: Session = Depends(get_d
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "weblogin.renamed",
                     changes=[("login", old, username)])
+    action_log.enrich(
+        target_kind="weblogin", target_id=key, target_name=pname,
+        details=[("profile", pname)], changes=[("login", old, username)],
+    )
     return {"ok": True, "web": _web_state(db, cred, key)}
 
 
@@ -1954,11 +2064,17 @@ def admin_toggle_web_login(payload: WebLoginPayload, db: Session = Depends(get_d
     if not cred.enabled:
         cred.token_version = (cred.token_version or 1) + 1
     db.commit()
+    pname = profile_display_name(db, key) or ""
     web_auth.audit("enabled" if cred.enabled else "disabled", caller,
-                   profile_display_name(db, key) or "", cred.username)
+                   pname, cred.username)
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE,
                     "weblogin.enabled" if cred.enabled else "weblogin.disabled",
                     details=[("login", cred.username)])
+    action_log.enrich(
+        target_kind="weblogin", target_id=key, target_name=pname,
+        details=[("profile", pname), ("login", cred.username)],
+        changes=[("enabled", not cred.enabled, bool(cred.enabled))],
+    )
     return {"ok": True, "web": _web_state(db, cred, key)}
 
 
@@ -1972,8 +2088,12 @@ def admin_revoke_web_sessions(payload: WebLoginPayload, db: Session = Depends(ge
     cred = _web_row(db, key)
     cred.token_version = (cred.token_version or 1) + 1
     db.commit()
-    web_auth.audit("sessions_revoked", caller, profile_display_name(db, key) or "",
-                   cred.username)
+    pname = profile_display_name(db, key) or ""
+    web_auth.audit("sessions_revoked", caller, pname, cred.username)
+    action_log.enrich(
+        target_kind="weblogin", target_id=key, target_name=pname,
+        details=[("profile", pname), ("login", cred.username)],
+    )
     return {"ok": True, "web": _web_state(db, cred, key)}
 
 
@@ -1984,11 +2104,16 @@ def admin_delete_web_login(payload: WebLoginPayload, db: Session = Depends(get_d
     _web_guard(caller, key)
     cred = _web_row(db, key)
     username = cred.username
-    web_auth.audit("deleted", caller, profile_display_name(db, key) or "", username)
+    pname = profile_display_name(db, key) or ""
+    web_auth.audit("deleted", caller, pname, username)
     db.delete(cred)
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "weblogin.deleted",
                     details=[("login", username)])
+    action_log.enrich(
+        target_kind="weblogin", target_id=key, target_name=pname,
+        details=[("profile", pname), ("login", username)],
+    )
     return {"ok": True}
 
 
@@ -2068,6 +2193,8 @@ def admin_set_photo(profile_key: str = Form(...), file: UploadFile = File(...),
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.photo_set",
                     details=[("profile", name)])
+    action_log.enrich(target_kind="profile", target_id=profile_key,
+                      target_name=name, details=[("role", role), ("profile", name)])
     return {"ok": True, "photo_ver": _photo_version(row)}
 
 
@@ -2087,8 +2214,11 @@ def admin_delete_photo(payload: PhotoDeletePayload, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="No photo")
     db.delete(row)
     db.commit()
+    pname = profile_display_name(db, payload.profile_key) or payload.profile_key
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.photo_removed",
-                    details=[("profile", profile_display_name(db, payload.profile_key) or payload.profile_key)])
+                    details=[("profile", pname)])
+    action_log.enrich(target_kind="profile", target_id=payload.profile_key,
+                      target_name=pname, details=[("role", role), ("profile", pname)])
     return {"ok": True}
 
 
@@ -2316,11 +2446,17 @@ def update_my_name(payload: MyNamePayload, caller: dict = Depends(_caller),
         p = db.query(RoleProfile).filter_by(id=admin_row.profile_id).first()
         if not p:
             raise HTTPException(status_code=404, detail="Profile not found")
+        was = p.name
         if payload.name is not None:
             _rename_profile(db, "admin", p.id, payload.name)
         if payload.overrides:
             _apply_overrides(db, p.name, payload.overrides)
         db.commit()
+        action_log.enrich(
+            target_kind="profile", target_id=profile_key("admin", p.id),
+            target_name=p.name, details=[("role", "admin")],
+            changes=[("name", was, p.name)] if p.name != was else None,
+        )
         return {"ok": True, "canonical": p.name}
 
     row = db.query(TelegramUserRole).filter_by(id=payload.role_ref, telegram_id=tid).first()
@@ -2328,6 +2464,7 @@ def update_my_name(payload: MyNamePayload, caller: dict = Depends(_caller),
         raise HTTPException(status_code=403, detail="Not your approved profile")
 
     canonical = row.full_name
+    was = canonical
     if payload.name is not None and (payload.name or "").strip() != canonical:
         if row.role == "supervisor":
             _rename_profile(db, "supervisor", row.role_id, payload.name)
@@ -2352,6 +2489,17 @@ def update_my_name(payload: MyNamePayload, caller: dict = Depends(_caller),
     if payload.overrides:
         _apply_overrides(db, canonical, payload.overrides)
     db.commit()
+    log_details = [("role", row.role), ("profile", canonical)]
+    if payload.overrides:
+        log_details.append(("language", ", ".join(sorted(payload.overrides))))
+    action_log.enrich(
+        target_kind="profile",
+        target_id=profile_key(row.role, row.role_id) if row.role != "leader" else None,
+        target_name=canonical,
+        unit_id=row.role_id if row.role == "leader" else None,
+        details=log_details,
+        changes=[("name", was, canonical)] if canonical != was else None,
+    )
     return {"ok": True, "canonical": canonical}
 
 

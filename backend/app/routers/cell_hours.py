@@ -28,7 +28,7 @@ from app.capabilities import CAP_CELL_HOURS_MANAGE, require_cap
 from app.capability_alerts import alert_grant_use, unit_name
 from app.database import get_db
 from app.models import Cell, Manager, RoleProfile
-from app.services import cell_hours
+from app.services import action_log, cell_hours
 from app.services.factory_scope import list_factories, serialize
 
 router = APIRouter(prefix="/api/cell-hours", tags=["cell-hours"])
@@ -140,6 +140,14 @@ def put_default(body: DefaultIn, db: Session = Depends(get_db),
     if body.shift not in cell_hours.DEFAULT_KEYS:
         raise HTTPException(status_code=400, detail="shift must be 1 or 2")
     before = cell_hours.defaults(db).get(body.shift)
+    # The count the confirmation named: every cell of this shift with no clock
+    # of its own is re-timed by this write (NULL = inherit, and the pair is
+    # both-or-neither, so shift_start alone answers it).
+    inheriting = (db.query(Cell)
+                  .join(Manager, Cell.manager_id == Manager.id)
+                  .filter(Manager.shift == body.shift,
+                          Cell.shift_start.is_(None))
+                  .count())
     try:
         start, end = cell_hours.set_default(db, body.shift, body.start, body.end)
     except ValueError as e:
@@ -152,6 +160,13 @@ def put_default(body: DefaultIn, db: Session = Depends(get_db),
     alert_grant_use(
         db, caller, CAP_CELL_HOURS_MANAGE, "cell_hours.default",
         details=[("shift", body.shift)],
+        changes=[("hours",
+                  cell_hours.fmt_pair(*(before or (None, None))) or "—",
+                  cell_hours.fmt_pair(start, end))],
+    )
+    action_log.enrich(
+        target_kind="setting", target_id=f"cell_hours_shift_{body.shift}",
+        details=[("shift", body.shift), ("cells", inheriting)],
         changes=[("hours",
                   cell_hours.fmt_pair(*(before or (None, None))) or "—",
                   cell_hours.fmt_pair(start, end))],
@@ -215,4 +230,12 @@ def put_bulk(body: BulkIn, db: Session = Depends(get_db),
             changes=[("hours", "—",
                       "—" if body.clear else cell_hours.fmt_pair(start, end))],
         )
+    action_log.enrich(
+        target_kind="cell",
+        details=[("mode", "clear" if body.clear else "set"),
+                 ("cells", len(changed)),
+                 ("cell", ", ".join(codes[:25]) + ("…" if len(codes) > 25 else "")),
+                 ("hours", "—" if body.clear
+                  else (cell_hours.fmt_pair(start, end) or "—"))],
+    )
     return {"updated": len(changed)}

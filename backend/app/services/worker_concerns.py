@@ -52,6 +52,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import SessionLocal
 from app.models import WorkerConcern, WorkerConcernSheetState, WorkerConcernSyncMeta
+from app.services import action_log
 
 log = logging.getLogger(__name__)
 
@@ -520,6 +521,20 @@ def run_sync(full: bool = False) -> dict:
         log.info("worker-concerns sync: %s rows from %s sheets (%s crawled, %s skipped unchanged, "
                  "%s failed, %s invalid dates)",
                  total, len(registry), len(to_crawl), skipped, len(failures), invalid_total)
+        # One register row per pass that actually CRAWLED something. The
+        # incremental sweep runs on a timer and its normal answer is "every
+        # sheet is unchanged" — a row for that would bury the register under
+        # passes that read nothing, so a crawl of zero sheets with no failure
+        # is silent. A failed sheet is always worth a row: it means some cell's
+        # rows are older than the page implies.
+        if to_crawl or failures:
+            action_log.record_system(
+                "sync_export", "sync.worker_concerns_pass", db=db,
+                details=[("mode", "full" if full else "incremental"),
+                         ("rows", total), ("sheets", len(registry)),
+                         ("crawled", len(to_crawl)), ("skipped", skipped),
+                         ("failed", len(failures))],
+            )
         return {"status": "ok", "rows": total, "sheets": len(registry),
                 "crawled": len(to_crawl), "skipped": skipped,
                 "failed": len(failures), "invalid_dates": invalid_total}

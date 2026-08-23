@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Cell, Manager, QualityComplaint, QualitySyncMeta, SheetSource
 from app.permissions import require_page
+from app.services import action_log
 from app.services.cell_lookup import by_verifix, resolve_verifix
 from app.services.factory_scope import factory_of_managers, viewer_factory_id
 from app.services.name_map import supervisor_match
@@ -29,6 +30,21 @@ from app.xlsx_delivery import deliver_xlsx
 router = APIRouter(prefix="/api/quality", tags=["quality"])
 
 SHEET_NAME = "quality"
+
+
+def _scope_line(meta: list[dict[str, Any]]) -> str:
+    """The export's own meta strip, flattened into one sentence for the register.
+
+    The page already spells out every narrowing it applied, in the viewer's
+    language — «who pulled what data» is only answerable if the log keeps that
+    same scope, so it is copied rather than re-derived here."""
+    parts = []
+    for it in meta or []:
+        label = str(it.get("label") or "").strip()
+        value = str(it.get("value") or "").strip()
+        if label and value:
+            parts.append(f"{label}: {value}")
+    return " · ".join(parts)[:1000]
 
 
 @router.get("")
@@ -223,7 +239,18 @@ def export_quality(
         fname += ".xlsx"
     caption = body.caption or f"📊 {body.title}"
     try:
-        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+        data = bio.read()
+        resp = deliver_xlsx(request, payload, fname, data, caption)
+        action_log.enrich(
+            target_kind="report", target_id=fname, target_name=body.title,
+            details=[
+                ("file", fname),
+                ("rows", len(((body.register or {}).get("rows")) or [])),
+                ("size", len(data)),
+                ("scope", _scope_line(body.meta)),
+            ],
+        )
+        return resp
     except HTTPException:
         raise
     except Exception as e:
@@ -255,4 +282,8 @@ def refresh_quality(
         db.commit()
         raise HTTPException(status_code=502, detail=f"Failed to sync the quality sheet: {exc}")
 
+    action_log.enrich(
+        target_kind="batch", target_id=SHEET_NAME,
+        details=[("source", "sheet"), ("rows", result.get("quality_rows"))],
+    )
     return {"status": "ok", **result}

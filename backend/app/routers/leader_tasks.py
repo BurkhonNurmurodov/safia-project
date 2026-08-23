@@ -33,7 +33,7 @@ from app.permissions import page_allowed, require_page
 from app.security import require_auth
 from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
-from app.services import leader_ai, leader_bot
+from app.services import action_log, leader_ai, leader_bot
 from app.services.leader_tasks import (
     CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_leader_config, effective_settings, ensure_task_defs,
@@ -56,6 +56,62 @@ _LANGS = ("uz", "uz_cyrl", "ru", "en")
 
 def _actor(admin: dict) -> str | None:
     return admin.get("profile_key") or admin.get("name") or admin.get("sub")
+
+
+# ── the action register ───────────────────────────────────────────────────────
+# Every write in this file lands somewhere on the global → supervisor → leader
+# chain, so WHICH LEVEL was written is the fact that makes a row readable: the
+# same field means three different things at the three levels, and "criteria
+# set" on its own cannot tell an admin whether one leader or the whole platform
+# just changed. The two `_need_*` helpers exist so the name comes off the lookup
+# the validation ALREADY makes — the register never buys a name with a query.
+
+def _need_manager(db: Session, mid: int | None) -> Manager | None:
+    if mid is None:
+        return None
+    row = db.query(Manager).filter_by(id=mid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Unknown supervisor")
+    return row
+
+
+def _need_leader(db: Session, lid: int | None) -> RoleProfile | None:
+    if lid is None:
+        return None
+    row = db.query(RoleProfile).filter_by(id=lid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Unknown leader")
+    return row
+
+
+def _log_cfg(*, task_id: int, level: str, mgr=None, lead=None,
+             count: int | None = None, task_name: str | None = None,
+             extra=()) -> None:
+    """One register line for a config write onto the chain."""
+    lines: list[tuple] = [("level", level), ("task", task_id)]
+    if mgr is not None:
+        lines.append(("unit", mgr.name))
+    if lead is not None:
+        lines.append(("leader", lead.name))
+    if count is not None:
+        lines.append(("count", count))
+    lines.extend(extra)
+    action_log.enrich(
+        target_kind="task", target_id=task_id, target_name=task_name,
+        unit_id=(mgr.id if mgr is not None
+                 else (lead.manager_id if lead is not None else None)),
+        unit_name=mgr.name if mgr is not None else None,
+        details=lines,
+    )
+
+
+def _applied(out: dict) -> list[tuple]:
+    """«now» or «next_day» (+ the day it flips) — a staged write has not landed
+    yet, and a register that did not say so would read as though it had."""
+    lines = [("mode", out.get("applied"))]
+    if out.get("effective_date"):
+        lines.append(("date", out["effective_date"]))
+    return lines
 
 
 @router.get("/admin/leader-tasks/config")
@@ -181,15 +237,21 @@ def _upsert(db: Session, manager_id: int, task_id: int,
 
 @router.put("/admin/leader-tasks/cell")
 def put_cell(cell: CellIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    if not db.query(Manager).filter_by(id=cell.manager_id).first():
+    mgr = db.query(Manager).filter_by(id=cell.manager_id).first()
+    if not mgr:
         raise HTTPException(status_code=404, detail="Unknown supervisor")
-    if not db.query(LeaderTaskDef).filter_by(id=cell.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=cell.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
     payload = {"manager_id": cell.manager_id, "cells": [{
         "task_id": cell.task_id, "enabled": cell.enabled,
         "min_media": cell.min_media, "weight": cell.weight, "names": cell.names,
     }]}
-    return write_change(db, "supervisor", payload, cell.when, _actor(admin))
+    out = write_change(db, "supervisor", payload, cell.when, _actor(admin))
+    _log_cfg(task_id=cell.task_id, level="unit", mgr=mgr, task_name=td.name_uz,
+             extra=[("enabled", cell.enabled), ("min_media", cell.min_media),
+                    ("weight", cell.weight)] + _applied(out))
+    return out
 
 
 class LeaderCellIn(BaseModel):
@@ -210,16 +272,28 @@ class LeaderCellIn(BaseModel):
 @router.put("/admin/leader-tasks/leader-cell")
 def put_leader_cell(cell: LeaderCellIn, db: Session = Depends(get_db),
                     admin: dict = Depends(verify_admin)):
-    if not db.query(RoleProfile).filter_by(id=cell.leader_id, role="leader").first():
+    lead = db.query(RoleProfile).filter_by(id=cell.leader_id, role="leader").first()
+    if not lead:
         raise HTTPException(status_code=404, detail="Unknown leader")
-    if not db.query(LeaderTaskDef).filter_by(id=cell.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=cell.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
     payload = {
         "leader_id": cell.leader_id, "task_id": cell.task_id,
         "enabled": cell.enabled, "min_media": cell.min_media, "weight": cell.weight,
         "names": cell.names, "reset": cell.reset,
     }
-    return write_change(db, "leader", payload, cell.when, _actor(admin))
+    out = write_change(db, "leader", payload, cell.when, _actor(admin))
+    # A null field means «inherit», which is not the same statement as a value —
+    # only what the request actually pinned is recorded.
+    fields = [(k, v) for k, v in (("enabled", cell.enabled),
+                                  ("min_media", cell.min_media),
+                                  ("weight", cell.weight)) if v is not None]
+    if cell.reset:
+        fields = [("override", "cleared")]
+    _log_cfg(task_id=cell.task_id, level="leader", lead=lead,
+             task_name=td.name_uz, extra=fields + _applied(out))
+    return out
 
 
 class TaskCellIn(BaseModel):
@@ -241,14 +315,24 @@ class SupervisorBatchIn(BaseModel):
 @router.put("/admin/leader-tasks/supervisor-batch")
 def put_supervisor_batch(body: SupervisorBatchIn, db: Session = Depends(get_db),
                          admin: dict = Depends(verify_admin)):
-    if not db.query(Manager).filter_by(id=body.manager_id).first():
+    mgr = db.query(Manager).filter_by(id=body.manager_id).first()
+    if not mgr:
         raise HTTPException(status_code=404, detail="Unknown supervisor")
     payload = {"manager_id": body.manager_id, "cells": [
         {"task_id": c.task_id, "enabled": c.enabled, "min_media": c.min_media,
          "weight": c.weight, "names": c.names}
         for c in body.cells
     ]}
-    return write_change(db, "supervisor", payload, body.when, _actor(admin))
+    out = write_change(db, "supervisor", payload, body.when, _actor(admin))
+    # One apply, one row: the batch editor writes the unit's whole column, so
+    # the register names the unit and counts the cells rather than the task.
+    action_log.enrich(
+        target_kind="unit", target_id=body.manager_id, target_name=mgr.name,
+        unit_id=mgr.id, unit_name=mgr.name,
+        details=[("level", "unit"), ("unit", mgr.name),
+                 ("tasks", len(body.cells))] + _applied(out),
+    )
+    return out
 
 
 class TaskIn(BaseModel):
@@ -312,13 +396,33 @@ def _scoped_rename(db: Session, body: "TaskIn", actor: str) -> dict:
 
 @router.put("/admin/leader-tasks/task")
 def put_task(body: TaskIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
+    new_name = next((v for v in ((body.names or {}).get(l) for l in _LANGS) if v), None)
     if body.manager_ids is not None or body.leader_ids is not None:
-        return _scoped_rename(db, body, _actor(admin))
+        out = _scoped_rename(db, body, _actor(admin))
+        _log_cfg(task_id=body.task_id, task_name=td.name_uz,
+                 level="unit" if out["level"] == "supervisor" else "leader",
+                 count=out["count"],
+                 extra=([("name", new_name)] if new_name else []) + _applied(out))
+        return out
     payload = {"task_id": body.task_id, "names": body.names, "note": body.note,
                "default_weight": body.default_weight}
-    return write_change(db, "global_task", payload, body.when, _actor(admin))
+    # The definition's own name is the one previous value this file has in hand
+    # before the write, so it is the one field recorded as an old→new pair.
+    old_name = td.name_uz
+    out = write_change(db, "global_task", payload, body.when, _actor(admin))
+    extra = _applied(out)
+    if body.default_weight is not None:
+        extra.append(("weight", body.default_weight))
+    action_log.enrich(
+        target_kind="task", target_id=body.task_id, target_name=old_name,
+        details=[("level", "global"), ("task", body.task_id)] + extra,
+        changes=([("name", old_name, new_name)]
+                 if new_name and new_name != old_name else None),
+    )
+    return out
 
 
 class ApplyAllIn(BaseModel):
@@ -347,9 +451,12 @@ def put_apply_all(body: ApplyAllIn, db: Session = Depends(get_db),
     leader-filtered matrix asks for: writing the parent supervisors instead
     would move every OTHER leader under them, which is precisely the rows the
     admin filtered out."""
-    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
     actor = _actor(admin)
+    pushed = [("enabled", body.enabled), ("min_media", body.min_media),
+              ("weight", body.weight)]
 
     if body.leader_ids is not None:
         ids = [i for (i,) in db.query(RoleProfile.id).filter(
@@ -361,8 +468,11 @@ def put_apply_all(body: ApplyAllIn, db: Session = Depends(get_db),
                        "enabled": body.enabled, "min_media": body.min_media,
                        "weight": body.weight, "names": None, "reset": False}
             write_change(db, "leader", payload, body.when, actor)
-        return {"ok": True, "count": len(ids), "level": "leader",
-                "applied": body.when}
+        out = {"ok": True, "count": len(ids), "level": "leader",
+               "applied": body.when}
+        _log_cfg(task_id=body.task_id, level="leader", count=len(ids),
+                 task_name=td.name_uz, extra=pushed + _applied(out))
+        return out
 
     q = db.query(Manager).filter(Manager.archived.is_(False))
     if body.manager_ids is not None:
@@ -376,8 +486,15 @@ def put_apply_all(body: ApplyAllIn, db: Session = Depends(get_db),
             "min_media": body.min_media, "weight": body.weight, "names": None,
         }]}
         write_change(db, "supervisor", payload, body.when, actor)
-    return {"ok": True, "count": len(managers), "level": "supervisor",
-            "applied": body.when}
+    out = {"ok": True, "count": len(managers), "level": "supervisor",
+           "applied": body.when}
+    # Narrowed to the filtered rows, or every unit on the platform — the count
+    # is the only thing that separates the two, so it is never left out.
+    _log_cfg(task_id=body.task_id, level="unit", count=len(managers),
+             task_name=td.name_uz,
+             extra=pushed + [("scope", "filtered" if body.manager_ids is not None
+                              else "all")] + _applied(out))
+    return out
 
 
 # Legacy column overwrite (old matrix UI). Retained so a stale client keeps
@@ -401,9 +518,13 @@ def put_column(col: ColumnIn, db: Session = Depends(get_db), _: dict = Depends(v
             if v:
                 setattr(td, f"name_{l}", v)
     mm, w = _clamp(col)
-    for m in db.query(Manager).filter(Manager.archived.is_(False)).all():
+    managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
+    for m in managers:
         _upsert(db, m.id, col.task_id, col.enabled, mm, w)
     db.commit()
+    _log_cfg(task_id=col.task_id, level="global", count=len(managers),
+             task_name=td.name_uz,
+             extra=[("enabled", col.enabled), ("min_media", mm), ("weight", w)])
     return {"ok": True}
 
 
@@ -428,8 +549,13 @@ def put_criteria(body: CriteriaIn, db: Session = Depends(get_db),
     """Set what the AI must see before it calls this task done. Applies at once
     (see services.leader_tasks.set_criteria for why it never stages), and the
     next drain re-reads it — verdicts already written are NOT recomputed."""
-    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
+    # The definition of done is prose an admin may paste a paragraph of; the
+    # register keeps the head of it, which is what makes two edits tellable
+    # apart without turning every row into a wall of text.
+    shown = [("criteria", (body.criteria or "")[:200] or "—")]
     # Scoped fan-out: the filtered rows each get their own copy of the text,
     # leaving the global level (and therefore every row outside the filter)
     # exactly as it was.
@@ -452,15 +578,18 @@ def put_criteria(body: CriteriaIn, db: Session = Depends(get_db),
             for mid in ids:
                 set_criteria(db, task_id=body.task_id, criteria=body.criteria,
                              manager_id=mid)
+        _log_cfg(task_id=body.task_id, task_name=td.name_uz, count=len(ids),
+                 level="leader" if body.leader_ids is not None else "unit",
+                 extra=shown)
         return {"ok": True, "count": len(ids)}
-    if body.manager_id is not None and not db.query(Manager).filter_by(
-            id=body.manager_id).first():
-        raise HTTPException(status_code=404, detail="Unknown supervisor")
-    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
-            id=body.leader_id).first():
-        raise HTTPException(status_code=404, detail="Unknown leader")
+    mgr = _need_manager(db, body.manager_id)
+    lead = _need_leader(db, body.leader_id)
     set_criteria(db, task_id=body.task_id, criteria=body.criteria,
                  manager_id=body.manager_id, leader_id=body.leader_id)
+    _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
+             level=("leader" if lead is not None
+                    else "unit" if mgr is not None else "global"),
+             extra=shown)
     return {"ok": True}
 
 
@@ -495,9 +624,14 @@ def put_window(body: WindowIn, db: Session = Depends(get_db),
     for v in (body.win_from, body.win_to):
         if v.strip() and leader_ai.hhmm(v) is None:
             raise HTTPException(status_code=400, detail="bad_time")
-    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
     win = {"win_from": body.win_from, "win_to": body.win_to}
+    # A blank end INHERITS the level above; «—» says so, where a blank cell in
+    # the register would read as "no window at all".
+    shown = [("window", f"{body.win_from.strip() or '—'} — "
+                        f"{body.win_to.strip() or '—'}")]
     if body.leader_ids is not None or body.manager_ids is not None:
         if body.leader_ids is not None:
             ids = [i for (i,) in db.query(RoleProfile.id).filter(
@@ -520,15 +654,18 @@ def put_window(body: WindowIn, db: Session = Depends(get_db),
         # Once, after the whole fan-out — the re-derivation is per task, not per
         # row written, so running it inside the loop would rescan N times.
         leader_ai.sync_date_flags(db, [body.task_id])
+        _log_cfg(task_id=body.task_id, task_name=td.name_uz, count=len(ids),
+                 level="leader" if body.leader_ids is not None else "unit",
+                 extra=shown)
         return {"ok": True, "count": len(ids)}
-    if body.manager_id is not None and not db.query(Manager).filter_by(
-            id=body.manager_id).first():
-        raise HTTPException(status_code=404, detail="Unknown supervisor")
-    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
-            id=body.leader_id).first():
-        raise HTTPException(status_code=404, detail="Unknown leader")
+    mgr = _need_manager(db, body.manager_id)
+    lead = _need_leader(db, body.leader_id)
     set_window(db, task_id=body.task_id, manager_id=body.manager_id,
                leader_id=body.leader_id, **win)
+    _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
+             level=("leader" if lead is not None
+                    else "unit" if mgr is not None else "global"),
+             extra=shown)
     return {"ok": True}
 
 
@@ -549,8 +686,10 @@ def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
                  _: dict = Depends(verify_admin)):
     if body.deadline.strip() and leader_ai.hhmm(body.deadline) is None:
         raise HTTPException(status_code=400, detail="bad_time")
-    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
+    shown = [("deadline", body.deadline.strip() or "—")]
     if body.leader_ids is not None or body.manager_ids is not None:
         if body.leader_ids is not None:
             ids = [i for (i,) in db.query(RoleProfile.id).filter(
@@ -570,15 +709,18 @@ def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
             for mid in ids:
                 set_deadline(db, task_id=body.task_id, deadline=body.deadline,
                              manager_id=mid)
+        _log_cfg(task_id=body.task_id, task_name=td.name_uz, count=len(ids),
+                 level="leader" if body.leader_ids is not None else "unit",
+                 extra=shown)
         return {"ok": True, "count": len(ids)}
-    if body.manager_id is not None and not db.query(Manager).filter_by(
-            id=body.manager_id).first():
-        raise HTTPException(status_code=404, detail="Unknown supervisor")
-    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
-            id=body.leader_id).first():
-        raise HTTPException(status_code=404, detail="Unknown leader")
+    mgr = _need_manager(db, body.manager_id)
+    lead = _need_leader(db, body.leader_id)
     set_deadline(db, task_id=body.task_id, deadline=body.deadline,
                  manager_id=body.manager_id, leader_id=body.leader_id)
+    _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
+             level=("leader" if lead is not None
+                    else "unit" if mgr is not None else "global"),
+             extra=shown)
     return {"ok": True}
 
 
@@ -673,8 +815,12 @@ def _write_date_rule(db: Session, body, *, setter, kw: str,
     skipped the single `sync_date_flags`, would leave the pair enforced on
     different sets of rows, which is invisible until somebody's score moves.
     """
-    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
+    # TRI-STATE, and the register has to keep it one: null is «inherit the level
+    # above», which is a different instruction from False.
+    shown = [(kw, "inherit" if value is None else value)]
     if body.leader_ids is not None or body.manager_ids is not None:
         if body.leader_ids is not None:
             ids = [i for (i,) in db.query(RoleProfile.id).filter(
@@ -697,15 +843,18 @@ def _write_date_rule(db: Session, body, *, setter, kw: str,
         # Once, after the whole fan-out — the re-derivation is per task, not per
         # row written (same reason as put_window).
         leader_ai.sync_date_flags(db, [body.task_id])
+        _log_cfg(task_id=body.task_id, task_name=td.name_uz, count=len(ids),
+                 level="leader" if body.leader_ids is not None else "unit",
+                 extra=shown)
         return {"ok": True, "count": len(ids)}
-    if body.manager_id is not None and not db.query(Manager).filter_by(
-            id=body.manager_id).first():
-        raise HTTPException(status_code=404, detail="Unknown supervisor")
-    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
-            id=body.leader_id).first():
-        raise HTTPException(status_code=404, detail="Unknown leader")
+    mgr = _need_manager(db, body.manager_id)
+    lead = _need_leader(db, body.leader_id)
     setter(db, task_id=body.task_id, **{kw: value},
            manager_id=body.manager_id, leader_id=body.leader_id)
+    _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
+             level=("leader" if lead is not None
+                    else "unit" if mgr is not None else "global"),
+             extra=shown)
     return {"ok": True}
 
 
@@ -749,8 +898,10 @@ def put_proof_kind(body: ProofKindIn, db: Session = Depends(get_db),
     """
     if body.proof_kind is not None and body.proof_kind not in PROOF_KINDS:
         raise HTTPException(status_code=400, detail="unknown_proof_kind")
-    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
+    shown = [("proof_kind", body.proof_kind or "inherit")]
     # Enrolment must NAME a unit. See services.leader_tasks.CAMERA_IS_PILOT: a
     # global camera is what every leader on the platform inherits, and that is
     # not something a pilot gets to do by accident.
@@ -778,16 +929,19 @@ def put_proof_kind(body: ProofKindIn, db: Session = Depends(get_db),
             for mid in ids:
                 set_proof_kind(db, task_id=body.task_id,
                                proof_kind=body.proof_kind, manager_id=mid)
+        _log_cfg(task_id=body.task_id, task_name=td.name_uz, count=len(ids),
+                 level="leader" if body.leader_ids is not None else "unit",
+                 extra=shown)
         return {"ok": True, "count": len(ids)}
 
-    if body.manager_id is not None and not db.query(Manager).filter_by(
-            id=body.manager_id).first():
-        raise HTTPException(status_code=404, detail="Unknown supervisor")
-    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
-            id=body.leader_id).first():
-        raise HTTPException(status_code=404, detail="Unknown leader")
+    mgr = _need_manager(db, body.manager_id)
+    lead = _need_leader(db, body.leader_id)
     set_proof_kind(db, task_id=body.task_id, proof_kind=body.proof_kind,
                    manager_id=body.manager_id, leader_id=body.leader_id)
+    _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
+             level=("leader" if lead is not None
+                    else "unit" if mgr is not None else "global"),
+             extra=shown)
     return {"ok": True}
 
 
@@ -855,6 +1009,17 @@ def put_unit(body: UnitIn, db: Session = Depends(get_db),
                       per_task_close=bool(body.per_task_close),
                       bot_from=bot_from)
     dropped = leader_ai.drop_rehearsal_pending(db, body.manager_id, bot_from)
+    lines = [("level", "unit"), ("unit", mgr.name),
+             ("mode", "per_task" if body.per_task_close else "per_day"),
+             ("from_date", bot_from or "—")]
+    if dropped:
+        # Queued AI work the rehearsal window just took back — the one visible
+        # consequence of this save that the two fields do not state.
+        lines.append(("removed", dropped))
+    action_log.enrich(
+        target_kind="unit", target_id=body.manager_id, target_name=mgr.name,
+        unit_id=mgr.id, unit_name=mgr.name, details=lines,
+    )
     return {"ok": True, "dropped": dropped}
 
 
@@ -910,9 +1075,14 @@ def post_example(task_id: int = Form(...), file: UploadFile = File(...),
     img.thumbnail((_EXAMPLE_EDGE, _EXAMPLE_EDGE), Image.Resampling.LANCZOS)
     buf = BytesIO()
     img.save(buf, "JPEG", quality=85)
-    row = LeaderTaskExample(task_id=task_id, mime="image/jpeg", data=buf.getvalue())
+    blob = buf.getvalue()
+    row = LeaderTaskExample(task_id=task_id, mime="image/jpeg", data=blob)
     db.add(row)
     db.commit()
+    action_log.enrich(
+        target_kind="example", target_id=row.id, target_name=td.name_uz,
+        details=[("level", "global"), ("task", task_id), ("size", len(blob))],
+    )
     return {"ok": True, "id": row.id}
 
 
@@ -922,8 +1092,13 @@ def delete_example(example_id: int, db: Session = Depends(get_db),
     row = db.query(LeaderTaskExample).filter_by(id=example_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="No example")
+    task_id = row.task_id
     db.delete(row)
     db.commit()
+    action_log.enrich(
+        target_kind="example", target_id=example_id,
+        details=[("level", "global"), ("task", task_id)],
+    )
     return {"ok": True}
 
 
@@ -944,6 +1119,8 @@ def post_cancel(body: CancelIn, db: Session = Depends(get_db),
                 admin: dict = Depends(verify_admin)):
     if not cancel_pending(db, body.pending_id, _actor(admin)):
         raise HTTPException(status_code=404, detail="Unknown pending change")
+    action_log.enrich(target_kind="setting", target_id=body.pending_id,
+                      details=[("id", body.pending_id)])
     return {"ok": True}
 
 
@@ -962,6 +1139,8 @@ def post_revert(body: RevertIn, db: Session = Depends(get_db),
                 admin: dict = Depends(verify_admin)):
     if not revert_audit(db, body.audit_id, _actor(admin)):
         raise HTTPException(status_code=400, detail="Nothing to revert")
+    action_log.enrich(target_kind="setting", target_id=body.audit_id,
+                      details=[("id", body.audit_id)])
     return {"ok": True}
 
 
@@ -975,10 +1154,15 @@ class ChannelIn(BaseModel):
 def put_channel(body: ChannelIn, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     chat_id = body.chat_id.strip()
     row = db.query(AppSetting).filter_by(key=CHANNEL_SETTING_KEY).first()
+    # The one setting in this file whose previous value is already in hand, so
+    # the archive channel is the one that gets a real old→new pair.
+    old = (row.value or "") if row else ""
     if not chat_id:  # clear
         if row:
             db.delete(row)
             db.commit()
+        action_log.enrich(target_kind="setting", target_id=CHANNEL_SETTING_KEY,
+                          changes=[("value", old or "—", "—")])
         return {"ok": True, "chat_id": ""}
 
     # Verify before storing: the bot must be able to post (and clean up) there.
@@ -998,6 +1182,8 @@ def put_channel(body: ChannelIn, db: Session = Depends(get_db), _: dict = Depend
     else:
         row.value = chat_id
     db.commit()
+    action_log.enrich(target_kind="setting", target_id=CHANNEL_SETTING_KEY,
+                      changes=[("value", old or "—", chat_id)])
     return {"ok": True, "chat_id": chat_id}
 
 
@@ -1161,6 +1347,11 @@ def delete_submissions(
         raise HTTPException(status_code=404, detail="No matching closed days")
 
     day_ids = [d.id for d in days]
+    # Read off the rows while they still exist: after the bulk delete + commit
+    # every one of these instances is expired, and touching an attribute would
+    # go looking for a row that is gone.
+    unit_ids = sorted({d.manager_id for d in days if d.manager_id is not None})
+    dates = sorted({str(d.date) for d in days})
     entries = db.query(LeaderTaskEntry).filter(LeaderTaskEntry.day_id.in_(day_ids)).all()
     entry_ids = [e.id for e in entries]
     n_media = 0
@@ -1199,6 +1390,23 @@ def delete_submissions(
         "leader-tasks: %s deleted %d bot day(s), %d entries, %d media rows, "
         "%d AI verdict(s) (ids=%s)",
         _actor(admin), n_days, n_entries, n_media, n_rev, day_ids,
+    )
+    # Irreversible and plural: WHICH units lost days, HOW MANY, and over what
+    # dates are the three things nobody can reconstruct afterwards. Names would
+    # cost a query the delete does not otherwise make, so the units are their
+    # ids — the day rows already carry them.
+    lines = [("count", n_days), ("tasks", n_entries), ("photos", n_media),
+             ("verdict", n_rev)]
+    if unit_ids:
+        lines.append(("unit", ", ".join(str(i) for i in unit_ids)))
+    if dates:
+        lines.append(("period", dates[0] if len(dates) == 1
+                      else f"{dates[0]} … {dates[-1]}"))
+    action_log.enrich(
+        target_kind="day",
+        unit_id=unit_ids[0] if len(unit_ids) == 1 else None,
+        day=dates[0] if len(dates) == 1 else None,
+        details=lines,
     )
     return {"days": n_days, "entries": n_entries, "media": n_media, "reviews": n_rev}
 

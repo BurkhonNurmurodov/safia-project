@@ -62,7 +62,7 @@ from app.models import (
     Manager,
     RoleProfile,
 )
-from app.services import gemini, leader_bot
+from app.services import action_log, gemini, leader_bot
 from app.services.name_map import leader_match, relabel_supervisor, supervisor_match
 
 log = logging.getLogger(__name__)
@@ -1802,6 +1802,16 @@ def note_auto_run(db: Session, queued: int, by: str) -> bool:
     else:
         row.value = payload
     db.commit()
+    # Work queued with nobody watching — a sheet Refresh, a bot day-close, a
+    # deadline sweep, the shift-2 backlog. `by` is where it came from, which is
+    # the one thing a later reader cannot reconstruct from the queue itself.
+    # Only a queueing that actually took the strip lands here: the two refusals
+    # above (nothing queued, a live run already owns it) return first.
+    action_log.record_system(
+        "leader_review", "ai.auto_queued", db=db,
+        details=[("count", queued), ("total", total),
+                 ("source", (by or "")[:120] or "—")],
+    )
     return True
 
 
@@ -1981,6 +1991,24 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
     # pass instead (above), for the reason given there.
     if scope is None and q.with_entities(LeaderAiReview.id).first() is None:
         _release_run(db)
+    # ONE row for the whole pass, never one per verdict: a batch is forty rows
+    # and a per-verdict trail would bury every other thing the register holds.
+    # A pass that reviewed nothing and hit nothing writes nothing — the timer
+    # fires every 20 minutes and its normal answer is an empty queue. Quota and
+    # an abort ARE something: they are the two states where the queue stops
+    # moving for a reason nobody can see from the outside.
+    if done or errors or quota or aborted:
+        action_log.record_system(
+            "leader_review", "ai.drain_pass", db=db,
+            # A pass that judged thirty rows and THEN hit the quota did its
+            # work — «refused» belongs to the pass that got nowhere.
+            outcome=("error" if aborted
+                     else "refused" if (quota and not done) else "done"),
+            details=[("rows", done), ("flagged", flagged), ("errors", errors),
+                     ("sent", reported)]
+                    + ([("quota", (quota_msg or "reached")[:200])] if quota else [])
+                    + ([("note", str(aborted)[:200])] if aborted else []),
+        )
     return {"ok": True, "done": done, "flagged": flagged, "errors": errors,
             "quota": quota, "quotaMsg": quota_msg, "aborted": aborted,
             "reported": reported}
@@ -3468,7 +3496,8 @@ def resume_after_boot() -> None:
     db = SessionLocal()
     try:
         beat = _read_beat(db)
-        if (beat or {}).get("state") == "running":
+        cleared = (beat or {}).get("state") == "running"
+        if cleared:
             log.info("leader-ai: clearing a drain heartbeat left running by a "
                      "previous process")
             _beat(db, state="idle", reason="restarted")
@@ -3476,6 +3505,16 @@ def resume_after_boot() -> None:
              .filter(LeaderAiReview.status.in_(("pending", "error")),
                      LeaderAiReview.attempts < MAX_ATTEMPTS)
              .count())
+        # A boot that found nothing to fix says nothing — every deploy restarts
+        # this unit, and a row per boot would make the register a deploy log.
+        # A queue picked back up, or a `running` heartbeat that was a lie by
+        # construction, are both real repairs and both get named.
+        if n or cleared:
+            action_log.record_system(
+                "leader_review", "ai.resumed_at_boot", db=db,
+                details=[("rows", n)]
+                        + ([("state", "heartbeat_cleared")] if cleared else []),
+            )
         if n:
             log.info("leader-ai: %s row(s) still queued at boot, resuming now", n)
             run_async(discover_first=False)

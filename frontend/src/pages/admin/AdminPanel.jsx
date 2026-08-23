@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
-  ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck,
+  ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
   Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, FileClock,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
@@ -32,6 +32,7 @@ import ShiftTimes from "./ShiftTimes";
 import IdleSource from "./IdleSource";
 import LostWorkers from "./LostWorkers";
 import DocAudit from "./DocAudit";
+import Logs from "./Logs";
 
 /**
  * The admin panel shell.
@@ -78,6 +79,10 @@ export const ADMIN_NAV = [
   { id: "access",       group: "people", Icon: ShieldCheck,    labelKey: "admin.tabAccess",       descKey: "admin.desc.access" },
   { id: "permissions",  group: "people", Icon: KeyRound,       labelKey: "admin.tabPermissions",  descKey: "admin.desc.permissions" },
   { id: "actions",      group: "people", Icon: History,        labelKey: "admin.tabActions",      descKey: "admin.desc.actions" },
+  // Every change on the platform, by category — one register nothing writes to
+  // twice: read-only and append-only. Sits with the other accountability
+  // surfaces, and carries no `capKey`, so like "permissions" it is admin-only.
+  { id: "logs",         group: "people", Icon: ScrollText,     labelKey: "admin.tabLogs",         descKey: "admin.desc.logs" },
 
   { id: "broadcast",    group: "tools",  Icon: Megaphone,      labelKey: "admin.tabBroadcast",    descKey: "admin.desc.broadcast" },
   { id: "ltasks",       group: "tools",  Icon: ListChecks,     labelKey: "admin.tabLtasks",       descKey: "admin.desc.ltasks" },
@@ -117,6 +122,7 @@ const VIEWS = {
   access:       PageAccess,
   permissions:  Permissions,
   actions:      ActionHistory,
+  logs:         Logs,
   broadcast:    Broadcast,
   ltasks:       LeaderTasksAdmin,
   shifttimes:   ShiftTimes,

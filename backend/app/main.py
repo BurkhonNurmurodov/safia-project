@@ -90,6 +90,7 @@ async def lifespan(app: FastAPI):
         add_leader_photo_client_key,
         add_leader_ai_clocks, sync_leader_ai_dates,
         add_leader_ai_resolution,
+        add_leader_ai_reviewed_index,
         add_web_credential_password_enc,
         add_arc_probe_columns,
         add_worker_concern_failures_column,
@@ -158,6 +159,7 @@ async def lifespan(app: FastAPI):
     set_camera_pilot_bot_from()
     add_leader_photo_client_key()
     add_leader_ai_resolution()
+    add_leader_ai_reviewed_index()
     # After add_leader_ai_resolution — the backfill reads reviewed rows.
     add_leader_ai_clocks()
     add_profile_identity_columns()

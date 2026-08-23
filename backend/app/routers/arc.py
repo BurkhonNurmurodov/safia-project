@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ArcRequest, ArcSyncMeta
 from app.permissions import require_page
-from app.services import arc_client, arc_discovery
+from app.services import action_log, arc_client, arc_discovery
 from app.services.arc_export import build_arc_workbook
 from app.services.arc_sync import _live, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
@@ -479,6 +479,13 @@ def refresh(
         raise HTTPException(status_code=409, detail="Sync is already running")
     if not start_sync_thread("full"):
         raise HTTPException(status_code=409, detail="Sync is already running")
+    # The walk runs in a thread, so the rows it will bring are not knowable here;
+    # what IS knowable is the mode and what the mirror held when it was asked for.
+    action_log.enrich(
+        target_kind="batch", target_id="arc",
+        details=[("mode", "full"), ("state", "started"),
+                 ("total", (meta.row_count if meta else 0) or 0)],
+    )
     return {"status": "started"}
 
 
@@ -510,6 +517,28 @@ class ArcExportBody(BaseModel):
 _EXPORT_MAX_ROWS = 50_000
 
 
+def _scope_line(f: dict, sort: Optional[str]) -> str:
+    """The filter set that produced the file, as one sentence. Only the
+    narrowings actually applied are named — «who pulled what data» is a question
+    about what was EXCLUDED, and a list of a dozen «all»s hides that."""
+    parts = []
+    for key in ("date_from", "date_to", "q"):
+        if f.get(key):
+            parts.append(f"{key}={f[key]}")
+    for key in ("status", "category", "branch", "master"):
+        vals = f.get(key) or []
+        if vals:
+            parts.append(f"{key}={','.join(str(v) for v in vals)}")
+    for key in ("urgent", "overdue", "sap", "state"):
+        if (f.get(key) or "all") != "all":
+            parts.append(f"{key}={f[key]}")
+    if f.get("include_missing"):
+        parts.append("include_missing=yes")
+    if sort:
+        parts.append(f"sort={sort}")
+    return (" · ".join(parts) or "no filters")[:1000]
+
+
 @router.post("/export.xlsx")
 def export_xlsx(
     request: Request,
@@ -532,7 +561,15 @@ def export_xlsx(
     fname = f"arc_requests_{today}.xlsx"
     caption = body.caption or f"📊 ARC · {len(rows)} rows"
     try:
-        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+        data = bio.read()
+        resp = deliver_xlsx(request, payload, fname, data, caption)
+        action_log.enrich(
+            target_kind="report", target_id=fname,
+            details=[("file", fname), ("rows", len(rows)), ("size", len(data)),
+                     ("columns", len(body.columns)),
+                     ("scope", _scope_line(f, body.sort))],
+        )
+        return resp
     except HTTPException:
         raise
     except Exception as e:
@@ -555,6 +592,20 @@ def post_probe(
     report = arc_discovery.run_probe(db)
     if not report.get("ok"):
         raise HTTPException(status_code=502, detail=f"ARC probe failed: {report.get('error')}")
+    # The probe CHANGES what every later walk sends, so the adopted parameter set
+    # and what it bought (baseline total → combined total) are the record.
+    winners = report.get("filters") or {}
+    combined = report.get("combined_total")
+    action_log.enrich(
+        target_kind="setting", target_id="arc.filters",
+        details=[
+            ("count", report.get("calls")),
+            ("value", ", ".join(f"{k}={v}" for k, v in winners.items()) or "defaults"),
+            ("spec_available", bool(report.get("spec_available"))),
+        ],
+        changes=([("total", report.get("baseline_total"), combined)]
+                 if combined is not None else None),
+    )
     return report
 
 
