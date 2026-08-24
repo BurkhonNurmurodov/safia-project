@@ -3269,16 +3269,27 @@ export default function Concerns() {
           subtitle={t("concerns.chartByRespSub").replace("{n}", String(respRows.length))}
           icon={<UserCheck size={16} style={{ color: "var(--brand-text)" }} />}
           maxWidth="max-w-2xl"
-          bodyClassName="px-5 py-4"
+          bodyClassName="px-5 pb-4"
           footer={
             <Button variant="secondary" onClick={() => setRespAllOpen(false)}>{t("concerns.close")}</Button>
           }
         >
           {/* The toggle and the legend stay put while the names scroll past:
               both are how the list is read, and a control you have to scroll
-              back up to reach is a control the reader stops using. */}
+              back up to reach is a control the reader stops using.
+
+              The TOP PADDING belongs to this block, never to the modal body —
+              which is why the body is `px-5 pb-4` and not the usual py-4. A
+              sticky box is constrained by its MARGIN box, so the `-mt-4` that
+              used to pull this one up into the body's own py-4 pushed it 16px
+              back DOWN at every scroll offset — including 0 — and its opaque
+              background then sat on the FIRST holder's name row: chip, name and
+              count all hidden under it, with nothing to scroll, because a
+              sticky shift is painting and not layout. With no vertical margin
+              the block's static position IS its pinned position, so it never
+              moves and never covers a row. */}
           <div
-            className="sticky top-0 z-10 -mx-5 px-5 -mt-4 pt-4 pb-1"
+            className="sticky top-0 z-10 -mx-5 px-5 pt-4 pb-1"
             style={{ background: "var(--bg-card)" }}
           >
             <SegmentedToggle
