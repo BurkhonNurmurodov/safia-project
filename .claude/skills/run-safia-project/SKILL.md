@@ -49,11 +49,19 @@ preview_start {"name":"backend"}       → uvicorn :8000
 preview_start {"name":"backend-alt"}   → uvicorn :8001
 ```
 
+**In a CLOUD session** none of these names exist until the SessionStart hook
+writes `.claude/launch.json` — and by then that hook has already started
+`uvicorn :8000` and `vite :5173` itself, so skip to step 3. Logs are
+`/tmp/safia-cloud/{backend,frontend}.log`; re-run
+`bash scripts/cloud-setup.sh` (idempotent) if a port is dead. The DB there is
+EMPTY, so every route renders its empty state and the `DATA_START`/`DATA_END`
+window is meaningless — see «Cloud sessions» in `CLAUDE.md`.
+
 **Which backend?** `frontend/.env.development.local` is gitignored and
 per-machine. If it sets `VITE_API_URL`, the dev bundle calls that origin
 directly and the vite `/api` proxy is bypassed — so you must start the backend
-on *that* port. On this machine it pins `http://localhost:8001`, so
-`backend-alt` is the one that matters. `doctor` prints the answer; don't guess.
+on *that* port. On this machine it pins :8001 or :8002 — so `backend-alt` / `backend-b`
+is the one that matters. `doctor` prints the answer; don't guess.
 
 ## 3. Drive it (agent path)
 
@@ -155,7 +163,7 @@ window the local DB has data for: **2026-05-08 → 2026-05-20**.
 | `no rows in admins` | `psql zagruzka_db -c "insert into admins (telegram_id) values (1);"` |
 | uvicorn crashes at import | `TELEGRAM_BOT_TOKEN` is missing/empty — telebot validates the *format* at import. Any `123456:XXX` shape works. |
 | DB connection refused / role `postgres` does not exist | `DATABASE_URL` must name your own local role, not `postgres`. |
-| `no chrome binary found` | `npx @puppeteer/browsers install chrome-headless-shell@stable`, or set `SAFIA_CHROME=/path/to/chrome`. |
+| `no chrome binary found` | `npx @puppeteer/browsers install chrome-headless-shell@stable`, or set `SAFIA_CHROME=/path/to/chrome`. mac-arm64 and linux64 cache layouts are both searched, plus `/opt/safia/chrome-headless-shell` (the cloud symlink). |
 | Endpoint returns all zeros | You used `start`/`end`. Use `date_from`/`date_to`. |
 | Empty page / charts missing in a screenshot | Raise `--wait` (ApexCharts + react-query need ~6s on chart pages). |
 

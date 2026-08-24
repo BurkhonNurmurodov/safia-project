@@ -62,13 +62,38 @@ if [ "$MODE" != "provision" ] \
   exit 0
 fi
 
+# `provision` skips the CLAUDE_CODE_REMOTE guard by design, so it needs its own:
+# run on the laptop it would overwrite .claude/launch.json with Linux paths and
+# break every local preview_start.
+if [ "$(uname -s)" != "Linux" ] && [ "${SAFIA_CLOUD_FORCE:-}" != "1" ]; then
+  log "not Linux — this provisions a cloud VM, not a laptop. Nothing done."
+  exit 0
+fi
+
 if [ ! -f "$REPO/backend/requirements.txt" ]; then
   log "no repo at $REPO — nothing to provision"
   exit 0
 fi
 
 mkdir -p "$LOGDIR"
-run_root mkdir -p "$CACHE" && run_root chmod 0777 "$CACHE"
+
+# provision runs as root, the session does not, so /opt/safia is made
+# world-writable rather than owned by whoever got there first. If /opt cannot be
+# had at all, fall back to HOME — a cache in the wrong place still works, while a
+# venv that silently failed to build means a backend that never starts, on a
+# platform where the operator has no shell to find that out from.
+run_root mkdir -p "$CACHE" >/dev/null 2>&1
+run_root chmod 0777 "$CACHE" >/dev/null 2>&1
+if ! ( : > "$CACHE/.wtest" ) 2>/dev/null; then
+  CACHE="$HOME/.safia"
+  VENV="$CACHE/venv"
+  NPMDIR="$CACHE/npm"
+  CHROMEDIR="$HOME/.cache/puppeteer"   # driver.mjs searches this layout too
+  CHROMELINK="$CACHE/chrome-headless-shell"
+  mkdir -p "$CACHE"
+  log "/opt not writable — caching in $CACHE"
+fi
+rm -f "$CACHE/.wtest"
 
 # ---------------------------------------------------------------- postgres ---
 # Pre-installed on the VM (PostgreSQL 16) but never running: the snapshot keeps
@@ -159,7 +184,11 @@ ensure_chrome() {
     bin="$(find "$CHROMEDIR" -type f -name chrome-headless-shell -perm -u+x 2>/dev/null | head -1)"
     [ -n "$bin" ] && ln -sf "$bin" "$CHROMELINK"
   fi
-  [ -x "$CHROMELINK" ] && log "chrome ready" || log "no chrome — shots unavailable, API + build still fine"
+  if [ -x "$CHROMELINK" ] || find "$CHROMEDIR" -type f -name chrome-headless-shell -perm -u+x >/dev/null 2>&1; then
+    log "chrome ready"
+  else
+    log "no chrome — shots unavailable, API + build still fine"
+  fi
 }
 
 # ------------------------------------------------------------------ config ---
@@ -258,7 +287,8 @@ if [ "$MODE" = "provision" ]; then
   log "provisioned"
 else
   start_stack
-  log "session ready — driver.mjs doctor will confirm"
+  log "api=:$API_PORT web=:$WEB_PORT db=$PGDB venv=$VENV logs=$LOGDIR"
+  log "session ready — run: node .claude/skills/run-safia-project/driver.mjs doctor"
 fi
 
 exit 0
