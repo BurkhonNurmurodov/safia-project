@@ -1222,6 +1222,81 @@ pages, full walk nightly 03:15 + on Refresh + 60 s after boot) ·
 - Backend changes need a service restart on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline restarts automatically for `backend/**` and `bot/**`. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today.
 - i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via `tl()` transliteration.
 
+## Cloud sessions (claude.ai/code)
+
+A cloud session is a fresh Ubuntu 24.04 VM with the **GitHub mirror** cloned into
+it and nothing else this repo keeps outside git — no `backend/.env`, no
+`.claude/launch.json`, no venv, no `node_modules`, no postgres running.
+`scripts/cloud-setup.sh` rebuilds all of it and is THE definition of "the local
+stack, in the cloud": one file, two callers, so the two moments cannot drift.
+
+Paste three values ONCE into the environment dialog (claude.ai/code → the cloud
+icon above the message box → **Add cloud environment**):
+
+- **Network access**: `Trusted`. Its default allowlist already covers npm, PyPI
+  and `storage.googleapis.com`, which is where the headless-Chrome binary comes
+  from. `None` breaks every install in the script.
+- **Environment variables**: leave **empty**. Anyone who can use the environment
+  can read them and there is no secrets store — and nothing is needed there,
+  because every integration on this platform disables itself on a blank key.
+- **Setup script**:
+
+  ```bash
+  #!/bin/bash
+  S=$(find /home /workspace /root /repo -maxdepth 5 -path '*/scripts/cloud-setup.sh' 2>/dev/null | head -1)
+  [ -n "$S" ] && bash "$S" provision
+  exit 0
+  ```
+
+  It *finds* the clone instead of naming a path, because where the clone lands
+  is not contracted anywhere.
+
+The split between the two callers is the cache: Anthropic snapshots the
+filesystem after the Setup script, and a snapshot keeps files, never processes.
+
+- **Setup script → `provision`**, once per environment, before Claude launches:
+  postgres role + DB, the venv, `node_modules`, Chrome, and one full backend
+  boot **so `create_all` and every startup migration land in the snapshot**.
+- **`.claude/settings.json` SessionStart hook → no args**, every session: start
+  postgres, top the deps up (keyed on the two manifest hashes, so a snapshot
+  older than a dependency bump heals itself and one that isn't costs nothing),
+  write `backend/.env` + `.claude/launch.json`, start `uvicorn :8000` and
+  `vite :5173`. A hard no-op unless `CLAUDE_CODE_REMOTE=true`, so committing it
+  cannot touch a laptop.
+- **`.claude/settings.json` is committed on purpose** — a cloud session gets only
+  what the repo carries — which needed a `!` line against the blanket `*.json`
+  ignore. `.claude/settings.local.json` and `.claude/launch.json` stay ignored.
+- **The backend is :8000 there, not :8001.** A fresh clone has no
+  `frontend/.env.development.local`, so the UI goes through the vite `/api`
+  proxy, whose target is 8000. `driver.mjs doctor` still prints the answer.
+
+What deliberately does NOT come along:
+
+- **The deploy loop.** `.claude/settings.local.json` stays gitignored, so the
+  Stop hook — build, commit, push to gitea, *which is the production deploy* —
+  does not exist in a cloud session. Never commit that file to make the cloud
+  "just like local": it would hand an Anthropic-managed VM the ability to deploy
+  the plant's dashboard, with no review window, on every turn. A cloud session
+  pushes its own branch to the GitHub mirror through the GitHub proxy and you
+  merge to gitea yourself. A merge that carries no rebuilt `frontend/dist` still
+  deploys correctly — `deploy/deploy.sh` rebuilds on the box when frontend
+  sources move without it.
+- **The automatic `VERSION` bump**, for the same reason: it lives in that hook.
+  A cloud branch has to bump it in the turn, by hand, sized per the table below.
+- **Data.** The DB is EMPTY — schema, migrations and one `admins` row
+  (`ADMIN_TELEGRAM_ID=1` → `startup.seed_admins`, which is what the `__dev__`
+  login resolves to). Every page loads and renders its empty state; no page
+  renders a number. The laptop's DB holds real attendance for
+  **2026-05-08 → 2026-05-20** — the window `driver.mjs` names in
+  `DATA_START`/`DATA_END` — so a KPI, chart or export change cannot be *verified*
+  in a cloud session until something seeds it. A prod `.sql.gz` from the admin
+  «Backup» tab would give exact parity and would also put every worker's name,
+  Telegram id and sealed browser password on that VM: a decision, never a
+  default. A synthetic seeder is the honest fix and does not exist yet.
+- **Telegram, Sheets, Gemini, Notion, ARC.** No tokens, no allowlisted hosts.
+  The scheduled jobs still fire and log their failures there; expected, not a
+  regression.
+
 ## Deployment
 
 Push to `main` → `https://production.safiacorporate.uz` updates itself. No

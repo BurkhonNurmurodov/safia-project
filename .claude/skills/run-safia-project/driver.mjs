@@ -62,18 +62,38 @@ const LAUNCH_FOR_PORT = { "8000": "backend", "8001": "backend-alt", "8002": "bac
 const apiPort = new URL(API).port || "80";
 const apiLaunch = LAUNCH_FOR_PORT[apiPort] || `a backend on :${apiPort}`;
 
+// Puppeteer's cache is <root>/<kind>/<version>/<platform-dir>/<binary>, and the
+// platform dir is part of the answer: this repo is edited from a mac arm64
+// laptop and from Ubuntu x86_64 cloud sessions, so pinning ONE layout is how a
+// skill that screenshots here reports "no chrome binary found" there. Try both.
+function puppeteerBins(root, kind, suffixes) {
+  const dir = `${root}/${kind}`;
+  if (!existsSync(dir)) return [];
+  return readdirSafe(dir).flatMap((v) => suffixes.map((s) => `${dir}/${v}/${s}`));
+}
+
+const PUP_CACHES = [`${process.env.HOME}/.cache/puppeteer`, "/opt/safia/chrome"];
+
 const CHROME_CANDIDATES = [
   process.env.SAFIA_CHROME,
-  ...(existsSync(`${process.env.HOME}/.cache/puppeteer/chrome-headless-shell`)
-    ? readdirSafe(`${process.env.HOME}/.cache/puppeteer/chrome-headless-shell`).map(
-        (v) => `${process.env.HOME}/.cache/puppeteer/chrome-headless-shell/${v}/chrome-headless-shell-mac-arm64/chrome-headless-shell`)
-    : []),
-  ...(existsSync(`${process.env.HOME}/.cache/puppeteer/chrome`)
-    ? readdirSafe(`${process.env.HOME}/.cache/puppeteer/chrome`).map(
-        (v) => `${process.env.HOME}/.cache/puppeteer/chrome/${v}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
-    : []),
+  // The stable symlink scripts/cloud-setup.sh maintains, so a cloud session
+  // needs no env var and no version in any path.
+  "/opt/safia/chrome-headless-shell",
+  ...PUP_CACHES.flatMap((root) => [
+    ...puppeteerBins(root, "chrome-headless-shell", [
+      "chrome-headless-shell-mac-arm64/chrome-headless-shell",
+      "chrome-headless-shell-linux64/chrome-headless-shell",
+    ]),
+    ...puppeteerBins(root, "chrome", [
+      "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+      "chrome-linux64/chrome",
+    ]),
+  ]),
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
 ].filter(Boolean);
 
 function readdirSafe(d) { try { return readdirSync(d); } catch { return []; } }

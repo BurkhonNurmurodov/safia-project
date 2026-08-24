@@ -44,6 +44,15 @@ cPanel*
 # RUNTIME by the running app to detect a newer build. Ignored, it never ships
 # and the update prompt goes permanently silent. Exact path, not a glob.
 !frontend/dist/build.json
+
+# The cloud-session SessionStart hook. Committed ON PURPOSE: a cloud session
+# gets only what the repo carries, so an ignored settings.json means the hook
+# that provisions the VM never runs there. .claude/settings.local.json stays
+# ignored — its Stop hook builds, commits and PUSHES TO GITEA, which IS the
+# production deploy, and no cloud VM should ever be able to do that.
+# .claude/launch.json stays ignored too: it names an absolute per-machine
+# python, and scripts/cloud-setup.sh writes the cloud's own copy.
+!.claude/settings.json
 # Defence in depth: these stay ignored even if *.json is ever relaxed.
 safia-project-*.json
 *service-account*.json
