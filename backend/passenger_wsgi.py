@@ -73,7 +73,8 @@ try:
         add_concern_seq,
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
-        add_task_comment_author_ref, add_notification_recipient_profile,
+        add_task_comment_author_ref, add_concern_comment_kind_column,
+        add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns,
         add_broadcast_resume_columns, add_broadcast_schedule_column,
         add_action_log_undo_column,
@@ -142,6 +143,7 @@ try:
     add_concern_seq()
     add_concern_owner_columns()
     add_task_comment_author_ref()
+    add_concern_comment_kind_column()
     add_leader_submission_columns()
     add_broadcast_rich_columns()
     add_broadcast_resume_columns()

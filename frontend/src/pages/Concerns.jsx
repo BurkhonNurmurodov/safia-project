@@ -606,7 +606,12 @@ const emptyForm = () => ({
   deadline_days: "",
   entry_date: todayIso(),
   completion_date: "",
+  // The closing note, composed only when this save CLOSES the concern (it is
+  // posted to the thread, never stored on the row). `was_done` is the status
+  // the row carried when the modal opened — an already-closed row is not asked
+  // again, because editing it changes nothing about how it was closed.
   solution: "",
+  was_done: false,
   can_set_status: false,    // edit form: may this viewer change the status?
   // New-concern target (see createLevel): admins pick the level (+ shift), the
   // chosen holder is a shift-manager or top-manager profile id.
@@ -1353,6 +1358,10 @@ export default function Concerns() {
     // 60s staleTime would otherwise show a minute-old history to whoever just
     // moved the concern — the one reader guaranteed to know it is wrong.
     qc.invalidateQueries({ queryKey: ["concern-history"] });
+    // Closing a concern posts its resolution note into the thread, so an open
+    // CommentsModal must re-read: the row's badge re-counts from ["concerns"]
+    // above, but the messages on screen would not move.
+    qc.invalidateQueries({ queryKey: ["concern-comments"] });
   };
 
   const buildPayload = () => ({
@@ -1408,9 +1417,11 @@ export default function Concerns() {
           deadline_days: row.deadline_days ?? null,
           entry_date: row.entry_date || null,
           completion_date: status === "done" ? row.completion_date || null : null,
-          // `solution` is passed through only for the note-prompted "done" flow;
-          // plain status swaps keep whatever the row already had.
-          solution: solution !== undefined ? solution || null : row.solution || null,
+          // The CLOSING note, sent only by the note-prompted "done" flow — the
+          // backend writes it into the concern's comment thread. A plain status
+          // swap carries none: there is no note on the row to round-trip any
+          // more, and re-sending an old one would post it again as a message.
+          solution: solution || null,
         })
         .then((r) => r.data),
     onSuccess: () => {
@@ -1420,12 +1431,13 @@ export default function Concerns() {
     onError: (e) => setResolveError(e?.response?.data?.detail || t("concerns.saveError")),
   });
 
-  // Inline pill → "done" opens the note prompt (pre-filled with any existing
-  // solution); every other status applies immediately.
+  // Inline pill → "done" opens the note prompt; every other status applies
+  // immediately. The box starts EMPTY — the note it composes is a new message
+  // in the concern's thread, not an edit of something the row already carries.
   function requestStatusChange(row, status) {
     if (status === "done") {
       setResolveRow(row);
-      setResolveNote(row.solution || "");
+      setResolveNote("");
       setResolveError("");
     } else {
       statusMutation.mutate({ row, status });
@@ -1526,7 +1538,7 @@ export default function Concerns() {
       deadline_days: r.deadline_days ?? "",
       entry_date: r.entry_date || todayIso(),
       completion_date: r.completion_date || "",
-      solution: r.solution || "",
+      was_done: r.status === "done",
       can_set_status: !!r.can_set_status,
     });
     setFormError("");
@@ -1548,7 +1560,10 @@ export default function Concerns() {
     // The modal is the third door into "done" (the two status pills prompt for
     // the note themselves) and used to ask for nothing — closing a concern says
     // how it was closed here too, or the DM that goes out names no resolution.
-    if (form.status === "done" && !form.solution.trim()) return setFormError(t("concerns.noteRequired"));
+    // Only the FLIP asks: a row that was already done was closed with a note of
+    // its own, and it is in the thread.
+    if (form.status === "done" && !form.was_done && !form.solution.trim())
+      return setFormError(t("concerns.noteRequired"));
     saveMutation.mutate();
   }
 
@@ -2029,6 +2044,10 @@ export default function Concerns() {
         return (
           <td key={key} className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ color: "var(--text-1)" }}>
             <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
+            {/* Legacy resolution note. A concern closed today puts its note in
+                the comment thread (the Comments column counts it), so this
+                prints only for the rows closed while the note lived on the
+                row — never nothing, never a second place to look. */}
             {r.solution && (
               <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
                 ✓ {tl(r.solution)}
@@ -2848,7 +2867,9 @@ export default function Concerns() {
                 </Field>
               </div>
 
-              {/* Completion + solution — only relevant when done */}
+              {/* Completion + the closing note — only relevant when done, and
+                  the note only when this save is what closes it (an already
+                  closed row keeps the note it was closed with, in the thread). */}
               {form.status === "done" && (
                 <div className="grid grid-cols-1 gap-3 rounded-lg p-3" style={{ background: "var(--bg-inner)" }}>
                   <Field label={t("concerns.fieldCompletion")}>
@@ -2860,16 +2881,18 @@ export default function Concerns() {
                       triggerClassName="px-3 py-2 text-sm w-full"
                     />
                   </Field>
-                  <Field label={t("concerns.fieldSolution")} required>
-                    <textarea
-                      value={form.solution}
-                      onChange={(e) => setForm((f) => ({ ...f, solution: e.target.value }))}
-                      rows={2}
-                      placeholder={t("concerns.noteHint")}
-                      className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                    />
-                  </Field>
+                  {!form.was_done && (
+                    <Field label={t("concerns.fieldSolution")} required hint={t("concerns.noteToThread")}>
+                      <textarea
+                        value={form.solution}
+                        onChange={(e) => setForm((f) => ({ ...f, solution: e.target.value }))}
+                        rows={2}
+                        placeholder={t("concerns.noteHint")}
+                        className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+                        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                      />
+                    </Field>
+                  )}
                 </div>
               )}
 
@@ -2958,7 +2981,9 @@ export default function Concerns() {
       )}
 
       {/* Resolution-note prompt — flipping a concern to "done" from the inline
-          pill first asks how it was resolved; the note is saved as the solution. */}
+          pill first asks how it was resolved, and that answer is posted into the
+          concern's comment thread (the discussion around a concern and the note
+          that closes it are one conversation, in one place). */}
       {resolveRow && (
         <Modal
           onClose={() => setResolveRow(null)}
@@ -2974,7 +2999,7 @@ export default function Concerns() {
             </>
           }
         >
-          <Field label={t("concerns.fieldSolution")} required>
+          <Field label={t("concerns.fieldSolution")} required hint={t("concerns.noteToThread")}>
             <textarea
               value={resolveNote}
               onChange={(e) => setResolveNote(e.target.value)}
@@ -3003,7 +3028,21 @@ export default function Concerns() {
           subtitle={`${t("concerns.colNum")}${concernNo(viewRow)} · ${fmtDate(viewRow.entry_date, lang)}${viewRow.cell_code ? ` · ${viewRow.cell_code}` : ""}`}
           icon={<Eye size={16} />}
           footer={
-            <Button variant="secondary" onClick={() => setViewRow(null)}>{t("concerns.cancel")}</Button>
+            <>
+              <Button variant="secondary" onClick={() => setViewRow(null)}>{t("concerns.cancel")}</Button>
+              {/* The note a concern was CLOSED with is a message in its thread,
+                  so the one surface that reads a row in full must be able to
+                  open it — this modal is exactly where somebody asks "and how
+                  was it resolved?". The thread stacks ON this one (z 60). */}
+              <Button
+                variant="secondary"
+                icon={<MessageSquare size={14} />}
+                onClick={() => setCommentsRow(viewRow)}
+              >
+                {t("concerns.commentsTitle")}
+                {!!viewRow.comment_count && ` · ${viewRow.comment_count}`}
+              </Button>
+            </>
           }
         >
           <div className="space-y-3">
@@ -3325,6 +3364,8 @@ export default function Concerns() {
           refreshKeys={[["concerns"]]}   // comment_count on the row
           title={t("concerns.commentsTitle")}
           subtitle={tl(commentsRow.concern_text)}
+          // Opened from the detail view it sits on top of that modal.
+          zIndex={viewRow ? 60 : undefined}
           onClose={() => setCommentsRow(null)}
         />
       )}

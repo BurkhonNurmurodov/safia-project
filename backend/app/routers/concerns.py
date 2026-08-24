@@ -356,6 +356,10 @@ class ConcernIn(BaseModel):
     deadline_days: Optional[int] = None
     entry_date: Optional[date] = None
     completion_date: Optional[date] = None
+    # The CLOSING NOTE, carried only by the save that flips a concern to done:
+    # the handler writes it into the concern's comment thread and never onto the
+    # row (leader_concerns.solution is legacy history). A value sent on any other
+    # save is ignored — there is nothing on the row left for it to change.
     solution: Optional[str] = None
     leader_profile_id: Optional[int] = None   # picker roles: which leader to act for
     leader_ref: Optional[int] = None          # legacy clients: telegram_user_roles.id
@@ -1147,19 +1151,25 @@ def update_concern(
     # else this handler may rewrite, so the log's diff is the whole save.
     was_row = {"cell": c.cell_code, "category": c.category, "status": c.status,
                "text": c.concern_text, "deadline": c.deadline_days,
-               "date": str(c.entry_date) if c.entry_date else None,
-               "note": c.solution}
+               "date": str(c.entry_date) if c.entry_date else None}
 
     # Closing a concern requires saying HOW it was closed. The note is not a
     # formality: it is the whole content of the DM the brigadir, the cell's
     # leader and the holder receive, and a resolution with nothing under it is
     # indistinguishable from a status pill somebody tapped by accident. The page
     # asks for one at every door; this is the same rule at the endpoint, which is
-    # reachable without it. Bounded to the FLIP into done and to blanking a note
-    # that exists, so a legacy done row that never carried one stays editable.
-    if body.status == "done" and not (body.solution or "").strip() and (
-        was_status != "done" or c.solution
-    ):
+    # reachable without it.
+    #
+    # The note is a MESSAGE IN THE CONCERN'S THREAD (below), not a field on the
+    # row: the answer belongs beside the questions that led to it, where the
+    # people around the concern are already talking, instead of a 10px footnote
+    # under the concern text that the comment count knows nothing about. So the
+    # rule is bounded to the FLIP into done — a later edit of a closed row
+    # changes nothing about how it was closed, and anything more to say about it
+    # is an ordinary comment.
+    closing = body.status == "done" and was_status != "done"
+    note = (body.solution or "").strip()
+    if closing and not note:
         raise HTTPException(status_code=400, detail="A resolution note is required")
 
     # Ownership (leader/brigadir) and the creator identity are never reassigned
@@ -1185,7 +1195,25 @@ def update_concern(
             c.done_at = datetime.now(timezone.utc)
     else:
         c.done_at = None
-    c.solution = (body.solution or "").strip() or None
+    # The closing note joins the thread as the acting profile's own message,
+    # flagged so the thread can mark it, the trail can find it and the delete
+    # guard can protect it. `c.solution` is deliberately NOT written here or
+    # anywhere else any more: it is the legacy column, and the concerns closed
+    # before this go on printing the note they were closed with.
+    #
+    # It deliberately does NOT send the `concern_comment` DM the thread's own
+    # endpoint sends: the close announces itself below as `concern_resolved`,
+    # with this very note in it, and one act must not DM the same people twice.
+    if closing:
+        db.add(LeaderConcernComment(
+            concern_id=c.id,
+            author_telegram_id=int(payload["sub"]),
+            author_role_ref=_profile_ref(payload),
+            author_profile=identity.viewer_profile_key(db, payload),
+            author_name=payload.get("full_name"),
+            text=note,
+            kind="resolution",
+        ))
 
     db.commit()
     db.refresh(c)
@@ -1210,8 +1238,10 @@ def update_concern(
             "concern": _snippet(c.concern_text),
             # Only concern_resolved prints it, and _render_body drops the row
             # whole when it is blank — so the reopen/edit DMs and every notice
-            # stored before this param existed render exactly as they did.
-            "solution": _snippet(c.solution or ""),
+            # stored before this param existed render exactly as they did. The
+            # note comes from THIS request (it is a comment now, not a column);
+            # `c.solution` answers for a legacy row being re-closed.
+            "solution": _snippet(note or c.solution or ""),
         },
         int(payload["sub"]), set(),
     ):
@@ -1219,13 +1249,15 @@ def update_concern(
 
     now_row = {"cell": c.cell_code, "category": c.category, "status": c.status,
                "text": c.concern_text, "deadline": c.deadline_days,
-               "date": str(c.entry_date) if c.entry_date else None,
-               "note": c.solution}
+               "date": str(c.entry_date) if c.entry_date else None}
     action_log.enrich(
         target_kind="concern", target_id=c.id, target_name=_snippet(c.concern_text),
         unit_id=c.brigadir_manager_id, unit_name=c.brigadir_name,
         day=c.entry_date,
-        details=[("id", c.seq), ("cell", c.cell_code), ("level", _level(c))],
+        # The note is no longer a field the diff can carry, so a close names it
+        # here — the register must still say what the concern was closed with.
+        details=[("id", c.seq), ("cell", c.cell_code), ("level", _level(c))]
+                + ([("note", note)] if closing else []),
         changes=[(k, was_row[k], now_row[k]) for k in now_row
                  if was_row[k] != now_row[k]],
     )
@@ -1590,13 +1622,28 @@ def concern_history(
         prev = e.created_at or prev
 
     if c.done_at:
+        # The closing note is a message in the thread; `solution` is the column
+        # the concerns closed before that carry. Either way the trail prints the
+        # note the concern was closed with — the newest one, because a reopened
+        # concern is closed again with a note of its own.
+        note = c.solution
+        if not note:
+            last = (
+                db.query(LeaderConcernComment)
+                .filter(LeaderConcernComment.concern_id == c.id,
+                        LeaderConcernComment.kind == "resolution")
+                .order_by(LeaderConcernComment.created_at.desc(),
+                          LeaderConcernComment.id.desc())
+                .first()
+            )
+            note = last.text if last else None
         events.append({
             "key": "resolved",
             "kind": "resolved",
             "created_at": c.done_at.isoformat(),
             "to_level": _level(c),
             "target_name": _holder_name(c, _level(c), sm_names, owner_names),
-            "solution": c.solution,
+            "solution": note,
             "held_seconds": _span_seconds(prev, c.done_at),
         })
     return events
@@ -1674,6 +1721,9 @@ def _serialize_comment(c: LeaderConcernComment, payload: dict, db: Session) -> d
         "author_profile": c.author_profile,
         "author_name": c.author_name,
         "text": c.text,
+        # NULL for ordinary chat, "resolution" for the note this concern was
+        # closed with — the thread marks it and offers no delete for it.
+        "kind": c.kind,
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "edited_at": c.edited_at.isoformat() if c.edited_at else None,
         # Edit/delete rights of the CALLER, resolved server-side so the client
@@ -1795,6 +1845,14 @@ def delete_concern_comment(
 ):
     parent = _visible_concern(concern_id, payload, db)
     c = _own_comment(concern_id, comment_id, payload, db)
+    # The closing note is the record of HOW this concern was resolved — the one
+    # message the platform demanded before it would accept "done". Deleting it
+    # would leave a closed concern explaining nothing, which is exactly the state
+    # that requirement exists to prevent. Editing it stays open (a typo fixed, a
+    # detail added): there the note survives the edit.
+    if c.kind == "resolution":
+        raise HTTPException(status_code=400,
+                            detail="The resolution note cannot be deleted")
     gone_id, gone_text = c.id, c.text
     db.delete(c)
     db.commit()

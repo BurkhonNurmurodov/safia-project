@@ -2085,6 +2085,14 @@ class LeaderConcernComment(Base):
     text               = Column(Text, nullable=False)
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     edited_at          = Column(DateTime(timezone=True), nullable=True)  # set on every edit
+    # What the message IS: NULL for ordinary chat, "resolution" for the
+    # mandatory note written when the concern was CLOSED. That note is a message
+    # in this thread and nowhere else — the answer belongs beside the questions
+    # that led to it, not in a 10px footnote on the register — so the flag is
+    # what lets the thread mark it, the trail find it, and the delete guard
+    # protect it (routers/concerns.py). ``LeaderConcern.solution`` is the legacy
+    # column: concerns closed before this carry their note there, untouched.
+    kind               = Column(String(12), nullable=True)
 
 
 class LeaderTask(Base):

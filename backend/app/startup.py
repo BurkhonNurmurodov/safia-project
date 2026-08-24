@@ -266,6 +266,25 @@ def add_task_comment_author_ref() -> None:
         db.close()
 
 
+def add_concern_comment_kind_column() -> None:
+    """Add kind to leader_concern_comments (idempotent). NULL is an ordinary
+    message; "resolution" is the mandatory note written when the concern was
+    closed, which lives in the thread instead of on the row. Messages written
+    before the column existed read as ordinary ones, which is what they are —
+    and the concerns closed then keep their note in leader_concerns.solution,
+    which nothing rewrites."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE leader_concern_comments "
+                        "ADD COLUMN IF NOT EXISTS kind VARCHAR(12)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader_concern_comments kind migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_submission_columns() -> None:
     """Add submission_id / submitted_at to leader_checklists (idempotent). The
     leaders form export now carries a «Submission ID» and a «Submission time»;

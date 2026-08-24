@@ -14,7 +14,7 @@ import { useTranslit } from "../../utils/transliterate";
  * thread hangs off any REST resource that exposes the four standard endpoints
  *
  *     GET    {endpoint}                → [{id, author_name, text, created_at,
- *                                          edited_at, is_own}]
+ *                                          edited_at, is_own, kind?}]
  *     POST   {endpoint}       {text}
  *     PUT    {endpoint}/{id}  {text}
  *     DELETE {endpoint}/{id}
@@ -27,6 +27,13 @@ import { useTranslit } from "../../utils/transliterate";
  * Ownership is decided SERVER-side and arrives as `is_own` per message: a
  * message belongs to the PROFILE that wrote it, and one Telegram account can
  * hold several profiles, so the client must not re-derive it from the account.
+ *
+ * `kind` (optional, server-set) says what a message IS. "resolution" marks the
+ * mandatory note a record was CLOSED with — the concerns register writes one
+ * into the thread when a concern is resolved — and the thread gives it a green
+ * ✓ header and no delete button: it is the record of how the thing was closed,
+ * and the backend refuses to delete it, so offering the button would only 400.
+ * A thread whose endpoint never sets `kind` (the tasks board) is unaffected.
  *
  * Props:
  *   endpoint     – thread base path, e.g. `/api/concerns/12/comments`
@@ -134,6 +141,13 @@ export default function CommentsModal({
                       ? { background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }
                       : { background: "var(--bg-inner)", border: "1px solid var(--border)" }}
                   >
+                    {c.kind === "resolution" && (
+                      <div className="flex items-center gap-1 text-[10px] font-semibold mb-1"
+                           style={{ color: "#22c55e" }}>
+                        <Check size={11} className="flex-shrink-0" />
+                        {t("ui.comments.resolution")}
+                      </div>
+                    )}
                     <div className="text-[10px] font-semibold mb-0.5" style={{ color: "var(--brand-text)" }}>
                       {tl(c.author_name) || "—"}
                     </div>
@@ -174,14 +188,16 @@ export default function CommentsModal({
                           <button onClick={() => { setEditingId(c.id); setEditText(c.text); }} style={{ color: "var(--text-4)" }} className="hover:text-[var(--brand-text)] transition-colors">
                             <Pencil size={11} />
                           </button>
-                          <button
-                            onClick={() => deleteMutation.mutate(c.id)}
-                            disabled={deleteMutation.isPending}
-                            style={{ color: "var(--text-4)" }}
-                            className="hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 size={11} />
-                          </button>
+                          {c.kind !== "resolution" && (
+                            <button
+                              onClick={() => deleteMutation.mutate(c.id)}
+                              disabled={deleteMutation.isPending}
+                              style={{ color: "var(--text-4)" }}
+                              className="hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          )}
                         </span>
                       )}
                     </div>
