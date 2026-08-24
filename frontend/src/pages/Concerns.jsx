@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, Fragment } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
@@ -432,10 +432,10 @@ function Subject({ text, title }) {
 // ── chart board primitives ──────────────────────────────────────────────────
 // Card shell for every chart on the analytics tab: cardStyle + the canonical
 // SectionHead, so all boards carry identical chrome.
-function ChartCard({ icon, title, subtitle, className = "", children }) {
+function ChartCard({ icon, title, subtitle, right, className = "", children }) {
   return (
     <div className={`rounded-2xl overflow-hidden flex flex-col ${className}`} style={cardStyle}>
-      <SectionHead icon={icon} title={title} subtitle={subtitle} />
+      <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} />
       {children}
     </div>
   );
@@ -447,11 +447,13 @@ function Chart({ ready, height, ...rest }) {
   return ready ? <ReactApexChart height={height} {...rest} /> : <div style={{ height }} />;
 }
 
-// "No data" body for a chart card — centred in the slot the chart would fill.
 // One responsible holder on the analytics board: their chain-step badge, name
 // and total on the first line, the four-bucket status stack under it. Every bar
-// is scaled to the SAME max (the busiest holder's total), so widths stay
-// comparable straight down a list that is deliberately not cut to a top N.
+// on ONE board shares a max — the busiest holder in whatever the level toggle
+// is showing — so widths compare straight down the list. The max is re-taken
+// per selection rather than fixed to the whole board: measured against a board
+// whose top holder carries 43, a level whose own top carries 2 draws nothing
+// but slivers, and the reader cannot tell its four people apart at all.
 // Drawn natively rather than as an SVG axis because a badge is a chip, and an
 // ApexCharts category label can only ever be a string.
 function ResponsibleBar({ row, max, parts, levelLabel, unit }) {
@@ -495,6 +497,64 @@ function ResponsibleBar({ row, max, parts, levelLabel, unit }) {
   );
 }
 
+// The four status segments as a legend — the native rows don't get the one
+// ApexCharts draws for free. Read from STACK_PARTS, so a colour can never mean
+// two things, and shared by the card and the full-list modal.
+function StackLegend({ parts }) {
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-4">
+      {parts.map((p) => (
+        <span key={p.key} className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+          <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: p.color }} />
+          {p.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// One column of holders. The card shows the slice that fits beside the
+// categories chart and the modal shows all of them — same component both
+// times, so the two can never drift into two different boards.
+function ResponsibleList({ rows, max, parts, levelLabel, unit }) {
+  return (
+    <div className="space-y-3">
+      {rows.map((r) => (
+        <ResponsibleBar key={r.key} row={r} max={max} parts={parts} levelLabel={levelLabel} unit={unit} />
+      ))}
+    </div>
+  );
+}
+
+// How many rows fit in a box whose height somebody else decides. The
+// responsible card sits in a stretch row beside the categories chart, so its
+// list area is handed a height — MEASURE it rather than predicting it from a
+// formula that would have to guess a wrapped header, four languages of legend
+// and the neighbour's own row count. No feedback loop: the area is flex-1 with
+// min-h-0, so its height never depends on how many rows we put in it.
+function useRowFit(rowH, gap, initial) {
+  const [fit, setFit] = useState(initial);
+  const roRef = useRef(null);
+  // A ref CALLBACK, not a ref + effect: the measured box only mounts once the
+  // query resolves, and an effect whose deps never change would have run once
+  // against the loading skeleton, found no node, and never observed anything.
+  const ref = useCallback((el) => {
+    roRef.current?.disconnect();
+    roRef.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const h = el.clientHeight;
+      if (h > 0) setFit(Math.max(1, Math.floor((h + gap) / rowH)));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    roRef.current = ro;
+    measure();
+  }, [rowH, gap]);
+  return [ref, fit];
+}
+
+// "No data" body for a chart card — centred in the slot the chart would fill.
 function NoChart({ height, text }) {
   return (
     <div className="grid place-items-center text-xs flex-1" style={{ color: "var(--text-4)", minHeight: height }}>
@@ -835,6 +895,15 @@ export default function Concerns() {
   // KPIs and the period/shift/brigadir bar stay above both; everything else is
   // split so each tab shows one thing well.
   const [view, setView] = usePersistentState("concerns_view", "list");
+
+  // The responsible board's own level toggle — "" = every level. Deliberately
+  // CARD-local: it narrows one chart, never the page, so the register, the KPIs
+  // and the other five charts keep answering the question the filter bar was
+  // set to. (The page-wide level filter is `levelSel`, inside FilterPanel.)
+  const [respLvl, setRespLvl] = usePersistentState("concerns_resp_level", "");
+  // …and the whole list, in a scrollable modal: the card itself only ever shows
+  // what fits beside the categories chart.
+  const [respAllOpen, setRespAllOpen] = useState(false);
 
   // ApexCharts measures its container width once at mount; inside the
   // responsive grid the cells only get their final width a frame or two after
@@ -1814,14 +1883,44 @@ export default function Concerns() {
   // axis-labelled SVG — hence the native rows below, which is also what lets
   // each name carry its chain-step badge, the second thing a reader needs
   // about a name they may not recognise.
-  const respMax = analytics.responsible[0]?.total || 0;
-  const respRows = analytics.responsible.map((r) => ({
+  const respAllRows = analytics.responsible.map((r) => ({
     ...r,
     // The un-named bucket keeps a neutral chip: it answers on no step.
     level: r.key === NO_RESP ? null : (analytics.respLevel.get(r.key) || "supervisor"),
     label: r.key === NO_RESP ? t("concerns.noResponsible") : shortOwner(r.key),
     title: r.key === NO_RESP ? t("concerns.noResponsible") : tl(r.key),
   }));
+  // The level toggle: «all» first, then the chain in its own order. Every
+  // segment carries its own count, so choosing one is never a guess about what
+  // is behind it — and a level nobody in scope answers on stays OFFERED but
+  // disabled, because segments that appear and vanish as the filters move make
+  // the toggle unreadable. «all» is also the only view the un-named bucket has:
+  // it answers on no step, so no level segment can hold it.
+  const respLvlOpts = [
+    { value: "", label: `${t("general.all")} · ${respAllRows.length}`, title: t("general.all") },
+    ...LEVELS.map((l) => {
+      const n = respAllRows.reduce((c, r) => c + (r.level === l ? 1 : 0), 0);
+      return { value: l, label: `${levelLabel(l)} · ${n}`, title: levelLabel(l), disabled: !n };
+    }),
+  ];
+  // A level the current filters emptied is not a level the reader can stand on.
+  const respLvlSel = respLvl && respAllRows.some((r) => r.level === respLvl) ? respLvl : "";
+  const respRows = respLvlSel ? respAllRows.filter((r) => r.level === respLvlSel) : respAllRows;
+  // Re-taken per selection, and over the whole list rather than its first row:
+  // the un-named bucket sorts last however big it is, so `[0]` is the top NAME,
+  // not the top total, and every bar was being scaled against the wrong number
+  // on any board where that bucket led.
+  const respMax = respRows.reduce((m, r) => Math.max(m, r.total), 0);
+
+  // One row of the board: the bar itself plus the list's gap-y-3. The floor is
+  // what the card shows when nothing stretches it — a phone, where the two
+  // cards stack and there is no neighbour to match.
+  const RESP_ROW_H = 45;
+  const RESP_GAP = 12;
+  const RESP_FLOOR = 5;
+  const [respFitRef, respFit] = useRowFit(RESP_ROW_H, RESP_GAP, RESP_FLOOR + 1);
+  const respShown = respRows.slice(0, respFit);
+  const respHidden = respRows.length - respShown.length;
 
   // Per-row action buttons — one source for the desktop expanded row and the
   // expanded mobile card, so the two layouts always offer the same actions.
@@ -2348,59 +2447,84 @@ export default function Concerns() {
             </ChartCard>
           </div>
 
-          {/* Status stack by department */}
-          <ChartCard icon={Tag} title={t("concerns.chartByCategory")} subtitle={t("concerns.chartByCategorySub")}>
-            {isLoading ? (
-              <div className="p-4"><SkeletonChart className="h-52" /></div>
-            ) : catRows.length ? (
-              <div className="px-1 pt-1 pb-1">
-                <Chart ready={chartsReady} height={stackHeight(catRows.length)} options={catOpts} series={catSeries} type="bar" />
-              </div>
-            ) : (
-              <NoChart height={220} text={t("concerns.noData")} />
-            )}
-          </ChartCard>
-
-          {/* Status stack per responsible holder — everyone in scope, each name
-              badged with the step they answer on. Full width and columned,
-              because listing everybody is the point and a half-width single
-              column would run to several screens. */}
-          <ChartCard
-            icon={UserCheck}
-            title={t("concerns.chartByResp")}
-            subtitle={t("concerns.chartByRespSub").replace("{n}", String(respRows.length))}
-          >
-            {isLoading ? (
-              <div className="p-4"><SkeletonChart className="h-52" /></div>
-            ) : respRows.length ? (
-              <div className="p-4">
-                {/* The chart legend the native rows don't get for free — same
-                    four segments, same order, read from STACK_PARTS. */}
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-4">
-                  {STACK_PARTS.map((p) => (
-                    <span key={p.key} className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-                      <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: p.color }} />
-                      {p.label}
-                    </span>
-                  ))}
+          {/* The same four buckets read two ways — by department, and by the
+              person answering for them — side by side, because the pair is the
+              question: a department that is behind is behind on somebody's
+              desk. The responsible board is ONE column here, cut to the rows
+              that fit beside its neighbour, with the rest a tap away. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <ChartCard icon={Tag} title={t("concerns.chartByCategory")} subtitle={t("concerns.chartByCategorySub")}>
+              {isLoading ? (
+                <div className="p-4"><SkeletonChart className="h-52" /></div>
+              ) : catRows.length ? (
+                <div className="px-1 pt-1 pb-1">
+                  <Chart ready={chartsReady} height={stackHeight(catRows.length)} options={catOpts} series={catSeries} type="bar" />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-3">
-                  {respRows.map((r) => (
-                    <ResponsibleBar
-                      key={r.key}
-                      row={r}
+              ) : (
+                <NoChart height={220} text={t("concerns.noData")} />
+              )}
+            </ChartCard>
+
+            {/* Status stack per responsible holder, each name badged with the
+                step they answer on. The level toggle is the card's own control
+                (header, the platform's place for one) and narrows nothing but
+                this board. */}
+            <ChartCard
+              icon={UserCheck}
+              title={t("concerns.chartByResp")}
+              subtitle={t("concerns.chartByRespSub").replace("{n}", String(respRows.length))}
+              right={
+                <SegmentedToggle
+                  size="sm"
+                  scrollable
+                  value={respLvlSel}
+                  onChange={setRespLvl}
+                  options={respLvlOpts}
+                  ariaLabel={t("concerns.colLevel")}
+                />
+              }
+            >
+              {isLoading ? (
+                <div className="p-4"><SkeletonChart className="h-52" /></div>
+              ) : respRows.length ? (
+                // flex-1 + min-h-0: the card stretches to the grid row (its
+                // neighbour's height) and the list area takes what is left, so
+                // the two cards end level. The floor is what a phone shows,
+                // where nothing stretches this card at all.
+                <div className="p-4 flex-1 flex flex-col min-h-0">
+                  <StackLegend parts={STACK_PARTS} />
+                  <div
+                    ref={respFitRef}
+                    className="flex-1 min-h-0 overflow-hidden"
+                    style={{ minHeight: Math.min(respRows.length, RESP_FLOOR) * RESP_ROW_H - RESP_GAP }}
+                  >
+                    <ResponsibleList
+                      rows={respShown}
                       max={respMax}
                       parts={STACK_PARTS}
                       levelLabel={levelLabel}
                       unit={t("concerns.itemsUnit")}
                     />
-                  ))}
+                  </div>
+                  {/* What was cut says so, and how many — a list that simply
+                      stops is a list the reader believes they have read. */}
+                  {respHidden > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full mt-3 flex-shrink-0"
+                      onClick={() => setRespAllOpen(true)}
+                    >
+                      {t("concerns.respMore").replace("{n}", String(respHidden))}
+                      <ChevronDown size={13} />
+                    </Button>
+                  )}
                 </div>
-              </div>
-            ) : (
-              <NoChart height={220} text={t("concerns.noData")} />
-            )}
-          </ChartCard>
+              ) : (
+                <NoChart height={220} text={t("concerns.noData")} />
+              )}
+            </ChartCard>
+          </div>
 
           {/* How long things take: resolved spans vs the wait of what is open */}
           <ChartCard icon={Hourglass} title={t("concerns.chartAge")} subtitle={t("concerns.chartAgeSub")}>
@@ -3118,6 +3242,50 @@ export default function Concerns() {
         tone="danger"
         loading={deleteMutation.isPending}
       />
+
+      {/* Every holder, unclipped — the card beside the categories chart can
+          only show what fits in that chart's height. Same toggle, same rows,
+          same order: this is the card at full length, not a second board. */}
+      {respAllOpen && (
+        <Modal
+          onClose={() => setRespAllOpen(false)}
+          title={t("concerns.chartByResp")}
+          subtitle={t("concerns.chartByRespSub").replace("{n}", String(respRows.length))}
+          icon={<UserCheck size={16} style={{ color: "var(--brand-text)" }} />}
+          maxWidth="max-w-2xl"
+          bodyClassName="px-5 py-4"
+          footer={
+            <Button variant="secondary" onClick={() => setRespAllOpen(false)}>{t("concerns.close")}</Button>
+          }
+        >
+          {/* The toggle and the legend stay put while the names scroll past:
+              both are how the list is read, and a control you have to scroll
+              back up to reach is a control the reader stops using. */}
+          <div
+            className="sticky top-0 z-10 -mx-5 px-5 -mt-4 pt-4 pb-1"
+            style={{ background: "var(--bg-card)" }}
+          >
+            <SegmentedToggle
+              fill
+              scrollable
+              size="sm"
+              value={respLvlSel}
+              onChange={setRespLvl}
+              options={respLvlOpts}
+              ariaLabel={t("concerns.colLevel")}
+              className="mb-3"
+            />
+            <StackLegend parts={STACK_PARTS} />
+          </div>
+          <ResponsibleList
+            rows={respRows}
+            max={respMax}
+            parts={STACK_PARTS}
+            levelLabel={levelLabel}
+            unit={t("concerns.itemsUnit")}
+          />
+        </Modal>
+      )}
 
       {/* Chat-style comments — everyone who can SEE a concern may write in its
           thread (the backend gates it the same way): the discussion is how the
