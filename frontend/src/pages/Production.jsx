@@ -254,8 +254,12 @@ function QtyCell({ col, row, value, overridden, onSave }) {
       data-qrow={row}
       title={t("production.editManually")}
       onKeyDown={onKeyDown}
-      onFocus={() => setSel(true)}
-      onBlur={() => setSel(false)}
+      // The cell's OWN focus only. React's onFocus/onBlur are focusin/focusout,
+      // which bubble — unguarded, the editor's focus marked the cell selected and
+      // its unmount fired no focusout to unmark it, so every cell that had ever
+      // been edited kept a gold ring and read as "this one was changed".
+      onFocus={(e) => { if (e.target === e.currentTarget) setSel(true); }}
+      onBlur={(e) => { if (e.target === e.currentTarget) setSel(false); }}
       // Read the selection BEFORE the browser's own focus-on-press lands, so the
       // tap that selects the cell is never the tap that opens it.
       onPointerDown={(e) => {
@@ -267,14 +271,16 @@ function QtyCell({ col, row, value, overridden, onSave }) {
         // A finger has no double-click: the second tap on an already-selected
         // cell opens it. A mouse keeps the spreadsheet rule — only a real
         // double-click does.
-        if (touch.current && wasSel.current) start();
+        if (!touch.current) return;
+        if (wasSel.current) start();
+        else e.currentTarget.focus();  // some WebViews don't focus a tapped cell — arm it by hand
       }}
       onDoubleClick={() => start()}
       className="px-3 py-2 text-center relative select-none group outline-none"
       style={{
         cursor: "cell",
         touchAction: "manipulation",  // a double-tap edits the cell, never zooms the page
-        boxShadow: sel && !editing ? "inset 0 0 0 2px var(--brand)" : undefined,
+        boxShadow: sel && !editing ? "inset 0 0 0 1px var(--brand)" : undefined,
       }}
     >
       <span
