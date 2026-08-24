@@ -75,7 +75,7 @@ const t = {
     "nav.support":         "Qo'llab-quvvatlash bilan bog'lanish",
     "nav.staff":           "Verifix to'g'irlash",
     "nav.daily":           "Kunlik",
-    "nav.production":      "Ishlab chiqarish fayli",
+    "nav.production":      "Zagruzka fayli",
     "nav.trudoyomkost":    "Plan Prognoz",
     "nav.leaders":         "Lider nazorati",
     "nav.cells":           "Yacheykalar",
@@ -3532,7 +3532,7 @@ const t = {
     "admin.tr.noKeys":        "Kalitlar yo'q.",
 
     // ── Production (Ishlab chiqarish) ────────────────────────────────────────
-    "production.title":            "Ishlab chiqarish fayli",
+    "production.title":            "Zagruzka fayli",
     "production.prevDay":          "Oldingi kun",
     "production.nextDay":          "Keyingi kun",
     "production.today":            "Bugun",
@@ -3880,7 +3880,7 @@ const t = {
     "nav.support":         "Қўллаб-қувватлаш билан боғланиш",
     "nav.staff":           "Verifix тўғрилаш",
     "nav.daily":           "Кунлик",
-    "nav.production":      "Ишлаб чиқариш файли",
+    "nav.production":      "Загрузка файли",
     "nav.trudoyomkost":    "План Прогноз",
     "nav.leaders":         "Лидер назорати",
     "nav.cells":           "Ячейкалар",
@@ -7337,7 +7337,7 @@ const t = {
     "admin.tr.noKeys":        "Калитлар йўқ.",
 
     // ── Production (Ишлаб чиқариш) ───────────────────────────────────────────
-    "production.title":            "Ишлаб чиқариш файли",
+    "production.title":            "Загрузка файли",
     "production.prevDay":          "Олдинги кун",
     "production.nextDay":          "Кейинги кун",
     "production.today":            "Бугун",
@@ -7685,7 +7685,7 @@ const t = {
     "nav.support":         "Связаться с поддержкой",
     "nav.staff":           "Verifix правка",
     "nav.daily":           "Ежедневно",
-    "nav.production":      "Производственный файл",
+    "nav.production":      "Файл загрузки",
     "nav.trudoyomkost":    "Прогноз плана",
     "nav.leaders":         "Контроль лидеров",
     "nav.cells":           "Ячейки",
@@ -11142,7 +11142,7 @@ const t = {
     "admin.tr.noKeys":        "Нет ключей.",
 
     // ── Production (Производство) ────────────────────────────────────────────
-    "production.title":            "Производственный файл",
+    "production.title":            "Файл загрузки",
     "production.prevDay":          "Предыдущий день",
     "production.nextDay":          "Следующий день",
     "production.today":            "Сегодня",
