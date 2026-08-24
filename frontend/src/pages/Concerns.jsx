@@ -2044,10 +2044,11 @@ export default function Concerns() {
         return (
           <td key={key} className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ color: "var(--text-1)" }}>
             <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
-            {/* Legacy resolution note. A concern closed today puts its note in
-                the comment thread (the Comments column counts it), so this
-                prints only for the rows closed while the note lived on the
-                row — never nothing, never a second place to look. */}
+            {/* Legacy resolution note. Every note is a message in the concern's
+                thread now — the ones written before that were moved there by a
+                one-shot at boot — so this renders nothing at all in practice.
+                It is kept as the fallback for a row that migration could not
+                reach: a note nobody can read is worse than a footnote. */}
             {r.solution && (
               <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
                 ✓ {tl(r.solution)}

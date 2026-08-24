@@ -9,7 +9,7 @@ from app.database import SessionLocal
 from app.models import (
     Admin, AppSetting, Attendance, CellPerenaladka, Comment, DayApproval,
     EditRequest, ExchangeTask, HrDocument, Language, LeaderAiReview,
-    LeaderConcern, LeaderTask,
+    LeaderConcern, LeaderConcernComment, LeaderTask,
     LeaderTaskComment, Manager, RoleProfile, SheetSource,
     TelegramUser, TelegramUserRole,
 )
@@ -3363,6 +3363,70 @@ def seed_idle_source_pilot() -> None:
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
         print(f"[startup] idle source pilot skipped: {exc}")
+    finally:
+        db.close()
+
+
+CONCERN_SOLUTION_THREAD_FLAG = "concern_solutions_to_thread_2026_08_24_v1"
+
+
+def migrate_concern_solutions_to_thread() -> None:
+    """2026-08-24: the note a concern is CLOSED with became a message in the
+    concern's own comment thread (routers/concerns.py). This moves the notes
+    already sitting on `leader_concerns.solution` into the threads they belong
+    to and clears the column, so a resolution is read in exactly ONE place —
+    without it the register keeps a `✓ …` footnote for the older half of the
+    table and a thread message for the newer, which is two answers to one
+    question depending on when the concern happened to be closed.
+
+    The message is written with NO author. Nothing on this platform ever
+    recorded WHO closed a concern — the row stamps `done_at` and nothing else —
+    so a name here would be a guess printed as a fact. `author_telegram_id = 0`
+    matches no account, which keeps `is_own` false for every viewer and leaves
+    the note uneditable by anyone; the thread renders the author as «—». Its
+    `created_at` is the moment the concern was closed, so the message lands in
+    the thread where it belongs in time rather than at the bottom.
+
+    Insert-only per concern and flag-guarded: a concern that already carries a
+    resolution message (closed since the change) keeps it and only has its
+    legacy column cleared. Re-running under a NEW flag key would add exactly
+    the notes a first pass could not — the old key makes it a no-op on every
+    box that has booted once."""
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONCERN_SOLUTION_THREAD_FLAG).first():
+            return
+        rows = (
+            db.query(LeaderConcern)
+            .filter(LeaderConcern.solution.isnot(None), LeaderConcern.solution != "")
+            .all()
+        )
+        already = {
+            cid for (cid,) in db.query(LeaderConcernComment.concern_id)
+            .filter(LeaderConcernComment.kind == "resolution").all()
+        }
+        moved = 0
+        for c in rows:
+            if c.id not in already:
+                db.add(LeaderConcernComment(
+                    concern_id=c.id,
+                    author_telegram_id=0,
+                    author_role_ref=None,
+                    author_profile=None,
+                    author_name=None,
+                    text=c.solution.strip(),
+                    kind="resolution",
+                    created_at=c.done_at or c.updated_at or c.created_at,
+                ))
+                moved += 1
+            c.solution = None
+        db.add(AppSetting(key=CONCERN_SOLUTION_THREAD_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] concern notes → threads: {moved} posted, "
+              f"{len(rows)} rows cleared")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] concern notes → threads skipped: {exc}")
     finally:
         db.close()
 

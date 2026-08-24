@@ -1204,7 +1204,15 @@ def update_concern(
     # It deliberately does NOT send the `concern_comment` DM the thread's own
     # endpoint sends: the close announces itself below as `concern_resolved`,
     # with this very note in it, and one act must not DM the same people twice.
+    #
+    # A legacy note on the row IS cleared here, and only here: a concern closed
+    # before this, reopened and closed again would otherwise print the old
+    # answer as a footnote beside the new one in the thread — two resolutions
+    # on one row, the older of them describing a closure that was undone. The
+    # trail keeps saying how the concern was closed either way (its `resolved`
+    # event falls back to the newest resolution message).
     if closing:
+        c.solution = None
         db.add(LeaderConcernComment(
             concern_id=c.id,
             author_telegram_id=int(payload["sub"]),
