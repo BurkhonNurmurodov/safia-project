@@ -18,11 +18,17 @@
 #                schema already built) is free in every later session.
 #   (no args)  ← the repo's .claude/settings.json SessionStart hook, run on
 #                EVERY session. It starts what a filesystem snapshot cannot
-#                keep — processes — and tops the deps up if a manifest moved.
+#                keep — processes — tops the deps up if a manifest moved, and
+#                does everything that belongs to the CLONE rather than the VM:
+#                the gitea remote and credential, the pre-push guard, the
+#                node_modules symlink. GITEA_TOKEN is invisible to `provision`
+#                (env vars reach the session, not the Setup script), so the git
+#                wiring can only live here.
 #
 # It is a NO-OP outside a cloud session unless called with `provision`, so
 # committing the hook cannot touch a laptop: the guard is CLAUDE_CODE_REMOTE,
-# which the session VM sets to "true" and nothing local ever does.
+# which the session VM sets to "true" and nothing local ever does — and
+# `provision` refuses to run on anything but Linux for the same reason.
 #
 # NEVER `set -e` here. A non-zero exit from the Setup script fails the whole
 # session before Claude starts, and a hook that dies takes the session's start
@@ -243,6 +249,94 @@ ENV_EOF
 LAUNCH_EOF
 }
 
+# --------------------------------------------------------------------- git ---
+# gitea (git.safiabakery.uz) is THE remote here; GitHub is a mirror. But this
+# platform's BUILT-IN clone and PR path is GitHub-only — "GitLab, Bitbucket, and
+# other non-GitHub repositories can be sent to cloud sessions as a local bundle,
+# but the session can't push results back to the remote" — so working against
+# gitea is something the session has to wire for itself: name the remote, hold a
+# credential, fetch, and refuse to push the one branch that deploys.
+GITEA_DEFAULT_URL="https://git.safiabakery.uz/Safia-Outsource/production.git"
+
+setup_git() {
+  git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || { log "not a git checkout"; return 0; }
+
+  # A bundle-created session carries the history and no remote; one created from
+  # the GitHub mirror carries origin. Either way, gitea must exist by name.
+  local url
+  url="$(git -C "$REPO" remote get-url gitea 2>/dev/null || true)"
+  if [ -z "$url" ]; then
+    url="${GITEA_REMOTE_URL:-$GITEA_DEFAULT_URL}"
+    git -C "$REPO" remote add gitea "$url" >/dev/null 2>&1
+    log "added remote gitea -> $url"
+  fi
+
+  git -C "$REPO" config user.name  "${GIT_AUTHOR_NAME:-Claude (cloud session)}"
+  git -C "$REPO" config user.email "${GIT_AUTHOR_EMAIL:-claude-cloud@safiabakery.uz}"
+
+  # THE guard. A push to gitea/main runs .gitea/workflows/deploy.yaml on the
+  # production box: no staging step, no review window. "Look at the diff first"
+  # is not a control; a refusal is. It lives in .git/hooks, which is never
+  # cloned, so it is re-installed per session and can never reach a laptop.
+  mkdir -p "$REPO/.git/hooks"
+  cat > "$REPO/.git/hooks/pre-push" <<'HOOK_EOF'
+#!/bin/sh
+# Installed by scripts/cloud-setup.sh in cloud sessions only.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      echo "pre-push REFUSED: $remote_ref" >&2
+      echo "  Pushing main to gitea deploys production.safiacorporate.uz on the spot." >&2
+      echo "  Push a branch instead and merge it in Gitea, where a human sees it first." >&2
+      exit 1 ;;
+  esac
+done
+exit 0
+HOOK_EOF
+  chmod +x "$REPO/.git/hooks/pre-push"
+
+  # The credential. Gitea over HTTPS needs a token, and there is no proxy
+  # holding it outside the VM the way the GitHub path has one — so it comes from
+  # the environment's variables panel and IS readable by anyone who can use that
+  # environment. Kept in a credential FILE, never in the remote URL: a URL
+  # carries the token into `git remote -v`, every log line and the transcript.
+  if [ -n "${GITEA_TOKEN:-}" ]; then
+    local host
+    host="$(printf '%s' "$url" | sed -E 's#^https?://([^/]+)/.*#\1#')"
+    printf 'https://%s:%s@%s\n' "${GITEA_USER:-claude-cloud}" "$GITEA_TOKEN" "$host" > "$HOME/.git-credentials"
+    chmod 600 "$HOME/.git-credentials"
+    git -C "$REPO" config credential.helper store
+    log "gitea credential set for ${GITEA_USER:-claude-cloud}@$host"
+  else
+    log "no GITEA_TOKEN — the checkout is offline: no fetch, no push, no way home but the web diff"
+    return 0
+  fi
+
+  # Fetch, then FAST-FORWARD ONLY — the same rule as .claude/hooks/auto-pull.sh,
+  # and for the same reason: a merge or rebase nobody looked at is how you ship
+  # someone else's half-finished work to a factory floor.
+  if ! git -C "$REPO" fetch gitea >/dev/null 2>&1; then
+    log "cannot reach gitea (allowlist the host, check the token) — working from the clone as-is"
+    return 0
+  fi
+  local branch local_sha up base
+  branch="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  if [ "$branch" != "main" ]; then log "fetched gitea; on '$branch', nothing merged"; return 0; fi
+  local_sha="$(git -C "$REPO" rev-parse HEAD)"
+  up="$(git -C "$REPO" rev-parse gitea/main 2>/dev/null)"
+  base="$(git -C "$REPO" merge-base HEAD gitea/main 2>/dev/null)"
+  if [ "$local_sha" = "$up" ]; then log "level with gitea/main"; return 0; fi
+  if [ "$base" != "$local_sha" ]; then
+    log "main DIVERGED from gitea/main — not merged, tree untouched"
+    return 0
+  fi
+  if git -C "$REPO" merge --ff-only gitea/main >/dev/null 2>&1; then
+    log "fast-forwarded to gitea/main ($(git -C "$REPO" rev-parse --short HEAD))"
+  else
+    log "behind gitea/main but the fast-forward failed — tree untouched"
+  fi
+}
+
 # ------------------------------------------------------------------- serve ---
 # No .env.development.local in a fresh clone ⇒ no VITE_API_URL ⇒ the UI goes
 # through the vite /api proxy, whose target is :8000. So :8000 is the backend
@@ -278,6 +372,7 @@ ensure_python
 ensure_node
 ensure_chrome
 write_conf
+setup_git
 
 if [ "$MODE" = "provision" ]; then
   # Build the schema into the snapshot, then stop: a snapshot keeps files, and

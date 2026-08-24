@@ -1224,21 +1224,59 @@ pages, full walk nightly 03:15 + on Refresh + 60 s after boot) ·
 
 ## Cloud sessions (claude.ai/code)
 
-A cloud session is a fresh Ubuntu 24.04 VM with the **GitHub mirror** cloned into
-it and nothing else this repo keeps outside git — no `backend/.env`, no
+A cloud session is a fresh Ubuntu 24.04 VM holding a checkout of this repo and
+nothing else the project keeps outside git — no `backend/.env`, no
 `.claude/launch.json`, no venv, no `node_modules`, no postgres running.
 `scripts/cloud-setup.sh` rebuilds all of it and is THE definition of "the local
 stack, in the cloud": one file, two callers, so the two moments cannot drift.
 
-Paste three values ONCE into the environment dialog (claude.ai/code → the cloud
-icon above the message box → **Add cloud environment**):
+### gitea, not GitHub
 
-- **Network access**: `Trusted`. Its default allowlist already covers npm, PyPI
-  and `storage.googleapis.com`, which is where the headless-Chrome binary comes
-  from. `None` breaks every install in the script.
-- **Environment variables**: leave **empty**. Anyone who can use the environment
-  can read them and there is no secrets store — and nothing is needed there,
-  because every integration on this platform disables itself on a blank key.
+The platform's BUILT-IN clone and pull-request path is GitHub-only, and the docs
+say so plainly: non-GitHub repositories "can be sent to cloud sessions as a local
+bundle, but the session can't push results back to the remote". That restriction
+is about the platform's own git plumbing — the credential proxy and the PR
+button. `git.safiabakery.uz` is a public HTTPS host, so a session can still talk
+to gitea directly once the environment allows the domain and holds a token, and
+`setup_git` in the script is that wiring: it names the `gitea` remote (a bundle
+arrives with none, a mirror-cloned session arrives with `origin`), sets a
+credential, fetches, and fast-forwards **only** — the `auto-pull.sh` rule, for
+the same reason.
+
+Two ways to start a session; both end up working against gitea:
+
+1. **Bundle — no GitHub anywhere.** `CCR_FORCE_BUNDLE=1 claude --cloud "<task>"`
+   from this checkout uploads the full history across all branches plus
+   uncommitted changes to **tracked** files (untracked files are NOT included —
+   `git add` them first; the bundle must stay under 100 MB). There is no
+   terminal here to type that in, so **ask this session to run it**.
+2. **The web picker, with the mirror as a delivery van.** Start from the GitHub
+   mirror at claude.ai/code and let `setup_git` fast-forward the checkout off
+   gitea. Only sound while the mirror is current — the Stop hook pushes it
+   best-effort and never gates on it. **Never open the PR on GitHub**: nobody
+   reads that repo. The PR belongs in Gitea.
+
+**Without a `GITEA_TOKEN` the checkout is offline** — the stack still runs, but
+there is no fetch, no push, and no way home except the session's own diff view.
+The token is what makes a gitea cloud session usable, and it is also the whole
+security question, below.
+
+### The three values to paste, once
+
+claude.ai/code → the cloud icon above the message box → **Add cloud environment**:
+
+- **Network access**: `Custom`, with `git.safiabakery.uz` in **Allowed domains**
+  (add `*.frame.claudeusercontent.com` if the session should read artifacts) and
+  **Also include default list of common package managers** CHECKED — the
+  provisioning needs npm, PyPI and `storage.googleapis.com` (headless Chrome).
+  Plain `Trusted` cannot reach gitea; `None` cannot install anything.
+- **Environment variables**: `GITEA_TOKEN=<token>`, optionally
+  `GITEA_USER=<login>` (defaults to `claude-cloud`) and `GITEA_REMOTE_URL=`.
+  This panel is readable by anyone who can use the environment and there is no
+  secrets store, so use a token minted for a **dedicated Gitea account with
+  write access to this repo only**, never a personal one, and rotate it like any
+  other deployed credential. Nothing else belongs here: every integration on
+  this platform disables itself on a blank key.
 - **Setup script**:
 
   ```bash
@@ -1248,21 +1286,31 @@ icon above the message box → **Add cloud environment**):
   exit 0
   ```
 
-  It *finds* the clone instead of naming a path, because where the clone lands
-  is not contracted anywhere.
+  It *finds* the clone instead of naming a path, because where the clone lands is
+  not contracted anywhere.
 
-The split between the two callers is the cache: Anthropic snapshots the
-filesystem after the Setup script, and a snapshot keeps files, never processes.
+**Environment variables are not visible to the Setup script** — a known platform
+limitation — only to the session. That is why the credential is written by the
+SessionStart hook and never by provisioning, and why `provision` never needs the
+token.
+
+### Why the work is split between provision and the hook
+
+Anthropic snapshots the filesystem after the Setup script, and a snapshot keeps
+files, never processes — and the repo itself is a fresh clone each session.
 
 - **Setup script → `provision`**, once per environment, before Claude launches:
-  postgres role + DB, the venv, `node_modules`, Chrome, and one full backend
-  boot **so `create_all` and every startup migration land in the snapshot**.
+  postgres role + DB, the venv, `node_modules` (kept OUTSIDE the repo and
+  symlinked in, precisely because the clone is replaced), Chrome, and one full
+  backend boot **so `create_all` and every startup migration land in the
+  snapshot**.
 - **`.claude/settings.json` SessionStart hook → no args**, every session: start
   postgres, top the deps up (keyed on the two manifest hashes, so a snapshot
   older than a dependency bump heals itself and one that isn't costs nothing),
-  write `backend/.env` + `.claude/launch.json`, start `uvicorn :8000` and
-  `vite :5173`. A hard no-op unless `CLAUDE_CODE_REMOTE=true`, so committing it
-  cannot touch a laptop.
+  write `backend/.env` + `.claude/launch.json`, wire gitea, re-install the
+  `node_modules` symlink and the pre-push guard, start `uvicorn :8000` and
+  `vite :5173`. A hard no-op unless `CLAUDE_CODE_REMOTE=true`, and it refuses to
+  run on anything but Linux, so it cannot touch a laptop.
 - **`.claude/settings.json` is committed on purpose** — a cloud session gets only
   what the repo carries — which needed a `!` line against the blanket `*.json`
   ignore. `.claude/settings.local.json` and `.claude/launch.json` stay ignored.
@@ -1270,19 +1318,30 @@ filesystem after the Setup script, and a snapshot keeps files, never processes.
   `frontend/.env.development.local`, so the UI goes through the vite `/api`
   proxy, whose target is 8000. `driver.mjs doctor` still prints the answer.
 
-What deliberately does NOT come along:
+### main is refused, by construction
 
-- **The deploy loop.** `.claude/settings.local.json` stays gitignored, so the
-  Stop hook — build, commit, push to gitea, *which is the production deploy* —
-  does not exist in a cloud session. Never commit that file to make the cloud
-  "just like local": it would hand an Anthropic-managed VM the ability to deploy
-  the plant's dashboard, with no review window, on every turn. A cloud session
-  pushes its own branch to the GitHub mirror through the GitHub proxy and you
-  merge to gitea yourself. A merge that carries no rebuilt `frontend/dist` still
-  deploys correctly — `deploy/deploy.sh` rebuilds on the box when frontend
-  sources move without it.
-- **The automatic `VERSION` bump**, for the same reason: it lives in that hook.
-  A cloud branch has to bump it in the turn, by hand, sized per the table below.
+A push to `gitea/main` runs `.gitea/workflows/deploy.yaml` on the production box
+— no staging step, no review window — so a cloud session must not be able to
+make one. Three separate things keep it that way, and none of them is "remember
+not to":
+
+- The hook installs a `.git/hooks/pre-push` that refuses `refs/heads/main`. It
+  lives in `.git/hooks`, which is never cloned, so it is per-session and can
+  never leak to a laptop.
+- **`.claude/settings.local.json` stays gitignored**, so the Stop hook — build,
+  commit, push to gitea, *which is the deploy* — does not exist in a cloud
+  session at all. Never commit that file to make the cloud "just like local".
+  The automatic `VERSION` bump lives in that same hook, so a cloud branch bumps
+  `VERSION` in the turn, by hand, sized per the table below.
+- **Protect `main` in Gitea** (require a pull request) so the refusal is not the
+  only line of defence. The hook stops the honest mistake; it is inside the
+  sandbox, so it is not a security boundary.
+
+A merge that carries no rebuilt `frontend/dist` still deploys correctly —
+`deploy/deploy.sh` rebuilds on the box when frontend sources move without it.
+
+### What still does not come along
+
 - **Data.** The DB is EMPTY — schema, migrations and one `admins` row
   (`ADMIN_TELEGRAM_ID=1` → `startup.seed_admins`, which is what the `__dev__`
   login resolves to). Every page loads and renders its empty state; no page
@@ -1293,9 +1352,9 @@ What deliberately does NOT come along:
   «Backup» tab would give exact parity and would also put every worker's name,
   Telegram id and sealed browser password on that VM: a decision, never a
   default. A synthetic seeder is the honest fix and does not exist yet.
-- **Telegram, Sheets, Gemini, Notion, ARC.** No tokens, no allowlisted hosts.
-  The scheduled jobs still fire and log their failures there; expected, not a
-  regression.
+- **Telegram, Sheets, Gemini, Notion, ARC.** No tokens, and none of those hosts
+  is on the allowlist. The scheduled jobs still fire and log their failures
+  there; expected, not a regression.
 
 ## Deployment
 
