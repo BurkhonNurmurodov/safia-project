@@ -165,6 +165,13 @@ const COLS = [
   { key: "concern",    labelKey: "concerns.colConcern",    icon: FileText },
   { key: "status",     labelKey: "concerns.colStatus",     icon: CircleDot },
   { key: "level",      labelKey: "concerns.colLevel",      icon: Layers },
+  // The STEP and the PERSON standing on it are two different facts — they sort
+  // differently (chain order vs. name), they filter separately (Daraja and
+  // Mas'ul are two sections in the panel), and a reader who only cares about
+  // one of them can now hide the other. Stacking them in one cell also made
+  // the holder a 10px footnote under a chip, which is not how the register
+  // prints any other name.
+  { key: "responsible", labelKey: "concerns.responsible",   icon: UserCheck },
   { key: "deadline",   labelKey: "concerns.colDeadline",   icon: Clock,         align: "center" },
   { key: "resolution", labelKey: "concerns.colResolution", icon: Timer,         align: "center" },
   { key: "comments",   labelKey: "concerns.colComments",   icon: MessageSquare, align: "center" },
@@ -1273,6 +1280,7 @@ export default function Concerns() {
         case "resolution": return resolutionMinutes(r);
         case "status":   return STATUSES.indexOf(r.status);
         case "level":    return LEVELS.indexOf(r.level || "supervisor");
+        case "responsible": return tl(r.responsible_name || "");
         case "comments": return r.comment_count || 0;
         default:         return "";
       }
@@ -2043,8 +2051,9 @@ export default function Concerns() {
             />
           </td>
         );
-      // Escalation level + who concretely holds it — the chip names the step,
-      // the line under it the person.
+      // The escalation STEP the concern sits on. The holder is its own column
+      // beside this one; the tooltip still carries the assigned top-manager on
+      // top-level rows.
       case "level":
         return (
           <td key={key} className="px-3 py-2.5 whitespace-nowrap">
@@ -2053,11 +2062,18 @@ export default function Concerns() {
               label={levelLabel(r.level || "supervisor")}
               title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
             />
-            {r.responsible_name && (
-              <div className="text-[10px] mt-1" style={{ color: "var(--text-3)" }} title={tl(r.responsible_name)}>
-                {shortOwner(r.responsible_name)}
-              </div>
-            )}
+          </td>
+        );
+      // Who concretely holds it. Printed in the collision-safe short form like
+      // every other person on the page (`shortOwner` answers "—" for the legacy
+      // rows that name nobody); the full name stays on the tooltip, and search,
+      // sort and the filter list all still run on it.
+      case "responsible":
+        return (
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap text-xs"
+              style={{ color: "var(--text-2)" }}
+              title={r.responsible_name ? tl(r.responsible_name) : undefined}>
+            {shortOwner(r.responsible_name)}
           </td>
         );
       // Overdue = still open and past entry_date + deadline_days (same
