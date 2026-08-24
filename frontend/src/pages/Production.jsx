@@ -161,43 +161,150 @@ function VypCell({ value }) {
   );
 }
 
-// ── editable qty cell (Факт / ПЛАН) ─────────────────────────────────────────
-function QtyCell({ value, overridden, onSave }) {
+// ── editable qty cells (Факт / ПЛАН) — Excel-style: the CELL is the editor ───
+// Grid coordinates live in the DOM, not in React state: every editable cell tags
+// itself with its column key and row index, so sorting, filtering or hiding a
+// column can never leave a stale coordinate behind. `qCells` reads them back in
+// document order.
+const qCells = (el) => Array.from(el.closest("table")?.querySelectorAll("[data-qcol]") ?? []);
+// Tab walks them in reading order — …, Факт, ПЛАН, next row's Факт.
+const stepCell = (el, delta) => { const all = qCells(el); all[all.indexOf(el) + delta]?.focus(); };
+// Enter and the arrows keep the column and move by row (clamped, never wrapped).
+const moveCell = (el, dCol, dRow) => {
+  const all = qCells(el);
+  const cols = [...new Set(all.map((n) => n.dataset.qcol))];
+  const col = cols[Math.min(cols.length - 1, Math.max(0, cols.indexOf(el.dataset.qcol) + dCol))];
+  const row = Number(el.dataset.qrow) + dRow;
+  all.find((n) => n.dataset.qcol === col && Number(n.dataset.qrow) === row)?.focus();
+};
+
+// One click SELECTS the cell (ring around the whole cell); a double-click — or a
+// second tap on a phone, or F2, or simply typing a digit — opens the editor, and
+// the editor FILLS the cell instead of floating a small box inside it. Enter
+// commits and drops to the cell below, Tab commits and steps right, Escape
+// cancels, Delete clears the override.
+function QtyCell({ col, row, value, overridden, onSave }) {
   const { t } = useLang();
+  const tdRef = useRef(null);
   const [editing, setEditing] = useState(false);
+  const [sel, setSel] = useState(false);
   const [draft, setDraft] = useState("");
-  const start = () => { setDraft(value === null || value === undefined ? "" : String(value)); setEditing(true); };
-  const commit = () => {
+  const closed = useRef(false);   // this edit already committed or cancelled
+  const touch = useRef(false);    // the last pointer on this cell was a finger
+  const wasSel = useRef(false);   // …and the cell was already selected when it landed
+  const grab = useRef(false);     // open the editor with its whole value selected
+  const nav = useRef(null);       // where focus goes once the editor unmounts
+
+  // `seed` = the character that opened the editor — typing over a selected cell
+  // replaces its contents, as in Excel. Opened without one, the current value is
+  // kept: a mouse or keyboard puts the caret at its end (the spreadsheet rule),
+  // a finger takes the whole value selected, because a double-tap is a phone's
+  // ONLY way in and clearing digits by hand on a touch keyboard is not editing.
+  const start = (seed) => {
+    if (editing) return;
+    closed.current = false;
+    grab.current = seed === undefined && touch.current;
+    setDraft(seed ?? (value === null || value === undefined ? "" : String(value)));
+    setEditing(true);
+  };
+  // `where` is where focus goes next — nothing means "leave focus alone", which
+  // is what a blur needs: the click that closed this editor has its own target.
+  const finish = (save, where) => {
+    if (closed.current) return;
+    closed.current = true;
+    nav.current = where ?? null;
     setEditing(false);
+    if (!save) return;
     const raw = draft.trim();
     const num = raw === "" ? null : Number(raw.replace(",", "."));
     if (raw !== "" && Number.isNaN(num)) return;
     if (num !== (value ?? null)) onSave(num);
   };
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
-        className="w-16 text-right text-xs px-1.5 py-0.5 rounded-md outline-none tabular-nums"
-        style={{ background: "var(--bg-inner)", border: "1px solid var(--brand)", color: "var(--text-1)" }}
-      />
-    );
-  }
+
+  // Focus moves only once the editor has actually unmounted — doing it inside the
+  // key handler hands focus back to <body> the moment the input goes away.
+  useEffect(() => {
+    if (editing || !nav.current || !tdRef.current) return;
+    const { step, d } = nav.current;
+    nav.current = null;
+    if (step) stepCell(tdRef.current, step);
+    else if (d) moveCell(tdRef.current, d[0], d[1]);
+    else tdRef.current.focus();
+  }, [editing]);
+
+  // Keys on the SELECTED cell (the editor has its own handler below).
+  const onKeyDown = (e) => {
+    if (editing) return;
+    const k = e.key;
+    if (k === "Enter" || k === "F2") { e.preventDefault(); start(); }
+    else if (k === "Delete" || k === "Backspace") { e.preventDefault(); if (value != null) onSave(null); }
+    else if (k === "Tab") { e.preventDefault(); stepCell(e.currentTarget, e.shiftKey ? -1 : 1); }
+    else if (k === "ArrowDown") { e.preventDefault(); moveCell(e.currentTarget, 0, 1); }
+    else if (k === "ArrowUp") { e.preventDefault(); moveCell(e.currentTarget, 0, -1); }
+    else if (k === "ArrowRight") { e.preventDefault(); moveCell(e.currentTarget, 1, 0); }
+    else if (k === "ArrowLeft") { e.preventDefault(); moveCell(e.currentTarget, -1, 0); }
+    else if (k.length === 1 && /[\d.,-]/.test(k)) { e.preventDefault(); start(k); }
+  };
+
   return (
-    <button
-      onClick={start}
-      className="inline-flex items-center gap-1 group tabular-nums"
+    <td
+      ref={tdRef}
+      tabIndex={0}
+      data-qcol={col}
+      data-qrow={row}
       title={t("production.editManually")}
-      style={{ color: overridden ? "var(--brand-text)" : "var(--text-1)", fontWeight: overridden ? 700 : 400 }}
+      onKeyDown={onKeyDown}
+      onFocus={() => setSel(true)}
+      onBlur={() => setSel(false)}
+      // Read the selection BEFORE the browser's own focus-on-press lands, so the
+      // tap that selects the cell is never the tap that opens it.
+      onPointerDown={(e) => {
+        touch.current = e.pointerType === "touch";
+        wasSel.current = document.activeElement === e.currentTarget;
+      }}
+      onClick={(e) => {
+        e.stopPropagation();          // never toggles the row's action strip
+        // A finger has no double-click: the second tap on an already-selected
+        // cell opens it. A mouse keeps the spreadsheet rule — only a real
+        // double-click does.
+        if (touch.current && wasSel.current) start();
+      }}
+      onDoubleClick={() => start()}
+      className="px-3 py-2 text-center relative select-none group outline-none"
+      style={{
+        cursor: "cell",
+        touchAction: "manipulation",  // a double-tap edits the cell, never zooms the page
+        boxShadow: sel && !editing ? "inset 0 0 0 2px var(--brand)" : undefined,
+      }}
     >
-      {fmt(value, 0)}
-      {overridden && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--brand)" }} />}
-      <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
-    </button>
+      <span
+        className="inline-flex items-center gap-1 tabular-nums"
+        style={{ color: overridden ? "var(--brand-text)" : "var(--text-1)", fontWeight: overridden ? 700 : 400 }}
+      >
+        {fmt(value, 0)}
+        {overridden && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--brand)" }} />}
+        <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+      </span>
+      {/* the editor covers the cell's whole box — inset-0 resolves against the
+          td's padding box, so the table's own grid lines stay visible around it */}
+      {editing && (
+        <input
+          autoFocus
+          value={draft}
+          inputMode="decimal"
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={(e) => { if (grab.current) e.target.select(); }}
+          onBlur={() => finish(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); finish(true, { d: [0, 1] }); }
+            else if (e.key === "Tab") { e.preventDefault(); finish(true, { step: e.shiftKey ? -1 : 1 }); }
+            else if (e.key === "Escape") { e.preventDefault(); finish(false, {}); }
+          }}
+          className="absolute inset-0 w-full h-full text-center text-xs px-2 outline-none tabular-nums"
+          style={{ background: "var(--bg-card)", border: "2px solid var(--brand)", borderRadius: 4, color: "var(--text-1)" }}
+        />
+      )}
+    </td>
   );
 }
 
@@ -960,7 +1067,7 @@ export default function Production() {
 
   // One renderer per column so the picker can hide/reorder freely — each case
   // is the exact cell markup the table previously hard-coded in SAP order.
-  const posCell = (key, r, vyp, wc) => {
+  const posCell = (key, r, vyp, wc, i) => {
     switch (key) {
       case "sap_code":
         // a line without a SAP code is a real position (dough mixes, unlisted
@@ -994,17 +1101,17 @@ export default function Production() {
         return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.people, 0)}</td>;
       case "vyp":
         return <td key={key} className="px-3 py-2 text-center"><VypCell value={vyp} /></td>;
+      // QtyCell IS the <td> — the spreadsheet editor fills the cell, so the cell
+      // has to be what owns it (padding box, borders and all).
       case "fact":
         return (
-          <td key={key} className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-            <QtyCell value={r.actual_qty} overridden={r.actual_overridden} onSave={saveOverride(r, "actual")} />
-          </td>
+          <QtyCell key={key} col={key} row={i}
+            value={r.actual_qty} overridden={r.actual_overridden} onSave={saveOverride(r, "actual")} />
         );
       case "plan":
         return (
-          <td key={key} className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-            <QtyCell value={r.plan_qty} overridden={r.plan_overridden} onSave={saveOverride(r, "plan")} />
-          </td>
+          <QtyCell key={key} col={key} row={i}
+            value={r.plan_qty} overridden={r.plan_overridden} onSave={saveOverride(r, "plan")} />
         );
       case "actual_labor":
         return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.actual_labor, 1)}</td>;
@@ -1507,7 +1614,7 @@ export default function Production() {
                       background: selected ? "var(--bg-inner)" : undefined,
                       cursor: selectable ? "pointer" : undefined,
                     }}>
-                    {visibleCols.map((c) => posCell(c.key, r, vyp, wc))}
+                    {visibleCols.map((c) => posCell(c.key, r, vyp, wc, i))}
                   </tr>
                   {selected && (
                     <tr ref={stripRef} style={{ background: "var(--bg-inner)" }}>
