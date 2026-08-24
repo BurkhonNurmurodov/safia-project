@@ -2716,6 +2716,13 @@ class ActionLog(Base):
     reason        = Column(Text, nullable=True)    # operator's own words
     enriched      = Column(Boolean, nullable=False, server_default=text("false"))
 
+    # ── taken back ────────────────────────────────────────────────────────────
+    # The row this one REVERSES. The register stays append-only: an undo is a
+    # new action that happens to be the inverse of an old one, never an edit of
+    # it. Indexed because the tab asks "was this undone" for every row of every
+    # page — a JSONB scan for that answer would grow with the table forever.
+    undo_of       = Column(BigInteger, nullable=True, index=True)
+
     # ── the request it rode in on ─────────────────────────────────────────────
     method        = Column(String, nullable=True)
     path          = Column(String, nullable=True)

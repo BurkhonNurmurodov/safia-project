@@ -1,12 +1,13 @@
 import { Fragment, useState } from "react";
-import { ArrowRight, ChevronRight, EyeOff, KeyRound } from "lucide-react";
+import { ArrowRight, ChevronRight, EyeOff, KeyRound, Undo2 } from "lucide-react";
+import Button from "../../ui/Button";
 import TableCard, { Th } from "../../ui/DataTable";
 import { SkeletonBlock } from "../../ui/Skeleton";
 import { useLang } from "../../../context/LangContext";
 import { useTranslit } from "../../../utils/transliterate";
 import {
   AMBER, CAT_ICON, OUTCOME, RED, SRC_ICON,
-  detail, firstOf, fmtDay, fmtDayShort, labelOf, num, roleLabel, tpl,
+  detail, firstOf, fmtDay, fmtDayShort, labelOf, num, roleLabel, timeAgo, tpl,
 } from "./taxonomy";
 
 /**
@@ -293,7 +294,66 @@ function Kv({ label, children }) {
   );
 }
 
-export function LogDetail({ r }) {
+/**
+ * The panel's action bar — the one place on this tab that WRITES.
+ *
+ * It renders on every row, in one of three states, and that is the point: an
+ * undo control that only appeared when it worked would leave the reader of a
+ * profile-deletion guessing whether the platform forgot the button or the
+ * action genuinely cannot be reversed. So the bar always says which, in words —
+ * `undo.ok` offers it, `undo.why` explains the refusal, and a row already taken
+ * back says by whom and when instead of offering it a second time.
+ *
+ * The verdict is the SERVER's (`services/action_undo.py`). Deriving "is this
+ * undoable" in the browser would be a second definition of the rule, and the
+ * one that is wrong is always the one the operator is looking at.
+ */
+function UndoBar({ r, onUndo, busy }) {
+  const { t } = useLang();
+  const { tl } = useTranslit();
+  const u = r.undo;
+  if (!u) return null;
+
+  if (r.undone) {
+    return (
+      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+        <Undo2 size={12} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+        <span className="min-w-0">
+          {tpl(t("logs.undo.doneBy"), {
+            who: tl(r.undone.actor) || "—",
+            ago: timeAgo(r.undone.at, t),
+          })}
+        </span>
+      </div>
+    );
+  }
+
+  if (!u.ok) {
+    return (
+      <div className="flex items-start gap-1.5 text-[11px]" style={{ color: "var(--text-4)" }}>
+        <Undo2 size={12} className="flex-shrink-0 mt-px" />
+        <span className="min-w-0">{labelOf(t, "logs.undo.why.", u.why)}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 flex-wrap">
+      <span className="text-[11px] min-w-0" style={{ color: "var(--text-3)" }}>
+        {tpl(t("logs.undo.will"), { action: labelOf(t, "logs.act.", u.action) })}
+      </span>
+      <Button
+        size="md" variant="primary" tint loading={busy}
+        icon={!busy ? <Undo2 size={13} /> : null}
+        onClick={(e) => { e.stopPropagation(); onUndo?.(r); }}
+      >
+        {t("logs.undo.do")}
+      </Button>
+    </div>
+  );
+}
+
+export function LogDetail({ r, onUndo, busy = false }) {
   const { t } = useLang();
   const { tl } = useTranslit();
 
@@ -384,6 +444,17 @@ export function LogDetail({ r }) {
         </div>
       )}
 
+      {/* Last of the human-readable half, and the only control on this tab: what
+          can still be done ABOUT this row, after everything it says has been
+          read. Above the request line, which is machine detail. */}
+      {onUndo && r.undo && (
+        <div className="pt-0.5" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="pt-2.5">
+            <UndoBar r={r} onUndo={onUndo} busy={busy} />
+          </div>
+        </div>
+      )}
+
       {/* Technical, and therefore muted and last: the request line answers "was
           this the app or somebody with a token", which is a question you only
           ask after the human-readable half has failed to explain something. */}
@@ -398,7 +469,7 @@ export function LogDetail({ r }) {
 
 // ── phone card ───────────────────────────────────────────────────────────────
 
-function LogCard({ r, cols, open, onToggle, ctx }) {
+function LogCard({ r, cols, open, onToggle, ctx, onUndo, busy }) {
   const { t, tl } = ctx;
   const lines = cols
     .filter((k) => !CARD_HEAD.has(k))
@@ -443,7 +514,7 @@ function LogCard({ r, cols, open, onToggle, ctx }) {
       </button>
       {open && (
         <div style={{ borderTop: "1px solid var(--border)" }}>
-          <LogDetail r={r} />
+          <LogDetail r={r} onUndo={onUndo} busy={busy} />
         </div>
       )}
     </div>
@@ -454,6 +525,7 @@ function LogCard({ r, cols, open, onToggle, ctx }) {
 
 export default function LogTable({
   rows, category, loading, multiDay, empty, icon, title, subtitle, right,
+  onUndo, undoing = null,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -512,7 +584,7 @@ export default function LogTable({
           {open && (
             <tr>
               <td colSpan={cols.length} className="p-0">
-                <LogDetail r={r} />
+                <LogDetail r={r} onUndo={onUndo} busy={undoing === r.id} />
               </td>
             </tr>
           )}
@@ -540,6 +612,8 @@ export default function LogTable({
           ctx={ctx}
           open={openId === r.id}
           onToggle={() => toggle(r.id)}
+          onUndo={onUndo}
+          busy={undoing === r.id}
         />
       ));
 

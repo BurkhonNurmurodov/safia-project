@@ -464,6 +464,29 @@ def add_broadcast_failures_column() -> None:
         db.close()
 
 
+def add_action_log_undo_column() -> None:
+    """`action_logs.undo_of` — the row a reversal takes back (idempotent).
+
+    The register is append-only, so an undo is a NEW action that happens to be
+    the inverse of an old one, never an edit of the row it reverses. This is the
+    link between the two, and it is indexed because the «Jurnal» tab asks "was
+    this one taken back" for every row of every page it renders: the same answer
+    derived from a JSONB scan would get slower every day the table worked.
+    Rows written before the column exists stay NULL and read as "not undone",
+    which is what they are."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS undo_of BIGINT"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_action_logs_undo_of "
+                        "ON action_logs (undo_of)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] action_logs undo_of migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_broadcast_schedule_column() -> None:
     """Deferred-send column (idempotent). A scheduled broadcast is a normal,
     fully-resolved row parked at status 'scheduled' until scheduled_at; the

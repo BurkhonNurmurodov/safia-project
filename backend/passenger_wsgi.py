@@ -76,6 +76,7 @@ try:
         add_task_comment_author_ref, add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns,
         add_broadcast_resume_columns, add_broadcast_schedule_column,
+        add_action_log_undo_column,
         add_broadcast_failures_column, add_pp_product_op,
         add_downtime_ns_columns,
         add_attendance_supervisor_column, backfill_supervisor_attendance,
@@ -145,6 +146,7 @@ try:
     add_broadcast_rich_columns()
     add_broadcast_resume_columns()
     add_broadcast_schedule_column()
+    add_action_log_undo_column()
     add_broadcast_failures_column()
     add_pp_product_op()
     add_downtime_ns_columns()

@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ActionLog
 from app.routers.admin import verify_admin
-from app.services import action_log
+from app.services import action_log, action_undo
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/admin/logs", tags=["logs"])
@@ -181,7 +181,15 @@ def _filters(
 
 # ── rendering ─────────────────────────────────────────────────────────────────
 
-def _row(r: ActionLog) -> dict:
+def _row(r: ActionLog, undo: Optional[dict] = None,
+         undone: Optional[ActionLog] = None) -> dict:
+    """One row as the tab reads it.
+
+    ``undo`` / ``undone`` are only ever filled in by the list endpoint, which
+    resolves them for a whole page at once. Everywhere else a row is a plain
+    record and carries neither — a summary tile has no undo button on it, and
+    computing one per row for every reader would be work nothing displays.
+    """
     at = r.created_at.astimezone(TASHKENT) if r.created_at else None
     return {
         "id": r.id,
@@ -214,6 +222,17 @@ def _row(r: ActionLog) -> dict:
         "ms": r.duration_ms,
         "ip": r.ip,
         "version": r.app_version,
+        # The register is append-only, so "taken back" is a RELATION between two
+        # rows, never a flag on one: `undo_of` points at what this row reverses,
+        # `undone` at the row that reversed it.
+        "undo_of": r.undo_of,
+        "undo": undo,
+        "undone": None if undone is None else {
+            "id": undone.id,
+            "at": (undone.created_at.astimezone(TASHKENT).isoformat()
+                   if undone.created_at else None),
+            "actor": undone.actor_name,
+        },
     }
 
 
@@ -232,11 +251,18 @@ def list_logs(
     total = base.with_entities(func.count(ActionLog.id)).scalar() or 0
     rows = (base.order_by(ActionLog.created_at.desc(), ActionLog.id.desc())
             .offset((page - 1) * page_size).limit(page_size).all())
+    # Whether each row can be taken back — resolved for the whole page: one
+    # indexed lookup for the reversals, then a cheap per-row verdict that only
+    # touches the DB for the handful of actions a plan exists for.
+    undone = action_undo.undone_map(db, [r.id for r in rows])
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
-        "rows": [_row(r) for r in rows],
+        "rows": [_row(r,
+                      undo=action_undo.describe(db, r, undone=r.id in undone),
+                      undone=undone.get(r.id))
+                 for r in rows],
     }
 
 
@@ -363,7 +389,47 @@ def one(log_id: int, db: Session = Depends(get_db), _: dict = Depends(verify_adm
     r = db.query(ActionLog).filter_by(id=log_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Not found")
-    return _row(r)
+    undone = action_undo.undone_map(db, [r.id])
+    return _row(r, undo=action_undo.describe(db, r, undone=bool(undone)),
+                undone=undone.get(r.id))
+
+
+# ── taking one back ───────────────────────────────────────────────────────────
+
+@router.post("/{log_id}/undo")
+def undo(log_id: int, db: Session = Depends(get_db),
+         caller: dict = Depends(verify_admin)):
+    """Reverse one recorded action.
+
+    Nothing is deleted or edited here — not the register (append-only, always)
+    and not the row being reversed. The undo is performed as a NEW action,
+    recorded under the inverse action's own key and linked back by ``undo_of``;
+    ``app/services/action_undo.py`` is the definition of which actions can be
+    reached this way and, for every one that cannot, why.
+
+    Admin-only like the rest of this router and deliberately not grantable: the
+    reach of this one endpoint is the union of everything it can reverse, so a
+    capability for it would be a capability for all of them at once.
+    """
+    r = db.query(ActionLog).filter_by(id=log_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Not found")
+    undone = bool(action_undo.undone_map(db, [r.id]))
+    try:
+        return action_undo.run(db, r, caller, undone=undone)
+    except action_undo.Refused as exc:
+        # 409, not 400: the request was well-formed and the state said no. The
+        # `why` key is what the dialog renders — in the reader's own language,
+        # standing, with the row still on screen.
+        raise HTTPException(status_code=409,
+                            detail={"code": "undo_refused", "why": exc.why})
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        log.exception("undo of action log #%s failed", log_id)
+        raise HTTPException(status_code=500,
+                            detail={"code": "undo_failed", "why": "failed"})
 
 
 # ── export ────────────────────────────────────────────────────────────────────

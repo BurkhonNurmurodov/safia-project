@@ -1057,7 +1057,57 @@ anywhere**. All six survive unchanged beside this one; nothing was retired.
   the table like any other and writes one row describing itself.
 - Admin-only and NOT grantable: no capability exists for it, so
   `capTabs.includes(capKey ?? id)` can never admit a grantee — the `permissions`
-  model. All five endpoints in `routers/logs.py` carry `verify_admin`.
+  model. Every endpoint in `routers/logs.py` carries `verify_admin` — the undo
+  door especially, whose reach is the union of everything it can reverse, so one
+  capability for it would be a capability for all of them at once.
+
+### Taking one action back (the Undo button)
+
+From **2026-08-24** an expanded row can be REVERSED — `POST
+/api/admin/logs/{id}/undo`, the undo bar at the foot of the detail panel. It is
+the only write on the tab.
+
+- **`services/action_undo.py` is THE definition** of what an undo can reach.
+  A `Plan` per action key (`check` + `run`); adding a fifth is one entry, not a
+  new mechanism. Never re-derive "is this undoable" at a call site — least of
+  all in the browser, where the copy on screen would be the wrong half of a
+  disagreement.
+- **The register stays append-only.** An undo is a NEW action that happens to be
+  the inverse of an old one, recorded under the INVERSE action's own key (undoing
+  a day-close IS a re-open, filed under Attendance) and linked by the indexed
+  `action_logs.undo_of` column. Nothing edits the row it reverses; nothing is
+  deleted, ever. `undone_map` filters on `outcome == "done"` — a REFUSED attempt
+  carries `undo_of` too (the row is re-badged before the check runs, so a
+  refusal says what it tried to reverse), and counting it would lock a row out
+  because an earlier attempt FAILED. **An undo cannot itself be undone**: a
+  longer chain turns "already undone" from a fact into a parity question.
+- **The rule that makes it safe: the world must still be as the action left it.**
+  Every `check` verifies the CURRENT state still equals what the row recorded as
+  its result and refuses `changed_since` otherwise. That one rule stops an undo
+  clobbering somebody's later edit, makes a double-tap harmless (the register is
+  written by a background thread, so the `already_undone` marker lands a beat
+  late and can never be the only guard), and needs no locks.
+- **Only what the register PROVES it can put back.** A log row is not a
+  snapshot. Four actions qualify today: `attendance.day_closed` ↔
+  `attendance.day_reopened` (unit + date, and it notifies the unit exactly as the
+  ordinary endpoints do), `config.settings_saved` and `config.translation_saved`
+  (each value back to its recorded old one). A cascading delete — a profile
+  taking its bindings, entries, photos and verdicts with it — is gone, and the
+  panel says so rather than offering a button that cannot work. Two refusals
+  exist precisely because the row is honest about its own limits: `masked` (the
+  old value was a secret and `/admin/settings` stored `•••`, so restoring it
+  would set the literal mask as the API key) and `capped` (a >50-string
+  translation save records only the first 50, and half an undo is not one).
+  **Never add a LOSSY reverser** — `task.status_changed` looks trivial and is
+  not, because leaving «done» re-queues the task at the BACK of the leader's
+  priority list; an undo would restore the status and silently lose the position.
+- **The bar renders on EVERY row, in one of three states** — offer, refusal
+  (`logs.undo.why.*`, in all four languages), or "taken back by X, N ago". A
+  control that appeared only when it worked would leave the reader of a
+  profile-deletion unable to tell whether the platform forgot the button or the
+  action genuinely cannot be reversed. Failures land INSIDE the `ConfirmDialog`
+  and leave it standing: `changed_since` is the message the operator must read
+  before deciding what to do instead.
 - Reading it: the CATEGORY RAIL is the spine, not a filter — its counts are
   computed with every filter applied EXCEPT the category, because its job is
   telling the reader where the rest of the activity is. **Table COLUMNS follow

@@ -310,6 +310,10 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/admin/exchange-audit/export.xlsx",     "sync_export", "export.exchange_audit"),
     (("POST",),   "/api/staff/attendance/export",              "sync_export", "export.attendance"),
     (("POST",),   "/api/admin/logs/export.xlsx",               "sync_export", "export.action_log"),
+    # The undo door. Its row is re-badged by `action_undo` to the INVERSE action
+    # (undoing a day-close IS a re-open, and belongs under Attendance), so this
+    # entry is only what a refusal that never reached a plan falls back to.
+    (("POST",),   "/api/admin/logs/{}/undo",                   "other", "log.undo_refused"),
 
     # ── platform configuration ────────────────────────────────────────────────
     (("PUT",),    "/admin/settings",                           "config", "config.settings_saved"),
@@ -488,7 +492,7 @@ _pending: ContextVar[Optional[dict]] = ContextVar("action_log_pending", default=
 
 _ENRICHABLE = (
     "category", "action", "outcome", "target_kind", "target_id", "target_name",
-    "unit_id", "unit_name", "day", "reason", "via_capability",
+    "unit_id", "unit_name", "day", "reason", "via_capability", "undo_of",
 )
 
 
@@ -613,6 +617,7 @@ def _write(rows: list[dict]) -> None:
                 changes=_pairs(r.get("changes")),
                 reason=r.get("reason"),
                 enriched=bool(r.get("enriched")),
+                undo_of=r.get("undo_of"),
                 method=r.get("method"),
                 path=r.get("path"),
                 status=r.get("status"),
@@ -700,7 +705,7 @@ def record(db=None, *, category: str, action: str, source: str = "system",
            unit_id: Optional[int] = None, unit_name: Optional[str] = None,
            day: Any = None, details: Optional[Iterable] = None,
            changes: Optional[Iterable] = None, reason: Optional[str] = None,
-           via_capability: Optional[str] = None,
+           via_capability: Optional[str] = None, undo_of: Optional[int] = None,
            enriched: bool = True) -> None:
     """Write one row directly. Never raises.
 
@@ -720,7 +725,8 @@ def record(db=None, *, category: str, action: str, source: str = "system",
             "outcome": outcome, "target_kind": target_kind, "target_id": target_id,
             "target_name": target_name, "unit_id": unit_id, "unit_name": unit_name,
             "day": day, "details": list(details or []), "changes": list(changes or []),
-            "reason": reason, "via_capability": via_capability, "enriched": enriched,
+            "reason": reason, "via_capability": via_capability,
+            "undo_of": undo_of, "enriched": enriched,
         }
         if actor:
             row.update(actor_fields(db, actor))

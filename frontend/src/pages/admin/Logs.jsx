@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity, ArrowUp, Building2, CheckCircle2, Clock, FileSpreadsheet, Layers,
-  Radio, ScrollText, ShieldAlert, TriangleAlert, UserRound, Users,
+  Radio, ScrollText, ShieldAlert, TriangleAlert, Undo2, UserRound, Users,
 } from "lucide-react";
 import api from "../../utils/api";
 import { exportXlsx } from "../../utils/exportXlsx";
@@ -10,6 +10,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import Button from "../../components/ui/Button";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import SearchInput from "../../components/ui/SearchInput";
 import Pagination from "../../components/ui/Pagination";
@@ -120,6 +121,7 @@ export default function Logs() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const toast = useToast();
+  const qc = useQueryClient();
   const today = todayISO();
 
   // ── the view, remembered ────────────────────────────────────────────────────
@@ -398,6 +400,45 @@ export default function Logs() {
     setSource([]); setOutcome([]); setActor(""); setUnitId(""); setAction(""); setLevel("");
   };
 
+  // ── taking one action back ──────────────────────────────────────────────────
+  // The only WRITE on this tab. Two rules it is built on:
+  //
+  // The verdict is the server's — `undo.ok` and `undo.why` ride on every row and
+  // nothing is re-derived here, so the button and the endpoint can never
+  // disagree about what is reversible.
+  //
+  // A refusal lands INSIDE the dialog and the dialog stays standing. Undo's
+  // commonest failure is `changed_since` — somebody edited the same thing after
+  // this row — and that is precisely the message the operator must read before
+  // deciding what to do instead; a toast that has already faded, or Telegram's
+  // suppressed `alert()`, would lose it.
+  const [undoRow, setUndoRow] = useState(null);
+  const [undoErr, setUndoErr] = useState(null);
+
+  const undoM = useMutation({
+    mutationFn: async (row) => (await api.post(`/api/admin/logs/${row.id}/undo`)).data,
+    onSuccess: (_d, row) => {
+      setUndoRow(null);
+      setUndoErr(null);
+      toast.success(tpl(t("logs.undo.done"), {
+        action: labelOf(t, "logs.act.", row.action),
+      }));
+      // The reversal is itself a row in this register, and the row it reversed
+      // now reads as taken back — both are on screen, so both are re-read.
+      qc.invalidateQueries({ queryKey: ["admin-logs"] });
+    },
+    onError: (e) => {
+      // 409 → {code, why}; `detail_raw` keeps the structure the interceptor
+      // flattens for the eighty call sites that print a sentence.
+      const why = e?.response?.data?.detail_raw?.why;
+      setUndoErr(why
+        ? labelOf(t, "logs.undo.why.", why)
+        : (e?.response?.data?.detail || t("logs.undo.failed")));
+    },
+  });
+
+  const askUndo = (row) => { setUndoErr(null); setUndoRow(row); };
+
   // ── export ──────────────────────────────────────────────────────────────────
   const runExport = async () => {
     setExporting(true);
@@ -556,6 +597,8 @@ export default function Logs() {
         <LogTable
           rows={rows}
           category={category}
+          onUndo={askUndo}
+          undoing={undoM.isPending ? undoM.variables?.id : null}
           loading={loading}
           multiDay={multiDay}
           empty={empty}
@@ -577,6 +620,38 @@ export default function Logs() {
           onPage={setPage}
         />
       </div>
+
+      {undoRow && (
+        <ConfirmDialog
+          open
+          icon={<Undo2 size={16} />}
+          title={t("logs.undo.confirmTitle")}
+          message={(
+            <>
+              <span className="block">
+                {tpl(t("logs.undo.confirmBody"), {
+                  action: labelOf(t, "logs.act.", undoRow.action),
+                  who: tl(undoRow.actor) || undoRow.actor_key || "—",
+                  ago: timeAgo(undoRow.at, t),
+                })}
+              </span>
+              <span className="block mt-2 font-medium" style={{ color: "var(--text-2)" }}>
+                {tpl(t("logs.undo.will"), {
+                  action: labelOf(t, "logs.act.", undoRow.undo?.action),
+                })}
+              </span>
+              <span className="block mt-2 text-[11px]" style={{ color: "var(--text-4)" }}>
+                {t("logs.undo.recorded")}
+              </span>
+            </>
+          )}
+          confirmLabel={t("logs.undo.do")}
+          loading={undoM.isPending}
+          error={undoErr}
+          onCancel={() => { if (!undoM.isPending) { setUndoRow(null); setUndoErr(null); } }}
+          onConfirm={() => undoM.mutate(undoRow)}
+        />
+      )}
 
       {toast.node}
     </div>
