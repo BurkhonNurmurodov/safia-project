@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import {
-  Boxes, Users, Building2, ClipboardList, Hourglass, Siren, CheckCircle2,
+  Boxes, Users, ClipboardList, Hourglass, Siren, CheckCircle2,
   ShieldCheck, Timer, CalendarClock, HelpCircle, Link2Off,
 } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
@@ -28,9 +28,11 @@ import { hexA, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../../utils/arcStatus"
  *   • The tickets whose division names NO cell get their own row, last and
  *     labelled. Folding them away would make a partial answer read as a
  *     complete one.
- *   • The cell NAME is a `CellLink` (→ /cells/:id) and the ROW opens the
+ *   • The cell's CODE is a `CellLink` (→ /cells/:id) and the ROW opens the
  *     register filtered to that cell. CellLink stops propagation, so the two
- *     destinations never fight.
+ *     destinations never fight. The workshop name rides on the link's title
+ *     rather than a column of its own: the code is what the ARC division
+ *     names, and it is what the reader matches against the register.
  */
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
@@ -80,9 +82,8 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
     const dir = sort.dir === "asc" ? 1 : -1;
     const val = (r) => {
       switch (sort.key) {
-        case "cell":     return (cellLabel(r.cell, lang) || r.code || "").toLowerCase();
+        case "cell":     return r.code || "";
         case "leader":   return (r.cell?.leader || "").toLowerCase();
-        case "division": return (r.divisions?.[0] || "").toLowerCase();
         case "last":     return r.last_created ? new Date(r.last_created).getTime() : 0;
         case "on_time":  return r.on_time_pct;
         case "median":   return r.median_hours;
@@ -104,7 +105,6 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
   const COLS = [
     { key: "cell",     label: t("arc.cCell"),     icon: Boxes },
     { key: "leader",   label: t("arc.cLeader"),   icon: Users },
-    { key: "division", label: t("arc.cDivisions"), icon: Building2 },
     { key: "total",    label: t("arc.cTotal"),    icon: ClipboardList, align: "right" },
     { key: "open",     label: t("arc.cOpen"),     icon: Hourglass,     align: "right" },
     { key: "overdue",  label: t("arc.cOverdue"),  icon: Siren,         align: "right" },
@@ -114,21 +114,16 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
     { key: "last",     label: t("arc.cLast"),     icon: CalendarClock, align: "right" },
   ];
 
-  // The cell's identity cell: the workshop name where the registry knows the
-  // code, the bare digits where it does not — never a blank, and never a dead
-  // link (CellLink renders inert text without an id).
+  // The cell's identity cell: the four digits the ARC division names, pressable
+  // into /cells/:id. The workshop name is the link's tooltip — never a dead
+  // link (CellLink renders inert text without an id), never a blank.
   const nameCell = (r) => {
     const name = cellLabel(r.cell, lang);
     return (
       <span className="inline-flex items-center gap-2 min-w-0">
         <CellLink id={r.cell?.id} title={name ? `${r.code} · ${name}` : r.code}>
-          {name || r.code}
+          <span className="tabular-nums">{r.code}</span>
         </CellLink>
-        {name && (
-          <span className="tabular-nums text-[11px] flex-shrink-0" style={{ color: "var(--text-4)" }}>
-            {r.code}
-          </span>
-        )}
         {!r.cell && (
           <span
             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold flex-shrink-0"
@@ -142,23 +137,9 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
     );
   };
 
-  const divisionsCell = (r) => {
-    const list = r.divisions || [];
-    if (!list.length) return "—";
-    return (
-      <span title={list.join("\n")}>
-        {list[0]}
-        {r.division_count > 1 && (
-          <span style={{ color: "var(--text-4)" }}> +{r.division_count - 1}</span>
-        )}
-      </span>
-    );
-  };
-
   const bodyCells = (r) => (
     <>
       <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.cell?.leader || "—"}</td>
-      <td className="px-3 py-2 max-w-[260px] truncate" style={{ color: "var(--text-2)" }}>{divisionsCell(r)}</td>
       <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{num(r.total)}</td>
       <td className="px-3 py-2 text-right"><Count value={r.open} color={C_DOING} /></td>
       <td className="px-3 py-2 text-right"><Count value={r.overdue} color={C_OVERDUE} /></td>
@@ -200,7 +181,7 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
         </div>
       ))}
       {!loading && rows.map((r) => card(r, r.code,
-        [cellLabel(r.cell, lang) || r.code, r.cell ? r.code : t("arc.cUnknown")].join(" · "),
+        r.cell ? r.code : `${r.code} · ${t("arc.cUnknown")}`,
         r.overdue ? C_OVERDUE : C_GREY))}
       {!loading && uncoded && card(uncoded, "none", t("arc.cNoCell"), C_GREY)}
       {!loading && !rows.length && !uncoded && (
@@ -233,7 +214,7 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
         icon={Boxes}
         title={t("arc.cTitle")}
         wrap
-        minWidth={1000}
+        minWidth={880}
         mobile={mobile}
         mobileCards
         right={
