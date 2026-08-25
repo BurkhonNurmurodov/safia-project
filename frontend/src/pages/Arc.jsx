@@ -20,7 +20,11 @@ import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import TableCard, { Th } from "../components/ui/DataTable";
 import CellLink from "../components/ui/CellLink";
-import ArcByCell, { cellLabel } from "../components/arc/ArcByCell";
+// The registry's workshop name in the viewer's language, Russian-first after
+// that. `cellName`'s empty prefix IS the short {uz, uz_cyrl, ru, en} shape
+// `cell_lookup` ships — the platform's one home for this fallback, so the
+// register, the filter and the modal cannot disagree about a cell's name.
+import { cellName } from "../utils/cellName";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonCard } from "../components/ui/Skeleton";
 import api from "../utils/api";
@@ -65,6 +69,36 @@ const COLS = [
 ];
 // The ticket number and its status are the row's identity — never hideable.
 const LOCKED_COLS = new Set(["num", "status"]);
+
+// «Yacheykalar bo'yicha» is the SAME register — one row per ticket, the same
+// filters, the same page — read through a different question: whose cell is
+// this ticket on, and where does it stand. So it is a fixed, curated column
+// set rather than a second table: the register's IT-side columns (division,
+// category, author, brigade) give way to this platform's org chart, and
+// everything they carried is one press away in the row's modal.
+//
+// Deliberately NOT offered to the ColumnsPicker. A curated answer that the
+// reader can dismantle column by column is not a curated answer, and the two
+// views would stop being two questions about one set of tickets.
+//
+// `sup` and `leader` carry no `sortKey`: both are resolved from the cells map
+// the payload already ships, and no SQL expression orders by them — a header
+// that looks sortable and does nothing is worse than one that does not.
+const CELL_COLS = [
+  { key: "num",         labelKey: "arc.colNum",         icon: Hash,          sortKey: "request_num" },
+  { key: "sup",         labelKey: "arc.colSup",         icon: Wrench },
+  { key: "leader",      labelKey: "arc.colLeader",      icon: UserCog },
+  { key: "cell",        labelKey: "arc.colCell",        icon: Boxes,         sortKey: "cell_code" },
+  { key: "description", labelKey: "arc.colDescription", icon: FileText },
+  { key: "status",      labelKey: "arc.colStatus",      icon: CircleDot,     sortKey: "status" },
+  { key: "due",         labelKey: "arc.colDue",         icon: Timer,         sortKey: "due" },
+  { key: "started",     labelKey: "arc.colStarted",     icon: PlayCircle,    sortKey: "started_at" },
+  // Closed AND how long it took, in one cell: the two facts are one sentence
+  // («closed on the 14th, after 3.9 h»), and on a register read for lateness
+  // the duration is what the closing stamp is FOR. It sorts by the stamp.
+  { key: "closed_h",    labelKey: "arc.colClosed",      icon: CheckCircle2,  sortKey: "closed_at" },
+  { key: "source",      labelKey: "arc.colSource",      icon: Bot,           align: "center" },
+];
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
@@ -269,16 +303,6 @@ export default function Arc() {
     enabled: configured && hasData && tab === "all",
     placeholderData: keepPreviousData,
   });
-  // The «by cells» view — the same filters, grouped. Fetched only while that
-  // tab is open: it is a full GROUP BY over the register and nobody looking at
-  // the ticket table is waiting on it.
-  const byCellQ = useQuery({
-    queryKey: ["arc-by-cell", filters],
-    queryFn: () => api.get("/api/arc/by-cell", { params: filters }).then((r) => r.data),
-    enabled: configured && hasData && tab === "cells",
-    placeholderData: keepPreviousData,
-  });
-
   // A failed /stats or /list must not masquerade as an empty register (skeleton
   // tiles forever + «no matching requests» for a 500). Toast once per failure —
   // the error toast persists until dismissed, so the reason survives.
@@ -289,10 +313,6 @@ export default function Arc() {
   useEffect(() => {
     if (listQ.isError) toast.error(`${t("arc.loadFailed")}: ${errMsg(listQ.error)}`);
   }, [listQ.isError, listQ.error]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (byCellQ.isError) toast.error(`${t("arc.loadFailed")}: ${errMsg(byCellQ.error)}`);
-  }, [byCellQ.isError, byCellQ.error]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Filters changed → back to page 1 of the register.
   const filterSig = JSON.stringify([filters, sortParam]);
   const prevSig = useRef(filterSig);
@@ -358,10 +378,27 @@ export default function Arc() {
     qc.setQueryData(["ui-pref", COL_PREF_KEY], value);
     saveCols.mutate(value);
   };
+  // The columns on screen. «Barchasi» is the reader's own arrangement (the
+  // picker's order minus what they hid); «Yacheykalar bo'yicha» is the fixed
+  // curated set — same rows, a different question, so the picker is neither
+  // consulted nor offered there.
   const visibleCols = useMemo(() => {
+    if (tab === "cells") return CELL_COLS;
     const hiddenSet = new Set(colCfg.hidden);
     return colCfg.order.map((k) => COLS.find((c) => c.key === k)).filter((c) => c && !hiddenSet.has(c.key));
-  }, [colCfg]);
+  }, [colCfg, tab]);
+
+  // One sort is shared by both views, so a switch can land on a key the new
+  // view has no column for — the rows really are ordered by it, and nothing on
+  // screen says so. Fall back to the register's own default (newest first)
+  // rather than leaving an order the reader can neither see nor undo. A key
+  // both views carry (№, cell, status, due…) survives the switch untouched.
+  useEffect(() => {
+    const offered = new Set(visibleCols.map((c) => c.sortKey).filter(Boolean));
+    if (!offered.has(sort.key) && sort.key !== "created_at") {
+      setSort({ key: "created_at", dir: "desc" });
+    }
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── option lookups ────────────────────────────────────────────────────────
   // The API ships a bare status integer, so the filter offers the codes the
@@ -387,7 +424,7 @@ export default function Arc() {
   const cellDisplay = (code) => {
     if (code === NO_CELL) return t("arc.cNoCell");
     const o = cellByCode[code];
-    return cellLabel(o?.cell, lang) || code;
+    return cellName(o?.cell, lang, "") || code;
   };
 
   // ── the org chain: shift → brigadir → leader → cell ───────────────────────
@@ -534,7 +571,7 @@ export default function Arc() {
           opts={[
             { value: "", label: t("arc.allCells") },
             ...cellPickOpts.map((o) => {
-              const name = cellLabel(o.cell, lang);
+              const name = cellName(o.cell, lang, "");
               return {
                 value: o.code,
                 title: name ? `${o.code} · ${name}` : o.code,
@@ -688,13 +725,6 @@ export default function Arc() {
   const stats = statsQ.data;
   const statsLoading = statsQ.isLoading || (statsQ.isFetching && !statsQ.data);
 
-  const byCell = byCellQ.data;
-  const byCellRows = byCell ? (byCell.rows?.length || 0) + (byCell.uncoded ? 1 : 0) : 0;
-  const byCellLoading = byCellQ.isLoading || (byCellQ.isFetching && !byCellQ.data);
-  // A cell picked from the grouped view narrows the REGISTER and takes the
-  // reader there — the row's whole point is «show me these tickets».
-  const pickCell = (code) => { setCell(code); setTab("all"); };
-
   // Telegram's WebView swallows target=_blank; openLink hands the URL to the
   // real browser. In a desktop browser the plain <a> is already correct.
   const openExt = (e, url) => {
@@ -738,7 +768,7 @@ export default function Arc() {
       );
     }
     const c = cellMap[r.cell_code];
-    const name = cellLabel(c, lang);
+    const name = cellName(c, lang, "");
     return (
       <span className="inline-flex items-center gap-1.5 min-w-0">
         <CellLink id={c?.id} title={name ? `${r.cell_code} · ${name}` : r.cell_code}>
@@ -753,9 +783,48 @@ export default function Arc() {
     );
   };
 
+  // The cell's owners on THIS platform's org chart — brigadir and leader — both
+  // reached through the code the division names, off the same `cells` map the
+  // cell column reads. Names are DB text, so they ride through the
+  // transliterator like every other name here: the column and the filter that
+  // narrows it spell the same person the same way.
+  //
+  // A ticket can fail to reach an owner three ways — its division names no
+  // cell, it names one the registry has never heard of, or the cell has nobody
+  // assigned. All three render «—», because the CELL column standing right
+  // beside it already says which of the three it is; the tooltip carries the
+  // reason for a reader who wants it rather than repeating it in two columns.
+  const ownerCell = (r, field) => {
+    const name = r.cell_code ? tl(cellMap[r.cell_code]?.[field] || "") : "";
+    if (name) return <span style={{ color: "var(--text-2)" }}>{name}</span>;
+    const why = !r.cell_code ? t("arc.cNoCellHint")
+      : !cellMap[r.cell_code] ? t("arc.cUnknown")
+      : t("arc.ownerNone");
+    return <span style={{ color: "var(--text-4)" }} title={why}>—</span>;
+  };
+
   // Row → cell, keyed by column — hide/reorder needs no markup change of its own.
   const listCell = (key, r) => {
     switch (key) {
+      case "sup":
+        return <td key={key} className="px-3 py-2">{ownerCell(r, "sup")}</td>;
+      case "leader":
+        return <td key={key} className="px-3 py-2">{ownerCell(r, "leader")}</td>;
+      // Closed + how long it took, one sentence. The duration is muted: it
+      // qualifies the stamp rather than competing with it, and an open ticket
+      // shows the bare «—» with no trailing figure to misread as zero hours.
+      case "closed_h":
+        return (
+          <td key={key} className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}
+            title={fmtDateTime(r.closed_at)}>
+            <span className="tabular-nums">{fmtShort(r.closed_at) || "—"}</span>
+            {r.closed_at && r.hours_to_close != null && (
+              <span className="tabular-nums text-[11px]" style={{ color: "var(--text-4)" }}>
+                {" · "}{tpl(t("arc.hoursShort"), { n: fmtHours(r.hours_to_close) })}
+              </span>
+            )}
+          </td>
+        );
       case "num":
         return <td key={key} className="px-3 py-2 font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{r.request_num ?? "—"}</td>;
       case "created":
@@ -854,21 +923,44 @@ export default function Arc() {
             </div>
             <div className="text-xs font-medium" style={{ color: "var(--text-1)" }}>{r.division_name || "—"}</div>
             <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{cellCell(r)}</div>
+            {/* The card answers the tab's own question. On «Yacheykalar
+                bo'yicha» that is who owns the cell and when it closed; on the
+                register it is what kind of job and who is working it. */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-              <Fact label={t("arc.colCategory")}>
-                <span className="inline-flex items-center gap-1 flex-wrap">
-                  {r.category_name || "—"}
-                  {r.category_urgent && <RedBadge icon={Zap}>{t("arc.urgent")}</RedBadge>}
-                </span>
-              </Fact>
-              <Fact label={t("arc.colBrigada")}>{r.brigada_name || "—"}</Fact>
+              {tab === "cells" ? (
+                <>
+                  <Fact label={t("arc.colSup")}>{ownerCell(r, "sup")}</Fact>
+                  <Fact label={t("arc.colLeader")}>{ownerCell(r, "leader")}</Fact>
+                </>
+              ) : (
+                <>
+                  <Fact label={t("arc.colCategory")}>
+                    <span className="inline-flex items-center gap-1 flex-wrap">
+                      {r.category_name || "—"}
+                      {r.category_urgent && <RedBadge icon={Zap}>{t("arc.urgent")}</RedBadge>}
+                    </span>
+                  </Fact>
+                  <Fact label={t("arc.colBrigada")}>{r.brigada_name || "—"}</Fact>
+                </>
+              )}
               <Fact label={t("arc.colDue")}>
                 <span className="inline-flex items-center gap-1 flex-wrap tabular-nums">
                   {fmtShort(r.due) || "—"}
                   {late && <RedBadge icon={AlertTriangle}>{t("arc.late")}</RedBadge>}
                 </span>
               </Fact>
-              <Fact label={t("arc.colCreated")}><span className="tabular-nums">{fmtShort(r.created_at) || "—"}</span></Fact>
+              {tab === "cells" ? (
+                <Fact label={t("arc.colClosed")}>
+                  <span className="tabular-nums">{fmtShort(r.closed_at) || "—"}</span>
+                  {r.closed_at && r.hours_to_close != null && (
+                    <span className="tabular-nums" style={{ color: "var(--text-4)" }}>
+                      {" · "}{tpl(t("arc.hoursShort"), { n: fmtHours(r.hours_to_close) })}
+                    </span>
+                  )}
+                </Fact>
+              ) : (
+                <Fact label={t("arc.colCreated")}><span className="tabular-nums">{fmtShort(r.created_at) || "—"}</span></Fact>
+              )}
             </div>
           </div>
         );
@@ -905,7 +997,7 @@ export default function Arc() {
       return <span style={{ color: "var(--text-4)" }}>{t("arc.cNoCell")}</span>;
     }
     const c = (detailQ.data?.cells || cellMap)[row.cell_code];
-    const name = cellLabel(c, lang);
+    const name = cellName(c, lang, "");
     return (
       <span className="inline-flex items-center gap-1.5 flex-wrap">
         <CellLink id={c?.id}>{name || row.cell_code}</CellLink>
@@ -1211,15 +1303,17 @@ export default function Arc() {
               : kpiTiles.map((k) => <KPICard key={k.label} {...k} />)}
           </div>
 
-          {tab === "cells" ? (
-            <ArcByCell data={byCell} loading={byCellLoading} lang={lang} t={t} tl={tl} onPick={pickCell} />
-          ) : (
+          {/* ONE table for both views. They differ only in which columns are on
+              it — the rows, the filters, the page and the sort are the same
+              register, which is the whole reason the two are tabs and not two
+              pages. The cells view is narrower, so it needs less minimum width
+              before it has to scroll. */}
           <>
           <TableCard
-            icon={ClipboardList}
-            title={t("arc.listTitle")}
+            icon={tab === "cells" ? Boxes : ClipboardList}
+            title={tab === "cells" ? t("arc.tabCells") : t("arc.listTitle")}
             wrap
-            minWidth={1200}
+            minWidth={tab === "cells" ? 1040 : 1200}
             mobile={mobileList}
             mobileCards
             right={
@@ -1258,7 +1352,6 @@ export default function Arc() {
           </TableCard>
           <Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
           </>
-          )}
         </>
       )}
 

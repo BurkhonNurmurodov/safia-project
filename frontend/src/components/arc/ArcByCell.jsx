@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import {
   Boxes, Users, ClipboardList, Hourglass, Siren, CheckCircle2,
-  ShieldCheck, Timer, CalendarClock, HelpCircle, Link2Off,
+  ShieldCheck, Timer, CalendarClock, Link2Off,
 } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import CellLink from "../ui/CellLink";
@@ -207,13 +207,6 @@ export default function ArcByCell({ data, loading, lang, t, tl, onPick }) {
 
   return (
     <>
-      {/* The rule, said out loud. A reader who does not know WHY «Блок Б» is
-          missing from this table cannot tell a gap from a bug. */}
-      <p className="text-[11px] mb-2 inline-flex items-start gap-1.5" style={{ color: "var(--text-3)" }}>
-        <HelpCircle size={12} className="flex-shrink-0 mt-[1px]" style={{ color: "var(--brand-text)" }} />
-        <span>{t("arc.cRule")}</span>
-      </p>
-
       <TableCard
         icon={Boxes}
         title={t("arc.cTitle")}

@@ -67,10 +67,16 @@ def cells_for(db: Session, codes: Iterable[str]) -> dict[str, dict]:
     A code it does not recognise is simply absent from the map; the caller
     keeps the digits and renders them as unregistered rather than as nothing.
     The dict is `cell_lookup`'s compact projection — id, both codes, the
-    workshop name in all four languages and the owning leader — so the page
-    picks the viewer's language itself, as every other cell-naming payload on
-    the platform does."""
-    table = by_verifix(db, with_leader=True)
+    workshop name in all four languages and the cell's OWNERS (brigadir and
+    leader) — so the page picks the viewer's language itself, as every other
+    cell-naming payload on the platform does.
+
+    The two owner names ride here rather than on each ticket because the map is
+    keyed by CODE: a thousand-row page names each unit once instead of once per
+    row, and the register's «Brigadir»/«Lider» columns read the same projection
+    the cell column already reads — one answer to «whose cell is this», never
+    two."""
+    table = by_verifix(db, with_leader=True, with_sup=True)
     out: dict[str, dict] = {}
     for code in codes:
         if not code or code == NO_CELL:

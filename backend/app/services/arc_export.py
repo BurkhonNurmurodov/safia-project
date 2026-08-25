@@ -68,6 +68,8 @@ _DEFAULT_LABELS = {
     "deny_reason": "Deny reason",
     "state": "State",
     "cell": "Cell",
+    "sup": "Brigadir",
+    "leader": "Leader",
 }
 
 # Fallback status words, by the API's own code. The page sends the viewer's
@@ -147,6 +149,12 @@ _COLS: dict[str, tuple[Callable[[dict, dict], Any], str, int]] = {
     # formatter: name where the registry knows the code, the bare digits where
     # it does not, and nothing at all where the division names no cell.
     "cell":        (lambda r, L: r.get("cell_name") or r.get("cell_code"), "text", 26),
+    # The cell's OWNERS on this platform's org chart, reached through that same
+    # code — resolved by the router off the one cells map, never per row here.
+    # Blank where the division names no cell, or names one the registry has
+    # never heard of: an unreachable owner is not an empty one.
+    "sup":         (lambda r, L: r.get("sup_name"), "text", 22),
+    "leader":      (lambda r, L: r.get("leader_name"), "text", 22),
 }
 
 _HEAD_FILL = PatternFill("solid", fgColor="F1F5F9")

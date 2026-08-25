@@ -881,9 +881,15 @@ def export_xlsx(
         rows = _fetch_rows(query, D, body.sort, limit=_EXPORT_MAX_ROWS)
         # The register's cell column is a NAME on screen and must be one in the
         # file too; the row carries only the digits, so resolve them once here.
+        # The cell's two owners ride on that same projection — a ticket whose
+        # division names no cell (or names one the registry does not know)
+        # reaches no unit, and its owner columns stay blank rather than guessing.
         cells = _cells_map(db, rows)
         for r in rows:
-            r["cell_name"] = workshop_name(cells.get(r.get("cell_code")), body.lang)
+            c = cells.get(r.get("cell_code"))
+            r["cell_name"] = workshop_name(c, body.lang)
+            r["sup_name"] = (c or {}).get("sup") or ""
+            r["leader_name"] = (c or {}).get("leader") or ""
         bio = build_arc_workbook(rows, body.columns, body.labels, body.status_labels)
         fname = f"arc_requests_{today}.xlsx"
 
