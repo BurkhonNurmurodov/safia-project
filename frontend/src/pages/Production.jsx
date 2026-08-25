@@ -44,6 +44,10 @@ const fmt = (v, d = 1) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toLocaleString("ru-RU", { maximumFractionDigits: d });
 const pct = (v) => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${(v * 100).toFixed(0)}%`);
 const ddmmyyyy = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; };
+// The page scope's shift filter — the platform runs two shifts and
+// `Manager.shift` holds nothing else, so the control offers the same three
+// answers everywhere rather than a set derived from the loaded rows.
+const SHIFTS = ["all", "1", "2"];
 
 // status colours (theme-agnostic, work on both dark & light)
 const GREEN = "#22c55e", AMBER = "#eab308", RED = "#ef4444";
@@ -872,13 +876,12 @@ export default function Production() {
     () => (!factoryOn || factory == null ? managers : managers.filter((m) => m.factory_id === factory)),
     [managers, factory, factoryOn],
   );
-  // Only shifts that exist in the current plant are offered — a shift option
-  // that empties the list is a control whose only outcome is an empty page.
-  const shiftOpts = useMemo(
-    () => [...new Set(byFactory.map((m) => m.shift).filter((v) => v != null))].sort(),
-    [byFactory],
-  );
-  const shiftPick = shiftOpts.some((v) => String(v) === shiftSel) ? shiftSel : "all";
+  // Two shifts, always — `Manager.shift` is the one shift dimension on the
+  // platform, so the control offers the same two options on every plant and on
+  // every page. Deriving them from whichever brigadirs happen to be loaded made
+  // the filter disappear on a plant that runs one shift, which reads as the
+  // page having lost a control rather than as the scope having one answer.
+  const shiftPick = SHIFTS.includes(shiftSel) ? shiftSel : "all";
   const mgrOpts = useMemo(
     () => (shiftPick === "all" ? byFactory : byFactory.filter((m) => String(m.shift) === shiftPick)),
     [byFactory, shiftPick],
@@ -1349,9 +1352,7 @@ export default function Production() {
 
   const pageSections = !canPickManager ? [] : [
     ...(factorySection ? [factorySection] : []),
-    // Offered only where there is a choice to make: one shift in the plant means
-    // the control can do nothing but narrow to what is already on screen.
-    ...(shiftOpts.length > 1 ? [{
+    {
       key: "shift", icon: Layers, label: t("filter.shift"),
       active: shiftPick !== "all",
       display: shiftLabel || "",
@@ -1361,10 +1362,10 @@ export default function Production() {
           fill
           value={shiftPick}
           onChange={setShiftSel}
-          options={[["all", t("production.shiftAll")], ...shiftOpts.map((v) => [String(v), `${t("filter.shift")} ${v}`])]}
+          options={[["all", t("production.shiftAll")], ...SHIFTS.filter((v) => v !== "all").map((v) => [v, `${t("filter.shift")} ${v}`])]}
         />
       ),
-    }] : []),
+    },
     {
       key: "brigadir", icon: Users, label: t("filter.brigadir"),
       // Always on: the dashboard reads exactly one unit, so this chip is what
