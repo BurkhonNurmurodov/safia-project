@@ -4,7 +4,7 @@ import {
   RefreshCw, CalendarClock, Download, Loader2, ClipboardList, Building2, Users, Tag,
   CircleDot, Layers, Siren, AlertTriangle, FileText, ExternalLink, Bot, Paperclip,
   Phone, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound, PlayCircle,
-  PlugZap, Zap, MessageSquare, History, Smartphone,
+  PlugZap, Zap, MessageSquare, History, Smartphone, Boxes, Link2Off,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -18,6 +18,8 @@ import KPICard from "../components/ui/KPICard";
 import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import TableCard, { Th } from "../components/ui/DataTable";
+import CellLink from "../components/ui/CellLink";
+import ArcByCell, { cellLabel } from "../components/arc/ArcByCell";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonCard } from "../components/ui/Skeleton";
 import api from "../utils/api";
@@ -29,6 +31,10 @@ import { toneFor, statusName, hexA, STATUS_CODES, C_DONE, C_DOING, C_OVERDUE, C_
 
 // ── constants ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 50;
+// The filter value standing for «this division names no cell» — the twin of
+// services/arc_cells.NO_CELL. Every real code is four digits, so a word can
+// never collide with one.
+const NO_CELL = "none";
 const COL_PREF_KEY = "arc.list.cols";
 const TZ = "Asia/Tashkent";
 
@@ -40,6 +46,9 @@ const COLS = [
   { key: "num",         labelKey: "arc.colNum",         icon: Hash,          sortKey: "request_num" },
   { key: "created",     labelKey: "arc.colCreated",     icon: CalendarClock, sortKey: "created_at" },
   { key: "division",    labelKey: "arc.colDivision",    icon: Building2,     sortKey: "division_name" },
+  // The cell the division NAMES — see services/arc_cells.py. It sits beside
+  // the division it is read out of, because that adjacency IS the rule.
+  { key: "cell",        labelKey: "arc.colCell",        icon: Boxes,         sortKey: "cell_code" },
   { key: "category",    labelKey: "arc.colCategory",    icon: Tag,           sortKey: "category_name" },
   { key: "description", labelKey: "arc.colDescription", icon: FileText },
   { key: "author",      labelKey: "arc.colAuthor",      icon: UserRound,     sortKey: "user_name" },
@@ -164,7 +173,7 @@ function Fact({ label, children, full = false }) {
 }
 
 export default function Arc() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -174,12 +183,20 @@ export default function Arc() {
   // No default period. A register answers «what do we have?», and a 30-day
   // window is a filter the reader never chose — it made a full mirror look
   // like a thin one. Both bounds empty = every ticket ever filed.
+  // Which VIEW is on screen. «all» is the ticket register; «cells» reads the
+  // same filtered tickets grouped by the production cell their division names.
+  const [tab, setTab] = usePersistentState("arc_tab", "all");
   const [dateFrom, setDateFrom] = usePersistentState("arc_date_from", "");
   const [dateTo, setDateTo] = usePersistentState("arc_date_to", "");
   const [state, setState] = usePersistentState("arc_state", "all");
   const [statusSel, setStatusSel] = usePersistentState("arc_status", []);
   const [catSel, setCatSel] = usePersistentState("arc_category", []);
   const [division, setDivision] = usePersistentState("arc_division", "");
+  // The cell scope is the four-digit CODE the division name carries — the same
+  // value the «by cells» rows are keyed by, so a row clicked there and the
+  // filter it sets can never mean two different things. NO_CELL ("none") is a
+  // pick like any other: the tickets whose division names no cell.
+  const [cell, setCell] = usePersistentState("arc_cell", "");
   const [brigada, setBrigada] = usePersistentState("arc_brigada", "");
   const [author, setAuthor] = usePersistentState("arc_author", "");
   const [urgent, setUrgent] = usePersistentState("arc_urgent", "all");
@@ -212,13 +229,14 @@ export default function Arc() {
     ...(statusSel.length ? { status: statusSel } : {}),
     ...(catSel.length ? { category: catSel } : {}),
     ...(division ? { division: [division] } : {}),
+    ...(cell ? { cell: [cell] } : {}),
     ...(brigada ? { brigada: [brigada] } : {}),
     ...(author ? { author: [author] } : {}),
     ...(urgent !== "all" ? { urgent } : {}),
     ...(overdue !== "all" ? { overdue } : {}),
     ...(source !== "all" ? { source } : {}),
     q: q.trim() || undefined,
-  }), [dateFrom, dateTo, state, statusSel, catSel, division, brigada, author, urgent, overdue, source, q]);
+  }), [dateFrom, dateTo, state, statusSel, catSel, division, cell, brigada, author, urgent, overdue, source, q]);
   const sortParam = `${sort.key}:${sort.dir}`;
   const listParams = useMemo(
     () => ({ ...filters, page, page_size: PAGE_SIZE, sort: sortParam }),
@@ -234,7 +252,16 @@ export default function Arc() {
   const listQ = useQuery({
     queryKey: ["arc-list", listParams],
     queryFn: () => api.get("/api/arc/list", { params: listParams }).then((r) => r.data),
-    enabled: configured && hasData,
+    enabled: configured && hasData && tab === "all",
+    placeholderData: keepPreviousData,
+  });
+  // The «by cells» view — the same filters, grouped. Fetched only while that
+  // tab is open: it is a full GROUP BY over the register and nobody looking at
+  // the ticket table is waiting on it.
+  const byCellQ = useQuery({
+    queryKey: ["arc-by-cell", filters],
+    queryFn: () => api.get("/api/arc/by-cell", { params: filters }).then((r) => r.data),
+    enabled: configured && hasData && tab === "cells",
     placeholderData: keepPreviousData,
   });
 
@@ -248,6 +275,9 @@ export default function Arc() {
   useEffect(() => {
     if (listQ.isError) toast.error(`${t("arc.loadFailed")}: ${errMsg(listQ.error)}`);
   }, [listQ.isError, listQ.error]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (byCellQ.isError) toast.error(`${t("arc.loadFailed")}: ${errMsg(byCellQ.error)}`);
+  }, [byCellQ.isError, byCellQ.error]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filters changed → back to page 1 of the register.
   const filterSig = JSON.stringify([filters, sortParam]);
@@ -277,6 +307,7 @@ export default function Arc() {
       // A sync just finished — pull fresh numbers and report the outcome.
       qc.invalidateQueries({ queryKey: ["arc-stats"] });
       qc.invalidateQueries({ queryKey: ["arc-list"] });
+      qc.invalidateQueries({ queryKey: ["arc-by-cell"] });
       qc.invalidateQueries({ queryKey: ["arc-meta"] });
       if (sync?.ok === false) toast.error(`${t("arc.syncFailed")}: ${sync?.message || ""}`);
       else toast.success(t("arc.syncDone"));
@@ -334,6 +365,16 @@ export default function Arc() {
   const catById = useMemo(() => Object.fromEntries(catOpts.map((c) => [String(c.id), c])), [catOpts]);
   const divOpts = options.divisions || [];
   const divById = useMemo(() => Object.fromEntries(divOpts.map((d) => [d.id, d])), [divOpts]);
+  // The cells the register actually carries, as {code, count, cell}. A code no
+  // registered cell answers to is offered too — it narrows real tickets — and
+  // «no cell» is the last option rather than an absence.
+  const cellOpts = options.cells || [];
+  const cellByCode = useMemo(() => Object.fromEntries(cellOpts.map((c) => [c.code, c])), [cellOpts]);
+  const cellDisplay = (code) => {
+    if (code === NO_CELL) return t("arc.cNoCell");
+    const o = cellByCode[code];
+    return cellLabel(o?.cell, lang) || code;
+  };
   const brigOpts = options.brigadas || [];
   const brigById = useMemo(() => Object.fromEntries(brigOpts.map((b) => [String(b.id), b])), [brigOpts]);
   const authorOpts = options.authors || [];
@@ -370,6 +411,40 @@ export default function Arc() {
             ...divOpts.map((d) => ({ value: d.id, label: withCount(d.name, d.count), title: d.name }))]}
           value={division}
           onChange={(v) => setDivision(v || "")} />
+      ),
+    },
+    {
+      key: "cell", icon: Boxes, label: t("arc.fCell"), group: grpWho,
+      active: !!cell,
+      display: cell ? cellDisplay(cell) : "",
+      onClear: () => setCell(""),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[
+            { value: "", label: t("arc.allCells") },
+            ...cellOpts.map((o) => {
+              const name = cellLabel(o.cell, lang);
+              return {
+                value: o.code,
+                title: name ? `${o.code} · ${name}` : o.code,
+                label: withCount(
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <span className="truncate">{name || o.code}</span>
+                    {name && <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{o.code}</span>}
+                  </span>,
+                  o.count,
+                ),
+              };
+            }),
+            // Last, and named — the divisions this rule cannot resolve are a
+            // real scope, not a gap in the list.
+            ...(options.no_cell_count
+              ? [{ value: NO_CELL, title: t("arc.cNoCell"),
+                   label: withCount(t("arc.cNoCell"), options.no_cell_count) }]
+              : []),
+          ]}
+          value={cell}
+          onChange={(v) => setCell(v || "")} />
       ),
     },
     {
@@ -468,13 +543,16 @@ export default function Arc() {
     },
   ];
   const clearAll = () => {
-    setDivision(""); setBrigada(""); setAuthor(""); setState("all"); setStatusSel([]);
+    setDivision(""); setCell(""); setBrigada(""); setAuthor(""); setState("all"); setStatusSel([]);
     setCatSel([]); setUrgent("all"); setOverdue("all"); setSource("all");
   };
 
   // ── register ──────────────────────────────────────────────────────────────
   const list = listQ.data;
   const rows = list?.rows || [];
+  // {code → cell} for this page of rows: the payload names each workshop once
+  // instead of once per ticket.
+  const cellMap = list?.cells || {};
   const total = list?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const listLoading = listQ.isLoading || (listQ.isFetching && !listQ.data);
@@ -482,6 +560,13 @@ export default function Arc() {
 
   const stats = statsQ.data;
   const statsLoading = statsQ.isLoading || (statsQ.isFetching && !statsQ.data);
+
+  const byCell = byCellQ.data;
+  const byCellRows = byCell ? (byCell.rows?.length || 0) + (byCell.uncoded ? 1 : 0) : 0;
+  const byCellLoading = byCellQ.isLoading || (byCellQ.isFetching && !byCellQ.data);
+  // A cell picked from the grouped view narrows the REGISTER and takes the
+  // reader there — the row's whole point is «show me these tickets».
+  const pickCell = (code) => { setCell(code); setTab("all"); };
 
   // Telegram's WebView swallows target=_blank; openLink hands the URL to the
   // real browser. In a desktop browser the plain <a> is already correct.
@@ -511,6 +596,36 @@ export default function Arc() {
       : <span title={t("arc.notFetched")} style={{ color: "var(--text-4)" }}>…</span>;
   };
 
+  // The production cell a ticket's division NAMES: the workshop name where the
+  // registry knows the code, the bare digits where it does not, and an explicit
+  // «no cell» where the division name carries none — three different facts that
+  // must never render as the same blank. The name is a CellLink (→ /cells/:id);
+  // it stops propagation, so it opens the CELL while the row opens the ticket.
+  const cellCell = (r) => {
+    if (!r.cell_code) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--text-4)" }}
+          title={t("arc.cNoCellHint")}>
+          <Link2Off size={11} />{t("arc.cNoCell")}
+        </span>
+      );
+    }
+    const c = cellMap[r.cell_code];
+    const name = cellLabel(c, lang);
+    return (
+      <span className="inline-flex items-center gap-1.5 min-w-0">
+        <CellLink id={c?.id} title={name ? `${r.cell_code} · ${name}` : r.cell_code}>
+          {name || r.cell_code}
+        </CellLink>
+        {name && (
+          <span className="tabular-nums text-[11px] flex-shrink-0" style={{ color: "var(--text-4)" }}>
+            {r.cell_code}
+          </span>
+        )}
+      </span>
+    );
+  };
+
   // Row → cell, keyed by column — hide/reorder needs no markup change of its own.
   const listCell = (key, r) => {
     switch (key) {
@@ -520,6 +635,8 @@ export default function Arc() {
         return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={fmtDateTime(r.created_at)}>{fmtShort(r.created_at) || "—"}</td>;
       case "division":
         return <td key={key} className="px-3 py-2" style={{ color: "var(--text-1)" }}>{r.division_name || "—"}</td>;
+      case "cell":
+        return <td key={key} className="px-3 py-2">{cellCell(r)}</td>;
       case "category":
         return (
           <td key={key} className="px-3 py-2">
@@ -609,6 +726,7 @@ export default function Arc() {
               <StatusChip status={r.status} label={stName(r.status)} />
             </div>
             <div className="text-xs font-medium" style={{ color: "var(--text-1)" }}>{r.division_name || "—"}</div>
+            <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{cellCell(r)}</div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
               <Fact label={t("arc.colCategory")}>
                 <span className="inline-flex items-center gap-1 flex-wrap">
@@ -653,6 +771,24 @@ export default function Arc() {
   // because it is the only thing carrying the description and the files.
   const openRow = useMemo(() => rows.find((r) => r.remote_id === openId) || null, [rows, openId]);
   const d = detailQ.data || openRow;
+  // The fetched card carries its own one-entry cells map; before it lands the
+  // page's map already names the row that was clicked.
+  const cellFact = (row) => {
+    if (!row?.cell_code) {
+      return <span style={{ color: "var(--text-4)" }}>{t("arc.cNoCell")}</span>;
+    }
+    const c = (detailQ.data?.cells || cellMap)[row.cell_code];
+    const name = cellLabel(c, lang);
+    return (
+      <span className="inline-flex items-center gap-1.5 flex-wrap">
+        <CellLink id={c?.id}>{name || row.cell_code}</CellLink>
+        {name && <span className="tabular-nums" style={{ color: "var(--text-4)" }}>{row.cell_code}</span>}
+        {!c && (
+          <span className="text-[10px]" style={{ color: "var(--text-4)" }}>· {t("arc.cUnknown")}</span>
+        )}
+      </span>
+    );
+  };
   const [brokenImgs, setBrokenImgs] = useState({});
   useEffect(() => { setBrokenImgs({}); }, [openId]);
 
@@ -669,24 +805,37 @@ export default function Arc() {
 
   // ── export ────────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
+  // The file is whatever is on SCREEN. On «by cells» that is the per-cell
+  // summary, laid out by the backend from the same function the tab reads — an
+  // Excel of the ticket rows there would be a file of the other tab.
+  const cellExportLabels = () => ({
+    cell: t("arc.cCell"), code: t("arc.cCode"), leader: t("arc.cLeader"),
+    divisions: t("arc.cDivisions"), total: t("arc.cTotal"), open: t("arc.cOpen"),
+    overdue: t("arc.cOverdue"), done: t("arc.cDone"), cancelled: t("arc.stateCancelled"),
+    on_time: t("arc.cOnTime"), closed_with_due: t("arc.cOnTimeHint"),
+    median: t("arc.cMedian"), last: t("arc.cLast"), _unknown: t("arc.cNoCell"),
+  });
   const runExport = async () => {
     setExporting(true);
     try {
       const via = await exportXlsx("/api/arc/export.xlsx", {
         body: {
-          ...filters, sort: sortParam,
+          ...filters, sort: sortParam, view: tab === "cells" ? "cells" : "list",
+          // The one value the backend has to pick a spelling of: a workshop
+          // name exists in four languages and the file carries one.
+          lang,
           columns: visibleCols.map((c) => c.key),
           // Headers in the viewer's language — the backend's own labels are an
           // English fallback only. `_bot` / `_app` are the two words the source
           // column needs; the API ships a flag, not a name.
-          labels: {
+          labels: tab === "cells" ? cellExportLabels() : {
             ...Object.fromEntries(visibleCols.map((c) => [c.key, t(c.labelKey)])),
             _bot: t("arc.srcBot"), _app: t("arc.srcApp"),
           },
           // Same reason: a status is an integer upstream.
           status_labels: Object.fromEntries(STATUS_CODES.map((c) => [String(c), t(`arc.st.${c}`)])),
         },
-        fallbackName: `arc_requests_${today}.xlsx`,
+        fallbackName: tab === "cells" ? `arc_cells_${today}.xlsx` : `arc_requests_${today}.xlsx`,
       });
       toast.success(via === "download" ? t("arc.exportDownloaded") : t("arc.exportSent"));
     } catch (e) {
@@ -877,6 +1026,30 @@ export default function Arc() {
         </div>
       ) : (
         <>
+          {/* The view switch. Both views read the SAME filtered tickets — one
+              as a ticket register, one grouped by the production cell their
+              division names — so the tabs sit above the filter row rather than
+              inside it. */}
+          <div className="mb-3">
+            <SegmentedToggle
+              asTabs
+              ariaLabel={t("arc.title")}
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: "all", label: t("arc.tabAll") },
+                {
+                  value: "cells",
+                  label: (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Boxes size={12} />{t("arc.tabCells")}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          </div>
+
           {/* ONE filter row: period inline, scopes + record filters in the
               panel, text search inline, export + column picker on the right. */}
           <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -886,21 +1059,22 @@ export default function Arc() {
             <div className="flex-1" />
             <SearchInput value={q} onChange={setQ} placeholder={t("arc.search")} className="w-full sm:w-72" />
             <Button size="lg" variant="secondary" loading={exporting}
-              disabled={listLoading || total === 0}
+              disabled={tab === "cells" ? (byCellQ.isLoading || !byCellRows) : (listLoading || total === 0)}
               icon={!exporting ? <Download size={14} /> : null}
               onClick={runExport}>
               <span className="hidden sm:inline">{t("arc.export")}</span>
             </Button>
-            {/* Hidden below `sm:` — that is where TableCard swaps the table for
-                the stacked cards, and a picker over a table nobody can see is a
-                control with no effect. */}
-            <ColumnsPicker
+            {/* The picker describes the REGISTER's columns, so it is offered on
+                that tab only. Hidden below `sm:` too — that is where TableCard
+                swaps the table for stacked cards, and a picker over a table
+                nobody can see is a control with no effect. */}
+            {tab === "all" && <ColumnsPicker
               className="ml-auto hidden sm:block"
               columns={COLS.map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
               order={colCfg.order}
               hidden={colCfg.hidden}
               onChange={onColsChange}
-            />
+            />}
           </div>
 
           {/* ── KPI strip — the SAME filtered set as the table ── */}
@@ -910,6 +1084,10 @@ export default function Arc() {
               : kpiTiles.map((k) => <KPICard key={k.label} {...k} />)}
           </div>
 
+          {tab === "cells" ? (
+            <ArcByCell data={byCell} loading={byCellLoading} lang={lang} t={t} onPick={pickCell} />
+          ) : (
+          <>
           <TableCard
             icon={ClipboardList}
             title={t("arc.listTitle")}
@@ -952,6 +1130,8 @@ export default function Arc() {
             </tbody>
           </TableCard>
           <Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
+          </>
+          )}
         </>
       )}
 
@@ -999,6 +1179,9 @@ export default function Arc() {
                     : "—"}
                 </Fact>
                 <Fact label={t("arc.dDivision")}>{d.division_name || "—"}</Fact>
+                {/* Which production cell that division names, read off the same
+                    rule the register column and the «by cells» tab use. */}
+                <Fact label={t("arc.dCell")}>{cellFact(d)}</Fact>
                 <Fact label={t("arc.dManager")}>{d.manager_name || "—"}</Fact>
                 <Fact label={t("arc.dBrigada")}>{d.brigada_name || "—"}</Fact>
                 <Fact label={t("arc.dCategory")}>

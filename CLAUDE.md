@@ -1287,6 +1287,40 @@ back on the first walk.
 - Attachments are relative paths (`files/….jpg`) resolved by
   `arc_client.file_url` against the API host; they serve **unauthenticated**, so
   the detail modal renders images inline and falls back to a link on error.
+- **A division name ending in FOUR DIGITS names a production cell by its
+  Verifix code** («Большая мойка 1 смена 0028» → cell 0028). That trailing
+  number is the ONLY link between IT's register and our cell list — the API
+  ships no cell id and no work centre — and `services/arc_cells.py` is THE
+  definition of it, in two spellings that must stay one rule: `cell_code` for a
+  name in memory, `code_expr()` as the SQL that filters, groups and selects.
+  **Exactly four digits, and the group must start where the match starts**: a
+  name ending «73215» names NO cell, because taking its last four digits would
+  invent one. Resolving a code to a cell stays `cell_lookup.by_verifix`
+  (zero-padded and zero-stripped keys, so «0028» and «28» are one cell).
+  - The code rides every row as `cell_code` (one `_derived()` entry, so the
+    register column, the `cell` filter, the sort and the export all read the
+    same expression), and the payload carries a `cells` map keyed by code —
+    each workshop name once per page, not once per ticket, with all four
+    languages so the page picks the viewer's.
+  - **Two facts the page must never render as one blank**: a code the registry
+    has never heard of (kept, shown, marked «not in the registry» — the ticket
+    register is IT's and the cell list is ours, and the two are allowed to
+    disagree in public) and a division that carries no code at all (its own
+    filter value `NO_CELL = "none"`, its own pinned row on the by-cell tab, its
+    own row in the export). Folding either away makes a partial answer read as
+    a complete one.
+- **The page is TWO tabs** (`SegmentedToggle asTabs`, above the filter row,
+  because both read the SAME filtered tickets): «Barchasi» is the ticket
+  register, «Yacheykalar bo'yicha» is `components/arc/ArcByCell.jsx` over
+  `GET /api/arc/by-cell`. One row per code, counted by `_by_cell()` — the same
+  expressions the KPI strip uses, so a cell's «open» and the strip's «open» can
+  only ever be the same count over the same rows. The cell NAME is a `CellLink`
+  (→ `/cells/:id`) and the ROW opens the register filtered to that cell;
+  CellLink stops propagation, so the two destinations never fight. Sorting is
+  client-side (a hundred-odd rows). The Export button follows the tab —
+  `view: "cells"` builds the per-cell sheet through the same `_by_cell()`, so
+  the file and the screen cannot hold two different numbers — and the
+  ColumnsPicker is offered on the register tab only.
 - **«Инвентарь Фабрика» is NOT mirrored.** The same key opens
   `/inventory/factory/requests` (different status set, `request_status` takes
   several values, and `fillial_id` matches the PARENT branch there, not the
