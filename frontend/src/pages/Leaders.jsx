@@ -231,6 +231,8 @@ const TXT = {
     tipLowSup: "Reyting bo'yicha eng past brigadir",
     tipLowLeader: "Reyting bo'yicha eng past lider",
     searchPh: "Lider qidirish…", bandAll: "Barchasi", noMatch: "Filtrlarga mos hisobot yo'q",
+    noMatchHint: "Tanlangan davr yoki filtrlar {n} ta hisobotni yashiryapti.",
+    resetFilters: "Davr va filtrlarni tozalash",
     refresh: "Yangilash", refreshing: "Yangilanmoqda…", refreshed: "Yangilandi",
     lastSynced: "Oxirgi yangilanish", never: "hech qachon",
     photoFailed: "Rasm yuklanmadi", retry: "Qayta urinish",
@@ -395,6 +397,8 @@ const TXT = {
     tipLowSup: "Рейтинг бўйича энг паст бригадир",
     tipLowLeader: "Рейтинг бўйича энг паст лидер",
     searchPh: "Лидер қидириш…", bandAll: "Барчаси", noMatch: "Филтрларга мос ҳисобот йўқ",
+    noMatchHint: "Танланган давр ёки филтрлар {n} та ҳисоботни яширяпти.",
+    resetFilters: "Давр ва филтрларни тозалаш",
     refresh: "Янгилаш", refreshing: "Янгиланмоқда…", refreshed: "Янгиланди",
     lastSynced: "Охирги янгиланиш", never: "ҳеч қачон",
     photoFailed: "Расм юкланмади", retry: "Қайта уриниш",
@@ -559,6 +563,8 @@ const TXT = {
     tipLowSup: "Бригадир с наименьшим рейтингом",
     tipLowLeader: "Лидер с наименьшим рейтингом",
     searchPh: "Поиск лидера…", bandAll: "Все", noMatch: "Нет отчётов под фильтры",
+    noMatchHint: "Выбранный период или фильтры скрывают отчётов: {n}.",
+    resetFilters: "Сбросить период и фильтры",
     refresh: "Обновить", refreshing: "Обновление…", refreshed: "Обновлено",
     lastSynced: "Обновлено", never: "никогда",
     photoFailed: "Не удалось загрузить фото", retry: "Повторить",
@@ -723,6 +729,8 @@ const TXT = {
     tipLowSup: "Supervisor with the lowest rating",
     tipLowLeader: "Leader with the lowest rating",
     searchPh: "Search leader…", bandAll: "All", noMatch: "No submissions match the filters",
+    noMatchHint: "The period or filters are hiding {n} submission(s).",
+    resetFilters: "Clear period and filters",
     refresh: "Refresh", refreshing: "Refreshing…", refreshed: "Refreshed",
     lastSynced: "Last updated", never: "never",
     photoFailed: "Failed to load image", retry: "Retry",
@@ -1857,6 +1865,21 @@ export default function Leaders() {
   const [fLeader, setFLeader] = usePersistentState(`${prefix}_leader`, "All");
   // Verification state filter: all | rejected | disputed | checking | clean.
   const [fVerify, setFVerify] = usePersistentState(`${prefix}_verify`, "all");
+
+  // A filter whose CONTROL this viewer never sees must not filter their page.
+  // `usePersistentState` writes plain, un-namespaced localStorage keys
+  // (`leaders_supervisor`, `leaders_leader`, …), so every session sharing this
+  // browser — a Telegram Desktop that has opened the mini app under more than
+  // one account, a shared machine, the same person's admin and leader logins —
+  // reads the SAME values. A leader gets no FilterPanel at all and a
+  // supervisor gets no supervisor picker, so a value left behind by another
+  // session silently emptied their page with no control on screen to clear it
+  // and no hint that anything was narrowing it. The stored values are left
+  // alone rather than reset: they belong to whoever CAN see the controls.
+  const effShift = isLeader ? null : fShift;
+  const effSup = (isLeader || isSupervisor) ? "All" : fSup;
+  const effLeader = isLeader ? "All" : fLeader;
+  const effVerify = isLeader ? "all" : fVerify;
   const [standMode, setStandMode] = usePersistentState(`${prefix}_stand_mode`, "leader");
   const [standDir, setStandDir] = usePersistentState(`${prefix}_stand_dir`, "desc");
   const [standMetric, setStandMetric] = usePersistentState(`${prefix}_stand_metric`, "rating"); // rating | consist
@@ -2169,30 +2192,34 @@ export default function Leaders() {
   }, [rows]);
   const supervisors = useMemo(
     () => Object.keys(supLeaderMap)
-      .filter((s) => s !== "All" && (fShift == null || supShift[s] === fShift))
+      .filter((s) => s !== "All" && (effShift == null || supShift[s] === effShift))
       .sort(),
-    [supLeaderMap, supShift, fShift]);
+    [supLeaderMap, supShift, effShift]);
   // Leader options track the active supervisor AND shift so the picker never
   // offers a leader whose rows aren't in the current scope.
   const leaderOptions = useMemo(() => {
     const set = new Set();
     for (const r of rows) {
       if (!r.leader || r.leader === "N/A") continue;
-      if (fShift != null && r.shift !== fShift) continue;
-      if (fSup !== "All" && r.supervisor !== fSup) continue;
+      if (effShift != null && r.shift !== effShift) continue;
+      if (effSup !== "All" && r.supervisor !== effSup) continue;
       set.add(r.leader);
     }
     return [...set].sort();
-  }, [rows, fShift, fSup]);
+  }, [rows, effShift, effSup]);
 
   // date-period bounds — plain ISO-string comparison (rows carry "YYYY-MM-DD")
   const filtered = useMemo(() => rows.filter((r) => {
     const d = String(r.date).slice(0, 10);
     return (!startDate || d >= startDate) && (!endDate || d <= endDate)
-      && (fShift == null || r.shift === fShift)
-      && (fSup === "All" || r.supervisor === fSup)
-      && (fLeader === "All" || r.leader === fLeader);
-  }), [rows, startDate, endDate, fShift, fSup, fLeader]);
+      && (effShift == null || r.shift === effShift)
+      && (effSup === "All" || r.supervisor === effSup)
+      && (effLeader === "All" || r.leader === effLeader);
+  }), [rows, startDate, endDate, effShift, effSup, effLeader]);
+  // Rows the server gave this viewer that the FILTERS are hiding — the empty
+  // state has to tell those two situations apart, or "no data" reads as "the
+  // platform has nothing of yours" when it means "you narrowed it away".
+  const hiddenByFilters = rows.length - filtered.length;
 
   // The window EVERY number on this page is scored over — exactly the picked
   // period, every calendar day in it. Nothing is inferred from where the data
@@ -2240,10 +2267,10 @@ export default function Leaders() {
   const trendRows = useMemo(() => rows.filter((r) => {
     const d = String(r.date).slice(0, 10);
     return (!trendFrom || d >= trendFrom) && (!endDate || d <= endDate)
-      && (fShift == null || r.shift === fShift)
-      && (fSup === "All" || r.supervisor === fSup)
-      && (fLeader === "All" || r.leader === fLeader);
-  }), [rows, trendFrom, endDate, fShift, fSup, fLeader]);
+      && (effShift == null || r.shift === effShift)
+      && (effSup === "All" || r.supervisor === effSup)
+      && (effLeader === "All" || r.leader === effLeader);
+  }), [rows, trendFrom, endDate, effShift, effSup, effLeader]);
 
   const hasData = filtered.length > 0;
   // Anything in flight that can still put rows on the page counts as loading —
@@ -2453,9 +2480,9 @@ export default function Leaders() {
     const lo = prevFrom < rollFrom ? prevFrom : rollFrom;
     const prevRows = [], rollRows = [];
     for (const r of rows) {
-      if ((fShift != null && r.shift !== fShift)
-        || (fSup !== "All" && r.supervisor !== fSup)
-        || (fLeader !== "All" && r.leader !== fLeader)) continue;
+      if ((effShift != null && r.shift !== effShift)
+        || (effSup !== "All" && r.supervisor !== effSup)
+        || (effLeader !== "All" && r.leader !== effLeader)) continue;
       const d = rowDate(r);
       if (d < lo || d > winTo) continue;
       if (d >= prevFrom && d <= prevTo) prevRows.push(r);
@@ -2518,7 +2545,7 @@ export default function Leaders() {
       for (const [name, vals] of series) sparks.set(name, vals);
     }
     return { prev, prevSeen, sparks };
-  }, [rows, scoreWin, dataMax, effStandMode, standMetric, standings, fShift, fSup, fLeader]);
+  }, [rows, scoreWin, dataMax, effStandMode, standMetric, standings, effShift, effSup, effLeader]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
   // which drops the three who need help into the card row (see StandCard).
@@ -2569,7 +2596,7 @@ export default function Leaders() {
   useEffect(() => {
     if (!pagerResetMounted.current) { pagerResetMounted.current = true; return; }
     setStandPage(1); setHmPage(1);
-  }, [standMetric, standDir, effStandMode, standSearch, startDate, endDate, fShift, fSup, fLeader]);
+  }, [standMetric, standDir, effStandMode, standSearch, startDate, endDate, effShift, effSup, effLeader]);
   // Tabs and sortable headers drive the same pair of knobs — re-picking the
   // column that is already active flips the direction, as a table should.
   const standSort = { key: standMetric, dir: standDir };
@@ -2618,9 +2645,9 @@ export default function Leaders() {
     // would be worse than no filter at all. «clean» deliberately means
     // "checked and nothing found", not "no marks": a report verification never
     // touched has not passed anything.
-    if (fVerify !== "all") arr = arr.filter((r) => {
+    if (effVerify !== "all") arr = arr.filter((r) => {
       const st = r.rejected ? null : reportState(r);
-      return fVerify === "clean" ? st?.key === "verified" : st?.key === fVerify;
+      return effVerify === "clean" ? st?.key === "verified" : st?.key === effVerify;
     });
     const dir = tSort.dir === "asc" ? 1 : -1;
     arr.sort((a, b) => {
@@ -2643,7 +2670,7 @@ export default function Leaders() {
       return (a.completion - b.completion) * dir;          // score
     });
     return arr;
-  }, [filtered, tSearch, tBand, fVerify, tSort, tl]);
+  }, [filtered, tSearch, tBand, effVerify, tSort, tl]);
 
   // What the rows ON SCREEN contain — the register's summary strip.
   //
@@ -2790,10 +2817,10 @@ export default function Leaders() {
   const scope = useMemo(() => ({
     from: startDate || "",
     to: endDate || "",
-    shift: fShift,                                   // null | 1 | 2
-    supervisor: fSup === "All" ? null : fSup,
-    leader: fLeader === "All" ? null : fLeader,
-  }), [startDate, endDate, fShift, fSup, fLeader]);
+    shift: effShift,                                 // null | 1 | 2
+    supervisor: effSup === "All" ? null : effSup,
+    leader: effLeader === "All" ? null : effLeader,
+  }), [startDate, endDate, effShift, effSup, effLeader]);
 
   // Handed to every scoped list, so the control that hid a row is always one
   // tap from the row it hid (see ScopeNotice). Both date edges go OPEN rather
@@ -3111,9 +3138,27 @@ export default function Leaders() {
           </div>
         </div>
       )}
+      {/* Two different emptinesses, and they must never wear the same words:
+          the server had nothing for this viewer, or it had rows and the period
+          / filters hid every one of them. The second says so and hands back
+          the control that caused it — a leader has no filter panel at all, so
+          without this there is nothing on screen to undo. */}
       {!showLoading && !isError && !hasData && (
         <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <EmptyState title={T.noData} message={null} showUploadLink={false} />
+          <EmptyState
+            title={hiddenByFilters > 0 ? T.noMatch : T.noData}
+            message={hiddenByFilters > 0
+              ? T.noMatchHint.replace("{n}", hiddenByFilters)
+              : null}
+            showUploadLink={false}
+            action={hiddenByFilters > 0 ? (
+              <Button size="md" variant="secondary" onClick={() => {
+                setStartDate(isoShift(todayISO(), -6));
+                setEndDate(todayISO());
+                setFShift(null); setFSup("All"); setFLeader("All"); setFVerify("all");
+              }}>{T.resetFilters}</Button>
+            ) : null}
+          />
         </div>
       )}
 
