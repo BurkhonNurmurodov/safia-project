@@ -5,6 +5,7 @@ import {
   CircleDot, Layers, Siren, AlertTriangle, FileText, ExternalLink, Bot, Paperclip,
   Phone, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound, PlayCircle,
   PlugZap, Zap, MessageSquare, History, Smartphone, Boxes, Link2Off,
+  Clock, Wrench, UserCog,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -26,6 +27,7 @@ import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
+import { useTranslit } from "../utils/transliterate";
 import { inTelegram } from "../utils/session";
 import { toneFor, statusName, hexA, STATUS_CODES, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatus";
 
@@ -174,6 +176,7 @@ function Fact({ label, children, full = false }) {
 
 export default function Arc() {
   const { t, lang } = useLang();
+  const tl = useTranslit();
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -197,6 +200,13 @@ export default function Arc() {
   // filter it sets can never mean two different things. NO_CELL ("none") is a
   // pick like any other: the tickets whose division names no cell.
   const [cell, setCell] = usePersistentState("arc_cell", "");
+  // The org chain this platform reads the register by — shift → brigadir →
+  // leader — carried onto IT's tickets by the cell their division names, and
+  // narrowed server-side into that same set of codes. One pick per level, like
+  // every other org chain on the platform.
+  const [shift, setShift] = usePersistentState("arc_shift", "");
+  const [sup, setSup] = usePersistentState("arc_sup", "");
+  const [leader, setLeader] = usePersistentState("arc_leader", "");
   const [brigada, setBrigada] = usePersistentState("arc_brigada", "");
   const [author, setAuthor] = usePersistentState("arc_author", "");
   const [urgent, setUrgent] = usePersistentState("arc_urgent", "all");
@@ -230,13 +240,17 @@ export default function Arc() {
     ...(catSel.length ? { category: catSel } : {}),
     ...(division ? { division: [division] } : {}),
     ...(cell ? { cell: [cell] } : {}),
+    ...(shift ? { shift: [shift] } : {}),
+    ...(sup ? { manager: [sup] } : {}),
+    ...(leader ? { leader: [leader] } : {}),
     ...(brigada ? { brigada: [brigada] } : {}),
     ...(author ? { author: [author] } : {}),
     ...(urgent !== "all" ? { urgent } : {}),
     ...(overdue !== "all" ? { overdue } : {}),
     ...(source !== "all" ? { source } : {}),
     q: q.trim() || undefined,
-  }), [dateFrom, dateTo, state, statusSel, catSel, division, cell, brigada, author, urgent, overdue, source, q]);
+  }), [dateFrom, dateTo, state, statusSel, catSel, division, cell, shift, sup, leader,
+       brigada, author, urgent, overdue, source, q]);
   const sortParam = `${sort.key}:${sort.dir}`;
   const listParams = useMemo(
     () => ({ ...filters, page, page_size: PAGE_SIZE, sort: sortParam }),
@@ -375,6 +389,48 @@ export default function Arc() {
     const o = cellByCode[code];
     return cellLabel(o?.cell, lang) || code;
   };
+
+  // ── the org chain: shift → brigadir → leader → cell ───────────────────────
+  // Each level lists only what the levels ABOVE it leave, and says so — a list
+  // shortened by a parent must never read as a dimension with nothing in it.
+  // The lists come off the register's own cells (the backend counts them in
+  // TICKETS), so every name offered is a narrowing with rows behind it.
+  const org = options.org || {};
+  const supAll = org.managers || [];
+  const leadAll = org.leaders || [];
+  const optsReady = !!meta?.options;
+  const supOpts = useMemo(
+    () => supAll.filter((m) => !shift || String(m.shift) === shift),
+    [supAll, shift]);
+  const leadOpts = useMemo(
+    () => leadAll.filter((l) => (!shift || String(l.shift) === shift)
+      && (!sup || String(l.manager_id) === sup)),
+    [leadAll, shift, sup]);
+  const orgActive = !!(shift || sup || leader);
+  const cellPickOpts = useMemo(
+    () => cellOpts.filter((o) => (!shift || String(o.sh) === shift)
+      && (!sup || String(o.mgr) === sup)
+      && (!leader || String(o.lead) === leader)),
+    [cellOpts, shift, sup, leader]);
+  const supById = useMemo(() => Object.fromEntries(supAll.map((m) => [String(m.id), m])), [supAll]);
+  const leadById = useMemo(() => Object.fromEntries(leadAll.map((l) => [String(l.id), l])), [leadAll]);
+
+  // A pick the shortened list below no longer offers is DROPPED: a control
+  // naming a value the page cannot show is worse than a reset. Guarded on the
+  // options actually having arrived — before /meta answers, every list is
+  // empty and clearing on that would wipe the reader's saved scope.
+  useEffect(() => {
+    if (optsReady && sup && !supOpts.some((m) => String(m.id) === sup)) setSup("");
+  }, [optsReady, supOpts]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (optsReady && leader && !leadOpts.some((l) => String(l.id) === leader)) setLeader("");
+  }, [optsReady, leadOpts]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!optsReady || !cell) return;
+    // «No cell» is a division this platform's org chart cannot reach at all, so
+    // it cannot survive an org pick.
+    if (cell === NO_CELL ? orgActive : !cellPickOpts.some((o) => o.code === cell)) setCell("");
+  }, [optsReady, cellPickOpts, orgActive]); // eslint-disable-line react-hooks/exhaustive-deps
   const brigOpts = options.brigadas || [];
   const brigById = useMemo(() => Object.fromEntries(brigOpts.map((b) => [String(b.id), b])), [brigOpts]);
   const authorOpts = options.authors || [];
@@ -399,18 +455,64 @@ export default function Arc() {
     </span>
   );
 
+  // A list a level above it narrowed says so above itself (`note`), naming only
+  // the NEAREST narrowing level — that is the control the reader has to touch
+  // to get a missing name back. A level narrowed to nothing offers the way out
+  // (`empty`) instead of an empty box.
+  const shiftLabel = shift ? `${t("arc.shift")} ${shift}` : null;
+  const supLabel = sup ? tl(supById[sup]?.name || `#${sup}`) : null;
+  const leadLabel = leader ? tl(leadById[leader]?.name || `#${leader}`) : null;
+  const chainNote = (parents, n) => {
+    const p = parents.filter(Boolean).pop();
+    return p ? `${t("arc.narrowedBy").replace("{x}", p)} · ${n}` : null;
+  };
+  const widenTo = (label, onClick) => (
+    <div className="text-center py-1">
+      <p className="text-xs mb-2" style={{ color: "var(--text-3)" }}>{t("arc.noneInScope")}</p>
+      <Button size="sm" variant="secondary" onClick={onClick}>{label}</Button>
+    </div>
+  );
+
   const sections = [
     {
-      key: "division", icon: Building2, label: t("arc.fDivision"), group: grpWho,
-      active: !!division,
-      display: division ? (divById[division]?.name || division) : "",
-      onClear: () => setDivision(""),
+      key: "shift", icon: Clock, label: t("arc.fShift"), group: grpWho,
+      active: !!shift,
+      display: shiftLabel || "",
+      onClear: () => setShift(""),
+      render: () => (
+        <SegmentedToggle fill value={shift || "all"} onChange={(v) => setShift(v === "all" ? "" : v)}
+          options={[["all", t("arc.shiftAll")], ["1", `${t("arc.shift")} 1`], ["2", `${t("arc.shift")} 2`]]} />
+      ),
+    },
+    {
+      key: "sup", icon: Wrench, label: t("arc.fSup"), group: grpWho,
+      active: !!sup,
+      display: supLabel || "",
+      onClear: () => setSup(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
-          opts={[{ value: "", label: t("arc.allDivisions") },
-            ...divOpts.map((d) => ({ value: d.id, label: withCount(d.name, d.count), title: d.name }))]}
-          value={division}
-          onChange={(v) => setDivision(v || "")} />
+          note={chainNote([shiftLabel], supOpts.length)}
+          empty={shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
+          opts={[{ value: "", label: t("arc.allSups") },
+            ...supOpts.map((m) => ({ value: String(m.id), label: withCount(tl(m.name), m.count), title: tl(m.name) }))]}
+          value={sup}
+          onChange={(v) => setSup(v || "")} />
+      ),
+    },
+    {
+      key: "leader", icon: UserCog, label: t("arc.fLeader"), group: grpWho,
+      active: !!leader,
+      display: leadLabel || "",
+      onClear: () => setLeader(""),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          note={chainNote([shiftLabel, supLabel], leadOpts.length)}
+          empty={supLabel ? widenTo(t("arc.allSups"), () => setSup(""))
+            : shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
+          opts={[{ value: "", label: t("arc.allLeaders") },
+            ...leadOpts.map((l) => ({ value: String(l.id), label: withCount(tl(l.name), l.count), title: tl(l.name) }))]}
+          value={leader}
+          onChange={(v) => setLeader(v || "")} />
       ),
     },
     {
@@ -420,9 +522,13 @@ export default function Arc() {
       onClear: () => setCell(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
+          note={chainNote([shiftLabel, supLabel, leadLabel], cellPickOpts.length)}
+          empty={leadLabel ? widenTo(t("arc.allLeaders"), () => setLeader(""))
+            : supLabel ? widenTo(t("arc.allSups"), () => setSup(""))
+            : shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
           opts={[
             { value: "", label: t("arc.allCells") },
-            ...cellOpts.map((o) => {
+            ...cellPickOpts.map((o) => {
               const name = cellLabel(o.cell, lang);
               return {
                 value: o.code,
@@ -437,14 +543,29 @@ export default function Arc() {
               };
             }),
             // Last, and named — the divisions this rule cannot resolve are a
-            // real scope, not a gap in the list.
-            ...(options.no_cell_count
+            // real scope, not a gap in the list. They belong to no unit, so an
+            // org pick above takes them off the list rather than offering a
+            // scope that can only ever be empty.
+            ...(options.no_cell_count && !orgActive
               ? [{ value: NO_CELL, title: t("arc.cNoCell"),
                    label: withCount(t("arc.cNoCell"), options.no_cell_count) }]
               : []),
           ]}
           value={cell}
           onChange={(v) => setCell(v || "")} />
+      ),
+    },
+    {
+      key: "division", icon: Building2, label: t("arc.fDivision"), group: grpWho,
+      active: !!division,
+      display: division ? (divById[division]?.name || division) : "",
+      onClear: () => setDivision(""),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[{ value: "", label: t("arc.allDivisions") },
+            ...divOpts.map((d) => ({ value: d.id, label: withCount(d.name, d.count), title: d.name }))]}
+          value={division}
+          onChange={(v) => setDivision(v || "")} />
       ),
     },
     {
@@ -543,6 +664,7 @@ export default function Arc() {
     },
   ];
   const clearAll = () => {
+    setShift(""); setSup(""); setLeader("");
     setDivision(""); setCell(""); setBrigada(""); setAuthor(""); setState("all"); setStatusSel([]);
     setCatSel([]); setUrgent("all"); setOverdue("all"); setSource("all");
   };
@@ -1085,7 +1207,7 @@ export default function Arc() {
           </div>
 
           {tab === "cells" ? (
-            <ArcByCell data={byCell} loading={byCellLoading} lang={lang} t={t} onPick={pickCell} />
+            <ArcByCell data={byCell} loading={byCellLoading} lang={lang} t={t} tl={tl} onPick={pickCell} />
           ) : (
           <>
           <TableCard

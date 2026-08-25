@@ -30,6 +30,12 @@ register and our cell registry, so it rides every row as ``cell_code``, filters
 like any other scope, and aggregates into the page's «by cells» view — all off
 the one expression, never re-read per call site.
 
+That link is also what carries the org chain — shift → brigadir → leader — onto
+a register that knows nothing about this platform's org chart: each level
+narrows to the CELLS it owns and meets the tickets at the same ``cell_code``
+expression (``arc_cells.org_codes``), so a scope the filter panel offers and a
+scope the query applies can never be two different things.
+
 Rows the API stopped returning (``missing_since`` set by a completed full
 walk) are hidden unless ``include_missing`` is asked for — visible on request,
 never deleted, never counted by default.
@@ -42,8 +48,8 @@ from typing import Any, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import (DateTime, Float, Text, and_, case, cast, func, not_,
-                        or_, text, type_coerce)
+from sqlalchemy import (DateTime, Float, Text, and_, case, cast, false, func,
+                        not_, or_, text, type_coerce)
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -156,6 +162,9 @@ def _filters(
     category: list[str] = Query(default=[]),
     division: list[str] = Query(default=[]),
     cell: list[str] = Query(default=[]),
+    shift: list[str] = Query(default=[]),
+    manager: list[str] = Query(default=[]),
+    leader: list[str] = Query(default=[]),
     brigada: list[str] = Query(default=[]),
     author: list[str] = Query(default=[]),
     urgent: str = Query("all"),
@@ -167,6 +176,7 @@ def _filters(
 ) -> dict:
     return {"date_from": date_from, "date_to": date_to, "status": status,
             "category": category, "division": division, "cell": cell,
+            "shift": shift, "manager": manager, "leader": leader,
             "brigada": brigada, "author": author, "urgent": urgent,
             "overdue": overdue, "source": source, "state": state, "q": q,
             "include_missing": include_missing}
@@ -192,7 +202,7 @@ def _tri(value: str, expr) -> Optional[Any]:
     return None
 
 
-def _apply_filters(query, f: dict, D: dict):
+def _apply_filters(query, f: dict, D: dict, db: Session):
     """The one place the filter set becomes WHERE clauses; list, stats and
     export all go through it."""
     R = ArcRequest
@@ -226,6 +236,17 @@ def _apply_filters(query, f: dict, D: dict):
         if arc_cells.NO_CELL in picked:
             conds.append(code.is_(None))
         query = query.filter(or_(*conds))
+    # The org chain — shift → brigadir → leader — reaches a ticket only through
+    # the cell its division names, so it narrows to a SET OF CODES and joins
+    # the register at exactly the same expression the cell pick uses. An empty
+    # set is a real answer («no cell in this scope»): it must show an empty
+    # register, never the whole plant, and a ticket whose division names no
+    # cell belongs to no unit, so it is out of every org scope by construction.
+    shifts, mgrs, leads = (_ints(f.get("shift") or []), _ints(f.get("manager") or []),
+                           _ints(f.get("leader") or []))
+    if shifts or mgrs or leads:
+        codes = arc_cells.org_codes(db, shifts, mgrs, leads)
+        query = query.filter(D["cell_code"].in_(sorted(codes))) if codes else query.filter(false())
     cond = _tri(f.get("urgent") or "all", R.category_urgent)
     if cond is not None:
         query = query.filter(cond)
@@ -353,7 +374,7 @@ def _cells_map(db: Session, rows: list[dict]) -> dict[str, dict]:
 def _rows_query(db: Session, f: dict, D: dict):
     """The register query: the entity plus its derived facts, filtered."""
     query = db.query(ArcRequest, *[D[k].label(k) for k in _ROW_DERIVED])
-    return _apply_filters(query, f, D)
+    return _apply_filters(query, f, D, db)
 
 
 def _fetch_rows(query, D: dict, sort: Optional[str], offset: int = 0,
@@ -442,14 +463,46 @@ def _options(db: Session) -> dict:
     cell_rows = (base.with_entities(code.label("code"), func.count(R.id))
                  .group_by(code).all())
     known = arc_cells.cells_for(db, [c for c, _ in cell_rows if c])
+    # The org chain behind those codes — shift, owning unit, owning leader. It
+    # is read from the CELLS the register names, so a unit is offered only
+    # while it has tickets, and every cell option carries the three keys the
+    # chain narrows it by (a level must be able to shorten the list below it).
+    org = arc_cells.org_index(db, [c for c, _ in cell_rows if c])
+    by_code = org["by_code"]
     cells = sorted(
-        ({"code": c, "count": n, "cell": known.get(c)} for c, n in cell_rows if c),
+        ({"code": c, "count": n, "cell": known.get(c),
+          "sh": (by_code.get(c) or {}).get("shift"),
+          "mgr": (by_code.get(c) or {}).get("manager_id"),
+          "lead": (by_code.get(c) or {}).get("leader_id")}
+         for c, n in cell_rows if c),
         key=lambda x: x["code"],
     )
     no_cell = sum(n for c, n in cell_rows if not c)
+    # Counted in TICKETS, like every other option list here — the question the
+    # number answers is «how much of the register is behind this name».
+    shift_n: dict[int, int] = {}
+    mgr_n: dict[int, int] = {}
+    lead_n: dict[int, int] = {}
+    for c, n in cell_rows:
+        o = by_code.get(c)
+        if not o:
+            continue
+        for key, bucket in ((o["shift"], shift_n), (o["manager_id"], mgr_n),
+                            (o["leader_id"], lead_n)):
+            if key is not None:
+                bucket[key] = bucket.get(key, 0) + n
+    org_out = {
+        "shifts": [{"value": s, "count": shift_n[s]} for s in sorted(shift_n)],
+        "managers": sorted(
+            ({**m, "count": mgr_n.get(m["id"], 0)} for m in org["managers"].values()),
+            key=lambda m: (m["name"] or "").lower()),
+        "leaders": sorted(
+            ({**l, "count": lead_n.get(l["id"], 0)} for l in org["leaders"].values()),
+            key=lambda l: (l["name"] or "").lower()),
+    }
     return {"statuses": statuses, "categories": categories,
             "divisions": divisions, "brigadas": brigadas, "authors": authors,
-            "cells": cells, "no_cell_count": no_cell}
+            "cells": cells, "no_cell_count": no_cell, "org": org_out}
 
 
 # ── endpoints ────────────────────────────────────────────────────────────────
@@ -500,7 +553,7 @@ def get_stats(
     """KPI figures over exactly the rows /list shows for the same filters."""
     R = ArcRequest
     D = _derived()
-    base = _apply_filters(db.query(R), f, D)
+    base = _apply_filters(db.query(R), f, D, db)
 
     def _sum(cond):
         return func.coalesce(func.sum(case((cond, 1), else_=0)), 0)
@@ -587,7 +640,7 @@ def _by_cell(db: Session, f: dict) -> dict:
     R = ArcRequest
     D = _derived()
     code = D["cell_code"]
-    base = _apply_filters(db.query(R), f, D)
+    base = _apply_filters(db.query(R), f, D, db)
 
     def _sum(cond):
         return func.coalesce(func.sum(case((cond, 1), else_=0)), 0)
@@ -740,6 +793,9 @@ class ArcExportBody(BaseModel):
     category: list[str] = []
     division: list[str] = []
     cell: list[str] = []
+    shift: list[str] = []
+    manager: list[str] = []
+    leader: list[str] = []
     brigada: list[str] = []
     author: list[str] = []
     urgent: str = "all"
@@ -767,8 +823,8 @@ class ArcExportBody(BaseModel):
 _EXPORT_MAX_ROWS = 50_000
 
 _FILTER_KEYS = ("date_from", "date_to", "status", "category", "division",
-                "cell", "brigada", "author", "urgent", "overdue", "source",
-                "state", "q", "include_missing")
+                "cell", "shift", "manager", "leader", "brigada", "author",
+                "urgent", "overdue", "source", "state", "q", "include_missing")
 
 
 def _scope_line(f: dict, sort: Optional[str]) -> str:
@@ -779,7 +835,8 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
     for key in ("date_from", "date_to", "q"):
         if f.get(key):
             parts.append(f"{key}={f[key]}")
-    for key in ("status", "category", "division", "cell", "brigada", "author"):
+    for key in ("status", "category", "division", "cell", "shift", "manager",
+                "leader", "brigada", "author"):
         vals = f.get(key) or []
         if vals:
             parts.append(f"{key}={','.join(str(v) for v in vals)}")

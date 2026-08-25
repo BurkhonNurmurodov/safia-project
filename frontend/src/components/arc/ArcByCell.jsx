@@ -67,12 +67,16 @@ const Count = ({ value, color }) => (
   </span>
 );
 
-export default function ArcByCell({ data, loading, lang, t, onPick }) {
+export default function ArcByCell({ data, loading, lang, t, tl, onPick }) {
   const [sort, setSort] = usePersistentState("arc_cell_sort", { key: "total", dir: "desc" });
   const onSort = (key) =>
     setSort((s) => ({ key, dir: s.key === key && s.dir === "desc" ? "asc" : "desc" }));
 
   const uncoded = data?.uncoded || null;
+  // The leader's name is DB text, so it rides through the transliterator like
+  // every other name on the platform — the filter that narrows by this column
+  // spells the same person the same way.
+  const leadName = (r) => (r.cell?.leader ? (tl ? tl(r.cell.leader) : r.cell.leader) : "");
 
   // Sorted here rather than on the server: the whole set is a hundred-odd rows,
   // so re-sorting is instant and costs no round trip. The «no cell» row is NOT
@@ -83,7 +87,7 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
     const val = (r) => {
       switch (sort.key) {
         case "cell":     return r.code || "";
-        case "leader":   return (r.cell?.leader || "").toLowerCase();
+        case "leader":   return leadName(r).toLowerCase();
         case "last":     return r.last_created ? new Date(r.last_created).getTime() : 0;
         case "on_time":  return r.on_time_pct;
         case "median":   return r.median_hours;
@@ -100,7 +104,7 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
       if (typeof x === "string") return dir * x.localeCompare(y);
       return dir * (x - y);
     });
-  }, [data?.rows, sort, lang]);
+  }, [data?.rows, sort, lang, tl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const COLS = [
     { key: "cell",     label: t("arc.cCell"),     icon: Boxes },
@@ -139,7 +143,7 @@ export default function ArcByCell({ data, loading, lang, t, onPick }) {
 
   const bodyCells = (r) => (
     <>
-      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.cell?.leader || "—"}</td>
+      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{leadName(r) || "—"}</td>
       <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{num(r.total)}</td>
       <td className="px-3 py-2 text-right"><Count value={r.open} color={C_DOING} /></td>
       <td className="px-3 py-2 text-right"><Count value={r.overdue} color={C_OVERDUE} /></td>

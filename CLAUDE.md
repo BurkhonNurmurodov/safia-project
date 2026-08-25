@@ -1309,6 +1309,21 @@ back on the first walk.
     filter value `NO_CELL = "none"`, its own pinned row on the by-cell tab, its
     own row in the export). Folding either away makes a partial answer read as
     a complete one.
+  - **The code is also what carries our ORG CHAIN onto IT's register** —
+    `shift` → `manager` → `leader`, one pick each, in the filter panel's «Kim va
+    qayerda» group ahead of the cell, exactly as on Quality. A level resolves to
+    the CELLS it owns and meets the tickets at the same `code_expr()`
+    (`arc_cells.org_codes`, AND-ed picks), so a scope the panel offers and a
+    scope the query applies can never be two different things — and it narrows
+    the whole page, both tabs, the KPI strip and the export, because both tabs
+    read the same filtered tickets. `arc_cells.org_index` is THE walk (cell →
+    supervisor → that supervisor's shift → leader): the option lists come off
+    the register's own cells and are counted in TICKETS, so a unit is offered
+    only while it has some. An empty code set is a REAL answer (an empty
+    register, never the whole plant), and the «no cell» bucket belongs to no
+    unit, so an org pick takes it off the cell list rather than offering a scope
+    that can only be empty. Each level notes what narrowed it and offers the way
+    back out; a child pick its parent no longer offers is dropped.
 - **The page is TWO tabs** (`SegmentedToggle asTabs`, above the filter row,
   because both read the SAME filtered tickets): «Barchasi» is the ticket
   register, «Yacheykalar bo'yicha» is `components/arc/ArcByCell.jsx` over

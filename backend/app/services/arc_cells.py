@@ -34,7 +34,7 @@ from typing import Iterable, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import ArcRequest
+from app.models import ArcRequest, Cell, Manager, RoleProfile
 from app.services.cell_lookup import by_verifix, resolve_verifix
 
 # The trailing four-digit group, in both dialects. Verified to agree on the
@@ -78,4 +78,106 @@ def cells_for(db: Session, codes: Iterable[str]) -> dict[str, dict]:
         cell = resolve_verifix(table, code)
         if cell:
             out[code] = cell
+    return out
+
+
+# ── the org chain behind a code ──────────────────────────────────────────────
+# A ticket reaches THIS platform's org chart only through the cell its division
+# names: that cell belongs to a supervisor, inherits that supervisor's shift,
+# and — where one is assigned — to a leader. The walk lives here, once, because
+# the filter's option lists and the WHERE clause behind them must read the same
+# map: a brigadir the panel offers and a brigadir the query cannot find would
+# be the same page disagreeing with itself.
+
+
+def register_codes(db: Session) -> list[str]:
+    """Every four-digit code the register's division names carry, once each.
+
+    Deliberately unbounded by ``missing_since``: this is the DOMAIN a code is
+    looked up in, not a row filter — the ticket filters are applied separately,
+    and narrowing the domain would drop a code that only a hidden ticket
+    carries."""
+    code = code_expr()
+    rows = db.query(code).filter(code.isnot(None)).distinct().all()
+    return [r[0] for r in rows if r[0]]
+
+
+def org_index(db: Session, codes: Iterable[str]) -> dict:
+    """{code → org} over the codes given, plus the units and leaders they reach.
+
+    ``by_code`` maps each ARC code to ``{manager_id, shift, leader_id}``;
+    ``managers`` and ``leaders`` hold only those a code in the list actually
+    reaches, so every name the filter offers is a narrowing that has tickets
+    behind it. Codes the registry does not recognise are simply absent — they
+    belong to no unit, and the page shows them as unregistered rather than
+    filing them under somebody."""
+    table = by_verifix(db)
+    rows = (
+        db.query(
+            Cell.id.label("cell_id"),
+            Cell.manager_id,
+            Cell.leader_id,
+            Manager.name.label("mgr_name"),
+            Manager.shift.label("shift"),
+            RoleProfile.name.label("lead_name"),
+            RoleProfile.manager_id.label("lead_mgr"),
+        )
+        .outerjoin(Manager, Manager.id == Cell.manager_id)
+        .outerjoin(RoleProfile, RoleProfile.id == Cell.leader_id)
+        .all()
+    )
+    per_cell: dict[int, dict] = {}
+    mgr_all: dict[int, dict] = {}
+    lead_all: dict[int, dict] = {}
+    for r in rows:
+        per_cell[r.cell_id] = {"manager_id": r.manager_id, "shift": r.shift,
+                               "leader_id": r.leader_id}
+        if r.manager_id and r.manager_id not in mgr_all:
+            mgr_all[r.manager_id] = {"id": r.manager_id,
+                                     "name": r.mgr_name or f"#{r.manager_id}",
+                                     "shift": r.shift}
+        if r.leader_id and r.leader_id not in lead_all:
+            lead_all[r.leader_id] = {"id": r.leader_id,
+                                     "name": r.lead_name or f"#{r.leader_id}",
+                                     # A leader's unit is their own profile's;
+                                     # the cell's owner is the fallback for a
+                                     # profile that never got one filled in.
+                                     "manager_id": r.lead_mgr or r.manager_id,
+                                     "shift": r.shift}
+
+    by_code: dict[str, dict] = {}
+    managers: dict[int, dict] = {}
+    leaders: dict[int, dict] = {}
+    for code in codes:
+        if not code or code == NO_CELL:
+            continue
+        cell = resolve_verifix(table, code)
+        org = per_cell.get(cell["id"]) if cell else None
+        if not org:
+            continue
+        by_code[code] = org
+        if org["manager_id"] in mgr_all:
+            managers[org["manager_id"]] = mgr_all[org["manager_id"]]
+        if org["leader_id"] in lead_all:
+            leaders[org["leader_id"]] = lead_all[org["leader_id"]]
+    return {"by_code": by_code, "managers": managers, "leaders": leaders}
+
+
+def org_codes(db: Session, shifts: list[int], managers: list[int],
+              leaders: list[int]) -> set[str]:
+    """The codes an org pick narrows the register to — the picks AND-ed.
+
+    An EMPTY set is a real answer («no cell answers to this scope»), never «no
+    filter»: a supervisor whose cells the register has never named must show an
+    empty register, not the whole plant."""
+    idx = org_index(db, register_codes(db))
+    out: set[str] = set()
+    for code, org in idx["by_code"].items():
+        if shifts and org["shift"] not in shifts:
+            continue
+        if managers and org["manager_id"] not in managers:
+            continue
+        if leaders and org["leader_id"] not in leaders:
+            continue
+        out.add(code)
     return out
