@@ -7,6 +7,11 @@ derived expressions the page uses and hands them here already serialised
 on-screen order and (optionally) their headers in the viewer's language.
 This module never re-derives a figure — it lays out what it is given.
 
+Two things arrive as codes rather than words, because that is what the source
+ships: the ticket ``status`` (an integer) and the source flag ``is_bot``. The
+page sends the words for both; the English fallbacks here exist only so a
+direct API call still produces a readable file.
+
 Timestamps arrive as UTC ISO strings and are written as NAIVE Tashkent
 datetimes with a number format, so Excel sorts and filters them as dates
 instead of as text and the reader sees the plant's wall clock.
@@ -38,34 +43,46 @@ def _xl_text(v: Any) -> Any:
         v = "'" + v
     return v
 
+
 # Fallback headers — the page normally sends translated ones in ``labels``.
 _DEFAULT_LABELS = {
     "num": "№",
     "created": "Created",
-    "branch": "Branch",
+    "division": "Division",
     "category": "Category",
     "urgent": "Urgent",
     "description": "Description",
-    "master": "Master",
+    "author": "Author",
+    "brigada": "Brigade",
     "status": "Status",
     "due": "Due",
     "overdue": "Overdue",
+    "started": "Started",
     "closed": "Closed",
     "hours": "Hours to close",
-    "sap": "SAP",
-    "evidence": "Evidence",
-    "client": "Client",
+    "response": "Hours to start",
+    "source": "Source",
+    "files": "Files",
     "phone": "Phone",
-    "cancelled": "Cancelled",
+    "manager": "Division manager",
     "deny_reason": "Deny reason",
-    "comment": "Report comment",
     "state": "State",
 }
 
+# Fallback status words, by the API's own code. The page sends the viewer's
+# language in ``status_labels``; this is what a direct API call gets.
+_DEFAULT_STATUS = {
+    0: "Created",
+    1: "In progress",
+    3: "Completed",
+    4: "Denied",
+    6: "Handled",
+}
+
 # The order used when the page sends no column list at all.
-_DEFAULT_COLUMNS = ("num", "created", "branch", "category", "description",
-                    "master", "status", "due", "closed", "hours", "sap",
-                    "evidence", "client")
+_DEFAULT_COLUMNS = ("num", "created", "division", "category", "description",
+                    "author", "brigada", "status", "due", "started", "closed",
+                    "hours", "source", "files")
 
 
 def _to_local(iso: Optional[str]) -> Optional[datetime]:
@@ -90,41 +107,40 @@ def _state(r: dict) -> str:
         return "cancelled"
     if r.get("is_open"):
         return "open"
-    return "closed"
+    return "done"
 
 
-def _evidence(r: dict) -> str:
-    parts = []
-    if r.get("photo_report"):
-        parts.append(str(r["photo_report"]))
-    if r.get("document_url"):
-        parts.append(str(r["document_url"]))
-    return "\n".join(parts)
+def _files(r: dict) -> Any:
+    fs = r.get("files")
+    return len(fs) if isinstance(fs, list) and fs else None
 
 
 # key → (value getter, kind, width). kind ∈ {"text", "dt", "num", "int"} and
-# picks the cell's number format / alignment.
-_COLS: dict[str, tuple[Callable[[dict], Any], str, int]] = {
-    "num":         (lambda r: r.get("request_num"), "int", 9),
-    "created":     (lambda r: _to_local(r.get("created_at")), "dt", 17),
-    "branch":      (lambda r: r.get("branch_name"), "text", 26),
-    "category":    (lambda r: r.get("category_name"), "text", 24),
-    "urgent":      (lambda r: _yn(r.get("category_is_urgent")), "text", 8),
-    "description": (lambda r: r.get("description"), "text", 48),
-    "master":      (lambda r: r.get("master_name"), "text", 22),
-    "status":      (lambda r: r.get("normalized_status"), "text", 16),
-    "due":         (lambda r: _to_local(r.get("due")), "dt", 17),
-    "overdue":     (lambda r: _yn(r.get("overdue_now") or r.get("late")), "text", 9),
-    "closed":      (lambda r: _to_local(r.get("closed_at")), "dt", 17),
-    "hours":       (lambda r: r.get("hours_to_close"), "num", 10),
-    "sap":         (lambda r: _yn(r.get("sended_to_sap")), "text", 7),
-    "evidence":    (_evidence, "text", 40),
-    "client":      (lambda r: r.get("client_name"), "text", 22),
-    "phone":       (lambda r: r.get("extra_phone"), "text", 15),
-    "cancelled":   (lambda r: _to_local(r.get("cancelled_at")), "dt", 17),
-    "deny_reason": (lambda r: r.get("deny_reason"), "text", 32),
-    "comment":     (lambda r: r.get("comment_report"), "text", 40),
-    "state":       (_state, "text", 11),
+# picks the cell's number format / alignment. A getter takes the row and, for
+# the two coded columns, the label maps the page sent.
+_COLS: dict[str, tuple[Callable[[dict, dict], Any], str, int]] = {
+    "num":         (lambda r, L: r.get("request_num"), "int", 9),
+    "created":     (lambda r, L: _to_local(r.get("created_at")), "dt", 17),
+    "division":    (lambda r, L: r.get("division_name"), "text", 26),
+    "category":    (lambda r, L: r.get("category_name"), "text", 24),
+    "urgent":      (lambda r, L: _yn(r.get("category_urgent")), "text", 8),
+    "description": (lambda r, L: r.get("description"), "text", 48),
+    "author":      (lambda r, L: r.get("user_name"), "text", 24),
+    "brigada":     (lambda r, L: r.get("brigada_name"), "text", 22),
+    "status":      (lambda r, L: L["status"].get(str(r.get("status")))
+                    or _DEFAULT_STATUS.get(r.get("status")), "text", 18),
+    "due":         (lambda r, L: _to_local(r.get("due")), "dt", 17),
+    "overdue":     (lambda r, L: _yn(r.get("overdue_now") or r.get("late")), "text", 9),
+    "started":     (lambda r, L: _to_local(r.get("started_at")), "dt", 17),
+    "closed":      (lambda r, L: _to_local(r.get("closed_at")), "dt", 17),
+    "hours":       (lambda r, L: r.get("hours_to_close"), "num", 10),
+    "response":    (lambda r, L: r.get("hours_to_start"), "num", 10),
+    "source":      (lambda r, L: L["source"].get("bot" if r.get("is_bot") else "app"), "text", 10),
+    "files":       (lambda r, L: _files(r), "int", 8),
+    "phone":       (lambda r, L: r.get("user_phone"), "text", 16),
+    "manager":     (lambda r, L: r.get("manager_name"), "text", 22),
+    "deny_reason": (lambda r, L: r.get("deny_reason"), "text", 32),
+    "state":       (lambda r, L: _state(r), "text", 11),
 }
 
 _HEAD_FILL = PatternFill("solid", fgColor="F1F5F9")
@@ -136,7 +152,8 @@ _CENTER = Alignment(horizontal="center", vertical="top")
 
 
 def build_arc_workbook(rows: list[dict], columns: Optional[list[str]] = None,
-                       labels: Optional[dict[str, str]] = None) -> BytesIO:
+                       labels: Optional[dict[str, str]] = None,
+                       status_labels: Optional[dict[str, str]] = None) -> BytesIO:
     """One sheet «ARC»: a bold header row, frozen at A2, one row per ticket
     in the page's column order. Unknown keys are skipped rather than failing
     the export — the page's catalog may grow ahead of this list."""
@@ -144,6 +161,12 @@ def build_arc_workbook(rows: list[dict], columns: Optional[list[str]] = None,
     if not keys:
         keys = [k for k in _DEFAULT_COLUMNS if k in _COLS]
     labels = labels or {}
+    # The two coded columns' words, in the viewer's language when the page sent
+    # them. «source» rides in the same map under its two values.
+    L = {
+        "status": {k: v for k, v in (status_labels or {}).items()},
+        "source": {"bot": labels.get("_bot") or "Bot", "app": labels.get("_app") or "App"},
+    }
 
     wb = Workbook()
     ws = wb.active
@@ -161,7 +184,7 @@ def build_arc_workbook(rows: list[dict], columns: Optional[list[str]] = None,
     for ri, r in enumerate(rows, 2):
         for ci, key in enumerate(keys, 1):
             getter, kind, _w = _COLS[key]
-            v = getter(r)
+            v = getter(r, L)
             if kind == "text":
                 v = _xl_text(v)
             c = ws.cell(row=ri, column=ci, value=v)
@@ -175,7 +198,7 @@ def build_arc_workbook(rows: list[dict], columns: Optional[list[str]] = None,
             elif kind == "int":
                 c.number_format = "0"
                 c.alignment = _RIGHT
-            elif key in ("urgent", "overdue", "sap"):
+            elif key in ("urgent", "overdue"):
                 c.alignment = _CENTER
             else:
                 c.alignment = _LEFT

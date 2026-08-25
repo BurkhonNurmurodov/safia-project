@@ -301,7 +301,6 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/worker-concerns/refresh",              "sync_export", "sync.worker_concerns_refreshed"),
     (("POST",),   "/api/kaizen/refresh",                       "sync_export", "sync.kaizen_refreshed"),
     (("POST",),   "/api/arc/refresh",                          "sync_export", "sync.arc_refreshed"),
-    (("POST",),   "/api/arc/probe",                            "sync_export", "sync.arc_probed"),
     (("POST",),   "/api/arc/export.xlsx",                      "sync_export", "export.arc"),
     (("POST",),   "/api/quality/export.xlsx",                  "sync_export", "export.quality"),
     (("POST",),   "/api/worker-concerns/export.xlsx",          "sync_export", "export.worker_concerns"),

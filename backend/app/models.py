@@ -2557,14 +2557,19 @@ class WorkerConcernSheetState(Base):
 
 
 class ArcRequest(Base):
-    """One service ticket mirrored from the ARC API («requests/factory»).
+    """One «АРС Фабрика» ticket mirrored from IT's internal API.
 
-    ``remote_id`` is the API's uuid and the ONLY identity — the row is upserted
-    on it every sync, so the local copy always reads as the API's latest state
-    (the API carries no updated_at, so every page walk re-writes every row).
-    ``raw`` keeps the full item: the register's columns are the fields the page
-    reads today, and a field the API adds later must not be lost until someone
-    adds a column for it.
+    ``remote_id`` is the ticket's own id as text and the ONLY identity — the
+    row is upserted on it every sync, so the local copy always reads as the
+    API's latest state (there is no updated_at anywhere, so every walk
+    re-writes every row it sees). ``request_num`` is the same number as an
+    integer, because «заявка №491» is what everybody upstream calls it.
+
+    The LIST endpoint is thin: it carries the ticket, its author, division,
+    category and brigade, but not the description, the deny reason, the files
+    or the status timeline. Those come one call at a time from the card
+    endpoint — ``detail_at`` is when that call last landed, and NULL means the
+    row is list-only so far (see services/arc_sync.hydrate_details).
 
     ``missing_since`` is set ONLY by a full walk that finished (page reached
     pages, no exception) for rows the API stopped returning, and cleared the
@@ -2573,44 +2578,47 @@ class ArcRequest(Base):
     in the table (never deleted) and are hidden by default on the page."""
     __tablename__ = "arc_requests"
 
-    id                      = Column(Integer, primary_key=True, autoincrement=True)
-    remote_id               = Column(String, unique=True, nullable=False)
-    request_num             = Column(Integer, index=True)
-    branch_id               = Column(String, nullable=True)
-    branch_name             = Column(String, index=True)
-    country_id              = Column(String, nullable=True)
-    description             = Column(Text, nullable=True)
-    category_id             = Column(String, nullable=True)
-    category_name           = Column(String, index=True)
-    category_is_urgent      = Column(Boolean, nullable=True)
-    category_deadline_hours = Column(Integer, nullable=True)
-    deadline                = Column(DateTime(timezone=True), nullable=True)
-    deadline_time           = Column(DateTime(timezone=True), nullable=True)
-    master_id               = Column(String, nullable=True)
-    master_name             = Column(String, index=True)
-    status                  = Column(Integer, nullable=True)
-    normalized_status       = Column(String, index=True)
-    status_color            = Column(String, nullable=True)
-    is_overdue              = Column(Boolean, nullable=True)
-    created_at              = Column(DateTime(timezone=True), index=True)
-    cancelled_at            = Column(DateTime(timezone=True), nullable=True)
-    finished_at             = Column(DateTime(timezone=True), nullable=True)
-    completed_at            = Column(DateTime(timezone=True), nullable=True)
-    extra_phone             = Column(String, nullable=True)
-    latitude                = Column(Float, nullable=True)
-    longitude               = Column(Float, nullable=True)
-    deny_reason             = Column(Text, nullable=True)
-    sended_to_sap           = Column(Boolean, nullable=True)
-    photo_report            = Column(Text, nullable=True)
-    comment_report          = Column(Text, nullable=True)
-    document_url            = Column(Text, nullable=True)
-    has_other_active        = Column(Boolean, nullable=True)
-    other_active_count      = Column(Integer, nullable=True)
-    client_name             = Column(String, nullable=True)
-    raw                     = Column(JSONB, nullable=True)         # the full API item
-    first_seen_at           = Column(DateTime(timezone=True), server_default=func.now())
-    synced_at               = Column(DateTime(timezone=True), nullable=True)   # every upsert
-    missing_since           = Column(DateTime(timezone=True), nullable=True)   # completed full walk only
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    remote_id       = Column(String, unique=True, nullable=False)
+    request_num     = Column(Integer, index=True)
+    status          = Column(Integer, index=True)      # 0 new · 1 doing · 3 done · 4 denied · 6 handled
+    # who filed it
+    user_id         = Column(Integer, index=True)
+    user_name       = Column(String, index=True)
+    user_phone      = Column(String, nullable=True)
+    user_manager    = Column(String, nullable=True)
+    # where
+    division_id     = Column(String, index=True)       # uuid, the API's «fillial_id» filter
+    division_name   = Column(String, index=True)
+    manager_name    = Column(String, nullable=True)    # the division's manager block
+    # who works it
+    brigada_id      = Column(Integer, index=True)
+    brigada_name    = Column(String, index=True)
+    # what kind of job
+    category_id     = Column(Integer, index=True)
+    category_name   = Column(String, index=True)
+    category_urgent = Column(Boolean, nullable=True)
+    category_ftime  = Column(Float, nullable=True)     # hours allowed → the derived due moment
+    department      = Column(Integer, nullable=True)   # 1 = АРС, per their section split
+    sphere_status   = Column(Integer, nullable=True)
+    is_bot          = Column(Boolean, nullable=True)   # filed from the Telegram bot
+    # when
+    created_at      = Column(DateTime(timezone=True), index=True)
+    started_at      = Column(DateTime(timezone=True), nullable=True)   # taken into work
+    finished_at     = Column(DateTime(timezone=True), nullable=True)   # closed / denied
+    # card-only fields (see detail_at)
+    description     = Column(Text, nullable=True)
+    deny_reason     = Column(Text, nullable=True)
+    files           = Column(JSONB, nullable=True)     # [{id, url, href}]
+    update_time     = Column(JSONB, nullable=True)     # {status: moment it was entered}
+    comments        = Column(JSONB, nullable=True)
+    comment_count   = Column(Integer, nullable=True)
+    detail_at       = Column(DateTime(timezone=True), nullable=True)   # last card fetch
+    raw             = Column(JSONB, nullable=True)     # the full list item
+    detail_raw      = Column(JSONB, nullable=True)     # the full card
+    first_seen_at   = Column(DateTime(timezone=True), server_default=func.now())
+    synced_at       = Column(DateTime(timezone=True), nullable=True)   # every upsert
+    missing_since   = Column(DateTime(timezone=True), nullable=True)   # completed full walk only
 
 
 class ArcSyncMeta(Base):
@@ -2619,11 +2627,10 @@ class ArcSyncMeta(Base):
     than the stale window is a dead process's claim), the progress feed the
     page polls, and the last outcome. ``mode`` says what the last pass was —
     «quick» (first pages, every 15 min) or «full» (every page, nightly / on
-    Refresh). ``status_catalog`` is the distinct (status, normalized_status,
-    status_color) triples with counts, recomputed after every pass so the
-    filter never offers a value the table doesn't hold. ``spec`` is the API's
-    own openapi document, fetched best-effort and kept for the admin-only
-    /spec endpoint — it may stay null forever without anything else caring."""
+    Refresh). ``status_catalog`` is the distinct statuses with counts,
+    recomputed after every pass so the filter never offers a value the table
+    doesn't hold. ``detail_pending`` is how many mirrored tickets still have no
+    card fetched — the one number that says the mirror is still filling in."""
     __tablename__ = "arc_sync_meta"
 
     id              = Column(Integer, primary_key=True)
@@ -2639,15 +2646,9 @@ class ArcSyncMeta(Base):
     progress_total  = Column(Integer, default=0)
     last_full_at    = Column(DateTime(timezone=True), nullable=True)
     mode            = Column(String, nullable=True)     # "full" | "quick"
-    status_catalog  = Column(JSONB, nullable=True)      # [{status, normalized_status, status_color, count}]
-    spec            = Column(JSONB, nullable=True)      # openapi doc, best-effort
-    spec_fetched_at = Column(DateTime(timezone=True), nullable=True)
-    # What the API answers under which parameters (services/arc_discovery.py):
-    # the measured report, and the filter set the walk sends because it made
-    # the API hand over MORE than its defaults did. NULL filters = defaults.
-    probe           = Column(JSONB, nullable=True)
-    probe_at        = Column(DateTime(timezone=True), nullable=True)
-    filters         = Column(JSONB, nullable=True)
+    status_catalog  = Column(JSONB, nullable=True)      # [{status, count}]
+    detail_pending  = Column(Integer, default=0)
+    detail_done     = Column(Integer, default=0)        # cards fetched by the last pass
 
 
 class ActionLog(Base):

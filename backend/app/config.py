@@ -71,15 +71,13 @@ class Settings(BaseSettings):
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
-    # ARC service-ticket API (page /arc). IT put the credential into prod .env under
-    # the bare names USERNAME/PASSWORD by SSH; the ARC_-prefixed names are the
-    # canonical ones (deliverable via deploy/sync-env.sh + Gitea secrets) and win
-    # when both exist. Blank (either) disables the integration.
-    arc_api_url: str = "https://api.dashboard.service.safiabakery.uz"
-    arc_username: str = Field("", validation_alias=AliasChoices("ARC_USERNAME", "USERNAME"))
-    # PASSAWORD is not a typo HERE: it is the spelling that actually reached
-    # prod's .env, and the file is the one thing this code cannot edit.
-    arc_password: str = Field("", validation_alias=AliasChoices("ARC_PASSWORD", "PASSWORD", "PASSAWORD"))
+    # IT's read-only internal API (page /arc). ONE key, no user login, GET only:
+    # the username+password ARC login it replaced is gone, and so are the
+    # USERNAME / PASSWORD / PASSAWORD names IT had written into prod's .env by
+    # SSH. Blank disables the integration — startup.ensure_internal_api_key
+    # seeds the key into backend/.env on boot, so a fresh box connects itself.
+    internal_api_url: str = "https://api.service.safiabakery.uz"
+    internal_api_key: str = Field("", validation_alias=AliasChoices("INTERNAL_API_KEY"))
 
     @field_validator("admin_telegram_id", mode="before")
     @classmethod

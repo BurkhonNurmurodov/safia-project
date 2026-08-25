@@ -1,9 +1,9 @@
 """
-ARC service-ticket mirror (page /arc).
+ARC service-ticket mirror (page /arc), fed by IT's internal read-only API.
 
-The ARC API (services/arc_client.py) is walked page by page and every ticket
-is UPSERTED on its uuid — the API carries no updated_at, so there is nothing
-to diff against and every walk re-writes every row it sees. Two passes:
+The list endpoint (services/arc_client.py) is walked page by page and every
+ticket is UPSERTED on its id — there is no updated_at anywhere, so there is
+nothing to diff against and every walk re-writes every row it sees. Two passes:
 
   * **quick** — the first QUICK_MAX_PAGES pages (newest tickets first, which
     is where anything that changes lives), every INTERVAL_MIN minutes;
@@ -12,13 +12,23 @@ to diff against and every walk re-writes every row it sees. Two passes:
     stopped returning them): a quick pass cannot tell "gone" from "further
     down than I looked", so it never touches ``missing_since``.
 
+**Then it hydrates cards.** The list carries no description, no deny reason,
+no files and no status timeline — those are one call per ticket. Fetching them
+inline during the walk would multiply a 40-page pass by a hundred, so it is a
+SECOND, bounded phase: at most DETAIL_BATCH_* cards per pass, never-fetched
+newest-first, then the ones whose ticket moved since their card was read. A
+mirror therefore fills in over several passes instead of hammering their host
+once, and `arc_sync_meta.detail_pending` is what says so out loud. The page's
+detail modal fetches a missing card on demand, so a ticket a reader actually
+opens is never left waiting for the queue.
+
 Same shape as the worker-concerns crawl (thread + DB claim + heartbeat +
 scheduler): each page commits on its own, so a process death mid-walk loses
 nothing already written and the next pass simply walks again; the claim's
 heartbeat is what makes a dead pass takeover-able instead of a permanent
 «running» that leaves the Refresh button dead.
 
-Nothing here logs or stores a credential — see the client module.
+Nothing here logs or stores the internal key — see the client module.
 """
 from __future__ import annotations
 
@@ -28,14 +38,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import ArcRequest, ArcSyncMeta
-from app.services import action_log, arc_client, arc_discovery
-from app.services.arc_client import ArcAuthError, ArcTransientError, configured
+from app.services import action_log, arc_client
+from app.services.arc_client import (OPEN_STATUSES, ArcAuthError,
+                                     ArcTransientError, configured)
 
 log = logging.getLogger(__name__)
 
@@ -46,8 +57,21 @@ STALE_AFTER = timedelta(minutes=3)
 QUICK_MAX_PAGES = 30
 # Quick-pass cadence.
 INTERVAL_MIN = 15
-# The stored openapi document is refreshed when older than this.
-SPEC_MAX_AGE = timedelta(days=7)
+# How many ticket cards one pass may fetch. A card is one HTTP call, so this is
+# the whole «do not hammer their host» budget. The register holds ~32k tickets
+# and only the card carries the description, so the FIRST backfill is tens of
+# thousands of calls however it is paced: at these numbers the quick pass is
+# ~10 requests a minute and the whole history has its descriptions inside a
+# couple of days, after which only the day's new tickets need one. Raising
+# them buys hours and costs their host; lowering them is always safe.
+DETAIL_BATCH_FULL = 600
+DETAIL_BATCH_QUICK = 150
+# An OPEN ticket's card is re-read when it is older than this (its description
+# can be edited and its comments grow). A closed one is only re-read when the
+# ticket closed AFTER the card was fetched — that is when deny_reason appears.
+DETAIL_REFRESH = timedelta(hours=12)
+# Commit + heartbeat every N cards, so a death mid-hydration keeps the rest.
+DETAIL_COMMIT_EVERY = 25
 
 _thread_lock = threading.Lock()
 
@@ -90,29 +114,32 @@ def _claim(db: Session, mode: str) -> bool:
     meta.heartbeat = now
     meta.progress_done = 0
     meta.progress_total = 0
+    meta.detail_done = 0
     db.commit()
     return True
 
 
-# Every column the upsert rewrites — everything normalize_item produces plus
-# the sync stamps. remote_id is the conflict key and stays; first_seen_at is
-# the insert's server default and is deliberately NOT in this set.
+# Every column the LIST upsert rewrites. The card-only columns (description,
+# deny_reason, files, update_time, detail_at, detail_raw) are deliberately
+# absent: the list does not carry them, so writing them would blank a card the
+# hydration phase already fetched. comments/comment_count are coalesced
+# instead of overwritten, for the same reason — the list ships `[]` for a
+# ticket whose card holds a thread.
 _UPSERT_COLS = (
-    "request_num", "branch_id", "branch_name", "country_id", "description",
-    "category_id", "category_name", "category_is_urgent", "category_deadline_hours",
-    "deadline", "deadline_time", "master_id", "master_name", "status",
-    "normalized_status", "status_color", "is_overdue", "created_at",
-    "cancelled_at", "finished_at", "completed_at", "extra_phone", "latitude",
-    "longitude", "deny_reason", "sended_to_sap", "photo_report", "comment_report",
-    "document_url", "has_other_active", "other_active_count", "client_name",
-    "raw", "synced_at", "missing_since",
+    "request_num", "status", "user_id", "user_name", "user_phone",
+    "user_manager", "division_id", "division_name", "manager_name",
+    "brigada_id", "brigada_name", "category_id", "category_name",
+    "category_urgent", "category_ftime", "department", "sphere_status",
+    "is_bot", "created_at", "started_at", "finished_at", "raw",
+    "synced_at", "missing_since",
 )
+_UPSERT_COALESCE = ("comments", "comment_count")
 
 
 def _upsert_page(db: Session, items: list[dict], now: datetime) -> list[str]:
     """Insert-or-update one page of tickets in a single statement; returns the
     remote ids it wrote (the full walk's «seen» set)."""
-    # Keyed by remote_id: the same uuid twice in one page (a page boundary
+    # Keyed by remote_id: the same ticket twice in one page (a page boundary
     # shifting under a walk) would make ON CONFLICT touch a row twice, which
     # Postgres refuses outright. Last occurrence wins.
     by_id: dict[str, dict] = {}
@@ -129,47 +156,124 @@ def _upsert_page(db: Session, items: list[dict], now: datetime) -> list[str]:
     if not ids:
         return ids
     stmt = pg_insert(ArcRequest).values(list(by_id.values()))
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["remote_id"],
-        set_={c: getattr(stmt.excluded, c) for c in _UPSERT_COLS},
-    )
+    updates = {c: getattr(stmt.excluded, c) for c in _UPSERT_COLS}
+    for c in _UPSERT_COALESCE:
+        updates[c] = func.coalesce(getattr(stmt.excluded, c), getattr(ArcRequest, c))
+    stmt = stmt.on_conflict_do_update(index_elements=["remote_id"], set_=updates)
     db.execute(stmt)
     return ids
 
 
-def _status_catalog(db: Session) -> list[dict]:
-    """Distinct (status, normalized_status, status_color) triples with counts,
-    over rows the API still returns — the filter's option list."""
-    q = (db.query(ArcRequest.status, ArcRequest.normalized_status,
-                  ArcRequest.status_color, func.count(ArcRequest.id))
-         .filter(ArcRequest.missing_since.is_(None))
-         .group_by(ArcRequest.status, ArcRequest.normalized_status, ArcRequest.status_color)
-         .order_by(ArcRequest.status))
-    return [{"status": s, "normalized_status": ns, "status_color": col, "count": n}
-            for s, ns, col, n in q.all()]
+# ── card hydration ──────────────────────────────────────────────────────────
+
+def _detail_needed(stale_before: datetime):
+    """The WHERE clause for «this row's card is missing or out of date», used
+    both to pick the batch and to count what is still pending — one expression,
+    so the queue and the number describing it cannot disagree."""
+    R = ArcRequest
+    return and_(
+        R.missing_since.is_(None),
+        or_(
+            R.detail_at.is_(None),
+            # The ticket closed after we last read its card — that is when the
+            # deny reason and the final timeline appear.
+            and_(R.finished_at.isnot(None), R.detail_at < R.finished_at),
+            # Still open: its text and its comments can still move.
+            and_(R.status.in_(OPEN_STATUSES), R.detail_at < stale_before),
+        ),
+    )
 
 
-def _maybe_fetch_spec(db: Session, client: httpx.Client, meta: ArcSyncMeta) -> None:
-    """Store the API's openapi document once (or when a week old). Runs after
-    the pass's first successful call, so the token is already good; any
-    failure is a skipped nicety, never a failed pass."""
-    fetched = meta.spec_fetched_at
-    if fetched is not None and fetched.tzinfo is None:
-        fetched = fetched.replace(tzinfo=timezone.utc)
-    if meta.spec is not None and fetched and (_now() - fetched) < SPEC_MAX_AGE:
-        return
-    doc = arc_client.fetch_openapi(client)
-    if doc is None:
-        return
-    meta.spec = doc
-    meta.spec_fetched_at = _now()
+def detail_pending(db: Session) -> int:
+    """How many mirrored tickets have NEVER had their card fetched — the «the
+    mirror is still filling in» number the page shows. Deliberately NOT the
+    whole `_detail_needed` queue: that also holds open tickets due a routine
+    re-read, so it never reaches zero, and a counter that never reaches zero
+    reads as «still loading» forever."""
+    return int(db.query(func.count(ArcRequest.id))
+               .filter(ArcRequest.missing_since.is_(None))
+               .filter(ArcRequest.detail_at.is_(None)).scalar() or 0)
+
+
+def _detail_batch(db: Session, limit: int) -> list[str]:
+    """The next cards to fetch: never-fetched first (newest ticket first),
+    then the stale ones. Newest-first is deliberate — the top of the register
+    is what a reader is looking at while the backlog fills in."""
+    R = ArcRequest
+    rows = (db.query(R.remote_id)
+            .filter(_detail_needed(_now() - DETAIL_REFRESH))
+            .order_by(R.detail_at.is_(None).desc(), R.created_at.desc().nullslast())
+            .limit(limit).all())
+    return [rid for (rid,) in rows]
+
+
+def fetch_detail(db: Session, client: httpx.Client, remote_id: str) -> bool:
+    """Fetch ONE ticket's card and write it onto its row. Returns False when
+    the API has no such ticket — the row is stamped anyway so the queue does
+    not offer it again on every pass. Commits nothing; the caller decides."""
+    row = db.query(ArcRequest).filter(ArcRequest.remote_id == remote_id).first()
+    if row is None:
+        return False
+    card = arc_client.get_request(client, remote_id)
+    now = _now()
+    if card is None:
+        row.detail_at = now
+        return False
+    for key, value in arc_client.normalize_detail(card).items():
+        setattr(row, key, value)
+    row.detail_at = now
+    return True
+
+
+def hydrate_details(db: Session, client: httpx.Client, limit: int,
+                    heartbeat=None) -> int:
+    """Fill in up to ``limit`` ticket cards. A transient failure ENDS the phase
+    rather than retrying — the list half of the pass already succeeded, and
+    hammering a host that just timed out is how a mirror becomes a problem for
+    the system it mirrors."""
+    ids = _detail_batch(db, limit)
+    done = 0
+    for i, rid in enumerate(ids, 1):
+        try:
+            fetch_detail(db, client, rid)
+        except (ArcTransientError, ArcAuthError) as exc:
+            # A timeout or a revoked key is the same answer for every remaining
+            # card in the batch; per-row retries would just be 400 identical
+            # failures against a host that has already said no.
+            db.commit()
+            log.warning("arc detail: stopping after %s cards — %s", done, str(exc)[:200])
+            break
+        except Exception as exc:                       # noqa: BLE001 - reported
+            db.rollback()
+            log.warning("arc detail %s failed: %s", rid, str(exc)[:200])
+            continue
+        done += 1
+        if i % DETAIL_COMMIT_EVERY == 0:
+            db.commit()
+            if heartbeat:
+                heartbeat(done)
     db.commit()
+    if heartbeat and done:
+        heartbeat(done)
+    return done
+
+
+def _status_catalog(db: Session) -> list[dict]:
+    """Distinct statuses with counts, over rows the API still returns — the
+    filter's option list. The API ships a bare integer, so the words come from
+    the four locales, never from here."""
+    q = (db.query(ArcRequest.status, func.count(ArcRequest.id))
+         .filter(ArcRequest.missing_since.is_(None))
+         .group_by(ArcRequest.status)
+         .order_by(ArcRequest.status))
+    return [{"status": s, "count": n} for s, n in q.all()]
 
 
 def run_sync(mode: str = "full") -> dict:
     """Walk the API and upsert every ticket seen (all pages when ``mode`` is
-    «full», the first QUICK_MAX_PAGES otherwise). Blocking — call through
-    :func:`start_sync_thread` or the scheduler, never from a request handler."""
+    «full», the first QUICK_MAX_PAGES otherwise), then hydrate a bounded batch
+    of ticket cards. Blocking — call through :func:`start_sync_thread` or the
+    scheduler, never from a request handler."""
     if not configured():
         return {"status": "not_configured"}
     mode = "quick" if mode == "quick" else "full"
@@ -182,31 +286,11 @@ def run_sync(mode: str = "full") -> dict:
         remote_total = 0
         pages_seen = 0
         walked_all = False
-        spec_checked = False
+        cards = 0
         started = _now()
         with httpx.Client(timeout=arc_client._TIMEOUT) as client:
-            # Never probed, and about to walk everything? Measure FIRST, on
-            # this connection: a filter discovered after the walk would leave
-            # the register short until the next pass, and the first full sync
-            # after an upgrade is exactly when that costs the most. ~40 cheap
-            # size=1 calls, once in the mirror's life (and on demand from the
-            # page's «API» panel).
-            if mode == "full" and _get_meta(db).probe_at is None:
-                try:
-                    arc_discovery.run_probe(db, client)
-                except Exception as exc:              # noqa: BLE001
-                    log.warning("arc probe during sync failed: %s", str(exc)[:200])
-            # The measured filter set — what makes the API hand over more than
-            # its defaults do. Empty means «the defaults were already widest».
-            filters = arc_discovery.active_filters(db)
-            if filters:
-                log.info("arc sync (%s): walking with discovered filters %s", mode, filters)
-            for items, page, pages, total in arc_client.iter_requests(client, extra=filters):
+            for items, page, pages, total in arc_client.iter_requests(client):
                 now = _now()
-                if not spec_checked:
-                    # First successful call of the pass — the login just worked.
-                    spec_checked = True
-                    _maybe_fetch_spec(db, client, _get_meta(db))
                 remote_total = total
                 ids = _upsert_page(db, items, now)
                 seen.update(ids)
@@ -224,23 +308,36 @@ def run_sync(mode: str = "full") -> dict:
                 if mode == "quick" and page >= QUICK_MAX_PAGES:
                     break
 
-        now = _now()
-        missing_marked = 0
-        if mode == "full" and walked_all and seen:
-            # Only a COMPLETED full walk that actually SAW tickets may say a
-            # row is gone: everything the API still returns was stamped
-            # synced_at >= started this pass, so a row last stamped before the
-            # pass began is newly missing. A 200 with an empty page 1 (an
-            # upstream hiccup, a scoped-out account) must never void the whole
-            # register — hence the ``seen`` guard.
-            missing_marked = (
-                db.query(ArcRequest)
-                .filter(ArcRequest.missing_since.is_(None))
-                .filter((ArcRequest.synced_at.is_(None)) | (ArcRequest.synced_at < started))
-                .update({ArcRequest.missing_since: now}, synchronize_session=False)
-            )
-            db.commit()
+            now = _now()
+            missing_marked = 0
+            if mode == "full" and walked_all and seen:
+                # Only a COMPLETED full walk that actually SAW tickets may say
+                # a row is gone: everything the API still returns was stamped
+                # synced_at >= started this pass, so a row last stamped before
+                # the pass began is newly missing. A 200 with an empty page 1
+                # (an upstream hiccup, a key scoped out from under us) must
+                # never void the whole register — hence the ``seen`` guard.
+                missing_marked = (
+                    db.query(ArcRequest)
+                    .filter(ArcRequest.missing_since.is_(None))
+                    .filter((ArcRequest.synced_at.is_(None)) | (ArcRequest.synced_at < started))
+                    .update({ArcRequest.missing_since: now}, synchronize_session=False)
+                )
+                db.commit()
 
+            def _beat(n: int) -> None:
+                m = _get_meta(db)
+                m.heartbeat = _now()
+                m.detail_done = n
+                db.commit()
+
+            cards = hydrate_details(
+                db, client,
+                DETAIL_BATCH_FULL if mode == "full" else DETAIL_BATCH_QUICK,
+                heartbeat=_beat,
+            )
+
+        now = _now()
         meta = _get_meta(db)
         meta.running = False
         meta.ok = True
@@ -249,32 +346,36 @@ def run_sync(mode: str = "full") -> dict:
         meta.row_count = db.query(ArcRequest).filter(ArcRequest.missing_since.is_(None)).count()
         meta.remote_total = remote_total
         meta.status_catalog = _status_catalog(db)
+        meta.detail_done = cards
+        meta.detail_pending = detail_pending(db)
         if mode == "full" and walked_all:
             meta.last_full_at = now
         meta.message = None
         db.commit()
-        log.info("arc sync (%s): %s pages, %s tickets seen, remote total %s, %s newly missing",
-                 mode, pages_seen, len(seen), remote_total, missing_marked)
+        log.info("arc sync (%s): %s pages, %s tickets seen, %s cards, remote total %s, "
+                 "%s newly missing, %s cards pending",
+                 mode, pages_seen, len(seen), cards, remote_total, missing_marked,
+                 meta.detail_pending)
         # One register row per pass that actually MIRRORED something. A quick
-        # pass that read no ticket (a transient 200 with an empty page, an
-        # account scoped out from under us) writes nothing: the point of the
-        # row is "the mirror moved", and a line every fifteen minutes saying it
-        # did not is exactly the noise that makes a register unreadable. The
-        # two early returns above (`not_configured`, `already_running`) never
-        # reach here, and a failed pass leaves its reason on `meta.message`.
-        if seen:
+        # pass that read no ticket (a transient 200 with an empty page, a key
+        # scoped out from under us) writes nothing: the point of the row is
+        # "the mirror moved", and a line every fifteen minutes saying it did
+        # not is exactly the noise that makes a register unreadable. The two
+        # early returns above (`not_configured`, `already_running`) never reach
+        # here, and a failed pass leaves its reason on `meta.message`.
+        if seen or cards:
             action_log.record_system(
                 "sync_export", "sync.arc_pass", db=db,
                 details=[("mode", mode), ("rows", len(seen)),
                          ("total", remote_total), ("pages", pages_seen),
-                         ("missing", missing_marked)],
+                         ("cards", cards), ("missing", missing_marked)],
             )
         return {"status": "ok", "mode": mode, "pages": pages_seen,
-                "seen": len(seen), "remote_total": remote_total,
+                "seen": len(seen), "cards": cards, "remote_total": remote_total,
                 "missing": missing_marked}
     except Exception as exc:
-        # Never leave the claim stuck. str(exc) is credential-free by the
-        # client's construction, and the page shows it verbatim.
+        # Never leave the claim stuck. str(exc) is key-free by the client's
+        # construction, and the page shows it verbatim.
         try:
             db.rollback()
             meta = _get_meta(db)
@@ -315,10 +416,10 @@ def register_boot_jobs() -> None:
     """Quick pass every INTERVAL_MIN minutes, full pass nightly, plus a
     one-shot catch-up a minute after boot (full if no full walk ever
     finished, quick otherwise). Mirrored in passenger_wsgi.py like every
-    other boot job. Skips entirely without credentials — same as the
-    worker-concerns crawl declining without a service-account key."""
+    other boot job. Skips entirely without a key — same as the worker-concerns
+    crawl declining without a service-account key."""
     if not configured():
-        log.info("arc: no ARC credentials, sync jobs not registered")
+        log.info("arc: no internal API key, sync jobs not registered")
         return
     from apscheduler.triggers.cron import CronTrigger
     from app.scheduler import SCHEDULER_TZ, get_scheduler, schedule_at, schedule_interval

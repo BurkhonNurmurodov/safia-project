@@ -1,14 +1,27 @@
 """
-ARC service-ticket register API (page /arc) — the tickets mirrored from the
-ARC API by services/arc_sync.py, served as a filterable, sortable, exportable
-register with a KPI strip.
+ARC service-ticket register API (page /arc) — the «АРС Фабрика» tickets
+mirrored from IT's internal read-only API by services/arc_sync.py, served as a
+filterable, sortable, exportable register with a KPI strip.
 
 Every derived fact the page shows («open», «late», hours-to-close …) is
 defined ONCE, in :func:`_derived`, as SQL expressions over the row's own
-timestamps, and every endpoint — list, stats, export — filters, sorts, counts
-and serialises through those same expressions. A number on the KPI strip is
-therefore always a count over exactly the rows the table would show for the
-same filters; there is no second copy of «what counts as open» to drift.
+status and timestamps, and every endpoint — list, stats, export — filters,
+sorts, counts and serialises through those same expressions. A number on the
+KPI strip is therefore always a count over exactly the rows the table would
+show for the same filters; there is no second copy of «what counts as open» to
+drift.
+
+Two facts about the source shape the whole module:
+
+  * **the status integer IS the state.** The API ships 0/1/3/4/6 and no label,
+    no colour and no «is_overdue» flag of its own, so open / done / cancelled
+    are read off it (services/arc_client names the codes) and the words come
+    from the four locales.
+  * **there is no deadline field.** The category carries ``ftime`` — the hours
+    a ticket of that kind is allowed — so the due moment is DERIVED as
+    ``created_at + ftime hours``. A category without one has no due date, and
+    such a ticket is neither on time nor late; every «on time» figure names
+    the count it was computed over.
 
 Rows the API stopped returning (``missing_since`` set by a completed full
 walk) are hidden unless ``include_missing`` is asked for — visible on request,
@@ -22,15 +35,18 @@ from typing import Any, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import Float, Text, and_, case, cast, func, not_, or_
+from sqlalchemy import (DateTime, Float, Text, and_, case, cast, func, not_,
+                        or_, text, type_coerce)
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import ArcRequest, ArcSyncMeta
 from app.permissions import require_page
-from app.services import action_log, arc_client, arc_discovery
+from app.services import action_log, arc_client
+from app.services.arc_client import (CANCELLED_STATUSES, DONE_STATUSES,
+                                     OPEN_STATUSES)
 from app.services.arc_export import build_arc_workbook
-from app.services.arc_sync import _live, start_sync_thread
+from app.services.arc_sync import _live, detail_pending, fetch_detail, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/arc", tags=["arc"])
@@ -41,7 +57,10 @@ PAGE = "arc"
 # spares the day-bound math a zoneinfo lookup per request.
 _TASHKENT = timezone(timedelta(hours=5))
 
-NOT_CONFIGURED_MSG = "ARC is not connected. Add ARC_USERNAME/ARC_PASSWORD to the backend."
+NOT_CONFIGURED_MSG = "ARC is not connected. INTERNAL_API_KEY is missing on the backend."
+
+# One hour as a SQL interval — the unit `category.ftime` is counted in.
+_HOUR = text("INTERVAL '1 hour'")
 
 
 # ── derived semantics (THE one definition) ───────────────────────────────────
@@ -49,67 +68,94 @@ NOT_CONFIGURED_MSG = "ARC is not connected. Add ARC_USERNAME/ARC_PASSWORD to the
 def _derived() -> dict[str, Any]:
     """The page's derived facts as SQL expressions over ArcRequest.
 
-    closed_at     = coalesce(completed_at, finished_at)
-    is_cancelled  = cancelled_at IS NOT NULL
-    is_open       = closed_at IS NULL AND NOT is_cancelled
-    is_closed     = closed_at IS NOT NULL AND NOT is_cancelled
-    due           = coalesce(deadline_time, deadline)
+    is_cancelled  = status = 4                (Отклонена)
+    is_done       = status IN (3, 6)          (Завершена · Обработана)
+    is_open       = status IS NULL OR status IN (0, 1)
+    closed_at     = finished_at, but only once the ticket is done or denied
+    due           = created_at + category_ftime hours, when the category has one
     late          = due IS NOT NULL AND coalesce(closed_at, now()) > due
-    overdue_now   = is_open AND (is_overdue OR late)
+    overdue_now   = is_open AND late
     hours_to_close= (closed_at − created_at) in hours, when closed
+    hours_to_start= (started_at − created_at) in hours, when taken into work
     """
     R = ArcRequest
-    closed_at = func.coalesce(R.completed_at, R.finished_at)
-    is_cancelled = R.cancelled_at.isnot(None)
-    is_open = and_(closed_at.is_(None), not_(is_cancelled))
-    is_closed = and_(closed_at.isnot(None), not_(is_cancelled))
-    due = func.coalesce(R.deadline_time, R.deadline)
+    is_cancelled = R.status.in_(CANCELLED_STATUSES)
+    is_done = R.status.in_(DONE_STATUSES)
+    is_open = or_(R.status.is_(None), R.status.in_(OPEN_STATUSES))
+    # finished_at is stamped on denial and on handling; a status that is still
+    # running must never read as closed just because a stamp survived an edit.
+    closed_at = case((or_(is_done, is_cancelled), R.finished_at), else_=None)
+    due = case(
+        (and_(R.created_at.isnot(None), R.category_ftime > 0),
+         type_coerce(R.created_at + R.category_ftime * _HOUR, DateTime(timezone=True))),
+        else_=None,
+    )
     late = and_(due.isnot(None), func.coalesce(closed_at, func.now()) > due)
-    overdue_now = and_(is_open, or_(R.is_overdue.is_(True), late))
+    overdue_now = and_(is_open, late)
     hours_to_close = case(
         (closed_at.isnot(None),
          cast(func.extract("epoch", closed_at - R.created_at), Float) / 3600.0),
+        else_=None,
+    )
+    hours_to_start = case(
+        (R.started_at.isnot(None),
+         cast(func.extract("epoch", R.started_at - R.created_at), Float) / 3600.0),
         else_=None,
     )
     return {
         "closed_at": closed_at,
         "is_cancelled": is_cancelled,
         "is_open": is_open,
-        "is_closed": is_closed,
+        "is_done": is_done,
         "due": due,
         "late": late,
         "overdue_now": overdue_now,
         "hours_to_close": hours_to_close,
+        "hours_to_start": hours_to_start,
     }
 
 
 # The derived columns that ride along with every serialised row, in the order
-# they are selected. is_closed is a stats-only helper (it is the complement of
+# they are selected. is_done is a stats-only helper (it is the complement of
 # open+cancelled and adds nothing to a row).
 _ROW_DERIVED = ("closed_at", "is_cancelled", "is_open", "due", "late",
-                "overdue_now", "hours_to_close")
+                "overdue_now", "hours_to_close", "hours_to_start")
 
 
 # ── filters ──────────────────────────────────────────────────────────────────
+
+def _ints(values: list[str]) -> list[int]:
+    """Query values → ints, silently dropping anything that is not one. The
+    page sends ids it got from /meta, so a non-numeric value is a typed URL."""
+    out = []
+    for v in values or []:
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    return out
+
 
 def _filters(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     status: list[str] = Query(default=[]),
     category: list[str] = Query(default=[]),
-    branch: list[str] = Query(default=[]),
-    master: list[str] = Query(default=[]),
+    division: list[str] = Query(default=[]),
+    brigada: list[str] = Query(default=[]),
+    author: list[str] = Query(default=[]),
     urgent: str = Query("all"),
     overdue: str = Query("all"),
-    sap: str = Query("all"),
+    source: str = Query("all"),
     state: str = Query("all"),
     q: Optional[str] = Query(None),
     include_missing: bool = Query(False),
 ) -> dict:
     return {"date_from": date_from, "date_to": date_to, "status": status,
-            "category": category, "branch": branch, "master": master,
-            "urgent": urgent, "overdue": overdue, "sap": sap, "state": state,
-            "q": q, "include_missing": include_missing}
+            "category": category, "division": division, "brigada": brigada,
+            "author": author, "urgent": urgent, "overdue": overdue,
+            "source": source, "state": state, "q": q,
+            "include_missing": include_missing}
 
 
 def _day_start(s: Optional[str]) -> Optional[datetime]:
@@ -144,19 +190,21 @@ def _apply_filters(query, f: dict, D: dict):
     hi = _day_start(f.get("date_to"))
     if hi is not None:
         query = query.filter(R.created_at < hi + timedelta(days=1))
-    if f.get("status"):
-        query = query.filter(R.normalized_status.in_(f["status"]))
-    if f.get("category"):
-        query = query.filter(R.category_id.in_(f["category"]))
-    if f.get("branch"):
-        query = query.filter(R.branch_id.in_(f["branch"]))
-    if f.get("master"):
-        query = query.filter(R.master_id.in_(f["master"]))
-    for key, expr in (("urgent", R.category_is_urgent),
-                      ("sap", R.sended_to_sap)):
-        cond = _tri(f.get(key) or "all", expr)
-        if cond is not None:
-            query = query.filter(cond)
+    for key, col in (("status", R.status), ("category", R.category_id),
+                     ("brigada", R.brigada_id), ("author", R.user_id)):
+        vals = _ints(f.get(key) or [])
+        if vals:
+            query = query.filter(col.in_(vals))
+    if f.get("division"):
+        query = query.filter(R.division_id.in_(f["division"]))
+    cond = _tri(f.get("urgent") or "all", R.category_urgent)
+    if cond is not None:
+        query = query.filter(cond)
+    src = f.get("source") or "all"
+    if src == "bot":
+        query = query.filter(R.is_bot.is_(True))
+    elif src == "app":
+        query = query.filter(func.coalesce(R.is_bot, False).is_(False))
     ov = f.get("overdue") or "all"
     if ov == "yes":
         query = query.filter(D["overdue_now"])
@@ -165,8 +213,8 @@ def _apply_filters(query, f: dict, D: dict):
     state = f.get("state") or "all"
     if state == "open":
         query = query.filter(D["is_open"])
-    elif state == "closed":
-        query = query.filter(D["is_closed"])
+    elif state == "done":
+        query = query.filter(D["is_done"])
     elif state == "cancelled":
         query = query.filter(D["is_cancelled"])
     q = (f.get("q") or "").strip()
@@ -175,9 +223,10 @@ def _apply_filters(query, f: dict, D: dict):
         query = query.filter(or_(
             cast(R.request_num, Text).ilike(like),
             R.description.ilike(like),
-            R.branch_name.ilike(like),
-            R.client_name.ilike(like),
-            R.master_name.ilike(like),
+            R.division_name.ilike(like),
+            R.user_name.ilike(like),
+            R.brigada_name.ilike(like),
+            R.category_name.ilike(like),
         ))
     return query
 
@@ -186,19 +235,20 @@ def _apply_filters(query, f: dict, D: dict):
 
 def _sort_expr(sort: Optional[str], D: dict):
     """«key:dir» → ORDER BY terms. Unknown keys fall back to created_at:desc.
-    «deadline» (and «due») sort by the effective due moment the table shows."""
+    «due» sorts by the derived due moment the table shows."""
     R = ArcRequest
     key, _, direction = (sort or "created_at:desc").partition(":")
     desc = (direction or "desc").lower() != "asc"
     cols = {
         "request_num": R.request_num,
         "created_at": R.created_at,
-        "deadline": D["due"],
+        "started_at": R.started_at,
         "due": D["due"],
-        "branch_name": R.branch_name,
+        "division_name": R.division_name,
         "category_name": R.category_name,
-        "master_name": R.master_name,
-        "normalized_status": R.normalized_status,
+        "brigada_name": R.brigada_name,
+        "user_name": R.user_name,
+        "status": R.status,
         "closed_at": D["closed_at"],
         "hours_to_close": D["hours_to_close"],
     }
@@ -221,18 +271,17 @@ def _iso(dt: Optional[datetime]) -> Optional[str]:
 
 
 _ROW_COLS = (
-    "remote_id", "request_num", "branch_id", "branch_name", "country_id",
-    "description", "category_id", "category_name", "category_is_urgent",
-    "category_deadline_hours", "deadline", "deadline_time", "master_id",
-    "master_name", "status", "normalized_status", "status_color", "is_overdue",
-    "created_at", "cancelled_at", "finished_at", "completed_at", "extra_phone",
-    "latitude", "longitude", "deny_reason", "sended_to_sap", "photo_report",
-    "comment_report", "document_url", "has_other_active", "other_active_count",
-    "client_name", "first_seen_at", "synced_at", "missing_since",
+    "remote_id", "request_num", "status", "user_id", "user_name", "user_phone",
+    "user_manager", "division_id", "division_name", "manager_name",
+    "brigada_id", "brigada_name", "category_id", "category_name",
+    "category_urgent", "category_ftime", "department", "sphere_status",
+    "is_bot", "created_at", "started_at", "finished_at", "description",
+    "deny_reason", "files", "update_time", "comment_count", "detail_at",
+    "first_seen_at", "synced_at", "missing_since",
 )
 
 
-def _serialize(r: ArcRequest, derived: dict[str, Any], with_raw: bool = False) -> dict:
+def _serialize(r: ArcRequest, derived: dict[str, Any], with_detail: bool = False) -> dict:
     """A row + its derived facts (as computed by the SAME SQL the filters
     use, never re-derived in Python)."""
     out: dict[str, Any] = {"id": r.remote_id}
@@ -245,10 +294,17 @@ def _serialize(r: ArcRequest, derived: dict[str, Any], with_raw: bool = False) -
     out["is_open"] = bool(derived.get("is_open"))
     out["late"] = bool(derived.get("late"))
     out["overdue_now"] = bool(derived.get("overdue_now"))
-    h = derived.get("hours_to_close")
-    out["hours_to_close"] = round(float(h), 2) if h is not None else None
-    if with_raw:
+    for k in ("hours_to_close", "hours_to_start"):
+        h = derived.get(k)
+        out[k] = round(float(h), 2) if h is not None else None
+    # `detail_at` is what says whether the card was ever fetched; a row with
+    # none is list-only, and an empty description on it means «not read yet»,
+    # not «the ticket has none». The page must be able to tell those apart.
+    out["has_detail"] = r.detail_at is not None
+    if with_detail:
+        out["comments"] = r.comments
         out["raw"] = r.raw
+        out["detail_raw"] = r.detail_raw
     return out
 
 
@@ -288,53 +344,56 @@ def _sync_state(meta: Optional[ArcSyncMeta]) -> dict:
         "mode": meta.mode if meta else None,
         "started_at": _iso(meta.started_at) if meta else None,
         "last_full_at": _iso(meta.last_full_at) if meta else None,
-        "spec_available": bool(meta and meta.spec is not None),
-        # What the API says it holds under the widest parameters we found, vs
-        # what we hold. The two numbers side by side are the whole «are we
-        # missing data?» question — never make the reader compute it.
-        "probe_at": _iso(getattr(meta, "probe_at", None)) if meta else None,
-        "filters": getattr(meta, "filters", None) if meta else None,
+        # Cards are fetched one ticket at a time and bounded per pass, so the
+        # mirror fills in over several passes. Saying how many are still
+        # outstanding is the difference between «still loading» and «this
+        # ticket has no description».
+        "detail_pending": (meta.detail_pending if meta else 0) or 0,
+        "detail_done": (meta.detail_done if meta else 0) or 0,
     }
 
 
 def _options(db: Session) -> dict:
-    """Filter option lists over the rows the API still returns. Statuses group
-    by ``normalized_status`` ALONE (one colour per value via min): the page keys
-    the list by value, and one status carrying two colours upstream would
-    otherwise render as two identical rows."""
+    """Filter option lists over the rows the API still returns."""
     R = ArcRequest
     base = db.query(R).filter(R.missing_since.is_(None))
     statuses = [
-        {"value": ns, "label": ns, "color": col, "count": n}
-        for ns, col, n in (base.with_entities(R.normalized_status, func.min(R.status_color), func.count(R.id))
-                           .group_by(R.normalized_status)
-                           .order_by(R.normalized_status).all())
-        if ns
+        {"value": st, "count": n}
+        for st, n in (base.with_entities(R.status, func.count(R.id))
+                      .group_by(R.status).order_by(R.status).all())
+        if st is not None
     ]
     categories = [
-        {"id": cid, "name": name, "is_urgent": bool(urg), "count": n}
+        {"id": cid, "name": name, "urgent": bool(urg), "count": n}
         for cid, name, urg, n in (base.with_entities(R.category_id, R.category_name,
-                                                     R.category_is_urgent, func.count(R.id))
-                                  .group_by(R.category_id, R.category_name, R.category_is_urgent)
+                                                     R.category_urgent, func.count(R.id))
+                                  .group_by(R.category_id, R.category_name, R.category_urgent)
                                   .order_by(R.category_name).all())
-        if cid
+        if cid is not None
     ]
-    branches = [
+    divisions = [
+        {"id": did, "name": name, "count": n}
+        for did, name, n in (base.with_entities(R.division_id, R.division_name, func.count(R.id))
+                             .group_by(R.division_id, R.division_name)
+                             .order_by(R.division_name).all())
+        if did
+    ]
+    brigadas = [
         {"id": bid, "name": name, "count": n}
-        for bid, name, n in (base.with_entities(R.branch_id, R.branch_name, func.count(R.id))
-                             .group_by(R.branch_id, R.branch_name)
-                             .order_by(R.branch_name).all())
-        if bid
+        for bid, name, n in (base.with_entities(R.brigada_id, R.brigada_name, func.count(R.id))
+                             .group_by(R.brigada_id, R.brigada_name)
+                             .order_by(R.brigada_name).all())
+        if bid is not None
     ]
-    masters = [
-        {"id": mid, "name": name, "count": n}
-        for mid, name, n in (base.with_entities(R.master_id, R.master_name, func.count(R.id))
-                             .group_by(R.master_id, R.master_name)
-                             .order_by(R.master_name).all())
-        if mid
+    authors = [
+        {"id": uid, "name": name, "count": n}
+        for uid, name, n in (base.with_entities(R.user_id, R.user_name, func.count(R.id))
+                             .group_by(R.user_id, R.user_name)
+                             .order_by(func.count(R.id).desc()).all())
+        if uid is not None
     ]
     return {"statuses": statuses, "categories": categories,
-            "branches": branches, "masters": masters}
+            "divisions": divisions, "brigadas": brigadas, "authors": authors}
 
 
 # ── endpoints ────────────────────────────────────────────────────────────────
@@ -389,30 +448,29 @@ def get_stats(
     def _sum(cond):
         return func.coalesce(func.sum(case((cond, 1), else_=0)), 0)
 
-    closed_with_due = and_(D["is_closed"], D["due"].isnot(None))
-    late_closed = and_(D["is_closed"], D["late"])
-    hours_closed = case((D["is_closed"], D["hours_to_close"]), else_=None)
+    closed_with_due = and_(D["is_done"], D["due"].isnot(None), D["closed_at"].isnot(None))
+    late_closed = and_(D["is_done"], D["closed_at"].isnot(None), D["late"])
+    hours_closed = case((D["is_done"], D["hours_to_close"]), else_=None)
 
     tot = base.with_entities(
         func.count(R.id),
         _sum(D["is_open"]),
         _sum(D["overdue_now"]),
         _sum(D["is_cancelled"]),
-        _sum(D["is_closed"]),
+        _sum(D["is_done"]),
         _sum(closed_with_due),
         _sum(late_closed),
         func.percentile_cont(0.5).within_group(hours_closed),
         func.avg(hours_closed),
     ).one()
-    shown, n_open, n_overdue, n_cancelled, n_closed, n_cwd, n_late, med, avg = tot
+    shown, n_open, n_overdue, n_cancelled, n_done, n_cwd, n_late, med, avg = tot
     n_cwd, n_late = _n(n_cwd), _n(n_late)
     on_time = round(100.0 * (n_cwd - n_late) / n_cwd, 1) if n_cwd else None
 
     by_status = [
-        {"value": ns, "label": ns, "color": col, "count": n}
-        for ns, col, n in (base.with_entities(R.normalized_status, func.min(R.status_color), func.count(R.id))
-                           .group_by(R.normalized_status)
-                           .order_by(func.count(R.id).desc()).all())
+        {"value": st, "count": n}
+        for st, n in (base.with_entities(R.status, func.count(R.id))
+                      .group_by(R.status).order_by(func.count(R.id).desc()).all())
     ]
     by_category = [
         {"id": cid, "name": name, "count": n, "overdue": _n(ov)}
@@ -421,16 +479,16 @@ def get_stats(
                                  .group_by(R.category_id, R.category_name)
                                  .order_by(func.count(R.id).desc()).all())
     ]
-    by_master = [
-        {"id": mid, "name": name, "open": _n(o), "overdue": _n(ov),
+    by_brigada = [
+        {"id": bid, "name": name, "open": _n(o), "overdue": _n(ov),
          "closed": _n(c), "late_closed": _n(lc),
          "median_hours": round(float(m), 1) if m is not None else None}
-        for mid, name, o, ov, c, lc, m in (
-            base.with_entities(R.master_id, R.master_name,
+        for bid, name, o, ov, c, lc, m in (
+            base.with_entities(R.brigada_id, R.brigada_name,
                                _sum(D["is_open"]), _sum(D["overdue_now"]),
-                               _sum(D["is_closed"]), _sum(late_closed),
+                               _sum(D["is_done"]), _sum(late_closed),
                                func.percentile_cont(0.5).within_group(hours_closed))
-            .group_by(R.master_id, R.master_name)
+            .group_by(R.brigada_id, R.brigada_name)
             .order_by(func.count(R.id).desc()).all())
     ]
     return {
@@ -438,7 +496,7 @@ def get_stats(
         "open": _n(n_open),
         "overdue": _n(n_overdue),
         "cancelled": _n(n_cancelled),
-        "closed": _n(n_closed),
+        "done": _n(n_done),
         "closed_with_due": n_cwd,
         "late_closed": n_late,
         "on_time_pct": on_time,
@@ -446,7 +504,7 @@ def get_stats(
         "avg_hours": round(float(avg), 1) if avg is not None else None,
         "by_status": by_status,
         "by_category": by_category,
-        "by_master": by_master,
+        "by_brigada": by_brigada,
     }
 
 
@@ -456,13 +514,31 @@ def get_request(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """One ticket, derived facts and the raw API item included."""
+    """One ticket, derived facts and the whole card included.
+
+    The list walk cannot carry a description — that is a per-ticket call — so a
+    row nobody has hydrated yet is fetched HERE, once, on the way out. A reader
+    who opens a ticket never waits on the background queue, and a failure is a
+    silent fall back to what the mirror already holds rather than a modal that
+    refuses to open."""
     D = _derived()
-    tup = (db.query(ArcRequest, *[D[k].label(k) for k in _ROW_DERIVED])
-           .filter(ArcRequest.remote_id == remote_id).first())
+
+    def _load():
+        return (db.query(ArcRequest, *[D[k].label(k) for k in _ROW_DERIVED])
+                .filter(ArcRequest.remote_id == remote_id).first())
+
+    tup = _load()
     if not tup:
         raise HTTPException(status_code=404, detail="Request not found")
-    return _serialize(tup[0], dict(zip(_ROW_DERIVED, tup[1:])), with_raw=True)
+    if tup[0].detail_at is None and arc_client.configured():
+        try:
+            with httpx.Client(timeout=arc_client._TIMEOUT) as client:
+                fetch_detail(db, client, remote_id)
+            db.commit()
+            tup = _load() or tup
+        except Exception:
+            db.rollback()
+    return _serialize(tup[0], dict(zip(_ROW_DERIVED, tup[1:])), with_detail=True)
 
 
 @router.post("/refresh")
@@ -493,28 +569,36 @@ class ArcExportBody(BaseModel):
     """The page's current filter set + sort + the visible column keys in
     on-screen order. ``labels`` (optional) carries the column headers already
     in the viewer's language; a key without one falls back to a plain English
-    header. Data is re-queried HERE through the same filters as /list, so the
-    file carries every matching row, not the page on screen."""
+    header. ``status_labels`` maps a status code to its word, for the same
+    reason — the API ships an integer and the words live in the locales. Data
+    is re-queried HERE through the same filters as /list, so the file carries
+    every matching row, not the page on screen."""
     date_from: Optional[str] = None
     date_to: Optional[str] = None
     status: list[str] = []
     category: list[str] = []
-    branch: list[str] = []
-    master: list[str] = []
+    division: list[str] = []
+    brigada: list[str] = []
+    author: list[str] = []
     urgent: str = "all"
     overdue: str = "all"
-    sap: str = "all"
+    source: str = "all"
     state: str = "all"
     q: Optional[str] = None
     include_missing: bool = False
     sort: str = "created_at:desc"
     columns: list[str] = []
     labels: dict[str, str] = {}
+    status_labels: dict[str, str] = {}
     caption: Optional[str] = None
 
 
 # Export ceiling — an Excel sheet of more rows than this is not a report.
 _EXPORT_MAX_ROWS = 50_000
+
+_FILTER_KEYS = ("date_from", "date_to", "status", "category", "division",
+                "brigada", "author", "urgent", "overdue", "source", "state",
+                "q", "include_missing")
 
 
 def _scope_line(f: dict, sort: Optional[str]) -> str:
@@ -525,11 +609,11 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
     for key in ("date_from", "date_to", "q"):
         if f.get(key):
             parts.append(f"{key}={f[key]}")
-    for key in ("status", "category", "branch", "master"):
+    for key in ("status", "category", "division", "brigada", "author"):
         vals = f.get(key) or []
         if vals:
             parts.append(f"{key}={','.join(str(v) for v in vals)}")
-    for key in ("urgent", "overdue", "sap", "state"):
+    for key in ("urgent", "overdue", "source", "state"):
         if (f.get(key) or "all") != "all":
             parts.append(f"{key}={f[key]}")
     if f.get("include_missing"):
@@ -549,13 +633,11 @@ def export_xlsx(
     """Excel of the register as filtered on the page, in the page's column
     order. A browser session downloads it; inside Telegram it lands in the
     caller's private chat (app/xlsx_delivery.py)."""
-    f = {k: getattr(body, k) for k in
-         ("date_from", "date_to", "status", "category", "branch", "master",
-          "urgent", "overdue", "sap", "state", "q", "include_missing")}
+    f = {k: getattr(body, k) for k in _FILTER_KEYS}
     D = _derived()
     query = _rows_query(db, f, D)
     rows = _fetch_rows(query, D, body.sort, limit=_EXPORT_MAX_ROWS)
-    bio = build_arc_workbook(rows, body.columns, body.labels)
+    bio = build_arc_workbook(rows, body.columns, body.labels, body.status_labels)
 
     today = datetime.now(_TASHKENT).date().isoformat()
     fname = f"arc_requests_{today}.xlsx"
@@ -576,97 +658,27 @@ def export_xlsx(
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
 
 
-@router.post("/probe")
-def post_probe(
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """Re-measure what the ARC API is willing to give under which parameters
-    (services/arc_discovery.py) and adopt the widest set. ADMIN-ONLY: it is a
-    burst of calls against a third-party system and it CHANGES what every
-    later sync sends."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    if not arc_client.configured():
-        raise HTTPException(status_code=400, detail=NOT_CONFIGURED_MSG)
-    report = arc_discovery.run_probe(db)
-    if not report.get("ok"):
-        raise HTTPException(status_code=502, detail=f"ARC probe failed: {report.get('error')}")
-    # The probe CHANGES what every later walk sends, so the adopted parameter set
-    # and what it bought (baseline total → combined total) are the record.
-    winners = report.get("filters") or {}
-    combined = report.get("combined_total")
-    action_log.enrich(
-        target_kind="setting", target_id="arc.filters",
-        details=[
-            ("count", report.get("calls")),
-            ("value", ", ".join(f"{k}={v}" for k, v in winners.items()) or "defaults"),
-            ("spec_available", bool(report.get("spec_available"))),
-        ],
-        changes=([("total", report.get("baseline_total"), combined)]
-                 if combined is not None else None),
-    )
-    return report
-
-
-@router.get("/probe")
-def get_probe(
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """The last measurement, unchanged — what the API declares it accepts,
-    what each parameter did to the total, and which set the walk now sends."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    meta = db.query(ArcSyncMeta).filter_by(id=1).first()
-    return {
-        "report": getattr(meta, "probe", None),
-        "at": _iso(getattr(meta, "probe_at", None)),
-        "filters": getattr(meta, "filters", None),
-        # The spec may exist even when nothing has been probed yet — the
-        # parameter list alone already answers «which filters are there?».
-        "params": arc_discovery.describe_params(getattr(meta, "spec", None)),
-        "paths": arc_discovery.describe_paths(getattr(meta, "spec", None)),
-        "spec_available": bool(getattr(meta, "spec", None)),
-    }
-
-
 @router.get("/diag")
-def get_diag(payload: dict = Depends(require_page(PAGE))):
-    """Why «not connected»? ADMIN-ONLY. Reports which env NAMES the process
-    finds and where (never a value) — the platform has no shell, so this is the
-    only way to tell «wrong file» from «unparseable line» from «blank value»."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    return arc_client.diagnostics()
-
-
-@router.get("/spec")
-def get_spec(
+def get_diag(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """The ARC API's own openapi document — ADMIN-ONLY (narrower than the
-    page): reference material about a third-party system, not ticket data.
-    Served from the stored copy; fetched live once when none is stored yet."""
+    """Why «not connected»? ADMIN-ONLY. Reports whether the process finds the
+    internal key and where (never its value), plus one live knock on the API —
+    the platform has no shell, so this is the only way to tell «wrong file»
+    from «unparseable line» from «their server rejects our key»."""
     if payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
-    meta = db.query(ArcSyncMeta).filter_by(id=1).first()
-    if meta and meta.spec is not None:
-        return {"spec": meta.spec, "fetched_at": _iso(meta.spec_fetched_at)}
-    if not arc_client.configured():
-        raise HTTPException(status_code=400, detail=NOT_CONFIGURED_MSG)
-    try:
-        with httpx.Client(timeout=arc_client._TIMEOUT) as client:
-            doc = arc_client.fetch_openapi(client)
-    except Exception:
-        doc = None
-    if doc is None:
-        raise HTTPException(status_code=502, detail="ARC did not return its openapi document")
-    if meta is None:
-        meta = ArcSyncMeta(id=1)
-        db.add(meta)
-    meta.spec = doc
-    meta.spec_fetched_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"spec": doc, "fetched_at": _iso(meta.spec_fetched_at)}
+    out = arc_client.diagnostics()
+    out["pending_details"] = detail_pending(db)
+    if arc_client.configured():
+        try:
+            with httpx.Client(timeout=arc_client._TIMEOUT) as client:
+                probe = arc_client.ping(client)
+        except Exception as exc:                       # noqa: BLE001 - reported
+            probe = {"ok": False, "error": str(exc)[:300]}
+        # The sample row would carry a real person's name and phone into a
+        # diagnostic panel; the numbers are the whole answer here.
+        probe.pop("sample", None)
+        out["ping"] = probe
+    return out

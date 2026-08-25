@@ -1213,59 +1213,85 @@ re-verifies it on every request. The second is a username + password at
 
 ## ARC tickets (`/arc`, page key `arc`)
 
-A mirror of IT's ARC service-ticket API
-(`api.dashboard.service.safiabakery.uz`, login → bearer → paginated
-`/arc/api/v1/requests/factory`). Admin-only by default; open it from Access /
-Permissions. `services/arc_client.py` (login, cached token, ONE re-login on
-401, page walk) · `services/arc_sync.py` (background thread + DB claim, per-page
+A mirror of «АРС Фабрика» from IT's **internal read-only API**
+(`api.service.safiabakery.uz/api/internal`, one key in `X-Internal-Key`,
+GET only, paginated `/arc/factory/requests`). Admin-only by default; open it
+from Access / Permissions. `services/arc_client.py` (key auth, page walk,
+normalisation) · `services/arc_sync.py` (background thread + DB claim, per-page
 `ON CONFLICT` upsert into `arc_requests`, quick pass every 15 min = first 30
-pages, full walk nightly 03:15 + on Refresh + 60 s after boot) ·
-`routers/arc.py` (`/meta` `/list` `/stats` `/requests/{id}` `/refresh`
-`/export.xlsx` `/spec`) · `pages/Arc.jsx`.
+pages, full walk nightly 03:15 + on Refresh + 60 s after boot, then a bounded
+card-hydration phase) · `routers/arc.py` (`/meta` `/list` `/stats`
+`/requests/{id}` `/refresh` `/export.xlsx` `/diag`) · `pages/Arc.jsx`.
 
-- **The API's quirks are load-bearing**: a wrong password answers **404**
-  «Invalid Credentials» (not 401); there is no refresh endpoint (re-login);
-  docs live at `/arc/openapi.json` BEHIND the bearer (the sync stores them in
-  `arc_sync_meta.spec`, admin `GET /api/arc/spec`); tickets carry no
-  `updated_at`, so a row the API stops returning is only ever MARKED
-  (`missing_since`, set by a COMPLETED full walk that saw ≥1 ticket, cleared
-  when seen again) — never deleted.
-- **What the API gives is MEASURED, never assumed** (`services/arc_discovery.py`,
-  admin «API» panel on the page + `GET/POST /api/arc/probe`). FastAPI silently
-  IGNORES a query parameter it does not declare, so guessing filter names is
-  worthless — the openapi document lists them and the only honest test is the
-  `total` the API reports for one parameter set versus another. The probe tries
-  both sides of every declared boolean, each enum value and an open bound for
-  every date parameter, keeps whatever RAISES the total, and verifies the
-  combination beats the baseline before storing it in `arc_sync_meta.filters`;
-  every walk then sends that set. A first full sync with no stored measurement
-  probes before walking. Nothing is stored when the defaults are already widest.
-  **The spec is often refused** (the panel now reports the status of all five
-  candidate paths), so there is a spec-free fallback that costs nothing in
-  correctness: FastAPI VALIDATES what it declares and IGNORES what it does not,
-  so one deliberately-wrong value per candidate name is an existence oracle —
-  a **422 proves the parameter is real**, a 200 means it was ignored. Only
-  proven names then cost a real measurement, so a guess can never produce a
-  false finding. The panel also shows our own token's claims (the account's
-  actual scope — the first thing to check against any «you have full access»
-  claim), fields the API sends that we do not store, and a direct knock on
-  eight sibling endpoints (`/stats`, `/export`, …).
-- **Derived state is defined ONCE** (`_derived()` in the router):
-  `closed_at = coalesce(completed_at, finished_at)`, `is_open`, `due =
-  coalesce(deadline_time, deadline)`, `late`, `overdue_now`, `hours_to_close`
-  — list, stats and export all read the same expressions; on-time % is over
-  closed tickets that HAVE a due. Status chips map `normalized_status` onto the
-  traffic-light palette by vocabulary (`utils/arcStatus.js`); the remote
-  `status_color` is a plain-hex fallback only. The register defaults to NO
-  period — a rolling window is a filter the reader never chose, and it made a
-  full mirror look like a thin one.
-- **Credentials**: `Settings.arc_username/arc_password` read `ARC_USERNAME` /
-  `ARC_PASSWORD` first, then the bare `USERNAME` / `PASSWORD` IT wrote into prod
-  `.env` by SSH — and `PASSAWORD`, the misspelling actually in that file (it is
-  the one thing the code cannot edit); both blank ⇒ «not connected», no jobs
-  registered. `Settings.Config.extra = "ignore"` exists because a stray `.env`
-  key used to abort boot AND the rollback — never re-tighten it. Rotation
-  without SSH: Gitea secrets `ARC_USERNAME` / `ARC_PASSWORD` (`deploy/sync-env.sh`).
+**It replaced the old ARC login API wholesale on 2026-08-25, and the history
+was DELETED rather than migrated** (`startup.reset_arc_mirror`, flag
+`arc_internal_api_reset_2026_08_25_v1`, which DROPs both tables and rebuilds
+them from the new metadata because `create_all` never ALTERs). Nothing in the
+old table could be re-read under the new columns: integer ids and statuses
+where there were uuids and status words, a division where there was a branch, a
+brigade where there was a master, and **no deadline column at all**. Moving the
+reset again needs a NEW flag key — the old "already ran" mark makes it a no-op
+on every box that has booted since. The whole register (~32k tickets) comes
+back on the first walk.
+
+- **One key, no session.** `INTERNAL_API_KEY` in `X-Internal-Key` on every
+  request; blank ⇒ «not connected» and no jobs registered.
+  `startup.ensure_internal_api_key` SEEDS it into `backend/.env` at boot AND
+  into the live settings object (pydantic read the file long before), so a
+  fresh box connects itself — this platform has no shell, so a key that is not
+  in code is a key that never reaches production. It is **insert-only**: a
+  file that already names the key is left alone, so a rotation on the server
+  (or via the Gitea secret `INTERNAL_API_KEY` + `deploy/sync-env.sh`) survives
+  the next deploy. `Settings.Config.extra = "ignore"` exists because a stray
+  `.env` key used to abort boot AND the rollback — never re-tighten it.
+- **There is nothing to probe any more.** `services/arc_discovery.py`, the
+  «API» panel, `/probe` and `/spec` are all GONE: every documented parameter
+  NARROWS the answer, so the bare walk is already the widest one the key can
+  perform. Sending no filters is the deliberate choice, not an oversight.
+- **The list is thin; the description is on the CARD.** `/arc/factory/requests`
+  carries the ticket, author, division, category and brigade — but not the
+  description, deny reason, files or status timeline. Those are one call per
+  ticket, so hydration is a SECOND, bounded phase of each pass
+  (`hydrate_details`, never-fetched newest-first then stale-open ones,
+  `DETAIL_BATCH_*` per pass ≈ 10 req/min). `detail_at IS NULL` is the whole
+  «list-only so far» fact and the page says so out loud — a row shows «…» with
+  «not fetched yet», never a blank that reads as «this ticket has none» — and
+  `GET /requests/{id}` fetches a missing card ON DEMAND, so a ticket a reader
+  actually opens never waits for the queue. `detail_pending` deliberately
+  counts only never-fetched rows: the full queue also holds open tickets due a
+  routine re-read, so it never reaches zero, and a counter that never reaches
+  zero reads as «still loading» forever.
+- **The status integer IS the state** (0 created · 1 in progress · 3 completed ·
+  4 denied · 6 handled/awaiting confirmation, named in `arc_client`). The API
+  ships no label and no colour, so open/done/cancelled are read off the code,
+  the traffic-light tone comes from `utils/arcStatus.js` and the WORDS from
+  `arc.st.<code>` in the four locales — which is why the Excel export is sent
+  `status_labels` instead of formatting them itself. An unmapped code renders
+  as «#7», never a raw translation key.
+- **There is no deadline field — `due` is DERIVED** as
+  `created_at + category.ftime hours`. A category without an `ftime` gives a
+  ticket no due date, and such a ticket is neither on time nor late; the KPI
+  therefore names the count it was computed over («of N done with a deadline»).
+- **Derived state is defined ONCE** (`_derived()` in the router): `is_cancelled`
+  `is_done` `is_open` `closed_at` (finished_at, but only once the status says
+  the ticket is finished) `due` `late` `overdue_now` `hours_to_close`
+  `hours_to_start` — list, stats and export all read the same expressions. The
+  register defaults to NO period — a rolling window is a filter the reader never
+  chose, and it made a full mirror look like a thin one.
+- Tickets carry no `updated_at`, so every walk re-writes every row it sees and a
+  row the API stops returning is only ever MARKED (`missing_since`, set by a
+  COMPLETED full walk that saw ≥1 ticket, cleared when seen again) — never
+  deleted. A LIST upsert must never blank a card-only column: `_UPSERT_COLS`
+  excludes them and `comments` is coalesced, because the list ships `[]` for a
+  ticket whose card holds a thread.
+- Attachments are relative paths (`files/….jpg`) resolved by
+  `arc_client.file_url` against the API host; they serve **unauthenticated**, so
+  the detail modal renders images inline and falls back to a link on error.
+- **«Инвентарь Фабрика» is NOT mirrored.** The same key opens
+  `/inventory/factory/requests` (different status set, `request_status` takes
+  several values, and `fillial_id` matches the PARENT branch there, not the
+  ticket's own) — building that register is a separate decision, not a
+  side-effect of this one.
 
 ## Workflow
 

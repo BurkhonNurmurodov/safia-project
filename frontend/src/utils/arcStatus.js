@@ -1,38 +1,55 @@
-// ARC ticket status → traffic-light tone. The ARC API ships a free-form
-// `normalized_status` string plus its own `status_color`; the platform's status
-// palette is fixed (red / yellow / green / grey, brand gold never a status), so
-// the string is matched by vocabulary first and the remote colour is only a
-// last resort for a status nobody has named yet.
+// ARC ticket status → traffic-light tone.
 //
-//   toneFor(normalized_status, status_color) → { color, dashed }
-//   `dashed` marks a NEW / pending ticket, whose grey would otherwise be
-//   indistinguishable from a cancelled one.
+// IT's internal API ships a bare INTEGER and nothing else — no label, no
+// colour of its own — so the vocabulary is the documented code table and the
+// WORDS live in the four locales (`arc.st.<code>`). Anything that needs to
+// name or colour a status goes through here, so the register chip, the filter
+// dots and the mobile card's stripe can never disagree.
+//
+//   0  Создана                          — filed, nobody has picked it up
+//   1  В работе                         — a brigade has it, started_at stamped
+//   3  Завершена                        — done, the author is asked to rate it
+//   4  Отклонена                        — denied, deny_reason says why
+//   6  Обработана, ждёт подтверждения    — done, waiting on the author
+//
+// `dashed` marks a status that is WAITING ON SOMEBODY — a fresh ticket and a
+// handled-but-unconfirmed one — so neither reads as settled at a glance.
 
 export const C_DONE = "#22c55e";
 export const C_DOING = "#eab308";
 export const C_OVERDUE = "#ef4444";
 export const C_GREY = "#94a3b8";
 
-const RX_DONE = /(complet|finish|done|закрыт|выполн|заверш|bajarildi|yakun)/;
-const RX_CANCEL = /(cancel|отмен|deny|отказ|rad|bekor)/;
-const RX_DOING = /(progress|в работе|process|accept|принят|jarayon|qabul)/;
-const RX_NEW = /(new|нов|pending|ожид|wait|kut|yangi|created)/;
+export const ST_NEW = 0;
+export const ST_DOING = 1;
+export const ST_DONE = 3;
+export const ST_DENIED = 4;
+export const ST_HANDLED = 6;
 
-// A remote colour is used only when it is a plain #RGB / #RRGGBB hex — the one
-// form `hexA` can tint. A named colour, rgb() or an alpha hex would leave the
-// chip with background === text colour, and a bare word like "warning" would
-// leak into an inline style as no colour at all.
-const RX_CSS_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+// In the order a ticket travels, which is the order the filter lists them.
+export const STATUS_CODES = [ST_NEW, ST_DOING, ST_HANDLED, ST_DONE, ST_DENIED];
 
-export function toneFor(normalizedStatus, statusColor) {
-  const s = String(normalizedStatus || "").toLowerCase();
-  if (RX_DONE.test(s)) return { color: C_DONE, dashed: false };
-  if (RX_CANCEL.test(s)) return { color: C_GREY, dashed: false };
-  if (RX_DOING.test(s)) return { color: C_DOING, dashed: false };
-  if (RX_NEW.test(s)) return { color: C_GREY, dashed: true };
-  const c = String(statusColor || "").trim();
-  if (c && RX_CSS_COLOR.test(c)) return { color: c, dashed: false };
-  return { color: C_GREY, dashed: false };
+const TONES = {
+  [ST_NEW]: { color: C_GREY, dashed: true },
+  [ST_DOING]: { color: C_DOING, dashed: false },
+  [ST_DONE]: { color: C_DONE, dashed: false },
+  // Denied is a status, not a failure — red stays reserved for LATE, which is
+  // a separate fact that can ride beside any status.
+  [ST_DENIED]: { color: C_GREY, dashed: false },
+  [ST_HANDLED]: { color: C_DONE, dashed: true },
+};
+
+export function toneFor(status) {
+  return TONES[status] || { color: C_GREY, dashed: false };
+}
+
+// The status in the viewer's language. A code the API starts sending that
+// nobody has named yet renders as «#7» — visible and obviously unmapped,
+// never a raw translation key.
+export function statusName(status, t) {
+  if (status === null || status === undefined || status === "") return "—";
+  const n = Number(status);
+  return STATUS_CODES.includes(n) ? t(`arc.st.${n}`) : `#${status}`;
 }
 
 // Soft rgba tint from a #hex; non-hex colours pass through untinted.

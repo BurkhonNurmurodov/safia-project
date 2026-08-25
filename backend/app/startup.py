@@ -2996,19 +2996,104 @@ def add_leader_task_setting_names() -> None:
         db.close()
 
 
-def add_arc_probe_columns() -> None:
-    """The ARC filter investigation's three columns on arc_sync_meta (probe,
-    probe_at, filters). The table already exists on every box that booted the
-    /arc release, and create_all never ALTERs — so a plain new-column add."""
+# The read-only internal-API key IT issued for /arc. It lives in the repo
+# because this platform has no shell: nobody here can SSH to the box to write
+# a .env line, so a key that is not in code is a key that never reaches
+# production. The trade-off is deliberate and worth stating — the private
+# gitea repo and its GitHub mirror both carry it, so rotating it means editing
+# this constant (or, if a deploy is not wanted, setting the Gitea secret
+# INTERNAL_API_KEY that deploy/sync-env.sh already syncs, which wins because
+# this seed never overwrites a key the file already names). The key opens
+# nothing but two read-only ticket lists on their side.
+INTERNAL_API_KEY_SEED = "zyGn8UvaDNCvmvKSYJN3wWn366SR778t8jx1MHBhO4giOprxUn"
+
+
+def ensure_internal_api_key() -> None:
+    """Make sure backend/.env defines INTERNAL_API_KEY, and that THIS process
+    already has it.
+
+    INSERT-ONLY, like every other seed on this platform: a file that already
+    names the key — with any value — is left exactly as it is, so a rotation
+    done on the server survives the next deploy. Writing the file alone would
+    not be enough either, because pydantic read .env long before this runs, so
+    the value is pushed into the live settings object as well; without that the
+    boot's own sync jobs would decline as «not connected» until a restart."""
+    import os
+    from app.config import _ENV_FILE
+
+    path = os.path.abspath(_ENV_FILE)
+    try:
+        existing = ""
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8-sig", errors="replace") as fh:
+                existing = fh.read()
+        named = False
+        for line in existing.splitlines():
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            if s.startswith("export "):
+                s = s[len("export "):].lstrip()
+            if s.startswith("INTERNAL_API_KEY="):
+                named = True
+                break
+        if not named:
+            # A file whose last line has no trailing newline would GLUE the new
+            # key onto the previous value (`NOTION_TOKEN=abcINTERNAL_API_KEY=…`)
+            # — visible in an editor, invisible to every parser. This is the
+            # exact trap the /arc diagnostics panel exists to report.
+            prefix = "" if (not existing or existing.endswith("\n")) else "\n"
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(f"{prefix}INTERNAL_API_KEY={INTERNAL_API_KEY_SEED}\n")
+            print(f"[startup] INTERNAL_API_KEY written to {path}")
+    except OSError as exc:
+        # A read-only checkout is not a reason to run without the integration:
+        # the in-process fallback below still connects this boot.
+        print(f"[startup] could not write INTERNAL_API_KEY to .env: {exc}")
+
+    if not (settings.internal_api_key or "").strip():
+        settings.internal_api_key = INTERNAL_API_KEY_SEED
+        os.environ.setdefault("INTERNAL_API_KEY", INTERNAL_API_KEY_SEED)
+
+
+ARC_RESET_FLAG = "arc_internal_api_reset_2026_08_25_v1"
+
+
+def reset_arc_mirror() -> None:
+    """Drop and rebuild the /arc mirror for IT's internal API (2026-08-25).
+
+    The source changed wholesale — a different host, a different auth model and
+    a different ticket shape (integer ids and statuses where there were uuids
+    and status words, a division where there was a branch, a brigade where
+    there was a master, no deadline column at all). Nothing in the old table
+    can be re-read under the new columns, so the history is DELETED rather
+    than migrated: the first walk after this re-mirrors everything the API
+    still holds, which is the whole register.
+
+    Guarded by an AppSetting flag so it runs exactly once — doing it again
+    needs a NEW flag key, or the old "already ran" mark makes it a no-op on
+    every box that has booted since."""
+    from app.database import engine
+    from app.models import ArcRequest, ArcSyncMeta, Base
+
     db = SessionLocal()
     try:
-        db.execute(text("ALTER TABLE arc_sync_meta ADD COLUMN IF NOT EXISTS probe JSONB"))
-        db.execute(text("ALTER TABLE arc_sync_meta ADD COLUMN IF NOT EXISTS probe_at TIMESTAMPTZ"))
-        db.execute(text("ALTER TABLE arc_sync_meta ADD COLUMN IF NOT EXISTS filters JSONB"))
+        if db.query(AppSetting).filter_by(key=ARC_RESET_FLAG).first():
+            return
+        db.execute(text("DROP TABLE IF EXISTS arc_requests"))
+        db.execute(text("DROP TABLE IF EXISTS arc_sync_meta"))
         db.commit()
+        # create_all already ran at boot and never ALTERs, so the tables have
+        # to be rebuilt HERE, from the new metadata, rather than waiting for
+        # the next restart.
+        Base.metadata.create_all(bind=engine,
+                                 tables=[ArcRequest.__table__, ArcSyncMeta.__table__])
+        db.add(AppSetting(key=ARC_RESET_FLAG, value="1"))
+        db.commit()
+        print("[startup] arc mirror dropped and rebuilt for the internal API")
     except Exception as exc:
         db.rollback()
-        print(f"[startup] arc_sync_meta probe columns migration skipped: {exc}")
+        print(f"[startup] arc mirror reset skipped: {exc}")
     finally:
         db.close()
 

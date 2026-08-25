@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
         add_leader_ai_resolution,
         add_leader_ai_reviewed_index,
         add_web_credential_password_enc,
-        add_arc_probe_columns,
+        ensure_internal_api_key, reset_arc_mirror,
         add_worker_concern_failures_column,
         add_worker_concern_sweep_columns,
         migrate_permission_modes,
@@ -171,7 +171,11 @@ async def lifespan(app: FastAPI):
     add_profile_identity_columns()
     add_activity_profile_key()
     add_web_credential_password_enc()
-    add_arc_probe_columns()
+    # The /arc integration: seed the internal key into .env (and into this
+    # process) BEFORE the mirror reset and before register_arc_jobs below,
+    # which declines outright without one.
+    ensure_internal_api_key()
+    reset_arc_mirror()
     add_worker_concern_failures_column()
     add_worker_concern_sweep_columns()
     migrate_multi_roles()

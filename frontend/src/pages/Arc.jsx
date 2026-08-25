@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
-  RefreshCw, CalendarClock, Download, Loader2, ClipboardList, Store, UserCog, Tag,
-  CircleDot, Layers, Siren, AlertTriangle, PackageCheck, Camera, FileText, ExternalLink,
-  MapPin, Phone, Check, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound,
-  PlugZap, Zap, ListChecks, Radar,
+  RefreshCw, CalendarClock, Download, Loader2, ClipboardList, Building2, Users, Tag,
+  CircleDot, Layers, Siren, AlertTriangle, FileText, ExternalLink, Bot, Paperclip,
+  Phone, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound, PlayCircle,
+  PlugZap, Zap, MessageSquare, History, Smartphone,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -24,10 +24,8 @@ import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
-import { useAuth } from "../context/AuthContext";
-import ApiPanel from "../components/arc/ApiPanel";
 import { inTelegram } from "../utils/session";
-import { toneFor, hexA, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatus";
+import { toneFor, statusName, hexA, STATUS_CODES, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatus";
 
 // ── constants ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 50;
@@ -41,28 +39,31 @@ const TZ = "Asia/Tashkent";
 const COLS = [
   { key: "num",         labelKey: "arc.colNum",         icon: Hash,          sortKey: "request_num" },
   { key: "created",     labelKey: "arc.colCreated",     icon: CalendarClock, sortKey: "created_at" },
-  { key: "branch",      labelKey: "arc.colBranch",      icon: Store,         sortKey: "branch_name" },
+  { key: "division",    labelKey: "arc.colDivision",    icon: Building2,     sortKey: "division_name" },
   { key: "category",    labelKey: "arc.colCategory",    icon: Tag,           sortKey: "category_name" },
   { key: "description", labelKey: "arc.colDescription", icon: FileText },
-  { key: "master",      labelKey: "arc.colMaster",      icon: UserCog,       sortKey: "master_name" },
-  { key: "status",      labelKey: "arc.colStatus",      icon: CircleDot,     sortKey: "normalized_status" },
-  { key: "due",         labelKey: "arc.colDue",         icon: Timer,         sortKey: "deadline" },
+  { key: "author",      labelKey: "arc.colAuthor",      icon: UserRound,     sortKey: "user_name" },
+  { key: "brigada",     labelKey: "arc.colBrigada",     icon: Users,         sortKey: "brigada_name" },
+  { key: "status",      labelKey: "arc.colStatus",      icon: CircleDot,     sortKey: "status" },
+  { key: "due",         labelKey: "arc.colDue",         icon: Timer,         sortKey: "due" },
+  { key: "started",     labelKey: "arc.colStarted",     icon: PlayCircle,    sortKey: "started_at" },
   { key: "closed",      labelKey: "arc.colClosed",      icon: CheckCircle2,  sortKey: "closed_at" },
   { key: "hours",       labelKey: "arc.colHours",       icon: Hourglass,     sortKey: "hours_to_close", align: "right" },
-  { key: "sap",         labelKey: "arc.colSap",         icon: PackageCheck,  align: "center" },
-  { key: "evidence",    labelKey: "arc.colEvidence",    icon: Camera,        align: "center" },
-  { key: "client",      labelKey: "arc.colClient",      icon: UserRound },
+  { key: "source",      labelKey: "arc.colSource",      icon: Bot,           align: "center" },
+  { key: "files",       labelKey: "arc.colFiles",       icon: Paperclip,     align: "center" },
 ];
 // The ticket number and its status are the row's identity — never hideable.
 const LOCKED_COLS = new Set(["num", "status"]);
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
+const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|heic)(\?|$)/i;
+
 // ── dates ────────────────────────────────────────────────────────────────────
-// ARC timestamps arrive as UTC ISO strings; every reader here is in Tashkent,
-// so they are rendered in that zone explicitly rather than in whatever zone
-// the browser happens to sit in (a laptop abroad must show the same clock the
-// branch saw).
+// ARC timestamps arrive with their own +05:00 offset; every reader here is in
+// Tashkent, so they are rendered in that zone explicitly rather than in
+// whatever zone the browser happens to sit in (a laptop abroad must show the
+// same clock the division saw).
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -98,11 +99,29 @@ const truncate = (s, n = 60) => {
   return v.length > n ? `${v.slice(0, n - 1)}…` : v;
 };
 
+// A comment object of an undocumented shape → its text, or nothing. The API
+// contract does not name these fields, so the known spellings are tried and a
+// row that yields none renders as a bare stamp instead of as «[object Object]».
+const commentText = (c) => {
+  if (typeof c === "string") return c;
+  if (!c || typeof c !== "object") return "";
+  for (const k of ["text", "comment", "message", "body", "content"]) {
+    if (typeof c[k] === "string" && c[k].trim()) return c[k].trim();
+  }
+  return "";
+};
+const commentWho = (c) => {
+  if (!c || typeof c !== "object") return "";
+  const u = c.user || c.author || {};
+  return (typeof u === "object" ? (u.full_name || u.name || u.username) : u) || c.user_name || "";
+};
+const commentWhen = (c) => (c && typeof c === "object" ? (c.created_at || c.date || c.time) : "") || "";
+
 // ── small presentational bits ────────────────────────────────────────────────
-// Status chip: traffic-light tone by vocabulary (utils/arcStatus.js); a NEW
-// ticket's grey is dashed so it never reads as cancelled.
-function StatusChip({ status, color, label }) {
-  const tone = toneFor(status, color);
+// Status chip: traffic-light tone by code (utils/arcStatus.js); a status that
+// is waiting on somebody is dashed, so it never reads as settled.
+function StatusChip({ status, label }) {
+  const tone = toneFor(status);
   return (
     <span
       className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap"
@@ -111,10 +130,10 @@ function StatusChip({ status, color, label }) {
         color: tone.color,
         border: `1px ${tone.dashed ? "dashed" : "solid"} ${hexA(tone.color, 0.45)}`,
       }}
-      title={label || status || ""}
+      title={label || ""}
     >
       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: tone.color }} />
-      {label || status || "—"}
+      {label || "—"}
     </span>
   );
 }
@@ -160,17 +179,16 @@ export default function Arc() {
   const [state, setState] = usePersistentState("arc_state", "all");
   const [statusSel, setStatusSel] = usePersistentState("arc_status", []);
   const [catSel, setCatSel] = usePersistentState("arc_category", []);
-  const [branch, setBranch] = usePersistentState("arc_branch", "");
-  const [master, setMaster] = usePersistentState("arc_master", "");
+  const [division, setDivision] = usePersistentState("arc_division", "");
+  const [brigada, setBrigada] = usePersistentState("arc_brigada", "");
+  const [author, setAuthor] = usePersistentState("arc_author", "");
   const [urgent, setUrgent] = usePersistentState("arc_urgent", "all");
   const [overdue, setOverdue] = usePersistentState("arc_overdue", "all");
-  const [sap, setSap] = usePersistentState("arc_sap", "all");
+  const [source, setSource] = usePersistentState("arc_source", "all");
   const [q, setQ] = usePersistentState("arc_q", "");
   const [page, setPage] = usePersistentState("arc_page", 1);
   const [sort, setSort] = usePersistentState("arc_sort", { key: "created_at", dir: "desc" });
   const [openId, setOpenId] = useState(null);
-  const [apiOpen, setApiOpen] = useState(false);
-  const isAdmin = useAuth()?.auth?.role === "admin";
 
   // ── meta (options + sync state) ───────────────────────────────────────────
   const metaQ = useQuery({
@@ -193,13 +211,14 @@ export default function Arc() {
     ...(state !== "all" ? { state } : {}),
     ...(statusSel.length ? { status: statusSel } : {}),
     ...(catSel.length ? { category: catSel } : {}),
-    ...(branch ? { branch: [branch] } : {}),
-    ...(master ? { master: [master] } : {}),
+    ...(division ? { division: [division] } : {}),
+    ...(brigada ? { brigada: [brigada] } : {}),
+    ...(author ? { author: [author] } : {}),
     ...(urgent !== "all" ? { urgent } : {}),
     ...(overdue !== "all" ? { overdue } : {}),
-    ...(sap !== "all" ? { sap } : {}),
+    ...(source !== "all" ? { source } : {}),
     q: q.trim() || undefined,
-  }), [dateFrom, dateTo, state, statusSel, catSel, branch, master, urgent, overdue, sap, q]);
+  }), [dateFrom, dateTo, state, statusSel, catSel, division, brigada, author, urgent, overdue, source, q]);
   const sortParam = `${sort.key}:${sort.dir}`;
   const listParams = useMemo(
     () => ({ ...filters, page, page_size: PAGE_SIZE, sort: sortParam }),
@@ -300,22 +319,34 @@ export default function Arc() {
   }, [colCfg]);
 
   // ── option lookups ────────────────────────────────────────────────────────
+  // The API ships a bare status integer, so the filter offers the codes the
+  // mirror actually holds, in the order a ticket travels through them.
   const statusOpts = options.statuses || [];
-  const statusByValue = useMemo(() => Object.fromEntries(statusOpts.map((s) => [s.value, s])), [statusOpts]);
+  const statusCount = useMemo(
+    () => Object.fromEntries(statusOpts.map((s) => [String(s.value), s.count])), [statusOpts]);
+  const statusValues = useMemo(() => {
+    const held = statusOpts.map((s) => Number(s.value));
+    const known = STATUS_CODES.filter((c) => held.includes(c));
+    const unknown = held.filter((c) => !STATUS_CODES.includes(c)).sort((a, b) => a - b);
+    return [...known, ...unknown].map(String);
+  }, [statusOpts]);
   const catOpts = options.categories || [];
-  const catById = useMemo(() => Object.fromEntries(catOpts.map((c) => [c.id, c])), [catOpts]);
-  const branchOpts = options.branches || [];
-  const branchById = useMemo(() => Object.fromEntries(branchOpts.map((b) => [b.id, b])), [branchOpts]);
-  const masterOpts = options.masters || [];
-  const masterById = useMemo(() => Object.fromEntries(masterOpts.map((m) => [m.id, m])), [masterOpts]);
-  const statusLabel = (v) => statusByValue[v]?.label || v || "—";
+  const catById = useMemo(() => Object.fromEntries(catOpts.map((c) => [String(c.id), c])), [catOpts]);
+  const divOpts = options.divisions || [];
+  const divById = useMemo(() => Object.fromEntries(divOpts.map((d) => [d.id, d])), [divOpts]);
+  const brigOpts = options.brigadas || [];
+  const brigById = useMemo(() => Object.fromEntries(brigOpts.map((b) => [String(b.id), b])), [brigOpts]);
+  const authorOpts = options.authors || [];
+  const authorById = useMemo(() => Object.fromEntries(authorOpts.map((a) => [String(a.id), a])), [authorOpts]);
+  const stName = (v) => statusName(v, t);
 
-  // Three-way yes/no/all toggle used by urgent, overdue and SAP.
+  // Three-way yes/no/all toggle used by urgent and overdue.
   const yesNoOpts = [["all", t("general.all")], ["yes", t("common.yes")], ["no", t("common.no")]];
   const yesNoDisplay = (v) => (v === "yes" ? t("common.yes") : v === "no" ? t("common.no") : "");
   const stateLabels = {
-    all: t("arc.stateAll"), open: t("arc.stateOpen"), closed: t("arc.stateClosed"), cancelled: t("arc.stateCancelled"),
+    all: t("arc.stateAll"), open: t("arc.stateOpen"), done: t("arc.stateDone"), cancelled: t("arc.stateCancelled"),
   };
+  const sourceLabels = { all: t("general.all"), bot: t("arc.srcBot"), app: t("arc.srcApp") };
 
   const grpWho = t("arc.grpWho");
   const grpWhat = t("arc.grpWhat");
@@ -329,29 +360,42 @@ export default function Arc() {
 
   const sections = [
     {
-      key: "branch", icon: Store, label: t("arc.fBranch"), group: grpWho,
-      active: !!branch,
-      display: branch ? (branchById[branch]?.name || branch) : "",
-      onClear: () => setBranch(""),
+      key: "division", icon: Building2, label: t("arc.fDivision"), group: grpWho,
+      active: !!division,
+      display: division ? (divById[division]?.name || division) : "",
+      onClear: () => setDivision(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
-          opts={[{ value: "", label: t("arc.allBranches") },
-            ...branchOpts.map((b) => ({ value: b.id, label: withCount(b.name, b.count), title: b.name }))]}
-          value={branch}
-          onChange={(v) => setBranch(v || "")} />
+          opts={[{ value: "", label: t("arc.allDivisions") },
+            ...divOpts.map((d) => ({ value: d.id, label: withCount(d.name, d.count), title: d.name }))]}
+          value={division}
+          onChange={(v) => setDivision(v || "")} />
       ),
     },
     {
-      key: "master", icon: UserCog, label: t("arc.fMaster"), group: grpWho,
-      active: !!master,
-      display: master ? (masterById[master]?.name || master) : "",
-      onClear: () => setMaster(""),
+      key: "brigada", icon: Users, label: t("arc.fBrigada"), group: grpWho,
+      active: !!brigada,
+      display: brigada ? (brigById[brigada]?.name || brigada) : "",
+      onClear: () => setBrigada(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
-          opts={[{ value: "", label: t("arc.allMasters") },
-            ...masterOpts.map((m) => ({ value: m.id, label: withCount(m.name, m.count), title: m.name }))]}
-          value={master}
-          onChange={(v) => setMaster(v || "")} />
+          opts={[{ value: "", label: t("arc.allBrigadas") },
+            ...brigOpts.map((b) => ({ value: String(b.id), label: withCount(b.name || `#${b.id}`, b.count), title: b.name || `#${b.id}` }))]}
+          value={brigada}
+          onChange={(v) => setBrigada(v || "")} />
+      ),
+    },
+    {
+      key: "author", icon: UserRound, label: t("arc.fAuthor"), group: grpWho,
+      active: !!author,
+      display: author ? (authorById[author]?.name || author) : "",
+      onClear: () => setAuthor(""),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[{ value: "", label: t("arc.allAuthors") },
+            ...authorOpts.map((a) => ({ value: String(a.id), label: withCount(a.name || `#${a.id}`, a.count), title: a.name || `#${a.id}` }))]}
+          value={author}
+          onChange={(v) => setAuthor(v || "")} />
       ),
     },
     {
@@ -361,26 +405,24 @@ export default function Arc() {
       onClear: () => setState("all"),
       render: () => (
         <SegmentedToggle fill value={state} onChange={setState}
-          options={[["all", stateLabels.all], ["open", stateLabels.open], ["closed", stateLabels.closed], ["cancelled", stateLabels.cancelled]]} />
+          options={[["all", stateLabels.all], ["open", stateLabels.open], ["done", stateLabels.done], ["cancelled", stateLabels.cancelled]]} />
       ),
     },
     {
       key: "status", icon: CircleDot, label: t("arc.fStatus"), group: grpWhat,
       active: statusSel.length > 0,
-      display: statusSel.length === 1 ? statusLabel(statusSel[0]) : `${statusSel.length} ${t("filter.selected2")}`,
+      display: statusSel.length === 1 ? stName(statusSel[0]) : `${statusSel.length} ${t("filter.selected2")}`,
       onClear: () => setStatusSel([]),
       render: () => (
-        <OptsFilter opts={statusOpts.map((s) => s.value)} sel={statusSel} onChange={setStatusSel}
-          render={(v) => {
-            const s = statusByValue[v];
-            return (
-              <span className="inline-flex items-center gap-1.5 min-w-0">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: toneFor(v, s?.color).color }} />
-                <span className="truncate">{s?.label || v}</span>
-                {s?.count != null && <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{s.count}</span>}
-              </span>
-            );
-          }} />
+        <OptsFilter opts={statusValues} sel={statusSel} onChange={setStatusSel}
+          labelOf={(v) => stName(v)}
+          render={(v) => (
+            <span className="inline-flex items-center gap-1.5 min-w-0">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: toneFor(Number(v)).color }} />
+              <span className="truncate">{stName(v)}</span>
+              {statusCount[v] != null && <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{statusCount[v]}</span>}
+            </span>
+          )} />
       ),
     },
     {
@@ -389,13 +431,13 @@ export default function Arc() {
       display: catSel.length === 1 ? (catById[catSel[0]]?.name || catSel[0]) : `${catSel.length} ${t("filter.selected2")}`,
       onClear: () => setCatSel([]),
       render: () => (
-        <OptsFilter searchable={catOpts.length > 8} opts={catOpts.map((c) => c.id)} sel={catSel} onChange={setCatSel}
+        <OptsFilter searchable={catOpts.length > 8} opts={catOpts.map((c) => String(c.id))} sel={catSel} onChange={setCatSel}
           labelOf={(id) => catById[id]?.name || id}
           render={(id) => {
             const c = catById[id];
             return (
               <span className="inline-flex items-center gap-1.5 min-w-0">
-                {c?.is_urgent ? <Zap size={10} className="flex-shrink-0" style={{ color: C_OVERDUE }} /> : null}
+                {c?.urgent ? <Zap size={10} className="flex-shrink-0" style={{ color: C_OVERDUE }} /> : null}
                 <span className="truncate">{c?.name || id}</span>
                 {c?.count != null && <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{c.count}</span>}
               </span>
@@ -416,15 +458,18 @@ export default function Arc() {
       render: () => <SegmentedToggle fill value={overdue} onChange={setOverdue} options={yesNoOpts} />,
     },
     {
-      key: "sap", icon: PackageCheck, label: t("arc.fSap"), group: grpWhat,
-      active: sap !== "all", display: yesNoDisplay(sap),
-      onClear: () => setSap("all"),
-      render: () => <SegmentedToggle fill value={sap} onChange={setSap} options={yesNoOpts} />,
+      key: "source", icon: Bot, label: t("arc.fSource"), group: grpWhat,
+      active: source !== "all", display: source !== "all" ? sourceLabels[source] : "",
+      onClear: () => setSource("all"),
+      render: () => (
+        <SegmentedToggle fill value={source} onChange={setSource}
+          options={[["all", sourceLabels.all], ["bot", sourceLabels.bot], ["app", sourceLabels.app]]} />
+      ),
     },
   ];
   const clearAll = () => {
-    setBranch(""); setMaster(""); setState("all"); setStatusSel([]); setCatSel([]);
-    setUrgent("all"); setOverdue("all"); setSap("all");
+    setDivision(""); setBrigada(""); setAuthor(""); setState("all"); setStatusSel([]);
+    setCatSel([]); setUrgent("all"); setOverdue("all"); setSource("all");
   };
 
   // ── register ──────────────────────────────────────────────────────────────
@@ -456,6 +501,16 @@ export default function Arc() {
     </a>
   );
 
+  // The description lives on the ticket CARD, one call per ticket, so a row the
+  // background hydration has not reached yet has none — and «no description
+  // yet» must not render the same as «this ticket has none».
+  const descCell = (r) => {
+    if (r.description) return truncate(r.description, 60);
+    return r.has_detail
+      ? "—"
+      : <span title={t("arc.notFetched")} style={{ color: "var(--text-4)" }}>…</span>;
+  };
+
   // Row → cell, keyed by column — hide/reorder needs no markup change of its own.
   const listCell = (key, r) => {
     switch (key) {
@@ -463,29 +518,31 @@ export default function Arc() {
         return <td key={key} className="px-3 py-2 font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{r.request_num ?? "—"}</td>;
       case "created":
         return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={fmtDateTime(r.created_at)}>{fmtShort(r.created_at) || "—"}</td>;
-      case "branch":
-        return <td key={key} className="px-3 py-2" style={{ color: "var(--text-1)" }}>{r.branch_name || "—"}</td>;
+      case "division":
+        return <td key={key} className="px-3 py-2" style={{ color: "var(--text-1)" }}>{r.division_name || "—"}</td>;
       case "category":
         return (
           <td key={key} className="px-3 py-2">
             <span className="inline-flex items-center gap-1.5 flex-wrap">
               <span style={{ color: "var(--text-2)" }}>{r.category_name || "—"}</span>
-              {r.category_is_urgent && <RedBadge icon={Zap}>{t("arc.urgent")}</RedBadge>}
+              {r.category_urgent && <RedBadge icon={Zap}>{t("arc.urgent")}</RedBadge>}
             </span>
           </td>
         );
       case "description":
         return (
           <td key={key} className="px-3 py-2 max-w-[280px]" style={{ color: "var(--text-2)" }} title={r.description || ""}>
-            {truncate(r.description, 60) || "—"}
+            {descCell(r)}
           </td>
         );
-      case "master":
-        return <td key={key} className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.master_name || "—"}</td>;
+      case "author":
+        return <td key={key} className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.user_name || "—"}</td>;
+      case "brigada":
+        return <td key={key} className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.brigada_name || "—"}</td>;
       case "status":
         return (
           <td key={key} className="px-3 py-2">
-            <StatusChip status={r.normalized_status} color={r.status_color} label={statusLabel(r.normalized_status)} />
+            <StatusChip status={r.status} label={stName(r.status)} />
           </td>
         );
       case "due":
@@ -497,28 +554,27 @@ export default function Arc() {
             </span>
           </td>
         );
+      case "started":
+        return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={fmtDateTime(r.started_at)}>{fmtShort(r.started_at) || "—"}</td>;
       case "closed":
         return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={fmtDateTime(r.closed_at)}>{fmtShort(r.closed_at) || "—"}</td>;
       case "hours":
         return <td key={key} className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{fmtHours(r.hours_to_close)}</td>;
-      case "sap":
+      case "source":
         return (
-          <td key={key} className="px-3 py-2 text-center">
-            {r.sended_to_sap ? <Check size={14} className="inline" style={{ color: C_DONE }} /> : <span style={{ color: "var(--text-4)" }}>—</span>}
+          <td key={key} className="px-3 py-2 text-center" style={{ color: "var(--text-3)" }}>
+            {r.is_bot ? <Bot size={14} className="inline" title={t("arc.srcBot")} />
+              : <Smartphone size={14} className="inline" title={t("arc.srcApp")} />}
           </td>
         );
-      case "evidence":
+      case "files":
         return (
-          <td key={key} className="px-3 py-2 text-center">
-            <span className="inline-flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-              {r.photo_report && <Camera size={13} title={t("arc.dPhoto")} />}
-              {r.document_url && <FileText size={13} title={t("arc.dDocument")} />}
-              {!r.photo_report && !r.document_url && <span style={{ color: "var(--text-4)" }}>—</span>}
-            </span>
+          <td key={key} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>
+            {Array.isArray(r.files) && r.files.length > 0
+              ? <span className="inline-flex items-center gap-1"><Paperclip size={12} />{r.files.length}</span>
+              : <span style={{ color: "var(--text-4)" }}>{r.has_detail ? "—" : "…"}</span>}
           </td>
         );
-      case "client":
-        return <td key={key} className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.client_name || "—"}</td>;
       default:
         return <td key={key} className="px-3 py-2" />;
     }
@@ -542,7 +598,7 @@ export default function Arc() {
       )}
       {!listLoading && rows.map((r) => {
         const late = r.overdue_now || r.late;
-        const strip = late ? C_OVERDUE : toneFor(r.normalized_status, r.status_color).color;
+        const strip = late ? C_OVERDUE : toneFor(r.status).color;
         return (
           <div key={r.remote_id || r.id}
             onClick={() => setOpenId(r.remote_id)}
@@ -550,17 +606,17 @@ export default function Arc() {
             style={{ ...cardStyle, borderLeft: `3px solid ${strip}` }}>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>№{r.request_num ?? "—"}</span>
-              <StatusChip status={r.normalized_status} color={r.status_color} label={statusLabel(r.normalized_status)} />
+              <StatusChip status={r.status} label={stName(r.status)} />
             </div>
-            <div className="text-xs font-medium" style={{ color: "var(--text-1)" }}>{r.branch_name || "—"}</div>
+            <div className="text-xs font-medium" style={{ color: "var(--text-1)" }}>{r.division_name || "—"}</div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
               <Fact label={t("arc.colCategory")}>
                 <span className="inline-flex items-center gap-1 flex-wrap">
                   {r.category_name || "—"}
-                  {r.category_is_urgent && <RedBadge icon={Zap}>{t("arc.urgent")}</RedBadge>}
+                  {r.category_urgent && <RedBadge icon={Zap}>{t("arc.urgent")}</RedBadge>}
                 </span>
               </Fact>
-              <Fact label={t("arc.colMaster")}>{r.master_name || "—"}</Fact>
+              <Fact label={t("arc.colBrigada")}>{r.brigada_name || "—"}</Fact>
               <Fact label={t("arc.colDue")}>
                 <span className="inline-flex items-center gap-1 flex-wrap tabular-nums">
                   {fmtShort(r.due) || "—"}
@@ -577,7 +633,7 @@ export default function Arc() {
 
   // ── «not connected» diagnostics (admin-only endpoint; others 403 → nothing) ─
   // The platform has no shell, so the page itself must say WHERE the process
-  // looked and which credential NAMES it found — never a value.
+  // looked and whether it found the key — never the key.
   const diagQ = useQuery({
     queryKey: ["arc-diag"],
     queryFn: () => api.get("/api/arc/diag").then((r) => r.data),
@@ -593,11 +649,23 @@ export default function Arc() {
     enabled: openId != null,
   });
   // The clicked row, straight from the list payload — the modal paints from it
-  // without waiting on the network.
+  // without waiting on the network. The fetched card wins once it lands,
+  // because it is the only thing carrying the description and the files.
   const openRow = useMemo(() => rows.find((r) => r.remote_id === openId) || null, [rows, openId]);
   const d = detailQ.data || openRow;
-  const [photoBroken, setPhotoBroken] = useState(false);
-  useEffect(() => { setPhotoBroken(false); }, [openId]);
+  const [brokenImgs, setBrokenImgs] = useState({});
+  useEffect(() => { setBrokenImgs({}); }, [openId]);
+
+  // The ticket's own history: status code → the moment it was entered. Sorted
+  // by that moment, not by the code, so it reads as what happened in order.
+  const timeline = useMemo(() => {
+    const ut = d?.update_time;
+    if (!ut || typeof ut !== "object") return [];
+    return Object.entries(ut)
+      .map(([code, at]) => ({ code: Number(code), at: String(at || "") }))
+      .filter((e) => e.at)
+      .sort((a, b) => new Date(a.at) - new Date(b.at));
+  }, [d]);
 
   // ── export ────────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
@@ -609,8 +677,14 @@ export default function Arc() {
           ...filters, sort: sortParam,
           columns: visibleCols.map((c) => c.key),
           // Headers in the viewer's language — the backend's own labels are an
-          // English fallback only.
-          labels: Object.fromEntries(visibleCols.map((c) => [c.key, t(c.labelKey)])),
+          // English fallback only. `_bot` / `_app` are the two words the source
+          // column needs; the API ships a flag, not a name.
+          labels: {
+            ...Object.fromEntries(visibleCols.map((c) => [c.key, t(c.labelKey)])),
+            _bot: t("arc.srcBot"), _app: t("arc.srcApp"),
+          },
+          // Same reason: a status is an integer upstream.
+          status_labels: Object.fromEntries(STATUS_CODES.map((c) => [String(c), t(`arc.st.${c}`)])),
         },
         fallbackName: `arc_requests_${today}.xlsx`,
       });
@@ -624,6 +698,7 @@ export default function Arc() {
 
   // ── header bits ───────────────────────────────────────────────────────────
   const lastSynced = fmtDateTime(sync?.last_synced);
+  const pendingCards = sync?.detail_pending || 0;
   const refreshBtn = (
     <Button size="lg" variant="secondary" loading={running || refreshMut.isPending}
       disabled={!configured}
@@ -635,7 +710,10 @@ export default function Arc() {
     </Button>
   );
   // The last-synced pill doubles as the live progress feed during a sync —
-  // a background walk with nothing but a spinner reads as frozen.
+  // a background walk with nothing but a spinner reads as frozen. Ticket cards
+  // are fetched one at a time and bounded per pass, so an outstanding count is
+  // named too: it is the difference between «still loading» and «this ticket
+  // has no description».
   const syncPill = running ? (
     <>
       <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: "var(--brand-text)" }} />
@@ -648,6 +726,11 @@ export default function Arc() {
     <>
       <CalendarClock size={14} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
       {t("arc.lastSynced")}: <span style={{ color: "var(--text-3)" }}>{lastSynced || t("arc.never")}</span>
+      {pendingCards > 0 && (
+        <span className="tabular-nums" style={{ color: "var(--text-4)" }} title={t("arc.cardsPendingHint")}>
+          · {tpl(t("arc.cardsPending"), { n: pendingCards.toLocaleString("ru-RU") })}
+        </span>
+      )}
     </>
   );
 
@@ -659,10 +742,11 @@ export default function Arc() {
     { label: t("arc.kOpen"), value: (stats.open ?? 0).toLocaleString("ru-RU"), icon: Hourglass, color: C_DOING },
     { label: t("arc.kOverdue"), value: (stats.overdue ?? 0).toLocaleString("ru-RU"), icon: Siren,
       color: (stats.overdue ?? 0) > 0 ? C_OVERDUE : C_GREY, danger: (stats.overdue ?? 0) > 0 },
-    { label: t("arc.kClosed"), value: (stats.closed ?? 0).toLocaleString("ru-RU"), icon: CheckCircle2, color: C_DONE },
+    { label: t("arc.kDone"), value: (stats.done ?? 0).toLocaleString("ru-RU"), icon: CheckCircle2, color: C_DONE },
     { label: t("arc.kOnTime"), value: stats.on_time_pct == null ? "—" : `${Math.round(stats.on_time_pct)}%`, icon: ShieldCheck,
-      // The share is computed over closed tickets that CARRY a deadline — a
-      // ticket without one is neither on time nor late — so name that count.
+      // The share is computed over closed tickets whose category CARRIES an
+      // allowed time — a ticket without one is neither on time nor late — so
+      // name that count.
       sub: tpl(t("arc.kOnTimeSub"), { n: (stats.closed_with_due ?? 0).toLocaleString("ru-RU") }) },
     { label: t("arc.kMedian"), value: fmtHours(stats.median_hours), icon: Timer, sub: t("arc.kMedianSub") },
   ] : [];
@@ -674,7 +758,7 @@ export default function Arc() {
         <div className="min-w-0">
           <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{t("arc.title")}</h2>
           <p className="text-xs sm:text-sm mt-0.5" style={{ color: "var(--text-3)" }}>{t("arc.subtitle")}</p>
-          <p className="sm:hidden text-[11px] mt-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }}>
+          <p className="sm:hidden text-[11px] mt-1 inline-flex items-center gap-1 flex-wrap" style={{ color: "var(--text-4)" }}>
             {syncPill}
           </p>
         </div>
@@ -682,25 +766,9 @@ export default function Arc() {
           <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ ...cardStyle, color: "var(--text-2)" }}>
             {syncPill}
           </span>
-          {isAdmin && (
-            <Button size="lg" variant="secondary" icon={<Radar size={14} />}
-              title={t("arc.api.title")} onClick={() => setApiOpen(true)}>
-              <span className="hidden sm:inline">{t("arc.api.short")}</span>
-            </Button>
-          )}
           {refreshBtn}
         </div>
       </div>
-
-      {isAdmin && apiOpen && (
-        <ApiPanel open onClose={() => setApiOpen(false)} sync={sync}
-          onProbed={() => {
-            // A probe can change WHAT the next walk fetches — say so, and let
-            // the operator start that walk from the same place.
-            toast.success(t("arc.api.probed"));
-            qc.invalidateQueries({ queryKey: ["arc-meta"] });
-          }} />
-      )}
 
       {loadError && (
         <div className="rounded-2xl px-4 py-3 text-xs mb-4 flex items-center justify-between gap-3 flex-wrap"
@@ -724,12 +792,12 @@ export default function Arc() {
           </div>
         </div>
       ) : !configured ? (
-        /* the credential is missing on the server — nothing here can work */
+        /* the key is missing on the server — nothing here can work */
         <div className="rounded-2xl" style={cardStyle}>
           <EmptyState icon={PlugZap} height="h-56" showUploadLink={false}
             title={t("arc.notConfiguredTitle")} message={t("arc.notConfigured")} />
           {diag && (
-            /* admin diagnostics: file → credential names → parse problems */
+            /* admin diagnostics: file → key presence → parse problems → a live knock */
             <div className="border-t px-4 py-3 text-xs space-y-2" style={{ borderColor: "var(--border)", color: "var(--text-2)" }}>
               <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{t("arc.diagTitle")}</div>
               <div className="flex flex-wrap gap-x-2">
@@ -739,17 +807,17 @@ export default function Arc() {
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <span style={{ color: "var(--text-3)" }}>{t("arc.diagCred")}:</span>
-                {["USERNAME", "PASSWORD", "PASSAWORD", "ARC_USERNAME", "ARC_PASSWORD"].map((n) => {
-                  const v = diag.env_file?.cred?.[n];
+                {(() => {
+                  const v = diag.env_file?.cred?.INTERNAL_API_KEY;
                   const tone = v === true ? C_DONE : v === false ? C_OVERDUE : C_GREY;
                   return (
-                    <span key={n} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 tabular-nums"
+                    <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5"
                       style={{ background: hexA(tone, 0.12), color: tone, border: `1px solid ${hexA(tone, 0.4)}` }}>
-                      <code>{n}</code>
+                      <code>INTERNAL_API_KEY</code>
                       <span>{v === true ? t("arc.diagSet") : v === false ? t("arc.diagEmpty") : t("arc.diagAbsent")}</span>
                     </span>
                   );
-                })}
+                })()}
               </div>
               {diag.env_file?.exists && (
                 <div className="flex flex-wrap gap-x-2">
@@ -769,23 +837,24 @@ export default function Arc() {
                 <div className="flex flex-wrap gap-x-2">
                   <span style={{ color: "var(--text-3)" }}>{t("arc.diagOther")}:</span>
                   <span className="break-all">
-                    {diag.other_env_files.map((f) => `${f.path} (${Object.entries(f.cred || {}).filter(([, ok]) => ok).map(([k]) => k).join("+") || "—"})`).join("; ")}
+                    {diag.other_env_files.map((f) => `${f.path} (${f.cred?.INTERNAL_API_KEY ? "INTERNAL_API_KEY" : "—"})`).join("; ")}
                   </span>
                 </div>
               )}
-              {Object.values(diag.process_env || {}).some(Boolean) && (
+              {diag.process_env?.INTERNAL_API_KEY && (
                 <div className="flex flex-wrap gap-x-2">
                   <span style={{ color: "var(--text-3)" }}>{t("arc.diagProcess")}:</span>
-                  <span>{Object.entries(diag.process_env).filter(([, ok]) => ok).map(([k]) => k).join(", ")}</span>
+                  <span>INTERNAL_API_KEY</span>
                 </div>
               )}
-              <div className="flex flex-wrap gap-x-2">
-                <span style={{ color: "var(--text-3)" }}>{t("arc.diagResolved")}:</span>
-                <span>
-                  username <span style={{ color: diag.resolved?.username ? C_DONE : C_OVERDUE }}>{diag.resolved?.username ? "✓" : "✗"}</span>
-                  {" · "}password <span style={{ color: diag.resolved?.password ? C_DONE : C_OVERDUE }}>{diag.resolved?.password ? "✓" : "✗"}</span>
-                </span>
-              </div>
+              {diag.ping && (
+                <div className="flex flex-wrap gap-x-2">
+                  <span style={{ color: "var(--text-3)" }}>{t("arc.diagPing")}:</span>
+                  <span style={{ color: diag.ping.ok ? C_DONE : C_OVERDUE }}>
+                    {diag.ping.ok ? tpl(t("arc.diagPingOk"), { n: diag.ping.total ?? 0 }) : (diag.ping.error || "—")}
+                  </span>
+                </div>
+              )}
               <p style={{ color: "var(--text-4)" }}>{t("arc.diagHint")}</p>
             </div>
           )}
@@ -845,7 +914,7 @@ export default function Arc() {
             icon={ClipboardList}
             title={t("arc.listTitle")}
             wrap
-            minWidth={1100}
+            minWidth={1200}
             mobile={mobileList}
             mobileCards
             right={
@@ -892,7 +961,7 @@ export default function Arc() {
           onClose={() => setOpenId(null)}
           maxWidth="max-w-2xl"
           icon={<ClipboardList size={16} />}
-          title={d ? tpl(t("arc.detailTitle"), { num: d.request_num ?? "—", branch: d.branch_name || "—" }) : "…"}
+          title={d ? tpl(t("arc.detailTitle"), { num: d.request_num ?? "—", division: d.division_name || "—" }) : "…"}
           subtitle={d ? [d.category_name, fmtDateTime(d.created_at)].filter(Boolean).join(" · ") : ""}
           footer={<Button variant="secondary" onClick={() => setOpenId(null)}>{t("arc.close")}</Button>}
         >
@@ -911,67 +980,111 @@ export default function Arc() {
               )}
               {/* headline facts: status + the marks that ride beside it */}
               <div className="flex items-center gap-2 flex-wrap">
-                <StatusChip status={d.normalized_status} color={d.status_color} label={statusLabel(d.normalized_status)} />
+                <StatusChip status={d.status} label={stName(d.status)} />
                 {(d.overdue_now || d.late) && <RedBadge icon={AlertTriangle}>{t("arc.late")}</RedBadge>}
-                {d.category_is_urgent && <RedBadge icon={Zap}>{t("arc.urgent")}</RedBadge>}
-                {d.sended_to_sap && (
+                {d.category_urgent && <RedBadge icon={Zap}>{t("arc.urgent")}</RedBadge>}
+                {d.is_bot && (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                    style={{ background: hexA(C_DONE, 0.12), color: C_DONE, border: `1px solid ${hexA(C_DONE, 0.35)}` }}>
-                    <PackageCheck size={10} />{t("arc.dSap")}
+                    style={{ background: hexA(C_GREY, 0.14), color: "var(--text-3)", border: `1px solid ${hexA(C_GREY, 0.35)}` }}>
+                    <Bot size={10} />{t("arc.srcBot")}
                   </span>
                 )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-                <Fact label={t("arc.dMaster")}>{d.master_name || "—"}</Fact>
-                <Fact label={t("arc.dClient")}>{d.client_name || "—"}</Fact>
+                <Fact label={t("arc.dAuthor")}>{d.user_name || "—"}</Fact>
                 <Fact label={t("arc.dPhone")}>
-                  {d.extra_phone
-                    ? <a href={`tel:${d.extra_phone}`} className="inline-flex items-center gap-1 underline underline-offset-2" style={{ color: "var(--brand-text)" }}><Phone size={11} />{d.extra_phone}</a>
+                  {d.user_phone
+                    ? <a href={`tel:${d.user_phone}`} className="inline-flex items-center gap-1 underline underline-offset-2" style={{ color: "var(--brand-text)" }}><Phone size={11} />{d.user_phone}</a>
                     : "—"}
                 </Fact>
-                <Fact label={t("arc.dSap")}>{d.sended_to_sap ? t("common.yes") : t("common.no")}</Fact>
-                <Fact label={t("arc.dDescription")} full>{d.description || "—"}</Fact>
-                <Fact label={t("arc.dDeadline")}><span className="tabular-nums">{fmtDateTime(d.deadline) || "—"}</span></Fact>
-                <Fact label={t("arc.dDeadlineTime")}><span className="tabular-nums">{fmtDateTime(d.deadline_time) || "—"}</span></Fact>
-                <Fact label={t("arc.dCreated")}><span className="tabular-nums">{fmtDateTime(d.created_at) || "—"}</span></Fact>
-                <Fact label={t("arc.dFinished")}><span className="tabular-nums">{fmtDateTime(d.finished_at) || "—"}</span></Fact>
-                <Fact label={t("arc.dCompleted")}><span className="tabular-nums">{fmtDateTime(d.completed_at) || "—"}</span></Fact>
-                <Fact label={t("arc.dCancelled")}><span className="tabular-nums">{fmtDateTime(d.cancelled_at) || "—"}</span></Fact>
-                {d.hours_to_close != null && (
-                  <Fact label={t("arc.colHours")}><span className="tabular-nums">{fmtHours(d.hours_to_close)}</span></Fact>
-                )}
-                {d.deny_reason && <Fact label={t("arc.dDenyReason")} full>{d.deny_reason}</Fact>}
-                {d.comment_report && <Fact label={t("arc.dComment")} full>{d.comment_report}</Fact>}
-                {d.photo_report && (
-                  <Fact label={t("arc.dPhoto")} full>
-                    {photoBroken ? (
-                      extLink(d.photo_report, <><Camera size={11} />{t("arc.dOpenLink")}<ExternalLink size={11} /></>)
-                    ) : (
-                      <a href={d.photo_report} target="_blank" rel="noopener noreferrer" onClick={(e) => openExt(e, d.photo_report)} className="inline-block">
-                        <img src={d.photo_report} alt="" className="max-h-64 rounded-lg" style={{ border: "1px solid var(--border)" }}
-                          onError={() => setPhotoBroken(true)} />
-                      </a>
+                <Fact label={t("arc.dDivision")}>{d.division_name || "—"}</Fact>
+                <Fact label={t("arc.dManager")}>{d.manager_name || "—"}</Fact>
+                <Fact label={t("arc.dBrigada")}>{d.brigada_name || "—"}</Fact>
+                <Fact label={t("arc.dCategory")}>
+                  <span className="inline-flex items-center gap-1 flex-wrap">
+                    {d.category_name || "—"}
+                    {d.category_ftime > 0 && (
+                      <span style={{ color: "var(--text-4)" }}>· {tpl(t("arc.dFtime"), { n: d.category_ftime })}</span>
                     )}
+                  </span>
+                </Fact>
+                <Fact label={t("arc.dDescription")} full>
+                  {d.description || (d.has_detail ? "—" : <span style={{ color: "var(--text-4)" }}>{t("arc.notFetched")}</span>)}
+                </Fact>
+                <Fact label={t("arc.dCreated")}><span className="tabular-nums">{fmtDateTime(d.created_at) || "—"}</span></Fact>
+                <Fact label={t("arc.dDue")}><span className="tabular-nums">{fmtDateTime(d.due) || "—"}</span></Fact>
+                <Fact label={t("arc.dStarted")}>
+                  <span className="tabular-nums">{fmtDateTime(d.started_at) || "—"}</span>
+                  {d.hours_to_start != null && (
+                    <span style={{ color: "var(--text-4)" }}> · {tpl(t("arc.dAfterHours"), { n: fmtHours(d.hours_to_start) })}</span>
+                  )}
+                </Fact>
+                <Fact label={t("arc.dFinished")}>
+                  <span className="tabular-nums">{fmtDateTime(d.finished_at) || "—"}</span>
+                  {d.hours_to_close != null && (
+                    <span style={{ color: "var(--text-4)" }}> · {tpl(t("arc.dAfterHours"), { n: fmtHours(d.hours_to_close) })}</span>
+                  )}
+                </Fact>
+                {d.deny_reason && <Fact label={t("arc.dDenyReason")} full>{d.deny_reason}</Fact>}
+
+                {Array.isArray(d.files) && d.files.length > 0 && (
+                  <Fact label={t("arc.dFiles")} full>
+                    <div className="flex flex-wrap gap-2">
+                      {d.files.map((f, i) => {
+                        const href = f?.href || f?.url;
+                        const isImg = IMG_RE.test(String(f?.url || ""));
+                        if (isImg && !brokenImgs[i]) {
+                          return (
+                            <a key={f?.id ?? i} href={href} target="_blank" rel="noopener noreferrer"
+                              onClick={(e) => openExt(e, href)} className="inline-block">
+                              <img src={href} alt="" className="max-h-40 rounded-lg" style={{ border: "1px solid var(--border)" }}
+                                onError={() => setBrokenImgs((s) => ({ ...s, [i]: true }))} />
+                            </a>
+                          );
+                        }
+                        return (
+                          <span key={f?.id ?? i}>
+                            {extLink(href, <><Paperclip size={11} />{truncate(String(f?.url || "").split("/").pop(), 28)}<ExternalLink size={11} /></>)}
+                          </span>
+                        );
+                      })}
+                    </div>
                   </Fact>
                 )}
-                {d.document_url && (
-                  <Fact label={t("arc.dDocument")} full>
-                    {extLink(d.document_url, <><FileText size={11} />{t("arc.dOpenLink")}<ExternalLink size={11} /></>)}
-                  </Fact>
+
+                {timeline.length > 0 && (
+                  <div className="sm:col-span-2">
+                    <div className="text-[10px] uppercase tracking-wider mb-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }}>
+                      <History size={11} />{t("arc.dTimeline")}
+                    </div>
+                    <div className="rounded-lg divide-y" style={{ border: "1px solid var(--border)", borderColor: "var(--border)" }}>
+                      {timeline.map((e) => (
+                        <div key={`${e.code}-${e.at}`} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
+                          <StatusChip status={e.code} label={stName(e.code)} />
+                          <span className="tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDateTime(e.at) || e.at}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-                {d.latitude != null && d.longitude != null && (
-                  <Fact label={t("arc.dLocation")} full>
-                    {extLink(`https://maps.google.com/?q=${d.latitude},${d.longitude}`,
-                      <><MapPin size={11} />{t("arc.dOpenMap")}<ExternalLink size={11} /></>)}
-                    <span className="tabular-nums ml-2" style={{ color: "var(--text-4)" }}>{d.latitude}, {d.longitude}</span>
-                  </Fact>
-                )}
-                {(d.other_active_count > 0 || d.has_other_active) && (
-                  <div className="sm:col-span-2 rounded-lg px-3 py-2 text-xs inline-flex items-center gap-2"
-                    style={{ background: hexA(C_DOING, 0.1), color: "var(--text-2)", border: `1px solid ${hexA(C_DOING, 0.3)}` }}>
-                    <ListChecks size={13} className="flex-shrink-0" style={{ color: C_DOING }} />
-                    {tpl(t("arc.dOtherOpen"), { n: d.other_active_count ?? "" })}
+
+                {Array.isArray(d.comments) && d.comments.length > 0 && (
+                  <div className="sm:col-span-2">
+                    <div className="text-[10px] uppercase tracking-wider mb-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }}>
+                      <MessageSquare size={11} />{tpl(t("arc.dComments"), { n: d.comments.length })}
+                    </div>
+                    <div className="rounded-lg divide-y" style={{ border: "1px solid var(--border)", borderColor: "var(--border)" }}>
+                      {d.comments.map((c, i) => (
+                        <div key={c?.id ?? i} className="px-3 py-2 text-xs">
+                          <div className="flex items-center justify-between gap-3 mb-0.5">
+                            <span style={{ color: "var(--text-2)" }}>{commentWho(c) || "—"}</span>
+                            <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{fmtDateTime(commentWhen(c))}</span>
+                          </div>
+                          {commentText(c) && <div style={{ color: "var(--text-1)" }}>{commentText(c)}</div>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
