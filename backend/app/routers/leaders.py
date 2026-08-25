@@ -92,6 +92,20 @@ def _wire_task(t: dict) -> dict:
 # that belongs to NO profile falls back to the name test — the same fuzzy
 # `leader_is` the pid-less branch has always used, and it cannot hand over
 # another profile's rows, because the row is attributed to no profile at all.
+#
+# One case is left, and it is the one that keeps a leader off their own page
+# after all of the above: the row resolved to a DIFFERENT profile of the SAME
+# person. One human commonly owns several leader profiles here — the seeded
+# passport-form one ("Bozorova Moxinur Safarali Qizi") and a short one an admin
+# created later ("Bozorova Moxinur") — and the register resolves each sheet
+# spelling to whichever of them it matches, while the session holds the other.
+# `_same_person` is the tie-break, and it is deliberately STRICTER than
+# `leader_is`: the surname and the first name must fold IDENTICALLY, no fuzzy
+# score, no prefix. Across the whole 93-profile roster that pair is unique to
+# one person (the only fuzzy collision, Babayeva / Xadjibayeva Sevara, fails it
+# on the surname), so it can only ever join two records of the same human — and
+# where two leaders really did share both names, the sheet could not tell them
+# apart either and neither could the register.
 def _self_names(db: Session, payload: dict, my_pid: int | None) -> set[str]:
     """Every spelling of the viewer's own name worth matching a sheet row
     against: their profile's canonical name (which survives a rename of the
@@ -106,8 +120,25 @@ def _self_names(db: Session, payload: dict, my_pid: int | None) -> set[str]:
 
 
 def _names_viewer(sheet_name: str | None, names: set[str]) -> bool:
-    """Does this sheet spelling name the viewer?"""
+    """Does this sheet spelling name the viewer? Fuzzy — the register's own
+    scorer, used only where the row belongs to no profile at all."""
     return bool(sheet_name) and any(leader_is(sheet_name, n) for n in names)
+
+
+def _same_person(sheet_name: str | None, names: set[str]) -> bool:
+    """Is this sheet spelling the SAME person as the viewer, strictly?
+
+    Surname and first name must fold to the same two tokens; anything the
+    passport form adds after them (patronymic, «qizi») is ignored, which is
+    exactly the difference between one person's two profiles. Used only to
+    join a row the register gave to another profile — see the note above.
+    """
+    tok = _name_tokens(sheet_name or "")
+    if len(tok) < 2:
+        return False
+    key = tuple(tok[:2])
+    return any(len(t) >= 2 and tuple(t[:2]) == key
+               for t in (_name_tokens(n) for n in names))
 
 
 def _json_default(o):
@@ -447,9 +478,9 @@ def get_leaders(
 
         def _is_mine(r) -> bool:
             pid = (_leader_of(r) or {}).get("id")
-            if my_pid and pid:
-                return pid == my_pid
-            return _names_viewer(r.leader, me)
+            if not my_pid or not pid:
+                return _names_viewer(r.leader, me)
+            return pid == my_pid or _same_person(r.leader, me)
 
         rows = [r for r in rows if _is_mine(r)]
 
@@ -759,18 +790,20 @@ def report_scope_ok(db: Session, payload: dict, row: dict) -> bool:
         return row.get("manager_id") is not None and \
             row.get("manager_id") == payload.get("role_id")
     if role == "leader":
-        # Profile identity FIRST and, on a row that HAS one, only — exactly
-        # what get_leaders does, and for the same reason: `leader_is` matches
-        # on a positive pair score, so two leaders spelled alike in different
-        # units would each read the other's report if a resolved row could be
-        # claimed by name. A row resolved to NO profile is the case the name
-        # test exists for, and the register now lists those rows to the leader
-        # they name — this door has to open exactly what that page shows, or a
-        # report the leader can see turns into a 404 when they tap it.
+        # The SAME three-way rule as get_leaders, and it has to stay the same
+        # three-way rule: this door opens exactly what that page lists, or a
+        # report the leader can see turns into a 404 the moment they tap it.
+        # Profile id decides a row the register resolved; the fuzzy name test
+        # only ever reaches a row resolved to nobody; `_same_person` (surname
+        # and first name folding identically) joins a row the register gave to
+        # this person's other profile. What is still refused is what always
+        # was: a row belonging to a profile whose person is somebody else.
         my_pid = identity.viewer_leader_profile_id(db, payload)
-        if my_pid and row.get("leader_id"):
-            return row["leader_id"] == my_pid
-        return _names_viewer(row.get("leader"), _self_names(db, payload, my_pid))
+        me = _self_names(db, payload, my_pid)
+        pid = row.get("leader_id")
+        if not my_pid or not pid:
+            return _names_viewer(row.get("leader"), me)
+        return pid == my_pid or _same_person(row.get("leader"), me)
     return False
 
 
