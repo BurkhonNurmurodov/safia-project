@@ -1566,8 +1566,49 @@ a bump RESETS every number to its right to 0 — `1.4.7` → patch `1.4.8` → m
 | Level | Bump for | Examples |
 |---|---|---|
 | **PATCH** `1.0.x` | Nothing new; something works better | bug fix, copy/translation fix, styling or spacing tweak, refactor with no visible change, docs |
-| **MINOR** `1.x.0` | Something the user can now do, or a visible behaviour change | new page/tab/admin destination, new endpoint or capability, a new column/filter/export, a template gaining a prop |
-| **MAJOR** `x.0.0` | The app is no longer used the way it was | data-model migration, auth/permission model change, a page removed or replaced, a redesign of a core flow. Rare — reserved. |
+| **MINOR** `1.x.0` | Something the user can now do, or a visible behaviour change — and **a tab already open on this MAJOR line keeps working** | new page/tab/admin destination, new endpoint or capability, a new column/filter/export, a template gaining a prop |
+| **MAJOR** `x.0.0` | A bundle already open in somebody's hand STOPS working | a request or response shape an old bundle still sends or reads, a removed/renamed endpoint or field, a required param that used to be optional, auth/permission model change, a page removed or replaced. Rare — reserved. |
+
+**The MAJOR row is written about open tabs, not about how large the change
+felt, because that is the one level the platform ENFORCES** — see the floor
+below. Every other judgement here is a label; this one has a consequence.
+
+### The compatibility floor
+
+`backend/app/version.py` derives `MIN_CLIENT = <MAJOR>.0.0` from the running
+version and publishes it on every `/api` and `/admin` response
+(`AppVersionMiddleware` in `main.py`) beside `X-App-Version`. The browser reads
+both in the axios interceptor — `frontend/src/utils/compat.js`, THE definition
+of "is this bundle still served" — and `useAppUpdate` turns the verdict into
+`incompatible`.
+
+This exists because a tab is the only API consumer this platform has and the
+one thing nothing could see. A push to main deploys immediately, the app is
+left open for whole shifts, and `UpdatePrompt` deliberately never reloads by
+itself — so an old bundle talking to a new backend is the NORMAL case. Until
+the server said so, nothing could tell "a few minutes behind" from "the server
+no longer speaks your version", and the second one reached the user as a 422 on
+a save or a column that rendered empty.
+
+- **The floor is DERIVED and has no override.** That is what makes the rule
+  enforceable rather than advisory: a bundle from an older MAJOR line is
+  refused, every bundle in the current line is served, so a change that breaks
+  an open tab **can only be expressed by bumping MAJOR**. A hand-set floor
+  would let a MINOR quietly cut clients off — precisely the break nobody had to
+  describe. Never add one.
+- **It states a fact; it refuses nothing.** No request is blocked and nothing
+  reloads on its own. A tab below the floor may still be holding an attendance
+  draft or a half-typed comment, and only some endpoints break — throwing that
+  away to deliver the news is worse than the staleness. The prompt escalates
+  instead: `info` + dismissible for a merely newer build, `warning` + **no ×**
+  once the bundle is unserved, because "later" is not an outcome that state has.
+- **Fail open, always.** A client the server cannot place is SERVED, never
+  refused — a dev bundle (`0.0.0`), a stripped checkout, a backend too old to
+  send the header, a response the host's anti-bot layer mangled on the way
+  through. A floor that refuses on a non-answer takes the platform down the day
+  a proxy starts eating custom headers.
+- The bot is not a client of this: it calls the backend in-process, from the
+  same commit.
 
 **PATCH is AUTOMATIC — never hand-bump one.** `.claude/hooks/auto-commit.sh`
 bumps the patch digit on every commit it makes, before the build (Vite bakes
@@ -1590,31 +1631,56 @@ no marker file and no flag.
   from the message generator's diff — it changes every commit and says nothing
   about what any one of them did.
 
-Three readings, deliberately distinct, all in the sidebar's «Versiya» dialog
-(`components/layout/VersionBadge.jsx`): **App** = the bundle this tab is
-running · **Deployed** = the bundle a reload would give it · **Server** = the
-Python process, its checkout commit and its boot time. A commit newer than the
-boot time means a backend change is still waiting on a restart — a
-frontend-only deploy never triggers one.
+### What the app can say about itself
+
+The sidebar's «Versiya» dialog (`components/layout/VersionBadge.jsx`) answers
+three separate questions plus the contract, and they are deliberately not one
+number: **App** = the bundle this tab is running · **Deployed** = the bundle a
+reload would give it · **Server** = the Python process, its checkout commit and
+its boot time · **Serves clients from** = `min_client`, the floor. A commit
+newer than the boot time means a backend change is still waiting on a restart —
+a frontend-only deploy never triggers one.
 
 - **A browser versions by the asset hash, not by this number.** Vite's
   content-hashed filenames plus `/assets/* immutable` and `index.html no-store`
   in `main.py` are the whole cache story; the version string is a human label
   and changes nothing about caching.
 - **Update detection compares the BUILD STAMP, not the version.** Even with the
-  bump rule above, the version is the wrong handle: it is set by judgement and
-  a rebuild can ship the same number twice, while the stamp is unique per build.
-  `dist/build.json` is written by the build (and served **no-store**, same
-  reason as `index.html`); `hooks/useAppUpdate.js` polls it every 5 min and on
-  window focus, and `UpdatePrompt` in `Layout` offers a reload. It NEVER
-  reloads by itself — attendance drafts, admin forms and half-typed comments
-  are all unsaved state. The reactive half of the same problem stays
-  `lazyWithReload` → `window.__staleReload` (a lazy chunk that 404s), which
-  fires only once the app is already broken.
+  bump rule above, the version is the wrong handle for "is there something
+  newer": it is set by judgement and a rebuild can ship the same number twice,
+  while the stamp is unique per build. `dist/build.json` is written by the build
+  (and served **no-store**, same reason as `index.html`); `hooks/useAppUpdate.js`
+  polls it every 5 min and on window focus, and `UpdatePrompt` in `Layout`
+  offers a reload. **The version is the handle for the other question** — "am I
+  still served" — which the stamp cannot answer at all, since a stamp has no
+  order. Two questions, two mechanisms, one prompt.
+- The reactive half stays `lazyWithReload` → `window.__staleReload` (a lazy
+  chunk that 404s), which fires only once the app is already broken.
 - `dist/build.json` survives the wholesale `*.json` ignore via an explicit `!`
   line in `.gitignore`. Ignored, it never ships and the prompt goes silent.
 - Vite 8 runs Rolldown, which silently dropped `this.emitFile` in
   `generateBundle` — the plugin writes the marker in `writeBundle` instead.
+
+### What this deliberately is NOT
+
+The public-platform machinery (Stripe, GitHub, Shopify, Kubernetes) solves a
+problem this app does not have: an ECOSYSTEM of third-party clients that chose
+their own version and cannot be made to move. Here there is one consumer — our
+own bundle, shipped from the same commit as the backend — so none of the
+following is wanted, and each was considered and rejected:
+
+- **Pinned client versions + request/response transformation layers.** Stripe
+  pays a permanent maintenance tax to keep a decade of schemas alive because
+  its users' revenue depends on it. Ours reload.
+- **Date-based versions** (`2026-08-25`). They exist to make breaking changes
+  cheap and frequent for consumers who opt in one at a time. Nobody opts in
+  here, and the format would throw away the impact signal the table above
+  encodes — which is the ONE thing SemVer is genuinely good at.
+- **`Deprecation` / `Sunset` headers, 24-month support windows, brownouts.**
+  All are ways to warn strangers. There are no strangers.
+- **API-level `/v1/` URI versioning.** Two live contracts to maintain, forever,
+  to serve tabs that a reload fixes.
+
 
 ## Context discipline
 

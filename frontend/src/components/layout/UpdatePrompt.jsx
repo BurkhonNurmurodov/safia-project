@@ -18,20 +18,31 @@ import { useAppUpdate } from "../../hooks/useAppUpdate";
  * this codebase got wrong before Toast existed. `duration={0}` keeps it up (an
  * update notice you can miss is an update notice that does nothing) and the ×
  * dismisses it for this build only.
+ *
+ * It says one of TWO things, and the difference is the whole point. Normally a
+ * newer build merely exists: info tone, dismissible, take it when you like.
+ * But once the server says this bundle is below its compatibility floor
+ * (`incompatible` — see utils/compat.js), the tab is not behind, it is no
+ * longer served: warning tone, no × at all, because "later" is not an outcome
+ * this state has. It still does not reload by itself — the reason for the
+ * prompt is precisely that some of what is on screen may be unsaved.
  */
 export default function UpdatePrompt() {
   const { t } = useLang();
-  const { show, dismiss, reload } = useAppUpdate();
+  const { show, incompatible, dismiss, reload } = useAppUpdate();
 
   return (
     <Toast
       open={show}
-      tone="info"
+      tone={incompatible ? "warning" : "info"}
       duration={0}
-      onClose={dismiss}
+      closable={!incompatible}
+      onClose={incompatible ? undefined : dismiss}
       message={
         <span className="block">
-          <span className="block">{t("ui.version.updateReady")}</span>
+          <span className="block">
+            {t(incompatible ? "ui.version.incompatible" : "ui.version.updateReady")}
+          </span>
           <span className="block mt-2">
             <Button variant="primary" size="sm" onClick={reload}>
               {t("ui.version.reload")}

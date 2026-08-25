@@ -28,7 +28,7 @@ from app.config import assert_secure_config, settings as cfg
 from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
-from app.version import APP_VERSION, STARTED_AT, current_commit
+from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
 from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs
 from app.routers import production as production_router
 from app.routers import auth as auth_router
@@ -297,6 +297,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-App-Version", "X-App-Min-Client"],
 )
 
 # Ghost Mode: admins can suppress change-notifications via the X-Ghost-Mode
@@ -435,6 +436,56 @@ class SecurityHeadersMiddleware:
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+
+class AppVersionMiddleware:
+    """Put the running build on every API response.
+
+    Two constant headers, read by the browser bundle's axios interceptor
+    (``frontend/src/utils/compat.js``):
+
+      ``X-App-Version``     which build answered this request
+      ``X-App-Min-Client``  the oldest bundle this build still serves
+
+    A push to main deploys immediately and this app is left OPEN for whole
+    shifts — a phone in a pocket, a tab on a desk — so a bundle routinely talks
+    to a backend newer than itself. The 5-minute ``build.json`` poll already
+    notices that a NEWER build exists; only this says whether the tab's own
+    build is still SERVED, and it says it on the very first request the stale
+    tab makes rather than letting the user discover it as an unexplained 422.
+
+    The floor is derived from MAJOR (see app/version.py), so this refuses
+    nothing and blocks nothing: it states a fact, and the client decides what
+    to show. Enforcing it here would mean cutting off a tab holding a
+    half-typed attendance draft, which is a worse outcome than the staleness.
+
+    Pure ASGI, like the middleware around it. Scoped to the API prefixes — the
+    SPA's own assets are content-hashed and have no client to inform.
+    """
+
+    _PREFIXES = ("/api", "/admin")
+
+    def __init__(self, app):
+        self.app = app
+        # Built once: these never change for the life of the process.
+        self._headers = [(b"x-app-version", APP_VERSION.encode("ascii", "ignore"))]
+        if MIN_CLIENT:
+            self._headers.append((b"x-app-min-client", MIN_CLIENT.encode("ascii", "ignore")))
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or not scope.get("path", "").startswith(self._PREFIXES):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                message["headers"] = list(message.get("headers", [])) + self._headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+app.add_middleware(AppVersionMiddleware)
+
 # Routers exposing /admin/* API routes need the initData guard applied at the
 # router level too — the global dep only covers /api/*. (These same three also
 # have /api/* routes, already covered globally; the admin guard skips those.)
@@ -539,9 +590,15 @@ def api_version():
     ``commit`` is the checkout's HEAD *now*; ``started_at`` is when this
     process booted. A commit newer than the boot time means a backend change
     is still waiting on a restart — a frontend-only deploy never restarts.
+
+    ``min_client`` is the compatibility floor (app/version.py) — the oldest
+    frontend bundle this build still serves. It rides every API response as a
+    header as well; it is repeated here so the «Versiya» dialog can state the
+    contract rather than only the symptom of breaching it.
     """
     return {
         "version": APP_VERSION,
+        "min_client": MIN_CLIENT,
         "commit": current_commit(),
         "started_at": STARTED_AT,
     }

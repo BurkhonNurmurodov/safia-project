@@ -1,5 +1,6 @@
 import axios from "axios";
 import { clearToken, getToken, isWebSession } from "./session";
+import { noteServerHeaders } from "./compat";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "",
@@ -132,12 +133,20 @@ function normalizeDetail(response) {
   data.detail = detailToText(data.detail);
 }
 
+// Every response — success or failure — carries the running build and the
+// oldest bundle it still serves (X-App-Version / X-App-Min-Client). Read here,
+// at the one place all of them pass through, so a stale tab learns it is stale
+// on its first request instead of on its first unexplained 422. It only ever
+// sets a flag; see utils/compat.js.
 api.interceptors.response.use(
-  (response) =>
-    isWebShieldResponse(response)
+  (response) => {
+    noteServerHeaders(response.headers);
+    return isWebShieldResponse(response)
       ? retryAfterWebShield(response.config, response)
-      : response,
+      : response;
+  },
   (error) => {
+    noteServerHeaders(error.response?.headers);
     normalizeDetail(error.response);
     if (isWebShieldResponse(error.response)) {
       return retryAfterWebShield(error.config, error.response);

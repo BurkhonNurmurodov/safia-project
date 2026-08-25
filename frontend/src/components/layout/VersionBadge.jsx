@@ -26,13 +26,18 @@ import { APP_VERSION, BUILD_TIME, fmtStamp } from "../../utils/version";
  * than the server's boot time means a backend change is still waiting on a
  * restart, which a frontend-only deploy never triggers. Neither is visible
  * from a single "version" number, which is why all three are shown.
+ *
+ * The server block also states the COMPATIBILITY FLOOR — the oldest bundle the
+ * running build still serves. Being stale and being unserved are different
+ * facts with different remedies, and the dialog that exists to answer "what is
+ * running?" should name the contract, not only the moment it is breached.
  */
 export default function VersionBadge({ expanded = true }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   // Shares one query with UpdatePrompt (same key) — opening this dialog costs
   // no extra polling.
-  const { deployed, deployedVersion, updateReady, reload } = useAppUpdate();
+  const { deployed, deployedVersion, updateReady, incompatible, reload } = useAppUpdate();
 
   // Fetched only once the dialog is opened — the rail itself costs no request.
   const { data, isLoading, isError } = useQuery({
@@ -60,11 +65,15 @@ export default function VersionBadge({ expanded = true }) {
         }}
       >
         {/* Gold once an update is waiting: the toast can be dismissed, and the
-            rail is then the only remaining trace that one is available. */}
+            rail is then the only remaining trace that one is available. Amber
+            when the server has stopped serving this bundle — a warning, not an
+            invitation, and the one state the toast never lets you dismiss. */}
         <Info
           size={14}
           className="flex-shrink-0"
-          style={{ color: updateReady ? "var(--brand)" : "var(--text-4)" }}
+          style={{
+            color: incompatible ? "#eab308" : updateReady ? "var(--brand)" : "var(--text-4)",
+          }}
         />
         <div
           className="text-[10px] leading-tight whitespace-nowrap transition-all duration-200 text-left"
@@ -94,7 +103,7 @@ export default function VersionBadge({ expanded = true }) {
             <Button variant="secondary" onClick={() => setOpen(false)}>
               {t("ui.version.close")}
             </Button>
-            {updateReady && (
+            {(updateReady || incompatible) && (
               <Button variant="primary" onClick={reload}>
                 {t("ui.version.reload")}
               </Button>
@@ -127,13 +136,18 @@ export default function VersionBadge({ expanded = true }) {
           ) : (
             <>
               <Row label={t("ui.version.server")} value={serverVersion ? `v${serverVersion}` : "—"} />
+              <Row
+                label={t("ui.version.minClient")}
+                value={data?.min_client ? `v${data.min_client}` : "—"}
+              />
               <Row label={t("ui.version.commit")} value={data?.commit || "—"} mono />
               <Row label={t("ui.version.started")} value={fmtStamp(data?.started_at) || "—"} />
             </>
           )}
         </div>
 
-        {updateReady && <Notice>{t("ui.version.updateReady")}</Notice>}
+        {incompatible && <Notice>{t("ui.version.incompatible")}</Notice>}
+        {!incompatible && updateReady && <Notice>{t("ui.version.updateReady")}</Notice>}
         {serverMismatch && <Notice>{t("ui.version.mismatch")}</Notice>}
       </Modal>
     </>

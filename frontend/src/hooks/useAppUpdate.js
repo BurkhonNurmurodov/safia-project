@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BUILD_TIME } from "../utils/version";
+import { isOutdated, subscribeCompat } from "../utils/compat";
 
 /**
  * Is the tab running an older build than the one deployed?
@@ -23,6 +24,14 @@ import { BUILD_TIME } from "../utils/version";
  *
  * It never reloads on its own. Attendance drafts, admin forms and comment
  * boxes are all unsaved state a surprise reload would throw away.
+ *
+ * The stamp answers "is there something newer?", which is a suggestion. It
+ * cannot answer "does the server still serve ME?", which is not — and those
+ * two need different words on screen, because one can be waved away for the
+ * rest of the shift and the other cannot. `incompatible` is the second
+ * question, answered by the server itself on the headers of every API response
+ * (see utils/compat.js). It rides the same hook so ONE component decides what
+ * the user is told, rather than two prompts arguing on top of each other.
  */
 
 const DISMISS_KEY = "appUpdateDismissed";
@@ -37,6 +46,12 @@ function readDismissed() {
 
 export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
   const [dismissed, setDismissed] = useState(readDismissed);
+
+  // Set by the axios interceptor the first time the server says this bundle is
+  // below its floor. Read once at mount as well: the verdict may already have
+  // landed before this component existed.
+  const [incompatible, setIncompatible] = useState(isOutdated);
+  useEffect(() => subscribeCompat(setIncompatible), []);
 
   const { data } = useQuery({
     queryKey: ["build-info"],
@@ -85,8 +100,14 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
     deployed,
     deployedVersion: typeof data?.version === "string" ? data.version : "",
     updateReady,
-    /** updateReady AND not already waved away for this same build. */
-    show: updateReady && dismissed !== deployed,
+    /** The server no longer serves this bundle — not dismissible, not a hint. */
+    incompatible,
+    /**
+     * Incompatible ALWAYS shows: it outranks a dismissal, and it does not wait
+     * on the build.json poll, which a locked-down WebView may never answer.
+     * Otherwise: updateReady AND not already waved away for this same build.
+     */
+    show: incompatible || (updateReady && dismissed !== deployed),
     dismiss,
     reload,
   };
