@@ -67,6 +67,7 @@ _DEFAULT_LABELS = {
     "manager": "Division manager",
     "deny_reason": "Deny reason",
     "state": "State",
+    "cell": "Cell",
 }
 
 # Fallback status words, by the API's own code. The page sends the viewer's
@@ -80,9 +81,9 @@ _DEFAULT_STATUS = {
 }
 
 # The order used when the page sends no column list at all.
-_DEFAULT_COLUMNS = ("num", "created", "division", "category", "description",
-                    "author", "brigada", "status", "due", "started", "closed",
-                    "hours", "source", "files")
+_DEFAULT_COLUMNS = ("num", "created", "division", "cell", "category",
+                    "description", "author", "brigada", "status", "due",
+                    "started", "closed", "hours", "source", "files")
 
 
 def _to_local(iso: Optional[str]) -> Optional[datetime]:
@@ -141,6 +142,11 @@ _COLS: dict[str, tuple[Callable[[dict, dict], Any], str, int]] = {
     "manager":     (lambda r, L: r.get("manager_name"), "text", 22),
     "deny_reason": (lambda r, L: r.get("deny_reason"), "text", 32),
     "state":       (lambda r, L: _state(r), "text", 11),
+    # The cell the division NAMES (services/arc_cells.py). The router resolves
+    # the code to a workshop name before handing the rows over, so this stays a
+    # formatter: name where the registry knows the code, the bare digits where
+    # it does not, and nothing at all where the division names no cell.
+    "cell":        (lambda r, L: r.get("cell_name") or r.get("cell_code"), "text", 26),
 }
 
 _HEAD_FILL = PatternFill("solid", fgColor="F1F5F9")
@@ -205,6 +211,99 @@ def build_arc_workbook(rows: list[dict], columns: Optional[list[str]] = None,
 
     if rows:
         ws.auto_filter.ref = f"A1:{get_column_letter(len(keys))}{len(rows) + 1}"
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
+
+
+# The by-cell summary, in the order the tab shows it. Same contract as above:
+# the router computes every figure through the page's own expressions and this
+# only lays them out. `_headers` are the page's translated labels, keyed the
+# same as the tab's columns.
+_CELL_COLS: tuple[tuple[str, str, int], ...] = (
+    ("cell",            "text", 30),
+    ("code",            "text", 10),
+    ("leader",          "text", 22),
+    ("divisions",       "text", 34),
+    ("total",           "int",  10),
+    ("open",            "int",  10),
+    ("overdue",         "int",  10),
+    ("done",            "int",  10),
+    ("cancelled",       "int",  11),
+    ("on_time",         "num",  11),
+    ("closed_with_due", "int",  13),
+    ("median",          "num",  11),
+    ("last",            "dt",   17),
+)
+
+_CELL_DEFAULT_LABELS = {
+    "cell": "Cell", "code": "Code", "leader": "Leader", "divisions": "Divisions",
+    "total": "Total", "open": "Open", "overdue": "Overdue", "done": "Done",
+    "cancelled": "Cancelled", "on_time": "On time %",
+    "closed_with_due": "Closed with a deadline", "median": "Median hours",
+    "last": "Last ticket",
+}
+
+
+def build_arc_cell_workbook(rows: list[dict],
+                            labels: Optional[dict[str, str]] = None) -> BytesIO:
+    """One sheet «ARC cells»: a row per cell the register names, in the tab's
+    own order. The «no cell» bucket is a row like any other and is written
+    LAST, never dropped — an export that hides the tickets the rule could not
+    resolve would read as a complete answer while being a partial one."""
+    labels = labels or {}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "ARC cells"
+
+    for i, (key, _kind, width) in enumerate(_CELL_COLS, 1):
+        c = ws.cell(row=1, column=i,
+                    value=_xl_text(labels.get(key) or _CELL_DEFAULT_LABELS.get(key, key)))
+        c.font = _HEAD_FONT
+        c.fill = _HEAD_FILL
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[get_column_letter(i)].width = width
+    ws.row_dimensions[1].height = 22
+    ws.freeze_panes = "A2"
+
+    for ri, r in enumerate(rows, 2):
+        vals = {
+            "cell": r.get("cell_name") or labels.get("_unknown") or "",
+            "code": r.get("code") or "",
+            "leader": r.get("leader") or "",
+            "divisions": ", ".join(r.get("divisions") or []),
+            "total": r.get("total"),
+            "open": r.get("open"),
+            "overdue": r.get("overdue"),
+            "done": r.get("done"),
+            "cancelled": r.get("cancelled"),
+            "on_time": r.get("on_time_pct"),
+            "closed_with_due": r.get("closed_with_due"),
+            "median": r.get("median_hours"),
+            "last": _to_local(r.get("last_created")),
+        }
+        for ci, (key, kind, _w) in enumerate(_CELL_COLS, 1):
+            v = vals[key]
+            if kind == "text":
+                v = _xl_text(v)
+            c = ws.cell(row=ri, column=ci, value=v)
+            c.font = _BODY_FONT
+            if kind == "dt":
+                c.number_format = DT_FMT
+                c.alignment = _RIGHT
+            elif kind == "num":
+                c.number_format = "0.0"
+                c.alignment = _RIGHT
+            elif kind == "int":
+                c.number_format = "0"
+                c.alignment = _RIGHT
+            else:
+                c.alignment = _LEFT
+
+    if rows:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(_CELL_COLS))}{len(rows) + 1}"
 
     bio = BytesIO()
     wb.save(bio)

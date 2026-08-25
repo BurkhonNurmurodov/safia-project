@@ -38,7 +38,15 @@ function fmtRange(from, to, t) {
 function fmtInput(iso) {
   if (!iso) return ""; const [y,m,d]=iso.split("-"); return `${d}.${m}.${y}`;
 }
-function getPresets(t) {
+// "All time" needs a floor and the data model has none, so it starts at a fixed
+// epoch far below any record the platform holds. Widening it costs nothing; a
+// floor picked from inside the data would silently hide the oldest rows.
+const ALL_TIME_FROM = "2015-01-01";
+
+// The end of the widest range: today, or `max` where a page bounds the picker.
+function allTimeTo(max) { const today = todayISO(); return max && max < today ? max : today; }
+
+function getPresets(t, max) {
   const today=todayISO(), ty=parseInt(today.split("-")[0]), tm=parseInt(today.split("-")[1])-1;
   const [lmy,lmm]=navMo(ty,tm,-1);
   return [
@@ -49,6 +57,11 @@ function getPresets(t) {
     { labelKey:"filter.last30",   from:addDays(today,-29), to:today },
     { labelKey:"filter.thisMonth",from:som(ty,tm),         to:today },
     { labelKey:"filter.lastMonth",from:som(lmy,lmm),       to:eom(lmy,lmm) },
+    // Widest, so last. It anchors the calendar on its END — jumping to the epoch
+    // month would park the reader six years away from the dates they can see.
+    ...(max && max < ALL_TIME_FROM ? [] : [
+      { labelKey:"filter.allTime", from:ALL_TIME_FROM, to:allTimeTo(max), anchor:allTimeTo(max) },
+    ]),
   ].map(p => ({ ...p, label: t(p.labelKey) }));
 }
 
@@ -212,7 +225,8 @@ export default function DateRangePicker({
 
   function handlePreset(p) {
     setTempFrom(p.from); setTempTo(p.to); setPhase("from"); setActiveP(p.label);
-    setLeftY(parseInt(p.from.split("-")[0])); setLeftM(parseInt(p.from.split("-")[1])-1);
+    const anchor = p.anchor || p.from;
+    setLeftY(parseInt(anchor.split("-")[0])); setLeftM(parseInt(anchor.split("-")[1])-1);
   }
 
   function handleApply() {
@@ -222,17 +236,27 @@ export default function DateRangePicker({
 
   // single-date mode only offers single-day quick picks (no ranges);
   // an upper bound drops presets that reach past it
-  const presets = (single ? getPresets(t).filter((p) => p.from === p.to) : getPresets(t))
+  const presets = (single ? getPresets(t, max).filter((p) => p.from === p.to) : getPresets(t, max))
     .filter((p) => !max || p.to <= max);
 
+  // A range covering everything says so on the trigger: the spelled-out
+  // "1 Jan 2015 – 25 Aug 2026" is the same fact, told in the one form a reader
+  // has to decode before they can tell that nothing is being filtered out.
+  const isAllTime = !single && dateFrom && dateTo
+    && dateFrom <= ALL_TIME_FROM && dateTo >= allTimeTo(max);
+
   // Trigger label — single mode can lead with the localized weekday
-  const triggerLabel = weekday && single && dateFrom
+  const triggerLabel = isAllTime
+    ? t("filter.allTime")
+    : weekday && single && dateFrom
     ? `${t(`cal.d${(new Date(dateFrom + "T00:00:00").getDay() + 6) % 7}`)}, ${fmtRange(dateFrom, dateFrom, t)}`
     : fmtRange(dateFrom, dateTo, t);
 
   // Numeric fallback for compact toolbars: "16.07.25 – 16.07.26" (dd.mm.yy).
   const short = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${d}.${m}.${y.slice(2)}`; };
-  const compactRange = !dateFrom
+  const compactRange = isAllTime
+    ? t("filter.allTime")
+    : !dateFrom
     ? t("filter.selectDates")
     : (!dateTo || dateFrom === dateTo) ? short(dateFrom) : `${short(dateFrom)} – ${short(dateTo)}`;
 

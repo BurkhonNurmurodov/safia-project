@@ -945,6 +945,7 @@ const t = {
     "filter.last30":       "Oxirgi 30 kun",
     "filter.thisMonth":    "Shu oy",
     "filter.lastMonth":    "O'tgan oy",
+    "filter.allTime":      "Barcha vaqt",
     "filter.tableOnly":    "Faqat jadval",
 
     // ── Overview ──────────────────────────────────────────────────────────────
@@ -4763,6 +4764,7 @@ const t = {
     "filter.last30":       "Охирги 30 кун",
     "filter.thisMonth":    "Шу ой",
     "filter.lastMonth":    "Ўтган ой",
+    "filter.allTime":      "Барча вақт",
     "filter.tableOnly":    "Фақат жадвал",
 
     // ── Overview ──────────────────────────────────────────────────────────────
@@ -8581,6 +8583,7 @@ const t = {
     "filter.last30":       "Последние 30 дней",
     "filter.thisMonth":    "Этот месяц",
     "filter.lastMonth":    "Прошлый месяц",
+    "filter.allTime":      "За всё время",
     "filter.tableOnly":    "Только таблица",
 
     // ── Overview ──────────────────────────────────────────────────────────────
@@ -12399,6 +12402,7 @@ const t = {
     "filter.last30":       "Last 30 days",
     "filter.thisMonth":    "This month",
     "filter.lastMonth":    "Last month",
+    "filter.allTime":      "All time",
     "filter.tableOnly":    "Table only",
 
     // ── Overview ──────────────────────────────────────────────────────────────
