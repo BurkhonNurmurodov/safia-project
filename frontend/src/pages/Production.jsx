@@ -3,13 +3,13 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import {
   ChevronRight, ChevronDown,
   AlertTriangle, Pencil, Save, Plus, Trash2,
-  Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2,
+  Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
   Download, CheckCircle,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
 import CellLink from "../components/ui/CellLink";
-import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
+import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import DayStepper from "../components/ui/DayStepper";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
@@ -26,6 +26,8 @@ import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
+import { useFactory } from "../context/FactoryContext";
+import { useFactorySection } from "../components/ui/FactorySelect";
 import { useTranslit } from "../utils/transliterate";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { exportXlsx } from "../utils/exportXlsx";
@@ -850,14 +852,50 @@ export default function Production() {
     enabled: canPickManager,
   });
   const managers = mgrData?.managers ?? [];
+
+  // ── the page scope chain: plant → shift → brigadir ─────────────────────────
+  // Each level narrows the one below it, and each says so (`note` / `empty`), so
+  // a shortened brigadir list reads as scope rather than as missing data. The
+  // brigadir is the only one the page actually READS — the plant and the shift
+  // exist to cut a fleet-wide list down to the unit somebody is looking for,
+  // which is why the shift left the brigadir LABELS: a name that carries its own
+  // shift beside a shift filter says the same thing twice.
+  const factorySection = useFactorySection();
+  const { factory, enabled: factoryOn } = useFactory();
+  const [shiftSel, setShiftSel] = usePersistentState("production_shift", "all");
+
+  // The plant narrows the list only where the plant is a real dimension. On a
+  // single-plant install there is no switcher at all, so filtering here would
+  // silently drop every unit whose factory_id nobody has filled in — with no
+  // control on screen to widen back out.
+  const byFactory = useMemo(
+    () => (!factoryOn || factory == null ? managers : managers.filter((m) => m.factory_id === factory)),
+    [managers, factory, factoryOn],
+  );
+  // Only shifts that exist in the current plant are offered — a shift option
+  // that empties the list is a control whose only outcome is an empty page.
+  const shiftOpts = useMemo(
+    () => [...new Set(byFactory.map((m) => m.shift).filter((v) => v != null))].sort(),
+    [byFactory],
+  );
+  const shiftPick = shiftOpts.some((v) => String(v) === shiftSel) ? shiftSel : "all";
+  const mgrOpts = useMemo(
+    () => (shiftPick === "all" ? byFactory : byFactory.filter((m) => String(m.shift) === shiftPick)),
+    [byFactory, shiftPick],
+  );
+
   // Default to the first configured brigadir, and re-sync if the current pick
-  // falls out of the list (list just loaded, or a shift-manager's scope narrows).
+  // falls out of the list (list just loaded, a shift-manager's scope narrows, or
+  // the plant/shift above it moved — a picker naming a unit its own list no
+  // longer offers is worse than a reset). A narrowing that empties the list
+  // leaves the pick alone: the page says so instead of jumping somewhere else.
   useEffect(() => {
     if (!canPickManager) return;
-    if (managers.length && (selManager == null || !managers.some((m) => m.manager_id === selManager))) {
+    if (mgrOpts.some((m) => m.manager_id === selManager)) return;
+    if (mgrOpts.length) setSelManager(mgrOpts[0].manager_id);
+    else if (managers.length && (selManager == null || !managers.some((m) => m.manager_id === selManager)))
       setSelManager(managers[0].manager_id);
-    }
-  }, [managers, canPickManager]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mgrOpts, managers, canPickManager]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const managerParam = canPickManager && selManager != null ? { manager_id: selManager } : {};
   // A picker role hasn't resolved a unit yet (list still loading) → hold the
@@ -865,6 +903,10 @@ export default function Production() {
   const managerReady = !canPickManager || selManager != null;
   // Picker role, list loaded, nothing in scope → no brigadir has production set up.
   const noManagers = canPickManager && mgrData != null && managers.length === 0;
+  // Configured brigadirs exist, but not inside the plant/shift picked above. An
+  // EMPTY scope is a real answer, not a reason to silently show another plant's
+  // unit — the chips beside the filter button are the way back out.
+  const noInScope = canPickManager && mgrData != null && managers.length > 0 && mgrOpts.length === 0;
 
   // Catalog fields (Сап код / Наименование / Труд. / Команда) are admin-editable
   // only — supervisors keep the read-only cells and just edit Факт/ПЛАН.
@@ -1272,6 +1314,77 @@ export default function Production() {
 
   const isToday = date === todayISO();
 
+  // ── the page bar's one filter zone ────────────────────────────────────────
+  // Plant → shift → brigadir, the same broad→narrow chain every other scoped
+  // page reads left to right, consolidated into ONE row with the day stepper
+  // instead of a stack of loose selects above the content.
+  //
+  // Surname + initials on the chip: full passport names ("XAKIMOV RUSLAN
+  // ABDULLAYEVICH") truncate to nothing useful in a chip, and the full name
+  // still rides the tooltip and the page title.
+  const shortName = (n) => {
+    const parts = tl(n || "").trim().split(/\s+/);
+    return parts.length < 2 ? parts[0] : `${parts[0]} ${parts.slice(1).map((w) => w[0] + ".").join("")}`;
+  };
+  const shiftLabel = shiftPick === "all" ? null : `${t("filter.shift")} ${shiftPick}`;
+  const plantLabel = factoryOn && factory != null ? (factorySection?.display || "") : null;
+  // The note names the NEAREST narrowing level — that is the control the user
+  // has to touch to get a missing name back, and one short line beats a recital
+  // of the whole chain. Same order for the way OUT: widen the tightest level
+  // first, and offer nothing where the plant is locked and has no ✕ of its own.
+  const chainNote = (parent, n) =>
+    parent ? `${t("production.narrowedBy").replace("{x}", parent)} · ${n}` : null;
+  const widenTo = (label, onClick) => (
+    <div className="text-center py-1">
+      <p className="text-xs mb-2" style={{ color: "var(--text-3)" }}>{t("production.noneInScope")}</p>
+      <Button size="sm" variant="secondary" onClick={onClick}>{label}</Button>
+    </div>
+  );
+  const widenOut = shiftLabel
+    ? widenTo(t("production.shiftAll"), () => setShiftSel("all"))
+    : plantLabel && factorySection?.onClear
+      ? widenTo(t("factory.all"), factorySection.onClear)
+      : null;
+  const selManagerName = managers.find((m) => m.manager_id === selManager)?.name || "";
+
+  const pageSections = !canPickManager ? [] : [
+    ...(factorySection ? [factorySection] : []),
+    // Offered only where there is a choice to make: one shift in the plant means
+    // the control can do nothing but narrow to what is already on screen.
+    ...(shiftOpts.length > 1 ? [{
+      key: "shift", icon: Layers, label: t("filter.shift"),
+      active: shiftPick !== "all",
+      display: shiftLabel || "",
+      onClear: () => setShiftSel("all"),
+      render: () => (
+        <SegmentedToggle
+          fill
+          value={shiftPick}
+          onChange={setShiftSel}
+          options={[["all", t("production.shiftAll")], ...shiftOpts.map((v) => [String(v), `${t("filter.shift")} ${v}`])]}
+        />
+      ),
+    }] : []),
+    {
+      key: "brigadir", icon: Users, label: t("filter.brigadir"),
+      // Always on: the dashboard reads exactly one unit, so this chip is what
+      // names the unit on screen rather than an optional narrowing.
+      active: selManager != null,
+      display: shortName(selManagerName),
+      render: ({ close } = {}) => (
+        <PickFilter
+          searchable
+          close={close}
+          note={chainNote(shiftLabel || plantLabel, mgrOpts.length)}
+          empty={widenOut}
+          opts={mgrOpts.map((m) => ({ value: m.manager_id, label: shortName(m.name), title: tl(m.name) }))}
+          value={selManager}
+          onChange={(v) => setSelManager(v)}
+        />
+      ),
+    },
+  ];
+
   return (
     <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`}>
       {/* Export success toast — fixed top-right, outside normal flow */}
@@ -1284,28 +1397,44 @@ export default function Production() {
           <span>{t("staff.exportToast")}</span>
         </div>
       )}
-      {/* brigadir picker — supervisors are pinned to their own unit (no picker);
-          shift-managers pick within their shift, top-managers/admins across all */}
-      {canPickManager && (
-        <div className="flex items-center gap-2 mb-4">
-          <Users size={15} style={{ color: "var(--text-4)" }} className="flex-shrink-0" />
+      {/* ONE page bar: the period control inline, then the consolidated filter
+          zone (plant → shift → brigadir) with its chips, then the jump-to-a-
+          loaded-date select on the right. Supervisors and leaders are pinned to
+          their own unit by the backend, so they get no sections and no panel. */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <DayStepper value={date} onChange={setDate} max={null} />
+        {!isToday && (
+          <button onClick={() => setDate(todayISO())} className="px-3 py-2 rounded-xl text-xs font-medium transition-colors hover:bg-[var(--bg-accent)]"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+            {t("production.today")}
+          </button>
+        )}
+        {pageSections.length > 0 && (
+          <FilterPanel sections={pageSections} />
+        )}
+
+        {/* switcher — jump to a date that has uploaded data */}
+        {availableDates.length > 0 && (
           <StyledSelect
-            className="w-full sm:w-72"
-            value={selManager != null ? String(selManager) : ""}
-            onChange={(v) => setSelManager(v ? Number(v) : null)}
-            options={managers.map((m) => ({
-              value: String(m.manager_id),
-              label: tl(m.name) + (m.shift ? ` · ${t("filter.shift")} ${m.shift}` : ""),
-            }))}
-            placeholder={t("production.pickBrigadir")}
+            className="ml-auto w-48"
+            value={availableDates.includes(date) ? date : ""}
+            onChange={(v) => { if (v) setDate(v); }}
+            options={availableDates.map((d) => ({ value: d, label: ddmmyyyy(d) }))}
+            placeholder={`${t("production.loadedDates")} (${availableDates.length})`}
           />
-        </div>
-      )}
+        )}
+      </div>
 
       {noManagers ? (
         <EmptyState
           title={t("production.noConfiguredTitle")}
           message={t("production.noConfiguredMsg")}
+          showUploadLink={false}
+        />
+      ) : noInScope ? (
+        <EmptyState
+          title={t("production.noInScopeTitle")}
+          message={t("production.noInScopeMsg")}
           showUploadLink={false}
         />
       ) : noCells ? (
@@ -1334,28 +1463,6 @@ export default function Production() {
           })}
         </div>
       )}
-
-      {/* date navigation */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <DayStepper value={date} onChange={setDate} max={null} />
-        {!isToday && (
-          <button onClick={() => setDate(todayISO())} className="px-3 py-2 rounded-xl text-xs font-medium transition-colors hover:bg-[var(--bg-accent)]"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
-            {t("production.today")}
-          </button>
-        )}
-
-        {/* switcher — jump to a date that has uploaded data */}
-        {availableDates.length > 0 && (
-          <StyledSelect
-            className="ml-auto w-48"
-            value={availableDates.includes(date) ? date : ""}
-            onChange={(v) => { if (v) setDate(v); }}
-            options={availableDates.map((d) => ({ value: d, label: ddmmyyyy(d) }))}
-            placeholder={`${t("production.loadedDates")} (${availableDates.length})`}
-          />
-        )}
-      </div>
 
       {/* view switcher: computed dashboard / staffing / raw фаза / raw заголовок */}
       <div className="overflow-x-auto mb-4">

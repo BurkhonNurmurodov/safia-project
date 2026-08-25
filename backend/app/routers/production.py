@@ -688,7 +688,13 @@ def list_production_managers(
         mgrs = [m for m in q.order_by(Manager.name).all() if m.id in configured]
     else:
         raise HTTPException(status_code=403, detail="Not allowed to view production data")
-    return {"managers": [{"manager_id": m.id, "name": m.name, "shift": m.shift} for m in mgrs]}
+    # `factory_id` rides along so the picker can be narrowed by plant on the
+    # client — the dimension still lives in exactly one place (managers.factory_id),
+    # this is only that one value being read out.
+    return {"managers": [
+        {"manager_id": m.id, "name": m.name, "shift": m.shift, "factory_id": m.factory_id}
+        for m in mgrs
+    ]}
 
 
 class OverrideBody(BaseModel):
