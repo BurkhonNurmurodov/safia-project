@@ -1324,9 +1324,9 @@ back on the first walk.
     that can only be empty. Each level notes what narrowed it and offers the way
     back out; a child pick its parent no longer offers is dropped.
 - **The page is TWO tabs over ONE table** (`SegmentedToggle asTabs`, above the
-  filter row, because both read the SAME filtered tickets — same rows, same
-  filters, same page, same sort). They differ in exactly one thing: **which
-  columns are on the table**, which is what makes them two questions about one
+  filter row, because both read the SAME filtered tickets — same filters, same
+  page, same sort). They differ in **which columns are on the table** and in
+  ONE narrowing (below), which is what makes them two questions about one
   register rather than two pages.
   - «Barchasi» is the register as IT files it — division, category, author,
     brigade — arranged by the reader through the `ColumnsPicker`.
@@ -1338,6 +1338,23 @@ back on the first walk.
     **Deliberately not offered to the ColumnsPicker** (which stays on «Barchasi»
     only): a curated answer the reader can dismantle column by column is not a
     curated answer.
+  - **«Yacheykalar bo'yicha» shows only the tickets that NAME a cell**
+    (`cells_only`, user 2026-08-25). A ticket whose division carries no
+    four-digit code has no answer to that tab's question — its cell, brigadir
+    and leader columns can only ever be blank — so it is out of that view. The
+    scope rides the SHARED filter set (`_filters` → `_apply_filters`, and the
+    export body), never a client-side row drop: the table, the KPI strip, the
+    row count and the file then describe the same rows, and a count above the
+    table can never promise more tickets than the table can show. What it hides
+    is **counted, named and reachable**, never silently dropped — `/stats`
+    returns `hidden_no_cell` (the same filters with that one narrowing lifted,
+    so an org pick, which already excludes cell-less tickets, makes it 0) and
+    the card header prints it as a button onto «Barchasi» with the cell filter
+    set to «Yacheykasiz». For the same reason that pick is not OFFERED on this
+    tab and a standing one is dropped on switching to it — it could only ever
+    answer with an empty table. A code the registry has never heard of still
+    SHOWS here (it names a cell; the two registers are allowed to disagree in
+    public) — only «no code at all» is out.
   - **This REPLACED a per-cell aggregate** (one row per cell: totals, open,
     overdue, on-time %, median). `ArcByCell.jsx`, `GET /api/arc/by-cell`,
     `_by_cell()` and `build_arc_cell_workbook` are all GONE — the tab shows

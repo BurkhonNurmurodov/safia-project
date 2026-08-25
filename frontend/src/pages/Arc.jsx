@@ -323,8 +323,17 @@ export default function Arc() {
     ...(urgent !== "all" ? { urgent } : {}),
     ...(overdue !== "all" ? { overdue } : {}),
     ...(source !== "all" ? { source } : {}),
+    // «Yacheykalar bo'yicha» asks whose cell a ticket is on — a question a
+    // ticket whose division names no cell cannot answer, and whose cell,
+    // brigadir and leader columns could only ever be blank. So that tab
+    // narrows the register to the tickets that name one. It goes in the shared
+    // filter set on purpose: the table, the KPI strip, the row count and the
+    // export then all describe the same rows. What it hides is not dropped in
+    // silence — `stats.hidden_no_cell` counts it and the card header says so,
+    // with the way over to «Barchasi», where those tickets are.
+    ...(tab === "cells" ? { cells_only: true } : {}),
     q: q.trim() || undefined,
-  }), [dateFrom, dateTo, state, statusSel, catSel, division, cell, shift, sup, leader,
+  }), [tab, dateFrom, dateTo, state, statusSel, catSel, division, cell, shift, sup, leader,
        brigada, author, urgent, overdue, source, q]);
   const sortParam = `${sort.key}:${sort.dir}`;
   const listParams = useMemo(
@@ -509,9 +518,12 @@ export default function Arc() {
   useEffect(() => {
     if (!optsReady || !cell) return;
     // «No cell» is a division this platform's org chart cannot reach at all, so
-    // it cannot survive an org pick.
-    if (cell === NO_CELL ? orgActive : !cellPickOpts.some((o) => o.code === cell)) setCell("");
-  }, [optsReady, cellPickOpts, orgActive]); // eslint-disable-line react-hooks/exhaustive-deps
+    // it cannot survive an org pick — nor the «by cells» view, which shows only
+    // the tickets that name a cell and would answer this pick with an empty
+    // table the reader has no way to explain.
+    if (cell === NO_CELL ? (orgActive || tab === "cells")
+      : !cellPickOpts.some((o) => o.code === cell)) setCell("");
+  }, [optsReady, cellPickOpts, orgActive, tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const brigOpts = options.brigadas || [];
   const brigById = useMemo(() => Object.fromEntries(brigOpts.map((b) => [String(b.id), b])), [brigOpts]);
   const authorOpts = options.authors || [];
@@ -634,7 +646,7 @@ export default function Arc() {
             // real scope, not a gap in the list. They belong to no unit, so an
             // org pick above takes them off the list rather than offering a
             // scope that can only ever be empty.
-            ...(options.no_cell_count && !orgActive
+            ...(options.no_cell_count && !orgActive && tab !== "cells"
               ? [{ value: NO_CELL, title: t("arc.cNoCell"),
                    label: withCount(t("arc.cNoCell"), options.no_cell_count) }]
               : []),
@@ -1373,8 +1385,20 @@ export default function Arc() {
             mobile={mobileList}
             mobileCards
             right={
-              <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-                {tpl(t("arc.count"), { n: total.toLocaleString("ru-RU") })}
+              <span className="text-[11px] inline-flex items-center gap-1.5 flex-wrap justify-end" style={{ color: "var(--text-4)" }}>
+                <span className="tabular-nums whitespace-nowrap">
+                  {tpl(t("arc.count"), { n: total.toLocaleString("ru-RU") })}
+                </span>
+                {/* What this view is not showing, and where it is. A count that
+                    silently omitted these would read as the whole register. */}
+                {tab === "cells" && (stats?.hidden_no_cell || 0) > 0 && (
+                  <button type="button" className="underline underline-offset-2 whitespace-nowrap text-left"
+                    style={{ color: "var(--text-3)" }}
+                    title={t("arc.cellsOnlyHiddenHint")}
+                    onClick={(e) => { e.stopPropagation(); setTab("all"); setCell(NO_CELL); }}>
+                    · {tpl(t("arc.cellsOnlyHidden"), { n: stats.hidden_no_cell.toLocaleString("ru-RU") })}
+                  </button>
+                )}
               </span>
             }
           >

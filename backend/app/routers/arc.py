@@ -30,7 +30,11 @@ register and our cell registry, so it rides every row as ``cell_code``, filters
 like any other scope, and resolves each ticket's owning brigadir and leader for
 the page's «by cells» view — all off the one expression, never re-read per call
 site. That view is a COLUMN SET over this same register, not an aggregate: the
-per-cell summary it used to be (and its ``/by-cell`` endpoint) is gone.
+per-cell summary it used to be (and its ``/by-cell`` endpoint) is gone. It
+carries exactly one narrowing of its own — ``cells_only``, the tickets whose
+division names a cell — because the question it asks has no answer for the
+rest; what that hides is counted back as ``hidden_no_cell`` on /stats and named
+on the page, never dropped in silence.
 
 That link is also what carries the org chain — shift → brigadir → leader — onto
 a register that knows nothing about this platform's org chart: each level
@@ -176,13 +180,14 @@ def _filters(
     state: str = Query("all"),
     q: Optional[str] = Query(None),
     include_missing: bool = Query(False),
+    cells_only: bool = Query(False),
 ) -> dict:
     return {"date_from": date_from, "date_to": date_to, "status": status,
             "category": category, "division": division, "cell": cell,
             "shift": shift, "manager": manager, "leader": leader,
             "brigada": brigada, "author": author, "urgent": urgent,
             "overdue": overdue, "source": source, "state": state, "q": q,
-            "include_missing": include_missing}
+            "include_missing": include_missing, "cells_only": cells_only}
 
 
 def _day_start(s: Optional[str]) -> Optional[datetime]:
@@ -240,6 +245,17 @@ def _apply_filters(query, f: dict, D: dict, db: Session):
         if arc_cells.NO_CELL in picked:
             conds.append(code.is_(None))
         query = query.filter(or_(*conds))
+    # The «by cells» view asks ONE question — whose cell is this ticket on, and
+    # where does it stand — and a ticket whose division names no cell has no
+    # answer to it: its cell, brigadir and leader columns can only ever be
+    # blank. So that view narrows the register to the tickets that name one.
+    # It rides the shared filter set on purpose: the table, the KPI strip and
+    # the export then read the same rows, and a count above the table can never
+    # describe more tickets than the table can show. What it excludes is not
+    # silently dropped — /stats returns it as `hidden_no_cell` and the page
+    # says so, with the way back to «Barchasi» where those tickets live.
+    if f.get("cells_only"):
+        query = query.filter(D["cell_code"].isnot(None))
     # The org chain — shift → brigadir → leader — reaches a ticket only through
     # the cell its division names, so it narrows to a SET OF CODES and joins
     # the register at exactly the same expression the cell pick uses. An empty
@@ -605,8 +621,19 @@ def get_stats(
             .group_by(R.brigada_id, R.brigada_name)
             .order_by(func.count(R.id).desc()).all())
     ]
+    # What this view is NOT showing. Only the «by cells» scope can hide a
+    # ticket the other filters kept, so it is counted over the same filter set
+    # with that one narrowing lifted — an org pick already excludes cell-less
+    # tickets by itself, and then this is 0, which is the honest answer.
+    hidden_no_cell = 0
+    if f.get("cells_only"):
+        hidden_no_cell = _n(
+            _apply_filters(db.query(func.count(R.id)), {**f, "cells_only": False}, D, db)
+            .filter(D["cell_code"].is_(None)).scalar())
+
     return {
         "shown": _n(shown),
+        "hidden_no_cell": hidden_no_cell,
         "open": _n(n_open),
         "overdue": _n(n_overdue),
         "cancelled": _n(n_cancelled),
@@ -706,6 +733,7 @@ class ArcExportBody(BaseModel):
     state: str = "all"
     q: Optional[str] = None
     include_missing: bool = False
+    cells_only: bool = False
     sort: str = "created_at:desc"
     columns: list[str] = []
     labels: dict[str, str] = {}
@@ -727,7 +755,8 @@ _EXPORT_MAX_ROWS = 50_000
 
 _FILTER_KEYS = ("date_from", "date_to", "status", "category", "division",
                 "cell", "shift", "manager", "leader", "brigada", "author",
-                "urgent", "overdue", "source", "state", "q", "include_missing")
+                "urgent", "overdue", "source", "state", "q", "include_missing",
+                "cells_only")
 
 
 def _scope_line(f: dict, sort: Optional[str]) -> str:
@@ -748,6 +777,8 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
             parts.append(f"{key}={f[key]}")
     if f.get("include_missing"):
         parts.append("include_missing=yes")
+    if f.get("cells_only"):
+        parts.append("cells_only=yes")
     if sort:
         parts.append(f"sort={sort}")
     return (" · ".join(parts) or "no filters")[:1000]
