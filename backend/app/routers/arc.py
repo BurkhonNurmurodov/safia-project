@@ -58,7 +58,7 @@ from app.permissions import require_page
 from app.services import action_log, arc_cells, arc_client
 from app.services.arc_client import (CANCELLED_STATUSES, DONE_STATUSES,
                                      OPEN_STATUSES)
-from app.services.arc_export import build_arc_cell_workbook, build_arc_workbook
+from app.services.arc_export import build_arc_workbook
 from app.services.cell_lookup import workshop_name
 from app.services.arc_sync import _live, detail_pending, fetch_detail, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
@@ -618,108 +618,6 @@ def get_stats(
     }
 
 
-# A coded row normally holds one division name; the «no cell» bucket can hold
-# dozens, and the page shows the first few beside an exact count either way.
-_NAMES_PER_ROW = 25
-
-
-def _by_cell(db: Session, f: dict) -> dict:
-    """The same filtered tickets, grouped by the CELL their division names.
-
-    One row per four-digit code the register carries, plus one row for every
-    ticket whose division names no cell at all — that bucket is the honest half
-    of the rule and is never folded away, because «this division does not say
-    which cell» is a fact about the register, not an absence of data.
-
-    Every figure is the same expression the KPI strip and the table use, so a
-    cell's «open» and the strip's «open» can only ever be the same count over
-    the same rows. `on_time_pct` names the population it was computed over for
-    the reason the strip does: a ticket whose category carries no allowed time
-    is neither on time nor late.
-    """
-    R = ArcRequest
-    D = _derived()
-    code = D["cell_code"]
-    base = _apply_filters(db.query(R), f, D, db)
-
-    def _sum(cond):
-        return func.coalesce(func.sum(case((cond, 1), else_=0)), 0)
-
-    closed_with_due = and_(D["is_done"], D["due"].isnot(None), D["closed_at"].isnot(None))
-    late_closed = and_(D["is_done"], D["closed_at"].isnot(None), D["late"])
-    hours_closed = case((D["is_done"], D["hours_to_close"]), else_=None)
-
-    grouped = (base.with_entities(
-        code.label("code"),
-        func.count(R.id),
-        _sum(D["is_open"]),
-        _sum(D["overdue_now"]),
-        _sum(D["is_done"]),
-        _sum(D["is_cancelled"]),
-        _sum(closed_with_due),
-        _sum(late_closed),
-        func.percentile_cont(0.5).within_group(hours_closed),
-        func.max(R.created_at),
-        func.count(func.distinct(R.division_name)),
-    ).group_by(code).all())
-
-    # The division names behind each code, so a row says WHICH «Большая мойка»
-    # it is even when the registry has never heard of the cell. Collected in one
-    # pass rather than per row — a query per cell is ~120 round trips.
-    names: dict[str, list[str]] = {}
-    for c, name in (base.with_entities(code.label("code"), R.division_name)
-                    .filter(R.division_name.isnot(None))
-                    .group_by(code, R.division_name)
-                    .order_by(R.division_name).all()):
-        got = names.setdefault(c or arc_cells.NO_CELL, [])
-        if len(got) < _NAMES_PER_ROW:
-            got.append(name)
-
-    known = arc_cells.cells_for(db, [g[0] for g in grouped if g[0]])
-
-    def _row(g) -> dict:
-        c, total, n_open, n_ov, n_done, n_canc, n_cwd, n_late, med, last, n_div = g
-        n_cwd, n_late = _n(n_cwd), _n(n_late)
-        return {
-            "code": c,
-            "cell": known.get(c) if c else None,
-            "divisions": names.get(c or arc_cells.NO_CELL, []),
-            "division_count": _n(n_div),
-            "total": _n(total),
-            "open": _n(n_open),
-            "overdue": _n(n_ov),
-            "done": _n(n_done),
-            "cancelled": _n(n_canc),
-            "closed_with_due": n_cwd,
-            "late_closed": n_late,
-            "on_time_pct": round(100.0 * (n_cwd - n_late) / n_cwd, 1) if n_cwd else None,
-            "median_hours": round(float(med), 1) if med is not None else None,
-            "last_created": _iso(last),
-        }
-
-    rows = [_row(g) for g in grouped if g[0]]
-    rows.sort(key=lambda r: (-r["total"], r["code"]))
-    uncoded = next((_row(g) for g in grouped if not g[0]), None)
-    return {
-        "rows": rows,
-        "uncoded": uncoded,
-        # «How much of the register does the rule actually reach?» — the two
-        # counts a reader needs before trusting any row below them.
-        "matched": sum(1 for r in rows if r["cell"]),
-        "unmatched": sum(1 for r in rows if not r["cell"]),
-    }
-
-
-@router.get("/by-cell")
-def get_by_cell(
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-    f: dict = Depends(_filters),
-):
-    """The «by cells» tab, over exactly the rows the register would show."""
-    return _by_cell(db, f)
-
-
 @router.get("/requests/{remote_id}")
 def get_request(
     remote_id: str,
@@ -809,9 +707,10 @@ class ArcExportBody(BaseModel):
     labels: dict[str, str] = {}
     status_labels: dict[str, str] = {}
     caption: Optional[str] = None
-    # Which VIEW is on screen — the file must be the thing the reader is
-    # looking at, not the other tab. «list» is the ticket register, «cells» the
-    # per-cell summary.
+    # Which VIEW is on screen. Both are the register now — same rows, same
+    # filters, differing only in the `columns` the page sends — so this no
+    # longer picks a builder, only the FILENAME, and «arc_cells_…» still tells
+    # the reader which of the two tabs the file came off.
     view: str = "list"
     # The viewer's language, for the one value the backend has to pick a
     # spelling of: a cell's workshop name exists in four and the export writes
@@ -864,34 +763,26 @@ def export_xlsx(
     D = _derived()
     today = datetime.now(_TASHKENT).date().isoformat()
 
-    if body.view == "cells":
-        # The per-cell summary, through the SAME function the tab reads, so the
-        # file and the screen cannot hold two different numbers. The «no cell»
-        # bucket is written last rather than dropped.
-        data = _by_cell(db, f)
-        rows = list(data["rows"]) + ([data["uncoded"]] if data.get("uncoded") else [])
-        for r in rows:
-            cell = r.get("cell") or {}
-            r["cell_name"] = workshop_name(cell, body.lang) or r.get("code") or ""
-            r["leader"] = cell.get("leader") or ""
-        bio = build_arc_cell_workbook(rows, body.labels)
-        fname = f"arc_cells_{today}.xlsx"
-    else:
-        query = _rows_query(db, f, D)
-        rows = _fetch_rows(query, D, body.sort, limit=_EXPORT_MAX_ROWS)
-        # The register's cell column is a NAME on screen and must be one in the
-        # file too; the row carries only the digits, so resolve them once here.
-        # The cell's two owners ride on that same projection — a ticket whose
-        # division names no cell (or names one the registry does not know)
-        # reaches no unit, and its owner columns stay blank rather than guessing.
-        cells = _cells_map(db, rows)
-        for r in rows:
-            c = cells.get(r.get("cell_code"))
-            r["cell_name"] = workshop_name(c, body.lang)
-            r["sup_name"] = (c or {}).get("sup") or ""
-            r["leader_name"] = (c or {}).get("leader") or ""
-        bio = build_arc_workbook(rows, body.columns, body.labels, body.status_labels)
-        fname = f"arc_requests_{today}.xlsx"
+    # Both views are the register — the same tickets through the same filters,
+    # differing only in which columns ride along — so there is ONE export path
+    # and `view` only names the file. A second builder here is what used to let
+    # the file and the screen hold two different answers.
+    query = _rows_query(db, f, D)
+    rows = _fetch_rows(query, D, body.sort, limit=_EXPORT_MAX_ROWS)
+    # The register's cell column is a NAME on screen and must be one in the
+    # file too; the row carries only the digits, so resolve them once here.
+    # The cell's two owners ride on that same projection — a ticket whose
+    # division names no cell (or names one the registry does not know)
+    # reaches no unit, and its owner columns stay blank rather than guessing.
+    cells = _cells_map(db, rows)
+    for r in rows:
+        c = cells.get(r.get("cell_code"))
+        r["cell_name"] = workshop_name(c, body.lang)
+        r["sup_name"] = (c or {}).get("sup") or ""
+        r["leader_name"] = (c or {}).get("leader") or ""
+    bio = build_arc_workbook(rows, body.columns, body.labels, body.status_labels)
+    fname = (f"arc_cells_{today}.xlsx" if body.view == "cells"
+             else f"arc_requests_{today}.xlsx")
 
     caption = body.caption or f"📊 ARC · {len(rows)} rows"
     try:

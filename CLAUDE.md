@@ -1306,9 +1306,8 @@ back on the first walk.
     has never heard of (kept, shown, marked «not in the registry» — the ticket
     register is IT's and the cell list is ours, and the two are allowed to
     disagree in public) and a division that carries no code at all (its own
-    filter value `NO_CELL = "none"`, its own pinned row on the by-cell tab, its
-    own row in the export). Folding either away makes a partial answer read as
-    a complete one.
+    filter value `NO_CELL = "none"`, and it is shown and counted like any other
+    ticket). Folding either away makes a partial answer read as a complete one.
   - **The code is also what carries our ORG CHAIN onto IT's register** —
     `shift` → `manager` → `leader`, one pick each, in the filter panel's «Kim va
     qayerda» group ahead of the cell, exactly as on Quality. A level resolves to
@@ -1324,18 +1323,52 @@ back on the first walk.
     unit, so an org pick takes it off the cell list rather than offering a scope
     that can only be empty. Each level notes what narrowed it and offers the way
     back out; a child pick its parent no longer offers is dropped.
-- **The page is TWO tabs** (`SegmentedToggle asTabs`, above the filter row,
-  because both read the SAME filtered tickets): «Barchasi» is the ticket
-  register, «Yacheykalar bo'yicha» is `components/arc/ArcByCell.jsx` over
-  `GET /api/arc/by-cell`. One row per code, counted by `_by_cell()` — the same
-  expressions the KPI strip uses, so a cell's «open» and the strip's «open» can
-  only ever be the same count over the same rows. The cell NAME is a `CellLink`
-  (→ `/cells/:id`) and the ROW opens the register filtered to that cell;
-  CellLink stops propagation, so the two destinations never fight. Sorting is
-  client-side (a hundred-odd rows). The Export button follows the tab —
-  `view: "cells"` builds the per-cell sheet through the same `_by_cell()`, so
-  the file and the screen cannot hold two different numbers — and the
-  ColumnsPicker is offered on the register tab only.
+- **The page is TWO tabs over ONE table** (`SegmentedToggle asTabs`, above the
+  filter row, because both read the SAME filtered tickets — same rows, same
+  filters, same page, same sort). They differ in exactly one thing: **which
+  columns are on the table**, which is what makes them two questions about one
+  register rather than two pages.
+  - «Barchasi» is the register as IT files it — division, category, author,
+    brigade — arranged by the reader through the `ColumnsPicker`.
+  - «Yacheykalar bo'yicha» asks *whose cell is this ticket on, and where does it
+    stand*: a **fixed** set — № · brigadir · lider · yacheyka · tavsif · holat ·
+    muddat · boshlandi · yopildi (+ hours in the same cell) · manba. `CELL_COLS`
+    in `pages/Arc.jsx` is that set, rendered through the SAME per-key `listCell`
+    switch as the register, so a column added to one is available to both.
+    **Deliberately not offered to the ColumnsPicker** (which stays on «Barchasi»
+    only): a curated answer the reader can dismantle column by column is not a
+    curated answer.
+  - **This REPLACED a per-cell aggregate** (one row per cell: totals, open,
+    overdue, on-time %, median). `ArcByCell.jsx`, `GET /api/arc/by-cell`,
+    `_by_cell()` and `build_arc_cell_workbook` are all GONE — the tab shows
+    tickets now, and every per-cell figure with them. Bringing any of it back is
+    a new decision, not a restoration.
+  - **The two owner columns come off the `cells` map, not off the ticket.**
+    `cell_lookup.by_verifix(with_leader=True, with_sup=True)` puts both names on
+    the projection `cells_for` already ships, so a thousand-row page names each
+    unit once instead of once per row, and the owner columns, the cell column
+    and the org filter all read ONE answer to «whose cell is this».
+    `cells.manager_id` is the only source for the brigadir (the factory
+    dimension's one attachment point). Neither is sortable: no SQL expression
+    orders by them, and a header that looks sortable and does nothing is worse
+    than one that does not.
+  - **A ticket can fail to reach an owner three ways** — its division names no
+    cell, it names one the registry has never heard of, or the cell has nobody
+    assigned. All three render «—» with the reason in the tooltip, because the
+    CELL column standing beside it already says which of the three it is;
+    repeating that distinction in two more columns is noise, not honesty.
+  - One sort serves both views, so a switch that lands on a key the new view has
+    no column for falls back to the register's own default (newest first) rather
+    than leaving an order the reader can neither see nor undo.
+  - **The Export mirrors whichever tab is open**, through the one
+    `build_arc_workbook` — `view` now only names the file. The screen's merged
+    «yopildi + hours» column is SPLIT back into the backend's two real columns
+    (`EXPORT_SPLIT` in `Arc.jsx`): a merged text cell can be neither sorted nor
+    number-formatted, which is most of what a spreadsheet is for.
+  - `cellName(cell, lang, "")` (`utils/cellName.js`) is THE workshop-name
+    fallback for the short `{uz, uz_cyrl, ru, en}` shape `cell_lookup` ships —
+    the page's old private `cellLabel` copy died with `ArcByCell.jsx`. Never
+    re-introduce a local one; the empty prefix is what names this shape.
 - **«Инвентарь Фабрика» is NOT mirrored.** The same key opens
   `/inventory/factory/requests` (different status set, `request_status` takes
   several values, and `fillial_id` matches the PARENT branch there, not the

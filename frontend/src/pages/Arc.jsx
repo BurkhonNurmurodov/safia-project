@@ -100,6 +100,15 @@ const CELL_COLS = [
   { key: "source",      labelKey: "arc.colSource",      icon: Bot,           align: "center" },
 ];
 
+// Screen column → the export's own columns. The table merges «closed» and how
+// long it took into one cell because they read as one sentence; a SPREADSHEET
+// must not, because a merged text cell can be neither sorted nor number-
+// formatted, which is most of what a spreadsheet is for. So the file carries
+// the two facts as the two columns the backend already knows how to write.
+const EXPORT_SPLIT = { closed_h: ["closed", "hours"] };
+const labelKeyOf = (key) =>
+  (CELL_COLS.find((c) => c.key === key) || COLS.find((c) => c.key === key))?.labelKey;
+
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
 const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|heic)(\?|$)/i;
@@ -341,7 +350,6 @@ export default function Arc() {
       // A sync just finished — pull fresh numbers and report the outcome.
       qc.invalidateQueries({ queryKey: ["arc-stats"] });
       qc.invalidateQueries({ queryKey: ["arc-list"] });
-      qc.invalidateQueries({ queryKey: ["arc-by-cell"] });
       qc.invalidateQueries({ queryKey: ["arc-meta"] });
       if (sync?.ok === false) toast.error(`${t("arc.syncFailed")}: ${sync?.message || ""}`);
       else toast.success(t("arc.syncDone"));
@@ -1008,6 +1016,14 @@ export default function Arc() {
       </span>
     );
   };
+  // The cell's owners, resolved through the SAME map the cell fact above uses
+  // (the fetched card's own one-entry map wins once it lands). The table's
+  // `ownerCell` reads the page map only, so this cannot borrow it.
+  const ownerFact = (row, field) => {
+    const c = row?.cell_code ? (detailQ.data?.cells || cellMap)[row.cell_code] : null;
+    const name = tl(c?.[field] || "");
+    return name || <span style={{ color: "var(--text-4)" }}>—</span>;
+  };
   const [brokenImgs, setBrokenImgs] = useState({});
   useEffect(() => { setBrokenImgs({}); }, [openId]);
 
@@ -1024,31 +1040,32 @@ export default function Arc() {
 
   // ── export ────────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
-  // The file is whatever is on SCREEN. On «by cells» that is the per-cell
-  // summary, laid out by the backend from the same function the tab reads — an
-  // Excel of the ticket rows there would be a file of the other tab.
-  const cellExportLabels = () => ({
-    cell: t("arc.cCell"), code: t("arc.cCode"), leader: t("arc.cLeader"),
-    divisions: t("arc.cDivisions"), total: t("arc.cTotal"), open: t("arc.cOpen"),
-    overdue: t("arc.cOverdue"), done: t("arc.cDone"), cancelled: t("arc.stateCancelled"),
-    on_time: t("arc.cOnTime"), closed_with_due: t("arc.cOnTimeHint"),
-    median: t("arc.cMedian"), last: t("arc.cLast"), _unknown: t("arc.cNoCell"),
-  });
+  // The file is whatever is on SCREEN — the same tickets, through the same
+  // filters and sort, in the column set the open tab is showing. Both views are
+  // the register now, so there is one export shape and the tab only decides
+  // which columns ride in it and what the file is called.
   const runExport = async () => {
     setExporting(true);
+    const exportKeys = visibleCols.flatMap((c) => EXPORT_SPLIT[c.key] || [c.key]);
     try {
       const via = await exportXlsx("/api/arc/export.xlsx", {
         body: {
-          ...filters, sort: sortParam, view: tab === "cells" ? "cells" : "list",
+          ...filters, sort: sortParam,
+          // Which tab the file came off. It no longer picks a builder — both
+          // views are the register — but it still names the file, and the
+          // backend's name is the one Telegram delivers, so dropping it would
+          // let a DM and a browser download of the same press disagree.
+          view: tab === "cells" ? "cells" : "list",
           // The one value the backend has to pick a spelling of: a workshop
           // name exists in four languages and the file carries one.
           lang,
-          columns: visibleCols.map((c) => c.key),
+          columns: exportKeys,
           // Headers in the viewer's language — the backend's own labels are an
           // English fallback only. `_bot` / `_app` are the two words the source
           // column needs; the API ships a flag, not a name.
-          labels: tab === "cells" ? cellExportLabels() : {
-            ...Object.fromEntries(visibleCols.map((c) => [c.key, t(c.labelKey)])),
+          labels: {
+            ...Object.fromEntries(
+              exportKeys.map((k) => [k, t(labelKeyOf(k) || k)])),
             _bot: t("arc.srcBot"), _app: t("arc.srcApp"),
           },
           // Same reason: a status is an integer upstream.
@@ -1278,7 +1295,7 @@ export default function Arc() {
             <div className="flex-1" />
             <SearchInput value={q} onChange={setQ} placeholder={t("arc.search")} className="w-full sm:w-72" />
             <Button size="lg" variant="secondary" loading={exporting}
-              disabled={tab === "cells" ? (byCellQ.isLoading || !byCellRows) : (listLoading || total === 0)}
+              disabled={listLoading || total === 0}
               icon={!exporting ? <Download size={14} /> : null}
               onClick={runExport}>
               <span className="hidden sm:inline">{t("arc.export")}</span>
@@ -1402,6 +1419,11 @@ export default function Arc() {
                 {/* Which production cell that division names, read off the same
                     rule the register column and the «by cells» tab use. */}
                 <Fact label={t("arc.dCell")}>{cellFact(d)}</Fact>
+                {/* THIS platform's org chart, reached through that cell —
+                    distinct from «Rahbar» below, which is the manager block
+                    IT's own division record carries. */}
+                <Fact label={t("arc.colSup")}>{ownerFact(d, "sup")}</Fact>
+                <Fact label={t("arc.colLeader")}>{ownerFact(d, "leader")}</Fact>
                 <Fact label={t("arc.dManager")}>{d.manager_name || "—"}</Fact>
                 <Fact label={t("arc.dBrigada")}>{d.brigada_name || "—"}</Fact>
                 <Fact label={t("arc.dCategory")}>
