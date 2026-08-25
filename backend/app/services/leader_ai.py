@@ -2348,6 +2348,19 @@ def parse_clock(raw: str | None) -> list[tuple[int, int, int, int]] | None:
     return out or None
 
 
+def _dated(clocks: list[dict] | None) -> list[dict]:
+    """The entries carrying a real calendar day — the only ones that can say
+    WHICH day an hour belongs to, and so the only ones a window can judge.
+
+    ONE definition, because `clock_in_window` decides on it and `date_prose`
+    explains that decision. Two spellings of "does this entry carry a day" is
+    how a card ends up printing «the day and month are not visible» underneath
+    a flag that was decided by a date it read perfectly well.
+    """
+    return [c for c in (clocks or [])
+            if isinstance(c, dict) and 0 not in _clock_date(c)]
+
+
 def clock_in_window(clocks: list[dict] | None,
                     date: str, win: tuple[str, str],
                     *, times: bool = True, plus: int = 0,
@@ -2359,10 +2372,19 @@ def clock_in_window(clocks: list[dict] | None,
     one (macOS never does), so demanding it would flag every macOS screenshot.
     Known, accepted loophole — a screenshot from exactly one year earlier passes.
 
-    A clock missing its day or month is NOT inside the window: the hour may look
-    right but which day it belongs to cannot be proven, and the user's rule is
-    that an unprovable day is flagged (2026-08-14). One bad photo fails the
-    report, which is how a multi-photo answer is read everywhere else too.
+    A clock missing its day or month cannot say which day its hour belongs to,
+    so it does not get to answer: it is judged only when NOTHING on the report
+    carries a day, and then it fails — the user's rule that an unprovable day is
+    flagged (2026-08-14), applied where it actually applies. What it must not do
+    is outvote a stamp that PROVES the day, and that pairing is the ordinary
+    shape of a phone proof: one screenshot carries the status bar (an hour, and
+    by construction never a date) beside the camera stamp (both). Failing the
+    report on the status bar rejected proofs the stamp had already proven, and
+    read backwards against the prompt besides — which tells the model to add NO
+    entry for an image showing no clock, so partial evidence was punished where
+    none at all was silent (user, 2026-08-25). Among the entries that DO carry a
+    day every one must still be inside the window: one badly dated photo fails
+    the report, which is how a multi-photo answer is read everywhere else too.
 
     `times=False` — the task's chain says the DAY is enough (`resolve_time_check`)
     — answers a deliberately different question, in three ways:
@@ -2422,8 +2444,7 @@ def clock_in_window(clocks: list[dict] | None,
     over = overnight(win)
     off = window_offset(shift, win)
     if not times:
-        days = [(int(c.get("month") or 0), int(c.get("day") or 0)) for c in clocks]
-        seen = [d for d in days if 0 not in d]
+        seen = [_clock_date(c) for c in _dated(clocks)]
         if not seen:
             return None          # nothing dated anything — nobody voted
         # The window is not a rule here; it only says whether the day AFTER the
@@ -2435,10 +2456,10 @@ def clock_in_window(clocks: list[dict] | None,
     # Strict: the hours ARE the rule, so they are compared on the date those
     # hours belong to in this shift — the report day, or its tomorrow.
     a0s, a1s = (d0s, d1s) if not off else (_span_days(off), _span_days(off + 1))
-    for c in clocks:
-        got = (int(c.get("month") or 0), int(c.get("day") or 0))
+    for c in _dated(clocks) or clocks:
+        got = _clock_date(c)
         clock = hhmm(c.get("time"))
-        if not clock or got == (0, 0) or 0 in got:
+        if not clock or 0 in got:
             return False          # day unconfirmed — cannot be proven in-window
         ok = (((got in a0s and clock >= lo) or (got in a1s and clock <= hi))
               if over else (got in a0s and lo <= clock <= hi))
@@ -2776,11 +2797,15 @@ def date_prose(clocks: list[dict] | None, date: str,
         key = "ok"
     elif clock_in_window(clocks, date, win, plus=plus, shift=shift) is None:
         key = "no_date"
-    elif any(not (c.get("day") and c.get("month")) for c in (clocks or [])):
+    elif not _dated(clocks):
         # "Read a clock but not a day" reads very differently from "wrong day",
         # and one sentence for both is what made a flagged card unactionable.
+        # It is the answer only when NOTHING carried a day: the entries that did
+        # are what decided the flag, and printing «the day and month are not
+        # visible» beneath a card showing one is exactly the contradiction
+        # `_dated` exists to prevent.
         key = "unconfirmed"
-    elif any(not hhmm(c.get("time")) for c in (clocks or [])):
+    elif any(not hhmm(c.get("time")) for c in _dated(clocks)):
         key = "no_time"          # dated, but nothing says when it was taken
     else:
         key = "date_mismatch"

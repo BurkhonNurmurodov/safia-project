@@ -368,8 +368,16 @@ number.
   `date_prose`, `sync_date_flags` and both verdict payloads, or the sentence on
   a card names a day the flag beside it did not judge:
   - `date_check T` + `time_check T` — **strict**: a SYSTEM clock (OS bar, phone
-    status bar, camera stamp) must be readable and inside the window. The
-    unchanged original.
+    status bar, camera stamp) must be readable and inside the window. **The
+    entries carrying a DAY are the ones judged** (`leader_ai._dated`, read by
+    both `clock_in_window` and `date_prose`): one photo commonly shows two
+    clocks — the status bar, an hour that by construction never carries a date,
+    beside the camera stamp that carries both — and failing the report on the
+    undated one rejected proofs the stamp had already proven, while an image
+    with NO clock stayed silent because the prompt tells the model to add no
+    entry for it (user, 2026-08-25). Every dated entry must still be inside the
+    window, and a report where NOTHING carries a day still fails, which is where
+    the 2026-08-14 "an unprovable day is flagged" ruling actually applies.
   - `date_check T` + `time_check F` — **date only**: the DAY must be the
     report's day, the hour is never compared and the window is not a rule. Here
     and ONLY here the model may read a date printed INSIDE the app or document
