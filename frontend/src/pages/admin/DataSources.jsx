@@ -1,22 +1,22 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, Database, RefreshCw, Copy, Check, AtSign, ExternalLink } from "lucide-react";
+import { Database, RefreshCw, Copy, Check, AtSign, ExternalLink } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import Button from "../../components/ui/Button";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
-import UploadDropzone, { FileStateList, useFileStates } from "../../components/ui/UploadDropzone";
 
 /**
- * «Ishchilar davomati» — the daily verifix upload plus the Google Sheet source
- * configuration.
+ * «Ma'lumotlar» — the Google Sheet source configuration.
  *
- * Split out of the old AdminUpload shell, which welded the panel's chrome, this
- * uploader, and two chart-colour editors for two OTHER pages into one 878-line
- * file under a tab called "Data". The colour editors now live in their own
- * destination; what remains here is one job: get today's data in.
+ * Split out of the old AdminUpload shell, which welded the panel's chrome, a
+ * per-manager verifix uploader, and two chart-colour editors for two OTHER
+ * pages into one 878-line file under a tab called "Data". The colour editors
+ * now live in their own destination; the verifix dropzone is gone (the
+ * «Davomat» tab ingests one factory-wide export instead), so what remains here
+ * is one job: say where each sheet lives and pull it.
  */
 
 const SOURCES = [
@@ -26,11 +26,7 @@ const SOURCES = [
   { name: "quality",      labelKey: "admin.qualitySheet" },
 ];
 
-const ACCEPT = { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] };
-
-// ─── Sheet sources ────────────────────────────────────────────────────────────
-
-function SheetSourceEditor() {
+export default function DataSources() {
   const { t } = useLang();
   const qc = useQueryClient();
   const toast = useToast();
@@ -280,75 +276,6 @@ function SheetSourceEditor() {
       </div>
 
       {toast.node}
-    </div>
-  );
-}
-
-// ─── Verifix upload ───────────────────────────────────────────────────────────
-
-export default function DataSources() {
-  const { t } = useLang();
-  const { states, begin, patch, addRejections, clear } = useFileStates();
-  const [uploading, setUploading] = useState(false);
-
-  async function uploadFiles(files) {
-    const entries = begin(files);
-    setUploading(true);
-
-    for (const { id, file } of entries) {
-      patch(id, { status: "uploading", progress: 0 });
-      const form = new FormData();
-      form.append("files", file);
-      try {
-        const { data } = await api.post("/admin/upload", form, {
-          onUploadProgress: (e) => {
-            const pct = e.total ? Math.round((e.loaded / e.total) * 100) : 50;
-            // Bytes are only the transfer. Parsing and the row insert happen
-            // after, so 100% flips to "processing" rather than sitting on a
-            // full bar that reads as a hang.
-            patch(id, { progress: pct, status: pct >= 100 ? "processing" : "uploading" });
-          },
-        });
-        const result = data.results[0];
-        if (result.status === "ok") {
-          patch(id, {
-            status: "ok",
-            progress: 100,
-            detail: t("admin.rowsInserted").replace("{n}", result.rows_inserted),
-          });
-        } else {
-          patch(id, { status: "error", progress: 100, detail: result.detail });
-        }
-      } catch (err) {
-        // The server's reason matters most exactly when the request fails —
-        // the old catch discarded the error and showed a generic string.
-        patch(id, {
-          status: "error",
-          progress: 100,
-          detail: err?.response?.data?.detail || t("admin.uploadFailed"),
-        });
-      }
-    }
-    setUploading(false);
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={Upload} title={t("admin.uploadTitle")} />
-        <div className="p-4">
-          <UploadDropzone
-            accept={ACCEPT}
-            busy={uploading}
-            onFiles={uploadFiles}
-            onRejected={(r) => addRejections(r, t("admin.upload.onlyXlsx"))}
-            hint={t("admin.format")}
-          />
-          <FileStateList states={states} busy={uploading} onClear={clear} className="mt-4" />
-        </div>
-      </div>
-
-      <SheetSourceEditor />
     </div>
   );
 }
