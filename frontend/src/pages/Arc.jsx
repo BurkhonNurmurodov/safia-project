@@ -473,9 +473,14 @@ export default function Arc() {
     </div>
   );
 
+  // The org chain is PINNED to the toolbar (`pinned`): thirteen filters can
+  // never pass the panel's fit check, so without it the three controls that
+  // steer the whole page — both tabs, the KPI strip and the export — sat behind
+  // a «Filtrlar» button that named none of them. The record filters stay in the
+  // panel, where a reader goes looking for them.
   const sections = [
     {
-      key: "shift", icon: Clock, label: t("arc.fShift"), group: grpWho,
+      key: "shift", icon: Clock, label: t("arc.fShift"), group: grpWho, pinned: true,
       active: !!shift,
       display: shiftLabel || "",
       onClear: () => setShift(""),
@@ -485,7 +490,7 @@ export default function Arc() {
       ),
     },
     {
-      key: "sup", icon: Wrench, label: t("arc.fSup"), group: grpWho,
+      key: "sup", icon: Wrench, label: t("arc.fSup"), group: grpWho, pinned: true,
       active: !!sup,
       display: supLabel || "",
       onClear: () => setSup(""),
@@ -500,7 +505,7 @@ export default function Arc() {
       ),
     },
     {
-      key: "leader", icon: UserCog, label: t("arc.fLeader"), group: grpWho,
+      key: "leader", icon: UserCog, label: t("arc.fLeader"), group: grpWho, pinned: true,
       active: !!leader,
       display: leadLabel || "",
       onClear: () => setLeader(""),

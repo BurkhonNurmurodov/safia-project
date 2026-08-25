@@ -402,7 +402,7 @@ function PanelField({ icon: Icon, label, active, display, renderContent }) {
 // Active-filter chip for the collapsed surfaces. The body opens the panel; the
 // ✕ resets just this filter (`onClear`). `static` sections (a locked viewer's
 // plant) render inert: readable scope, no implied choice.
-function FilterChip({ s, onOpen }) {
+function FilterChip({ s, onOpen, className = "" }) {
   const { t } = useLang();
   const Icon = s.icon;
   const inert = !!s.static;
@@ -410,7 +410,7 @@ function FilterChip({ s, onOpen }) {
   const clearable = !inert && !!s.onClear;
   return (
     <span
-      className="inline-flex items-center rounded-full flex-shrink-0"
+      className={`inline-flex items-center rounded-full flex-shrink-0 ${className}`}
       style={{
         background: inert ? "var(--bg-inner)" : "var(--brand-bg)",
         border: `1px solid ${inert ? "var(--border-md)" : "transparent"}`,
@@ -626,8 +626,21 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
   // section metadata so pages don't have to duplicate the bookkeeping.
   const real = sections.filter(s => !s.static);
   const statics = sections.filter(s => s.static);
+  // Sections the page PINS to the toolbar keep their own inline dropdown even
+  // when everything else folds into the grouped «Filtrlar» button. On a page
+  // carrying a dozen filters the fit check can never unfold the row, so the two
+  // or three controls the reader actually steers the page with — the org chain
+  // — sit a press away behind a button that says nothing about them. Pinning
+  // names those; nothing else about the panel moves. Below md nothing is
+  // pinned: there is no room for an inline control, so the sheet keeps them all.
+  const pinned = real.filter(s => s.pinned);
+  const rest = real.filter(s => !s.pinned);
   const cnt = activeCount ?? real.filter(s => s.active).length;
   const any = anyActive ?? cnt > 0;
+  // The grouped button speaks for what it HOLDS. A pinned filter states itself
+  // on the row, so counting it here would badge the panel over nothing.
+  const restCnt = rest.filter(s => s.active).length;
+  const restAny = restCnt > 0;
   const clearAll = onClearAll ?? (() => real.forEach(s => s.onClear && s.onClear()));
   const chips = real.filter(s => s.active);
   const hasChips = statics.length + chips.length > 0;
@@ -758,26 +771,28 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
         </div>
 
         {!collapsed && statics.map(s => <FilterChip key={s.key} s={s} />)}
-        {!collapsed && real.map(s => (
+        {(collapsed ? pinned : real).map(s => (
           <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}
             renderContent={({ close }) => s.render({ close })} />
         ))}
-        {!collapsed && any && <ClearAllBtn onClick={clearAll} title={t("staff.clearAll")} />}
+        {/* Clear-all lives on the row while there is no panel to carry it —
+            unfolded, or collapsed with every section pinned. */}
+        {(!collapsed || !rest.length) && any && <ClearAllBtn onClick={clearAll} title={t("staff.clearAll")} />}
 
-        {collapsed && (
+        {collapsed && rest.length > 0 && (
           <div ref={ref} className="relative">
             <button
               onClick={() => setOpen(o => !o)}
               className={`flex ${TRIGGER_CLS} transition-colors`}
               style={{
                 background: "var(--bg-card)",
-                border: `1px solid ${open || any ? "var(--brand)" : "var(--border-md)"}`,
-                color: any ? "var(--text-1)" : "var(--text-3)",
+                border: `1px solid ${open || restAny ? "var(--brand)" : "var(--border-md)"}`,
+                color: restAny ? "var(--text-1)" : "var(--text-3)",
               }}
             >
-              <SlidersHorizontal size={14} style={{ color: any ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
+              <SlidersHorizontal size={14} style={{ color: restAny ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
               <span className="whitespace-nowrap">{t("filter.filters")}</span>
-              {cnt > 0 && <CountBadge n={cnt} />}
+              {restCnt > 0 && <CountBadge n={restCnt} />}
               <ChevronDown size={13}
                 style={{ color: "var(--text-4)", flexShrink: 0, marginLeft: 2,
                   transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
@@ -806,7 +821,7 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
                   )}
                 </div>
                 <div className="flex flex-col gap-2">
-                  {groupSections(real).map((g, gi) => (
+                  {groupSections(rest).map((g, gi) => (
                     <div key={g.key} className="flex flex-col gap-2">
                       <GroupCaption label={g.label} first={gi === 0} />
                       {g.items.map(s => (
@@ -831,7 +846,12 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
           className={`${collapsed ? "flex" : "flex md:hidden"} items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center`}
         >
           {statics.map(s => <FilterChip key={s.key} s={s} />)}
-          {chips.map(s => <FilterChip key={s.key} s={s} onOpen={openPanel} />)}
+          {/* A pinned section carries its state in its own trigger from md+ —
+              its chip would be the same fact twice. It stays below md, where
+              the filter itself lives in the sheet. */}
+          {chips.map(s => (
+            <FilterChip key={s.key} s={s} onOpen={openPanel} className={s.pinned ? "md:hidden" : ""} />
+          ))}
         </div>
       )}
 

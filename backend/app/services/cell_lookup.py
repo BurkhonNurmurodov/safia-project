@@ -24,7 +24,7 @@ import re
 
 from sqlalchemy.orm import Session
 
-from app.models import Cell, RoleProfile
+from app.models import Cell, Manager, RoleProfile
 
 # UI language code → the Cell column holding that language's workshop name.
 _WS_COL = {
@@ -51,9 +51,22 @@ def _leader_names(db: Session) -> dict[int, str]:
     return {r.id: r.name for r in rows}
 
 
-def _cell_dict(c: Cell, leader: str | None) -> dict:
+def _sup_names(db: Session) -> dict[int, str]:
+    """{manager id → the brigadir's name}, the twin of :func:`_leader_names`.
+
+    A cell's owning SUPERVISOR is `cells.manager_id` — the one place the plant
+    dimension is attached — so this is the only correct source for «whose unit
+    is this cell», and it is read the same way the leader name is."""
+    return {r.id: r.name for r in db.query(Manager.id, Manager.name).all()}
+
+
+def _cell_dict(c: Cell, leader: str | None, sup: str | None = None) -> dict:
     """Compact, JSON-ready projection of a cell row for API enrichment. Short
-    per-language keys keep it light when embedded in large payloads."""
+    per-language keys keep it light when embedded in large payloads.
+
+    `leader` and `sup` follow the same convention: the key is always present,
+    and None means either «not asked for» or «this cell has none» — a caller
+    that did not ask cannot tell them apart, and does not need to."""
     return {
         "id": c.id,
         "verifix_code": c.verifix_code,
@@ -63,19 +76,26 @@ def _cell_dict(c: Cell, leader: str | None) -> dict:
         "ru": c.name_workshop_ru,
         "en": c.name_workshop_en,
         "leader": leader,
+        "sup": sup,
     }
 
 
-def by_verifix(db: Session, with_leader: bool = False) -> dict[str, dict]:
+def by_verifix(db: Session, with_leader: bool = False,
+               with_sup: bool = False) -> dict[str, dict]:
     """{normalized verifix code → cell dict}. Codes are keyed both zero-padded
-    (authoritative) and zero-stripped (alias) so '0822' and '822' both resolve."""
+    (authoritative) and zero-stripped (alias) so '0822' and '822' both resolve.
+
+    `with_sup` adds the owning brigadir's name the same way `with_leader` adds
+    the leader's: one extra query for the whole registry, never one per cell."""
     cells = db.query(Cell).order_by(Cell.verifix_code).all()
     leaders = _leader_names(db) if with_leader else {}
+    sups = _sup_names(db) if with_sup else {}
     out: dict[str, dict] = {}
     for c in cells:                       # pass 1 — exact, zero-padded keys win
         key = _norm(c.verifix_code)
         if key:
-            out.setdefault(key, _cell_dict(c, leaders.get(c.leader_id)))
+            out.setdefault(key, _cell_dict(c, leaders.get(c.leader_id),
+                                           sups.get(c.manager_id)))
     for c in cells:                       # pass 2 — zero-stripped aliases fill gaps
         key = _norm(c.verifix_code)
         alias = key.lstrip("0")
