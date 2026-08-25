@@ -11,13 +11,14 @@ lives here and every reader takes it from here.
 It has two spellings and they must stay ONE rule: :func:`cell_code` for a name
 already in memory, :func:`code_expr` as the SQL that filters, groups and
 selects it. A second spelling of «which four digits» is how the register's
-cell column and the by-cell tab start disagreeing about the same ticket.
+cell column and the «by cells» view start disagreeing about the same ticket.
 
 Exactly four digits, and the number must start where the match starts: a name
 ending «73215» names NO cell, because taking its last four digits would invent
 one. A name with no digits, a three-digit tail, or a code buried mid-string
-resolves to nothing — and «no cell» is an answer the page SHOWS (its own row on
-the by-cell tab, its own filter value :data:`NO_CELL`), never a ticket quietly
+resolves to nothing — and «no cell» is an answer the page SHOWS (its own filter
+value :data:`NO_CELL`, and a ticket listed and counted like any other, with the
+owner columns blank because it reaches no unit), never a ticket quietly
 dropped.
 
 Turning a code into a cell stays `cell_lookup`'s job: it already keys the

@@ -12,6 +12,11 @@ deployed. It is read LIVE on each call rather than cached at import, because a
 frontend-only deploy moves the checkout without restarting this process: the
 pair (commit, started_at) is what tells you whether a backend change is still
 waiting on a restart.
+
+``MIN_CLIENT`` is the other half of the answer: the version says which build is
+running, the floor says how old a build it still serves. Both are published on
+every API response, because a tab left open across a deploy is the only client
+this platform has and the only one that can silently fall behind.
 """
 
 import os
@@ -98,3 +103,33 @@ APP_VERSION = _read_version()
 # When this process booted. Compared against the deploy time, it answers
 # "is the running code the code in the checkout?"
 STARTED_AT = datetime.now(timezone.utc).isoformat()
+
+
+def _major(version: str) -> int:
+    """The MAJOR digit of an ``X.Y.Z`` string; 0 for anything unparseable.
+
+    0 doubles as the "I cannot tell" answer and as a real major-0 release, and
+    both are treated identically on purpose — see ``MIN_CLIENT``.
+    """
+    head = version.strip().split(".", 1)[0]
+    return int(head) if head.isdigit() else 0
+
+
+_MAJOR = _major(APP_VERSION)
+
+# ── The compatibility floor ──────────────────────────────────────────────────
+# The oldest frontend bundle this backend still answers correctly, published to
+# every client on ``X-App-Min-Client`` (see AppVersionMiddleware in main.py).
+#
+# It is DERIVED — ``<MAJOR>.0.0`` of the running version — and there is
+# deliberately NO override. That is what turns the version number from a label
+# into a rule: a bundle from an older MAJOR line is incompatible, every bundle
+# in the current line is served, and therefore a change that breaks an open tab
+# can only be expressed by bumping MAJOR. A hand-set floor would let a MINOR
+# quietly cut clients off, which is exactly the break-nobody-had-to-describe
+# this exists to prevent.
+#
+# Empty means NO floor, and that is the fail-open answer for an unversioned
+# checkout (a missing VERSION file reads as "0.0.0" → major 0). A backend that
+# cannot say how old is too old must serve everyone rather than refuse everyone.
+MIN_CLIENT = f"{_MAJOR}.0.0" if _MAJOR else ""

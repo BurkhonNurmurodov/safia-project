@@ -27,8 +27,10 @@ A third fact is derived the same way, from the division NAME: an ARC division
 ending in a four-digit number names one of this platform's production cells by
 its Verifix code (services/arc_cells.py). That is the only link between IT's
 register and our cell registry, so it rides every row as ``cell_code``, filters
-like any other scope, and aggregates into the page's «by cells» view — all off
-the one expression, never re-read per call site.
+like any other scope, and resolves each ticket's owning brigadir and leader for
+the page's «by cells» view — all off the one expression, never re-read per call
+site. That view is a COLUMN SET over this same register, not an aggregate: the
+per-cell summary it used to be (and its ``/by-cell`` endpoint) is gone.
 
 That link is also what carries the org chain — shift → brigadir → leader — onto
 a register that knows nothing about this platform's org chart: each level
@@ -55,6 +57,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ArcRequest, ArcSyncMeta
 from app.permissions import require_page
+from app.translit import transliterate
 from app.services import action_log, arc_cells, arc_client
 from app.services.arc_client import (CANCELLED_STATUSES, DONE_STATUSES,
                                      OPEN_STATUSES)
@@ -221,11 +224,12 @@ def _apply_filters(query, f: dict, D: dict, db: Session):
             query = query.filter(col.in_(vals))
     if f.get("division"):
         query = query.filter(R.division_id.in_(f["division"]))
-    # Cells are picked by the CODE the division name carries, which is the
-    # value the by-cell view is keyed by — so a row clicked there and the
-    # filter it sets can never mean two different things. The «no cell» bucket
-    # is a pick like any other: a division naming none is a real answer, and
-    # the reader must be able to ask for exactly those tickets.
+    # Cells are picked by the CODE the division name carries, which is the same
+    # value the register's cell column and the «by cells» view's owner columns
+    # read — so the filter and what is on screen can never mean two different
+    # things. The «no cell» bucket is a pick like any other: a division naming
+    # none is a real answer, and the reader must be able to ask for exactly
+    # those tickets.
     picked = [c for c in (f.get("cell") or []) if c]
     if picked:
         code = D["cell_code"]
@@ -774,12 +778,18 @@ def export_xlsx(
     # The cell's two owners ride on that same projection — a ticket whose
     # division names no cell (or names one the registry does not know)
     # reaches no unit, and its owner columns stay blank rather than guessing.
+    # Both owner names are OUR registry's text and the screen renders them
+    # through the transliterator, so the file must too — an export that mirrors
+    # the table everywhere except the spelling of a person's name is a file the
+    # reader cannot match against what they just pressed Export on. (The author
+    # and division-manager columns stay raw on both sides: those are IT's own
+    # text, not ours.)
     cells = _cells_map(db, rows)
     for r in rows:
         c = cells.get(r.get("cell_code"))
         r["cell_name"] = workshop_name(c, body.lang)
-        r["sup_name"] = (c or {}).get("sup") or ""
-        r["leader_name"] = (c or {}).get("leader") or ""
+        r["sup_name"] = transliterate((c or {}).get("sup") or "", body.lang)
+        r["leader_name"] = transliterate((c or {}).get("leader") or "", body.lang)
     bio = build_arc_workbook(rows, body.columns, body.labels, body.status_labels)
     fname = (f"arc_cells_{today}.xlsx" if body.view == "cells"
              else f"arc_requests_{today}.xlsx")

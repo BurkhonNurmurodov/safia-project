@@ -309,7 +309,11 @@ export default function Arc() {
   const listQ = useQuery({
     queryKey: ["arc-list", listParams],
     queryFn: () => api.get("/api/arc/list", { params: listParams }).then((r) => r.data),
-    enabled: configured && hasData && tab === "all",
+    // BOTH tabs are this register — they differ only in which columns are on
+    // the table — so this must never be gated on which one is open. It was,
+    // back when «Yacheykalar bo'yicha» had its own aggregate endpoint, and
+    // leaving that gate behind left the cells tab fetching nothing at all.
+    enabled: configured && hasData,
     placeholderData: keepPreviousData,
   });
   // A failed /stats or /list must not masquerade as an empty register (skeleton
@@ -1022,7 +1026,13 @@ export default function Arc() {
   const ownerFact = (row, field) => {
     const c = row?.cell_code ? (detailQ.data?.cells || cellMap)[row.cell_code] : null;
     const name = tl(c?.[field] || "");
-    return name || <span style={{ color: "var(--text-4)" }}>—</span>;
+    if (name) return name;
+    // Same three reasons, same wording as the table's `ownerCell` — the two
+    // surfaces answer «why is this blank» identically or they are two rules.
+    const why = !row?.cell_code ? t("arc.cNoCellHint")
+      : !c ? t("arc.cUnknown")
+      : t("arc.ownerNone");
+    return <span style={{ color: "var(--text-4)" }} title={why}>—</span>;
   };
   const [brokenImgs, setBrokenImgs] = useState({});
   useEffect(() => { setBrokenImgs({}); }, [openId]);
