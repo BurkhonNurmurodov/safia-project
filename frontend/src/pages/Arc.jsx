@@ -176,7 +176,7 @@ function Fact({ label, children, full = false }) {
 
 export default function Arc() {
   const { t, lang } = useLang();
-  const tl = useTranslit();
+  const { tl } = useTranslit();
   const toast = useToast();
   const qc = useQueryClient();
 
