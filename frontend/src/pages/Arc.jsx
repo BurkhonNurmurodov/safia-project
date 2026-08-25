@@ -1338,13 +1338,14 @@ export default function Arc() {
           </div>
 
           {/* ONE filter row: period inline, scopes + record filters in the
-              panel, text search inline, export + column picker on the right. */}
+              panel, export + column picker on the right. The text search sits
+              INSIDE the table card — it filters that table's rows and nothing
+              else, so it belongs on the table, not on the page bar. */}
           <div className="flex items-center gap-2 mb-4 flex-wrap">
             <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
               max={today} compactLabel triggerClassName="px-3 py-2 text-sm" />
             <FilterPanel sections={sections} onClearAll={clearAll} />
             <div className="flex-1" />
-            <SearchInput value={q} onChange={setQ} placeholder={t("arc.search")} className="w-full sm:w-72" />
             <Button size="lg" variant="secondary" loading={exporting}
               disabled={listLoading || total === 0}
               icon={!exporting ? <Download size={14} /> : null}
@@ -1384,6 +1385,7 @@ export default function Arc() {
             minWidth={tab === "cells" ? 1040 : 1200}
             mobile={mobileList}
             mobileCards
+            toolbar={<SearchInput value={q} onChange={setQ} placeholder={t("arc.search")} className="w-full" />}
             right={
               <span className="text-[11px] inline-flex items-center gap-1.5 flex-wrap justify-end" style={{ color: "var(--text-4)" }}>
                 <span className="tabular-nums whitespace-nowrap">
