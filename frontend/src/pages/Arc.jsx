@@ -74,8 +74,11 @@ const LOCKED_COLS = new Set(["num", "status"]);
 // filters, the same page — read through a different question: whose cell is
 // this ticket on, and where does it stand. So it is a fixed, curated column
 // set rather than a second table: the register's IT-side columns (division,
-// category, author, brigade) give way to this platform's org chart, and
-// everything they carried is one press away in the row's modal.
+// author, brigade) give way to this platform's org chart, and everything they
+// carried is one press away in the row's modal. Category stays, because it is
+// the one IT-side fact this view's own columns depend on — `due` IS
+// `created_at + category.ftime`, so the deadline standing two columns along
+// cannot be read without it.
 //
 // Deliberately NOT offered to the ColumnsPicker. A curated answer that the
 // reader can dismantle column by column is not a curated answer, and the two
@@ -89,6 +92,7 @@ const CELL_COLS = [
   { key: "sup",         labelKey: "arc.colSup",         icon: Wrench },
   { key: "leader",      labelKey: "arc.colLeader",      icon: UserCog },
   { key: "cell",        labelKey: "arc.colCell",        icon: Boxes,         sortKey: "cell_code" },
+  { key: "category",    labelKey: "arc.colCategory",    icon: Tag,           sortKey: "category_name" },
   { key: "description", labelKey: "arc.colDescription", icon: FileText },
   { key: "status",      labelKey: "arc.colStatus",      icon: CircleDot,     sortKey: "status" },
   { key: "due",         labelKey: "arc.colDue",         icon: Timer,         sortKey: "due" },
