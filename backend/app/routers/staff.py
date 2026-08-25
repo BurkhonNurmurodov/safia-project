@@ -4152,6 +4152,12 @@ def approve_document(doc_id: int, caller=Depends(_require_staff), db: Session = 
         raise HTTPException(status_code=404, detail="Document not found")
     if not _can_approve_doc(doc, caller, db):
         raise HTTPException(status_code=403, detail="Not authorised to post this document")
+    if doc.status == "approved":
+        # Idempotent, and deliberately silent: _approve_doc would return without
+        # touching anything, so a second press must not re-DM the parties, warn
+        # about a grant use that changed nothing, or re-stamp the inline admin
+        # card with the name of someone who did not approve it.
+        return {"ok": True, "status": doc.status}
     via_grant = _doc_via_grant(doc, caller, db)
     _approve_doc(doc, caller, db)
     if doc.doc_type == "people_exchange":
@@ -4204,6 +4210,9 @@ def cancel_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
         raise HTTPException(status_code=404, detail="Document not found")
     if not _can_approve_doc(doc, caller, db):
         raise HTTPException(status_code=403, detail="Not authorised to un-post this document")
+    if doc.status != "approved":
+        # Nothing to un-post — idempotent and silent, as on the approve side.
+        return {"ok": True, "status": doc.status}
     via_grant = _doc_via_grant(doc, caller, db)
     _cancel_doc(doc, caller, db)
     if doc.doc_type == "people_exchange":
@@ -4306,7 +4315,14 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
         # Approval authority is per-document (e.g. a receiving supervisor may
         # post their own incoming exchange but not someone else's role change).
         if body.action == "approve":
-            if doc.status == "rejected" or not _can_approve_doc(doc, caller, db):
+            # Only a DRAFT can be posted. An already-approved document is a
+            # silent no-op inside _approve_doc, so everything below it would
+            # record an approval that never happened — the exchange DM most of
+            # all, which is what turned one «Провести» over a select-all (the
+            # header checkbox takes every visible row, posted ones included)
+            # into a fresh announcement of the whole day's exchanges to every
+            # admin. Rejected documents cannot be posted at all.
+            if doc.status != "draft" or not _can_approve_doc(doc, caller, db):
                 continue
             try:
                 _approve_doc(doc, caller, db)
@@ -4326,7 +4342,11 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
             pending_notify.append((doc, "approved"))
             resolved.append((doc.id, "approved"))
         elif body.action == "cancel":
-            if not _can_approve_doc(doc, caller, db):
+            # Mirror of the approve branch: only an APPROVED document can be
+            # un-posted. _cancel_doc no-ops on a draft, so without this a
+            # select-all «Отменить» announces the cancellation of exchanges
+            # that were never posted.
+            if doc.status != "approved" or not _can_approve_doc(doc, caller, db):
                 continue
             _grant_row(doc, "v.approved", "v.draft")
             _cancel_doc(doc, caller, db)
