@@ -765,11 +765,14 @@ export default function Arc() {
       : <span title={t("arc.notFetched")} style={{ color: "var(--text-4)" }}>…</span>;
   };
 
-  // The production cell a ticket's division NAMES: the workshop name where the
-  // registry knows the code, the bare digits where it does not, and an explicit
-  // «no cell» where the division name carries none — three different facts that
-  // must never render as the same blank. The name is a CellLink (→ /cells/:id);
-  // it stops propagation, so it opens the CELL while the row opens the ticket.
+  // The production cell a ticket's division NAMES — as the CODE alone (the
+  // user's call): the workshop names are long enough to wrap every row onto two
+  // lines, and the code is the identifier both registers actually share. The
+  // name still rides the tooltip, so nothing is lost, only unstacked. An
+  // explicit «no cell» stays for a division carrying no code — that is a
+  // different fact from a code the registry has never heard of, and neither may
+  // render as a blank. The code is a CellLink (→ /cells/:id); it stops
+  // propagation, so it opens the CELL while the row opens the ticket.
   const cellCell = (r) => {
     if (!r.cell_code) {
       return (
@@ -782,16 +785,9 @@ export default function Arc() {
     const c = cellMap[r.cell_code];
     const name = cellName(c, lang, "");
     return (
-      <span className="inline-flex items-center gap-1.5 min-w-0">
-        <CellLink id={c?.id} title={name ? `${r.cell_code} · ${name}` : r.cell_code}>
-          {name || r.cell_code}
-        </CellLink>
-        {name && (
-          <span className="tabular-nums text-[11px] flex-shrink-0" style={{ color: "var(--text-4)" }}>
-            {r.cell_code}
-          </span>
-        )}
-      </span>
+      <CellLink id={c?.id} title={name ? `${r.cell_code} · ${name}` : r.cell_code}>
+        <span className="tabular-nums">{r.cell_code}</span>
+      </CellLink>
     );
   };
 
