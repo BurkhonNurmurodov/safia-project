@@ -113,6 +113,24 @@ const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--borde
 
 const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|heic)(\?|$)/i;
 
+// ── people ───────────────────────────────────────────────────────────────────
+// A person here is DB text written surname-first with an optional patronymic
+// («Radjapov Shuxrat Raxim O'g'li»). Spelled out, the two owner columns wrap to
+// three lines each and push the row's own facts — cell, status, deadline — off
+// a phone, for names that repeat all the way down the column. So the column
+// carries the surname as an INITIAL and the given name in full («R. Shuxrat»):
+// enough to tell two brigadirs apart at a glance, with the full spelling one
+// hover away in the cell's own title, never dropped.
+//
+// Applied AFTER `tl()`, or the initial would be in a different script from the
+// name standing beside it. A single-word name is left exactly as it is: there
+// is no surname to shorten, and an initial on its own names nobody.
+const shortPerson = (name) => {
+  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (p.length < 2) return p[0] || "";
+  return `${p[0][0].toUpperCase()}. ${p[1]}`;
+};
+
 // ── dates ────────────────────────────────────────────────────────────────────
 // ARC timestamps arrive with their own +05:00 offset; every reader here is in
 // Tashkent, so they are rendered in that zone explicitly rather than in
@@ -804,7 +822,7 @@ export default function Arc() {
   // reason for a reader who wants it rather than repeating it in two columns.
   const ownerCell = (r, field) => {
     const name = r.cell_code ? tl(cellMap[r.cell_code]?.[field] || "") : "";
-    if (name) return <span style={{ color: "var(--text-2)" }}>{name}</span>;
+    if (name) return <span style={{ color: "var(--text-2)" }} title={name}>{shortPerson(name)}</span>;
     const why = !r.cell_code ? t("arc.cNoCellHint")
       : !cellMap[r.cell_code] ? t("arc.cUnknown")
       : t("arc.ownerNone");
@@ -815,9 +833,9 @@ export default function Arc() {
   const listCell = (key, r) => {
     switch (key) {
       case "sup":
-        return <td key={key} className="px-3 py-2">{ownerCell(r, "sup")}</td>;
+        return <td key={key} className="px-3 py-2 whitespace-nowrap">{ownerCell(r, "sup")}</td>;
       case "leader":
-        return <td key={key} className="px-3 py-2">{ownerCell(r, "leader")}</td>;
+        return <td key={key} className="px-3 py-2 whitespace-nowrap">{ownerCell(r, "leader")}</td>;
       // Closed + how long it took, one sentence. The duration is muted: it
       // qualifies the stamp rather than competing with it, and an open ticket
       // shows the bare «—» with no trailing figure to misread as zero hours.
