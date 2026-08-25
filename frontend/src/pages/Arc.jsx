@@ -554,14 +554,16 @@ export default function Arc() {
     </div>
   );
 
-  // The org chain is PINNED to the toolbar (`pinned`): thirteen filters can
-  // never pass the panel's fit check, so without it the three controls that
-  // steer the whole page — both tabs, the KPI strip and the export — sat behind
-  // a «Filtrlar» button that named none of them. The record filters stay in the
-  // panel, where a reader goes looking for them.
+  // Pinning follows the OPEN TAB: thirteen filters can never pass the panel's
+  // fit check, so the two or three controls the reader steers with stay inline
+  // — and which those are is the tab's own question. «Yacheykalar bo'yicha»
+  // pins the org chain its columns show (smena → brigadir → lider); «Barchasi»
+  // pins the register's own axes (bo'lim, kategoriya, holat). Every filter
+  // still narrows BOTH tabs, the KPI strip and the export — only where its
+  // control sits changes with the tab.
   const sections = [
     {
-      key: "shift", icon: Clock, label: t("arc.fShift"), group: grpWho, pinned: true,
+      key: "shift", icon: Clock, label: t("arc.fShift"), group: grpWho, pinned: tab === "cells",
       active: !!shift,
       display: shiftLabel || "",
       onClear: () => setShift(""),
@@ -571,7 +573,7 @@ export default function Arc() {
       ),
     },
     {
-      key: "sup", icon: Wrench, label: t("arc.fSup"), group: grpWho, pinned: true,
+      key: "sup", icon: Wrench, label: t("arc.fSup"), group: grpWho, pinned: tab === "cells",
       active: !!sup,
       display: supLabel || "",
       onClear: () => setSup(""),
@@ -586,7 +588,7 @@ export default function Arc() {
       ),
     },
     {
-      key: "leader", icon: UserCog, label: t("arc.fLeader"), group: grpWho, pinned: true,
+      key: "leader", icon: UserCog, label: t("arc.fLeader"), group: grpWho, pinned: tab === "cells",
       active: !!leader,
       display: leadLabel || "",
       onClear: () => setLeader(""),
@@ -642,7 +644,7 @@ export default function Arc() {
       ),
     },
     {
-      key: "division", icon: Building2, label: t("arc.fDivision"), group: grpWho,
+      key: "division", icon: Building2, label: t("arc.fDivision"), group: grpWho, pinned: tab === "all",
       active: !!division,
       display: division ? (divById[division]?.name || division) : "",
       onClear: () => setDivision(""),
@@ -691,7 +693,7 @@ export default function Arc() {
       ),
     },
     {
-      key: "status", icon: CircleDot, label: t("arc.fStatus"), group: grpWhat,
+      key: "status", icon: CircleDot, label: t("arc.fStatus"), group: grpWhat, pinned: tab === "all",
       active: statusSel.length > 0,
       display: statusSel.length === 1 ? stName(statusSel[0]) : `${statusSel.length} ${t("filter.selected2")}`,
       onClear: () => setStatusSel([]),
@@ -708,7 +710,7 @@ export default function Arc() {
       ),
     },
     {
-      key: "category", icon: Tag, label: t("arc.fCategory"), group: grpWhat,
+      key: "category", icon: Tag, label: t("arc.fCategory"), group: grpWhat, pinned: tab === "all",
       active: catSel.length > 0,
       display: catSel.length === 1 ? (catById[catSel[0]]?.name || catSel[0]) : `${catSel.length} ${t("filter.selected2")}`,
       onClear: () => setCatSel([]),
