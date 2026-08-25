@@ -1415,6 +1415,34 @@ back on the first walk.
     fallback for the short `{uz, uz_cyrl, ru, en}` shape `cell_lookup` ships —
     the page's old private `cellLabel` copy died with `ArcByCell.jsx`. Never
     re-introduce a local one; the empty prefix is what names this shape.
+- **Each tab carries a «Ma'lumotlar / Tahlil» mode toggle under the KPI strip**
+  (v3.48.0, `arc_mode`). Both modes read the SAME filtered tickets — `GET
+  /api/arc/analysis` computes every chart figure through the same
+  `_apply_filters` + `_derived()` as /list, so a bar is always a count over
+  exactly the rows the table would show; `view=all|cells` only picks WHICH
+  aggregates are computed, and the cells tab's `cells_only` narrowing rides in
+  with the shared filter set as everywhere else. Rendered by
+  `components/arc/ArcAnalysis.jsx` (the Quality page's ChartCard pattern), and
+  the two tabs get two question sets: «Barchasi» = IT's flow — filed-vs-closed
+  trend line (day/week/month, auto-picked from the span, overridable; the
+  trend ALONE honours the 7-day chart minimum, widened server-side, and
+  zero-fills empty buckets), category donut (top 8 + slate fold, centre =
+  total), TOP divisions, closing speed vs the category's `ftime` allowance
+  (Apex goal marker; bar green/red by verdict, grey with no allowance, each
+  row naming the closed count behind its median), and IT brigades — where the
+  NULL brigade is the not-yet-picked-up pile, shown as its own row.
+  «Yacheykalar bo'yicha» = the org chart — tickets by brigadir/lider (one
+  toggle, the Quality «acc» model) and TOP cells, plus the same donut and
+  trend over the cells scope. Every «who/where» ranking is ONE stacked
+  traffic-light grammar (green done · yellow open · red overdue · grey
+  cancelled, total at the bar's end) via one shared opts/series builder;
+  ranked cards name what they hide («TOP 12 / N»); an org bucket no code
+  reaches renders «Biriktirilmagan», never folded into somebody's row. In
+  analysis mode the text search keeps a visible control beside the toggle (a
+  filter narrowing every chart must never be invisible) and the ColumnsPicker
+  hides (it configures a table nobody can see).
+  `utils/personName.js#shortPerson` is now THE surname-shortening rule — the
+  register's owner columns and the chart axes read one spelling.
 - **«Инвентарь Фабрика» is NOT mirrored.** The same key opens
   `/inventory/factory/requests` (different status set, `request_status` takes
   several values, and `fillial_id` matches the PARENT branch there, not the

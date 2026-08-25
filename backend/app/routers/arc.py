@@ -780,6 +780,229 @@ def get_stats(
     }
 
 
+# ── analysis (the «Tahlil» mode) ─────────────────────────────────────────────
+# Chart aggregates over exactly the rows /list shows for the same filters —
+# the analysis mode is the same register read as charts, so every figure is a
+# count/percentile through the same _apply_filters and the same derived
+# expressions as the table and the KPI strip. `view` picks WHICH aggregates
+# are computed: the two tabs ask different questions («Barchasi» = IT's flow,
+# «Yacheykalar bo'yicha» = whose cells), and walking the org index for a tab
+# that never renders it would be work with no reader.
+
+_GRANS = ("day", "week", "month")
+# A day-granularity walk of the whole mirror is thousands of points nobody can
+# read — the trend keeps its LAST buckets and the axis states where it starts.
+_TREND_MAX_BUCKETS = 400
+_TOP = 12          # ranked bars: top N on screen, the card names the rest
+_TOP_LEADERS = 14  # leaders are the longest list; one extra row of headroom
+
+
+def _py_trunc(d: date_cls, gran: str) -> date_cls:
+    """date_trunc's bucket start, in Python — for padding the trend's edges to
+    the picked period. Must agree with SQL date_trunc (weeks start Monday)."""
+    if gran == "week":
+        return d - timedelta(days=d.weekday())
+    if gran == "month":
+        return d.replace(day=1)
+    return d
+
+
+def _next_bucket(d: date_cls, gran: str) -> date_cls:
+    if gran == "week":
+        return d + timedelta(weeks=1)
+    if gran == "month":
+        return (d.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return d + timedelta(days=1)
+
+
+@router.get("/analysis")
+def get_analysis(
+    view: str = Query("all"),
+    gran: str = Query("day"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+    f: dict = Depends(_filters),
+):
+    """Aggregates behind the analysis charts, per view, over the filtered set."""
+    R = ArcRequest
+    D = _derived()
+    if gran not in _GRANS:
+        gran = "day"
+    base = _apply_filters(db.query(R), f, D, db)
+
+    def _sum(cond):
+        return func.coalesce(func.sum(case((cond, 1), else_=0)), 0)
+
+    # ── flow trend: filed vs closed per bucket, Tashkent wall clock ──────────
+    # The trend ALONE widens a very short period to the platform's 7-day chart
+    # minimum (the utils/chartRange.js rule: only the chart window is padded;
+    # every other figure keeps the exact range the reader picked).
+    f_trend = dict(f)
+    lo_d = hi_d = None
+    try:
+        if f.get("date_from"):
+            lo_d = date_cls.fromisoformat(f["date_from"][:10])
+        if f.get("date_to"):
+            hi_d = date_cls.fromisoformat(f["date_to"][:10])
+    except ValueError:
+        pass
+    if lo_d and hi_d and (hi_d - lo_d).days + 1 < 7:
+        lo_d = hi_d - timedelta(days=6)
+        f_trend["date_from"] = lo_d.isoformat()
+    tbase = _apply_filters(db.query(R), f_trend, D, db)
+
+    def _bucket(col):
+        return func.date_trunc(gran, func.timezone("Asia/Tashkent", col))
+
+    created_b = _bucket(R.created_at)
+    made = {k.date(): int(n) for k, n in
+            (tbase.filter(R.created_at.isnot(None))
+             .with_entities(created_b, func.count(R.id)).group_by(created_b).all())
+            if k is not None}
+    closed_b = _bucket(D["closed_at"])
+    shut = {k.date(): int(n) for k, n in
+            (tbase.filter(D["closed_at"].isnot(None))
+             .with_entities(closed_b, func.count(R.id)).group_by(closed_b).all())
+            if k is not None}
+    # Zero-fill every bucket in the span — a bucket with no tickets is a real
+    # zero, and a line that skips it draws a slope that never happened. The
+    # picked period's own edges count toward the span, so a quiet first week
+    # still starts the axis where the reader's filter starts.
+    span = sorted(set(made) | set(shut)
+                  | ({_py_trunc(lo_d, gran)} if lo_d else set())
+                  | ({_py_trunc(hi_d, gran)} if hi_d else set()))
+    trend: list[dict] = []
+    if span:
+        cur, last = span[0], span[-1]
+        while cur <= last and len(trend) < 20_000:
+            trend.append({"d": cur.isoformat(), "created": made.get(cur, 0),
+                          "closed": shut.get(cur, 0)})
+            cur = _next_bucket(cur, gran)
+    trend = trend[-_TREND_MAX_BUCKETS:]
+
+    # ── the category mix (both views' donut) ─────────────────────────────────
+    categories = [
+        {"id": cid, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc)}
+        for cid, name, n, dn, op, ov, cc in (
+            base.with_entities(R.category_id, R.category_name, func.count(R.id),
+                               _sum(D["is_done"]), _sum(D["is_open"]),
+                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]))
+            .group_by(R.category_id, R.category_name)
+            .order_by(func.count(R.id).desc()).all())
+    ]
+    out: dict[str, Any] = {"gran": gran, "trend": trend, "categories": categories}
+
+    if view == "cells":
+        # Per-code counts once; the top-cells chart and the two owner rollups
+        # (brigadir, leader) are all read off this one pass, joined to the org
+        # chart through the SAME org_index the filter panel resolves scopes
+        # with — the chart and the filter must agree on whose cell a code is.
+        code = D["cell_code"]
+        crows = (base.filter(code.isnot(None))
+                 .with_entities(code, func.count(R.id), _sum(D["is_done"]),
+                                _sum(D["is_open"]), _sum(D["overdue_now"]),
+                                _sum(D["is_cancelled"]))
+                 .group_by(code).all())
+        codes = [c for c, *_ in crows]
+        org = arc_cells.org_index(db, codes)
+        by_code = org["by_code"]
+
+        cells = sorted(
+            ({"code": c, "total": int(n), "done": _n(dn), "open": _n(op),
+              "overdue": _n(ov), "cancelled": _n(cc)}
+             for c, n, dn, op, ov, cc in crows),
+            key=lambda x: -x["total"])
+        top_cells = cells[:_TOP]
+        out["cells"] = top_cells
+        out["cells_n"] = len(cells)
+        # Names for exactly the codes on screen; a code the registry has never
+        # heard of stays absent and the page marks it unregistered.
+        out["cells_map"] = arc_cells.cells_for(db, [c["code"] for c in top_cells])
+
+        def rollup(key: str, catalog: dict) -> list[dict]:
+            agg: dict = {}
+            for c, n, dn, op, ov, cc in crows:
+                k = (by_code.get(c) or {}).get(key)
+                a = agg.setdefault(k, {"total": 0, "done": 0, "open": 0,
+                                       "overdue": 0, "cancelled": 0})
+                a["total"] += int(n)
+                a["done"] += _n(dn)
+                a["open"] += _n(op)
+                a["overdue"] += _n(ov)
+                a["cancelled"] += _n(cc)
+            rows = []
+            for k, a in agg.items():
+                info = catalog.get(k) if k is not None else None
+                # k None = the codes this platform's org chart cannot place (an
+                # unregistered cell, or a cell with nobody assigned). Shown as
+                # its own bucket, never folded into somebody's row.
+                rows.append({"id": k, "name": (info or {}).get("name"), **a})
+            rows.sort(key=lambda x: (-x["total"], (x["name"] or "").lower()))
+            return rows
+
+        sups = rollup("manager_id", org["managers"])
+        out["sups"] = sups[:40]
+        out["sups_n"] = len(sups)
+        leaders = rollup("leader_id", org["leaders"])
+        out["leaders"] = leaders[:_TOP_LEADERS]
+        out["leaders_n"] = len(leaders)
+        return out
+
+    # ── the register view: where from, how fast, and who does the work ───────
+    divisions = [
+        {"id": did, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc)}
+        for did, name, n, dn, op, ov, cc in (
+            base.with_entities(R.division_id, R.division_name, func.count(R.id),
+                               _sum(D["is_done"]), _sum(D["is_open"]),
+                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]))
+            .group_by(R.division_id, R.division_name)
+            .order_by(func.count(R.id).desc()).all())
+        if did
+    ]
+    out["divisions"] = divisions[:_TOP]
+    out["divisions_n"] = len(divisions)
+
+    # Median close time per category, beside the hours that category ALLOWS
+    # (`ftime` — the same figure the due date is derived from). Only closed
+    # tickets carry an hours figure, so each row names the count behind it.
+    hours_closed = case((D["is_done"], D["hours_to_close"]), else_=None)
+    speed = [
+        {"id": cid, "name": name, "closed": _n(n),
+         "median_h": round(float(m), 1),
+         "allowed_h": float(ft) if ft else None}
+        for cid, name, n, m, ft in (
+            base.with_entities(R.category_id, R.category_name,
+                               _sum(hours_closed.isnot(None)),
+                               func.percentile_cont(0.5).within_group(hours_closed),
+                               func.max(R.category_ftime))
+            .group_by(R.category_id, R.category_name).all())
+        if _n(n) > 0 and m is not None
+    ]
+    speed.sort(key=lambda x: -x["closed"])
+    out["speed"] = speed[:10]
+    out["speed_n"] = len(speed)
+
+    # IT's own crews. The NULL brigade is the not-yet-assigned pile — a real
+    # state (fresh tickets nobody has picked up), shown as its own row.
+    brigadas = [
+        {"id": bid, "name": name, "total": int(n), "done": _n(dn),
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc),
+         "median_h": round(float(m), 1) if m is not None else None}
+        for bid, name, n, dn, op, ov, cc, m in (
+            base.with_entities(R.brigada_id, R.brigada_name, func.count(R.id),
+                               _sum(D["is_done"]), _sum(D["is_open"]),
+                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+                               func.percentile_cont(0.5).within_group(hours_closed))
+            .group_by(R.brigada_id, R.brigada_name)
+            .order_by(func.count(R.id).desc()).all())
+    ]
+    out["brigadas"] = brigadas[:_TOP]
+    out["brigadas_n"] = len(brigadas)
+    return out
+
+
 @router.get("/requests/{remote_id}")
 def get_request(
     remote_id: str,

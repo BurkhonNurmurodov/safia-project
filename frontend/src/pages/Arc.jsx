@@ -5,7 +5,7 @@ import {
   CircleDot, Layers, Siren, AlertTriangle, FileText, ExternalLink, Bot, Paperclip,
   Phone, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound, PlayCircle,
   PlugZap, Zap, MessageSquare, History, Smartphone, Boxes, Link2Off,
-  Clock, Wrench, UserCog,
+  Clock, Wrench, UserCog, BarChart3,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -25,6 +25,7 @@ import CellLink from "../components/ui/CellLink";
 // `cell_lookup` ships — the platform's one home for this fallback, so the
 // register, the filter and the modal cannot disagree about a cell's name.
 import { cellName } from "../utils/cellName";
+import ArcAnalysis from "../components/arc/ArcAnalysis";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonCard } from "../components/ui/Skeleton";
 import api from "../utils/api";
@@ -33,6 +34,7 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { inTelegram } from "../utils/session";
+import { shortPerson } from "../utils/personName";
 import { toneFor, statusName, hexA, STATUS_CODES, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatus";
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -118,22 +120,11 @@ const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--borde
 const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|heic)(\?|$)/i;
 
 // ── people ───────────────────────────────────────────────────────────────────
-// A person here is DB text written surname-first with an optional patronymic
-// («Radjapov Shuxrat Raxim O'g'li»). Spelled out, the two owner columns wrap to
-// three lines each and push the row's own facts — cell, status, deadline — off
-// a phone, for names that repeat all the way down the column. So the column
-// carries the surname as an INITIAL and the given name in full («R. Shuxrat»):
-// enough to tell two brigadirs apart at a glance, with the full spelling one
-// hover away in the cell's own title, never dropped.
-//
-// Applied AFTER `tl()`, or the initial would be in a different script from the
-// name standing beside it. A single-word name is left exactly as it is: there
-// is no surname to shorten, and an initial on its own names nobody.
-const shortPerson = (name) => {
-  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (p.length < 2) return p[0] || "";
-  return `${p[0][0].toUpperCase()}. ${p[1]}`;
-};
+// Long surname-first DB names would wrap the two owner columns to three lines
+// each and push the row's own facts off a phone — so they render as
+// «R. Shuxrat» via the shared `shortPerson` (utils/personName.js, ONE rule
+// with the analysis charts), applied AFTER `tl()` so the initial is in the
+// same script as the name beside it. Full spelling stays in the cell's title.
 
 // ── dates ────────────────────────────────────────────────────────────────────
 // ARC timestamps arrive with their own +05:00 offset; every reader here is in
@@ -264,6 +255,11 @@ export default function Arc() {
   // Which VIEW is on screen. «all» is the ticket register; «cells» reads the
   // same filtered tickets grouped by the production cell their division names.
   const [tab, setTab] = usePersistentState("arc_tab", "all");
+  // Which MODE the open tab is read in — the table («Ma'lumotlar») or the
+  // charts («Tahlil»). Both read the SAME filtered tickets, and each tab keeps
+  // its own analysis set, so the toggle changes how the register is shown and
+  // nothing about what is in it.
+  const [mode, setMode] = usePersistentState("arc_mode", "data");
   const [dateFrom, setDateFrom] = usePersistentState("arc_date_from", "");
   const [dateTo, setDateTo] = usePersistentState("arc_date_to", "");
   const [state, setState] = usePersistentState("arc_state", "all");
@@ -413,6 +409,7 @@ export default function Arc() {
       qc.invalidateQueries({ queryKey: ["arc-stats"] });
       qc.invalidateQueries({ queryKey: ["arc-list"] });
       qc.invalidateQueries({ queryKey: ["arc-facets"] });
+      qc.invalidateQueries({ queryKey: ["arc-analysis"] });
       qc.invalidateQueries({ queryKey: ["arc-meta"] });
       if (sync?.ok === false) toast.error(`${t("arc.syncFailed")}: ${sync?.message || ""}`);
       else toast.success(t("arc.syncDone"));
@@ -1400,10 +1397,12 @@ export default function Arc() {
               <span className="hidden sm:inline">{t("arc.export")}</span>
             </Button>
             {/* The picker describes the REGISTER's columns, so it is offered on
-                that tab only. Hidden below `sm:` too — that is where TableCard
-                swaps the table for stacked cards, and a picker over a table
-                nobody can see is a control with no effect. */}
-            {tab === "all" && <ColumnsPicker
+                that tab only, and only while the table is the thing on screen —
+                in analysis mode it would configure something nobody can see.
+                Hidden below `sm:` too — that is where TableCard swaps the table
+                for stacked cards, and a picker over a table nobody can see is a
+                control with no effect. */}
+            {tab === "all" && mode === "data" && <ColumnsPicker
               className="ml-auto hidden sm:block"
               columns={COLS.map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
               order={colCfg.order}
@@ -1419,12 +1418,33 @@ export default function Arc() {
               : kpiTiles.map((k) => <KPICard key={k.label} {...k} />)}
           </div>
 
+          {/* ── data / analysis mode — under the KPI strip, so the headline
+              numbers stay on screen either way. Both modes read the SAME
+              filtered tickets; the toggle changes nothing about scope, only
+              how it is shown. In analysis mode the text search keeps a
+              control HERE (it lives on the table's toolbar otherwise): a
+              filter that narrows every chart must never become invisible. */}
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <SegmentedToggle value={mode} onChange={setMode}
+              options={[
+                { value: "data", label: (<span className="inline-flex items-center gap-1.5"><ClipboardList size={12} />{t("arc.modeData")}</span>) },
+                { value: "analysis", label: (<span className="inline-flex items-center gap-1.5"><BarChart3 size={12} />{t("arc.modeAnalysis")}</span>) },
+              ]} />
+            {mode === "analysis" && (
+              <SearchInput value={q} onChange={setQ} placeholder={t("arc.search")}
+                className="ml-auto w-full sm:w-72" />
+            )}
+          </div>
+
+          {mode === "analysis" ? (
+            <ArcAnalysis view={tab} filters={filters} enabled={configured && hasData} />
+          ) : (
+          <>
           {/* ONE table for both views. They differ only in which columns are on
               it — the rows, the filters, the page and the sort are the same
               register, which is the whole reason the two are tabs and not two
               pages. The cells view is narrower, so it needs less minimum width
               before it has to scroll. */}
-          <>
           <TableCard
             icon={tab === "cells" ? Boxes : ClipboardList}
             title={tab === "cells" ? t("arc.tabCells") : t("arc.listTitle")}
@@ -1481,6 +1501,7 @@ export default function Arc() {
           </TableCard>
           <Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
           </>
+          )}
         </>
       )}
 
