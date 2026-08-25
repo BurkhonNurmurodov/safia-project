@@ -142,24 +142,34 @@ const localISO = (d) =>
 const tsFmt = new Intl.DateTimeFormat("ru-RU", {
   timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
 });
-const dFmt = new Intl.DateTimeFormat("ru-RU", { timeZone: TZ, day: "2-digit", month: "2-digit", year: "2-digit" });
 const parts = (fmt, d) => Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
-// dd.mm.yyyy HH:MM (Tashkent) — the full stamp for detail views and tooltips.
-const fmtDateTime = (iso) => {
+
+// Three-letter month names per language (the map the Kaizen deadlines read).
+// A numeric month beside a numeric day is two figures the eye has to tell
+// apart — «26.08.26» is three of them, and which one is the year depends on
+// knowing the convention. A word in the middle names itself and cannot be read
+// in the wrong order.
+const MONTHS_SHORT = {
+  uz:      ["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"],
+  uz_cyrl: ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"],
+  ru:      ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"],
+  en:      ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+};
+
+// «25 Avg, 2026 14:45» (Tashkent) — THE stamp on this page. One format for the
+// table cells, the detail card, the timeline, the comments and the header pill,
+// so a figure is never re-read in a second shape; and the year stays FOUR
+// digits, because the register spans several and a two-digit one is one more
+// thing to decode. This replaced the dd.mm.yy / dd.mm.yyyy pair — the compact
+// form existed only to fit the column, and the tooltips that used to spell it
+// out went with it.
+const fmtDT = (iso, lang) => {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(+d)) return "";
   const p = parts(tsFmt, d);
-  return `${p.day}.${p.month}.${p.year} ${p.hour}:${p.minute}`;
-};
-// dd.mm.yy HH:MM — the compact table stamp.
-const fmtShort = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(+d)) return "";
-  const p = parts(dFmt, d);
-  const q = parts(tsFmt, d);
-  return `${p.day}.${p.month}.${p.year} ${q.hour}:${q.minute}`;
+  const mn = (MONTHS_SHORT[lang] || MONTHS_SHORT.en)[Number(p.month) - 1];
+  return `${p.day} ${mn}, ${p.year} ${p.hour}:${p.minute}`;
 };
 const fmtHours = (h) => (h == null || Number.isNaN(Number(h)) ? "—" : Number(h).toFixed(1));
 
@@ -841,9 +851,8 @@ export default function Arc() {
       // shows the bare «—» with no trailing figure to misread as zero hours.
       case "closed_h":
         return (
-          <td key={key} className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}
-            title={fmtDateTime(r.closed_at)}>
-            <span className="tabular-nums">{fmtShort(r.closed_at) || "—"}</span>
+          <td key={key} className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
+            <span className="tabular-nums">{fmtDT(r.closed_at, lang) || "—"}</span>
             {r.closed_at && r.hours_to_close != null && (
               <span className="tabular-nums text-[11px]" style={{ color: "var(--text-4)" }}>
                 {" · "}{tpl(t("arc.hoursShort"), { n: fmtHours(r.hours_to_close) })}
@@ -854,7 +863,7 @@ export default function Arc() {
       case "num":
         return <td key={key} className="px-3 py-2 font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{r.request_num ?? "—"}</td>;
       case "created":
-        return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={fmtDateTime(r.created_at)}>{fmtShort(r.created_at) || "—"}</td>;
+        return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{fmtDT(r.created_at, lang) || "—"}</td>;
       case "division":
         return <td key={key} className="px-3 py-2" style={{ color: "var(--text-1)" }}>{r.division_name || "—"}</td>;
       case "cell":
@@ -888,15 +897,15 @@ export default function Arc() {
         return (
           <td key={key} className="px-3 py-2 whitespace-nowrap">
             <span className="inline-flex items-center gap-1.5">
-              <span className="tabular-nums" style={{ color: "var(--text-2)" }} title={fmtDateTime(r.due)}>{fmtShort(r.due) || "—"}</span>
+              <span className="tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDT(r.due, lang) || "—"}</span>
               {(r.overdue_now || r.late) && <RedBadge icon={AlertTriangle}>{t("arc.late")}</RedBadge>}
             </span>
           </td>
         );
       case "started":
-        return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={fmtDateTime(r.started_at)}>{fmtShort(r.started_at) || "—"}</td>;
+        return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{fmtDT(r.started_at, lang) || "—"}</td>;
       case "closed":
-        return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={fmtDateTime(r.closed_at)}>{fmtShort(r.closed_at) || "—"}</td>;
+        return <td key={key} className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{fmtDT(r.closed_at, lang) || "—"}</td>;
       case "hours":
         return <td key={key} className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{fmtHours(r.hours_to_close)}</td>;
       case "source":
@@ -971,13 +980,13 @@ export default function Arc() {
               )}
               <Fact label={t("arc.colDue")}>
                 <span className="inline-flex items-center gap-1 flex-wrap tabular-nums">
-                  {fmtShort(r.due) || "—"}
+                  {fmtDT(r.due, lang) || "—"}
                   {late && <RedBadge icon={AlertTriangle}>{t("arc.late")}</RedBadge>}
                 </span>
               </Fact>
               {tab === "cells" ? (
                 <Fact label={t("arc.colClosed")}>
-                  <span className="tabular-nums">{fmtShort(r.closed_at) || "—"}</span>
+                  <span className="tabular-nums">{fmtDT(r.closed_at, lang) || "—"}</span>
                   {r.closed_at && r.hours_to_close != null && (
                     <span className="tabular-nums" style={{ color: "var(--text-4)" }}>
                       {" · "}{tpl(t("arc.hoursShort"), { n: fmtHours(r.hours_to_close) })}
@@ -985,7 +994,7 @@ export default function Arc() {
                   )}
                 </Fact>
               ) : (
-                <Fact label={t("arc.colCreated")}><span className="tabular-nums">{fmtShort(r.created_at) || "—"}</span></Fact>
+                <Fact label={t("arc.colCreated")}><span className="tabular-nums">{fmtDT(r.created_at, lang) || "—"}</span></Fact>
               )}
             </div>
           </div>
@@ -1106,7 +1115,7 @@ export default function Arc() {
   };
 
   // ── header bits ───────────────────────────────────────────────────────────
-  const lastSynced = fmtDateTime(sync?.last_synced);
+  const lastSynced = fmtDT(sync?.last_synced, lang);
   const pendingCards = sync?.detail_pending || 0;
   const refreshBtn = (
     <Button size="lg" variant="secondary" loading={running || refreshMut.isPending}
@@ -1403,7 +1412,7 @@ export default function Arc() {
           maxWidth="max-w-2xl"
           icon={<ClipboardList size={16} />}
           title={d ? tpl(t("arc.detailTitle"), { num: d.request_num ?? "—", division: d.division_name || "—" }) : "…"}
-          subtitle={d ? [d.category_name, fmtDateTime(d.created_at)].filter(Boolean).join(" · ") : ""}
+          subtitle={d ? [d.category_name, fmtDT(d.created_at, lang)].filter(Boolean).join(" · ") : ""}
           footer={<Button variant="secondary" onClick={() => setOpenId(null)}>{t("arc.close")}</Button>}
         >
           {!d ? (
@@ -1461,16 +1470,16 @@ export default function Arc() {
                 <Fact label={t("arc.dDescription")} full>
                   {d.description || (d.has_detail ? "—" : <span style={{ color: "var(--text-4)" }}>{t("arc.notFetched")}</span>)}
                 </Fact>
-                <Fact label={t("arc.dCreated")}><span className="tabular-nums">{fmtDateTime(d.created_at) || "—"}</span></Fact>
-                <Fact label={t("arc.dDue")}><span className="tabular-nums">{fmtDateTime(d.due) || "—"}</span></Fact>
+                <Fact label={t("arc.dCreated")}><span className="tabular-nums">{fmtDT(d.created_at, lang) || "—"}</span></Fact>
+                <Fact label={t("arc.dDue")}><span className="tabular-nums">{fmtDT(d.due, lang) || "—"}</span></Fact>
                 <Fact label={t("arc.dStarted")}>
-                  <span className="tabular-nums">{fmtDateTime(d.started_at) || "—"}</span>
+                  <span className="tabular-nums">{fmtDT(d.started_at, lang) || "—"}</span>
                   {d.hours_to_start != null && (
                     <span style={{ color: "var(--text-4)" }}> · {tpl(t("arc.dAfterHours"), { n: fmtHours(d.hours_to_start) })}</span>
                   )}
                 </Fact>
                 <Fact label={t("arc.dFinished")}>
-                  <span className="tabular-nums">{fmtDateTime(d.finished_at) || "—"}</span>
+                  <span className="tabular-nums">{fmtDT(d.finished_at, lang) || "—"}</span>
                   {d.hours_to_close != null && (
                     <span style={{ color: "var(--text-4)" }}> · {tpl(t("arc.dAfterHours"), { n: fmtHours(d.hours_to_close) })}</span>
                   )}
@@ -1511,7 +1520,7 @@ export default function Arc() {
                       {timeline.map((e) => (
                         <div key={`${e.code}-${e.at}`} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
                           <StatusChip status={e.code} label={stName(e.code)} />
-                          <span className="tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDateTime(e.at) || e.at}</span>
+                          <span className="tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDT(e.at, lang) || e.at}</span>
                         </div>
                       ))}
                     </div>
@@ -1528,7 +1537,7 @@ export default function Arc() {
                         <div key={c?.id ?? i} className="px-3 py-2 text-xs">
                           <div className="flex items-center justify-between gap-3 mb-0.5">
                             <span style={{ color: "var(--text-2)" }}>{commentWho(c) || "—"}</span>
-                            <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{fmtDateTime(commentWhen(c))}</span>
+                            <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{fmtDT(commentWhen(c), lang)}</span>
                           </div>
                           {commentText(c) && <div style={{ color: "var(--text-1)" }}>{commentText(c)}</div>}
                         </div>
