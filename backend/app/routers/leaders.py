@@ -74,6 +74,42 @@ def _wire_task(t: dict) -> dict:
     return out
 
 
+# ── "is this row mine?", for a leader reading their own register ─────────────
+# A leader is scoped by PROFILE id: the row's «Лидер ФИО» is resolved to a
+# leader profile (leader_match) and only their own id counts. That is right for
+# a row the register DID resolve — two leaders spelled alike in different units
+# must never read each other — and wrong for a row it resolved to NOBODY.
+#
+# Unresolved is common and not the leader's doing: the sheet's spelling has to
+# reach a profile inside the unit its «Бригадир ФИО» matched, so a leader whose
+# profile sits under a different unit than the one the form files them under —
+# or who has no profile yet — carries a null `leader_id`. On the snapshot this
+# was ~18% of all rows (16 leaders). Their brigadir and every admin saw those
+# reports; the one person who could not was the leader who filed them, whose
+# own page said «Ma'lumot yo'q».
+#
+# So: a row that belongs to a profile is matched by id, exactly as before. A row
+# that belongs to NO profile falls back to the name test — the same fuzzy
+# `leader_is` the pid-less branch has always used, and it cannot hand over
+# another profile's rows, because the row is attributed to no profile at all.
+def _self_names(db: Session, payload: dict, my_pid: int | None) -> set[str]:
+    """Every spelling of the viewer's own name worth matching a sheet row
+    against: their profile's canonical name (which survives a rename of the
+    JWT's copy) plus the name the token was issued with. Names too short to
+    identify anyone are dropped — `leader_is` needs two tokens."""
+    names = {payload.get("full_name") or ""}
+    if my_pid:
+        prof = db.query(RoleProfile).filter_by(id=my_pid, role="leader").first()
+        if prof:
+            names.add(prof.name or "")
+    return {n for n in names if len(_name_tokens(n)) >= 2}
+
+
+def _names_viewer(sheet_name: str | None, names: set[str]) -> bool:
+    """Does this sheet spelling name the viewer?"""
+    return bool(sheet_name) and any(leader_is(sheet_name, n) for n in names)
+
+
 def _json_default(o):
     if isinstance(o, datetime):
         return o.isoformat()
@@ -400,16 +436,22 @@ def get_leaders(
     if role == "leader" and not sees_all:
         # Scope a leader to their OWN rows by profile identity — from any of
         # their logins, and immune to the sheet's spelling of their name.
-        # No confident match ⇒ no rows, never another leader's data.
+        # A row the register attributed to a profile is matched by id and by
+        # nothing else: that is what keeps two leaders spelled alike in
+        # different units out of each other's data. A row it attributed to NO
+        # profile falls back to the name (see `_self_names` above) — it belongs
+        # to nobody, so matching it by name takes it from no one, and refusing
+        # it hid a leader from the reports they had filed themselves.
         my_pid = identity.viewer_leader_profile_id(db, payload)
-        if my_pid:
-            rows = [r for r in rows if (_leader_of(r) or {}).get("id") == my_pid]
-        else:
-            me = payload.get("full_name") or ""
-            rows = (
-                [r for r in rows if r.leader and leader_is(r.leader, me)]
-                if len(_name_tokens(me)) >= 2 else []
-            )
+        me = _self_names(db, payload, my_pid)
+
+        def _is_mine(r) -> bool:
+            pid = (_leader_of(r) or {}).get("id")
+            if my_pid and pid:
+                return pid == my_pid
+            return _names_viewer(r.leader, me)
+
+        rows = [r for r in rows if _is_mine(r)]
 
     sup_shift = {name: info["shift"] for name, info in sup_match.items()}
 
@@ -717,18 +759,18 @@ def report_scope_ok(db: Session, payload: dict, row: dict) -> bool:
         return row.get("manager_id") is not None and \
             row.get("manager_id") == payload.get("role_id")
     if role == "leader":
-        # Profile identity FIRST and, once we have one, ONLY — exactly what
-        # get_leaders does. Falling through to the fuzzy name match on a row
-        # whose leader never resolved would open a door the register keeps
-        # shut: `leader_is` matches on a positive pair score, so two leaders
-        # spelled alike in different units could each read the other's report
-        # whenever the row's supervisor name failed to match a unit.
+        # Profile identity FIRST and, on a row that HAS one, only — exactly
+        # what get_leaders does, and for the same reason: `leader_is` matches
+        # on a positive pair score, so two leaders spelled alike in different
+        # units would each read the other's report if a resolved row could be
+        # claimed by name. A row resolved to NO profile is the case the name
+        # test exists for, and the register now lists those rows to the leader
+        # they name — this door has to open exactly what that page shows, or a
+        # report the leader can see turns into a 404 when they tap it.
         my_pid = identity.viewer_leader_profile_id(db, payload)
-        if my_pid:
-            return row.get("leader_id") == my_pid
-        me = payload.get("full_name") or ""
-        return bool(row.get("leader") and len(_name_tokens(me)) >= 2
-                    and leader_is(row["leader"], me))
+        if my_pid and row.get("leader_id"):
+            return row["leader_id"] == my_pid
+        return _names_viewer(row.get("leader"), _self_names(db, payload, my_pid))
     return False
 
 
