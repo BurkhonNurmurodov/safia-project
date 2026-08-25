@@ -109,7 +109,8 @@ def register_codes(db: Session) -> list[str]:
     return [r[0] for r in rows if r[0]]
 
 
-def org_index(db: Session, codes: Iterable[str]) -> dict:
+def org_index(db: Session, codes: Iterable[str], keep_managers: Iterable[int] = (),
+              keep_leaders: Iterable[int] = ()) -> dict:
     """{code → org} over the codes given, plus the units and leaders they reach.
 
     ``by_code`` maps each ARC code to ``{manager_id, shift, leader_id}``;
@@ -117,7 +118,13 @@ def org_index(db: Session, codes: Iterable[str]) -> dict:
     reaches, so every name the filter offers is a narrowing that has tickets
     behind it. Codes the registry does not recognise are simply absent — they
     belong to no unit, and the page shows them as unregistered rather than
-    filing them under somebody."""
+    filing them under somebody.
+
+    ``keep_*`` add names the codes do not reach — the unit the reader has
+    ALREADY picked, whose tickets the rest of the view may hold none of. A
+    pick missing from its own list is un-picked by the page's chain guards, so
+    dropping it here would silently widen the register instead of answering
+    with the empty table the reader asked for."""
     table = by_verifix(db)
     rows = (
         db.query(
@@ -167,6 +174,12 @@ def org_index(db: Session, codes: Iterable[str]) -> dict:
             managers[org["manager_id"]] = mgr_all[org["manager_id"]]
         if org["leader_id"] in lead_all:
             leaders[org["leader_id"]] = lead_all[org["leader_id"]]
+    for mid in keep_managers:
+        if mid in mgr_all:
+            managers.setdefault(mid, mgr_all[mid])
+    for lid in keep_leaders:
+        if lid in lead_all:
+            leaders.setdefault(lid, lead_all[lid])
     return {"by_code": by_code, "managers": managers, "leaders": leaders}
 
 

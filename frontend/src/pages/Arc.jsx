@@ -292,11 +292,15 @@ export default function Arc() {
   const [sort, setSort] = usePersistentState("arc_sort", { key: "created_at", dir: "desc" });
   const [openId, setOpenId] = useState(null);
 
-  // ── meta (options + sync state) ───────────────────────────────────────────
+  // ── meta (sync state) ─────────────────────────────────────────────────────
   const metaQ = useQuery({
     queryKey: ["arc-meta"],
-    queryFn: () => api.get("/api/arc/meta").then((r) => r.data),
-    // While a sync runs the meta row is the progress feed — poll it.
+    queryFn: () => api.get("/api/arc/meta", { params: { options: 0 } }).then((r) => r.data),
+    // While a sync runs the meta row is the progress feed — poll it. The
+    // filter lists are NOT on it (`options: 0`): they move with every pick and
+    // this call moves with nothing, so putting them here would recompute all
+    // of them every 2.5 s and re-fetch the progress feed on every filter
+    // change. They come from /facets below.
     refetchInterval: (query) => (query.state.data?.sync?.running ? 2500 : false),
   });
   const meta = metaQ.data;
@@ -304,7 +308,6 @@ export default function Arc() {
   const running = !!sync?.running;
   const configured = meta?.configured !== false;
   const hasData = (sync?.row_count || 0) > 0;
-  const options = meta?.options || {};
 
   // ── request params ────────────────────────────────────────────────────────
   const filters = useMemo(() => ({
@@ -347,6 +350,20 @@ export default function Arc() {
     enabled: configured && hasData,
     placeholderData: keepPreviousData,
   });
+  // The filter option lists, over exactly the rows the table holds — every
+  // page of them, not the page on screen. Same filter set as /list and /stats,
+  // so a count beside a name and the table under it can never describe two
+  // different registers. `keepPreviousData` keeps the previous lists on screen
+  // while the new ones land: an empty list for one render would read as «this
+  // dimension has nothing» and, worse, would take the chain guards' picks with
+  // it.
+  const facetsQ = useQuery({
+    queryKey: ["arc-facets", filters],
+    queryFn: () => api.get("/api/arc/facets", { params: filters }).then((r) => r.data),
+    enabled: configured && hasData,
+    placeholderData: keepPreviousData,
+  });
+  const options = facetsQ.data || {};
   const listQ = useQuery({
     queryKey: ["arc-list", listParams],
     queryFn: () => api.get("/api/arc/list", { params: listParams }).then((r) => r.data),
@@ -395,6 +412,7 @@ export default function Arc() {
       // A sync just finished — pull fresh numbers and report the outcome.
       qc.invalidateQueries({ queryKey: ["arc-stats"] });
       qc.invalidateQueries({ queryKey: ["arc-list"] });
+      qc.invalidateQueries({ queryKey: ["arc-facets"] });
       qc.invalidateQueries({ queryKey: ["arc-meta"] });
       if (sync?.ok === false) toast.error(`${t("arc.syncFailed")}: ${sync?.message || ""}`);
       else toast.success(t("arc.syncDone"));
@@ -484,11 +502,14 @@ export default function Arc() {
   // Each level lists only what the levels ABOVE it leave, and says so — a list
   // shortened by a parent must never read as a dimension with nothing in it.
   // The lists come off the register's own cells (the backend counts them in
-  // TICKETS), so every name offered is a narrowing with rows behind it.
+  // TICKETS over the current view), so every name offered is a narrowing with
+  // rows behind it. /facets already applies the parent picks; the filtering
+  // below is the same rule on the client, which is what keeps a pick from
+  // surviving a render on the previous scope's lists while the new ones land.
   const org = options.org || {};
   const supAll = org.managers || [];
   const leadAll = org.leaders || [];
-  const optsReady = !!meta?.options;
+  const optsReady = !!facetsQ.data;
   const supOpts = useMemo(
     () => supAll.filter((m) => !shift || String(m.shift) === shift),
     [supAll, shift]);
@@ -540,7 +561,10 @@ export default function Arc() {
 
   const grpWho = t("arc.grpWho");
   const grpWhat = t("arc.grpWhat");
-  // The count beside an option — how many non-missing tickets carry it.
+  // The count beside an option — how many tickets in the CURRENT VIEW carry
+  // it, if this one control were the only thing changed. Not the whole mirror
+  // (the reader would be sent to a category the period holds nothing of) and
+  // not the page on screen (a list that rewrote itself on every page turn).
   const withCount = (label, n) => (
     <span className="inline-flex items-center gap-1.5 min-w-0">
       <span className="truncate">{label}</span>
@@ -548,16 +572,35 @@ export default function Arc() {
     </span>
   );
 
-  // A list a level above it narrowed says so above itself (`note`), naming only
-  // the NEAREST narrowing level — that is the control the reader has to touch
-  // to get a missing name back. A level narrowed to nothing offers the way out
-  // (`empty`) instead of an empty box.
+  // Every list is narrowed twice over, and both narrowings SAY SO — a short
+  // list must never read as a dimension the register has nothing in.
+  //  · by the levels ABOVE it in the org chain (`note`), naming only the
+  //    NEAREST one — that is the control the reader has to touch to get a
+  //    missing name back. A level narrowed to nothing offers the way out
+  //    (`empty`) instead of an empty box.
+  //  · by the view itself — the period, the search and every other pick, which
+  //    is what the counts are over. That one is a standing sentence on every
+  //    list (`viewNote`) whenever anything at all is narrowing the page.
   const shiftLabel = shift ? `${t("arc.shift")} ${shift}` : null;
   const supLabel = sup ? tl(supById[sup]?.name || `#${sup}`) : null;
   const leadLabel = leader ? tl(leadById[leader]?.name || `#${leader}`) : null;
   const chainNote = (parents, n) => {
     const p = parents.filter(Boolean).pop();
     return p ? `${t("arc.narrowedBy").replace("{x}", p)} · ${n}` : null;
+  };
+  // Anything at all narrowing the page — the tab included, since «Yacheykalar
+  // bo'yicha» drops every ticket whose division names no cell.
+  const viewNarrowed = !!(dateFrom || dateTo || q.trim() || state !== "all"
+    || statusSel.length || catSel.length || division || cell || shift || sup
+    || leader || brigada || author || urgent !== "all" || overdue !== "all"
+    || source !== "all" || tab === "cells");
+  const viewNote = viewNarrowed ? t("arc.optsInView") : null;
+  // The chain note and the view note are two different facts, so they get two
+  // lines rather than one run-on sentence.
+  const listNote = (chain) => {
+    const parts = [chain, viewNote].filter(Boolean);
+    if (!parts.length) return null;
+    return parts.length === 1 ? parts[0] : <>{parts[0]}<br />{parts[1]}</>;
   };
   const widenTo = (label, onClick) => (
     <div className="text-center py-1">
@@ -591,7 +634,7 @@ export default function Arc() {
       onClear: () => setSup(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
-          note={chainNote([shiftLabel], supOpts.length)}
+          note={listNote(chainNote([shiftLabel], supOpts.length))}
           empty={shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
           opts={[{ value: "", label: t("arc.allSups") },
             ...supOpts.map((m) => ({ value: String(m.id), label: withCount(tl(m.name), m.count), title: tl(m.name) }))]}
@@ -606,7 +649,7 @@ export default function Arc() {
       onClear: () => setLeader(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
-          note={chainNote([shiftLabel, supLabel], leadOpts.length)}
+          note={listNote(chainNote([shiftLabel, supLabel], leadOpts.length))}
           empty={supLabel ? widenTo(t("arc.allSups"), () => setSup(""))
             : shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
           opts={[{ value: "", label: t("arc.allLeaders") },
@@ -622,7 +665,7 @@ export default function Arc() {
       onClear: () => setCell(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
-          note={chainNote([shiftLabel, supLabel, leadLabel], cellPickOpts.length)}
+          note={listNote(chainNote([shiftLabel, supLabel, leadLabel], cellPickOpts.length))}
           empty={leadLabel ? widenTo(t("arc.allLeaders"), () => setLeader(""))
             : supLabel ? widenTo(t("arc.allSups"), () => setSup(""))
             : shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
@@ -662,6 +705,7 @@ export default function Arc() {
       onClear: () => setDivision(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
+          note={viewNote}
           opts={[{ value: "", label: t("arc.allDivisions") },
             ...divOpts.map((d) => ({ value: d.id, label: withCount(d.name, d.count), title: d.name }))]}
           value={division}
@@ -675,6 +719,7 @@ export default function Arc() {
       onClear: () => setBrigada(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
+          note={viewNote}
           opts={[{ value: "", label: t("arc.allBrigadas") },
             ...brigOpts.map((b) => ({ value: String(b.id), label: withCount(b.name || `#${b.id}`, b.count), title: b.name || `#${b.id}` }))]}
           value={brigada}
@@ -688,6 +733,7 @@ export default function Arc() {
       onClear: () => setAuthor(""),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
+          note={viewNote}
           opts={[{ value: "", label: t("arc.allAuthors") },
             ...authorOpts.map((a) => ({ value: String(a.id), label: withCount(a.name || `#${a.id}`, a.count), title: a.name || `#${a.id}` }))]}
           value={author}
@@ -710,7 +756,7 @@ export default function Arc() {
       display: statusSel.length === 1 ? stName(statusSel[0]) : `${statusSel.length} ${t("filter.selected2")}`,
       onClear: () => setStatusSel([]),
       render: () => (
-        <OptsFilter opts={statusValues} sel={statusSel} onChange={setStatusSel}
+        <OptsFilter opts={statusValues} sel={statusSel} onChange={setStatusSel} note={viewNote}
           labelOf={(v) => stName(v)}
           render={(v) => (
             <span className="inline-flex items-center gap-1.5 min-w-0">
@@ -728,6 +774,7 @@ export default function Arc() {
       onClear: () => setCatSel([]),
       render: () => (
         <OptsFilter searchable={catOpts.length > 8} opts={catOpts.map((c) => String(c.id))} sel={catSel} onChange={setCatSel}
+          note={viewNote}
           labelOf={(id) => catById[id]?.name || id}
           render={(id) => {
             const c = catById[id];

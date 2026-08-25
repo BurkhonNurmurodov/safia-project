@@ -1284,6 +1284,35 @@ back on the first walk.
   deleted. A LIST upsert must never blank a card-only column: `_UPSERT_COLS`
   excludes them and `comments` is coalesced, because the list ships `[]` for a
   ticket whose card holds a thread.
+- **The filter option lists describe the VIEW, not the mirror** (from
+  v3.47.0). `GET /api/arc/facets` takes the same filter set as `/list` and
+  `/stats` and `_facets()` is its one definition: every list — statuses,
+  categories, divisions, brigadas, authors, cells, and the whole org chain —
+  is counted over the **entire filtered set** (every page of it, never the
+  page on screen) with exactly ONE narrowing lifted: **its own**. Lifting its
+  own is what makes the number beside a name answer «how many rows do I get if
+  I pick this INSTEAD»; applying it would leave every other name reading 0 the
+  moment one was picked. Before this the lists came off the whole mirror, so a
+  table of 566 sat under «Оборудование 8281» and the reader was sent to a
+  category the period holds nothing of.
+  - **The reader's own pick is always offered, at 0** when the rest of the
+    view holds none of it (`_relabel`, and `org_index`'s `keep_managers` /
+    `keep_leaders`). A pick missing from its own list is un-picked by the
+    page's chain guards — the register silently WIDENING, answering a question
+    nobody asked — and its chip loses the name it renders from that list.
+  - The four code-derived lists (cell · smena · brigadir · lider) come off the
+    one `code_expr()`, each over its own base, so the org cascade is now
+    measured against the whole filter set rather than the whole mirror. A
+    level nobody picked leaves its base identical to its neighbours', so the
+    memo collapses those four queries back to one; `org_codes` is resolved
+    once per scope via `_apply_filters`' `org_cache`.
+  - Both narrowings SAY SO on the list itself — the chain note names the
+    nearest parent, `arc.optsInView` names the view — because a short list must
+    never read as a dimension the register has nothing in. `OptsFilter` gained
+    the `note` prop `PickFilter` already had.
+  - `/meta` is the SYNC FEED (polled every 2.5 s while a walk runs) and still
+    serves the unfiltered lists by default, for a tab still open on an older
+    bundle; the current page asks it `?options=0` and reads `/facets` instead.
 - Attachments are relative paths (`files/….jpg`) resolved by
   `arc_client.file_url` against the API host; they serve **unauthenticated**, so
   the detail modal renders images inline and falls back to a link on error.

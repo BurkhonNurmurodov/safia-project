@@ -110,7 +110,7 @@ export function TxtFilter({ value, onChange, placeholder }) {
 // tooltip when `render` returns a node AND the option itself is an opaque id
 // (a category uuid rendered as «name · count») — without it the search box
 // would match the id, never the name.
-export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null, labelOf = null }) {
+export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null, labelOf = null, note = null }) {
   const { t } = useLang();
   const [q, setQ] = useState("");
   // `render` may return a node (chips, icons) — fall back to `labelOf`, then
@@ -168,6 +168,12 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
   );
   return (
     <div>
+      {/* Same contract as PickFilter's: a list narrowed by something OUTSIDE
+          it says so above itself, or a short list reads as a dimension with
+          nothing in it. */}
+      {note && (
+        <p className="text-[11px] leading-snug mb-1.5" style={{ color: "var(--text-3)" }}>{note}</p>
+      )}
       {searchable && (
         <input
           value={q} onChange={e => setQ(e.target.value)}

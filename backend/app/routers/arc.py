@@ -210,9 +210,14 @@ def _tri(value: str, expr) -> Optional[Any]:
     return None
 
 
-def _apply_filters(query, f: dict, D: dict, db: Session):
-    """The one place the filter set becomes WHERE clauses; list, stats and
-    export all go through it."""
+def _apply_filters(query, f: dict, D: dict, db: Session, org_cache: Optional[dict] = None):
+    """The one place the filter set becomes WHERE clauses; list, stats, export
+    and the filter option lists all go through it.
+
+    ``org_cache`` is a caller-owned memo for the org walk below. /facets builds
+    up to five bases out of one filter set, and resolving «which codes does
+    this scope reach» once per base is four walks of the cell registry for one
+    answer that cannot have changed between them."""
     R = ArcRequest
     if not f.get("include_missing"):
         query = query.filter(R.missing_since.is_(None))
@@ -265,7 +270,13 @@ def _apply_filters(query, f: dict, D: dict, db: Session):
     shifts, mgrs, leads = (_ints(f.get("shift") or []), _ints(f.get("manager") or []),
                            _ints(f.get("leader") or []))
     if shifts or mgrs or leads:
-        codes = arc_cells.org_codes(db, shifts, mgrs, leads)
+        ck = (tuple(shifts), tuple(mgrs), tuple(leads))
+        if org_cache is not None and ck in org_cache:
+            codes = org_cache[ck]
+        else:
+            codes = arc_cells.org_codes(db, shifts, mgrs, leads)
+            if org_cache is not None:
+                org_cache[ck] = codes
         query = query.filter(D["cell_code"].in_(sorted(codes))) if codes else query.filter(false())
     cond = _tri(f.get("urgent") or "all", R.category_urgent)
     if cond is not None:
@@ -436,89 +447,184 @@ def _sync_state(meta: Optional[ArcSyncMeta]) -> dict:
     }
 
 
-def _options(db: Session) -> dict:
-    """Filter option lists over the rows the API still returns."""
+# ── filter option lists ──────────────────────────────────────────────────────
+# Every list is counted over the rows the CURRENT VIEW holds — the whole
+# filtered set, every page of it, not the page on screen — with exactly ONE
+# narrowing lifted: its own.
+#
+# Lifting its own is what makes the number beside a name answer the question
+# the reader asks of it: «how many rows do I get if I pick this INSTEAD».
+# Applying it too would leave every other name in the list reading 0 the
+# moment one was picked; counting the whole mirror instead — what this page
+# did until v3.47.0 — offered «Оборудование 8281» beside a table of 566 and
+# sent the reader to a category the period holds nothing of.
+#
+# The reader's OWN pick is always offered, at 0 when the rest of the view
+# holds none of it. A pick that vanished from its own list would be un-picked
+# by the page's chain guards — the view silently widening, answering a
+# question nobody asked — and its chip would lose the name it renders from
+# that list and fall back to a raw id.
+
+# What each control looks like when it is narrowing nothing.
+_OFF: dict[str, Any] = {
+    "status": [], "category": [], "division": [], "cell": [], "shift": [],
+    "manager": [], "leader": [], "brigada": [], "author": [],
+    "urgent": "all", "overdue": "all", "source": "all", "state": "all",
+}
+
+# The filter set that narrows nothing at all — every ticket the API still
+# returns. /meta serves its lists over this, which is what the page showed
+# before /facets existed.
+_ALL_ROWS: dict[str, Any] = {**_OFF, "date_from": None, "date_to": None,
+                             "q": None, "include_missing": False,
+                             "cells_only": False}
+
+
+def _lift(f: dict, *keys: str) -> dict:
+    """The filter set with the named controls switched off."""
+    return {**f, **{k: _OFF[k] for k in keys}}
+
+
+def _relabel(db: Session, id_col, name_col, ids) -> dict:
+    """{id → name} straight off the mirror, unnarrowed.
+
+    A pick its own list could not count keeps its NAME: the panel row and the
+    chip both render from the option list, and an id is not a name."""
+    ids = [i for i in ids if i is not None]
+    if not ids:
+        return {}
+    return dict(db.query(id_col, func.max(name_col))
+                .filter(id_col.in_(ids)).group_by(id_col).all())
+
+
+def _by_name(items: list[dict]) -> list[dict]:
+    return sorted(items, key=lambda x: (x.get("name") or "").lower())
+
+
+def _facets(db: Session, f: dict) -> dict:
+    """The filter option lists for exactly the rows this filter set shows."""
     R = ArcRequest
-    base = db.query(R).filter(R.missing_since.is_(None))
-    statuses = [
-        {"value": st, "count": n}
-        for st, n in (base.with_entities(R.status, func.count(R.id))
-                      .group_by(R.status).order_by(R.status).all())
-        if st is not None
-    ]
-    categories = [
-        {"id": cid, "name": name, "urgent": bool(urg), "count": n}
-        for cid, name, urg, n in (base.with_entities(R.category_id, R.category_name,
-                                                     R.category_urgent, func.count(R.id))
-                                  .group_by(R.category_id, R.category_name, R.category_urgent)
-                                  .order_by(R.category_name).all())
-        if cid is not None
-    ]
-    divisions = [
-        {"id": did, "name": name, "count": n}
-        for did, name, n in (base.with_entities(R.division_id, R.division_name, func.count(R.id))
-                             .group_by(R.division_id, R.division_name)
-                             .order_by(R.division_name).all())
-        if did
-    ]
-    brigadas = [
-        {"id": bid, "name": name, "count": n}
-        for bid, name, n in (base.with_entities(R.brigada_id, R.brigada_name, func.count(R.id))
-                             .group_by(R.brigada_id, R.brigada_name)
-                             .order_by(R.brigada_name).all())
-        if bid is not None
-    ]
-    authors = [
-        {"id": uid, "name": name, "count": n}
-        for uid, name, n in (base.with_entities(R.user_id, R.user_name, func.count(R.id))
-                             .group_by(R.user_id, R.user_name)
-                             .order_by(func.count(R.id).desc()).all())
-        if uid is not None
-    ]
-    # Cells are offered as the CODES the division names carry, counted the same
-    # way — a code with no registered cell is still offered (it is a real
-    # narrowing over real tickets), and the «no cell» bucket is offered too so
-    # the reader can ask for the divisions this rule cannot resolve.
-    code = arc_cells.code_expr()
-    cell_rows = (base.with_entities(code.label("code"), func.count(R.id))
-                 .group_by(code).all())
-    known = arc_cells.cells_for(db, [c for c, _ in cell_rows if c])
-    # The org chain behind those codes — shift, owning unit, owning leader. It
-    # is read from the CELLS the register names, so a unit is offered only
-    # while it has tickets, and every cell option carries the three keys the
-    # chain narrows it by (a level must be able to shorten the list below it).
-    org = arc_cells.org_index(db, [c for c, _ in cell_rows if c])
+    D = _derived()
+    oc: dict = {}                      # the org walk, resolved once per scope
+
+    def base(*lift: str):
+        return _apply_filters(db.query(R), _lift(f, *lift), D, db, oc)
+
+    def counted(lift: str, *cols):
+        return (base(lift).with_entities(*cols, func.count(R.id))
+                .group_by(*cols).all())
+
+    # ── the register's own columns ───────────────────────────────────────────
+    statuses = [{"value": st, "count": n}
+                for st, n in counted("status", R.status) if st is not None]
+    statuses += [{"value": v, "count": 0}
+                 for v in set(_ints(f.get("status") or [])) - {s["value"] for s in statuses}]
+    statuses.sort(key=lambda s: s["value"])
+
+    categories = [{"id": cid, "name": name, "urgent": bool(urg), "count": n}
+                  for cid, name, urg, n in counted("category", R.category_id, R.category_name,
+                                                   R.category_urgent)
+                  if cid is not None]
+    missing = set(_ints(f.get("category") or [])) - {c["id"] for c in categories}
+    if missing:
+        categories += [{"id": cid, "name": name, "urgent": bool(urg), "count": 0}
+                       for cid, name, urg in (
+                           db.query(R.category_id, func.max(R.category_name),
+                                    func.bool_or(R.category_urgent))
+                           .filter(R.category_id.in_(sorted(missing)))
+                           .group_by(R.category_id).all())]
+    categories = _by_name(categories)
+
+    divisions = [{"id": did, "name": name, "count": n}
+                 for did, name, n in counted("division", R.division_id, R.division_name) if did]
+    divisions += [{"id": did, "name": name, "count": 0} for did, name in _relabel(
+        db, R.division_id, R.division_name,
+        set(f.get("division") or []) - {d["id"] for d in divisions}).items()]
+    divisions = _by_name(divisions)
+
+    brigadas = [{"id": bid, "name": name, "count": n}
+                for bid, name, n in counted("brigada", R.brigada_id, R.brigada_name)
+                if bid is not None]
+    brigadas += [{"id": bid, "name": name, "count": 0} for bid, name in _relabel(
+        db, R.brigada_id, R.brigada_name,
+        set(_ints(f.get("brigada") or [])) - {b["id"] for b in brigadas}).items()]
+    brigadas = _by_name(brigadas)
+
+    authors = [{"id": uid, "name": name, "count": n}
+               for uid, name, n in counted("author", R.user_id, R.user_name)
+               if uid is not None]
+    authors += [{"id": uid, "name": name, "count": 0} for uid, name in _relabel(
+        db, R.user_id, R.user_name,
+        set(_ints(f.get("author") or [])) - {a["id"] for a in authors}).items()]
+    authors.sort(key=lambda a: -a["count"])
+
+    # ── the cell code, and the org chain behind it ───────────────────────────
+    # Four lists come off the ONE code expression, each over its own base: the
+    # cell list lifts «cell», the brigadir list lifts «manager», and so on —
+    # every other level stays applied, which is the cascade this page already
+    # had, now measured against the whole filter set instead of the whole
+    # mirror. A level nobody picked leaves its base identical to its
+    # neighbours', so the memo collapses the four queries back to one.
+    code = D["cell_code"]
+    memo: dict = {}
+
+    def code_rows(lift: str):
+        sig = tuple((k, () if k == lift else tuple(str(v) for v in (f.get(k) or [])))
+                    for k in ("cell", "shift", "manager", "leader"))
+        if sig not in memo:
+            memo[sig] = (base(lift).with_entities(code.label("code"), func.count(R.id))
+                         .group_by(code).all())
+        return memo[sig]
+
+    cell_rows, mgr_rows = code_rows("cell"), code_rows("manager")
+    lead_rows, shift_rows = code_rows("leader"), code_rows("shift")
+    picked_cells = {c for c in (f.get("cell") or []) if c and c != arc_cells.NO_CELL}
+    picked_mgrs, picked_leads = _ints(f.get("manager") or []), _ints(f.get("leader") or [])
+    all_codes = {c for rows in (cell_rows, mgr_rows, lead_rows, shift_rows)
+                 for c, _ in rows if c} | picked_cells
+    known = arc_cells.cells_for(db, all_codes)
+    # The catalog is built over the UNION of the four bases (a name has to be
+    # available to whichever list needs it), but which names a list OFFERS is
+    # decided by that list's own rows below — a manager reached only by some
+    # other level's codes would otherwise be offered at 0.
+    org = arc_cells.org_index(db, all_codes, keep_managers=picked_mgrs,
+                              keep_leaders=picked_leads)
     by_code = org["by_code"]
+
+    per_code = {c: n for c, n in cell_rows if c}
+    for c in picked_cells:
+        per_code.setdefault(c, 0)
     cells = sorted(
         ({"code": c, "count": n, "cell": known.get(c),
           "sh": (by_code.get(c) or {}).get("shift"),
           "mgr": (by_code.get(c) or {}).get("manager_id"),
           "lead": (by_code.get(c) or {}).get("leader_id")}
-         for c, n in cell_rows if c),
+         for c, n in per_code.items()),
         key=lambda x: x["code"],
     )
     no_cell = sum(n for c, n in cell_rows if not c)
-    # Counted in TICKETS, like every other option list here — the question the
-    # number answers is «how much of the register is behind this name».
-    shift_n: dict[int, int] = {}
-    mgr_n: dict[int, int] = {}
-    lead_n: dict[int, int] = {}
-    for c, n in cell_rows:
-        o = by_code.get(c)
-        if not o:
-            continue
-        for key, bucket in ((o["shift"], shift_n), (o["manager_id"], mgr_n),
-                            (o["leader_id"], lead_n)):
-            if key is not None:
-                bucket[key] = bucket.get(key, 0) + n
+
+    # Counted in TICKETS, like every other list here — the question the number
+    # answers is «how much of this view is behind this name».
+    def level(rows, key: str, keep: list[int]) -> dict[int, int]:
+        out: dict[int, int] = {}
+        for c, n in rows:
+            v = (by_code.get(c) or {}).get(key)
+            if v is not None:
+                out[v] = out.get(v, 0) + n
+        for k in keep:
+            out.setdefault(k, 0)
+        return out
+
+    shift_n = level(shift_rows, "shift", _ints(f.get("shift") or []))
+    mgr_n = level(mgr_rows, "manager_id", picked_mgrs)
+    lead_n = level(lead_rows, "leader_id", picked_leads)
     org_out = {
         "shifts": [{"value": s, "count": shift_n[s]} for s in sorted(shift_n)],
-        "managers": sorted(
-            ({**m, "count": mgr_n.get(m["id"], 0)} for m in org["managers"].values()),
-            key=lambda m: (m["name"] or "").lower()),
-        "leaders": sorted(
-            ({**l, "count": lead_n.get(l["id"], 0)} for l in org["leaders"].values()),
-            key=lambda l: (l["name"] or "").lower()),
+        "managers": _by_name([{**org["managers"][i], "count": n}
+                              for i, n in mgr_n.items() if i in org["managers"]]),
+        "leaders": _by_name([{**org["leaders"][i], "count": n}
+                             for i, n in lead_n.items() if i in org["leaders"]]),
     }
     return {"statuses": statuses, "categories": categories,
             "divisions": divisions, "brigadas": brigadas, "authors": authors,
@@ -529,17 +635,42 @@ def _options(db: Session) -> dict:
 
 @router.get("/meta")
 def get_meta(
+    options: bool = Query(True),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """Sync state + filter options — one boot call for the page."""
+    """Sync state, and — for a bundle that predates /facets — the option lists
+    over the whole mirror.
+
+    ``options=0`` is what the current page sends: it reads its lists from
+    /facets, narrowed to the view, and this call is then the sync progress
+    feed alone, which is polled every 2.5 s while a walk runs. The default
+    stays ON so a tab still open on an older bundle keeps the lists it renders
+    its filter panel from."""
     meta = db.query(ArcSyncMeta).filter_by(id=1).first()
     return {
         "configured": arc_client.configured(),
         "can_refresh": True,
         "sync": _sync_state(meta),
-        "options": _options(db),
+        "options": _facets(db, _ALL_ROWS) if options else None,
     }
+
+
+@router.get("/facets")
+def get_facets(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+    f: dict = Depends(_filters),
+):
+    """The filter option lists over exactly the rows /list shows.
+
+    Split off /meta because the two answer different questions and move at
+    different rates: the sync state is a progress feed that no filter touches,
+    while these lists change with every pick and never need polling. Counts
+    are over the whole filtered set — the page is paginated, the lists are
+    not: a list that described the fifty rows on screen would rewrite itself
+    every time the reader turned a page."""
+    return _facets(db, f)
 
 
 @router.get("/list")
