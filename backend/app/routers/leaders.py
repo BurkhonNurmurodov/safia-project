@@ -464,23 +464,29 @@ def get_leaders(
             (r.leader, (sup_match.get(_relabel(r.supervisor)) or {}).get("id"))
         )
 
+    # Every leader profile record that IS this viewer (see
+    # `identity.viewer_leader_profile_ids`) — the set both halves of the
+    # register scope by, so a person entered twice reads one history.
+    my_pids: set[int] = set()
+
     if role == "leader" and not sees_all:
         # Scope a leader to their OWN rows by profile identity — from any of
         # their logins, and immune to the sheet's spelling of their name.
-        # A row the register attributed to a profile is matched by id and by
-        # nothing else: that is what keeps two leaders spelled alike in
-        # different units out of each other's data. A row it attributed to NO
-        # profile falls back to the name (see `_self_names` above) — it belongs
-        # to nobody, so matching it by name takes it from no one, and refusing
-        # it hid a leader from the reports they had filed themselves.
+        # A row the register attributed to a profile is matched by id: any of
+        # this person's own records counts, another person's never does. A row
+        # it attributed to NO profile falls back to the name (see `_self_names`
+        # above) — it belongs to nobody, so matching it by name takes it from
+        # no one, and refusing it hid a leader from reports they filed
+        # themselves.
         my_pid = identity.viewer_leader_profile_id(db, payload)
+        my_pids = set(identity.viewer_leader_profile_ids(db, payload))
         me = _self_names(db, payload, my_pid)
 
         def _is_mine(r) -> bool:
             pid = (_leader_of(r) or {}).get("id")
-            if not my_pid or not pid:
+            if not pid or not my_pids:
                 return _names_viewer(r.leader, me)
-            return pid == my_pid or _same_person(r.leader, me)
+            return pid in my_pids or _same_person(r.leader, me)
 
         rows = [r for r in rows if _is_mine(r)]
 
@@ -530,22 +536,26 @@ def get_leaders(
         })
 
     # ── the bot layer (shift 2 only) ──────────────────────────────────────────
-    # Scoped exactly like the sheet rows above. A leader with no resolvable
-    # PROFILE gets no bot rows at all rather than a name-matched guess: bot days
-    # are keyed by profile id, so a name fallback could only ever mis-attribute.
+    # Scoped exactly like the sheet rows above. A bot day is keyed by profile
+    # id and carries no name of its own, so there is nothing here to match
+    # loosely — but it is keyed by ONE record of a person who may hold several,
+    # which is why the scope is the viewer's whole record set rather than the
+    # single id their token names. A viewer we cannot resolve to any leader
+    # record still gets no bot rows: with no id there is nothing to ask for.
     bot_rows = []
     skip_bot = False
-    bot_manager_id = bot_leader_id = None
+    bot_manager_id = None
+    bot_leader_ids: list[int] | None = None
     if not sees_all:
         if role == "supervisor":
             bot_manager_id = payload.get("role_id")
         elif role == "leader":
-            bot_leader_id = identity.viewer_leader_profile_id(db, payload)
-            skip_bot = bot_leader_id is None
+            bot_leader_ids = sorted(my_pids)
+            skip_bot = not bot_leader_ids
     if not skip_bot:
         bot_rows = leader_bot.dashboard_rows(
             db,
-            leader_bot.closed_days(db, manager_id=bot_manager_id, leader_id=bot_leader_id),
+            leader_bot.closed_days(db, manager_id=bot_manager_id, leader_id=bot_leader_ids),
             sup_display=sup_display,
         )
         # The filing-window rule judges SHEET rows: a bot day is filed by being
@@ -799,11 +809,12 @@ def report_scope_ok(db: Session, payload: dict, row: dict) -> bool:
         # this person's other profile. What is still refused is what always
         # was: a row belonging to a profile whose person is somebody else.
         my_pid = identity.viewer_leader_profile_id(db, payload)
+        my_pids = set(identity.viewer_leader_profile_ids(db, payload))
         me = _self_names(db, payload, my_pid)
         pid = row.get("leader_id")
-        if not my_pid or not pid:
+        if not pid or not my_pids:
             return _names_viewer(row.get("leader"), me)
-        return pid == my_pid or _same_person(row.get("leader"), me)
+        return pid in my_pids or _same_person(row.get("leader"), me)
     return False
 
 

@@ -30,6 +30,8 @@ report, which would otherwise DM a score for a day the register does not show.
 Only CLOSED days surface. An open day is a leader mid-checklist, not a
 submission — the same rule the dashboard has always applied.
 """
+from typing import Iterable
+
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -136,16 +138,24 @@ def closed_days(
     *,
     merged: bool = True,
     manager_id: int | None = None,
-    leader_id: int | None = None,
+    leader_id: int | Iterable[int] | None = None,
 ) -> list[LeaderTaskDay]:
     """Closed bot days, optionally narrowed to one unit / leader.
+
+    `leader_id` takes a collection as well as one id, because one person can
+    own several leader profile records and their days hang off whichever record
+    was current when each day closed (`identity.viewer_leader_profile_ids`).
+    An EMPTY collection is a real answer — no record, so no days — not "every
+    leader".
+
     `merged=False` lifts the merge rule (the admin clear tool wants every day it
     could ever delete, whichever unit filed it and whether or not it shows)."""
     q = db.query(LeaderTaskDay).filter(LeaderTaskDay.closed_at.isnot(None))
     if manager_id is not None:
         q = q.filter(LeaderTaskDay.manager_id == manager_id)
     if leader_id is not None:
-        q = q.filter(LeaderTaskDay.leader_id == leader_id)
+        ids = [leader_id] if isinstance(leader_id, int) else list(leader_id)
+        q = q.filter(LeaderTaskDay.leader_id.in_(ids))
     days = q.all()
     if not days or not merged:
         return days
@@ -299,5 +309,8 @@ def visible_day(db: Session, day: LeaderTaskDay, payload: dict, *, sees_all: boo
         if role == "leader":
             from app import identity
 
-            return day.leader_id == identity.viewer_leader_profile_id(db, payload)
+            # Every record of this person, exactly as /api/leaders scopes the
+            # rows these photos hang off — a day filed under their other
+            # profile is still their own day.
+            return day.leader_id in identity.viewer_leader_profile_ids(db, payload)
     return True

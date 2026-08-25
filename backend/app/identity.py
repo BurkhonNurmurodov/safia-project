@@ -148,6 +148,53 @@ def viewer_leader_profile_id(db: Session, payload: dict) -> Optional[int]:
     return ref if role == "leader" else None
 
 
+def viewer_leader_profile_ids(db: Session, payload: dict) -> list[int]:
+    """Every leader profile RECORD that is this viewer — their session's own
+    plus any other spelling the same human was entered under.
+
+    THE RULE above says a profile is a person; in practice one leader here owns
+    several records. The seeder created passport-form profiles ("Bozorova
+    Moxinur Safarali Qizi"), admins later create short ones ("Bozorova
+    Moxinur"), a unit gets rebuilt, a registration is re-claimed — and the
+    checklist register hands each sheet spelling and each bot day to whichever
+    record matched at the time. Scoping the viewer to the single record their
+    token happens to name then shows a leader an empty page over their own
+    work, which is exactly what /leaders did for the reports filed under the
+    other record.
+
+    Sameness is decided STRICTLY: surname and first name must fold to the same
+    two tokens (`name_map._name_tokens`), which is unique to one person across
+    the whole roster — the only fuzzy near-collision on it, Babayeva /
+    Xadjibayeva Sevara, differs in the surname. This is NOT the profile
+    switcher's rule and must not become it: `viewer_profile_key` stays the one
+    active identity for everything a viewer WRITES or is addressed as. This
+    answers a narrower question — which records hold this person's history.
+
+    The name comes from the token as well as the profile, so it still answers
+    for a session whose `profile_key` points at a record that has since been
+    renamed or deleted.
+    """
+    # Local import: identity.py stays importable from every router, and
+    # name_map pulls in the transliterator.
+    from app.services.name_map import _name_tokens
+
+    own = viewer_leader_profile_id(db, payload)
+    ids: set[int] = {own} if own else set()
+
+    names = {payload.get("full_name") or ""}
+    if own:
+        prof = db.query(RoleProfile).filter_by(id=own, role="leader").first()
+        if prof:
+            names.add(prof.name or "")
+    keys = {tuple(t[:2]) for t in (_name_tokens(n) for n in names) if len(t) >= 2}
+    if keys:
+        for p in db.query(RoleProfile).filter(RoleProfile.role == "leader").all():
+            tok = _name_tokens(p.name or "")
+            if len(tok) >= 2 and tuple(tok[:2]) in keys:
+                ids.add(p.id)
+    return sorted(ids)
+
+
 # ── holders: profile → the accounts that may act as this person ───────────────
 
 def profile_holders(db: Session, key: Optional[str]) -> list[int]:
