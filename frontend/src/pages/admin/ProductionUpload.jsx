@@ -357,7 +357,10 @@ export default function ProductionUpload() {
         />
         <div className="p-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-            <FormField label={t("admin.prod.date")} hint={t("admin.prod.replaceWarn")}>
+            {/* Only the date carries a hint, so without `alignTop` the growing
+                label in the two hintless cells parks their selects a whole
+                hint line below it. */}
+            <FormField alignTop label={t("admin.prod.date")} hint={t("admin.prod.replaceWarn")}>
               <DateRangePicker
                 single
                 dateFrom={date} dateTo={date}
@@ -365,7 +368,7 @@ export default function ProductionUpload() {
                 triggerClassName="px-3 py-2 text-sm w-full"
               />
             </FormField>
-            <FormField label={t("admin.prod.mode")}>
+            <FormField alignTop label={t("admin.prod.mode")}>
               <StyledSelect
                 value={mode}
                 onChange={setMode}
@@ -377,6 +380,7 @@ export default function ProductionUpload() {
               />
             </FormField>
             <FormField
+              alignTop
               label={t("admin.prod.fileType")}
               hint={fileType !== "auto" ? t("admin.prod.ftSingleOnly") : null}
             >
