@@ -795,6 +795,7 @@ _GRANS = ("day", "week", "month")
 _TREND_MAX_BUCKETS = 400
 _TOP = 12          # ranked bars: top N on screen, the card names the rest
 _TOP_LEADERS = 14  # leaders are the longest list; one extra row of headroom
+_SPARK_BUCKETS = 60  # the speed table's sparkline window, shared by every row
 
 
 def _py_trunc(d: date_cls, gran: str) -> date_cls:
@@ -892,15 +893,16 @@ def get_analysis(
     categories = [
         {"id": cid, "name": name, "total": int(n), "done": _n(dn),
          "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc),
-         "cwd": _n(cw), "late": _n(lt),
+         "cwd": _n(cw), "late": _n(lt), "closed_n": _n(hn),
          "avg_h": round(float(av), 1) if av is not None else None,
          "median_h": round(float(md), 1) if md is not None else None,
          "allowed_h": float(ft) if ft else None}
-        for cid, name, n, dn, op, ov, cc, cw, lt, av, md, ft in (
+        for cid, name, n, dn, op, ov, cc, cw, lt, hn, av, md, ft in (
             base.with_entities(R.category_id, R.category_name, func.count(R.id),
                                _sum(D["is_done"]), _sum(D["is_open"]),
                                _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
                                _sum(closed_with_due), _sum(late_closed),
+                               _sum(hours_closed.isnot(None)),
                                func.avg(hours_closed),
                                func.percentile_cont(0.5).within_group(hours_closed),
                                func.max(R.category_ftime))
@@ -920,6 +922,48 @@ def get_analysis(
                   "overdue": _n(st[3]), "cancelled": _n(st[4]),
                   "cwd": _n(st[5]), "late": _n(st[6]),
                   "avg_h": round(float(st[7]), 1) if st[7] is not None else None}
+    # ── closing hours over time, per category (both views) ──────────────────
+    # The third column of the «Yopilish vaqti» table. A bucket carries the
+    # MEDIAN close time of the tickets CLOSED IN IT — bucketed on `closed_at`,
+    # because the hours a ticket took belong to the moment its clock stopped,
+    # not to the month it was filed — and the median rather than the mean,
+    # because one 3000-hour ticket would otherwise draw a spike the category
+    # never felt. Read off the EXACT filtered set, never the flow chart's
+    # 7-day-widened twin: the table's mean and median must count the same rows
+    # its sparkline draws.
+    #
+    # An empty bucket carries NO point and is simply absent: the median of no
+    # closures is not zero hours, and zero-filling would draw a crash to the
+    # axis on every quiet week. Only the categories the card actually shows
+    # get a series (the same TOP cut the ranked bars and the scorecard take),
+    # so a mirror with forty categories does not ship thirty-eight unread ones.
+    want = categories[:_TOP]
+    ids = [c["id"] for c in want if c["id"] is not None]
+    conds = []
+    if ids:
+        conds.append(R.category_id.in_(ids))
+    if any(c["id"] is None for c in want):
+        conds.append(R.category_id.is_(None))
+    if conds:
+        cb = func.date_trunc(gran, func.timezone("Asia/Tashkent", D["closed_at"]))
+        seen: dict = {}
+        for cid, b, n, m in (
+            base.filter(or_(*conds), hours_closed.isnot(None))
+            .with_entities(R.category_id, cb, func.count(R.id),
+                           func.percentile_cont(0.5).within_group(hours_closed))
+            .group_by(R.category_id, cb).all()
+        ):
+            if b is None or m is None:
+                continue
+            seen.setdefault(cid, []).append((b.date(), int(n), round(float(m), 1)))
+        # ONE window for every row, so twelve sparklines can be read against
+        # each other in time rather than each against its own private span.
+        keep = set(sorted({b for v in seen.values() for b, _c, _m in v})[-_SPARK_BUCKETS:])
+        for c in want:
+            c["trend"] = [[b.isoformat(), m, n]
+                          for b, n, m in sorted(seen.get(c["id"], []))
+                          if b in keep]
+
     out: dict[str, Any] = {"gran": gran, "trend": trend,
                            "categories": categories, "sla_totals": sla_totals}
 

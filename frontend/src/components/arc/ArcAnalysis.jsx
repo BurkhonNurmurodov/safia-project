@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  TrendingUp, Tag, Building2, Timer, Users, Wrench, UserCog, Boxes,
-  AlertTriangle, ClipboardList, Gauge,
+  TrendingUp, TrendingDown, Minus, Tag, Building2, Timer, Users, Wrench,
+  UserCog, Boxes, AlertTriangle, ClipboardList, Gauge, Hourglass,
 } from "lucide-react";
 import Button from "../ui/Button";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -264,6 +264,191 @@ function SlaCard({ rows, totals, right }) {
             <MobRow name={t("arc.slaTotal")} r={totals} d={td} bold />
           </div>
         )}
+      </div>
+    </ChartCard>
+  );
+}
+
+// ── the closing-time table («Yopilish vaqti») ────────────────────────────────
+// The one card that answers «how long does this kind of request actually take,
+// and is it getting better». Per category: how many closures the figures stand
+// on, the MEAN and the MEDIAN hours to close, and the direction of travel.
+//
+// Mean and median sit side by side on purpose — they answer the same question,
+// and their DISAGREEMENT is itself the answer: a mean far above the median
+// says a handful of tickets sat for weeks while the typical one closed fast,
+// which is a fact neither number states alone. Neither is shown without the
+// closure count behind it, because an average over three tickets is not an
+// average. Every figure counts CLOSED tickets only — an open ticket has no
+// closing time yet, and folding it in as a zero would reward a backlog.
+//
+// The trend is the backend's per-bucket median (day/week/month — the flow
+// chart's own granularity, and the same toggle drives both), drawn as a
+// sparkline scaled to ITS OWN row: categories that close in 2 hours and in 200
+// share no y-axis, so one scale across the table would flatten eleven rows to
+// straight lines. The chip beside it compares the first half of the buckets to
+// the last — robust to a single bad week in a way «latest vs previous» is not.
+// Down is green because down is faster.
+const SPD_GRID = "minmax(0,1.5fr) 5.5rem 6.6rem 6.6rem minmax(9rem,1fr)";
+const SPD_HALF_MIN = 4;   // fewer buckets than this and a halves split is noise
+const SPD_FLAT_PCT = 5;   // inside this band the movement is called stable
+
+// A sparkline over `pts` = [[isoBucket, medianHours, closedCount], …].
+function Spark({ pts, color, w = 92, h = 28 }) {
+  const n = pts.length;
+  const vals = pts.map((p) => p[1]);
+  const lo = Math.min(...vals);
+  const hi = Math.max(...vals);
+  const span = hi - lo;
+  const x = (i) => (n === 1 ? w / 2 : 1 + (i * (w - 2)) / (n - 1));
+  // No spread at all — one bucket, or every bucket identical — draws down the
+  // middle: pinned to the floor it would read as «this category closes in no
+  // time», which is the one thing a flat line does not say.
+  const y = (v) => (span ? h - 3 - ((v - lo) / span) * (h - 6) : h / 2);
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join(" ");
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="flex-shrink-0" aria-hidden="true">
+      {n > 1 && (
+        <path d={d} fill="none" stroke={color} strokeWidth="1.5"
+          strokeLinejoin="round" strokeLinecap="round" />
+      )}
+      <circle cx={x(n - 1)} cy={y(vals[n - 1])} r="2.2" fill={color} />
+    </svg>
+  );
+}
+
+function SpeedTable({ rows, gran, lang, right }) {
+  const { t } = useLang();
+
+  // Bare numbers in the two hour columns — the unit rides in the header, so
+  // the digits stay a column a reader can compare down. The day restatement
+  // moves into the cell's own tooltip, where it costs no width.
+  const num = (h) => (h == null ? "—" : h >= 100 ? String(Math.round(h)) : h.toFixed(1));
+  const hoursTip = (h) => {
+    if (h == null) return t("arc.spdNoClose");
+    const days = h >= 24 ? ` (${(h / 24).toFixed(1)} ${t("arc.slaDays")})` : "";
+    return `${num(h)} ${t("arc.anHours")}${days}`;
+  };
+
+  const trendOf = (pts) => {
+    if (!pts || pts.length < SPD_HALF_MIN) return null;
+    const k = Math.floor(pts.length / 2);
+    const mean = (a) => a.reduce((s, p) => s + p[1], 0) / a.length;
+    const a = mean(pts.slice(0, k));
+    const b = mean(pts.slice(pts.length - k));
+    if (!a) return null;
+    const pct = ((b - a) / a) * 100;
+    const dir = Math.abs(pct) < SPD_FLAT_PCT ? "flat" : pct < 0 ? "down" : "up";
+    return { a, b, pct, dir };
+  };
+  const TREND_TONE = { down: C_DONE, up: C_OVERDUE, flat: C_GREY };
+  const TREND_ICON = { down: TrendingDown, up: TrendingUp, flat: Minus };
+
+  // The sparkline + its verdict chip. A row with no closures at all says so;
+  // a row with too few buckets keeps its line and withholds only the verdict,
+  // because a shape the reader can see is not a claim about direction.
+  const Trend = ({ pts }) => {
+    const p = pts || [];
+    if (!p.length) {
+      return <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("arc.spdNoClose")}</span>;
+    }
+    const v = trendOf(p);
+    const tone = v ? TREND_TONE[v.dir] : C_GREY;
+    const Icon = v ? TREND_ICON[v.dir] : null;
+    const range = `${fmtBucket(p[0][0], gran, lang)} — ${fmtBucket(p[p.length - 1][0], gran, lang)}`;
+    const tip = v
+      ? `${tpl(t("arc.spdHalves"), { a: num(v.a), b: num(v.b) })} · ${range}`
+      : `${t("arc.spdNoTrend")} · ${range}`;
+    return (
+      <span className="inline-flex items-center gap-2 min-w-0" title={tip}>
+        <Spark pts={p} color={tone} />
+        {v ? (
+          <span className="inline-flex items-center gap-1 text-[11px] tabular-nums whitespace-nowrap"
+            style={{ color: tone }}>
+            <Icon size={12} className="flex-shrink-0" />
+            {v.dir === "flat" ? t("arc.spdFlat") : `${Math.abs(Math.round(v.pct))}%`}
+          </span>
+        ) : (
+          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>—</span>
+        )}
+      </span>
+    );
+  };
+
+  const Hd = ({ children, right: r }) => (
+    <div className={`text-[10px] uppercase tracking-wide truncate ${r ? "text-right" : ""}`}
+      style={{ color: "var(--text-4)" }}>{children}</div>
+  );
+
+  const DeskRow = ({ name, r }) => (
+    <div className="hidden md:grid items-center gap-3 px-3 py-2" style={{ gridTemplateColumns: SPD_GRID }}>
+      <span className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }} title={name}>{name}</span>
+      <span className="text-right text-xs tabular-nums" style={{ color: r.closed_n ? "var(--text-2)" : "var(--text-4)" }}>
+        {r.closed_n || 0}
+      </span>
+      <span className="text-right text-xs tabular-nums font-semibold"
+        style={{ color: r.avg_h == null ? "var(--text-4)" : "var(--text-1)" }} title={hoursTip(r.avg_h)}>
+        {num(r.avg_h)}
+      </span>
+      <span className="text-right text-xs tabular-nums font-semibold"
+        style={{ color: r.median_h == null ? "var(--text-4)" : "var(--text-1)" }} title={hoursTip(r.median_h)}>
+        {num(r.median_h)}
+      </span>
+      <span className="flex justify-end"><Trend pts={r.trend} /></span>
+    </div>
+  );
+
+  // The header row is hidden on a phone, so every figure brings its own label —
+  // the unit included, beside the value it belongs to rather than once at the
+  // end of the line, where «— soat» reads as a measurement of nothing.
+  const MStat = ({ label, h }) => (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      <span style={{ color: "var(--text-4)" }}>{label}</span>
+      <span className="font-semibold tabular-nums"
+        style={{ color: h == null ? "var(--text-4)" : "var(--text-1)" }}>{num(h)}</span>
+      {h != null && <span style={{ color: "var(--text-4)" }}>{t("arc.anHours")}</span>}
+    </span>
+  );
+
+  const MobRow = ({ name, r }) => (
+    <div className="md:hidden px-3 py-2.5 space-y-1.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }}>{name}</span>
+        <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>
+          {t("arc.spdClosed")} {r.closed_n || 0}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] min-w-0">
+          <MStat label={t("arc.spdMeanShort")} h={r.avg_h} />
+          <MStat label={t("arc.spdMedianShort")} h={r.median_h} />
+        </div>
+        <span className="flex-shrink-0"><Trend pts={r.trend} /></span>
+      </div>
+    </div>
+  );
+
+  return (
+    <ChartCard icon={Hourglass} title={t("arc.spdTitle")} subtitle={t("arc.spdSub")}
+      empty={!rows.length} emptyText={t("arc.noMatch")} ready height={200} right={right}>
+      <div className="pb-1">
+        <div className="hidden md:grid items-center gap-3 px-3 pt-1 pb-2"
+          style={{ gridTemplateColumns: SPD_GRID, borderBottom: "1px solid var(--border)" }}>
+          <Hd>{t("arc.fCategory")}</Hd>
+          <Hd right>{t("arc.spdClosed")}</Hd>
+          <Hd right>{t("arc.spdMean")}</Hd>
+          <Hd right>{t("arc.spdMedian")}</Hd>
+          <Hd right>{t("arc.spdTrend")}</Hd>
+        </div>
+        {rows.map((r, i) => {
+          const name = r.name || t("arc.anUnassigned");
+          return (
+            <div key={r.id ?? `${name}-${i}`} style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
+              <DeskRow name={name} r={r} />
+              <MobRow name={name} r={r} />
+            </div>
+          );
+        })}
       </div>
     </ChartCard>
   );
@@ -544,6 +729,21 @@ export default function ArcAnalysis({ view, filters, enabled }) {
       right={topOf(catRows.length, cats.length)} />
   );
 
+  // Third card off the SAME category rows and the SAME cut as the ranked bars
+  // and the scorecard — three cards about categories that disagreed about
+  // which categories they read would be three cards nobody could reconcile.
+  // The granularity toggle is the flow chart's own state, so the sparklines
+  // and the line above them can never be bucketed differently.
+  const speedTable = (
+    <SpeedTable rows={catRows} gran={A?.gran || gran} lang={lang}
+      right={
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {topOf(catRows.length, cats.length)}
+          <span className="hidden sm:flex">{granToggle}</span>
+        </div>
+      } />
+  );
+
   if (viewKey === "cells") {
     return (
       <div className="space-y-4">
@@ -578,6 +778,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
             type="bar" height={stackHeight(cellRows.length)} />
         </ChartCard>
         {slaCard}
+        {speedTable}
       </div>
     );
   }
@@ -589,6 +790,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
         {catsCard}
       </div>
       {slaCard}
+      {speedTable}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <ChartCard icon={Building2} title={t("arc.anDivs")} subtitle={t("arc.anDivsSub")}
           empty={divs.length === 0} emptyText={t("arc.noMatch")} ready={ready}
