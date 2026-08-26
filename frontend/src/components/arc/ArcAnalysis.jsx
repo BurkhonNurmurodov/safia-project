@@ -14,6 +14,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import { usePersistentState } from "../../hooks/usePersistentState";
+import useIsMobile from "../../hooks/useIsMobile";
 import { cellName } from "../../utils/cellName";
 import { shortPerson } from "../../utils/personName";
 import { C_DONE, C_DOING, C_OVERDUE, C_GREY, hexA } from "../../utils/arcStatus";
@@ -42,6 +43,9 @@ const C_CREATED = "#3b82f6";
 // Categories on screen — the backend's `_TOP` for every other ranked bar,
 // so the four ranked cards cut their tails at the same place.
 const TOP_CATS = 12;
+
+const CARD_CHROME = 78;  // ChartCard around its chart: header + padding + borders
+const GRID_GAP = 16;     // gap-4
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
@@ -95,6 +99,10 @@ export default function ArcAnalysis({ view, filters, enabled }) {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const { chartTheme, gridColor, labelColor, legendColor } = useChartTheme();
+  // Below `lg` the grid is ONE column: nothing sits beside anything, so a
+  // chart grown to match a row-mate would just be a needlessly tall chart
+  // on a phone. Every height below falls back to its own natural size.
+  const narrow = useIsMobile(1024);
 
   // ── the trend's granularity: auto from the picked span, overridable ───────
   // No period = the whole mirror → months; a short window → days. «» = auto,
@@ -213,6 +221,17 @@ export default function ArcAnalysis({ view, filters, enabled }) {
     tooltip: { theme: chartTheme.mode, shared: true, intersect: false },
   });
   const stackHeight = (n) => Math.max(260, n * 34 + 104);
+  // A ranked bar card's height is DICTATED by its row count, so two of them
+  // in one row can differ by 500px and neither can be talked out of it. The
+  // narrow column is therefore a RAIL of two cards, and the free-height line
+  // chart at its foot takes exactly what the tall ranking leaves — the only
+  // way this row ends level without a hollow card or a hollow column.
+  // CARD_CHROME ≈ ChartCard's header + borders + body padding.
+  const railFill = (tall, above) =>
+    narrow ? 320 : Math.min(720, Math.max(280, tall - above - CARD_CHROME - GRID_GAP));
+  // The same trade one row up: a line chart's height is free, so it adopts the
+  // bar chart's beside it rather than leaving half a column empty.
+  const matchH = (base, mate) => (narrow ? base : Math.max(base, mate));
   // «top N of M» — what a ranked card is NOT showing, named on the card.
   const topOf = (shown, total) =>
     total > shown ? (
@@ -365,18 +384,18 @@ export default function ArcAnalysis({ view, filters, enabled }) {
                 type="bar" height={stackHeight(units.length)} />
             </ChartCard>
           </div>
-          {catsCard}
+          <div className="flex flex-col gap-4">
+            {catsCard}
+            {flowCard(railFill(stackHeight(units.length), stackHeight(catRows.length)))}
+          </div>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-          <ChartCard icon={Boxes} title={t("arc.anCellsTop")} subtitle={t("arc.anCellsTopSub")}
-            empty={cellRows.length === 0} emptyText={t("arc.noMatch")} ready={ready}
-            height={stackHeight(cellRows.length)}
-            right={topOf(cellRows.length, A?.cells_n || cellRows.length)}>
-            <ReactApexChart options={stackOpts(cellLabels)} series={stackSeries(cellRows)}
-              type="bar" height={stackHeight(cellRows.length)} />
-          </ChartCard>
-          {flowCard(Math.max(320, stackHeight(cellRows.length)))}
-        </div>
+        <ChartCard icon={Boxes} title={t("arc.anCellsTop")} subtitle={t("arc.anCellsTopSub")}
+          empty={cellRows.length === 0} emptyText={t("arc.noMatch")} ready={ready}
+          height={stackHeight(cellRows.length)}
+          right={topOf(cellRows.length, A?.cells_n || cellRows.length)}>
+          <ReactApexChart options={stackOpts(cellLabels)} series={stackSeries(cellRows)}
+            type="bar" height={stackHeight(cellRows.length)} />
+        </ChartCard>
       </div>
     );
   }
@@ -384,7 +403,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-        <div className="lg:col-span-2">{flowCard(Math.max(286, stackHeight(catRows.length)))}</div>
+        <div className="lg:col-span-2">{flowCard(matchH(286, stackHeight(catRows.length)))}</div>
         {catsCard}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
