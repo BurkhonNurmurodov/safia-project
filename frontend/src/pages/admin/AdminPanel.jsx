@@ -5,7 +5,7 @@ import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
   Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, FileClock,
-  ClipboardList,
+  ClipboardList, CircleSlash,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -27,6 +27,7 @@ import AttendanceCleanup from "./AttendanceCleanup";
 import ActionHistory from "./ActionHistory";
 import LeaderTasksAdmin from "./LeaderTasksAdmin";
 import LeaderDailyTasks from "./LeaderDailyTasks";
+import LeaderDayExclusions from "./LeaderDayExclusions";
 import DbBackup from "./DbBackup";
 import DataSources from "./DataSources";
 import DisplaySettings from "./DisplaySettings";
@@ -96,6 +97,12 @@ export const ADMIN_NAV = [
   // like "permissions" and "logs" a grantee can never be admitted — it can
   // delete a scored day and move a leader's score.
   { id: "ltdaily",      group: "tools",  Icon: ClipboardList,  labelKey: "admin.tabLtDaily",      descKey: "admin.desc.ltdaily" },
+  // Leader-days taken OUT of the results — the one control that makes a day
+  // count NEITHER way, for the leader and their brigadir at once. Sits with the
+  // other two leader surfaces: one configures the checklist, one reads what came
+  // back, this one says which of it counts. No `capKey`, for the same reason as
+  // "ltdaily" — it moves a leader's score and a brigadir's.
+  { id: "ltexclude",    group: "tools",  Icon: CircleSlash,    labelKey: "admin.tabLtExclude",    descKey: "admin.desc.ltexclude" },
   // The cells' working start/end register — per-shift defaults a cell inherits,
   // its own pair overriding them. A register only: nothing scores off it yet.
   { id: "shifttimes",   group: "tools",  Icon: Clock,          labelKey: "admin.tabShiftTimes",   descKey: "admin.desc.shifttimes" },
@@ -136,6 +143,7 @@ const VIEWS = {
   broadcast:    Broadcast,
   ltasks:       LeaderTasksAdmin,
   ltdaily:      LeaderDailyTasks,
+  ltexclude:    LeaderDayExclusions,
   shifttimes:   ShiftTimes,
   idlesource:   IdleSource,
   lostworkers:  LostWorkers,

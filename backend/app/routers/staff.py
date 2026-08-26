@@ -274,6 +274,36 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Ваша оценка изменена — {before}% → {score}%", "Дата: {date} | После пересмотра результат дня изменился. Сейчас не принято задач: {rejected}."),
         "en": ("Your score was updated — {before}% → {score}%", "Date: {date} | The day's result changed after review. Currently not accepted: {rejected} task(s)."),
     },
+    # ── a day taken OUT of the results ───────────────────────────────────────
+    # Not a correction: the number does not move to something else, it stops
+    # existing. Both people who were told a score for this day are told it no
+    # longer counts, because a figure that quietly vanishes from an average is
+    # exactly the change neither of them could otherwise explain.
+    "leader_day_report_excluded": {
+        "uz": ("{leader}: kun hisobdan chiqarildi", "Sana: {date} | Bu kun ({score}%) endi natijalarga kirmaydi — na ortiqcha, na kamchilik. Sabab: {reason} | Kim: {by}"),
+        "uz_cyrl": ("{leader}: кун ҳисобдан чиқарилди", "Сана: {date} | Бу кун ({score}%) энди натижаларга кирмайди — на ортиқча, на камчилик. Сабаб: {reason} | Ким: {by}"),
+        "ru": ("{leader}: день исключён из результатов", "Дата: {date} | Этот день ({score}%) больше не входит в результаты — ни в плюс, ни в минус. Причина: {reason} | Кто: {by}"),
+        "en": ("{leader}: day excluded from results", "Date: {date} | This day ({score}%) no longer counts either way. Reason: {reason} | By: {by}"),
+    },
+    "leader_day_excluded": {
+        "uz": ("Kuningiz hisobdan chiqarildi", "Sana: {date} | Bu kun ({score}%) endi natijalaringizga kirmaydi — na ortiqcha, na kamchilik. Sabab: {reason} | Kim: {by}"),
+        "uz_cyrl": ("Кунингиз ҳисобдан чиқарилди", "Сана: {date} | Бу кун ({score}%) энди натижаларингизга кирмайди — на ортиқча, на камчилик. Сабаб: {reason} | Ким: {by}"),
+        "ru": ("Ваш день исключён из результатов", "Дата: {date} | Этот день ({score}%) больше не влияет на ваши результаты — ни в плюс, ни в минус. Причина: {reason} | Кто: {by}"),
+        "en": ("Your day was excluded from the results", "Date: {date} | This day ({score}%) no longer affects your results either way. Reason: {reason} | By: {by}"),
+    },
+    # Put back: the day counts again, at the score it always had.
+    "leader_day_report_restored": {
+        "uz": ("{leader}: kun yana hisobga olinadi", "Sana: {date} | Bu kun ({score}%) natijalarga qaytarildi. Kim: {by}"),
+        "uz_cyrl": ("{leader}: кун яна ҳисобга олинади", "Сана: {date} | Бу кун ({score}%) натижаларга қайтарилди. Ким: {by}"),
+        "ru": ("{leader}: день снова учитывается", "Дата: {date} | Этот день ({score}%) возвращён в результаты. Кто: {by}"),
+        "en": ("{leader}: day counts again", "Date: {date} | This day ({score}%) is back in the results. By: {by}"),
+    },
+    "leader_day_restored": {
+        "uz": ("Kuningiz yana hisobga olinadi", "Sana: {date} | Bu kun ({score}%) natijalaringizga qaytarildi. Kim: {by}"),
+        "uz_cyrl": ("Кунингиз яна ҳисобга олинади", "Сана: {date} | Бу кун ({score}%) натижаларингизга қайтарилди. Ким: {by}"),
+        "ru": ("Ваш день снова учитывается", "Дата: {date} | Этот день ({score}%) возвращён в ваши результаты. Кто: {by}"),
+        "en": ("Your day counts again", "Date: {date} | This day ({score}%) is back in your results. By: {by}"),
+    },
     # An admin ruled on the brigadir's objection to an automatic rejection.
     "leader_dispute_approved": {
         "uz": ("Norozilik qabul qilindi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa yana bajarilgan deb hisoblanadi."),
@@ -892,6 +922,106 @@ _NOTIF_TG_HTML = {
                "🔻 <b>Tasks:</b> {tasks}\n\n"
                "<blockquote>The reason for each task is in the report behind the button below. "
                "If you disagree, talk to your supervisor.</blockquote>"),
+    },
+    "leader_day_report_excluded": {
+        "uz": ("⊘ <b>Kun hisobdan chiqarildi</b>\n\n"
+               "👤 <b>Lider:</b> {leader}\n"
+               "📅 <b>Sana:</b> {date}\n"
+               "📊 <b>Kun bahosi edi:</b> {score}%\n"
+               "✍️ <b>Kim:</b> {by}\n\n"
+               "💬 <b>Sabab:</b> {reason}\n\n"
+               "<blockquote>Bu kun endi o'rtacha natijaga umuman kirmaydi — na ortiqcha, na kamchilik.</blockquote>"),
+        "uz_cyrl": ("⊘ <b>Кун ҳисобдан чиқарилди</b>\n\n"
+                    "👤 <b>Лидер:</b> {leader}\n"
+                    "📅 <b>Сана:</b> {date}\n"
+                    "📊 <b>Кун баҳоси эди:</b> {score}%\n"
+                    "✍️ <b>Ким:</b> {by}\n\n"
+                    "💬 <b>Сабаб:</b> {reason}\n\n"
+                    "<blockquote>Бу кун энди ўртача натижага умуман кирмайди — на ортиқча, на камчилик.</blockquote>"),
+        "ru": ("⊘ <b>День исключён из результатов</b>\n\n"
+               "👤 <b>Лидер:</b> {leader}\n"
+               "📅 <b>Дата:</b> {date}\n"
+               "📊 <b>Результат дня был:</b> {score}%\n"
+               "✍️ <b>Кто:</b> {by}\n\n"
+               "💬 <b>Причина:</b> {reason}\n\n"
+               "<blockquote>Этот день больше не входит в средний результат — ни в плюс, ни в минус.</blockquote>"),
+        "en": ("⊘ <b>Day excluded from the results</b>\n\n"
+               "👤 <b>Leader:</b> {leader}\n"
+               "📅 <b>Date:</b> {date}\n"
+               "📊 <b>The day scored:</b> {score}%\n"
+               "✍️ <b>By:</b> {by}\n\n"
+               "💬 <b>Reason:</b> {reason}\n\n"
+               "<blockquote>This day is now out of the average entirely — neither a plus nor a minus.</blockquote>"),
+    },
+    "leader_day_excluded": {
+        "uz": ("⊘ <b>Kuningiz hisobdan chiqarildi</b>\n\n"
+               "📅 <b>Sana:</b> {date}\n"
+               "📊 <b>Kun bahosi edi:</b> {score}%\n"
+               "✍️ <b>Kim:</b> {by}\n\n"
+               "💬 <b>Sabab:</b> {reason}\n\n"
+               "<blockquote>Bu kun natijalaringizga umuman ta'sir qilmaydi — na ortiqcha, na kamchilik. "
+               "Ballaringiz qolgan kunlar bo'yicha hisoblanadi.</blockquote>"),
+        "uz_cyrl": ("⊘ <b>Кунингиз ҳисобдан чиқарилди</b>\n\n"
+                    "📅 <b>Сана:</b> {date}\n"
+                    "📊 <b>Кун баҳоси эди:</b> {score}%\n"
+                    "✍️ <b>Ким:</b> {by}\n\n"
+                    "💬 <b>Сабаб:</b> {reason}\n\n"
+                    "<blockquote>Бу кун натижаларингизга умуман таъсир қилмайди — на ортиқча, на камчилик. "
+                    "Балларингиз қолган кунлар бўйича ҳисобланади.</blockquote>"),
+        "ru": ("⊘ <b>Ваш день исключён из результатов</b>\n\n"
+               "📅 <b>Дата:</b> {date}\n"
+               "📊 <b>Результат дня был:</b> {score}%\n"
+               "✍️ <b>Кто:</b> {by}\n\n"
+               "💬 <b>Причина:</b> {reason}\n\n"
+               "<blockquote>Этот день никак не влияет на ваши результаты — ни в плюс, ни в минус. "
+               "Средний балл считается по остальным дням.</blockquote>"),
+        "en": ("⊘ <b>Your day was excluded from the results</b>\n\n"
+               "📅 <b>Date:</b> {date}\n"
+               "📊 <b>The day scored:</b> {score}%\n"
+               "✍️ <b>By:</b> {by}\n\n"
+               "💬 <b>Reason:</b> {reason}\n\n"
+               "<blockquote>This day does not affect your results either way. "
+               "Your average is taken over the remaining days.</blockquote>"),
+    },
+    "leader_day_report_restored": {
+        "uz": ("↩️ <b>Kun yana hisobga olinadi</b>\n\n"
+               "👤 <b>Lider:</b> {leader}\n"
+               "📅 <b>Sana:</b> {date}\n"
+               "📊 <b>Kun bahosi:</b> {score}%\n"
+               "✍️ <b>Kim:</b> {by}"),
+        "uz_cyrl": ("↩️ <b>Кун яна ҳисобга олинади</b>\n\n"
+                    "👤 <b>Лидер:</b> {leader}\n"
+                    "📅 <b>Сана:</b> {date}\n"
+                    "📊 <b>Кун баҳоси:</b> {score}%\n"
+                    "✍️ <b>Ким:</b> {by}"),
+        "ru": ("↩️ <b>День снова учитывается</b>\n\n"
+               "👤 <b>Лидер:</b> {leader}\n"
+               "📅 <b>Дата:</b> {date}\n"
+               "📊 <b>Результат дня:</b> {score}%\n"
+               "✍️ <b>Кто:</b> {by}"),
+        "en": ("↩️ <b>Day counts again</b>\n\n"
+               "👤 <b>Leader:</b> {leader}\n"
+               "📅 <b>Date:</b> {date}\n"
+               "📊 <b>The day scores:</b> {score}%\n"
+               "✍️ <b>By:</b> {by}"),
+    },
+    "leader_day_restored": {
+        "uz": ("↩️ <b>Kuningiz yana hisobga olinadi</b>\n\n"
+               "📅 <b>Sana:</b> {date}\n"
+               "📊 <b>Kun bahosi:</b> {score}%\n"
+               "✍️ <b>Kim:</b> {by}"),
+        "uz_cyrl": ("↩️ <b>Кунингиз яна ҳисобга олинади</b>\n\n"
+                    "📅 <b>Сана:</b> {date}\n"
+                    "📊 <b>Кун баҳоси:</b> {score}%\n"
+                    "✍️ <b>Ким:</b> {by}"),
+        "ru": ("↩️ <b>Ваш день снова учитывается</b>\n\n"
+               "📅 <b>Дата:</b> {date}\n"
+               "📊 <b>Результат дня:</b> {score}%\n"
+               "✍️ <b>Кто:</b> {by}"),
+        "en": ("↩️ <b>Your day counts again</b>\n\n"
+               "📅 <b>Date:</b> {date}\n"
+               "📊 <b>The day scores:</b> {score}%\n"
+               "✍️ <b>By:</b> {by}"),
     },
     "leader_day_corrected": {
         "uz": ("🔄 <b>Bahoyingiz yangilandi — {score}%</b>\n\n"

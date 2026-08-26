@@ -62,7 +62,7 @@ from app.models import (
     Manager,
     RoleProfile,
 )
-from app.services import action_log, gemini, leader_bot
+from app.services import action_log, gemini, leader_bot, leader_exclusions
 from app.services.name_map import leader_match, relabel_supervisor, supervisor_match
 
 log = logging.getLogger(__name__)
@@ -959,6 +959,10 @@ def discover(db: Session) -> int:
         shifts = {m.id: m.shift for m in db.query(Manager).all()}
         rehearsing = leader_bot.bot_from_floors(db)
         picks = leader_bot.source_overrides(db)
+        # A day an admin took out of the results: its number counts nowhere, so
+        # a verdict on it is a Gemini call spent on a photo that can move
+        # nothing — the same reasoning as a rehearsal day.
+        dropped = leader_exclusions.profile_days(db)
         with_media = {r[0] for r in db.query(LeaderTaskMedia.entry_id).distinct().all()}
         entries = (
             db.query(LeaderTaskEntry)
@@ -978,6 +982,8 @@ def discover(db: Session) -> int:
             if leader_bot.training(shifts.get(d.manager_id), d.manager_id,
                                    d.date, rehearsing,
                                    leader_id=d.leader_id, overrides=picks):
+                continue
+            if leader_exclusions.excluded(db, d.leader_id, d.date, pairs=dropped):
                 continue
             db.add(LeaderAiReview(
                 ref=ref, source="bot", date=d.date, task_id=e.task_id,
@@ -1200,6 +1206,7 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         # never takes — and the figure would never come down.
         rehearsing = leader_bot.bot_from_floors(db)
         picks = leader_bot.source_overrides(db)
+        excluded_pairs = leader_exclusions.profile_days(db)
         entries = (
             db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id,
                      LeaderTaskEntry.task_id)
@@ -1219,6 +1226,12 @@ def undiscovered(db: Session, *, date_from: str | None = None,
             mgr, ldr, when = days.get(day_id, (None, None, None))
             if leader_bot.training(shifts.get(mgr), mgr, when, rehearsing,
                                    leader_id=ldr, overrides=picks):
+                continue
+            # Excluded days are not "unchecked work waiting" — counting them
+            # here would promise «N tekshirilmagan» rows that «Tekshirish» then
+            # refuses to take, which is the exact mismatch the rehearsal bound
+            # was added to avoid.
+            if leader_exclusions.excluded(db, ldr, when, pairs=excluded_pairs):
                 continue
             out.append((f"bot:{day_id}", shifts.get(mgr), mgr, ldr, task_id))
 
@@ -1303,6 +1316,12 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
                 leader_bot.bot_from_floors(db),
                 leader_id=day.leader_id,
                 overrides=leader_bot.source_overrides(db)):
+            return 0
+        # Excluded from the results by an admin: nothing this verdict could say
+        # can move a number, and the day sends no report. `force` — the admin's
+        # own «check now» — still opens it, the same carve-out the shift pause
+        # and the rehearsal window both keep.
+        if not force and leader_exclusions.excluded(db, day.leader_id, day.date):
             return 0
         entries = db.query(LeaderTaskEntry).filter_by(
             day_id=day.id, done=True).all()
@@ -1408,6 +1427,8 @@ def queue_task(db: Session, day: LeaderTaskDay, entry: LeaderTaskEntry, *,
             leader_bot.bot_from_floors(db),
             leader_id=day.leader_id, overrides=leader_bot.source_overrides(db)):
         return 0                       # rehearsal — see queue_report
+    if not force and leader_exclusions.excluded(db, day.leader_id, day.date):
+        return 0                       # out of the results — see queue_report
     if not db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).first():
         return 0
     ref = bot_ref(entry.id)

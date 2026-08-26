@@ -22,7 +22,8 @@ from app.permissions import page_allowed, require_page
 from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
-from app.services import action_log, leader_ai, leader_bot, leader_reports
+from app.services import (
+    action_log, leader_ai, leader_bot, leader_exclusions, leader_reports)
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -497,6 +498,10 @@ def get_leaders(
 
     meta = db.query(LeaderSyncMeta).filter_by(id=1).first()
     late = _late_map(db)
+    # Days an admin took out of the results entirely. Loaded here, once, and
+    # stamped per row: the client scores this feed, so a day it is not told
+    # about is a day it counts.
+    excl = leader_exclusions.load(db)
 
     sheet_data = []
     for r in rows:
@@ -527,6 +532,12 @@ def get_leaders(
             "late_by": req.decided_by_name if opened else None,
             "late_at": req.decided_at.isoformat() if opened and req.decided_at else None,
             "late_reason": req.reason if req else None,
+            # OUT of the results — not 0%, absent. Outranks `rejected`: an
+            # exclusion is a person's explicit answer about this exact day and
+            # the void is a rule about all of them, the same precedence
+            # `LeaderDaySource` has over `merges()`.
+            "excluded": leader_exclusions.wire(
+                excl.get(leader_exclusions.key(prof.get("id"), r.leader, r.date))),
             # The PERSON: a stable profile id plus their canonical profile
             # name, so every spelling of one leader groups as one person.
             "leader_id": prof.get("id"),
@@ -564,6 +575,8 @@ def get_leaders(
         for b in bot_rows:
             b["rejected"] = False
             b["late_state"] = None
+            b["excluded"] = leader_exclusions.wire(
+                excl.get(leader_exclusions.key(b.get("leader_id"), None, b["date"])))
 
     # A closed bot day REPLACES the sheet row for the same person and date —
     # the leader answered twice through two channels, and the bot is the live
@@ -1785,3 +1798,121 @@ def get_leader_photo(
     else:
         data, ctype = hit
     return Response(content=data, media_type=ctype)
+
+
+# ── taking a leader-day OUT of the results ───────────────────────────────────
+
+_EXCL_CAP = 400          # one press, one batch — a bulk bar, not a migration
+
+
+@router.post("/leaders/exclusions")
+def set_exclusions(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """Exclude leader-days from the results, or put them back.
+
+    **Admin-only, and deliberately not grantable** — no capability names it, so
+    `page.view.leaders` at "all" does not reach it either. It moves the score of
+    a leader AND of their brigadir, and it is the one control on the platform
+    that can make a bad night cost nobody anything; that authority is the same
+    one that opens a late day, and it is not delegated for the same reason.
+
+    The candidate rows come from `/api/leaders` — the register's own projection
+    — so the days an admin can exclude are exactly the days the page scores. A
+    second list built here would let the tab offer a day the register does not
+    have, or hide one it does.
+
+    `excluded: false` lifts. A reason is mandatory to exclude and pointless to
+    lift, because the reason answers "why does this day not count" and a day
+    that counts needs no answer.
+    """
+    if payload.get("role") != "admin":
+        raise HTTPException(403, "Faqat administrator")
+
+    items = body.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(400, "Kun tanlanmagan")
+    if len(items) > _EXCL_CAP:
+        raise HTTPException(400, f"Bir vaqtda {_EXCL_CAP} tadan ko'p kun bo'lmaydi")
+
+    on = bool(body.get("excluded", True))
+    reason = str(body.get("reason") or "").strip()
+    if on and not reason:
+        raise HTTPException(400, "Sabab majburiy")
+    notify = bool(body.get("notify", True))
+    who = payload.get("full_name") or "admin"
+
+    done, told, dropped = 0, 0, 0
+    seen: set[str] = set()
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        date = str(raw.get("date") or "")[:10]
+        if len(date) != 10 or date[4] != "-" or date[7] != "-":
+            continue
+        lid = raw.get("leader_id")
+        lid = int(lid) if str(lid or "").isdigit() else None
+        name = str(raw.get("leader") or "") or None
+        if not lid and not name:
+            continue                       # nothing to key the decision by
+        k = leader_exclusions.key(lid, name, date)
+        if k in seen:
+            continue                       # the same day sent twice in one batch
+        seen.add(k)
+        score = raw.get("score")
+        score = float(score) if isinstance(score, (int, float)) else None
+        mgr = raw.get("manager_id")
+        mgr = int(mgr) if str(mgr or "").isdigit() else None
+
+        if on:
+            row, created = leader_exclusions.exclude(
+                db, leader_id=lid, leader_name=name, date=date,
+                manager_id=mgr, reason=reason, score=score, actor=who)
+            if not created:
+                continue                   # already out; the reason was updated
+            # Whatever was queued before the decision would be spent on Gemini
+            # and then displayed on a day that counts nowhere.
+            dropped += leader_exclusions.drop_pending_reviews(db, lid, date)
+        else:
+            row = leader_exclusions.lift(db, leader_id=lid, leader_name=name,
+                                         date=date)
+            if row is None:
+                continue                   # already counting
+            score = score if score is not None else row.score_at
+            mgr = mgr if mgr is not None else row.manager_id
+        done += 1
+        db.commit()
+
+        if notify:
+            try:
+                told += leader_reports.notify_excluded(
+                    db, leader_id=lid, leader_name=name, manager_id=mgr,
+                    date=date, score=score, reason=reason, actor=who,
+                    restored=not on)
+                db.commit()
+            except Exception:
+                # A DM failure must never roll back the decision: the exclusion
+                # is what the register reads, and re-pressing the button would
+                # find the day already excluded and tell nobody at all.
+                logger.exception("leader-exclusion: could not notify %s on %s",
+                                 lid or name, date)
+                db.rollback()
+
+    # A bulk decision has no single target, so the row identifies the BATCH and
+    # counts what it did. Names are deliberately absent: the batch can be 400
+    # leader-days and the register rides in every db-dump, where anything
+    # unbounded belongs as a count (the log's own rule).
+    action_log.enrich(
+        target_kind="day", target_name=f"{done} leader-day(s)",
+        reason=reason or None,
+        details=[("action", "excluded" if on else "restored"),
+                 ("days", done), ("requested", len(seen)),
+                 ("notified", told), ("reviews_dropped", dropped)],
+    )
+    logger.info("leader-exclusion: %s %s leader-day(s) by %s — %s notified, "
+                "%s queued review(s) dropped",
+                "excluded" if on else "restored", done, who, told, dropped)
+    return {"ok": True, "changed": done, "notified": told,
+            "reviewsDropped": dropped}

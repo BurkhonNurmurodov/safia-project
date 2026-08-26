@@ -1139,6 +1139,88 @@ leaves two honest submissions and only a person can say which is the record.
   rehearsal day, an unmerged shift-1 day). The cell says «Hisobga olinmaydi»
   rather than naming a Form row that does not exist.
 
+## Days that count NEITHER way (`/admin/upload?tab=ltexclude`)
+
+From **2026-08-27** a leader-day can be taken OUT of the results entirely —
+`LeaderDayExclusion`, the «Hisobdan chiqarilgan kunlar» admin destination
+(`pages/admin/LeaderDayExclusions.jsx`). Not green, not red: the day leaves the
+numerator AND the denominator, for the leader and for their brigadir at once.
+
+Every other "does not count" on this platform is one of two other things, and
+neither can express this. The filing-window void scores the day **0** and leaves
+it occupying its slot — arithmetically identical to holding it against the
+leader. `LeaderDaySource` and `bot_from` switch which LAYER supplies the number.
+So when the platform itself was at fault — the shift-2 per-task auto-close that
+closed and AI-failed whole checklists before their windows opened — an operator
+had no way to make the night cost nobody anything.
+
+- **`services/leader_exclusions.py` is THE definition** — `key`, `load`,
+  `profile_days`, `excluded`, `row_for`, `wire`, `exclude`, `lift`,
+  `drop_pending_reviews`. Nothing is written onto a score, so lifting an
+  exclusion restores the day everywhere at once with no migration and no
+  re-sync, exactly as a window edit re-derives its verdicts for free.
+- **The key is the leader-DAY**, keyed as `LeaderLateRequest` is (`p<id>` when
+  the sheet name resolved to a profile, else `n<folded name>`) — a deliberate
+  twin of `routers.leaders._late_key`. `leader_checklists` is wiped and reloaded
+  on every Refresh so a row-id key would not survive the next sync, and ~18% of
+  sheet names never resolve to a profile so a profile-only key could never reach
+  an unlinked leader's day.
+- **The denominator is what makes it real, and it is PER PERSON.** `slotsBy` in
+  `Leaders.jsx` returns `{days, off}` and `scoreSlots` scores over
+  `winDays - off.size`. All five readings move together — standings, the
+  headline average, Barqarorlik, the trend line (a per-DAY roster) and the
+  rolling sparkline (`x` slides with the window) — plus `taskStats`, whose
+  `owed` loses the excluded pairs through its own suffix array. The file's
+  invariant is that one rule scores the whole page; a second denominator here is
+  how the trend dips on a day the ranking says cost nobody anything.
+- **A unit-day survives on the leaders who filed it.** `off` is computed as
+  "this key had an excluded row on that date and NO surviving slot", never as
+  "the row said excluded" — one leader of a unit excluded leaves the unit's day
+  standing on its other leaders, and only a unit-day excluded in full leaves the
+  unit's window.
+- **A person whose whole window is excluded leaves the ranking**, rather than
+  ranking 0% — 0 is the one answer that is certainly wrong, since it is exactly
+  the "counts against them" the exclusion removes. Same state as somebody with
+  no rows in the period.
+- **It outranks the filing-window void** wherever both land on one day (an
+  exclusion is a person's answer about that exact day, the void is a rule about
+  all of them — `LeaderDaySource`'s precedence). The day then shows ONE chip,
+  its own: no verify chip, no late flag, grey score badge, blank heatmap cell.
+- **Visible, never hidden.** A day silently removed cannot be told from one that
+  was never collected, so the row stays in the register with «Hisobga
+  olinmaydi» + the reason, and the day report carries a banner. The `reason` is
+  mandatory to exclude and travels with the flag everywhere it is shown.
+- **Nothing is deleted.** Photos, entries, verdicts, the day report and both
+  collection layers are untouched; only whether the number enters an average
+  changes. Lifting puts the day back at the score it always had.
+- **The AI stops looking and no score DM goes out.** All four queue doors
+  (`discover`, `undiscovered`, `queue_report`, `queue_task`) refuse an excluded
+  day — with `force=True`, the admin's own «check now», as the one carve-out,
+  the same shape the shift pause and the rehearsal window keep — and
+  `drop_pending_reviews` takes back what was queued before the decision
+  (never-judged rows only: `reviewed_at IS NULL AND resolution IS NULL`).
+  `leader_reports` PARKS the report so the key leaves the sweep's candidate set;
+  lifting the exclusion lifts the park and the report goes out as a FIRST one.
+- **The people already told a score are told it stopped counting** —
+  `leader_reports.notify_excluded`, leader + brigadir, once, at the decision.
+  Only where a DM actually went out (`LeaderDayReport.sends > 0`, a PARKED row
+  is not a send): a day nobody was messaged about needs no correction. A DM
+  failure never rolls back the decision — re-pressing would find the day already
+  excluded and tell nobody at all.
+- **Admin-only and NOT grantable.** No `capKey` on the `ADMIN_NAV` entry, so
+  `capTabs.includes(capKey ?? id)` can never admit a grantee — the
+  `permissions` / `logs` / `ltdaily` model. `POST /api/leaders/exclusions`
+  checks `role == "admin"` itself, because the endpoint is reachable without the
+  UI. Batches cap at 400.
+- **The tab has no register of its own** — its rows come from `/api/leaders`,
+  the same feed the dashboard scores, so the days it can exclude are exactly the
+  days the page counts. The SELECTION is the scope (the `Factories` /
+  `ShiftTimes` model): filters narrow to the night, then the operator ticks the
+  rows — an incident hits a whole unit, but the two leaders who filed properly
+  are what an operator needs to be able to leave alone.
+
+Related memory: `leader-day-exclusions`.
+
 ## The action register (`/admin/upload?tab=logs`)
 
 From **2026-08-23** every change on the platform lands in ONE append-only table,

@@ -78,6 +78,8 @@ const T_ALL = {
     undone: "Qaror bekor qilindi",
     sent: "Norozilik yuborildi", decided: "Qaror saqlandi",
     voided: "Kun vaqtida yuborilmagan",
+    excluded: "Bu kun natijalarga kirmaydi",
+    excludedNote: "Administrator bu kunni hisobdan chiqargan — u o'rtacha natijaga na ortiqcha, na kamchilik bo'lib qo'shiladi. Quyidagi baho faqat kun nimaga teng bo'lganini ko'rsatadi.",
     voidedNote: "Bu kun belgilangan vaqtdan tashqarida yuborilgani uchun 0% bilan hisoblanadi. Quyidagi baho faqat dalil tekshiruvini ko'rsatadi.",
     notAuto: "Bu kun avtomatik tekshiruvga kirmaydi",
     notAutoNote: "Avtomatik tekshiruv {date} dan boshlab va faqat 1-smena uchun ishlaydi. Bu yerdagi belgilar faqat ma'lumot uchun.",
@@ -123,6 +125,8 @@ const T_ALL = {
     undone: "Қарор бекор қилинди",
     sent: "Норозилик юборилди", decided: "Қарор сақланди",
     voided: "Кун вақтида юборилмаган",
+    excluded: "Бу кун натижаларга кирмайди",
+    excludedNote: "Администратор бу кунни ҳисобдан чиқарган — у ўртача натижага на ортиқча, на камчилик бўлиб қўшилади. Қуйидаги баҳо фақат кун нимага тенг бўлганини кўрсатади.",
     voidedNote: "Бу кун белгиланган вақтдан ташқарида юборилгани учун 0% билан ҳисобланади. Қуйидаги баҳо фақат далил текширувини кўрсатади.",
     notAuto: "Бу кун автоматик текширувга кирмайди",
     notAutoNote: "Автоматик текширув {date} дан бошлаб ва фақат 1-смена учун ишлайди. Бу ердаги белгилар фақат маълумот учун.",
@@ -168,6 +172,8 @@ const T_ALL = {
     undone: "Решение отменено",
     sent: "Возражение отправлено", decided: "Решение сохранено",
     voided: "День сдан вне окна",
+    excluded: "Этот день не входит в результаты",
+    excludedNote: "Администратор исключил этот день — он не влияет на средний результат ни в плюс, ни в минус. Оценка ниже показывает только то, чего день стоил.",
     voidedNote: "Этот день считается как 0%, потому что отчёт сдан вне установленного окна. Оценка ниже показывает только результат проверки фото.",
     notAuto: "Этот день не входит в автоматическую проверку",
     notAutoNote: "Автоматическая проверка работает с {date} и только для 1-й смены. Отметки здесь — справочные.",
@@ -213,6 +219,8 @@ const T_ALL = {
     undone: "The ruling was undone",
     sent: "Objection sent", decided: "Decision saved",
     voided: "Filed outside the window",
+    excluded: "This day is out of the results",
+    excludedNote: "An admin excluded this day — it counts neither for nor against the average. The score below only says what the day was worth.",
     voidedNote: "This day counts as 0% because the checklist was filed outside its window. The score below reflects the photo check only.",
     notAuto: "This day is not in automatic verification",
     notAutoNote: "Automatic verification runs from {date} and for shift 1 only. The marks here are informational.",
@@ -573,7 +581,10 @@ export default function LeaderDayReport() {
   const c = data.counts;
   const moved = data.score !== data.rawScore;
   const running = c.pending > 0;
-  const tone = data.voided ? "var(--text-4)" : scoreColor(data.score);
+  // Grey once the day is out of the results, exactly as the register greys
+  // its badge: the number is still what the day was worth, but it is no
+  // longer a verdict on anybody, and the traffic light is for verdicts.
+  const tone = data.voided || data.excluded ? "var(--text-4)" : scoreColor(data.score);
 
   return (
     <Layout title={T.title}>
@@ -640,6 +651,16 @@ export default function LeaderDayReport() {
               style={{ background: hexA(C_MID, 0.1), color: "var(--text-2)" }}>
               <strong>{T.checking}.</strong>{" "}
               {fill(T.chkNote, { done: c.checked, total: c.total })}
+            </p>
+          )}
+          {data.excluded && (
+            <p className="text-[11px] leading-snug mt-2.5 rounded-lg px-2.5 py-2"
+              style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
+              <strong>{T.excluded}.</strong> {T.excludedNote}
+              {data.excluded.reason ? <> <span style={{ color: "var(--text-3)" }}>
+                «{data.excluded.reason}»</span></> : null}
+              {data.excluded.by ? <> <span style={{ color: "var(--text-4)" }}>
+                — {data.excluded.by}</span></> : null}
             </p>
           )}
           {data.voided && (

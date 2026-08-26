@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
-  ShieldCheck, Hourglass, Layers, X, FileText,
+  ShieldCheck, Hourglass, Layers, X, FileText, CircleSlash,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -102,6 +102,9 @@ const TXT = {
     save: "Saqlash", cancel: "Bekor qilish",
     winLabel: "Hisob oynasi", daysSent: "Yuborilgan", daysMissed: "O'tkazib yuborilgan",
     hmTitle: "Kunlar kalendari", hmNoSync: "Ma'lumot hali kelmagan",
+    hmExcluded: "Hisobga olinmaydi",
+    exclChip: "Hisobga olinmaydi",
+    exclTitle: "Bu kun natijalarga kirmaydi — na ortiqcha, na kamchilik",
     tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun", shiftAbbr: "smena",
@@ -268,6 +271,9 @@ const TXT = {
     save: "Сақлаш", cancel: "Бекор қилиш",
     winLabel: "Ҳисоб ойнаси", daysSent: "Юборилган", daysMissed: "Ўтказиб юборилган",
     hmTitle: "Кунлар календари", hmNoSync: "Маълумот ҳали келмаган",
+    hmExcluded: "Ҳисобга олинмайди",
+    exclChip: "Ҳисобга олинмайди",
+    exclTitle: "Бу кун натижаларга кирмайди — на ортиқча, на камчилик",
     tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
     thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун", shiftAbbr: "смена",
@@ -434,6 +440,9 @@ const TXT = {
     save: "Сохранить", cancel: "Отмена",
     winLabel: "Окно расчёта", daysSent: "Сдано", daysMissed: "Пропущено",
     hmTitle: "Календарь дней", hmNoSync: "Данные ещё не поступили",
+    hmExcluded: "Не учитывается",
+    exclChip: "Не учитывается",
+    exclTitle: "Этот день не входит в результаты — ни в плюс, ни в минус",
     tableTitle: "Последние отчёты (сначала низкий балл)",
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
     thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.", shiftAbbr: "смена",
@@ -600,6 +609,9 @@ const TXT = {
     save: "Save", cancel: "Cancel",
     winLabel: "Scoring window", daysSent: "Filed", daysMissed: "Missed",
     hmTitle: "Day calendar", hmNoSync: "Not synced yet",
+    hmExcluded: "Not counted",
+    exclChip: "Not counted",
+    exclTitle: "This day is out of the results — neither a plus nor a minus",
     tableTitle: "Recent Submissions (Low Score First)",
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d", shiftAbbr: "shift",
@@ -881,14 +893,31 @@ const photoCount = (tk) => (typeof tk?.photos === "number" ? tk.photos : photoUr
 // beside the average that had already dropped because of it.
 const effDone = (tk) => tk.admin_done ?? (!!tk.done && !tk.ai_rejected);
 
-//   key → Map(date → { sum, n })
+//   key → { days: Map(date → { sum, n }), off: Set(date) }
+//
+// `off` is the second half of the rule and the only one that shrinks a
+// DENOMINATOR: days an admin took out of the results entirely. Everything else
+// that "does not count" here — a voided row, a day nobody filed — is a real 0%
+// occupying its slot, which is the whole difference. A day in `off` is neither
+// a filing nor a miss: it leaves the numerator AND the window it was measured
+// against, so the person's mean is taken over the days that remain.
+//
+// It is computed as "this key had an excluded row on that date and no surviving
+// slot for it", never as "the row said excluded" — for a UNIT key a day whose
+// other leaders filed normally still counts, on their rows, and only a unit-day
+// that is excluded in full leaves the unit's window.
 const slotsBy = (rows, keyFn) => {
   const map = new Map();
   for (const r of rows) {
     const key = keyFn(r);
     if (!key || key === "N/A") continue;
     let e = map.get(key);
-    if (!e) map.set(key, (e = new Map()));
+    if (!e) map.set(key, (e = { days: new Map(), off: new Set() }));
+    const d = rowDate(r);
+    // EXCLUDED outranks the window void below: an exclusion is a person's
+    // explicit answer about this exact day, the void is a rule about all of
+    // them — the same precedence the backend gives the two.
+    if (r.excluded) { e.off.add(d); continue; }
     // A row the backend voided on the shift-1 submission window is not a report.
     // The person is registered above BEFORE this bails, so they stay on the
     // roster — they keep their standings row, they keep counting in every
@@ -897,29 +926,51 @@ const slotsBy = (rows, keyFn) => {
     // twice on one day and hitting the window once still settles the day at the
     // valid row's score, because only the voided one drops out here.
     if (r.rejected) continue;
-    const d = rowDate(r);
-    const day = e.get(d) || { sum: 0, n: 0 };
+    const day = e.days.get(d) || { sum: 0, n: 0 };
     day.sum += r.completion; day.n++;
-    e.set(d, day);
+    e.days.set(d, day);
   }
+  // A date that ended up with a real slot is not off, whatever else was filed
+  // on it — see the header: one leader of a unit excluded does not take the
+  // unit's day away from the leaders who filed it.
+  for (const e of map.values())
+    for (const d of e.days.keys()) e.off.delete(d);
   return map;
 };
-// …scored over a fixed window: Reyting = Σ day means ÷ every day of it,
+// How many days of the window this person is actually measured over. Excluded
+// days come off the top, so a leader with three excluded days in a seven-day
+// period is scored over four — that is what "counts neither for nor against"
+// means arithmetically, and scoring them 0 over seven is precisely what it is
+// not. Never below 1: a window excluded in full has no mean to state, and
+// dividing by 0 would print NaN where the honest answer is "nothing to score".
+const winFor = (winDays, off) => Math.max(0, winDays - (off ? off.size : 0));
+// …scored over that window: Reyting = Σ day means ÷ every day of it,
 // Barqarorlik = how many of those days carry a report at all.
 const scoreSlots = (map, winDays) =>
-  [...map.entries()].map(([name, days]) => {
+  [...map.entries()].flatMap(([name, { days, off }]) => {
     let sum = 0;
     for (const day of days.values()) sum += day.sum / day.n;
-    const score = winDays ? sum / winDays : 0;
-    return {
+    const win = winFor(winDays, off);
+    // Every day of this person's window was excluded, so there is nothing to
+    // score them on — and 0% is the one answer that would be wrong, since it is
+    // exactly the "counts against them" an exclusion exists to remove. They
+    // leave the ranking, the calendar and the headline average, the same as
+    // somebody with no rows in the period at all. Guarded on `winDays` so a
+    // degenerate empty window (no period at all) still behaves as it always did.
+    if (winDays > 0 && win <= 0) return [];
+    const score = win ? sum / win : 0;
+    return [{
       name, score,
       rating: Math.round(score),
-      consist: winDays ? Math.round((days.size / winDays) * 100) : 0,
+      consist: win ? Math.round((days.size / win) * 100) : 0,
       sent: days.size,
-      missed: Math.max(0, winDays - days.size),
+      missed: Math.max(0, win - days.size),
+      // Days taken out of the results — shown as such on the calendar grid, so
+      // a blank cell is never read as a miss.
+      excluded: off,
       // Which days those were, for the calendar grid under the register.
       days: new Set(days.keys()),
-    };
+    }];
   });
 
 // Dense ranking on the (primary, sub-rating) PAIR — a place is shared only when
@@ -1063,7 +1114,11 @@ function LateChip({ days, T }) {
 const FLAG_TONE = { void: C_BAD, rejected: C_BAD, pending: "#eab308", approved: "#eab308" };
 function DayFlag({ row, T }) {
   const st = row?.late_state;
-  if (!st) return null;
+  // An excluded day shows ONLY its exclusion chip — the same rule the void chip
+  // already follows. Whether the report was late stopped mattering the moment
+  // the day left the results, and a second mark beside it reads as a day being
+  // held against somebody twice.
+  if (!st || row.excluded) return null;
   const color = FLAG_TONE[st];
   const [Icon, label, title] =
     st === "approved" ? [ShieldCheck, T.lateOkChip, T.lateOkTitle.replace("{by}", row.late_by || "—")]
@@ -1076,6 +1131,31 @@ function DayFlag({ row, T }) {
       className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold"
       style={{ background: hexA(color, 0.12), border: `1px solid ${hexA(color, 0.3)}`, color }}>
       <Icon size={10} />{label}
+    </span>
+  );
+}
+
+/* A day an admin took OUT of the results — neither a plus nor a minus.
+ *
+ * Deliberately its own chip and not a `late_state` tone: every state in
+ * `FLAG_TONE` says something went WRONG with the filing, and this one says the
+ * opposite — that whatever happened, the day is not being held against anyone.
+ * Grey for the same reason the score badge beside it goes grey: the traffic
+ * light is for verdicts, and this is the absence of one. Carries the reason in
+ * its tooltip, because a day that stopped counting with no stated why is the
+ * unexplainable change the whole feature exists to avoid.
+ */
+function ExclChip({ row, T }) {
+  const x = row?.excluded;
+  if (!x) return null;
+  const title = [T.exclTitle, x.reason && `— ${x.reason}`, x.by && `(${x.by})`]
+    .filter(Boolean).join(" ");
+  return (
+    <span
+      title={title}
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold"
+      style={{ background: hexA(C_FLAT, 0.12), border: `1px solid ${hexA(C_FLAT, 0.3)}`, color: C_FLAT }}>
+      <CircleSlash size={10} />{T.exclChip}
     </span>
   );
 }
@@ -1155,7 +1235,7 @@ function AiChip({ n, T }) {
  * a reason that outranks anything the photos say, and a second red mark beside
  * the void chip would read as two separate failures. */
 function VerifyChip({ row, T }) {
-  if (row.rejected) return null;
+  if (row.rejected || row.excluded) return null;
   const st = reportState(row);
   if (!st) return null;
   const { color, Icon, key, n } = st;
@@ -1625,6 +1705,12 @@ const HM_SENT   = "#22c55e";
 const HM_MISSED = "#ef4444";
 // The fleet's "pending" hatch, reused for a day the sheet has not reached yet.
 const HM_VOID = "repeating-linear-gradient(45deg, var(--bg-inner), var(--bg-inner) 5px, transparent 5px, transparent 10px)";
+// A day an admin took OUT of the results. Flat, quiet, and deliberately neither
+// of the two verdict colours: it is not a filing and it is not a miss, and the
+// grid's whole grammar is that green and red are the only two answers. Left
+// visible rather than blanked away, so a reader can see the day was collected
+// and ask why it does not count.
+const HM_EXCL = "var(--bg-inner)";
 const HM_BORDER = "1px solid var(--border)";
 
 // Fleet header strip: brand-gold band, white uppercase micro-caps.
@@ -1636,7 +1722,7 @@ const HM_TH = {
   position: "sticky", top: 0,
 };
 
-function HmLegend({ T, hasVoid }) {
+function HmLegend({ T, hasVoid, hasExcl }) {
   const chip = (bg, label) => (
     <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-4)" }}>
       <span style={{ width: 11, height: 11, borderRadius: 3, background: bg, flexShrink: 0 }} />
@@ -1647,6 +1733,7 @@ function HmLegend({ T, hasVoid }) {
     <div className="flex items-center gap-3 flex-wrap">
       {chip(HM_SENT, T.daysSent)}
       {chip(HM_MISSED, T.daysMissed)}
+      {hasExcl && chip(HM_EXCL, T.hmExcluded)}
       {hasVoid && chip(HM_VOID, T.noData)}
     </div>
   );
@@ -1656,7 +1743,7 @@ function HmLegend({ T, hasVoid }) {
  * thousand cells, and without this boundary every unrelated re-render of the
  * page around the grid would walk all of them. */
 const HmRow = memo(function HmRow({
-  rowKey, name, place, days, dates, dataMax, cellW, labelW, padCount,
+  rowKey, name, place, days, excluded, dates, dataMax, cellW, labelW, padCount,
   sel, dim, selDate, hoverRow, hoverDate, onEnter, onLeave, onPick, T,
 }) {
   const live = !sel && !dim && selDate == null;   // hover only reads when nothing is isolated
@@ -1687,6 +1774,10 @@ const HmRow = memo(function HmRow({
 
       {dates.map((d) => {
         const stale = dataMax != null && d > dataMax;
+        // Checked BEFORE `sent`: an excluded day has no slot, so it would
+        // otherwise paint red — the exact "counts against them" this exists to
+        // stop.
+        const off = !!excluded && excluded.has(d);
         const sent = days.has(d);
         const grayed = dim || (selDate != null && d !== selDate);
         // Fleet cell feedback: the cell under the pointer lifts, its row and
@@ -1698,14 +1789,14 @@ const HmRow = memo(function HmRow({
             onMouseEnter={() => onEnter(rowKey, d)}
             onMouseLeave={onLeave}
             onClick={(ev) => { ev.stopPropagation(); onPick("date", d); }}
-            title={`${name} · ${ddmm(d)} — ${stale ? T.hmNoSync : sent ? T.daysSent : T.daysMissed}`}
+            title={`${name} · ${ddmm(d)} — ${off ? T.hmExcluded : stale ? T.hmNoSync : sent ? T.daysSent : T.daysMissed}`}
             style={{
               width: cellW, minWidth: cellW, height: HM_ROW_H, padding: 0,
-              background: stale ? HM_VOID : sent ? HM_SENT : HM_MISSED,
+              background: off ? HM_EXCL : stale ? HM_VOID : sent ? HM_SENT : HM_MISSED,
               border: HM_BORDER, cursor: "pointer", position: "relative",
               opacity: grayed ? 0.18 : 1,
-              filter: stale || grayed ? "none" : cellHov ? "brightness(1.25)" : soft ? "brightness(1.12)" : "none",
-              transform: !stale && !grayed && cellHov ? "scale(1.06)" : "none",
+              filter: stale || off || grayed ? "none" : cellHov ? "brightness(1.25)" : soft ? "brightness(1.12)" : "none",
+              transform: !stale && !off && !grayed && cellHov ? "scale(1.06)" : "none",
               boxShadow: !stale && !grayed && cellHov ? "0 4px 12px rgba(0,0,0,.25)" : "none",
               zIndex: cellHov ? 3 : "auto",
               transition: "filter .08s, transform .07s, box-shadow .07s, opacity .1s",
@@ -1802,6 +1893,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
             const rowSel = selection?.type === "row";
             return (
               <HmRow key={e.name} rowKey={e.name} name={nm(e.name)} place={e.place} days={e.days}
+                excluded={e.excluded}
                 dates={dates} dataMax={dataMax} cellW={cellW} labelW={labelW} padCount={padCount}
                 sel={rowSel && selection.value === e.name}
                 dim={rowSel && selection.value !== e.name}
@@ -2310,6 +2402,11 @@ export default function Leaders() {
     const leaders = new Set();
     const onForm = new Set();                            // every question id the sheet carries
     const filedPerDay = new Array(winDays).fill(0);      // (leader, day) slots that exist
+    // …and the (leader, day) pairs nobody owed an answer for, because an admin
+    // took the day out of the results. Counted once per pair, not per row: a
+    // leader who filed twice on an excluded day still owes exactly one day less.
+    const offPerDay = new Array(winDays).fill(0);
+    const offSeen = new Set();
     const slots = new Map();                             // "leader|date" → { i, tasks }
     for (const r of filtered) {
       const L = r.leader;
@@ -2318,6 +2415,14 @@ export default function Leaders() {
       const i = spanDays(from, d) - 1;
       if (i < 0 || i >= winDays) continue;
       leaders.add(L);
+      // EXCLUDED: this pair is not owed at all. It leaves the denominator
+      // instead of counting as undone — the standings rule, in the currency
+      // this block happens to count in.
+      if (r.excluded) {
+        const ok = `${L}|${d}`;
+        if (!offSeen.has(ok)) { offSeen.add(ok); offPerDay[i]++; }
+        continue;
+      }
       // Voided by the submission window: no slot, so every question counts this
       // day as owed-and-undone — the same thing a day with no report at all
       // means here. The leader stays in `leaders`, so the denominator is intact.
@@ -2339,6 +2444,10 @@ export default function Leaders() {
     // into "days missed from day i" without walking the calendar per question.
     const suffix = new Array(winDays + 1).fill(0);
     for (let i = winDays - 1; i >= 0; i--) suffix[i] = suffix[i + 1] + filedPerDay[i];
+    // The same suffix over the excluded pairs, so they come off `owed` the way
+    // filed ones come off `missed`.
+    const offSuffix = new Array(winDays + 1).fill(0);
+    for (let i = winDays - 1; i >= 0; i--) offSuffix[i] = offSuffix[i + 1] + offPerDay[i];
 
     const acc = new Map();                               // question id → { done, asked, first }
     for (const s of slots.values())
@@ -2353,7 +2462,8 @@ export default function Leaders() {
     return [...onForm].sort((a, b) => a - b).map((id) => {
       const t = acc.get(id);
       if (!t) return { id, asked: 0, rate: null };       // on the form, answered by nobody
-      const missed = Math.max(0, nL * (winDays - t.first) - suffix[t.first]);
+      const missed = Math.max(
+        0, nL * (winDays - t.first) - suffix[t.first] - offSuffix[t.first]);
       const owed = t.asked + missed;
       return { id, asked: t.asked, rate: owed ? Math.round((t.done / owed) * 100) : null };
     });
@@ -2380,13 +2490,21 @@ export default function Leaders() {
     const roster = perLeader.size;
     if (!roster) return empty;
     const dayScore = new Map();                          // date → Σ of that day's leader scores
+    // …over a roster that SHRINKS on the days somebody was excluded. The line
+    // divides by everyone expected to file, and a leader whose day was taken
+    // out of the results was not expected to file it — leaving them in the
+    // denominator would dip the line on exactly the day the ranking says cost
+    // nobody anything, and the two are meant to be one rule.
+    const dayOff = new Map();                            // date → people excluded on it
     let dMin = null, dMax = null;
-    for (const filedDays of perLeader.values())
+    for (const { days: filedDays, off } of perLeader.values()) {
       for (const [d, v] of filedDays) {
         dayScore.set(d, (dayScore.get(d) || 0) + v.sum / v.n);
         if (dMin == null || d < dMin) dMin = d;
         if (dMax == null || d > dMax) dMax = d;
       }
+      for (const d of off) dayOff.set(d, (dayOff.get(d) || 0) + 1);
+    }
     const from = trendFrom || dMin;
     let to = endDate || dMax;
     if (dataMax && to > dataMax) to = dataMax;
@@ -2398,9 +2516,13 @@ export default function Leaders() {
     for (const d of days) {
       const key = mode === "day" ? d : mode === "week" ? weekStartISO(d) : d.slice(0, 7);
       (buckets[key] ||= { sum: 0, n: 0 });
-      buckets[key].sum += (dayScore.get(d) || 0) / roster; buckets[key].n++;
+      // A day everybody was excluded on has no one left to average: it is
+      // dropped from the bucket rather than drawn as 0.
+      const due = roster - (dayOff.get(d) || 0);
+      if (due <= 0) continue;
+      buckets[key].sum += (dayScore.get(d) || 0) / due; buckets[key].n++;
     }
-    const keys = Object.keys(buckets).sort();
+    const keys = Object.keys(buckets).sort().filter((k) => buckets[k].n > 0);
     const label = (k) => (mode === "month" ? `${k.slice(5, 7)}.${k.slice(0, 4)}` : ddmm(k));
     return {
       trendCats: keys.map(label),
@@ -2522,22 +2644,31 @@ export default function Leaders() {
       const head = rollDays.length - sparkDays.length;
       // One pass, sliding: each day adds itself and drops the day that fell out
       // of the trailing window, so re-ranking N days costs N sorts, not N².
-      const acc = new Map(allNames.map((n) => [n, { sum: 0, n: 0 }]));
+      // `x` rides the same sliding window as the score: how many of this
+      // person's trailing days are excluded, so their rolling denominator is
+      // the window minus those — the standings rule, day by day. Re-deriving it
+      // per day would cost N² and would be a second answer to one question.
+      const acc = new Map(allNames.map((n) => [n, { sum: 0, n: 0, x: 0 }]));
       rollDays.forEach((d, i) => {
         const gone = i >= winDays ? rollDays[i - winDays] : null;
         for (const name of allNames) {
-          const days = byPerson.get(name);
-          if (!days) continue;
+          const p = byPerson.get(name);
+          if (!p) continue;
           const a = acc.get(name);
-          const came = days.get(d);
+          const came = p.days.get(d);
           if (came) { a.sum += came.sum / came.n; a.n++; }
-          const left = gone && days.get(gone);
+          if (p.off.has(d)) a.x++;
+          const left = gone && p.days.get(gone);
           if (left) { a.sum -= left.sum / left.n; a.n--; }
+          if (gone && p.off.has(gone)) a.x--;
         }
         if (i < head) return;
         const scored = allNames.map((name) => {
           const a = acc.get(name);
-          return { name, rating: Math.round(a.sum / winDays), consist: Math.round((a.n / winDays) * 100) };
+          const win = Math.max(0, winDays - a.x);
+          return { name,
+                   rating: win ? Math.round(a.sum / win) : 0,
+                   consist: win ? Math.round((a.n / win) * 100) : 0 };
         });
         for (const e of rankPlaces(scored, standMetric))
           series.get(e.name).push(100 - ((e.place - 1) / top) * 100);
@@ -3316,7 +3447,9 @@ export default function Leaders() {
         <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={CalendarDays} title={T.hmTitle}
             subtitle={`${ddmm(standings.winFrom)} – ${ddmm(standings.winTo)} · ${standings.winDays} ${T.dayAbbr}`}
-            right={<HmLegend T={T} hasVoid={dataMax != null && heatDates[heatDates.length - 1] > dataMax} />} />
+            right={<HmLegend T={T}
+              hasVoid={dataMax != null && heatDates[heatDates.length - 1] > dataMax}
+              hasExcl={heatRows.some((e) => e.excluded?.size)} />} />
           <DayGrid rows={heatPageRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm}
             nameHead={effStandMode === "leader" ? T.thLeader : T.supervisor} />
         </div>
@@ -3467,6 +3600,7 @@ export default function Leaders() {
                               findable without opening all of them. From the
                               row's own counts — the same scoped source as the
                               verify chip beside it — for every viewer. */}
+                          <ExclChip row={r} T={T} />
                           <VerifyChip row={r} T={T} />
                           {aiOn && <AiChip n={r.ai?.open} T={T} />}
                         </span>
@@ -3478,12 +3612,13 @@ export default function Leaders() {
                         {supName(r.supervisor) ? nm(r.supervisor) : "—"}
                       </td>
                       <td className="px-3 py-2 text-center">
-                        {/* Grey, not traffic-light, once the window voided the row:
-                            the sheet's own figure still shows, but it no longer
-                            says anything about the day's score. */}
-                        <span title={r.rejected ? T.voidTitle : undefined}
+                        {/* Grey, not traffic-light, once the window voided the row
+                            or an admin excluded the day: the sheet's own figure
+                            still shows, but it no longer says anything about
+                            anybody's score. */}
+                        <span title={r.excluded ? T.exclTitle : r.rejected ? T.voidTitle : undefined}
                           className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums"
-                          style={{ background: r.rejected ? C_FLAT : scoreColor(r.completion) }}>
+                          style={{ background: r.excluded || r.rejected ? C_FLAT : scoreColor(r.completion) }}>
                           {Math.round(r.completion)}%
                         </span>
                       </td>
@@ -3507,11 +3642,12 @@ export default function Leaders() {
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
                       {nm(r.leader)}
+                      {" "}<ExclChip row={r} T={T} />
                       {" "}<VerifyChip row={r} T={T} />
                       {aiOn && r.ai?.open ? <> <AiChip n={r.ai.open} T={T} /></> : null}
                     </span>
                     <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0"
-                      style={{ background: r.rejected ? C_FLAT : scoreColor(r.completion) }}>
+                      style={{ background: r.excluded || r.rejected ? C_FLAT : scoreColor(r.completion) }}>
                       {Math.round(r.completion)}%
                     </span>
                   </div>

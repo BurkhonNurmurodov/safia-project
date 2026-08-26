@@ -27,7 +27,7 @@ from app.models import (
     LeaderTaskDef, LeaderTaskEntry, LeaderTaskLeaderSetting, LeaderTaskSetting,
     Manager, RoleProfile,
 )
-from app.services import action_log, leader_ai, leader_bot
+from app.services import action_log, leader_ai, leader_bot, leader_exclusions
 
 log = logging.getLogger(__name__)
 
@@ -206,6 +206,12 @@ def day_report(db: Session, uid: str) -> dict | None:
         # has nothing to do with the photos, and the page has to say so or the
         # verified score below reads as a contradiction of the register.
         "voided": bool(row.get("rejected")),
+        # Taken OUT of the results by an admin — not 0%, absent. The score below
+        # is still rendered (it is what the day was worth), but the page has to
+        # say it counts for nobody, or the person reading their own report has
+        # no way to tell it from a day that scored against them.
+        "excluded": leader_exclusions.wire(leader_exclusions.row_for(
+            db, row.get("leader_id"), row.get("leader"), row["date"])),
         "lateState": row.get("late_state"),
         "lateBy": row.get("late_by"),
         "lateReason": row.get("late_reason"),
@@ -463,6 +469,19 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
         _park(db, key, uid, "voided by the filing window")
         return False
 
+    # EXCLUDED from the results by an admin. There is no number to report: the
+    # day counts neither for nor against anyone, so a «natija» DM would be the
+    # one message that puts a score on a day the register shows as blank. The
+    # people already told a score for it are told it stopped counting instead —
+    # `notify_excluded`, sent once at the moment of the decision.
+    #
+    # A park, not a skip: the key must leave the sweep's candidate set or every
+    # excluded day sorts ahead of newer ones forever. Lifting the exclusion
+    # lifts the park, and the report then goes out as a FIRST one.
+    if leader_exclusions.excluded(db, row.get("leader_id"), date):
+        _park(db, key, uid, "excluded from the results")
+        return False
+
     if not key:
         return False
 
@@ -583,3 +602,65 @@ def resend_if_changed(db: Session, uid: str) -> bool:
     except Exception:
         log.exception("leader-ai: correction report failed for %s", uid)
         return False
+
+
+# ── a day taken out of the results ───────────────────────────────────────────
+
+def notify_excluded(db: Session, *, leader_id: int | None, leader_name: str | None,
+                    manager_id: int | None, date: str, score: float | None,
+                    reason: str, actor: str | None, restored: bool = False) -> int:
+    """Tell the people who were told a score that this day stopped counting.
+
+    Sent once, at the moment of the decision — not by the sweep, which reports
+    VERDICTS and has nothing to say about a day that has left the results.
+
+    **Only where a score actually went out.** The ledger is the record of that:
+    a day nobody was ever DMed about needs no correction, and messaging it would
+    be the platform announcing a change to a number the reader never saw. A
+    PARKED row (`sends == 0`) is a placeholder, not a send — the same test
+    `send_report` makes when it decides between a first report and a correction.
+
+    Both audiences, exactly as the report itself has two: the unit's brigadir,
+    whose unit mean just lost a day, and the leader, whose own mean did. Neither
+    can work out on their own why an average moved with nothing else changing.
+
+    Returns how many people were notified — 0 is an ordinary outcome and the
+    caller says so rather than treating it as a failure.
+    """
+    from app.routers.staff import notify_profile
+    from app.identity import profile_key
+
+    if not leader_id or not date:
+        return 0
+    led = (db.query(LeaderDayReport)
+           .filter(LeaderDayReport.leader_id == int(leader_id),
+                   LeaderDayReport.date == str(date)[:10])
+           .order_by(LeaderDayReport.id.desc()).first())
+    if led is None or (led.sends or 0) == 0:
+        return 0
+
+    params = {
+        "date": str(date)[:10],
+        "leader": leader_name or "—",
+        # What the day was worth before it left the results. `score_sent` is the
+        # number these two people were actually shown, which is the one they
+        # will be looking for — not a figure re-derived now.
+        "score": (round(float(score)) if score is not None
+                  else int(led.score_sent or 0)),
+        "reason": (reason or "—").strip() or "—",
+        "by": actor or "—",
+    }
+    sent = 0
+    if manager_id:
+        notify_profile(db, profile_key("supervisor", int(manager_id)),
+                       "leader_day_report_restored" if restored
+                       else "leader_day_report_excluded",
+                       params, type="info")
+        sent += 1
+    prof = db.query(RoleProfile).filter_by(id=int(leader_id)).first()
+    if prof is not None:
+        notify_profile(db, profile_key("leader", prof.id),
+                       "leader_day_restored" if restored else "leader_day_excluded",
+                       params, type="info")
+        sent += 1
+    return sent

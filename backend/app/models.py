@@ -2795,3 +2795,60 @@ class LeaderDaySource(Base):
     source = Column(String(8), nullable=False)                       # "bot" | "sheet"
     set_by = Column(String(160), nullable=True)
     set_at = Column(DateTime, nullable=True)
+
+
+class LeaderDayExclusion(Base):
+    """ONE leader-day taken OUT of the results — neither a plus nor a minus.
+
+    Every other "this day does not count" on the platform is really one of two
+    other things: it scores the day 0 while the day still occupies a slot in the
+    denominator (the filing-window void), or it switches WHICH layer supplies
+    the number (`LeaderDaySource`, `bot_from`). Neither can express the thing an
+    operator actually needs when the platform itself was at fault — a day that
+    is not green, not red, and simply absent from the average, so nobody is
+    rewarded or punished for a night the system got wrong.
+
+    That is this. An excluded day leaves the numerator AND the denominator: the
+    leader's mean is taken over the days that remain, their consistency counts
+    neither a filing nor a miss, and the brigadir's unit mean loses that
+    leader's contribution to it. Removing it from the denominator is the whole
+    point — scoring it 0 was always possible and is exactly what makes an
+    incident night cost the leader their month.
+
+    Keyed by leader-day the way `LeaderLateRequest` is, through
+    `leader_exclusions.key()`: the profile id when the sheet name resolved to a
+    person, else the folded raw name. `leader_checklists` is wiped and reloaded
+    on every sheet refresh and ~18% of its names never resolve to a profile, so
+    a key built from a row id would not survive the next Refresh and a key built
+    from the profile alone could never reach an unlinked leader's day.
+
+    The `reason` is mandatory at the endpoint, not here: a score that changed
+    with no button behind it is precisely the change an operator later cannot
+    explain, and this one is visible to the leader it belongs to.
+
+    Lifting an exclusion DELETES the row — "counts again" is the absence of a
+    record, never a third state every reader would have to spell out.
+    """
+    __tablename__ = "leader_day_exclusions"
+    __table_args__ = (
+        UniqueConstraint("leader_key", "date", name="uq_leader_day_exclusion"),
+        Index("ix_leader_day_excl_date", "date"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # `leader_exclusions.key()` — "p<profile_id>" or "n<folded name>"
+    leader_key = Column(String(200), nullable=False, index=True)
+    date = Column(String(10), nullable=False, index=True)            # "YYYY-MM-DD"
+    # Snapshotted so the register can name who was excluded even after a rename
+    # or a profile deletion — the log's rule: a rename must not rewrite what the
+    # record says happened.
+    leader_profile_id = Column(Integer, nullable=True, index=True)
+    leader_name = Column(String(160), nullable=True)
+    manager_id = Column(Integer, nullable=True, index=True)          # the unit at the time
+    reason = Column(Text, nullable=False)
+    # What the day was worth when it was excluded, so the register can say what
+    # was taken out of the average without re-deriving a score the sheet may no
+    # longer hold.
+    score_at = Column(Float, nullable=True)
+    set_by = Column(String(160), nullable=True)
+    set_at = Column(DateTime, nullable=True)
