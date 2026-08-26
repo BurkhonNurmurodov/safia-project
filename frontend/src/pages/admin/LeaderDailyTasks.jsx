@@ -96,12 +96,19 @@ function CountedCell({ row, both, bot, onPick }) {
   const { t } = useLang();
   if (!row.counted) return <span style={{ color: "var(--text-4)" }}>—</span>;
   const isBot = row.counted === "bot";
-  // Only reachable on the bot tab: a sheet row that counts as "sheet" IS the
-  // record, whether or not a bot twin exists.
+  // On the BOT tab every closed day can be ruled on, whether or not a Form row
+  // exists under it: choosing «Bot» only ever ADDS a finished, scored day the
+  // rule was hiding. On the FORM tab the control appears only where a bot twin
+  // exists — a sheet row with no twin IS the record already, and neither option
+  // would change anything.
+  const canPick = bot || both;
+  // Only reachable on the bot tab: a sheet row counting as "sheet" is the
+  // record, twin or no twin. Here it means the day counts NOWHERE, and this
+  // chip is the way to fix that — so it is a button like the others.
   if (bot && !isBot && !both) {
     return (
       <Chip color="#94a3b8" icon={Minus} label={t("admin.ltd.notCounted")}
-        title={t("admin.ltd.notCountedHint")} />
+        title={t("admin.ltd.notCountedHint")} onClick={() => onPick(row)} />
     );
   }
   const label = t(isBot ? "admin.ltd.srcBot" : "admin.ltd.srcForm");
@@ -114,7 +121,7 @@ function CountedCell({ row, both, bot, onPick }) {
         label={label}
         title={both ? t("admin.ltd.bothHint")
           : (chosen ? undefined : t("admin.ltd.autoRule"))}
-        onClick={both ? () => onPick(row) : undefined}
+        onClick={canPick ? () => onPick(row) : undefined}
       />
       {/* A dot, not a second chip: it says only that a PERSON decided this
           rather than the rule, and names them on hover. The answer itself is
@@ -133,7 +140,7 @@ function CountedCell({ row, both, bot, onPick }) {
 
 /** The choice itself. Both options are always offered, plus the way back to the
  *  rule — a setting you can only ever set is a setting you cannot correct. */
-function SourcePicker({ row, onClose, onSaved }) {
+function SourcePicker({ row, bot, onClose, onSaved }) {
   const { t } = useLang();
   const save = useMutation({
     mutationFn: (source) =>
@@ -141,9 +148,20 @@ function SourcePicker({ row, onClose, onSaved }) {
         { leader_id: row.leader_id, date: row.date, source }).then((r) => r.data),
     onSuccess: (d) => onSaved(d),
   });
+  // Which side actually has a submission behind it. The bot tab knows both
+  // facts (`has_sheet` on the row, and the row itself IS the bot day); the form
+  // tab is only ever opened where a bot twin exists.
+  const hasSheet = bot ? !!row.has_sheet : true;
+  const hasBot = bot ? true : !!row.has_bot;
+  // What is in force RIGHT NOW. A bot day the rule resolves to «sheet» with no
+  // sheet row under it is in force nowhere — marking «Forma» active there would
+  // point at the one option that is also disabled, which reads as a bug.
+  const current = hasSheet ? row.counted : null;
   const opts = [
-    { v: "bot", Icon: Bot, label: t("admin.ltd.srcBot") },
-    { v: "sheet", Icon: FileSpreadsheet, label: t("admin.ltd.srcForm") },
+    { v: "bot", Icon: Bot, label: t("admin.ltd.srcBot"), ok: hasBot,
+      why: t("admin.ltd.noBot") },
+    { v: "sheet", Icon: FileSpreadsheet, label: t("admin.ltd.srcForm"), ok: hasSheet,
+      why: t("admin.ltd.noSheet") },
   ];
   return (
     <Modal
@@ -155,31 +173,53 @@ function SourcePicker({ row, onClose, onSaved }) {
       zIndex={60}
       footer={<Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>}
     >
-      <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
-        {t("admin.ltd.chooseBody")}
-      </p>
+      {/* The "you answered twice" explanation belongs only to the case it
+          describes. A day with one submission is a different question — the
+          note under the options answers that one. */}
+      {hasSheet && hasBot && (
+        <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
+          {t("admin.ltd.chooseBody")}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-2">
-        {opts.map(({ v, Icon, label }) => {
-          const on = row.counted === v;
+        {opts.map(({ v, Icon, label, ok, why }) => {
+          const on = current === v;
           return (
             <button
               key={v}
               type="button"
-              disabled={save.isPending}
+              // An option with no submission behind it is refused by the
+              // endpoint anyway; disabling it here means the reason is on the
+              // button rather than in an error the operator has to provoke.
+              disabled={save.isPending || !ok}
+              title={ok ? undefined : why}
               onClick={() => save.mutate(v)}
-              className="rounded-xl px-3 py-3 flex flex-col items-center gap-1.5 transition-colors"
+              className="rounded-xl px-3 py-3 flex flex-col items-center gap-1 transition-colors"
               style={{
                 background: on ? "rgba(200,151,63,0.12)" : "var(--bg-inner)",
                 border: `1px solid ${on ? "var(--brand)" : "var(--border)"}`,
                 color: on ? "var(--brand)" : "var(--text-2)",
+                opacity: ok ? 1 : 0.45,
+                cursor: ok ? "pointer" : "not-allowed",
               }}
             >
               <Icon size={18} />
               <span className="text-xs font-semibold">{label}</span>
+              {!ok && (
+                <span className="text-[10px] leading-tight text-center"
+                  style={{ color: "var(--text-4)" }}>{why}</span>
+              )}
             </button>
           );
         })}
       </div>
+      {/* Why one side is greyed out, and — because a per-day ruling repeated
+          every shift is the wrong tool — where the durable switch lives. */}
+      {!hasSheet && (
+        <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+          {t("admin.ltd.noSheetHint")} {t("admin.ltd.unitHint")}
+        </p>
+      )}
       <div className="pt-1">
         <Button variant="ghost" size="sm" loading={save.isPending}
           onClick={() => save.mutate(null)}>
@@ -678,6 +718,7 @@ export default function LeaderDailyTasks() {
       {pick && (
         <SourcePicker
           row={pick}
+          bot={bot}
           onClose={() => setPick(null)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["leader-fillout"] });

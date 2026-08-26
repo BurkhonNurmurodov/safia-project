@@ -1597,12 +1597,22 @@ def set_day_source(
     """Pick the submission that COUNTS for one leader-day, or hand the day back
     to the rule.
 
-    Only for a pair that genuinely holds BOTH, and that bound is the whole
-    safety of the feature: shift 2 files only in the bot, so forcing one of its
-    days to «sheet» when no sheet row exists would delete the day from every
-    surface at once — the register, the score, the report and the AI queue —
-    without deleting anything. Refused here rather than guarded in the UI,
-    because the endpoint is reachable without it.
+    **The bound is ASYMMETRIC, because the two directions carry opposite risk**,
+    and it is enforced here rather than guarded in the UI — the endpoint is
+    reachable without it.
+
+      * «bot» needs only the closed bot day. Choosing it can add a day to the
+        register that the rule was hiding (a shift-1 unit outside the camera
+        pilot, a day below a unit's rehearsal floor) and can never take one
+        away: the sheet row it displaces, where there is one, is displaced
+        exactly as an ordinary merge displaces it. Requiring a sheet twin here
+        was the first cut of this rule and it was wrong — it refused the one
+        thing an admin looking at a finished, scored, unshown bot day actually
+        wants to do.
+      * «sheet» needs BOTH. Shift 2 files only in the bot, so forcing one of its
+        days to the sheet when no sheet row exists would delete the day from
+        every surface at once — register, score, report, AI queue — without
+        deleting anything.
 
     Clearing DELETES the row: "no opinion" is the absence of a record, not a
     third value every reader would have to spell out.
@@ -1623,19 +1633,20 @@ def set_day_source(
     old = row.source if row else None
 
     if src is not None:
-        # BOTH sides must exist, checked through the same `_pair_state` the two
-        # registers are drawn from — a choice offered by one computation and
-        # validated by another is a choice that can be offered and refused.
-        counted, _, sheet_pairs, _by = _pair_state(db)
+        # Checked through the same `_pair_state` the two registers are drawn
+        # from — a choice offered by one computation and validated by another is
+        # a choice that can be offered and then refused.
+        counted, _, sheet_pairs, _by = _pair_state(db, want_sheet=(src == "sheet"))
         key = (body.leader_id, date)
         if key not in counted:
             raise HTTPException(
                 status_code=409,
-                detail="This day has no closed bot submission — nothing to choose between")
-        if key not in sheet_pairs:
+                detail="This day has no closed bot submission — nothing to choose")
+        if src == "sheet" and key not in sheet_pairs:
             raise HTTPException(
                 status_code=409,
-                detail="This day has no fill-out submission — nothing to choose between")
+                detail="This day has no fill-out submission — choosing it would "
+                       "leave the day counted nowhere")
 
     if src is None:
         if row is not None:
