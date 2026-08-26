@@ -99,19 +99,15 @@ const CELL_COLS = [
   { key: "status",      labelKey: "arc.colStatus",      icon: CircleDot,     sortKey: "status" },
   { key: "due",         labelKey: "arc.colDue",         icon: Timer,         sortKey: "due" },
   { key: "started",     labelKey: "arc.colStarted",     icon: PlayCircle,    sortKey: "started_at" },
-  // Closed AND how long it took, in one cell: the two facts are one sentence
-  // («closed on the 14th, after 3.9 h»), and on a register read for lateness
-  // the duration is what the closing stamp is FOR. It sorts by the stamp.
-  { key: "closed_h",    labelKey: "arc.colClosed",      icon: CheckCircle2,  sortKey: "closed_at" },
+  // Closed and how long it took stand as TWO columns, as they do on the
+  // register: they are one sentence to read but two facts to compare, and a
+  // merged cell can be sorted by only one of them — on a register read for
+  // lateness, the duration is the half the reader ranks by.
+  { key: "closed",      labelKey: "arc.colClosed",      icon: CheckCircle2,  sortKey: "closed_at" },
+  { key: "hours",       labelKey: "arc.colHours",       icon: Hourglass,     sortKey: "hours_to_close", align: "right" },
   { key: "source",      labelKey: "arc.colSource",      icon: Bot,           align: "center" },
 ];
 
-// Screen column → the export's own columns. The table merges «closed» and how
-// long it took into one cell because they read as one sentence; a SPREADSHEET
-// must not, because a merged text cell can be neither sorted nor number-
-// formatted, which is most of what a spreadsheet is for. So the file carries
-// the two facts as the two columns the backend already knows how to write.
-const EXPORT_SPLIT = { closed_h: ["closed", "hours"] };
 const labelKeyOf = (key) =>
   (CELL_COLS.find((c) => c.key === key) || COLS.find((c) => c.key === key))?.labelKey;
 
@@ -910,20 +906,6 @@ export default function Arc() {
         return <td key={key} className="px-3 py-2 whitespace-nowrap">{ownerCell(r, "sup")}</td>;
       case "leader":
         return <td key={key} className="px-3 py-2 whitespace-nowrap">{ownerCell(r, "leader")}</td>;
-      // Closed + how long it took, one sentence. The duration is muted: it
-      // qualifies the stamp rather than competing with it, and an open ticket
-      // shows the bare «—» with no trailing figure to misread as zero hours.
-      case "closed_h":
-        return (
-          <td key={key} className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
-            <span className="tabular-nums">{fmtDT(r.closed_at, lang) || "—"}</span>
-            {r.closed_at && r.hours_to_close != null && (
-              <span className="tabular-nums text-[11px]" style={{ color: "var(--text-4)" }}>
-                {" · "}{tpl(t("arc.hoursShort"), { n: fmtHours(r.hours_to_close) })}
-              </span>
-            )}
-          </td>
-        );
       case "num":
         return <td key={key} className="px-3 py-2 font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{r.request_num ?? "—"}</td>;
       case "created":
@@ -1049,14 +1031,16 @@ export default function Arc() {
                 </span>
               </Fact>
               {tab === "cells" ? (
-                <Fact label={t("arc.colClosed")}>
-                  <span className="tabular-nums">{fmtDT(r.closed_at, lang) || "—"}</span>
-                  {r.closed_at && r.hours_to_close != null && (
-                    <span className="tabular-nums" style={{ color: "var(--text-4)" }}>
-                      {" · "}{tpl(t("arc.hoursShort"), { n: fmtHours(r.hours_to_close) })}
-                    </span>
-                  )}
-                </Fact>
+                <>
+                  <Fact label={t("arc.colClosed")}>
+                    <span className="tabular-nums">{fmtDT(r.closed_at, lang) || "—"}</span>
+                  </Fact>
+                  {/* Its own fact, as on the table. An open ticket shows the
+                      bare «—» rather than a figure that would read as zero. */}
+                  <Fact label={t("arc.colHours")}>
+                    <span className="tabular-nums">{r.closed_at ? fmtHours(r.hours_to_close) : "—"}</span>
+                  </Fact>
+                </>
               ) : (
                 <Fact label={t("arc.colCreated")}><span className="tabular-nums">{fmtDT(r.created_at, lang) || "—"}</span></Fact>
               )}
@@ -1143,7 +1127,7 @@ export default function Arc() {
   // which columns ride in it and what the file is called.
   const runExport = async () => {
     setExporting(true);
-    const exportKeys = visibleCols.flatMap((c) => EXPORT_SPLIT[c.key] || [c.key]);
+    const exportKeys = visibleCols.map((c) => c.key);
     try {
       const via = await exportXlsx("/api/arc/export.xlsx", {
         body: {
