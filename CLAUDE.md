@@ -1346,6 +1346,28 @@ back on the first walk.
   «API» panel, `/probe` and `/spec` are all GONE: every documented parameter
   NARROWS the answer, so the bare walk is already the widest one the key can
   perform. Sending no filters is the deliberate choice, not an oversight.
+- **IT's own TEST categories are not in this register.**
+  `services/arc_hidden.py` is THE definition, in the two spellings that must
+  stay one rule: `is_hidden(name)` for a name in memory and `hidden_clause()`
+  as the SQL. Two categories exist today — «test apc fabric» (84) and
+  «child  test apc fabric» (85, the child of the first, two spaces), 17 of the
+  32,487 tickets on 2026-08-26 — and the match is by NAME, not by those ids: an
+  id is IT's to change and a third test category is theirs to add. The name is
+  stripped to its letters and digits and must then be NOTHING BUT marker words
+  («Test», «Тест АРС Фабрика») or carry the test token with an ARC or Фабрика
+  one straight after it («child  test apc fabric»). Never widen it to a bare
+  «тест» substring — several divisions here are named after **тесто** (dough).
+  Two doors: `arc_sync` refuses to write such a ticket (so it is never stored
+  and its card never spends one of the bounded per-pass fetches — and a rule
+  later withdrawn refills itself on the next full walk), and
+  `_apply_filters` drops it in SQL, which is what hides the rows an earlier
+  pass already wrote, with no migration. That clause sits in the SHARED filter
+  set, so the table, the facet lists, the KPI strip, the charts and the export
+  all read it once — and it is not a narrowing the reader chose, so nothing
+  lifts it, `include_missing` included; the single-ticket door checks it too,
+  because a remote id is typeable. `missing_since` deliberately skips them: it
+  means «the API stopped returning it», never «we stopped storing it».
+
 - **The list is thin; the description is on the CARD.** `/arc/factory/requests`
   carries the ticket, author, division, category and brigade — but not the
   description, deny reason, files or status timeline. Those are one call per

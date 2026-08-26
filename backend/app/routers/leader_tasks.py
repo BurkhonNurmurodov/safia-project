@@ -35,7 +35,8 @@ from app.permissions import page_allowed, require_page
 from app.security import require_auth
 from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
-from app.services import action_log, leader_ai, leader_bot, leader_close
+from app.services import (
+    action_log, leader_ai, leader_bot, leader_close, leader_reports)
 from app.services.leader_tasks import (
     CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_leader_config, effective_settings, ensure_task_defs,
@@ -1673,6 +1674,170 @@ def set_day_source(
     return {"leader_id": body.leader_id, "date": date, "source": src}
 
 
+# ── Admin: ONE day, finished or not ──────────────────────────────────────────
+# The register above says a day is unfinished and what it is waiting for; this
+# says WHAT IS IN IT. Until now an open day had no detail anywhere on the
+# platform — `build_report_row` serves closed days only, by the rule that an
+# open day is a leader mid-checklist and not a submission — so the proofs a
+# leader had already uploaded were, for an unfinished day, visible to nobody.
+#
+# A CLOSED day is still served by `leader_reports.day_report`, verbatim: this
+# endpoint delegates rather than re-deriving, so the admin, the leader and the
+# brigadir go on reading ONE answer. What is added on top is per-task state the
+# report has no reason to carry — whether the task is locked, when it was
+# submitted, and the camera roll of a task that never produced an entry.
+
+def _roll_wire(p: LeaderTaskPhoto) -> dict:
+    """One camera-roll shot, as the admin modal shows it. Deliberately the same
+    facts `leader_proof._photo_wire` gives the leader's own page — the stamp
+    burnt into the image, whether it was captured outside the window, whether it
+    arrived from the offline queue — because a reviewer and a filer looking at
+    one photo must not be told different things about it."""
+    return {
+        "id": p.id, "slot": p.slot,
+        "capturedAt": p.captured_at.isoformat() if p.captured_at else None,
+        "stamp": p.stamp, "late": bool(p.late), "deferred": bool(p.deferred),
+    }
+
+
+@router.get("/admin/leader-tasks/day/{day_id}")
+def admin_day_detail(day_id: int, db: Session = Depends(get_db),
+                     _: dict = Depends(verify_admin)):
+    day = db.query(LeaderTaskDay).filter_by(id=day_id).first()
+    if day is None:
+        raise HTTPException(status_code=404, detail="No such day")
+
+    prof = db.query(RoleProfile).filter_by(id=day.leader_id).first()
+    mgr = db.query(Manager).filter_by(id=day.manager_id).first()
+    shift = mgr.shift if mgr else None
+    entries = {e.task_id: e for e in db.query(LeaderTaskEntry)
+               .filter_by(day_id=day.id).all()}
+    media = leader_bot.media_of(db, [e.id for e in entries.values()])
+    roll: dict[int, list] = {}
+    for p in (db.query(LeaderTaskPhoto).filter_by(day_id=day.id)
+              .order_by(LeaderTaskPhoto.task_id, LeaderTaskPhoto.slot).all()):
+        roll.setdefault(p.task_id, []).append(p)
+    revs = {}
+    if entries:
+        refs = {leader_ai.bot_ref(e.id): e.task_id for e in entries.values()}
+        revs = {refs[r.ref]: r for r in db.query(LeaderAiReview)
+                .filter(LeaderAiReview.ref.in_(refs.keys())).all() if r.ref in refs}
+
+    # Per-task state every branch needs: it is the SAME question on a finished
+    # day and an unfinished one, so it is answered once, above the split.
+    per_task = day.manager_id in per_task_units(db)
+
+    def _state(task_id: int) -> dict:
+        e = entries.get(task_id)
+        return {
+            "state": leader_close.task_state(
+                e, revs.get(task_id), bool(media.get(e.id)) if e else False, day),
+            "locked": leader_close.locked(e, day),
+            "closedAt": e.closed_at.isoformat() if e is not None and e.closed_at else None,
+            "roll": [_roll_wire(p) for p in roll.get(task_id, [])],
+        }
+
+    if day.closed_at is not None:
+        row = leader_reports.day_report(db, leader_bot.day_uid(day.id))
+        if row is None:
+            raise HTTPException(status_code=404, detail="No such report")
+        for tk in row.get("tasks") or []:
+            tk.update(_state(int(tk.get("id") or 0)))
+        row["open"] = False
+        row["perTask"] = per_task
+        return row
+
+    # ── the unfinished day ───────────────────────────────────────────────────
+    # Built from the CONFIG, not from the entries, so a task the leader has not
+    # reached yet is listed as unanswered instead of being absent — "which
+    # tasks have nothing on them" is most of what this view is for.
+    # Verdict shaping is the AI router's — imported here rather than re-spelled,
+    # so an open day's verdict card and a closed one's come out identical.
+    from app.routers.leader_ai import (
+        _as_verdict, _date_check, _task_cfg, _time_check, _window)
+
+    cfg = effective_leader_config(db, prof, shift) if prof is not None else {}
+    defs = {td.id: td for td in db.query(LeaderTaskDef).all()}
+    names = leader_reports._name_chain(db, day.manager_id, day.leader_id, defs)
+    win_cfg = _task_cfg(db, list(revs.values())) if revs else None
+
+    tasks = []
+    for tid in sorted(t for t, c in cfg.items() if c.get("enabled")):
+        e = entries.get(tid)
+        rev = revs.get(tid)
+        tasks.append({
+            "id": tid,
+            "name": names.get(tid) or {l: f"#{tid}" for l in leader_ai.LANGS},
+            "weight": (cfg.get(tid) or {}).get("weight") or 0,
+            "minMedia": int((cfg.get(tid) or {}).get("min_media") or 0),
+            "proofKind": (cfg.get(tid) or {}).get("proof_kind"),
+            "answered": e is not None,
+            "done": bool(e.done) if e is not None else False,
+            "reason": (e.reason if e is not None else "") or "",
+            "media": media.get(e.id, []) if e is not None else [],
+            "photo": "",
+            "review": _as_verdict(rev, _window(win_cfg, rev), _date_check(win_cfg, rev),
+                                  _time_check(win_cfg, rev)) if rev is not None else None,
+            "queued": bool(rev is not None and rev.status == "pending"),
+            "ai_rejected": False,
+            "dispute": None,
+            **_state(tid),
+        })
+
+    answered = sum(1 for t in tasks if t["answered"])
+    closed_n = sum(1 for t in tasks if t["closedAt"])
+    return {
+        "uid": leader_bot.day_uid(day.id),
+        "open": True,
+        "perTask": per_task,
+        "date": day.date,
+        "shift": shift,
+        "source": "bot",
+        "submittedAt": None,
+        "leader": prof.name if prof else f"#{day.leader_id}",
+        "leaderId": day.leader_id,
+        "supervisor": mgr.name if mgr else "N/A",
+        "managerId": day.manager_id,
+        "voided": False,
+        "lateState": None,
+        # An unfinished day has NO score, and must not print one: `completion`
+        # is written when the day closes, and a running total shown as the
+        # result is a number the leader can still move.
+        "score": None,
+        "rawScore": None,
+        "progress": {
+            "enabled": len(tasks),
+            "answered": answered,
+            "closed": closed_n,
+            # Shots sitting on the server for a task with NO answer — a camera
+            # roll short of its minimum. This is the number that separates
+            # "they never filed" from "they filed and we are holding it".
+            "pendingMedia": sum(len(t["roll"]) for t in tasks if not t["answered"]),
+            "expired": str(day.date) <= expired_through(shift),
+        },
+        "counts": {"total": len(tasks), "checked": 0, "rejected": 0,
+                   "errors": 0, "pending": sum(1 for t in tasks if t["queued"])},
+        "tasks": tasks,
+    }
+
+
+@router.get("/admin/leader-tasks/roll-photo/{photo_id}")
+def admin_roll_photo(photo_id: int, db: Session = Depends(get_db),
+                     _: dict = Depends(verify_admin)):
+    """One camera-roll shot, for the admin day detail.
+
+    A door of its own rather than a widening of `/api/leader-proof/photo/{id}`,
+    which answers only for a photo belonging to a leader profile the CALLER
+    holds and says in its own docstring that it must never widen into anything
+    else. These shots hang off no entry — the task is still short of
+    `min_media` — so the register's media proxy cannot reach them either.
+    """
+    row = db.query(LeaderTaskPhoto).filter_by(id=photo_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return _stream_tg_file(row.file_id)
+
+
 # ── Admin: taking ONE submitted task back ────────────────────────────────────
 # The bot already offers this on its locked-task screen; this is the same core
 # reached from the panel, for an admin at a desk rather than in the chat. It is
@@ -1729,6 +1894,37 @@ def reopen_submitted_task(
     return {**lifted, "emptied": emptied}
 
 
+def _stream_tg_file(file_id: str) -> StreamingResponse:
+    """Pipe one archive-channel file back to the browser.
+
+    THE streamer, shared by the two doors that serve a proof photo — the
+    register's media proxy and the admin roll reader below. They differ only in
+    WHO may ask; how the bytes travel is one answer, and duplicating it is how
+    one of them ends up without the no-store header or the close-on-finish.
+    """
+    meta = _tg_file_meta(file_id)
+    url = f"{_TG_API}/file/bot{settings.telegram_bot_token}/{meta['file_path']}"
+    try:
+        upstream = requests.get(url, stream=True, timeout=60)
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Telegram unreachable: {e}")
+    if upstream.status_code != 200:
+        upstream.close()
+        raise HTTPException(status_code=404, detail="File no longer available")
+
+    def _chunks():
+        try:
+            yield from upstream.iter_content(chunk_size=64 * 1024)
+        finally:
+            upstream.close()
+
+    headers = {"Content-Disposition": f'inline; filename="{meta["file_name"]}"',
+               "Cache-Control": "no-store"}
+    if meta["file_size"]:
+        headers["Content-Length"] = str(meta["file_size"])
+    return StreamingResponse(_chunks(), media_type=meta["mime_type"], headers=headers)
+
+
 # ── Viewer: proof-photo streaming for the /leaders detail modal ───────────────
 # Was admin-only while bot data lived on its own admin page. Shift-2 rows now
 # merge into /api/leaders for every role, so the photos have to open with them —
@@ -1768,27 +1964,7 @@ def leader_task_media(
         # 404, not 403: whether a photo exists is itself somebody else's data.
         raise HTTPException(status_code=404, detail="Media not found")
 
-    meta = _tg_file_meta(m.file_id)
-    url = f"{_TG_API}/file/bot{settings.telegram_bot_token}/{meta['file_path']}"
-    try:
-        upstream = requests.get(url, stream=True, timeout=60)
-    except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Telegram unreachable: {e}")
-    if upstream.status_code != 200:
-        upstream.close()
-        raise HTTPException(status_code=404, detail="File no longer available")
-
-    def _chunks():
-        try:
-            yield from upstream.iter_content(chunk_size=64 * 1024)
-        finally:
-            upstream.close()
-
-    headers = {"Content-Disposition": f'inline; filename="{meta["file_name"]}"',
-               "Cache-Control": "no-store"}
-    if meta["file_size"]:
-        headers["Content-Length"] = str(meta["file_size"])
-    return StreamingResponse(_chunks(), media_type=meta["mime_type"], headers=headers)
+    return _stream_tg_file(m.file_id)
 
 
 # ── Viewer: the «Vazifalar» tab of /leaders ───────────────────────────────────

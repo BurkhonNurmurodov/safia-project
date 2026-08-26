@@ -109,6 +109,15 @@ export const BotPhoto = ({ id, T, className, uid, ...rest }) => (
       { params: uid ? { uid } : undefined, responseType: "blob" })} />
 );
 
+// A camera-roll shot that has NOT become an entry yet — a task still short of
+// its `min_media`. Admin-only, and the only door onto these: they hang off no
+// LeaderTaskEntry, so the register's media proxy cannot reach them, and the
+// leader's own /api/leader-proof/photo answers only for its own filer.
+export const RollPhoto = ({ id, T, className, ...rest }) => (
+  <ProxyPhoto T={T} className={className} deps={[id]} {...rest}
+    load={() => api.get(`/admin/leader-tasks/roll-photo/${id}`, { responseType: "blob" })} />
+);
+
 // An admin-uploaded EXAMPLE of a correct proof for one task, as shown on the
 // «Vazifalar» tab. Page-gated only (reference material, nobody's data), so no
 // uid: /api/leader-tasks/examples/{id}. Bytes are immutable per id, so the

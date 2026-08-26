@@ -14,15 +14,20 @@ never downloaded, and a mirror that predates the rule needs no migration. Two
 spellings of «is this a test category» is how the table and the KPI strip
 above it start counting different tickets.
 
-**The match is anchored and deliberately narrow.** The name is stripped to its
-letters and digits and must then consist of NOTHING BUT the marker words: a
-test token, optionally an ARC token, optionally a Фабрика token, optionally a
-trailing number. That is what keeps real work visible — «Тесто» (dough, which
-several divisions here are named after), «Теста», «Тест качества» all stay,
-while «Test ARC Fabrika», «ТЕСТ АРС ФАБРИКА», «Тест-АПС Фабрика 2» and a bare
-«Test» do not. A name that puts the words in some other order does not match:
-extend the pattern rather than loosening the anchors, because a rule that
-merely CONTAINS «тест» hides the dough shops.
+**Two live categories, and the rule is written for the shape they have.** IT
+files against «test apc fabric» (category 84) and «child  test apc fabric»
+(85, the child of the first — two spaces, and the reason the rule cannot be
+anchored to the start of the name): 17 tickets of the 32,487 the register held
+on 2026-08-26. Matching by NAME rather than by those two ids is deliberate —
+an id is IT's to change and a third test category is theirs to add, and either
+would put test tickets back on the page with nothing on screen saying so.
+
+**The match is deliberately narrow.** The name is stripped to its letters and
+digits, and then has to be either NOTHING BUT marker words or to carry the
+test token with an ARC or a Фабрика one straight after it. That is what keeps
+real work visible: «Тесто» (dough, which several divisions here are named
+after), «Теста» and «Тест качества» all stay. Widening this to a bare «тест»
+substring is what would hide the dough shops.
 
 A ticket IT filed with NO category is a real ticket and stays — see the
 ``coalesce`` in :func:`hidden_clause`.
@@ -51,11 +56,28 @@ _STRIP_SQL = r"[^0-9a-zа-яё]"
 _CYR_UPPER = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
 _CYR_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
 
-# The marker words, in both alphabets, anchored end to end.
-_MARKER = (r"^(?:test|тест)"
-           r"(?:arc|ars|ark|apc|арс|арк|апс)?"
-           r"(?:(?:fabrik|фабрик)[a-zа-яё]*|factory)?"
-           r"[0-9]*$")
+# The marker words, in both alphabets. IT writes the section as «apc» where
+# this platform writes «ARC», so both spellings are here; so are the Cyrillic
+# ones, which nothing in the register uses today.
+_TEST = r"(?:test|тест)"
+_ARC = r"(?:a(?:rc|rk|rs|pc|pk|ps)|а(?:рс|рк|пс|пк))"
+_FAB = r"(?:fabri[ck][a-zа-яё]*|фабрик[a-zа-яё]*|factory)"
+
+# Two shapes, and they answer two different questions.
+#
+# Anchored: the name is NOTHING BUT marker words — «Test», «Тест АРС Фабрика»,
+# «Test ARC Fabrika 2». A bare «Тест» is safely a test category only because
+# the anchors make it the whole name; «Тесто» and «Тест качества» are real.
+#
+# Contains: the PHRASE, anywhere in the name — which is what the two live
+# categories need, since IT named them «test apc fabric» (id 84) and
+# «child  test apc fabric» (id 85, two spaces, the child of the first). Here
+# the test token must be followed IMMEDIATELY by an ARC or a Фабрика one:
+# «testapc», «тестарс» and «testfabric» cannot occur inside a real category
+# name, while a bare «тест» substring occurs inside «тесто» — the dough
+# several divisions here are named after.
+_MARKER = (rf"(?:^{_TEST}{_ARC}?{_FAB}?[0-9]*$)"
+           rf"|(?:{_TEST}(?:{_ARC}{_FAB}?|{_FAB}))")
 _MARKER_PY = re.compile(_MARKER)
 
 
@@ -70,7 +92,11 @@ def is_hidden(category_name: Optional[str]) -> bool:
     so nothing downstream has to know it existed."""
     if not category_name:
         return False
-    return bool(_MARKER_PY.match(_norm(category_name)))
+    # `search`, not `match`: one of the two shapes is a phrase that may sit
+    # anywhere in the name (that is exactly what «child  test apc fabric» is),
+    # and the other carries its own anchors. Postgres's `~` searches too, so
+    # this is also what keeps the two spellings one rule.
+    return bool(_MARKER_PY.search(_norm(category_name)))
 
 
 def hidden_clause():
