@@ -16,7 +16,6 @@ import { useChartTheme } from "../../hooks/useChartTheme";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { cellName } from "../../utils/cellName";
 import { shortPerson } from "../../utils/personName";
-import { categoryColor, FOLD_COLOR } from "../../utils/chartPalette";
 import { C_DONE, C_DOING, C_OVERDUE, C_GREY, hexA } from "../../utils/arcStatus";
 
 // «Tahlil» — the ARC register read as charts. Same tickets, same filters, same
@@ -28,10 +27,10 @@ import { C_DONE, C_DOING, C_OVERDUE, C_GREY, hexA } from "../../utils/arcStatus"
 // (whose cells call, which cells are hotspots).
 //
 // Chart types are picked per question, the Quality page's way: a LINE for the
-// two flows over time (they compare, never stack), a DONUT for the category
-// mix (composition, centre = total), stacked traffic-light BARS for every
-// «who/where and how does it stand» ranking (green closed · yellow waiting ·
-// red overdue — the palette every page here already taught), and a bar with a
+// two flows over time (they compare, never stack), stacked traffic-light BARS
+// for every «what/who/where and how does it stand» ranking — categories,
+// divisions, IT brigades, units, cells (green closed · yellow waiting · red
+// overdue — the palette every page here already taught) — and a bar with a
 // goal marker for speed-vs-allowance, where «the bar crossed the line» IS the
 // verdict.
 
@@ -39,6 +38,10 @@ import { C_DONE, C_DOING, C_OVERDUE, C_GREY, hexA } from "../../utils/arcStatus"
 // status palette does not use; «closed» keeps the done-green the whole page
 // speaks.
 const C_CREATED = "#3b82f6";
+
+// Categories on screen — the backend's `_TOP` for every other ranked bar,
+// so the four ranked cards cut their tails at the same place.
+const TOP_CATS = 12;
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
@@ -91,7 +94,7 @@ function ChartCard({ icon: Icon, title, subtitle, right, height = 300, empty, em
 export default function ArcAnalysis({ view, filters, enabled }) {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
-  const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();
+  const { chartTheme, gridColor, labelColor, legendColor } = useChartTheme();
 
   // ── the trend's granularity: auto from the picked span, overridable ───────
   // No period = the whole mirror → months; a short window → days. «» = auto,
@@ -164,45 +167,19 @@ export default function ArcAnalysis({ view, filters, enabled }) {
       options={[["day", t("arc.anGranDay")], ["week", t("arc.anGranWeek")], ["month", t("arc.anGranMonth")]]} />
   );
 
-  // ── the category donut: top 8 + slate fold, centre = the filtered total ───
+  // ── the category ranking ─────────────────────────────────────────────────
+  // A donut until v3.50, and it was the wrong shape for this card twice over:
+  // a pie is fixed-height by construction, so beside a taller row-mate it left
+  // a column of dead space no data could ever fill, and at a phone's width its
+  // small slices collapsed into unlabelled slivers. Ranked bars grow with
+  // their own row count (the chart IS the card's height), name every category,
+  // and — being the page's one traffic-light grammar — answer the second
+  // question for free: not just which kind of request dominates, but how much
+  // of it is still open or already overdue.
   const cats = A?.categories || [];
   const catTotal = cats.reduce((s, c) => s + (c.total || 0), 0);
-  const topCats = cats.slice(0, 8);
-  const foldN = cats.slice(8).reduce((s, c) => s + (c.total || 0), 0);
-  const donutLabels = [...topCats.map((c) => c.name || "—"), ...(foldN ? [t("arc.anOther")] : [])];
-  const donutColors = [...topCats.map((_, i) => categoryColor(i)), ...(foldN ? [FOLD_COLOR] : [])];
-  const donutSeries = [...topCats.map((c) => c.total), ...(foldN ? [foldN] : [])];
-  const donutOpts = {
-    chart: { ...baseChart, type: "donut" },
-    theme: chartTheme,
-    labels: donutLabels,
-    colors: donutColors,
-    stroke: { width: 2, colors: [cardBg] },
-    dataLabels: {
-      enabled: true,
-      formatter: (v) => (v >= 6 ? `${Math.round(v)}%` : ""),
-      style: { fontSize: "10px", fontWeight: 700, colors: ["#fff"] },
-      dropShadow: { enabled: false },
-    },
-    plotOptions: {
-      pie: {
-        donut: {
-          size: "68%",
-          labels: {
-            show: true,
-            total: {
-              show: true, showAlways: true, label: t("arc.anTotal"), fontSize: "11px", color: labelColor,
-              formatter: () => catTotal.toLocaleString("ru-RU"),
-            },
-            value: { fontSize: "20px", fontWeight: 700, color: legendColor },
-            name: { fontSize: "11px", color: labelColor },
-          },
-        },
-      },
-    },
-    legend: { show: false },
-    tooltip: { theme: chartTheme.mode, y: { formatter: (v) => tpl(t("arc.count"), { n: v }) } },
-  };
+  const catRows = cats.slice(0, TOP_CATS);
+  const catLabels = catRows.map((c) => c.name || t("arc.anUnassigned"));
 
   // ── stacked traffic-light rankings (divisions · brigades · units · cells) ─
   // One options builder + one series builder, so «green closed · yellow
@@ -306,7 +283,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
           <div className="lg:col-span-2 rounded-2xl p-4" style={cardStyle}>
             <SkeletonBlock className="h-3 w-28 mb-4" /><SkeletonChart className="h-64" />
           </div>
@@ -314,7 +291,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
             <SkeletonBlock className="h-3 w-24 mb-4" /><SkeletonChart className="h-64" />
           </div>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           {[0, 1].map((i) => (
             <div key={i} className="rounded-2xl p-4" style={cardStyle}>
               <SkeletonBlock className="h-3 w-24 mb-4" /><SkeletonChart className="h-56" />
@@ -349,20 +326,13 @@ export default function ArcAnalysis({ view, filters, enabled }) {
     );
   }
 
-  const donutCard = (
+  const catsCard = (
     <ChartCard icon={Tag} title={t("arc.anCats")} subtitle={t("arc.anCatsSub")}
-      empty={cats.length === 0} emptyText={t("arc.noMatch")} ready={ready} height={286}>
-      <div className="px-3">
-        <ReactApexChart options={donutOpts} series={donutSeries} type="donut" height={210} />
-        <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center pb-2">
-          {topCats.slice(0, 6).map((c, i) => (
-            <span key={c.id ?? c.name} className="inline-flex items-center gap-1.5 text-[10px]" style={{ color: "var(--text-3)" }}>
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: categoryColor(i) }} />
-              {c.name || "—"} <span className="tabular-nums font-semibold" style={{ color: "var(--text-2)" }}>{c.total}</span>
-            </span>
-          ))}
-        </div>
-      </div>
+      empty={catRows.length === 0} emptyText={t("arc.noMatch")} ready={ready}
+      height={stackHeight(catRows.length)}
+      right={topOf(catRows.length, cats.length)}>
+      <ReactApexChart options={stackOpts(catLabels)} series={stackSeries(catRows)}
+        type="bar" height={stackHeight(catRows.length)} />
     </ChartCard>
   );
 
@@ -377,7 +347,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
   if (viewKey === "cells") {
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
           <div className="lg:col-span-2">
             <ChartCard icon={dim === "leader" ? UserCog : Wrench}
               title={dim === "leader" ? t("arc.anByLeader") : t("arc.anBySup")}
@@ -395,9 +365,9 @@ export default function ArcAnalysis({ view, filters, enabled }) {
                 type="bar" height={stackHeight(units.length)} />
             </ChartCard>
           </div>
-          {donutCard}
+          {catsCard}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           <ChartCard icon={Boxes} title={t("arc.anCellsTop")} subtitle={t("arc.anCellsTopSub")}
             empty={cellRows.length === 0} emptyText={t("arc.noMatch")} ready={ready}
             height={stackHeight(cellRows.length)}
@@ -405,7 +375,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
             <ReactApexChart options={stackOpts(cellLabels)} series={stackSeries(cellRows)}
               type="bar" height={stackHeight(cellRows.length)} />
           </ChartCard>
-          {flowCard(320)}
+          {flowCard(Math.max(320, stackHeight(cellRows.length)))}
         </div>
       </div>
     );
@@ -413,11 +383,11 @@ export default function ArcAnalysis({ view, filters, enabled }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">{flowCard(286)}</div>
-        {donutCard}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        <div className="lg:col-span-2">{flowCard(Math.max(286, stackHeight(catRows.length)))}</div>
+        {catsCard}
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <ChartCard icon={Building2} title={t("arc.anDivs")} subtitle={t("arc.anDivsSub")}
           empty={divs.length === 0} emptyText={t("arc.noMatch")} ready={ready}
           height={stackHeight(divs.length)}
