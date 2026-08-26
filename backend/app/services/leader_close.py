@@ -34,7 +34,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models import (
-    LeaderTaskDay, LeaderTaskEntry, LeaderTaskMedia, Manager, RoleProfile,
+    LeaderAiDispute, LeaderAiReview, LeaderTaskDay, LeaderTaskEntry,
+    LeaderTaskMedia, Manager, RoleProfile,
 )
 from app.services import action_log, leader_ai, leader_proof, leader_tasks
 
@@ -214,6 +215,103 @@ def maybe_close_day(db: Session, day: LeaderTaskDay, cfg: dict) -> bool:
     return True
 
 
+# ── taking a submission back: the admin's inverse ────────────────────────────
+
+def reopen_task(db: Session, *, day: LeaderTaskDay | None, task_id: int,
+                entry: LeaderTaskEntry | None,
+                actor: str | None = None) -> dict:
+    """Unlock ONE task again — ADMINS only, and the only thing that ever does.
+
+    Closing stays final for the leader: nothing they press and no config change
+    reopens a submission, which is the whole reason the mode exists. From
+    2026-08-26 an admin has a way back, because the alternative was worse — a
+    task submitted by accident, or shot against the wrong standard, was frozen
+    for good with no route out except editing the database, and this platform
+    has no shell.
+
+    It lifts whatever locks actually stand, which is why it reads BOTH of
+    `locked()`'s: the entry's own `closed_at`, and the DAY's, which on a
+    per-task unit `maybe_close_day` wrote the moment this task closed. Lifting
+    the task without the day would hand back a lock the leader cannot see and
+    nothing else can reach.
+
+    **The verdict goes with it.** `queue_task` dedupes on `bot:<entry_id>`, so a
+    review row left behind would let the re-close pass silently — the old
+    verdict standing over new photos, the one outcome a reopen must never
+    produce. It is DELETED rather than re-queued: a `pending` row is worked by
+    the drain within minutes, and the leader has not redone anything yet. The
+    next close re-creates it from the ref, exactly as discovery does after
+    «stop and clear». Any live objection to it is retired too — see
+    `_retire_disputes`.
+
+    The day's report is NOT recalled — a DM cannot be. It corrects itself the
+    ordinary way: the re-close re-scores the day and `resend_if_changed` sends
+    the new number, the same path a re-review or an upheld dispute takes.
+
+    Returns what it actually lifted, so the caller can SAY so. A reopen that
+    found nothing locked must not read like one that undid a submission.
+    """
+    lifted = {"task": False, "day": False, "verdict": False, "disputes": 0}
+    if day is None:
+        return lifted
+    if task_id not in reopened_tasks(day):
+        # A NEW list, never an in-place append: SQLAlchemy only sees the change
+        # when the attribute is reassigned.
+        day.reopened = sorted(reopened_tasks(day) | {task_id})
+    if day.closed_at is not None:
+        day.closed_at = None
+        day.completion = None          # an open day is not a scored one
+        lifted["day"] = True
+    if entry is not None and entry.closed_at is not None:
+        entry.closed_at = None
+        lifted["task"] = True
+    if entry is not None:
+        ref = leader_ai.bot_ref(entry.id)
+        lifted["disputes"] = _retire_disputes(db, ref, actor)
+        lifted["verdict"] = bool(
+            db.query(LeaderAiReview).filter_by(ref=ref)
+            .delete(synchronize_session=False))
+    db.commit()
+    logger.info("checklist: task reopened (day %s, entry %s) by %s — %s",
+                day.id, entry.id if entry else None, actor or "admin", lifted)
+    return lifted
+
+
+def _retire_disputes(db: Session, ref: str, actor: str | None) -> int:
+    """Cancel every live objection to a verdict that is being WITHDRAWN.
+
+    Deliberately not `supersede_dispute`, which answers a different question —
+    "a later RULING contradicted this one" — and therefore only touches settled
+    rows. Here the submission the objection is about stops existing, so a
+    still-pending objection has to go with it: it would otherwise sit in the
+    admin queue pointing at a verdict that is gone, and its card is built from
+    that verdict.
+    """
+    n = 0
+    for d in (db.query(LeaderAiDispute)
+              .filter(LeaderAiDispute.ref == ref,
+                      LeaderAiDispute.status != "cancelled").all()):
+        d.status = "cancelled"
+        if actor:
+            d.decided_by_name = actor[:160]
+        d.decided_at = datetime.now(timezone.utc)
+        n += 1
+        logger.info("leader-dispute: %s cancelled — %s was reopened", d.id, ref)
+    return n
+
+
+def reopened_tasks(day: LeaderTaskDay | None) -> set[int]:
+    """Tasks an ADMIN took back on this day.
+
+    THE reader of `LeaderTaskDay.reopened`, because two surfaces act on it and
+    they must agree: `autoclose_due`, which must not re-close such a task on
+    the deadline that already fired, and the bot line that tells the leader
+    when the task WILL close. A grace the sweep honours and the screen does not
+    name is a task the leader believes is already over.
+    """
+    return {int(t) for t in ((day.reopened if day is not None else None) or [])}
+
+
 def force_answer(db: Session, *, day: LeaderTaskDay, task_id: int,
                  cfg_entry: dict, shift: int | None) -> LeaderTaskEntry:
     """The answer to record for a task the deadline caught mid-flight.
@@ -271,10 +369,17 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
         shift = shifts.get(day.manager_id)
         cfg = leader_tasks.effective_leader_config(db, prof, shift)
         already = closed_tasks(db, day)
+        graced = reopened_tasks(day)
         for tid, s in cfg.items():
             if not s.get("enabled") or tid in already:
                 continue
-            if not past_deadline(s, shift, day.date, now):
+            # A task an admin took back does NOT re-close on the deadline that
+            # has already fired once — that would simply undo them, every five
+            # minutes, and the reopen would look broken. It closes with the DAY
+            # instead: `{}` walks `closing_time`'s chain down to the day's own
+            # filing deadline, so a reopened task is still never endless.
+            due_cfg = {} if tid in graced else s
+            if not past_deadline(due_cfg, shift, day.date, now):
                 continue
             entry = force_answer(db, day=day, task_id=tid, cfg_entry=s, shift=shift)
             db.commit()
@@ -298,7 +403,7 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
                     unit_id=day.manager_id, day=day.date,
                     details=[("leader", prof.name), ("task_id", tid),
                              ("shift", shift),
-                             ("deadline", task_deadline(s, shift)),
+                             ("deadline", task_deadline(due_cfg, shift)),
                              ("state", "done" if was_done else "not_done")],
                     reason="deadline",
                 )
@@ -525,16 +630,23 @@ def score_line(db: Session, day: LeaderTaskDay | None,
     return (earned, out_of, pending)
 
 
-def task_state(entry: LeaderTaskEntry | None, rev, has_media: bool) -> str:
+def task_state(entry: LeaderTaskEntry | None, rev, has_media: bool,
+               day: LeaderTaskDay | None = None) -> str:
     """One word for how a task stands, for the menu row.
 
     draft   answered but still editable        open    nothing answered yet
     pending closed, waiting on the AI          passed  closed and accepted
     failed  closed and rejected (or «Yo'q»)
+
+    `day` is optional only for the callers that already know it is open —
+    `locked(entry, None)` is exactly the entry's own lock, so passing nothing
+    behaves as it always did. Pass it wherever the DAY may be closed: in day
+    mode an entry never carries a lock of its own, so without it a submitted
+    task on a closed day reads as a «draft» and prints as «not done».
     """
     if entry is None:
         return "open"
-    if entry.closed_at is None:
+    if not locked(entry, day):
         return "draft"
     if not entry.done:
         return "failed"

@@ -2002,6 +2002,17 @@ _LT_MESSAGES = {
         "camera_only": "📷 Bu vazifaga rasm yuborib bo'lmaydi.\n\nRasm ilovada olinadi va vaqti avtomatik yoziladi — «📷 Kamerani ochish» tugmasini bosing.",
         "camera_reset_confirm": "📌 {task}\n\n🔄 Bu vazifaning barcha rasmlari va javobi o'chiriladi — qaytadan suratga olishingiz kerak bo'ladi.\n\nTasdiqlaysizmi?",
         "reset_toast": "🔄 Tozalandi",
+        "pt_state_none": "❔ Javob berilmagan.",
+        "adm_menu_hint": "\n\n👑 Admin: vazifani qayta ochish yoki tozalash uchun ustiga bosing.",
+        "adm_locked_hint": "\n\n👑 Admin sifatida siz bu vazifani qayta ocha olasiz.",
+        "btn_adm_reopen": "🔓 Qayta ochish (admin)",
+        "btn_adm_wipe": "🗑 Tozalash (admin)",
+        "adm_reopen_confirm": "📌 {task}\n\n🔓 Vazifa qayta ochiladi. Javob va rasmlar joyida qoladi, AI xulosasi esa o'chiriladi — vazifa qaytadan topshirilishi va qaytadan tekshirilishi kerak bo'ladi.\n\nTasdiqlaysizmi?",
+        "adm_wipe_confirm": "📌 {task}\n\n🗑 Vazifa butunlay tozalanadi: javob, rasmlar va AI xulosasi o'chiriladi. Vazifa boshidan boshlanadi.\n\nTasdiqlaysizmi?",
+        "adm_reopened_toast": "🔓 Vazifa qayta ochildi",
+        "adm_wiped_toast": "🗑 Vazifa tozalandi",
+        "adm_not_locked": "Bu vazifa yopilmagan — uni tahrirlash mumkin.",
+        "adm_only_alert": "Bu amal faqat adminlar uchun.",
     },
     "uz_cyrl": {
         "not_leader": "Сиз лидер эмассиз.",
@@ -2039,6 +2050,17 @@ _LT_MESSAGES = {
         "camera_only": "📷 Бу вазифага расм юбориб бўлмайди.\n\nРасм иловада олинади ва вақти автоматик ёзилади — «📷 Камерани очиш» тугмасини босинг.",
         "camera_reset_confirm": "📌 {task}\n\n🔄 Бу вазифанинг барча расмлари ва жавоби ўчирилади — қайтадан суратга олишингиз керак бўлади.\n\nТасдиқлайсизми?",
         "reset_toast": "🔄 Тозаланди",
+        "pt_state_none": "❔ Жавоб берилмаган.",
+        "adm_menu_hint": "\n\n👑 Админ: вазифани қайта очиш ёки тозалаш учун устига босинг.",
+        "adm_locked_hint": "\n\n👑 Админ сифатида сиз бу вазифани қайта оча оласиз.",
+        "btn_adm_reopen": "🔓 Қайта очиш (админ)",
+        "btn_adm_wipe": "🗑 Тозалаш (админ)",
+        "adm_reopen_confirm": "📌 {task}\n\n🔓 Вазифа қайта очилади. Жавоб ва расмлар жойида қолади, AI хулосаси эса ўчирилади — вазифа қайтадан топширилиши ва қайтадан текширилиши керак бўлади.\n\nТасдиқлайсизми?",
+        "adm_wipe_confirm": "📌 {task}\n\n🗑 Вазифа бутунлай тозаланади: жавоб, расмлар ва AI хулосаси ўчирилади. Вазифа бошидан бошланади.\n\nТасдиқлайсизми?",
+        "adm_reopened_toast": "🔓 Вазифа қайта очилди",
+        "adm_wiped_toast": "🗑 Вазифа тозаланди",
+        "adm_not_locked": "Бу вазифа ёпилмаган — уни таҳрирлаш мумкин.",
+        "adm_only_alert": "Бу амал фақат админлар учун.",
     },
     "ru": {
         "not_leader": "Вы не лидер.",
@@ -2076,6 +2098,17 @@ _LT_MESSAGES = {
         "camera_only": "📷 Для этой задачи фото отправить нельзя.\n\nСнимок делается в приложении, и время записывается автоматически — нажмите «📷 Открыть камеру».",
         "camera_reset_confirm": "📌 {task}\n\n🔄 Все фото и ответ по этой задаче будут удалены — снимать придётся заново.\n\nПодтверждаете?",
         "reset_toast": "🔄 Сброшено",
+        "pt_state_none": "❔ Ответ не дан.",
+        "adm_menu_hint": "\n\n👑 Админ: нажмите на задачу, чтобы открыть её заново или очистить.",
+        "adm_locked_hint": "\n\n👑 Как администратор вы можете открыть эту задачу заново.",
+        "btn_adm_reopen": "🔓 Открыть заново (админ)",
+        "btn_adm_wipe": "🗑 Очистить (админ)",
+        "adm_reopen_confirm": "📌 {task}\n\n🔓 Задача будет открыта заново. Ответ и фото останутся, но заключение ИИ удалится — задачу нужно будет сдать и проверить ещё раз.\n\nПодтверждаете?",
+        "adm_wipe_confirm": "📌 {task}\n\n🗑 Задача будет полностью очищена: ответ, фото и заключение ИИ удаляются. Задача начнётся с нуля.\n\nПодтверждаете?",
+        "adm_reopened_toast": "🔓 Задача открыта заново",
+        "adm_wiped_toast": "🗑 Задача очищена",
+        "adm_not_locked": "Эта задача не закрыта — её можно редактировать.",
+        "adm_only_alert": "Действие доступно только администраторам.",
     },
     "en": {
         "not_leader": "You're not a leader.",
@@ -2113,6 +2146,17 @@ _LT_MESSAGES = {
         "camera_only": "📷 You cannot send a photo for this task.\n\nThe shot is taken in the app and its time is recorded automatically — tap «📷 Open the camera».",
         "camera_reset_confirm": "📌 {task}\n\n🔄 Every photo and the answer for this task will be deleted — you'll have to shoot them again.\n\nConfirm?",
         "reset_toast": "🔄 Reset",
+        "pt_state_none": "❔ No answer was given.",
+        "adm_menu_hint": "\n\n👑 Admin: tap a task to reopen or clear it.",
+        "adm_locked_hint": "\n\n👑 As an admin you can reopen this task.",
+        "btn_adm_reopen": "🔓 Reopen (admin)",
+        "btn_adm_wipe": "🗑 Clear (admin)",
+        "adm_reopen_confirm": "📌 {task}\n\n🔓 The task will be reopened. The answer and its photos stay, but the AI verdict is dropped — the task has to be submitted and reviewed again.\n\nConfirm?",
+        "adm_wipe_confirm": "📌 {task}\n\n🗑 The task will be cleared completely: the answer, the photos and the AI verdict are deleted. It starts from scratch.\n\nConfirm?",
+        "adm_reopened_toast": "🔓 Task reopened",
+        "adm_wiped_toast": "🗑 Task cleared",
+        "adm_not_locked": "This task isn't closed — it can still be edited.",
+        "adm_only_alert": "Admins only.",
     },
 }
 
@@ -2341,13 +2385,19 @@ def _lt_pt_close_btn(lang: str, pid: int, task_id: int, ready: bool):
 def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
                      msg_id: int | None, task_id: int, entry_cfg: dict,
                      prof, day, shift: int | None) -> None:
-    """One task's own screen on a per-task unit: draft, or closed for good.
+    """One task's own screen: draft, or locked.
 
-    This is where the mode lives for the leader — the menu only lists tasks,
-    and everything they do to one happens here. Three shapes, and the buttons
-    are what tell them apart: a DRAFT offers the way to add or redo its proof
-    plus the close button once it is complete; a CLOSED task offers nothing but
-    the way back, because there is nothing left that can be done to it.
+    This is where per-task submission lives for the leader — the menu only
+    lists tasks, and everything they do to one happens here. The buttons tell
+    the shapes apart: a DRAFT offers the way to add or redo its proof plus the
+    close button once it is complete; a LOCKED task offers nothing but the way
+    back, because for the leader there is nothing left that can be done to it.
+
+    It is also the ADMIN's screen for a locked task, in either mode — which is
+    why the lock test is `locked()` and not the entry's own `closed_at`: on a
+    unit that closes whole DAYS the entry never carries one, and on a per-task
+    unit the day's own lock lands the moment the last task closes. Both mean
+    the same sentence to the reader, and both are what an admin reopens.
     """
     entry = (db.query(LeaderTaskEntry)
              .filter_by(day_id=day.id, task_id=task_id).first()) if day else None
@@ -2356,22 +2406,40 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
     weight = int(entry_cfg.get("weight") or 0)
     kb = types.InlineKeyboardMarkup(row_width=1)
 
-    if entry is not None and entry.closed_at is not None:
-        rev = leader_ai.verdicts_for(db, day).get(task_id)
-        has_media = bool(db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).first())
-        state = leader_close.task_state(entry, rev, has_media)
-        key = {"pending": "pt_state_pending", "passed": "pt_state_passed",
-               "failed": "pt_state_failed"}.get(state, "pt_state_undone")
-        if not entry.done:
-            key = "pt_state_undone"
-        text = _lt(lang, "pt_closed_head").format(task=name) + \
-            _lt(lang, key).format(w=weight)
-        # The AI's own words, when it has any — the leader is entitled to read
-        # the reason a task they cannot change any more was rejected.
-        if rev is not None and getattr(rev, f"reason_{lang}", None):
-            text += "\n\n" + getattr(rev, f"reason_{lang}")[:400]
-        elif not entry.done and entry.reason:
-            text += "\n\n" + entry.reason[:400]
+    # `locked()` rather than the entry's own lock, because this screen is also
+    # where an admin lands on a CLOSED DAY — in day mode the entry never carries
+    # a `closed_at` of its own, and the two locks mean the same thing to the
+    # reader: nothing more can be done to this task.
+    if leader_close.locked(entry, day):
+        text = _lt(lang, "pt_closed_head").format(task=name)
+        if entry is None:
+            # The day shut with this task unanswered: there is no submission to
+            # describe, only the lock the day put on it.
+            text += _lt(lang, "pt_state_none")
+        else:
+            rev = leader_ai.verdicts_for(db, day).get(task_id)
+            has_media = bool(db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).first())
+            state = leader_close.task_state(entry, rev, has_media, day)
+            key = {"pending": "pt_state_pending", "passed": "pt_state_passed",
+                   "failed": "pt_state_failed"}.get(state, "pt_state_undone")
+            if not entry.done:
+                key = "pt_state_undone"
+            text += _lt(lang, key).format(w=weight)
+            # The AI's own words, when it has any — the leader is entitled to read
+            # the reason a task they cannot change any more was rejected.
+            if rev is not None and getattr(rev, f"reason_{lang}", None):
+                text += "\n\n" + getattr(rev, f"reason_{lang}")[:400]
+            elif not entry.done and entry.reason:
+                text += "\n\n" + entry.reason[:400]
+        # The one way back out of a submission, and it belongs to admins alone.
+        # Both buttons say so in their own label: this screen is the leader's
+        # too, and a control they must never press is a control that has to
+        # name whose it is.
+        if tid in _admin_ids():
+            text += _lt(lang, "adm_locked_hint")
+            kb.add(_lt_btn(_lt(lang, "btn_adm_reopen"), f"lt:aop:{pid}:{task_id}"))
+            if entry is not None or _lt_roll_count(db, prof, task_id):
+                kb.add(_lt_btn(_lt(lang, "btn_adm_wipe"), f"lt:awp:{pid}:{task_id}"))
         kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
         _lt_edit(chat_id, msg_id, text, kb)
         return
@@ -2389,8 +2457,13 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
         if not ready:
             text += _lt(lang, "pt_need_more").format(min=max(1, need))
     text += _lt(lang, "pt_draft_hint")
+    # A task an admin reopened is on the DAY's filing deadline now, not on the
+    # one that already fired — this line has to name the hour that will
+    # actually close it, or the leader reads a time that is already past.
     text += _lt(lang, "pt_auto").format(
-        t=leader_close.task_deadline(entry_cfg, shift))
+        t=leader_close.task_deadline(
+            {} if task_id in leader_close.reopened_tasks(day) else entry_cfg,
+            shift))
 
     if entry_cfg.get("proof_kind") == "camera":
         url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
@@ -2523,16 +2596,25 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
 
     kb = types.InlineKeyboardMarkup(row_width=1)
     if day and day.closed_at:
+        # A closed day is dead for the leader — every row is a noop, and that
+        # is the point. For an ADMIN the rows stay live: the way back into a
+        # submission is through the task itself, and on a per-task unit the day
+        # is closed precisely BECAUSE the tasks are, so a dead menu would put
+        # every locked task out of reach of the one person allowed to reopen it.
+        adm = tid in _admin_ids()
         text = _lt(lang, "menu_closed").format(
             name=prof.name, date=date,
             score=round(float(day.completion or 0)),
         )
+        if adm:
+            text += _lt(lang, "adm_menu_hint")
         for td_id, s in cfg.items():
             if not s["enabled"]:
                 continue
             e = entries.get(td_id)
             mark = "✅ " if (e and e.done) else ("❌ " if e else "")
-            kb.add(_lt_btn(f"{mark}{config_name(s, lang)}", f"lt:noop:{pid}"))
+            kb.add(_lt_btn(f"{mark}{config_name(s, lang)}",
+                           f"lt:task:{pid}:{td_id}" if adm else f"lt:noop:{pid}"))
         kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
     else:
         text = _lt(lang, "menu_title").format(name=prof.name, date=date)
@@ -2566,7 +2648,7 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
             e = entries.get(td_id)
             if per_task:
                 st = leader_close.task_state(
-                    e, revs.get(td_id), bool(e and e.id in with_media))
+                    e, revs.get(td_id), bool(e and e.id in with_media), day)
                 mark = {"open": "", "draft": "✏️ ", "pending": "⏳ ",
                         "passed": "✅ ", "failed": "⚠️ "}[st]
                 if st == "open" and s.get("proof_kind") == "camera":
@@ -2794,12 +2876,17 @@ def _lt_callback(call: types.CallbackQuery):
 
         if action == "task":
             task_id = int(parts[3])
-            if closed:
+            if closed and tid not in _admin_ids():
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
             if task_id not in cfg or not cfg[task_id]["enabled"]:
                 bot.answer_callback_query(call.id)
                 _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                return
+            if closed:  # admin, guarded above → the locked-task screen
+                bot.answer_callback_query(call.id)
+                _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
+                                 cfg[task_id], prof, day, shift)
                 return
             entries = _lt_entries(db, day)
             bot.answer_callback_query(call.id)
@@ -2892,6 +2979,61 @@ def _lt_callback(call: types.CallbackQuery):
             leader_ai.run_async(discover_first=False)
             _lt_clear(tid)
             bot.answer_callback_query(call.id, _lt(lang, "task_closed_ok"))
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            return
+
+        if action in ("aop", "awp", "aopok", "awpok"):
+            # Reopening a submission, and emptying one. Admin-only, checked
+            # HERE and not merely by hiding the buttons: a callback is a string
+            # the leader's own client already holds once the screen has been
+            # rendered for anyone, and «closing is final» is a rule, not a
+            # layout. Deliberately NOT gated on `closed` like every other
+            # action above — these two exist to act on a closed thing.
+            task_id = int(parts[3])
+            if tid not in _admin_ids():
+                bot.answer_callback_query(call.id, _lt(lang, "adm_only_alert"),
+                                          show_alert=True)
+                return
+            wipe = action in ("awp", "awpok")
+            if action in ("aop", "awp"):
+                # The confirm names which of the two it is: one keeps the
+                # photos and one deletes them, and they sit next to each other.
+                kb = types.InlineKeyboardMarkup()
+                kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{pid}:{task_id}"),
+                       _lt_btn(_lt(lang, "btn_confirm"),
+                               f"lt:{'awpok' if wipe else 'aopok'}:{pid}:{task_id}"))
+                bot.answer_callback_query(call.id)
+                _lt_edit(chat_id, msg_id,
+                         _lt(lang, "adm_wipe_confirm" if wipe
+                             else "adm_reopen_confirm").format(task=tname(task_id)),
+                         kb)
+                return
+            e = _lt_entries(db, day).get(task_id)
+            if not leader_close.locked(e, day):
+                bot.answer_callback_query(call.id, _lt(lang, "adm_not_locked"),
+                                          show_alert=True)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                return
+            lifted = leader_close.reopen_task(db, day=day, task_id=task_id,
+                                              entry=e, actor=prof.name)
+            # Emptying is reopening PLUS the ordinary reset — the same
+            # `_lt_reset_task` the leader's own «Qayta topshirish» runs, so
+            # «empty» goes on meaning exactly one thing.
+            if wipe:
+                _lt_reset_task(db, day, task_id)
+            _lt_log(db, tid, prof, date,
+                    "checklist.task_reset" if wipe else "checklist.task_reopened",
+                    target_kind="task", target_id=task_id,
+                    target_name=tname(task_id),
+                    details=[("leader", prof.name), ("by", "admin"),
+                             ("day_reopened", bool(lifted["day"])),
+                             ("verdict_dropped", bool(lifted["verdict"])),
+                             ("disputes_cancelled", lifted["disputes"])],
+                    changes=[("status", "closed", "empty" if wipe else "draft")])
+            _lt_clear(tid)
+            bot.answer_callback_query(
+                call.id, _lt(lang, "adm_wiped_toast" if wipe
+                             else "adm_reopened_toast"))
             _lt_menu(db, tid, pid, lang, chat_id, msg_id)
             return
 

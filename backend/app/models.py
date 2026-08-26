@@ -1474,6 +1474,14 @@ class LeaderTaskDay(Base):
     date       = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
     closed_at  = Column(DateTime(timezone=True), nullable=True)
     completion = Column(Numeric(6, 2), nullable=True)  # weighted %, stamped at close
+    # Task ids an ADMIN took back on this day (leader_close.reopen_task). Kept
+    # on the DAY and not on the entry because the admin's «Tozalash» DELETES
+    # the entry, and the grace has to outlive it: without that, the per-task
+    # deadline sweep re-closes an emptied task as "not done" within five
+    # minutes and the reopen silently undoes itself. Read through
+    # `leader_close.reopened_tasks()`; it moves a task onto the DAY's filing
+    # deadline, never off a deadline altogether.
+    reopened   = Column(JSONB, nullable=True)
 
     __table_args__ = (UniqueConstraint("leader_id", "date", name="uq_ltask_day"),)
 

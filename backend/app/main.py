@@ -88,7 +88,8 @@ async def lifespan(app: FastAPI):
         add_leader_task_date_check, add_leader_task_time_check,
         add_leader_task_date_plus,
         add_leader_task_proof_kind, reset_leader_camera_pilot,
-        add_leader_entry_closed_at, add_leader_unit_bot_from,
+        add_leader_day_reopened, add_leader_entry_closed_at,
+        add_leader_unit_bot_from,
         set_camera_pilot_bot_from,
         add_leader_photo_client_key,
         add_leader_ai_clocks, sync_leader_ai_dates,
@@ -159,6 +160,7 @@ async def lifespan(app: FastAPI):
     add_leader_task_date_plus()
     add_leader_task_proof_kind()
     add_leader_entry_closed_at()
+    add_leader_day_reopened()
     add_leader_unit_bot_from()
     # After the column exists — both of these write values into it.
     reset_leader_camera_pilot()

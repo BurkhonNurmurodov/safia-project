@@ -1087,6 +1087,31 @@ def add_leader_entry_closed_at() -> None:
         db.close()
 
 
+def add_leader_day_reopened() -> None:
+    """2026-08-26: an admin can take ONE submitted task back.
+
+    The list of task ids reopened on this day. It lives on the DAY rather than
+    on the entry because the admin's «Tozalash» deletes the entry outright, and
+    the grace has to outlive it — otherwise `autoclose_due` re-closes the
+    emptied task on the deadline that already fired, as "not done", within five
+    minutes, and the reopen undoes itself in front of the operator.
+
+    NULL is "nothing was reopened", which is what every existing row is; there
+    is nothing to backfill.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_task_days "
+            "ADD COLUMN IF NOT EXISTS reopened JSONB"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader day reopened migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def reset_leader_camera_pilot() -> None:
     """One-shot: take in-app camera capture back to OFF, everywhere.
 

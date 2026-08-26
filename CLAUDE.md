@@ -872,12 +872,46 @@ unit). Absent row = off, so nothing moves until an admin switches it.
   and hands it to the AI. The button is only offered once the task is complete
   (Ha + all required photos, or Yo'q + reason) — Telegram has no disabled
   button, so an unusable one is a button that silently does nothing.
-- **Closing is FINAL — for everyone.** No leader, no admin, no config change
+- **Closing is FINAL for the LEADER.** Nothing they press and no config change
   reopens a closed task; switching the unit back to day mode does not either.
   `leader_close.locked(entry, day)` is THE predicate and every writer consults
   it (the bot's entry writer, the shared reset core, both camera writes). It
   reads BOTH locks always, so outside this mode it answers exactly what it
   always answered: an entry is frozen once its DAY is closed.
+- **An ADMIN has the one way back** (from 2026-08-26): «🔓 Qayta ochish» and
+  «🗑 Tozalash» on the locked-task screen in the bot, and on a CLOSED day the
+  menu rows stay tappable for admins so a locked task is still reachable — on a
+  per-task unit the day is closed precisely BECAUSE its tasks are. Without it a
+  task submitted by accident, or shot against the wrong standard, was frozen
+  for good with no route out but editing the database, and this platform has no
+  shell. **`leader_close.reopen_task` is THE definition** and it is admin-only,
+  checked in the handler and not merely by hiding the buttons.
+  - It lifts **both** of `locked()`'s locks — the entry's `closed_at` and the
+    DAY's, which `maybe_close_day` wrote when this task closed. Lifting one
+    hands back a lock the leader cannot see and nothing else can reach.
+  - **The verdict goes with it.** `queue_task` dedupes on `bot:<entry_id>`, so
+    a review row left behind lets the re-close pass silently and the OLD
+    verdict judge NEW photos. Deleted, never re-queued (a `pending` row is
+    drained within minutes, before anything has been redone); the next close
+    re-creates it from the ref. Live objections to it are cancelled with it
+    (`_retire_disputes` — deliberately not `supersede_dispute`, which answers
+    "a later ruling contradicted this" and so only touches settled rows).
+  - **The report is not recalled** — a DM cannot be. The re-close re-scores the
+    day and `resend_if_changed` sends the correction, the same path a re-review
+    or an upheld dispute takes.
+  - **The grace lives on the DAY** (`LeaderTaskDay.reopened`, a task-id list,
+    read through `leader_close.reopened_tasks`), NOT on the entry: «Tozalash»
+    deletes the entry, and without a grace that outlives it `autoclose_due`
+    re-closes the emptied task as "not done" on the deadline that already
+    fired, within five minutes, in front of the operator. A reopened task moves
+    onto the DAY's filing deadline (`{}` down `closing_time`'s chain) — never
+    off a deadline altogether — and the bot's «⏰ …da avtomatik yopiladi» line
+    names that hour, or the leader reads a time already past.
+  - «Tozalash» is reopen PLUS the ordinary `_lt_reset_task`, so «empty» goes on
+    meaning exactly one thing. Both actions confirm first and are recorded
+    (`checklist.task_reopened` / `checklist.task_reset`, actor + what was
+    lifted). The DAY sweeps need no grace: the bot only ever reaches
+    `effective_date(shift)`, and they only close days already expired.
 - **One task, one review.** `leader_ai.queue_task` is the per-task door beside
   `queue_report`, under the same rules (review floor, shift pause, "no photos ⇒
   not reviewable") — a unit judged by two definitions of a submission would be
