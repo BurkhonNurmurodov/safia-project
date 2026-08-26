@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Camera, Check, X, Minus, Lock, RotateCcw, Eraser, ExternalLink, ShieldAlert,
-  Hourglass,
+  Hourglass, Pencil, CircleDashed, CloudOff, Clock,
 } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
@@ -10,7 +10,7 @@ import ConfirmDialog from "../ui/ConfirmDialog";
 import Lightbox from "../ui/Lightbox";
 import { SkeletonBlock } from "../ui/Skeleton";
 import EmptyState from "../ui/EmptyState";
-import { BotPhoto, ReportPhoto } from "./ProofPhoto";
+import { BotPhoto, ReportPhoto, RollPhoto } from "./ProofPhoto";
 import { useLang } from "../../context/LangContext";
 import api from "../../utils/api";
 
@@ -31,8 +31,19 @@ import api from "../../utils/api";
  * through the shared cores in `leader_close`, so a task reopened here and one
  * reopened from the bot's own locked-task screen end in the same state.
  *
- * Only CLOSED days have a report. An open day is a leader mid-checklist, not a
- * submission — the modal says so instead of rendering an empty shell.
+ * It renders an UNFINISHED day in exactly the same shape. That is the point:
+ * until this existed, a day the leader had not submitted had no detail anywhere
+ * on the platform — `build_report_row` serves closed days only — so proofs that
+ * were already uploaded were, for an open day, visible to nobody. A bot day is
+ * therefore fetched from `/admin/leader-tasks/day/{id}`, which DELEGATES to
+ * `day_report` once the day is closed (so the shared answer stays the shared
+ * answer) and projects the in-progress day into the same keys otherwise.
+ *
+ * Three facts only the open view can show, and each has its own mark: a task
+ * nobody has started, a task answered but not SUBMITTED (a draft — what holds a
+ * 1×1 day open), and a camera roll sitting on the server for a task that has
+ * not reached `min_media`, which is the difference between "they never filed"
+ * and "they filed and the platform is holding it".
  */
 
 const ddmm = (iso) => (iso ? String(iso).split("-").reverse().join(".") : "—");
@@ -59,6 +70,24 @@ function AnswerChip({ t, task }) {
   );
 }
 
+/**
+ * How the task STANDS, as one word, in the platform status palette.
+ *
+ * The vocabulary is the backend's own (`leader_close.task_state`), not a second
+ * set invented here: five states, and the register, the bot menu and this modal
+ * must agree about which one a task is in. Grey is "not started" — an absence,
+ * never a failure — and amber is a draft, the state that quietly holds a whole
+ * 1×1 day open.
+ */
+const STATE = {
+  open:    { color: "#94a3b8", Icon: CircleDashed, key: "admin.ltd.stOpenTask" },
+  draft:   { color: "#eab308", Icon: Pencil,       key: "admin.ltd.stDraft",
+             hint: "admin.ltd.stDraftHint" },
+  pending: { color: "#94a3b8", Icon: Hourglass,    key: "admin.ltd.aiPending" },
+  passed:  { color: "#22c55e", Icon: Check,        key: "admin.ltd.stPassed" },
+  failed:  { color: "#ef4444", Icon: X,            key: "admin.ltd.stFailed" },
+};
+
 function Mark({ color, icon: Icon, label, title }) {
   return (
     <span title={title}
@@ -69,8 +98,13 @@ function Mark({ color, icon: Icon, label, title }) {
   );
 }
 
-function TaskRow({ task, uid, lang, T, locked, onPhoto, onReopen, onWipe, busy }) {
+function TaskRow({ task, uid, lang, T, onPhoto, onReopen, onWipe, busy }) {
   const { t } = useLang();
+  // Authority comes off the PAYLOAD, not off the list row: the day detail is
+  // the thing that actually knows which locks stand, and threading a second
+  // answer in from the table is how the button appears on a task that has none.
+  const locked = !!task.locked;
+  const roll = task.roll || [];
   // Both layers hand their photos over in their own shape: the bot ships media
   // ids out of the archive channel, the sheet ships Drive links. Normalised
   // once here so the thumbnail strip below knows nothing about either.
@@ -84,6 +118,8 @@ function TaskRow({ task, uid, lang, T, locked, onPhoto, onReopen, onWipe, busy }
   }, [task.media, task.photo]);
 
   const name = task.name?.[lang] || task.name?.ru || task.name?.uz || `#${task.id}`;
+  const st = STATE[task.state];
+  const min = Number(task.minMedia || 0);
 
   return (
     <div className="rounded-xl px-3 py-2.5 space-y-2"
@@ -95,12 +131,14 @@ function TaskRow({ task, uid, lang, T, locked, onPhoto, onReopen, onWipe, busy }
           {name}
         </span>
         <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-          <AnswerChip t={t} task={task} />
+          {/* The answer, then how the task STANDS. Two different questions: a
+              task can be answered «Ha» and still be a draft nobody submitted. */}
+          {task.answered ? <AnswerChip t={t} task={task} />
+            : <Mark color="#94a3b8" icon={Minus} label={t("admin.ltd.noAnswerYet")} />}
+          {st && <Mark color={st.color} icon={st.Icon} label={t(st.key)}
+            title={st.hint ? t(st.hint) : undefined} />}
           {task.ai_rejected && (
             <Mark color="#ef4444" icon={ShieldAlert} label={t("admin.ltd.aiRejected")} />
-          )}
-          {task.queued && (
-            <Mark color="#94a3b8" icon={Hourglass} label={t("admin.ltd.aiPending")} />
           )}
           {locked && <Mark color="#eab308" icon={Lock} label={t("admin.ltd.lockedChip")} />}
         </div>
@@ -111,6 +149,12 @@ function TaskRow({ task, uid, lang, T, locked, onPhoto, onReopen, onWipe, busy }
           <span style={{ color: "var(--text-4)" }}>{t("admin.ltd.reason")}: </span>{task.reason}
         </p>
       ) : null}
+
+      {task.closedAt && (
+        <p className="text-[11px]" style={{ color: "var(--text-4)" }}>
+          {t("admin.ltd.taskSubmittedAt").replace("{t}", hhmm(task.closedAt))}
+        </p>
+      )}
 
       {/* Thumbnails, never full-size: thirteen tasks of proof photos at full
           width is a scroll nobody finishes, and here the photo is an index
@@ -131,8 +175,45 @@ function TaskRow({ task, uid, lang, T, locked, onPhoto, onReopen, onWipe, busy }
             ))}
           </div>
         </div>
-      ) : (
+      ) : roll.length === 0 ? (
         <p className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("admin.ltd.noPhotos")}</p>
+      ) : null}
+
+      {/* The camera roll of a task that has NOT written its answer yet. Shown
+          under its own heading, never merged into the proof strip above: these
+          shots count towards nothing until the roll reaches `min_media`, and
+          presenting them as filed evidence would say the task is done. */}
+      {roll.length > 0 && photos.length === 0 && (
+        <div className="rounded-lg px-2 py-2"
+          style={{ background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.35)" }}>
+          <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: "#eab308" }}>
+            <Camera size={10} className="inline mr-1" />
+            {t("admin.ltd.rollTitle")}
+            {min > 0 && <> · {t("admin.ltd.shots").replace("{n}", roll.length).replace("{m}", min)}</>}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {roll.map((p) => (
+              <div key={p.id} className="relative w-14 h-14 rounded-lg overflow-hidden">
+                <RollPhoto id={p.id} T={T} thumb className="" onClick={onPhoto} />
+                {/* Two facts the stamp itself cannot carry, and both change how
+                    the shot should be read. */}
+                {(p.late || p.deferred) && (
+                  <span className="absolute bottom-0 right-0 rounded-tl px-0.5"
+                    style={{ background: "rgba(0,0,0,0.65)" }}
+                    title={[p.late && t("admin.ltd.lateShot"),
+                            p.deferred && t("admin.ltd.deferredShot")]
+                      .filter(Boolean).join(" · ")}>
+                    {p.late && <Clock size={9} color="#ef4444" />}
+                    {p.deferred && <CloudOff size={9} color="#eab308" />}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] leading-snug mt-1.5" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltd.rollTaskHint")}
+          </p>
+        </div>
       )}
 
       {/* The authority, offered only where there is something to lift. A task
