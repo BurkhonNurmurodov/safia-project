@@ -92,8 +92,10 @@ def closing_time(cfg_entry: dict | None,
        the checklist with no end at all.
 
     The second return value is the range's OPENING time when the clock was read
-    off a range, and None when it is a bare hour. `past_deadline` needs it to
-    tell 09:00-tomorrow from 09:00-today without guessing from the shift.
+    off a range, and None when it is a bare hour. `due_at` needs it to tell
+    09:00-tomorrow from 09:00-today: which day an hour falls on is decided by
+    where it sits relative to the SHIFT's own opening, and only the range's
+    opening side can answer that.
 
     **`date_check` / `time_check` deliberately do NOT gate this.** They answer
     whether the clock the AI transcribes off the PROOF is judged; this answers
@@ -126,37 +128,69 @@ def task_deadline(cfg_entry: dict | None, shift: int | None) -> str:
     return closing_time(cfg_entry, shift)[0]
 
 
+def due_at(cfg_entry: dict | None, shift: int | None,
+           date: str) -> datetime | None:
+    """The instant this task stops accepting work — Tashkent, on a real day.
+
+    Which DAY that hour falls on has exactly one answer on this platform, and it
+    is `leader_ai.window_offset`. A shift's report day is not a calendar day:
+    shift 2's «26.08» runs 26.08 17:00 → 27.08 09:00, and a task's hours are
+    written in those same shift hours, so an hour sits on the report day or on
+    the one after it depending on nothing but which side of the shift's own
+    opening it falls on. «08:00 — 10:00» on a night shift can only mean the
+    morning of the 27th — 08:00 on the 26th is not inside that shift at all.
+
+    This used to decide for itself, with the platform's crossing-midnight rule
+    (`end <= start`, as in `idle_cell` / `cell_hours`), and that rule cannot see
+    the shift. A shift-2 task whose window runs 08:00→10:00 does not cross
+    midnight, so its close was pinned to 10:00 on the REPORT day — seven hours
+    before the night began. Every such task was therefore already past due the
+    moment the day existed: `autoclose_due` closed the whole checklist at the
+    START of the shift, locked it forever and handed it to the AI, which then
+    judged the photos against a window that had not opened yet (reported
+    2026-08-26, a per-task shift-2 unit whose tasks were all closed and failed
+    before 01:00). The reviewer has been anchored to the shift since 2026-08-22;
+    this was not, and two anchors for one window is how a task closes before it
+    opens. There is now one.
+
+    `overnight` is applied only to a real RANGE. A bare clock — an admin's
+    explicit `deadline`, or the day's filing deadline for a task carrying
+    neither — is one hour and not a span, and `window_offset` already places it
+    inside the shift on its own: 22:00 on a night shift is that same evening,
+    09:00 is the morning after. That replaces the old blanket "+1 day for shift
+    2", under which an evening deadline landed a full day late — past the 09:00
+    at which the day sweep closes the day, so it could never fire at all.
+
+    None when the day or the clock cannot be read; the caller decides what an
+    unreadable deadline means (`past_deadline`: not past).
+    """
+    hhmm, opens = closing_time(cfg_entry, shift)
+    try:
+        h, m = (int(x) for x in hhmm.split(":"))
+        day0 = datetime.strptime(date, "%Y-%m-%d").replace(
+            tzinfo=leader_proof.TASHKENT)
+    except (ValueError, AttributeError, TypeError):
+        return None
+    win = (opens if opens is not None else hhmm, hhmm)
+    days = leader_ai.window_offset(shift, win)
+    if opens is not None and leader_ai.overnight(win):
+        days += 1
+    return day0.replace(hour=h, minute=m) + timedelta(days=days)
+
+
 def past_deadline(cfg_entry: dict | None, shift: int | None, date: str,
                   now: datetime | None = None) -> bool:
     """Has this task's own closing time gone by for the day it belongs to?
 
     Anchored on the checklist DAY, not on the wall clock alone: shift 2's day
     opens at 17:00 and dies at 09:00 the next morning, so "is 08:00 past 09:00"
-    is only answerable once you know which day's 09:00 is meant.
+    is only answerable once you know which day's 09:00 is meant. `due_at` is
+    where that reasoning lives.
     """
-    hhmm, opens = closing_time(cfg_entry, shift)
-    now = (now or datetime.now(timezone.utc)).astimezone(leader_proof.TASHKENT)
-    try:
-        h, m = (int(x) for x in hhmm.split(":"))
-        day0 = datetime.strptime(date, "%Y-%m-%d").replace(
-            tzinfo=leader_proof.TASHKENT)
-    except (ValueError, AttributeError):
+    due = due_at(cfg_entry, shift, date)
+    if due is None:
         return False
-    due = day0.replace(hour=h, minute=m)
-    if opens is not None:
-        # A range says for ITSELF which day it ends on — `end <= start` is the
-        # platform's crossing-midnight rule (`idle_cell`, `cell_hours`), and it
-        # is right for both shifts: 17:00→09:00 lands on the morning after the
-        # evening its day is named for, 07:00→20:00 stays put, and a shift-2
-        # range that does NOT cross (17:00→23:00) correctly stays on its own
-        # evening — which the old blanket "+1 day for shift 2" got wrong.
-        if hhmm <= opens:
-            due += timedelta(days=1)
-    elif shift == 2:
-        # A bare clock carries no range, so the night shift's boundary still has
-        # to be applied from outside: its day is named for the evening it starts
-        # and its deadline falls the following morning.
-        due += timedelta(days=1)
+    now = (now or datetime.now(timezone.utc)).astimezone(leader_proof.TASHKENT)
     return now >= due
 
 

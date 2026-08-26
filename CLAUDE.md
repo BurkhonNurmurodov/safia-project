@@ -937,11 +937,25 @@ unit). Absent row = off, so nothing moves until an admin switches it.
     for exactly the units most likely to want it — the camera pilot, whose
     proofs are dashboard screens in date-only mode. The fairness is bought by
     SAYING the hour on both surfaces the leader reads, not by withholding it.
-  - **A range decides its own end date**; a bare clock still takes the shift
-    boundary from outside. `end <= start` ⇒ the range crosses midnight (the
-    `idle_cell` / `cell_hours` rule), which is right for 17:00→09:00 AND fixes a
-    shift-2 range that does not cross (17:00→23:00), where the old blanket
-    "+1 day for shift 2" pushed the close a full day late.
+  - **Which DAY the closing hour falls on is `leader_ai.window_offset`, the
+    same one anchor the REVIEWER uses** (`leader_close.due_at`). A task's hours
+    are written in shift hours, so «08:00 — 10:00» on a night shift means the
+    morning AFTER the evening its day is named for. Deciding it here instead,
+    by the platform's crossing-midnight rule (`end <= start`), is what broke on
+    2026-08-26: that rule cannot see the shift, a shift-2 window of 08:00→10:00
+    does not cross midnight, so the close was pinned to 10:00 on the REPORT
+    day — hours before the night began. Every task carrying a window written in
+    shift-1 hours was therefore past due the instant its day existed:
+    `autoclose_due` closed a shift-2 unit's whole checklist at the START of the
+    shift, locked it forever and sent it to the AI, which failed the photos
+    against a window that had not opened. The reviewer was anchored to the
+    shift on 2026-08-22 and this was not; **two anchors for one window is how a
+    task closes before it opens, so never re-derive this one.** `overnight` is
+    then applied only to a real RANGE — a bare clock (an admin `deadline`, the
+    day's filing deadline) is one hour, and `window_offset` already seats it in
+    the shift: 22:00 that same evening, 09:00 the morning after. That replaced
+    the blanket "+1 day for shift 2", under which an evening deadline landed a
+    full day late, past the 09:00 the day sweep closes at, so it never fired.
   - At the hour, `autoclose_due` submits whatever exists — a roll short of
     `min_media` still goes to the AI and is judged as it stands, and a DRAFT
     (answered, never submitted) is submitted with its answer and photos intact,
