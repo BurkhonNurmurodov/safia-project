@@ -223,6 +223,11 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/leaders/task-override",                "leader_config", "ltask.task_overridden"),
 
     # ── leader submissions, AI review & disputes ──────────────────────────────
+    # Taking one submitted task back, and choosing which of the two collection
+    # layers counts for a leader-day. Both move a SCORE, so they sit with the
+    # review actions rather than with the config matrix that shapes them.
+    (("POST",),   "/admin/leader-tasks/task/reopen",           "leader_review", "checklist.task_reopened"),
+    (("POST",),   "/admin/leader-tasks/day-source",            "leader_review", "checklist.day_source_set"),
     (("POST",),   "/api/leader-proof/photo",                   "leader_review", "proof.photo_taken"),
     (("DELETE",), "/api/leader-proof/photo/{}",                "leader_review", "proof.photo_dropped"),
     (("POST",),   "/api/leader-ai/resolve",                    "leader_review", "ai.verdict_resolved"),

@@ -2755,3 +2755,43 @@ class ActionLog(Base):
         Index("ix_action_logs_cat_at", "category", created_at.desc()),
         Index("ix_action_logs_actor_at", "actor_profile_key", created_at.desc()),
     )
+
+
+class LeaderDaySource(Base):
+    """WHICH of the two collection layers counts for ONE (leader, day).
+
+    The Google Form (→ `leader_checklists`) and the in-bot /tasks checklist are
+    two doors onto the same daily checklist, and `leader_bot.merges()` decides
+    between them by RULE — shift 2 from the bot, shift 1 from the sheet, plus
+    the bounded camera-pilot exception. That rule is right for the general case
+    and cannot be right for every case: a leader who filed through both doors on
+    one day leaves two honest submissions, and only a person can say which of
+    them is the record.
+
+    This is that person's answer, and it is the ONLY thing that outranks the
+    rule. `source` is "bot" or "sheet" — never null; clearing the choice DELETES
+    the row, so "no opinion" is the absence of a record rather than a third
+    value every reader would have to spell out.
+
+    Keyed by the leader PROFILE and the day, because that pair is the register's
+    own dedupe key (`get_leaders`: a bot day replaces the sheet row for the same
+    `(leader_id, date)`). Keying it by bot-day id instead would lose the choice
+    the moment the day was deleted and re-filed, and could never express "take
+    the sheet row" for a day whose bot twin does not exist yet.
+
+    Bounded on write, not here: an override is only accepted for a pair that
+    genuinely holds BOTH submissions, so it can never point the register at a
+    row that does not exist (a shift-2 day forced to "sheet" would otherwise
+    vanish from every surface — that shift files only in the bot).
+    """
+    __tablename__ = "leader_day_sources"
+    __table_args__ = (
+        UniqueConstraint("leader_profile_id", "date", name="uq_leader_day_source"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    leader_profile_id = Column(Integer, nullable=False, index=True)  # role_profiles.id
+    date = Column(String(10), nullable=False, index=True)            # "YYYY-MM-DD"
+    source = Column(String(8), nullable=False)                       # "bot" | "sheet"
+    set_by = Column(String(160), nullable=True)
+    set_at = Column(DateTime, nullable=True)

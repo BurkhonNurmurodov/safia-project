@@ -2922,10 +2922,12 @@ export default function Leaders() {
   // strip is no longer conditional on the admin/supervisor tools.
   const tabsBar = (
     <div className="mb-3">
-      {/* No `scrollable` here: it makes the track w-full, and inside a block
-          div that stretches the bar across the page. Two or three short tabs
-          never overflow, so the toggle shrink-wraps to its labels instead. */}
-      <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
+      {/* `scrollable` costs nothing while the tabs fit — without `fill` the
+          track still shrink-wraps to its labels, so this reads exactly as it
+          did on a desktop. It earns its keep at 390px, where four tabs cannot
+          fit and the selected one used to sit clipped off the right edge with
+          nothing on screen saying more existed. */}
+      <SegmentedToggle asTabs scrollable ariaLabel={pageTitle} value={tab} onChange={setTab}
         options={[
           ["monitor", T.tabMonitor],
           ["tasks", T.tabTasks],

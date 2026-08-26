@@ -5,6 +5,7 @@ import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
   Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, FileClock,
+  ClipboardList,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -25,6 +26,7 @@ import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
 import ActionHistory from "./ActionHistory";
 import LeaderTasksAdmin from "./LeaderTasksAdmin";
+import LeaderDailyTasks from "./LeaderDailyTasks";
 import DbBackup from "./DbBackup";
 import DataSources from "./DataSources";
 import DisplaySettings from "./DisplaySettings";
@@ -86,6 +88,14 @@ export const ADMIN_NAV = [
 
   { id: "broadcast",    group: "tools",  Icon: Megaphone,      labelKey: "admin.tabBroadcast",    descKey: "admin.desc.broadcast" },
   { id: "ltasks",       group: "tools",  Icon: ListChecks,     labelKey: "admin.tabLtasks",       descKey: "admin.desc.ltasks" },
+  // What the leaders actually FILED, in both collection layers — the Google
+  // Form rows and the bot days — with the proofs behind them, the per-task
+  // reopen, and the choice of which submission counts on a day that holds
+  // both. Sits directly under the matrix that CONFIGURES those tasks: one
+  // configures the checklist, the other reads what came back. No `capKey`, so
+  // like "permissions" and "logs" a grantee can never be admitted — it can
+  // delete a scored day and move a leader's score.
+  { id: "ltdaily",      group: "tools",  Icon: ClipboardList,  labelKey: "admin.tabLtDaily",      descKey: "admin.desc.ltdaily" },
   // The cells' working start/end register — per-shift defaults a cell inherits,
   // its own pair overriding them. A register only: nothing scores off it yet.
   { id: "shifttimes",   group: "tools",  Icon: Clock,          labelKey: "admin.tabShiftTimes",   descKey: "admin.desc.shifttimes" },
@@ -125,6 +135,7 @@ const VIEWS = {
   logs:         Logs,
   broadcast:    Broadcast,
   ltasks:       LeaderTasksAdmin,
+  ltdaily:      LeaderDailyTasks,
   shifttimes:   ShiftTimes,
   idlesource:   IdleSource,
   lostworkers:  LostWorkers,

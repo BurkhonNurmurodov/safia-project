@@ -35,6 +35,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  *               without replacing the affordance, and leaves the selected
  *               segment off-screen — at which point nothing looks selected and
  *               the user can't tell where they are.
+ *               It costs nothing while the options FIT: without `fill` the
+ *               track is inline and shrink-wraps to its labels exactly like a
+ *               plain toggle (capped at max-w-full), so a toolbar or tab strip
+ *               can carry it permanently and only scrolls on the narrow screen
+ *               that needs it. With `fill` it stays full-width, for the form
+ *               panels that want the row filled.
  *   asTabs    – give the track tablist/tab semantics with aria-selected and
  *               arrow-key navigation, for when the toggle switches VIEWS rather
  *               than setting a value. (Plain toggles get aria-pressed instead.)
@@ -129,7 +135,12 @@ export default function SegmentedToggle({
       aria-label={ariaLabel}
       onKeyDown={onKeyDown}
       className={`${
-        scrollable ? "flex w-full overflow-x-auto no-scrollbar" : fill ? "flex w-full" : "inline-flex"
+        scrollable
+          // min-w-0 is what lets the track shrink below its content inside the
+          // inline-flex wrapper below — without it the flex item keeps its
+          // max-content width and overflows instead of scrolling.
+          ? `${fill ? "flex w-full" : "inline-flex max-w-full min-w-0"} overflow-x-auto no-scrollbar`
+          : fill ? "flex w-full" : "inline-flex"
       } items-center gap-1 rounded-xl p-[4px] ${scrollable ? "" : className}`}
       style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
     >
@@ -172,7 +183,14 @@ export default function SegmentedToggle({
   // Edge fades stand in for the scrollbar the track hides — without them an
   // overflowing set of options gives no hint that more exist off-screen.
   return (
-    <div className={`relative min-w-0 ${className}`}>
+    <div
+      className={`relative min-w-0 ${
+        // The fades are positioned against THIS box, so it has to be the width
+        // of the track and not of the row: a block wrapper would park the end
+        // fade at the far edge of the page while the track ended mid-row.
+        fill ? "" : "inline-flex max-w-full align-top"
+      } ${className}`}
+    >
       {track}
       {edges.start && (
         <div

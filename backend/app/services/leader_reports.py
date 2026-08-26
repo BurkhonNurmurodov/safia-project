@@ -448,7 +448,9 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     # would name a number nothing on the page agrees with. Only BOT uids can be
     # one — the sheet row filed the same day is the counted submission.
     if uid.startswith("bot:") and leader_bot.training(
-            shift, row.get("manager_id"), date, leader_bot.bot_from_floors(db)):
+            shift, row.get("manager_id"), date, leader_bot.bot_from_floors(db),
+            leader_id=row.get("leader_id"),
+            overrides=leader_bot.source_overrides(db)):
         _park(db, key, uid, "rehearsal day — the fill-out row is the record")
         return False
 

@@ -312,6 +312,38 @@ def reopened_tasks(day: LeaderTaskDay | None) -> set[int]:
     return {int(t) for t in ((day.reopened if day is not None else None) or [])}
 
 
+def reset_task(db: Session, day: LeaderTaskDay | None, task_id: int) -> bool:
+    """Empty ONE task — its answer, its media rows and its camera roll.
+
+    THE reset core: the bot's two «Qayta topshirish» buttons (upload flow and
+    camera prompt) and the admin panel's «Tozalash» all run this, so «empty»
+    can never come to mean two different things on two surfaces.
+
+    The roll is dropped whether or not an answer exists: a camera task below
+    `min_media` holds shots and no entry, and that half-shot state is exactly
+    what a leader resets from — clearing it only alongside an entry would leave
+    the menu counting «📷 2/3» on a task the leader just emptied.
+
+    Refuses a task that is still LOCKED, which is what makes the admin's
+    «Tozalash» a two-step act: `reopen_task` first, this second. The channel
+    copies stay either way — the archive is the audit trail.
+
+    Returns whether anything was actually emptied, so a caller can say so.
+    """
+    if not day:
+        return False
+    e = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
+    if locked(e, day):
+        return False        # submitted on a per-task unit — nothing empties it
+    hit = e is not None
+    if e:  # channel posts stay (audit trail); only our rows go
+        db.query(LeaderTaskMedia).filter_by(entry_id=e.id).delete()
+        db.delete(e)
+    hit = leader_proof.clear_roll(db, day.id, task_id) or hit
+    db.commit()
+    return bool(hit)
+
+
 def force_answer(db: Session, *, day: LeaderTaskDay, task_id: int,
                  cfg_entry: dict, shift: int | None) -> LeaderTaskEntry:
     """The answer to record for a task the deadline caught mid-flight.

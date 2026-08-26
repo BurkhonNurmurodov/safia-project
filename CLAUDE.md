@@ -1037,6 +1037,70 @@ which door reached the day first.
   on a day-close unit ⇒ they simply never pressed «KUNNI YOPISH». `expired` ⇒ it
   will close (and go to the AI) the moment that leader reopens the bot.
 
+## What the leaders FILED (`/admin/upload?tab=ltdaily`)
+
+From **2026-08-26** «Liderlar kunlik vazifalari» is the admin's read of both
+collection layers WHOLE — `pages/admin/LeaderDailyTasks.jsx`, two sub-tabs over
+`GET /admin/leader-tasks/fillout` (the Google-Form rows) and `GET
+/admin/leader-tasks/submissions` (the bot days, the existing «Tozalash» feed).
+Every read surface on the platform serves the MERGED answer — `/api/leaders`
+drops a sheet row the moment a bot day replaces it — so a leader who filed
+through both doors left one submission an admin could open and one they could
+see **nowhere**. This is the surface where both exist.
+
+- **Admin-only and NOT grantable.** No `capKey` on the `ADMIN_NAV` entry, so
+  `capTabs.includes(capKey ?? id)` can never admit a grantee — the `permissions`
+  / `logs` model. It can delete a scored day and move a leader's score.
+- **The fill-out layer is READ-ONLY, and the tab says why.** `leader_checklists`
+  is wiped and reloaded by `sheets_sync.sync_leaders_sheet` on every Refresh, so
+  a delete here would reappear on the next sync — a button that lies about what
+  it did. A row is removed in the Google sheet itself. (The user's ruling: a
+  suppression list that survives re-sync was offered and declined.)
+- **The detail modal reads `/api/leaders/report/{uid}`** —
+  `components/leaders/DaySubmissionModal.jsx`, the SAME payload the day-report
+  page and the report DM are built from. That is what makes it trustworthy: a
+  score, a verdict or a photo shown to the admin is the one the leader and the
+  brigadir were shown. Never add a second admin-only projection of a day. Both
+  submissions stay readable whichever one counts — `build_report_row` finds a
+  sheet row by `submission_id` and a bot day by `closed_at`, neither gated on the
+  merge.
+- **Reopen is PER TASK** (the user's ruling), `POST
+  /admin/leader-tasks/task/reopen` → `leader_close.reopen_task` (+ `reset_task`
+  when `wipe`), the same cores the bot's own locked-task screen runs, so a task
+  taken back from the panel and one taken back in Telegram end in one state.
+  `leader_close.reset_task` is now THE reset core — `telegram_bot._lt_reset_task`
+  is a thin call into it. Offered only where a task is actually LOCKED
+  (`locked_tasks` on the row); delete stays whole-day and closed-only.
+
+### Which submission COUNTS (`leader_day_sources`)
+
+`leader_bot.merges()` decides between the two layers by RULE, and that rule is
+right in general and cannot be right in every case: a leader who answered twice
+leaves two honest submissions and only a person can say which is the record.
+
+- **`LeaderDaySource` is that person's answer** — `(leader_profile_id, date)` →
+  `"bot" | "sheet"`, `POST /admin/leader-tasks/day-source`. Clearing DELETES the
+  row, so "no opinion" is the absence of a record rather than a third value
+  every reader has to spell out.
+- **It is checked FIRST inside `merges()` and `training()`**, which is what makes
+  it reach every surface at once — the register, the photo proxy, the score, the
+  day report, the AI queue (`discover` / `undiscovered` / `queue_report` /
+  `queue_task`) and `leader_reports`' park. Both now take `leader_id=` +
+  `overrides=`; a caller that omits them behaves exactly as before.
+- **Bounded on write to pairs that hold BOTH.** Shift 2 files only in the bot, so
+  forcing one of its days to «sheet» with no sheet row would delete the day from
+  every surface at once without deleting anything. Refused in the endpoint, not
+  guarded in the UI — the endpoint is reachable without it.
+- **`_pair_state()` in `routers/leader_tasks.py` is the ONE computation** behind
+  both registers and the writer, so the two tabs and the endpoint that changes
+  the answer can never disagree about a day — including about whether there are
+  two submissions to choose between. Pairs are joined by the resolved leader
+  PROFILE (`supervisor_match` → `leader_match`), the register's own dedupe key;
+  a looser matcher here would act on pairs `/api/leaders` never joins.
+- A bot day that resolves to «sheet» with **no** sheet row counts NOWHERE (a
+  rehearsal day, an unmerged shift-1 day). The cell says «Hisobga olinmaydi»
+  rather than naming a Form row that does not exist.
+
 ## The action register (`/admin/upload?tab=logs`)
 
 From **2026-08-23** every change on the platform lands in ONE append-only table,

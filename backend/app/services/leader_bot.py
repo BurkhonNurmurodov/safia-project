@@ -27,6 +27,13 @@ before the floor the bot day is a REHEARSAL, so the sheet row stays the record
 and `training()` says so to the one other reader that must agree — the day
 report, which would otherwise DM a score for a day the register does not show.
 
+One thing outranks all of it: an ADMIN's per-day choice (`source_overrides`,
+written from the admin «Liderlar kunlik vazifalari» tab). A leader who filed
+through both doors on one day leaves two honest submissions, and no rule can
+say which is the record — only a person can. The choice is bounded on write to
+pairs that genuinely hold both, so it can never point the register at a row
+that is not there.
+
 Only CLOSED days surface. An open day is a leader mid-checklist, not a
 submission — the same rule the dashboard has always applied.
 """
@@ -42,6 +49,7 @@ from app.models import (
     LeaderTaskMedia,
     LeaderTaskPhoto,
     LeaderTaskSetting,
+    LeaderDaySource,
     LeaderUnitSetting,
     Manager,
     RoleProfile,
@@ -95,18 +103,44 @@ def bot_from_floors(db: Session) -> dict[int, str]:
             if (f or "").strip()}
 
 
+def source_overrides(db: Session) -> dict[tuple[int, str], str]:
+    """(leader profile id, day) → the layer an ADMIN chose, in one query.
+
+    Only pairs somebody actually ruled on are in the map; every other day falls
+    through to `merges()`, i.e. behaves exactly as it always did. Clearing a
+    choice deletes the row, so an absent key means "no opinion" and there is no
+    third value for a reader to special-case.
+    """
+    return {(int(l), str(d)): str(src)
+            for l, d, src in db.query(LeaderDaySource.leader_profile_id,
+                                      LeaderDaySource.date,
+                                      LeaderDaySource.source).all()}
+
+
 def merges(shift: int | None, manager_id: int | None, date: str | None,
-           cams: set[int], floors: dict[int, str] | None = None) -> bool:
+           cams: set[int], floors: dict[int, str] | None = None,
+           *, leader_id: int | None = None,
+           overrides: dict[tuple[int, str], str] | None = None) -> bool:
     """Does this closed bot day replace its (leader, date) sheet row?
 
     THE merge rule, in one place: both readers below call it, so the register
     and the photo proxy can never disagree about whether a day is visible.
+
+    An ADMIN's per-day choice outranks everything else here, and is checked
+    FIRST — a leader who filed through both doors on one day leaves two honest
+    submissions, and no rule can tell which is the record. It reaches only the
+    pairs somebody ruled on; the endpoint that writes it refuses a pair that
+    does not hold both submissions, so this can never point the register at a
+    row that is not there.
 
     `floors` is the per-unit rehearsal window. It can only ever move the day
     LATER — `max` against `MERGE_FROM` — so a floor typed into the admin panel
     cannot reach back past the pilot's own bound and pull months of bot days
     into a register that has never shown them.
     """
+    picked = (overrides or {}).get((leader_id, str(date or ""))) if leader_id else None
+    if picked:
+        return picked == "bot"
     if shift == MERGE_SHIFT:
         return True
     if manager_id not in cams:
@@ -116,7 +150,9 @@ def merges(shift: int | None, manager_id: int | None, date: str | None,
 
 
 def training(shift: int | None, manager_id: int | None, date: str | None,
-             floors: dict[int, str] | None = None) -> bool:
+             floors: dict[int, str] | None = None,
+             *, leader_id: int | None = None,
+             overrides: dict[tuple[int, str], str] | None = None) -> bool:
     """Is this closed bot day a REHEARSAL — filed in the bot on a day whose
     counted submission is still the sheet row?
 
@@ -126,7 +162,18 @@ def training(shift: int | None, manager_id: int | None, date: str | None,
     nobody asked to silence. True only for a day an admin explicitly declared
     practice, and never for shift 2 — which files ONLY in the bot, so there is
     no sheet row underneath it to fall back to.
+
+    An explicit per-day source choice answers this too, and answers it first:
+    picking the SHEET row says this bot filing is not the record, which is the
+    same fact a rehearsal day states.
     """
+    picked = (overrides or {}).get((leader_id, str(date or ""))) if leader_id else None
+    if picked:
+        # An admin who took the sheet row has said this bot filing is not the
+        # record — the same fact a rehearsal day states, so it takes the same
+        # answer: no score DM that contradicts the register. Choosing the BOT
+        # day makes it the record whatever the rule said, rehearsal included.
+        return picked == "sheet"
     if shift == MERGE_SHIFT:
         return False
     floor = (floors or {}).get(manager_id)
@@ -165,8 +212,10 @@ def closed_days(
     }
     cams = camera_units(db)
     floors = bot_from_floors(db)
+    picks = source_overrides(db)
     return [d for d in days
-            if merges(shifts.get(d.manager_id), d.manager_id, d.date, cams, floors)]
+            if merges(shifts.get(d.manager_id), d.manager_id, d.date, cams, floors,
+                      leader_id=d.leader_id, overrides=picks)]
 
 
 def entries_of(db: Session, days: list[LeaderTaskDay]) -> dict[int, list[LeaderTaskEntry]]:
@@ -299,7 +348,8 @@ def visible_day(db: Session, day: LeaderTaskDay, payload: dict, *, sees_all: boo
     # day the merge rule does not carry has unreachable photos for them.
     mgr = db.query(Manager).filter_by(id=day.manager_id).first()
     if not merges(mgr.shift if mgr else None, day.manager_id, day.date,
-                  camera_units(db), bot_from_floors(db)):
+                  camera_units(db), bot_from_floors(db),
+                  leader_id=day.leader_id, overrides=source_overrides(db)):
         return False
     # Below that, mirror /api/leaders exactly: only supervisors and leaders are
     # narrowed, and a personal "see all" page grant lifts both.

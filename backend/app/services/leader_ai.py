@@ -958,6 +958,7 @@ def discover(db: Session) -> int:
     if days:
         shifts = {m.id: m.shift for m in db.query(Manager).all()}
         rehearsing = leader_bot.bot_from_floors(db)
+        picks = leader_bot.source_overrides(db)
         with_media = {r[0] for r in db.query(LeaderTaskMedia.entry_id).distinct().all()}
         entries = (
             db.query(LeaderTaskEntry)
@@ -975,7 +976,8 @@ def discover(db: Session) -> int:
             if review_paused(shifts.get(d.manager_id)):
                 continue
             if leader_bot.training(shifts.get(d.manager_id), d.manager_id,
-                                   d.date, rehearsing):
+                                   d.date, rehearsing,
+                                   leader_id=d.leader_id, overrides=picks):
                 continue
             db.add(LeaderAiReview(
                 ref=ref, source="bot", date=d.date, task_id=e.task_id,
@@ -1197,6 +1199,7 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         # that counted them would promise «N unchecked» rows the button then
         # never takes — and the figure would never come down.
         rehearsing = leader_bot.bot_from_floors(db)
+        picks = leader_bot.source_overrides(db)
         entries = (
             db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id,
                      LeaderTaskEntry.task_id)
@@ -1214,7 +1217,8 @@ def undiscovered(db: Session, *, date_from: str | None = None,
             if bot_ref(eid) in known:
                 continue
             mgr, ldr, when = days.get(day_id, (None, None, None))
-            if leader_bot.training(shifts.get(mgr), mgr, when, rehearsing):
+            if leader_bot.training(shifts.get(mgr), mgr, when, rehearsing,
+                                   leader_id=ldr, overrides=picks):
                 continue
             out.append((f"bot:{day_id}", shifts.get(mgr), mgr, ldr, task_id))
 
@@ -1296,7 +1300,9 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
         # is a Gemini call spent on a photo nobody will ever be shown.
         if not force and leader_bot.training(
                 mgr.shift if mgr else None, day.manager_id, day.date,
-                leader_bot.bot_from_floors(db)):
+                leader_bot.bot_from_floors(db),
+                leader_id=day.leader_id,
+                overrides=leader_bot.source_overrides(db)):
             return 0
         entries = db.query(LeaderTaskEntry).filter_by(
             day_id=day.id, done=True).all()
@@ -1399,7 +1405,8 @@ def queue_task(db: Session, day: LeaderTaskDay, entry: LeaderTaskEntry, *,
         return 0
     if not force and leader_bot.training(
             mgr.shift if mgr else None, day.manager_id, day.date,
-            leader_bot.bot_from_floors(db)):
+            leader_bot.bot_from_floors(db),
+            leader_id=day.leader_id, overrides=leader_bot.source_overrides(db)):
         return 0                       # rehearsal — see queue_report
     if not db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).first():
         return 0

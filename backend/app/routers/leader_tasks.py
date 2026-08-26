@@ -10,6 +10,7 @@ for the /leaders detail modal — page-access gated with the same row scoping as
 """
 import logging
 import re
+from datetime import datetime, timezone
 from io import BytesIO
 
 import requests
@@ -25,7 +26,8 @@ from app.capabilities import page_scope_is_all
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    AppSetting, LeaderAiReview, LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry,
+    AppSetting, LeaderAiReview, LeaderChecklist, LeaderDaySource, LeaderTaskDay,
+    LeaderTaskDef, LeaderTaskEntry,
     LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskMedia,
     LeaderTaskPhoto, LeaderTaskSetting, Manager, RoleProfile,
 )
@@ -33,7 +35,7 @@ from app.permissions import page_allowed, require_page
 from app.security import require_auth
 from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
-from app.services import action_log, leader_ai, leader_bot
+from app.services import action_log, leader_ai, leader_bot, leader_close
 from app.services.leader_tasks import (
     CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_leader_config, effective_settings, ensure_task_defs,
@@ -44,7 +46,8 @@ from app.services.leader_tasks import (
     set_time_check, set_window,
     write_change,
 )
-from app.services.name_map import relabel_supervisor, supervisor_match
+from app.services.name_map import (
+    leader_match, relabel_supervisor, supervisor_match)
 
 router = APIRouter(tags=["leader-tasks"])
 log = logging.getLogger(__name__)
@@ -1242,6 +1245,10 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
     # the entries: a task short of `min_media` has no entry, and its shots are
     # precisely the evidence that the leader did the work.
     per_task = per_task_units(db)
+    # Which layer counts for each (leader, day) — the SAME computation the
+    # fill-out register runs, so the two tabs can never print different answers
+    # about one day.
+    counted, picks, sheet_pairs, pick_by = _pair_state(db)
     open_ids = [d.id for d in open_days]
     roll: dict[tuple[int, int], int] = {}
     if open_ids:
@@ -1270,10 +1277,23 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
             "shift": mgr.shift if mgr else None,
             "tasks": len(entries),
             "done": sum(1 for e in entries if e.done),
+            # The tasks an admin can take back: one entry is one lock, and the
+            # panel must not offer a button for a task that is not locked.
+            "locked_tasks": sorted(e.task_id for e in entries
+                                   if leader_close.locked(e, d)),
             "media": sum(len(media_by_entry.get(e.id, [])) for e in entries),
             "completion": float(d.completion or 0),
             "closed_at": d.closed_at.isoformat() if d.closed_at else None,
             "open": d.closed_at is None,
+            # Which submission the register serves for this (leader, day), and
+            # the admin's choice if somebody made one. An OPEN day is in neither
+            # — it is not a submission yet.
+            "counted": counted.get((d.leader_id, str(d.date))),
+            "pick": picks.get((d.leader_id, str(d.date))),
+            # A Google-Form row for the same person and day: only then is there
+            # anything to CHOOSE between, and only then is the choice offered.
+            "has_sheet": (d.leader_id, str(d.date)) in sheet_pairs,
+            "pick_by": pick_by.get((d.leader_id, str(d.date))),
         }
         if d.closed_at is None:
             shift = mgr.shift if mgr else None
@@ -1409,6 +1429,289 @@ def delete_submissions(
         details=lines,
     )
     return {"days": n_days, "entries": n_entries, "media": n_media, "reviews": n_rev}
+
+
+# ── Admin: the fill-out (Google Form) register ────────────────────────────────
+# The bot half above has had an admin register since the «Tozalash» tab; the
+# sheet half never did. /api/leaders serves the MERGED register — a sheet row
+# replaced by a bot day is simply not in it — so a leader who filed through both
+# doors left one submission an admin could open and one they could not see at
+# all. This lists the sheet layer WHOLE, exactly as `closed_days(merged=False)`
+# lists the bot layer whole, and says of every day which of the two counts.
+#
+# READ-ONLY, deliberately. `leader_checklists` is wiped and reloaded on every
+# sheet Refresh (`sheets_sync.sync_leaders_sheet`), so a delete here would
+# reappear on the next sync — a button that lies about what it did. The sheet is
+# the source of truth for this layer, and a row is removed there.
+
+def _sheet_pairs(db: Session, rows=None) -> set[tuple[int, str]]:
+    """(leader profile id, day) for every Google-Form row that RESOLVED to a
+    leader profile.
+
+    Matched the register's own way — `supervisor_match` then `leader_match` —
+    because that pair is the register's dedupe key. A second, looser matcher
+    here would join rows /api/leaders never joins, and the source choice would
+    then act on a pair that does not exist anywhere else.
+
+    A row whose leader resolves to nobody is deliberately absent: it belongs to
+    no profile, so no bot day can be its twin.
+    """
+    from app.routers.leaders import _relabel
+
+    rows = db.query(LeaderChecklist).all() if rows is None else rows
+    sup = supervisor_match(db.query(Manager).all(),
+                           {_relabel(r.supervisor) for r in rows if r.supervisor})
+    lead = leader_match(
+        db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
+        {(r.leader, (sup.get(_relabel(r.supervisor)) or {}).get("id"))
+         for r in rows if r.leader},
+    )
+    out = set()
+    for r in rows:
+        pid = (lead.get((r.leader, (sup.get(_relabel(r.supervisor)) or {}).get("id"))) or {}).get("id")
+        if pid:
+            out.add((pid, str(r.date)))
+    return out
+
+
+def _pair_state(db: Session, *, want_sheet: bool = True):
+    """Everything both registers need to say which submission counts, in one
+    read: `(counted, picks, sheet_pairs, pick_by)`.
+
+    `want_sheet=False` skips the sheet pass for a caller that already resolved
+    the sheet layer itself (`list_fillout` does). The fuzzy name matchers are
+    the expensive half of this, and running them twice for one page load buys
+    nothing — the caller's own answer is the same answer.
+
+    `counted` — (leader profile id, day) → the layer in force, for every pair
+    that holds a CLOSED bot day. `picks` — the admin overrides. `sheet_pairs` —
+    the pairs the Google-Form layer holds. `pick_by` — who ruled.
+
+    ONE computation shared by both registers and by the writer below, so the
+    fill-out tab, the bot tab and the endpoint that changes the answer can never
+    disagree about the same day — including about whether there are two
+    submissions to choose between at all.
+    """
+    days = leader_bot.closed_days(db, merged=False)
+    shifts = {m.id: m.shift for m in db.query(Manager).all()}
+    cams = leader_bot.camera_units(db)
+    floors = leader_bot.bot_from_floors(db)
+    picks = leader_bot.source_overrides(db)
+    # WHO ruled, so a row can say that the answer beside it was a person's and
+    # name them. A choice presented as an unattributed fact is one nobody can
+    # ask about.
+    by = {(int(l), str(d)): (who or "")
+          for l, d, who in db.query(LeaderDaySource.leader_profile_id,
+                                    LeaderDaySource.date,
+                                    LeaderDaySource.set_by).all()}
+    counted: dict[tuple[int, str], str] = {}
+    for d in days:
+        counted[(d.leader_id, str(d.date))] = "bot" if leader_bot.merges(
+            shifts.get(d.manager_id), d.manager_id, d.date, cams, floors,
+            leader_id=d.leader_id, overrides=picks) else "sheet"
+    return counted, picks, (_sheet_pairs(db) if want_sheet else set()), by
+
+
+@router.get("/admin/leader-tasks/fillout")
+def list_fillout(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """Every Google-Form checklist row the platform holds, resolved to the same
+    people and units the dashboard resolves them to.
+
+    The matchers are the register's own (`supervisor_match` + `leader_match`),
+    not a second spelling of them: a row this tab attributed to a different
+    person than /api/leaders did would make the source choice below act on a
+    pair the register never joins.
+    """
+    from app.routers.leaders import _photo_count, _relabel
+
+    rows = (db.query(LeaderChecklist)
+            .order_by(LeaderChecklist.date.desc(), LeaderChecklist.id.desc()).all())
+    managers = db.query(Manager).all()
+    sup = supervisor_match(managers, {_relabel(r.supervisor) for r in rows if r.supervisor})
+    lead = leader_match(
+        db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
+        {(r.leader, (sup.get(_relabel(r.supervisor)) or {}).get("id"))
+         for r in rows if r.leader},
+    )
+    counted, picks, _, pick_by = _pair_state(db, want_sheet=False)
+
+    out = []
+    for r in rows:
+        name = _relabel(r.supervisor)
+        info = sup.get(name) or {}
+        prof = lead.get((r.leader, info.get("id"))) or {}
+        tasks = r.tasks or []
+        lid = prof.get("id")
+        key = (lid, str(r.date)) if lid else None
+        has_bot = key in counted if key else False
+        out.append({
+            # The form's own id where it has one — it survives the wipe-and-
+            # reload of every refresh, unlike the row id.
+            "uid": r.submission_id or f"row-{r.id}",
+            "id": r.id,
+            "date": r.date,
+            "leader_id": lid,
+            "leader": prof.get("name") or r.leader,
+            "manager_id": info.get("id"),
+            "supervisor": name,
+            "shift": info.get("shift"),
+            "tasks": len(tasks),
+            "done": sum(1 for t in tasks if t.get("done")),
+            "media": sum(_photo_count(t.get("photo")) for t in tasks),
+            "completion": float(r.completion or 0),
+            "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            # The pair also holds a closed bot day, so somebody may have to
+            # choose between them — and until they do, `counted` says which one
+            # the rule picked.
+            "has_bot": has_bot,
+            "counted": counted.get(key, "sheet") if key else "sheet",
+            "pick": picks.get(key) if key else None,
+            "pick_by": pick_by.get(key) if key else None,
+        })
+
+    sup_ids = {r["manager_id"] for r in out if r["manager_id"]}
+    return {
+        "rows": out,
+        "both_count": sum(1 for r in out if r["has_bot"]),
+        "supervisors": sorted(
+            ({"id": i, "name": next((r["supervisor"] for r in out if r["manager_id"] == i), f"#{i}"),
+              "shift": next((r["shift"] for r in out if r["manager_id"] == i), None)}
+             for i in sup_ids), key=lambda x: x["name"]),
+    }
+
+
+# ── Admin: which layer counts for one (leader, day) ──────────────────────────
+
+class DaySource(BaseModel):
+    leader_id: int
+    date: str
+    source: str | None = None      # "bot" | "sheet" | null = back to the rule
+
+
+@router.post("/admin/leader-tasks/day-source")
+def set_day_source(
+    body: DaySource,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(verify_admin),
+):
+    """Pick the submission that COUNTS for one leader-day, or hand the day back
+    to the rule.
+
+    Only for a pair that genuinely holds BOTH, and that bound is the whole
+    safety of the feature: shift 2 files only in the bot, so forcing one of its
+    days to «sheet» when no sheet row exists would delete the day from every
+    surface at once — the register, the score, the report and the AI queue —
+    without deleting anything. Refused here rather than guarded in the UI,
+    because the endpoint is reachable without it.
+
+    Clearing DELETES the row: "no opinion" is the absence of a record, not a
+    third value every reader would have to spell out.
+    """
+    src = (body.source or "").strip().lower() or None
+    if src not in (None, "bot", "sheet"):
+        raise HTTPException(status_code=400, detail="source must be 'bot' or 'sheet'")
+    date = (body.date or "").strip()[:10]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise HTTPException(status_code=400, detail="Bad date")
+
+    prof = db.query(RoleProfile).filter_by(id=body.leader_id).first()
+    if prof is None or prof.role != "leader":
+        raise HTTPException(status_code=404, detail="No such leader")
+
+    row = (db.query(LeaderDaySource)
+           .filter_by(leader_profile_id=body.leader_id, date=date).first())
+    old = row.source if row else None
+
+    if src is not None:
+        # BOTH sides must exist, checked through the same `_pair_state` the two
+        # registers are drawn from — a choice offered by one computation and
+        # validated by another is a choice that can be offered and refused.
+        counted, _, sheet_pairs, _by = _pair_state(db)
+        key = (body.leader_id, date)
+        if key not in counted:
+            raise HTTPException(
+                status_code=409,
+                detail="This day has no closed bot submission — nothing to choose between")
+        if key not in sheet_pairs:
+            raise HTTPException(
+                status_code=409,
+                detail="This day has no fill-out submission — nothing to choose between")
+
+    if src is None:
+        if row is not None:
+            db.delete(row)
+    elif row is None:
+        db.add(LeaderDaySource(leader_profile_id=body.leader_id, date=date,
+                               source=src, set_by=_actor(admin),
+                               set_at=datetime.now(timezone.utc)))
+    else:
+        row.source = src
+        row.set_by = _actor(admin)
+        row.set_at = datetime.now(timezone.utc)
+    db.commit()
+    log.info("leader-tasks: %s set the counted source for leader %s on %s to %s",
+             _actor(admin), body.leader_id, date, src or "the rule")
+    action_log.enrich(
+        target_kind="day", target_id=str(body.leader_id), target_name=prof.name,
+        unit_id=prof.manager_id, day=date,
+        changes=[("source", old or "auto", src or "auto")])
+    return {"leader_id": body.leader_id, "date": date, "source": src}
+
+
+# ── Admin: taking ONE submitted task back ────────────────────────────────────
+# The bot already offers this on its locked-task screen; this is the same core
+# reached from the panel, for an admin at a desk rather than in the chat. It is
+# admin-only in `verify_admin` AND in `reopen_task`'s own contract — «closing is
+# final» is a rule, not a layout.
+
+class ReopenTask(BaseModel):
+    day_id: int
+    task_id: int
+    wipe: bool = False             # reopen AND empty it
+
+
+@router.post("/admin/leader-tasks/task/reopen")
+def reopen_submitted_task(
+    body: ReopenTask,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(verify_admin),
+):
+    """Unlock one submitted task, optionally emptying it.
+
+    Both halves are the shared cores — `leader_close.reopen_task` and
+    `leader_close.reset_task` — so a task taken back from the panel and one
+    taken back from the bot end in exactly the same state. Reopen lifts the
+    entry's lock AND the day's, drops the AI verdict (a review row left behind
+    would let the re-close pass silently, the old verdict standing over new
+    photos) and cancels live objections to it; the day's report is not recalled
+    — a DM cannot be — it corrects itself when the task closes again.
+    """
+    day = db.query(LeaderTaskDay).filter_by(id=body.day_id).first()
+    if day is None:
+        raise HTTPException(status_code=404, detail="No such day")
+    entry = (db.query(LeaderTaskEntry)
+             .filter_by(day_id=day.id, task_id=body.task_id).first())
+    if not leader_close.locked(entry, day):
+        raise HTTPException(status_code=409, detail="This task is not locked")
+
+    prof = db.query(RoleProfile).filter_by(id=day.leader_id).first()
+    actor = _actor(admin)
+    lifted = leader_close.reopen_task(db, day=day, task_id=body.task_id,
+                                      entry=entry, actor=actor)
+    emptied = leader_close.reset_task(db, day, body.task_id) if body.wipe else False
+    log.info("leader-tasks: %s %s task %s of day %s (%s) — %s",
+             actor, "emptied" if body.wipe else "reopened", body.task_id,
+             day.id, day.date, lifted)
+    action_log.enrich(
+        target_kind="task", target_id=str(body.task_id),
+        unit_id=day.manager_id, day=str(day.date),
+        details=[("leader", prof.name if prof else f"#{day.leader_id}"),
+                 ("day_reopened", bool(lifted["day"])),
+                 ("verdict_dropped", bool(lifted["verdict"])),
+                 ("disputes_cancelled", lifted["disputes"]),
+                 ("emptied", bool(emptied))],
+        changes=[("status", "closed", "empty" if body.wipe else "draft")])
+    return {**lifted, "emptied": emptied}
 
 
 # ── Viewer: proof-photo streaming for the /leaders detail modal ───────────────

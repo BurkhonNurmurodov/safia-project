@@ -2737,28 +2737,13 @@ def _lt_save_entry(db, pid: int, task_id: int, done: bool,
 
 
 def _lt_reset_task(db, day: LeaderTaskDay | None, task_id: int) -> None:
-    """Empty ONE task — its answer, its media rows and its camera roll.
+    """Empty ONE task — the bot's two «Qayta topshirish» buttons.
 
-    THE reset core, shared by the upload flow's «Qayta topshirish» and the
-    camera prompt's, so the two can never disagree about what «empty» means.
-    The roll is dropped whether or not an answer exists: a camera task below
-    `min_media` holds shots and no entry, and that half-shot state is exactly
-    what a leader resets from — clearing it only alongside an entry would leave
-    the menu counting «📷 2/3» on a task the leader just emptied.
-
-    The channel copies stay. The archive is the audit trail, same as for the
-    bot's own reset.
+    A thin call into `leader_close.reset_task`, which is THE reset core: the
+    admin panel empties a task through the same function, so «empty» means one
+    thing wherever it is pressed.
     """
-    if not day:
-        return
-    e = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
-    if leader_close.locked(e, day):
-        return          # submitted on a per-task unit — nothing empties it
-    if e:  # channel posts stay (audit trail); only our rows go
-        db.query(LeaderTaskMedia).filter_by(entry_id=e.id).delete()
-        db.delete(e)
-    leader_proof.clear_roll(db, day.id, task_id)
-    db.commit()
+    leader_close.reset_task(db, day, task_id)
 
 
 def _lt_log(db, tid: int, prof, date: str, action: str, **kw) -> None:
