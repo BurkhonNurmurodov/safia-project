@@ -57,20 +57,20 @@ const LENS_KEY = "proof.camera.lens2";
 // with and a lens fix must not quietly cost the resolution.
 const VIDEO_SIZE = { width: { ideal: 1920 }, height: { ideal: 1080 } };
 
-const FRONT_LENS = /front|face|user|selfie/i;
+const FRONT_LENS = /front|face|user|selfie|фронт|перед|\boldi?\b|ön/i;
 // Lens words to avoid when a phone offers several rear cameras. An ultra-wide
 // shoots the whole room and bends straight lines, a macro cannot focus past
 // 10 cm, a telephoto cannot step back — all three make a workplace photo look
 // like evidence of a different place. The MAIN camera is the one none of these
 // words describe.
-const AVOID_LENS = /(ultra|wide.?angle|tele|zoom|macro|depth|truedepth|infrared|monochrome|\bir\b)/i;
+const AVOID_LENS = /(ultra|wide.?angle|tele|zoom|macro|depth|truedepth|infrared|monochrome|\bir\b|широк|макро|теле|глубин|keng)/i;
 // A FUSED rear camera — one device standing for two or three sensors. It is a
 // real camera, so it is never disqualified; it is only ever second choice,
 // because WHICH member it opens on is the phone's decision and on iOS that
 // decision is regularly the 0.5x.
 const FUSED_LENS = /(dual|triple|quad|virtual|multi)/i;
 // iOS names the plain 1x sensor «Back Camera»; Android's main one is index 0.
-const MAIN_LENS = /(back camera|rear camera|camera2 0)/i;
+const MAIN_LENS = /(back|rear|main|camera2 0|задн|основн|orqa|asosiy|arka)/i;
 
 /** How much a label looks like the camera a person means by «the camera». */
 function lensScore(label) {
@@ -550,10 +550,21 @@ export default function ProofCamera() {
       if (!stream) {
         // First pass gets permission (labels are blank until it is granted),
         // then the device list becomes readable and the right lens chosen.
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: want }, ...VIDEO_SIZE },
-          audio: false,
-        });
+        // We try exact facingMode first so that resolution preferences don't
+        // override the requested side, falling back to ideal if the device
+        // lacks it (e.g. laptops).
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { exact: want }, ...VIDEO_SIZE },
+            audio: false,
+          });
+        } catch (e) {
+          if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: want }, ...VIDEO_SIZE },
+            audio: false,
+          });
+        }
         const id = pickLens(await lenses(), want);
         if (id && stream.getVideoTracks()[0]?.getSettings?.().deviceId !== id) {
           stream.getTracks().forEach((tr) => tr.stop());
