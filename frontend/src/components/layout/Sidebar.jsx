@@ -37,7 +37,6 @@ const ALL_LINKS = [
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
-  // ARC service-ticket register — synced from the ARC API, admin-only by default.
   // Leader monitoring — ONE page for every role (the per-shift admin copies
   // are retired): the Smena filter inside it narrows to a shift, «All» shows
   // both. Shift 2's days come from the bot once the leader closed one there.
@@ -46,6 +45,7 @@ const ALL_LINKS = [
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles, group: "quality" },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
+  // ARC service-ticket register — synced from the ARC API, admin-only by default.
   { to: "/arc", page: "arc", key: "nav.arc", icon: ClipboardList, group: "quality" },
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },
   { to: "/worker-concerns", page: "worker-concerns", key: "nav.workerConcerns", icon: Megaphone, group: "leaders" },
