@@ -142,7 +142,12 @@ export const profileKeyOf = (targetKey) =>
  *                  cannot write to. Without it the profile is listed FIRST among
  *                  its own accounts, so both kinds sit in one tree. Either way
  *                  an unclaimed profile stays selectable instead of being the
- *                  disabled "not registered" leaf Broadcast shows.
+ *                  disabled "not registered" leaf Broadcast shows. Returning
+ *                  null keeps the default rendering for THAT profile only — the
+ *                  Permissions accounts axis uses this to offer just the
+ *                  unclaimed profiles as positions (their holders signed out,
+ *                  so the position is the one target left) while registered
+ *                  ones keep plain account leaves.
  */
 export function buildRecipientGroups(tree, t, tl, noUsersLabel, leafHint, profileLeaf) {
   return (tree || []).map((block) => {

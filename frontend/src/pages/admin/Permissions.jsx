@@ -222,27 +222,39 @@ export default function Permissions() {
     const chip = (n) => (entryCount(n) > 0 ? String(entryCount(n)) : undefined);
     // On the positions axis the profile IS the leaf and its accounts are not
     // listed at all: showing a login the current mode cannot write to is how an
-    // admin ticks a row and saves nothing they meant.
+    // admin ticks a row and saves nothing they meant. On the accounts axis a
+    // profile whose holders all signed out has no login left to write to, but
+    // the POSITION is still there — so it is offered as the leaf (the save
+    // payload carries both kinds) instead of the disabled dead end that used to
+    // make "set their permissions before they re-register" impossible.
     const tree = buildRecipientGroups(
       blocks, t, tl, t("admin.broadcast.notRegistered"),
       profileAxis ? undefined : chip,
-      profileAxis ? (p) => ({ only: true, hint: chip(p) }) : undefined,
+      profileAxis
+        ? (p) => ({ only: true, hint: chip(p) })
+        : (p) => ((p.users || []).length ? null : { only: true, hint: chip(p) }),
     );
     return { tree, byKey };
   }, [data, t, tl, profileAxis]);
 
   const allKeys = useMemo(() => collectLeafKeys(tree), [tree]);
-  // Keys belonging to the axis on screen. `selected` is persisted across
-  // sessions and a deploy can change the default axis under it, so a stale key
-  // from the other namespace is filtered out rather than left to drive a panel
-  // whose tree shows nothing ticked.
-  const keys = useMemo(
-    () => selected.filter((k) => isProfileTarget(k) === profileAxis),
-    [selected, profileAxis],
-  );
+  // Keys the tree on screen can actually show. `selected` is persisted across
+  // sessions, a deploy can change the default axis under it, and a profile can
+  // be deleted while its key sits saved — so membership in the visible tree is
+  // the filter, not namespace parity (the accounts axis now legitimately holds
+  // BOTH kinds: logins, plus unclaimed positions offered in their place). A
+  // stale key must not drive a panel whose tree shows nothing ticked.
+  const keys = useMemo(() => {
+    const ok = new Set(allKeys);
+    return selected.filter((k) => ok.has(k));
+  }, [selected, allKeys]);
   const chosen = keys.map((k) => byKey[k]).filter(Boolean);
   const chosenProfiles = chosen.filter((c) => c.kind === "profile");
   const chosenUsers = chosen.filter((c) => c.kind === "user");
+  // The accounts axis can hold positions too (an unclaimed profile stands in
+  // for its missing logins), so any wording that names the target kind follows
+  // the selection's real composition, never the axis label.
+  const allProfilesChosen = chosen.length > 0 && chosenUsers.length === 0;
 
   /** Human label for a capability id — page grants read as «Sahifalar · Ishlab
    *  chiqarish» so the audit log never shows a bare page name next to actions. */
@@ -355,7 +367,7 @@ export default function Permissions() {
       setDraft({});
       setConfirmSave(false);
       toast.success(
-        t(profileAxis ? "admin.perms.savedNProfiles" : "admin.perms.savedN")
+        t(allProfilesChosen ? "admin.perms.savedNProfiles" : "admin.perms.savedN")
           .replace("{n}", changeCount).replace("{m}", keys.length),
       );
     } catch (e) {
@@ -389,7 +401,7 @@ export default function Permissions() {
   const only = chosen.length === 1 ? chosen[0] : null;
   const headTitle = only
     ? only.name
-    : t(profileAxis ? "admin.perms.nSelectedProfiles" : "admin.perms.nSelected")
+    : t(allProfilesChosen ? "admin.perms.nSelectedProfiles" : "admin.perms.nSelected")
         .replace("{n}", chosen.length);
   const headSub = only
     ? (only.kind === "profile"
@@ -399,7 +411,7 @@ export default function Permissions() {
         : (only.posts && only.posts.length
             ? t("admin.perms.holds").replace("{names}", [...new Set(only.posts)].join(", "))
             : (only.username ? `@${only.username}` : "")))
-    : t(profileAxis ? "admin.perms.bulkHintProfiles" : "admin.perms.bulkHint");
+    : t(allProfilesChosen ? "admin.perms.bulkHintProfiles" : "admin.perms.bulkHint");
 
   return (
     <div className="space-y-4">
@@ -780,7 +792,7 @@ export default function Permissions() {
         message={
           <>
             <p className="mb-2">
-              {t(profileAxis ? "admin.perms.confirmMsgProfiles" : "admin.perms.confirmMsg")
+              {t(allProfilesChosen ? "admin.perms.confirmMsgProfiles" : "admin.perms.confirmMsg")
                 .replace("{n}", grantCount + denyCount)
                 .replace("{m}", keys.length)}
             </p>
