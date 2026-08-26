@@ -479,8 +479,22 @@ export default function ProofCamera() {
     // and some WebViews leave them blank even after the grant. Choosing by
     // POSITION there is how a phone gets pinned to its 0.5x lens — or its front
     // one — for good: answer nothing, and keep the camera facingMode picked.
-    if (!list.some((d) => d.label)) return null;
-    const side = list.filter((d) => FRONT_LENS.test(d.label || "") === (want === "user"));
+    const isFront = (d) => FRONT_LENS.test(d.label || "");
+    const isBack = (d) => MAIN_LENS.test(d.label || "");
+
+    // If we can't identify ANY camera, trust facingMode rather than making a blind guess.
+    if (!list.some(isFront) && !list.some(isBack)) return null;
+
+    let side;
+    if (want === "user") {
+      side = list.filter(isFront);
+      // If we want front but didn't find any explicit front label, pick what's NOT a known back camera
+      if (!side.length) side = list.filter((d) => !isBack(d));
+    } else {
+      side = list.filter(isBack);
+      // If we want back but didn't find any explicit back label, pick what's NOT a known front camera
+      if (!side.length) side = list.filter((d) => !isFront(d));
+    }
     const pool = side.length ? side : list;
     // Modern phones expose three or four rear cameras and their labels are the
     // only difference between them. SCORE every one and take the best, rather
