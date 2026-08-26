@@ -249,12 +249,18 @@ export default function DaySubmissionModal({ row, onClose, onChanged }) {
 
   const uid = row?.uid;
   const dayId = row?.source === "bot" ? row.id : null;
-  const lockable = useMemo(() => new Set(row?.locked_tasks || []), [row]);
 
+  // Two doors, one shape. A BOT day goes through the admin detail — the only
+  // reader that answers for an UNFINISHED day, and which delegates to
+  // `day_report` verbatim once the day is closed, so a finished day is still
+  // the shared answer. A sheet row has no unfinished state and keeps the
+  // ordinary report endpoint.
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["leader-report", uid],
-    queryFn: () => api.get(`/api/leaders/report/${encodeURIComponent(uid)}`).then((r) => r.data),
-    enabled: !!uid && !row?.open,
+    queryKey: dayId ? ["admin-day", dayId] : ["leader-report", uid],
+    queryFn: () => api.get(dayId
+      ? `/admin/leader-tasks/day/${dayId}`
+      : `/api/leaders/report/${encodeURIComponent(uid)}`).then((r) => r.data),
+    enabled: !!(dayId || uid),
   });
 
   const act = useMutation({
@@ -262,6 +268,7 @@ export default function DaySubmissionModal({ row, onClose, onChanged }) {
       api.post("/admin/leader-tasks/task/reopen",
         { day_id: dayId, task_id: task.id, wipe }).then((r) => r.data),
     onSuccess: (res, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin-day", dayId] });
       qc.invalidateQueries({ queryKey: ["leader-report", uid] });
       qc.invalidateQueries({ queryKey: ["leader-bot-submissions"] });
       qc.invalidateQueries({ queryKey: ["leaders"] });
@@ -288,7 +295,7 @@ export default function DaySubmissionModal({ row, onClose, onChanged }) {
         bodyClassName="px-5 py-4 space-y-3 overflow-y-auto"
         footer={
           <div className="flex items-center gap-2">
-            {uid && !row.open && (
+            {uid && data && !data.open && (
               <a href={`/leaders/report/${encodeURIComponent(uid)}`}
                 target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl"
@@ -301,14 +308,7 @@ export default function DaySubmissionModal({ row, onClose, onChanged }) {
           </div>
         }
       >
-        {/* An OPEN day has no report to render — it is a leader mid-checklist,
-            not a submission. Saying so beats an empty shell that reads like a
-            load that failed. */}
-        {row.open ? (
-          <EmptyState icon={Hourglass} showUploadLink={false}
-            title={t("admin.ltd.openChip")}
-            message={t("admin.ltd.openNoDetail")} />
-        ) : isLoading ? (
+        {isLoading ? (
           <div className="space-y-2">
             {[0, 1, 2, 3].map((i) => <SkeletonBlock key={i} className="h-16 w-full rounded-xl" />)}
           </div>
@@ -323,40 +323,93 @@ export default function DaySubmissionModal({ row, onClose, onChanged }) {
               || (uid ? "" : t("admin.ltd.openNoDetail"))} />
         ) : (
           <>
-            {/* The score is never shown without the number it moved FROM —
-                a figure that dropped with no visible derivation reads as an
-                error rather than a verdict. */}
+            {/* An unfinished day has NO score and must not print one: the
+                figure is written when the day closes, and a running total shown
+                as «Natija» is a number the leader can still move. It gets its
+                progress instead — the two counts that say what is holding the
+                day open. A finished day shows the score, never without the
+                number it moved FROM: a figure that dropped with no visible
+                derivation reads as an error rather than a verdict. */}
             <div className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-2.5"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-              <div>
-                <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
-                  {t("admin.ltd.score")}
-                </p>
-                <p className="text-lg font-bold leading-tight" style={{ color: "var(--text-1)" }}>
-                  {data.score}%
-                </p>
-              </div>
-              {data.rawScore !== data.score && (
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
-                    {t("admin.ltd.rawScore")}
-                  </p>
-                  <p className="text-sm font-semibold leading-tight" style={{ color: "var(--text-3)" }}>
-                    {data.rawScore}%
-                  </p>
-                </div>
-              )}
-              {data.submittedAt && (
-                <div className="ml-auto text-right">
-                  <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
-                    {t("admin.ltd.thSubmitted")}
-                  </p>
-                  <p className="text-xs font-medium" style={{ color: "var(--text-2)" }}>
-                    {ddmm(String(data.submittedAt).slice(0, 10))} {hhmm(data.submittedAt)}
-                  </p>
-                </div>
+              {data.open ? (
+                <>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
+                      {t("admin.ltd.answeredN")}
+                    </p>
+                    <p className="text-lg font-bold leading-tight"
+                      style={{ color: data.progress?.answered < data.progress?.enabled
+                        ? "#eab308" : "var(--text-1)" }}>
+                      {data.progress?.answered ?? 0}/{data.progress?.enabled ?? 0}
+                    </p>
+                  </div>
+                  {/* Only in 1×1 mode: elsewhere one button submits the whole
+                      day and a per-task count would name a step that unit has
+                      not got. */}
+                  {data.perTask && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
+                        {t("admin.ltd.submittedN")}
+                      </p>
+                      <p className="text-sm font-semibold leading-tight"
+                        style={{ color: data.progress?.closed < data.progress?.enabled
+                          ? "#eab308" : "var(--text-1)" }}>
+                        {data.progress?.closed ?? 0}/{data.progress?.enabled ?? 0}
+                      </p>
+                    </div>
+                  )}
+                  {data.progress?.pendingMedia > 0 && (
+                    <Mark color="#eab308" icon={Camera}
+                      label={data.progress.pendingMedia}
+                      title={t("admin.ltd.rollTaskHint")} />
+                  )}
+                  <div className="ml-auto flex items-center gap-1.5">
+                    {data.progress?.expired && (
+                      <Mark color="#ef4444" icon={Hourglass} label={t("admin.ltd.expiredChip")} />
+                    )}
+                    <Mark color="#94a3b8" icon={Hourglass} label={t("admin.ltd.openChip")}
+                      title={t("admin.ltd.noScoreYet")} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
+                      {t("admin.ltd.score")}
+                    </p>
+                    <p className="text-lg font-bold leading-tight" style={{ color: "var(--text-1)" }}>
+                      {data.score}%
+                    </p>
+                  </div>
+                  {data.rawScore !== data.score && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
+                        {t("admin.ltd.rawScore")}
+                      </p>
+                      <p className="text-sm font-semibold leading-tight" style={{ color: "var(--text-3)" }}>
+                        {data.rawScore}%
+                      </p>
+                    </div>
+                  )}
+                  {data.submittedAt && (
+                    <div className="ml-auto text-right">
+                      <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
+                        {t("admin.ltd.thSubmitted")}
+                      </p>
+                      <p className="text-xs font-medium" style={{ color: "var(--text-2)" }}>
+                        {ddmm(String(data.submittedAt).slice(0, 10))} {hhmm(data.submittedAt)}
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
+            {data.perTask && (
+              <p className="text-[11px]" style={{ color: "var(--text-4)" }}>
+                {t("admin.ltd.perTaskChip")}
+              </p>
+            )}
 
             <div className="space-y-2">
               {(data.tasks || []).map((task) => (
@@ -366,7 +419,6 @@ export default function DaySubmissionModal({ row, onClose, onChanged }) {
                   uid={uid}
                   lang={lang}
                   T={T}
-                  locked={!!dayId && lockable.has(task.id)}
                   onPhoto={setZoom}
                   onReopen={(tk) => setAsk({ task: tk, wipe: false })}
                   onWipe={(tk) => setAsk({ task: tk, wipe: true })}

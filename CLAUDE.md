@@ -1056,14 +1056,38 @@ see **nowhere**. This is the surface where both exist.
   a delete here would reappear on the next sync — a button that lies about what
   it did. A row is removed in the Google sheet itself. (The user's ruling: a
   suppression list that survives re-sync was offered and declined.)
-- **The detail modal reads `/api/leaders/report/{uid}`** —
-  `components/leaders/DaySubmissionModal.jsx`, the SAME payload the day-report
-  page and the report DM are built from. That is what makes it trustworthy: a
-  score, a verdict or a photo shown to the admin is the one the leader and the
-  brigadir were shown. Never add a second admin-only projection of a day. Both
-  submissions stay readable whichever one counts — `build_report_row` finds a
-  sheet row by `submission_id` and a bot day by `closed_at`, neither gated on the
-  merge.
+- **The detail modal** (`components/leaders/DaySubmissionModal.jsx`) reads a
+  SHEET row through `/api/leaders/report/{uid}` and a BOT day through `GET
+  /admin/leader-tasks/day/{id}`. The second **delegates to
+  `leader_reports.day_report` verbatim once the day is closed** and only adds
+  per-task `state` / `locked` / `closedAt` / `roll` on top — so a score, a
+  verdict or a photo shown to the admin is still the one the leader and the
+  brigadir were shown. Never add a second admin-only projection of a CLOSED day.
+  Both submissions stay readable whichever one counts — `build_report_row` finds
+  a sheet row by `submission_id` and a bot day by `closed_at`, neither gated on
+  the merge. A bot day's report handle is `leader_bot.day_uid()`, the ONE
+  spelling both registers write (the admin one forgot it once, and every row on
+  the tab opened onto «could not load the detail»).
+- **An UNFINISHED day has a detail too, and this is the only place it exists.**
+  `build_report_row` serves closed days only — an open day is a leader
+  mid-checklist, not a submission — so proofs already uploaded to an unsubmitted
+  day were visible to nobody. The open branch of `admin_day_detail` projects the
+  in-progress day into the SAME keys, built from the CONFIG rather than from the
+  entries so a task nobody has reached is listed as unanswered instead of being
+  absent. Three facts only it can show: a task not started, a task answered but
+  not SUBMITTED (a `draft` — what holds a 1×1 day open), and the **camera roll**
+  of a task short of `min_media`, which writes no entry and which the register's
+  media proxy therefore cannot reach. It prints **no score** — `completion` is
+  written when the day closes, and a running total shown as «Natija» is a number
+  the leader can still move — showing `progress` instead.
+- **`leader_close.task_state` is THE state vocabulary** (open · draft · pending ·
+  passed · failed) and the modal renders that, never a second set of words: the
+  bot menu, the register and this tab must agree about which state a task is in.
+- Roll shots stream from `GET /admin/leader-tasks/roll-photo/{id}` (admin-only).
+  Deliberately NOT a widening of `/api/leader-proof/photo/{id}`, which answers
+  only for a photo belonging to a leader profile the CALLER holds and says so in
+  its own contract. `_stream_tg_file` is the one streamer behind both that door
+  and the register's media proxy.
 - **Reopen is PER TASK** (the user's ruling), `POST
   /admin/leader-tasks/task/reopen` → `leader_close.reopen_task` (+ `reset_task`
   when `wipe`), the same cores the bot's own locked-task screen runs, so a task
