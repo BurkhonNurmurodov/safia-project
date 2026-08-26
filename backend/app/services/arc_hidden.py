@@ -47,6 +47,10 @@ from app.models import ArcRequest
 _STRIP_PY = re.compile(r"[^0-9a-zа-яё]+")
 _STRIP_SQL = r"[^0-9a-zа-яё]"
 
+# The Cyrillic case fold, done by hand — see :func:`hidden_clause`.
+_CYR_UPPER = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
+_CYR_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+
 # The marker words, in both alphabets, anchored end to end.
 _MARKER = (r"^(?:test|тест)"
            r"(?:arc|ars|ark|apc|арс|арк|апс)?"
@@ -72,11 +76,20 @@ def is_hidden(category_name: Optional[str]) -> bool:
 def hidden_clause():
     """The same rule as a SQL boolean over ``ArcRequest.category_name``.
 
-    ``coalesce`` is load-bearing. A NULL name makes the comparison NULL, and
-    ``not_(NULL)`` is NULL, not TRUE — so without it every ticket IT filed
-    with no category at all would drop out of the register instead of the test
-    ones, silently, on every endpoint at once."""
+    Two details are load-bearing.
+
+    ``coalesce``: a NULL name makes the comparison NULL, and ``not_(NULL)`` is
+    NULL, not TRUE — so without it every ticket IT filed with no category at
+    all would drop out of the register instead of the test ones, silently, on
+    every endpoint at once.
+
+    ``translate``: Postgres ``lower()`` folds ASCII only unless the database
+    was created with a UTF-8 ctype (this one was not), so «ТЕСТ АРС ФАБРИКА»
+    reaches the pattern as «ТЕСТ АРС ФАБРИКА» and the strip then deletes every
+    capital letter in it. Folding the Cyrillic alphabet by hand is the one
+    spelling that answers the same in both, on any box."""
     norm = func.regexp_replace(
-        func.lower(func.coalesce(ArcRequest.category_name, "")),
+        func.lower(func.translate(func.coalesce(ArcRequest.category_name, ""),
+                                  _CYR_UPPER, _CYR_LOWER)),
         _STRIP_SQL, "", "g")
     return norm.op("~")(_MARKER)

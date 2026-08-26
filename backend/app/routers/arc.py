@@ -62,7 +62,7 @@ from app.database import get_db
 from app.models import ArcRequest, ArcSyncMeta
 from app.permissions import require_page
 from app.translit import transliterate
-from app.services import action_log, arc_cells, arc_client
+from app.services import action_log, arc_cells, arc_client, arc_hidden
 from app.services.arc_client import (CANCELLED_STATUSES, DONE_STATUSES,
                                      OPEN_STATUSES)
 from app.services.arc_export import build_arc_workbook
@@ -219,6 +219,14 @@ def _apply_filters(query, f: dict, D: dict, db: Session, org_cache: Optional[dic
     this scope reach» once per base is four walks of the cell registry for one
     answer that cannot have changed between them."""
     R = ArcRequest
+    # IT's own test categories are not part of this register at all, so this
+    # is not a narrowing the reader chose and there is no control that lifts
+    # it — not even `include_missing`. It sits in the shared filter set so
+    # every door reads it once: the table, the option lists, the KPI strip,
+    # the charts and the export (services/arc_hidden.py is the rule). The sync
+    # already refuses to write such a ticket; this is what hides the ones an
+    # earlier pass wrote, with no migration.
+    query = query.filter(not_(arc_hidden.hidden_clause()))
     if not f.get("include_missing"):
         query = query.filter(R.missing_since.is_(None))
     lo = _day_start(f.get("date_from"))
@@ -532,6 +540,12 @@ def _facets(db: Session, f: dict) -> dict:
                            db.query(R.category_id, func.max(R.category_name),
                                     func.bool_or(R.category_urgent))
                            .filter(R.category_id.in_(sorted(missing)))
+                           # This one query does not go through _apply_filters
+                           # (it re-labels a pick its own list could not count,
+                           # over the whole mirror), so it needs the rule
+                           # spelled out: a typed ?category= must not be able
+                           # to put a test category's NAME in the panel.
+                           .filter(not_(arc_hidden.hidden_clause()))
                            .group_by(R.category_id).all())]
     categories = _by_name(categories)
 
@@ -1092,6 +1106,9 @@ def get_request(
 
     def _load():
         return (db.query(ArcRequest, *[D[k].label(k) for k in _ROW_DERIVED])
+                # A remote id is typeable, and this door would otherwise both
+                # SHOW a test ticket and fetch its card on the way out.
+                .filter(not_(arc_hidden.hidden_clause()))
                 .filter(ArcRequest.remote_id == remote_id).first())
 
     tup = _load()

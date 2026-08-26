@@ -1269,6 +1269,10 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
         entries = by_day.get(d.id, [])
         row = {
             "id": d.id,
+            # The report handle, so a row on the admin tab can open the very
+            # report the leader and the brigadir were shown. Same spelling as
+            # the dashboard feed, from the same function.
+            "uid": leader_bot.day_uid(d.id),
             "date": d.date,
             "leader_id": d.leader_id,
             "leader": prof.name if prof else f"#{d.leader_id}",

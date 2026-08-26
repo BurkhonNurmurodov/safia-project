@@ -38,13 +38,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, not_, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import ArcRequest, ArcSyncMeta
-from app.services import action_log, arc_client
+from app.services import action_log, arc_client, arc_hidden
 from app.services.arc_client import (OPEN_STATUSES, ArcAuthError,
                                      ArcTransientError, configured)
 
@@ -149,6 +149,15 @@ def _upsert_page(db: Session, items: list[dict], now: datetime) -> list[str]:
         rec = arc_client.normalize_item(item)
         if not rec["remote_id"]:
             continue
+        # IT's own test categories are not work this plant did, so the mirror
+        # never carries them: the row is not written, its card is never
+        # fetched, and nothing downstream has to know it came past. Rows an
+        # earlier pass wrote are hidden by the register's own clause (the same
+        # rule, in SQL — services/arc_hidden.py), so the two answers agree
+        # with no migration and a rule that is later withdrawn refills itself
+        # on the next full walk.
+        if arc_hidden.is_hidden(rec.get("category_name")):
+            continue
         rec["synced_at"] = now
         rec["missing_since"] = None    # seen again → no longer missing
         by_id[rec["remote_id"]] = rec
@@ -173,6 +182,9 @@ def _detail_needed(stale_before: datetime):
     R = ArcRequest
     return and_(
         R.missing_since.is_(None),
+        # A card is one HTTP call out of a bounded per-pass budget; a ticket
+        # no surface can show must never spend one.
+        not_(arc_hidden.hidden_clause()),
         or_(
             R.detail_at.is_(None),
             # The ticket closed after we last read its card — that is when the
@@ -192,6 +204,7 @@ def detail_pending(db: Session) -> int:
     reads as «still loading» forever."""
     return int(db.query(func.count(ArcRequest.id))
                .filter(ArcRequest.missing_since.is_(None))
+               .filter(not_(arc_hidden.hidden_clause()))
                .filter(ArcRequest.detail_at.is_(None)).scalar() or 0)
 
 
@@ -264,6 +277,7 @@ def _status_catalog(db: Session) -> list[dict]:
     the four locales, never from here."""
     q = (db.query(ArcRequest.status, func.count(ArcRequest.id))
          .filter(ArcRequest.missing_since.is_(None))
+         .filter(not_(arc_hidden.hidden_clause()))
          .group_by(ArcRequest.status)
          .order_by(ArcRequest.status))
     return [{"status": s, "count": n} for s, n in q.all()]
@@ -320,6 +334,10 @@ def run_sync(mode: str = "full") -> dict:
                 missing_marked = (
                     db.query(ArcRequest)
                     .filter(ArcRequest.missing_since.is_(None))
+                    # A test-category row is skipped ON PURPOSE by every walk,
+                    # so it is not «gone from the API» and must not be stamped
+                    # as such — `missing_since` has to keep meaning one thing.
+                    .filter(not_(arc_hidden.hidden_clause()))
                     .filter((ArcRequest.synced_at.is_(None)) | (ArcRequest.synced_at < started))
                     .update({ArcRequest.missing_since: now}, synchronize_session=False)
                 )
@@ -343,7 +361,9 @@ def run_sync(mode: str = "full") -> dict:
         meta.ok = True
         meta.last_synced = now
         meta.heartbeat = now
-        meta.row_count = db.query(ArcRequest).filter(ArcRequest.missing_since.is_(None)).count()
+        meta.row_count = (db.query(ArcRequest)
+                          .filter(ArcRequest.missing_since.is_(None))
+                          .filter(not_(arc_hidden.hidden_clause())).count())
         meta.remote_total = remote_total
         meta.status_catalog = _status_catalog(db)
         meta.detail_done = cards

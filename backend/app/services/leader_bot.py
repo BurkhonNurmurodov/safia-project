@@ -65,6 +65,18 @@ MERGE_SHIFT = 2
 MERGE_FROM = "2026-08-19"
 
 
+def day_uid(day_id: int) -> str:
+    """THE report id of a bot day — the handle `/api/leaders/report/{uid}`,
+    `build_report_row` and `_refs_for_uid` all parse back.
+
+    One function because two registers write it: the dashboard feed
+    (`dashboard_rows`) and the admin submissions register. They spelled it
+    separately once and the admin one simply forgot to, so every row on that tab
+    opened onto «could not load the detail» — the modal had no id to ask for.
+    """
+    return f"bot-{day_id}"
+
+
 def camera_units(db: Session) -> set[int]:
     """Supervisor units with at least one task collected through the mini-app
     camera — the only shift-1 units whose bot days merge.
@@ -306,7 +318,7 @@ def dashboard_rows(
         mgr = mgrs.get(d.manager_id)
         rows.append(
             {
-                "uid": f"bot-{d.id}",
+                "uid": day_uid(d.id),
                 "source": "bot",
                 "date": d.date,
                 "submitted_at": d.closed_at.isoformat() if d.closed_at else None,

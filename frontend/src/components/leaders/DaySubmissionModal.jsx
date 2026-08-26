@@ -170,7 +170,7 @@ export default function DaySubmissionModal({ row, onClose, onChanged }) {
   const dayId = row?.source === "bot" ? row.id : null;
   const lockable = useMemo(() => new Set(row?.locked_tasks || []), [row]);
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["leader-report", uid],
     queryFn: () => api.get(`/api/leaders/report/${encodeURIComponent(uid)}`).then((r) => r.data),
     enabled: !!uid && !row?.open,
@@ -232,8 +232,14 @@ export default function DaySubmissionModal({ row, onClose, onChanged }) {
             {[0, 1, 2, 3].map((i) => <SkeletonBlock key={i} className="h-16 w-full rounded-xl" />)}
           </div>
         ) : isError || !data ? (
+          // The server's own reason, not just "failed": a 404 here means the
+          // uid names nothing (a deleted day, a sheet row the sync dropped),
+          // which is a different problem from a permission or network failure
+          // and sends the reader somewhere else entirely.
           <EmptyState icon={ShieldAlert} showUploadLink={false}
-            title={t("admin.ltd.detailFailed")} message="" />
+            title={t("admin.ltd.detailFailed")}
+            message={error?.response?.data?.detail
+              || (uid ? "" : t("admin.ltd.openNoDetail"))} />
         ) : (
           <>
             {/* The score is never shown without the number it moved FROM —
