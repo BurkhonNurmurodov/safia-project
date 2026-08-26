@@ -51,7 +51,7 @@ const JPEG_Q = 0.92;
 // pinned its ultra-wide under an older rule answers with that lens forever,
 // and a value already sitting in somebody's localStorage cannot be reached any
 // other way. Bump it whenever the rule below changes its mind.
-const LENS_KEY = "proof.camera.lens2";
+const LENS_KEY = "proof.camera.lens3";
 // The shape asked of every camera, in one place: it travels with the zoom
 // correction too, because applyConstraints REPLACES the set a track was opened
 // with and a lens fix must not quietly cost the resolution.
