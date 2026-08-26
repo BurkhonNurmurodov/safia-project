@@ -795,7 +795,10 @@ _GRANS = ("day", "week", "month")
 _TREND_MAX_BUCKETS = 400
 _TOP = 12          # ranked bars: top N on screen, the card names the rest
 _TOP_LEADERS = 14  # leaders are the longest list; one extra row of headroom
-_SPARK_BUCKETS = 60  # the speed table's sparkline window, shared by every row
+# Duration bands for the modal close time, as upper edges in hours; the band
+# above the last edge is open. Fine where tickets actually cluster, coarse in
+# the tail: <1h · 1–2h · 2–4h · 4–8h · 8–24h · 1–3d · 3–7d · 7d+.
+_HOUR_BANDS = (1, 2, 4, 8, 24, 72, 168)
 
 
 def _py_trunc(d: date_cls, gran: str) -> date_cls:
@@ -922,47 +925,42 @@ def get_analysis(
                   "overdue": _n(st[3]), "cancelled": _n(st[4]),
                   "cwd": _n(st[5]), "late": _n(st[6]),
                   "avg_h": round(float(st[7]), 1) if st[7] is not None else None}
-    # ── closing hours over time, per category (both views) ──────────────────
-    # The third column of the «Yopilish vaqti» table. A bucket carries the
-    # MEDIAN close time of the tickets CLOSED IN IT — bucketed on `closed_at`,
-    # because the hours a ticket took belong to the moment its clock stopped,
-    # not to the month it was filed — and the median rather than the mean,
-    # because one 3000-hour ticket would otherwise draw a spike the category
-    # never felt. Read off the EXACT filtered set, never the flow chart's
-    # 7-day-widened twin: the table's mean and median must count the same rows
-    # its sparkline draws.
+    # ── the modal closing time, per category (both views) ───────────────────
+    # The third measure of central tendency beside the mean and the median:
+    # WHICH close time occurs most often. Hours-to-close is continuous, so a
+    # raw mode is meaningless — every value is its own — and it is binned into
+    # the duration ladder below, which is spaced the way durations actually
+    # distribute (heavy-tailed: fine at the fast end, coarse at the slow one).
+    # A flat 1-hour bin would answer «0–1 h» for every category at once and
+    # tell the reader nothing about which of them differ.
     #
-    # An empty bucket carries NO point and is simply absent: the median of no
-    # closures is not zero hours, and zero-filling would draw a crash to the
-    # axis on every quiet week. Only the categories the card actually shows
-    # get a series (the same TOP cut the ranked bars and the scorecard take),
-    # so a mirror with forty categories does not ship thirty-eight unread ones.
-    want = categories[:_TOP]
-    ids = [c["id"] for c in want if c["id"] is not None]
-    conds = []
-    if ids:
-        conds.append(R.category_id.in_(ids))
-    if any(c["id"] is None for c in want):
-        conds.append(R.category_id.is_(None))
-    if conds:
-        cb = func.date_trunc(gran, func.timezone("Asia/Tashkent", D["closed_at"]))
-        seen: dict = {}
-        for cid, b, n, m in (
-            base.filter(or_(*conds), hours_closed.isnot(None))
-            .with_entities(R.category_id, cb, func.count(R.id),
-                           func.percentile_cont(0.5).within_group(hours_closed))
-            .group_by(R.category_id, cb).all()
-        ):
-            if b is None or m is None:
-                continue
-            seen.setdefault(cid, []).append((b.date(), int(n), round(float(m), 1)))
-        # ONE window for every row, so twelve sparklines can be read against
-        # each other in time rather than each against its own private span.
-        keep = set(sorted({b for v in seen.values() for b, _c, _m in v})[-_SPARK_BUCKETS:])
-        for c in want:
-            c["trend"] = [[b.isoformat(), m, n]
-                          for b, n, m in sorted(seen.get(c["id"], []))
-                          if b in keep]
+    # `_HOUR_BANDS` is THE ladder and the boundaries travel WITH the answer
+    # (`mode_lo` / `mode_hi`, hours, `mode_hi` null on the open top band) —
+    # the label is rendered FROM them, so the words on screen and the bin the
+    # count was taken over can never drift apart. Ties go to the FASTER band:
+    # an arbitrary winner is fine, an unstable one that flips between reloads
+    # is not.
+    band = case(
+        *[(hours_closed < e, i) for i, e in enumerate(_HOUR_BANDS)],
+        else_=len(_HOUR_BANDS),
+    )
+    modal: dict = {}
+    for cid, bi, n in (
+        # The NULL filter is load-bearing: `NULL < 1` is NULL, so an unclosed
+        # ticket would fall through every arm of the CASE into the top band and
+        # be counted as the slowest closure there is.
+        base.filter(hours_closed.isnot(None))
+        .with_entities(R.category_id, band, func.count(R.id))
+        .group_by(R.category_id, band).all()
+    ):
+        cur = modal.get(cid)
+        if cur is None or int(n) > cur[1] or (int(n) == cur[1] and int(bi) < cur[0]):
+            modal[cid] = (int(bi), int(n))
+    for c in categories:
+        bi, mn = modal.get(c["id"], (None, 0))
+        c["mode_lo"] = None if bi is None else (0 if bi == 0 else _HOUR_BANDS[bi - 1])
+        c["mode_hi"] = None if bi is None or bi >= len(_HOUR_BANDS) else _HOUR_BANDS[bi]
+        c["mode_n"] = mn
 
     out: dict[str, Any] = {"gran": gran, "trend": trend,
                            "categories": categories, "sla_totals": sla_totals}

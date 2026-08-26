@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  TrendingUp, TrendingDown, Minus, Tag, Building2, Timer, Users, Wrench,
-  UserCog, Boxes, AlertTriangle, ClipboardList, Gauge, Hourglass,
+  TrendingUp, Tag, Building2, Timer, Users, Wrench, UserCog, Boxes,
+  AlertTriangle, ClipboardList, Gauge, Hourglass,
 } from "lucide-react";
 import Button from "../ui/Button";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -270,54 +270,30 @@ function SlaCard({ rows, totals, right }) {
 }
 
 // ── the closing-time table («Yopilish vaqti») ────────────────────────────────
-// The one card that answers «how long does this kind of request actually take,
-// and is it getting better». Per category: how many closures the figures stand
-// on, the MEAN and the MEDIAN hours to close, and the direction of travel.
+// The one card that answers «how long does this kind of request actually
+// take». Per category, the three measures of central tendency over the hours
+// to close — MEAN, MEDIAN and MODE — beside the number of closures they all
+// stand on.
 //
-// Mean and median sit side by side on purpose — they answer the same question,
-// and their DISAGREEMENT is itself the answer: a mean far above the median
-// says a handful of tickets sat for weeks while the typical one closed fast,
-// which is a fact neither number states alone. Neither is shown without the
-// closure count behind it, because an average over three tickets is not an
-// average. Every figure counts CLOSED tickets only — an open ticket has no
-// closing time yet, and folding it in as a zero would reward a backlog.
+// The three are shown together because each is wrong on its own and their
+// DISAGREEMENT is the answer. A mean far above the median says a handful of
+// tickets sat for weeks while the typical one closed fast. A mode far below
+// both says most tickets close in one band and a tail drags every average
+// after it. Neither figure is shown without the closure count, because an
+// average over three tickets is not an average.
 //
-// The trend is the backend's per-bucket median (day/week/month — the flow
-// chart's own granularity, and the same toggle drives both), drawn as a
-// sparkline scaled to ITS OWN row: categories that close in 2 hours and in 200
-// share no y-axis, so one scale across the table would flatten eleven rows to
-// straight lines. The chip beside it compares the first half of the buckets to
-// the last — robust to a single bad week in a way «latest vs previous» is not.
-// Down is green because down is faster.
-const SPD_GRID = "minmax(0,1.5fr) 5.5rem 6.6rem 6.6rem minmax(9rem,1fr)";
-const SPD_HALF_MIN = 4;   // fewer buckets than this and a halves split is noise
-const SPD_FLAT_PCT = 5;   // inside this band the movement is called stable
+// Every figure counts CLOSED tickets only — an open ticket has no closing time
+// yet, and folding it in as a zero would reward a backlog.
+//
+// The mode is a BAND, not a number: hours-to-close is continuous, so the
+// backend bins it (`_HOUR_BANDS`) and returns the winning band's own edges.
+// The label is rendered from those edges rather than from a parallel list of
+// words, so what the cell says and what the count was taken over cannot drift.
+// Its share of the closures rides beside it, because a mode holding 9% of the
+// rows is barely a mode and the reader has to be able to see that.
+const SPD_GRID = "minmax(0,1.5fr) 5rem 6.4rem 6.4rem minmax(8.5rem,1fr)";
 
-// A sparkline over `pts` = [[isoBucket, medianHours, closedCount], …].
-function Spark({ pts, color, w = 92, h = 28 }) {
-  const n = pts.length;
-  const vals = pts.map((p) => p[1]);
-  const lo = Math.min(...vals);
-  const hi = Math.max(...vals);
-  const span = hi - lo;
-  const x = (i) => (n === 1 ? w / 2 : 1 + (i * (w - 2)) / (n - 1));
-  // No spread at all — one bucket, or every bucket identical — draws down the
-  // middle: pinned to the floor it would read as «this category closes in no
-  // time», which is the one thing a flat line does not say.
-  const y = (v) => (span ? h - 3 - ((v - lo) / span) * (h - 6) : h / 2);
-  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join(" ");
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="flex-shrink-0" aria-hidden="true">
-      {n > 1 && (
-        <path d={d} fill="none" stroke={color} strokeWidth="1.5"
-          strokeLinejoin="round" strokeLinecap="round" />
-      )}
-      <circle cx={x(n - 1)} cy={y(vals[n - 1])} r="2.2" fill={color} />
-    </svg>
-  );
-}
-
-function SpeedTable({ rows, gran, lang, right }) {
+function SpeedTable({ rows, right }) {
   const { t } = useLang();
 
   // Bare numbers in the two hour columns — the unit rides in the header, so
@@ -330,47 +306,38 @@ function SpeedTable({ rows, gran, lang, right }) {
     return `${num(h)} ${t("arc.anHours")}${days}`;
   };
 
-  const trendOf = (pts) => {
-    if (!pts || pts.length < SPD_HALF_MIN) return null;
-    const k = Math.floor(pts.length / 2);
-    const mean = (a) => a.reduce((s, p) => s + p[1], 0) / a.length;
-    const a = mean(pts.slice(0, k));
-    const b = mean(pts.slice(pts.length - k));
-    if (!a) return null;
-    const pct = ((b - a) / a) * 100;
-    const dir = Math.abs(pct) < SPD_FLAT_PCT ? "flat" : pct < 0 ? "down" : "up";
-    return { a, b, pct, dir };
+  // «< 1 soat» · «2–4 soat» · «1–3 kun» · «7 kun+», straight off the band's own
+  // edges in hours. Days once the band starts at a day, hours below that.
+  const dnum = (v) => (v % 24 === 0 ? String(v / 24) : (v / 24).toFixed(1));
+  const bandLabel = (lo, hi) => {
+    const H = t("arc.anHours");
+    const D = t("arc.slaDays");
+    if (lo == null) return "—";
+    if (hi == null) return `${dnum(lo)} ${D}+`;
+    if (lo === 0) return `< ${hi} ${H}`;
+    if (lo >= 24) return `${dnum(lo)}–${dnum(hi)} ${D}`;
+    return `${lo}–${hi} ${H}`;
   };
-  const TREND_TONE = { down: C_DONE, up: C_OVERDUE, flat: C_GREY };
-  const TREND_ICON = { down: TrendingDown, up: TrendingUp, flat: Minus };
 
-  // The sparkline + its verdict chip. A row with no closures at all says so;
-  // a row with too few buckets keeps its line and withholds only the verdict,
-  // because a shape the reader can see is not a claim about direction.
-  const Trend = ({ pts }) => {
-    const p = pts || [];
-    if (!p.length) {
+  const fmtPct = (v) => {
+    const r = Math.round(v * 10) / 10;
+    return `${Number.isInteger(r) ? r : r.toFixed(1)}%`;
+  };
+
+  // The modal band + how much of the category it actually holds. A row with no
+  // closures says so rather than leaving a dash the reader has to interpret.
+  const Mode = ({ r }) => {
+    if (r.mode_lo == null) {
       return <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("arc.spdNoClose")}</span>;
     }
-    const v = trendOf(p);
-    const tone = v ? TREND_TONE[v.dir] : C_GREY;
-    const Icon = v ? TREND_ICON[v.dir] : null;
-    const range = `${fmtBucket(p[0][0], gran, lang)} — ${fmtBucket(p[p.length - 1][0], gran, lang)}`;
-    const tip = v
-      ? `${tpl(t("arc.spdHalves"), { a: num(v.a), b: num(v.b) })} · ${range}`
-      : `${t("arc.spdNoTrend")} · ${range}`;
+    const share = r.closed_n ? (100 * r.mode_n) / r.closed_n : 0;
     return (
-      <span className="inline-flex items-center gap-2 min-w-0" title={tip}>
-        <Spark pts={p} color={tone} />
-        {v ? (
-          <span className="inline-flex items-center gap-1 text-[11px] tabular-nums whitespace-nowrap"
-            style={{ color: tone }}>
-            <Icon size={12} className="flex-shrink-0" />
-            {v.dir === "flat" ? t("arc.spdFlat") : `${Math.abs(Math.round(v.pct))}%`}
-          </span>
-        ) : (
-          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>—</span>
-        )}
+      <span className="text-xs whitespace-nowrap"
+        title={tpl(t("arc.spdModeTip"), { n: r.mode_n, band: bandLabel(r.mode_lo, r.mode_hi) })}>
+        <span className="font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
+          {bandLabel(r.mode_lo, r.mode_hi)}
+        </span>
+        <span className="tabular-nums" style={{ color: "var(--text-4)" }}> · {fmtPct(share)}</span>
       </span>
     );
   };
@@ -394,7 +361,7 @@ function SpeedTable({ rows, gran, lang, right }) {
         style={{ color: r.median_h == null ? "var(--text-4)" : "var(--text-1)" }} title={hoursTip(r.median_h)}>
         {num(r.median_h)}
       </span>
-      <span className="flex justify-end"><Trend pts={r.trend} /></span>
+      <span className="text-right"><Mode r={r} /></span>
     </div>
   );
 
@@ -418,12 +385,13 @@ function SpeedTable({ rows, gran, lang, right }) {
           {t("arc.spdClosed")} {r.closed_n || 0}
         </span>
       </div>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] min-w-0">
-          <MStat label={t("arc.spdMeanShort")} h={r.avg_h} />
-          <MStat label={t("arc.spdMedianShort")} h={r.median_h} />
-        </div>
-        <span className="flex-shrink-0"><Trend pts={r.trend} /></span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+        <MStat label={t("arc.spdMeanShort")} h={r.avg_h} />
+        <MStat label={t("arc.spdMedianShort")} h={r.median_h} />
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          <span style={{ color: "var(--text-4)" }}>{t("arc.spdModeShort")}</span>
+          <Mode r={r} />
+        </span>
       </div>
     </div>
   );
@@ -438,7 +406,7 @@ function SpeedTable({ rows, gran, lang, right }) {
           <Hd right>{t("arc.spdClosed")}</Hd>
           <Hd right>{t("arc.spdMean")}</Hd>
           <Hd right>{t("arc.spdMedian")}</Hd>
-          <Hd right>{t("arc.spdTrend")}</Hd>
+          <Hd right>{t("arc.spdMode")}</Hd>
         </div>
         {rows.map((r, i) => {
           const name = r.name || t("arc.anUnassigned");
@@ -732,16 +700,8 @@ export default function ArcAnalysis({ view, filters, enabled }) {
   // Third card off the SAME category rows and the SAME cut as the ranked bars
   // and the scorecard — three cards about categories that disagreed about
   // which categories they read would be three cards nobody could reconcile.
-  // The granularity toggle is the flow chart's own state, so the sparklines
-  // and the line above them can never be bucketed differently.
   const speedTable = (
-    <SpeedTable rows={catRows} gran={A?.gran || gran} lang={lang}
-      right={
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {topOf(catRows.length, cats.length)}
-          <span className="hidden sm:flex">{granToggle}</span>
-        </div>
-      } />
+    <SpeedTable rows={catRows} right={topOf(catRows.length, cats.length)} />
   );
 
   if (viewKey === "cells") {
