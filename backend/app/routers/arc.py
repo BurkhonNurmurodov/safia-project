@@ -880,18 +880,48 @@ def get_analysis(
             cur = _next_bucket(cur, gran)
     trend = trend[-_TREND_MAX_BUCKETS:]
 
-    # ── the category mix (both views' donut) ─────────────────────────────────
+    # ── the category mix + deadline discipline (both views) ──────────────────
+    # ONE grouped pass serves BOTH category cards: the ranked traffic-light
+    # bars and the SLA scorecard. `cwd` = closures that HAD a deadline — the
+    # only rows a timeliness verdict exists for; on-time is `cwd - late` on
+    # the client, and `done - cwd` is its «closed, no norm» bucket — counted
+    # and shown, never silently painted on-time.
+    closed_with_due = and_(D["is_done"], D["due"].isnot(None), D["closed_at"].isnot(None))
+    late_closed = and_(closed_with_due, D["late"])
+    hours_closed = case((D["is_done"], D["hours_to_close"]), else_=None)
     categories = [
         {"id": cid, "name": name, "total": int(n), "done": _n(dn),
-         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc)}
-        for cid, name, n, dn, op, ov, cc in (
+         "open": _n(op), "overdue": _n(ov), "cancelled": _n(cc),
+         "cwd": _n(cw), "late": _n(lt),
+         "avg_h": round(float(av), 1) if av is not None else None,
+         "median_h": round(float(md), 1) if md is not None else None,
+         "allowed_h": float(ft) if ft else None}
+        for cid, name, n, dn, op, ov, cc, cw, lt, av, md, ft in (
             base.with_entities(R.category_id, R.category_name, func.count(R.id),
                                _sum(D["is_done"]), _sum(D["is_open"]),
-                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]))
+                               _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+                               _sum(closed_with_due), _sum(late_closed),
+                               func.avg(hours_closed),
+                               func.percentile_cont(0.5).within_group(hours_closed),
+                               func.max(R.category_ftime))
             .group_by(R.category_id, R.category_name)
             .order_by(func.count(R.id).desc()).all())
     ]
-    out: dict[str, Any] = {"gran": gran, "trend": trend, "categories": categories}
+    # The scorecard's «Jami» row — totals over the WHOLE filtered set, not the
+    # visible TOP: a footer summing only what the cut shows would understate
+    # every number on a card that already names what it hides.
+    st = base.with_entities(
+        func.count(R.id), _sum(D["is_done"]), _sum(D["is_open"]),
+        _sum(D["overdue_now"]), _sum(D["is_cancelled"]),
+        _sum(closed_with_due), _sum(late_closed),
+        func.avg(hours_closed),
+    ).one()
+    sla_totals = {"total": _n(st[0]), "done": _n(st[1]), "open": _n(st[2]),
+                  "overdue": _n(st[3]), "cancelled": _n(st[4]),
+                  "cwd": _n(st[5]), "late": _n(st[6]),
+                  "avg_h": round(float(st[7]), 1) if st[7] is not None else None}
+    out: dict[str, Any] = {"gran": gran, "trend": trend,
+                           "categories": categories, "sla_totals": sla_totals}
 
     if view == "cells":
         # Per-code counts once; the top-cells chart and the two owner rollups
@@ -967,7 +997,7 @@ def get_analysis(
     # Median close time per category, beside the hours that category ALLOWS
     # (`ftime` — the same figure the due date is derived from). Only closed
     # tickets carry an hours figure, so each row names the count behind it.
-    hours_closed = case((D["is_done"], D["hours_to_close"]), else_=None)
+    # (`hours_closed` is the SLA block's, defined once for both.)
     speed = [
         {"id": cid, "name": name, "closed": _n(n),
          "median_h": round(float(m), 1),

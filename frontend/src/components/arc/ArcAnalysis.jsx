@@ -3,7 +3,7 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   TrendingUp, Tag, Building2, Timer, Users, Wrench, UserCog, Boxes,
-  AlertTriangle, ClipboardList,
+  AlertTriangle, ClipboardList, Gauge,
 } from "lucide-react";
 import Button from "../ui/Button";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -92,6 +92,180 @@ function ChartCard({ icon: Icon, title, subtitle, right, height = 300, empty, em
           : ready ? children : <div style={{ height }} />}
       </div>
     </div>
+  );
+}
+
+// ── the SLA scorecard («Muddat intizomi») ───────────────────────────────────
+// IT's «Статистика по заявкам» sheet, redrawn as a UI element: per category —
+// received, closed on time, closed late, still in progress, and the mean
+// close time — with a 100% meter carrying the same shares the numbers state.
+// Every share is OF RECEIVED (the meter's own denominator), so the meter and
+// the columns can never disagree; the header labels wear the segment colours,
+// so the header IS the legend. A closure the category gives no norm for
+// (`ftime` absent → no due date exists) is a washed-green «no verdict» share —
+// counted and shown, never painted on-time — and its row answers «—» in the
+// two verdict columns rather than a zero that reads as a score. Deliberately
+// NOT an Apex chart: a scorecard is rows of aligned numbers, and a component
+// owns alignment the way a chart owns axes. (Colour never stands alone here:
+// every tinted figure sits under a labelled header or beside its own label.)
+const C_NONORM = hexA(C_DONE, 0.4);
+const SLA_GRID = "minmax(0,1.4fr) 5rem minmax(6rem,1fr) 6.8rem 7.4rem 6rem 7.6rem";
+
+function SlaMeter({ parts }) {
+  const on = parts.filter((p) => p.v > 0);
+  if (!on.length) return <div className="h-2.5 rounded-full" style={{ background: "var(--bg-inner)" }} />;
+  return (
+    <div className="h-2.5 rounded-full overflow-hidden flex gap-px w-full" style={{ background: "var(--bg-inner)" }}>
+      {on.map((p, i) => (
+        // flexGrow keeps the shares proportional while flexBasis keeps a tiny
+        // share visible — a 0.3% segment that renders 0px wide is a fact the
+        // reader was shown nowhere.
+        <div key={i} title={p.tip} style={{ flexGrow: p.v, flexBasis: 4, background: p.color }} />
+      ))}
+    </div>
+  );
+}
+
+function SlaCard({ rows, totals, right }) {
+  const { t } = useLang();
+
+  const fmtPct = (v) => {
+    const r = Math.round(v * 10) / 10;
+    return `${Number.isInteger(r) ? r : r.toFixed(1)}%`;
+  };
+  // «19.0 soat (0.8 kun)» — the day restatement only once it says something
+  // an hour figure does not.
+  const fmtAvg = (h) => {
+    if (h == null) return "—";
+    const hs = h >= 100 ? String(Math.round(h)) : h.toFixed(1);
+    const days = h >= 24 ? ` (${(h / 24).toFixed(1)} ${t("arc.slaDays")})` : "";
+    return `${hs} ${t("arc.anHours")}${days}`;
+  };
+
+  const derive = (r) => {
+    const total = r.total || 0;
+    const cwd = r.cwd || 0;
+    const late = r.late || 0;
+    const onTime = Math.max(0, cwd - late);
+    const noVerdict = Math.max(0, (r.done || 0) - cwd);
+    const open = r.open || 0;
+    const cancelled = r.cancelled || 0;
+    const overdue = r.overdue || 0;
+    const p = (v) => (total ? (100 * v) / total : 0);
+    const parts = [
+      { v: onTime, color: C_DONE, tip: `${t("arc.slaOnTime")}: ${onTime} (${fmtPct(p(onTime))})` },
+      { v: late, color: C_OVERDUE, tip: `${t("arc.slaLate")}: ${late} (${fmtPct(p(late))})` },
+      { v: noVerdict, color: C_NONORM, tip: `${t("arc.slaNoDue")}: ${noVerdict}` },
+      { v: open, color: C_DOING, tip: `${t("arc.slaOpen")}: ${open}${overdue ? ` · ${t("arc.kOverdue")}: ${overdue}` : ""}` },
+      { v: cancelled, color: C_GREY, tip: `${t("arc.stateCancelled")}: ${cancelled}` },
+    ];
+    return { total, onTime, late, open, p, parts };
+  };
+
+  // A zero is shown muted — a bright red «0» drags the eye to nothing.
+  const CountPct = ({ v, share, color, dash }) =>
+    dash ? (
+      <span className="text-right text-xs" style={{ color: "var(--text-4)" }} title={t("arc.anNoNorm")}>—</span>
+    ) : !v ? (
+      <span className="text-right text-xs tabular-nums" style={{ color: "var(--text-4)" }}>0</span>
+    ) : (
+      <span className="text-right text-xs tabular-nums whitespace-nowrap">
+        <span className="font-semibold" style={{ color }}>{v}</span>
+        <span style={{ color: hexA(color, 0.66) }}> · {fmtPct(share)}</span>
+      </span>
+    );
+
+  const Hd = ({ children, right: r, dot }) => (
+    <div className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wide ${r ? "justify-end" : ""}`}
+      style={{ color: "var(--text-4)" }}>
+      {dot && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: dot }} />}
+      <span className="truncate">{children}</span>
+    </div>
+  );
+
+  const DeskRow = ({ name, r, d, bold, noNorm }) => (
+    <div className="hidden md:grid items-center gap-3 px-3 py-2" style={{ gridTemplateColumns: SLA_GRID }}>
+      <span className={`text-xs truncate ${bold ? "font-bold" : "font-medium"}`}
+        style={{ color: "var(--text-1)" }} title={name}>{name}</span>
+      <span className={`text-right text-xs tabular-nums ${bold ? "font-bold" : "font-semibold"}`}
+        style={{ color: "var(--text-2)" }}>{d.total}</span>
+      <SlaMeter parts={d.parts} />
+      <CountPct v={d.onTime} share={d.p(d.onTime)} color={C_DONE} dash={noNorm} />
+      <CountPct v={d.late} share={d.p(d.late)} color={C_OVERDUE} dash={noNorm} />
+      <CountPct v={d.open} share={d.p(d.open)} color={C_DOING} />
+      <span className="text-right text-[11px] tabular-nums whitespace-nowrap"
+        style={{ color: "var(--text-2)" }}>{fmtAvg(r.avg_h)}</span>
+    </div>
+  );
+
+  // The header row is hidden on a phone, so every figure brings its own label.
+  const MStat = ({ color, label, v, share, dash }) =>
+    dash ? null : (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+        <span style={{ color: "var(--text-4)" }}>{label}</span>
+        <span className="font-semibold tabular-nums" style={{ color: v ? color : "var(--text-4)" }}>
+          {v}{v && share != null ? ` · ${fmtPct(share)}` : ""}
+        </span>
+      </span>
+    );
+
+  const MobRow = ({ name, r, d, bold, noNorm }) => (
+    <div className="md:hidden px-3 py-2.5 space-y-1.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className={`text-xs truncate ${bold ? "font-bold" : "font-medium"}`}
+          style={{ color: "var(--text-1)" }}>{name}</span>
+        <span className="text-xs tabular-nums font-semibold flex-shrink-0"
+          style={{ color: "var(--text-2)" }}>{d.total}</span>
+      </div>
+      <SlaMeter parts={d.parts} />
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        <MStat color={C_DONE} label={t("arc.slaOnTime")} v={d.onTime} share={d.p(d.onTime)} dash={noNorm} />
+        <MStat color={C_OVERDUE} label={t("arc.slaLate")} v={d.late} share={d.p(d.late)} dash={noNorm} />
+        <MStat color={C_DOING} label={t("arc.slaOpen")} v={d.open} share={d.p(d.open)} />
+        {noNorm && <span style={{ color: "var(--text-4)" }}>{t("arc.anNoNorm")}</span>}
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          <span style={{ color: "var(--text-4)" }}>{t("arc.slaAvg")}</span>
+          <span className="tabular-nums" style={{ color: "var(--text-2)" }}>{fmtAvg(r.avg_h)}</span>
+        </span>
+      </div>
+    </div>
+  );
+
+  const td = totals ? derive(totals) : null;
+  return (
+    <ChartCard icon={Gauge} title={t("arc.slaTitle")} subtitle={t("arc.slaSub")}
+      empty={!rows.length} emptyText={t("arc.noMatch")} ready height={200} right={right}>
+      <div className="pb-1">
+        <div className="hidden md:grid items-center gap-3 px-3 pt-1 pb-2"
+          style={{ gridTemplateColumns: SLA_GRID, borderBottom: "1px solid var(--border)" }}>
+          <Hd>{t("arc.fCategory")}</Hd>
+          <Hd right>{t("arc.slaIn")}</Hd>
+          <span />
+          <Hd right dot={C_DONE}>{t("arc.slaOnTime")}</Hd>
+          <Hd right dot={C_OVERDUE}>{t("arc.slaLate")}</Hd>
+          <Hd right dot={C_DOING}>{t("arc.slaOpen")}</Hd>
+          <Hd right>{t("arc.slaAvg")}</Hd>
+        </div>
+        {rows.map((r, i) => {
+          const d = derive(r);
+          const noNorm = r.allowed_h == null;
+          const name = r.name || t("arc.anUnassigned");
+          return (
+            <div key={r.id ?? `${name}-${i}`} style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
+              <DeskRow name={name} r={r} d={d} noNorm={noNorm} />
+              <MobRow name={name} r={r} d={d} noNorm={noNorm} />
+            </div>
+          );
+        })}
+        {td && (
+          <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)" }}>
+            <DeskRow name={t("arc.slaTotal")} r={totals} d={td} bold />
+            <MobRow name={t("arc.slaTotal")} r={totals} d={td} bold />
+          </div>
+        )}
+      </div>
+    </ChartCard>
   );
 }
 
@@ -363,6 +537,13 @@ export default function ArcAnalysis({ view, filters, enabled }) {
     </ChartCard>
   );
 
+  // Same rows, same cut, same «TOP n / N» as the ranked category bars — the
+  // two category cards must never disagree about which categories they read.
+  const slaCard = (
+    <SlaCard rows={catRows} totals={A?.sla_totals}
+      right={topOf(catRows.length, cats.length)} />
+  );
+
   if (viewKey === "cells") {
     return (
       <div className="space-y-4">
@@ -396,6 +577,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
           <ReactApexChart options={stackOpts(cellLabels)} series={stackSeries(cellRows)}
             type="bar" height={stackHeight(cellRows.length)} />
         </ChartCard>
+        {slaCard}
       </div>
     );
   }
@@ -406,6 +588,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
         <div className="lg:col-span-2">{flowCard(matchH(286, stackHeight(catRows.length)))}</div>
         {catsCard}
       </div>
+      {slaCard}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <ChartCard icon={Building2} title={t("arc.anDivs")} subtitle={t("arc.anDivsSub")}
           empty={divs.length === 0} emptyText={t("arc.noMatch")} ready={ready}
