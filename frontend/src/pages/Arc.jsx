@@ -35,7 +35,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { inTelegram } from "../utils/session";
 import { shortPerson } from "../utils/personName";
-import { toneFor, statusName, hexA, STATUS_CODES, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatus";
+import { toneFor, dotStyle, stripeColor, statusName, hexA, STATUS_CODES, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatus";
 
 // ── constants ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 50;
@@ -195,8 +195,10 @@ const commentWho = (c) => {
 const commentWhen = (c) => (c && typeof c === "object" ? (c.created_at || c.date || c.time) : "") || "";
 
 // ── small presentational bits ────────────────────────────────────────────────
-// Status chip: traffic-light tone by code (utils/arcStatus.js); a status that
-// is waiting on somebody is dashed, so it never reads as settled.
+// Status chip: hue = the backend's derived state, ring + dashed border = the
+// ticket is waiting on somebody (utils/arcStatus.js). Both marks, always —
+// «Yakunlangan» and «Tasdiq kutilmoqda» share a hue by definition, so the ring
+// is the only thing that tells them apart.
 function StatusChip({ status, label }) {
   const tone = toneFor(status);
   return (
@@ -205,11 +207,11 @@ function StatusChip({ status, label }) {
       style={{
         background: hexA(tone.color, 0.14),
         color: tone.color,
-        border: `1px ${tone.dashed ? "dashed" : "solid"} ${hexA(tone.color, 0.45)}`,
+        border: `1px ${tone.waiting ? "dashed" : "solid"} ${hexA(tone.color, 0.45)}`,
       }}
       title={label || ""}
     >
-      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: tone.color }} />
+      <span className="rounded-full flex-shrink-0" style={dotStyle(status, 7)} />
       {label || "—"}
     </span>
   );
@@ -757,7 +759,7 @@ export default function Arc() {
           labelOf={(v) => stName(v)}
           render={(v) => (
             <span className="inline-flex items-center gap-1.5 min-w-0">
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: toneFor(Number(v)).color }} />
+              <span className="rounded-full flex-shrink-0" style={dotStyle(Number(v), 9)} />
               <span className="truncate">{stName(v)}</span>
               {statusCount[v] != null && <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{statusCount[v]}</span>}
             </span>
@@ -1008,7 +1010,7 @@ export default function Arc() {
       )}
       {!listLoading && rows.map((r) => {
         const late = r.overdue_now || r.late;
-        const strip = late ? C_OVERDUE : toneFor(r.status).color;
+        const strip = late ? C_OVERDUE : stripeColor(r.status);
         return (
           <div key={r.remote_id || r.id}
             onClick={() => setOpenId(r.remote_id)}
