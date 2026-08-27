@@ -608,7 +608,7 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
                     unit_id=day.manager_id, day=day.date,
                     details=[("leader", prof.name), ("task_id", tid),
                              ("shift", shift),
-                             ("deadline", task_deadline(due_cfg, shift)),
+                             ("deadline", task_deadline(s, shift)),
                              ("state", "done" if was_done else "not_done")],
                     reason="deadline",
                 )

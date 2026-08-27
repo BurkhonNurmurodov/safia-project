@@ -55,7 +55,7 @@ import { useToast } from "../../components/ui/Toast";
 const TXT = {
   uz: {
     title: "Hisobdan chiqarilgan kunlar",
-    lead: "Bu yerda tanlangan kunlar liderning ham, brigadirning ham natijalariga umuman kirmaydi — na ortiqcha, na kamchilik. Kun o'chirilmaydi: rasmlar, hisobot va baho joyida qoladi, faqat o'rtachaga qo'shilmaydi.",
+    lead: "Kun o'chirilmaydi: rasmlar, hisobot va baho joyida qoladi — faqat o'rtacha ballga qo'shilmaydi. Filtrlar bilan kunni toping, keyin kerakli qatorlarni belgilang.",
     tabOn: "Hisobga olinadi", tabOff: "Hisobdan chiqarilgan",
     search: "Lider yoki brigadir...",
     fShift: "Smena", fSup: "Brigadir", fLeader: "Lider", all: "Barchasi",
@@ -84,7 +84,7 @@ const TXT = {
   },
   uz_cyrl: {
     title: "Ҳисобдан чиқарилган кунлар",
-    lead: "Бу ерда танланган кунлар лидернинг ҳам, бригадирнинг ҳам натижаларига умуман кирмайди — на ортиқча, на камчилик. Кун ўчирилмайди: расмлар, ҳисобот ва баҳо жойида қолади, фақат ўртачага қўшилмайди.",
+    lead: "Кун ўчирилмайди: расмлар, ҳисобот ва баҳо жойида қолади — фақат ўртача баллга қўшилмайди. Филтрлар билан кунни топинг, кейин керакли қаторларни белгиланг.",
     tabOn: "Ҳисобга олинади", tabOff: "Ҳисобдан чиқарилган",
     search: "Лидер ёки бригадир...",
     fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер", all: "Барчаси",
@@ -113,7 +113,7 @@ const TXT = {
   },
   ru: {
     title: "Исключённые дни",
-    lead: "Выбранные здесь дни не входят в результаты ни лидера, ни бригадира — ни в плюс, ни в минус. День не удаляется: фото, отчёт и оценка остаются на месте, просто не попадают в средний балл.",
+    lead: "День не удаляется: фото, отчёт и оценка остаются на месте — они просто не попадают в средний балл. Найдите нужный день фильтрами и отметьте строки.",
     tabOn: "Учитываются", tabOff: "Исключены",
     search: "Лидер или бригадир...",
     fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер", all: "Все",
@@ -142,7 +142,7 @@ const TXT = {
   },
   en: {
     title: "Excluded days",
-    lead: "Days picked here count for neither the leader nor the brigadir — no plus, no minus. Nothing is deleted: the photos, the report and the score all stay; they just leave the average.",
+    lead: "Nothing is deleted — the photos, the report and the score all stay; they just leave the average. Narrow to the day with the filters, then tick the rows you mean.",
     tabOn: "Counting", tabOff: "Excluded",
     search: "Leader or brigadir...",
     fShift: "Shift", fSup: "Brigadir", fLeader: "Leader", all: "All",
@@ -181,7 +181,7 @@ const rowKey = (r) => `${r.leader_id ? `p${r.leader_id}` : `n${(r.leader || "").
 export default function LeaderDayExclusions() {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.uz;
-  const tl = useTranslit();
+  const { tl } = useTranslit();
   const qc = useQueryClient();
   const { node: toastNode, show } = useToast();
 
@@ -325,12 +325,13 @@ export default function LeaderDayExclusions() {
   return (
     <div>
       {toastNode}
-      <div className="mb-4">
-        <h2 className="text-lg font-bold mb-1" style={{ color: "var(--text-1)" }}>{T.title}</h2>
-        <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)", maxWidth: 760 }}>
-          {T.lead}
-        </p>
-      </div>
+      {/* No title here — the AdminPanel shell already renders this
+        * destination's name and its one-line `admin.desc.*` description. This
+        * note carries only what that line has no room for. */}
+      <p className="text-xs leading-relaxed mb-3"
+        style={{ color: "var(--text-3)", maxWidth: 760 }}>
+        {T.lead}
+      </p>
 
       <div className="mb-3">
         <SegmentedToggle asTabs value={view} onChange={switchView}
@@ -339,7 +340,7 @@ export default function LeaderDayExclusions() {
 
       <TableCard
         icon={on ? CircleSlash : RotateCcw}
-        title={T.title}
+        title={on ? T.tabOn : T.tabOff}
         right={<span className="text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
           {fill(T.rows, { n: shown.length })}
         </span>}
