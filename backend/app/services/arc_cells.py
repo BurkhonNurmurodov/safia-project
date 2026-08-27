@@ -47,6 +47,14 @@ _SQL = r"(?:^|[^0-9])([0-9]{4})$"
 # is four digits, so a word can never collide with one.
 NO_CELL = "none"
 
+# The same word, in the OWNER dimension: «this ticket reaches no brigadir» /
+# «…no leader». Deliberately the same spelling as :data:`NO_CELL` and
+# deliberately its own name — every real owner pick is a numeric id, so a word
+# cannot collide with one, and the two sentinels answer about two different
+# dimensions. It is the value the «Biriktirilmagan» row of the brigadir and
+# leader lists carries.
+NO_OWNER = "none"
+
 
 def cell_code(division_name: Optional[str]) -> Optional[str]:
     """The Verifix code a division name carries, or None."""
@@ -183,24 +191,81 @@ def org_index(db: Session, codes: Iterable[str], keep_managers: Iterable[int] = 
     return {"by_code": by_code, "managers": managers, "leaders": leaders}
 
 
-def org_codes(db: Session, shifts: list[int], managers: list[int],
-              leaders: list[int]) -> set[str]:
-    """The codes an org pick narrows the register to — the picks AND-ed.
+def owner_picks(values: Iterable[str]) -> tuple[set[int], bool]:
+    """A brigadir/leader pick list → (ids, «unassigned» asked for).
 
-    An EMPTY set is a real answer («no cell answers to this scope»), never «no
-    filter»: a supervisor whose cells the register has never named must show an
-    empty register, not the whole plant."""
-    idx = org_index(db, register_codes(db))
+    The two are separated here, once, because every reader of an owner pick
+    needs both halves and neither is derivable from the other: an id narrows
+    to a unit, :data:`NO_OWNER` narrows to the tickets that reach NO unit, and
+    picking both means «these people, or nobody»."""
+    ids: set[int] = set()
+    none = False
+    for v in values or ():
+        s = str(v).strip()
+        if not s:
+            continue
+        if s == NO_OWNER:
+            none = True
+            continue
+        try:
+            ids.add(int(s))
+        except ValueError:
+            continue
+    return ids, none
+
+
+def _owner_ok(value: Optional[int], ids: set[int], none: bool) -> bool:
+    """Does one code's owner satisfy one level's picks?
+
+    No pick at all on a level is no narrowing — every code passes. Otherwise
+    the picks are OR-ed: a named id matches its own unit, :data:`NO_OWNER`
+    matches an owner this platform cannot name (an unregistered cell, or a
+    registered one nobody is assigned to)."""
+    if not ids and not none:
+        return True
+    return none if value is None else value in ids
+
+
+def org_codes(db: Session, shifts: list[int], managers: list[str],
+              leaders: list[str]) -> tuple[set[str], bool]:
+    """The codes an org pick narrows the register to, and whether tickets that
+    name NO cell are in that scope.
+
+    The picks are AND-ed across levels and OR-ed within one, and the brigadir /
+    leader lists carry raw picks — ids as strings, plus :data:`NO_OWNER`. That
+    sentinel is why the walk is over EVERY code the register carries rather
+    than over the resolved ones: a code the cell registry has never heard of
+    reaches no brigadir either, and it is one of the three ways a ticket ends
+    up with a blank owner column. All three are what «Biriktirilmagan» means,
+    which is what makes the pick and the column agree about the same row.
+
+    The second half of the answer is the third of those ways: a division that
+    names no cell at all. It cannot be expressed as a code, so it rides back
+    as a flag — and it is in scope only while no level NAMES anything, because
+    such a ticket reaches no unit, no shift and no leader.
+
+    An EMPTY answer is a real one («no cell answers to this scope»): it must
+    show an empty register, never the whole plant."""
+    mgrs, mgr_none = owner_picks(managers)
+    leads, lead_none = owner_picks(leaders)
+    want_shifts = set(shifts or ())
+    codes = register_codes(db)
+    idx = org_index(db, codes)
+    by_code = idx["by_code"]
     out: set[str] = set()
-    for code, org in idx["by_code"].items():
-        if shifts and org["shift"] not in shifts:
+    for code in codes:
+        org = by_code.get(code) or {}
+        if want_shifts and org.get("shift") not in want_shifts:
             continue
-        if managers and org["manager_id"] not in managers:
+        if not _owner_ok(org.get("manager_id"), mgrs, mgr_none):
             continue
-        if leaders and org["leader_id"] not in leaders:
+        if not _owner_ok(org.get("leader_id"), leads, lead_none):
             continue
         out.add(code)
-    return out
+    with_null = (not want_shifts
+                 and _owner_ok(None, mgrs, mgr_none)
+                 and _owner_ok(None, leads, lead_none))
+    return out, with_null
 
 
 def assigned_codes(db: Session) -> set[str]:

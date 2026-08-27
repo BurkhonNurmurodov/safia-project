@@ -300,20 +300,33 @@ def _apply_filters(query, f: dict, D: dict, db: Session, org_cache: Optional[dic
     # The org chain — shift → brigadir → leader — reaches a ticket only through
     # the cell its division names, so it narrows to a SET OF CODES and joins
     # the register at exactly the same expression the cell pick uses. An empty
-    # set is a real answer («no cell in this scope»): it must show an empty
-    # register, never the whole plant, and a ticket whose division names no
-    # cell belongs to no unit, so it is out of every org scope by construction.
-    shifts, mgrs, leads = (_ints(f.get("shift") or []), _ints(f.get("manager") or []),
-                           _ints(f.get("leader") or []))
+    # answer is a real one («no cell in this scope»): it must show an empty
+    # register, never the whole plant.
+    #
+    # The brigadir and leader levels are MULTI-select and carry one value that
+    # is not a unit — `arc_cells.NO_OWNER`, «Biriktirilmagan»: the tickets that
+    # reach no such person at all. That is the one pick a ticket whose division
+    # names NO cell can satisfy, so the scope comes back as a code set PLUS a
+    # flag for those, and both halves are OR-ed into one clause. Picks are
+    # OR-ed within a level and AND-ed across them; `arc_cells.org_codes` is the
+    # whole rule and nothing is re-derived here.
+    shifts = _ints(f.get("shift") or [])
+    mgrs = [str(v) for v in (f.get("manager") or []) if str(v).strip()]
+    leads = [str(v) for v in (f.get("leader") or []) if str(v).strip()]
     if shifts or mgrs or leads:
         ck = (tuple(shifts), tuple(mgrs), tuple(leads))
         if org_cache is not None and ck in org_cache:
-            codes = org_cache[ck]
+            codes, with_null = org_cache[ck]
         else:
-            codes = arc_cells.org_codes(db, shifts, mgrs, leads)
+            codes, with_null = arc_cells.org_codes(db, shifts, mgrs, leads)
             if org_cache is not None:
-                org_cache[ck] = codes
-        query = query.filter(D["cell_code"].in_(sorted(codes))) if codes else query.filter(false())
+                org_cache[ck] = (codes, with_null)
+        conds = []
+        if codes:
+            conds.append(D["cell_code"].in_(sorted(codes)))
+        if with_null:
+            conds.append(D["cell_code"].is_(None))
+        query = query.filter(or_(*conds)) if conds else query.filter(false())
     cond = _tri(f.get("urgent") or "all", R.category_urgent)
     if cond is not None:
         query = query.filter(cond)
@@ -506,6 +519,10 @@ _OFF: dict[str, Any] = {
     "status": [], "category": [], "division": [], "cell": [], "shift": [],
     "manager": [], "leader": [], "brigada": [], "author": [],
     "urgent": "all", "overdue": "all", "source": "all", "state": "all",
+    # The «by cells» owner scope is a narrowing on the SAME dimension the
+    # brigadir and leader picks are on, so it is liftable like any other
+    # control — see the two owner lists in _facets.
+    "assigned_only": False,
 }
 
 # The filter set that narrows nothing at all — every ticket the API still
@@ -513,7 +530,7 @@ _OFF: dict[str, Any] = {
 # before /facets existed.
 _ALL_ROWS: dict[str, Any] = {**_OFF, "date_from": None, "date_to": None,
                              "q": None, "include_missing": False,
-                             "cells_only": False, "assigned_only": False}
+                             "cells_only": False}
 
 
 def _lift(f: dict, *keys: str) -> dict:
@@ -851,10 +868,6 @@ _GRANS = ("day", "week", "month")
 _TREND_MAX_BUCKETS = 400
 _TOP = 12          # ranked bars: top N on screen, the card names the rest
 _TOP_LEADERS = 14  # leaders are the longest list; one extra row of headroom
-# Duration bands for the modal close time, as upper edges in hours; the band
-# above the last edge is open. Fine where tickets actually cluster, coarse in
-# the tail: <1h · 1–2h · 2–4h · 4–8h · 8–24h · 1–3d · 3–7d · 7d+.
-_HOUR_BANDS = (1, 2, 4, 8, 24, 72, 168)
 
 
 def _py_trunc(d: date_cls, gran: str) -> date_cls:
@@ -941,11 +954,15 @@ def get_analysis(
     trend = trend[-_TREND_MAX_BUCKETS:]
 
     # ── the category mix + deadline discipline (both views) ──────────────────
-    # ONE grouped pass serves BOTH category cards: the ranked traffic-light
-    # bars and the SLA scorecard. `cwd` = closures that HAD a deadline — the
-    # only rows a timeliness verdict exists for; on-time is `cwd - late` on
-    # the client, and `done - cwd` is its «closed, no norm» bucket — counted
-    # and shown, never silently painted on-time.
+    # ONE grouped pass serves ALL THREE category cards: the ranked traffic-light
+    # bars, the SLA scorecard and the closing-time table. `cwd` = closures that
+    # HAD a deadline — the only rows a timeliness verdict exists for; on-time is
+    # `cwd - late` on the client, and `done - cwd` is its «closed, no norm»
+    # bucket — counted and shown, never silently painted on-time. `allowed_h` is
+    # the category's own norm (`ftime`, the hours `due` is derived over): the
+    # measured closing times and the time they were MEANT to take come off one
+    # read, so a table that prints them side by side cannot show two categories'
+    # answers to one row.
     closed_with_due = and_(D["is_done"], D["due"].isnot(None), D["closed_at"].isnot(None))
     late_closed = and_(closed_with_due, D["late"])
     hours_closed = case((D["is_done"], D["hours_to_close"]), else_=None)
@@ -981,42 +998,6 @@ def get_analysis(
                   "overdue": _n(st[3]), "cancelled": _n(st[4]),
                   "cwd": _n(st[5]), "late": _n(st[6]),
                   "avg_h": round(float(st[7]), 1) if st[7] is not None else None}
-    # ── the modal closing time, per category (both views) ───────────────────
-    # The third measure of central tendency beside the mean and the median:
-    # WHICH close time occurs most often. Hours-to-close is continuous, so a
-    # raw mode is meaningless — every value is its own — and it is binned into
-    # the duration ladder below, which is spaced the way durations actually
-    # distribute (heavy-tailed: fine at the fast end, coarse at the slow one).
-    # A flat 1-hour bin would answer «0–1 h» for every category at once and
-    # tell the reader nothing about which of them differ.
-    #
-    # `_HOUR_BANDS` is THE ladder and the boundaries travel WITH the answer
-    # (`mode_lo` / `mode_hi`, hours, `mode_hi` null on the open top band) —
-    # the label is rendered FROM them, so the words on screen and the bin the
-    # count was taken over can never drift apart. Ties go to the FASTER band:
-    # an arbitrary winner is fine, an unstable one that flips between reloads
-    # is not.
-    band = case(
-        *[(hours_closed < e, i) for i, e in enumerate(_HOUR_BANDS)],
-        else_=len(_HOUR_BANDS),
-    )
-    modal: dict = {}
-    for cid, bi, n in (
-        # The NULL filter is load-bearing: `NULL < 1` is NULL, so an unclosed
-        # ticket would fall through every arm of the CASE into the top band and
-        # be counted as the slowest closure there is.
-        base.filter(hours_closed.isnot(None))
-        .with_entities(R.category_id, band, func.count(R.id))
-        .group_by(R.category_id, band).all()
-    ):
-        cur = modal.get(cid)
-        if cur is None or int(n) > cur[1] or (int(n) == cur[1] and int(bi) < cur[0]):
-            modal[cid] = (int(bi), int(n))
-    for c in categories:
-        bi, mn = modal.get(c["id"], (None, 0))
-        c["mode_lo"] = None if bi is None else (0 if bi == 0 else _HOUR_BANDS[bi - 1])
-        c["mode_hi"] = None if bi is None or bi >= len(_HOUR_BANDS) else _HOUR_BANDS[bi]
-        c["mode_n"] = mn
 
     out: dict[str, Any] = {"gran": gran, "trend": trend,
                            "categories": categories, "sla_totals": sla_totals}

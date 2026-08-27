@@ -276,33 +276,36 @@ function SlaCard({ rows, totals, right }) {
 }
 
 // ── the closing-time table («Yopilish vaqti») ────────────────────────────────
-// The one card that answers «how long does this kind of request actually
-// take». Per category, the three measures of central tendency over the hours
-// to close — MEAN, MEDIAN and MODE — beside the number of closures they all
-// stand on.
+// The one card that answers «how long does this kind of request actually take,
+// and how long was it MEANT to take». Per category, the mean and the median
+// over the hours to close, beside the number of closures they stand on and the
+// category's own NORM — `category.ftime`, the allowance every `due` on this
+// register is derived over.
 //
-// The three are shown together because each is wrong on its own and their
-// DISAGREEMENT is the answer. A mean far above the median says a handful of
-// tickets sat for weeks while the typical one closed fast. A mode far below
-// both says most tickets close in one band and a tail drags every average
-// after it. Neither figure is shown without the closure count, because an
-// average over three tickets is not an average.
+// Mean and median are shown together because each is wrong on its own and their
+// DISAGREEMENT is the answer: a mean far above the median says a handful of
+// tickets sat for weeks while the typical one closed fast. Neither is shown
+// without the closure count, because an average over three tickets is not an
+// average.
 //
-// Every figure counts CLOSED tickets only — an open ticket has no closing time
-// yet, and folding it in as a zero would reward a backlog.
+// The norm is the column that makes the other two mean something. A median of
+// 3.1 h is neither good nor bad until the row states what the category was
+// given, and it is the ONE number here the register did not measure — it is
+// the standard IT files against. It is rendered plainly, in the same hours as
+// its neighbours: the verdict «did this category beat its norm» belongs to the
+// SLA scorecard and the speed chart, which already say it once each, and a
+// third differently-worded verdict is how one page starts disagreeing with
+// itself. A category carrying no `ftime` has no norm and says so — it is not
+// a norm of zero, and every timeliness figure on this page already excludes it.
 //
-// The mode is a BAND, not a number: hours-to-close is continuous, so the
-// backend bins it (`_HOUR_BANDS`) and returns the winning band's own edges.
-// The label is rendered from those edges rather than from a parallel list of
-// words, so what the cell says and what the count was taken over cannot drift.
-// Its share of the closures rides beside it, because a mode holding 9% of the
-// rows is barely a mode and the reader has to be able to see that.
-const SPD_GRID = "minmax(0,1.5fr) 5rem 6.4rem 6.4rem minmax(8.5rem,1fr)";
+// Every measured figure counts CLOSED tickets only — an open ticket has no
+// closing time yet, and folding it in as a zero would reward a backlog.
+const SPD_GRID = "minmax(0,1fr) 5rem 6.4rem 6.4rem 6.4rem";
 
 function SpeedTable({ rows, right }) {
   const { t } = useLang();
 
-  // Bare numbers in the two hour columns — the unit rides in the header, so
+  // Bare numbers in the three hour columns — the unit rides in the header, so
   // the digits stay a column a reader can compare down. The day restatement
   // moves into the cell's own tooltip, where it costs no width.
   const num = (h) => (h == null ? "—" : h >= 100 ? String(Math.round(h)) : h.toFixed(1));
@@ -312,41 +315,11 @@ function SpeedTable({ rows, right }) {
     return `${num(h)} ${t("arc.anHours")}${days}`;
   };
 
-  // «< 1 soat» · «2–4 soat» · «1–3 kun» · «7 kun+», straight off the band's own
-  // edges in hours. Days once the band starts at a day, hours below that.
-  const dnum = (v) => (v % 24 === 0 ? String(v / 24) : (v / 24).toFixed(1));
-  const bandLabel = (lo, hi) => {
-    const H = t("arc.anHours");
-    const D = t("arc.slaDays");
-    if (lo == null) return "—";
-    if (hi == null) return `${dnum(lo)} ${D}+`;
-    if (lo === 0) return `< ${hi} ${H}`;
-    if (lo >= 24) return `${dnum(lo)}–${dnum(hi)} ${D}`;
-    return `${lo}–${hi} ${H}`;
-  };
-
-  const fmtPct = (v) => {
-    const r = Math.round(v * 10) / 10;
-    return `${Number.isInteger(r) ? r : r.toFixed(1)}%`;
-  };
-
-  // The modal band + how much of the category it actually holds. A row with no
-  // closures says so rather than leaving a dash the reader has to interpret.
-  const Mode = ({ r }) => {
-    if (r.mode_lo == null) {
-      return <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("arc.spdNoClose")}</span>;
-    }
-    const share = r.closed_n ? (100 * r.mode_n) / r.closed_n : 0;
-    return (
-      <span className="text-xs whitespace-nowrap"
-        title={tpl(t("arc.spdModeTip"), { n: r.mode_n, band: bandLabel(r.mode_lo, r.mode_hi) })}>
-        <span className="font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
-          {bandLabel(r.mode_lo, r.mode_hi)}
-        </span>
-        <span className="tabular-nums" style={{ color: "var(--text-4)" }}> · {fmtPct(share)}</span>
-      </span>
-    );
-  };
+  // The norm's own tooltip: the allowance restated in days once it runs past
+  // one, and the plain fact that a category has none — a «—» in a column of
+  // hours otherwise reads as «nobody closed one», which is the column to its
+  // left, not this one.
+  const normTip = (h) => (h == null ? t("arc.anNoNorm") : hoursTip(h));
 
   const Hd = ({ children, right: r }) => (
     <div className={`text-[10px] uppercase tracking-wide truncate ${r ? "text-right" : ""}`}
@@ -367,19 +340,28 @@ function SpeedTable({ rows, right }) {
         style={{ color: r.median_h == null ? "var(--text-4)" : "var(--text-1)" }} title={hoursTip(r.median_h)}>
         {num(r.median_h)}
       </span>
-      <span className="text-right"><Mode r={r} /></span>
+      <span className="text-right text-xs tabular-nums"
+        style={{ color: r.allowed_h == null ? "var(--text-4)" : "var(--text-2)" }} title={normTip(r.allowed_h)}>
+        {num(r.allowed_h)}
+      </span>
     </div>
   );
 
   // The header row is hidden on a phone, so every figure brings its own label —
   // the unit included, beside the value it belongs to rather than once at the
   // end of the line, where «— soat» reads as a measurement of nothing.
-  const MStat = ({ label, h }) => (
+  // `none` is the word a missing value gets instead of a dash: on a phone the
+  // header is gone, so «Norma —» has to say WHICH nothing it means.
+  const MStat = ({ label, h, none }) => (
     <span className="inline-flex items-center gap-1 whitespace-nowrap">
       <span style={{ color: "var(--text-4)" }}>{label}</span>
-      <span className="font-semibold tabular-nums"
-        style={{ color: h == null ? "var(--text-4)" : "var(--text-1)" }}>{num(h)}</span>
-      {h != null && <span style={{ color: "var(--text-4)" }}>{t("arc.anHours")}</span>}
+      {h == null && none
+        ? <span style={{ color: "var(--text-4)" }}>{none}</span>
+        : (<>
+          <span className="font-semibold tabular-nums"
+            style={{ color: h == null ? "var(--text-4)" : "var(--text-1)" }}>{num(h)}</span>
+          {h != null && <span style={{ color: "var(--text-4)" }}>{t("arc.anHours")}</span>}
+        </>)}
     </span>
   );
 
@@ -394,10 +376,7 @@ function SpeedTable({ rows, right }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
         <MStat label={t("arc.spdMeanShort")} h={r.avg_h} />
         <MStat label={t("arc.spdMedianShort")} h={r.median_h} />
-        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-          <span style={{ color: "var(--text-4)" }}>{t("arc.spdModeShort")}</span>
-          <Mode r={r} />
-        </span>
+        <MStat label={t("arc.spdNormShort")} h={r.allowed_h} none={t("arc.anNoNorm")} />
       </div>
     </div>
   );
@@ -412,7 +391,7 @@ function SpeedTable({ rows, right }) {
           <Hd right>{t("arc.spdClosed")}</Hd>
           <Hd right>{t("arc.spdMean")}</Hd>
           <Hd right>{t("arc.spdMedian")}</Hd>
-          <Hd right>{t("arc.spdMode")}</Hd>
+          <Hd right>{t("arc.spdNorm")}</Hd>
         </div>
         {rows.map((r, i) => {
           const name = r.name || t("arc.anUnassigned");
