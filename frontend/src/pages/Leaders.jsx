@@ -106,6 +106,7 @@ const TXT = {
     hmExcluded: "Hisobga olinmaydi",
     exclChip: "Hisobga olinmaydi",
     exclTitle: "Bu kun natijalarga kirmaydi — na ortiqcha, na kamchilik",
+    exclNone: "Bu kunda hech narsa topshirilmagan",
     tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun", shiftAbbr: "smena",
@@ -275,6 +276,7 @@ const TXT = {
     hmExcluded: "Ҳисобга олинмайди",
     exclChip: "Ҳисобга олинмайди",
     exclTitle: "Бу кун натижаларга кирмайди — на ортиқча, на камчилик",
+    exclNone: "Бу кунда ҳеч нарса топширилмаган",
     tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
     thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун", shiftAbbr: "смена",
@@ -444,6 +446,7 @@ const TXT = {
     hmExcluded: "Не учитывается",
     exclChip: "Не учитывается",
     exclTitle: "Этот день не входит в результаты — ни в плюс, ни в минус",
+    exclNone: "В этот день ничего не сдавалось",
     tableTitle: "Последние отчёты (сначала низкий балл)",
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
     thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.", shiftAbbr: "смена",
@@ -613,6 +616,7 @@ const TXT = {
     hmExcluded: "Not counted",
     exclChip: "Not counted",
     exclTitle: "This day is out of the results — neither a plus nor a minus",
+    exclNone: "Nothing was submitted on this day",
     tableTitle: "Recent Submissions (Low Score First)",
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d", shiftAbbr: "shift",
@@ -1145,7 +1149,13 @@ function DayFlag({ row, T }) {
 function ExclChip({ row, T }) {
   const x = row?.excluded;
   if (!x) return null;
-  const title = [T.exclTitle, x.reason && `— ${x.reason}`, x.by && `(${x.by})`]
+  // A day with no submission at all is excluded for a different reason from a
+  // day that was filed and then taken out, and only the tooltip can say which:
+  // the row beside it prints «—» where every other row prints a score, and a
+  // reader has to be able to tell "nothing was filed" from "the score no longer
+  // counts".
+  const title = [row.missing && `${T.exclNone}.`, T.exclTitle,
+                 x.reason && `— ${x.reason}`, x.by && `(${x.by})`]
     .filter(Boolean).join(" ");
   return (
     <span
@@ -3613,18 +3623,25 @@ export default function Leaders() {
                             or an admin excluded the day: the sheet's own figure
                             still shows, but it no longer says anything about
                             anybody's score. */}
-                        <span title={r.excluded ? T.exclTitle : r.rejected ? T.voidTitle : undefined}
+                        {/* «—», never «0%», when nothing was filed: 0 is the
+                            arithmetic floor and not the fact, and a score badge
+                            is a claim about a report that does not exist. */}
+                        <span title={r.missing ? T.exclNone : r.excluded ? T.exclTitle : r.rejected ? T.voidTitle : undefined}
                           className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums"
                           style={{ background: r.excluded || r.rejected ? C_FLAT : scoreColor(r.completion) }}>
-                          {Math.round(r.completion)}%
+                          {r.missing ? "—" : `${Math.round(r.completion)}%`}
                         </span>
                       </td>
                       <td className="px-3 py-2" style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</td>
                       <td className="px-3 py-2 text-right">
-                        <button onClick={() => openDetail(r)} className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-                          style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
-                          {T.details}
-                        </button>
+                        {/* Nothing was filed, so there is no report to open —
+                            and a button that 404s is worse than no button. */}
+                        {!r.missing && (
+                          <button onClick={() => openDetail(r)} className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                            style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
+                            {T.details}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -3643,9 +3660,10 @@ export default function Leaders() {
                       {" "}<VerifyChip row={r} T={T} />
                       {aiOn && r.ai?.open ? <> <AiChip n={r.ai.open} T={T} /></> : null}
                     </span>
-                    <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0"
+                    <span title={r.missing ? T.exclNone : undefined}
+                      className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0"
                       style={{ background: r.excluded || r.rejected ? C_FLAT : scoreColor(r.completion) }}>
-                      {Math.round(r.completion)}%
+                      {r.missing ? "—" : `${Math.round(r.completion)}%`}
                     </span>
                   </div>
                   {supName(r.supervisor) && (
@@ -3666,10 +3684,12 @@ export default function Leaders() {
                       <DayFlag row={r} T={T} />
                     </div>
                   )}
-                  <button onClick={() => openDetail(r)} className="w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-                    style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
-                    {T.details}
-                  </button>
+                  {!r.missing && (
+                    <button onClick={() => openDetail(r)} className="w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                      style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
+                      {T.details}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

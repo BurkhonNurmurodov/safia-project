@@ -504,8 +504,15 @@ def get_leaders(
     excl = leader_exclusions.load(db)
 
     sheet_data = []
+    # Every leader-day the two FILED layers account for. An exclusion whose key
+    # is not in here has no row to carry it — `orphan_rows` builds one, because
+    # the client drops a day from its denominator only when handed a row saying
+    # so, and a day nobody filed already costs its leader a full slot.
+    covered: set[str] = set()
     for r in rows:
         prof = _leader_of(r) or {}
+        excl_key = leader_exclusions.key(prof.get("id"), r.leader, r.date)
+        covered.add(excl_key)
         voided = _rejected(r.date, _shift_of(r), r.submitted_at)
         # An APPROVED request un-voids the day — it counts at its own score again
         # — but `late_state` survives on the row for good, so the dashboard can
@@ -536,8 +543,7 @@ def get_leaders(
             # exclusion is a person's explicit answer about this exact day and
             # the void is a rule about all of them, the same precedence
             # `LeaderDaySource` has over `merges()`.
-            "excluded": leader_exclusions.wire(
-                excl.get(leader_exclusions.key(prof.get("id"), r.leader, r.date))),
+            "excluded": leader_exclusions.wire(excl.get(excl_key)),
             # The PERSON: a stable profile id plus their canonical profile
             # name, so every spelling of one leader groups as one person.
             "leader_id": prof.get("id"),
@@ -575,14 +581,29 @@ def get_leaders(
         for b in bot_rows:
             b["rejected"] = False
             b["late_state"] = None
-            b["excluded"] = leader_exclusions.wire(
-                excl.get(leader_exclusions.key(b.get("leader_id"), None, b["date"])))
+            bot_key = leader_exclusions.key(b.get("leader_id"), None, b["date"])
+            covered.add(bot_key)
+            b["excluded"] = leader_exclusions.wire(excl.get(bot_key))
 
     # A closed bot day REPLACES the sheet row for the same person and date —
     # the leader answered twice through two channels, and the bot is the live
     # one. Sheet rows the bot never covered stay as history.
     filed = {(b["leader_id"], b["date"]) for b in bot_rows}
     data = [r for r in sheet_data if (r["leader_id"], r["date"]) not in filed] + bot_rows
+
+    # A THIRD kind of row: a day an admin excluded that neither layer ever
+    # carried. It exists only because somebody recorded a decision about that
+    # exact day — the register still invents nothing — and it is scoped exactly
+    # as the filed layers are, because it moves the denominator: a viewer not
+    # handed it would read a different mean for a leader than everyone else
+    # reads for that same leader.
+    data += leader_exclusions.orphan_rows(
+        db, excl, covered,
+        sup_display=sup_display,
+        manager_ids=({payload.get("role_id")}
+                     if role == "supervisor" and not sees_all else None),
+        leader_ids=(my_pids if role == "leader" and not sees_all else None),
+    )
     data.sort(key=lambda r: str(r["date"]), reverse=True)
 
     _apply_overlays(db, data)
@@ -606,10 +627,39 @@ def get_leaders(
         # carries the count, not the links (see _wire_task).
         row["tasks"] = [_wire_task(t) for t in (row.get("tasks") or [])]
 
+    # Who was SUPPOSED to file. The feed above answers "what was submitted", and
+    # nothing on the platform answered "by whom, on a day where the answer was
+    # nothing" — which is the only question the exclusions tab can build a
+    # missing day from. Served to ADMINS alone: it is the roster of every leader
+    # on the platform, the tab that needs it is admin-only, and the endpoint
+    # that acts on it refuses anybody else. The supervisor spelling is
+    # `sup_display`, the same one the rows carry, so a day named here lands in
+    # the unit bucket its leader's filed days land in.
+    roster = []
+    if role == "admin":
+        by_unit = {m.id: m for m in managers}
+        for p in (db.query(RoleProfile)
+                  .filter(RoleProfile.role == "leader",
+                          RoleProfile.manager_id.isnot(None))
+                  .order_by(RoleProfile.name).all()):
+            unit = by_unit.get(p.manager_id)
+            # An archived unit keeps its history and leaves every picker — a
+            # leader nobody can file for is not a leader with missing days.
+            if unit is None or unit.archived:
+                continue
+            roster.append({
+                "id": p.id,
+                "name": p.name,
+                "manager_id": p.manager_id,
+                "supervisor": sup_display.get(p.manager_id) or unit.name,
+                "shift": unit.shift,
+            })
+
     return _json_response({
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "data": data,
+        "roster": roster,
         # Whether this viewer can act in the open-a-day flow at all. The client
         # shows the «Late reports» tab off these, so authority is never a guess
         # made from the role string on the client.
@@ -1819,10 +1869,14 @@ def set_exclusions(
     that can make a bad night cost nobody anything; that authority is the same
     one that opens a late day, and it is not delegated for the same reason.
 
-    The candidate rows come from `/api/leaders` — the register's own projection
-    — so the days an admin can exclude are exactly the days the page scores. A
-    second list built here would let the tab offer a day the register does not
-    have, or hide one it does.
+    The candidates come from `/api/leaders` — the register's own projection for
+    a day that was filed, and the leader roster served beside it for a day that
+    was not. The second is not a loophole in the first: the page scores over the
+    CALENDAR days of a period, so an unfiled day already costs its leader a full
+    slot of the denominator, and it was the only day an operator could not
+    forgive. This endpoint has never needed the row to exist — the key is the
+    leader-DAY — and `leader_exclusions.orphan_rows` gives the decision a
+    register row from the next read on.
 
     `excluded: false` lifts. A reason is mandatory to exclude and pointless to
     lift, because the reason answers "why does this day not count" and a day

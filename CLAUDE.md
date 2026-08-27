@@ -1314,12 +1314,42 @@ had no way to make the night cost nobody anything.
   `permissions` / `logs` / `ltdaily` model. `POST /api/leaders/exclusions`
   checks `role == "admin"` itself, because the endpoint is reachable without the
   UI. Batches cap at 400.
-- **The tab has no register of its own** — its rows come from `/api/leaders`,
-  the same feed the dashboard scores, so the days it can exclude are exactly the
-  days the page counts. The SELECTION is the scope (the `Factories` /
+- **The tab has THREE views, and only the third has a source of its own.**
+  «Hisobga olinadi» and «Hisobdan chiqarilgan» come from `/api/leaders`, the
+  same feed the dashboard scores, so they can never offer a day the register
+  does not have. **«Topshirilmagan» is the day nobody filed** (from
+  2026-08-27), and it needs a second source because the register has no trace
+  of such a day at all — while the score is Σ of filed-day means ÷ the CALENDAR
+  days of the period, so an unfiled day already costs its leader a full slot of
+  the denominator. It was the one day an operator could not forgive, and it is
+  the commonest one they need to. The SELECTION is the scope (the `Factories` /
   `ShiftTimes` model): filters narrow to the night, then the operator ticks the
   rows — an incident hits a whole unit, but the two leaders who filed properly
   are what an operator needs to be able to leave alone.
+- **The second source is `roster` on `/api/leaders`** — every non-archived
+  leader profile with its unit, its supervisor in the SHEET's spelling
+  (`sup_display`, so a day named here lands in the same unit bucket that
+  leader's filed days land in) and its shift. **Admins only**: it is the roster
+  of every leader on the platform, the tab is admin-only, and the endpoint that
+  acts on it refuses anybody else. A leader-day is «missing» when the period
+  holds no row for it by profile id **and** none by folded name — ~18% of sheet
+  names never resolve to a profile, and a row filed under an unmatched spelling
+  must not make its leader look absent. The list is drawn per leader per day,
+  so the period is capped at 62 days and the cap is SAID, never silently
+  truncated.
+- **An excluded day with no submission becomes a register row**
+  (`leader_exclusions.orphan_rows`, `missing: true`, `source: "none"`). The
+  writer never needed a row — the key is the leader-DAY — but every READER does:
+  `slotsBy` drops a day from the denominator only when handed a row carrying
+  `excluded`, so the decision moved nothing until the row existed. One row per
+  exclusion an admin actually recorded, never a projection of "every day nobody
+  filed"; lift it and the row goes with it. Scoped exactly as the filed layers
+  are (supervisor → own unit, leader → own profile ids) — it moves the
+  denominator, so a viewer not handed it would read a different mean for a
+  leader than everyone else reads for that same leader. It prints «—» and not
+  «0%», and offers no «Batafsil» button, because there is no report behind it.
+  `notify_excluded` says nothing about such a day, by its own rule: nobody was
+  ever DMed a score for it.
 
 Related memory: `leader-day-exclusions`.
 

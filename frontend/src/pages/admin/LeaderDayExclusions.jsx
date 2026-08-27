@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CircleSlash, RotateCcw, AlertTriangle, CalendarDays, Users, Check,
+  CircleSlash, RotateCcw, AlertTriangle, CalendarDays, CalendarOff, Users, Check,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -14,6 +14,7 @@ import SearchInput from "../../components/ui/SearchInput";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import TableCard, { Th } from "../../components/ui/DataTable";
+import Pagination from "../../components/ui/Pagination";
 import { FilterPanel, PickFilter } from "../../components/ui/ColumnFilter";
 import { SkeletonTable } from "../../components/ui/Skeleton";
 import EmptyState from "../../components/ui/EmptyState";
@@ -32,10 +33,17 @@ import { useToast } from "../../components/ui/Toast";
  *
  * Three things it deliberately does NOT do:
  *
- *   * **It has no register of its own.** The rows come from `/api/leaders` —
- *     the same feed the dashboard scores — so the days an admin can exclude are
- *     exactly the days the page counts. A second list built here could offer a
- *     day the register does not have, or hide one it does.
+ *   * **The days it can reach are the days the page SCORES — which is not the
+ *     same as the days the page has rows for.** The first two views come from
+ *     `/api/leaders`, the register's own projection, so they can never offer a
+ *     day the dashboard does not have or hide one it does. The third comes from
+ *     the leader ROSTER served beside it, because the score is Σ of filed-day
+ *     means ÷ the CALENDAR days of the period: a day nobody filed already costs
+ *     its leader a whole slot of that denominator while leaving no row anywhere
+ *     to say so, and it was the one day an operator could never forgive.
+ *     Excluding one writes an ordinary exclusion, and
+ *     `leader_exclusions.orphan_rows` gives it a register row from then on — so
+ *     nothing downstream has to know this view exists.
  *   * **It never deletes anything.** Photos, verdicts, the day report and both
  *     collection layers are untouched; only whether the number enters an
  *     average changes. Lifting an exclusion puts the day back at the score it
@@ -57,13 +65,19 @@ const TXT = {
     title: "Hisobdan chiqarilgan kunlar",
     lead: "Kun o'chirilmaydi: rasmlar, hisobot va baho joyida qoladi — faqat o'rtacha ballga qo'shilmaydi. Filtrlar bilan kunni toping, keyin kerakli qatorlarni belgilang.",
     tabOn: "Hisobga olinadi", tabOff: "Hisobdan chiqarilgan",
+    tabMissing: "Topshirilmagan",
+    missLead: "Bu ro'yxat davrdagi har bir kun uchun hech narsa topshirmagan liderlarni ko'rsatadi. Bunday kun hozir 0 ball sifatida o'rtachaga kiradi — belgilangan qatorlar esa umuman hisobga olinmaydi.",
+    missSelected: "Faqat tanlangan kunlar chiqariladi.",
+    emptyMiss: "Topshirilmagan kun yo'q",
+    emptyMissBody: "Bu oraliqda hamma lider har kuni topshirgan.",
+    missTooLong: "Bu ro'yxat har bir lider uchun har bir kunni chizadi — davrni {n} kundan uzun qilib bo'lmaydi.",
     search: "Lider yoki brigadir...",
     fShift: "Smena", fSup: "Brigadir", fLeader: "Lider", all: "Barchasi",
     shift1: "1-smena", shift2: "2-smena",
     thDate: "Sana", thLeader: "Lider", thSup: "Brigadir", thShift: "Smena",
     thScore: "Natija", thWhy: "Sabab", thBy: "Kim",
     rows: "{n} ta kun", picked: "{n} ta tanlandi",
-    selAll: "Ko'rinayotganlarini tanlash", selNone: "Tanlovni bekor qilish",
+    selAll: "Hammasini tanlash ({n})", selNone: "Tanlovni bekor qilish",
     exclude: "{n} ta kunni hisobdan chiqarish",
     restore: "{n} ta kunni qaytarish",
     reason: "Sabab", reasonHint: "Bu sabab liderga va brigadirga xabar qilib yuboriladi, hisobotda ham ko'rinadi.",
@@ -86,13 +100,19 @@ const TXT = {
     title: "Ҳисобдан чиқарилган кунлар",
     lead: "Кун ўчирилмайди: расмлар, ҳисобот ва баҳо жойида қолади — фақат ўртача баллга қўшилмайди. Филтрлар билан кунни топинг, кейин керакли қаторларни белгиланг.",
     tabOn: "Ҳисобга олинади", tabOff: "Ҳисобдан чиқарилган",
+    tabMissing: "Топширилмаган",
+    missLead: "Бу рўйхат даврдаги ҳар бир кун учун ҳеч нарса топширмаган лидерларни кўрсатади. Бундай кун ҳозир 0 балл сифатида ўртачага киради — белгиланган қаторлар эса умуман ҳисобга олинмайди.",
+    missSelected: "Фақат танланган кунлар чиқарилади.",
+    emptyMiss: "Топширилмаган кун йўқ",
+    emptyMissBody: "Бу оралиқда ҳамма лидер ҳар куни топширган.",
+    missTooLong: "Бу рўйхат ҳар бир лидер учун ҳар бир кунни чизади — даврни {n} кундан узун қилиб бўлмайди.",
     search: "Лидер ёки бригадир...",
     fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер", all: "Барчаси",
     shift1: "1-смена", shift2: "2-смена",
     thDate: "Сана", thLeader: "Лидер", thSup: "Бригадир", thShift: "Смена",
     thScore: "Натижа", thWhy: "Сабаб", thBy: "Ким",
     rows: "{n} та кун", picked: "{n} та танланди",
-    selAll: "Кўринаётганларини танлаш", selNone: "Танловни бекор қилиш",
+    selAll: "Ҳаммасини танлаш ({n})", selNone: "Танловни бекор қилиш",
     exclude: "{n} та кунни ҳисобдан чиқариш",
     restore: "{n} та кунни қайтариш",
     reason: "Сабаб", reasonHint: "Бу сабаб лидерга ва бригадирга хабар қилиб юборилади, ҳисоботда ҳам кўринади.",
@@ -115,13 +135,19 @@ const TXT = {
     title: "Исключённые дни",
     lead: "День не удаляется: фото, отчёт и оценка остаются на месте — они просто не попадают в средний балл. Найдите нужный день фильтрами и отметьте строки.",
     tabOn: "Учитываются", tabOff: "Исключены",
+    tabMissing: "Не сдано",
+    missLead: "Здесь — лидеры и дни периода, за которые не сдано ничего. Сейчас такой день входит в средний балл как 0; отмеченные строки не будут учитываться вовсе.",
+    missSelected: "Исключаются только отмеченные дни.",
+    emptyMiss: "Несданных дней нет",
+    emptyMissBody: "В этом периоде каждый лидер сдавал каждый день.",
+    missTooLong: "Этот список строится по каждому лидеру и каждому дню — период не может быть длиннее {n} дней.",
     search: "Лидер или бригадир...",
     fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер", all: "Все",
     shift1: "1-я смена", shift2: "2-я смена",
     thDate: "Дата", thLeader: "Лидер", thSup: "Бригадир", thShift: "Смена",
     thScore: "Результат", thWhy: "Причина", thBy: "Кто",
     rows: "дней: {n}", picked: "выбрано: {n}",
-    selAll: "Выбрать все видимые", selNone: "Снять выбор",
+    selAll: "Выбрать все ({n})", selNone: "Снять выбор",
     exclude: "Исключить дней: {n}",
     restore: "Вернуть дней: {n}",
     reason: "Причина", reasonHint: "Эта причина уйдёт лидеру и бригадиру в уведомлении и будет видна в отчёте.",
@@ -144,13 +170,19 @@ const TXT = {
     title: "Excluded days",
     lead: "Nothing is deleted — the photos, the report and the score all stay; they just leave the average. Narrow to the day with the filters, then tick the rows you mean.",
     tabOn: "Counting", tabOff: "Excluded",
+    tabMissing: "Not submitted",
+    missLead: "Every leader-day in the period that nothing was filed for. Such a day counts as a 0 in the average today; the rows you tick will not count at all.",
+    missSelected: "Only the days you tick are excluded.",
+    emptyMiss: "No missing days",
+    emptyMissBody: "Every leader filed every day in this period.",
+    missTooLong: "This list is drawn per leader per day — the period cannot be longer than {n} days.",
     search: "Leader or brigadir...",
     fShift: "Shift", fSup: "Brigadir", fLeader: "Leader", all: "All",
     shift1: "Shift 1", shift2: "Shift 2",
     thDate: "Date", thLeader: "Leader", thSup: "Brigadir", thShift: "Shift",
     thScore: "Score", thWhy: "Reason", thBy: "By",
     rows: "{n} day(s)", picked: "{n} selected",
-    selAll: "Select all visible", selNone: "Clear selection",
+    selAll: "Select all ({n})", selNone: "Clear selection",
     exclude: "Exclude {n} day(s)",
     restore: "Restore {n} day(s)",
     reason: "Reason", reasonHint: "This reason is DMed to the leader and the brigadir, and shows on the day report.",
@@ -177,6 +209,25 @@ const shiftDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); ret
 
 // A leader-day's identity, the same pair the backend keys an exclusion by.
 const rowKey = (r) => `${r.leader_id ? `p${r.leader_id}` : `n${(r.leader || "").trim().toLowerCase()}`}|${String(r.date).slice(0, 10)}`;
+
+// UTC throughout: these are calendar dates, and a local-midnight Date shifts the
+// day across the international date line for anybody east of UTC — which is
+// everybody here.
+const addDay = (d, n) => {
+  const t = new Date(`${d}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+};
+const spanDays = (a, b) =>
+  Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000) + 1;
+
+// The missing-day list is drawn per leader per day — ~90 leaders against an
+// unbounded period is a browser, not a table. Two months is longer than any
+// incident and short enough to render; the cap is STATED rather than silently
+// truncating, because a list that quietly stopped at some row reads as "these
+// are all of them".
+const MISS_MAX_DAYS = 62;
+const PAGE_SIZE = 100;
 
 export default function LeaderDayExclusions() {
   const { lang } = useLang();
@@ -206,26 +257,86 @@ export default function LeaderDayExclusions() {
     staleTime: 60_000,
   });
   const rows = data?.data || [];
+  // Who was SUPPOSED to file — served to admins only, and the only thing on the
+  // platform that can name a leader-day nobody filed. Without it the third view
+  // could not exist: the register answers "what was submitted", and a day with
+  // no submission leaves no trace in it at all.
+  const roster = data?.roster || [];
 
   const inRange = useMemo(() => rows.filter((r) => {
     const d = String(r.date).slice(0, 10);
     return (!from || d >= from) && (!to || d <= to);
   }), [rows, from, to]);
 
-  // Option lists come off the rows the PERIOD holds, not the whole feed: a
-  // brigadir with nothing in this fortnight is a scope that can only be empty.
+  const miss = view === "missing";
+  const span = from && to ? spanDays(from, to) : 0;
+  const tooLong = miss && span > MISS_MAX_DAYS;
+
+  /* Every (leader, day) in the period that carries no submission and no
+   * decision — the days that are costing their leader a full slot of the
+   * denominator with nothing on screen anywhere saying so.
+   *
+   * A day is HELD if the register accounts for it in any way: filed through
+   * either layer, or already excluded (which now brings its own row). Matched
+   * by profile id AND by folded name, because ~18% of sheet names never resolve
+   * to a profile — a row filed under an unmatched spelling must not make its
+   * leader look absent, which is the one mistake this list cannot afford.
+   */
+  const missingRows = useMemo(() => {
+    if (!miss || tooLong || !from || !to || !roster.length) return [];
+    const held = new Set();
+    for (const r of inRange) {
+      const d = String(r.date).slice(0, 10);
+      if (r.leader_id) held.add(`p${r.leader_id}|${d}`);
+      const n = String(r.leader || "").trim().toLowerCase();
+      if (n) held.add(`n${n}|${d}`);
+    }
+    const days = [];
+    for (let d = from; d <= to; d = addDay(d, 1)) days.push(d);
+    const out = [];
+    for (const p of roster) {
+      const n = String(p.name || "").trim().toLowerCase();
+      for (const d of days) {
+        if (held.has(`p${p.id}|${d}`) || (n && held.has(`n${n}|${d}`))) continue;
+        out.push({
+          // Not a register row and never pretends to be one: it exists only in
+          // this list, until an admin turns one into a decision.
+          uid: `miss-${p.id}-${d}`,
+          date: d, leader_id: p.id, leader: p.name,
+          supervisor: p.supervisor, manager_id: p.manager_id, shift: p.shift,
+          // No report, so no score — `null`, never 0, which is a figure
+          // somebody would otherwise have to have earned.
+          completion: null, excluded: null, missing: true,
+        });
+      }
+    }
+    return out;
+  }, [miss, tooLong, from, to, inRange, roster]);
+
+  // The rows this view is ABOUT, before the shared narrowing below. Splitting
+  // here keeps one filter path for all three views — a second copy of the
+  // shift/brigadir/lider/search rules is how two tabs start disagreeing about
+  // what a filter means.
+  const base = useMemo(
+    () => (miss ? missingRows
+      : inRange.filter((r) => (view === "off" ? !!r.excluded : !r.excluded))),
+    [miss, missingRows, inRange, view]);
+
+  // Option lists come off the rows this VIEW holds, not the whole feed: a
+  // brigadir with nothing in this fortnight is a scope that can only be empty —
+  // and on the missing view the lists are the roster's, so a leader who filed
+  // nothing at all is still reachable, which is the whole point of it.
   const sups = useMemo(
-    () => [...new Set(inRange.map((r) => r.supervisor).filter((x) => x && x !== "N/A"))].sort(),
-    [inRange]);
+    () => [...new Set(base.map((r) => r.supervisor).filter((x) => x && x !== "N/A"))].sort(),
+    [base]);
   const leaders = useMemo(
-    () => [...new Set(inRange.filter((r) => sup === "All" || r.supervisor === sup)
+    () => [...new Set(base.filter((r) => sup === "All" || r.supervisor === sup)
       .map((r) => r.leader).filter((x) => x && x !== "N/A"))].sort(),
-    [inRange, sup]);
+    [base, sup]);
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return inRange
-      .filter((r) => (view === "off" ? !!r.excluded : !r.excluded))
+    return base
       .filter((r) => shift === "All" || r.shift === Number(shift))
       .filter((r) => sup === "All" || r.supervisor === sup)
       .filter((r) => leader === "All" || r.leader === leader)
@@ -239,7 +350,16 @@ export default function LeaderDayExclusions() {
         || `${tl(r.supervisor || "")} ${r.supervisor || ""}`.toLowerCase().includes(needle))
       .sort((a, b) => String(b.date).localeCompare(String(a.date))
         || String(a.leader || "").localeCompare(String(b.leader || "")));
-  }, [inRange, view, shift, sup, leader, q, lang]);
+  }, [base, shift, sup, leader, q, lang]);
+
+  // Paged for the DOM only: `shown` stays the whole filtered set, so a
+  // selection made on page 1 is still armed while page 4 is on screen — and
+  // «select all» selects the set, not the slice, which is why its label carries
+  // the count.
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [view, from, to, q, shift, sup, leader]);
+  const pageRows = useMemo(
+    () => shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [shown, page]);
 
   const shownKeys = useMemo(() => shown.map(rowKey), [shown]);
   const pickedShown = shownKeys.filter((k) => picked.has(k));
@@ -262,7 +382,14 @@ export default function LeaderDayExclusions() {
   // the operator can no longer see.
   const switchView = (v) => { setView(v); setPicked(new Set()); setErr(""); };
 
-  const on = view === "on";
+  // «Hisobga olinadi» and «Topshirilmagan» both EXCLUDE — they differ in which
+  // days they can reach, not in what the button does to them. Only the restore
+  // tab runs the decision backwards.
+  const off = view === "off";
+  const excluding = !off;
+  // checkbox · date · leader · brigadir · shift, + score unless nothing was
+  // filed, + why/by only where a decision has already been recorded.
+  const nCols = 5 + (miss ? 0 : 1) + (off ? 2 : 0);
   const chosen = useMemo(
     () => shown.filter((r) => picked.has(rowKey(r))), [shown, picked]);
 
@@ -270,8 +397,8 @@ export default function LeaderDayExclusions() {
     setBusy(true); setErr("");
     try {
       const { data: res } = await api.post("/api/leaders/exclusions", {
-        excluded: on,
-        reason: on ? reason.trim() : "",
+        excluded: excluding,
+        reason: excluding ? reason.trim() : "",
         items: chosen.map((r) => ({
           leader_id: r.leader_id ?? null,
           leader: r.leader ?? null,
@@ -283,7 +410,7 @@ export default function LeaderDayExclusions() {
       setConfirm(false);
       setPicked(new Set());
       setReason("");
-      show(fill(on ? T.okOn : T.okOff, { n: res.changed })
+      show(fill(excluding ? T.okOn : T.okOff, { n: res.changed })
         + (res.notified ? ` · ${fill(T.told, { n: res.notified })}` : ""), "success");
       qc.invalidateQueries({ queryKey: ["leaders"] });
     } catch (e) {
@@ -335,17 +462,17 @@ export default function LeaderDayExclusions() {
         * note carries only what that line has no room for. */}
       <p className="text-xs leading-relaxed mb-3"
         style={{ color: "var(--text-3)", maxWidth: 760 }}>
-        {T.lead}
+        {miss ? <>{T.missLead} <b style={{ color: "var(--text-2)" }}>{T.missSelected}</b></> : T.lead}
       </p>
 
       <div className="mb-3">
         <SegmentedToggle asTabs value={view} onChange={switchView}
-          options={[["on", T.tabOn], ["off", T.tabOff]]} />
+          options={[["on", T.tabOn], ["off", T.tabOff], ["missing", T.tabMissing]]} />
       </div>
 
       <TableCard
-        icon={on ? CircleSlash : RotateCcw}
-        title={on ? T.tabOn : T.tabOff}
+        icon={off ? RotateCcw : miss ? CalendarOff : CircleSlash}
+        title={off ? T.tabOff : miss ? T.tabMissing : T.tabOn}
         right={<span className="text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
           {fill(T.rows, { n: shown.length })}
         </span>}
@@ -358,7 +485,7 @@ export default function LeaderDayExclusions() {
             className="flex-1 min-w-[180px]" />
           {shown.length > 0 && (
             <Button size="lg" variant="secondary" onClick={toggleAll}>
-              {allPicked ? T.selNone : T.selAll}
+              {allPicked ? T.selNone : fill(T.selAll, { n: shown.length })}
             </Button>
           )}
         </>}>
@@ -369,28 +496,41 @@ export default function LeaderDayExclusions() {
             <Th label={T.thLeader} />
             <Th label={T.thSup} />
             <Th label={T.thShift} align="center" />
-            <Th label={T.thScore} align="center" />
-            {!on && <Th label={T.thWhy} />}
-            {!on && <Th label={T.thBy} />}
+            {/* No score column where nothing was filed: every cell in it could
+                only be «—», and a column of them reads as missing data rather
+                than as the absence of a report. */}
+            {!miss && <Th label={T.thScore} align="center" />}
+            {off && <Th label={T.thWhy} />}
+            {off && <Th label={T.thBy} />}
           </tr>
         </thead>
         <tbody>
           {isLoading ? (
             // SkeletonTable renders a div — it needs a cell to live in.
-            <tr><td colSpan={on ? 6 : 8} className="p-0">
-              <SkeletonTable rows={6} cols={on ? 6 : 8} />
+            <tr><td colSpan={nCols} className="p-0">
+              <SkeletonTable rows={6} cols={nCols} />
             </td></tr>
           ) : isError ? (
-            <tr><td colSpan={on ? 6 : 8} className="px-3 py-6 text-center"
+            <tr><td colSpan={nCols} className="px-3 py-6 text-center"
               style={{ color: "var(--text-4)" }}>{T.loadFailed}</td></tr>
-          ) : shown.length === 0 ? (
-            <tr><td colSpan={on ? 6 : 8} className="px-3 py-8">
-              <EmptyState showUploadLink={false}
-                icon={on ? CalendarDays : CircleSlash}
-                title={on ? T.emptyOn : T.emptyOff}
-                message={on ? T.emptyOnBody : T.emptyOffBody} />
+          ) : tooLong ? (
+            // Refused, and it says the number: this list is drawn per leader
+            // per day, so an unbounded period is not a long table but a dead
+            // tab — and a cap the operator cannot see is one they cannot work
+            // around.
+            <tr><td colSpan={nCols} className="px-3 py-8">
+              <EmptyState showUploadLink={false} icon={CalendarDays}
+                title={T.tabMissing}
+                message={fill(T.missTooLong, { n: MISS_MAX_DAYS })} />
             </td></tr>
-          ) : shown.map((r) => {
+          ) : shown.length === 0 ? (
+            <tr><td colSpan={nCols} className="px-3 py-8">
+              <EmptyState showUploadLink={false}
+                icon={off ? CircleSlash : miss ? CalendarOff : CalendarDays}
+                title={off ? T.emptyOff : miss ? T.emptyMiss : T.emptyOn}
+                message={off ? T.emptyOffBody : miss ? T.emptyMissBody : T.emptyOnBody} />
+            </td></tr>
+          ) : pageRows.map((r) => {
             const k = rowKey(r);
             const sel = picked.has(k);
             return (
@@ -417,15 +557,17 @@ export default function LeaderDayExclusions() {
                 <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>
                   {r.shift ?? "—"}
                 </td>
-                <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>
-                  {Math.round(r.completion)}%
-                </td>
-                {!on && (
+                {!miss && (
+                  <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>
+                    {Math.round(r.completion)}%
+                  </td>
+                )}
+                {off && (
                   <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
                     {r.excluded?.reason || "—"}
                   </td>
                 )}
-                {!on && (
+                {off && (
                   <td className="px-3 py-2" style={{ color: "var(--text-4)" }}>
                     {r.excluded?.by || "—"}
                   </td>
@@ -435,6 +577,9 @@ export default function LeaderDayExclusions() {
           })}
         </tbody>
       </TableCard>
+
+      <Pagination page={page} pageCount={Math.ceil(shown.length / PAGE_SIZE)}
+        total={shown.length} pageSize={PAGE_SIZE} onPage={setPage} />
 
       {/* The bulk bar names the count in its own label — a button that acts on
         * a selection has to say how big that selection is. */}
@@ -446,7 +591,7 @@ export default function LeaderDayExclusions() {
             style={{ color: "var(--text-1)" }}>
             {fill(T.picked, { n: chosen.length })}
           </span>
-          {on && (
+          {excluding && (
             <div className="flex-1 min-w-[240px]">
               <FormField label={T.reason} required hint={T.reasonHint}>
                 <input value={reason} onChange={(e) => setReason(e.target.value)}
@@ -457,20 +602,20 @@ export default function LeaderDayExclusions() {
               </FormField>
             </div>
           )}
-          <Button size="lg" variant={on ? "danger" : "primary"}
-            disabled={on && !reason.trim()}
+          <Button size="lg" variant={excluding ? "danger" : "primary"}
+            disabled={excluding && !reason.trim()}
             onClick={() => { setErr(""); setConfirm(true); }}>
-            {fill(on ? T.exclude : T.restore, { n: chosen.length })}
+            {fill(excluding ? T.exclude : T.restore, { n: chosen.length })}
           </Button>
         </div>
       )}
 
       <ConfirmDialog
         open={confirm}
-        tone={on ? "danger" : "warning"}
-        title={on ? T.confirmOn : T.confirmOff}
-        message={fill(on ? T.confirmOnBody : T.confirmOffBody, { n: chosen.length })}
-        confirmLabel={fill(on ? T.exclude : T.restore, { n: chosen.length })}
+        tone={excluding ? "danger" : "warning"}
+        title={excluding ? T.confirmOn : T.confirmOff}
+        message={fill(excluding ? T.confirmOnBody : T.confirmOffBody, { n: chosen.length })}
+        confirmLabel={fill(excluding ? T.exclude : T.restore, { n: chosen.length })}
         loading={busy}
         error={err}
         onConfirm={submit}

@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import LeaderAiReview, LeaderDayExclusion
+from app.models import LeaderAiReview, LeaderDayExclusion, Manager, RoleProfile
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,102 @@ def wire(e: LeaderDayExclusion | None) -> dict | None:
         "at": e.set_at.isoformat() if e.set_at else None,
         "score": float(e.score_at) if e.score_at is not None else None,
     }
+
+
+def orphan_rows(db: Session, excl: dict[str, LeaderDayExclusion],
+                covered: set[str], *,
+                sup_display: dict[int, str] | None = None,
+                manager_ids: set[int] | None = None,
+                leader_ids: set[int] | None = None) -> list[dict]:
+    """Register rows for excluded days that NOTHING was ever filed on.
+
+    The register is built from what was submitted — sheet rows and closed bot
+    days — so a day a leader never filed has no row anywhere, and until this
+    existed an exclusion on one was a record no reader could see. That mattered
+    arithmetically, not just cosmetically: the score is Σ of filed-day means ÷
+    the CALENDAR days of the period, so an unfiled day already costs its leader
+    a full slot, and the client drops a day from that denominator only when it
+    is handed a row carrying `excluded`. Writing the decision without the row
+    left the number exactly where it was.
+
+    **The register still does not invent days.** One row appears here per
+    exclusion an admin explicitly recorded, and not one more: this is the
+    materialisation of a human decision about a named day, never a projection of
+    "every day nobody filed". Lift the exclusion and the row goes with it.
+
+    `covered` is every leader-day key the real rows already carry, so a day that
+    WAS filed keeps its own row and can never be shown twice.
+
+    Scoped exactly as the two filed layers are — `manager_ids` for a supervisor,
+    `leader_ids` for a leader — and for the same reason the bot rows are: these
+    rows move the denominator, so a viewer who is not handed them would read a
+    different mean for themselves than everyone else reads for them. A
+    name-keyed exclusion (an unlinked leader, whose sheet row a later Refresh
+    dropped) resolves to no profile and therefore no unit, so it reaches only
+    the viewers who are not narrowed at all.
+    """
+    pending = [e for k, e in excl.items() if k not in covered]
+    if not pending:
+        return []
+
+    pids = {int(e.leader_profile_id) for e in pending if e.leader_profile_id}
+    profs = ({p.id: p for p in db.query(RoleProfile)
+              .filter(RoleProfile.id.in_(pids)).all()} if pids else {})
+    units = {int(e.manager_id) for e in pending if e.manager_id}
+    units |= {int(p.manager_id) for p in profs.values() if p.manager_id}
+    mgrs = ({m.id: m for m in db.query(Manager)
+             .filter(Manager.id.in_(units)).all()} if units else {})
+
+    out: list[dict] = []
+    for e in pending:
+        pid = int(e.leader_profile_id) if e.leader_profile_id else None
+        prof = profs.get(pid) if pid else None
+        # The unit as the DECISION recorded it, falling back to the leader's own
+        # profile. `manager_id` is snapshotted on the exclusion precisely so a
+        # later transfer cannot move a day that has already left the results.
+        unit = e.manager_id or (prof.manager_id if prof else None)
+        unit = int(unit) if unit else None
+        mgr = mgrs.get(unit) if unit else None
+        if manager_ids is not None and (unit is None or unit not in manager_ids):
+            continue
+        if leader_ids is not None and (pid is None or pid not in leader_ids):
+            continue
+        out.append({
+            "uid": f"excl-{e.id}",
+            # Neither layer filed it. `missing` is what every reader tests —
+            # inferring it from an empty task list would make a report whose
+            # questions were all unasked look like a day nobody worked.
+            "source": "none",
+            "missing": True,
+            "date": str(e.date)[:10],
+            "submitted_at": None,
+            # The SHEET's spelling of the unit, like every other row: a unit
+            # that reached the standings under two names splits its own row.
+            "supervisor": ((sup_display or {}).get(unit)
+                           or (mgr.name if mgr else None)),
+            "shift": mgr.shift if mgr else None,
+            # The filing window has nothing to say about a day with no filing,
+            # and an exclusion outranks it in any case.
+            "rejected": False,
+            "late_state": None,
+            "late_by": None,
+            "late_at": None,
+            "late_reason": None,
+            "excluded": wire(e),
+            "leader_id": pid,
+            # The profile's canonical name where there is one — the same key the
+            # filed rows group by, so this day joins that person's history
+            # instead of opening a second one beside it.
+            "leader": (prof.name if prof else None) or e.leader_name or "",
+            "manager_id": unit,
+            # Nothing was filed, so there is no score. Zero is the arithmetic
+            # floor and NOT the fact: the row is excluded, so no consumer scores
+            # it, and the register prints «—» rather than a 0% nobody earned.
+            "completion": 0.0,
+            "tasks": [],
+        })
+    out.sort(key=lambda r: (str(r["date"]), str(r["leader"])), reverse=True)
+    return out
 
 
 # ── writing ──────────────────────────────────────────────────────────────────
