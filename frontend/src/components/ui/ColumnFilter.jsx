@@ -110,7 +110,7 @@ export function TxtFilter({ value, onChange, placeholder }) {
 // tooltip when `render` returns a node AND the option itself is an opaque id
 // (a category uuid rendered as «name · count») — without it the search box
 // would match the id, never the name.
-export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null, labelOf = null, note = null }) {
+export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null, labelOf = null, note = null, empty = null }) {
   const { t } = useLang();
   const [q, setQ] = useState("");
   // `render` may return a node (chips, icons) — fall back to `labelOf`, then
@@ -184,7 +184,13 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
       )}
       <div className="max-h-44 overflow-y-auto space-y-0.5 mb-1">
         {shown.length === 0 && (
-          <p className="text-xs text-center py-2" style={{ color: "var(--text-4)" }}>{t("staff.noOptionsShort")}</p>
+          // Same contract as PickFilter's: a search that matched nothing gets
+          // the plain message, while a list that had nothing to offer in the
+          // first place gets `empty` — the way OUT of whatever narrowed it,
+          // because there is nothing in here the reader can press instead.
+          empty && !q.trim()
+            ? <div className="py-1">{empty}</div>
+            : <p className="text-xs text-center py-2" style={{ color: "var(--text-4)" }}>{t("staff.noOptionsShort")}</p>
         )}
         {groups
           ? groups.map(([g, items]) => (

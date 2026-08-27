@@ -1680,20 +1680,36 @@ back on the first walk.
     filter value `NO_CELL = "none"`, and it is shown and counted like any other
     ticket). Folding either away makes a partial answer read as a complete one.
   - **The code is also what carries our ORG CHAIN onto IT's register** —
-    `shift` → `manager` → `leader`, one pick each, in the filter panel's «Kim va
-    qayerda» group ahead of the cell, exactly as on Quality. A level resolves to
-    the CELLS it owns and meets the tickets at the same `code_expr()`
-    (`arc_cells.org_codes`, AND-ed picks), so a scope the panel offers and a
-    scope the query applies can never be two different things — and it narrows
-    the whole page, both tabs, the KPI strip and the export, because both tabs
-    read the same filtered tickets. `arc_cells.org_index` is THE walk (cell →
-    supervisor → that supervisor's shift → leader): the option lists come off
-    the register's own cells and are counted in TICKETS, so a unit is offered
-    only while it has some. An empty code set is a REAL answer (an empty
-    register, never the whole plant), and the «no cell» bucket belongs to no
-    unit, so an org pick takes it off the cell list rather than offering a scope
-    that can only be empty. Each level notes what narrowed it and offers the way
-    back out; a child pick its parent no longer offers is dropped.
+    `shift` → `manager` → `leader`, in the filter panel's «Kim va qayerda» group
+    ahead of the cell, exactly as on Quality. A level resolves to the CELLS it
+    owns and meets the tickets at the same `code_expr()`
+    (`arc_cells.org_codes`), so a scope the panel offers and a scope the query
+    applies can never be two different things — and it narrows the whole page,
+    both tabs, the KPI strip and the export, because both tabs read the same
+    filtered tickets. `arc_cells.org_index` is THE walk (cell → supervisor →
+    that supervisor's shift → leader): the option lists come off the register's
+    own cells and are counted in TICKETS, so a unit is offered only while it
+    has some. An empty answer is a REAL one (an empty register, never the whole
+    plant). Each level notes what narrowed it and offers the way back out; a
+    child pick its parent no longer offers is dropped.
+  - **Brigadir and lider are MULTI-select and carry a value that is not a
+    person** — `arc_cells.NO_OWNER` («Biriktirilmagan»), the tickets that reach
+    no such person at all. Picks are OR-ed within a level and AND-ed across
+    them. `NO_OWNER` is what a BLANK owner column means, so it is all three of
+    the ways one goes blank at once — the division names no cell, it names one
+    the cell registry has never heard of, or the cell has nobody assigned — and
+    the pick and the column then agree about exactly the same rows. The third
+    of those cannot be expressed as a code, so `org_codes` answers
+    `(codes, with_null)` and the router ORs the two halves into one clause;
+    a cell-less ticket is in scope only while no level NAMES anything, which is
+    also why the «Yacheykasiz» cell pick survives beside `NO_OWNER` (`orgNamed`)
+    where a named unit still retires it. The count comes off `/facets` like
+    every other option (`org.managers_none` / `leaders_none`), and the two owner
+    lists lift `assigned_only` along with their own pick — it narrows the SAME
+    dimension, so a list that left it applied could only ever count its own
+    «Biriktirilmagan» row at 0. Picking it on «Yacheykalar bo'yicha» therefore
+    moves that tab's owner toggle to «Barcha yacheykalar» rather than answering
+    with an empty table nothing on screen explains.
 - **The page is TWO tabs over ONE table** (`SegmentedToggle asTabs`, above the
   filter row, because both read the SAME filtered tickets — same filters, same
   page, same sort). They differ in **which columns are on the table** and in

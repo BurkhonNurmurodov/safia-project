@@ -627,11 +627,21 @@ def _facets(db: Session, f: dict) -> dict:
     code = D["cell_code"]
     memo: dict = {}
 
+    # The two OWNER lists lift the «by cells» owner scope along with their own
+    # pick. `assigned_only` narrows the same dimension a brigadir pick does —
+    # it is that tab's standing «only the cells somebody is assigned to» — so a
+    # list that left it applied could only ever count its own «Biriktirilmagan»
+    # row at 0, and the row would then be missing from the one list that exists
+    # to offer it. No named unit's count moves: a ticket that scope hides
+    # reaches nobody, so it was never in one.
     def code_rows(lift: str):
-        sig = tuple((k, () if k == lift else tuple(str(v) for v in (f.get(k) or [])))
-                    for k in ("cell", "shift", "manager", "leader"))
+        owner = lift in ("manager", "leader") and bool(f.get("assigned_only"))
+        lifts = (lift, "assigned_only") if owner else (lift,)
+        sig = (owner,) + tuple(
+            (k, () if k == lift else tuple(str(v) for v in (f.get(k) or [])))
+            for k in ("cell", "shift", "manager", "leader"))
         if sig not in memo:
-            memo[sig] = (base(lift).with_entities(code.label("code"), func.count(R.id))
+            memo[sig] = (base(*lifts).with_entities(code.label("code"), func.count(R.id))
                          .group_by(code).all())
         return memo[sig]
 
@@ -665,25 +675,39 @@ def _facets(db: Session, f: dict) -> dict:
 
     # Counted in TICKETS, like every other list here — the question the number
     # answers is «how much of this view is behind this name».
-    def level(rows, key: str, keep: list[int]) -> dict[int, int]:
+    # The second half of the answer is the bucket the org chart cannot place —
+    # counted here rather than inferred from a subtraction, because the rows a
+    # list is counted over are its own and nobody else's.
+    def level(rows, key: str, keep: list[int]) -> tuple[dict[int, int], int]:
         out: dict[int, int] = {}
+        none_n = 0
         for c, n in rows:
-            v = (by_code.get(c) or {}).get(key)
-            if v is not None:
+            v = (by_code.get(c) or {}).get(key) if c else None
+            if v is None:
+                none_n += n
+            else:
                 out[v] = out.get(v, 0) + n
         for k in keep:
             out.setdefault(k, 0)
-        return out
+        return out, none_n
 
-    shift_n = level(shift_rows, "shift", _ints(f.get("shift") or []))
-    mgr_n = level(mgr_rows, "manager_id", picked_mgrs)
-    lead_n = level(lead_rows, "leader_id", picked_leads)
+    shift_n, _ = level(shift_rows, "shift", _ints(f.get("shift") or []))
+    mgr_n, mgr_none_n = level(mgr_rows, "manager_id", picked_mgrs)
+    lead_n, lead_none_n = level(lead_rows, "leader_id", picked_leads)
     org_out = {
         "shifts": [{"value": s, "count": shift_n[s]} for s in sorted(shift_n)],
         "managers": _by_name([{**org["managers"][i], "count": n}
                               for i, n in mgr_n.items() if i in org["managers"]]),
         "leaders": _by_name([{**org["leaders"][i], "count": n}
                              for i, n in lead_n.items() if i in org["leaders"]]),
+        # «Biriktirilmagan» — the tickets that reach no such person at all, in
+        # the three ways this platform can fail to name one: the division names
+        # no cell, it names one the cell registry has never heard of, or the
+        # cell has nobody assigned. All three render a blank owner column on
+        # the register, so all three are what the row offers — the pick and the
+        # column then agree about exactly the same rows.
+        "managers_none": mgr_none_n,
+        "leaders_none": lead_none_n,
     }
     return {"statuses": statuses, "categories": categories,
             "divisions": divisions, "brigadas": brigadas, "authors": authors,

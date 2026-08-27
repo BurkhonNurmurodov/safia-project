@@ -43,6 +43,11 @@ const PAGE_SIZE = 50;
 // services/arc_cells.NO_CELL. Every real code is four digits, so a word can
 // never collide with one.
 const NO_CELL = "none";
+// The same word in the OWNER dimension — the twin of services/arc_cells.NO_OWNER:
+// «this ticket reaches no brigadir» / «…no leader», which is what a blank owner
+// column on the register means. Every real owner pick is a numeric id, so a word
+// cannot collide with one.
+const NO_OWNER = "none";
 const COL_PREF_KEY = "arc.list.cols";
 const TZ = "Asia/Tashkent";
 
@@ -283,8 +288,14 @@ export default function Arc() {
   // narrowed server-side into that same set of codes. One pick per level, like
   // every other org chain on the platform.
   const [shift, setShift] = usePersistentState("arc_shift", "");
-  const [sup, setSup] = usePersistentState("arc_sup", "");
-  const [leader, setLeader] = usePersistentState("arc_leader", "");
+  // Brigadir and lider are MULTI-select: the question they answer is «these
+  // people», which is one pick or five, and one of their values is not a person
+  // at all — NO_OWNER, «Biriktirilmagan», the tickets that reach nobody. The
+  // storage keys are versioned (…s) because the value used to be a single id
+  // string and a saved one would come back as the wrong SHAPE, which no guard
+  // below can tell from a real pick.
+  const [sups, setSups] = usePersistentState("arc_sups", []);
+  const [leaders, setLeaders] = usePersistentState("arc_leaders", []);
   const [brigada, setBrigada] = usePersistentState("arc_brigada", "");
   const [author, setAuthor] = usePersistentState("arc_author", "");
   const [urgent, setUrgent] = usePersistentState("arc_urgent", "all");
@@ -322,8 +333,8 @@ export default function Arc() {
     ...(division ? { division: [division] } : {}),
     ...(cell ? { cell: [cell] } : {}),
     ...(shift ? { shift: [shift] } : {}),
-    ...(sup ? { manager: [sup] } : {}),
-    ...(leader ? { leader: [leader] } : {}),
+    ...(sups.length ? { manager: sups } : {}),
+    ...(leaders.length ? { leader: leaders } : {}),
     ...(brigada ? { brigada: [brigada] } : {}),
     ...(author ? { author: [author] } : {}),
     ...(urgent !== "all" ? { urgent } : {}),
@@ -345,7 +356,7 @@ export default function Arc() {
     // left out and the toggle standing right beside the count.
     ...(tab === "cells" && owner === "assigned" ? { assigned_only: true } : {}),
     q: q.trim() || undefined,
-  }), [tab, owner, dateFrom, dateTo, state, statusSel, catSel, division, cell, shift, sup, leader,
+  }), [tab, owner, dateFrom, dateTo, state, statusSel, catSel, division, cell, shift, sups, leaders,
        brigada, author, urgent, overdue, source, q]);
   const sortParam = `${sort.key}:${sort.dir}`;
   const listParams = useMemo(
@@ -520,41 +531,61 @@ export default function Arc() {
   const supAll = org.managers || [];
   const leadAll = org.leaders || [];
   const optsReady = !!facetsQ.data;
+  // One level's picks against one row's owner: no pick is no narrowing, a named
+  // id matches its own unit, and NO_OWNER matches an owner this platform cannot
+  // name. The exact twin of `arc_cells._owner_ok` — the server decides, this
+  // keeps a pick from surviving a render on the previous scope's lists, and the
+  // two must give the same answer about the same row.
+  const ownerOk = (sel, value) => (!sel.length ? true
+    : value == null || value === "" ? sel.includes(NO_OWNER) : sel.includes(String(value)));
   const supOpts = useMemo(
     () => supAll.filter((m) => !shift || String(m.shift) === shift),
     [supAll, shift]);
   const leadOpts = useMemo(
     () => leadAll.filter((l) => (!shift || String(l.shift) === shift)
-      && (!sup || String(l.manager_id) === sup)),
-    [leadAll, shift, sup]);
-  const orgActive = !!(shift || sup || leader);
+      && ownerOk(sups, l.manager_id)),
+    [leadAll, shift, sups]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Whether the org chain is narrowed to a NAMED unit. A ticket whose division
+  // names no cell reaches no unit, no shift and no leader, so it can never
+  // satisfy a named pick; but «Biriktirilmagan» is precisely the bucket it
+  // falls in, so the «Yacheykasiz» cell pick stands beside that one instead of
+  // being dropped by it.
+  const orgNamed = !!shift || sups.some((v) => v !== NO_OWNER)
+    || leaders.some((v) => v !== NO_OWNER);
   const cellPickOpts = useMemo(
     () => cellOpts.filter((o) => (!shift || String(o.sh) === shift)
-      && (!sup || String(o.mgr) === sup)
-      && (!leader || String(o.lead) === leader)),
-    [cellOpts, shift, sup, leader]);
+      && ownerOk(sups, o.mgr) && ownerOk(leaders, o.lead)),
+    [cellOpts, shift, sups, leaders]); // eslint-disable-line react-hooks/exhaustive-deps
   const supById = useMemo(() => Object.fromEntries(supAll.map((m) => [String(m.id), m])), [supAll]);
   const leadById = useMemo(() => Object.fromEntries(leadAll.map((l) => [String(l.id), l])), [leadAll]);
 
   // A pick the shortened list below no longer offers is DROPPED: a control
   // naming a value the page cannot show is worse than a reset. Guarded on the
   // options actually having arrived — before /meta answers, every list is
-  // empty and clearing on that would wipe the reader's saved scope.
+  // empty and clearing on that would wipe the reader's saved scope. NO_OWNER is
+  // never dropped: it names no unit, so no shortened list of units can retire
+  // it, and the register can always answer it.
+  const keepPicks = (sel, opts) =>
+    sel.filter((v) => v === NO_OWNER || opts.some((o) => String(o.id) === v));
   useEffect(() => {
-    if (optsReady && sup && !supOpts.some((m) => String(m.id) === sup)) setSup("");
+    if (!optsReady) return;
+    const keep = keepPicks(sups, supOpts);
+    if (keep.length !== sups.length) setSups(keep);
   }, [optsReady, supOpts]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (optsReady && leader && !leadOpts.some((l) => String(l.id) === leader)) setLeader("");
+    if (!optsReady) return;
+    const keep = keepPicks(leaders, leadOpts);
+    if (keep.length !== leaders.length) setLeaders(keep);
   }, [optsReady, leadOpts]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!optsReady || !cell) return;
     // «No cell» is a division this platform's org chart cannot reach at all, so
-    // it cannot survive an org pick — nor the «by cells» view, which shows only
-    // the tickets that name a cell and would answer this pick with an empty
-    // table the reader has no way to explain.
-    if (cell === NO_CELL ? (orgActive || tab === "cells")
+    // it cannot survive a pick that NAMES a unit — nor the «by cells» view,
+    // which shows only the tickets that name a cell and would answer this pick
+    // with an empty table the reader has no way to explain.
+    if (cell === NO_CELL ? (orgNamed || tab === "cells")
       : !cellPickOpts.some((o) => o.code === cell)) setCell("");
-  }, [optsReady, cellPickOpts, orgActive, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [optsReady, cellPickOpts, orgNamed, tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const brigOpts = options.brigadas || [];
   const brigById = useMemo(() => Object.fromEntries(brigOpts.map((b) => [String(b.id), b])), [brigOpts]);
   const authorOpts = options.authors || [];
@@ -592,8 +623,45 @@ export default function Arc() {
   //    is what the counts are over. That one is a standing sentence on every
   //    list (`viewNote`) whenever anything at all is narrowing the page.
   const shiftLabel = shift ? `${t("arc.shift")} ${shift}` : null;
-  const supLabel = sup ? tl(supById[sup]?.name || `#${sup}`) : null;
-  const leadLabel = leader ? tl(leadById[leader]?.name || `#${leader}`) : null;
+  // An owner pick names a person, or names the bucket of tickets that reach
+  // none — and a multi-select says how many rather than running the names off
+  // the chip, exactly as the status and category filters already do.
+  const ownerName = (by, v) => (v === NO_OWNER ? t("arc.unassigned")
+    : tl(by[v]?.name || `#${v}`));
+  const ownerDisplay = (sel, by) => (!sel.length ? null
+    : sel.length === 1 ? ownerName(by, sel[0])
+    : `${sel.length} ${t("filter.selected2")}`);
+  const supLabel = ownerDisplay(sups, supById);
+  const leadLabel = ownerDisplay(leaders, leadById);
+  // «Biriktirilmagan» is an option like any other and sits LAST — it names no
+  // person, and a list of people should read as a list of people first. It is
+  // offered while the view holds a ticket that reaches nobody, and kept while
+  // it is picked even at 0, exactly as a named unit is.
+  const ownerValues = (opts, noneN, sel) => {
+    const vals = opts.map((o) => String(o.id));
+    if (noneN > 0 || sel.includes(NO_OWNER)) vals.push(NO_OWNER);
+    return vals;
+  };
+  const supValues = ownerValues(supOpts, org.managers_none || 0, sups);
+  const leadValues = ownerValues(leadOpts, org.leaders_none || 0, leaders);
+  const ownerRow = (by, v, noneN) => (v === NO_OWNER
+    ? withCount(
+        <span className="inline-flex items-center gap-1.5 min-w-0" style={{ color: "var(--text-3)" }}>
+          <Link2Off size={10} className="flex-shrink-0" />
+          <span className="truncate">{t("arc.unassigned")}</span>
+        </span>,
+        noneN || 0)
+    : withCount(tl(by[v]?.name || `#${v}`), by[v]?.count));
+  // Asking for the tickets that reach nobody, while «Yacheykalar bo'yicha» is
+  // standing on its own «Biriktirilgan» scope, asks for rows that scope has
+  // already removed — an empty table with nothing on screen explaining it. So
+  // the pick lifts that scope, and lifts it VISIBLY: the toggle beside the
+  // tabs moves to «Barcha yacheykalar», which is the sentence for what the
+  // register is now showing.
+  const pickOwner = (set) => (vals) => {
+    set(vals);
+    if (vals.includes(NO_OWNER) && tab === "cells" && owner === "assigned") setOwner("all");
+  };
   const chainNote = (parents, n) => {
     const p = parents.filter(Boolean).pop();
     return p ? `${t("arc.narrowedBy").replace("{x}", p)} · ${n}` : null;
@@ -601,8 +669,8 @@ export default function Arc() {
   // Anything at all narrowing the page — the tab included, since «Yacheykalar
   // bo'yicha» drops every ticket whose division names no cell.
   const viewNarrowed = !!(dateFrom || dateTo || q.trim() || state !== "all"
-    || statusSel.length || catSel.length || division || cell || shift || sup
-    || leader || brigada || author || urgent !== "all" || overdue !== "all"
+    || statusSel.length || catSel.length || division || cell || shift || sups.length
+    || leaders.length || brigada || author || urgent !== "all" || overdue !== "all"
     || source !== "all" || tab === "cells");
   const viewNote = viewNarrowed ? t("arc.optsInView") : null;
   // The chain note and the view note are two different facts, so they get two
@@ -639,33 +707,29 @@ export default function Arc() {
     },
     {
       key: "sup", icon: Wrench, label: t("arc.fSup"), group: grpWho, pinned: tab === "cells",
-      active: !!sup,
+      active: sups.length > 0,
       display: supLabel || "",
-      onClear: () => setSup(""),
-      render: ({ close } = {}) => (
-        <PickFilter searchable close={close}
-          note={listNote(chainNote([shiftLabel], supOpts.length))}
+      onClear: () => setSups([]),
+      render: () => (
+        <OptsFilter searchable opts={supValues} sel={sups} onChange={pickOwner(setSups)}
+          note={listNote(chainNote([shiftLabel], supValues.length))}
           empty={shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
-          opts={[{ value: "", label: t("arc.allSups") },
-            ...supOpts.map((m) => ({ value: String(m.id), label: withCount(tl(m.name), m.count), title: tl(m.name) }))]}
-          value={sup}
-          onChange={(v) => setSup(v || "")} />
+          labelOf={(v) => ownerName(supById, v)}
+          render={(v) => ownerRow(supById, v, org.managers_none)} />
       ),
     },
     {
       key: "leader", icon: UserCog, label: t("arc.fLeader"), group: grpWho, pinned: tab === "cells",
-      active: !!leader,
+      active: leaders.length > 0,
       display: leadLabel || "",
-      onClear: () => setLeader(""),
-      render: ({ close } = {}) => (
-        <PickFilter searchable close={close}
-          note={listNote(chainNote([shiftLabel, supLabel], leadOpts.length))}
-          empty={supLabel ? widenTo(t("arc.allSups"), () => setSup(""))
+      onClear: () => setLeaders([]),
+      render: () => (
+        <OptsFilter searchable opts={leadValues} sel={leaders} onChange={pickOwner(setLeaders)}
+          note={listNote(chainNote([shiftLabel, supLabel], leadValues.length))}
+          empty={supLabel ? widenTo(t("arc.allSups"), () => setSups([]))
             : shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
-          opts={[{ value: "", label: t("arc.allLeaders") },
-            ...leadOpts.map((l) => ({ value: String(l.id), label: withCount(tl(l.name), l.count), title: tl(l.name) }))]}
-          value={leader}
-          onChange={(v) => setLeader(v || "")} />
+          labelOf={(v) => ownerName(leadById, v)}
+          render={(v) => ownerRow(leadById, v, org.leaders_none)} />
       ),
     },
     {
@@ -676,8 +740,8 @@ export default function Arc() {
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
           note={listNote(chainNote([shiftLabel, supLabel, leadLabel], cellPickOpts.length))}
-          empty={leadLabel ? widenTo(t("arc.allLeaders"), () => setLeader(""))
-            : supLabel ? widenTo(t("arc.allSups"), () => setSup(""))
+          empty={leadLabel ? widenTo(t("arc.allLeaders"), () => setLeaders([]))
+            : supLabel ? widenTo(t("arc.allSups"), () => setSups([]))
             : shiftLabel ? widenTo(t("arc.shiftAll"), () => setShift("")) : null}
           opts={[
             { value: "", label: t("arc.allCells") },
@@ -699,7 +763,7 @@ export default function Arc() {
             // real scope, not a gap in the list. They belong to no unit, so an
             // org pick above takes them off the list rather than offering a
             // scope that can only ever be empty.
-            ...(options.no_cell_count && !orgActive && tab !== "cells"
+            ...(options.no_cell_count && !orgNamed && tab !== "cells"
               ? [{ value: NO_CELL, title: t("arc.cNoCell"),
                    label: withCount(t("arc.cNoCell"), options.no_cell_count) }]
               : []),
@@ -821,7 +885,7 @@ export default function Arc() {
     },
   ];
   const clearAll = () => {
-    setShift(""); setSup(""); setLeader("");
+    setShift(""); setSups([]); setLeaders([]);
     setDivision(""); setCell(""); setBrigada(""); setAuthor(""); setState("all"); setStatusSel([]);
     setCatSel([]); setUrgent("all"); setOverdue("all"); setSource("all");
   };
