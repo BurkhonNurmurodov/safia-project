@@ -5,7 +5,7 @@ import {
   CircleDot, Layers, Siren, AlertTriangle, FileText, ExternalLink, Bot, Paperclip,
   Phone, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound, PlayCircle,
   PlugZap, Zap, MessageSquare, History, Smartphone, Boxes, Link2Off,
-  Clock, Wrench, UserCog, BarChart3,
+  Clock, Wrench, UserCog, BarChart3, UserCheck,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -258,6 +258,15 @@ export default function Arc() {
   // its own analysis set, so the toggle changes how the register is shown and
   // nothing about what is in it.
   const [mode, setMode] = usePersistentState("arc_mode", "data");
+  // «Yacheykalar bo'yicha» asks whose cell a ticket is on, so it OPENS on the
+  // cells this platform can actually answer that for — the ones with a
+  // brigadir assigned. A cell with none reaches no unit, no shift and no
+  // leader, so its rows carry three blank owner columns and read as a hole in
+  // the register rather than as an answer. The toggle beside the mode switch
+  // lifts the narrowing («Barcha yacheykalar»), what it hides is counted on
+  // the card, and it lives on the CELLS tab only: «Barchasi» is IT's register
+  // as filed, where our org chart is not the question.
+  const [owner, setOwner] = usePersistentState("arc_owner", "assigned");
   const [dateFrom, setDateFrom] = usePersistentState("arc_date_from", "");
   const [dateTo, setDateTo] = usePersistentState("arc_date_to", "");
   const [state, setState] = usePersistentState("arc_state", "all");
@@ -329,8 +338,14 @@ export default function Arc() {
     // silence — `stats.hidden_no_cell` counts it and the card header says so,
     // with the way over to «Barchasi», where those tickets are.
     ...(tab === "cells" ? { cells_only: true } : {}),
+    // …and, unless the reader asked for every cell, to the ones with an owner.
+    // Same shape and the same reason as the line above — a shared narrowing, so
+    // the table, the KPI strip, the option lists, the charts and the export all
+    // describe one set of rows, with `stats.hidden_unassigned` naming what is
+    // left out and the toggle standing right beside the count.
+    ...(tab === "cells" && owner === "assigned" ? { assigned_only: true } : {}),
     q: q.trim() || undefined,
-  }), [tab, dateFrom, dateTo, state, statusSel, catSel, division, cell, shift, sup, leader,
+  }), [tab, owner, dateFrom, dateTo, state, statusSel, catSel, division, cell, shift, sup, leader,
        brigada, author, urgent, overdue, source, q]);
   const sortParam = `${sort.key}:${sort.dir}`;
   const listParams = useMemo(
@@ -1416,6 +1431,18 @@ export default function Arc() {
                 { value: "data", label: (<span className="inline-flex items-center gap-1.5"><ClipboardList size={12} />{t("arc.modeData")}</span>) },
                 { value: "analysis", label: (<span className="inline-flex items-center gap-1.5"><BarChart3 size={12} />{t("arc.modeAnalysis")}</span>) },
               ]} />
+            {/* WHICH cells this view answers for — the ones with a brigadir
+                (the default) or every cell the register names. It is a scope,
+                so it narrows both modes and every figure in them; it belongs
+                to the cells tab's question alone, so «Barchasi» never shows
+                it. */}
+            {tab === "cells" && (
+              <SegmentedToggle value={owner} onChange={setOwner}
+                options={[
+                  { value: "assigned", label: (<span className="inline-flex items-center gap-1.5"><UserCheck size={12} />{t("arc.ownerAssigned")}</span>), title: t("arc.ownerAssignedHint") },
+                  { value: "all", label: (<span className="inline-flex items-center gap-1.5"><Boxes size={12} />{t("arc.ownerAll")}</span>), title: t("arc.ownerAllHint") },
+                ]} />
+            )}
             {mode === "analysis" && (
               <SearchInput value={q} onChange={setQ} placeholder={t("arc.search")}
                 className="ml-auto w-full sm:w-72" />
@@ -1452,6 +1479,18 @@ export default function Arc() {
                     title={t("arc.cellsOnlyHiddenHint")}
                     onClick={(e) => { e.stopPropagation(); setTab("all"); setCell(NO_CELL); }}>
                     · {tpl(t("arc.cellsOnlyHidden"), { n: stats.hidden_no_cell.toLocaleString("ru-RU") })}
+                  </button>
+                )}
+                {/* The other half of what this view leaves out, and the way to
+                    it: the tickets on cells nobody is assigned to. Counted and
+                    named for the same reason as the line above — a count that
+                    silently omitted them would read as the whole register. */}
+                {tab === "cells" && (stats?.hidden_unassigned || 0) > 0 && (
+                  <button type="button" className="underline underline-offset-2 whitespace-nowrap text-left"
+                    style={{ color: "var(--text-3)" }}
+                    title={t("arc.unassignedHiddenHint")}
+                    onClick={(e) => { e.stopPropagation(); setOwner("all"); }}>
+                    · {tpl(t("arc.unassignedHidden"), { n: stats.hidden_unassigned.toLocaleString("ru-RU") })}
                   </button>
                 )}
               </span>

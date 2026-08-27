@@ -201,3 +201,20 @@ def org_codes(db: Session, shifts: list[int], managers: list[int],
             continue
         out.add(code)
     return out
+
+
+def assigned_codes(db: Session) -> set[str]:
+    """The codes whose cell this platform's registry gives an OWNER.
+
+    «Assigned» means a SUPERVISOR and only that: ``cells.manager_id`` is the
+    one attachment point of the whole org dimension, so a cell without a
+    brigadir reaches no unit, no shift and no leader — the three columns
+    «Yacheykalar bo'yicha» exists to answer, blank on every one of its rows. A
+    leader is deliberately NOT required (plenty of cells legitimately have
+    none), and a code the registry has never heard of is not assigned either:
+    it names a cell nobody here can resolve to a person.
+
+    An EMPTY set is a real answer, exactly as in :func:`org_codes` — an empty
+    register, never the whole plant."""
+    idx = org_index(db, register_codes(db))
+    return {code for code, org in idx["by_code"].items() if org.get("manager_id")}

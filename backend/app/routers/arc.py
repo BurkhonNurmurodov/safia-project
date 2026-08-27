@@ -181,13 +181,15 @@ def _filters(
     q: Optional[str] = Query(None),
     include_missing: bool = Query(False),
     cells_only: bool = Query(False),
+    assigned_only: bool = Query(False),
 ) -> dict:
     return {"date_from": date_from, "date_to": date_to, "status": status,
             "category": category, "division": division, "cell": cell,
             "shift": shift, "manager": manager, "leader": leader,
             "brigada": brigada, "author": author, "urgent": urgent,
             "overdue": overdue, "source": source, "state": state, "q": q,
-            "include_missing": include_missing, "cells_only": cells_only}
+            "include_missing": include_missing, "cells_only": cells_only,
+            "assigned_only": assigned_only}
 
 
 def _day_start(s: Optional[str]) -> Optional[datetime]:
@@ -208,6 +210,12 @@ def _tri(value: str, expr) -> Optional[Any]:
     if value == "no":
         return func.coalesce(expr, False).is_(False)
     return None
+
+
+# The `org_cache` slot the «assigned» code set is memoised under. Every other
+# key in that memo is a tuple of the org picks, so a plain string cannot
+# collide with one.
+_ASSIGNED_CK = "assigned"
 
 
 def _apply_filters(query, f: dict, D: dict, db: Session, org_cache: Optional[dict] = None):
@@ -269,6 +277,26 @@ def _apply_filters(query, f: dict, D: dict, db: Session, org_cache: Optional[dic
     # says so, with the way back to «Barchasi» where those tickets live.
     if f.get("cells_only"):
         query = query.filter(D["cell_code"].isnot(None))
+    # «Biriktirilgan» — the tickets whose cell this platform can actually route
+    # to somebody. `cells.manager_id` is the one attachment point of the org
+    # dimension, so a cell with no brigadir reaches no unit, no shift and no
+    # leader: on the «by cells» view its rows can only ever carry three blank
+    # owner columns. That view therefore OPENS on this narrowing and the toggle
+    # beside the mode switch lifts it. Same shape as the org chain below — it
+    # resolves to a SET OF CODES (arc_cells.assigned_codes is the rule) and
+    # meets the register at the one `cell_code` expression, and an empty set is
+    # a real answer: an empty register, never the whole plant. What it hides is
+    # counted back as `hidden_unassigned` on /stats and named on the card, with
+    # the way over to «Barcha yacheykalar».
+    if f.get("assigned_only"):
+        if org_cache is not None and _ASSIGNED_CK in org_cache:
+            codes = org_cache[_ASSIGNED_CK]
+        else:
+            codes = arc_cells.assigned_codes(db)
+            if org_cache is not None:
+                org_cache[_ASSIGNED_CK] = codes
+        query = (query.filter(D["cell_code"].in_(sorted(codes))) if codes
+                 else query.filter(false()))
     # The org chain — shift → brigadir → leader — reaches a ticket only through
     # the cell its division names, so it narrows to a SET OF CODES and joins
     # the register at exactly the same expression the cell pick uses. An empty
@@ -485,7 +513,7 @@ _OFF: dict[str, Any] = {
 # before /facets existed.
 _ALL_ROWS: dict[str, Any] = {**_OFF, "date_from": None, "date_to": None,
                              "q": None, "include_missing": False,
-                             "cells_only": False}
+                             "cells_only": False, "assigned_only": False}
 
 
 def _lift(f: dict, *keys: str) -> dict:
@@ -766,19 +794,33 @@ def get_stats(
             .group_by(R.brigada_id, R.brigada_name)
             .order_by(func.count(R.id).desc()).all())
     ]
-    # What this view is NOT showing. Only the «by cells» scope can hide a
-    # ticket the other filters kept, so it is counted over the same filter set
-    # with that one narrowing lifted — an org pick already excludes cell-less
-    # tickets by itself, and then this is 0, which is the honest answer.
-    hidden_no_cell = 0
-    if f.get("cells_only"):
-        hidden_no_cell = _n(
-            _apply_filters(db.query(func.count(R.id)), {**f, "cells_only": False}, D, db)
-            .filter(D["cell_code"].is_(None)).scalar())
+    # What this view is NOT showing, in the two ways the «by cells» scope can
+    # hide a ticket the other filters kept: its division names no cell, and its
+    # cell has no brigadir. Both are counted over the same filter set with BOTH
+    # of the view's own narrowings lifted, which is what keeps them disjoint —
+    # with `assigned_only` still applied «no cell» could only ever count 0, a
+    # NULL code being in no code set. An org pick already excludes both by
+    # itself, and then they are 0, which is the honest answer.
+    hidden_no_cell = hidden_unassigned = 0
+    if f.get("cells_only") or f.get("assigned_only"):
+        base = {**f, "cells_only": False, "assigned_only": False}
+        code = D["cell_code"]
+        if f.get("cells_only"):
+            hidden_no_cell = _n(
+                _apply_filters(db.query(func.count(R.id)), base, D, db)
+                .filter(code.is_(None)).scalar())
+        if f.get("assigned_only"):
+            owned = arc_cells.assigned_codes(db)
+            q_un = (_apply_filters(db.query(func.count(R.id)), base, D, db)
+                    .filter(code.isnot(None)))
+            if owned:
+                q_un = q_un.filter(code.notin_(sorted(owned)))
+            hidden_unassigned = _n(q_un.scalar())
 
     return {
         "shown": _n(shown),
         "hidden_no_cell": hidden_no_cell,
+        "hidden_unassigned": hidden_unassigned,
         "open": _n(n_open),
         "overdue": _n(n_overdue),
         "cancelled": _n(n_cancelled),
@@ -1177,6 +1219,7 @@ class ArcExportBody(BaseModel):
     q: Optional[str] = None
     include_missing: bool = False
     cells_only: bool = False
+    assigned_only: bool = False
     sort: str = "created_at:desc"
     columns: list[str] = []
     labels: dict[str, str] = {}
@@ -1199,7 +1242,7 @@ _EXPORT_MAX_ROWS = 50_000
 _FILTER_KEYS = ("date_from", "date_to", "status", "category", "division",
                 "cell", "shift", "manager", "leader", "brigada", "author",
                 "urgent", "overdue", "source", "state", "q", "include_missing",
-                "cells_only")
+                "cells_only", "assigned_only")
 
 
 def _scope_line(f: dict, sort: Optional[str]) -> str:
@@ -1222,6 +1265,8 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
         parts.append("include_missing=yes")
     if f.get("cells_only"):
         parts.append("cells_only=yes")
+    if f.get("assigned_only"):
+        parts.append("assigned_only=yes")
     if sort:
         parts.append(f"sort={sort}")
     return (" · ".join(parts) or "no filters")[:1000]
