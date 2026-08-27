@@ -46,6 +46,20 @@ Other UI conventions:
 - Status colors are traffic-light: red `#ef4444` / yellow `#eab308` / green `#22c55e`; "not started" is grey `#94a3b8`; brand gold `#C8973F` is an accent, never a status.
 - Categorical chart colors (roles, units, products, people, series identities) come from `utils/chartPalette.js` `CATEGORY_COLORS`, assigned generic-first in this exact order: red → green → blue → yellow → orange → purple → teal → pink → … One fixed hue per category, reused across every chart that shows it; «Остальные/Other» folds are `FOLD_COLOR` slate. Brand gold NEVER represents a category (all pages except `/leaders`). Single-metric accents, status palettes, and value-intensity ramps are separate and may keep gold.
 - Date-axis line/area charts never show fewer than 7 days — use `utils/chartRange.js`.
+- **A date axis thins its labels to its MEASURED width, never to a fixed count.**
+  `ticksForWidth` (+ `axisLabelPx`) in `utils/chartRange.js` is THE rule and
+  `hooks/useElementWidth.js` is how a chart learns its own width (a callback
+  ref measured during the commit, so the first width is known before Apex
+  mounts and the unfitted axis never paints). A hard-coded `tickAmount` cannot
+  be right on more than one screen: the same card is two thirds of a grid on
+  one tab, a third of it on another and a single column on a phone — the ARC
+  flow chart's fixed 12 ran «29 Дек» into «19 Янв» on every width but the
+  widest. Apex's `hideOverlappingLabels` is the last safety net ONLY: on a
+  category axis it drops whichever labels collide instead of thinning them
+  evenly, so an axis leaning on it alone reads as a random subset of the range.
+  Labels stay horizontal (`rotate: 0`) — the slant is not the fix here — and no
+  precision is lost, because every bucket is still named in the tooltip.
+  Reference wiring: `FleetLineChart.jsx` and `components/arc/ArcAnalysis.jsx`.
 - ApexCharts custom tooltips (`tooltip: { custom: … }`) draw their own glassy box, but ApexCharts still wraps them in a themed box → a white halo / extra layer around the tooltip. EVERY such chart MUST carry `apx-bare-tip` on an ancestor to strip that wrapper: `<ReactApexChart className="apx-bare-tip" … />` (react-apexcharts forwards `className` to the container div), or on an existing wrapper div. Default `theme`-only tooltips don't need it. See the `.apx-bare-tip` rule in `index.css`.
 
 ## Admin panel structure
