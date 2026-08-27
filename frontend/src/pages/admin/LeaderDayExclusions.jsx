@@ -229,12 +229,17 @@ export default function LeaderDayExclusions() {
       .filter((r) => shift === "All" || r.shift === Number(shift))
       .filter((r) => sup === "All" || r.supervisor === sup)
       .filter((r) => leader === "All" || r.leader === leader)
+      // Matched against BOTH spellings — the register's own (the sheet's, most
+      // often Cyrillic) and the transliterated one this table actually PRINTS,
+      // exactly as the register's own search does. Typing the name you can see
+      // is the only search anybody performs, and matching the raw value alone
+      // answered «no days in this period» to a period that was full of them.
       .filter((r) => !needle
-        || String(r.leader || "").toLowerCase().includes(needle)
-        || String(r.supervisor || "").toLowerCase().includes(needle))
+        || `${tl(r.leader || "")} ${r.leader || ""}`.toLowerCase().includes(needle)
+        || `${tl(r.supervisor || "")} ${r.supervisor || ""}`.toLowerCase().includes(needle))
       .sort((a, b) => String(b.date).localeCompare(String(a.date))
         || String(a.leader || "").localeCompare(String(b.leader || "")));
-  }, [inRange, view, shift, sup, leader, q]);
+  }, [inRange, view, shift, sup, leader, q, lang]);
 
   const shownKeys = useMemo(() => shown.map(rowKey), [shown]);
   const pickedShown = shownKeys.filter((k) => picked.has(k));
