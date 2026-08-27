@@ -268,18 +268,37 @@ def org_codes(db: Session, shifts: list[int], managers: list[str],
     return out, with_null
 
 
-def assigned_codes(db: Session) -> set[str]:
-    """The codes whose cell this platform's registry gives an OWNER.
+# The two levels the «by cells» owner scope can be read at, and the column each
+# one is. They are separate questions about the same cell — a cell has a
+# brigadir, a leader, both or neither — so neither is derivable from the other
+# and the toggle offers both.
+OWNER_LEVELS = {"manager": "manager_id", "leader": "leader_id"}
 
-    «Assigned» means a SUPERVISOR and only that: ``cells.manager_id`` is the
-    one attachment point of the whole org dimension, so a cell without a
-    brigadir reaches no unit, no shift and no leader — the three columns
-    «Yacheykalar bo'yicha» exists to answer, blank on every one of its rows. A
-    leader is deliberately NOT required (plenty of cells legitimately have
-    none), and a code the registry has never heard of is not assigned either:
-    it names a cell nobody here can resolve to a person.
+
+def assigned_codes(db: Session, level: str = "manager") -> set[str]:
+    """The codes whose cell this platform's registry gives an OWNER at *level*.
+
+    ``manager`` — the cell has a brigadir. ``cells.manager_id`` is the one
+    attachment point of the whole org dimension, so a cell without one reaches
+    no unit, no shift and no leader: the three columns «Yacheykalar bo'yicha»
+    exists to answer, blank on every one of its rows.
+
+    ``leader`` — the cell has a lider. Deliberately a SEPARATE question rather
+    than a stricter form of the first: plenty of cells legitimately have a
+    brigadir and no leader, and the reader asking «whose leader is on this
+    ticket» wants exactly the cells that can answer, not the intersection.
+
+    Either way a code the registry has never heard of is not assigned: it
+    names a cell nobody here can resolve to a person.
 
     An EMPTY set is a real answer, exactly as in :func:`org_codes` — an empty
-    register, never the whole plant."""
+    register, never the whole plant. Which is why an unrecognised *level* is
+    also empty rather than unnarrowed: this must never widen a scope on its
+    own. Validate against :data:`OWNER_LEVELS` before asking — the router's
+    ``_owner_scope`` is where that happens, and «no scope at all» is expressed
+    by not calling this."""
+    field = OWNER_LEVELS.get(level)
+    if not field:
+        return set()
     idx = org_index(db, register_codes(db))
-    return {code for code, org in idx["by_code"].items() if org.get("manager_id")}
+    return {code for code, org in idx["by_code"].items() if org.get(field)}

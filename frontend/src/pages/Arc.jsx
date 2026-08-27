@@ -5,7 +5,7 @@ import {
   CircleDot, Layers, Siren, AlertTriangle, FileText, ExternalLink, Bot, Paperclip,
   Phone, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound, PlayCircle,
   PlugZap, Zap, MessageSquare, History, Smartphone, Boxes, Link2Off,
-  Clock, Wrench, UserCog, BarChart3, UserCheck,
+  Clock, Wrench, UserCog, BarChart3,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -267,11 +267,19 @@ export default function Arc() {
   // cells this platform can actually answer that for — the ones with a
   // brigadir assigned. A cell with none reaches no unit, no shift and no
   // leader, so its rows carry three blank owner columns and read as a hole in
-  // the register rather than as an answer. The toggle beside the mode switch
-  // lifts the narrowing («Barcha yacheykalar»), what it hides is counted on
-  // the card, and it lives on the CELLS tab only: «Barchasi» is IT's register
-  // as filed, where our org chart is not the question.
-  const [owner, setOwner] = usePersistentState("arc_owner", "assigned");
+  // the register rather than as an answer.
+  //
+  // «manager» is that opening scope, «leader» reads the same question one
+  // level down (only the cells a lider is on), and «all» lifts the narrowing
+  // entirely. The two levels are separate questions about the same cell, not
+  // a stricter form of each other: plenty of cells legitimately have a
+  // brigadir and no leader. Whatever the scope hides is counted on the card
+  // with the way out of it, and the toggle lives on the CELLS tab only —
+  // «Barchasi» is IT's register as filed, where our org chart is not the
+  // question. The storage key is versioned because the value used to be
+  // «assigned»/«all», and a saved «assigned» would come back selecting
+  // nothing at all.
+  const [owner, setOwner] = usePersistentState("arc_owner2", "manager");
   const [dateFrom, setDateFrom] = usePersistentState("arc_date_from", "");
   const [dateTo, setDateTo] = usePersistentState("arc_date_to", "");
   const [state, setState] = usePersistentState("arc_state", "all");
@@ -349,12 +357,13 @@ export default function Arc() {
     // silence — `stats.hidden_no_cell` counts it and the card header says so,
     // with the way over to «Barchasi», where those tickets are.
     ...(tab === "cells" ? { cells_only: true } : {}),
-    // …and, unless the reader asked for every cell, to the ones with an owner.
-    // Same shape and the same reason as the line above — a shared narrowing, so
-    // the table, the KPI strip, the option lists, the charts and the export all
-    // describe one set of rows, with `stats.hidden_unassigned` naming what is
-    // left out and the toggle standing right beside the count.
-    ...(tab === "cells" && owner === "assigned" ? { assigned_only: true } : {}),
+    // …and, unless the reader asked for every cell, to the ones an owner is on
+    // at the level the toggle names. Same shape and the same reason as the line
+    // above — a shared narrowing, so the table, the KPI strip, the option
+    // lists, the charts and the export all describe one set of rows, with
+    // `stats.hidden_unassigned` naming what is left out at that same level and
+    // the toggle standing right beside the count.
+    ...(tab === "cells" && owner !== "all" ? { owner_scope: owner } : {}),
     q: q.trim() || undefined,
   }), [tab, owner, dateFrom, dateTo, state, statusSel, catSel, division, cell, shift, sups, leaders,
        brigada, author, urgent, overdue, source, q]);
@@ -1495,15 +1504,19 @@ export default function Arc() {
                 { value: "data", label: (<span className="inline-flex items-center gap-1.5"><ClipboardList size={12} />{t("arc.modeData")}</span>) },
                 { value: "analysis", label: (<span className="inline-flex items-center gap-1.5"><BarChart3 size={12} />{t("arc.modeAnalysis")}</span>) },
               ]} />
-            {/* WHICH cells this view answers for — the ones with a brigadir
-                (the default) or every cell the register names. It is a scope,
-                so it narrows both modes and every figure in them; it belongs
-                to the cells tab's question alone, so «Barchasi» never shows
-                it. */}
+            {/* WHICH cells this view answers for — the ones a brigadir is on
+                (the default), the ones a lider is on, or every cell the
+                register names. It is a scope, so it narrows both modes and
+                every figure in them; it belongs to the cells tab's question
+                alone, so «Barchasi» never shows it. The two owner segments
+                carry the SAME marks the brigadir and lider columns and filters
+                carry, so the toggle names the two people the table already
+                names rather than inventing a third vocabulary for them. */}
             {tab === "cells" && (
               <SegmentedToggle value={owner} onChange={setOwner}
                 options={[
-                  { value: "assigned", label: (<span className="inline-flex items-center gap-1.5"><UserCheck size={12} />{t("arc.ownerAssigned")}</span>), title: t("arc.ownerAssignedHint") },
+                  { value: "manager", label: (<span className="inline-flex items-center gap-1.5"><Wrench size={12} />{t("arc.ownerManager")}</span>), title: t("arc.ownerManagerHint") },
+                  { value: "leader", label: (<span className="inline-flex items-center gap-1.5"><UserCog size={12} />{t("arc.ownerLeader")}</span>), title: t("arc.ownerLeaderHint") },
                   { value: "all", label: (<span className="inline-flex items-center gap-1.5"><Boxes size={12} />{t("arc.ownerAll")}</span>), title: t("arc.ownerAllHint") },
                 ]} />
             )}
@@ -1548,13 +1561,18 @@ export default function Arc() {
                 {/* The other half of what this view leaves out, and the way to
                     it: the tickets on cells nobody is assigned to. Counted and
                     named for the same reason as the line above — a count that
-                    silently omitted them would read as the whole register. */}
+                    silently omitted them would read as the whole register.
+                    The SENTENCE follows the level the toggle is reading, since
+                    the number alone cannot say which person is missing, and a
+                    chip naming the brigadir over a leader-scoped count would be
+                    the page disagreeing with itself. */}
                 {tab === "cells" && (stats?.hidden_unassigned || 0) > 0 && (
                   <button type="button" className="underline underline-offset-2 whitespace-nowrap text-left"
                     style={{ color: "var(--text-3)" }}
-                    title={t("arc.unassignedHiddenHint")}
+                    title={t(owner === "leader" ? "arc.leaderlessHiddenHint" : "arc.unassignedHiddenHint")}
                     onClick={(e) => { e.stopPropagation(); setOwner("all"); }}>
-                    · {tpl(t("arc.unassignedHidden"), { n: stats.hidden_unassigned.toLocaleString("ru-RU") })}
+                    · {tpl(t(owner === "leader" ? "arc.leaderlessHidden" : "arc.unassignedHidden"),
+                           { n: stats.hidden_unassigned.toLocaleString("ru-RU") })}
                   </button>
                 )}
               </span>

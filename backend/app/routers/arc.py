@@ -162,6 +162,23 @@ def _ints(values: list[str]) -> list[int]:
     return out
 
 
+# The «Yacheykalar bo'yicha» owner scope: "" (every cell the register names),
+# "manager" (only the cells with a brigadir) or "leader" (only the cells with a
+# lider). ONE key downstream — this is the only place the wire is read, so the
+# rest of the module never has to know there are two spellings of it.
+#
+# `assigned_only` is that key's pre-v3.63 spelling and still means «manager».
+# It is folded HERE rather than kept alive as a second filter, because a tab
+# open on an older bundle goes on sending it: the compatibility floor only
+# refuses a MAJOR line, and this is not one. A bundle that sends neither gets
+# no narrowing, exactly as it always did.
+def _owner_scope(scope: Optional[str], assigned_only: bool) -> str:
+    s = (scope or "").strip().lower()
+    if s in arc_cells.OWNER_LEVELS:
+        return s
+    return "manager" if assigned_only else ""
+
+
 def _filters(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -181,6 +198,7 @@ def _filters(
     q: Optional[str] = Query(None),
     include_missing: bool = Query(False),
     cells_only: bool = Query(False),
+    owner_scope: str = Query(""),
     assigned_only: bool = Query(False),
 ) -> dict:
     return {"date_from": date_from, "date_to": date_to, "status": status,
@@ -189,7 +207,7 @@ def _filters(
             "brigada": brigada, "author": author, "urgent": urgent,
             "overdue": overdue, "source": source, "state": state, "q": q,
             "include_missing": include_missing, "cells_only": cells_only,
-            "assigned_only": assigned_only}
+            "owner_scope": _owner_scope(owner_scope, assigned_only)}
 
 
 def _day_start(s: Optional[str]) -> Optional[datetime]:
@@ -212,10 +230,11 @@ def _tri(value: str, expr) -> Optional[Any]:
     return None
 
 
-# The `org_cache` slot the «assigned» code set is memoised under. Every other
-# key in that memo is a tuple of the org picks, so a plain string cannot
-# collide with one.
-_ASSIGNED_CK = "assigned"
+# The `org_cache` slot one owner scope's code set is memoised under. Every
+# other key in that memo is a tuple of TUPLES (the org picks), so a pair of
+# plain strings cannot collide with one.
+def _owner_ck(scope: str) -> tuple[str, str]:
+    return ("assigned", scope)
 
 
 def _apply_filters(query, f: dict, D: dict, db: Session, org_cache: Optional[dict] = None):
@@ -277,24 +296,31 @@ def _apply_filters(query, f: dict, D: dict, db: Session, org_cache: Optional[dic
     # says so, with the way back to «Barchasi» where those tickets live.
     if f.get("cells_only"):
         query = query.filter(D["cell_code"].isnot(None))
-    # «Biriktirilgan» — the tickets whose cell this platform can actually route
-    # to somebody. `cells.manager_id` is the one attachment point of the org
-    # dimension, so a cell with no brigadir reaches no unit, no shift and no
-    # leader: on the «by cells» view its rows can only ever carry three blank
-    # owner columns. That view therefore OPENS on this narrowing and the toggle
-    # beside the mode switch lifts it. Same shape as the org chain below — it
-    # resolves to a SET OF CODES (arc_cells.assigned_codes is the rule) and
+    # The owner scope — the tickets whose cell this platform can actually route
+    # to a brigadir («manager») or to a lider («leader»). `cells.manager_id` is
+    # the one attachment point of the org dimension, so a cell with no brigadir
+    # reaches no unit, no shift and no leader: on the «by cells» view its rows
+    # can only ever carry three blank owner columns. That view therefore OPENS
+    # on the brigadir narrowing, and the toggle beside the mode switch is what
+    # moves it to the leader level or lifts it entirely. The two levels are
+    # separate questions about the same cell, never a stricter form of each
+    # other — arc_cells.assigned_codes is the whole rule and nothing is
+    # re-derived here.
+    #
+    # Same shape as the org chain below: it resolves to a SET OF CODES and
     # meets the register at the one `cell_code` expression, and an empty set is
-    # a real answer: an empty register, never the whole plant. What it hides is
-    # counted back as `hidden_unassigned` on /stats and named on the card, with
-    # the way over to «Barcha yacheykalar».
-    if f.get("assigned_only"):
-        if org_cache is not None and _ASSIGNED_CK in org_cache:
-            codes = org_cache[_ASSIGNED_CK]
+    # a real answer — an empty register, never the whole plant. What it hides
+    # is counted back as `hidden_unassigned` on /stats and named on the card,
+    # with the way over to «Barcha yacheykalar».
+    scope = f.get("owner_scope") or ""
+    if scope:
+        ck = _owner_ck(scope)
+        if org_cache is not None and ck in org_cache:
+            codes = org_cache[ck]
         else:
-            codes = arc_cells.assigned_codes(db)
+            codes = arc_cells.assigned_codes(db, scope)
             if org_cache is not None:
-                org_cache[_ASSIGNED_CK] = codes
+                org_cache[ck] = codes
         query = (query.filter(D["cell_code"].in_(sorted(codes))) if codes
                  else query.filter(false()))
     # The org chain — shift → brigadir → leader — reaches a ticket only through
@@ -522,7 +548,7 @@ _OFF: dict[str, Any] = {
     # The «by cells» owner scope is a narrowing on the SAME dimension the
     # brigadir and leader picks are on, so it is liftable like any other
     # control — see the two owner lists in _facets.
-    "assigned_only": False,
+    "owner_scope": "",
 }
 
 # The filter set that narrows nothing at all — every ticket the API still
@@ -628,15 +654,16 @@ def _facets(db: Session, f: dict) -> dict:
     memo: dict = {}
 
     # The two OWNER lists lift the «by cells» owner scope along with their own
-    # pick. `assigned_only` narrows the same dimension a brigadir pick does —
-    # it is that tab's standing «only the cells somebody is assigned to» — so a
-    # list that left it applied could only ever count its own «Biriktirilmagan»
-    # row at 0, and the row would then be missing from the one list that exists
-    # to offer it. No named unit's count moves: a ticket that scope hides
-    # reaches nobody, so it was never in one.
+    # pick. That scope narrows the same dimension a brigadir or lider pick does
+    # — it is that tab's standing «only the cells somebody is assigned to» — so
+    # a list that left it applied could only ever count its own
+    # «Biriktirilmagan» row at 0, and the row would then be missing from the one
+    # list that exists to offer it. Both levels lift both lists: a leader scope
+    # hides tickets that reach no lider, and those are exactly the ones the
+    # brigadir list's «Biriktirilmagan» row is counted over too.
     def code_rows(lift: str):
-        owner = lift in ("manager", "leader") and bool(f.get("assigned_only"))
-        lifts = (lift, "assigned_only") if owner else (lift,)
+        owner = lift in ("manager", "leader") and bool(f.get("owner_scope"))
+        lifts = (lift, "owner_scope") if owner else (lift,)
         sig = (owner,) + tuple(
             (k, () if k == lift else tuple(str(v) for v in (f.get(k) or [])))
             for k in ("cell", "shift", "manager", "leader"))
@@ -837,21 +864,27 @@ def get_stats(
     ]
     # What this view is NOT showing, in the two ways the «by cells» scope can
     # hide a ticket the other filters kept: its division names no cell, and its
-    # cell has no brigadir. Both are counted over the same filter set with BOTH
-    # of the view's own narrowings lifted, which is what keeps them disjoint —
-    # with `assigned_only` still applied «no cell» could only ever count 0, a
-    # NULL code being in no code set. An org pick already excludes both by
-    # itself, and then they are 0, which is the honest answer.
+    # cell has nobody assigned at the level the toggle is reading. Both are
+    # counted over the same filter set with BOTH of the view's own narrowings
+    # lifted, which is what keeps them disjoint — with the owner scope still
+    # applied «no cell» could only ever count 0, a NULL code being in no code
+    # set. An org pick already excludes both by itself, and then they are 0,
+    # which is the honest answer.
+    #
+    # `hidden_unassigned` is counted at whichever level the scope names, so on
+    # «leader» it is the tickets whose cell has no lider. The page's chip says
+    # which — the number alone cannot, and a chip that named the brigadir over a
+    # leader-scoped count would be the page disagreeing with itself.
     hidden_no_cell = hidden_unassigned = 0
-    if f.get("cells_only") or f.get("assigned_only"):
-        base = {**f, "cells_only": False, "assigned_only": False}
+    if f.get("cells_only") or f.get("owner_scope"):
+        base = {**f, "cells_only": False, "owner_scope": ""}
         code = D["cell_code"]
         if f.get("cells_only"):
             hidden_no_cell = _n(
                 _apply_filters(db.query(func.count(R.id)), base, D, db)
                 .filter(code.is_(None)).scalar())
-        if f.get("assigned_only"):
-            owned = arc_cells.assigned_codes(db)
+        if f.get("owner_scope"):
+            owned = arc_cells.assigned_codes(db, f["owner_scope"])
             q_un = (_apply_filters(db.query(func.count(R.id)), base, D, db)
                     .filter(code.isnot(None)))
             if owned:
@@ -1224,6 +1257,11 @@ class ArcExportBody(BaseModel):
     q: Optional[str] = None
     include_missing: bool = False
     cells_only: bool = False
+    # The «by cells» owner scope, and its pre-v3.63 spelling beside it — folded
+    # into one key by `_owner_scope` in the handler, exactly as on the query
+    # string. An older bundle still posts the bool and gets the file it always
+    # got.
+    owner_scope: str = ""
     assigned_only: bool = False
     sort: str = "created_at:desc"
     columns: list[str] = []
@@ -1247,7 +1285,7 @@ _EXPORT_MAX_ROWS = 50_000
 _FILTER_KEYS = ("date_from", "date_to", "status", "category", "division",
                 "cell", "shift", "manager", "leader", "brigada", "author",
                 "urgent", "overdue", "source", "state", "q", "include_missing",
-                "cells_only", "assigned_only")
+                "cells_only", "owner_scope")
 
 
 def _scope_line(f: dict, sort: Optional[str]) -> str:
@@ -1270,8 +1308,8 @@ def _scope_line(f: dict, sort: Optional[str]) -> str:
         parts.append("include_missing=yes")
     if f.get("cells_only"):
         parts.append("cells_only=yes")
-    if f.get("assigned_only"):
-        parts.append("assigned_only=yes")
+    if f.get("owner_scope"):
+        parts.append(f"owner_scope={f['owner_scope']}")
     if sort:
         parts.append(f"sort={sort}")
     return (" · ".join(parts) or "no filters")[:1000]
@@ -1288,6 +1326,8 @@ def export_xlsx(
     order. A browser session downloads it; inside Telegram it lands in the
     caller's private chat (app/xlsx_delivery.py)."""
     f = {k: getattr(body, k) for k in _FILTER_KEYS}
+    # One key downstream, one place the two spellings become it.
+    f["owner_scope"] = _owner_scope(body.owner_scope, body.assigned_only)
     D = _derived()
     today = datetime.now(_TASHKENT).date().isoformat()
 
