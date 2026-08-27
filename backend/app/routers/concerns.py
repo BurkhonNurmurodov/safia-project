@@ -78,6 +78,7 @@ VALID_STATUSES = {"todo", "doing", "done"}
 CATEGORIES = {
     "ars", "inventory", "warehouse", "fridge", "procurement", "logistics",
     "it", "washing", "plan", "hr", "technologist", "raw_material",
+    "security", "kitchen", "other",
 }
 
 # Escalation chain, bottom → top. New concerns still open at "supervisor" (the

@@ -10,7 +10,7 @@ import {
   Layers, ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
   MessageSquare, Hash,
   Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
-  Droplets, CalendarRange, Users, FlaskConical, Wheat,
+  Droplets, CalendarRange, Users, FlaskConical, Wheat, Shield, ChefHat, Ellipsis,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -45,6 +45,7 @@ const STATUSES = ["todo", "doing", "done"];
 const CATEGORIES = [
   "ars", "inventory", "warehouse", "fridge", "procurement", "logistics",
   "it", "washing", "plan", "hr", "technologist", "raw_material",
+  "security", "kitchen", "other",
 ];
 
 // Per-category identity hue for the category chip — the shared generic-first
@@ -54,6 +55,10 @@ const CATEGORY_COLOR = {
   ars: "#ef4444", inventory: "#22c55e", warehouse: "#3b82f6", fridge: "#eab308",
   procurement: "#f97316", logistics: "#a855f7", it: "#14b8a6", washing: "#ec4899",
   plan: "#6366f1", hr: "#84cc16", technologist: "#06b6d4", raw_material: "#d946ef",
+  security: "#0ea5e9", kitchen: "#b45309",
+  // «Другой отдел» is a catch-all, not a department with an identity — slate,
+  // the same de-emphasis every «Остальные» fold gets, so it never competes.
+  other: "#94a3b8",
 };
 
 // Icon per department — same visual language as the downtime category legend
@@ -63,6 +68,7 @@ const CATEGORY_ICON = {
   ars: Wrench, inventory: Boxes, warehouse: Warehouse, fridge: Refrigerator,
   procurement: ShoppingCart, logistics: Truck, it: MonitorCog, washing: Droplets,
   plan: CalendarRange, hr: Users, technologist: FlaskConical, raw_material: Wheat,
+  security: Shield, kitchen: ChefHat, other: Ellipsis,
 };
 
 // Escalation chain, bottom → top. A concern OPENS at "supervisor" and moves one
