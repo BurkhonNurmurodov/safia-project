@@ -1,10 +1,12 @@
-import { useRef, useState, useEffect, useLayoutEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import ReactApexChart from "react-apexcharts";
 import { Users, ChevronDown } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import { useLang } from "../../context/LangContext";
 import { useDragSelect } from "../../hooks/useDragSelect";
 import { CATEGORY_COLORS } from "../../utils/chartPalette";
+import { ticksForWidth } from "../../utils/chartRange";
+import useElementWidth from "../../hooks/useElementWidth";
 
 // Per-manager identity colors — the shared generic-first category order.
 const LINE_COLORS = CATEGORY_COLORS;
@@ -56,18 +58,6 @@ function getValue(cell, mode) {
 
 function buildSeries(name, dates, data, mode) {
   return { name, data: dates.map((d) => getValue(data[name]?.[d], mode)) };
-}
-
-// How many horizontal "DD.MM" date labels fit in a chart of the given width.
-// A DD.MM label + comfortable gap needs ~52px; ~46px is reserved for the y-axis
-// gutter. Cap at 12 so a wide desktop axis stays clean, floor at 2. Returns
-// undefined (→ show every label) when they already fit, so short ranges are
-// untouched. This is what makes the axis responsive: ~5 labels on a phone,
-// ~12 on desktop — instead of one fixed count that overlaps on small screens.
-function ticksForWidth(width, count) {
-  if (!width) return undefined;
-  const fit = Math.min(12, Math.max(2, Math.floor((width - 46) / 52)));
-  return count > fit ? fit : undefined;
 }
 
 // ─── manager picker ───────────────────────────────────────────────────────────
@@ -208,23 +198,9 @@ export default function FleetLineChart({
   const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const { t } = useLang();
   const apexRef = useRef(null);
-  const wrapRef = useRef(null);
-  const [wrapW, setWrapW] = useState(0);
-
-  // ── responsive width tracking ─────────────────────────────────────────────────
-  // Measure the wrapper (before paint) and keep it in sync via a ResizeObserver.
-  // This one number drives BOTH fixes below: the label count and the SVG re-fit.
-  useLayoutEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const measure = () => setWrapW(Math.round(el.getBoundingClientRect().width));
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    let raf = 0;
-    const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(measure); });
-    ro.observe(el);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-  }, []);
+  // Measured before paint and kept in sync by a ResizeObserver. This one number
+  // drives BOTH fixes below: the label count and the SVG re-fit.
+  const [wrapRef, wrapW] = useElementWidth();
 
   // ApexCharts bakes a fixed pixel width into its SVG at mount and won't re-fit
   // when the container later changes size (redraw-on-resize is off, on purpose).
@@ -288,7 +264,8 @@ export default function FleetLineChart({
     xaxis: {
       categories: dates.map((d) => d.slice(0, 5)),
       // Dense date axis: keep labels horizontal (never Apex's default -45° slant)
-      // and thin them to only what the current width fits (see ticksForWidth) —
+      // and thin them to only what the current width fits (ticksForWidth, in
+      // utils/chartRange — the ONE definition, shared with the ARC flow chart) —
       // ~5 anchors on a phone, ~12 on desktop. hideOverlappingLabels is the last
       // safety net. Full DD.MM stays in the tooltip, so no precision is lost.
       tickAmount: ticksForWidth(wrapW, dates.length),

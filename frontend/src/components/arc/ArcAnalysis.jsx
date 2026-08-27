@@ -479,6 +479,11 @@ export default function ArcAnalysis({ view, filters, enabled }) {
   };
 
   // ── flow: filed vs closed per bucket ──────────────────────────────────────
+  // The one card on this page with a DATE axis, and the one whose width is not
+  // knowable from the code: it is two thirds of the grid on «Barchasi», a third
+  // of it in the rail on «Yacheykalar bo'yicha», and a single column on a
+  // phone. So it measures itself and thins its own labels — see the xaxis.
+  const [flowRef, flowW] = useElementWidth();
   const trend = A?.trend || [];
   const trendLabels = trend.map((b) => fmtBucket(b.d, A?.gran || gran, lang));
   const flowOpts = {
@@ -490,8 +495,21 @@ export default function ArcAnalysis({ view, filters, enabled }) {
     dataLabels: { enabled: false },
     xaxis: {
       categories: trendLabels,
-      tickAmount: Math.min(12, Math.max(2, trendLabels.length - 1)),
-      labels: { style: { colors: labelColor, fontSize: "10px" }, rotate: 0, hideOverlappingLabels: true },
+      // Thinned to what the card's MEASURED width fits (the fleet-trend rule,
+      // utils/chartRange). A fixed 12 was the bug: twelve «29 Дек» anchors need
+      // ~670px and this card is ~470px in the rail and narrower still on a
+      // phone, so the labels ran into each other on every width but the widest.
+      // Apex's hideOverlappingLabels is only the last safety net — on a category
+      // axis it drops colliding labels rather than thinning them evenly, which
+      // reads as a random subset of the range. Labels stay HORIZONTAL (never
+      // Apex's -45° slant, the platform's convention) and no precision is lost:
+      // every bucket is still named in the tooltip.
+      tickAmount: ticksForWidth(flowW, trendLabels.length, axisLabelPx(trendLabels)),
+      tickPlacement: "on",
+      labels: {
+        style: { colors: labelColor, fontSize: "10px" },
+        rotate: 0, rotateAlways: false, hideOverlappingLabels: true, trim: false,
+      },
       axisBorder: { show: false }, axisTicks: { show: false },
     },
     yaxis: { labels: { style: { colors: labelColor, fontSize: "10px" } } },
@@ -691,7 +709,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
   const flowCard = (height) => (
     <ChartCard icon={TrendingUp} title={t("arc.anFlow")} subtitle={t("arc.anFlowSub")}
       empty={trend.length === 0} emptyText={t("arc.noMatch")} ready={ready} height={height}
-      right={granToggle}>
+      right={granToggle} bodyRef={flowRef}>
       <ReactApexChart options={flowOpts} series={flowSeries} type="line" height={height} />
     </ChartCard>
   );
