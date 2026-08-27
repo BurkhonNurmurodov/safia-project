@@ -40,6 +40,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { showReason as expandReason } from "../utils/leaderReason";
 
 // ── score colours (tuned for the dark dashboard — softer emerald/amber/rose,
 //    deliberately desaturated so they glow rather than glare against charcoal) ──
@@ -757,11 +758,7 @@ const TXT = {
    here renders it in the VIEWER's language, and keeps the deadline in 24-hour
    time: ru/uz never print AM/PM. Anything else is a real typed reason and
    passes through untouched. */
-const MISSED_REASON = /^__missed__\|(\d{2}:\d{2})$/;
-const showReason = (raw, T) => {
-  const m = MISSED_REASON.exec(raw || "");
-  return m ? T.missedDeadline.replace("{time}", m[1]) : raw;
-};
+const showReason = (raw, T) => expandReason(raw, T.missedDeadline);
 
 // The 13 checklist questions, in the sheet's question order (index + 1 = the
 // "N)" in its column headers). The first 12 carry over from

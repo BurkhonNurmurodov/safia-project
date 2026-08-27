@@ -842,13 +842,27 @@ def score_line(db: Session, day: LeaderTaskDay | None,
     return (earned, out_of, pending)
 
 
+# The three ways a task can end badly, kept apart. They used to be one state
+# («failed») wearing one ⚠️, and a leader could not tell which had happened:
+# choosing not to do a task, running out of time on it, and having a photo
+# rejected are three different facts with three different things to do about
+# them, and the warning triangle made all three read as an accusation (the
+# operator's report, 2026-08-27).
+FAILED_STATES = frozenset({"notdone", "expired", "rejected"})
+
+
 def task_state(entry: LeaderTaskEntry | None, rev, has_media: bool,
                day: LeaderTaskDay | None = None) -> str:
     """One word for how a task stands, for the menu row.
 
-    draft   answered but still editable        open    nothing answered yet
-    pending closed, waiting on the AI          passed  closed and accepted
-    failed  closed and rejected (or «Yo'q»)
+    open     nothing answered yet          draft    answered, still editable
+    pending  closed, waiting on the AI     passed   closed and accepted
+    notdone  the leader answered «Yo'q»    — a decision, not a failure
+    expired  the clock ran out with no answer at all
+    rejected the proof was reviewed and refused
+
+    The last three are `FAILED_STATES`; anything asking only "did this go
+    wrong" must test membership rather than compare to a single word.
 
     `day` is optional only for the callers that already know it is open —
     `locked(entry, None)` is exactly the entry's own lock, so passing nothing
@@ -861,11 +875,16 @@ def task_state(entry: LeaderTaskEntry | None, rev, has_media: bool,
     if not locked(entry, day):
         return "draft"
     if not entry.done:
-        return "failed"
+        # The missed-deadline sentinel is what separates «I decided not to» from
+        # «nobody ever asked me»: `force_answer` and the day close write it,
+        # a leader answering «Yo'q» writes their own words.
+        return ("expired"
+                if str(entry.reason or "").startswith(leader_tasks.MISSED_PREFIX)
+                else "notdone")
     if has_media and (rev is None or rev.status in ("pending", "error")):
         return "pending"
     if rev is not None and rev.status == "flagged" and rev.resolution != "approved":
-        return "failed"
+        return "rejected"
     return "passed"
 
 

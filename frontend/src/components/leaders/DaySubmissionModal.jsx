@@ -12,6 +12,7 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import EmptyState from "../ui/EmptyState";
 import { BotPhoto, ReportPhoto, RollPhoto } from "./ProofPhoto";
 import { useLang } from "../../context/LangContext";
+import { showReason } from "../../utils/leaderReason";
 import api from "../../utils/api";
 
 /**
@@ -85,7 +86,14 @@ const STATE = {
              hint: "admin.ltd.stDraftHint" },
   pending: { color: "#94a3b8", Icon: Hourglass,    key: "admin.ltd.aiPending" },
   passed:  { color: "#22c55e", Icon: Check,        key: "admin.ltd.stPassed" },
-  failed:  { color: "#ef4444", Icon: X,            key: "admin.ltd.stFailed" },
+  // The three bad endings, kept apart. All three score 0, so all three are RED
+  // — colour is the status here — and the ICON is what says which of them
+  // happened, exactly as the Jurnal tab separates its categories. They were one
+  // «failed» wearing one ⚠️ until 2026-08-27, and leaders read the warning as an
+  // accusation whichever of the three it actually was.
+  notdone:  { color: "#ef4444", Icon: X,            key: "admin.ltd.stNotdone" },
+  expired:  { color: "#ef4444", Icon: Clock,        key: "admin.ltd.stExpired" },
+  rejected: { color: "#ef4444", Icon: ShieldAlert,  key: "admin.ltd.stRejected" },
 };
 
 function Mark({ color, icon: Icon, label, title }) {
@@ -146,7 +154,8 @@ function TaskRow({ task, uid, lang, T, onPhoto, onReopen, onWipe, busy }) {
 
       {task.reason ? (
         <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-          <span style={{ color: "var(--text-4)" }}>{t("admin.ltd.reason")}: </span>{task.reason}
+          <span style={{ color: "var(--text-4)" }}>{t("admin.ltd.reason")}: </span>
+          {showReason(task.reason, t("admin.ltd.missedAt"))}
         </p>
       ) : null}
 

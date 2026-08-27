@@ -1058,9 +1058,16 @@ unit). Absent row = off, so nothing moves until an admin switches it.
   on a verdict is in NEITHER number. A pending task counted as 0 would make the
   score fall as the day went well, which teaches leaders to stop reading it.
 - Row marks come from `leader_close.task_state`: open · ✏️ draft · ⏳ pending ·
-  ✅ passed · ⚠️ failed. `_lt_pt_task_view` is the task's own screen (draft or
-  submitted); a submitted one offers nothing but the way back, because there is
-  nothing left that can be done to it.
+  ✅ passed · ✖️ notdone · ⏱ expired · ⚠️ rejected. **The last three were ONE
+  state wearing ONE ⚠️ until 2026-08-27**, and leaders read the triangle as an
+  accusation whichever had happened (the operator's report): choosing «Yo'q»,
+  running out of time, and having a proof refused are three different facts with
+  three different things to do about them. ⚠️ now means exactly one — somebody
+  looked at your proof and refused it. `FAILED_STATES` is the set, so anything
+  asking only "did this go wrong" tests membership instead of comparing to a
+  word. `_lt_pt_task_view` is the task's own screen (draft or submitted); a
+  submitted one offers nothing but the way back, because there is nothing left
+  that can be done to it.
 
 Related memory: `leader-per-task-submission`.
 
@@ -1181,8 +1188,17 @@ see **nowhere**. This is the surface where both exist.
   written when the day closes, and a running total shown as «Natija» is a number
   the leader can still move — showing `progress` instead.
 - **`leader_close.task_state` is THE state vocabulary** (open · draft · pending ·
-  passed · failed) and the modal renders that, never a second set of words: the
-  bot menu, the register and this tab must agree about which state a task is in.
+  passed · notdone · expired · rejected) and the modal renders that, never a
+  second set of words: the bot menu, the register and this tab must agree about
+  which state a task is in. The three bad endings are all RED here — they all
+  score 0, and colour is the status — with the ICON saying which one it was,
+  the same split the Jurnal tab makes between outcome and category.
+- **A not-done `reason` is the leader's own free text, except when nobody typed
+  it**: a task the deadline caught carries the sentinel `__missed__|HH:MM`,
+  because one fixed sentence cannot read correctly for four viewers.
+  `utils/leaderReason.js#showReason` is THE expansion and both readers call it —
+  it lived only inside `Leaders.jsx` until this modal grew the same column and
+  printed «__missed__|09:00» at an operator verbatim (2026-08-27).
 - Roll shots stream from `GET /admin/leader-tasks/roll-photo/{id}` (admin-only).
   Deliberately NOT a widening of `/api/leader-proof/photo/{id}`, which answers
   only for a photo belonging to a leader profile the CALLER holds and says so in

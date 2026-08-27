@@ -1944,6 +1944,7 @@ _LT_MESSAGES = {
         "pt_state_passed": "\u2705 Accepted \u00b7 {w}/{w} points",
         "pt_state_failed": "\u26a0\ufe0f Rejected \u00b7 0/{w} points",
         "pt_state_undone": "\u274c Not done \u00b7 0/{w} points",
+        "pt_state_expired": "\u23f1 Time ran out \u00b7 0/{w} points",
         "pt_score": "\n\n\U0001F3AF {x}/{y} баллов",
         "pt_pending": " \u00b7 \u23f3 проверяется: {n}",
         "pt_menu_hint": "\n\nКаждая задача сдаётся отдельно.",
@@ -1961,6 +1962,7 @@ _LT_MESSAGES = {
         "pt_state_passed": "\u2705 Принято \u00b7 {w}/{w} баллов",
         "pt_state_failed": "\u26a0\ufe0f Отклонено \u00b7 0/{w} баллов",
         "pt_state_undone": "\u274c Не выполнено \u00b7 0/{w} баллов",
+        "pt_state_expired": "\u23f1 Время вышло \u00b7 0/{w} баллов",
         "pt_score": "\n\n\U0001F3AF {x}/{y} балл",
         "pt_pending": " \u00b7 \u23f3 {n} та текширилмоқда",
         "pt_menu_hint": "\n\nҲар бир вазифа алоҳида топширилади.",
@@ -1978,6 +1980,7 @@ _LT_MESSAGES = {
         "pt_state_passed": "\u2705 Қабул қилинди \u00b7 {w}/{w} балл",
         "pt_state_failed": "\u26a0\ufe0f Рад этилди \u00b7 0/{w} балл",
         "pt_state_undone": "\u274c Бажарилмади \u00b7 0/{w} балл",
+        "pt_state_expired": "\u23f1 Вақт тугади \u00b7 0/{w} балл",
         "pt_score": "\n\n\U0001F3AF {x}/{y} ball",
         "pt_pending": " \u00b7 \u23f3 {n} ta tekshirilmoqda",
         "pt_menu_hint": "\n\nHar bir vazifa alohida topshiriladi.",
@@ -1995,6 +1998,7 @@ _LT_MESSAGES = {
         "pt_state_passed": "\u2705 Qabul qilindi \u00b7 {w}/{w} ball",
         "pt_state_failed": "\u26a0\ufe0f Rad etildi \u00b7 0/{w} ball",
         "pt_state_undone": "\u274c Bajarilmadi \u00b7 0/{w} ball",
+        "pt_state_expired": "\u23f1 Vaqt tugadi \u00b7 0/{w} ball",
         "camera_prompt": "📌 {task}\n\n📷 Bu vazifaning rasmi ILOVADA olinadi — quyidagi tugmani bosing.\n\n📸 {k}/{min} rasm olindi.",
         "camera_ready": "📌 {task}\n\n✅ {k}/{min} rasm olindi — vazifa bajarildi.\n\nRasmni almashtirish yoki qo'shish uchun tugmani bosing.",
         "camera_hours": "\n\n🕒 Tavsiya etilgan vaqt: {lo} — {hi}. Undan tashqarida olingan rasm «kech» deb belgilanadi.",
@@ -2420,10 +2424,12 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
             rev = leader_ai.verdicts_for(db, day).get(task_id)
             has_media = bool(db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).first())
             state = leader_close.task_state(entry, rev, has_media, day)
+            # `rejected` is the AI's verdict and reads as one; the two
+            # not-done states read as themselves — a leader who chose «Yo'q»
+            # and one the clock caught are not in the same position.
             key = {"pending": "pt_state_pending", "passed": "pt_state_passed",
-                   "failed": "pt_state_failed"}.get(state, "pt_state_undone")
-            if not entry.done:
-                key = "pt_state_undone"
+                   "rejected": "pt_state_failed", "expired": "pt_state_expired",
+                   "notdone": "pt_state_undone"}.get(state, "pt_state_undone")
             text += _lt(lang, key).format(w=weight)
             # The AI's own words, when it has any — the leader is entitled to read
             # the reason a task they cannot change any more was rejected.
@@ -2649,8 +2655,15 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
             if per_task:
                 st = leader_close.task_state(
                     e, revs.get(td_id), bool(e and e.id in with_media), day)
+                # One mark per MEANING. ⚠️ used to carry all three bad
+                # endings at once, so a leader who simply ran out of time read
+                # the same warning as one whose proof was refused — and the
+                # triangle made every unfinished row look like an accusation
+                # (the operator's report, 2026-08-27). ⚠️ now means exactly one
+                # thing: somebody looked at your proof and refused it.
                 mark = {"open": "", "draft": "✏️ ", "pending": "⏳ ",
-                        "passed": "✅ ", "failed": "⚠️ "}[st]
+                        "passed": "✅ ", "notdone": "✖️ ",
+                        "expired": "⏱ ", "rejected": "⚠️ "}.get(st, "")
                 if st == "open" and s.get("proof_kind") == "camera":
                     k = shot.get(td_id, 0)
                     mark = f"📷 {k}/{s['min_media']} · " if k else "📷 "
