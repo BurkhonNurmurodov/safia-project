@@ -401,7 +401,7 @@ export default function AiActivity({ open, onClose, progress }) {
       {!isLoading && !nothing && (
         <>
           <div>
-            <SegmentedToggle asTabs scrollable ariaLabel={T.title} value={tab}
+            <SegmentedToggle asTabs ariaLabel={T.title} value={tab}
               onChange={(v) => { setTabPicked(true); setTab(v); }}
               options={[
                 { value: "who", label: `${T.tabWho} · ${people.length}` },

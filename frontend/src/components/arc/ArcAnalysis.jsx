@@ -15,6 +15,8 @@ import { useTranslit } from "../../utils/transliterate";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import useIsMobile from "../../hooks/useIsMobile";
+import useElementWidth from "../../hooks/useElementWidth";
+import { ticksForWidth, axisLabelPx } from "../../utils/chartRange";
 import { cellName } from "../../utils/cellName";
 import { shortPerson } from "../../utils/personName";
 import { C_DONE, C_DOING, C_OVERDUE, C_GREY, hexA } from "../../utils/arcStatus";
@@ -68,7 +70,11 @@ const fmtBucket = (iso, gran, lang) => {
 
 // The chart card — the Quality page's pattern: icon chip + title + one-line
 // «how to read me» subtitle + a right slot for the card's own toggle.
-function ChartCard({ icon: Icon, title, subtitle, right, height = 300, empty, emptyText, ready, children }) {
+// `bodyRef` is the seam a chart measures ITS OWN WIDTH through (see the flow
+// card): the body div is the chart's width container and — unlike `children`
+// — it is mounted whether or not the card is `ready`, so the width is known
+// before Apex ever mounts.
+function ChartCard({ icon: Icon, title, subtitle, right, height = 300, empty, emptyText, ready, bodyRef, children }) {
   return (
     <div className="rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
       <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
@@ -86,7 +92,7 @@ function ChartCard({ icon: Icon, title, subtitle, right, height = 300, empty, em
         </div>
         {right}
       </div>
-      <div className="px-1 py-2 flex-1">
+      <div ref={bodyRef} className="px-1 py-2 flex-1">
         {empty
           ? <div className="grid place-items-center text-xs" style={{ height, color: "var(--text-4)" }}>{emptyText}</div>
           : ready ? children : <div style={{ height }} />}

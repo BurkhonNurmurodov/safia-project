@@ -319,7 +319,7 @@ export default function AiClearHistory({ floor, defaultFloor }) {
           </p>
 
           <FormField label={T.scope} hint={T.scopeHint}>
-            <SegmentedToggle fill scrollable value={scope} onChange={setScope} options={[
+            <SegmentedToggle fill value={scope} onChange={setScope} options={[
               ["all", T.scAll], ["flagged", T.scFlagged],
               ["clean", T.scClean], ["unjudged", T.scUnjudged],
             ]} />

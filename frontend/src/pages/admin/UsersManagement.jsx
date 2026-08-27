@@ -254,7 +254,6 @@ export default function UsersManagement() {
             />
             {/* Status filter — single-select segmented toggle with live counts */}
             <SegmentedToggle
-              scrollable
               className="w-full sm:w-auto"
               value={statusFilter}
               onChange={setStatusFilter}

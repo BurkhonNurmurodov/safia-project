@@ -156,7 +156,7 @@ export default function DocAudit() {
             <SearchInput value={search} onChange={setSearch}
                          placeholder={t("docAudit.searchPh")} className="w-full sm:w-56" />
             <SegmentedToggle value={flag} onChange={setFlag} options={opts}
-                             size="md" scrollable className="ml-auto" />
+                             size="md" className="ml-auto" />
           </div>
         }
         minWidth="980px"

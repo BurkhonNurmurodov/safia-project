@@ -852,7 +852,6 @@ export default function IdleCell() {
       {/* View switch — stays OUTSIDE the filter zone (platform rule). */}
       <SegmentedToggle
         asTabs
-        scrollable
         value={tab}
         onChange={setTab}
         ariaLabel={t("idleCell.title")}

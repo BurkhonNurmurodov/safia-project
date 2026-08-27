@@ -2512,7 +2512,6 @@ export default function Concerns() {
               right={
                 <SegmentedToggle
                   size="sm"
-                  scrollable
                   value={respLvlSel}
                   onChange={setRespLvl}
                   options={respLvlOpts}
@@ -3334,7 +3333,6 @@ export default function Concerns() {
           >
             <SegmentedToggle
               fill
-              scrollable
               size="sm"
               value={respLvlSel}
               onChange={setRespLvl}

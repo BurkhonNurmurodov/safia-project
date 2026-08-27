@@ -143,7 +143,7 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
             <SearchInput value={search} onChange={setSearch}
                          placeholder={t("reconcile.searchPh")} className="w-full sm:w-56" />
             <SegmentedToggle value={reason} onChange={setReason} options={opts}
-                             size="md" scrollable className="ml-auto" />
+                             size="md" className="ml-auto" />
           </div>
         }
         minWidth="900px"

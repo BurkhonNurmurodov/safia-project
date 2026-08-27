@@ -283,7 +283,6 @@ export default function TranslationsEditor() {
           ]}
         />
         <SegmentedToggle
-          scrollable
           value={mobileLang}
           onChange={setMobileLang}
           options={languages.map((l) => ({ value: l.code, label: l.name, title: l.code }))}

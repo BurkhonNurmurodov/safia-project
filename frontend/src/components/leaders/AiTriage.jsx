@@ -505,7 +505,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
           must stay a DIRECT child of this flex row — it measures the row's
           children to decide whether to unfold. */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <SegmentedToggle scrollable value={f.bucket || "all"} onChange={pickBucket} options={bucketOpts} />
+        <SegmentedToggle value={f.bucket || "all"} onChange={pickBucket} options={bucketOpts} />
         <FilterPanel
           sections={[
             {

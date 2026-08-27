@@ -629,7 +629,7 @@ export default function AiRecheck({ errorCount = 0 }) {
           </p>
 
           <FormField label={T.scope} hint={T.scopeHint}>
-            <SegmentedToggle fill scrollable value={scope} onChange={setScope} options={[
+            <SegmentedToggle fill value={scope} onChange={setScope} options={[
               ["unchecked", T.scUnchecked],
               ["flagged", T.scFlagged], ["clean", T.scClean], ["all", T.scAll],
             ]} />

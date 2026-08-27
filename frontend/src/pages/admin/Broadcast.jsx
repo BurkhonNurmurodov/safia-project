@@ -938,7 +938,6 @@ export default function Broadcast() {
           />
         </div>
         <SegmentedToggle
-          scrollable
           value={histFilter}
           onChange={setHistFilter}
           ariaLabel={t("admin.broadcast.colStatus")}

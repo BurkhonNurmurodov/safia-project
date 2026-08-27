@@ -358,7 +358,6 @@ export default function Disputes({ scope, onClearScope }) {
           <SearchInput value={q} onChange={setQ} placeholder={T.searchPh} />
         </div>
         <SegmentedToggle
-          scrollable
           value={seg}
           onChange={setSeg}
           options={[

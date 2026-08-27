@@ -42,3 +42,39 @@ export function listChartDays(fromISO, endISO) {
   }
   return out;
 }
+
+// ─── date-axis label thinning ───────────────────────────────────────────────
+// A horizontal date axis overlaps the moment its label COUNT outgrows its
+// pixel WIDTH, and one fixed tick count cannot serve a card that is two thirds
+// of a grid on one tab, a third of it on another, and a single column on a
+// phone. ApexCharts' own `hideOverlappingLabels` is only the last safety net:
+// on a category axis it DROPS whichever labels collide rather than thinning
+// them evenly, so an axis leaning on it alone reads as a random subset of
+// days. The tick count is therefore DERIVED from the measured width —
+// ~5 anchors on a phone, up to `max` on a desktop.
+//
+// Pair with `useElementWidth` on the chart's own container; nothing here may
+// guess a width, because the only wrong answer is a confident one.
+
+// The y-axis labels' own column, which the plot never gets to use.
+export const AXIS_GUTTER_PX = 46;
+
+// Room ONE label of this set needs, its gap included: the longest string at
+// the charts' 10px axis font (~6px per character, Cyrillic and Latin alike)
+// plus 16px of breathing space. «29 Дек» → 52px, which is the DD.MM default
+// below — pass this whenever the labels are not plain DD.MM (month names,
+// another language) instead of trusting that default.
+export function axisLabelPx(labels, charPx = 6, gapPx = 16) {
+  const longest = (labels || []).reduce((m, s) => Math.max(m, String(s ?? "").length), 0);
+  return Math.max(28, longest * charPx + gapPx);
+}
+
+// How many labels fit on an axis of the given width. Returns undefined — Apex
+// for "show every label" — when they already fit, so a short range is never
+// thinned, and while the width is still unknown (0), which callers must read
+// as "not measured yet" rather than "zero wide".
+export function ticksForWidth(width, count, labelPx = 52, max = 12) {
+  if (!width) return undefined;
+  const fit = Math.min(max, Math.max(2, Math.floor((width - AXIS_GUTTER_PX) / labelPx)));
+  return count > fit ? fit : undefined;
+}

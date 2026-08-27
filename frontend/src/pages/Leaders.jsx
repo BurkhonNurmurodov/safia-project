@@ -3058,7 +3058,7 @@ export default function Leaders() {
           did on a desktop. It earns its keep at 390px, where four tabs cannot
           fit and the selected one used to sit clipped off the right edge with
           nothing on screen saying more existed. */}
-      <SegmentedToggle asTabs scrollable ariaLabel={pageTitle} value={tab} onChange={setTab}
+      <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
         options={[
           ["monitor", T.tabMonitor],
           ["tasks", T.tabTasks],

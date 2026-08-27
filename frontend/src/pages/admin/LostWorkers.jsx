@@ -312,7 +312,6 @@ export default function LostWorkers() {
               onChange={setState}
               options={stateOpts}
               size="md"
-              scrollable
               className="ml-auto"
             />
             <Button

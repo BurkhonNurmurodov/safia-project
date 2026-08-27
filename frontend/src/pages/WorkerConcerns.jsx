@@ -1071,7 +1071,7 @@ export default function WorkerConcerns() {
         <>
           {/* view tabs — switching WHAT you look at, so tabs semantics */}
           <div className="flex items-center gap-2 mb-3">
-            <SegmentedToggle asTabs scrollable ariaLabel={T.title} value={view} onChange={setView}
+            <SegmentedToggle asTabs ariaLabel={T.title} value={view} onChange={setView}
               options={[["obzor", T.vObzor], ["leaders", T.vLeaders], ["register", T.vRegister]]} />
           </div>
 
