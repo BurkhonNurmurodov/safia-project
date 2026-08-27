@@ -189,7 +189,7 @@ const moveCell = (el, dCol, dRow) => {
 // the editor FILLS the cell instead of floating a small box inside it. Enter
 // commits and drops to the cell below, Tab commits and steps right, Escape
 // cancels, Delete clears the override.
-function QtyCell({ col, row, value, overridden, onSave }) {
+function QtyCell({ col, row, value, onSave }) {
   const { t } = useLang();
   const tdRef = useRef(null);
   const [editing, setEditing] = useState(false);
@@ -230,11 +230,18 @@ function QtyCell({ col, row, value, overridden, onSave }) {
   // Focus moves only once the editor has actually unmounted — doing it inside the
   // key handler hands focus back to <body> the moment the input goes away.
   useEffect(() => {
-    if (editing || !nav.current || !tdRef.current) return;
-    const { step, d } = nav.current;
+    if (editing || !tdRef.current) return;
+    const next = nav.current;
     nav.current = null;
-    if (step) stepCell(tdRef.current, step);
-    else if (d) moveCell(tdRef.current, d[0], d[1]);
+    // No target = the editor was closed by a blur, and focus went wherever the
+    // click that closed it landed. Removing a FOCUSED input fires no focusout of
+    // its own, so the ring is re-read off the DOM rather than trusted to an
+    // event that may never come — otherwise a cell somebody typed in keeps its
+    // ring and reads as "this one was changed", which is exactly the mark an
+    // edited value must not carry.
+    if (!next) { setSel(document.activeElement === tdRef.current); return; }
+    if (next.step) stepCell(tdRef.current, next.step);
+    else if (next.d) moveCell(tdRef.current, next.d[0], next.d[1]);
     else tdRef.current.focus();
   }, [editing]);
 
@@ -289,12 +296,11 @@ function QtyCell({ col, row, value, overridden, onSave }) {
         boxShadow: sel && !editing ? "inset 0 0 0 1px var(--brand)" : undefined,
       }}
     >
-      <span
-        className="inline-flex items-center gap-1 tabular-nums"
-        style={{ color: overridden ? "var(--brand-text)" : "var(--text-1)", fontWeight: overridden ? 700 : 400 }}
-      >
+      {/* A typed value is displayed as ANY REGULAR CELL — no colour, no weight,
+          no dot. What the operator entered IS the figure for that day, not an
+          annotation on the sheet’s, so nothing here says where it came from. */}
+      <span className="inline-flex items-center gap-1 tabular-nums" style={{ color: "var(--text-1)" }}>
         {fmt(value, 0)}
-        {overridden && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--brand)" }} />}
         <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
       </span>
       {/* the editor covers the cell's whole box — inset-0 resolves against the
@@ -1157,12 +1163,12 @@ export default function Production() {
       case "fact":
         return (
           <QtyCell key={key} col={key} row={i}
-            value={r.actual_qty} overridden={r.actual_overridden} onSave={saveOverride(r, "actual")} />
+            value={r.actual_qty} onSave={saveOverride(r, "actual")} />
         );
       case "plan":
         return (
           <QtyCell key={key} col={key} row={i}
-            value={r.plan_qty} overridden={r.plan_overridden} onSave={saveOverride(r, "plan")} />
+            value={r.plan_qty} onSave={saveOverride(r, "plan")} />
         );
       case "actual_labor":
         return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.actual_labor, 1)}</td>;
@@ -1618,7 +1624,10 @@ export default function Production() {
                 </div>
                 <Bar value={w.load} color={c} height={6} track="var(--bg-card)" />
                 <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-                  {/* a pinned value goes brand-gold + bold, like an overridden Факт/ПЛАН cell */}
+                  {/* a pinned staffing value goes brand-gold + bold. The Факт/ПЛАН
+                      cells deliberately no longer do: a quantity somebody typed IS the
+                      day’s quantity, while a pinned headcount overrides a figure the
+                      attendance still holds beside it. */}
                   <span className="truncate">
                     {t("production.oSoni")} <b style={{ color: w.people_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.people, 0)}</b>
                     {" · "}
