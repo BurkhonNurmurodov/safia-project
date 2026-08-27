@@ -3053,10 +3053,10 @@ export default function Leaders() {
   // strip is no longer conditional on the admin/supervisor tools.
   const tabsBar = (
     <div className="mb-3">
-      {/* `scrollable` costs nothing while the tabs fit — without `fill` the
-          track still shrink-wraps to its labels, so this reads exactly as it
-          did on a desktop. It earns its keep at 390px, where four tabs cannot
-          fit and the selected one used to sit clipped off the right edge with
+      {/* The track scrolls on its own once the labels stop fitting — without
+          `fill` it still shrink-wraps to them, so this reads exactly as it did
+          on a desktop. It earns its keep at 390px, where four tabs cannot fit
+          and the selected one used to sit clipped off the right edge with
           nothing on screen saying more existed. */}
       <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
         options={[
