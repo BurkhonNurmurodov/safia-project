@@ -60,6 +60,7 @@ try:
         migrate_cell_in_load_column,
         add_cell_shift_times,
         create_action_log, report_unclassified_routes,
+        report_leader_deadline_rules,
         migrate_factories,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
@@ -229,6 +230,10 @@ try:
     backfill_day_approvals()
     backfill_day_closures()
     backfill_deletion_batch_ids()
+
+    # The task-closing arithmetic, asserted out loud — see the lifespan twin in
+    # main.py. Mirrored here per the startup-migration rule.
+    report_leader_deadline_rules()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

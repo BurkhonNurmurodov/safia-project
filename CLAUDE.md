@@ -903,15 +903,25 @@ unit). Absent row = off, so nothing moves until an admin switches it.
     read through `leader_close.reopened_tasks`), NOT on the entry: «Tozalash»
     deletes the entry, and without a grace that outlives it `autoclose_due`
     re-closes the emptied task as "not done" on the deadline that already
-    fired, within five minutes, in front of the operator. A reopened task moves
-    onto the DAY's filing deadline (`{}` down `closing_time`'s chain) — never
-    off a deadline altogether — and the bot's «⏰ …da avtomatik yopiladi» line
-    names that hour, or the leader reads a time already past.
+    fired, within five minutes, in front of the operator.
+  - **NO sweep re-closes a reopened task, and `_awaiting_reopen` is the ONE
+    predicate both consult** (fixed 2026-08-27). The grace used to fall back on
+    the DAY's filing deadline (`{}` down `closing_time`'s chain), which is in
+    the PAST for every reopen that matters — a shift-2 day is only locked once
+    09:00 has gone by — so `autoclose_due` re-closed the task on an hour already
+    spent, and `close_expired_days`, which never read `reopened` at all,
+    re-stamped the day around it. Two doors, five minutes, no message: the
+    reopen was inert on shift 2 from the day it shipped. A reopen is a PERSON
+    deciding a task must be redone, so a person closes it — the leader
+    re-submits, or an admin closes or empties it again. The day stays open until
+    then and shows on «Tozalash» → «Yakunlanmagan», which exists to expose
+    exactly that; a stale id in `reopened` can never strand it, because
+    `_awaiting_reopen` only holds while the task is genuinely unfinished and
+    `maybe_close_day` closes the day the moment the last one is in.
   - «Tozalash» is reopen PLUS the ordinary `_lt_reset_task`, so «empty» goes on
     meaning exactly one thing. Both actions confirm first and are recorded
     (`checklist.task_reopened` / `checklist.task_reset`, actor + what was
-    lifted). The DAY sweeps need no grace: the bot only ever reaches
-    `effective_date(shift)`, and they only close days already expired.
+    lifted).
 - **One task, one review.** `leader_ai.queue_task` is the per-task door beside
   `queue_report`, under the same rules (review floor, shift pause, "no photos ⇒
   not reviewable") — a unit judged by two definitions of a submission would be
@@ -937,6 +947,32 @@ unit). Absent row = off, so nothing moves until an admin switches it.
     for exactly the units most likely to want it — the camera pilot, whose
     proofs are dashboard screens in date-only mode. The fairness is bought by
     SAYING the hour on both surfaces the leader reads, not by withholding it.
+  - **The day's filing deadline is a CEILING on every task, not just the
+    fallback** (`closing_time`, 2026-08-27). `close_expired_days` ends the whole
+    checklist on that hour knowing nothing about per-task clocks, so a task
+    whose own clock lands after it can never reach that clock — yet the platform
+    printed it on both surfaces the leader reads and then locked the task on the
+    earlier hour, recording it not-done. A shift-2 task carrying the 26 Aug
+    incident's own «08:00 — 10:00» window said 10:00 and was closed at 09:05:
+    one hour instead of fifteen, the same defect. The clamp compares
+    `_shift_pos` tuples, never clock strings — a shift-2 evening close at
+    «23:00» is EARLIER than the day's «09:00», which lands the next morning —
+    and it changes only what is PROMISED: over all 4,608 configs the instant a
+    task actually stops accepting work is unmoved, while 2,871 promised hours
+    became the true one. Because `autoclose_due` runs before the day sweep in
+    `_sweep`, a short camera roll now reaches the AI through `force_answer`
+    instead of being recorded not-done by the day close.
+  - **The rules assert themselves at boot** — `leader_close.self_check()` walks
+    every clock a config can carry on both shifts and returns every violation of
+    four invariants: no shift-2 close before the shift opens, no close after the
+    day's own filing deadline, the hour PRINTED is the hour that fires, and an
+    unclamped range closes exactly where `leader_ai.date_window` does. Wired
+    into both entrypoints via `startup.report_leader_deadline_rules`, which
+    prints with the deploy output AND DMs the support chat / every admin,
+    because this repo has no test suite, a push to `main` is a deploy, and this
+    platform has no shell — a log nobody can open is not a warning. Twice a task
+    has been closed at an hour nobody intended and the only signal either time
+    was a leader losing points.
   - **Which DAY the closing hour falls on is `leader_ai.window_offset`, the
     same one anchor the REVIEWER uses** (`leader_close.due_at`). A task's hours
     are written in shift hours, so «08:00 — 10:00» on a night shift means the

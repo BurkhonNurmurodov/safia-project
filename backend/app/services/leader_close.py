@@ -70,6 +70,30 @@ def closed_tasks(db: Session, day: LeaderTaskDay | None) -> set[int]:
 
 # ── when a task stops accepting work ─────────────────────────────────────────
 
+def _shift_pos(shift: int | None, clock: str,
+               opens: str | None = None) -> tuple[int, str]:
+    """Where a closing hour falls relative to the REPORT day — `(days, clock)`.
+
+    The comparable form of a closing time, and the only honest way to ask which
+    of two hours comes first on a shift whose day is not a calendar day: on
+    shift 2, «10:00» is the morning AFTER the evening «23:00» belongs to, so
+    comparing the two clocks as strings gets the order exactly backwards.
+    Tuples order on the day first and the clock second, which is that question
+    answered.
+
+    `leader_ai.window_offset` is the anchor, as everywhere else here; `overnight`
+    applies only to a real RANGE, a bare clock being one hour and not a span.
+    Both `due_at` (which seats the hour on a real date) and `closing_time`
+    (which has to know whether the task outlives its day) read it, so the
+    ordering and the seating cannot drift apart.
+    """
+    lo = opens if opens is not None else clock
+    days = leader_ai.window_offset(shift, (lo, clock))
+    if opens is not None and leader_ai.overnight((lo, clock)):
+        days += 1
+    return days, clock
+
+
 def closing_time(cfg_entry: dict | None,
                  shift: int | None) -> tuple[str, str | None]:
     """When this task stops accepting work — `(clock, the range it came from)`.
@@ -91,6 +115,22 @@ def closing_time(cfg_entry: dict | None,
        auto-close only worked for hand-configured tasks would leave the rest of
        the checklist with no end at all.
 
+    **That third step is also a CEILING, not just a fallback.** The day's filing
+    deadline is when the checklist itself stops accepting work — `close_expired_days`
+    closes the whole day on it, from a sweep that knows nothing about per-task
+    hours — so a task whose own clock falls after it cannot ever reach that
+    clock. Left unclamped the platform PROMISED the later hour on both surfaces
+    the leader reads and then locked the task on the earlier one, recording it
+    not-done: a shift-2 task with the 26 Aug incident's own «08:00 — 10:00»
+    window said 10:00 and was closed at 09:05 (found by audit, 2026-08-27). One
+    hour rather than the fifteen the shift anchor was costing before it, but the
+    same defect — a task closed before the time the leader was given.
+
+    The comparison is a `_shift_pos`, never a string compare: a shift-2 evening
+    task closing at «23:00» is EARLIER than the day's «09:00», which lands the
+    next morning, and ordering the raw clocks would clamp exactly the tasks that
+    do not need it.
+
     The second return value is the range's OPENING time when the clock was read
     off a range, and None when it is a bare hour. `due_at` needs it to tell
     09:00-tomorrow from 09:00-today: which day an hour falls on is decided by
@@ -111,15 +151,25 @@ def closing_time(cfg_entry: dict | None,
     `per_task_units`, and both other readers are per-task surfaces. The 2026-08-15
     ruling (the deadline is informational) stands everywhere else.
     """
-    own = leader_ai.hhmm((cfg_entry or {}).get("deadline"))
-    if own:
-        return own, None
-    win = (cfg_entry or {}).get("window") or ()
-    if len(win) == 2:
-        lo, hi = leader_ai.hhmm(win[0]), leader_ai.hhmm(win[1])
-        if hi:
-            return hi, lo
-    return leader_tasks.deadline_hhmm(shift), None
+    day_hh = leader_tasks.deadline_hhmm(shift)
+    own = opens = None
+    admin = leader_ai.hhmm((cfg_entry or {}).get("deadline"))
+    if admin:
+        own = admin
+    else:
+        win = (cfg_entry or {}).get("window") or ()
+        if len(win) == 2:
+            lo, hi = leader_ai.hhmm(win[0]), leader_ai.hhmm(win[1])
+            if hi:
+                own, opens = hi, lo
+    if own is None:
+        return day_hh, None
+    # The day dies first — see the docstring. Returned as a bare clock, because
+    # it no longer came off the task's range and `_shift_pos` must seat it as
+    # the day's own deadline.
+    if _shift_pos(shift, own, opens) > _shift_pos(shift, day_hh):
+        return day_hh, None
+    return own, opens
 
 
 def task_deadline(cfg_entry: dict | None, shift: int | None) -> str:
@@ -171,10 +221,7 @@ def due_at(cfg_entry: dict | None, shift: int | None,
             tzinfo=leader_proof.TASHKENT)
     except (ValueError, AttributeError, TypeError):
         return None
-    win = (opens if opens is not None else hhmm, hhmm)
-    days = leader_ai.window_offset(shift, win)
-    if opens is not None and leader_ai.overnight(win):
-        days += 1
+    days, _ = _shift_pos(shift, hhmm, opens)
     return day0.replace(hour=h, minute=m) + timedelta(days=days)
 
 
@@ -404,6 +451,28 @@ def force_answer(db: Session, *, day: LeaderTaskDay, task_id: int,
     return entry
 
 
+def _awaiting_reopen(db: Session, day: LeaderTaskDay) -> bool:
+    """Is this day still waiting on a task an admin handed back?
+
+    THE predicate both sweeps consult, because a reopen has to survive BOTH or
+    it survives neither: `autoclose_due` would re-close the task and
+    `close_expired_days` would re-close the day around it.
+
+    True only while a reopened task is genuinely unfinished — no entry (it was
+    emptied) or an entry not yet re-submitted. Once the leader closes it again
+    the day is ordinary, so a stale id left in `reopened` can never strand a
+    day: `maybe_close_day` closes it the moment the last task is in.
+    """
+    want = reopened_tasks(day)
+    if not want:
+        return False
+    done = {t for (t,) in db.query(LeaderTaskEntry.task_id)
+            .filter(LeaderTaskEntry.day_id == day.id,
+                    LeaderTaskEntry.task_id.in_(want),
+                    LeaderTaskEntry.closed_at.isnot(None)).all()}
+    return bool(want - done)
+
+
 def autoclose_due(db: Session, now: datetime | None = None) -> int:
     """Close every task whose deadline has passed, on every per-task unit.
 
@@ -439,13 +508,22 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
         for tid, s in cfg.items():
             if not s.get("enabled") or tid in already:
                 continue
-            # A task an admin took back does NOT re-close on the deadline that
-            # has already fired once — that would simply undo them, every five
-            # minutes, and the reopen would look broken. It closes with the DAY
-            # instead: `{}` walks `closing_time`'s chain down to the day's own
-            # filing deadline, so a reopened task is still never endless.
-            due_cfg = {} if tid in graced else s
-            if not past_deadline(due_cfg, shift, day.date, now):
+            # A task an admin took back is never re-closed by a sweep. It was
+            # meant to fall back on the DAY's own filing deadline, but that
+            # deadline is in the PAST for every reopen that matters: a shift-2
+            # day is only locked once 09:00 has gone by, so the grace resolved
+            # to an hour already spent and this pass undid the admin within five
+            # minutes — silently, and in front of them (found by audit,
+            # 2026-08-27; the reopen shipped 2026-08-26 and was inert on shift 2
+            # from the day it landed).
+            #
+            # A reopen is a person deciding this task must be redone, so a
+            # person closes it: the leader re-submits, or an admin closes or
+            # empties it again. Such a day stays OPEN until then and shows on
+            # «Tozalash» → «Yakunlanmagan», which exists to expose exactly that.
+            if tid in graced:
+                continue
+            if not past_deadline(s, shift, day.date, now):
                 continue
             entry = force_answer(db, day=day, task_id=tid, cfg_entry=s, shift=shift)
             db.commit()
@@ -529,6 +607,13 @@ def close_expired_days(db: Session, prof, shift: int,
                      LeaderTaskDay.date <= leader_tasks.expired_through(shift),
                      LeaderTaskDay.closed_at.is_(None))
              .all())
+    # A day holding a task an ADMIN reopened is not an abandoned day — it is a
+    # day somebody deliberately put back into play, and every such day is past
+    # its deadline by construction (nothing reopens a day still inside its
+    # window). This sweep never consulted `reopened`, so it re-stamped the day
+    # wholesale on the next tick and re-recorded an emptied task as not-done,
+    # undoing the reopen through a second door (audit, 2026-08-27).
+    stale = [d for d in stale if not _awaiting_reopen(db, d)]
     if not stale:
         return 0
 
@@ -773,3 +858,101 @@ def _sweep() -> None:
         except Exception:
             logger.exception("day auto-close sweep failed")
             db.rollback()
+
+
+# ── the closing rules, checked out loud at every boot ────────────────────────
+
+# The clocks a self-check walks. Hourly is enough: every rule here turns on
+# which SIDE of the shift's opening an hour falls, and an hour grid crosses
+# every one of those boundaries. A finer grid buys nothing and costs boot time.
+_CHECK_CLOCKS = tuple(f"{h:02d}:00" for h in range(24))
+_CHECK_DATE = "2026-06-15"      # an arbitrary settled day; nothing here is dated
+
+
+def self_check() -> list[str]:
+    """Prove the task-closing rules still hold. Every violation, as a sentence.
+
+    This exists because of what breaking them costs and how invisible it is.
+    Twice now a task has been closed at an hour nobody intended — on 2026-08-26
+    a whole shift-2 checklist was closed and AI-failed before its windows even
+    opened (a second anchor for one window), and the audit that followed found
+    a task still being locked an hour before the hour both leader-facing
+    surfaces promised (a deadline past the day's own death). Neither showed up
+    as an error. Both surfaced as leaders losing points, days later, and the
+    only reason anybody caught them is that a person complained.
+
+    There is no test suite on this repo and a push to `main` is a deploy, so
+    the app checking its own arithmetic at boot is the earliest a regression can
+    be caught. The pattern is `action_log.unmatched_routes`: ONE rule stays
+    correct only if the app says out loud when something falls out of it.
+
+    The four invariants, and what each one is the scar of:
+
+    1. **No shift-2 task closes before its shift opens.** The 26 Aug incident
+       exactly: a window written in daytime hours was seated on the report day,
+       so it was past due the moment the day existed.
+    2. **No task closes after its own day's filing deadline.** `close_expired_days`
+       ends the whole checklist on that hour knowing nothing about per-task
+       clocks, so a later one is unreachable — and while it was merely unreachable
+       the platform went on printing it, then locked the task an hour early.
+    3. **The hour the leader is TOLD is the hour that fires.** `task_deadline`
+       feeds the bot's `pt_auto` line and the «Vazifalar» card; the whole reason
+       `closing_time` is one function is that a leader must never be given two
+       different hours.
+    4. **An unclamped range closes exactly when the REVIEWER's window closes.**
+       `leader_ai.date_window` is what the AI judges a proof against. The two
+       drifting apart is what made the 26 Aug photos fail against a window that
+       had not opened, so the agreement is asserted rather than assumed.
+
+    Pure arithmetic — no DB, no clock, no I/O — so it is safe anywhere and costs
+    microseconds. Returns [] when everything holds.
+    """
+    bad: list[str] = []
+
+    def _say(msg: str) -> None:
+        if len(bad) < 40:               # a broken rule fails thousands of cases
+            bad.append(msg)
+
+    for shift in (1, 2):
+        s_lo, _ = leader_ai.shift_window(shift)
+        day0 = datetime.strptime(_CHECK_DATE, "%Y-%m-%d").replace(
+            tzinfo=leader_proof.TASHKENT)
+        opens_at = day0.replace(hour=int(s_lo[:2]), minute=int(s_lo[3:]))
+        dies_at = due_at({}, shift, _CHECK_DATE)          # the day's own end
+        if dies_at is None:
+            _say(f"shift {shift}: the day's filing deadline does not resolve")
+            continue
+
+        cfgs = [{"window": [lo, hi]} for lo in _CHECK_CLOCKS
+                for hi in _CHECK_CLOCKS if lo != hi]
+        cfgs += [{"deadline": d} for d in _CHECK_CLOCKS]
+        cfgs += [{}]
+        for cfg in cfgs:
+            due = due_at(cfg, shift, _CHECK_DATE)
+            if due is None:
+                _say(f"shift {shift} {cfg}: no closing time resolves")
+                continue
+            # 1 — never before the shift itself opens (shift 1's day IS the
+            # calendar day, so only the night shift can express this at all).
+            if shift == 2 and due < opens_at:
+                _say(f"shift 2 {cfg}: closes {due:%d %H:%M}, before the shift "
+                     f"opens at {opens_at:%d %H:%M}")
+            # 2 — never after the day stops accepting work.
+            if due > dies_at:
+                _say(f"shift {shift} {cfg}: closes {due:%d %H:%M}, after the "
+                     f"day dies at {dies_at:%d %H:%M} — unreachable")
+            # 3 — the promise is the enforcement.
+            told = task_deadline(cfg, shift)
+            if told != due.strftime("%H:%M"):
+                _say(f"shift {shift} {cfg}: leader told {told}, fires "
+                     f"{due:%H:%M}")
+            # 4 — an unclamped range agrees with what the AI judges against.
+            win = cfg.get("window")
+            if win:
+                _, ai_hi = leader_ai.date_window(_CHECK_DATE, shift,
+                                                 (win[0], win[1]))
+                want = min(ai_hi, dies_at.strftime("%Y-%m-%d %H:%M"))
+                if due.strftime("%Y-%m-%d %H:%M") != want:
+                    _say(f"shift {shift} {cfg}: closes {due:%m-%d %H:%M}, the "
+                         f"reviewer's window ends {ai_hi} — anchors disagree")
+    return bad

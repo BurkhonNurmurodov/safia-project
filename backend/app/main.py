@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI):
         migrate_cell_in_load_column,
         add_cell_shift_times,
         create_action_log, report_unclassified_routes,
+        report_leader_deadline_rules,
         migrate_factories,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
@@ -258,6 +259,12 @@ async def lifespan(app: FastAPI):
     # They are still recorded (under «other»), so nothing is lost silently —
     # this is what keeps ONE list from quietly going stale.
     report_unclassified_routes(app)
+    # …and whether the task-closing arithmetic still holds. Twice a task
+    # has been closed at an hour nobody intended and nothing said so; the
+    # only signal was a leader losing points. There is no test suite here
+    # and a push to main is a deploy, so boot is the earliest a
+    # regression can be caught.
+    report_leader_deadline_rules()
     yield
     shutdown_scheduler()
 

@@ -3625,3 +3625,51 @@ def report_unclassified_routes(app) -> None:
                   + ", ".join(missing[:20]) + ("…" if len(missing) > 20 else ""))
     except Exception as exc:
         print(f"[startup] action log route check skipped: {exc}")
+
+
+def report_leader_deadline_rules() -> None:
+    """Check the task-closing arithmetic at boot, and say so out loud when it
+    is wrong.
+
+    The scar this is cut from: on 2026-08-26 a per-task shift-2 unit had its
+    whole checklist closed and AI-failed hours before its windows opened, and
+    nobody found out from the platform — a leader complained. The follow-up
+    audit found a second, quieter version of the same defect still live. Neither
+    raised, logged or failed anything; both simply cost people points.
+
+    So the rules now assert themselves (`leader_close.self_check`), on a repo
+    with no test suite where a push to `main` is a deploy. A violation is
+    printed with the deploy output AND sent to the support chat / every admin,
+    because this platform has no shell: a log nobody can open is not a warning.
+    Never raises — a broken CHECK must not be able to take the app down.
+    """
+    try:
+        from app.services.leader_close import self_check
+        bad = self_check()
+    except Exception as exc:
+        print(f"[startup] leader deadline self-check skipped: {exc}")
+        return
+    if not bad:
+        print("[startup] leader deadline rules: OK")
+        return
+
+    head = (f"{len(bad)} violation(s) of the task-closing rules — leaders may "
+            f"be locked out at the wrong hour")
+    print("[startup] LEADER DEADLINE RULES: " + head)
+    for line in bad[:20]:
+        print(f"[startup]   · {line}")
+    try:
+        import html
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        text = ("🛑 <b>Leader checklist deadline rules broken</b>\n"
+                f"{html.escape(head)}.\n\n<pre>"
+                + html.escape("\n".join(bad[:12])) + "</pre>\n"
+                "Tasks may close at an hour the leader was never shown.")
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, text, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] deadline-rule alert not delivered: {exc}")
