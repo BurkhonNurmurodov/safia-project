@@ -225,6 +225,50 @@ def due_at(cfg_entry: dict | None, shift: int | None,
     return day0.replace(hour=h, minute=m) + timedelta(days=days)
 
 
+def starts_at(cfg_entry: dict | None, shift: int | None,
+              date: str) -> datetime | None:
+    """The instant this task STARTS accepting work, or None when it has no
+    range of its own and is therefore open for the whole day.
+
+    The twin of `due_at`, seated by the same `_shift_pos`, and it exists because
+    of the sharpest reading of the 26 Aug incident (the operator's, 2026-08-27):
+    the tasks that were force-closed at the start of that night were the ones
+    **whose own start time had not come yet**. A task nobody could have begun is
+    not a task somebody failed to finish.
+    """
+    win = (cfg_entry or {}).get("window") or ()
+    if len(win) != 2:
+        return None                     # a bare deadline bounds the END only
+    lo, hi = leader_ai.hhmm(win[0]), leader_ai.hhmm(win[1])
+    if not lo or not hi:
+        return None
+    try:
+        day0 = datetime.strptime(date, "%Y-%m-%d").replace(
+            tzinfo=leader_proof.TASHKENT)
+    except (ValueError, AttributeError, TypeError):
+        return None
+    # The OPENING side takes the window's own offset and never `overnight`'s
+    # extra day — that one moves the closing side across midnight.
+    days = leader_ai.window_offset(shift, (lo, hi))
+    return day0.replace(hour=int(lo[:2]), minute=int(lo[3:])) + timedelta(days=days)
+
+
+def not_started(cfg_entry: dict | None, shift: int | None, date: str,
+                now: datetime | None = None) -> bool:
+    """Has this task's own window not opened yet?
+
+    THE guard that keeps a deadline from reaching a task nobody could have
+    begun. Two very different things had been landing in one bucket — a task
+    the leader had time for and did not do, and a task whose hours had not
+    arrived — and only the first is a failure.
+    """
+    start = starts_at(cfg_entry, shift, date)
+    if start is None:
+        return False
+    now = (now or datetime.now(timezone.utc)).astimezone(leader_proof.TASHKENT)
+    return now < start
+
+
 def past_deadline(cfg_entry: dict | None, shift: int | None, date: str,
                   now: datetime | None = None) -> bool:
     """Has this task's own closing time gone by for the day it belongs to?
@@ -522,6 +566,23 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
             # empties it again. Such a day stays OPEN until then and shows on
             # «Tozalash» → «Yakunlanmagan», which exists to expose exactly that.
             if tid in graced:
+                continue
+            # NOT YET STARTED. The operator's reading of the 26 Aug night, and
+            # the one that explains why the day closed at 22:36 rather than at
+            # the shift's start: a subset of tasks was force-closed as not-done
+            # the moment the night began — the ones whose windows were written
+            # in hours that had not arrived — the leader worked through what was
+            # left by hand, and when the last of those landed `maybe_close_day`
+            # counted 13 of 13 closed and ended the day mid-shift.
+            #
+            # The anchor fix stops a window being seated on the wrong DAY; this
+            # stops the whole class, including a window that cannot open inside
+            # its shift at all (705 shapes on shift 2, where the clamp to the
+            # day's filing deadline lands before the window's own opening). A
+            # task nobody could begin is left OPEN: it never counts toward «all
+            # tasks closed», so the day is not ended out from under a leader who
+            # is still working.
+            if not_started(s, shift, day.date, now):
                 continue
             if not past_deadline(s, shift, day.date, now):
                 continue
@@ -903,6 +964,11 @@ def self_check() -> list[str]:
        `leader_ai.date_window` is what the AI judges a proof against. The two
        drifting apart is what made the 26 Aug photos fail against a window that
        had not opened, so the agreement is asserted rather than assumed.
+    5. **The sweep never reaches a task that has not STARTED.** The operator's
+       own reading of that night: what got force-closed at its beginning were
+       the tasks whose hours had not arrived. Asserted against the composite
+       predicate `autoclose_due` actually evaluates, so deleting the
+       `not_started` guard fails the check rather than the leaders.
 
     Pure arithmetic — no DB, no clock, no I/O — so it is safe anywhere and costs
     microseconds. Returns [] when everything holds.
@@ -946,6 +1012,16 @@ def self_check() -> list[str]:
             if told != due.strftime("%H:%M"):
                 _say(f"shift {shift} {cfg}: leader told {told}, fires "
                      f"{due:%H:%M}")
+            # 5 — nothing closes a task whose window has not opened. Tested
+            # on the pair `autoclose_due` evaluates, one minute before the
+            # opening, which is where a missing guard shows itself.
+            start = starts_at(cfg, shift, _CHECK_DATE)
+            if start is not None:
+                t = start - timedelta(minutes=1)
+                if (not not_started(cfg, shift, _CHECK_DATE, t)
+                        and past_deadline(cfg, shift, _CHECK_DATE, t)):
+                    _say(f"shift {shift} {cfg}: closed at {t:%d %H:%M}, before "
+                         f"its window opens at {start:%d %H:%M}")
             # 4 — an unclamped range agrees with what the AI judges against.
             win = cfg.get("window")
             if win:

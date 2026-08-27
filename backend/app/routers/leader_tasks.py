@@ -44,7 +44,7 @@ from app.services.leader_tasks import (
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
     per_task_units, revert_audit, set_criteria, set_date_check, set_deadline,
     set_proof_kind, set_unit_settings, unit_bot_from_map,
-    set_time_check, set_window,
+    set_time_check, set_window, window_shift_problems,
     write_change,
 )
 from app.services.name_map import (
@@ -631,6 +631,23 @@ def put_window(body: WindowIn, db: Session = Depends(get_db),
     td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
     if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
+    # A window a leader cannot work is REFUSED, not stored (the operator's
+    # ruling, 2026-08-27). This is the source of the 26 Aug night: «08:00 —
+    # 10:00» is an ordinary shift-1 morning and, inherited by a shift-2 unit,
+    # an hour that never arrives — the platform then recorded the leaders as
+    # having failed it. Checked here rather than in `set_window` so a fan-out
+    # is refused WHOLE: half a matrix written and half rejected is a state
+    # nobody can read off the screen.
+    bad = window_shift_problems(
+        db, leader_ai.hhmm(body.win_from), leader_ai.hhmm(body.win_to),
+        manager_id=body.manager_id, leader_id=body.leader_id,
+        manager_ids=body.manager_ids, leader_ids=body.leader_ids)
+    if bad:
+        shift, lo, hi = bad[0]
+        s_lo, s_hi = leader_ai.shift_window(shift)
+        raise HTTPException(
+            status_code=400,
+            detail=f"window_outside_shift|{shift or '?'}|{lo}-{hi}|{s_lo}-{s_hi}")
     win = {"win_from": body.win_from, "win_to": body.win_to}
     # A blank end INHERITS the level above; «—» says so, where a blank cell in
     # the register would read as "no window at all".

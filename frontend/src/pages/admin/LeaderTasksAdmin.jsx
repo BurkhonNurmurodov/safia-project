@@ -196,6 +196,17 @@ export default function LeaderTasksAdmin() {
   const onErr = (e) => {
     const d = e?.response?.data?.detail;
     if (d === "camera_needs_a_unit") { toast2.error(t("admin.ltasks.proofNeedsUnit")); return; }
+    // A window a leader on that shift could never work — refused rather than
+    // stored. The message NAMES the shift and its hours, because "outside the
+    // shift" is unreadable without them: «08:00 — 10:00» looks like an ordinary
+    // morning until you know the unit works 17:00 → 09:00.
+    if (typeof d === "string" && d.startsWith("window_outside_shift")) {
+      const [, sh, win, hours] = d.split("|");
+      toast2.error(t("admin.ltasks.winOutsideShift")
+        .replace("{win}", win || "").replace("{shift}", sh || "?")
+        .replace("{hours}", hours || ""));
+      return;
+    }
     toast2.error(Array.isArray(d) ? d.map((x) => x?.msg || String(x)).join("; ")
       : (typeof d === "string" && d) || t("admin.ltasks.fail"));
   };

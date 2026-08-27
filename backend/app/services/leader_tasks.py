@@ -484,6 +484,53 @@ def set_criteria(db: Session, *, task_id: int, criteria: str,
     db.commit()
 
 
+def target_shifts(db: Session, *, manager_id: int | None = None,
+                  leader_id: int | None = None,
+                  manager_ids: list[int] | None = None,
+                  leader_ids: list[int] | None = None) -> set[int | None]:
+    """Which shifts a config write actually LANDS on.
+
+    A window is written at one of three levels and every one of them resolves to
+    real people on real shifts: a leader's own row reaches that leader's unit, a
+    supervisor's row reaches that unit, and the GLOBAL level reaches every
+    active unit on the platform — which is precisely how a window written in
+    shift-1 hours reached shift-2 leaders on 26 Aug and cost them the night.
+    """
+    ids: list[int] = []
+    if leader_ids or leader_id is not None:
+        want = list(leader_ids or []) + ([leader_id] if leader_id is not None else [])
+        ids = [m for (m,) in db.query(RoleProfile.manager_id)
+               .filter(RoleProfile.id.in_(want)).all() if m]
+    elif manager_ids or manager_id is not None:
+        ids = list(manager_ids or []) + ([manager_id] if manager_id is not None else [])
+    if ids:
+        return {sh for (sh,) in db.query(Manager.shift)
+                .filter(Manager.id.in_(ids)).all()}
+    # Global: every shift that has somebody on it.
+    return {sh for (sh,) in db.query(Manager.shift)
+            .filter(Manager.archived.is_(False)).distinct().all()}
+
+
+def window_shift_problems(db: Session, lo: str | None, hi: str | None,
+                          **target) -> list[tuple[int | None, str, str]]:
+    """Shifts this window cannot be worked on — `(shift, lo, hi)` each.
+
+    A blank end inherits, and what it inherits is not knowable here, so the
+    shift's own default stands in for it: that is the value the chain falls
+    through to, and it is the reading that catches the end an admin DID type.
+    Empty list means the window is workable everywhere it lands.
+    """
+    if not lo and not hi:
+        return []                                   # clearing a level
+    bad = []
+    for shift in target_shifts(db, **target):
+        d_lo, d_hi = leader_ai.shift_window(shift)
+        win = (lo or d_lo, hi or d_hi)
+        if not leader_ai.window_fits_shift(shift, win):
+            bad.append((shift, win[0], win[1]))
+    return bad
+
+
 def set_window(db: Session, *, task_id: int, win_from: str | None,
                win_to: str | None, manager_id: int | None = None,
                leader_id: int | None = None, rejudge: bool = True) -> None:

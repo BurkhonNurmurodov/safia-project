@@ -605,6 +605,25 @@ number.
   It only DRAFTS; nothing is written until Save, and the writes then go through
   the ordinary criteria endpoint ONE AT A TIME, the same rule (and the same
   unique key) as the three ltasks modals.
+- **A window OUTSIDE its shift's hours is refused on write** (the operator's
+  ruling, 2026-08-27). `leader_ai.window_fits_shift` is the rule and
+  `leader_tasks.window_shift_problems` applies it at the endpoint, so a fan-out
+  is refused WHOLE rather than half-written. The frame is
+  `leader_ai.window_span` — MINUTES FROM THE SHIFT'S OWN OPENING, seated by
+  `window_offset` — because raw clocks cannot answer the question: on a night
+  shift «08:00» is 15 hours in while «18:00» is one hour in, and the smaller
+  number is the later moment. A window ending exactly ON the shift's close fits.
+  This is the source of the 26 Aug night and the reason it is a hard 400: the
+  windows were simply set wrong («08:00 — 10:00», an ordinary shift-1 morning,
+  inherited by a unit working 17:00 → 09:00), and the platform stored the
+  impossible hours and then recorded the leaders as having failed them.
+  **Consequence to know: the GLOBAL level is judged against every shift that has
+  an active unit**, so with both shifts running a global window is limited to
+  their overlap (17:00–20:00) and everything else must be set on a brigadir's or
+  a leader's cell. That is the honest shape — a window is a property of a shift,
+  and the global level is exactly the door the incident came through.
+  `backend/report_bad_windows.py` is the read-only audit of what is already
+  stored, across all three levels.
 - **The per-task submission `deadline` ("HH:MM", same three tables + admin matrix
   field beside the window, `PUT /admin/leader-tasks/deadline`) is INFORMATIONAL
   (user, 2026-08-15)** — a bot entry is still judged by nothing but the day's
@@ -947,6 +966,23 @@ unit). Absent row = off, so nothing moves until an admin switches it.
     for exactly the units most likely to want it — the camera pilot, whose
     proofs are dashboard screens in date-only mode. The fairness is bought by
     SAYING the hour on both surfaces the leader reads, not by withholding it.
+  - **A task that has not STARTED is never force-closed** (`not_started` /
+    `starts_at`, 2026-08-27). The operator's own reading of the 26 Aug night,
+    and the one that explains its shape: what was closed at the beginning of
+    that shift was precisely the tasks **whose start time had not come yet**.
+    The leader then worked through what was left by hand, and when the last of
+    those landed `maybe_close_day` counted 13 of 13 closed and ended the day at
+    22:36 — mid-shift, hours before its 09:00 deadline — sending the whole night
+    to the AI. So the early day-close was never a separate bug: a partial
+    mis-close converts itself into a full one, because a force-closed task
+    counts toward «all tasks closed» exactly like a filed one.
+    The anchor fix stops a window being seated on the wrong DAY; this stops the
+    whole class, **including a window that cannot open inside its shift at all**
+    — 705 shapes on shift 2, every window opening between 09:30 and 16:30, where
+    the day's own filing deadline lands before the window's opening. Such a task
+    is left OPEN rather than recorded not-done, so it never ends the day out
+    from under a leader who is still working. What SCORE an unstartable task
+    should carry is a separate question and deliberately unanswered here.
   - **The day's filing deadline is a CEILING on every task, not just the
     fallback** (`closing_time`, 2026-08-27). `close_expired_days` ends the whole
     checklist on that hour knowing nothing about per-task clocks, so a task

@@ -492,6 +492,49 @@ def window_offset(shift: int | None, win: tuple[str, str]) -> int:
     return 1 if win[0] < s_lo else 0
 
 
+def _mins(clock: str) -> int:
+    """"HH:MM" → minutes past midnight."""
+    return int(clock[:2]) * 60 + int(clock[3:5])
+
+
+def shift_span_min(shift: int | None) -> int:
+    """How long a shift's working day is, in minutes."""
+    lo, hi = shift_window(shift)
+    return _mins(hi) - _mins(lo) + (1440 if overnight((lo, hi)) else 0)
+
+
+def window_span(shift: int | None, win: tuple[str, str]) -> tuple[int, int]:
+    """A task window as `(start, end)` MINUTES FROM ITS SHIFT'S OPENING.
+
+    The one comparable frame for "is this window inside its shift". Raw clocks
+    cannot answer it: on a night shift «08:00» is 15 hours INTO the shift while
+    «18:00» is one hour in, and the smaller number is the later moment. Seated
+    by `window_offset`, the same anchor the reviewer and the auto-close use.
+    """
+    lo, hi = win
+    off = window_offset(shift, (lo, hi))
+    start = _mins(lo) + off * 1440
+    end = _mins(hi) + (off + (1 if overnight((lo, hi)) else 0)) * 1440
+    base = _mins(shift_window(shift)[0])
+    return start - base, end - base
+
+
+def window_fits_shift(shift: int | None, win: tuple[str, str]) -> bool:
+    """Can a leader on this shift actually work a task with these hours?
+
+    False means the window opens before the shift does, or closes after it ends
+    — a task nobody on that shift can start or finish, which the platform then
+    records against them as not-done. That is the 26 Aug incident's own config:
+    «08:00 — 10:00» on shift 2 sits 15 hours into a 16-hour night and closes an
+    hour after it is over.
+
+    A window ending exactly ON the shift's close fits: a task may run to the
+    last minute of the shift.
+    """
+    start, end = window_span(shift, win)
+    return start >= 0 and end <= shift_span_min(shift)
+
+
 def date_window(date: str, shift: int | None,
                 win: tuple[str, str] | None = None,
                 plus: int = 0) -> tuple[str, str]:
