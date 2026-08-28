@@ -203,6 +203,16 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Новый документ смены должности от {actor_name}", "{count} сотр. → {new_role} | Дата: {date}"),
         "en": ("New Role Change document from {actor_name}", "{count} employee(s) → {new_role} | Date: {date}"),
     },
+    # An admin's own role-change filing is already posted when the parties hear
+    # about it, so this says what HAPPENED — `new_role_change` announces a draft
+    # somebody still has to decide, and the two must never read alike. The
+    # people-exchange twin is `worker_exchange_approved`.
+    "role_change_approved": {
+        "uz": ("Lavozim o'zgarishi tasdiqlandi", "{count} xodim → {new_role} | Sana: {date}"),
+        "uz_cyrl": ("Лавозим ўзгариши тасдиқланди", "{count} ходим → {new_role} | Сана: {date}"),
+        "ru": ("Смена должности проведена", "{count} сотр. → {new_role} | Дата: {date}"),
+        "en": ("Role change posted", "{count} employee(s) → {new_role} | Date: {date}"),
+    },
     # A leader's late checklist day was opened by an admin: it counts again, at
     # its own score. The day stays flagged as late on the dashboard, so the text
     # says "counted", never "on time".
@@ -3945,11 +3955,31 @@ def create_document(body: DocCreateBody, caller=Depends(_require_staff), db: Ses
     _record_history(db, doc, "created", caller, {
         "new_role": body.new_role, "employee_count": len(payload["employees"]),
     })
-    # Ghost Mode: an admin's change applies immediately, with no approval step and
-    # no notifications/approval-requests to anyone (notify + broadcast are gated).
-    if notifications_suppressed():
+    # An ADMIN's own filing IS the approval. There is nobody above them to ask,
+    # so a draft waiting on its author's second tap is a step that decides
+    # nothing — and Ghost Mode auto-approved for exactly that reason already.
+    # The two branches differ ONLY in whether anyone is told: Ghost Mode is
+    # silent by definition (notify + broadcast are gated), an ordinary admin
+    # filing is announced as a DONE deed. No approve/reject card follows either
+    # way, because there is nothing left for anyone to decide.
+    ghost = notifications_suppressed()
+    if ghost or caller.get("role") == "admin":
         _approve_doc(doc, caller, db)
         log = _doc_log_fields(doc, [("status", None, "approved")])
+        if not ghost:
+            # include_supervisor: the roles are already changed on their unit's
+            # day, so the brigadir hears about it — the draft path leaves them
+            # out because there is still a decision pending. admin_dm stays on:
+            # the rich approve/reject message this create path normally defers
+            # to is never sent on this branch.
+            _notify_all_parties(
+                db, manager_id,
+                "role_change_approved",
+                {"actor_name": caller.get("full_name", ""), "count": len(payload["employees"]),
+                 "new_role": body.new_role, "date": body.attend_date},
+                ntype="info",
+                actor_tg_id=int(caller["sub"]),
+            )
         db.commit()
         action_log.enrich(**log)
         return {"id": doc.id, "status": doc.status}
@@ -4008,10 +4038,18 @@ def _create_people_exchange(db: Session, caller: dict, body: "DocCreateBody",
     _record_history(db, doc, "created", caller, {
         "target": _exchange_target_label(payload), "employee_count": len(payload["employees"]),
     })
-    # Ghost Mode: apply immediately, silently — no approval step, no pings.
-    if notifications_suppressed():
+    # An admin's own filing IS the approval, exactly as in create_document
+    # above; Ghost Mode auto-approves for anyone and stays silent.
+    ghost = notifications_suppressed()
+    if ghost or caller.get("role") == "admin":
         _approve_doc(doc, caller, db)
         log = _doc_log_fields(doc, [("status", None, "approved")])
+        if not ghost:
+            # "approved", not "created": the parties are told what happened, not
+            # asked to decide it. admin_dm defaults on — the rich approve/reject
+            # message the draft path defers to is not sent on this branch, so
+            # withholding the plain DM would leave admins with a bell row only.
+            _notify_exchange(db, doc, "approved", int(caller["sub"]))
         db.commit()
         action_log.enrich(**log)
         return {"id": doc.id, "status": doc.status}

@@ -11,7 +11,7 @@ import {
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
-  Grid3x3, TestTubes, Megaphone, ClipboardList,
+  Grid3x3, TestTubes, Megaphone, ClipboardList, ScanLine,
 } from "lucide-react";
 import api from "../../utils/api";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
@@ -34,6 +34,10 @@ const ALL_LINKS = [
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "lab" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
   { to: "/staff",    page: "staff",    key: "nav.staff",           icon: Fingerprint, group: "people" },
+  // Cell-level SANDBOX twin of /staff (page key SINGULAR "staff-cell", route
+  // PLURAL). Deliberately NOT in BADGES below: its documents are test rows and
+  // must stay out of the pending queue count the /staff badge shows.
+  { to: "/staff-cells", page: "staff-cell", key: "nav.staffCell",  icon: ScanLine, group: "people" },
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },

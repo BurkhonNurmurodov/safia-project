@@ -34,6 +34,11 @@ export const PAGES = [
   { key: "plan",     route: "/plan",     labelKey: "nav.planFulfillment" },
   { key: "downtime", route: "/downtime", labelKey: "nav.idleTime" },
   { key: "staff",    route: "/staff",    labelKey: "nav.staff" },
+  // Cell-level SANDBOX twin of /staff — key SINGULAR, route PLURAL. `tier:
+  // "test"` is what paints the amber TEST chip on the Access matrix; while the
+  // page files test documents that apply nothing, whoever hands out access
+  // must be able to see it is a rehearsal.
+  { tier: "test", key: "staff-cell", route: "/staff-cells", labelKey: "nav.staffCell" },
   { key: "daily",    route: "/daily",    labelKey: "nav.daily" },
   { key: "production", route: "/production", labelKey: "nav.production" },
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
@@ -62,6 +67,10 @@ export const DEFAULT_PAGE_ACCESS = {
   plan:     ["shift-manager"],
   downtime: ["shift-manager"],
   staff:    ["shift-manager", "supervisor"],
+  // Cell-level twin of `staff` — leaders are in by default, which is the whole
+  // point of it. Must stay byte-identical to backend DEFAULT_PAGE_ACCESS, or
+  // the sidebar link flickers in or out on every cold load.
+  "staff-cell": ["shift-manager", "supervisor", "leader"],
   daily:    ["shift-manager", "supervisor"],
   production: [], // pilot: admin-only until enabled from the Access tab
   trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable

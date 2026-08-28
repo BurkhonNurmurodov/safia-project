@@ -83,6 +83,9 @@ const PlanFulfillment = lazyWithReload(() => import("./pages/PlanFulfillment"));
 const Downtime = lazyWithReload(() => import("./pages/Downtime"));
 const AdminPanel = lazyWithReload(() => import("./pages/admin/AdminPanel"));
 const Staff = lazyWithReload(() => import("./pages/Staff"));
+// Cell-level SANDBOX twin of /staff. Page key is SINGULAR "staff-cell"; the
+// route is PLURAL /staff-cells — deliberate, and the single most likely typo.
+const StaffCells = lazyWithReload(() => import("./pages/StaffCells"));
 const Daily = lazyWithReload(() => import("./pages/Daily"));
 const Production = lazyWithReload(() => import("./pages/Production"));
 const Trudoyomkost = lazyWithReload(() => import("./pages/Trudoyomkost"));
@@ -430,6 +433,7 @@ function AppWithLang() {
             <Route path="/plan" element={<AuthGate><RequirePage page="plan"><PlanFulfillment /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
+            <Route path="/staff-cells" element={<AuthGate><RequirePage page="staff-cell"><StaffCells /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />

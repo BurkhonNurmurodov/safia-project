@@ -96,7 +96,7 @@ function sumHours(rows) {
 }
 
 // ── Transfer-time helpers (people-exchange split) ──────────────────────────────
-function parseHHMM(s) {
+export function parseHHMM(s) {
   if (!s) return null;
   // Tolerate the verifix clock format's trailing worked-hours suffix, e.g.
   // " 00:38 (7.08)" → "00:38", before splitting into H:M.
@@ -105,14 +105,14 @@ function parseHHMM(s) {
   const m = parts.length > 1 && parts[1] !== "" ? parseInt(parts[1], 10) : 0;
   return Number.isNaN(h) || Number.isNaN(m) ? null : h * 60 + m;
 }
-function scheduleStartMin(schedule) {
+export function scheduleStartMin(schedule) {
   return schedule ? parseHHMM(String(schedule).split("до")[0]) : null;
 }
-function clockInMin(clock) {
+export function clockInMin(clock) {
   if (!clock || !String(clock).includes("-")) return null;
   return parseHHMM(String(clock).trim().split("-")[0]);
 }
-function clockOutMin(clock) {
+export function clockOutMin(clock) {
   if (!clock || !String(clock).includes("-")) return null;
   const parts = String(clock).trim().split("-");
   return parseHHMM(parts[parts.length - 1]);

@@ -549,6 +549,16 @@ app.include_router(idle_cell.router)
 # and cell view — its own page is gone, so this self-gates via
 # require_page("staff") (and require_page("cells") for the in-load writer).
 app.include_router(cell_attendance.router)
+# The cell-level people-exchange page — the SANDBOX twin of /staff, filing one
+# document per sender CELL instead of one per unit. Every route self-gates via
+# require_page("staff-cell") (its own key: nothing about the "staff" grant is
+# folded in), and the page is grantable to shift-managers, supervisors and
+# leaders — so this must NOT join the _admin_guard cluster. It lives under
+# /api/*, so the app-wide initData dependency already covers it.
+# TEMPORARILY DISABLED: routers/staff_cells.py is still being written. A
+# module-level import of a missing module kills boot, and deploy.sh would roll
+# the whole checkout back. Re-enable in the same commit the router lands in.
+# app.include_router(staff_cells.router)
 # Single-file attendance ingest («Davomat» admin tab) — one «Отчёт по посещениям
 # сотрудников» export for the whole factory, staged for review before it reaches
 # `attendance`. Under /api/*, so the global initData guard already covers it;

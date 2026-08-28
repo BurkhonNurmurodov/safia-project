@@ -52,6 +52,13 @@ DEFAULT_PAGE_ACCESS = {
     "plan":     ["shift-manager"],
     "downtime": ["shift-manager"],
     "staff":    ["shift-manager", "supervisor"],
+    # People exchange filed one CELL at a time — the same HR document as
+    # /staff, but the roster, the sender and the target are cells rather than
+    # whole units, so a leader can move their own cell's workers without seeing
+    # anybody else's. Which rows a caller reaches is decided server-side
+    # (services/cell_scope.py, fails closed); the roles here only say who gets
+    # as far as the page.
+    "staff-cell": ["shift-manager", "supervisor", "leader"],
     "daily":    ["shift-manager", "supervisor"],
     # Pilot: admin-only by default. Above supervisors pick a configured brigadir
     # from the dashboard picker (shift-managers within their shift, top-managers
