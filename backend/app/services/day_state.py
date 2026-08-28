@@ -17,12 +17,18 @@ from sqlalchemy.orm import Session
 
 from app.models import DayApproval, EditRequest, HrDocument
 
+# The doc types that are REAL work, as against the sandbox rehearsal types the
+# cell-level exchange page files (`people_exchange_test` / `role_change_test`).
+# `services/cell_exchange.real_clause` is the source of truth for this list; the
+# tuple is spelled out again here rather than imported because this module is
+# the leaf EVERY dashboard, KPI, heatmap and export passes through on its way to
+# "may this day be shown", and it must not be able to fail because a module
+# above it is missing or half-imported. Widen `cell_exchange` and widen this.
+_REAL_DOC_TYPES = ("people_exchange", "role_change")
+
 
 def pending_counts(db: Session, manager_id: int, d: date_t) -> dict:
     """Unprocessed requests blocking confirmation of this (manager, date)."""
-    # deferred: cell_exchange reaches staff.py, which imports this module
-    from app.services.cell_exchange import real_clause
-
     pending_requests = db.query(EditRequest).filter(
         EditRequest.manager_id == manager_id,
         EditRequest.date == d,
@@ -31,13 +37,12 @@ def pending_counts(db: Session, manager_id: int, d: date_t) -> dict:
     # Only a REAL document holds a day back. A sandbox test document filed on a
     # live (manager, date) pair would otherwise take that day out of the
     # загрузка, every KPI, every heatmap and every export — a rehearsal must
-    # never change what the platform shows. `cell_exchange.real_clause` is the
-    # one definition of which doc types are real.
+    # never change what the platform shows.
     draft_docs = db.query(HrDocument).filter(
         HrDocument.manager_id == manager_id,
         HrDocument.date == d,
         HrDocument.status == "draft",
-        real_clause(HrDocument.doc_type),
+        HrDocument.doc_type.in_(_REAL_DOC_TYPES),
     ).count()
     return {"pending_requests": pending_requests, "draft_docs": draft_docs}
 
@@ -60,9 +65,6 @@ def confirmed_pairs(
     manager_ids: Optional[Iterable[int]] = None,
 ) -> Set[Tuple[int, date_t]]:
     """The (manager_id, date) pairs whose data may be calculated/shown."""
-    # deferred: cell_exchange reaches staff.py, which imports this module
-    from app.services.cell_exchange import real_clause
-
     q = db.query(DayApproval.manager_id, DayApproval.date).filter(
         DayApproval.date >= date_from,
         DayApproval.date <= date_to,
@@ -85,6 +87,6 @@ def confirmed_pairs(
         HrDocument.status == "draft",
         HrDocument.date >= date_from,
         HrDocument.date <= date_to,
-        real_clause(HrDocument.doc_type),
+        HrDocument.doc_type.in_(_REAL_DOC_TYPES),
     ).distinct().all()
     return closed - set(pend) - set(drafts)
