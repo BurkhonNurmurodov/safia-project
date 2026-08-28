@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs, staff_cells
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -555,10 +555,7 @@ app.include_router(cell_attendance.router)
 # folded in), and the page is grantable to shift-managers, supervisors and
 # leaders — so this must NOT join the _admin_guard cluster. It lives under
 # /api/*, so the app-wide initData dependency already covers it.
-# TEMPORARILY DISABLED: routers/staff_cells.py is still being written. A
-# module-level import of a missing module kills boot, and deploy.sh would roll
-# the whole checkout back. Re-enable in the same commit the router lands in.
-# app.include_router(staff_cells.router)
+app.include_router(staff_cells.router)
 # Single-file attendance ingest («Davomat» admin tab) — one «Отчёт по посещениям
 # сотрудников» export for the whole factory, staged for review before it reaches
 # `attendance`. Under /api/*, so the global initData guard already covers it;

@@ -24,7 +24,7 @@ from datetime import date
 from app.config import settings
 from app.database import SessionLocal
 from app.models import ApprovalNotice, Attendance, Manager, TelegramUserRole
-from app.services import action_log
+from app.services import action_log, cell_exchange
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,15 @@ _LABELS = {
         "hdr_bulk":      "🗑 Ommaviy o'chirish so'rovi",
         "hdr_role":      "📋 Lavozim o'zgarishi hujjati",
         "hdr_exchange":  "🔄 Xodim almashinuvi hujjati",
+        # Cell-level exchange: the two identity blocks, the shift label, the
+        # «no leader» word and the sandbox chip. Each of them is resolved HERE,
+        # at render time, in the reader's own language — never baked into a
+        # payload, or the filer's language would be frozen onto the card.
+        "from_block":    "Kimdan",
+        "to_block":      "Kimga",
+        "shift":         "Smena",
+        "no_leader":     "Biriktirilmagan",
+        "test_chip":     "🧪 TEST — hech qanday davomat yozuvi ko'chirilmaydi",
         "hdr_late":      "⏰ Kechikkan hisobotni ochish so'rovi",
         "hdr_dispute":   "⚖️ AI qaroriga norozilik",
         "task":          "Vazifa",
@@ -100,6 +109,11 @@ _LABELS = {
         "hdr_bulk":      "🗑 Массовый запрос на удаление",
         "hdr_role":      "📋 Документ смены должности",
         "hdr_exchange":  "🔄 Документ обмена сотрудниками",
+        "from_block":    "Откуда",
+        "to_block":      "Куда",
+        "shift":         "Смена",
+        "no_leader":     "Не назначен",
+        "test_chip":     "🧪 ТЕСТ — ни одна запись посещаемости не переносится",
         "hdr_late":      "⏰ Запрос на открытие опоздавшего отчёта",
         "hdr_dispute":   "⚖️ Возражение на решение ИИ",
         "task":          "Задача",
@@ -144,6 +158,11 @@ _LABELS = {
         "hdr_bulk":      "🗑 Bulk delete request",
         "hdr_role":      "📋 Role change document",
         "hdr_exchange":  "🔄 Worker exchange document",
+        "from_block":    "From",
+        "to_block":      "To",
+        "shift":         "Shift",
+        "no_leader":     "Unassigned",
+        "test_chip":     "🧪 TEST — no attendance row is moved",
         "hdr_late":      "⏰ Request to open a late report",
         "hdr_dispute":   "⚖️ Objection to an AI ruling",
         "task":          "Task",
@@ -259,16 +278,65 @@ def _hr_document_data(db, doc) -> dict:
         names = payload.get("target_cell_names") or {}
         cell_label = names.get("ru") or names.get("uz") or payload["target_cell"]
         target = f"{target or '—'} · {cell_label}"
+    unit = doc.supervisor_name or (mgr.name if mgr else f"#{doc.manager_id}")
     return {
         "doc_type":  doc.doc_type,
-        "unit":      doc.supervisor_name or (mgr.name if mgr else f"#{doc.manager_id}"),
+        # The type this document STANDS FOR. A sandbox document is a worker
+        # exchange that moves nothing, not a fourth kind of document, so the
+        # renderer branches on this and the chip below says the rest.
+        "kind":      cell_exchange.REAL_OF.get(doc.doc_type, doc.doc_type),
+        "is_test":   cell_exchange.is_test(doc.doc_type),
+        "unit":      unit,
         "date":      doc.date,
         "creator":   doc.created_by_name or "",
         "new_role":  payload.get("new_role"),
         "target":    target or "—",
         "transfer_time": payload.get("transfer_time"),
         "employees": payload.get("employees", []),
+        # The two ENDS of a cell-level move, as raw facts. Both are None on a
+        # unit-level /staff document, which carries no cell at all — the
+        # renderer then prints exactly what it always printed.
+        "from_block": _identity_block(
+            unit, payload.get("shift"), payload.get("sender_cell"),
+            payload.get("sender_leader_name")),
+        "to_block": _identity_block(
+            payload.get("target_manager_name"), payload.get("shift"),
+            payload.get("target_cell"), payload.get("target_leader_name"),
+        ) if payload.get("target_type") == "supervisor" and payload.get("sender_cell") else None,
     }
+
+
+def _identity_block(who, shift, cell, leader) -> dict | None:
+    """One end of a cell-level move, as RAW values — never as a sentence.
+
+    Returned as a dict rather than a formatted string because every part of it
+    is language-dependent at RENDER time: «Smena» / «Смена» / «Shift» and the
+    «Biriktirilmagan» that stands in for a cell nobody owns are resolved per
+    recipient in `_fmt_block`, and each recipient gets the card in their own
+    language. A block is None — and prints nothing — when the document names no
+    cell, which is every /staff document ever filed.
+    """
+    if not cell:
+        return None
+    return {"who": who or "—", "shift": shift, "cell": cell, "leader": leader}
+
+
+def _fmt_block(block: dict, lang: str) -> str:
+    """«Rustamov A. · Smena 1 · 0028 · Lider: Karimov B.» in one line.
+
+    ONE line per block, and each block on a line of ITS OWN: an identity that
+    shares a line with the other end is an identity a reader has to take apart,
+    and a leader half that could vanish would leave a trailing separator with
+    nothing after it. A cell with nobody assigned says so — the translated
+    «unassigned», resolved here, so a blank never reads as a missing name.
+    """
+    parts = [_v(block.get("who"))]
+    if block.get("shift") in (1, 2):
+        parts.append(f"{_L(lang, 'shift')} {block['shift']}")
+    parts.append(str(block.get("cell")))
+    parts.append(f"{_L(lang, 'leader')}: "
+                 f"{block.get('leader') or _L(lang, 'no_leader')}")
+    return " · ".join(parts)
 
 
 # ── Renderers (data dict + admin language → message body) ─────────────────────
@@ -309,10 +377,33 @@ def _render_edit_batch(data, lang) -> str:
 
 
 def _render_hr_document(data, lang) -> str:
+    """The inline card, in the recipient's own language.
+
+    A cell-level document adds two things and changes nothing else. The **TEST
+    chip**, once, at the top — the decision this card asks for is real (it is
+    filed, recorded and announced), only its EFFECT is withheld, and a reader
+    who cannot tell those apart is a reader who will approve a rehearsal
+    thinking they moved somebody. And the two **identity blocks**, each on a
+    line of its own, naming both ends of the move down to the cell and its
+    leader; without them the card said «Manzil: Suvonov E. · Bolshaya moyka»
+    and left the origin — the fact this whole page is about — unstated.
+
+    `_MAX_LIST` is untouched. The blocks and the chip cost about five lines,
+    and raising the worker cap to make room is how a forty-worker card starts
+    exceeding Telegram's 4096-character limit and silently fails to send.
+    """
     emps = data["employees"]
-    if data["doc_type"] == "role_change":
+    kind = data.get("kind") or data["doc_type"]
+    from_block = data.get("from_block")
+    to_block = data.get("to_block")
+
+    if kind == "role_change":
         lines = [_L(lang, "hdr_role"), ""]
+        if data.get("is_test"):
+            lines += [_L(lang, "test_chip"), ""]
         lines.append(f"🏭 {_L(lang, 'unit')}: {data['unit']}")
+        if from_block:
+            lines.append(f"📦 {_L(lang, 'from_block')}: {_fmt_block(from_block, lang)}")
         lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
         lines.append(f"👤 {_L(lang, 'creator')}: {data['creator']}")
         lines.append(f"🎯 {_L(lang, 'new_role')}: {_v(data['new_role'])}")
@@ -323,10 +414,21 @@ def _render_hr_document(data, lang) -> str:
             lines.append(f"• {r}")
     else:  # people_exchange
         lines = [_L(lang, "hdr_exchange"), ""]
-        lines.append(f"🏭 {_L(lang, 'unit')}: {data['unit']}")
+        if data.get("is_test"):
+            lines += [_L(lang, "test_chip"), ""]
+        if from_block:
+            # Both ends, each on its OWN line. A → task move renders only the
+            # origin plus the task name below: there is no receiving cell, and
+            # inventing a second block would name one.
+            lines.append(f"📦 {_L(lang, 'from_block')}: {_fmt_block(from_block, lang)}")
+            if to_block:
+                lines.append(f"📥 {_L(lang, 'to_block')}: {_fmt_block(to_block, lang)}")
+        else:
+            lines.append(f"🏭 {_L(lang, 'unit')}: {data['unit']}")
         lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
         lines.append(f"👤 {_L(lang, 'creator')}: {data['creator']}")
-        lines.append(f"🎯 {_L(lang, 'target')}: {data['target']}")
+        if not to_block:
+            lines.append(f"🎯 {_L(lang, 'target')}: {data['target']}")
         if data.get("transfer_time"):
             lines.append(f"🕐 {_L(lang, 'time')}: {data['transfer_time']}")
         lines.append("")
@@ -429,7 +531,13 @@ def _exchange_supervisor_recipients(db, doc) -> set[int]:
     a unit — they confirm the incoming transfer inline just like an admin. Empty
     for every other document kind/target. The creator (e.g. an admin who also
     supervises the target unit) is never re-pinged for their own document."""
-    if doc.doc_type != "people_exchange":
+    # The SEMANTIC type, not the stored one: a sandbox document is a worker
+    # exchange whose effect is withheld, and the receiving supervisor is still
+    # the person being asked. Comparing the raw doc_type here left every
+    # cell-level document with no non-admin recipient — and since an
+    # ApprovalNotice IS the permission to tap, that silently removed the
+    # receiving brigadir's authority over their own incoming transfer.
+    if cell_exchange.REAL_OF.get(doc.doc_type, doc.doc_type) != "people_exchange":
         return set()
     payload = doc.payload or {}
     if payload.get("target_type") != "supervisor":
@@ -483,11 +591,16 @@ def send_edit_batch_to_admins(db, batch_id, manager_id, attend_date, supervisor_
 
 def send_hr_document_to_admins(db, doc) -> None:
     from app.capabilities import CAP_DOCUMENTS_APPROVE
+    # «Panelda ochish» must land on the page the document actually lives on: a
+    # cell-level document does not appear on /staff at all, and a button onto a
+    # register that cannot show the row is worse than no button.
+    panel = "/staff-cells" if cell_exchange.is_test(doc.doc_type) else "/staff"
     _broadcast(db, "hr_document", doc.id, _hr_document_data(db, doc), _render_hr_document,
                extra_recipients=_exchange_supervisor_recipients(db, doc) | _grantee_recipients(
                    db, CAP_DOCUMENTS_APPROVE,
                    doc.manager_id, (doc.payload or {}).get("target_manager_id"),
-                   skip_telegram_id=doc.created_by_telegram_id))
+                   skip_telegram_id=doc.created_by_telegram_id),
+               panel=panel)
 
 
 def _leader_dispute_data(db, d) -> dict:
@@ -775,25 +888,51 @@ def _caller_for_request(call) -> dict | None:
 
 
 def _caller_for_doc(call, doc, db) -> dict | None:
-    """Build the staff caller for whoever tapped an hr_document button. Admins
-    get an admin caller; a non-admin is treated as the receiving supervisor and
-    must hold the approved supervisor role for the document's target unit —
-    otherwise ``None`` (no authority). The supervisor's role-scoped name is used
-    so the audit trail / outcome line reads like a web-app decision."""
+    """Build the staff caller for whoever tapped an hr_document button.
+
+    Admins get an admin caller. A non-admin is whichever approver the document
+    actually has, in the order authority narrows:
+
+      * the **receiving supervisor** — they must hold the approved supervisor
+        role for the document's target unit;
+      * a **shift-manager**, for a cell-level document. This second rung is not
+        cosmetic: a cell → cell move inside one brigade names no receiving
+        supervisor other than the sender, and a `→ task` move names none at
+        all, so without it those documents were decidable by an admin and by
+        nobody else. It has to be added HERE and in the router's own
+        `_can_approve_cell_doc` together — the two answer the same question at
+        two doors, and editing one alone produces a tap that passes the notice
+        gate, builds a caller, and is then refused as «already handled», the
+        least debuggable failure this area can produce.
+
+    The receiving **LEADER is deliberately not here**, and never sending them a
+    card is what actually enforces it (see `recipient_has_notice_for_code`).
+
+    The role-scoped name is used so the audit trail and the outcome line read
+    like a web-app decision.
+    """
     from app.telegram_bot import _admin_ids
     u = call.from_user
     if u.id in _admin_ids():
         return {"sub": str(u.id), "role": "admin", "full_name": _display_name(u)}
+
     target_mid = (doc.payload or {}).get("target_manager_id")
-    if not target_mid:
-        return None
-    role_row = db.query(TelegramUserRole).filter_by(
-        telegram_id=u.id, role="supervisor", role_id=target_mid, status="approved",
-    ).first()
-    if not role_row:
-        return None
-    return {"sub": str(u.id), "role": "supervisor", "role_id": target_mid,
-            "full_name": role_row.full_name}
+    if target_mid:
+        role_row = db.query(TelegramUserRole).filter_by(
+            telegram_id=u.id, role="supervisor", role_id=target_mid, status="approved",
+        ).first()
+        if role_row:
+            return {"sub": str(u.id), "role": "supervisor", "role_id": target_mid,
+                    "full_name": role_row.full_name}
+
+    if cell_exchange.is_test(doc.doc_type):
+        sm = db.query(TelegramUserRole).filter_by(
+            telegram_id=u.id, role="shift-manager", status="approved",
+        ).first()
+        if sm:
+            return {"sub": str(u.id), "role": "shift-manager", "role_id": sm.role_id,
+                    "full_name": sm.full_name}
+    return None
 
 
 def recipient_has_notice_for_code(code: str, ref, telegram_id: int) -> bool:
@@ -957,28 +1096,52 @@ def _notify_dispute_decided(db, d, status: str, decided_by: str) -> None:
 
 
 def _decide_hr_document(doc_id: int, status: str, call) -> None:
+    """Settle an hr_document from its inline card.
+
+    A CELL-level document is decided through the cell router's OWN core —
+    `staff_cells._can_approve_cell_doc`, `_approve_cell_doc`,
+    `_reject_cell_doc`, `_notify_cell_doc` — and not through `routers.staff`'s.
+    Two reasons, and both are correctness rather than tidiness. The authority
+    ladders differ: `staff._native_can_approve_doc` tests
+    ``doc_type == "people_exchange"`` literally, so for a sandbox type it falls
+    through to «admin or shift-manager» and would refuse the RECEIVING
+    SUPERVISOR the button was sent to — the exact Telegram-versus-API
+    disagreement this file is meant not to have. And the approve path differs:
+    `staff._approve_doc` ends in `_apply_doc_effects`, while the sandbox's one
+    invariant is that no attendance row is written on any path a test document
+    can reach. One core per document kind, both doors.
+    """
     from fastapi import HTTPException
     from app.models import HrDocument
-    from app.routers import staff
+    from app.routers import staff, staff_cells
     with SessionLocal() as db:
         doc = db.query(HrDocument).filter_by(id=doc_id).first()
         if not doc:
             raise AlreadyHandled()
+        cell_doc = cell_exchange.is_test(doc.doc_type)
         caller = _caller_for_doc(call, doc, db)
-        # No caller, or a non-admin who is no longer the receiving supervisor of
-        # this document → they may not decide it (role changed, or a stale tap).
-        if caller is None or (caller["role"] != "admin"
-                              and not staff._can_approve_doc(doc, caller, db)):
+        may = (staff_cells._can_approve_cell_doc if cell_doc
+               else staff._can_approve_doc)
+        # No caller, or a non-admin who no longer holds authority over this
+        # document → they may not decide it (role changed, or a stale tap).
+        if caller is None or (caller["role"] != "admin" and not may(doc, caller, db)):
             raise AlreadyHandled()
         try:
             if status == "approved":
                 if doc.status == "approved":
                     raise AlreadyHandled()
-                staff._approve_doc(doc, caller, db)
-                if doc.doc_type == "people_exchange":
-                    staff._notify_exchange(db, doc, "approved", int(caller["sub"]))
+                if cell_doc:
+                    staff_cells._approve_cell_doc(doc, caller, db)
+                    staff_cells._notify_cell_doc(db, doc, "approved", int(caller["sub"]))
+                else:
+                    staff._approve_doc(doc, caller, db)
+                    if doc.doc_type == "people_exchange":
+                        staff._notify_exchange(db, doc, "approved", int(caller["sub"]))
             else:  # rejected → keep the draft as a rejected record
-                staff._reject_document(doc, caller, db)
+                if cell_doc:
+                    staff_cells._reject_cell_doc(doc, caller, db)
+                else:
+                    staff._reject_document(doc, caller, db)
         except staff.ExchangeTargetNoData:
             # Not a stale tap: the target unit's verifix data isn't uploaded yet.
             # Let it reach the generic handler so the tapper sees an error toast
