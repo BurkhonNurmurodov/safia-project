@@ -20,15 +20,24 @@ from app.models import DayApproval, EditRequest, HrDocument
 
 def pending_counts(db: Session, manager_id: int, d: date_t) -> dict:
     """Unprocessed requests blocking confirmation of this (manager, date)."""
+    # deferred: cell_exchange reaches staff.py, which imports this module
+    from app.services.cell_exchange import real_clause
+
     pending_requests = db.query(EditRequest).filter(
         EditRequest.manager_id == manager_id,
         EditRequest.date == d,
         EditRequest.status == "pending",
     ).count()
+    # Only a REAL document holds a day back. A sandbox test document filed on a
+    # live (manager, date) pair would otherwise take that day out of the
+    # загрузка, every KPI, every heatmap and every export — a rehearsal must
+    # never change what the platform shows. `cell_exchange.real_clause` is the
+    # one definition of which doc types are real.
     draft_docs = db.query(HrDocument).filter(
         HrDocument.manager_id == manager_id,
         HrDocument.date == d,
         HrDocument.status == "draft",
+        real_clause(HrDocument.doc_type),
     ).count()
     return {"pending_requests": pending_requests, "draft_docs": draft_docs}
 
@@ -51,6 +60,9 @@ def confirmed_pairs(
     manager_ids: Optional[Iterable[int]] = None,
 ) -> Set[Tuple[int, date_t]]:
     """The (manager_id, date) pairs whose data may be calculated/shown."""
+    # deferred: cell_exchange reaches staff.py, which imports this module
+    from app.services.cell_exchange import real_clause
+
     q = db.query(DayApproval.manager_id, DayApproval.date).filter(
         DayApproval.date >= date_from,
         DayApproval.date <= date_to,
@@ -66,9 +78,13 @@ def confirmed_pairs(
         EditRequest.date >= date_from,
         EditRequest.date <= date_to,
     ).distinct().all()
+    # Same rule as pending_counts, and for the same reason: a sandbox test
+    # document must never subtract a real (manager, date) pair from the set the
+    # dashboards are computed over.
     drafts = db.query(HrDocument.manager_id, HrDocument.date).filter(
         HrDocument.status == "draft",
         HrDocument.date >= date_from,
         HrDocument.date <= date_to,
+        real_clause(HrDocument.doc_type),
     ).distinct().all()
     return closed - set(pend) - set(drafts)
