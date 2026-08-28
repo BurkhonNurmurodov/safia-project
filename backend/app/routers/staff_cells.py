@@ -1098,9 +1098,18 @@ def _is_creator(doc: HrDocument, caller: dict) -> bool:
 
 def _may_reject(doc: HrDocument, caller: dict, db: Session) -> bool:
     """Rejecting a draft is withdrawing it when it is yours, and deciding it
-    when it is not — so the door is the union of both."""
+    when it is not — so the door is the union of both.
+
+    Deliberately NOT `role in ("admin", "shift-manager")`. That bare tuple
+    carries no shift and no cell, while `_scope_documents` hands every document
+    on the platform to a `page.view.staff-cell` grant at "all" — a READ grant.
+    A shift-manager holding it could therefore reject, and then permanently
+    delete, a document filed on the OTHER shift. `_can_approve_cell_doc` is the
+    same predicate `approve` and `cancel` already use, and it bounds a
+    shift-manager to the shifts the move actually touches; the omission here
+    was the only thing that made the page grant a write authority.
+    """
     return (_can_approve_cell_doc(doc, caller, db)
-            or caller.get("role") in ("admin", "shift-manager")
             or _is_creator(doc, caller))
 
 
@@ -1789,7 +1798,10 @@ def update_document(doc_id: int, body: DocUpdateBody,
     doc = _get_doc(doc_id, caller, db)
     if doc.status != "draft":
         raise HTTPException(status_code=409, detail="Only draft documents can be edited")
-    if caller.get("role") not in ("admin", "shift-manager") and not _is_creator(doc, caller):
+    # Same bounded rule as `_may_reject` and the delete rung: the bare
+    # ("admin", "shift-manager") tuple carries no shift, and `_scope_documents`
+    # hands every document to a `page.view.staff-cell` grant at "all".
+    if not _can_approve_cell_doc(doc, caller, db) and not _is_creator(doc, caller):
         raise HTTPException(status_code=403, detail="Not allowed to edit this document")
     if not body.employees:
         raise HTTPException(status_code=400, detail="Select at least one employee")
@@ -2111,7 +2123,11 @@ def delete_document(doc_id: int, caller=Depends(_require_cell_staff),
                         native=not via_grant)
         _clear_card(doc_id, "rejected", caller.get("full_name", ""))
         return {"ok": True, "status": doc.status}
-    elif caller.get("role") not in ("admin", "shift-manager") and not _is_creator(doc, caller):
+    # Same rule as `_may_reject`, and for the same reason: the bare
+    # ("admin", "shift-manager") tuple that used to stand here carried no shift,
+    # so a shift-manager reading another shift's document through a
+    # `page.view.staff-cell` grant at "all" could delete it outright.
+    elif not _can_approve_cell_doc(doc, caller, db) and not _is_creator(doc, caller):
         raise HTTPException(status_code=403, detail="Not allowed to delete this document")
 
     # Snapshot BEFORE the delete: a removed row's attributes are expired after
