@@ -60,8 +60,9 @@ rollback and is re-sent by every retry.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import date, datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -88,7 +89,9 @@ from app.routers.staff import (
     is_assignable_target_role, notify_profile,
 )
 from app.services import action_log, cell_exchange, cell_lookup
-from app.services.cell_scope import CellScope, allows, caller_cells, code_clause
+from app.services.cell_scope import (
+    CellScope, allows, caller_cells, code_clause, in_codes, same_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -211,9 +214,19 @@ def _scope_documents(q, caller: dict, db: Session):
     A cell-level document is visible from BOTH ends, because both ends lost or
     gained the people: a leader sees a document whose ``sender_cell`` OR whose
     ``target_cell`` is one of theirs. Both comparisons are made against the
-    payload as TEXT — JSONB ``.astext`` is a string comparison, which is
-    precisely why every code is normalised on write; a document filed as «28»
-    would be invisible to a scope filtering on «0028».
+    payload as TEXT — JSONB ``.astext`` is a string comparison — and both go
+    through `cell_scope.code_clause`, the SAME twin that narrows the roster,
+    rather than through a hand-written ``.in_(scope.codes)``.
+
+    That distinction is the whole of this branch. A payload code is normalised
+    on write, but it is normalised from the ATTENDANCE row's spelling, while
+    `scope.codes` come from `cells.verifix_code` — and the plant writes one
+    cell both ways, so a document filed out of a cell the register calls «0028»
+    stores «28» whenever the day's upload spelled it that way. Filtering on the
+    bare scope set made exactly those documents invisible to the leader who
+    owns the cell, on a page whose register is the only place they can see a
+    move out of it. `code_clause` matches every spelling, so the register and
+    the roster answer for one cell the same way.
     """
     role = caller.get("role")
 
@@ -255,10 +268,9 @@ def _scope_documents(q, caller: dict, db: Session):
         scope = caller_cells(db, caller)
         if not scope.codes:
             return q.filter(HrDocument.id < 0)
-        wanted = sorted(scope.codes)
         return q.filter(or_(
-            HrDocument.payload["sender_cell"].astext.in_(wanted),
-            HrDocument.payload["target_cell"].astext.in_(wanted),
+            code_clause(scope, HrDocument.payload["sender_cell"].astext),
+            code_clause(scope, HrDocument.payload["target_cell"].astext),
         ))
 
     # top-manager, guest, anything a future release invents → nothing.
@@ -575,28 +587,43 @@ def _shift_of_unit(db: Session, manager_id: Optional[int]) -> Optional[int]:
     return m.shift if m else None
 
 
-def _sender_shift(db: Session, caller: dict, scope: CellScope,
-                  sender_cell: Optional[str], d: date) -> Optional[int]:
-    """The shift a move is being filed ON — `None` means «do not narrow».
+def _sender_shifts(db: Session, caller: dict, scope: CellScope,
+                   sender_cell: Optional[str], d: date) -> Optional[frozenset]:
+    """The shift(s) a move may be filed ON. **Fails CLOSED.**
 
-    A cell carries no shift of its own: it is reached through
+    ``None`` means «do not narrow» and is the ADMIN answer and nothing else —
+    an admin may file across the whole plant and there is nobody above them to
+    ask. Every other caller gets a SET, and an EMPTY set is a real answer that
+    the caller must render as «nowhere to send anybody», never as «no filter».
+
+    That distinction is the whole of this function, and it used to be the other
+    way round. It returned a single ``Optional[int]``, and `None` — the admin's
+    «do not narrow» — was also what came back when the caller owned no unit at
+    all, when the named sender cell belonged to no unit, and when the caller's
+    own units straddled both shifts. `exchange_targets` applies no scope filter
+    of its own, so each of those answered a caller who owns nothing with the
+    name and shift of every live unit on the platform. `cell_scope` fails
+    closed on the code dimension; this is the same discipline on the shift one.
+
+    A cell carries no shift of its own — it is reached through
     ``Cell.manager_id → Manager.shift``, the one place the dimension is
-    attached. When the page names a sender cell the answer comes from that
-    cell; otherwise it comes from the caller's own units, and an admin — who
-    may file across the whole plant — gets no narrowing at all.
+    attached — so a cell with no owning unit names no shift, and the answer
+    falls back to the caller's own units rather than opening up.
     """
     if caller.get("role") == "admin":
         return None
     if sender_cell:
         cell = _cell_rows(db, [sender_cell]).get(cell_lookup.norm_code(sender_cell))
-        if cell is not None:
-            return _shift_of_unit(db, cell.manager_id)
-    shifts = {
+        if cell is not None and cell.manager_id:
+            s = _shift_of_unit(db, cell.manager_id)
+            return frozenset({s}) if s in (1, 2) else frozenset()
+    if not scope.units:
+        return frozenset()
+    return frozenset(
         s for (s,) in db.query(Manager.shift).filter(
-            Manager.id.in_(sorted(scope.units) or [0])).distinct().all()
+            Manager.id.in_(sorted(scope.units))).distinct().all()
         if s in (1, 2)
-    }
-    return next(iter(shifts)) if len(shifts) == 1 else None
+    )
 
 
 @router.get("/exchange-targets")
@@ -636,7 +663,19 @@ def exchange_targets(
         # value: it decides which shift the whole list is drawn from.
         sender_norm = _assert_cell_allowed(scope, sender_cell, "sender_cell")
 
-    shift = _sender_shift(db, caller, scope, sender_norm or None, d)
+    shifts = _sender_shifts(db, caller, scope, sender_norm or None, d)
+    tasks = [
+        t.name for t in db.query(ExchangeTask)
+        .filter(ExchangeTask.active.is_(True))
+        .order_by(func.lower(ExchangeTask.name)).all()
+    ]
+    if shifts is not None and not shifts:
+        # FAIL CLOSED. A non-admin caller whose shift cannot be established
+        # owns no cell this move could come out of, and the unfiltered query
+        # below would hand them the name and shift of every live unit on the
+        # platform. The task list is the platform's own global one and is left
+        # as it is — it names no unit and no person.
+        return {"supervisors": [], "tasks": tasks}
 
     closed = {
         a.manager_id for a in db.query(DayApproval).filter(DayApproval.date == d).all()
@@ -659,8 +698,11 @@ def exchange_targets(
     leaders = _leader_names(db)
 
     q = db.query(Manager).filter(Manager.archived.is_(False))
-    if shift in (1, 2):
-        q = q.filter(Manager.shift == shift)
+    if shifts is not None:
+        # `.in_`, not `==`: a caller whose own cells straddle both shifts has
+        # two sender shifts and both are theirs. The empty case never reaches
+        # here — it returned above.
+        q = q.filter(Manager.shift.in_(sorted(shifts)))
 
     out = []
     for m in q.order_by(Manager.shift, Manager.name).all():
@@ -668,7 +710,13 @@ def exchange_targets(
             continue
         cells = []
         for code in sorted(unit_codes.get(m.id) or ()):
-            if code == sender_norm:
+            # `same_code`, not `==`: the sender cell arrived on the query
+            # string and was normalised against the CELL REGISTER, while this
+            # code came off the day's ATTENDANCE — one cell, two spellings. A
+            # bare comparison left the sender's own cell in its own unit's
+            # option list, and the move into it was then refused by a rule
+            # nothing on screen had stated.
+            if same_code(code, sender_norm):
                 continue
             c = cells_by_code.get(code)
             cells.append({
@@ -686,11 +734,6 @@ def exchange_targets(
         out.append({"manager_id": m.id, "full_name": m.name,
                     "shift": m.shift, "cells": cells})
 
-    tasks = [
-        t.name for t in db.query(ExchangeTask)
-        .filter(ExchangeTask.active.is_(True))
-        .order_by(func.lower(ExchangeTask.name)).all()
-    ]
     return {"supervisors": out, "tasks": tasks}
 
 
@@ -791,7 +834,11 @@ def _resolve_cell_target(db: Session, caller: dict, d: date, sender_unit: int,
     if codes:
         if not cell:
             raise HTTPException(status_code=400, detail="Select the receiving supervisor's cell")
-        if cell not in codes:
+        # `in_codes`, not `in`: the body's cell was normalised against the CELL
+        # REGISTER and these came off the receiving unit's ATTENDANCE, so one
+        # cell can arrive spelled «0028» and be listed as «28». A bare
+        # membership test 404s on a destination the picker itself offered.
+        if not in_codes(cell, codes):
             raise HTTPException(
                 status_code=404,
                 detail="Target cell not found in the receiving unit's attendance for this date")
@@ -801,7 +848,11 @@ def _resolve_cell_target(db: Session, caller: dict, d: date, sender_unit: int,
         # page unusable on days nobody can retro-fit.
         cell = None
 
-    if cell and cell == cell_lookup.norm_code(sender_cell):
+    # The one refusal that replaces /staff's «not the same unit»: a move into
+    # the cell you are standing in is not a move. Compared through `same_code`
+    # because the two sides come from two registers that spell one cell two
+    # ways — an `==` here is a self-move the platform accepts.
+    if cell and same_code(cell, sender_cell):
         raise HTTPException(status_code=400,
                             detail="Cannot exchange workers into the same cell")
     return ttype, target.id, target.name, None, cell
@@ -992,7 +1043,28 @@ def _can_approve_cell_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
     ``staff.documents.approve``. The grant never REMOVES an authority: it is
     the mechanism for «this person handles transfers» without making them an
     admin.
+
+    **Except for a LEADER, who is refused here before either ladder is asked.**
+    A leader is never an approver on this page — they are told a move touches
+    their cell and that is all — and the refusal has to be stated in THIS
+    function because it is the one both doors read: the router's own
+    approve/cancel/delete routes, and `approvals._decide_hr_document`, which
+    settles an inline card through exactly this predicate. The Telegram side
+    also refuses them structurally (they are never sent an `ApprovalNotice`,
+    and on this platform the notice IS the permission to tap), so without the
+    refusal here the API granted a power the card could not, to the same person
+    over the same document — the two doors disagreeing about one person.
+
+    `_native_can_approve_cell_doc` could never answer True for a leader, but
+    `_granted_over_cell_doc` could: an own-scoped ``staff.documents.approve``
+    resolves «own» to the caller's own CELL scope, and the receiving leader's
+    cell is on the document by construction. So the grant silently made the
+    receiving leader an approver of every transfer into their own cell.
+    Withdrawing a draft they FILED themselves is a different act and still
+    theirs — see `_may_reject`, which keeps the creator's door open.
     """
+    if (caller or {}).get("role") == "leader":
+        return False
     return (_native_can_approve_cell_doc(doc, caller, db)
             or _granted_over_cell_doc(doc, caller, db))
 
@@ -1000,7 +1072,13 @@ def _can_approve_cell_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
 def _via_grant(doc: HrDocument, caller: dict, db: Session) -> bool:
     """True when the ONLY thing authorising this action is the grant — the
     trigger for the admin warning DM. Evaluate BEFORE the mutation: it answers
-    «what authorised this», and after a status change the answer differs."""
+    «what authorised this», and after a status change the answer differs.
+
+    A LEADER is False by the same rule `_can_approve_cell_doc` states: their
+    grant authorises nothing here, so it can never be what authorised an
+    action."""
+    if (caller or {}).get("role") == "leader":
+        return False
     return (not _native_can_approve_cell_doc(doc, caller, db)
             and _granted_over_cell_doc(doc, caller, db))
 
@@ -1099,6 +1177,81 @@ def _doc_parties(db: Session, doc: HrDocument) -> list:
     return profiles
 
 
+# ── the TEST chip, on the channel people act on ───────────────────────────────
+#
+# The approval CARD and the register row have said «🧪 TEST» since the page
+# shipped; the bell row and the plain DM did not — and the plain DM is the
+# channel the receiving brigadir actually reads and acts on. So a rehearsal
+# arrived in their chat word for word identical to a transfer that really took
+# their people, which is the one confusion the whole sandbox exists to prevent.
+#
+# It has to be a TEMPLATE and not a word pushed into `params`, because a bell
+# row re-renders at VIEW time in the VIEWER's language: a «TEST» baked into a
+# param is frozen in the filer's language for good. `_NOTIF_STRINGS` is the
+# only renderer-side vocabulary there is, so these three keys join it — in all
+# FOUR languages, because a key missing from `uz_cyrl` does not show the key,
+# it silently renders Latin Uzbek at a Cyrillic reader.
+#
+# Registered rather than written into `routers/staff.py`: the table is that
+# module's, this feature is this one's, and `main.py` imports this router at
+# boot so the keys are present in every process that renders a bell row.
+# `setdefault` — never overwrite a key `staff` itself defines.
+_TEST_NOTIF_STRINGS: dict = {
+    "worker_exchange_test_created": {
+        "uz": ("🧪 TEST · {actor_name} xodim almashinuvi yaratdi",
+               "{count} xodim → {target} | Sana: {date}\n"
+               "🧪 TEST hujjat — hech qanday davomat yozuvi ko'chirilmaydi"),
+        "uz_cyrl": ("🧪 ТЕСТ · {actor_name} ходим алмашинуви яратди",
+                    "{count} ходим → {target} | Сана: {date}\n"
+                    "🧪 ТЕСТ ҳужжат — ҳеч қандай давомат ёзуви кўчирилмайди"),
+        "ru": ("🧪 ТЕСТ · Новый обмен сотрудниками от {actor_name}",
+               "{count} сотр. → {target} | Дата: {date}\n"
+               "🧪 ТЕСТ-документ — ни одна запись посещаемости не переносится"),
+        "en": ("🧪 TEST · New worker exchange from {actor_name}",
+               "{count} worker(s) → {target} | Date: {date}\n"
+               "🧪 TEST document — no attendance row is moved"),
+    },
+    "worker_exchange_test_approved": {
+        "uz": ("🧪 TEST · Xodim almashinuvi tasdiqlandi",
+               "{count} xodim → {target} | Sana: {date}\n"
+               "🧪 TEST hujjat — hech qanday davomat yozuvi ko'chirilmadi"),
+        "uz_cyrl": ("🧪 ТЕСТ · Ходим алмашинуви тасдиқланди",
+                    "{count} ходим → {target} | Сана: {date}\n"
+                    "🧪 ТЕСТ ҳужжат — ҳеч қандай давомат ёзуви кўчирилмади"),
+        "ru": ("🧪 ТЕСТ · Обмен сотрудниками одобрен",
+               "{count} сотр. → {target} | Дата: {date}\n"
+               "🧪 ТЕСТ-документ — ни одна запись посещаемости не перенесена"),
+        "en": ("🧪 TEST · Worker exchange approved",
+               "{count} worker(s) → {target} | Date: {date}\n"
+               "🧪 TEST document — no attendance row was moved"),
+    },
+    "worker_exchange_test_cancelled": {
+        "uz": ("🧪 TEST · Xodim almashinuvi bekor qilindi",
+               "{count} xodim → {target} | Sana: {date}\n"
+               "🧪 TEST hujjat — hech qanday davomat yozuvi ko'chirilmadi"),
+        "uz_cyrl": ("🧪 ТЕСТ · Ходим алмашинуви бекор қилинди",
+                    "{count} ходим → {target} | Сана: {date}\n"
+                    "🧪 ТЕСТ ҳужжат — ҳеч қандай давомат ёзуви кўчирилмади"),
+        "ru": ("🧪 ТЕСТ · Обмен сотрудниками отменён",
+               "{count} сотр. → {target} | Дата: {date}\n"
+               "🧪 ТЕСТ-документ — ни одна запись посещаемости не перенесена"),
+        "en": ("🧪 TEST · Worker exchange cancelled",
+               "{count} worker(s) → {target} | Date: {date}\n"
+               "🧪 TEST document — no attendance row was moved"),
+    },
+}
+for _k, _v in _TEST_NOTIF_STRINGS.items():
+    staff._NOTIF_STRINGS.setdefault(_k, _v)
+
+# real key → its TEST twin. The params are identical, so a document that turns
+# out not to be a test simply keeps the key it always had.
+_TEST_NKEY = {
+    "worker_exchange_created":   "worker_exchange_test_created",
+    "worker_exchange_approved":  "worker_exchange_test_approved",
+    "worker_exchange_cancelled": "worker_exchange_test_cancelled",
+}
+
+
 def _notify_cell_doc(db: Session, doc: HrDocument, event: str, actor_tg_id: int,
                      *, admin_dm: bool = True) -> None:
     """Tell everyone the document concerns, once each, in their own language.
@@ -1117,6 +1270,13 @@ def _notify_cell_doc(db: Session, doc: HrDocument, event: str, actor_tg_id: int,
     filed from a cell is still a worker exchange, and a fifth template saying
     the same sentence is a fifth place a translation can go missing.
 
+    A SANDBOX document takes the `_TEST_NKEY` twin of that template and nothing
+    else changes — same params, same recipients, same dedupe. The chip has to
+    be in the TEMPLATE for exactly the reason the paragraph above gives, and it
+    has to be here at all because this is the channel the receiving brigadir
+    acts on: the approval card and the register row already said «TEST», and
+    the DM in their chat did not.
+
     Ghost Mode needs no branch: `notify_profile` and `_notify` both return at
     the `notifications_suppressed()` chokepoint, so a suppressed run writes
     nothing and still applies.
@@ -1127,6 +1287,11 @@ def _notify_cell_doc(db: Session, doc: HrDocument, event: str, actor_tg_id: int,
         "approved":  "worker_exchange_approved",
         "cancelled": "worker_exchange_cancelled",
     }.get(event, "worker_exchange_created")
+    # CUT-OVER: off the DOC_TYPE, never off SANDBOX — after the flip the
+    # documents already written are still rehearsals and must go on saying so,
+    # while a new real one takes the plain template with no edit here.
+    if cell_exchange.is_test(doc.doc_type):
+        nkey = _TEST_NKEY.get(nkey, nkey)
     params = {
         "actor_name": doc.created_by_name or "",
         "count":      len(payload.get("employees") or []),
@@ -1220,10 +1385,36 @@ def get_document(doc_id: int, caller=Depends(_require_cell_staff), db: Session =
 
 # ── POST /documents ───────────────────────────────────────────────────────────
 
+class EmployeeRef(BaseModel):
+    """ONE roster row, named the way the roster names it.
+
+    A bare worker NAME does not identify a row on this page and never did.
+    The roster spans several cells and, for a shift-manager or an admin,
+    several units, and namesakes are ordinary in this data — so a selection
+    sent as names was re-expanded server-side across every in-scope row those
+    names hold, and one tick filed people the operator never chose, each into
+    a document named for their OWN cell. The page has always known which rows
+    were ticked; this is the shape that lets it say so.
+
+    ``manager_id`` and ``verifix_code`` are OPTIONAL, which keeps the old
+    bare-string body working — but a bare name is no longer re-expanded: it is
+    accepted only while it resolves to exactly one row identity, and refused
+    with a 409 naming the collision otherwise (see :func:`_resolve_selection`).
+    Neither field is ever trusted as authority: they NARROW the caller's own
+    in-scope rows and are then intersected with `cell_scope` exactly as before,
+    so naming somebody else's row reaches a 403, never their day.
+    """
+    worker_name:  str
+    manager_id:   Optional[int] = None
+    verifix_code: Optional[str] = None
+
+
 class DocCreateBody(BaseModel):
     doc_type:    str = "people_exchange"
     attend_date: str
-    employees:   List[str]
+    # Either shape: `["Ivanov I."]` (legacy) or
+    # `[{"worker_name": …, "manager_id": …, "verifix_code": …}]`.
+    employees:   List[Union[EmployeeRef, str]]
     # role_change
     new_role:    Optional[str] = None
     # people_exchange
@@ -1238,51 +1429,163 @@ class DocCreateBody(BaseModel):
     # body that could name somebody else's.
 
 
+def _refs(entries) -> List[EmployeeRef]:
+    """The body's ``employees`` in ONE shape, whichever of the two it arrived in.
+
+    Pydantic hands back an :class:`EmployeeRef` for an object and a plain
+    ``str`` for the legacy shape; both become a ref, and a blank name is
+    dropped rather than resolved to every nameless row on the day.
+
+    A raw MAPPING is accepted as the object shape too. It is not what the
+    endpoint receives — the model has already parsed the body — but this
+    function is reachable from anything holding a list, and ``str({...})``
+    would turn a row identity into a worker name nobody has, filed as a 400
+    quoting a Python dict at an operator."""
+    out: List[EmployeeRef] = []
+    for e in entries or []:
+        if isinstance(e, EmployeeRef):
+            ref = e
+        elif isinstance(e, Mapping):
+            ref = EmployeeRef(worker_name=str(e.get("worker_name") or ""),
+                              manager_id=e.get("manager_id"),
+                              verifix_code=e.get("verifix_code"))
+        else:
+            ref = EmployeeRef(worker_name=str(e or ""))
+        name = (ref.worker_name or "").strip()
+        if name:
+            out.append(EmployeeRef(worker_name=name, manager_id=ref.manager_id,
+                                   verifix_code=ref.verifix_code))
+    return out
+
+
+def _row_identity(r: Attendance) -> tuple:
+    """THE identity of one roster row: unit + cell + name. The grouping key,
+    the selection key the page ticks, and what an :class:`EmployeeRef` names."""
+    return (r.manager_id, cell_lookup.norm_code(r.verifix_code), r.worker_name)
+
+
 def _resolve_selection(db: Session, caller: dict, scope: CellScope, d: date,
-                       names: List[str]) -> dict:
-    """Group the selected workers by the cell they are actually standing in.
+                       entries) -> dict:
+    """Resolve each SELECTED ROW and group the result by its sender cell.
 
-    The selection arrives as bare names, so this is where the page's one Save
-    becomes N documents: each name is resolved to its OWN in-scope attendance
-    row, and the rows are grouped by `(unit, cell)`. A name legitimately holds
-    two rows in two cells of one unit — that is the whole reason the grouping
-    is by row and not by name.
+    This is where the page's one Save becomes N documents, and it is where the
+    namesake bug lived. The selection used to arrive as bare NAMES, and every
+    name was re-expanded across every in-scope attendance row that held it —
+    so a roster spanning several cells, where namesakes are ordinary, filed
+    people nobody had ticked, each into a document named for their own cell.
+    The operator saw «3 xodim» on screen and five in the register.
 
-    A name the caller may not touch is a **403 that says so**, never a silent
-    drop. The two failures are told apart on purpose: a name with no row
-    anywhere on that date is a 400 («no record»), a name with a row the scope
-    does not reach is a 403 («outside your cells»). Dropping either quietly is
-    how an operator files three of the five people they selected and finds out
-    a shift later.
+    An entry now names a ROW — worker plus unit plus cell (:class:`EmployeeRef`)
+    — and is resolved to exactly the rows that identity names. **Nothing is ever
+    expanded.** The old bare-name shape is still accepted, because the endpoint
+    is reachable without the page, but it is no longer re-expanded either: a
+    PARTLY named entry — a bare name, or a name plus only one of the two
+    fields — is resolved only while it names ONE row identity on that date,
+    and one holding two is refused with a **409 naming the collision** so the
+    caller re-sends it with its unit and cell. Answering the ambiguity
+    silently — either by taking one row or by taking them all — is the bug,
+    and «name plus unit» over two of that unit's cells is the same bug in
+    miniature.
+
+    The refusals stay distinct, and none of them is a silent drop: an entry
+    with no attendance row at all is a 400 («no record»), a namesake collision
+    is a 409, and a row the caller's cell scope does not reach — or the
+    brigadir's own cell-less row, which nothing on this page may move — is a
+    403 («outside your cells»). Dropping any of them quietly is how an operator
+    files three of the five people they selected and finds out a shift later.
+
+    ``manager_id`` / ``verifix_code`` on a ref carry no authority: they only
+    NARROW the rows the name already holds, and every surviving row is then put
+    through `cell_scope.allows` exactly as before. Naming somebody else's row
+    reaches the 403; it never reaches their day.
     """
-    wanted = [n for n in {(x or "").strip() for x in names} if n]
-    if not wanted:
+    refs = _refs(entries)
+    if not refs:
         raise HTTPException(status_code=400, detail="Select at least one employee")
 
     rows = _named_rows(db.query(Attendance).filter(
-        Attendance.date == d, Attendance.worker_name.in_(wanted))).all()
+        Attendance.date == d,
+        Attendance.worker_name.in_(sorted({r.worker_name for r in refs})))).all()
+    by_name: dict = {}
+    for r in rows:
+        by_name.setdefault(r.worker_name, []).append(r)
 
-    in_scope = [
-        r for r in rows
-        if r.verifix_code and allows(scope, r.verifix_code) and not r.is_supervisor
-    ]
-    found = {r.worker_name for r in rows}
-    ok = {r.worker_name for r in in_scope}
+    def _movable(r) -> bool:
+        # The brigadir's own row carries no cell and is the one row on this
+        # page that can never be moved — `verifix_code IS NULL` does not imply
+        # `is_supervisor`, so both are tested.
+        return bool(r.verifix_code) and not r.is_supervisor
 
-    missing = [n for n in wanted if n not in found]
+    def _label(ref: EmployeeRef) -> str:
+        cell = cell_lookup.norm_code(ref.verifix_code)
+        return f"{ref.worker_name} ({cell})" if cell else ref.worker_name
+
+    missing: list = []
+    ambiguous: list = []
+    refused: list = []
+    groups: dict = {}
+    seen_refs: set = set()
+    taken: set = set()
+
+    for ref in refs:
+        key = (ref.worker_name, ref.manager_id, cell_lookup.norm_code(ref.verifix_code))
+        if key in seen_refs:
+            continue
+        seen_refs.add(key)
+
+        named = by_name.get(ref.worker_name) or []
+        if ref.manager_id is not None:
+            named = [r for r in named if r.manager_id == ref.manager_id]
+        if key[2]:
+            named = [r for r in named if same_code(r.verifix_code, key[2])]
+        if not named:
+            missing.append(_label(ref))
+            continue
+
+        movable = [r for r in named if _movable(r)]
+        if not movable:
+            refused.append(_label(ref))
+            continue
+        if (ref.manager_id is None or not key[2]) \
+                and len({_row_identity(r) for r in movable}) > 1:
+            # An entry that does not name BOTH the unit and the cell, over more
+            # than one row identity: a bare name held by two people, or a name
+            # plus a unit that stands in two of its cells. Never expanded,
+            # never narrowed by guesswork — named back at the caller. A ref
+            # that DOES name both cannot reach here, because every row it
+            # matched carries the same (unit, cell, name) by construction.
+            ambiguous.append("%s → %s" % (
+                ref.worker_name,
+                ", ".join(sorted({f"#{r.manager_id}/{cell_lookup.norm_code(r.verifix_code)}"
+                                  for r in movable}))))
+            continue
+
+        out_of_scope = [r for r in movable if not allows(scope, r.verifix_code)]
+        if out_of_scope:
+            refused.append(_label(ref))
+            continue
+        for r in movable:
+            if r.id in taken:
+                continue
+            taken.add(r.id)
+            groups.setdefault(_row_identity(r)[:2], []).append(r)
+
     if missing:
         raise HTTPException(
             status_code=400,
             detail=f"No attendance record on this date for: {', '.join(sorted(missing)[:5])}")
-    refused = [n for n in wanted if n not in ok]
+    if ambiguous:
+        raise HTTPException(
+            status_code=409,
+            detail="This name is held by more than one roster row on this date — "
+                   "re-send it with its unit and cell: "
+                   f"{'; '.join(sorted(ambiguous)[:5])}")
     if refused:
         raise HTTPException(
             status_code=403,
             detail=f"Outside your cells (or not movable): {', '.join(sorted(refused)[:5])}")
-
-    groups: dict = {}
-    for r in in_scope:
-        groups.setdefault((r.manager_id, cell_lookup.norm_code(r.verifix_code)), []).append(r)
+    if not groups:
+        raise HTTPException(status_code=400, detail="Select at least one employee")
     return groups
 
 
@@ -1431,13 +1734,31 @@ def create_documents(body: DocCreateBody, caller=Depends(_require_cell_staff),
             except Exception:
                 logger.exception("staff-cells: approval card failed for doc %s", doc.id)
 
+    # The bell rows the loop above just wrote. `staff._notify` only ever does
+    # `db.add(Notification(...))` and `database.get_db` closes WITHOUT
+    # committing, so every one of them was rolled back on the way out — on the
+    # ADMIN auto-approve path silently and completely, since that path sends no
+    # approval card and `_broadcast`'s own commit was what happened to save
+    # them on the draft path. The DMs still went out, so the failure was
+    # invisible: the people were told, and the platform kept no record of
+    # having told them. Committed here, after the notifications and after every
+    # Telegram send, so a DM failure can never roll back the documents either.
+    try:
+        db.commit()
+    except Exception:
+        logger.exception("staff-cells: could not commit notifications for %s", made)
+        db.rollback()
+
     return {"documents": made, "count": len(made)}
 
 
 # ── PUT /documents/{id} ───────────────────────────────────────────────────────
 
 class DocUpdateBody(BaseModel):
-    employees:         List[str]
+    # The same two accepted shapes as `DocCreateBody.employees` — one
+    # vocabulary for the selection, or the edit path would re-introduce the
+    # namesake expansion the create path just lost.
+    employees:         List[Union[EmployeeRef, str]]
     new_role:          Optional[str] = None
     target_type:       Optional[str] = None
     target_manager_id: Optional[int] = None
@@ -1482,13 +1803,20 @@ def update_document(doc_id: int, body: DocUpdateBody,
     _assert_day_open(db, doc.manager_id, doc.date)
 
     groups = _resolve_selection(db, caller, scope, doc.date, body.employees)
-    keys = set(groups)
-    if keys != {(doc.manager_id, sender_cell)}:
+    keys = sorted(groups)
+    # The unit is an id and compares as one; the CELL is a code and compares
+    # through `same_code`, because the group key was normalised from the
+    # attendance row while `sender_cell` was normalised into the payload from
+    # whichever spelling the day's upload carried. A `==` here refuses an edit
+    # to the document's own workers whenever the two registers disagree about
+    # the padding of one code.
+    if len(keys) != 1 or keys[0][0] != doc.manager_id \
+            or not same_code(keys[0][1], sender_cell):
         raise HTTPException(
             status_code=400,
             detail="Every worker on this document must come from its own cell — "
                    "file a separate document for another cell")
-    rows = groups[(doc.manager_id, sender_cell)]
+    rows = groups[keys[0]]
 
     unit_names = _unit_names(db)
     leaders = _leader_names(db)

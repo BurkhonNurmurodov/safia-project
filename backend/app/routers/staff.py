@@ -2948,11 +2948,31 @@ def _doc_via_grant(doc: HrDocument, caller: dict, db: Session) -> bool:
 
 
 def _doc_alert_details(db: Session, doc: HrDocument) -> list:
-    kind = (tv("doc." + doc.doc_type)
-            if doc.doc_type in ("people_exchange", "role_change") else doc.doc_type)
+    # The label lookup is asked the SEMANTIC type — what this document stands
+    # for — exactly as `approvals._as_doc` resolves it. A sandbox document is a
+    # worker exchange that moves nothing, not a fourth kind of document, and
+    # `routers/staff_cells` calls this helper for its own rows; handed the raw
+    # `people_exchange_test` the two-name test misses and the admin's warning
+    # DM printed the bare column value at them.
+    real = cell_exchange.REAL_OF.get(doc.doc_type, doc.doc_type)
+    kind = (tv("doc." + real)
+            if real in ("people_exchange", "role_change") else doc.doc_type)
     details = [("document", kind),
                ("unit", unit_name(db, doc.manager_id)),
                ("date", str(doc.date))]
+    if cell_exchange.is_test(doc.doc_type):
+        # …and SAY it was a rehearsal. Resolving the type above is what makes
+        # the label readable, and it is also what would let a sandbox document
+        # read to an admin as the real move it only mirrors. The chip is
+        # language-neutral on purpose: a translated string would have to live
+        # in `capability_alerts._T`, which is not this module's to extend, and
+        # a raw English sentence in a uz_cyrl DM is the same defect one layer
+        # down — so only the LABEL is translated, and it is spelled as the
+        # plain key `capability_alerts._label` resolves through `l.<key>`, not
+        # as a `tv()` marker: `render_use` un-marks the value side of a stored
+        # detail and not the label side, so a marker here would read back off
+        # the «Action history» tab as a literal ['__t__', 'l.note'].
+        details.append(("note", "🧪 TEST"))
     emps = [e.get("worker_name") or "?" for e in (doc.payload or {}).get("employees") or []]
     if emps:
         names = ", ".join(emps[:10]) + (f" +{len(emps) - 10}" if len(emps) > 10 else "")

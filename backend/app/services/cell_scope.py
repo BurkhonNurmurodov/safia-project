@@ -51,6 +51,7 @@ written by hand somewhere else is a cell that silently drops out of a scope.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Iterable, Optional
 
 from sqlalchemy import false, true
@@ -229,6 +230,62 @@ def _variants(code: str) -> set[str]:
     return out
 
 
+@lru_cache(maxsize=512)
+def _wanted(codes: frozenset[str]) -> frozenset[str]:
+    """THE in-scope code set, every spelling of it — read by BOTH twins.
+
+    This exists because the two spellings of the rule stopped agreeing about
+    the same cell. :func:`code_clause` expanded each scope code through
+    :func:`_variants` and matched the column against the expansion, while
+    :func:`allows` tested raw membership in ``scope.codes``: a scope holding
+    the canonical «0028» therefore READ an attendance row stamped «28» through
+    the SQL clause and then REFUSED every action on it in memory — and a scope
+    that happened to hold the bare «28» failed the other way round. Two
+    spellings of one rule that do not match is precisely what this module
+    exists to prevent, so neither of them expands anything on its own any more;
+    both ask here.
+
+    Cached on the frozen code set — ``CellScope`` is frozen and its ``codes``
+    are a ``frozenset``, so the same caller's scope is expanded once per
+    process rather than once per worker row on a roster.
+    """
+    return frozenset(v for c in codes for v in _variants(c))
+
+
+def same_code(a, b) -> bool:
+    """«do these two raw spellings name ONE cell?» — the code-equality rule.
+
+    The scope twins above answer «is this cell in scope»; this answers the
+    other comparison the cell dimension needs, and it is the same rule: the
+    plant writes one cell both zero-padded and zero-stripped, so «0028» and
+    «28» are one cell and ``norm_code(a) == norm_code(b)`` is not equality
+    here. Every hand-written ``==`` between two codes is a place where the
+    sender cell fails to be recognised as the target cell, or a document's own
+    cell fails to match the attendance row it was filed from — the same class
+    of silent miss :func:`_wanted` exists to close, one level down.
+
+    A blank on either side is never equal to anything: a row that names no
+    cell is not «the same cell» as one that does.
+    """
+    va, vb = _variants(a), _variants(b)
+    return bool(va and vb and (va & vb))
+
+
+def in_codes(code, codes: Iterable[str]) -> bool:
+    """«is this raw code one of these?» — :func:`same_code` over a set.
+
+    For the comparisons that are NOT about a caller's scope: a body's target
+    cell against the codes a receiving unit's attendance actually carries, a
+    document's own sender cell against the cells a selection resolved to. Both
+    sides are expanded, so a unit whose attendance spells the cell «28» accepts
+    a body naming «0028» and vice-versa.
+    """
+    v = _variants(code)
+    if not v:
+        return False
+    return any(v & _variants(c) for c in codes)
+
+
 def code_clause(scope: CellScope, col):
     """SQL twin of :func:`caller_cells` — «this row's cell code is in scope».
 
@@ -246,8 +303,7 @@ def code_clause(scope: CellScope, col):
         return true()
     if not scope.codes:
         return false()
-    wanted = sorted({v for c in scope.codes for v in _variants(c)})
-    return col.in_(wanted)
+    return col.in_(sorted(_wanted(scope.codes)))
 
 
 def allows(scope: CellScope, code: Optional[str]) -> bool:
@@ -259,8 +315,14 @@ def allows(scope: CellScope, code: Optional[str]) -> bool:
     cell, a target cell, a worker's own code — is checked through here before
     it is trusted, because a body is typeable and the page that produced it is
     not the authority on what its author may touch.
+
+    It answers off exactly the set :func:`code_clause` matches the column
+    against (:func:`_wanted`), never off ``scope.codes`` directly: a bare
+    membership test refused every action on a row the SQL twin had already
+    shown the caller, which is a page that lists rows nobody may act on — the
+    one failure this module was written to make impossible.
     """
     if scope.all:
         return True
     n = cell_lookup.norm_code(code)
-    return bool(n) and n in scope.codes
+    return bool(n) and n in _wanted(scope.codes)

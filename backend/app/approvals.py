@@ -589,17 +589,131 @@ def send_edit_batch_to_admins(db, batch_id, manager_id, attend_date, supervisor_
                extra_recipients=_grantee_recipients(db, CAP_REQUESTS_APPROVE, manager_id))
 
 
+def _cell_doc_shifts(db, doc) -> set[int]:
+    """The shift(s) a cell-level document touches — the sender unit's and the
+    receiving unit's. Both, because an admin may file across shifts; this is
+    the exact set `staff_cells._native_can_approve_cell_doc` measures a
+    shift-manager against."""
+    from app.routers.staff_cells import _shift_of_unit
+    payload = doc.payload or {}
+    return {s for s in (_shift_of_unit(db, doc.manager_id),
+                        _shift_of_unit(db, payload.get("target_manager_id")))
+            if s in (1, 2)}
+
+
+def _cell_doc_shift_manager_recipients(db, doc) -> set[int]:
+    """Telegram ids of the shift-managers who may decide a CELL document.
+
+    The API has granted them approve authority since the page shipped
+    (`staff_cells._native_can_approve_cell_doc`), and the Telegram card never
+    reached them — so the button and the endpoint disagreed about the same
+    person over the same document. It was not a theoretical gap: a cell → cell
+    move inside ONE brigade names no receiving supervisor other than the
+    sender, and a `→ task` move names none at all, so those documents had no
+    non-admin card recipient and the shift-manager who was supposed to decide
+    them got «⛔️ Ruxsat yo'q» on a card nobody had sent.
+
+    Bounded to CELL documents. A /staff document's authority ladder is
+    `staff._native_can_approve_doc`'s, and widening its fan-out is not this
+    page's business.
+    """
+    # CUT-OVER: `is_test` stands in for «is this a CELL document» — after the
+    # flip this returns an empty set for every new cell document and the
+    # shift-manager loses the card again. Re-key it with the two branches in
+    # `send_hr_document_to_admins` and `_decide_hr_document`.
+    if not cell_exchange.is_test(doc.doc_type):
+        return set()
+    from app.identity import profile_key, profile_holders
+    from app.routers.staff import _sm_role_ids_for_shift
+    out: set[int] = set()
+    for shift in sorted(_cell_doc_shifts(db, doc)):
+        for rid in _sm_role_ids_for_shift(db, shift):
+            out.update(profile_holders(db, profile_key("shift-manager", rid)))
+    out.discard(doc.created_by_telegram_id)
+    return out
+
+
+def _hr_doc_grantee_recipients(db, doc) -> set[int]:
+    """`staff.documents.approve` holders the card may go to for THIS document.
+
+    For a /staff document this is `_grantee_recipients` unchanged.
+
+    For a CELL document it drops every account whose approve reach comes from a
+    LEADER profile, and that is a security fix rather than tidying.
+    `cap_recipients` resolves an "own" grant through
+    `capabilities.account_unit_ids`, which answers ``None`` — «no restriction»
+    — for any account holding a leader profile, so an own-scoped grant made a
+    LEADER a card recipient for every hr_document on the platform. On this
+    platform **an ApprovalNotice IS the permission to tap**
+    (`recipient_has_notice_for_code` is the whole non-admin gate), and the
+    operator's ruling is that the receiving leader cannot approve — they are
+    notified only, through `staff_cells._notify_cell_doc`'s bell row and plain
+    DM. A card in their chat would have been the authority itself.
+
+    An account is kept when it holds at least one NON-leader approved profile
+    whose own units reach this document — so a brigadir who also holds a leader
+    record is unaffected, while a pure leader is out. Admins are unaffected
+    either way: `_broadcast` unions `_admin_ids()` on top of this.
+    """
+    from app.capabilities import (
+        CAP_DOCUMENTS_APPROVE, account_cap_scope, account_profile_keys,
+        profile_unit_ids, users_with_cap,
+    )
+    payload = doc.payload or {}
+    # CUT-OVER: same substitution — after the flip a cell document takes the
+    # /staff branch below and the leader exclusion is silently lost.
+    if not cell_exchange.is_test(doc.doc_type):
+        return _grantee_recipients(
+            db, CAP_DOCUMENTS_APPROVE, doc.manager_id,
+            payload.get("target_manager_id"),
+            skip_telegram_id=doc.created_by_telegram_id)
+
+    wanted = {m for m in (doc.manager_id, payload.get("target_manager_id")) if m}
+    out: set[int] = set()
+    for tg in users_with_cap(db, CAP_DOCUMENTS_APPROVE):
+        if tg == doc.created_by_telegram_id:
+            continue
+        # Leader profiles are skipped outright — they widen nothing here, and
+        # letting one answer «no restriction» is the bug this closes.
+        keys = [k for k in account_profile_keys(db, tg)
+                if not str(k).startswith("leader:")]
+        if not keys:
+            continue
+        if account_cap_scope(db, tg, CAP_DOCUMENTS_APPROVE) == "all":
+            out.add(tg)
+            continue
+        units: set[int] = set()
+        for key in keys:
+            u = profile_unit_ids(db, key)
+            if u is None:                  # admin / top-manager profile
+                units = None
+                break
+            units.update(u)
+        if units is None or (wanted & units):
+            out.add(tg)
+    return out
+
+
 def send_hr_document_to_admins(db, doc) -> None:
-    from app.capabilities import CAP_DOCUMENTS_APPROVE
     # «Panelda ochish» must land on the page the document actually lives on: a
     # cell-level document does not appear on /staff at all, and a button onto a
     # register that cannot show the row is worse than no button.
+    #
+    # CUT-OVER: `is_test` stands in for «is this a CELL document», and the two
+    # stop being the same question the moment `cell_exchange.SANDBOX` is
+    # False — a new cell document then carries the REAL doc_type, answers
+    # False here, and every card it sends points at /staff, a register that
+    # cannot show the row. This branch must be re-keyed off a fact that
+    # survives the flip (the payload's `sender_cell`), not off the type.
     panel = "/staff-cells" if cell_exchange.is_test(doc.doc_type) else "/staff"
+    # The card goes to exactly the people who may decide the document: admins
+    # (unioned in by `_broadcast`), the receiving supervisor, the shift-manager
+    # of a shift the move touches, and a documents-approve grantee — never a
+    # leader. See `_hr_doc_grantee_recipients`.
     _broadcast(db, "hr_document", doc.id, _hr_document_data(db, doc), _render_hr_document,
-               extra_recipients=_exchange_supervisor_recipients(db, doc) | _grantee_recipients(
-                   db, CAP_DOCUMENTS_APPROVE,
-                   doc.manager_id, (doc.payload or {}).get("target_manager_id"),
-                   skip_telegram_id=doc.created_by_telegram_id),
+               extra_recipients=(_exchange_supervisor_recipients(db, doc)
+                                 | _cell_doc_shift_manager_recipients(db, doc)
+                                 | _hr_doc_grantee_recipients(db, doc)),
                panel=panel)
 
 
@@ -895,18 +1009,32 @@ def _caller_for_doc(call, doc, db) -> dict | None:
 
       * the **receiving supervisor** — they must hold the approved supervisor
         role for the document's target unit;
-      * a **shift-manager**, for a cell-level document. This second rung is not
-        cosmetic: a cell → cell move inside one brigade names no receiving
-        supervisor other than the sender, and a `→ task` move names none at
-        all, so without it those documents were decidable by an admin and by
-        nobody else. It has to be added HERE and in the router's own
-        `_can_approve_cell_doc` together — the two answer the same question at
-        two doors, and editing one alone produces a tap that passes the notice
-        gate, builds a caller, and is then refused as «already handled», the
-        least debuggable failure this area can produce.
+      * a **shift-manager of a shift the move touches**, for a cell-level
+        document. This second rung is not cosmetic: a cell → cell move inside
+        one brigade names no receiving supervisor other than the sender, and a
+        `→ task` move names none at all, so without it those documents were
+        decidable by an admin and by nobody else.
 
-    The receiving **LEADER is deliberately not here**, and never sending them a
-    card is what actually enforces it (see `recipient_has_notice_for_code`).
+        It is only half the rung, and the other half is the CARD. This function
+        runs after `telegram_bot._approval_callback` has already gated the tap
+        on `recipient_has_notice_for_code`, so a shift-manager who is never
+        sent a notice never reaches here at all — the rung sat unreachable
+        while the router granted the same person approve authority through the
+        API, which is the two doors disagreeing about one person. Both halves
+        moved together: `_cell_doc_shift_manager_recipients` sends them the
+        card, and this builds the caller for the tap.
+
+        The SHIFT is checked here rather than left to the router's re-check.
+        An account may hold two shift-manager profiles; picking whichever row
+        the database returned first would build a caller for the wrong shift
+        and `staff_cells._can_approve_cell_doc` would then refuse the tap as
+        «already handled» — the least debuggable failure this area can produce.
+
+    The receiving **LEADER is deliberately not here**, and it is enforced
+    twice: no leader is ever sent a card (`_hr_doc_grantee_recipients`, and on
+    this platform the notice IS the permission to tap), and
+    `staff_cells._can_approve_cell_doc` refuses the role outright at the API
+    door.
 
     The role-scoped name is used so the audit trail and the outcome line read
     like a web-app decision.
@@ -925,10 +1053,17 @@ def _caller_for_doc(call, doc, db) -> dict | None:
             return {"sub": str(u.id), "role": "supervisor", "role_id": target_mid,
                     "full_name": role_row.full_name}
 
+    # CUT-OVER: same substitution — after the flip this rung stops firing for
+    # new cell documents and a shift-manager's tap is refused again.
     if cell_exchange.is_test(doc.doc_type):
-        sm = db.query(TelegramUserRole).filter_by(
+        from app.routers.staff import _sm_shift
+        rows = db.query(TelegramUserRole).filter_by(
             telegram_id=u.id, role="shift-manager", status="approved",
-        ).first()
+        ).order_by(TelegramUserRole.id).all()
+        shifts = _cell_doc_shifts(db, doc)
+        # The profile whose SHIFT actually touches this move, never «the first
+        # shift-manager row this account holds» — see the docstring.
+        sm = next((r for r in rows if _sm_shift(db, r.role_id) in shifts), None)
         if sm:
             return {"sub": str(u.id), "role": "shift-manager", "role_id": sm.role_id,
                     "full_name": sm.full_name}
@@ -1118,6 +1253,15 @@ def _decide_hr_document(doc_id: int, status: str, call) -> None:
         doc = db.query(HrDocument).filter_by(id=doc_id).first()
         if not doc:
             raise AlreadyHandled()
+        # CUT-OVER: this is the OTHER place `is_test` stands in for «is this a
+        # CELL document», and it is the consequential one. Flip
+        # `cell_exchange.SANDBOX` and every new cell document answers False
+        # here, so an inline tap on it is settled through `routers.staff`'s
+        # ladder instead of this page's: the shift-manager rung disappears, the
+        # leader refusal disappears, and `_notify_cell_doc` is never called, so
+        # the sending brigadir and the receiving leader are told nothing. Both
+        # this line and the `panel` line above must be re-keyed off a fact that
+        # survives the flip before SANDBOX moves.
         cell_doc = cell_exchange.is_test(doc.doc_type)
         caller = _caller_for_doc(call, doc, db)
         may = (staff_cells._can_approve_cell_doc if cell_doc

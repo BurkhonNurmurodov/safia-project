@@ -251,7 +251,7 @@ function LoadFailed({ error, onRetry }) {
 // and its leader, because ONE Save can file several documents — a selection
 // spanning two groups has to be visible while it is being made, not a surprise
 // in the footer.
-function ExchangeModal({ date, workers, allWorkers, byCode, probeCell, lang, onClose, onSaved }) {
+function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSaved }) {
   const { t } = useLang();
   const { tl } = useTranslit();
 
@@ -374,40 +374,20 @@ function ExchangeModal({ date, workers, allWorkers, byCode, probeCell, lang, onC
   const selectedRows = useMemo(() => pool.filter((w) => selected.has(rowKey(w))), [pool, selected]);
 
   // ── namesakes ───────────────────────────────────────────────────────────
-  // The selection is a set of ROWS, but the endpoint takes NAMES: it resolves
-  // each one to every in-scope attendance row that name holds that day and
-  // groups the result by each row's own cell. So a name that is only PARTLY
-  // ticked would file somebody who was never chosen — the same bug one level
-  // further down the wire. The page refuses to send such a selection and says
-  // which names are ambiguous; it never silently drops or silently adds a row.
+  // Nothing to guard here any more, and that is a SERVER guarantee, not an
+  // assumption. `POST /documents` takes row identities — worker name plus unit
+  // plus cell — and resolves each to exactly the row it names; a bare name is
+  // accepted only while it names one row and is refused with a 409 otherwise,
+  // so nothing is ever re-expanded across namesakes.
   //
-  // Counted over the whole roster the page holds (`allWorkers`), not over the
-  // cell-narrowed pool: the namesake the filing would sweep up is precisely the
-  // one the current cell filter is hiding. What the page holds is the limit of
-  // what it can prove — the SUPERVISOR filter narrows the payload server-side,
-  // so a namesake in another unit of the caller's scope is invisible here. The
-  // backend stays the authority on who a name resolves to; this refuses the
-  // ambiguity the page can see rather than sending it and hoping.
-  const nameCounts = useMemo(() => {
-    const m = new Map();
-    for (const w of (allWorkers?.length ? allWorkers : workers).filter(isSelectable)) {
-      const n = w.worker_name || "";
-      m.set(n, (m.get(n) || 0) + 1);
-    }
-    return m;
-  }, [allWorkers, workers]);
-
-  const partialNames = useMemo(() => {
-    const picked = new Map();
-    for (const w of selectedRows) {
-      const n = w.worker_name || "";
-      picked.set(n, (picked.get(n) || 0) + 1);
-    }
-    return [...picked.entries()]
-      .filter(([n, c]) => (nameCounts.get(n) ?? c) > c)
-      .map(([n]) => n)
-      .sort();
-  }, [selectedRows, nameCounts]);
+  // The page used to refuse a partly-ticked name before Save, because the
+  // endpoint took bare NAMES and swept up every row each one held. That guard
+  // could never be more than a partial one: the supervisor filter narrows the
+  // payload server-side, so a namesake in another unit of the caller's scope
+  // was invisible to it, and it blocked filings that were perfectly honest.
+  // With the identity sent explicitly there is no ambiguity left for the page
+  // to see, and re-adding a client-side check would only re-introduce the half
+  // of it that was wrong.
 
   // ── transfer / return windows ───────────────────────────────────────────
   // Same arithmetic as /staff, from the same imported helpers: earliest start
@@ -494,21 +474,23 @@ function ExchangeModal({ date, workers, allWorkers, byCode, probeCell, lang, onC
       setError(t("staffCell.sameCell").replace("{cells}", sameCell.join(", ")));
       return;
     }
-    if (partialNames.length) {
-      setError(t("staffCell.namesakeWarn").replace("{names}", partialNames.map(tl).join(", ")));
-      return;
-    }
     const tgt = targetIsSup
       ? { target_type: "supervisor", target_manager_id: parseInt(target.slice(4), 10), target_cell: targetCell || "" }
       : { target_type: "task", task_name: target.slice(5) };
     const tt = useTime && transferTime ? transferTime : "";
     const rt = tt && useReturn && returnTime ? returnTime : "";
-    // The set holds ROW keys; the endpoint takes names. This is the one place
-    // the two vocabularies meet, and it is a de-duplicated projection of the
-    // rows actually ticked — never a re-derivation from the roster, which is
-    // what would let a namesake back in. `partialNames` above has already
-    // refused any name whose other rows are not in this set.
-    const employees = [...new Set(selectedRows.map((w) => w.worker_name))];
+    // The one place the selection leaves the page — and it leaves it as the
+    // ROW IDENTITIES it has held all along (`rowKey`), never collapsed back to
+    // names. Collapsing was the whole namesake bug: two people spelled the
+    // same way became one entry on the wire, and the backend re-expanded it
+    // across every row that name held, filing people nobody ticked. The server
+    // now resolves each entry to exactly the row it names, so the vocabulary
+    // is the same on both sides of the request.
+    const employees = selectedRows.map((w) => ({
+      worker_name:  w.worker_name,
+      manager_id:   w.manager_id,
+      verifix_code: w.verifix_code,
+    }));
     setSaving(true);
     try {
       const res = await api.post("/api/staff-cells/documents", {
@@ -561,10 +543,7 @@ function ExchangeModal({ date, workers, allWorkers, byCode, probeCell, lang, onC
               size="sm"
               icon={<Check size={13} />}
               loading={saving}
-              // A partly-ticked namesake blocks the Save, and the warning strip
-              // above the roster is what says so — a button that refuses
-              // without a reason on screen is the same defect as a tooltip.
-              disabled={!chainDone || !selectedRows.length || partialNames.length > 0}
+              disabled={!chainDone || !selectedRows.length}
               onClick={handleSave}
             >
               {t("staff.saveDocument")}
@@ -725,17 +704,6 @@ function ExchangeModal({ date, workers, allWorkers, byCode, probeCell, lang, onC
             {selectedRows.length} {t("staff.selected")}
           </span>
         </div>
-
-        {/* A partly-ticked name is refused BEFORE Save, not by it: the operator
-            has to be able to see which tick is the problem while they still
-            have the roster in front of them. */}
-        {partialNames.length > 0 && (
-          <div className="px-5 py-2.5 border-b flex items-start gap-2 text-[11px] leading-snug flex-shrink-0"
-            style={{ borderColor: "var(--border)", background: "rgba(234,179,8,0.10)", color: "var(--text-2)" }}>
-            <AlertTriangle size={13} style={{ color: "#eab308", flexShrink: 0, marginTop: 1 }} />
-            <span>{t("staffCell.namesakeWarn").replace("{names}", partialNames.map(tl).join(", "))}</span>
-          </div>
-        )}
 
         <div className="flex-1 min-h-0 overflow-y-auto">
           {pool.length === 0 ? (
@@ -1528,10 +1496,6 @@ export default function StaffCells() {
         <ExchangeModal
           date={date}
           workers={scoped}
-          // The WHOLE in-scope roster, not the narrowed one: it is only used to
-          // spot a name the filing would sweep up beyond what was ticked, and
-          // that namesake is exactly the row the cell filter is hiding.
-          allWorkers={rows}
           byCode={byCode}
           probeCell={probeCell}
           lang={lang}
