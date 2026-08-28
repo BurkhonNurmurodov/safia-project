@@ -31,7 +31,7 @@ import { useState, useMemo, useEffect, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeftRight, Boxes, Check, Ban, Trash2, X, Plus, UserRound,
-  FlaskConical, AlertTriangle, Clock, Users, FileText, Info,
+  FlaskConical, AlertTriangle, Clock, Users, FileText, Info, RefreshCw,
 } from "lucide-react";
 
 import Layout from "../components/layout/Layout";
@@ -44,6 +44,9 @@ import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import EmptyState from "../components/ui/EmptyState";
+import ErrorScreen from "../components/ui/ErrorScreen";
+import FormField from "../components/ui/FormField";
+import RequestStateChip from "../components/ui/RequestStateChip";
 import DayStepper from "../components/ui/DayStepper";
 import CellLink from "../components/ui/CellLink";
 import TimeWheelPicker from "../components/ui/TimeWheelPicker";
@@ -53,7 +56,6 @@ import { useToast } from "../components/ui/Toast";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
-import { useCapabilities } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
 import api from "../utils/api";
 import { cellName as pickCellName } from "../utils/cellName";
@@ -72,10 +74,16 @@ const todayISO = () => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
-// A sandbox document is told apart by its doc_type suffix — the same fact
-// `cell_exchange.is_test` states on the backend. The label still comes from the
-// REAL type, so «people_exchange_test» reads as «Perevod sotrudnikov · TEST»
-// rather than as a fourth document kind nobody has heard of.
+// CUT-OVER: sandbox declaration #1 of 2 on this page. A sandbox document is
+// told apart by its doc_type suffix — the same fact `cell_exchange.is_test`
+// states on the backend. The label still comes from the REAL type, so
+// «people_exchange_test» reads as «Perevod sotrudnikov · TEST» rather than as a
+// fourth document kind nobody has heard of.
+// When `cell_exchange.SANDBOX` is flipped to False these two helpers keep
+// working unchanged — new documents simply stop matching `isTestDoc`, and the
+// TEST chip disappears from them on its own. LEAVE THEM IN PLACE at cut-over:
+// the documents already filed keep their test doc_type until they are purged,
+// and a chip that stopped rendering would present them as live transfers.
 const isTestDoc = (d) => String(d?.doc_type || "").endsWith("_test");
 const realType  = (d) => String(d?.doc_type || "").replace(/_test$/, "");
 
@@ -91,6 +99,19 @@ const isSelectable = (w) => !!w.verifix_code && !w.is_supervisor;
 // refuse exactly that.
 const normCode = (c) => String(c ?? "").trim().replace(/^0+(?=\d)/, "");
 const sameCode = (a, b) => !!a && !!b && normCode(a) === normCode(b);
+
+/**
+ * THE identity of one roster row for SELECTION — unit + cell + name.
+ *
+ * Not the bare name. This roster spans several cells and, for a shift-manager
+ * or an admin, several units, and namesakes are common in this data: a
+ * selection keyed by the name alone ticks EVERY namesake at once, and the
+ * filing then groups them into documents by each namesake's own cell — so one
+ * tick files people the operator never chose. Every place that reads, writes,
+ * counts, renders or sends the selection goes through this one key.
+ */
+const rowKey = (w) =>
+  `${w?.manager_id ?? ""}|${normCode(w?.verifix_code)}|${w?.worker_name || ""}`;
 
 /**
  * What one cell shows, in the viewer's language. The day catalog
@@ -135,23 +156,25 @@ function TestChip() {
   );
 }
 
-// Traffic light — the one place a raw status hex is correct.
-const STATUS_TONE = {
-  approved: { bg: "rgba(34,197,94,0.14)",  fg: "#22c55e", bd: "rgba(34,197,94,0.35)",  key: "staff.yes" },
-  rejected: { bg: "rgba(239,68,68,0.14)",  fg: "#ef4444", bd: "rgba(239,68,68,0.35)",  key: "staff.rejected" },
-  draft:    { bg: "rgba(234,179,8,0.14)",  fg: "#eab308", bd: "rgba(234,179,8,0.35)",  key: "staff.pending" },
+// A document's state is «waiting / accepted / refused» — exactly the three
+// facts `RequestStateChip` is THE template for, so this page renders that and
+// nothing of its own. The words stay the register's own (`staff.yes` for a
+// posted document), because two vocabularies for one status is how a reader
+// stops being able to tell the two pages' rows apart.
+const DOC_STATE = { approved: "approved", rejected: "rejected", draft: "pending" };
+const DOC_STATE_TKEY = {
+  approved: "staff.yes",
+  rejected: "staff.rejected",
+  draft:    "staff.pending",
 };
 
 function StatusChip({ status }) {
   const { t } = useLang();
-  const tone = STATUS_TONE[status] || STATUS_TONE.draft;
   return (
-    <span
-      className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full inline-block whitespace-nowrap"
-      style={{ background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}` }}
-    >
-      {t(tone.key)}
-    </span>
+    <RequestStateChip
+      state={DOC_STATE[status] || "pending"}
+      label={t(DOC_STATE_TKEY[status] || "staff.pending")}
+    />
   );
 }
 
@@ -163,9 +186,13 @@ function CellCell({ info }) {
   if (!info || !info.code) {
     return <span style={{ color: "var(--text-4)" }}>{t("staffCell.noCellGroup")}</span>;
   }
+  // The colour sits on the WRAPPER, never on the link: `.cell-link` is
+  // `color: inherit` at rest precisely so it can be tinted from outside, and an
+  // inline colour on the element itself beats the template's `:hover` rule —
+  // which is half of the affordance on a device that has a pointer.
   return (
-    <div className="flex flex-col leading-tight">
-      <CellLink id={info.id} className="font-mono text-xs" style={{ color: "var(--text-1)" }}>
+    <div className="flex flex-col leading-tight" style={{ color: "var(--text-1)" }}>
+      <CellLink id={info.id} className="font-mono text-xs">
         {info.code}
       </CellLink>
       {info.name && (
@@ -177,6 +204,45 @@ function CellCell({ info }) {
   );
 }
 
+// ── A read that FAILED ────────────────────────────────────────────────────────
+//
+// A failed request is not an empty day, and this page shipped unable to tell
+// the two apart: with no `isError` anywhere, a 403, a 500 or an endpoint that
+// is not deployed yet fell through to `EmptyState` and told the operator «no
+// attendance for this day» — the factory reported empty because the request
+// never landed. Every read here renders its own failure instead: what broke,
+// the server's own words behind a disclosure, and one button that tries again.
+// `ErrorScreen inline` is THE template for this — it keeps the nav, so the page
+// itself stays an escape hatch.
+
+// The server's own words, whatever shape they arrive in — the 422 interceptor
+// flattens a detail ARRAY, but a handler may still answer with an object.
+function detailText(error) {
+  const raw = error?.response?.data?.detail;
+  if (typeof raw === "string") return raw;
+  if (raw) return JSON.stringify(raw);
+  return error?.message || null;
+}
+
+function LoadFailed({ error, onRetry }) {
+  const { t } = useLang();
+  const status = error?.response?.status;
+  const detail = detailText(error);
+  return (
+    <ErrorScreen
+      inline
+      tone="danger"
+      icon={AlertTriangle}
+      code={status ? `HTTP ${status}` : t("common.error")}
+      title={t("staffCell.loadFailedTitle")}
+      message={t("staffCell.loadFailedMsg")}
+      action={{ label: t("common.retry"), onClick: onRetry, icon: <RefreshCw size={16} /> }}
+      detail={detail}
+      detailLabel={t("staffCell.errorDetails")}
+    />
+  );
+}
+
 // ── The exchange modal ────────────────────────────────────────────────────────
 //
 // The target chain reveals in order, so there is never more than one thing to
@@ -185,7 +251,7 @@ function CellCell({ info }) {
 // and its leader, because ONE Save can file several documents — a selection
 // spanning two groups has to be visible while it is being made, not a surprise
 // in the footer.
-function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSaved }) {
+function ExchangeModal({ date, workers, allWorkers, byCode, probeCell, lang, onClose, onSaved }) {
   const { t } = useLang();
   const { tl } = useTranslit();
 
@@ -201,14 +267,28 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
   const [rOpen, setROpen]           = useState(false);
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState("");
+  // Validation lands on the FIELD that caused it (the FormField `error` prop);
+  // only the save's own failure and the roster-level refusals stay in the
+  // footer, where the outcome sentence they contradict is written.
+  const [fieldErr, setFieldErr]     = useState({});
 
-  // Where a move may land. The endpoint answers for the SENDER's shift, so it
-  // is asked with one sender cell — the page's own scope, fixed for the life of
-  // the modal so the option list can never move under a half-made decision.
-  const { data: raw } = useQuery({
-    queryKey: ["staffcell-exchange-targets", date, probeCell],
+  // The sender cell the target list is drawn for, CAPTURED ONCE at mount — the
+  // literal reading of "fixed for the life of the modal". It is the page's cell
+  // filter and nothing else: with no filter set the page is not scoped to a
+  // cell, and naming an arbitrary row's code instead would pin the whole list
+  // to one cell's shift and quietly drop that cell from the destinations.
+  // Sending nothing is the honest answer, and the endpoint's own fallback (the
+  // caller's units, no narrowing for an admin) is the right one.
+  const [probe] = useState(() => probeCell || "");
+
+  // Where a move may land. The endpoint answers for the SENDER's shift.
+  const {
+    data: raw, isError: targetsFailed, error: targetsError,
+    refetch: refetchTargets, isFetching: targetsFetching,
+  } = useQuery({
+    queryKey: ["staffcell-exchange-targets", date, probe],
     queryFn: () => api.get("/api/staff-cells/exchange-targets", {
-      params: { attend_date: date, ...(probeCell ? { sender_cell: probeCell } : {}) },
+      params: { attend_date: date, ...(probe ? { sender_cell: probe } : {}) },
     }).then((r) => r.data),
     enabled: !!date,
   });
@@ -273,22 +353,61 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [shown]);
 
-  function toggle(name) {
+  // Every write to the set is a ROW key (see `rowKey`): ticking one worker can
+  // never tick their namesake standing in another cell.
+  function toggle(w) {
+    const k = rowKey(w);
     setSelected((s) => {
       const n = new Set(s);
-      n.has(name) ? n.delete(name) : n.add(name);
+      n.has(k) ? n.delete(k) : n.add(k);
       return n;
     });
   }
   function toggleGroup(rows, on) {
     setSelected((s) => {
       const n = new Set(s);
-      rows.forEach((w) => (on ? n.delete(w.worker_name) : n.add(w.worker_name)));
+      rows.forEach((w) => (on ? n.delete(rowKey(w)) : n.add(rowKey(w))));
       return n;
     });
   }
 
-  const selectedRows = useMemo(() => pool.filter((w) => selected.has(w.worker_name)), [pool, selected]);
+  const selectedRows = useMemo(() => pool.filter((w) => selected.has(rowKey(w))), [pool, selected]);
+
+  // ── namesakes ───────────────────────────────────────────────────────────
+  // The selection is a set of ROWS, but the endpoint takes NAMES: it resolves
+  // each one to every in-scope attendance row that name holds that day and
+  // groups the result by each row's own cell. So a name that is only PARTLY
+  // ticked would file somebody who was never chosen — the same bug one level
+  // further down the wire. The page refuses to send such a selection and says
+  // which names are ambiguous; it never silently drops or silently adds a row.
+  //
+  // Counted over the whole roster the page holds (`allWorkers`), not over the
+  // cell-narrowed pool: the namesake the filing would sweep up is precisely the
+  // one the current cell filter is hiding. What the page holds is the limit of
+  // what it can prove — the SUPERVISOR filter narrows the payload server-side,
+  // so a namesake in another unit of the caller's scope is invisible here. The
+  // backend stays the authority on who a name resolves to; this refuses the
+  // ambiguity the page can see rather than sending it and hoping.
+  const nameCounts = useMemo(() => {
+    const m = new Map();
+    for (const w of (allWorkers?.length ? allWorkers : workers).filter(isSelectable)) {
+      const n = w.worker_name || "";
+      m.set(n, (m.get(n) || 0) + 1);
+    }
+    return m;
+  }, [allWorkers, workers]);
+
+  const partialNames = useMemo(() => {
+    const picked = new Map();
+    for (const w of selectedRows) {
+      const n = w.worker_name || "";
+      picked.set(n, (picked.get(n) || 0) + 1);
+    }
+    return [...picked.entries()]
+      .filter(([n, c]) => (nameCounts.get(n) ?? c) > c)
+      .map(([n]) => n)
+      .sort();
+  }, [selectedRows, nameCounts]);
 
   // ── transfer / return windows ───────────────────────────────────────────
   // Same arithmetic as /staff, from the same imported helpers: earliest start
@@ -367,11 +486,16 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
 
   async function handleSave() {
     setError("");
-    if (!target)               { setError(t("staff.chooseTarget")); return; }
-    if (needCell && !targetCell) { setError(t("staff.chooseCell")); return; }
-    if (!selected.size)        { setError(t("staff.selectAtLeastOne")); return; }
+    setFieldErr({});
+    if (!target)                 { setFieldErr({ target: t("staff.chooseTarget") }); return; }
+    if (needCell && !targetCell) { setFieldErr({ cell: t("staff.chooseCell") }); return; }
+    if (!selectedRows.length)    { setError(t("staff.selectAtLeastOne")); return; }
     if (sameCell.length) {
       setError(t("staffCell.sameCell").replace("{cells}", sameCell.join(", ")));
+      return;
+    }
+    if (partialNames.length) {
+      setError(t("staffCell.namesakeWarn").replace("{names}", partialNames.map(tl).join(", ")));
       return;
     }
     const tgt = targetIsSup
@@ -379,12 +503,18 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
       : { target_type: "task", task_name: target.slice(5) };
     const tt = useTime && transferTime ? transferTime : "";
     const rt = tt && useReturn && returnTime ? returnTime : "";
+    // The set holds ROW keys; the endpoint takes names. This is the one place
+    // the two vocabularies meet, and it is a de-duplicated projection of the
+    // rows actually ticked — never a re-derivation from the roster, which is
+    // what would let a namesake back in. `partialNames` above has already
+    // refused any name whose other rows are not in this set.
+    const employees = [...new Set(selectedRows.map((w) => w.worker_name))];
     setSaving(true);
     try {
       const res = await api.post("/api/staff-cells/documents", {
         doc_type: "people_exchange",
         attend_date: date,
-        employees: [...selected],
+        employees,
         transfer_time: tt,
         return_time: rt,
         ...tgt,
@@ -398,8 +528,12 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
     }
   }
 
-  const stepCls = "px-5 py-3 border-b flex flex-wrap items-center gap-3 flex-shrink-0";
-  const labelCls = "text-xs font-medium";
+  // One step = one `FormField` (label + control + its own hint/error) inside a
+  // separated row. A validation failure attaches to the control that caused it
+  // instead of being dumped in one paragraph the reader has to map back onto
+  // four fields by themselves.
+  const stepCls = "px-5 py-3 border-b flex-shrink-0";
+  const rowCls = "flex flex-wrap items-center gap-3";
 
   return (
       <Modal
@@ -427,7 +561,10 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
               size="sm"
               icon={<Check size={13} />}
               loading={saving}
-              disabled={!chainDone || !selected.size}
+              // A partly-ticked namesake blocks the Save, and the warning strip
+              // above the roster is what says so — a button that refuses
+              // without a reason on screen is the same defect as a tooltip.
+              disabled={!chainDone || !selectedRows.length || partialNames.length > 0}
               onClick={handleSave}
             >
               {t("staff.saveDocument")}
@@ -437,99 +574,138 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
       >
         {/* 1 — Qayerga */}
         <div className={stepCls} style={{ borderColor: "var(--border)" }}>
-          <span className={labelCls} style={{ color: "var(--text-3)" }}>{t("staff.moveTo")}</span>
-          <StyledSelect
-            value={target}
-            onChange={(v) => { setTarget(v); setTargetCell(""); }}
-            options={targetOptions}
-            placeholder={t("staff.selectTargetOpt")}
-            searchable
-            searchPlaceholder={t("common.search")}
-            className="flex-1 min-w-[220px]"
-            triggerClassName="px-3 py-2 text-xs"
-          />
+          <FormField
+            label={t("staff.moveTo")}
+            required
+            // A dead target list must never read as "there is nowhere to send
+            // them": the reason sits on the field, with the way to try again
+            // beside the control it emptied.
+            error={fieldErr.target || (targetsFailed ? t("staffCell.targetsFailed") : "")}
+          >
+            <div className={rowCls}>
+              <StyledSelect
+                value={target}
+                onChange={(v) => { setTarget(v); setTargetCell(""); setFieldErr({}); }}
+                options={targetOptions}
+                placeholder={t("staff.selectTargetOpt")}
+                searchable
+                searchPlaceholder={t("common.search")}
+                className="flex-1 min-w-[220px]"
+                triggerClassName="px-3 py-2 text-xs"
+              />
+              {targetsFailed && (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  icon={<RefreshCw size={13} />}
+                  loading={targetsFetching}
+                  onClick={() => refetchTargets()}
+                >
+                  {t("common.retry")}
+                </Button>
+              )}
+            </div>
+          </FormField>
+          {targetsFailed && detailText(targetsError) && (
+            <p className="mt-1 text-[11px] leading-snug" style={{ color: "var(--text-4)" }}>
+              {detailText(targetsError)}
+            </p>
+          )}
         </div>
 
         {/* 2 — Yacheyka (only once a receiving supervisor is chosen) */}
         {needCell && (
           <div className={stepCls} style={{ borderColor: "var(--border)" }}>
-            <span className={labelCls} style={{ color: "var(--text-3)" }}>{t("staff.toCell")}</span>
-            <StyledSelect
-              value={targetCell}
-              onChange={setTargetCell}
-              options={cellOptions}
-              placeholder={t("staff.selectCellOpt")}
-              searchable
-              searchPlaceholder={t("common.search")}
-              className="flex-1 min-w-[240px]"
-              triggerClassName="px-3 py-2 text-xs"
-            />
+            <FormField label={t("staff.toCell")} required error={fieldErr.cell || ""}>
+              <div className={rowCls}>
+                <StyledSelect
+                  value={targetCell}
+                  onChange={(v) => { setTargetCell(v); setFieldErr({}); }}
+                  options={cellOptions}
+                  placeholder={t("staff.selectCellOpt")}
+                  searchable
+                  searchPlaceholder={t("common.search")}
+                  className="flex-1 min-w-[240px]"
+                  triggerClassName="px-3 py-2 text-xs"
+                />
+              </div>
+            </FormField>
           </div>
         )}
 
         {/* 3 — transfer time T */}
         {chainDone && (
           <div className={stepCls} style={{ borderColor: "var(--border)" }}>
-            <span className={labelCls} style={{ color: "var(--text-3)" }}>{t("staff.transferTimeToggle")}</span>
-            <SegmentedToggle
-              size="sm"
-              value={useTime ? "at" : "all"}
-              onChange={(v) => { const on = v === "at"; setUseTime(on); if (!on) { setTransfer(""); setUseReturn(false); setReturn(""); } }}
-              options={[["all", t("staffCell.tWhole")], ["at", t("staffCell.tFrom")]]}
-            />
-            {useTime && (timeWindow ? (
-              <Button
-                variant="secondary"
-                size="md"
-                icon={<Clock size={13} />}
-                onClick={() => setTOpen(true)}
-              >
-                {transferTime || t("staff.transferTimePlaceholder")}
-              </Button>
-            ) : (
-              <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("staff.transferTimeNoOptions")}</span>
-            ))}
-            <TimeWheelPicker
-              open={tOpen && !!timeWindow}
-              lo={timeWindow?.lo}
-              hi={timeWindow?.hi}
-              value={transferTime}
-              onConfirm={(v) => { setTransfer(v); setTOpen(false); }}
-              onClose={() => setTOpen(false)}
-            />
+            <FormField
+              label={t("staff.transferTimeToggle")}
+              // Why the hour cannot be picked belongs UNDER the control that
+              // will not take one, at --text-3, not beside it at --text-4.
+              hint={useTime && !timeWindow ? t("staff.transferTimeNoOptions") : undefined}
+            >
+              <div className={rowCls}>
+                <SegmentedToggle
+                  size="sm"
+                  value={useTime ? "at" : "all"}
+                  onChange={(v) => { const on = v === "at"; setUseTime(on); if (!on) { setTransfer(""); setUseReturn(false); setReturn(""); } }}
+                  options={[["all", t("staffCell.tWhole")], ["at", t("staffCell.tFrom")]]}
+                />
+                {useTime && timeWindow && (
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    icon={<Clock size={13} />}
+                    onClick={() => setTOpen(true)}
+                  >
+                    {transferTime || t("staff.transferTimePlaceholder")}
+                  </Button>
+                )}
+                <TimeWheelPicker
+                  open={tOpen && !!timeWindow}
+                  lo={timeWindow?.lo}
+                  hi={timeWindow?.hi}
+                  value={transferTime}
+                  onConfirm={(v) => { setTransfer(v); setTOpen(false); }}
+                  onClose={() => setTOpen(false)}
+                />
+              </div>
+            </FormField>
           </div>
         )}
 
         {/* 4 — return time R (only once T exists: R ends the away stint) */}
         {chainDone && useTime && !!transferTime && (
           <div className={stepCls} style={{ borderColor: "var(--border)" }}>
-            <span className={labelCls} style={{ color: "var(--text-3)" }}>{t("staff.returnTimeToggle")}</span>
-            <SegmentedToggle
-              size="sm"
-              value={useReturn ? "at" : "none"}
-              onChange={(v) => { const on = v === "at"; setUseReturn(on); if (!on) setReturn(""); }}
-              options={[["none", t("staffCell.rNone")], ["at", t("staffCell.rAt")]]}
-            />
-            {useReturn && (returnWindow ? (
-              <Button
-                variant="secondary"
-                size="md"
-                icon={<Clock size={13} />}
-                onClick={() => setROpen(true)}
-              >
-                {returnTime || t("staff.returnTimePlaceholder")}
-              </Button>
-            ) : (
-              <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("staff.returnTimeNoOptions")}</span>
-            ))}
-            <TimeWheelPicker
-              open={rOpen && !!returnWindow}
-              lo={returnWindow?.lo}
-              hi={returnWindow?.hi}
-              value={returnTime}
-              onConfirm={(v) => { setReturn(v); setROpen(false); }}
-              onClose={() => setROpen(false)}
-            />
+            <FormField
+              label={t("staff.returnTimeToggle")}
+              hint={useReturn && !returnWindow ? t("staff.returnTimeNoOptions") : undefined}
+            >
+              <div className={rowCls}>
+                <SegmentedToggle
+                  size="sm"
+                  value={useReturn ? "at" : "none"}
+                  onChange={(v) => { const on = v === "at"; setUseReturn(on); if (!on) setReturn(""); }}
+                  options={[["none", t("staffCell.rNone")], ["at", t("staffCell.rAt")]]}
+                />
+                {useReturn && returnWindow && (
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    icon={<Clock size={13} />}
+                    onClick={() => setROpen(true)}
+                  >
+                    {returnTime || t("staff.returnTimePlaceholder")}
+                  </Button>
+                )}
+                <TimeWheelPicker
+                  open={rOpen && !!returnWindow}
+                  lo={returnWindow?.lo}
+                  hi={returnWindow?.hi}
+                  value={returnTime}
+                  onConfirm={(v) => { setReturn(v); setROpen(false); }}
+                  onClose={() => setROpen(false)}
+                />
+              </div>
+            </FormField>
           </div>
         )}
 
@@ -542,11 +718,24 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
             className="flex-1"
             inputClassName="text-xs pl-8 pr-7 py-2"
           />
+          {/* The count is a count of ROWS — the same set the footer, the Save
+              button and the POST body read. */}
           <span className="text-[11px] px-2 py-1 rounded-full whitespace-nowrap"
             style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-            {selected.size} {t("staff.selected")}
+            {selectedRows.length} {t("staff.selected")}
           </span>
         </div>
+
+        {/* A partly-ticked name is refused BEFORE Save, not by it: the operator
+            has to be able to see which tick is the problem while they still
+            have the roster in front of them. */}
+        {partialNames.length > 0 && (
+          <div className="px-5 py-2.5 border-b flex items-start gap-2 text-[11px] leading-snug flex-shrink-0"
+            style={{ borderColor: "var(--border)", background: "rgba(234,179,8,0.10)", color: "var(--text-2)" }}>
+            <AlertTriangle size={13} style={{ color: "#eab308", flexShrink: 0, marginTop: 1 }} />
+            <span>{t("staffCell.namesakeWarn").replace("{names}", partialNames.map(tl).join(", "))}</span>
+          </div>
+        )}
 
         <div className="flex-1 min-h-0 overflow-y-auto">
           {pool.length === 0 ? (
@@ -566,7 +755,7 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
           ) : (
             groups.map(([code, rows]) => {
               const info = cellInfo(code, byCode, lang, rows[0]?.cell);
-              const allOn = rows.every((w) => selected.has(w.worker_name));
+              const allOn = rows.every((w) => selected.has(rowKey(w)));
               return (
                 <div key={code || "_none"}>
                   <div
@@ -593,12 +782,12 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
                     </Button>
                   </div>
                   {rows.map((w) => {
-                    const on = selected.has(w.worker_name);
+                    const on = selected.has(rowKey(w));
                     return (
                       <button
-                        key={w.worker_name}
+                        key={rowKey(w)}
                         type="button"
-                        onClick={() => toggle(w.worker_name)}
+                        onClick={() => toggle(w)}
                         className="w-full text-left flex items-center gap-3 px-5 py-2 border-b text-xs"
                         style={{ borderColor: "var(--border)", background: on ? "var(--brand-bg)" : "transparent" }}
                       >
@@ -807,17 +996,17 @@ export default function StaffCells() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
-  const { seesAllOn } = useCapabilities();
   const qc = useQueryClient();
   const toast = useToast();
 
   const role       = auth?.role;
   const isAdmin    = role === "admin";
   const isShiftMgr = role === "shift-manager";
-  // A personal grant at "all" on THIS page — never folded in from /staff, whose
-  // scope answers a different question about a different set of endpoints.
-  const seesAll    = seesAllOn("staff-cell");
-  const picksSupervisor = isAdmin || isShiftMgr || seesAll;
+  // Admins and shift-managers, and nobody else — the frozen contract's §8.
+  // A `page.view.staff-cell` grant at "all" is deliberately NOT folded in: it
+  // widens which ROWS a viewer may read, which is the backend's answer to give,
+  // and it is not a statement that this viewer steers the plant by brigadir.
+  const picksSupervisor = isAdmin || isShiftMgr;
   // Only a decider gets the Approvals queue; a leader files and reads, and the
   // backend refuses their decision anyway.
   const showApprovals = isAdmin || isShiftMgr || role === "supervisor";
@@ -837,7 +1026,14 @@ export default function StaffCells() {
   const tab = rawTab === "approvals" && !showApprovals ? "workers" : rawTab;
 
   // ── data ────────────────────────────────────────────────────────────────
-  const { data: attData, isLoading: attLoading } = useQuery({
+  // Both reads carry their own failure. Without `isError` a 403, a 500 or an
+  // endpoint that is not deployed yet arrives as `undefined` data and renders
+  // as an EMPTY day — the page telling the operator the factory stood still
+  // when the request simply never landed.
+  const {
+    data: attData, isLoading: attLoading,
+    isError: attFailed, error: attError, refetch: refetchAtt,
+  } = useQuery({
     queryKey: ["staffcell-attendance", date, managerId],
     queryFn: () => api.get("/api/staff-cells/attendance", {
       params: { attend_date: date, ...(managerId ? { manager_id: managerId } : {}) },
@@ -845,10 +1041,16 @@ export default function StaffCells() {
     enabled: !!date,
   });
 
-  const { data: docsRaw, isLoading: docsLoading } = useQuery({
+  const {
+    data: docsRaw, isLoading: docsLoading,
+    isError: docsFailed, error: docsError, refetch: refetchDocs,
+  } = useQuery({
     queryKey: ["staffcell-documents"],
     queryFn: () => api.get("/api/staff-cells/documents").then((r) => r.data),
-    refetchInterval: 30_000,
+    // The register polls, but a FAILING register does not: re-entering a dead
+    // cascade every 30 seconds for the rest of the shift buys nothing and hides
+    // nothing. The poll resumes on its own the moment a retry succeeds.
+    refetchInterval: (q) => (q.state.status === "error" ? false : 30_000),
   });
   const documents = useMemo(
     () => (Array.isArray(docsRaw) ? docsRaw : (docsRaw?.documents ?? [])),
@@ -1079,11 +1281,22 @@ export default function StaffCells() {
 
   function openAct(doc, action) { setAskErr(""); setAsk({ doc, action }); }
 
-  // The exchange is asked about ONE sender cell — the one the page is scoped to
-  // — and the answer is fixed for the modal's life so the option list can never
-  // move under a half-made decision.
-  const probeCell = cellPick || scoped.find((w) => w.verifix_code)?.verifix_code || "";
+  // The exchange asks its target list about ONE sender cell, and the only cell
+  // this page is actually scoped to is the one the FILTER names. The first
+  // row's code used to stand in for it when no filter was set — an arbitrary
+  // cell, which pins the destination list to that cell's shift and removes that
+  // one cell from it, both invisible to the operator. With nothing picked the
+  // page sends nothing and the endpoint answers from the caller's own units
+  // (an admin: every shift), which is the honest scope. The modal freezes
+  // whatever this is at mount, so the list cannot move under a half-made
+  // decision — the promise the comment there makes.
+  const probeCell = cellPick || "";
+
+  // Two different reasons the button cannot be pressed, and the operator is
+  // told WHICH on screen (see the toolbar): the day carries no cell codes at
+  // all, or the current narrowing holds nobody who may be moved.
   const canFile = dayHasCodes && scoped.some(isSelectable);
+  const cannotFileWhy = dayHasCodes ? t("staffCell.newExchangeNoRows") : t("staffCell.newExchangeDisabled");
 
   const thProps = { sort, onSort };
 
@@ -1117,7 +1330,13 @@ export default function StaffCells() {
         ]}
       />
 
-      {/* Nothing moves today — said once, at the top, in one line. */}
+      {/* CUT-OVER: sandbox declaration #2 of 2 on this page. Nothing moves
+          today — said once, at the top, in one line. DELETE THIS BANNER when
+          `cell_exchange.SANDBOX` is flipped to False: from that moment a
+          document filed here moves attendance rows for real, and a page still
+          promising that it does not is the worst thing on the screen. The TEST
+          chip (declaration #1) stays — it marks the documents filed BEFORE the
+          flip, which keep their test doc_type until they are purged. */}
       <div className="mb-4 flex items-start gap-2 px-3 py-2 rounded-xl text-[11px] leading-snug"
         style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.30)", color: "var(--text-2)" }}>
         <FlaskConical size={13} style={{ color: "#eab308", flexShrink: 0, marginTop: 1 }} />
@@ -1136,109 +1355,125 @@ export default function StaffCells() {
             <FilterPanel sections={sections} />
           </div>
 
-          {noCodesDay && (
-            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-[11px] leading-snug"
-              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.30)", color: "var(--text-2)" }}>
-              <AlertTriangle size={13} style={{ color: "#ef4444", flexShrink: 0, marginTop: 1 }} />
-              <span>{t("staffCell.noCellCodes")}</span>
-            </div>
-          )}
+          {attFailed ? (
+            <LoadFailed error={attError} onRetry={() => refetchAtt()} />
+          ) : (
+            <>
+            {noCodesDay && (
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-[11px] leading-snug"
+                style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.30)", color: "var(--text-2)" }}>
+                <AlertTriangle size={13} style={{ color: "#ef4444", flexShrink: 0, marginTop: 1 }} />
+                <span>{t("staffCell.noCellCodes")}</span>
+              </div>
+            )}
 
-          <TableCard
-            icon={Users}
-            title={t("staffCell.rosterTitle")}
-            subtitle={attData?.manager_name ? tl(attData.manager_name) : undefined}
-            right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>
-              {t("staff.showingRows").replace("{n}", String(sorted.length))}
-            </span>}
-            toolbar={
-              <>
-                <SearchInput
-                  value={query}
-                  onChange={setQuery}
-                  placeholder={t("staff.searchByName")}
-                  className="w-full sm:w-64"
-                />
-                <Button
-                  size="lg"
-                  className="sm:ml-auto"
-                  icon={<Plus size={14} />}
-                  disabled={!canFile}
-                  title={canFile ? undefined : t("staffCell.newExchangeDisabled")}
-                  onClick={() => setExchangeOpen(true)}
-                >
-                  {t("staffCell.newExchange")}
-                </Button>
-              </>
-            }
-          >
-            <thead>
-              <tr>
-                <Th label={t("staff.colEmployee")} k="worker" {...thProps} />
-                <Th label={t("staff.colCell")} icon={Boxes} k="cell" {...thProps} />
-                <Th label={t("staff.colRole")} k="role" {...thProps} />
-                <Th label={t("staff.colSchedule")} k="schedule" {...thProps} />
-                <Th label={t("staff.colClock")} k="clock" {...thProps} />
-                <Th label={t("staff.colHours")} k="hours" align="right" {...thProps} />
-                <Th label={t("staff.colEffHours")} k="eff" align="right" {...thProps} />
-              </tr>
-            </thead>
-            <tbody>
-              {attLoading && [0, 1, 2, 3, 4].map((i) => (
-                <tr key={`sk-${i}`}>
-                  {[0, 1, 2, 3, 4, 5, 6].map((c) => (
-                    <td key={c} className="px-3 py-2"><SkeletonBlock className="h-4 w-full" /></td>
-                  ))}
-                </tr>
-              ))}
-              {!attLoading && sorted.length === 0 && (
+            <TableCard
+              icon={Users}
+              title={t("staffCell.rosterTitle")}
+              subtitle={attData?.manager_name ? tl(attData.manager_name) : undefined}
+              right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>
+                {t("staff.showingRows").replace("{n}", String(sorted.length))}
+              </span>}
+              toolbar={
+                <>
+                  <SearchInput
+                    value={query}
+                    onChange={setQuery}
+                    placeholder={t("staff.searchByName")}
+                    className="w-full sm:w-64"
+                  />
+                  {/* Why the button is dead is ON SCREEN, never in a `title`:
+                      a tooltip never fires on touch, and this platform is read
+                      on a phone. It sits beside the control it explains. */}
+                  {!canFile && (
+                    <span className="text-[11px] leading-snug sm:ml-auto sm:text-right sm:max-w-[260px]"
+                      style={{ color: "var(--text-3)" }}>
+                      {cannotFileWhy}
+                    </span>
+                  )}
+                  <Button
+                    size="lg"
+                    className={canFile ? "sm:ml-auto" : ""}
+                    icon={<Plus size={14} />}
+                    disabled={!canFile}
+                    onClick={() => setExchangeOpen(true)}
+                  >
+                    {t("staffCell.newExchange")}
+                  </Button>
+                </>
+              }
+            >
+              <thead>
                 <tr>
-                  <td colSpan={7} className="px-3 py-6">
-                    <EmptyState
-                      showUploadLink={false}
-                      icon={Users}
-                      title={rows.length === 0 ? t("staffCell.emptyRosterTitle") : t("staffCell.noMatchTitle")}
-                      message={rows.length === 0 ? t("staffCell.emptyRosterMsg") : t("staffCell.noMatchMsg")}
-                    />
-                  </td>
+                  <Th label={t("staff.colEmployee")} k="worker" {...thProps} />
+                  <Th label={t("staff.colCell")} icon={Boxes} k="cell" {...thProps} />
+                  <Th label={t("staff.colRole")} k="role" {...thProps} />
+                  <Th label={t("staff.colSchedule")} k="schedule" {...thProps} />
+                  <Th label={t("staff.colClock")} k="clock" {...thProps} />
+                  <Th label={t("staff.colHours")} k="hours" align="right" {...thProps} />
+                  <Th label={t("staff.colEffHours")} k="eff" align="right" {...thProps} />
                 </tr>
-              )}
-              {!attLoading && groups
-                ? groups.map(([code, list]) => {
-                  const info = cellInfo(code, byCode, lang, list[0]?.cell);
-                  return (
-                    <Fragment key={code || "_none"}>
-                      <tr>
-                        <td colSpan={7} className="px-3 py-1.5" style={{ background: "var(--bg-inner)" }}>
-                          <span className="inline-flex items-center gap-2 flex-wrap">
-                            <Boxes size={11} style={{ color: "var(--brand-text)" }} />
-                            <span className="font-mono text-[11px] font-semibold" style={{ color: "var(--text-1)" }}>
-                              {info.code || t("staffCell.noCellGroup")}
-                            </span>
-                            {info.name && <span className="text-[10px]" style={{ color: "var(--text-4)" }}>{info.name}</span>}
-                            <span className="text-[10px]" style={{ color: "var(--text-3)" }}>
-                              {t("staffCell.leaderPrefix").replace("{name}", info.leader ? tl(info.leader) : t("staffCell.unassignedLeader"))}
-                            </span>
-                            <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
-                              {t("staffCell.groupCount").replace("{n}", String(list.length))}
-                            </span>
-                          </span>
-                        </td>
-                      </tr>
-                      {list.map((w) => <WorkerRow key={`${w.verifix_code || "_"}-${w.worker_name}`} w={w} tl={tl} t={t} />)}
-                    </Fragment>
-                  );
-                })
-                : !attLoading && sorted.map((w) => (
-                  <WorkerRow key={`${w.verifix_code || "_"}-${w.worker_name}`} w={w} tl={tl} t={t} />
+              </thead>
+              <tbody>
+                {attLoading && [0, 1, 2, 3, 4].map((i) => (
+                  <tr key={`sk-${i}`}>
+                    {[0, 1, 2, 3, 4, 5, 6].map((c) => (
+                      <td key={c} className="px-3 py-2"><SkeletonBlock className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
                 ))}
-            </tbody>
-          </TableCard>
+                {!attLoading && sorted.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-6">
+                      <EmptyState
+                        showUploadLink={false}
+                        icon={Users}
+                        title={rows.length === 0 ? t("staffCell.emptyRosterTitle") : t("staffCell.noMatchTitle")}
+                        message={rows.length === 0 ? t("staffCell.emptyRosterMsg") : t("staffCell.noMatchMsg")}
+                      />
+                    </td>
+                  </tr>
+                )}
+                {!attLoading && groups
+                  ? groups.map(([code, list]) => {
+                    const info = cellInfo(code, byCode, lang, list[0]?.cell);
+                    return (
+                      <Fragment key={code || "_none"}>
+                        <tr>
+                          <td colSpan={7} className="px-3 py-1.5" style={{ background: "var(--bg-inner)" }}>
+                            <span className="inline-flex items-center gap-2 flex-wrap">
+                              <Boxes size={11} style={{ color: "var(--brand-text)" }} />
+                              <span className="font-mono text-[11px] font-semibold" style={{ color: "var(--text-1)" }}>
+                                {info.code || t("staffCell.noCellGroup")}
+                              </span>
+                              {info.name && <span className="text-[10px]" style={{ color: "var(--text-4)" }}>{info.name}</span>}
+                              <span className="text-[10px]" style={{ color: "var(--text-3)" }}>
+                                {t("staffCell.leaderPrefix").replace("{name}", info.leader ? tl(info.leader) : t("staffCell.unassignedLeader"))}
+                              </span>
+                              <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
+                                {t("staffCell.groupCount").replace("{n}", String(list.length))}
+                              </span>
+                            </span>
+                          </td>
+                        </tr>
+                        {list.map((w) => <WorkerRow key={rowKey(w)} w={w} tl={tl} t={t} />)}
+                      </Fragment>
+                    );
+                  })
+                  : !attLoading && sorted.map((w) => (
+                    // Two namesakes in one cell of two different units are two
+                    // rows; `rowKey` is what keeps them two rows here too.
+                    <WorkerRow key={rowKey(w)} w={w} tl={tl} t={t} />
+                  ))}
+              </tbody>
+            </TableCard>
 
-          {(attData?.extra_hours ?? 0) > 0 && (
-            <p className="text-[11px] text-right" style={{ color: "var(--text-4)" }}>
-              {t("staff.extraHoursNote").replace("{n}", String(attData.extra_hours))}
-            </p>
+            {(attData?.extra_hours ?? 0) > 0 && (
+              <p className="text-[11px] text-right" style={{ color: "var(--text-4)" }}>
+                {t("staff.extraHoursNote").replace("{n}", String(attData.extra_hours))}
+              </p>
+            )}
+            </>
           )}
           <div className="pb-16" />
         </div>
@@ -1246,37 +1481,45 @@ export default function StaffCells() {
 
       {tab === "requests" && (
         <>
-          <DocumentsTable
-            title={t("staffCell.registerTitle")}
-            rows={documents}
-            isLoading={docsLoading}
-            byCode={byCode}
-            lang={lang}
-            canDecide={canDecide}
-            canDelete={canDelete}
-            onAct={openAct}
-            emptyTitle={t("staffCell.noRequestsTitle")}
-            emptyMessage={t("staff.noDocuments")}
-          />
+          {docsFailed ? (
+            <LoadFailed error={docsError} onRetry={() => refetchDocs()} />
+          ) : (
+            <DocumentsTable
+              title={t("staffCell.registerTitle")}
+              rows={documents}
+              isLoading={docsLoading}
+              byCode={byCode}
+              lang={lang}
+              canDecide={canDecide}
+              canDelete={canDelete}
+              onAct={openAct}
+              emptyTitle={t("staffCell.noRequestsTitle")}
+              emptyMessage={t("staff.noDocuments")}
+            />
+          )}
           <div className="pb-16" />
         </>
       )}
 
       {tab === "approvals" && showApprovals && (
         <>
-          <DocumentsTable
-            title={t("staff.tabApprovals")}
-            subtitle={t("staffCell.approvalsHint")}
-            rows={pending}
-            isLoading={docsLoading}
-            byCode={byCode}
-            lang={lang}
-            canDecide={canDecide}
-            canDelete={canDelete}
-            onAct={openAct}
-            emptyTitle={t("staffCell.noApprovalsTitle")}
-            emptyMessage={t("staffCell.noApprovalsMsg")}
-          />
+          {docsFailed ? (
+            <LoadFailed error={docsError} onRetry={() => refetchDocs()} />
+          ) : (
+            <DocumentsTable
+              title={t("staff.tabApprovals")}
+              subtitle={t("staffCell.approvalsHint")}
+              rows={pending}
+              isLoading={docsLoading}
+              byCode={byCode}
+              lang={lang}
+              canDecide={canDecide}
+              canDelete={canDelete}
+              onAct={openAct}
+              emptyTitle={t("staffCell.noApprovalsTitle")}
+              emptyMessage={t("staffCell.noApprovalsMsg")}
+            />
+          )}
           <div className="pb-16" />
         </>
       )}
@@ -1285,6 +1528,10 @@ export default function StaffCells() {
         <ExchangeModal
           date={date}
           workers={scoped}
+          // The WHOLE in-scope roster, not the narrowed one: it is only used to
+          // spot a name the filing would sweep up beyond what was ticked, and
+          // that namesake is exactly the row the cell filter is hiding.
+          allWorkers={rows}
           byCode={byCode}
           probeCell={probeCell}
           lang={lang}

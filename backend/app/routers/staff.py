@@ -42,7 +42,7 @@ from app.models import (
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
     TelegramUserRole,
 )
-from app.services import action_log
+from app.services import action_log, cell_exchange
 from app.services.day_state import confirmed_pairs, day_state
 from app.xlsx_delivery import deliver_xlsx
 
@@ -2816,6 +2816,35 @@ def _scope_deletion_requests(caller, db: Session):
     return q.order_by(EditRequest.date.desc()).all()
 
 
+def _real_docs(db: Session):
+    """THE starting query for every /staff document read — real documents only.
+
+    /staff is the LIVE register: approving a row here runs ``_apply_doc_effects``
+    and writes attendance. The cell-level rehearsal page files its documents
+    under the sandbox doc types (``cell_exchange.TEST_DOC_TYPES``) precisely so
+    that no such row can reach an applier, and five of the six semantic
+    HrDocument readers exclude them for free because they already narrow to
+    ``doc_type == "people_exchange"``. This register does not — it serves every
+    type — so without this clause a sandbox document would appear in the /staff
+    list, in the sidebar pending badge, and be reachable by id on the approve
+    door, where the one invariant the sandbox exists to hold ("no attendance row
+    is written on any path a test document can reach") would break.
+
+    Narrowing only, and it changes nothing about any row that exists today: the
+    only writer of a test doc_type is ``routers/staff_cells``, which has never
+    been deployed. Every ``_scope_documents(...)`` call site starts here so the
+    rule has ONE spelling and no door can be forgotten.
+
+    TRAP: ``real_clause`` is an explicit whitelist (``cell_exchange.REAL_DOC_TYPES``),
+    deliberately, so an unanticipated type defaults to being ignored by the
+    day-state queries rather than blocking every dashboard. For a REGISTER that
+    default hides rows instead — so a fifth REAL doc_type (``graphic_change`` is
+    a placeholder today, with no writer) must be added to ``REAL_DOC_TYPES`` or
+    it will not show on this page.
+    """
+    return db.query(HrDocument).filter(cell_exchange.real_clause(HrDocument.doc_type))
+
+
 def _scope_documents(q, caller, db: Session):
     """Restrict a HrDocument query to what the caller is allowed to see."""
     role    = caller.get("role")
@@ -3768,7 +3797,7 @@ def delete_exchange_task(body: TaskDeleteBody, caller=Depends(_require_staff), d
 
 @router.get("/documents")
 def list_documents(caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    rows = _scope_documents(db.query(HrDocument), caller, db) \
+    rows = _scope_documents(_real_docs(db), caller, db) \
         .order_by(HrDocument.created_at.desc()).all()
     mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     docs = [_serialize_doc(d, mgr_names.get(d.manager_id)) for d in rows]
@@ -3843,7 +3872,7 @@ def documents_pending_count(caller=Depends(_require_staff), db: Session = Depend
     # the sidebar badge was smaller than the tab badge.
 
     # 1) Pending role-change documents (HrDocument drafts)
-    doc_count = _scope_documents(db.query(HrDocument), caller, db) \
+    doc_count = _scope_documents(_real_docs(db), caller, db) \
         .filter(HrDocument.status == "draft").count()
 
     # 2) Pending deletion-request batches — grouped by batch_id exactly like
@@ -3858,7 +3887,7 @@ def documents_pending_count(caller=Depends(_require_staff), db: Session = Depend
 
 @router.get("/documents/{doc_id}")
 def get_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
+    doc = _scope_documents(_real_docs(db), caller, db).filter(HrDocument.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     mgr = db.query(Manager).filter_by(id=doc.manager_id).first()
@@ -3867,7 +3896,7 @@ def get_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depe
 
 @router.get("/documents/{doc_id}/history")
 def document_history(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
+    doc = _scope_documents(_real_docs(db), caller, db).filter(HrDocument.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     rows = db.query(HrDocumentHistory).filter_by(document_id=doc_id) \
@@ -4094,7 +4123,7 @@ def _is_doc_creator(doc: HrDocument, caller: dict) -> bool:
 
 @router.put("/documents/{doc_id}")
 def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
+    doc = _scope_documents(_real_docs(db), caller, db).filter(HrDocument.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if doc.status != "draft":
@@ -4315,7 +4344,7 @@ def _doc_reject_via_grant(doc: HrDocument, caller: dict, db: Session) -> bool:
 
 @router.post("/documents/{doc_id}/approve")
 def approve_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
+    doc = _scope_documents(_real_docs(db), caller, db).filter(HrDocument.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if not _can_approve_doc(doc, caller, db):
@@ -4349,7 +4378,7 @@ def approve_document(doc_id: int, caller=Depends(_require_staff), db: Session = 
 def reject_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
     """Reject a pending (draft) document — the webapp counterpart of the
     Telegram ❌ button. The record stays visible with a rejected status."""
-    doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
+    doc = _scope_documents(_real_docs(db), caller, db).filter(HrDocument.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if not _may_reject_doc(doc, caller, db):
@@ -4373,7 +4402,7 @@ def reject_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
 
 @router.post("/documents/{doc_id}/cancel")
 def cancel_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
+    doc = _scope_documents(_real_docs(db), caller, db).filter(HrDocument.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if not _can_approve_doc(doc, caller, db):
@@ -4397,7 +4426,7 @@ def cancel_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
 
 @router.post("/documents/{doc_id}/delete")
 def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
+    doc = _scope_documents(_real_docs(db), caller, db).filter(HrDocument.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -4458,7 +4487,7 @@ class DocBulkBody(BaseModel):
 
 @router.post("/documents/bulk")
 def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    docs = _scope_documents(db.query(HrDocument), caller, db) \
+    docs = _scope_documents(_real_docs(db), caller, db) \
         .filter(HrDocument.id.in_(body.ids)).all()
 
     done = 0
@@ -4690,10 +4719,15 @@ def approvals_calendar(
             EditRequest.status == "pending",
         ).all()
     } | {
+        # Only a REAL document blocks a day here — the twin of the same clause in
+        # `services/day_state.pending_counts`. A sandbox test document filed on a
+        # live (manager, date) pair would otherwise hold that day at «closed» on
+        # this calendar, i.e. a rehearsal changing what /staff shows.
         d for (d,) in db.query(distinct(HrDocument.date)).filter(
             HrDocument.manager_id == manager_id,
             HrDocument.date >= start, HrDocument.date < end,
             HrDocument.status == "draft",
+            cell_exchange.real_clause(HrDocument.doc_type),
         ).all()
     }
 
