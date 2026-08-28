@@ -198,20 +198,42 @@ fleet page and the Daily donut start disagreeing about the same minutes.
   `/zagruzka-cell`'s «Cat H: N daq hisobga olinmadi» note names the remaining
   category, and its reconciliation delta shrinks accordingly.
 
-## Ojidaniya source per supervisor (`/admin/upload?tab=idlesource`)
+## Ojidaniya comes from the CELLS (`/admin/upload?tab=idlesource`)
 
-From **2026-08-22** a supervisor's ojidaniya minutes come from ONE of two
-sources, chosen per unit and dated: the «Смена отчёт» sheet row
-(`DowntimeData`, the default for everyone) or the per-cell interval model
-(`cell_ojidaniya_intervals`) **from a given day onward**. The pilot is
-**Suvonov Elshod OF (manager 5) from 2026-08-21**, seeded once by
-`startup.seed_idle_source_pilot` (insert-only, flag-guarded — an admin's later
-edit is never overwritten). Days before the from-date keep the sheet; history
-is never rewritten.
+From **2026-08-27** — `idle_source.CELLS_FROM`, the user's directive — **every**
+supervisor's ojidaniya minutes come from the per-cell interval model
+(`cell_ojidaniya_intervals`, what the leaders file on `/idle-cell`). The
+«Смена отчёт» sheet row (`DowntimeData`) is **not read for any unit on any day
+from that date on**, and nothing turns it back on.
 
-- **`services/idle_source.py` is THE definition** — `cell_units`, `uses_cells`,
-  `unit_downtime`. The unit figure is the **headcount-weighted mean of its
-  cells**: `Σ(Nᵢ·Tᵢ) ÷ ΣNᵢ`, N = the people who ACTUALLY worked cell i that
+- **The floor is a CONSTANT with no override**, the shape the AI review floor
+  and the client-compat floor already use: a rule a per-unit toggle can quietly
+  undo is a rule nobody can read off the platform. Moving it is a one-line
+  edit; it must never be moved LATER, which would hand days back to the sheet
+  that have already been read off the cells.
+- **Days BEFORE the floor are untouched, and they are all the per-supervisor
+  register still governs.** `IdleSourceSetting` (the «Kutish manbasi» tab) can
+  start a unit EARLIER — that is where the pilot, **Suvonov Elshod OF (manager
+  5) from 2026-08-21**, still lives, seeded by `startup.seed_idle_source_pilot`
+  (insert-only, flag-guarded) — and a `sheet` row keeps that unit's earlier
+  days on the sheet. Neither can reach a day the floor covers. History is never
+  rewritten and one day is never answered by two sources.
+- **The tab must not present a setting the platform stopped honouring**, so
+  `GET /api/admin/idle-source` carries `cells_from` (the floor) and each row's
+  `effective_from` — `idle_source.start_day`, the ONE definition of "which day
+  does this unit actually start reading its cells", never re-derived on the
+  client.
+- **Consequence to know: the sheet number is gone from 27 Aug for everyone.**
+  A unit whose leaders file nothing on `/idle-cell`, whose cells carry no
+  counted attendance (`ΣN == 0`), or that owns no cells at all now reads **0
+  minutes** — idle DOWN and net utilisation UP on exactly those units. That is
+  the directive, not a bug; the fix for a unit reading 0 is its leaders filing
+  intervals, not a fallback.
+- **`services/idle_source.py` is THE definition** — `CELLS_FROM`, `cell_units`,
+  `start_day`, `uses_cells`, `unit_downtime`. `cell_units` returns EVERY unit
+  (at the floor, or earlier where the register moved it), so a consumer that
+  asks "is this unit switched" gets one answer and the floor cannot be missed.
+  The unit figure is the **headcount-weighted mean of its cells**: `Σ(Nᵢ·Tᵢ) ÷ ΣNᵢ`, N = the people who ACTUALLY worked cell i that
   day (direct-role attendance matched by `verifix_code`, the `verifix_hc`
   rule), T = that cell's UNION of stopped ranges. **All** the unit's cells
   count (`in_load` ignored, as on `/zagruzka-cell`); a cell with N = 0 is on
@@ -221,9 +243,9 @@ is never rewritten.
   rule per category (they may sum to more than the total when causes overlap);
   the «To'xtamaganda» half is the weighted plain sum per category. Legacy
   minutes-only rows are never read. All merging stays in `idle_intervals`.
-- **A switched day with no interval on any cell is 0 minutes** — no marker, no
-  sheet fallback. The override in `build_metrics_list` and `get_downtime`
-  writes the derived value EVEN WHEN it is absent, or the sheet row leaks back.
+- **A day with no interval on any cell is 0 minutes** — no marker, no sheet
+  fallback. The override in `build_metrics_list` and `get_downtime` writes the
+  derived value EVEN WHEN it is absent, or the sheet row leaks back.
 - **Everywhere switches through the two doors**: `build_metrics_list`
   (Overview, Zagruzka heatmap/comparison, brigadir profile, Daily performance
   block, `/summary`) and `get_downtime` (+ seasonality) — which is what the
@@ -231,8 +253,9 @@ is never rewritten.
   consumer of ojidaniya minutes must go through one of them, never
   `DowntimeData` directly. No source label on payloads (the user's call); the
   50-min flag and the flat 480 base are unchanged; `/zagruzka-cell` stays the
-  untouched test twin (its reconciliation delta should read ~0 for a switched
-  unit).
+  untouched test twin (its reconciliation delta should read ~0 from the floor
+  on, for every unit). The sheet keeps IMPORTING for everybody — it feeds
+  nothing here any more, and it is what makes the two answers comparable.
 - **The approval step on `/idle-cell` is GONE (same day).** A leader's entry
   counts the moment it is saved (status written `approved`); leaders cannot
   edit or delete their own rows — only the unit's brigadir, an admin or a

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, AlertTriangle, Check } from "lucide-react";
+import { GitBranch, AlertTriangle, Check, Info } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -18,21 +18,37 @@ import { useToast } from "../../components/ui/Toast";
  * «Kutish manbasi» — where each supervisor's ojidaniya minutes come from.
  *
  * Every KPI surface that prints a unit's idle time (fleet загрузка, Overview,
- * the Ojidaniya page, the bot card, the weekly svodka) reads ONE of two
- * sources per supervisor, and this tab is the only place the rule is visible:
+ * the Ojidaniya page, the bot card, the weekly svodka) reads ONE source per
+ * supervisor per day, and this tab is the only place that rule is visible:
  *
- *   sheet — the «Смена отчёт» row, today's rule and everybody's default;
  *   cells — the per-cell interval model, headcount-weighted across the unit's
- *           cells (Σ N·T ÷ Σ N), FROM A GIVEN DATE onward. Days before the
- *           date keep the sheet, so switching a unit never rewrites history —
- *           which is why a `cells` row without a date is refused, here and on
- *           the server: a switch with no start is a switch that rewrites
- *           everything.
+ *           cells (Σ N·T ÷ Σ N). Since `cells_from` (the FLOOR the server
+ *           sends, 2026-08-27) this is the rule for EVERY unit and no setting
+ *           on this page can turn it off;
+ *   sheet — the «Смена отчёт» row, which now only ever answers days BEFORE
+ *           the floor.
+ *
+ * So the register still governs exactly one thing: a unit's HISTORY. A `cells`
+ * row can start a unit earlier than the floor (the pilot's 2026-08-21) and a
+ * `sheet` row keeps its earlier days on the sheet; neither can put a current
+ * day back. A `cells` row without a date is refused, here and on the server: a
+ * switch with no start is a switch that rewrites everything.
+ *
+ * `effective_from` per row is the SERVER's answer to "which day does this unit
+ * actually start reading its cells" (`idle_source.start_day`) — never
+ * re-derived here, because the wrong half of that disagreement is the half on
+ * screen.
  *
  * One row per active supervisor, saved one row at a time (PUT per manager).
  * The pilot unit is an ordinary row; nothing here names it. The KPI payloads
  * carry no source label by design — this register is the label.
  */
+
+/** ISO "YYYY-MM-DD" -> "DD.MM.YYYY", the day format every admin tab prints. */
+const ddmmyyyy = (iso) => {
+  const [y, m, d] = String(iso || "").split("-");
+  return d ? `${d}.${m}.${y}` : (iso || "—");
+};
 
 const SRC_SHEET = "sheet";
 const SRC_CELLS = "cells";
@@ -72,6 +88,9 @@ export default function IdleSource() {
   });
 
   const units = useMemo(() => data?.units || [], [data]);
+  // The floor comes from the server (`idle_source.CELLS_FROM`) — a date this
+  // page hard-coded would be a second definition of the platform's rule.
+  const floorText = ddmmyyyy(data?.cells_from);
 
   // Drafts live beside the server rows, keyed by manager id: a row is DIRTY
   // when its draft differs from what the server last answered, and clean rows
@@ -150,29 +169,48 @@ export default function IdleSource() {
     );
   };
 
+  // The date cell answers two different questions and must not merge them:
+  // what this row STORES (the control + its note) and what the platform
+  // actually does with the unit (`effective_from`, hidden while a draft is
+  // unsaved, when the server's answer no longer describes what is on screen).
   const dateControl = (u, fill = false) => {
     const d = effective(u);
-    if (d.source !== SRC_CELLS) {
-      // The sheet has no start: it is the rule for every day nobody switched.
-      return <span style={{ color: "var(--text-4)" }}>—</span>;
-    }
-    const missing = !d.from_date;
+    const isCells = d.source === SRC_CELLS;
+    const missing = isCells && !d.from_date;
+    const lateStart = isCells && !!d.from_date && !!data?.cells_from
+      && d.from_date >= data.cells_from;   // ISO days compare as strings
+    const note = missing
+      ? t("idleSource.fromRequired")
+      : !isCells
+        ? t("idleSource.sheetHistoryOnly").replace("{date}", floorText)
+        : lateStart
+          ? t("idleSource.notEarlier")
+          : t("idleSource.fromBefore");
     return (
       <div className={`flex flex-col gap-1 ${fill ? "w-full" : ""}`}>
-        {canEdit ? (
-          <DateRangePicker
-            single
-            dateFrom={d.from_date}
-            dateTo={d.from_date}
-            setDateFrom={(v) => setDraft(u, { from_date: v })}
-            setDateTo={() => {}}
-          />
+        {isCells ? (
+          canEdit ? (
+            <DateRangePicker
+              single
+              dateFrom={d.from_date}
+              dateTo={d.from_date}
+              setDateFrom={(v) => setDraft(u, { from_date: v })}
+              setDateTo={() => {}}
+            />
+          ) : (
+            <span className="tabular-nums" style={{ color: "var(--text-1)" }}>{d.from_date || "—"}</span>
+          )
         ) : (
-          <span className="tabular-nums" style={{ color: "var(--text-1)" }}>{d.from_date || "—"}</span>
+          <span style={{ color: "var(--text-4)" }}>—</span>
         )}
         <span className="text-[11px]" style={{ color: missing ? "#ef4444" : "var(--text-3)" }}>
-          {missing ? t("idleSource.fromRequired") : t("idleSource.fromBefore")}
+          {note}
         </span>
+        {!isDirty(u) && u.effective_from && (
+          <span className="text-[11px] tabular-nums" style={{ color: "var(--text-2)" }}>
+            {t("idleSource.effective").replace("{date}", ddmmyyyy(u.effective_from))}
+          </span>
+        )}
       </div>
     );
   };
@@ -226,10 +264,25 @@ export default function IdleSource() {
 
   return (
     <div className="space-y-4">
-      {/* The rule, spelled out once: an admin flipping a unit must know what
-          the number they are about to move is made of. */}
+      {/* The platform rule first, the register's remaining job second: an
+          admin flipping a unit must know both what the number is made of and
+          which days their flip can still reach. */}
+      <div
+        className="flex items-start gap-2.5 px-4 py-3 rounded-2xl"
+        style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}
+      >
+        <Info size={15} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand)" }} />
+        <div className="text-xs leading-relaxed" style={{ color: "var(--text-2)" }}>
+          <span className="font-semibold" style={{ color: "var(--text-1)" }}>
+            {t("idleSource.floorTitle").replace("{date}", floorText)}
+          </span>
+          <br />
+          {t("idleSource.floorBody")}
+        </div>
+      </div>
+
       <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
-        {t("idleSource.intro")}
+        {t("idleSource.intro").replace("{date}", floorText)}
       </p>
 
       <TableCard

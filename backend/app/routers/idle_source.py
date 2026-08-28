@@ -7,6 +7,15 @@ sheet row or from the unit's own cells' interval model, and FROM WHICH DAY.
 The rule itself lives in ``app.services.idle_source``; this module is only the
 door — the list the tab renders and the one writer.
 
+**Since ``idle_source.CELLS_FROM`` (2026-08-27) the register governs the days
+BEFORE that floor only**: from it every unit reads its cells whatever a row
+says, so a `cells` row can still start a unit EARLIER (the pilot's
+2026-08-21) and a `sheet` row still owns that unit's history, but neither can
+put a current day back on the sheet. The payload therefore carries the floor
+(`cells_from`) and each row's `effective_from` — the day that unit ACTUALLY
+starts reading its cells — because a tab that showed only the stored setting
+would name a source the platform stopped using.
+
 Every route, the READ included, is gated on ``admin.idle_source.manage``, the
 same shape as the cell-hours register: a switch this consequential (it changes
 a brigadir's KPI from the next day on) has no reason to be readable by a page
@@ -37,7 +46,9 @@ class SourceIn(BaseModel):
     """``cells`` needs a from-date — "from forever" would rewrite the unit's
     whole history the moment the row is saved. ``sheet`` may carry one or not;
     it is kept so a unit switched back keeps the date it had, ready to be
-    switched on again."""
+    switched on again. Both are accepted on or after the floor and simply
+    change nothing there: refusing them would make the register unable to
+    state a unit's history, which is the only thing it still governs."""
     source: str
     from_date: Optional[str] = None
 
@@ -49,7 +60,12 @@ def _factory_name(f) -> Optional[str]:
     return f.name_ru or f.name_uz or f.name_en or f.name_uz_cyrl or f.code
 
 
-def _row(m: Manager, s: Optional[IdleSourceSetting], fac) -> dict:
+def _row(m: Manager, s: Optional[IdleSourceSetting], fac,
+         units: dict) -> dict:
+    """`source`/`from_date` are what is STORED; `effective_from` is what the
+    KPI doors actually do — the floor, or the earlier day this unit's row
+    starts it. Never derive the second from the first on the client: one
+    definition of the rule, and it is `idle_source.start_day`."""
     return {
         "manager_id": m.id,
         "name": m.name,
@@ -59,6 +75,7 @@ def _row(m: Manager, s: Optional[IdleSourceSetting], fac) -> dict:
         "source": (s.source if s and s.source in idle_source.SOURCES
                    else idle_source.SOURCE_SHEET),
         "from_date": (s.from_date or None) if s else None,
+        "effective_from": idle_source.start_day(units, m.id).isoformat(),
     }
 
 
@@ -71,8 +88,10 @@ def list_units(db: Session = Depends(get_db), _: dict = Depends(_manage)):
                 .order_by(Manager.shift, Manager.name).all())
     settings = {s.manager_id: s for s in db.query(IdleSourceSetting).all()}
     facs = {f.id: f for f in list_factories(db, include_archived=True)}
+    units = idle_source.cell_units(db)
     return {
-        "units": [_row(m, settings.get(m.id), facs.get(m.factory_id))
+        "cells_from": idle_source.CELLS_FROM.isoformat(),
+        "units": [_row(m, settings.get(m.id), facs.get(m.factory_id), units)
                   for m in managers],
         "factories": [serialize(f) for f in list_factories(db)],
     }
@@ -129,4 +148,7 @@ def put_unit(manager_id: int, body: SourceIn, db: Session = Depends(get_db),
         changes=diff,
     )
     facs = {f.id: f for f in list_factories(db, include_archived=True)}
-    return {"ok": True, "unit": _row(m, row, facs.get(m.factory_id))}
+    return {"ok": True,
+            "cells_from": idle_source.CELLS_FROM.isoformat(),
+            "unit": _row(m, row, facs.get(m.factory_id),
+                         idle_source.cell_units(db))}

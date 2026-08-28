@@ -101,13 +101,13 @@ def build_metrics_list(
             k: v for k, v in by_cat.items() if k not in OJIDANIYA_ONLY_CATS
         }
 
-    # A unit switched to its CELLS (services/idle_source) reads the
-    # headcount-weighted mean of its cells' interval unions from its from-date
-    # on, and the sheet row is OVERRIDDEN on every such day — present or not.
-    # A day with no derived figure (no counted attendance on any cell) is 0,
-    # never the sheet: after the from-date the sheet is not a source for that
-    # unit, and letting it answer the gaps would make one figure come from two
-    # places nobody can tell apart. Days before the from-date keep the sheet.
+    # Every unit reads the headcount-weighted mean of its cells' interval
+    # unions from `idle_source.CELLS_FROM` on — earlier where the register
+    # switched one by hand — and the sheet row is OVERRIDDEN on every such day,
+    # present or not. A day with no derived figure (no counted attendance on
+    # any cell) is 0, never the sheet: from that day the sheet is not a source,
+    # and letting it answer the gaps would make one figure come from two places
+    # nobody can tell apart. Days before it keep the sheet.
     # The Ojidaniya-only categories are already out of `total` (dropped
     # before the union) and are stripped from the breakdown here, exactly as
     # the sheet rows above.

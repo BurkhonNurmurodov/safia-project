@@ -1581,19 +1581,27 @@ class LeaderUnitSetting(Base):
 class IdleSourceSetting(Base):
     """Where a supervisor unit's ojidaniya minutes come from — per UNIT, dated.
 
-    ``sheet`` (the default, and what an absent row means) keeps today's rule:
-    the «Смена отчёт» row the brigadir types at end of shift. ``cells`` makes
-    the fleet figure the headcount-weighted mean of the unit's cells' interval
-    unions (``services/idle_source.py`` is THE definition) FROM ``from_date``
-    onward. The date is what keeps history honest: an admin flipping the toggle
-    moves the rule for the days ahead and never rewrites the days behind, and
-    after it the sheet is never read for that unit even where a row exists —
-    two sources answering one day is how a figure stops being explainable.
+    ``cells`` makes the figure the headcount-weighted mean of the unit's cells'
+    interval unions (``services/idle_source.py`` is THE definition) FROM
+    ``from_date`` onward; ``sheet`` (what an absent row means) is the «Смена
+    отчёт» row the brigadir types at end of shift.
+
+    **From ``idle_source.CELLS_FROM`` (2026-08-27) this table governs the days
+    BEFORE that floor only**: every unit reads its cells from the floor on, so
+    a row can still start one EARLIER (the pilot's 2026-08-21) and still keep a
+    unit's earlier days on the sheet, but neither value reaches a day the floor
+    covers. The date is what keeps history honest: an admin flipping the toggle
+    moves the rule for the days it can reach and never rewrites the days behind,
+    and where the cells answer a day the sheet is not read even though a row
+    exists — two sources answering one day is how a figure stops being
+    explainable.
 
     Per SUPERVISOR, like `LeaderUnitSetting`, and for the same reason it is not
     on a global → unit chain: a level that means "everybody" is one mis-tap away
-    from switching every unit on the platform mid-shift. A `cells` row without
-    a from-date is refused on write and read as NOT switched.
+    from switching every unit on the platform mid-shift — which is exactly why
+    the fleet-wide rule is a constant in code and not a row anybody can save. A
+    `cells` row without a from-date is refused on write and read as NOT
+    switched.
     """
     __tablename__ = "idle_source_settings"
 

@@ -5,12 +5,23 @@ per-cell figure for the units that switched.
 off the «Смена отчёт» sheet row (`DowntimeData`): one total per brigadir per
 day, typed by the brigadir at end of shift. Since 2026-08-20 the leaders of a
 unit can file each ojidaniya as a start→end EVENT on the cell where it
-happened (`cell_ojidaniya_intervals`), and from 2026-08-22 ONE unit — the
-pilot — has that record feed the fleet figure instead of the sheet. The switch
-is per SUPERVISOR and DATED: before the from-date the sheet stays the answer,
-so history is never rewritten by an admin flipping a toggle; after it the
-sheet is never read for that unit, not even on a day a sheet row exists —
-two sources answering one day is how a figure stops being explainable.
+happened (`cell_ojidaniya_intervals`), and on 2026-08-22 ONE unit — the pilot
+— had that record feed the fleet figure instead of the sheet.
+
+**From 2026-08-27 (``CELLS_FROM``) that is the rule for EVERY unit**, by the
+operator's directive: the cells are the only source of a waiting minute, the
+sheet row is not read for any supervisor on any day from that date on, and no
+setting turns it back on. The floor is a CONSTANT with no override — the shape
+the review floor and the client-compat floor already use — because a rule a
+per-unit toggle can quietly undo is a rule nobody can read off the platform.
+
+Days BEFORE the floor are untouched, and they are what the per-supervisor
+register (``IdleSourceSetting``, the «Kutish manbasi» tab) still governs: it
+can start a unit EARLIER than the floor — that is where the pilot's
+2026-08-21 lives — and never later, and never back onto the sheet for a day
+the floor covers. History is therefore never rewritten by an admin flipping a
+toggle, and one day is never answered by two sources, which is how a figure
+stops being explainable.
 
 **The unit figure is the headcount-weighted mean of its cells.**
 ``T_unit = Σ(Nᵢ·Tᵢ) ÷ ΣNᵢ`` over every cell the unit owns (`Cell.manager_id`;
@@ -48,7 +59,8 @@ from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Attendance, Cell, CellOjidaniyaInterval, IdleSourceSetting
+from app.models import (Attendance, Cell, CellOjidaniyaInterval,
+                        IdleSourceSetting, Manager)
 from app.services import idle_intervals
 from app.services.kpi_calculator import is_direct_role
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
@@ -56,6 +68,13 @@ from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 SOURCE_SHEET = "sheet"
 SOURCE_CELLS = "cells"
 SOURCES = (SOURCE_SHEET, SOURCE_CELLS)
+
+# THE floor: from this day every unit's ojidaniya is the headcount-weighted
+# mean of its cells and the «Смена отчёт» row is not a source for anybody.
+# Derived from nothing and overridable by nothing — a per-supervisor row can
+# only start a unit EARLIER (the pilot's 2026-08-21). Moving it later would
+# hand days back to the sheet that have already been read off the cells.
+CELLS_FROM = date(2026, 8, 27)
 
 
 def parse_iso(s: Optional[str]) -> Optional[date]:
@@ -70,25 +89,46 @@ def parse_iso(s: Optional[str]) -> Optional[date]:
 
 
 def cell_units(db: Session) -> dict[int, date]:
-    """manager_id -> from_date for every unit whose figure comes from its
-    cells. A `cells` row with no from-date is refused on write, but a row can
-    still be read without one (a hand edit, an older dump) — it is treated as
-    NOT switched rather than switched since forever, because "from forever"
-    would silently rewrite every day of that unit's history."""
+    """manager_id -> the FIRST day that unit's figure comes from its cells.
+
+    EVERY unit is in this map, at ``CELLS_FROM`` unless a per-supervisor
+    `cells` row starts it earlier: the floor is the rule and the register is
+    the exception to it, never the other way round. A row dated on or after
+    the floor is dropped rather than stored twice — the floor already answers
+    those days — and a `sheet` row is not read here at all, because from the
+    floor on there is nothing for it to switch back to.
+
+    A `cells` row with no from-date is refused on write, but one can still be
+    read without a date (a hand edit, an older dump); it is ignored rather
+    than read as "since forever", because "from forever" would silently
+    rewrite every day of that unit's history.
+    """
     out: dict[int, date] = {}
+    for (mid,) in db.query(Manager.id).all():
+        out[int(mid)] = CELLS_FROM
     for r in db.query(IdleSourceSetting).filter(
         IdleSourceSetting.source == SOURCE_CELLS,
     ).all():
         d = parse_iso(r.from_date)
-        if d is not None:
-            out[int(r.manager_id)] = d
+        if d is None or d >= CELLS_FROM:
+            continue
+        out[int(r.manager_id)] = d
     return out
 
 
+def start_day(units: dict[int, date], manager_id: int) -> date:
+    """The first day this unit reads its cells — THE answer, and never later
+    than the floor whatever the map holds. `units` is `cell_units()`; a unit
+    missing from it (an id created after the map was built) still gets the
+    floor, because the floor is not a per-unit fact to look up."""
+    explicit = units.get(int(manager_id))
+    return explicit if explicit is not None and explicit < CELLS_FROM else CELLS_FROM
+
+
 def uses_cells(units: dict[int, date], manager_id: int, d: date) -> bool:
-    """Does this (unit, day) read its cells? `units` is `cell_units()`."""
-    start = units.get(manager_id)
-    return start is not None and d >= start
+    """Does this (unit, day) read its cells? True for every unit from
+    ``CELLS_FROM`` on, and earlier for one the register switched by hand."""
+    return d >= start_day(units, manager_id)
 
 
 def _counted_hc(r) -> bool:
@@ -136,9 +176,17 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
     # in the cell are the ones who waited in it. `is_supervisor` rows are out
     # — the unit's cell-less brigadir is kept off the load at every other
     # enforcement point too.
+    #
+    # COLUMNS, not entities: this ran for one pilot unit until the floor and
+    # now runs for the whole fleet on every KPI request, and the predicate
+    # below reads five fields of an attendance row.
     n_by_cell: dict[tuple[int, str], int] = defaultdict(int)
     if code_to_cell:
-        for r in db.query(Attendance).filter(
+        for r in db.query(
+            Attendance.verifix_code, Attendance.date, Attendance.job_title,
+            Attendance.hours_worked, Attendance.is_supervisor,
+            Attendance.worker_name,
+        ).filter(
             Attendance.verifix_code.in_(list(code_to_cell)),
             Attendance.date >= date_from,
             Attendance.date <= date_to,
@@ -235,13 +283,14 @@ def switched_in_range(units: dict[int, date], manager_ids: Iterable[int],
     """The units among `manager_ids` that read their cells on at least one day
     of the range, and the earliest day any of them does — the one call a
     consumer needs to make to `unit_downtime` for the whole range.
-    ``([], None)`` when nothing in scope is switched, so the consumer can skip
-    the three queries outright."""
+    ``([], None)`` when the range ends before the floor and nothing in scope
+    was switched earlier by hand, so the consumer can skip the three queries
+    outright."""
     hit: list[int] = []
     lo: Optional[date] = None
     for mid in manager_ids:
-        start = units.get(int(mid))
-        if start is None or start > date_to:
+        start = start_day(units, mid)
+        if start > date_to:
             continue
         hit.append(int(mid))
         eff = max(start, date_from)

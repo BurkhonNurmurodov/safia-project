@@ -80,10 +80,10 @@ def get_downtime(
         cat_names_set.update((r.by_category or {}).keys())
         cat_names_set.update((r.by_category_ns or {}).keys())
 
-    # A unit switched to its CELLS (services/idle_source) answers every day
-    # from its from-date with the headcount-weighted mean of its cells' interval
-    # unions, and the sheet row for such a day is dropped first — present or
-    # not, the sheet is no longer a source for that unit. The day-close gate
+    # Every unit answers with its CELLS from `idle_source.CELLS_FROM` on —
+    # earlier where the register switched one by hand — the headcount-weighted
+    # mean of its cells' interval unions, and the sheet row for such a day is
+    # dropped first: present or not, the sheet is no longer a source. The day-close gate
     # below is left exactly as it is: a switched day with nothing filed yet is
     # simply "not reported", so a confirmed one reads as a real zero and an open
     # one stays hidden, the same two answers the sheet model gives. A day with
@@ -237,15 +237,15 @@ def get_downtime_seasonality(
                 "col_totals": [0.0] * 12, "col_totals_ns": [0.0] * 12,
                 "by_category": {}, "by_category_ns": {}}
 
-    # Units reading their CELLS from a date (services/idle_source): their
-    # sheet rows on and after that date are dropped and the derived per-day
-    # breakdown is added in their place. The year list also carries the year
-    # each switch starts in, or a unit switched before its first sheet row
-    # would have no year to pick.
+    # Units read their CELLS from `idle_source.CELLS_FROM` on (earlier where
+    # the register switched one by hand): their sheet rows on and after that
+    # day are dropped and the derived per-day breakdown is added in their
+    # place. The year list also carries the year each unit's switch starts in,
+    # or a unit switched before its first sheet row would have no year to pick.
     units = idle_source.cell_units(db)
     mgr_ids = [m.id for m in managers]
     name_to_id = {m.name: m.id for m in managers}
-    switched_any = [mid for mid in mgr_ids if mid in units]
+    switch_years = {idle_source.start_day(units, mid).year for mid in mgr_ids}
 
     # Years that actually hold shift reports for the scoped supervisors, newest
     # first — the card's year selector.
@@ -253,7 +253,7 @@ def get_downtime_seasonality(
         int(d[-4:]) for (d,) in db.query(DowntimeData.date)
         .filter(DowntimeData.manager_name.in_(manager_names)).distinct().all()
         if d and len(d) >= 4 and d[-4:].isdigit()
-    } | {units[mid].year for mid in switched_any}, reverse=True)
+    } | switch_years, reverse=True)
     if year is None:
         today_year = date.today().year
         year = today_year if today_year in years else (years[0] if years else today_year)
