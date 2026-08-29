@@ -140,6 +140,8 @@ export const factColor = (v, std) =>
   v == null ? "#94a3b8" : std == null || std <= 0 ? minColor(v) : deltaColor(v - std, std);
 
 // Short {uz, uz_cyrl, ru, en} keys — viewer language first, Russian next.
+// SEARCH ONLY: a cell is written out as its code (utils/cellName.js), but
+// typing a workshop name still has to find it.
 export const pickName = (obj, lang) => cellName(obj, lang, "");
 
 // Sortable-table state + toggle, persisted per key (asc → desc → off).
@@ -156,21 +158,22 @@ export const sortCmp = (sort, val) => (a, b) => {
   return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
 };
 
-// Code + muted workshop name — the one way a cell renders across these tabs.
-// With a registry id the code is a CellLink to /cells/:id; free-typed cells
-// that match no registry row (cellId null) stay inert text.
-export function CellCol({ code, name, lang, cellId }) {
-  const nm = pickName(name, lang);
+// Code + muted LEADER — the one way a cell renders across these tabs. The
+// workshop name is never printed (utils/cellName.js); the person answerable for
+// the cell is the fact worth the second line. With a registry id the code is a
+// CellLink to /cells/:id; free-typed cells that match no registry row (cellId
+// null) stay inert text.
+export function CellCol({ code, leader, cellId }) {
   return (
     <>
       <div className="font-mono tabular-nums truncate" style={{ color: "var(--text-2)" }}>
         <CellLink id={cellId}>{code}</CellLink>
       </div>
-      {nm && (
+      {leader && (
         // Truncated, not wrapped: a fixed-width column must never let a long
-        // workshop name spill into the number beside it. The full name stays
-        // one hover away.
-        <div className="text-[11px] leading-tight mt-0.5 truncate" title={nm} style={{ color: "var(--text-4)" }}>{nm}</div>
+        // name spill into the number beside it. The full name stays one hover
+        // away.
+        <div className="text-[11px] leading-tight mt-0.5 truncate" title={leader} style={{ color: "var(--text-4)" }}>{leader}</div>
       )}
     </>
   );
@@ -201,16 +204,10 @@ export function usePerenaladkaFact(date) {
 }
 
 /** Normalise a fact row to the shape the Idle-cell page's filter chain reads
- *  (`verifix_code` + flat `name_*` keys), keeping every original field so the
- *  same object still feeds this table. */
-export const asIdleCell = (c) => ({
-  ...c,
-  verifix_code: c.code,
-  name_uz: c.name?.uz,
-  name_uz_cyrl: c.name?.uz_cyrl,
-  name_ru: c.name?.ru,
-  name_en: c.name?.en,
-});
+ *  (`verifix_code`; `leader` already matches), keeping every original field so
+ *  the same object still feeds this table. The flat `name_*` keys are not
+ *  carried over — nothing renders a cell's workshop name (utils/cellName.js). */
+export const asIdleCell = (c) => ({ ...c, verifix_code: c.code });
 
 // A number typed straight into a table row. `text` + inputMode=decimal, not
 // type=number: the uz/ru iOS keypad types a comma, which type=number silently
@@ -418,7 +415,7 @@ export default function PerenaladkaFactTable({
                   </td>
                 )}
                 <td className="px-3 py-2">
-                  <CellCol code={c.code} name={c.name} lang={lang} cellId={c.cell_id} />
+                  <CellCol code={c.code} cellId={c.cell_id} />
                   {/* Without the supervisor column the leader is this row's only
                       other identity — it must not disappear with it. */}
                   {!showSupervisor && c.leader && (

@@ -158,7 +158,7 @@ function DiagRow({ label, items, tone = "warn" }) {
 export default function ZagruzkaCell() {
   const { ready, dateFrom, dateTo, setDateFrom, setDateTo } = useFilters();
   const { t } = useLang();
-  const { tl, lang } = useTranslit();
+  const { tl } = useTranslit();
   const [heatmapMode, setHeatmapMode] = usePersistentState("zagruzka_cell_heatmap_mode", "actual");
   const [heatmapFullscreen, setHeatmapFullscreen] = useState(false);
   const [compFullscreen, setCompFullscreen] = useState(false);

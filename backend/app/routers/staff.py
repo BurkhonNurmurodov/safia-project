@@ -1664,6 +1664,14 @@ def get_attendance(
     cells = []
     if codes:
         by_code = {c.verifix_code: c for c in db.query(Cell).filter(Cell.verifix_code.in_(codes)).all()}
+        # The cell's LEADER — what the Yacheyka column and its filter print
+        # beside the code, since a cell is never written out by its workshop
+        # name (frontend `utils/cellName.js`). One query for the whole day.
+        lids = {c.leader_id for c in by_code.values() if c.leader_id}
+        lead_names = {
+            p.id: p.name
+            for p in db.query(RoleProfile).filter(RoleProfile.id.in_(lids)).all()
+        } if lids else {}
         for code in codes:
             c = by_code.get(code)
             cells.append({
@@ -1671,6 +1679,7 @@ def get_attendance(
                 # codes the registry doesn't know (they render as inert text).
                 "cell_id":      c.id if c else None,
                 "verifix_code": code,
+                "leader_name":  lead_names.get(c.leader_id) if c else None,
                 "name_uz":      c.name_workshop_uz      if c else None,
                 "name_uz_cyrl": c.name_workshop_uz_cyrl if c else None,
                 "name_ru":      c.name_workshop_ru      if c else None,

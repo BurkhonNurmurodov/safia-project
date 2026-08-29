@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, LayoutGrid, Hash, Users, Flag, Clock, Factory as FactoryIcon,
   Settings2, Activity, Pencil, ShieldCheck, CalendarDays, Timer, Wrench,
-  Boxes, SearchX, AlertTriangle, Languages,
+  Boxes, SearchX, AlertTriangle,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
@@ -18,7 +18,6 @@ import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
-import { cellName } from "../utils/cellName";
 import api from "../utils/api";
 
 /**
@@ -158,7 +157,6 @@ function FlagRow({ icon: Icon, label, control, hint }) {
   );
 }
 
-const NAME_LANGS = ["uz", "uz_cyrl", "ru", "en"];
 
 export default function CellDetails() {
   const { id } = useParams();
@@ -266,13 +264,16 @@ export default function CellDetails() {
   // then reads exactly like a cell whose hours nobody has set.
   const hours = data.hours || null;
 
-  const name = cellName(c, lang) || c.verifix_code;
+  // A cell is its CODE — the workshop name is never printed (utils/cellName.js),
+  // so the hero states the code and the people answerable for it.
+  const name = c.verifix_code || "";
   const factoryName = factory
     ? (factory[`name_${lang}`] || factory.name_ru || factory.name_uz || factory.code)
     : null;
   // att_included NULL = derived: a cell with a supervisor counts.
   const attResolved = c.att_included ?? !!sup;
   const context = [
+    leader ? tl(leader.name) : null,
     sup ? tl(sup.name) : null,
     sup?.shift != null ? `${t("profile.shift")} ${sup.shift}` : null,
     factoryName,
@@ -295,11 +296,10 @@ export default function CellDetails() {
                 <LayoutGrid size={28} style={{ color: "var(--brand-text)" }} />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-xl font-semibold leading-tight break-words" style={{ color: "var(--text-1)" }}>
+                <div className="text-xl font-semibold leading-tight break-words tabular-nums" style={{ color: "var(--text-1)" }}>
                   {name}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <CodeChip>{c.verifix_code}</CodeChip>
                   {c.sap_code && <CodeChip muted>SAP · {c.sap_code}</CodeChip>}
                   <Tag color={c.in_load ? GREEN : GREY}>
                     {t(c.in_load ? "cellPage.inLoadOn" : "cellPage.inLoadOff")}
@@ -319,7 +319,9 @@ export default function CellDetails() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
 
-            {/* Codes & names — the full record, every language column shown */}
+            {/* Codes — a cell is identified by them and by nothing else
+                (utils/cellName.js); the stored workshop names are edited in the
+                register's own form and never printed. */}
             <Card icon={Hash} title={t("cellPage.secIdentity")}>
               <div className="-my-2">
                 <InfoRow icon={Hash} label={t("admin.profiles.colVerifixCode")}>
@@ -330,30 +332,6 @@ export default function CellDetails() {
                     ? <span className="font-mono">{c.sap_code}</span>
                     : <span style={{ color: "var(--text-4)" }}>—</span>}
                 </InfoRow>
-                <div className="py-2">
-                  <span className="flex items-center gap-2">
-                    <Languages size={13} style={{ color: "var(--text-4)" }} />
-                    <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-                      {t("cellPage.names")}
-                    </span>
-                  </span>
-                  <div className="mt-2 space-y-1.5">
-                    {NAME_LANGS.map((l) => {
-                      const v = c[`name_workshop_${l}`];
-                      return (
-                        <div key={l} className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-14 flex-shrink-0 text-center text-[9px] font-mono uppercase tracking-wide px-1 py-0.5 rounded-md"
-                                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
-                            {l}
-                          </span>
-                          <span className="text-[13px] truncate" style={{ color: v ? "var(--text-1)" : "var(--text-4)" }}>
-                            {v || "—"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             </Card>
 

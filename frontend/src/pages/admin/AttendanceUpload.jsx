@@ -378,7 +378,7 @@ function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd, onRevert })
 // ── one cell row ──────────────────────────────────────────────────────────────
 
 function CellRow({
-  cell, locked, expanded, dragging, t, cellName,
+  cell, locked, expanded, dragging, t,
   onToggleExpand, onToggleTick, onDragStart, menuItems,
 }) {
   const dim = !cell.included;
@@ -425,9 +425,6 @@ function CellRow({
           >
             {cell.verifix_code}
           </span>
-          <span className="truncate text-xs" style={{ color: dim ? "var(--text-4)" : "var(--text-1)" }}>
-            {cellName(cell)}
-          </span>
           {cell.moved && <Chip tone="warn" icon={ArrowRightLeft} title={t("attUp.movedHint")}>{t("attUp.moved")}</Chip>}
           {/* Staged: this cell's state has not reached `attendance` yet. */}
           {cell.pending && <Chip tone="warn" title={t("attUp.pendingHint")}>{t("attUp.pendingCell")}</Chip>}
@@ -458,7 +455,7 @@ function CellRow({
 // ── supervisor section ────────────────────────────────────────────────────────
 
 function Section({
-  section, orphan, locked, t, tl, cellName, expandedCells, dragCode, dropTarget,
+  section, orphan, locked, t, tl, expandedCells, dragCode, dropTarget,
   sectionRef, onToggleExpand, onToggleTick, onDragStart, cellMenuItems, sectionMenuItems,
   renderWorkers,
 }) {
@@ -519,7 +516,6 @@ function Section({
             expanded={expandedCells.includes(cell.verifix_code)}
             dragging={dragCode === cell.verifix_code}
             t={t}
-            cellName={cellName}
             onToggleExpand={onToggleExpand}
             onToggleTick={onToggleTick}
             onDragStart={onDragStart}
@@ -763,6 +759,8 @@ export default function AttendanceUpload() {
   }, [mapMut]);
 
   // ── derived view ───────────────────────────────────────────────────────────
+  // SEARCH ONLY. Rows and the move dialog name a cell by its CODE and nothing
+  // else (utils/cellName.js) — typing «яблоки» still has to find 1612.
   const cellName = useCallback((cell) => {
     const byLang = {
       uz: cell.name_uz, uz_cyrl: cell.name_uz_cyrl, ru: cell.name_ru, en: cell.name_en,
@@ -1138,7 +1136,7 @@ export default function AttendanceUpload() {
               }}
               orphan
               locked={locked}
-              t={t} tl={tl} cellName={cellName}
+              t={t} tl={tl}
               expandedCells={expandedCells}
               dragCode={drag?.code}
               dropTarget={dropTarget}
@@ -1157,7 +1155,7 @@ export default function AttendanceUpload() {
               key={s.manager_id}
               section={s}
               locked={locked}
-              t={t} tl={tl} cellName={cellName}
+              t={t} tl={tl}
               expandedCells={expandedCells}
               dragCode={drag?.code}
               dropTarget={dropTarget}
@@ -1228,7 +1226,7 @@ export default function AttendanceUpload() {
           open
           onClose={() => setMoveFor(null)}
           title={t("attUp.moveTo")}
-          subtitle={`${moveFor.verifix_code} · ${cellName(moveFor)}`}
+          subtitle={moveFor.verifix_code}
           icon={<ArrowRightLeft size={15} style={{ color: "var(--brand-text)" }} />}
           maxWidth="max-w-sm"
           footer={<Button variant="secondary" onClick={() => setMoveFor(null)}>{t("attUp.cancel")}</Button>}

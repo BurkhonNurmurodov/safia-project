@@ -173,6 +173,8 @@ export default function ShiftTimes() {
   const supById = useMemo(() => new Map(supervisors.map((s) => [s.id, s])), [supervisors]);
   const leadById = useMemo(() => new Map(leaders.map((p) => [p.id, p])), [leaders]);
 
+  // SEARCH ONLY — a cell is written out as its code, never as its workshop
+  // name (utils/cellName.js), but typing «яблоки» still has to find 1612.
   const wname = (c) => cellName(c, lang);
   const supLabel = (id) => tl(supById.get(id)?.name || "") || `#${id}`;
   const leadLabel = (id) => tl(leadById.get(id)?.name || "") || `#${id}`;
@@ -801,8 +803,8 @@ export default function ShiftTimes() {
                   <CellLink id={c.id} className="text-sm font-semibold">
                     {c.verifix_code || "—"}
                   </CellLink>
-                  <span className="text-xs truncate min-w-0 flex-1" style={{ color: wname(c) ? "var(--text-2)" : "var(--text-4)" }}>
-                    {wname(c) || "—"}
+                  <span className="text-xs truncate min-w-0 flex-1" style={{ color: c.leader ? "var(--text-2)" : "var(--text-4)" }}>
+                    {tl(c.leader) || "—"}
                   </span>
                   <ShiftChip shift={c.shift} t={t} />
                 </div>
@@ -850,7 +852,6 @@ export default function ShiftTimes() {
               }
             />
             <Th label={t("admin.profiles.colVerifixCode")} k="code" sort={sort} onSort={onSort} cls="w-24" />
-            <Th label={t("admin.profiles.colWorkshop")} />
             <Th label={t("admin.shiftTimes.fBrigadir")} k="brigadir" sort={sort} onSort={onSort} />
             <Th label={t("admin.shiftTimes.fShift")} k="shift" sort={sort} onSort={onSort} cls="w-20" />
             <Th label={t("admin.shiftTimes.fLeader")} />
@@ -864,7 +865,7 @@ export default function ShiftTimes() {
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={11} className="text-center py-8 text-xs" style={{ color: "var(--text-4)" }}>
+              <td colSpan={10} className="text-center py-8 text-xs" style={{ color: "var(--text-4)" }}>
                 {t("admin.shiftTimes.empty")}
               </td>
             </tr>
@@ -891,9 +892,6 @@ export default function ShiftTimes() {
                 <td className="px-3 py-2 font-semibold">
                   {/* e.g. «0822» → /cells/:id */}
                   <CellLink id={c.id}>{c.verifix_code || "—"}</CellLink>
-                </td>
-                <td className="px-3 py-2" style={{ color: wname(c) ? "var(--text-1)" : "var(--text-4)" }}>
-                  {wname(c) || "—"}
                 </td>
                 <td className="px-3 py-2" style={{ color: c.supervisor ? "var(--text-2)" : "var(--text-4)" }}>
                   {tl(c.supervisor) || "—"}

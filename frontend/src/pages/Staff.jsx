@@ -28,7 +28,7 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useDragSelect } from "../hooks/useDragSelect";
 import api from "../utils/api";
 import { fmtPct, fmtNum } from "../utils/formatters";
-import { cellName as pickCellName, exchangeCellSuffix } from "../utils/cellName";
+import { cellLabel, exchangeCellSuffix } from "../utils/cellName";
 import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
 import { exportXlsx } from "../utils/exportXlsx";
 import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
@@ -157,14 +157,16 @@ const INIT_FILTERS = {
 const normName = (s) =>
   s ? transliterate(String(s), "en").replace(/\s+/g, " ").trim().toUpperCase() : "";
 
-// What the Yacheyka column shows for one cell, in the viewer's language.
-const cellDisplay = (c, lang) => {
-  const nm = pickCellName(c, lang, "name_");
+// What the Yacheyka column shows for one cell: the CODE, and — where the
+// payload names one — the cell's leader beside it. The workshop name is never
+// printed (utils/cellName.js). `full` is the label; the FILTER keys on `code`,
+// so a value the reader ticked survives a leader being reassigned.
+const cellDisplay = (c, tl) => {
+  const code = c.verifix_code || "—";
   return {
     id: c.cell_id ?? null,   // registry id → the code links to /cells/:id
-    code: c.verifix_code || "—",
-    name: nm || "",
-    full: `${c.verifix_code || "—"}${nm ? " · " + nm : ""}`,
+    code,
+    full: cellLabel(code, tl(c.leader_name || c.leader || "")),
   };
 };
 
@@ -174,7 +176,7 @@ const cellDisplay = (c, lang) => {
 function matchesFilters(w, f, skipRoles = false) {
   if (f.worker     && !w.worker_name?.toLowerCase().includes(f.worker.toLowerCase())) return false;
   if (!skipRoles && f.job_titles.length && !f.job_titles.includes(w.job_title || "")) return false;
-  if (f.cells.length      && !f.cells.includes(w._cell?.full   || ""))               return false;
+  if (f.cells.length      && !f.cells.includes(w._cell?.code   || ""))               return false;
   if (f.schedules.length  && !f.schedules.includes(w.schedule   || ""))              return false;
   if (f.clock.length && !f.clock.includes(w.clock_in_out || "")) return false;
   if (f.hours_min !== "" && (w.hours_worked      == null || w.hours_worked      < parseFloat(f.hours_min))) return false;
@@ -428,6 +430,8 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 
 export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const { t } = useLang();
+  // `lang` is read only as a memo KEY: `tl` is a new function on every render,
+  // so the language is what those memos actually depend on.
   const { tl, lang } = useTranslit();
   const [rawFilters, setFilters]        = usePersistentState("staff_workers_filters", INIT_FILTERS);
   const [showExport, setShowExport]     = useState(false);
@@ -508,7 +512,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     if (allWorkersRaw.some(w => w.verifix_code)) {
       const byCode = new Map((dayCellNames || []).map(c => [c.verifix_code, c]));
       return allWorkersRaw.map(w => w.verifix_code
-        ? { ...w, _cell: cellDisplay(byCode.get(w.verifix_code) || { verifix_code: w.verifix_code }, lang) }
+        ? { ...w, _cell: cellDisplay(byCode.get(w.verifix_code) || { verifix_code: w.verifix_code }, tl) }
         : w);
     }
     // Fallback for days ingested through the older per-supervisor files: match
@@ -516,8 +520,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     if (!cellOfWorker || cellOfWorker.size === 0) return allWorkersRaw;
     return allWorkersRaw.map(w => {
       const hit = cellOfWorker.get(normName(w.worker_name));
-      return hit ? { ...w, _cell: cellDisplay(hit.c, lang) } : w;
+      return hit ? { ...w, _cell: cellDisplay(hit.c, tl) } : w;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allWorkersRaw, dayCellNames, cellOfWorker, lang]);
   // Only claim the column when at least one row actually matched — a day whose
   // two uploads don't overlap would otherwise render a full column of dashes.
@@ -579,9 +584,28 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const distinctClockInOut = useMemo(() =>
     [...new Set(allWorkers.map(w => w.clock_in_out || ""))].sort(),
     [allWorkers]);
-  const distinctCells = useMemo(() =>
-    [...new Set(allWorkers.map(w => w._cell?.full).filter(Boolean))].sort(),
-    [allWorkers]);
+  // Ticked by CODE, labelled «code · leader» — the option's value is the code
+  // so a relabelled cell never strands a pick.
+  const distinctCells = useMemo(() => {
+    const seen = new Map();
+    for (const w of allWorkers) {
+      if (w._cell?.code && !seen.has(w._cell.code)) seen.set(w._cell.code, w._cell.full);
+    }
+    return [...seen.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+      .map(([value, label]) => ({ value, label }));
+  }, [allWorkers]);
+
+  // A pick the day no longer offers — including one saved under the old
+  // «code · workshop» spelling — is dropped rather than left narrowing the
+  // table to nothing while its chip still reads like a real cell.
+  useEffect(() => {
+    if (!filters.cells.length || !distinctCells.length) return;
+    const have = new Set(distinctCells.map((o) => o.value));
+    const kept = filters.cells.filter((v) => have.has(v));
+    if (kept.length !== filters.cells.length) setFilters(f => ({ ...f, cells: kept }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [distinctCells, filters.cells]);
 
   const activeFilter = isFilterActive(filters);
   function setF(key, val) { setFilters(f => ({ ...f, [key]: val })); }
@@ -1473,6 +1497,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
 
 export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, onClose, onSaved }) {
   const { t } = useLang();
+  // `lang` is read only as a memo KEY — see AttendanceTable.
   const { tl, lang } = useTranslit();
   const qc = useQueryClient();
   const isEdit  = !!editDoc;
@@ -1575,7 +1600,8 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     return s?.cells || [];
   }, [targetIsSup, target, supTargets]);
   const cellOptions = useMemo(
-    () => targetCells.map(c => ({ value: c.verifix_code, label: cellDisplay(c, lang).full })),
+    () => targetCells.map(c => ({ value: c.verifix_code, label: cellDisplay(c, tl).full })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [targetCells, lang]
   );
   // Drop a picked cell that the (newly chosen) target doesn't have. Only once
@@ -1691,7 +1717,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
       let label = s ? tl(s.full_name) : "…";
       if (targetCells.length) {
         const c = targetCells.find(x => x.verifix_code === targetCell);
-        label += ` · ${c ? cellDisplay(c, lang).full : "…"}`;
+        label += ` · ${c ? cellDisplay(c, tl).full : "…"}`;
       }
       return label;
     }
@@ -2012,7 +2038,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
 export function DocumentViewModal({ docId, onClose }) {
   const { t } = useLang();
-  const { tl, lang } = useTranslit();
+  const { tl } = useTranslit();
   const { data: doc, isLoading } = useQuery({
     queryKey: ["staff-document", docId],
     queryFn: () => api.get(`/api/staff/documents/${docId}`).then(r => r.data),
@@ -3945,6 +3971,7 @@ function ApprovalsCalendar({ role, supervisors }) {
 export default function Staff() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
+  const { tl } = useTranslit();
   const qc = useQueryClient();
   const role = auth?.role;
   // Deleting rows outright rather than filing a delete request: admins always,
@@ -4008,18 +4035,22 @@ export default function Staff() {
       const k = cellKey(r);
       counts.set(k, (counts.get(k) || 0) + 1);
     }
+    // `name` is the cell's LEADER, not its workshop — a cell is written out as
+    // its code and the person answerable for it (utils/cellName.js).
     return (cellDay.cells || []).map(c => ({
       key:       cellKey(c),
       code:      c.verifix_code || null,
-      name:      pickCellName(c, lang, "name_") || null,
+      name:      c.leader_name ? tl(c.leader_name) : null,
       unmatched: !!c.unmatched,
       count:     counts.get(cellKey(c)) || 0,
     }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cellDay, hasCellData, lang]);
 
-  // The pick survives navigation like the supervisor + date do. Code and name
-  // are stored alongside the key so the trigger can label the cell even on a
-  // date whose payload doesn't carry it (the body then explains, not the label).
+  // The pick survives navigation like the supervisor + date do. The code and
+  // the leader are stored alongside the key so the trigger can label the cell
+  // even on a date whose payload doesn't carry it (the body then explains, not
+  // the label).
   const [rawSelCell, setSelCell] = usePersistentState("staff_selected_cell", null);
   const selCell = isManagerView && rawSelCell && typeof rawSelCell === "object" && rawSelCell.key
     ? rawSelCell

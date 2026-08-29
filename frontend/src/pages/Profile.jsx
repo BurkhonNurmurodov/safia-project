@@ -25,7 +25,6 @@ import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit, transliterate, convertFromUz } from "../utils/transliterate";
-import { cellName } from "../utils/cellName";
 import { ROLE_LABEL_KEYS } from "../config/pages";
 
 /**
@@ -542,7 +541,7 @@ function MyProfile() {
               <InfoRow icon={LayoutGrid} label={t("profile.cells")} top>
                 <span className="inline-flex flex-wrap gap-1 justify-end">
                   {me.cells.map((c) => (
-                    <CellLink key={c.verifix_code} id={c.id} title={cellName(c, lang) || undefined}
+                    <CellLink key={c.verifix_code} id={c.id}
                           className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
                           style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
                       {c.verifix_code}
@@ -756,21 +755,18 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   const roleChanged = form.role && form.role !== ptype;
   const effType = roleChanged ? form.role : ptype;
   const cellList = form.cells || [];
-  const wname = (c) => cellName(c, lang);
 
+  // The cells this leader may hold, by CODE — never by workshop name
+  // (utils/cellName.js). The list is already narrowed to cells that are free or
+  // already theirs, so the leader beside a code would be this profile itself.
   const leaderCellOpts = useMemo(() => {
     const meId = item.id;
     const sel = new Set(form.cells || []);
     return (data?.cells ?? [])
       .filter((c) => !c.leader_id || c.leader_id === meId || sel.has(c.verifix_code))
       .sort((a, b) => String(a.verifix_code).localeCompare(String(b.verifix_code), undefined, { numeric: true }))
-      .map((c) => {
-        const w = wname(c);
-        const label = w ? `${c.verifix_code} · ${w}` : c.verifix_code;
-        return { value: c.verifix_code, label, title: label };
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, item.id, form.cells, lang]);
+      .map((c) => ({ value: c.verifix_code, label: c.verifix_code, title: c.verifix_code }));
+  }, [data, item.id, form.cells]);
 
   const updateMut = useMutation({
     mutationFn: (body) => api.put(`/api/profiles/admin/${ptype}/${item.id}`, body),

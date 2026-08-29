@@ -31,6 +31,7 @@ or copy-paste its markup into a page.
 | Table pager | `Pagination.jsx` | For registers too long to dump into the DOM (thousands of rows). Sits directly under the `TableCard`: "x–y of N" left, windowed page buttons right, built from `Button`. Renders nothing for a single page. |
 | Column show/hide + reorder | `ColumnsPicker.jsx` | 38px `Columns3` icon trigger on the toolbar's RIGHT edge (`className="ml-auto"`, hidden-count badge) + portaled panel listing every column IN TABLE ORDER — hidden ones stay dimmed in place (eye-off), never regrouped to the bottom. Hide all/Show all links; drag-to-reorder only arms via the panel's reorder button. Controlled: `columns [{key,label,locked}]`, `order`, `hidden`, `onChange({order,hidden})`. Persist via `/api/ui-prefs/{key}` (per-profile JSON blobs, `UiPref` model); reconcile saved keys against the current column catalog and keep identity columns `locked`. `t("cols.*")` keys exist in all 4 langs. Excel exports of a picker-equipped table must mirror it exactly — send the visible keys in on-screen order (`columns`) with the row-id `order`, backend formats keyed per column. (Exception: the Позиции export deliberately emits the fixed brigadir «ABC форма» formula workbook instead of a picker mirror — don't revert it. It reproduces the manual form cell-for-cell: totals row 1, headers row 2, positions row 3+, team block M:W, indicators X:Y, staffing Z:AA; only Трудоемкость/Команда/Факт/ПЛАН/Штатка and the reconciliation counts are values, everything else is a live formula so the brigadir's edits recalculate. Superseded the older «загрузка» two-shift layout.) See the Production «Позиции» table for the reference wiring (cells rendered by a per-key switch so hide/reorder is free). |
 | Factory (plant) switcher | `useFactorySection()` from `FactorySelect.jsx` | THE plant switcher — a `FilterPanel` SECTION, first in every factory-aware page's section list (plant → shift → supervisor → …), never a standalone control on the bar. (The standalone `FactorySelect` dropdown and the `FactoryTabs` strip before it are both retired from page toolbars: each cost a permanent toolbar cell on a phone-first platform for a value most users never change.) «All factories» is the FIRST option. Returns `null` when fewer than two factories exist; a locked viewer (supervisor/leader) gets a `static` section — an inert chip naming their plant, never a one-option control. The `FactorySelect` component itself survives only for non-toolbar surfaces (admin forms). |
+| Cell label (how a cell is NAMED) | `utils/cellName.js` → `cellLabel(code, leader)` | A cell is its **verifix CODE**. The workshop name is NEVER printed — see the section below. |
 | Pressable cell reference | `CellLink.jsx` | THE way a production cell rendered as CONTENT (table cell, card, chip) opens its page `/cells/:id` — dotted-underline affordance via the `.cell-link` rule in `index.css`. `id` = cells.id; without one it renders inert text (never a dead link). Clicks stop propagation, so it nests in clickable rows. FILTER controls listing cells never navigate. Don't put it inside another `<button>` (IdleCell accordion / AttendanceUpload expander stay unlinked on purpose — nested-interactive + they hold unsaved drafts). `/cells/:id` (`CellDetails.jsx`) is auth-only like `/profile`; its edit modal is the shared `CellFormModal.jsx` (ONE form with the `/cells` register). |
 | Empty-data placeholder | `EmptyState.jsx` | For page/section level. Table "no match" rows stay plain muted text. |
 | Full-screen "you can't see this page" state | `ErrorScreen.jsx` | THE template for 404, no-access, a crash, offline, and every blocked auth status (`AuthGate`'s screens, `NoAccess`, `ErrorBoundary` all render through it). Shape: tinted icon chip → status `code` → `title` → ONE sentence → ONE primary `action` → `secondary` escape hatch → `detail` collapsed. Tones are the status palette: `danger` broke, `warning` blocked-but-fixable, `neutral` slate just-not-there (404/403), `brand` an invitation (register) — never a raw emoji as the lead visual, which is what all eight hand-rolled copies used to do. Takes focus on the primary action at mount and pads for Telegram safe areas. `inline` drops the viewport wrapper for a screen rendered INSIDE `Layout` (the 404 keeps the sidebar, so the nav is itself an escape hatch). **Crashes are SCOPED and never technical**: use `ScopedErrorBoundary` from `ErrorBoundary.jsx` (never the bare class) — one inside `Layout` around the content column so a broken table keeps the nav alive, one above the routes so a broken page keeps the session, and the app-level one only for a provider. It clears itself on navigation (`resetKey` = pathname), shows the minified stack to ADMINS only, and posts every catch to `POST /api/crash-report` (`routers/boot.py`, the ONE client-failure door — fingerprint-deduped, one DM per crash per hour, always logged as `CLIENT-CRASH`). A user must never be the monitoring system. |
@@ -92,6 +93,48 @@ never moves the frame.
   depends on a nav item being visible.
 - A destination added by splitting an existing one carries `capKey` pointing at
   the original id, so the split cannot narrow any grantee's access.
+
+## A cell is its CODE (`utils/cellName.js`)
+
+From **2026-08-29** (the operator's standing directive) a production cell is
+identified on screen by its four-digit **verifix code** and by nothing else.
+The workshop name («Холодные яблоки», «Холодильщик и кладовщик») is not printed
+anywhere: not in a table cell, a card, a chip, a filter option, a chart axis, a
+modal title, a tooltip, a notification or an export column.
+
+- **`cellLabel(code, leader)` is THE label** and the only place the separator
+  lives. Where a code alone is too thin, the second fact is the cell's
+  **LEADER** — the person answerable for it, already transliterated by the
+  caller's `tl` — never the workshop. Everything else about a cell (its
+  brigadir, its shift) is a column of its own, not part of its name.
+- **Why**: the names are long, they truncate to nothing in the narrow controls
+  that carry them (a 240px filter dropdown, a phone table row), and they are
+  near-duplicates of one another — «Холодная ягода» is the name of BOTH 1611
+  and 1622 — so a reader who has only the name cannot tell two cells apart,
+  while the code always can. The plant's own people say the code.
+- **`cellName()` survives for exactly two jobs and is documented as such**:
+  SEARCH (typing «яблоки» still finds 1612 on `/cells`, «Smena vaqtlari» and
+  the attendance upload — what comes back is the code) and the register's own
+  EDITOR (`CellFormModal.jsx`, and the create-a-cell form on `/profile`), which
+  is where the four language columns are maintained. Rendering it as a label
+  anywhere else is the regression this section exists to prevent.
+- **Read surfaces carry no names at all.** `/cells` lost its «Цех» column (and
+  the workbook lost that column with it); `/cells/:id` leads with the code and
+  lost the four-language «Names» card; the Quality register, ARC (both tabs,
+  its charts and its export), Ojidaniya, Zagruzka-cell, Setup times, Staff,
+  StaffCells, WorkerConcerns and «Smena vaqtlari» all print the code, with the
+  leader beside it where the payload names one.
+- **The backend prints the code too** — the approval card and the
+  people-exchange notification (`_exchange_target_label`), the ARC export's
+  `cell` column, the cells-register workbook. `cell_lookup.workshop_name` is
+  documented as NOT-A-LABEL; no payload or file should write it out.
+- Three payloads gained the cell's `leader` so the code never stands alone
+  where a name used to help: `/api/staff/attendance` `cells[]`, and both
+  `/api/setup-times` list rows and its analysis rows. `cell_lookup.by_verifix`
+  already shipped it (ARC, Quality), as did `/api/cell-attendance` and
+  `/api/idle-cell`.
+- The stored names are untouched — nothing was migrated or deleted, so lifting
+  this rule anywhere is a rendering change and nothing more.
 
 ## Factory (plant) dimension
 

@@ -816,9 +816,13 @@ _XLSX_MUTED   = "9CA3AF"   # placeholder text ("—", "not assigned")
 
 
 class CellsExportRow(BaseModel):
+    """One register row. No workshop name: a cell is identified by its CODE and
+    by the two people answerable for it (frontend `utils/cellName.js`), and the
+    workbook mirrors the screen. The field stays declared so an older bundle
+    still sending it is accepted rather than 422'd — it is simply not written."""
     verifix_code: str = ""
     sap_code:     str = ""
-    workshop:     str = ""
+    workshop:     str = ""   # accepted from older bundles, never written
     supervisor:   str = ""   # "" = unassigned; the label is applied here
     leader:       str = ""   # "" = unassigned
 
@@ -853,7 +857,6 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
     muted = Font(color=_XLSX_MUTED, italic=True, size=10)
     body_font = Font(size=10, color="1F2937")
     center = Alignment(horizontal="center", vertical="center")
-    left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
     left_mid = Alignment(horizontal="left", vertical="center")
 
     def band(ws, span: str, text: str, *, height: int, fill: str,
@@ -882,7 +885,7 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
     ws = wb.active
     ws.title = L["sheet"]
 
-    headers = [L["num"], L["verifix"], L["sap"], L["workshop"], L["brigadir"], L["leader"]]
+    headers = [L["num"], L["verifix"], L["sap"], L["brigadir"], L["leader"]]
     ncols = len(headers)
     last_col = get_column_letter(ncols)
 
@@ -908,30 +911,27 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
         ws.cell(y, 2, r.verifix_code or "—").font = Font(bold=True, size=10, color="111827")
         ws.cell(y, 2).alignment = center
         ws.cell(y, 3, r.sap_code or "—").alignment = center
-        ws.cell(y, 4, r.workshop or "—")
-        ws.cell(y, 5, r.supervisor or L["no_brigadir"])
-        ws.cell(y, 6, r.leader or L["unassigned"])
+        ws.cell(y, 4, r.supervisor or L["no_brigadir"])
+        ws.cell(y, 5, r.leader or L["unassigned"])
         for i in range(1, ncols + 1):
             c = ws.cell(y, i)
             c.border = grid
             if i in (1, 3):
                 c.font = Font(size=10, color="6B7280")
             elif i >= 4:
-                c.alignment = left_wrap if i == 4 else left_mid
+                c.alignment = left_mid
                 c.font = body_font
             if n % 2 == 0:
                 c.fill = zebra
         # Placeholders read as absent data, never as a value.
         if not r.sap_code:
             ws.cell(y, 3).font = muted
-        if not r.workshop:
-            ws.cell(y, 4).font = muted
         if not r.supervisor:
-            ws.cell(y, 5).font = muted
+            ws.cell(y, 4).font = muted
         if not r.leader:
-            ws.cell(y, 6).font = muted
+            ws.cell(y, 5).font = muted
 
-    for col, width in zip("ABCDEF", (5, 14, 13, 48, 28, 34)):
+    for col, width in zip("ABCDE", (5, 14, 13, 30, 36)):
         ws.column_dimensions[col].width = width
     if rows:
         ws.auto_filter.ref = f"A{HEAD_ROW}:{last_col}{HEAD_ROW + len(rows)}"

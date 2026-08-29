@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Factory, Settings2,
+  LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Settings2,
   FileSpreadsheet, ShieldCheck, UserRound,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
@@ -80,10 +80,12 @@ function RowActions({ t, onEdit, onDelete, deleting }) {
   );
 }
 
-// Phone-only card: code + SAP chip and the actions up top, the workshop name as
-// the body, brigadir + leader pinned to the footer so a stack lines up.
+// Phone-only card: code + SAP chip and the actions up top, brigadir + leader
+// pinned to the footer so a stack lines up. The code is the whole identity —
+// the workshop name is never printed (utils/cellName.js), and the two people
+// answerable for the cell are what the card carries instead.
 // The whole card opens the cell's page; the icon pair stops propagation.
-function CellCard({ c, workshop, tl, t, canEdit, onEdit, onDelete, deleting, onOpen }) {
+function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onOpen }) {
   return (
     <div
       className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)] cursor-pointer"
@@ -106,12 +108,6 @@ function CellCard({ c, workshop, tl, t, canEdit, onEdit, onDelete, deleting, onO
             <RowActions t={t} onEdit={onEdit} onDelete={onDelete} deleting={deleting} />
           </div>
         )}
-      </div>
-
-      <div className="min-h-[2.5rem] min-w-0">
-        {workshop
-          ? <div className="text-sm font-medium leading-snug text-[var(--text-1)] break-words">{workshop}</div>
-          : <div className="text-sm" style={{ color: "var(--text-4)" }}>—</div>}
       </div>
 
       <div className="mt-auto pt-3 space-y-1.5" style={{ borderTop: "1px solid var(--border)" }}>
@@ -154,6 +150,10 @@ export default function Cells() {
 
   // Workshop name in the viewer's language, Russian as the fallback (shared
   // resolver — every language column is nullable, see utils/cellName).
+  //
+  // SEARCH ONLY. A cell is never written out by its name — not in this table,
+  // not on a card, not in the export — so this feeds the match test and nothing
+  // else: typing «яблоки» still finds 1612, and 1612 is what comes back.
   const wname = (c) => cellName(c, lang);
 
   const [search, setSearch] = usePersistentState("cells_search", "");
@@ -200,7 +200,6 @@ export default function Cells() {
     const val = (c) => {
       switch (sort.key) {
         case "sap_code":   return c.sap_code || "";
-        case "workshop":   return wname(c);
         case "supervisor": return tl(c.supervisor) || "";
         case "owner":      return tl(c.leader) || "";
         default:           return c.verifix_code || "";
@@ -227,7 +226,6 @@ export default function Cells() {
           rows: sorted.map((c) => ({
             verifix_code: c.verifix_code || "",
             sap_code: c.sap_code || "",
-            workshop: wname(c) || "",
             supervisor: c.supervisor ? tl(c.supervisor) : "",
             leader: c.leader ? tl(c.leader) : "",
           })),
@@ -238,7 +236,7 @@ export default function Cells() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
-  const colSpan = canEdit ? 6 : 5;
+  const colSpan = canEdit ? 5 : 4;
 
   const brigadirOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllBrigadirs") },
@@ -274,7 +272,6 @@ export default function Cells() {
         <CellCard
           key={c.id}
           c={c}
-          workshop={wname(c)}
           tl={tl}
           t={t}
           canEdit={canEdit}
@@ -366,11 +363,10 @@ export default function Cells() {
       >
         <thead>
           <tr>
-            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[13%]" />
-            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[12%]" />
-            <Th icon={Factory} label={t("admin.profiles.colWorkshop")} k="workshop" sort={sort} onSort={onSort} cls="w-[29%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[19%]" />
-            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[19%]" />
+            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[18%]" />
+            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[18%]" />
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[28%]" />
+            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[28%]" />
             {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[8%]" />}
           </tr>
         </thead>
@@ -395,11 +391,6 @@ export default function Cells() {
                 <CellLink id={c.id}>{c.verifix_code}</CellLink>
               </td>
               <td className="px-3 py-2 font-mono text-[var(--text-3)] whitespace-nowrap">{c.sap_code || "—"}</td>
-              <td className="px-3 py-2">
-                {wname(c)
-                  ? <span className="font-medium text-[var(--text-1)]">{wname(c)}</span>
-                  : <span style={{ color: "var(--text-4)" }}>—</span>}
-              </td>
               <td className="px-3 py-2">
                 {c.supervisor
                   ? <span className="text-[var(--text-2)]">{tl(c.supervisor)}</span>

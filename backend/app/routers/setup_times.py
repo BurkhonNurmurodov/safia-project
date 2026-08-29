@@ -119,6 +119,10 @@ def list_setup_times(
             "cell": r.cell,
             "cell_id": (cell["id"] if cell else None),
             "cell_name": {k: cell[k] for k in ("uz", "uz_cyrl", "ru", "en")} if cell else None,
+            # The cell's LEADER — what the register prints beside the code, since
+            # a cell is never written out by its workshop name (frontend
+            # `utils/cellName.js`). None for a code the registry cannot resolve.
+            "leader": (cell["leader"] if cell else None),
             "cell_known": cell is not None,
             "minutes": float(r.minutes) if r.minutes is not None else None,
             "reason": r.reason,
@@ -446,10 +450,17 @@ def setup_analysis(
     for p in rows:
         by_cell[p.cell_id].append({"date": p.date, "minutes": float(p.minutes or 0)})
     managers = {m.id: m for m in db.query(Manager).filter(Manager.archived.is_(False)).all()}
+    # Resolved the same way `list_fact` resolves them: the analysis table names
+    # each cell by its CODE, and the leader is the fact printed beside it.
+    lids = {c.leader_id for c in cells if c.leader_id}
+    leaders = {p.id: p.name for p in db.query(RoleProfile).filter(
+        RoleProfile.id.in_(lids),
+    ).all()} if lids else {}
     standards = _standards_by_cell_id(db)
     cells.sort(key=lambda c: (c.verifix_code or "").lower())
     return {"cells": [
-        {**_fact_cell_meta(c, managers.get(c.manager_id), None, standards.get(c.id)),
+        {**_fact_cell_meta(c, managers.get(c.manager_id), leaders.get(c.leader_id),
+                           standards.get(c.id)),
          "entries": by_cell.get(c.id, [])}
         for c in cells
     ]}

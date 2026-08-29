@@ -489,14 +489,14 @@ export default function WorkerConcerns() {
     () => Object.fromEntries((meta?.supervisors || []).map((s) => [s.id, s.name])),
     [meta]
   );
-  const cellName = useMemo(() => {
+  // A cell is its CODE (utils/cellName.js) — the workshop name is never printed.
+  // The leader is what stands beside it, and the register carries one per row,
+  // so the map only has to answer for the FILTER's option list.
+  const cellLabels = useMemo(() => {
     const m = {};
-    for (const c of meta?.cells || []) {
-      const n = c.names && (c.names[lang] || c.names.ru || c.names.uz);
-      m[c.code] = n ? `${c.code} · ${n}` : c.code;
-    }
+    for (const c of meta?.cells || []) m[c.code] = c.code;
     return m;
-  }, [meta, lang]);
+  }, [meta]);
 
   const sections = useMemo(() => {
     const s = [];
@@ -533,7 +533,7 @@ export default function WorkerConcerns() {
         onClear: () => setCellSel([]),
         render: () => (
           <OptsFilter searchable opts={(meta.cells || []).map((c) => c.code)}
-            sel={cellSel} onChange={setCellSel} render={(c) => cellName[c] || c} />
+            sel={cellSel} onChange={setCellSel} render={(c) => cellLabels[c] || c} />
         ),
       });
     }
@@ -547,7 +547,7 @@ export default function WorkerConcerns() {
       ),
     });
     return s;
-  }, [factorySection, meta, mgrSel, leadSel, cellSel, stSel, supers, supName, cellName, T, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [factorySection, meta, mgrSel, leadSel, cellSel, stSel, supers, supName, cellLabels, T, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearAll = () => { setMgrSel([]); setLeadSel([]); setCellSel([]); setStSel([]); };
 
@@ -1278,7 +1278,7 @@ export default function WorkerConcerns() {
                             style={{ color: r.d ? "var(--text-2)" : "var(--text-4)" }}>
                             {fmtDate(r.d)}
                           </td>
-                          <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={cellName[r.cell] || r.cell}>{r.cell}</td>
+                          <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }} title={r.leader ? `${r.cell} · ${tl(r.leader)}` : r.cell}>{r.cell}</td>
                           <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
                             {r.leader ? tl(shortName(r.leader)) : "—"}
                           </td>
@@ -1302,7 +1302,7 @@ export default function WorkerConcerns() {
       {/* row detail — the full text one row at a time */}
       {detail && (
         <Modal open onClose={() => setDetail(null)} title={T.mTitle}
-          subtitle={cellName[detail.cell] || detail.cell}
+          subtitle={detail.leader ? `${detail.cell} · ${tl(detail.leader)}` : detail.cell}
           icon={<Megaphone size={16} />}>
           <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-1)" }}>{detail.text}</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs pt-2" style={{ borderTop: "1px solid var(--border)" }}>

@@ -210,12 +210,10 @@ function ModalInput({ value, onChange, type = "text", className = "", ...rest })
 
 const EMPTY_DRAFT = { manager_id: null, supervisor: "", cell: "", minutes: "", sku: "", reason: "" };
 
-// Label a cell picker option "code — name" (`pickName` is the shared one).
+// A cell picker option is the CODE — never the workshop name
+// (utils/cellName.js).
 const CUSTOM_CELL = "__custom__";
-const cellOptLabel = (c, lang) => {
-  const nm = pickName(c, lang);
-  return nm ? `${c.code} — ${nm}` : c.code;
-};
+const cellOptLabel = (c) => c.code;
 
 // Card + SectionHead wrapper for the analysis charts — same chrome as TableCard.
 function ChartCard({ icon, title, subtitle, right, children }) {
@@ -315,7 +313,7 @@ function StandardTab({ T, lang, tl }) {
   // Cell picker: the whole registry as options + a «Custom…» escape hatch that
   // reveals a free-text input (unknown codes are legitimate, so never reject).
   const cellSelectOpts = [
-    ...cells.map((c) => ({ value: c.code, label: cellOptLabel(c, lang) })),
+    ...cells.map((c) => ({ value: c.code, label: cellOptLabel(c) })),
     { value: CUSTOM_CELL, label: T.customCellOpt },
   ];
   const cellSelValue = modal?.cellCustom ? CUSTOM_CELL : (modal?.draft.cell || "");
@@ -397,7 +395,7 @@ function StandardTab({ T, lang, tl }) {
                 <span className="font-medium" style={{ color: "var(--text-1)" }}>{tl(r.supervisor)}</span>
               </td>
               <td className="px-3 py-2">
-                <CellCol code={r.cell} name={r.cell_name} lang={lang} cellId={r.cell_id} />
+                <CellCol code={r.cell} leader={tl(r.leader || "")} cellId={r.cell_id} />
               </td>
               <td className="px-3 py-2 text-right">
                 <MinPill value={r.minutes} color={minColor(r.minutes)} />
@@ -724,8 +722,7 @@ function AnalysisTab({ T, lang, tl }) {
         formatter: (val, opts) => {
           const c = dev[opts?.dataPointIndex];
           if (!c) return val;
-          const nm = pickName(c.name, lang);
-          return nm ? `${c.code} — ${nm}` : c.code;
+          return c.leader ? `${c.code} · ${tl(c.leader)}` : c.code;
         },
       },
       y: {
@@ -893,7 +890,7 @@ function AnalysisTab({ T, lang, tl }) {
                 </span>
               </td>
               <td className="px-3 py-2">
-                <CellCol code={s.code} name={s.name} lang={lang} cellId={s.cell_id} />
+                <CellCol code={s.code} leader={tl(s.leader || "")} cellId={s.cell_id} />
               </td>
               <td className="px-3 py-2 text-right tabular-nums"
                 style={{ color: s.standard != null ? "var(--text-3)" : "var(--text-4)" }}>
