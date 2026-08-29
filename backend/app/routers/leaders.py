@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (
     AppSetting, LeaderAiDispute, LeaderAiReview, LeaderChecklist,
-    LeaderLateRequest, LeaderSyncMeta, LeaderTaskDay, LeaderTaskOverride, Manager,
+    LeaderLateProof, LeaderLateProofMedia, LeaderLateRequest, LeaderSyncMeta,
+    LeaderTaskDay, LeaderTaskOverride, Manager,
 )
 from app.capabilities import page_scope_is_all
 from app.permissions import page_allowed, require_page
@@ -23,7 +24,8 @@ from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
 from app.services import (
-    action_log, leader_ai, leader_bot, leader_exclusions, leader_reports)
+    action_log, leader_ai, leader_bot, leader_exclusions, leader_late_proof,
+    leader_reports)
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -1970,3 +1972,250 @@ def set_exclusions(
                 "excluded" if on else "restored", done, who, told, dropped)
     return {"ok": True, "changed": done, "notified": told,
             "reviewsDropped": dropped}
+
+
+# ── Late proofs: the two-stage queue ─────────────────────────────────────────
+# The dashboard half of services/leader_late_proof.py. The bot card and this
+# page are two views of ONE row and one rule — every write here goes through
+# the same `decide_supervisor` / `decide_admin` the Telegram buttons call, so a
+# ruling made in a workshop and a ruling made at a desk cannot end differently.
+
+LATE_PROOF_CAP = 400
+
+
+def _lp_stage_rights(db: Session, payload: dict, row) -> tuple[bool, bool]:
+    """(may rule at stage 1, may rule at stage 2) for this caller on this row.
+
+    Authority is per ROW, not per page: a brigadir owns their own unit's late
+    proofs and nobody else's, and only an admin can put a point back. A "see
+    all" page grant widens READING and never this — the same rule the late-day
+    flow already states.
+    """
+    if payload.get("role") == "admin":
+        return True, True
+    is_sup = (payload.get("role") == "supervisor"
+              and row.manager_id is not None
+              and int(payload.get("role_id") or 0) == int(row.manager_id))
+    return is_sup, False
+
+
+def _lp_item(db: Session, row, names: dict, mgr_names: dict) -> dict:
+    media = leader_late_proof.photos(db, row.id)
+    return {
+        "id": row.id,
+        "status": row.status,
+        "date": row.date,
+        "shift": row.shift,
+        "taskId": row.task_id,
+        "taskName": (names.get((row.manager_id, row.leader_id)) or {}).get(row.task_id),
+        "leader": row.leader_name,
+        "leaderId": row.leader_id,
+        "supervisor": mgr_names.get(row.manager_id),
+        "managerId": row.manager_id,
+        "deadline": row.deadline,
+        "reason": row.reason,
+        "uid": row.uid,
+        "at": row.created_at.isoformat() if row.created_at else None,
+        "photos": [{"id": m.id, "pos": m.pos} for m in media],
+        "sup": {
+            "action": row.sup_action, "note": row.sup_note,
+            "by": row.sup_by_name,
+            "at": row.sup_at.isoformat() if row.sup_at else None,
+        } if row.sup_action else None,
+        "adm": {
+            "action": row.adm_action, "note": row.adm_note,
+            "by": row.adm_by_name,
+            "at": row.adm_at.isoformat() if row.adm_at else None,
+        } if row.adm_action else None,
+    }
+
+
+@router.get("/leaders/late-proofs")
+def list_late_proofs(
+    status: str | None = Query(None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """The «Kechikkan isbotlar» queue — every proof filed after its deadline.
+
+    Scoped like every other read on this page: an admin sees all, a brigadir
+    their own unit's, a leader their own. Reading is not ruling — the two
+    `can*` flags say whose turn it is, and every write re-checks them per row.
+
+    `todo` is what the tab badge counts: the rows waiting on THIS caller. A
+    brigadir never carries a badge for an uplifted row they cannot decide, and
+    an admin never carries one for a row still sitting with a brigadir.
+    """
+    role = payload.get("role")
+    is_admin = role == "admin"
+    q = db.query(LeaderLateProof)
+    if status:
+        q = q.filter(LeaderLateProof.status == status)
+    if not (is_admin or role in ("shift-manager", "top-manager")
+            or page_scope_is_all(db, payload, "leaders")):
+        if role == "supervisor":
+            q = q.filter(LeaderLateProof.manager_id == payload.get("role_id"))
+        elif role == "leader":
+            # A leader reads their OWN filings — the whole flow asks them to
+            # explain themselves, so the answer has to be visible to them.
+            own = identity.viewer_leader_profile_ids(db, payload)
+            if not own:
+                return {"items": [], "canSupervise": False, "canApprove": False,
+                        "todo": 0}
+            q = q.filter(LeaderLateProof.leader_id.in_(own))
+        else:
+            return {"items": [], "canSupervise": False, "canApprove": False,
+                    "todo": 0}
+    rows = q.order_by(LeaderLateProof.id.desc()).limit(LATE_PROOF_CAP).all()
+
+    names = leader_reports.names_for_pairs(
+        db, {(r.manager_id, r.leader_id) for r in rows}, {}) if rows else {}
+    mgr_names = {m.id: m.name for m in db.query(Manager).all()} if rows else {}
+
+    todo = 0
+    for r in rows:
+        sup_ok, adm_ok = _lp_stage_rights(db, payload, r)
+        if (r.status == leader_late_proof.SUPERVISOR and sup_ok) or \
+           (r.status == leader_late_proof.ADMIN and adm_ok):
+            todo += 1
+    return {
+        "items": [_lp_item(db, r, names, mgr_names) for r in rows],
+        "canSupervise": is_admin or role == "supervisor",
+        "canApprove": is_admin,
+        "todo": todo,
+    }
+
+
+@router.post("/leaders/late-proofs/{late_id}/decide")
+def decide_late_proof(
+    late_id: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """Rule on one late proof. WHICH ruling is decided by the row's own stage.
+
+    One endpoint rather than two, for the same reason `_settle_dispute` is one
+    core: the stage is a property of the row, so a caller naming the stage could
+    name the wrong one — and the answer to "which decision is available here"
+    must not be able to differ between the page and the server.
+    """
+    row = db.query(LeaderLateProof).filter_by(id=late_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    action = str(body.get("action") or "").strip()
+    note = str(body.get("note") or "").strip()
+    sup_ok, adm_ok = _lp_stage_rights(db, payload, row)
+    # The house spelling of "who did this" on this page — the same two lines
+    # `decide_dispute` uses, so one person is named one way in the register.
+    who = payload.get("full_name") or "—"
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+
+    if row.status == leader_late_proof.SUPERVISOR:
+        if not sup_ok:
+            raise HTTPException(status_code=403, detail="Not yours to decide")
+        if action not in ("rejected", "uplifted"):
+            raise HTTPException(status_code=400,
+                                detail="action must be rejected or uplifted")
+        if action == "uplifted" and not note:
+            raise HTTPException(status_code=400,
+                                detail="A comment is required to pass this up")
+        try:
+            leader_late_proof.decide_supervisor(
+                db, row, action=action, note=note, actor_name=who,
+                actor_telegram=tid)
+        except leader_late_proof.Refused as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        db.commit()
+        action_log.enrich(
+            target_kind="task", target_id=row.id, target_name=row.leader_name,
+            unit_id=row.manager_id, day=row.date, reason=note or row.reason,
+            details=[("leader", row.leader_name), ("task_id", row.task_id)],
+            changes=[("status", leader_late_proof.SUPERVISOR, row.status)],
+        )
+        _lp_after(db, row, stage="supervisor", uplifted=(action == "uplifted"))
+        return {"ok": True, "status": row.status}
+
+    if row.status == leader_late_proof.ADMIN:
+        if not adm_ok:
+            raise HTTPException(status_code=403, detail="Admins only")
+        if action not in ("approved", "rejected"):
+            raise HTTPException(status_code=400,
+                                detail="action must be approved or rejected")
+        try:
+            leader_late_proof.decide_admin(
+                db, row, action=action, note=note or None, actor_name=who,
+                actor_telegram=tid)
+        except leader_late_proof.Refused as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        db.commit()
+        action_log.enrich(
+            target_kind="task", target_id=row.id, target_name=row.leader_name,
+            unit_id=row.manager_id, day=row.date, reason=note or row.reason,
+            details=[("leader", row.leader_name), ("task_id", row.task_id)],
+            changes=[("status", leader_late_proof.ADMIN, row.status)],
+        )
+        _lp_after(db, row, stage="admin", uplifted=False)
+        return {"ok": True, "status": row.status}
+
+    raise HTTPException(status_code=409, detail="Already decided")
+
+
+def _lp_after(db: Session, row, *, stage: str, uplifted: bool) -> None:
+    """Everything a ruling owes the outside world, and none of it fatal.
+
+    A DM that will not send must never roll back a decision somebody already
+    made — re-pressing would then find the row already decided and tell nobody
+    at all, which is strictly worse than a missing message.
+    """
+    try:
+        from app.telegram_bot import _lp_retire, _lp_send_to_admins
+        # The KEY, never a rendered string — the card sits in several chats and
+        # each reader has their own language. `row.status` is a storage word
+        # ("admin"), not a sentence: an uplift reads as «uplifted» to a person.
+        key = ("lp_done_uplifted" if uplifted
+               else f"lp_done_{row.status}")
+        _lp_retire(db, row, "sup" if stage == "supervisor" else "adm", key)
+        if uplifted:
+            _lp_send_to_admins(db, row)
+    except Exception:
+        logger.warning("late-proof card retire/forward failed", exc_info=True)
+    try:
+        leader_late_proof.notify_decided(db, row, stage=stage)
+        db.commit()
+    except Exception:
+        logger.warning("late-proof leader notice failed", exc_info=True)
+    if row.status == leader_late_proof.APPROVED:
+        leader_late_proof.rescore(db, row)
+
+
+@router.get("/leaders/late-proofs/{late_id}/photo/{media_id}")
+def late_proof_photo(
+    late_id: int,
+    media_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """One late-proof photo, streamed through the token-hiding proxy.
+
+    Row-scoped like the day report's own photo door, and checked against THIS
+    late proof: without the second half a readable queue would become a fetcher
+    for any late-proof photo on the platform.
+    """
+    row = db.query(LeaderLateProof).filter_by(id=late_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    role = payload.get("role")
+    if role != "admin":
+        allowed = (role in ("shift-manager", "top-manager")
+                   or page_scope_is_all(db, payload, "leaders")
+                   or (role == "supervisor" and row.manager_id is not None
+                       and int(payload.get("role_id") or 0) == int(row.manager_id)))
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Not allowed")
+    m = (db.query(LeaderLateProofMedia)
+         .filter_by(id=media_id, late_id=late_id).first())
+    if m is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    from app.routers.leader_tasks import _stream_tg_file
+    return _stream_tg_file(m.file_id)

@@ -254,6 +254,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/leaders/report/{}/dispute",            "leader_review", "dispute.filed"),
     (("POST",),   "/api/leaders/disputes/{}/decide",           "leader_review", "dispute.decided"),
     (("POST",),   "/api/leaders/disputes/{}/undo",             "leader_review", "dispute.undone"),
+    (("POST",),   "/api/leaders/late-proofs/{}/decide",       "leader_review", "late_proof.decided"),
     (("POST",),   "/api/leaders/late/{}/decide",               "leader_review", "lateday.decided"),
     (("DELETE",), "/api/leaders/late/{}",                      "leader_review", "lateday.cancelled"),
     (("POST",),   "/api/leaders/late",                         "leader_review", "lateday.requested"),

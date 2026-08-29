@@ -1163,6 +1163,66 @@ unit). Absent row = off, so nothing moves until an admin switches it.
 
 Related memory: `leader-per-task-submission`.
 
+## Filing a proof AFTER the deadline (late proofs)
+
+From **2026-08-30** a leader whose task deadline has gone by can still send the
+proof. It earns NO point on its own; two people decide whether it earns one at
+all. Before this the deadline had one shape for two very different people — the
+leader who did not do the work and the leader who did it and could not file it
+in time (a dead phone, a line that ran over) — and both scored 0 with nothing to
+say about it.
+
+- **Nothing about the existing close changes.** `autoclose_due` still force-closes
+  the task, `leader_close.locked()` still answers what it always answered, the
+  day still closes on its own schedule and the score is still stamped as it was.
+  The late proof is a SEPARATE row with its own photos, which is what keeps
+  every writer, reader and sweep ignorant of it.
+- **`services/leader_late_proof.py` is THE definition** — `eligible`, `create`,
+  `decide_supervisor`, `decide_admin`, `_grant`, `revoke`. A task is
+  late-fileable while: the unit closes tasks one at a time (nothing else HAS a
+  per-task deadline to miss), the task's deadline has passed, **its day is still
+  OPEN**, the task was not actually done, and no late proof exists for it yet.
+  «Its day is still open» is the window (the operator's call): the late door
+  shuts when the checklist shuts, so a proof can never arrive for a day whose
+  score has already been reported and read.
+- **The AI never sees one.** No `LeaderAiReview` row is written, so there is no
+  queue door to close — a late proof is judged on WHY it is late, which is a
+  question about a person and not about a photograph.
+- **The chain is two-stage and deliberately asymmetric.** The unit's own
+  brigadir may REJECT (final) or UPLIFT with a written case for it; only an
+  ADMIN can approve. The person closest to the leader knows best whether the
+  excuse is true and is the worst possible choice for the only person who
+  decides that it counts. The keyboards and the dashboard buttons express this
+  by being the only ones present, and every write re-checks it server-side.
+- **Approval gives FULL weight**, through the ordinary `LeaderTaskOverride`
+  overlay — the same read-time mechanism an admin's manual done/not-done ruling
+  uses, so it moves the register, the leaderboard, the day report and the
+  corrected report DM with no new scoring path. The lateness is not laundered:
+  the row, its chip and the day report all go on saying it arrived late.
+- **Nothing expires it.** An undecided row waits in both queues with a badge
+  until a person acts. The default is already 0 points, so a silent auto-reject
+  would only take the decision away from the two people the flow exists to put
+  it in front of.
+- **`status` is the stage AND the outcome**, one column: `supervisor` → `admin`
+  → `approved` | `rejected`. A separate stage column would be a second thing to
+  keep in step, and every reader would consult both to answer one question.
+- Bot: the warning screen is a SCREEN, not a line — it names the hour that
+  passed, states plainly that no point comes automatically, says who will read
+  the reason, and only then offers the way forward. Photos, then a mandatory
+  reason, then the card goes to the brigadir with its photos attached (a
+  brigadir deciding in a workshop will not open a dashboard first). Cards are
+  recorded as `ApprovalNotice` rows so one decision retires every copy.
+- Dashboard: `/leaders?tab=lateproof`
+  (`components/leaders/LateProofs.jsx`). Photos are ON the card — unlike
+  «Norozliklar» next door, where the subject is a verdict that carries its own
+  prose; here the evidence IS the submission. Uplift is a FORM (the `Modal`
+  template with a required field), reject and approve are plain confirms.
+  Photos go through `ProofPhoto.jsx`'s `LateProofPhoto` — never a bare
+  `<img src>`, which carries no JWT and can only ever render broken.
+  Scoped like every read on the page, plus the LEADER, who reads their own
+  filings: the flow asks them to explain themselves, so the answer has to be
+  visible to them.
+
 ## An UNFINISHED bot day is visible («Tozalash» → «Yakunlanmagan»)
 
 Every read surface on the platform serves a CLOSED bot day — the `/leaders`

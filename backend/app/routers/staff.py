@@ -315,6 +315,28 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("Your day counts again", "Date: {date} | This day ({score}%) is back in your results. By: {by}"),
     },
     # An admin ruled on the brigadir's objection to an automatic rejection.
+    # A proof filed after the task's own deadline. The leader is told at EVERY
+    # terminal stage, rejection included: somebody who explained themselves and
+    # heard nothing back learns that explaining is pointless, which is the one
+    # outcome that makes the whole flow worthless.
+    "late_proof_uplifted": {
+        "uz": ("Kechikkan isbot adminlarga yuborildi", "Sana: {date} | Vazifa: {task} | Brigadir: {by} | Izoh: {note}"),
+        "uz_cyrl": ("Кечиккан исбот админларга юборилди", "Сана: {date} | Вазифа: {task} | Бригадир: {by} | Изоҳ: {note}"),
+        "ru": ("Позднее подтверждение передано администраторам", "Дата: {date} | Задача: {task} | Бригадир: {by} | Комментарий: {note}"),
+        "en": ("Late proof passed to the admins", "Date: {date} | Task: {task} | Brigadir: {by} | Comment: {note}"),
+    },
+    "late_proof_approved": {
+        "uz": ("Kechikkan isbot tasdiqlandi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa to'liq ballini oldi."),
+        "uz_cyrl": ("Кечиккан исбот тасдиқланди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа тўлиқ баллини олди."),
+        "ru": ("Позднее подтверждение принято", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача получила полный балл."),
+        "en": ("Late proof approved", "Date: {date} | Task: {task} | Decided by: {by} | The task got its full weight."),
+    },
+    "late_proof_rejected": {
+        "uz": ("Kechikkan isbot rad etildi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Bu vazifa uchun ball berilmaydi."),
+        "uz_cyrl": ("Кечиккан исбот рад этилди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Бу вазифа учун балл берилмайди."),
+        "ru": ("Позднее подтверждение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Балл за эту задачу не начислен."),
+        "en": ("Late proof rejected", "Date: {date} | Task: {task} | Decided by: {by} | No point is given for this task."),
+    },
     "leader_dispute_approved": {
         "uz": ("Norozilik qabul qilindi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa yana bajarilgan deb hisoblanadi."),
         "uz_cyrl": ("Норозилик қабул қилинди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа яна бажарилган деб ҳисобланади."),
