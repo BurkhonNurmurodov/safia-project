@@ -20,11 +20,11 @@ import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import TableCard, { Th } from "../components/ui/DataTable";
 import CellLink from "../components/ui/CellLink";
-// The registry's workshop name in the viewer's language, Russian-first after
-// that. `cellName`'s empty prefix IS the short {uz, uz_cyrl, ru, en} shape
-// `cell_lookup` ships — the platform's one home for this fallback, so the
-// register, the filter and the modal cannot disagree about a cell's name.
-import { cellName } from "../utils/cellName";
+// A cell is its CODE here as everywhere else — the workshop name is never
+// printed (utils/cellName.js). Where a code alone is thin, the second fact is
+// the cell's LEADER, whose name rides on the same `cells` map the owner columns
+// read, so the label and the column name one person the same way.
+import { cellLabel } from "../utils/cellName";
 import ArcAnalysis from "../components/arc/ArcAnalysis";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonCard } from "../components/ui/Skeleton";
@@ -522,10 +522,11 @@ export default function Arc() {
   // «no cell» is the last option rather than an absence.
   const cellOpts = options.cells || [];
   const cellByCode = useMemo(() => Object.fromEntries(cellOpts.map((c) => [c.code, c])), [cellOpts]);
+  // The chip / option text for one cell: the code, plus its leader when the
+  // registry knows one.
   const cellDisplay = (code) => {
     if (code === NO_CELL) return t("arc.cNoCell");
-    const o = cellByCode[code];
-    return cellName(o?.cell, lang, "") || code;
+    return cellLabel(code, tl(cellByCode[code]?.cell?.leader || ""));
   };
 
   // ── the org chain: shift → brigadir → leader → cell ───────────────────────
@@ -755,14 +756,14 @@ export default function Arc() {
           opts={[
             { value: "", label: t("arc.allCells") },
             ...cellPickOpts.map((o) => {
-              const name = cellName(o.cell, lang, "");
+              const leader = tl(o.cell?.leader || "");
               return {
                 value: o.code,
-                title: name ? `${o.code} · ${name}` : o.code,
+                title: cellLabel(o.code, leader),
                 label: withCount(
                   <span className="inline-flex items-center gap-1.5 min-w-0">
-                    <span className="truncate">{name || o.code}</span>
-                    {name && <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{o.code}</span>}
+                    <span className="tabular-nums flex-shrink-0">{o.code}</span>
+                    {leader && <span className="truncate" style={{ color: "var(--text-4)" }}>{shortPerson(leader)}</span>}
                   </span>,
                   o.count,
                 ),
@@ -959,9 +960,8 @@ export default function Arc() {
       );
     }
     const c = cellMap[r.cell_code];
-    const name = cellName(c, lang, "");
     return (
-      <CellLink id={c?.id} title={name ? `${r.cell_code} · ${name}` : r.cell_code}>
+      <CellLink id={c?.id} title={cellLabel(r.cell_code, tl(c?.leader || ""))}>
         <span className="tabular-nums">{r.cell_code}</span>
       </CellLink>
     );
@@ -1168,11 +1168,11 @@ export default function Arc() {
       return <span style={{ color: "var(--text-4)" }}>{t("arc.cNoCell")}</span>;
     }
     const c = (detailQ.data?.cells || cellMap)[row.cell_code];
-    const name = cellName(c, lang, "");
+    const leader = tl(c?.leader || "");
     return (
       <span className="inline-flex items-center gap-1.5 flex-wrap">
-        <CellLink id={c?.id}>{name || row.cell_code}</CellLink>
-        {name && <span className="tabular-nums" style={{ color: "var(--text-4)" }}>{row.cell_code}</span>}
+        <CellLink id={c?.id}><span className="tabular-nums">{row.cell_code}</span></CellLink>
+        {leader && <span className="text-[11px]" style={{ color: "var(--text-4)" }}>· {leader}</span>}
         {!c && (
           <span className="text-[10px]" style={{ color: "var(--text-4)" }}>· {t("arc.cUnknown")}</span>
         )}

@@ -3599,11 +3599,14 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
 
 
 def _exchange_target_label(payload: dict) -> str:
+    """Who (and where) the workers are moving to, for a notification.
+
+    The destination cell is named by its CODE — a cell is never written out by
+    its workshop name (frontend `utils/cellName.js`)."""
     if (payload or {}).get("target_type") == "supervisor":
         label = payload.get("target_manager_name") or "—"
         if payload.get("target_cell"):
-            names = payload.get("target_cell_names") or {}
-            label += f" · {names.get('ru') or names.get('uz') or payload['target_cell']}"
+            label += f" · {payload['target_cell']}"
         return label
     return (payload or {}).get("task_name") or "—"
 

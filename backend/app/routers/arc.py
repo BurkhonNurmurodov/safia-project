@@ -66,7 +66,6 @@ from app.services import action_log, arc_cells, arc_client, arc_hidden
 from app.services.arc_client import (CANCELLED_STATUSES, DONE_STATUSES,
                                      OPEN_STATUSES)
 from app.services.arc_export import build_arc_workbook
-from app.services.cell_lookup import workshop_name
 from app.services.arc_sync import _live, detail_pending, fetch_detail, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
 
@@ -1337,11 +1336,12 @@ def export_xlsx(
     # the file and the screen hold two different answers.
     query = _rows_query(db, f, D)
     rows = _fetch_rows(query, D, body.sort, limit=_EXPORT_MAX_ROWS)
-    # The register's cell column is a NAME on screen and must be one in the
-    # file too; the row carries only the digits, so resolve them once here.
-    # The cell's two owners ride on that same projection — a ticket whose
-    # division names no cell (or names one the registry does not know)
-    # reaches no unit, and its owner columns stay blank rather than guessing.
+    # The register's cell column is the CODE on screen and the code in the file
+    # — the workshop name is never written out (frontend utils/cellName.js), so
+    # the row's own digits are already the whole column and nothing has to be
+    # resolved for it. The cell's two OWNERS still do: a ticket whose division
+    # names no cell (or names one the registry does not know) reaches no unit,
+    # and its owner columns stay blank rather than guessing.
     # Both owner names are OUR registry's text and the screen renders them
     # through the transliterator, so the file must too — an export that mirrors
     # the table everywhere except the spelling of a person's name is a file the
@@ -1351,7 +1351,6 @@ def export_xlsx(
     cells = _cells_map(db, rows)
     for r in rows:
         c = cells.get(r.get("cell_code"))
-        r["cell_name"] = workshop_name(c, body.lang)
         r["sup_name"] = transliterate((c or {}).get("sup") or "", body.lang)
         r["leader_name"] = transliterate((c or {}).get("leader") or "", body.lang)
     bio = build_arc_workbook(rows, body.columns, body.labels, body.status_labels)

@@ -836,6 +836,32 @@ SERVER's; the phone never authors it.
   instead of falling through — a refusal is the leader's answer, and re-asking
   with different constraints is a second sheet for the same «no». **Never split
   the open back into probe-then-correct**, and never add a third call.
+- **A BLACK viewfinder must always say which black it is** (leaders' report,
+  2026-08-29). Three different states painted the same rectangle — still
+  opening, opened but sending no frames, and a working camera pointed at
+  something dark — and none of them said anything, so the whole class reached
+  the operator as «the camera isn't working». Three rules now hold, and each
+  closes a path that had NO way out:
+  - **The one-at-a-time guard is releasable.** `getUserMedia` inside Telegram's
+    WebView can simply never settle (the leader backgrounds the app while the
+    «Allow camera?» sheet is up), and `startingRef` was then stuck true for the
+    life of the page: the mount, `visibilitychange`, the track's `ended` and the
+    Retry button all returned at it. An attempt now carries `OPEN_TIMEOUT_MS`
+    and an `attemptRef` token — the deadline frees the guard, and a superseded
+    attempt stops its own stream instead of attaching it or reopening a newer
+    one's guard. The mount effect's cleanup retires the in-flight attempt too,
+    which is also what makes a flip pressed mid-open work.
+  - **Frames are the test, not `readyState`.** A track sits at `live`, unpaused
+    and attached, while the WebView delivers nothing — what Android leaves
+    behind after another app takes the camera. `ensureCamera` measures
+    `videoWidth` + `currentTime` against `FRAME_STALL_MS`: ONE silent re-open,
+    then `camErr = "stalled"` with the button. Never restart forever behind a
+    black screen.
+  - **Events are not enough** — a track can end with no event at all — so the
+    viewfinder is also looked at on a `CAM_WATCH_MS` heartbeat while it is on
+    screen. And the shutter is DISABLED until a frame has arrived: `capture`
+    returns silently without `videoWidth`, so an armed-looking button that did
+    nothing was the last thing the leader was left with.
 - **The main lens is chosen TWICE, because 0.5x arrives two different ways**
   (user, 2026-08-20 — a pilot phone opened on the ultra-wide). A phone that
   exposes each rear sensor as its own DEVICE is answered by label: `lensScore`

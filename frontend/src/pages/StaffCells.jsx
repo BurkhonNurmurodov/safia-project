@@ -58,7 +58,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
 import api from "../utils/api";
-import { cellName as pickCellName } from "../utils/cellName";
+import { cellLabel } from "../utils/cellName";
 // Imported, never re-spelled: the transfer/return window arithmetic and the
 // document-type label map are one rule each, and /staff owns them.
 import {
@@ -114,19 +114,21 @@ const rowKey = (w) =>
   `${w?.manager_id ?? ""}|${normCode(w?.verifix_code)}|${w?.worker_name || ""}`;
 
 /**
- * What one cell shows, in the viewer's language. The day catalog
- * (`cells: [{cell_id, verifix_code, name_*, leader_name}]`) is authoritative;
- * the row's own `cell {code, names, leader_name}` is the fallback for a code
- * the catalog does not carry. Both shapes resolve through the ONE
- * `cellName` helper — the short `{uz,…}` map takes the empty prefix.
+ * What one cell shows. The day catalog
+ * (`cells: [{cell_id, verifix_code, leader_name}]`) is authoritative; the row's
+ * own `cell {code, leader_name}` is the fallback for a code the catalog does
+ * not carry.
+ *
+ * The CODE is the label and the leader is the only thing shown beside it — the
+ * workshop name is never printed (see utils/cellName.js), which is why nothing
+ * here reads the `name_*` columns the payload still carries.
  */
-function cellInfo(code, byCode, lang, fallback) {
+function cellInfo(code, byCode, fallback) {
   const c = byCode.get(normCode(code));
   if (c) {
     return {
       id: c.cell_id ?? null,
       code: c.verifix_code || code || "",
-      name: pickCellName(c, lang, "name_") || "",
       leader: c.leader_name || null,
     };
   }
@@ -134,11 +136,10 @@ function cellInfo(code, byCode, lang, fallback) {
     return {
       id: fallback.cell_id ?? null,
       code: fallback.code || code || "",
-      name: pickCellName(fallback.names || {}, lang, "") || "",
       leader: fallback.leader_name || null,
     };
   }
-  return { id: null, code: code || "", name: "", leader: null };
+  return { id: null, code: code || "", leader: null };
 }
 
 // ── chips ─────────────────────────────────────────────────────────────────────
@@ -178,9 +179,9 @@ function StatusChip({ status }) {
   );
 }
 
-// The cell as CONTENT: code prominent, workshop name muted beneath it. The code
-// links to /cells/:id when the registry knows it, and renders inert when it
-// does not — the two registers are allowed to disagree in public.
+// The cell as CONTENT: the code, which is the whole label. It links to
+// /cells/:id when the registry knows it, and renders inert when it does not —
+// the two registers are allowed to disagree in public.
 function CellCell({ info }) {
   const { t } = useLang();
   if (!info || !info.code) {
@@ -195,11 +196,6 @@ function CellCell({ info }) {
       <CellLink id={info.id} className="font-mono text-xs">
         {info.code}
       </CellLink>
-      {info.name && (
-        <span className="text-[10px] truncate max-w-[160px]" style={{ color: "var(--text-4)" }}>
-          {info.name}
-        </span>
-      )}
     </div>
   );
 }
@@ -251,7 +247,7 @@ function LoadFailed({ error, onRetry }) {
 // and its leader, because ONE Save can file several documents — a selection
 // spanning two groups has to be visible while it is being made, not a surprise
 // in the footer.
-function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSaved }) {
+function ExchangeModal({ date, workers, byCode, probeCell, onClose, onSaved }) {
   const { t } = useLang();
   const { tl } = useTranslit();
 
@@ -317,15 +313,15 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
     return s?.cells || [];
   }, [targetIsSup, target, supTargets]);
 
-  // «code · workshop · leader» — the whole address of the destination in one
-  // line. A cell with nobody assigned says «Biriktirilmagan» rather than
-  // trailing off, so a blank never reads as a missing name.
+  // «code · leader» — the whole address of the destination in one line (the
+  // workshop name is never printed, see utils/cellName.js). A cell with nobody
+  // assigned says «Biriktirilmagan» rather than trailing off, so a blank never
+  // reads as a missing name.
   const cellOptions = useMemo(() => targetCells.map((c) => {
-    const nm = pickCellName(c, lang, "name_");
     const leader = c.leader_name ? tl(c.leader_name) : t("staffCell.unassignedLeader");
-    const label = [c.verifix_code, nm, leader].filter(Boolean).join(" · ");
+    const label = cellLabel(c.verifix_code, leader);
     return { value: c.verifix_code, label, title: label };
-  }), [targetCells, lang, tl, t]);
+  }), [targetCells, tl, t]);
 
   // Drop a picked destination the (newly chosen) target does not have.
   useEffect(() => {
@@ -722,7 +718,7 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
             />
           ) : (
             groups.map(([code, rows]) => {
-              const info = cellInfo(code, byCode, lang, rows[0]?.cell);
+              const info = cellInfo(code, byCode, rows[0]?.cell);
               const allOn = rows.every((w) => selected.has(rowKey(w)));
               return (
                 <div key={code || "_none"}>
@@ -734,9 +730,6 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
                     <span className="font-mono text-xs font-semibold" style={{ color: "var(--text-1)" }}>
                       {info.code || t("staffCell.noCellGroup")}
                     </span>
-                    {info.name && (
-                      <span className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>{info.name}</span>
-                    )}
                     <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--text-3)" }}>
                       {t("staffCell.leaderPrefix").replace("{name}", info.leader ? tl(info.leader) : t("staffCell.unassignedLeader"))}
                     </span>
@@ -787,7 +780,7 @@ function ExchangeModal({ date, workers, byCode, probeCell, lang, onClose, onSave
 // ── The documents register (Requests + Approvals read the same renderer) ──────
 
 function DocumentsTable({
-  title, subtitle, rows, isLoading, byCode, lang,
+  title, subtitle, rows, isLoading, byCode,
   canDecide, canDelete, onAct, emptyTitle, emptyMessage,
 }) {
   const { t } = useLang();
@@ -795,7 +788,7 @@ function DocumentsTable({
 
   function fromCell(d) {
     const p = d.sender_cell || "";
-    return cellInfo(p, byCode, lang, d.sender_cell_names ? { code: p, names: d.sender_cell_names, leader_name: d.sender_leader_name } : null);
+    return cellInfo(p, byCode, d.sender_leader_name || d.sender_cell_names ? { code: p, leader_name: d.sender_leader_name } : null);
   }
   function toLabel(d) {
     if (d.target_type === "task") return t("staffCell.taskPrefix").replace("{name}", d.task_name || "—");
@@ -962,7 +955,7 @@ const ACT_LABEL = {
 
 export default function StaffCells() {
   const { auth } = useAuth();
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast();
@@ -1035,8 +1028,8 @@ export default function StaffCells() {
   // sort and the filter all read ONE answer to "which yacheyka is this".
   const rows = useMemo(() => allWorkers.map((w) => ({
     ...w,
-    _cell: w.verifix_code ? cellInfo(w.verifix_code, byCode, lang, w.cell) : null,
-  })), [allWorkers, byCode, lang]);
+    _cell: w.verifix_code ? cellInfo(w.verifix_code, byCode, w.cell) : null,
+  })), [allWorkers, byCode]);
 
   // The page is NAMED for this dimension, so a day that carries none of it says
   // so out loud. Hiding the column instead would make "we have no codes for
@@ -1052,7 +1045,7 @@ export default function StaffCells() {
       const info = w._cell;
       seen.set(w.verifix_code, {
         value: w.verifix_code,
-        label: [info.code, info.name].filter(Boolean).join(" · "),
+        label: cellLabel(info.code, tl(info.leader || "")),
       });
     }
     return [...seen.values()].sort((a, b) => a.value.localeCompare(b.value));
@@ -1404,7 +1397,7 @@ export default function StaffCells() {
                 )}
                 {!attLoading && groups
                   ? groups.map(([code, list]) => {
-                    const info = cellInfo(code, byCode, lang, list[0]?.cell);
+                    const info = cellInfo(code, byCode, list[0]?.cell);
                     return (
                       <Fragment key={code || "_none"}>
                         <tr>
@@ -1414,7 +1407,6 @@ export default function StaffCells() {
                               <span className="font-mono text-[11px] font-semibold" style={{ color: "var(--text-1)" }}>
                                 {info.code || t("staffCell.noCellGroup")}
                               </span>
-                              {info.name && <span className="text-[10px]" style={{ color: "var(--text-4)" }}>{info.name}</span>}
                               <span className="text-[10px]" style={{ color: "var(--text-3)" }}>
                                 {t("staffCell.leaderPrefix").replace("{name}", info.leader ? tl(info.leader) : t("staffCell.unassignedLeader"))}
                               </span>
@@ -1457,7 +1449,6 @@ export default function StaffCells() {
               rows={documents}
               isLoading={docsLoading}
               byCode={byCode}
-              lang={lang}
               canDecide={canDecide}
               canDelete={canDelete}
               onAct={openAct}
@@ -1480,7 +1471,6 @@ export default function StaffCells() {
               rows={pending}
               isLoading={docsLoading}
               byCode={byCode}
-              lang={lang}
               canDecide={canDecide}
               canDelete={canDelete}
               onAct={openAct}
@@ -1498,7 +1488,6 @@ export default function StaffCells() {
           workers={scoped}
           byCode={byCode}
           probeCell={probeCell}
-          lang={lang}
           onClose={() => setExchangeOpen(false)}
           onSaved={(n) => {
             setExchangeOpen(false);

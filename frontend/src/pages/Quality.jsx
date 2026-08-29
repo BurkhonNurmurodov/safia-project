@@ -31,6 +31,8 @@ import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory, factoryName } from "../context/FactoryContext";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { exportXlsx } from "../utils/exportXlsx";
+import { cellLabel } from "../utils/cellName";
+import { shortPerson } from "../utils/personName";
 
 // ── palettes ────────────────────────────────────────────────────────────────
 // Status keeps the traffic-light encoding used across the platform; the
@@ -50,40 +52,28 @@ const SRC_ICONS  = { production: Factory,   guest: UserRound,  store: Store };
 const SUP_PALETTE = CATEGORY_COLORS;
 const OTHER_KEY = "__other__";
 
-// «Виновная ячейка»: prefer the canonical cells-registry workshop name (resolved
-// server-side from fault_code, carried in the `cells` map keyed by row.ci) in the
-// viewer's language, falling back to the sheet's own cell_name and then the raw
-// code. cellMap comes from the /api/quality payload's `cells` object.
-const CELL_LANGS = ["ru", "uz", "uz_cyrl", "en"];
-// The registry's workshop name in the viewer's language, straight off a cell
-// entry — a cell the leader roster names without a single record behind it has
-// no row to be read through, so the lookup can't start from one.
-const cellLabelOf = (c, lang) => {
-  if (c) for (const l of [lang, ...CELL_LANGS]) if (c[l]) return c[l];
-  return "";
-};
-const cellNameOf = (r, cellMap, lang) => {
-  const c = r?.ci != null ? cellMap[r.ci] : null;
-  return cellLabelOf(c, lang) || r?.cn || r?.fc || "";
-};
-// Every place this page NAMES a cell in a row — the register's «Виновная
-// ячейка» column and the drill-down rows under an expanded name — identifies it
-// by its VERIFIX CODE, not its workshop name: the code is what the QA sheet and
-// the brigadirs themselves say, and it fits a narrow column without truncating —
-// «Участок приготов. кекс. №2.1» does not. The name is kept as the row's tooltip
-// so nothing is lost, and the detail modal still spells both out in full.
+// «Виновная ячейка»: the registry's verifix code (resolved server-side from
+// fault_code, carried in the `cells` map keyed by row.ci), falling back to the
+// sheet's own raw code. cellMap comes from the /api/quality payload's `cells`.
+// Every place this page names a cell — the register's «Виновная ячейка» column,
+// the drill-down rows under an expanded name, the filter, the charts and the
+// detail modal — identifies it by its VERIFIX CODE and nothing else. The
+// workshop name is never printed (utils/cellName.js): it is what the QA sheet
+// and the brigadirs themselves never say, it truncates to nothing in a narrow
+// column («Участок приготов. кекс. №2.1»), and two cells routinely carry the
+// same one. Where a code alone is thin, the second fact is the cell's LEADER.
 const cellCodeOf = (r, cellMap) => {
   const c = r?.ci != null ? cellMap[r.ci] : null;
   return c?.verifix_code || r?.fc || r?.cn || "";
 };
-// A row's tooltip: code · workshop name, collapsing to one when they agree.
-const cellTitleOf = (r, cellMap, lang) => {
-  const code = cellCodeOf(r, cellMap);
-  const name = cellNameOf(r, cellMap, lang);
-  return name && name !== code ? `${code} · ${name}` : code;
+// A row's tooltip: code · leader, collapsing to the code when the registry
+// knows no leader (or does not know the code at all).
+const cellTitleOf = (r, cellMap, tl) => {
+  const c = r?.ci != null ? cellMap[r.ci] : null;
+  return cellLabel(cellCodeOf(r, cellMap), tl(c?.leader || ""));
 };
-// code · workshop name, collapsing to one when the row has only the code.
-const brkTitle = (k) => (k.name && k.name !== k.label ? `${k.label} · ${k.name}` : k.label);
+// The breakdown kid's tooltip — same rule, off the leader stored on the row.
+const brkTitle = (k) => cellLabel(k.label, k.leader);
 
 const TYPE_COLORS = {
   risk: "#ef4444", foreign: "#22c55e", storage: "#3b82f6", sanitation: "#eab308",
@@ -797,12 +787,15 @@ export default function Quality() {
     const topPlaces = count(hotBase, "pl").slice(0, 10);
 
     // Cells at fault: only rows the QA team actually pinned on a production
-    // cell (a fault code that resolved to a cell name).
+    // cell. Counted per CODE — the axis names the code and the cell's leader,
+    // never the workshop (utils/cellName.js).
     const cellRows = filtered.filter((r) => r.f && (r.cn || r.fc));
     const cellCounts = {};
     for (const r of cellRows) {
-      const k = cellNameOf(r, cellMap, lang) || r.fc;
-      const c = cellCounts[k] || (cellCounts[k] = { k, n: 0, code: r.fc });
+      const k = cellCodeOf(r, cellMap) || r.fc;
+      if (!k) continue;
+      const leader = r.ci != null ? tl(cellMap[r.ci]?.leader || "") : "";
+      const c = cellCounts[k] || (cellCounts[k] = { k, n: 0, leader });
       c.n++;
     }
     const topCells = Object.values(cellCounts).sort((a, b) => b.n - a.n).slice(0, 10);
@@ -960,9 +953,9 @@ export default function Quality() {
   // disagreement into a bucket meant a reader had to be told what the bucket was
   // before the table made sense, which is a table that failed.
   //
-  // A code the cells registry has never heard of still names itself — cellNameOf
-  // falls back to the sheet's cell_name and then the raw code — so it becomes its
-  // own row rather than a third of the tab disappearing into «unresolved».
+  // A code the cells registry has never heard of still names itself — cellCodeOf
+  // falls back to the sheet's raw code — so it becomes its own row rather than a
+  // third of the tab disappearing into «unresolved».
   //
   // Only two things have no name to show: a blank code (27 rows in the whole
   // register), and, in leader mode, a cell no leader is registered against. They
@@ -984,8 +977,7 @@ export default function Quality() {
         for (const c of cells) {
           const key = `c${c.id}`;
           b.kids[key] = { key, fold: false, ...emptySplit(),
-            label: c.verifix_code || cellLabelOf(c, lang) || "",
-            name: cellLabelOf(c, lang) };
+            label: c.verifix_code || "", leader: tl(c.leader || "") };
         }
       }
     }
@@ -996,22 +988,22 @@ export default function Quality() {
       const b = bucket(nm);
       const c = r.ci != null ? cellMap[r.ci] : null;
 
-      let key, label, name = "";
+      let key, label, leader = "";
       if (isLeadDim || brkDim === "cell") {
-        // Shown as the code, hovered as the workshop name.
+        // Shown as the code, hovered as code · leader.
         label = cellCodeOf(r, cellMap);
-        name = cellNameOf(r, cellMap, lang);
+        leader = tl(c?.leader || "");
         // Registry hit → key by cell id, so two spellings of one cell merge.
         // Otherwise the code stands on its own.
         key = c ? `c${c.id}` : `raw:${label}`;
-        if (!label) { key = F_NOCELL; label = T.brkNoCell; name = ""; }
+        if (!label) { key = F_NOCELL; label = T.brkNoCell; leader = ""; }
       } else if (c?.leader) {
         key = `l${c.leader}`; label = tl(c.leader);
       } else {
         key = F_NOLEAD; label = T.brkNoLead;
       }
 
-      const kid = b.kids[key] || (b.kids[key] = { key, label, name, fold: FOLDS.includes(key), ...emptySplit() });
+      const kid = b.kids[key] || (b.kids[key] = { key, label, leader, fold: FOLDS.includes(key), ...emptySplit() });
       bumpStatus(kid, r.st);
     }
     for (const b of Object.values(out)) {
@@ -1194,16 +1186,15 @@ export default function Quality() {
         if (shiftTab !== "all" && String(c.sh ?? "") !== shiftTab) continue;
         if (brigPick && c.sup !== brigPick) continue;
         if (leadPick && c.leader !== leadPick) continue;
-        const nm = cellLabelOf(c, lang);
-        put(`c${c.id}`, c.verifix_code && c.verifix_code !== nm ? `${c.verifix_code} · ${nm}` : (nm || c.verifix_code || ""));
+        put(`c${c.id}`, cellLabel(c.verifix_code, tl(c.leader || "")));
       }
     }
     for (const r of rows) {
       if (!inView(r) || !inShift(r) || !inBrig(r) || !inLead(r)) continue;
       const k = cellKey(r);
       if (!k) continue;
-      const nm = cellNameOf(r, cellMap, lang) || r.fc || "";
-      put(k, r.fc && r.fc !== nm ? `${r.fc} · ${nm}` : nm).n++;
+      const c = r.ci != null ? cellMap[r.ci] : null;
+      put(k, cellLabel(cellCodeOf(r, cellMap) || r.fc, tl(c?.leader || ""))).n++;
     }
     return Object.values(acc).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
   }, [rows, view, cellMap, lang, factory, shiftTab, brigPick, leadPick]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1774,7 +1765,7 @@ export default function Quality() {
 
       cells: A.topCells.length ? {
         title: T.secCells, subtitle: T.cellsSub, colLabel: T.colCell,
-        rows: A.topCells.map((x) => ({ label: x.code && x.code !== x.k ? `${x.code} · ${x.k}` : x.k, n: x.n })),
+        rows: A.topCells.map((x) => ({ label: cellLabel(x.k, x.leader), n: x.n })),
       } : null,
 
       acc: !lockOwn && A.acc.length ? {
@@ -2297,7 +2288,7 @@ export default function Quality() {
               empty={A.topCells.length === 0} height={330}>
               <ReactApexChart
                 className="apx-bare-tip"
-                options={barOpts(A.topCells.map((x) => (x.code && x.code !== x.k ? `${x.code} · ${x.k}` : x.k)), SRC_COLORS.production)}
+                options={barOpts(A.topCells.map((x) => cellLabel(x.k, shortPerson(x.leader))), SRC_COLORS.production)}
                 series={[{ name: T.rows, data: A.topCells.map((x) => x.n) }]}
                 type="bar" height={330} />
             </ChartCard>
@@ -2422,7 +2413,7 @@ export default function Quality() {
                       <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
                         {r.c ? <Chip color={CAT_COLORS[r.c] || C_NA}>{L("cat", r.c)}</Chip> : "—"}
                       </td>
-                      <td className="px-3 py-2 max-w-[150px] truncate" title={cellTitleOf(r, cellMap, lang)} style={{ color: "var(--text-3)" }}>
+                      <td className="px-3 py-2 max-w-[150px] truncate" title={cellTitleOf(r, cellMap, tl)} style={{ color: "var(--text-3)" }}>
                         {/* The verifix code, hovered as the workshop name — see
                             cellCodeOf. r.ci = cells.id when the fault code
                             matched the registry; the link stops propagation so
@@ -2481,7 +2472,8 @@ export default function Quality() {
                 [RU.colPlace, openRow.pl || ""],
                 [RU.colProduct, openRow.pr || ""],
                 [RU.mCell, (() => {
-                  const label = [...new Set([openRow.fc, cellNameOf(openRow, cellMap, lang)].filter(Boolean))].join(" · ");
+                  const c = openRow.ci != null ? cellMap[openRow.ci] : null;
+                  const label = cellLabel(cellCodeOf(openRow, cellMap), tl(c?.leader || ""));
                   return label ? <CellLink id={openRow.ci}>{label}</CellLink> : "";
                 })()],
                 [RU.mFault, openRow.f == null ? "—" : openRow.f ? T.yes : T.no],

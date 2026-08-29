@@ -36,7 +36,6 @@ import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
-import cellName from "../utils/cellName";
 import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
@@ -556,7 +555,7 @@ export default function ZagruzkaCell() {
                     <tr key={c}>
                       <td className="px-3 py-2 truncate" style={{ color: "var(--text-1)" }} title={c}>
                         {meta
-                          ? <CellLink id={meta.cell_id}>{`${meta.verifix_code} · ${cellName(meta, lang, "name_")}`}</CellLink>
+                          ? <CellLink id={meta.cell_id}>{meta.verifix_code}</CellLink>
                           : c}
                       </td>
                       <td className="px-3 py-2 text-center" style={{ color: meta?.joined ? "var(--text-2)" : "#ef4444" }}>

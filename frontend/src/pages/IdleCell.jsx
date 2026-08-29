@@ -27,7 +27,7 @@ import IntervalFormModal from "../components/idle/IntervalFormModal";
 import DayTimeline from "../components/idle/DayTimeline";
 import { CATS, iconFor, catColor } from "../components/idle/categories";
 import api from "../utils/api";
-import { cellName as pickCellName } from "../utils/cellName";
+import { cellLabel } from "../utils/cellName";
 import { fmtDur, toMin } from "../utils/idleTime";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -40,9 +40,6 @@ const localTodayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
-// Viewer language first, then Russian — the shared registry fallback.
-const cellName = (c, lang) => pickCellName(c, lang, "name_");
-
 // The category's meaning, or "" when that code was never seeded. `t()` answers
 // with the KEY itself when a translation is missing, so the guard is what keeps
 // a literal "downtime.cat.X.label" off the screen — the same test Downtime.jsx
@@ -52,13 +49,13 @@ const catLabel = (code, t) => {
   return s && !s.startsWith("downtime.cat.") ? s : "";
 };
 
-// Cell identity block: verifix badge + workshop name on line 1, the cell's
-// OWNING LEADER (role_profiles) muted underneath. Shared by both views so the
-// leader always sits in exactly the same spot, and it lives on the row rather
-// than as a grouping level because leaders are ~1:1 with cells (93 leaders /
-// 108 cells) — grouping would put a heading over almost every single row.
-function CellIdent({ cell, t, tl, lang, nameCls = "text-xs", extra }) {
-  const name = cellName(cell, lang);
+// Cell identity block: the verifix badge on line 1, the cell's OWNING LEADER
+// (role_profiles) muted underneath — the code is the whole name and the leader
+// is the one fact printed beside it (utils/cellName.js). Shared by both views
+// so the leader always sits in exactly the same spot, and it lives on the row
+// rather than as a grouping level because leaders are ~1:1 with cells (93
+// leaders / 108 cells) — grouping would put a heading over almost every row.
+function CellIdent({ cell, t, tl, extra }) {
   return (
     <span className="min-w-0 flex-1 flex flex-col gap-0.5">
       <span className="flex items-center gap-2 min-w-0">
@@ -75,7 +72,6 @@ function CellIdent({ cell, t, tl, lang, nameCls = "text-xs", extra }) {
         >
           {cell.verifix_code}
         </span>
-        <span className={`truncate ${nameCls}`} style={{ color: "var(--text-1)" }}>{name || "—"}</span>
         {extra}
       </span>
       <span className="flex items-center gap-1.5 min-w-0 text-[11px] leading-tight" title={t("idleCell.leader")}>
@@ -217,7 +213,7 @@ function errText(e, t) {
   return t("idleCell.saveError");
 }
 
-function CellCard({ cell, date, view, sort, onSort, t, tl, lang, autoOpen, toast, isLeader = false }) {
+function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLeader = false }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(autoOpen);
   const [form, setForm] = useState(null);          // {interval, category} | null
@@ -337,7 +333,7 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, lang, autoOpen, toast
           size={16}
           style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
         />
-        <CellIdent cell={cell} t={t} tl={tl} lang={lang} nameCls="text-sm" />
+        <CellIdent cell={cell} t={t} tl={tl} />
         <span className="flex items-center gap-2 flex-shrink-0">
           {summary.overlap_min > 0 && (
             <span
@@ -811,10 +807,11 @@ export default function IdleCell() {
     [supervisors, supervisorId],
   );
 
+  // Code · leader — never the workshop name (utils/cellName.js).
   const cellOptions = leaderCells.map((c) => ({
     value: String(c.cell_id),
-    label: `${c.verifix_code}${cellName(c, lang) ? " · " + cellName(c, lang) : ""}`,
-    title: `${c.verifix_code} ${cellName(c, lang)}`,
+    label: cellLabel(c.verifix_code, tl(c.leader || "")),
+    title: cellLabel(c.verifix_code, tl(c.leader || "")),
   }));
 
   // Auto-open when there is exactly one visible cell, or the user explicitly
@@ -1070,7 +1067,7 @@ export default function IdleCell() {
               view={tab === "timeline" ? "timeline" : "table"}
               sort={rowSort}
               onSort={onRowSort}
-              t={t} tl={tl} lang={lang}
+              t={t} tl={tl}
               autoOpen={autoOpen}
               toast={toast}
             />

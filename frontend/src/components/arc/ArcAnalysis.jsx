@@ -17,7 +17,6 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import useIsMobile from "../../hooks/useIsMobile";
 import useElementWidth from "../../hooks/useElementWidth";
 import { ticksForWidth, axisLabelPx } from "../../utils/chartRange";
-import { cellName } from "../../utils/cellName";
 import { shortPerson } from "../../utils/personName";
 import { C_DONE, C_DOING, C_OVERDUE, C_GREY, hexA } from "../../utils/arcStatus";
 
@@ -623,9 +622,12 @@ export default function ArcAnalysis({ view, filters, enabled }) {
 
   const cellRows = A?.cells || [];
   const cellsMap = A?.cells_map || {};
+  // A cell axis is its CODE (utils/cellName.js) — the workshop name is never
+  // printed. The second fact is the LEADER, shortened like every other person
+  // on these axes, so a bar names whom to ask about it.
   const cellLabels = cellRows.map((c) => {
-    const name = cellName(cellsMap[c.code], lang, "");
-    return name ? `${c.code} · ${name}` : `${c.code} · ${t("arc.cUnknown")}`;
+    const leader = tl(cellsMap[c.code]?.leader || "");
+    return leader ? `${c.code} · ${shortPerson(leader)}` : c.code;
   });
 
   // ── frame states ──────────────────────────────────────────────────────────

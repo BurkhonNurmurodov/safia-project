@@ -144,11 +144,11 @@ _COLS: dict[str, tuple[Callable[[dict, dict], Any], str, int]] = {
     "manager":     (lambda r, L: r.get("manager_name"), "text", 22),
     "deny_reason": (lambda r, L: r.get("deny_reason"), "text", 32),
     "state":       (lambda r, L: _state(r), "text", 11),
-    # The cell the division NAMES (services/arc_cells.py). The router resolves
-    # the code to a workshop name before handing the rows over, so this stays a
-    # formatter: name where the registry knows the code, the bare digits where
-    # it does not, and nothing at all where the division names no cell.
-    "cell":        (lambda r, L: r.get("cell_name") or r.get("cell_code"), "text", 26),
+    # The cell the division NAMES (services/arc_cells.py) — its CODE, which is
+    # the whole label on screen too (frontend utils/cellName.js: a cell is never
+    # written out by its workshop name). Nothing at all where the division names
+    # no cell; the two owner columns beside this one say whose it is.
+    "cell":        (lambda r, L: r.get("cell_code"), "text", 12),
     # The cell's OWNERS on this platform's org chart, reached through that same
     # code — resolved by the router off the one cells map, never per row here.
     # Blank where the division names no cell, or names one the registry has

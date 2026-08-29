@@ -162,7 +162,13 @@ def workshop_name(cell: dict | None, lang: str = "ru") -> str | None:
     """Pick the workshop name for the viewer language, falling back across the
     other languages — RUSSIAN FIRST — so a partially-filled cell still shows
     something. Every language column is nullable and Russian is the one the
-    plant actually fills in, so it is the fallback the UI promises."""
+    plant actually fills in, so it is the fallback the UI promises.
+
+    NOT A LABEL. A cell is identified by its verifix CODE everywhere it is
+    shown (frontend `utils/cellName.js`), and the second fact beside a code is
+    the LEADER's name, never the workshop. This survives for search and for the
+    register's own editor; no payload or export should write it out.
+    """
     if not cell:
         return None
     for l in (lang, *_LANGS):

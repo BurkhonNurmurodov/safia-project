@@ -43,6 +43,25 @@ const CLOCK_RESYNC_MS = 5 * 60 * 1000;
 // have finished reading the roll, long enough that a phone on a dead cell keeps
 // its battery.
 const RETRY_EVERY_MS = 20 * 1000;
+// An attempt to OPEN the camera has a deadline. Inside Telegram's WebView
+// `getUserMedia` can simply never settle — the «Allow camera?» sheet belongs to
+// the WebView, and a leader who backgrounds the app or dismisses it while the
+// sheet is up leaves the promise hanging for the life of the page. The
+// one-at-a-time guard below was then stuck shut forever: the mount,
+// `visibilitychange`, the track's own `ended` and even the Retry button all
+// returned at it, and the leader was left looking at a black rectangle that
+// said nothing and could not be recovered from. After this the guard is
+// released and the failure is stated instead.
+const OPEN_TIMEOUT_MS = 20 * 1000;
+// A video track reads `live`, unpaused and attached, while the WebView delivers
+// no frames at all — the state Android leaves behind when another app takes the
+// camera, and the one thing that looks pixel-for-pixel like a working
+// viewfinder aimed at something black. `videoWidth` stays 0 and `currentTime`
+// stops advancing; that is the only way to tell the two apart, so it is
+// measured rather than assumed.
+const FRAME_STALL_MS = 6 * 1000;
+// How often the viewfinder is checked while it is on screen.
+const CAM_WATCH_MS = 2 * 1000;
 // A shot's own quality. 0.92 keeps small print (a gauge, a label, a serial)
 // legible for the reviewer; the server re-encodes to its own long edge anyway.
 const JPEG_Q = 0.92;
@@ -393,6 +412,7 @@ export default function ProofCamera() {
   const [viewing, setViewing] = useState(null);
   const [retakeSlot, setRetakeSlot] = useState(null);
   const [camErr, setCamErr] = useState(null);
+  const [camBusy, setCamBusy] = useState(false);   // opening: black, but not broken
   const [facing, setFacing] = useState("environment");
   const [devices, setDevices] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -518,10 +538,30 @@ export default function ProofCamera() {
   // page is closed, with no way left to stop it.
   const startingRef = useRef(false);
   const startCameraRef = useRef(null);
+  // Which attempt is the CURRENT one. The guard above is released by whichever
+  // comes first — the negotiation or its deadline — so a superseded attempt can
+  // still be running: it must not then hand its stream to the page, reopen a
+  // newer attempt's guard, or overwrite a newer attempt's verdict. Every step
+  // that touches state checks its own number first, and a stream that arrives
+  // too late is stopped rather than left running with nothing holding it.
+  const attemptRef = useRef(0);
+  // Frame bookkeeping for the watchdog: the last `currentTime` seen, when it
+  // was seen, and how many silent re-opens this stall has already cost.
+  const framesRef = useRef({ time: -1, at: 0, fixes: 0 });
   const startCamera = useCallback(async (want = facing) => {
     if (startingRef.current) return;
     startingRef.current = true;
+    const attempt = ++attemptRef.current;
+    const mine = () => attemptRef.current === attempt;
     setCamErr(null);
+    setCamBusy(true);
+    framesRef.current = { time: -1, at: 0, fixes: framesRef.current.fixes };
+    const deadline = setTimeout(() => {
+      if (!mine()) return;
+      startingRef.current = false;
+      setCamBusy(false);
+      setCamErr("stalled");
+    }, OPEN_TIMEOUT_MS);
     try {
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
       // ONE getUserMedia whenever this phone's lens is already known.
@@ -589,6 +629,7 @@ export default function ProofCamera() {
         }
         if (id) localStorage.setItem(`${LENS_KEY}.${want}`, id);
       }
+      if (!mine()) { stream.getTracks().forEach((tr) => tr.stop()); return; }
       streamRef.current = stream;
       // A phone whose rear camera is ONE fused device can open it at 0.5x, and
       // the labels above cannot see that: the device they picked really is the
@@ -610,11 +651,21 @@ export default function ProofCamera() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
       }
+      // A negotiation slow enough to have been called stalled can still end in
+      // a working camera: clear the verdict rather than leave an overlay across
+      // a live viewfinder. Having the stream is not yet having a picture — the
+      // FRAMES are what prove that, and the watchdog below is what waits.
+      if (mine()) {
+        setCamErr(null);
+        framesRef.current = { time: -1, at: Date.now(), fixes: framesRef.current.fixes };
+      }
     } catch (e) {
+      if (!mine()) return;
       setCamErr(e?.name === "NotAllowedError" ? "denied"
         : e?.name === "NotFoundError" ? "none" : "failed");
     } finally {
-      startingRef.current = false;
+      clearTimeout(deadline);
+      if (mine()) { startingRef.current = false; setCamBusy(false); }
     }
   }, [facing, pickLens]);
   startCameraRef.current = startCamera;
@@ -622,7 +673,15 @@ export default function ProofCamera() {
   useEffect(() => {
     if (!task || dayClosed) return undefined;
     startCamera(facing);
-    return () => streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    return () => {
+      // Retire what is IN FLIGHT along with what is open. An attempt that
+      // outlives its effect — the flip pressed while the first open was still
+      // negotiating — would otherwise hold the guard shut, so the new side
+      // never opens, and then attach a stream for the side just left.
+      attemptRef.current += 1;
+      startingRef.current = false;
+      streamRef.current?.getTracks().forEach((tr) => tr.stop());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, dayClosed, facing]);
 
@@ -660,8 +719,14 @@ export default function ProofCamera() {
    *  backgrounded can end the track outright, and a dead track looks exactly
    *  like a working camera pointed at something black. */
   const ensureCamera = useCallback(() => {
-    if (mode !== "live" || !task || dayClosed) return;   // nothing to look through
-    if (camErr) return;                    // a refusal is not retried in a loop
+    if (mode !== "live" || !task || dayClosed) {
+      // Not on screen ⇒ not measured, and the clock starts again on the way
+      // back: a stale marker would read as six seconds of stall the instant the
+      // leader returns from reviewing a shot.
+      framesRef.current = { ...framesRef.current, time: -1, at: 0 };
+      return;                                            // nothing to look through
+    }
+    if (camErr || startingRef.current) return;  // a refusal is not retried in a loop
     const s = streamRef.current;
     const alive = !!s && s.getVideoTracks().some((tr) => tr.readyState === "live");
     if (!alive) { startCamera(facing); return; }
@@ -669,9 +734,40 @@ export default function ProofCamera() {
     if (!v) return;
     if (v.srcObject !== s) v.srcObject = s;
     if (v.paused) v.play?.().catch(() => {});
+
+    // Is anything actually ARRIVING? Every check above can pass on a stream
+    // that delivers no frames, and a leader looking at that has been handed the
+    // one screen the page cannot tell from a working one: the shutter is live,
+    // `capture` finds no `videoWidth` and returns without a word, and pressing
+    // it harder is the only move left. So the frames themselves are the test.
+    const now = Date.now();
+    const f = framesRef.current;
+    if (v.videoWidth && v.currentTime !== f.time) {
+      framesRef.current = { time: v.currentTime, at: now, fixes: 0 };
+      return;
+    }
+    if (!f.at) { framesRef.current = { ...f, at: now }; return; }
+    if (now - f.at < FRAME_STALL_MS) return;
+    // ONE silent re-open, because a WebView that lost the camera usually hands
+    // it straight back and a leader should never have to know. A second dead
+    // stream is not a hiccup: say so and give them the button, rather than
+    // restarting the camera behind a black screen for the rest of the shift.
+    if (f.fixes >= 1) { setCamErr("stalled"); return; }
+    framesRef.current = { time: -1, at: 0, fixes: f.fixes + 1 };
+    startCamera(facing);
   }, [mode, task, dayClosed, camErr, facing, startCamera]);
 
   useEffect(() => { ensureCamera(); }, [ensureCamera]);
+
+  // A heartbeat as well as the events. `visibilitychange` catches the WebView
+  // coming back and the track's `ended` catches a camera taken cleanly, but a
+  // track can also end with no event of any kind, and a live one can stop
+  // delivering without ending. Neither is reachable except by looking.
+  useEffect(() => {
+    if (mode !== "live" || !task || dayClosed) return undefined;
+    const id = setInterval(() => ensureCamera(), CAM_WATCH_MS);
+    return () => clearInterval(id);
+  }, [mode, task, dayClosed, ensureCamera]);
 
   useEffect(() => {
     const onVis = () => { if (document.visibilityState === "visible") ensureCamera(); };
@@ -972,13 +1068,31 @@ export default function ProofCamera() {
           {mode !== "slot" ? <StampMark text={stamp} boxW={fit.w} boxH={fit.h} /> : null}
         </div>
 
+        {/* Black is the one thing this screen must never mean two things at
+            once. A viewfinder still opening, a camera that opened and sent
+            nothing, and a working camera pointed at something dark were all
+            the same rectangle — so the first two now say which they are. */}
+        {camBusy && !camErr && mode === "live" ? (
+          <div className="absolute inset-0 grid place-items-center p-6 text-center"
+            style={{ background: "rgba(11,13,16,0.72)" }}>
+            <div className="flex flex-col items-center gap-2.5">
+              <Loader2 size={26} className="animate-spin" />
+              <div className="text-[13px]" style={{ color: "rgba(255,255,255,0.75)" }}>
+                {t("proof.cam.opening")}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {camErr && mode === "live" ? (
           <div className="absolute inset-0 grid place-items-center p-6 text-center"
             style={{ background: "rgba(11,13,16,0.94)" }}>
             <div className="max-w-xs">
               <div className="mx-auto mb-3 grid place-items-center rounded-2xl"
                 style={{ width: 48, height: 48, background: "rgba(239,68,68,0.16)" }}>
-                <Camera size={22} color="#ef4444" />
+                {camErr === "stalled"
+                  ? <ImageOff size={22} color="#ef4444" />
+                  : <Camera size={22} color="#ef4444" />}
               </div>
               <div className="text-[15px] font-semibold mb-1.5">
                 {t(`proof.cam.${camErr}`)}
@@ -1029,7 +1143,10 @@ export default function ProofCamera() {
                 <SwitchCamera size={20} />
               </button>
 
-              <button type="button" onClick={capture} disabled={!!camErr}
+              {/* `capture` returns without a word when no frame has arrived,
+                  so a shutter that still looks armed is a button that silently
+                  does nothing — the exact complaint this screen produced. */}
+              <button type="button" onClick={capture} disabled={!!camErr || camBusy || !camAR}
                 aria-label={t("proof.shoot")}
                 className="justify-self-center grid place-items-center rounded-full transition-transform active:scale-95 disabled:opacity-30"
                 style={{ width: 72, height: 72, background: "#fff", boxShadow: "0 0 0 4px rgba(255,255,255,0.22)" }}>
