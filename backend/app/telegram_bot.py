@@ -1968,6 +1968,7 @@ _LT_MESSAGES = {
         "btn_late_clear": "\U0001F5D1 Rasmlarni tozalash",
         "late_have": "\n\n\U0001F4F8 {k} ta rasm tayyor.",
         "late_send_now": "Rasmni shu yerga yuboring",
+        "late_awaiting": "\n\n\U0001F5BC Rasmni shu yerga yuboring \u2014 kutyapman.",
         "late_cleared": "\U0001F5D1 Rasmlar o'chirildi",
         "late_need_reason": "Avval sababni yozing.",
         "late_roll_full": "Rasmlar soni chegaraga yetdi.",
@@ -2085,6 +2086,7 @@ _LT_MESSAGES = {
         "btn_late_clear": "\U0001F5D1 Расмларни тозалаш",
         "late_have": "\n\n\U0001F4F8 {k} та расм тайёр.",
         "late_send_now": "Расмни шу ерга юборинг",
+        "late_awaiting": "\n\n\U0001F5BC Расмни шу ерга юборинг \u2014 кутяпман.",
         "late_cleared": "\U0001F5D1 Расмлар ўчирилди",
         "late_need_reason": "Аввал сабабни ёзинг.",
         "late_roll_full": "Расмлар сони чегарага етди.",
@@ -2202,6 +2204,7 @@ _LT_MESSAGES = {
         "btn_late_clear": "\U0001F5D1 Очистить фото",
         "late_have": "\n\n\U0001F4F8 Готово фото: {k}.",
         "late_send_now": "Пришлите фото сюда",
+        "late_awaiting": "\n\n\U0001F5BC Пришлите фото сюда \u2014 жду.",
         "late_cleared": "\U0001F5D1 Фото удалены",
         "late_need_reason": "Сначала напишите причину.",
         "late_roll_full": "Достигнут предел числа фото.",
@@ -2319,6 +2322,7 @@ _LT_MESSAGES = {
         "btn_late_clear": "\U0001F5D1 Clear the photos",
         "late_have": "\n\n\U0001F4F8 {k} photo(s) ready.",
         "late_send_now": "Send the photo here",
+        "late_awaiting": "\n\n\U0001F5BC Send the photo here \u2014 waiting for it.",
         "late_cleared": "\U0001F5D1 Photos removed",
         "late_need_reason": "Write the reason first.",
         "late_roll_full": "The photo limit is reached.",
@@ -2750,14 +2754,23 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
 
 
 def _lt_edit(chat_id: int, msg_id: int | None, text: str, kb) -> None:
-    """Edit in place when we own a message, else send a fresh one."""
+    """Edit in place when we own a message, else send a fresh one.
+
+    «Message is not modified» is a SUCCESS, not a failure: Telegram refuses an
+    edit whose text and keyboard already match what is on screen, which means
+    the screen is exactly what we wanted to draw. Treating it as a failure and
+    falling through sent a second identical copy of the screen — which is what
+    a leader saw when they pressed a button that re-renders the same state
+    (reported from production, 2026-08-30: two identical late screens).
+    """
     if msg_id:
         try:
             bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id,
                                   reply_markup=kb)
             return
-        except Exception:
-            pass
+        except Exception as exc:
+            if "not modified" in str(exc).lower():
+                return
     bot.send_message(chat_id, text, reply_markup=kb)
 
 
@@ -3165,7 +3178,7 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(
                     call.id, _lt(lang, "late_send_now") if action == "lgo" else None)
                 _lt_late_open(db, tid, pid, lang, chat_id, msg_id, task_id,
-                              s_cfg, shift, day)
+                              s_cfg, shift, day, awaiting=(action == "lgo"))
                 return
 
             if action == "lclr":
@@ -3944,7 +3957,7 @@ def _lp_can_supervise(db, tid: int, row) -> bool:
 
 
 def _lt_late_screen(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
-                    shift: int | None, k: int):
+                    shift: int | None, k: int, awaiting: bool = False):
     """THE late screen — warning and photo counter in ONE evolving message.
 
     They were two renderers and that was wrong: the warning is what the leader
@@ -3968,6 +3981,12 @@ def _lt_late_screen(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
         t=leader_close.task_deadline(cfg_entry, shift))
     if k:
         text += _lt(lang, "late_have").format(k=k)
+    # The upload door has nothing to open — the chat is already listening, and
+    # the capture was armed when this screen was drawn. So pressing it changes
+    # the SCREEN: without that it re-rendered an identical message and read as
+    # a dead button. The state is what says the bot is waiting for a file.
+    if awaiting:
+        text += _lt(lang, "late_awaiting")
     kb = types.InlineKeyboardMarkup(row_width=1)
     if camera:
         url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
@@ -3986,7 +4005,7 @@ def _lt_late_screen(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
 
 def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
                   msg_id: int | None, task_id: int, cfg_entry: dict,
-                  shift: int | None, day) -> None:
+                  shift: int | None, day, awaiting: bool = False) -> None:
     """Show the late screen and arm the staging row that photos land in.
 
     The capture is created HERE rather than after a second tap, because a
@@ -4008,7 +4027,8 @@ def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
             day = leader_proof.open_day(db, prof, create=True)
             db.commit()
     k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
-    text, kb = _lt_late_screen(db, lang, pid, task_id, cfg_entry, shift, k)
+    text, kb = _lt_late_screen(db, lang, pid, task_id, cfg_entry, shift, k,
+                               awaiting=awaiting)
     cap = _lt_capture(db, tid)
     if not (cap and cap.stage == "late_photos"
             and cap.leader_id == pid and cap.task_id == task_id):
