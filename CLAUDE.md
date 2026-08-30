@@ -1672,6 +1672,150 @@ had no way to make the night cost nobody anything.
 
 Related memory: `leader-day-exclusions`.
 
+## A LEADER who stops counting (`/admin/upload?tab=ltcutoff`)
+
+From **2026-08-30** a leader can be taken out of the results **from one day on,
+open-ended** — `LeaderCutoff`, the «Liderni hisobdan chiqarish» destination
+(`pages/admin/LeaderCutoffs.jsx`), sitting directly after the day exclusions
+because the two are read together and are constantly mistaken for one another.
+
+The tab next door answers a question about a **named DAY**: the platform got
+that night wrong, so nobody is scored on it. This answers a question about a
+**PERSON**: from this date they are no longer a leader here — they left, they
+moved, their unit was handed over — and every day from that one on is a day they
+were never expected to file. Same arithmetic, different subject.
+
+- **It cannot be built out of day exclusions, and that is the whole reason it
+  exists.** An exclusion is one row per day and the future has no days in it
+  yet, so «from the 21st onwards» written as exclusions means writing rows for
+  days that do not exist and then writing more of them every morning forever —
+  and the morning the writer stops, the leader silently starts scoring 0 again
+  with nothing on screen saying why. One record per decision goes on answering
+  after the person who made it has stopped looking.
+- **`services/leader_cutoffs.py` is THE definition** — `person_key`, `load`,
+  `stopped_from`, `hit`, `active`, `wire`, `set_cutoff`, `lift`,
+  `drop_pending_reviews`. Nothing is written onto a score, so lifting restores
+  every affected day everywhere at once with no migration and no re-sync.
+- **The key is the PERSON**, spelled by `person_key` exactly as
+  `leader_exclusions.key()` spells its own half before the date — that function
+  now CALLS this one, so a leader who is one person to the day-exclusion tool
+  cannot be two people to this one. ~18% of sheet names never resolve to a
+  profile, so both spellings are carried and `load()` is deliberately the only
+  preload shape: an id-keyed twin drops exactly those leaders, and the census
+  (`undiscovered`) would then promise «N tekshirilmagan» rows the queue
+  (`discover`) refuses, a counter that never comes down.
+- **The date is a FLOOR with no ceiling.** A leader who returns has their cutoff
+  LIFTED or moved later; a gap in the middle of a career is a run of day
+  exclusions, which is what that tool is for. A second date would give "is this
+  day counted" four answers and every reader would have to spell all four.
+- **`leader_exclusions.excluded()` is THE door for both**, and folding the
+  cutoff in there is what took it to the four AI queue doors and the report
+  sender's park without wiring it to each. `wire_for` (per-row) and `wire_in`
+  (map-based) are the twin readers, and the **DAY's own exclusion outranks the
+  cutoff** in both — it names this exact night, the cutoff is a rule about every
+  day after a date — so lifting a cutoff leaves a day exclusion standing.
+- **It lands on the SAME `excluded` field the day exclusion uses**, plus
+  `cutoff: true` and `from`. The client already knows what an excluded row is —
+  it leaves both sides of the average, it shows a grey chip, its calendar cell
+  is blank, no verdict prints beside it — and every one of those is right here.
+  A second field would mean a second denominator rule on the client, which is
+  how two readings of one ranking start disagreeing. Only the TOOLTIP and the
+  report banner branch, because only they say anything about tomorrow.
+- **Rows are not enough, and this is the load-bearing part.** Stamping
+  `excluded` reaches only days a cut leader actually FILED; every day after the
+  cutoff that nobody filed leaves no row anywhere, and the client shrinks a
+  denominator only when handed a row saying so. So the DECISION travels —
+  `cutoffs` (display name → from) and `cutUnits` on `/api/leaders`, one entry
+  per person rather than one per day — and `slotsBy(rows, keyFn, cuts, dates)`
+  expands it over whichever window each ranking is scored over. **Every call
+  site passes its own date list**: the standings, the trend, the previous
+  period and the rolling sparkline score four different windows, and one shared
+  list would be wrong for three of them. The expansion is in `slotsBy` and NOT
+  in `scoreSlots` because two readers never reach `scoreSlots` at all — the
+  trend builds `dayOff` off `off`, and the spark tests `off.has(d)` per day.
+- **`off.delete` still runs last, and that is what makes the two sources
+  agree**: a cut leader who files anyway gets a row the backend already stamped,
+  so it never reaches `e.days` and the date stays off, while an unstamped row is
+  a day somebody really was measured on and keeps its slot.
+- **A UNIT leaves its own denominator only when EVERY leader it has is cut**,
+  from the LAST of their floors. Computed on the backend because the client
+  cannot: it is handed the cut leaders, never a unit's full roster, so it could
+  not tell "all of them" from "the only one I was told about". One leader of
+  three leaving takes nothing from the unit — its day still stands on the two
+  who file.
+- **The maps are SCOPED like the rows** (supervisor → own unit, leader → own
+  profile ids): they move the denominator, so a viewer not handed them would
+  read a different mean for a leader than everyone else reads for that same
+  leader.
+- **`auto_discover` was the worst leak and is now closed.** It fires on the
+  leaders-sheet **Refresh**, a button an admin presses all day, so a cut
+  leader's rows would be re-queued and re-spent on Gemini indefinitely. Every
+  other door is a one-shot or fires once per close.
+- **Admin-only and NOT grantable.** No `capKey` on the `ADMIN_NAV` entry, so
+  `capTabs.includes(capKey ?? id)` can never admit a grantee — the
+  `permissions` / `logs` / `ltdaily` / `ltexclude` model. `POST
+  /api/leaders/cutoffs` checks `role == "admin"` itself, because the endpoint is
+  reachable without the UI. Batches cap at 200 — a cutoff batch is PEOPLE, not
+  days. The confirm carries a `challenge` (retype the date), which the
+  exclusions tab deliberately does not: that decision names one night and its
+  blast radius is on screen, this one silently covers every day that has not
+  happened yet.
+- **Both people are told, once, at the decision** (`leader_reports.notify_cutoff`
+  → `leader_cutoff_set` / `leader_cutoff_lifted` and their `_report_` twins).
+  Unconditionally, unlike `notify_excluded`: the news is not "a number you were
+  shown has changed" but "from Monday your reports are no longer scored", which
+  is news whether or not any particular day was ever reported.
+- **Moving a cutoff EARLIER newly covers queued days** — `set_cutoff` returns
+  the PREVIOUS floor for exactly that, and `drop_pending_reviews` runs from the
+  earlier of the two. Moving it LATER cannot resurrect the verdicts that were
+  dropped: those days come back **unverified**, and «Tekshirish» with scope
+  «unchecked» is the only route to a verdict for anything outside the rolling
+  14-day window.
+- **Lifting a long cutoff sends a backlog of FIRST reports** — a parked day is
+  `sends = 0`, so the sweep treats it as never reported. Bounded by
+  `auto_window_start()`'s rolling 14 days.
+- **Deliberately NOT changed: the bot.** `/tasks` opens, tasks close, the day
+  closes, and `leader_close.score_line` still prints a running score to a cut
+  leader in Telegram. A cutoff is about RESULTS, not access, and a leader in a
+  handover week may legitimately still be filing. Same for
+  `leader_late_proof.eligible` and `leader_dispute.create`: both are
+  arithmetically inert on a cut day (it enters no average either way), and
+  closing them is a separate decision.
+- **A cutoff-stamped ROW never adds to `off` itself** — only a DAY exclusion
+  does. The expansion owns it, and it owns it per key space. Letting the row do
+  it meant a cut leader who went on filing (the bot still lets them) FORGAVE
+  their whole unit's misses: on any day their row was the unit's only one, the
+  unit's day left the unit's denominator though the unit still owed a report
+  from its other leaders.
+- The day exclusions tab keeps its own subject: a cutoff-derived row is not a
+  `LeaderDayExclusion`, so it is kept out of both of that tab's day views (a
+  «Qaytarish» there would find nothing to lift) and **counted and named**
+  instead; its «Topshirilmagan» list skips days past a leader's cutoff, which
+  would otherwise bury the days that matter under hundreds that already cost
+  nobody anything.
+
+**Three known limits, all inherited from how the register already groups people
+and none of them a wrong number in the common case:**
+
+1. **An unlinked sheet spelling cannot be cut.** The tab writes from the ROSTER,
+   so every cutoff is profile-keyed. A sheet row whose spelling `leader_match`
+   never resolved is already a SEPARATE person to the register (it groups under
+   its raw spelling, not under the profile's name), so the cutoff correctly does
+   not reach it — but there is no way to cut that entity either. The
+   `n<folded name>` key exists and every reader tries it, so a writer for it is
+   a UI question, not a model change.
+2. **Namesakes merge, because the register merges them.** `cutoffs` is keyed by
+   display name and two profiles sharing a `RoleProfile.name` are already ONE
+   standings row, so cutting one applies to the merged row. Two cutoff records
+   under one name settle on the EARLIER floor — the conservative direction.
+3. **`cutUnits` reads a unit's roster, which omits unlinked leaders**, and it is
+   keyed by the unit's MAJORITY sheet spelling (`unit_display_names`) while
+   sheet rows carry their own per-row spelling. So it can declare a unit fully
+   cut when an unlinked leader is still filing, and it misses a minority-spelled
+   row group. It fires only when every PROFILED leader of a unit is cut, which
+   is rare; the leader half of the feature — the part that was actually asked
+   for — does not depend on it.
+
 ## The action register (`/admin/upload?tab=logs`)
 
 From **2026-08-23** every change on the platform lands in ONE append-only table,

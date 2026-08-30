@@ -617,12 +617,17 @@ def get_leaders(
     # as the filed layers are, because it moves the denominator: a viewer not
     # handed it would read a different mean for a leader than everyone else
     # reads for that same leader.
+    # Named once because the cutoff maps further down are scoped by the very
+    # same rule, and for the very same reason.
+    manager_ids = ({payload.get("role_id")}
+                   if role == "supervisor" and not sees_all else None)
+    leader_ids = my_pids if role == "leader" and not sees_all else None
+
     data += leader_exclusions.orphan_rows(
         db, excl, covered,
         sup_display=sup_display,
-        manager_ids=({payload.get("role_id")}
-                     if role == "supervisor" and not sees_all else None),
-        leader_ids=(my_pids if role == "leader" and not sees_all else None),
+        manager_ids=manager_ids,
+        leader_ids=leader_ids,
     )
     data.sort(key=lambda r: str(r["date"]), reverse=True)
 
@@ -655,31 +660,123 @@ def get_leaders(
     # that acts on it refuses anybody else. The supervisor spelling is
     # `sup_display`, the same one the rows carry, so a day named here lands in
     # the unit bucket its leader's filed days land in.
+    by_unit = {m.id: m for m in managers}
+    leader_profiles = (db.query(RoleProfile)
+                       .filter(RoleProfile.role == "leader",
+                               RoleProfile.manager_id.isnot(None))
+                       .order_by(RoleProfile.name).all())
+
     roster = []
     if role == "admin":
-        by_unit = {m.id: m for m in managers}
-        for p in (db.query(RoleProfile)
-                  .filter(RoleProfile.role == "leader",
-                          RoleProfile.manager_id.isnot(None))
-                  .order_by(RoleProfile.name).all()):
+        for p in leader_profiles:
             unit = by_unit.get(p.manager_id)
             # An archived unit keeps its history and leaves every picker — a
             # leader nobody can file for is not a leader with missing days.
             if unit is None or unit.archived:
                 continue
+            # The decision that stopped this leader counting, if there is one.
+            # Flattened onto the entry rather than nested, because the tab that
+            # reads it renders three plain table columns and every other roster
+            # field is flat. Only an admin is handed the roster, and only the
+            # admin tab writes one.
+            cut = (cuts.get(leader_cutoffs.person_key(p.id, None))
+                   or cuts.get(leader_cutoffs.person_key(None, p.name)))
             roster.append({
                 "id": p.id,
                 "name": p.name,
                 "manager_id": p.manager_id,
                 "supervisor": sup_display.get(p.manager_id) or unit.name,
                 "shift": unit.shift,
+                "cutoff": str(cut.from_date)[:10] if cut else None,
+                "cutoff_reason": (cut.reason or "") if cut else None,
+                "cutoff_by": (cut.set_by or None) if cut else None,
             })
+
+    # ── who stopped counting, and from when ──────────────────────────────────
+    # THE load-bearing half of the cutoff, and the one thing rows cannot carry.
+    # Stamping `excluded` above only reaches days the leader FILED after their
+    # cutoff; every day after it that nobody filed leaves no row anywhere, and
+    # the client shrinks a denominator only when handed a row saying so. So the
+    # DECISION itself travels — one entry per cut leader, not one per day — and
+    # the client expands it over whichever window it happens to be scoring.
+    #
+    # Keyed by the DISPLAY NAME, because that is what `slotsBy` groups by: a
+    # leader is `prof.name or r.leader` on every row, a unit is its sheet
+    # spelling. Resolving a person from a name is the server's job; the client
+    # must never do it twice and get two answers.
+    prof_by_id = {p.id: p for p in leader_profiles}
+    cut_leaders: dict[str, dict] = {}
+    for c in cuts.values():
+        pid = int(c.leader_profile_id) if c.leader_profile_id else None
+        prof = prof_by_id.get(pid) if pid else None
+        name = (prof.name if prof else None) or c.leader_name
+        if not name:
+            continue
+        if leader_ids is not None and (pid is None or pid not in leader_ids):
+            continue
+        if manager_ids is not None:
+            unit = (prof.manager_id if prof else None) or c.manager_id
+            if unit is None or int(unit) not in manager_ids:
+                continue
+        prev = cut_leaders.get(name)
+        # Two records under one display name (a namesake, a re-keyed row) settle
+        # on the EARLIER floor: the register groups them as one person, and the
+        # later date would go on counting days one of them is already out of.
+        if prev is None or str(c.from_date)[:10] < prev["from"]:
+            cut_leaders[name] = {
+                "from": str(c.from_date)[:10],
+                "reason": c.reason or "",
+                "by": c.set_by or None,
+                "at": c.set_at.isoformat() if c.set_at else None,
+            }
+
+    # A UNIT leaves its own denominator only when EVERY leader it has is cut —
+    # and then from the LAST of their floors, because the unit is only gone once
+    # the last of them is. One leader of three leaving takes nothing away from
+    # the unit: its day still stands on the two who file, which is what the
+    # client's "a date with a real slot is not off" pass already says.
+    #
+    # Computed here and not on the client because it cannot be: the client is
+    # handed the cut leaders, never the unit's full roster (`roster` is admin
+    # only), so it cannot tell "all of them" from "the only one I was told
+    # about".
+    unit_members: dict[int, list] = {}
+    for p in leader_profiles:
+        unit = by_unit.get(p.manager_id)
+        if unit is None or unit.archived:
+            continue
+        unit_members.setdefault(int(p.manager_id), []).append(p)
+    # A LEADER viewer is scoped by profile id everywhere else, which says
+    # nothing about units — so their unit scope is derived: the units their own
+    # profiles sit in, and no others. Without it a leader would be handed the
+    # names of every fully-cut unit on the platform.
+    own_units = ({int(p.manager_id) for p in leader_profiles
+                  if p.id in leader_ids and p.manager_id}
+                 if leader_ids is not None else None)
+    cut_units: dict[str, dict] = {}
+    for uid_, members in unit_members.items():
+        if manager_ids is not None and uid_ not in manager_ids:
+            continue
+        if own_units is not None and uid_ not in own_units:
+            continue
+        floors = [leader_cutoffs.stopped_from(cuts, p.id, p.name) for p in members]
+        if not floors or any(f is None for f in floors):
+            continue
+        label = sup_display.get(uid_) or (by_unit[uid_].name if uid_ in by_unit else None)
+        if not label:
+            continue
+        cut_units[label] = {"from": max(floors)}
 
     return _json_response({
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "data": data,
         "roster": roster,
+        # Leaders (and whole units) whose results stopped counting from a date
+        # on. One entry per DECISION, expanded by the client over whichever
+        # window it is scoring — see the block that builds them.
+        "cutoffs": cut_leaders,
+        "cutUnits": cut_units,
         # Whether this viewer can act in the open-a-day flow at all. The client
         # shows the «Late reports» tab off these, so authority is never a guess
         # made from the role string on the client.
@@ -1571,6 +1668,11 @@ def _late_queue_items(db: Session, payload: dict) -> list[dict]:
     )
     late = _late_map(db)
     mgr_name = {m.id: m.name for m in managers}
+    # A day whose leader stopped counting is not a decision anybody has to make:
+    # opening it would restore a score to a day that enters no average, and the
+    # queue carries a badge asking somebody to do exactly that. One press-worth
+    # of work per cut leader per voided day, forever, for nothing.
+    cuts = leader_cutoffs.load(db)
 
     # Collapse the day's rows into one item: the window voids a submission, but
     # the DAY is what gets opened, so a leader who filed twice out of hours is
@@ -1584,6 +1686,8 @@ def _late_queue_items(db: Session, payload: dict) -> list[dict]:
         if role == "supervisor" and mid != payload.get("role_id"):
             continue
         prof = lead_match.get((r.leader, mid)) or {}
+        if leader_cutoffs.hit(cuts, prof.get("id"), r.leader, r.date) is not None:
+            continue
         key = _late_key(prof.get("id"), r.leader, r.date)
         req = late.get(key)
         it = items.get(key)
@@ -2139,6 +2243,139 @@ def set_exclusions(
     logger.info("leader-exclusion: %s %s leader-day(s) by %s — %s notified, "
                 "%s queued review(s) dropped",
                 "excluded" if on else "restored", done, who, told, dropped)
+    return {"ok": True, "changed": done, "notified": told,
+            "reviewsDropped": dropped}
+
+
+# ── taking a LEADER out of the results, from a date on ───────────────────────
+
+_CUTOFF_CAP = 200        # a cutoff batch is PEOPLE, not days
+
+
+@router.post("/leaders/cutoffs")
+def set_cutoffs(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """Stop a leader counting from one day on, or put them back.
+
+    The sibling of `set_exclusions` above, and deliberately a separate door
+    rather than a widening of it: that one takes leader-DAYS and this one takes
+    PEOPLE plus one date. The same authority governs both — **admin-only, and
+    deliberately not grantable**, because it moves a leader's score and their
+    brigadir's, and no capability names it.
+
+    What it cannot express is the whole reason it exists. An exclusion is one
+    row per day and the future has no days in it yet, so «from the 21st onwards»
+    written as exclusions means writing rows for days that do not exist and then
+    writing more every morning forever — and the morning that stops, the leader
+    silently starts scoring 0 again. One record per decision goes on answering
+    after the person who made it has stopped looking.
+
+    `cutoff: false` lifts, and every day the cutoff covered comes back at the
+    score it always had — nothing was ever written onto one. A reason is
+    mandatory to cut and pointless to lift, because the reason answers "why do
+    these days not count" and days that count need no answer.
+    """
+    if payload.get("role") != "admin":
+        raise HTTPException(403, "Faqat administrator")
+
+    items = body.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(400, "Lider tanlanmagan")
+    if len(items) > _CUTOFF_CAP:
+        raise HTTPException(400, f"Bir vaqtda {_CUTOFF_CAP} tadan ko'p lider bo'lmaydi")
+
+    on = bool(body.get("cutoff", True))
+    frm = str(body.get("from") or "")[:10]
+    if on and (len(frm) != 10 or frm[4] != "-" or frm[7] != "-"):
+        raise HTTPException(400, "Sana tanlanmagan")
+    reason = str(body.get("reason") or "").strip()
+    if on and not reason:
+        raise HTTPException(400, "Sabab majburiy")
+    notify = bool(body.get("notify", True))
+    who = payload.get("full_name") or "admin"
+
+    done, told, dropped = 0, 0, 0
+    seen: set[str] = set()
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        lid = raw.get("leader_id")
+        lid = int(lid) if str(lid or "").isdigit() else None
+        # Clamped to the `leader_name` column's own width, because the key is
+        # built FROM it: `n<name>` has to fit `leader_key`'s String(200), and an
+        # unbounded body field would otherwise fail the insert half-way through
+        # a batch that has already committed the leaders before it.
+        name = str(raw.get("leader") or "")[:160] or None
+        if not lid and not name:
+            continue                       # nothing to key the decision by
+        k = leader_cutoffs.person_key(lid, name)
+        if k in seen:
+            continue                       # the same leader sent twice
+        seen.add(k)
+        mgr = raw.get("manager_id")
+        mgr = int(mgr) if str(mgr or "").isdigit() else None
+
+        if on:
+            row, prev, prev_reason = leader_cutoffs.set_cutoff(
+                db, leader_id=lid, leader_name=name, from_date=frm,
+                manager_id=mgr, reason=reason, actor=who)
+            # Genuinely nothing to say: same floor, same reason. Anything else
+            # counts and is announced — a rewritten reason is DMed to two people
+            # and printed on every report banner, so changing it while reporting
+            # «0 changed» and telling nobody is the one outcome the operator can
+            # never see.
+            if prev == frm and (prev_reason or "") == reason:
+                db.commit()
+                continue
+            # Only what the decision NEWLY covers. A first cutoff, or one moved
+            # EARLIER, drags days into the cut that are already queued — those
+            # would be spent on Gemini and then displayed on days that count
+            # nowhere. A cutoff moved LATER does the opposite: it hands days
+            # back, and dropping their queued verdicts would take the answer
+            # away from exactly the days that just started counting again.
+            if prev is None or frm < prev:
+                dropped += leader_cutoffs.drop_pending_reviews(db, lid, frm)
+        else:
+            row = leader_cutoffs.lift(db, leader_id=lid, leader_name=name)
+            if row is None:
+                continue                   # already counting
+            frm_row = str(row.from_date)[:10]
+            mgr = mgr if mgr is not None else row.manager_id
+            name = name or row.leader_name
+        done += 1
+        db.commit()
+
+        if notify:
+            try:
+                told += leader_reports.notify_cutoff(
+                    db, leader_id=lid, leader_name=name, manager_id=mgr,
+                    from_date=frm if on else frm_row, reason=reason,
+                    actor=who, restored=not on)
+                db.commit()
+            except Exception:
+                # A DM failure must never roll back the decision: the cutoff is
+                # what every reader reads, and re-pressing the button would find
+                # the leader already cut and tell nobody at all.
+                logger.exception("leader-cutoff: could not notify %s", lid or name)
+                db.rollback()
+
+    # A bulk decision has no single target, so the row identifies the BATCH and
+    # counts what it did. Names are deliberately absent: the register rides in
+    # every db-dump, where anything unbounded belongs as a count.
+    action_log.enrich(
+        target_kind="leader", target_name=f"{done} leader(s)",
+        reason=reason or None,
+        details=[("action", "cutoff" if on else "restored"),
+                 ("from", frm or "—"), ("leaders", done),
+                 ("requested", len(seen)), ("notified", told),
+                 ("reviews_dropped", dropped)],
+    )
+    logger.info("leader-cutoff: %s %s leader(s) from %s by %s — %s notified, "
+                "%s queued review(s) dropped",
+                "cut" if on else "restored", done, frm or "—", who, told, dropped)
     return {"ok": True, "changed": done, "notified": told,
             "reviewsDropped": dropped}
 

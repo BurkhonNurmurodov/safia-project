@@ -95,6 +95,7 @@ const TXT = {
     emptyOff: "Hisobdan chiqarilgan kun yo'q",
     emptyOffBody: "Bu oraliqda hamma kun natijalarga kiradi.",
     loadFailed: "Ma'lumot yuklanmadi",
+    cutHidden: "Yana {n} ta kun lider butunlay hisobdan chiqarilgani uchun bu yerda ko'rsatilmaydi — «Liderni hisobdan chiqarish» bo'limiga qarang.",
   },
   uz_cyrl: {
     title: "Ҳисобдан чиқарилган кунлар",
@@ -130,6 +131,7 @@ const TXT = {
     emptyOff: "Ҳисобдан чиқарилган кун йўқ",
     emptyOffBody: "Бу оралиқда ҳамма кун натижаларга киради.",
     loadFailed: "Маълумот юкланмади",
+    cutHidden: "Яна {n} та кун лидер бутунлай ҳисобдан чиқарилгани учун бу ерда кўрсатилмайди — «Лидерни ҳисобдан чиқариш» бўлимига қаранг.",
   },
   ru: {
     title: "Исключённые дни",
@@ -165,6 +167,7 @@ const TXT = {
     emptyOff: "Исключённых дней нет",
     emptyOffBody: "В этом периоде все дни входят в результаты.",
     loadFailed: "Не удалось загрузить",
+    cutHidden: "Ещё {n} дн. не показаны здесь, потому что лидер исключён целиком — см. «Исключённые лидеры».",
   },
   en: {
     title: "Excluded days",
@@ -200,6 +203,7 @@ const TXT = {
     emptyOff: "No excluded days",
     emptyOffBody: "Every day in this period counts.",
     loadFailed: "Could not load",
+    cutHidden: "{n} more day(s) are not shown here because the leader is out of the results entirely — see «Excluded leaders».",
   },
 };
 
@@ -298,6 +302,11 @@ export default function LeaderDayExclusions() {
       const n = String(p.name || "").trim().toLowerCase();
       for (const d of days) {
         if (held.has(`p${p.id}|${d}`) || (n && held.has(`n${n}|${d}`))) continue;
+        // A day this leader was never expected to file: their results stopped
+        // counting on or before it («Liderni hisobdan chiqarish»). It already
+        // costs nobody anything, so offering it here would be an exclusion with
+        // nothing to do — and a hundred of them would bury the days that matter.
+        if (p.cutoff && d >= p.cutoff) continue;
         out.push({
           // Not a register row and never pretends to be one: it exists only in
           // this list, until an admin turns one into a decision.
@@ -319,7 +328,9 @@ export default function LeaderDayExclusions() {
   // what a filter means.
   const base = useMemo(
     () => (miss ? missingRows
-      : inRange.filter((r) => (view === "off" ? !!r.excluded : !r.excluded))),
+      : inRange.filter((r) => (view === "off"
+          ? !!r.excluded && !r.excluded.cutoff
+          : !r.excluded))),
     [miss, missingRows, inRange, view]);
 
   // Option lists come off the rows this VIEW holds, not the whole feed: a
@@ -334,23 +345,41 @@ export default function LeaderDayExclusions() {
       .map((r) => r.leader).filter((x) => x && x !== "N/A"))].sort(),
     [base, sup]);
 
-  const shown = useMemo(() => {
+  // ONE narrowing predicate, so the table and the «N more days are hidden» count
+  // above it describe the same rows. Counting the withheld days over the period
+  // alone made the note contradict the view it was explaining: filter to one
+  // brigadir and it went on promising days that are not in scope at all.
+  const narrow = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return base
-      .filter((r) => shift === "All" || r.shift === Number(shift))
-      .filter((r) => sup === "All" || r.supervisor === sup)
-      .filter((r) => leader === "All" || r.leader === leader)
+    return (r) =>
+      (shift === "All" || r.shift === Number(shift))
+      && (sup === "All" || r.supervisor === sup)
+      && (leader === "All" || r.leader === leader)
       // Matched against BOTH spellings — the register's own (the sheet's, most
       // often Cyrillic) and the transliterated one this table actually PRINTS,
       // exactly as the register's own search does. Typing the name you can see
       // is the only search anybody performs, and matching the raw value alone
       // answered «no days in this period» to a period that was full of them.
-      .filter((r) => !needle
+      && (!needle
         || `${tl(r.leader || "")} ${r.leader || ""}`.toLowerCase().includes(needle)
-        || `${tl(r.supervisor || "")} ${r.supervisor || ""}`.toLowerCase().includes(needle))
-      .sort((a, b) => String(b.date).localeCompare(String(a.date))
-        || String(a.leader || "").localeCompare(String(b.leader || "")));
-  }, [base, shift, sup, leader, q, lang]);
+        || `${tl(r.supervisor || "")} ${r.supervisor || ""}`.toLowerCase().includes(needle));
+  }, [shift, sup, leader, q, lang]);
+
+  const shown = useMemo(() => base.filter(narrow)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date))
+      || String(a.leader || "").localeCompare(String(b.leader || ""))),
+    [base, narrow]);
+
+  // A day out of the results because its LEADER is cut off is not a decision
+  // this tab can act on: it has no `LeaderDayExclusion` row, so «Qaytarish»
+  // here would find nothing to lift and report that it changed nothing. It is
+  // counted and named instead — the count links the reader to the tab that owns
+  // it, which is the platform's rule for anything a view hides.
+  const cutHidden = useMemo(
+    () => (view === "off"
+      ? inRange.filter((r) => r.excluded?.cutoff).filter(narrow).length : 0),
+    [inRange, view, narrow]);
+
 
   // Paged for the DOM only: `shown` stays the whole filtered set, so a
   // selection made on page 1 is still armed while page 4 is on screen — and
@@ -463,6 +492,8 @@ export default function LeaderDayExclusions() {
       <p className="text-xs leading-relaxed mb-3"
         style={{ color: "var(--text-3)", maxWidth: 760 }}>
         {miss ? <>{T.missLead} <b style={{ color: "var(--text-2)" }}>{T.missSelected}</b></> : T.lead}
+        {cutHidden > 0 && <> <span style={{ color: "var(--text-4)" }}>
+          {fill(T.cutHidden, { n: cutHidden })}</span></>}
       </p>
 
       <div className="mb-3">

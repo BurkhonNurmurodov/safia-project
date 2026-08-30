@@ -261,6 +261,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("DELETE",), "/api/leaders/late/{}",                      "leader_review", "lateday.cancelled"),
     (("POST",),   "/api/leaders/late",                         "leader_review", "lateday.requested"),
     (("POST",),   "/api/leaders/exclusions",                   "leader_review", "day.excluded"),
+    (("POST",),   "/api/leaders/cutoffs",                      "leader_review", "leader.cutoff_set"),
 
     # ── shop-floor records ────────────────────────────────────────────────────
     (("POST",),   "/api/production/override",                  "shopfloor", "production.override_set"),

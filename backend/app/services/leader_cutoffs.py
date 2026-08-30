@@ -128,7 +128,7 @@ def active(db: Session, leader_id: int | None, leader_name: str | None,
     """The same question for ONE row, straight off the DB.
 
     The per-row doors (`queue_report`, `queue_task`, the report sender) ask this;
-    anything walking many rows preloads `load()` or `by_profile()` instead.
+    anything walking many rows preloads `load()` and reads it with `hit()`.
     """
     if not date:
         return None
@@ -175,18 +175,25 @@ def wire(c: LeaderCutoff | None) -> dict | None:
 
 def set_cutoff(db: Session, *, leader_id: int | None, leader_name: str | None,
                from_date: str, manager_id: int | None, reason: str,
-               actor: str | None) -> tuple[LeaderCutoff, str | None]:
-    """Stop this leader counting from `from_date`. `(row, previous_from)`.
+               actor: str | None) -> tuple[LeaderCutoff, str | None, str | None]:
+    """Stop this leader counting from `from_date`.
 
-    Re-setting an existing cutoff MOVES it rather than failing — the operator is
-    correcting the date they wrote, and a unique-key error on the second attempt
-    would read as "the leader is not cut off". The previous floor comes back so
-    the caller can say what actually changed, and so a date moved EARLIER can
-    take the newly-covered days out of the AI queue.
+    Returns `(row, previous_from, previous_reason)`. Re-setting an existing
+    cutoff MOVES it rather than failing — the operator is correcting what they
+    wrote, and a unique-key error on the second attempt would read as "the
+    leader is not cut off".
+
+    **Both previous values come back, and the caller needs both.** The floor
+    says whether the decision NEWLY covers queued days (a cutoff moved EARLIER
+    does, one moved later does not). The reason says whether anything changed at
+    all — the reason is DMed to two people and printed on every report banner,
+    so rewriting it while reporting «0 changed» and telling nobody is the one
+    outcome that leaves the platform saying something the operator never sees.
     """
     k = person_key(leader_id, leader_name)
     row = db.query(LeaderCutoff).filter_by(leader_key=k).first()
     prev = str(row.from_date)[:10] if row is not None else None
+    prev_reason = (row.reason or "") if row is not None else None
     if row is None:
         row = LeaderCutoff(leader_key=k)
         db.add(row)
@@ -197,7 +204,7 @@ def set_cutoff(db: Session, *, leader_id: int | None, leader_name: str | None,
     row.reason = (reason or "").strip()[:2000]
     row.set_by = (actor or "")[:160] or None
     row.set_at = datetime.now(timezone.utc)
-    return row, prev
+    return row, prev, prev_reason
 
 
 def lift(db: Session, *, leader_id: int | None,
@@ -206,9 +213,21 @@ def lift(db: Session, *, leader_id: int | None,
 
     Every day the cutoff covered returns at the score it always had — nothing
     was written onto one, so there is nothing to restore.
+
+    **BOTH spellings, exactly as every reader tries both.** `person_key` answers
+    `p<id>` the moment an id is present, so a lift that asked it alone could
+    never reach a cutoff stored under a folded NAME — while `hit`, `active`,
+    `stopped_from` and the roster builder all find that row and show the leader
+    as cut. The tab would list them, the admin would press «Qaytarish», and the
+    endpoint would answer «0 changed» over a success toast, forever.
     """
+    keys = [person_key(leader_id, None)] if leader_id else []
+    if leader_name:
+        keys.append(person_key(None, leader_name))
+    if not keys:
+        return None
     row = (db.query(LeaderCutoff)
-           .filter_by(leader_key=person_key(leader_id, leader_name)).first())
+           .filter(LeaderCutoff.leader_key.in_(keys)).first())
     if row is not None:
         db.delete(row)
     return row

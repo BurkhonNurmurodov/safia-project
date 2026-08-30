@@ -109,6 +109,7 @@ const TXT = {
     exclChip: "Hisobga olinmaydi",
     exclTitle: "Bu kun natijalarga kirmaydi — na ortiqcha, na kamchilik",
     exclNone: "Bu kunda hech narsa topshirilmagan",
+    cutTitle: "{d} dan boshlab bu liderning natijalari hisobga olinmaydi",
     tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun", shiftAbbr: "smena",
@@ -280,6 +281,7 @@ const TXT = {
     exclChip: "Ҳисобга олинмайди",
     exclTitle: "Бу кун натижаларга кирмайди — на ортиқча, на камчилик",
     exclNone: "Бу кунда ҳеч нарса топширилмаган",
+    cutTitle: "{d} дан бошлаб бу лидернинг натижалари ҳисобга олинмайди",
     tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
     thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун", shiftAbbr: "смена",
@@ -451,6 +453,7 @@ const TXT = {
     exclChip: "Не учитывается",
     exclTitle: "Этот день не входит в результаты — ни в плюс, ни в минус",
     exclNone: "В этот день ничего не сдавалось",
+    cutTitle: "С {d} результаты этого лидера не учитываются",
     tableTitle: "Последние отчёты (сначала низкий балл)",
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
     thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.", shiftAbbr: "смена",
@@ -622,6 +625,7 @@ const TXT = {
     exclChip: "Not counted",
     exclTitle: "This day is out of the results — neither a plus nor a minus",
     exclNone: "Nothing was submitted on this day",
+    cutTitle: "From {d} this leader's results are not counted",
     tableTitle: "Recent Submissions (Low Score First)",
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d", shiftAbbr: "shift",
@@ -912,7 +916,24 @@ const effDone = (tk) => tk.admin_done ?? (!!tk.done && !tk.ai_rejected);
 // slot for it", never as "the row said excluded" — for a UNIT key a day whose
 // other leaders filed normally still counts, on their rows, and only a unit-day
 // that is excluded in full leaves the unit's window.
-const slotsBy = (rows, keyFn) => {
+//
+// `cuts` + `dates` are the second source of `off`, and the only one that can
+// reach a day nobody filed. A row can say "this day does not count"; a day with
+// no row says nothing at all, and a leader cut off on the 21st and read over
+// 18–30 August has ten such days. So the CUTOFF travels as one fact per person
+// (`cuts`: display key → the first ISO day that stopped counting) and is
+// expanded here against `dates`, the days of the window this particular call is
+// scored over. Every caller passes its own list — the standings window, the
+// trend's span, the previous period, the sparkline's rolling range — because
+// they score four different windows and a single shared list would be wrong for
+// three of them.
+//
+// It happens HERE and not in `scoreSlots` because two readers never go through
+// `scoreSlots` at all: the trend line builds `dayOff` straight off `off`, and
+// the rolling spark tests `off.has(d)` per day. Expanding downstream would fix
+// the ranking and leave those two on the old denominator — two answers to one
+// question, on one card.
+const slotsBy = (rows, keyFn, cuts, dates) => {
   const map = new Map();
   for (const r of rows) {
     const key = keyFn(r);
@@ -923,7 +944,15 @@ const slotsBy = (rows, keyFn) => {
     // EXCLUDED outranks the window void below: an exclusion is a person's
     // explicit answer about this exact day, the void is a rule about all of
     // them — the same precedence the backend gives the two.
-    if (r.excluded) { e.off.add(d); continue; }
+    //
+    // …but only a DAY exclusion puts the date in `off` from a row. A CUTOFF is
+    // a fact about a PERSON and says nothing about this unit's day: the
+    // expansion below owns it, and it owns it PER KEY SPACE (`cutLeaders` for a
+    // leader, `cutUnits` for a unit). Letting the row do it here meant a cut
+    // leader who went on filing forgave their whole unit's misses — on a day
+    // where their row was the unit's only one, the unit's day left the unit's
+    // denominator, though the unit still owed a report from its other leaders.
+    if (r.excluded) { if (!r.excluded.cutoff) e.off.add(d); continue; }
     // A row the backend voided on the shift-1 submission window is not a report.
     // The person is registered above BEFORE this bails, so they stay on the
     // roster — they keep their standings row, they keep counting in every
@@ -936,9 +965,24 @@ const slotsBy = (rows, keyFn) => {
     day.sum += r.completion; day.n++;
     e.days.set(d, day);
   }
+  // Every day of this window from the person's cutoff on: days they were never
+  // expected to file, so days that belong in neither half of the average.
+  if (cuts?.size && dates?.length) {
+    for (const [key, e] of map) {
+      const from = cuts.get(key);
+      if (!from) continue;
+      for (const d of dates) if (d >= from) e.off.add(d);
+    }
+  }
   // A date that ended up with a real slot is not off, whatever else was filed
   // on it — see the header: one leader of a unit excluded does not take the
   // unit's day away from the leaders who filed it.
+  //
+  // This runs LAST, and that is what makes the two sources agree. A cut leader
+  // who files anyway gets a row the backend already stamped `excluded`, so it
+  // never reaches `e.days` and its date stays off — while a row the backend did
+  // NOT stamp is a day somebody really was measured on, and it keeps its slot
+  // rather than being silently erased by a rule about the days around it.
   for (const e of map.values())
     for (const d of e.days.keys()) e.off.delete(d);
   return map;
@@ -1159,7 +1203,12 @@ function ExclChip({ row, T }) {
   // the row beside it prints «—» where every other row prints a score, and a
   // reader has to be able to tell "nothing was filed" from "the score no longer
   // counts".
-  const title = [row.missing && `${T.exclNone}.`, T.exclTitle,
+  // A CUTOFF says something different from a day exclusion and the tooltip is
+  // the only place that can: one is a decision about this night, the other is
+  // "this person stopped counting on the 21st". The chip stays identical —
+  // the arithmetic is the same and the reader is not being told two things.
+  const title = [row.missing && `${T.exclNone}.`,
+                 x.cutoff ? T.cutTitle.replace("{d}", ddmm(x.from)) : T.exclTitle,
                  x.reason && `— ${x.reason}`, x.by && `(${x.by})`]
     .filter(Boolean).join(" ");
   return (
@@ -2123,6 +2172,24 @@ export default function Leaders() {
   // under «All» and drop out when the Smena filter narrows — visible somewhere,
   // never padded onto a shift they may not belong to.
   const rows = useMemo(() => data?.data ?? [], [data]);
+  // Who stopped counting, and from when — one entry per DECISION, keyed by the
+  // same display name `slotsBy` groups by. Rows carry the cutoff on the days a
+  // cut leader actually FILED; these carry the days nobody filed, which is most
+  // of them and the only reason the denominator moves at all. Expanded over
+  // whichever window each ranking happens to be scored over — see `slotsBy`.
+  const cutLeaders = useMemo(() => {
+    const m = new Map();
+    for (const [name, c] of Object.entries(data?.cutoffs ?? {})) m.set(name, c.from);
+    return m;
+  }, [data]);
+  // The same for a whole unit, which the backend computes because the client
+  // cannot: a unit leaves its own denominator only once EVERY leader it has is
+  // cut, and the client is never handed a unit's full roster.
+  const cutUnits = useMemo(() => {
+    const m = new Map();
+    for (const [name, c] of Object.entries(data?.cutUnits ?? {})) m.set(name, c.from);
+    return m;
+  }, [data]);
   // Name → shift, for the S1/S2 chips the combined view prints beside people:
   // a unit lives in one shift, so any of a person's rows answers for them.
   const shiftOf = useMemo(() => {
@@ -2367,10 +2434,20 @@ export default function Leaders() {
   // of their leaders (so a unit filing more rows than another can't inflate its
   // calendar). Both are computed regardless of which standings tab is open —
   // the insight cards need the other one too.
+  // Every calendar day of the scored window, built once and shared: the two
+  // rankings and the heatmap all measure over exactly this list, and building
+  // it twice is how a cutoff comes off one of them and not the other.
+  const winDates = useMemo(() => {
+    const { from, days } = scoreWin;
+    if (!from || !days) return [];
+    return Array.from({ length: days }, (_, i) => isoShift(from, i));
+  }, [scoreWin]);
   const leaderScores = useMemo(
-    () => scoreSlots(slotsBy(filtered, (r) => r.leader), scoreWin.days), [filtered, scoreWin.days]);
+    () => scoreSlots(slotsBy(filtered, (r) => r.leader, cutLeaders, winDates), scoreWin.days),
+    [filtered, scoreWin.days, cutLeaders, winDates]);
   const supScores = useMemo(
-    () => scoreSlots(slotsBy(filtered, (r) => r.supervisor), scoreWin.days), [filtered, scoreWin.days]);
+    () => scoreSlots(slotsBy(filtered, (r) => r.supervisor, cutUnits, winDates), scoreWin.days),
+    [filtered, scoreWin.days, cutUnits, winDates]);
 
   // The newest day the sheet holds ANYTHING for. Read off the raw feed, never
   // the filtered slice: narrowing to one leader must not turn that leader's own
@@ -2476,6 +2553,29 @@ export default function Leaders() {
         s.tasks.set(id, a);
       }
     }
+    // …and the same for a leader who STOPPED COUNTING mid-window. `leaders.add`
+    // above fires before the excluded bail, so a leader cut off on the 21st is
+    // still in `nL` and still inflates `nL * (winDays - t.first)` by every day
+    // after it — days they filed nothing on because nobody expected them to.
+    // The row loop can only see days that produced a row; this walks the
+    // calendar for the days that did not.
+    for (const L of leaders) {
+      // NOT named `from`: the window's own origin is called that here, and
+      // shadowing it walks the calendar from the CUTOFF instead — every index
+      // then lands on the wrong day and the subtraction misses entirely.
+      const cutFrom = cutLeaders.get(L);
+      if (!cutFrom) continue;
+      for (let i = 0; i < winDays; i++) {
+        const d = isoShift(from, i);
+        if (d < cutFrom) continue;
+        const k = `${L}|${d}`;
+        // Disjoint from what the row loop already counted, both ways: a day
+        // with a real slot is a day somebody was measured on, and a pair
+        // already in `offSeen` would otherwise be subtracted twice.
+        if (slots.has(k) || offSeen.has(k)) continue;
+        offSeen.add(k); offPerDay[i]++;
+      }
+    }
     // suffix[i] = slots filed on day i or later, to turn "days owed from day i"
     // into "days missed from day i" without walking the calendar per question.
     const suffix = new Array(winDays + 1).fill(0);
@@ -2503,7 +2603,7 @@ export default function Leaders() {
       const owed = t.asked + missed;
       return { id, asked: t.asked, rate: owed ? Math.round((t.done / owed) * 100) : null };
     });
-  }, [filtered, scoreWin]);
+  }, [filtered, scoreWin, cutLeaders]);
 
   // Every question on the form keeps its slot on the axis, but one nobody has
   // answered plots as null — an empty space under its label, not a 0% bar. A 0%
@@ -2522,7 +2622,26 @@ export default function Leaders() {
     // rather than drawn as 0 — the grid greys those too, because a lagging sync
     // is not a day of failures. That is only the un-synced tail; an empty day
     // inside the data is a real 0, exactly as it is in the calendar.
-    const perLeader = slotsBy(trendRows, (r) => r.leader);
+    // The cut days have to be expanded over a list built BEFORE the map exists,
+    // and the drawn range is not known until after it (`dMin`/`dMax` come out
+    // of the map's filed days). So this is the outer bound of what could be
+    // drawn — every date the rows span, clipped exactly as the line is. A
+    // SUPERSET is safe and a subset is not: the bucket loop below walks `days`
+    // alone, so an `off` entry outside the drawn range is never read, while a
+    // missing one would leave a cut leader in the day's denominator.
+    let rawMin = null, rawMax = null;
+    for (const r of trendRows) {
+      const d = rowDate(r);
+      if (rawMin == null || d < rawMin) rawMin = d;
+      if (rawMax == null || d > rawMax) rawMax = d;
+    }
+    let cutTo = endDate || rawMax;
+    if (dataMax && cutTo > dataMax) cutTo = dataMax;
+    const cutFrom = trendFrom || rawMin;
+    const cutSpan = cutFrom && cutTo && cutTo >= cutFrom
+      ? Array.from({ length: spanDays(cutFrom, cutTo) }, (_, i) => isoShift(cutFrom, i))
+      : [];
+    const perLeader = slotsBy(trendRows, (r) => r.leader, cutLeaders, cutSpan);
     const roster = perLeader.size;
     if (!roster) return empty;
     const dayScore = new Map();                          // date → Σ of that day's leader scores
@@ -2566,7 +2685,7 @@ export default function Leaders() {
       // weekly buckets get a full "start – end" range in the tooltip
       trendTips: keys.map((k) => (mode === "week" ? `${ddmm(k)} – ${ddmm(isoShift(k, 6))}` : label(k))),
     };
-  }, [trendRows, trendFrom, endDate, dataMax]);
+  }, [trendRows, trendFrom, endDate, dataMax, cutLeaders]);
 
   const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
@@ -2647,18 +2766,35 @@ export default function Leaders() {
       if (d >= rollFrom && d <= sparkTo) rollRows.push(r);
     }
     const roster = standings.list.map((e) => e.name);
+    // Whichever cutoff map answers for the key this ranking is built on.
+    const keyCuts = effStandMode === "leader" ? cutLeaders : cutUnits;
     // A window's scores padded back up to the roster, so the board is the same
     // size every time it is ranked.
-    const onRoster = (scored) => {
+    //
+    // …except for anyone whose WHOLE window was cut. `scoreSlots` drops them on
+    // purpose (`win <= 0`), and padding them back at `rating: 0` would put them
+    // in last place for that window — so the chip would read the difference as
+    // a climb, out of exactly the 0 the cutoff exists to stop them being given.
+    // The WHOLE window, mirroring `scoreSlots`' own `win <= 0` drop exactly: a
+    // cutoff that starts mid-window still leaves countable days in front of it,
+    // and filing nothing on those really is a 0.
+    const cutWhole = (name, winStart) => {
+      const from = keyCuts.get(name);
+      return !!from && from <= winStart;
+    };
+    const onRoster = (scored, winStart) => {
       const seen = new Set(scored.map((s) => s.name));
-      for (const name of roster) if (!seen.has(name)) scored.push({ name, rating: 0, consist: 0 });
+      for (const name of roster)
+        if (!seen.has(name) && !cutWhole(name, winStart))
+          scored.push({ name, rating: 0, consist: 0 });
       return seen;
     };
 
     let prev = null, prevSeen = null;
     if (prevRows.length) {
-      const scored = scoreSlots(slotsBy(prevRows, keyFn), winDays);
-      prevSeen = onRoster(scored);
+      const prevDays = Array.from({ length: winDays }, (_, i) => isoShift(prevFrom, i));
+      const scored = scoreSlots(slotsBy(prevRows, keyFn, keyCuts, prevDays), winDays);
+      prevSeen = onRoster(scored, prevFrom);
       prev = new Map(rankPlaces(scored, standMetric).map((e) => [e.name, e.place]));
     }
 
@@ -2666,7 +2802,12 @@ export default function Leaders() {
     const sparkDays = sparkTo >= sparkFrom
       ? Array.from({ length: spanDays(sparkFrom, sparkTo) }, (_, i) => isoShift(sparkFrom, i)) : [];
     if (sparkDays.length >= 2) {
-      const byPerson = slotsBy(rollRows, keyFn);
+      // Built BEFORE the map, because the sliding window below reads
+      // `p.off.has(d)` for every one of these days — the cut days have to be in
+      // `off` by then or a cut person's rolling denominator never shrinks.
+      const rollDays = Array.from(
+        { length: spanDays(rollFrom, sparkTo) }, (_, i) => isoShift(rollFrom, i));
+      const byPerson = slotsBy(rollRows, keyFn, keyCuts, rollDays);
       const names = new Set(roster);
       for (const n of byPerson.keys()) names.add(n);
       const allNames = [...names];
@@ -2676,7 +2817,6 @@ export default function Leaders() {
       // size, not the day's worst place, or the line would breathe with the
       // tie structure instead of tracking the person.
       const top = Math.max(1, allNames.length - 1);
-      const rollDays = Array.from({ length: spanDays(rollFrom, sparkTo) }, (_, i) => isoShift(rollFrom, i));
       const head = rollDays.length - sparkDays.length;
       // One pass, sliding: each day adds itself and drops the day that fell out
       // of the trailing window, so re-ranking N days costs N sorts, not N².
@@ -2712,7 +2852,8 @@ export default function Leaders() {
       for (const [name, vals] of series) sparks.set(name, vals);
     }
     return { prev, prevSeen, sparks };
-  }, [rows, scoreWin, dataMax, effStandMode, standMetric, standings, effShift, effSup, effLeader]);
+  }, [rows, scoreWin, dataMax, effStandMode, standMetric, standings, effShift,
+      effSup, effLeader, cutLeaders, cutUnits]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
   // which drops the three who need help into the card row (see StandCard).
