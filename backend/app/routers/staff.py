@@ -1972,6 +1972,7 @@ def admin_delete(body: AdminDeleteBody, caller=Depends(_require_staff), db: Sess
         "delete", {}, original,
         int(caller["sub"]), caller.get("full_name", "Admin"),
     )
+    _drop_split_secondary(db, row)
     db.delete(row)
     db.commit()
     unit = unit_name(db, body.manager_id)
@@ -2066,6 +2067,7 @@ def bulk_delete_attendance(
                 batch_id=admin_batch_id,
             )
             deleted_rows.append((worker_name, original["job_title"], None))
+            _drop_split_secondary(db, row)
             db.delete(row)
             affected += 1
     else:
@@ -2449,6 +2451,7 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
         ).first()
         if att_row:
             if changes.get("_action") == "delete":
+                _drop_split_secondary(db, att_row)
                 db.delete(att_row)
             else:
                 field_changes = {k: v for k, v in changes.items() if not k.startswith("_")}
@@ -2829,6 +2832,7 @@ def _process_batch(batch_token: str, action: str, caller: dict, db: Session, ids
                 Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
             ).first()
             if att_row:
+                _drop_split_secondary(db, att_row)
                 db.delete(att_row)
 
     # Snapshot before the commit expires the instances — the register must not
@@ -3209,6 +3213,12 @@ def _apply_role_change(db: Session, doc: HrDocument):
         ).first()
         if att:
             att.job_title = new_role
+            # Both halves of a split are the same person doing the same job —
+            # retitling one would leave the other counted under the old role by
+            # `is_direct_role`, i.e. in or out of the load at random.
+            sec = _split_secondary(db, att)
+            if sec is not None:
+                sec.job_title = new_role
 
 
 def _revert_role_change(db: Session, doc: HrDocument):
@@ -3222,6 +3232,9 @@ def _revert_role_change(db: Session, doc: HrDocument):
         ).first()
         if att:
             att.job_title = emp.get("old_role") or ""
+            sec = _split_secondary(db, att)
+            if sec is not None:
+                sec.job_title = emp.get("old_role") or ""
 
 
 # ── People exchange (worker move) ────────────────────────────────────────────────
@@ -3407,6 +3420,10 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
         ).first()
         if not att:
             continue
+        # Same rule as the plain apply: a cell split inside the sending unit is
+        # folded back before a transfer-time split divides the day between two
+        # UNITS. Two splits on one row cannot both be true.
+        _merge_split_halves(db, att)
         plan = _compute_split(emp.get("snapshot") or {}, ttime, rtime)
         if not plan or (not is_task and not target):
             # Can't split → fall back to a plain full move.
@@ -3606,6 +3623,12 @@ def _apply_people_exchange(db: Session, doc: HrDocument):
         ).first()
         if not att:
             continue
+        # A worker split across two of the SENDER's cells cannot be half-moved:
+        # the halves are a fact about this unit, so they are folded back before
+        # the row goes anywhere. Not a legacy case — a draft filed today can be
+        # approved after the sender split the worker tomorrow — so it is checked
+        # here and not only at filing time.
+        _merge_split_halves(db, att)
         if ttype == "supervisor" and target:
             att.manager_id = target
             # Cell-less on arrival, unconditionally — including for a document
@@ -3640,6 +3663,12 @@ def _revert_people_exchange(db: Session, doc: HrDocument):
                 Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
             ).first()
             if att:
+                # The RECEIVING supervisor may have split the arrived worker
+                # across two of THEIR cells. Those halves belong to that unit,
+                # so they are folded back before the row returns to the sender —
+                # otherwise the second half is orphaned on a unit whose roster
+                # no longer names the worker.
+                _merge_split_halves(db, att)
                 att.manager_id = emp.get("old_manager_id") or doc.manager_id
                 if "old_verifix_code" in emp:
                     att.verifix_code = emp.get("old_verifix_code")
@@ -4954,6 +4983,68 @@ class ApprovalBody(BaseModel):
 # mind before anything is real, and one write means one action-log row.
 
 
+def _split_secondary(db: Session, pri: Attendance) -> Optional[Attendance]:
+    """The SECOND half of a split, or None. Keyed on the primary's id."""
+    return db.query(Attendance).filter(Attendance.split_of == pri.id).first()
+
+
+def _split_moment(r: Attendance) -> Optional[str]:
+    """The clock a split worker changed cell at, derived from their own row.
+
+    The SECOND half starts at it; the FIRST half ends at it. A row that is
+    neither half of a split has no such moment and answers None.
+    """
+    if getattr(r, "hc_weight", None) is None:
+        return None
+    c_o = (r.clock_in_out or "").strip()
+    if "-" not in c_o:
+        return None
+    left, _, right = c_o.partition("-")
+    return (left if r.split_of is not None else right).strip() or None
+
+
+def _drop_split_secondary(db: Session, pri: Attendance) -> None:
+    """Delete the second half when the PRIMARY row is being deleted.
+
+    Not a merge: the worker-day is going away entirely, so there is nothing to
+    fold the hours back into. Left behind, the orphan keeps its name, its hours
+    and its fraction of a person in a cell whose worker the register says was
+    removed — and `split_of` would point at an id that no longer exists, so
+    nothing could ever find it again.
+    """
+    sec = _split_secondary(db, pri)
+    if sec is not None:
+        db.delete(sec)
+
+
+def _merge_split_halves(db: Session, pri: Attendance) -> bool:
+    """Fold a split worker back into ONE row. Returns True if a half was folded.
+
+    THE one spelling of "undo a split", called from three very different places
+    and for one reason: a split is a fact about a worker inside ONE unit, so the
+    moment that worker's row leaves the unit — or stops existing — the halves
+    must stop existing too. Miss it and the same worker-day is named on two
+    units at once, each counting a FRACTION of them: the receiving unit holds
+    0.6 of a person it has whole, and the sending unit holds 0.4 of a person it
+    lent away, with nothing on any screen saying so.
+
+    The halves were scaled to sum to the recorded hours and their clocks were
+    cut "C-T" / "T-O", so both restore exactly without a stored copy of either —
+    the same arithmetic `save_cell_placement`'s un-split runs.
+    """
+    sec = _split_secondary(db, pri)
+    if sec is None:
+        return False
+    pri.hours_worked = float(pri.hours_worked or 0) + float(sec.hours_worked or 0)
+    pri.hc_weight    = None
+    pri_start = (pri.clock_in_out or "").partition("-")[0]
+    sec_end   = (sec.clock_in_out or "").rpartition("-")[2]
+    if pri_start and sec_end:
+        pri.clock_in_out = f"{pri_start}-{sec_end}"
+    db.delete(sec)
+    return True
+
+
 def _split_hours(att: Attendance, hhmm: str):
     """Split one attendance row's hours at a wall-clock time → (h1, h2).
 
@@ -5082,6 +5173,11 @@ def cell_placement(attend_date: str, manager_id: Optional[int] = None,
             "counted":       is_direct_role(r.job_title, r.hours_worked, bool(r.is_supervisor)),
             "hc_weight":     float(r.hc_weight) if getattr(r, "hc_weight", None) is not None else None,
             "split_of":      getattr(r, "split_of", None),
+            # WHEN the worker changed cell. Not stored: a saved split cut the
+            # clocks "C-T" / "T-O", so T is the second half's own clock-in and
+            # the first half's clock-out — deriving it keeps one source of truth
+            # and survives an operator editing either clock afterwards.
+            "split_at":      _split_moment(r),
             "from_unit":     lenders.get(r.worker_name),
         }
 
@@ -5203,7 +5299,21 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
     if db.query(DayApproval).filter_by(manager_id=manager_id, date=d).first():
         raise HTTPException(status_code=409, detail="Day is already closed")
 
-    valid_codes = {c.verifix_code for c in _placement_cells(db, manager_id, set())}
+    # The SAME set the GET published as destinations, or the tab offers cells the
+    # save refuses. `_placement_cells` can only return codes that have a Cell row,
+    # so the in-use half must be unioned back in explicitly — that is exactly the
+    # pseudo-cell the GET emits for a code the registry has never heard of.
+    # Read BEFORE the loops run, so no rewritten verifix_code can widen it.
+    in_use = {
+        (c or "").strip()
+        for (c,) in db.query(Attendance.verifix_code).filter(
+            Attendance.manager_id == manager_id,
+            Attendance.date == d,
+            Attendance.verifix_code.isnot(None),
+        ).distinct()
+        if (c or "").strip()
+    }
+    valid_codes = {c.verifix_code for c in _placement_cells(db, manager_id, in_use)} | in_use
 
     def _own_row(att_id: int) -> Attendance:
         r = db.query(Attendance).filter_by(id=att_id).first()
@@ -5226,18 +5336,16 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
         sec = _own_row(u)
         if sec.split_of is None:
             raise HTTPException(status_code=400, detail="That row is not the second half of a split")
-        pri = db.query(Attendance).filter_by(id=sec.split_of).first()
-        if pri is not None:
-            # Put the day back together: the halves were scaled to sum to the
-            # original, and the clocks were cut "C-T" / "T-O", so both restore
-            # exactly without having stored a copy of either.
-            pri.hours_worked = float(pri.hours_worked or 0) + float(sec.hours_worked or 0)
-            pri.hc_weight    = None
-            pri_start = (pri.clock_in_out or "").partition("-")[0]
-            sec_end   = (sec.clock_in_out or "").rpartition("-")[2]
-            if pri_start and sec_end:
-                pri.clock_in_out = f"{pri_start}-{sec_end}"
-        db.delete(sec)
+        # The PRIMARY is resolved through the same ownership check as the
+        # secondary, not by bare id. The two can be on different units — an
+        # exchange moves the primary and (before the fold-back landed) could
+        # leave the secondary behind — and this endpoint is reachable without
+        # the UI, so an un-owned id would let one unit rewrite another unit's
+        # hours and clock, on a day it may already have closed.
+        pri = _own_row(sec.split_of)
+        # `_merge_split_halves` is THE fold-back, shared with the exchange and
+        # revert paths, so "undo a split" has one spelling and one arithmetic.
+        _merge_split_halves(db, pri)
         unsplit_n += 1
 
     for m in body.moves:
@@ -5262,8 +5370,12 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
                 detail=f"{r.worker_name}: «{sp.split_at}» bu xodimning ish vaqtidan tashqarida")
         h1, h2 = parts
         total = h1 + h2
-        c_o = (r.clock_in_out or "").strip()
-        start_s, _, end_s = c_o.partition("-")
+        # The verifix clock arrives in several shapes («07:49 - 17:04 (8.43)»),
+        # so the two ends are re-canonicalised rather than sliced raw — a
+        # half-clock reading "07:49 -13:00" would be printed at the operator.
+        c_in, c_out = _clock_bounds_min(r.clock_in_out)
+        start_s = _fmt_hhmm(c_in)  if c_in  is not None else ""
+        end_s   = _fmt_hhmm(c_out) if c_out is not None else ""
         # The SECOND half is a new row carrying the same name — the worker is on
         # this supervisor's roster either way, so stripping the name off the
         # smaller side (what a cross-unit split does) would be a lie here. What
@@ -5282,7 +5394,7 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
             effective_hours   = None,
             verifix_code      = second,
             is_supervisor     = bool(r.is_supervisor),
-            hc_weight         = round(h2 / total, 6),
+            hc_weight         = round(1.0 - round(h1 / total, 6), 6),
             split_of          = r.id,
         )
         r.verifix_code    = first

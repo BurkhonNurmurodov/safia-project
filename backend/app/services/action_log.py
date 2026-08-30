@@ -132,6 +132,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/staff/requests",                       "attendance", "attendance.request_filed"),
     (("POST",),   "/api/staff/daily/close",                    "attendance", "attendance.day_closed"),
     (("POST",),   "/api/staff/approvals/reopen",               "attendance", "attendance.day_reopened"),
+    (("PUT",),    "/api/staff/cell-placement",                "attendance", "attendance.cells_placed"),
     (("PUT",),    "/api/cell-attendance/registry",             "attendance", "attendance.cell_registry_saved"),
 
     # ── exchanges & HR documents ──────────────────────────────────────────────

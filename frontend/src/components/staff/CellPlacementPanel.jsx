@@ -257,7 +257,7 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: [QK, managerId, selectedDate],
     queryFn: () => api
-      .get("/api/staff/cell-placement", { params: { manager_id: managerId, date: selectedDate } })
+      .get("/api/staff/cell-placement", { params: { manager_id: managerId, attend_date: selectedDate } })
       .then((r) => r.data),
     enabled,
     retry: 1,
@@ -508,8 +508,17 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
   const payload = useMemo(() => ({
     manager_id: managerId,
     date: selectedDate,
+    // A row whose split was just undone is an ordinary row again, so it can be
+    // moved in the same draft — and the server runs unsplits BEFORE moves, so
+    // the pair is safe to send together. Its `staged` still reads "unsplit"
+    // (that is the louder of the two facts), which is why filtering on
+    // `staged === "move"` alone silently dropped the move while the table drew
+    // the worker in their new cell.
     moves: Object.entries(moves)
-      .filter(([id]) => view.byEntryId.get(Number(id))?.staged === "move")
+      .filter(([id, code]) => {
+        const e = view.byEntryId.get(Number(id));
+        return !!e && (e.staged === "move" || e.staged === "unsplit") && code !== e.serverCode;
+      })
       .map(([id, code]) => ({ attendance_id: Number(id), verifix_code: code })),
     splits: Object.entries(splits)
       .filter(([id, s]) => view.byEntryId.get(Number(id))?.staged === "split" && s?.at)
@@ -587,7 +596,13 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
   }
 
   const { totals } = view;
-  const nothingHere = totals.cells === 0 && totals.workers === 0;
+  // Two different nothings. NO CELLS with people still on the roster is the
+  // dead end: the «Yacheykasiz» card fills with the whole unit, the selection
+  // bar invites a pick, and the list it points at is empty — while the day-close
+  // gate refuses on exactly those people. Nothing on screen would explain it, so
+  // it gets said out loud rather than folded into the generic empty state.
+  const noCells     = totals.cells === 0;
+  const nothingHere = noCells && totals.workers === 0;
 
   const cellOptions = view.buckets.map((b) => ({
     value: b.code,
@@ -737,6 +752,22 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
           showUploadLink={false}
           icon={Users}
         />
+      )}
+
+      {noCells && !nothingHere && (
+        <div
+          className="flex items-start gap-2.5 rounded-xl px-3.5 py-3"
+          style={{
+            background: "color-mix(in srgb, #eab308 12%, transparent)",
+            border: "1px solid color-mix(in srgb, #eab308 35%, transparent)",
+          }}
+        >
+          <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#eab308" }} />
+          <div className="text-[11px] leading-snug" style={{ color: "var(--text-2)" }}>
+            <span className="font-semibold" style={{ color: "var(--text-1)" }}>{t("cellPlace.noCells")}</span>
+            {" — "}{t("cellPlace.noCellsMsg")}
+          </div>
+        </div>
       )}
 
       {/* «Yacheykasiz» FIRST — it is the work that has to be done before the day

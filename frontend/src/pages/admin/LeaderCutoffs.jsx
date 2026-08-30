@@ -207,7 +207,7 @@ const todayISO = () => {
 export default function LeaderCutoffs() {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.uz;
-  const tl = useTranslit();
+  const { tl } = useTranslit();
   const qc = useQueryClient();
   const { show, node: toastNode } = useToast();
 

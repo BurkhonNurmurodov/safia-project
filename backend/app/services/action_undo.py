@@ -81,6 +81,7 @@ CHANGED_SINCE = "changed_since"    # the world moved on; an undo would clobber i
 NO_DATA = "no_data"                # the row is too thin to reverse (an automatic row)
 MASKED = "masked"                  # the old value was a secret and was never stored
 CAPPED = "capped"                  # the row records only part of what it changed
+CELLS_MISSING = "cells_missing"    # the day cannot close: somebody has no cell
 
 # What `/admin/settings` writes instead of a secret. The register must never be a
 # second place a key is readable — which also means it can never put one back.
@@ -207,6 +208,15 @@ def _check_close(db: Session, r: ActionLog) -> Optional[str]:
         return NO_DATA
     if db.query(DayApproval).filter_by(manager_id=ref[0], date=ref[1]).first():
         return CHANGED_SINCE   # already closed again
+    # This undo re-creates the DayApproval directly and never calls
+    # `staff.close_day`, so it is the one door the cell gate does not otherwise
+    # reach. It is a real gap and not a theoretical one: a reopened day is an
+    # OPEN day, so an exchange can land a cell-less worker in it between the
+    # reopen and the undo — and this would then close the day over them, which
+    # is precisely what `close_day` refuses for everybody else.
+    from app.routers.staff import _unplaced_workers
+    if _unplaced_workers(db, ref[0], ref[1]):
+        return CELLS_MISSING
     return None
 
 
