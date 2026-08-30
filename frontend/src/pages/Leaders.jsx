@@ -2931,10 +2931,23 @@ export default function Leaders() {
     return { lowTask, lowSup: worst(supScores), lowLeader: worst(leaderScores) };
   }, [chartTasks, supScores, leaderScores]);
 
+  // The register is a list of SUBMISSIONS, so a day nobody submitted is not one
+  // of its rows. `missing` rows are the orphans the exclusion and cutoff tools
+  // mint for days that were never filed (leader_exclusions.orphan_rows,
+  // `source: "none"`): they exist so `slotsBy` can drop the day from the
+  // DENOMINATOR, they carry no score, no tasks, no proofs and no report to
+  // open, and one cutoff fills the table with a run of identical grey lines
+  // that push the real submissions off the screen. They are dropped HERE and
+  // nowhere else — `filtered` still holds them, so every average, chart,
+  // heatmap and per-person window above reads them exactly as before, and an
+  // excluded day that WAS filed keeps its row and its «Hisobga olinmaydi» chip
+  // (an exclusion must stay visible; a non-submission has nothing to show).
+  const regRows = useMemo(() => filtered.filter((r) => !r.missing), [filtered]);
+
   // table rows: search + score-band filter, then sortable columns
   const displayRows = useMemo(() => {
     const q = tSearch.trim().toLowerCase();
-    let arr = filtered.map((r) => ({
+    let arr = regRows.map((r) => ({
       ...r,
       // an unasked question is not a missed one
       // Effective failures, through the page's one `effDone` rule — so this
@@ -2978,7 +2991,7 @@ export default function Leaders() {
       return (a.completion - b.completion) * dir;          // score
     });
     return arr;
-  }, [filtered, tSearch, tBand, effVerify, tSort, tl]);
+  }, [regRows, tSearch, tBand, effVerify, tSort, tl]);
 
   // What the rows ON SCREEN contain — the register's summary strip.
   //
@@ -3014,7 +3027,9 @@ export default function Leaders() {
       errors  += a.error || 0;
     }
     return {
-      shown: displayRows.length, total: filtered.length,
+      // `total` counts the register's own rows, not `filtered` — otherwise
+      // «shown / total» could never reach equality in a scope holding orphans.
+      shown: displayRows.length, total: regRows.length,
       photos, proofs,
       // A verdict can outlive the answer it judged (an admin flipped the task
       // to «not done» after the photo was checked). Never print 9/7: the
@@ -3022,7 +3037,7 @@ export default function Leaders() {
       reviewable: Math.max(reviewable, checked),
       checked, flagged, open, errors,
     };
-  }, [displayRows, filtered.length]);
+  }, [displayRows, regRows.length]);
 
   const toggleSort = (key) => setTSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
   // colored score-band chips, matching the badge palette
