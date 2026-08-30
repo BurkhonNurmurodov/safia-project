@@ -885,6 +885,134 @@ def migrate_dispute_stages() -> None:
         db.close()
 
 
+def add_attendance_split_columns() -> None:
+    """2026-08-30: one worker-day may be SPLIT across two of the unit's own
+    cells, so an attendance row has to be able to say it is a FRACTION of a
+    person (`hc_weight`) and which row it is the second half of (`split_of`).
+
+    Neither column is NOT NULL and neither carries a DEFAULT, because NULL is
+    what carries the meaning: NULL `hc_weight` is one whole person — every row
+    that predates this and every unsplit row forever — and NULL `split_of` is
+    "not the secondary half", which is true of a normal row and of the PRIMARY
+    row of a split alike. A DEFAULT of 1.0 would make "unsplit" and "split whose
+    other half went missing" the same stored value.
+
+    DOUBLE PRECISION and not NUMERIC: every headcount accumulator downstream is
+    a float, and psycopg hands NUMERIC back as Decimal, which cannot be summed
+    into one. The index is what the /staff cell editor walks a pair on."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS "
+            "hc_weight DOUBLE PRECISION"
+        ))
+        db.execute(text(
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS "
+            "split_of INTEGER"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_attendance_split_of "
+            "ON attendance (split_of)"
+        ))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] attendance split columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+CELL_EXCHANGE_PURGE_FLAG = "cell_exchange_sandbox_purge_2026_08_30_v1"
+
+
+def purge_cell_exchange_sandbox() -> None:
+    """2026-08-30: /staff-cells and its sandbox are gone — the cell-level
+    exchange became an ordinary /staff placement, so the pretend documents it
+    filed have nothing left to describe.
+
+    Those documents were TEST data by construction: `services/cell_exchange`
+    filed them under their own doc types precisely so that no attendance row
+    would ever be written from one, and the operator has confirmed they can go.
+    What they leave behind is not inert, which is why this deletes more than the
+    documents:
+
+    - an `approval_notices` row is a LIVE BUTTON sitting in an admin's Telegram
+      chat. Orphan it and the next tap resolves a document that no longer
+      exists — so the notices go FIRST, while their refs still name something.
+    - a `notifications` row renders through a template registered at IMPORT time
+      by the deleted router, so from this deploy the bell has no text for these
+      keys at all and would show a blank line in somebody's list.
+    - `hr_document_history` hangs off a real ON DELETE CASCADE FK and needs no
+      statement of its own.
+
+    The doc types are spelled here as LITERALS on purpose: importing
+    `app.services.cell_exchange` for its constants would make boot depend on a
+    module this same deploy deletes.
+
+    Flag-guarded because it is a one-shot destructive pass — a rerun would be a
+    no-op today but a NEW flag key is required to change what it does, or the
+    old "already ran" mark makes the change invisible on every box that has
+    booted once. Every statement is wrapped on its own: a table or column that
+    is already gone must not stop the rest, and must never block boot."""
+    from app.models import ApprovalNotice, Notification
+
+    TEST_DOC_TYPES = ["people_exchange_test", "role_change_test"]
+    TEST_NKEYS = ["worker_exchange_test_created",
+                  "worker_exchange_test_approved",
+                  "worker_exchange_test_cancelled"]
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CELL_EXCHANGE_PURGE_FLAG).first():
+            return
+
+        notices = notifs = docs = 0
+
+        # `approval_notices.ref` is a plain STRING with no FK — it holds the
+        # document id as text — so the ids are gathered while the documents are
+        # still there and matched as strings.
+        try:
+            ids = [str(i) for (i,) in db.query(HrDocument.id).filter(
+                HrDocument.doc_type.in_(TEST_DOC_TYPES)).all()]
+            if ids:
+                notices = (db.query(ApprovalNotice)
+                             .filter(ApprovalNotice.kind == "hr_document",
+                                     ApprovalNotice.ref.in_(ids))
+                             .delete(synchronize_session=False))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[startup] cell-exchange sandbox notices skipped: {exc}")
+
+        try:
+            notifs = (db.query(Notification)
+                        .filter(Notification.nkey.in_(TEST_NKEYS))
+                        .delete(synchronize_session=False))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[startup] cell-exchange sandbox notifications skipped: {exc}")
+
+        try:
+            docs = (db.query(HrDocument)
+                      .filter(HrDocument.doc_type.in_(TEST_DOC_TYPES))
+                      .delete(synchronize_session=False))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[startup] cell-exchange sandbox documents skipped: {exc}")
+
+        db.add(AppSetting(key=CELL_EXCHANGE_PURGE_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] cell-exchange sandbox purged: {docs} document(s), "
+              f"{notices} approval notice(s), {notifs} notification(s)")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] cell-exchange sandbox purge skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_cell_shift_times() -> None:
     """2026-08-21: cells gain their working START and END clock («Smena
     vaqtlari» admin tab). Two nullable "HH:MM" columns — NULL on both means the

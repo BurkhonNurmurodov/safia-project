@@ -40,7 +40,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "staff-cell", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -52,13 +52,6 @@ DEFAULT_PAGE_ACCESS = {
     "plan":     ["shift-manager"],
     "downtime": ["shift-manager"],
     "staff":    ["shift-manager", "supervisor"],
-    # People exchange filed one CELL at a time — the same HR document as
-    # /staff, but the roster, the sender and the target are cells rather than
-    # whole units, so a leader can move their own cell's workers without seeing
-    # anybody else's. Which rows a caller reaches is decided server-side
-    # (services/cell_scope.py, fails closed); the roles here only say who gets
-    # as far as the page.
-    "staff-cell": ["shift-manager", "supervisor", "leader"],
     "daily":    ["shift-manager", "supervisor"],
     # Pilot: admin-only by default. Above supervisors pick a configured brigadir
     # from the dashboard picker (shift-managers within their shift, top-managers

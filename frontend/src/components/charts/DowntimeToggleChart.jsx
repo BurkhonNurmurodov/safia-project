@@ -1,5 +1,5 @@
 "use no memo";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import ReactApexChart from "react-apexcharts";
 import { fmtDuration } from "../../utils/formatters";
 
@@ -82,7 +82,17 @@ export default function DowntimeToggleChart({
   labelColor,
   tooltipTheme,
   outsideLabelColor,
+  // Pressing a bar opens that supervisor's detail. Held in a REF and read at
+  // event time, never listed as a dependency of the options memo: the parent
+  // recreates this closure on every render, and an options object that changes
+  // identity tears the chart down and rebuilds it — which is exactly the morph
+  // animation the fixed series shape above exists to preserve.
+  onPick,
 }) {
+  const pickRef = useRef(onPick);
+  // Written in an effect, not during render: the handler is only ever read from
+  // an ApexCharts event, which fires long after the commit.
+  useEffect(() => { pickRef.current = onPick; });
   // Theme-aware fallbacks (dark) so the chart still renders if a caller omits them.
   const themeMode = (chartTheme && chartTheme.mode) || "dark";
   const grid = gridColor || "#1e2235";
@@ -159,7 +169,24 @@ export default function DowntimeToggleChart({
           redrawOnParentResize: false,
           redrawOnWindowResize: false,
           // Keeps the threshold line above the bars after a Total⇄Categories toggle.
-          events: { updated: raiseAnnotations },
+          events: {
+            updated: raiseAnnotations,
+            // seriesIndex 0/1 are the over/under-threshold halves of a single
+            // total bar — the whole unit. Anything from 2 up is a CATEGORY
+            // segment, and pressing one carries that category into the detail,
+            // so a reader who pressed the yellow slice is not answered with the
+            // whole day.
+            dataPointSelection: (_e, _ctx, cfg) => {
+              const { seriesIndex: si, dataPointIndex: di, w } = cfg;
+              // A category is carried only when the segment pressed actually
+              // HAS minutes: in the Total view every category series is a row
+              // of zeros drawn at zero width, and a stray hit on one would open
+              // the detail narrowed to a category that bar never counted.
+              const val = Number(w?.globals?.series?.[si]?.[di]) || 0;
+              pickRef.current?.(di, si >= 2 && val > 0 ? si - 2 : null);
+            },
+            dataPointMouseEnter: (e) => { if (e?.target) e.target.style.cursor = "pointer"; },
+          },
         },
         plotOptions: {
           bar: {
@@ -214,6 +241,11 @@ export default function DowntimeToggleChart({
         yaxis: { labels: { style: { colors: axisLabel, fontSize: "11px" } } },
         grid: { borderColor: grid, padding: { right: 28 } },
         legend: { show: false },
+        // A press is a NAVIGATION here, not a selection: without this Apex dims
+        // every other bar and leaves the pressed one latched, so the chart comes
+        // back from a closed modal looking filtered by something the page has no
+        // control for.
+        states: { active: { filter: { type: "none" } } },
         annotations: {
           xaxis: [{ x: 50, borderColor: "#C8973F", strokeDashArray: 4 }],
         },

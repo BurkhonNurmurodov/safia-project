@@ -37,6 +37,13 @@ a twenty-person cell's short one, which is the opposite of how the loss was
 actually paid. A cell with ``Nᵢ == 0`` enters neither side; ``ΣN == 0`` is no
 figure at all and the (unit, day) is simply ABSENT from the answer.
 
+``Nᵢ`` is FRACTIONAL since 2026-08-30: a worker-day split across two of the
+unit's cells is `hc_weight` of a person in each (NULL = one whole person), pro
+-rata by the hours placed there. The two halves are always inside the same
+unit, so ``ΣN`` — and therefore the unit's minutes — is unmoved by a split;
+what moves is which cell's ``Tᵢ`` those minutes are weighed against, which is
+the whole point of letting a supervisor say where the person actually stood.
+
 ``Tᵢ`` is the UNION of the cell's stopped ranges, and every piece of that
 arithmetic lives in ``services/idle_intervals`` — this module only decides
 WHICH rows go in and how the cells are weighed together. The Ojidaniya-only
@@ -179,13 +186,20 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
     #
     # COLUMNS, not entities: this ran for one pilot unit until the floor and
     # now runs for the whole fleet on every KPI request, and the predicate
-    # below reads five fields of an attendance row.
-    n_by_cell: dict[tuple[int, str], int] = defaultdict(int)
+    # below reads five fields of an attendance row. `hc_weight` therefore has
+    # to be named in the list — a column left out of an explicit select is an
+    # AttributeError on the row object, thrown from inside unit_downtime, i.e.
+    # from under build_metrics_list: Overview, the Zagruzka heatmap and
+    # comparison, and the brigadir profile, all at once.
+    #
+    # N is a HEADCOUNT and a split worker is half of one in each cell, so it is
+    # a float sum of weights, not a row count. NULL weight = one whole person.
+    n_by_cell: dict[tuple[int, str], float] = defaultdict(float)
     if code_to_cell:
         for r in db.query(
             Attendance.verifix_code, Attendance.date, Attendance.job_title,
             Attendance.hours_worked, Attendance.is_supervisor,
-            Attendance.worker_name,
+            Attendance.worker_name, Attendance.hc_weight,
         ).filter(
             Attendance.verifix_code.in_(list(code_to_cell)),
             Attendance.date >= date_from,
@@ -195,7 +209,9 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
             cid = code_to_cell.get(r.verifix_code)
             if cid is None or not _counted_hc(r):
                 continue
-            n_by_cell[(cid, r.date.isoformat())] += 1
+            n_by_cell[(cid, r.date.isoformat())] += (
+                1.0 if r.hc_weight is None else float(r.hc_weight)
+            )
     if not n_by_cell:
         return {}
 

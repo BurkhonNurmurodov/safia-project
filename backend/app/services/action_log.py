@@ -144,20 +144,6 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/staff/documents",                      "documents", "document.created"),
     (("POST",),   "/api/staff/tasks/delete",                   "documents", "document.exchange_task_deleted"),
     (("POST",),   "/api/admin/exchange-audit/repair",          "documents", "document.lost_workers_repaired"),
-    # The cell-level twin of the block above (/api/staff-cells, the page that
-    # files an exchange per CELL rather than per unit). Deliberately the SAME
-    # action keys: a document approved on either page is the same act, so the
-    # register groups them together and the four-language `logs.act.document.*`
-    # labels already read correctly. What distinguishes them is the `path`
-    # column, which every row carries. Ordering mirrors its twin — specific
-    # before generic — so that a `/documents/<word>` route added here later
-    # cannot be swallowed by a bare `/documents/{}` template above it.
-    (("POST",),   "/api/staff-cells/documents/{}/approve",     "documents", "document.approved"),
-    (("POST",),   "/api/staff-cells/documents/{}/reject",      "documents", "document.rejected"),
-    (("POST",),   "/api/staff-cells/documents/{}/cancel",      "documents", "document.cancelled"),
-    (("POST",),   "/api/staff-cells/documents/{}/delete",      "documents", "document.deleted"),
-    (("PUT",),    "/api/staff-cells/documents/{}",             "documents", "document.edited"),
-    (("POST",),   "/api/staff-cells/documents",                "documents", "document.created"),
 
     # ── identity, roles & access ──────────────────────────────────────────────
     (("PATCH",),  "/admin/users/{}/roles/{}",                  "identity", "identity.role_approved"),
@@ -329,6 +315,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/quality/export.xlsx",                  "sync_export", "export.quality"),
     (("POST",),   "/api/worker-concerns/export.xlsx",          "sync_export", "export.worker_concerns"),
     (("POST",),   "/api/production/export.xlsx",               "sync_export", "export.production"),
+    (("POST",),   "/api/downtime/cell-detail/export.xlsx",     "sync_export", "export.ojidaniya_detail"),
     (("POST",),   "/api/profiles/admin/cells/export.xlsx",     "sync_export", "export.cells"),
     (("POST",),   "/api/admin/exchange-audit/export.xlsx",     "sync_export", "export.exchange_audit"),
     (("POST",),   "/api/staff/attendance/export",              "sync_export", "export.attendance"),

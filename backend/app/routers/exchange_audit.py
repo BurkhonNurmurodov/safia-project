@@ -580,7 +580,14 @@ def _restore_split(db: Session, d: date_t, name: str, r: dict, actor) -> dict:
             clock_in_out=snap.get("clock_in_out"), hours_worked=snap.get("hours_worked"),
             early_arrival_min=snap.get("early_arrival_min"),
             effective_hours=snap.get("effective_hours"),
-            verifix_code=payload.get("target_cell") or emp.get("old_verifix_code"),
+            # The destination cell a LEGACY document named, and NOTHING when it
+            # named none — an exchange stopped naming one, so the moved worker
+            # lands cell-less on the receiving unit and is placed there by hand.
+            # Never `old_verifix_code` here: this row is written on the TARGET,
+            # and the sender's code names a cell that unit does not own — the
+            # old fallback restored the worker into a foreign cell, which then
+            # rides every load figure the receiving unit is scored on.
+            verifix_code=payload.get("target_cell"),
         )
         db.add(row); db.flush()
         log.warning("EXCHANGE-REPAIR split(plain) id=%s worker=%r date=%s -> manager=%s "
@@ -615,9 +622,14 @@ def _restore_split(db: Session, d: date_t, name: str, r: dict, actor) -> dict:
             clock_in_out=plan.get("away_clock") or f'{plan["T"]}-{plan["O"]}',
             hours_worked=plan["part2"], effective_hours=plan["part2"],
             early_arrival_min=0,
-            verifix_code=payload.get("target_cell") or emp.get("old_verifix_code"),
+            # Legacy destination cell or nothing, as above: on the TARGET the
+            # sender's own code names a cell this unit does not own.
+            verifix_code=payload.get("target_cell"),
         )
         leftover_mgr, leftover_hrs = sender, plan["part1_eff"]
+        # The leftover half stays on the SENDER, so it keeps the sender's cell —
+        # blanking it would park a cell-less row on the sending unit and block
+        # that supervisor's day-close over a worker they never moved.
         leftover_cell = emp.get("old_verifix_code")
         side, named_mgr = "move", target
 
@@ -735,9 +747,12 @@ def repair(
             # across from the batch row and a restored row must be
             # indistinguishable from a projected one.
             effective_hours   = br.effective_hours,
-            # The destination cell the exchange named; the worker's own cell
-            # when the document predates cell-level moves (a legacy no-cell day).
-            verifix_code      = r["target_cell"] or br.verifix_code,
+            # The destination cell a LEGACY document named, and NOTHING
+            # otherwise — an exchange no longer names one, so the moved worker
+            # arrives cell-less and is placed by the receiving supervisor. Never
+            # the batch row's own code: this row is written on the TARGET and
+            # that code names one of the SENDER's cells.
+            verifix_code      = r["target_cell"],
         )
         db.add(row)
         db.flush()

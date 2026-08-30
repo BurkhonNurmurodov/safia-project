@@ -19,6 +19,7 @@ import TimeWheelPicker from "../components/ui/TimeWheelPicker";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
+import CellPlacementPanel from "../components/staff/CellPlacementPanel";
 import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
@@ -28,7 +29,7 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useDragSelect } from "../hooks/useDragSelect";
 import api from "../utils/api";
 import { fmtPct, fmtNum } from "../utils/formatters";
-import { cellLabel, exchangeCellSuffix } from "../utils/cellName";
+import { cellLabel } from "../utils/cellName";
 import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
 import { exportXlsx } from "../utils/exportXlsx";
 import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
@@ -1507,7 +1508,6 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
   const [query, setQuery]       = useState("");
   const [target, setTarget]     = useState("");     // "sup:<id>" | "task:<name>" | "__new__"
-  const [targetCell, setTargetCell] = useState(""); // destination cell (verifix_code) for → supervisor
   const [newTask, setNewTask]   = useState("");
   const [selected, setSelected] = useState(new Set());
   const [useTime, setUseTime]   = useState(false);  // transfer-time split (admin + supervisor)
@@ -1548,7 +1548,6 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     if (isEdit && detail && !initialised.current) {
       if (detail.target_type === "supervisor" && detail.target_manager_id) {
         setTarget(`sup:${detail.target_manager_id}`);
-        if (detail.target_cell) setTargetCell(detail.target_cell);
       } else if (detail.target_type === "task" && detail.task_name)
         setTarget(`task:${detail.task_name}`);
       setSelected(new Set((detail.employees || []).map(e => e.worker_name)));
@@ -1591,26 +1590,11 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const targetIsTask = target.startsWith("task:") || target === "__new__";
   const canUseTime   = targetIsSup || targetIsTask;
 
-  // Destination cells of the chosen receiving supervisor (that day's upload).
-  // A → supervisor move must land in one of them; an empty list = legacy
-  // no-cell day, where the move stays unit-level like before.
-  const targetCells = useMemo(() => {
-    if (!targetIsSup) return [];
-    const s = supTargets.find(x => `sup:${x.manager_id}` === target);
-    return s?.cells || [];
-  }, [targetIsSup, target, supTargets]);
-  const cellOptions = useMemo(
-    () => targetCells.map(c => ({ value: c.verifix_code, label: cellDisplay(c, tl).full })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [targetCells, lang]
-  );
-  // Drop a picked cell that the (newly chosen) target doesn't have. Only once
-  // the target's cells are known — an edit-mode hydrated cell must survive the
-  // exchange-targets fetch.
-  useEffect(() => {
-    if (targetCell && targetCells.length && !targetCells.some(c => c.verifix_code === targetCell))
-      setTargetCell("");
-  }, [targetCells, targetCell]);
+  // A move names the receiving SUPERVISOR and nothing more. It used to make the
+  // sender pick one of that unit's cells — a guess about somebody else's
+  // shopfloor, made before the shift had run. The worker now arrives cell-less
+  // and the receiving supervisor places them on the «Yacheykalar» tab, where
+  // their own day-close refuses until they have.
   // Valid transfer-time window (minutes from midnight) = earliest start →
   // latest clock-out across the selected workers. Overnight shifts whose clock-out
   // lands past midnight (out < start) are carried into the next day (+1440) so the
@@ -1714,12 +1698,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     if (target === "__new__")        return newTask.trim() || "…";
     if (target.startsWith("sup:")) {
       const s = supTargets.find(x => `sup:${x.manager_id}` === target);
-      let label = s ? tl(s.full_name) : "…";
-      if (targetCells.length) {
-        const c = targetCells.find(x => x.verifix_code === targetCell);
-        label += ` · ${c ? cellDisplay(c, tl).full : "…"}`;
-      }
-      return label;
+      return s ? tl(s.full_name) : "…";
     }
     if (target.startsWith("task:"))  return target.slice(5);
     return "…";
@@ -1756,9 +1735,6 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     setError("");
     const tgt = resolveTarget();
     if (!tgt)                { setError(t("staff.chooseTarget")); return; }
-    if (tgt.target_type === "supervisor" && targetCells.length > 0 && !targetCell) {
-      setError(t("staff.chooseCell")); return;
-    }
     if (selected.size === 0) { setError(t("staff.selectAtLeastOne")); return; }
     // Transfer-time is only meaningful for a → supervisor/task move with the
     // toggle on and a time chosen. Always send the field (empty clears it). The
@@ -1766,16 +1742,15 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     // stint's end), and only when its own toggle is on with a valid pick.
     const tt = (canUseTime && useTime && transferTime) ? transferTime : "";
     const rt = (tt && useReturn && returnTime) ? returnTime : "";
-    const tc = tgt.target_type === "supervisor" ? { target_cell: targetCell || "" } : {};
     setSaving(true);
     try {
       if (isEdit) {
-        await api.put(`/api/staff/documents/${editDoc.id}`, { ...tgt, ...tc, employees: [...selected], transfer_time: tt, return_time: rt });
+        await api.put(`/api/staff/documents/${editDoc.id}`, { ...tgt, employees: [...selected], transfer_time: tt, return_time: rt });
       } else {
         await api.post("/api/staff/documents", {
           doc_type: "people_exchange", attend_date: date,
           ...(isAdmin ? { manager_id: mgrId } : {}),
-          ...tgt, ...tc, employees: [...selected], transfer_time: tt, return_time: rt,
+          ...tgt, employees: [...selected], transfer_time: tt, return_time: rt,
         });
       }
       qc.invalidateQueries({ queryKey: ["staff-documents"] });
@@ -1822,18 +1797,6 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
             onRemove={isAdmin ? (opt) => { setRemoveError(""); setTaskToRemove(opt.taskName); } : undefined}
             removeTitle={t("staff.removeTaskTooltip")}
           />
-          {targetIsSup && targetCells.length > 0 && (
-            <>
-              <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.toCell")}</span>
-              <StyledSelect
-                value={targetCell}
-                onChange={setTargetCell}
-                options={cellOptions}
-                placeholder={t("staff.selectCellOpt")}
-                className="flex-1 min-w-[200px] text-xs"
-              />
-            </>
-          )}
           {target === "__new__" && (
             <input
               value={newTask}
@@ -2067,7 +2030,7 @@ export function DocumentViewModal({ docId, onClose }) {
                   {t("staff.moveTo")}{" "}
                   <span style={{ color: "var(--brand-text)" }}>
                     {doc.target_type === "supervisor"
-                      ? `👤 ${tl(doc.target_manager_name) || "—"}${exchangeCellSuffix(doc)}`
+                      ? `👤 ${tl(doc.target_manager_name) || "—"}`
                       : `🗂 ${doc.task_name || "—"}`}
                   </span>
                 </div>
@@ -3200,7 +3163,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                         {isDeletion
                           ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")}</span>
                           : isExchange
-                          ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · → {doc.target_type === "supervisor" ? `${tl(doc.target_manager_name)}${exchangeCellSuffix(doc)}` : doc.task_name}</span>
+                          ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · → {doc.target_type === "supervisor" ? `${tl(doc.target_manager_name)}` : doc.task_name}</span>
                           : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · {tl(doc.new_role)}</span>}
                       </td>
                       <td className="px-3 py-3 text-center">
@@ -4007,6 +3970,22 @@ export default function Staff() {
     staleTime: 120_000,
   });
 
+  // How many of this unit's workers still have no cell — the number the day
+  // close will REFUSE on. It rides the day-state endpoint the close itself
+  // consults (`needs_cell`), so the badge and the refusal can never disagree.
+  const supervisorManagerIdEarly = role === "supervisor"
+    ? (seesAllUnits ? (selectedManagerId ?? auth?.role_id) : auth?.role_id)
+    : selectedManagerId;
+  const { data: dayState } = useQuery({
+    queryKey: ["daily-approval", supervisorManagerIdEarly, selectedDate],
+    queryFn: () => api.get("/api/staff/approvals/day", {
+      params: { attend_date: selectedDate, manager_id: supervisorManagerIdEarly },
+    }).then(r => r.data),
+    enabled: !!supervisorManagerIdEarly && !!selectedDate,
+    staleTime: 30_000,
+  });
+  const needsCell = dayState?.needs_cell || 0;
+
   // ── Cells from the by-cell attendance import ───────────────────────────────
   // On a date that has a by-cell upload, the unit picker also lists the cells
   // carrying rows that day; picking one swaps the verifix table for a read-only
@@ -4083,9 +4062,19 @@ export default function Staff() {
     : selectedManagerId;
   const showWorkersTab      = true;
   const showApprovalsTab    = role === "admin" || role === "supervisor";
-  // A restored "approvals" from an admin/supervisor session must not strand a
-  // role that can't see that tab — fall back to the role's default.
-  const tab = rawTab === "approvals" && !showApprovalsTab
+  // A shift-manager already reads every unit on their shift, so hiding the
+  // placement tab from them would be inconsistent with the rest of the page.
+  // WRITING it is a narrower question and the backend answers it per unit
+  // (`_can_edit_placement`) — the tab is read-only for anyone but the unit's
+  // own supervisor and an admin.
+  const showCellsTab        = role === "admin" || role === "supervisor" || role === "shift-manager";
+  // A restored tab from another profile's session must not strand a role that
+  // can't see it — `staff_tab` is a bare localStorage string and the browser
+  // profile wallet lets several profiles share one browser, so this is reachable
+  // in normal use, not just in theory.
+  const tabHidden = (rawTab === "approvals" && !showApprovalsTab)
+                 || (rawTab === "cells"     && !showCellsTab);
+  const tab = tabHidden
     ? (role === "shift-manager" ? "requests" : "workers")
     : rawTab;
   const canCreate           = role === "admin" || role === "supervisor";
@@ -4136,9 +4125,12 @@ export default function Staff() {
 
   return (
     <Layout title={t("nav.staff")}>
-      {/* Tabs — the shared view-tab template (scroll wrapper for phones) */}
-      <div className="mb-6 max-w-full overflow-x-auto">
+      {/* Tabs — the shared view-tab template. NO overflow wrapper: the template
+          caps itself at its container, scrolls, and scrolls the SELECTED segment
+          into view; a bare wrapper hides that and leaves nothing looking picked. */}
+      <div className="mb-6">
         <SegmentedToggle
+          asTabs
           value={tab}
           onChange={setTab}
           options={[
@@ -4162,6 +4154,25 @@ export default function Staff() {
                 </span>
               ),
             },
+            ...(showCellsTab ? [{
+              value: "cells",
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  <LayoutGrid size={14} /> {t("staff.tabCells")}
+                  {needsCell > 0 && (
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: tab === "cells" ? "rgba(255,255,255,0.3)" : "#eab308",
+                        color: "#fff", minWidth: 18, textAlign: "center",
+                      }}
+                    >
+                      {needsCell}
+                    </span>
+                  )}
+                </span>
+              ),
+            }] : []),
             ...(showApprovalsTab ? [{
               value: "approvals",
               label: <span className="inline-flex items-center gap-1.5"><Calendar size={14} /> {t("staff.tabApprovals")}</span>,
@@ -4252,6 +4263,16 @@ export default function Staff() {
           documents={documents}
           isLoading={documentsLoading}
           onEdit={startEdit}
+        />
+      )}
+
+      {/* Cell placement tab — where the cell-less workers an accepted exchange
+          delivered are put into the cells they actually worked in. */}
+      {tab === "cells" && showCellsTab && (
+        <CellPlacementPanel
+          managerId={supervisorManagerId}
+          selectedDate={selectedDate}
+          canEdit={role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id)}
         />
       )}
 

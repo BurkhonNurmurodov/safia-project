@@ -514,7 +514,7 @@ def cell_zagruzka(
             )
             # PARTIAL attendance collapses the maths the same way a missing file
             # does, in two shapes:
-            #   verifix_hc == 0 — rows exist but NONE survived the direct-role /
+            #   verifix_hc <= 0 — rows exist but NONE survived the direct-role /
             #     hours filter, so verifix_labor is 0 and the load is derived
             #     from nobody. (`excluded_job_titles` below names the titles
             #     that were dropped, which is usually the reason.)
@@ -523,7 +523,13 @@ def cell_zagruzka(
             # compute_metrics only guards against effective_hc being exactly 0 —
             # the fleet page never sees either case because its attendance is
             # always whole — so unguarded these surface as the ±1000% cells.
-            if m.verifix_hc == 0 or m.effective_hc is None or m.effective_hc <= 0:
+            #
+            # A TOLERANCE test, never `== 0`: since 2026-08-30 verifix_hc is a
+            # sum of fractional weights, so a cell holding only split halves
+            # legitimately reads 0.4 and an exact-equality guard would be one
+            # rounding away from either passing a headcount of nobody or
+            # blanking a cell that has real people standing in it.
+            if m.verifix_hc <= 0 or m.effective_hc is None or m.effective_hc <= 0:
                 data[label][key] = {"baseline_util": None, "net_util": None}
                 collapsed_hc += 1
                 continue
@@ -628,7 +634,11 @@ def cell_zagruzka(
             "idle_weight_n": r["downtime_n"],
             "idle_weight_sum": round(r["downtime_w"], 2),
         }
-        if m.verifix_hc == 0 or m.effective_hc is None or m.effective_hc <= 0:
+        # Same tolerance rule as the per-cell guard above — verifix_hc is
+        # fractional. At unit level the halves of a split sum back to 1.0, so
+        # this total is unmoved by the split model; the test is written this way
+        # because the two guards must stay one rule.
+        if m.verifix_hc <= 0 or m.effective_hc is None or m.effective_hc <= 0:
             totals[key] = {"baseline_util": None, "net_util": None}
 
     # ── The fleet page's own figure for this unit, to reconcile against ───────

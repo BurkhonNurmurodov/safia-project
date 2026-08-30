@@ -17,13 +17,14 @@ from sqlalchemy.orm import Session
 
 from app.models import DayApproval, EditRequest, HrDocument
 
-# The doc types that are REAL work, as against the sandbox rehearsal types the
-# cell-level exchange page files (`people_exchange_test` / `role_change_test`).
-# `services/cell_exchange.real_clause` is the source of truth for this list; the
-# tuple is spelled out again here rather than imported because this module is
-# the leaf EVERY dashboard, KPI, heatmap and export passes through on its way to
-# "may this day be shown", and it must not be able to fail because a module
-# above it is missing or half-imported. Widen `cell_exchange` and widen this.
+# The doc types that hold a day back — an explicit whitelist, deliberately
+# spelled out here and imported from nowhere. This module is the leaf EVERY
+# dashboard, KPI, heatmap and export passes through on its way to "may this day
+# be shown", so it must not be able to fail because a module above it is
+# missing or half-imported. The narrowing is the point and must stay: a
+# doc_type nobody has thought about here defaults to being IGNORED, never to
+# taking a live (manager, date) pair out of every number on the platform.
+# Add a new attendance-touching type to this tuple by hand.
 _REAL_DOC_TYPES = ("people_exchange", "role_change")
 
 
@@ -34,10 +35,9 @@ def pending_counts(db: Session, manager_id: int, d: date_t) -> dict:
         EditRequest.date == d,
         EditRequest.status == "pending",
     ).count()
-    # Only a REAL document holds a day back. A sandbox test document filed on a
-    # live (manager, date) pair would otherwise take that day out of the
-    # загрузка, every KPI, every heatmap and every export — a rehearsal must
-    # never change what the platform shows.
+    # Only a document that actually rewrites attendance holds a day back:
+    # anything else filed on a live (manager, date) pair would take that day out
+    # of the загрузка, every KPI, every heatmap and every export.
     draft_docs = db.query(HrDocument).filter(
         HrDocument.manager_id == manager_id,
         HrDocument.date == d,
@@ -80,8 +80,8 @@ def confirmed_pairs(
         EditRequest.date >= date_from,
         EditRequest.date <= date_to,
     ).distinct().all()
-    # Same rule as pending_counts, and for the same reason: a sandbox test
-    # document must never subtract a real (manager, date) pair from the set the
+    # Same rule as pending_counts, and for the same reason: a document outside
+    # the whitelist must never subtract a (manager, date) pair from the set the
     # dashboards are computed over.
     drafts = db.query(HrDocument.manager_id, HrDocument.date).filter(
         HrDocument.status == "draft",

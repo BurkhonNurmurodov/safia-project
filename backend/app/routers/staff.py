@@ -42,7 +42,7 @@ from app.models import (
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
     TelegramUserRole,
 )
-from app.services import action_log, cell_exchange
+from app.services import action_log
 from app.services.day_state import confirmed_pairs, day_state
 from app.xlsx_delivery import deliver_xlsx
 
@@ -1793,6 +1793,14 @@ def get_attendance(
             # Which cell the single-file «Davomat» upload filed the row under.
             # NULL on days that came in through the older per-supervisor files.
             "verifix_code":      row.verifix_code,
+            # A worker split across two of this unit's cells («Yacheykalar»):
+            # both halves keep the NAME — the worker is on this roster either
+            # way — and `hc_weight` is what stops the per-cell headcount
+            # counting them twice. NULL stays NULL on the wire rather than
+            # being normalised to 1.0: only the null tells an unsplit row from
+            # a half that happens to be worth a whole person.
+            "hc_weight":         float(row.hc_weight) if row.hc_weight is not None else None,
+            "split_of":          row.split_of,
             # The unit's own brigadir — on the roster, never in the load.
             "is_supervisor":     bool(row.is_supervisor),
             "on_task":           task_map.get(row.worker_name),
@@ -1883,6 +1891,7 @@ def admin_update(body: DirectUpdateBody, caller=Depends(_require_staff), db: Ses
         Attendance.manager_id == body.manager_id,
         Attendance.date == d,
         Attendance.worker_name == body.worker_name,
+        Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
     ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Attendance record not found")
@@ -1946,6 +1955,7 @@ def admin_delete(body: AdminDeleteBody, caller=Depends(_require_staff), db: Sess
         Attendance.manager_id == body.manager_id,
         Attendance.date == d,
         Attendance.worker_name == body.worker_name,
+        Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
     ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Attendance record not found")
@@ -2040,6 +2050,7 @@ def bulk_delete_attendance(
                 Attendance.manager_id  == manager_id,
                 Attendance.date        == d,
                 Attendance.worker_name == worker_name,
+                Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
             ).first()
             if not row:
                 continue
@@ -2081,6 +2092,7 @@ def bulk_delete_attendance(
                 Attendance.manager_id  == manager_id,
                 Attendance.date        == d,
                 Attendance.worker_name == worker_name,
+                Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
             ).first()
             if not row:
                 continue
@@ -2433,6 +2445,7 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
             Attendance.manager_id == req.manager_id,
             Attendance.date       == req.date,
             Attendance.worker_name == req.worker_name,
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if att_row:
             if changes.get("_action") == "delete":
@@ -2597,6 +2610,7 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
             Attendance.manager_id  == req.manager_id,
             Attendance.date        == req.date,
             Attendance.worker_name == req.worker_name,
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if not exists:
             try:
@@ -2617,6 +2631,7 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
             Attendance.manager_id  == req.manager_id,
             Attendance.date        == req.date,
             Attendance.worker_name == req.worker_name,
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if att:
             field_changes = {k: v for k, v in changes.items() if not k.startswith("_")}
@@ -2811,6 +2826,7 @@ def _process_batch(batch_token: str, action: str, caller: dict, db: Session, ids
                 Attendance.manager_id  == req.manager_id,
                 Attendance.date        == req.date,
                 Attendance.worker_name == req.worker_name,
+                Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
             ).first()
             if att_row:
                 db.delete(att_row)
@@ -2992,33 +3008,30 @@ def _scope_deletion_requests(caller, db: Session):
     return q.order_by(EditRequest.date.desc()).all()
 
 
+_REAL_DOC_TYPES = ("people_exchange", "role_change")
+
+
 def _real_docs(db: Session):
     """THE starting query for every /staff document read — real documents only.
 
     /staff is the LIVE register: approving a row here runs ``_apply_doc_effects``
-    and writes attendance. The cell-level rehearsal page files its documents
-    under the sandbox doc types (``cell_exchange.TEST_DOC_TYPES``) precisely so
-    that no such row can reach an applier, and five of the six semantic
-    HrDocument readers exclude them for free because they already narrow to
-    ``doc_type == "people_exchange"``. This register does not — it serves every
-    type — so without this clause a sandbox document would appear in the /staff
-    list, in the sidebar pending badge, and be reachable by id on the approve
-    door, where the one invariant the sandbox exists to hold ("no attendance row
-    is written on any path a test document can reach") would break.
+    and writes attendance. The clause used to exclude the cell-level rehearsal
+    page's sandbox doc types; that page and its types are gone (2026-08-30), so
+    every document is real now. The WHITELIST stays, because it answers a second
+    question the sandbox never owned: this register serves every type, so an
+    unanticipated one would appear in the list, in the sidebar pending badge and
+    on the approve door with no reader having decided what it means there.
 
-    Narrowing only, and it changes nothing about any row that exists today: the
-    only writer of a test doc_type is ``routers/staff_cells``, which has never
-    been deployed. Every ``_scope_documents(...)`` call site starts here so the
-    rule has ONE spelling and no door can be forgotten.
+    Every ``_scope_documents(...)`` call site starts here so the rule has ONE
+    spelling and no door can be forgotten. ``services/day_state`` hand-copies
+    the same tuple on purpose — see the comment there.
 
-    TRAP: ``real_clause`` is an explicit whitelist (``cell_exchange.REAL_DOC_TYPES``),
-    deliberately, so an unanticipated type defaults to being ignored by the
-    day-state queries rather than blocking every dashboard. For a REGISTER that
-    default hides rows instead — so a fifth REAL doc_type (``graphic_change`` is
-    a placeholder today, with no writer) must be added to ``REAL_DOC_TYPES`` or
-    it will not show on this page.
+    TRAP: a whitelist DEFAULTS TO HIDING. That is the safe default for the
+    day-state queries but the wrong one for a register, so a fifth real
+    doc_type (``graphic_change`` is a placeholder today, with no writer) must be
+    added here or it will silently not show on this page.
     """
-    return db.query(HrDocument).filter(cell_exchange.real_clause(HrDocument.doc_type))
+    return db.query(HrDocument).filter(HrDocument.doc_type.in_(_REAL_DOC_TYPES))
 
 
 def _scope_documents(q, caller, db: Session):
@@ -3124,31 +3137,13 @@ def _doc_via_grant(doc: HrDocument, caller: dict, db: Session) -> bool:
 
 
 def _doc_alert_details(db: Session, doc: HrDocument) -> list:
-    # The label lookup is asked the SEMANTIC type — what this document stands
-    # for — exactly as `approvals._as_doc` resolves it. A sandbox document is a
-    # worker exchange that moves nothing, not a fourth kind of document, and
-    # `routers/staff_cells` calls this helper for its own rows; handed the raw
-    # `people_exchange_test` the two-name test misses and the admin's warning
-    # DM printed the bare column value at them.
-    real = cell_exchange.REAL_OF.get(doc.doc_type, doc.doc_type)
-    kind = (tv("doc." + real)
-            if real in ("people_exchange", "role_change") else doc.doc_type)
+    # An unknown type falls back to its raw column value rather than a missing
+    # translation: the warning DM must still name what it is about.
+    kind = (tv("doc." + doc.doc_type)
+            if doc.doc_type in _REAL_DOC_TYPES else doc.doc_type)
     details = [("document", kind),
                ("unit", unit_name(db, doc.manager_id)),
                ("date", str(doc.date))]
-    if cell_exchange.is_test(doc.doc_type):
-        # …and SAY it was a rehearsal. Resolving the type above is what makes
-        # the label readable, and it is also what would let a sandbox document
-        # read to an admin as the real move it only mirrors. The chip is
-        # language-neutral on purpose: a translated string would have to live
-        # in `capability_alerts._T`, which is not this module's to extend, and
-        # a raw English sentence in a uz_cyrl DM is the same defect one layer
-        # down — so only the LABEL is translated, and it is spelled as the
-        # plain key `capability_alerts._label` resolves through `l.<key>`, not
-        # as a `tv()` marker: `render_use` un-marks the value side of a stored
-        # detail and not the label side, so a marker here would read back off
-        # the «Action history» tab as a literal ['__t__', 'l.note'].
-        details.append(("note", "🧪 TEST"))
     emps = [e.get("worker_name") or "?" for e in (doc.payload or {}).get("employees") or []]
     if emps:
         names = ", ".join(emps[:10]) + (f" +{len(emps) - 10}" if len(emps) > 10 else "")
@@ -3210,6 +3205,7 @@ def _apply_role_change(db: Session, doc: HrDocument):
             Attendance.manager_id  == doc.manager_id,
             Attendance.date        == doc.date,
             Attendance.worker_name == emp.get("worker_name"),
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if att:
             att.job_title = new_role
@@ -3222,6 +3218,7 @@ def _revert_role_change(db: Session, doc: HrDocument):
             Attendance.manager_id  == doc.manager_id,
             Attendance.date        == doc.date,
             Attendance.worker_name == emp.get("worker_name"),
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if att:
             att.job_title = emp.get("old_role") or ""
@@ -3406,6 +3403,7 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
             Attendance.manager_id  == doc.manager_id,
             Attendance.date        == doc.date,
             Attendance.worker_name == emp.get("worker_name"),
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if not att:
             continue
@@ -3419,8 +3417,12 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 att.early_arrival_min = None
             else:
                 att.manager_id = target
-                if "target_cell" in payload:
-                    att.verifix_code = payload.get("target_cell")
+                # The worker arrives at the SUPERVISOR, not at one of their
+                # cells — the sender is not asked to guess inside somebody
+                # else's unit. The receiving supervisor places them on the
+                # /staff «Yacheykalar» tab, and their day will not close until
+                # they have (`_unplaced_workers`).
+                att.verifix_code = None
             emp["applied"] = {"side": "move", "leftover_id": None, "plain": True}
             continue
 
@@ -3434,9 +3436,13 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
         if max(plan["part1"], plan["part2"]) < MIN_MOVED_ZAGRUZKA_HOURS:
             recv_leftover_id = None
             if not is_task and target and plan["part2"] > 0:
+                # Cell-less like every arrival, and NAMELESS besides — so no
+                # placement can ever reach it. `_unplaced_workers` deliberately
+                # counts named rows only: the day-close gate must not demand a
+                # cell for a row the placement tab cannot show.
                 row = Attendance(manager_id=target, date=doc.date, worker_name=None,
                                  hours_worked=plan["part2"],
-                                 verifix_code=payload.get("target_cell"))
+                                 verifix_code=None)
                 db.add(row); db.flush()
                 recv_leftover_id = row.id
             att.worker_name       = None
@@ -3459,11 +3465,11 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
             # early_arrival_min unchanged — early belongs to the original unit
             if not is_task and plan["part2"] > 0:
                 # → supervisor: the after-T hours land on the receiving unit,
-                # credited to the destination cell.
+                # cell-less and nameless (see the below-min branch above).
                 # → task: dropped (no row).
                 row = Attendance(manager_id=target, date=doc.date, worker_name=None,
                                  hours_worked=plan["part2"],
-                                 verifix_code=payload.get("target_cell"))
+                                 verifix_code=None)
                 db.add(row); db.flush()
                 leftover_id = row.id
             emp["applied"] = {"side": "stay", "leftover_id": leftover_id}
@@ -3491,8 +3497,7 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 # stripped): once the name has left, the original unit isn't credited
                 # for the worker clocking in before their scheduled start.
                 att.manager_id        = target
-                if "target_cell" in payload:
-                    att.verifix_code  = payload.get("target_cell")
+                att.verifix_code      = None      # placed by the receiving supervisor
                 # No return → away runs T–O; carve-out → just the [T,R] stint.
                 att.clock_in_out      = plan.get("away_clock") or f'{plan["T"]}-{plan["O"]}'
                 att.hours_worked      = plan["part2"]
@@ -3553,6 +3558,7 @@ def _revert_split_exchange(db: Session, doc: HrDocument):
             Attendance.manager_id  == cur_mgr,
             Attendance.date        == doc.date,
             Attendance.worker_name == wname,
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if att:
             att.manager_id        = emp.get("old_manager_id") or doc.manager_id
@@ -3596,15 +3602,19 @@ def _apply_people_exchange(db: Session, doc: HrDocument):
             Attendance.manager_id  == doc.manager_id,
             Attendance.date        == doc.date,
             Attendance.worker_name == emp.get("worker_name"),
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if not att:
             continue
         if ttype == "supervisor" and target:
             att.manager_id = target
-            # Land the worker in the chosen destination cell (key-guarded so a
-            # pre-cell document approved after this deploy stays untouched).
-            if "target_cell" in payload:
-                att.verifix_code = payload.get("target_cell")
+            # Cell-less on arrival, unconditionally — including for a document
+            # filed under the old rule with a `target_cell` still in its
+            # payload. Honouring that key would drop the worker into a cell the
+            # RECEIVING supervisor never chose, which is exactly the guess this
+            # change removed; the sender-side `old_verifix_code` is untouched,
+            # so a revert still restores the original cell.
+            att.verifix_code = None
         else:
             att.clock_in_out      = "X"
             att.hours_worked      = 0
@@ -3627,6 +3637,7 @@ def _revert_people_exchange(db: Session, doc: HrDocument):
                 Attendance.manager_id  == target,
                 Attendance.date        == doc.date,
                 Attendance.worker_name == wname,
+                Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
             ).first()
             if att:
                 att.manager_id = emp.get("old_manager_id") or doc.manager_id
@@ -3639,6 +3650,7 @@ def _revert_people_exchange(db: Session, doc: HrDocument):
                 Attendance.manager_id  == doc.manager_id,
                 Attendance.date        == doc.date,
                 Attendance.worker_name == wname,
+                Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
             ).first()
             if att:
                 att.job_title         = snap.get("job_title")
@@ -3663,30 +3675,17 @@ def _revert_people_exchange(db: Session, doc: HrDocument):
                 ))
 
 
-def _unit_cell_codes(db: Session, manager_id: int, d: date) -> set:
-    """Cells actually present in a unit's uploaded attendance for a date (named
-    rows only — a nameless split-leftover row doesn't make its cell a real
-    destination). Empty on legacy days whose upload carried no cell codes."""
-    return {
-        code for (code,) in db.query(Attendance.verifix_code).filter(
-            Attendance.manager_id == manager_id,
-            Attendance.date == d,
-            Attendance.verifix_code.isnot(None),
-            Attendance.verifix_code != "",
-            Attendance.worker_name.isnot(None),
-            Attendance.worker_name.notin_(["", "nan", "NaN"]),
-        ).distinct().all()
-    }
-
-
 def _resolve_exchange_target(db: Session, sender_id: int, d: date, ttype: Optional[str],
-                             target_manager_id_in: Optional[int], task_name_in: Optional[str],
-                             target_cell_in: Optional[str] = None):
-    """Validate the move target; returns (ttype, target_manager_id, target_manager_name,
-    task_name, target_cell). Enforces: real target unit, not the sender, the receiving
-    unit's day must still be open, and — whenever that unit's day carries cell codes
-    at all — the destination cell must be one of them. Legacy no-cell days resolve
-    to target_cell=None (plain unit-level move, exactly the old behaviour)."""
+                             target_manager_id_in: Optional[int], task_name_in: Optional[str]):
+    """Validate the move target; returns (ttype, target_manager_id,
+    target_manager_name, task_name). Enforces: real target unit, not the sender,
+    and the receiving unit's day must still be open.
+
+    It no longer resolves a destination CELL (2026-08-30). The sender was being
+    asked which of the RECEIVING unit's cells the worker would land in — a guess
+    about somebody else's shopfloor, made before the shift had run. The worker
+    now arrives cell-less and the receiving supervisor places them on the /staff
+    «Yacheykalar» tab, where the day-close gate makes it unskippable."""
     if ttype not in ("supervisor", "task"):
         raise HTTPException(status_code=400, detail="target_type must be 'supervisor' or 'task'")
     if ttype == "supervisor":
@@ -3700,33 +3699,24 @@ def _resolve_exchange_target(db: Session, sender_id: int, d: date, ttype: Option
         _assert_day_open(db, target.id, d)   # can't move into a closed unit
         if not _unit_has_attendance(db, target.id, d):
             raise ExchangeTargetNoData()     # can't move into a unit with no data yet
-        codes = _unit_cell_codes(db, target.id, d)
-        cell  = (target_cell_in or "").strip() or None
-        if codes:
-            if not cell:
-                raise HTTPException(status_code=400, detail="Select the receiving supervisor's cell")
-            if cell not in codes:
-                raise HTTPException(status_code=404, detail="Target cell not found in the receiving unit's attendance for this date")
-        else:
-            cell = None
-        return ttype, target.id, target.name, None, cell
+        return ttype, target.id, target.name, None
     name = (task_name_in or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="task_name is required")
-    return ttype, None, None, name, None
+    return ttype, None, None, name
 
 
 def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: str,
                             target_manager_id: Optional[int], target_manager_name: Optional[str],
                             task_name: Optional[str], employees: List[str],
-                            transfer_time: Optional[str] = None, return_time: Optional[str] = None,
-                            target_cell: Optional[str] = None):
+                            transfer_time: Optional[str] = None, return_time: Optional[str] = None):
     emp_rows = []
     for wname in employees:
         att = db.query(Attendance).filter(
             Attendance.manager_id  == manager_id,
             Attendance.date        == d,
             Attendance.worker_name == wname,
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if not att:
             continue   # "worker must be present" — silently drop rows with no record
@@ -3750,24 +3740,11 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
                 "effective_hours":   float(att.effective_hours)   if att.effective_hours   is not None else None,
             }
         emp_rows.append(row)
-    # Snapshot the destination cell's display names so documents/notifications
-    # keep rendering it even if the cell register changes later.
-    cell_names = None
-    if target_cell:
-        c = db.query(Cell).filter(Cell.verifix_code == target_cell).first()
-        cell_names = {
-            "uz":      c.name_workshop_uz      if c else None,
-            "uz_cyrl": c.name_workshop_uz_cyrl if c else None,
-            "ru":      c.name_workshop_ru      if c else None,
-            "en":      c.name_workshop_en      if c else None,
-        }
     return {
         "target_type":         target_type,
         "target_manager_id":   target_manager_id,
         "target_manager_name": target_manager_name,
         "task_name":           task_name,
-        "target_cell":         target_cell,
-        "target_cell_names":   cell_names,
         "transfer_time":       transfer_time,
         "return_time":         return_time,
         "employees":           emp_rows,
@@ -3775,15 +3752,13 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
 
 
 def _exchange_target_label(payload: dict) -> str:
-    """Who (and where) the workers are moving to, for a notification.
+    """Who the workers are moving to, for a notification.
 
-    The destination cell is named by its CODE — a cell is never written out by
-    its workshop name (frontend `utils/cellName.js`)."""
+    The receiving SUPERVISOR and nothing else: a move no longer names a
+    destination cell, because the receiving supervisor chooses it after the
+    shift has actually run."""
     if (payload or {}).get("target_type") == "supervisor":
-        label = payload.get("target_manager_name") or "—"
-        if payload.get("target_cell"):
-            label += f" · {payload['target_cell']}"
-        return label
+        return payload.get("target_manager_name") or "—"
     return (payload or {}).get("task_name") or "—"
 
 
@@ -3835,8 +3810,6 @@ def _serialize_doc(doc: HrDocument, mgr_name: str | None = None, detailed: bool 
         "target_manager_id":    payload.get("target_manager_id"),
         "target_manager_name":  payload.get("target_manager_name"),
         "task_name":            payload.get("task_name"),
-        "target_cell":          payload.get("target_cell"),
-        "target_cell_names":    payload.get("target_cell_names"),
         "transfer_time":        payload.get("transfer_time"),
         "return_time":          payload.get("return_time"),
         "employee_count":   len(employees),
@@ -3875,10 +3848,12 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
     """Supervisors a worker exchange may move INTO for a date — every unit except
     the sender, excluding any unit that has already closed that day or has no
     attendance data uploaded for it yet (rows moved into a data-less unit would
-    be destroyed by that unit's eventual verifix upload). Each target carries its
-    `cells` — the codes present in that unit's upload for the date — because a
-    → supervisor move must pick the destination cell; an empty list means a
-    legacy no-cell day (plain unit-level move)."""
+    be destroyed by that unit's eventual verifix upload).
+
+    A target is a SUPERVISOR and nothing more. It used to carry that unit's cell
+    codes so the sender could pick a destination cell; the receiving supervisor
+    places the worker themselves now (/staff «Yacheykalar»), so the sender is no
+    longer asked to guess inside another unit."""
     if caller.get("role") not in ("admin", "supervisor"):
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     d = date.fromisoformat(attend_date)
@@ -3893,35 +3868,11 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
             Attendance.worker_name.notin_(["", "nan", "NaN"]),
         ).distinct().all()
     }
-    # Cell codes per unit for the date (named rows only) + their display names.
-    unit_codes: dict = {}
-    for mid, code in db.query(Attendance.manager_id, Attendance.verifix_code).filter(
-        Attendance.date == d,
-        Attendance.verifix_code.isnot(None),
-        Attendance.verifix_code != "",
-        Attendance.worker_name.isnot(None),
-        Attendance.worker_name.notin_(["", "nan", "NaN"]),
-    ).distinct().all():
-        unit_codes.setdefault(mid, set()).add(code)
-    all_codes = {c for codes in unit_codes.values() for c in codes}
-    by_code = {}
-    if all_codes:
-        by_code = {c.verifix_code: c for c in db.query(Cell).filter(Cell.verifix_code.in_(all_codes)).all()}
     out = []
     for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.shift, Manager.name).all():
         if m.id == sender_id or m.id in closed or m.id not in has_data:
             continue
-        cells = []
-        for code in sorted(unit_codes.get(m.id) or ()):
-            c = by_code.get(code)
-            cells.append({
-                "verifix_code": code,
-                "name_uz":      c.name_workshop_uz      if c else None,
-                "name_uz_cyrl": c.name_workshop_uz_cyrl if c else None,
-                "name_ru":      c.name_workshop_ru      if c else None,
-                "name_en":      c.name_workshop_en      if c else None,
-            })
-        out.append({"manager_id": m.id, "full_name": m.name, "shift": m.shift, "cells": cells})
+        out.append({"manager_id": m.id, "full_name": m.name, "shift": m.shift})
     return out
 
 
@@ -4122,8 +4073,6 @@ class DocCreateBody(BaseModel):
     target_type:       Optional[str] = None   # "supervisor" | "task"
     target_manager_id: Optional[int] = None
     task_name:         Optional[str] = None
-    target_cell:       Optional[str] = None   # destination cell (verifix_code) — required
-                                              # when the receiving unit's day has cells
     transfer_time:     Optional[str] = None   # "HH:MM" — split (→ supervisor or task)
     return_time:       Optional[str] = None   # "HH:MM" — carve-out end (the away stint is [T,R])
 
@@ -4135,6 +4084,7 @@ def _build_role_payload(db: Session, manager_id: int, d: date, new_role: str, em
             Attendance.manager_id  == manager_id,
             Attendance.date        == d,
             Attendance.worker_name == wname,
+            Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         emp_rows.append({
             "worker_name": wname,
@@ -4236,15 +4186,13 @@ def _create_people_exchange(db: Session, caller: dict, body: "DocCreateBody",
                             d: date, manager_id: int, mgr_name: Optional[str]):
     # The sending unit's day must still be open
     _assert_day_open(db, manager_id, d)
-    ttype, tgt_id, tgt_name, task_name, tcell = _resolve_exchange_target(
+    ttype, tgt_id, tgt_name, task_name = _resolve_exchange_target(
         db, manager_id, d, body.target_type, body.target_manager_id, body.task_name,
-        body.target_cell,
     )
     ttime = _normalize_transfer_time(caller, ttype, body.transfer_time)
     rtime = _normalize_return_time(ttype, ttime, body.return_time)
     payload = _build_exchange_payload(db, manager_id, d, ttype, tgt_id, tgt_name, task_name,
-                                      body.employees, transfer_time=ttime, return_time=rtime,
-                                      target_cell=tcell)
+                                      body.employees, transfer_time=ttime, return_time=rtime)
     if not payload["employees"]:
         raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
     if ttype == "task":
@@ -4299,7 +4247,6 @@ class DocUpdateBody(BaseModel):
     target_type:       Optional[str] = None   # people_exchange
     target_manager_id: Optional[int] = None
     task_name:         Optional[str] = None
-    target_cell:       Optional[str] = None
     transfer_time:     Optional[str] = None
     return_time:       Optional[str] = None
 
@@ -4339,16 +4286,14 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
         ttype   = body.target_type or prev.get("target_type")
         tgt_in  = body.target_manager_id if body.target_manager_id is not None else prev.get("target_manager_id")
         task_in = body.task_name if body.task_name is not None else prev.get("task_name")
-        tcell_in = body.target_cell if body.target_cell is not None else prev.get("target_cell")
-        ttype, tgt_id, tgt_name, task_name, tcell = _resolve_exchange_target(
-            db, doc.manager_id, doc.date, ttype, tgt_in, task_in, tcell_in)
+        ttype, tgt_id, tgt_name, task_name = _resolve_exchange_target(
+            db, doc.manager_id, doc.date, ttype, tgt_in, task_in)
         ttime_in = body.transfer_time if body.transfer_time is not None else prev.get("transfer_time")
         ttime    = _normalize_transfer_time(caller, ttype, ttime_in)
         rtime_in = body.return_time if body.return_time is not None else prev.get("return_time")
         rtime    = _normalize_return_time(ttype, ttime, rtime_in)
         payload = _build_exchange_payload(db, doc.manager_id, doc.date, ttype, tgt_id, tgt_name, task_name,
-                                          body.employees, transfer_time=ttime, return_time=rtime,
-                                          target_cell=tcell)
+                                          body.employees, transfer_time=ttime, return_time=rtime)
         if not payload["employees"]:
             raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
         if ttype == "task":
@@ -4919,14 +4864,14 @@ def approvals_calendar(
         ).all()
     } | {
         # Only a REAL document blocks a day here — the twin of the same clause in
-        # `services/day_state.pending_counts`. A sandbox test document filed on a
-        # live (manager, date) pair would otherwise hold that day at «closed» on
-        # this calendar, i.e. a rehearsal changing what /staff shows.
+        # `services/day_state.pending_counts`. An unrecognised type must not hold
+        # a day at «closed» on this calendar on the strength of a reader nobody
+        # has written yet.
         d for (d,) in db.query(distinct(HrDocument.date)).filter(
             HrDocument.manager_id == manager_id,
             HrDocument.date >= start, HrDocument.date < end,
             HrDocument.status == "draft",
-            cell_exchange.real_clause(HrDocument.doc_type),
+            HrDocument.doc_type.in_(_REAL_DOC_TYPES),
         ).all()
     }
 
@@ -4972,6 +4917,10 @@ def approval_day(
         raise HTTPException(status_code=400, detail="Invalid date format")
 
     state, closure, counts = day_state(db, manager_id, d)
+    # What the close will REFUSE on, published before the press — the same
+    # `_unplaced_workers` the endpoint enforces with, so the warning and the
+    # refusal can never name different people.
+    unplaced = [] if closure is not None else _unplaced_workers(db, manager_id, d)
     return {
         "manager_id":       manager_id,
         "date":             attend_date,
@@ -4981,12 +4930,446 @@ def approval_day(
         "closed_at":        closure.approved_at.isoformat() if closure and closure.approved_at else None,
         "pending_requests": counts["pending_requests"] + counts["draft_docs"],
         "can_reopen":       _cap_covers_unit(caller, db, CAP_DAY_REOPEN, manager_id),
+        "needs_cell":       len(unplaced),
+        "needs_cell_names": [r.worker_name for r in unplaced[:20]],
     }
 
 
 class ApprovalBody(BaseModel):
     manager_id: Optional[int] = None
     date: str
+
+
+# ── Cell placement («Yacheykalar» tab on /staff) ──────────────────────────────
+#
+# Where a supervisor says WHICH CELL each of their people actually worked in.
+# It exists because an accepted people-exchange no longer names a destination
+# cell (2026-08-30): the sender was guessing about somebody else's shopfloor
+# before the shift had run, so the worker now arrives on the SUPERVISOR and the
+# supervisor places them here. `_unplaced_workers` is the gate that makes it
+# unskippable, and it is the same predicate this tab clears.
+#
+# Everything is STAGED on the client and written by one PUT, the admin «Davomat»
+# tab's model: a supervisor rearranging people should be able to change their
+# mind before anything is real, and one write means one action-log row.
+
+
+def _split_hours(att: Attendance, hhmm: str):
+    """Split one attendance row's hours at a wall-clock time → (h1, h2).
+
+    Deliberately NOT `_compute_split`: that one answers a different question —
+    how a day divides between two UNITS, with an early-arrival rule, a
+    return/carve-out window and a minimum-hours test that can strip the worker's
+    name off the smaller side. None of that applies inside one unit, where both
+    halves stay named and stay on the same roster.
+
+    The two halves are scaled to sum to EXACTLY `hours_worked`, so no unit total
+    moves: the clock is only used for the RATIO. Returns None when the row
+    carries no usable clock or the time falls outside it — the caller refuses
+    rather than inventing a division.
+    """
+    total = float(att.hours_worked or 0)
+    if total <= 0:
+        return None
+    # `_clock_bounds_min` / `_parse_hhmm` are the file's ONE clock parser and
+    # already tolerate the verifix formats («07:49 - 17:04 (8.43)», '8-00',
+    # '08.00'). A second spelling here is how the split and the transfer-time
+    # arithmetic would start disagreeing about the same string.
+    t = _parse_hhmm(hhmm)
+    c, o = _clock_bounds_min(att.clock_in_out)
+    if t is None or c is None or o is None:
+        return None
+    if o <= c:
+        o += 1440                       # crossed midnight — the house rule
+    if t <= c:
+        t += 1440
+    if not (c < t < o):
+        return None
+    frac = (t - c) / (o - c)
+    h1 = round(total * frac, 4)
+    h2 = round(total - h1, 4)
+    if h1 <= 0 or h2 <= 0:
+        return None
+    return h1, h2
+
+
+def _placement_cells(db: Session, manager_id: int, codes_in_use: set) -> list:
+    """The cells this supervisor may place somebody INTO.
+
+    The unit's REGISTRY cells (cells.manager_id) unioned with whatever codes the
+    day's rows already carry. The registry half is what lets an EMPTY cell be a
+    destination — /api/staff/attendance derives its catalog from the codes
+    present in today's rows, so on its own it can only ever offer a cell that
+    already has somebody standing in it. The in-use half is what keeps a code
+    the registry has never heard of visible instead of silently unplaceable:
+    the two registers are allowed to disagree, in public.
+    """
+    clauses = [Cell.manager_id == manager_id]
+    if codes_in_use:
+        clauses.append(Cell.verifix_code.in_(list(codes_in_use)))
+    return db.query(Cell).filter(or_(*clauses)).all()
+
+
+def _lender_names(db: Session, manager_id: int, d: date) -> dict:
+    """worker_name → the unit that LENT them here, off the approved exchange.
+
+    Only for display: it answers "why is this person in my list at all", which
+    is the first question a supervisor asks of a name they do not recognise.
+    """
+    out: dict = {}
+    docs = db.query(HrDocument).filter(
+        HrDocument.date == d,
+        HrDocument.doc_type == "people_exchange",
+        HrDocument.status == "approved",
+    ).all()
+    for doc in docs:
+        payload = doc.payload or {}
+        if payload.get("target_manager_id") != manager_id:
+            continue
+        sender = doc.supervisor_name or unit_name(db, doc.manager_id)
+        for emp in payload.get("employees") or []:
+            wn = (emp.get("worker_name") or "").strip()
+            if wn:
+                out[wn] = sender
+    return out
+
+
+@router.get("/cell-placement")
+def cell_placement(attend_date: str, manager_id: Optional[int] = None,
+                   caller=Depends(_require_staff), db: Session = Depends(get_db)):
+    """The unit's day, grouped by cell, with the cell-less workers first."""
+    manager_id = _staff_target_manager(db, caller, manager_id)
+    if not manager_id:
+        raise HTTPException(status_code=400, detail="manager_id required")
+    if not _can_touch_manager(db, caller, manager_id):
+        raise HTTPException(status_code=403, detail="Not allowed for this manager")
+    try:
+        d = date.fromisoformat(attend_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+
+    from app.services.kpi_calculator import is_direct_role
+    rows = db.query(Attendance).filter(
+        Attendance.manager_id == manager_id,
+        Attendance.date == d,
+        Attendance.worker_name.isnot(None),
+        Attendance.worker_name.notin_(["", "nan", "NaN"]),
+    ).order_by(Attendance.worker_name).all()
+
+    closed = db.query(DayApproval).filter_by(manager_id=manager_id, date=d).first()
+    lenders = _lender_names(db, manager_id, d)
+
+    def _hc(r) -> float:
+        """This row's contribution to its cell's headcount N.
+
+        The SAME rule `idle_source` and `kpi_calculator` now weigh a cell by:
+        a split worker is named in both of their cells and is worth their share
+        of a person in each, so the two halves add back to exactly 1.0 and no
+        UNIT total moves. Printing a plain row count here instead would put a
+        number on screen that no KPI agrees with.
+        """
+        if not is_direct_role(r.job_title, r.hours_worked, bool(r.is_supervisor)):
+            return 0.0
+        return 1.0 if r.hc_weight is None else float(r.hc_weight)
+
+    def w_json(r):
+        return {
+            "id":            r.id,
+            "worker_name":   r.worker_name,
+            "job_title":     r.job_title or "",
+            "hours":         float(r.hours_worked) if r.hours_worked is not None else 0.0,
+            "clock_in_out":  r.clock_in_out or "",
+            "counted":       is_direct_role(r.job_title, r.hours_worked, bool(r.is_supervisor)),
+            "hc_weight":     float(r.hc_weight) if getattr(r, "hc_weight", None) is not None else None,
+            "split_of":      getattr(r, "split_of", None),
+            "from_unit":     lenders.get(r.worker_name),
+        }
+
+    by_code: dict = {}
+    unplaced = []
+    for r in rows:
+        code = (r.verifix_code or "").strip()
+        # The unit's own brigadir is cell-less by construction and no placement
+        # can ever give them one — they are neither unplaced nor in a cell.
+        if not code:
+            if r.is_supervisor:
+                continue
+            unplaced.append(w_json(r))
+        else:
+            by_code.setdefault(code, []).append(r)
+
+    cells_out = []
+    for c in _placement_cells(db, manager_id, set(by_code)):
+        crows = by_code.pop(c.verifix_code, [])
+        cells_out.append({
+            "verifix_code": c.verifix_code,
+            "cell_id":      c.id,
+            "leader_name":  _cell_leader_name(db, c),
+            "workers":      [w_json(r) for r in crows],
+            "counted":      round(sum(_hc(r) for r in crows), 2),
+            "total":        len(crows),
+            "hours":        round(sum(float(r.hours_worked or 0) for r in crows), 1),
+        })
+    # A code on a row that the registry does not know — shown, never dropped.
+    for code, crows in by_code.items():
+        cells_out.append({
+            "verifix_code": code, "cell_id": None, "leader_name": None,
+            "workers":      [w_json(r) for r in crows],
+            "counted":      round(sum(_hc(r) for r in crows), 2),
+            "total":        len(crows),
+            "hours":        round(sum(float(r.hours_worked or 0) for r in crows), 1),
+        })
+    cells_out.sort(key=lambda c: c["verifix_code"])
+
+    mgr = db.query(Manager).filter_by(id=manager_id).first()
+    return {
+        "manager_id":   manager_id,
+        "manager_name": mgr.name if mgr else "",
+        "shift":        mgr.shift if mgr else None,
+        "date":         attend_date,
+        "day_closed":   closed is not None,
+        "can_edit":     closed is None and _can_edit_placement(caller, manager_id),
+        "unplaced":     unplaced,
+        "cells":        cells_out,
+        "totals": {
+            "cells":    len(cells_out),
+            "workers":  len(rows),
+            "counted":  sum(c["counted"] for c in cells_out),
+            "hours":    round(sum(c["hours"] for c in cells_out), 1),
+            "unplaced": len(unplaced),
+        },
+    }
+
+
+def _cell_leader_name(db: Session, c: Cell) -> Optional[str]:
+    """The cell's leader — the second fact a code is allowed to carry.
+    A cell is its CODE; the workshop name is never printed (utils/cellName.js)."""
+    if not c.leader_id:
+        return None
+    p = db.query(RoleProfile).filter_by(id=c.leader_id).first()
+    return p.full_name if p else None
+
+
+def _can_edit_placement(caller: dict, manager_id: int) -> bool:
+    """Who may WRITE a placement. Reading follows the page's ordinary scope, but
+    writing is the unit's own business: a supervisor widened by a page grant can
+    BROWSE another unit and must not rearrange its people — the same rule
+    `canCreateHere` already applies to documents on this page."""
+    role = caller.get("role")
+    if role == "admin":
+        return True
+    if role == "supervisor":
+        return caller.get("role_id") == manager_id
+    return False
+
+
+class PlacementMove(BaseModel):
+    attendance_id: int
+    verifix_code:  str
+
+
+class PlacementSplit(BaseModel):
+    attendance_id: int
+    verifix_code:  str          # the cell the FIRST half stays in
+    second_code:   str          # the cell the second half moves to
+    split_at:      str          # "HH:MM"
+
+
+class PlacementBody(BaseModel):
+    manager_id: Optional[int] = None
+    date:       str
+    moves:      List[PlacementMove]  = []
+    splits:     List[PlacementSplit] = []
+    unsplits:   List[int]            = []   # the SECONDARY row's id
+
+
+@router.put("/cell-placement")
+def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
+                        db: Session = Depends(get_db)):
+    """Write a batch of placements, splits and un-splits for one unit-day."""
+    manager_id = _staff_target_manager(db, caller, body.manager_id)
+    if not manager_id:
+        raise HTTPException(status_code=400, detail="manager_id required")
+    if not _can_touch_manager(db, caller, manager_id):
+        raise HTTPException(status_code=403, detail="Not allowed for this manager")
+    if not _can_edit_placement(caller, manager_id):
+        raise HTTPException(status_code=403, detail="Only this unit's supervisor or an admin may place workers")
+    try:
+        d = date.fromisoformat(body.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+    # A closed day is frozen like everything else on this page. 409 so the
+    # client can tell "somebody closed it under me" from a validation refusal.
+    if db.query(DayApproval).filter_by(manager_id=manager_id, date=d).first():
+        raise HTTPException(status_code=409, detail="Day is already closed")
+
+    valid_codes = {c.verifix_code for c in _placement_cells(db, manager_id, set())}
+
+    def _own_row(att_id: int) -> Attendance:
+        r = db.query(Attendance).filter_by(id=att_id).first()
+        # Re-checked per row: an id is typeable, and the caller's authority is
+        # over a UNIT-DAY, not over an arbitrary attendance row.
+        if not r or r.manager_id != manager_id or r.date != d:
+            raise HTTPException(status_code=404, detail="Worker row not found for this unit and date")
+        return r
+
+    def _check_code(code: str) -> str:
+        code = (code or "").strip()
+        if code not in valid_codes:
+            raise HTTPException(status_code=400,
+                                detail=f"«{code}» — bu brigadaning yacheykasi emas")
+        return code
+
+    moved = split_n = unsplit_n = 0
+
+    for u in body.unsplits:
+        sec = _own_row(u)
+        if sec.split_of is None:
+            raise HTTPException(status_code=400, detail="That row is not the second half of a split")
+        pri = db.query(Attendance).filter_by(id=sec.split_of).first()
+        if pri is not None:
+            # Put the day back together: the halves were scaled to sum to the
+            # original, and the clocks were cut "C-T" / "T-O", so both restore
+            # exactly without having stored a copy of either.
+            pri.hours_worked = float(pri.hours_worked or 0) + float(sec.hours_worked or 0)
+            pri.hc_weight    = None
+            pri_start = (pri.clock_in_out or "").partition("-")[0]
+            sec_end   = (sec.clock_in_out or "").rpartition("-")[2]
+            if pri_start and sec_end:
+                pri.clock_in_out = f"{pri_start}-{sec_end}"
+        db.delete(sec)
+        unsplit_n += 1
+
+    for m in body.moves:
+        r = _own_row(m.attendance_id)
+        r.verifix_code = _check_code(m.verifix_code)
+        moved += 1
+
+    for sp in body.splits:
+        r = _own_row(sp.attendance_id)
+        if r.split_of is not None:
+            raise HTTPException(status_code=400, detail="Cannot split a half of an existing split")
+        if db.query(Attendance).filter_by(split_of=r.id).first():
+            raise HTTPException(status_code=400, detail="That worker is already split")
+        first  = _check_code(sp.verifix_code)
+        second = _check_code(sp.second_code)
+        if first == second:
+            raise HTTPException(status_code=400, detail="Ikkala yacheyka bir xil bo'lishi mumkin emas")
+        parts = _split_hours(r, sp.split_at)
+        if not parts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{r.worker_name}: «{sp.split_at}» bu xodimning ish vaqtidan tashqarida")
+        h1, h2 = parts
+        total = h1 + h2
+        c_o = (r.clock_in_out or "").strip()
+        start_s, _, end_s = c_o.partition("-")
+        # The SECOND half is a new row carrying the same name — the worker is on
+        # this supervisor's roster either way, so stripping the name off the
+        # smaller side (what a cross-unit split does) would be a lie here. What
+        # keeps the arithmetic honest instead is `hc_weight`: the two halves sum
+        # to 1.0, so every per-cell N sees a fraction and every UNIT total is
+        # unmoved.
+        second_row = Attendance(
+            manager_id        = manager_id,
+            date              = d,
+            worker_name       = r.worker_name,
+            job_title         = r.job_title,
+            schedule          = r.schedule,
+            clock_in_out      = f"{sp.split_at}-{end_s}" if end_s else None,
+            hours_worked      = h2,
+            early_arrival_min = 0,          # early belongs to the first half
+            effective_hours   = None,
+            verifix_code      = second,
+            is_supervisor     = bool(r.is_supervisor),
+            hc_weight         = round(h2 / total, 6),
+            split_of          = r.id,
+        )
+        r.verifix_code    = first
+        r.hours_worked    = h1
+        r.effective_hours = None
+        r.hc_weight       = round(h1 / total, 6)
+        if start_s:
+            r.clock_in_out = f"{start_s}-{sp.split_at}"
+        db.add(second_row)
+        split_n += 1
+
+    db.commit()
+
+    left = _unplaced_workers(db, manager_id, d)
+    action_log.enrich(
+        target_kind="day", target_id=f"{manager_id}:{body.date}",
+        unit_id=manager_id, unit_name=unit_name(db, manager_id), day=d,
+        details=[("date", body.date), ("moved", moved), ("split", split_n),
+                 ("unsplit", unsplit_n), ("still_unplaced", len(left))],
+    )
+    return {"ok": True, "moved": moved, "split": split_n,
+            "unsplit": unsplit_n, "unplaced": len(left)}
+
+
+
+# The day a worker's row first carried a cell («Код подразделения», the
+# single-file «Davomat» upload — models.Attendance.verifix_code). EVERY row
+# before it is cell-less by construction, and an admin can reopen any historical
+# day from four surfaces, so without this floor re-opening one would make it
+# permanently unclosable — on a platform with no shell.
+CELLS_REQUIRED_FROM = date(2026, 8, 1)
+
+
+def _unplaced_workers(db: Session, manager_id: int, d: date) -> list:
+    """Named, counted workers in this unit-day who still have no cell.
+
+    THE predicate behind the day-close gate and behind the «Yacheykalar» tab —
+    one spelling, so the button that refuses and the page that clears the
+    refusal can never disagree about who is missing.
+
+    Three exclusions, each of which makes the gate unclearable if dropped:
+      · `is_supervisor` — the unit's OWN brigadir is written cell-less on every
+        re-projection (attendance_batch._cellless_by_manager) and no placement
+        can ever give them one. Counting them locks every unit out forever.
+      · nameless rows — the hours-only leftovers a transfer-time split writes
+        (`worker_name IS NULL`). /api/staff/attendance folds them into
+        `extra_hours` and the tab cannot show them, so nobody could name one
+        into a cell.
+      · rows that did not come — `CALC_ROWS_FILTER` already demands hours > 0.
+        An absent worker belongs to no cell that day.
+
+    An empty-string code counts as no cell: the parser writes `code or None`,
+    but nothing forces that shape on every writer, and a stray "" would
+    otherwise pass the gate while still counting towards no cell anywhere.
+    """
+    if d < CELLS_REQUIRED_FROM:
+        return []
+    from app.routers.workers import CALC_ROWS_FILTER
+    rows = db.query(Attendance).filter(
+        Attendance.manager_id == manager_id,
+        Attendance.date == d,
+        Attendance.worker_name.isnot(None),
+        Attendance.worker_name.notin_(["", "nan", "NaN"]),
+        CALC_ROWS_FILTER,
+        or_(Attendance.verifix_code.is_(None), Attendance.verifix_code == ""),
+    ).order_by(Attendance.worker_name).all()
+    return rows
+
+
+def _unplaced_detail(rows: list) -> str:
+    """The 409 body, as a PLAIN STRING.
+
+    `utils/api.js` rewrites any non-string `detail` (a dict without
+    msg/message/detail becomes JSON.stringify), and both close dialogs render
+    `detail` only when `typeof d === "string"` — so a structured refusal arrives
+    as the generic "save failed" with the reason stripped off, which is the one
+    outcome a hard gate must never produce. Capped at five names because
+    ConfirmDialog's card has no max-height and no scroll: an uncapped list
+    pushes the buttons off-screen and the operator can neither read the reason
+    nor dismiss the dialog.
+    """
+    names = [r.worker_name for r in rows[:5]]
+    more  = len(rows) - len(names)
+    tail  = f" +{more}" if more > 0 else ""
+    return (f"{len(rows)} ta xodim yacheykaga biriktirilmagan: "
+            f"{', '.join(names)}{tail}. "
+            f"«Yacheykalar» bo'limida ularni joylashtiring.")
 
 
 @router.post("/daily/close")
@@ -5018,6 +5401,27 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
 
     if db.query(DayApproval).filter_by(manager_id=manager_id, date=d).first():
         raise HTTPException(status_code=409, detail="Day is already closed")
+
+    # A worker with no cell is a worker whose hours belong to no cell's load and
+    # to no cell's headcount — Σ(Nᵢ·Tᵢ)/ΣNᵢ simply never sees them. Since
+    # 2026-08-30 an accepted people-exchange lands its workers on the SUPERVISOR
+    # rather than on a cell, so this is the step that makes the receiving
+    # supervisor say where they actually worked, while the day is still fresh in
+    # their head. HARD, and for an admin closing on behalf too: an override
+    # would be used, and the number it protects is one nobody can reconstruct
+    # afterwards.
+    unplaced = _unplaced_workers(db, manager_id, d)
+    if unplaced:
+        # enrich() BEFORE the raise — the middleware has already opened an
+        # `attendance.day_closed` row for this request and will stamp it
+        # 'refused'; without this it names no reason at all.
+        action_log.enrich(
+            target_kind="day", target_id=f"{manager_id}:{body.date}",
+            unit_id=manager_id, unit_name=unit_name(db, manager_id), day=d,
+            details=[("date", body.date), ("blocked", "cells_missing"),
+                     ("workers", len(unplaced))],
+        )
+        raise HTTPException(status_code=409, detail=_unplaced_detail(unplaced))
 
     # Per-cell ojidaniya never blocks a close (from 2026-08-22): a leader's entry
     # counts the moment it is saved, so nothing on /idle-cell can be pending.

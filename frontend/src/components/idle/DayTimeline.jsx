@@ -37,7 +37,12 @@ function catOf(name) {
   };
 }
 
-export default function DayTimeline({ intervals, summary, t, onPick }) {
+// `unionLabel` names the slate bar underneath. It is «the cell's downtime» on
+// the To'xtaganda half and nothing of the sort on the other one — there the bar
+// unions ranges the cell kept working through — so the caller that changed what
+// is drawn is the caller that renames it. Default = the stopped reading, which
+// is what /idle-cell has always shown.
+export default function DayTimeline({ intervals, summary, t, onPick, unionLabel }) {
   // Only the register is drawn. Rejected rows are not here at all: this tab is
   // the day as it was, and a refused claim was never part of it; it stays
   // readable on «Kutish» with its reason.
@@ -225,7 +230,7 @@ export default function DayTimeline({ intervals, summary, t, onPick }) {
           )}
           <span className="inline-flex items-center gap-1.5">
             <span className="rounded-sm flex-shrink-0" style={{ width: 12, height: 8, background: "rgba(148,163,184,0.8)" }} />
-            {t("idleCell.unionBarLabel")}
+            {unionLabel || t("idleCell.unionBarLabel")}
           </span>
         </div>
       </div>

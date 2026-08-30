@@ -22,10 +22,6 @@ const TITLE_KEYS = {
   "/plan":             "nav.planFulfillment",
   "/downtime":         "nav.idleTime",
   "/staff":            "nav.staff",
-  // The segment fallback below does NOT rescue this one — "/staff-cells" is
-  // its own first segment, so without this entry the tab reads bare "Safia
-  // Dashboard" instead of inheriting anything.
-  "/staff-cells":      "nav.staffCell",
   "/daily":            "nav.daily",
   "/production":       "nav.production",
   "/trudoyomkost":     "nav.trudoyomkost",

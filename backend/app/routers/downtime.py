@@ -1,14 +1,22 @@
+from collections import defaultdict
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.permissions import require_page
-from app.models import Manager, DowntimeData
+from app.models import Cell, CellOjidaniyaInterval, DowntimeData, Manager, RoleProfile
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services import idle_source
+from app.services import action_log, idle_intervals, idle_source
+from app.xlsx_delivery import deliver_xlsx
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -166,6 +174,11 @@ def get_downtime(
                 cats = {k: v for k, v in cats.items() if k not in OJIDANIYA_ONLY_CATS}
                 cats_ns = {k: v for k, v in cats_ns.items() if k not in OJIDANIYA_ONLY_CATS}
             rows.append({
+                # The unit's id rides beside its name so a reader can address
+                # ONE unit — the detail endpoint below is keyed by id, and the
+                # sheet spells brigadirs in two alphabets, so a name is not an
+                # address. Additive: every earlier consumer reads the name.
+                "manager_id": mgr.id,
                 "manager_name": mgr.name,
                 "shift": mgr.shift,
                 "date": d_str,
@@ -182,7 +195,7 @@ def get_downtime(
         n = r["manager_name"]
         if n not in summary:
             summary[n] = {
-                "manager_name": n, "shift": r["shift"],
+                "manager_id": r["manager_id"], "manager_name": n, "shift": r["shift"],
                 "total": 0.0, "flagged_days": 0,
                 "total_ns": 0.0, "flagged_days_ns": 0,
             }
@@ -310,3 +323,300 @@ def get_downtime_seasonality(
         "by_category": {k: [round(v, 2) for v in vals] for k, vals in by_cat.items()},
         "by_category_ns": {k: [round(v, 2) for v in vals] for k, vals in by_cat_ns.items()},
     }
+
+
+# ── What the unit's bar is MADE OF: the per-cell ojidaniya behind one supervisor ──
+#
+# The Ojidaniya page's supervisor bar is a number with no way in: it says a unit
+# waited 464 minutes over a fortnight and nothing about which cell stopped, when,
+# or why. From 2026-08-30 pressing the bar opens the detail — date by date, cell
+# by cell, each cell's day drawn to scale over the table of its own events.
+#
+# Two rules this endpoint exists to keep:
+#
+# * **It serves the EVENTS, never a second answer to "how much".** The figure the
+#   chart counted for a date stays the page's own row (`/api/downtime`'s `rows`,
+#   which is where the headcount-weighted unit mean and the sheet row both come
+#   from). This endpoint answers only "what did the cells file", so nothing here
+#   can drift from the bar it was opened out of.
+# * **A day the unit does NOT read from its cells has no per-cell answer at all.**
+#   Before `idle_source.CELLS_FROM` (earlier where the register moved a unit) the
+#   number came from the «Смена отчёт» row, which carries category minutes and no
+#   endpoints — so such a day is named as a sheet day and its dates are listed,
+#   rather than rendering as a cells day that nobody filed anything on. The two
+#   are indistinguishable from emptiness alone, and reading one as the other is
+#   how a reported day looks like a silent one.
+@router.get("/downtime/cell-detail")
+def get_downtime_cell_detail(
+    manager_id: int = Query(...),
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    # The page's own narrowings, mirrored: which half of every category pair is
+    # on screen, whether the загрузка-only category set is in force, and the
+    # doughnut's category picks. The modal is a zoom-in on one bar, so it must
+    # be narrowed by exactly what narrowed that bar.
+    stopped: bool = Query(default=True),
+    kpi_only: bool = Query(default=False),
+    cats: List[str] = Query(default=[]),
+    factory: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """One supervisor's ojidaniya EVENTS for a period, grouped date → cell.
+
+    Scoped exactly as the page is: a viewer who cannot see the unit on the chart
+    cannot read its cells here either — `manager_id` is a query parameter, so the
+    check is on the server and not on which bars were drawn."""
+    scoped = scoped_manager_ids(db, payload, factory, [manager_id])
+    if empty_scope(scoped) or (scoped is not None and manager_id not in scoped):
+        raise HTTPException(status_code=403, detail="Out of scope")
+    mgr = db.query(Manager).filter(Manager.id == manager_id).first()
+    if not mgr:
+        raise HTTPException(status_code=404, detail="Supervisor not found")
+
+    detail = _cell_detail(db, manager_id, date_from, date_to, stopped, kpi_only, cats)
+    return {
+        "manager_id": manager_id,
+        "manager_name": mgr.name,
+        "shift": mgr.shift,
+        **detail,
+    }
+
+
+def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
+                 stopped: bool, kpi_only: bool, cats: List[str]) -> dict:
+    """The unit's filed events per date, and WHICH dates its cells answer for.
+
+    `cells_days` is not decorative: a cells day with nothing filed and a sheet
+    day both arrive with no intervals, and only this list tells them apart."""
+    units = idle_source.cell_units(db)
+    cells_days = [
+        d.isoformat()
+        for d in (date_from + timedelta(days=i)
+                  for i in range((date_to - date_from).days + 1))
+        if idle_source.uses_cells(units, manager_id, d)
+    ]
+    cells = db.query(Cell).filter(Cell.manager_id == manager_id).all()
+    if not cells or not cells_days:
+        return {"cells_days": cells_days, "days": {}}
+
+    wanted = set(cats) if cats else None
+    rows = db.query(CellOjidaniyaInterval).filter(
+        CellOjidaniyaInterval.cell_id.in_([c.id for c in cells]),
+        CellOjidaniyaInterval.date.in_(cells_days),
+        CellOjidaniyaInterval.status == "approved",
+    ).all()
+
+    lids = {c.leader_id for c in cells if c.leader_id}
+    leaders = {p.id: p.name for p in db.query(RoleProfile).filter(
+        RoleProfile.id.in_(lids)).all()} if lids else {}
+    by_cell = {c.id: c for c in cells}
+
+    # date -> cell_id -> [row]. Only the half on screen, only the categories the
+    # page is counting: an event the bar did not count has no business being
+    # totalled underneath it.
+    grouped: dict[str, dict[int, list]] = defaultdict(lambda: defaultdict(list))
+    for e in rows:
+        if bool(e.stopped) is not stopped:
+            continue
+        if kpi_only and e.category in OJIDANIYA_ONLY_CATS:
+            continue
+        if wanted is not None and e.category not in wanted:
+            continue
+        grouped[e.date][e.cell_id].append({
+            "id": e.id,
+            "category": e.category,
+            "start": e.start,
+            "end": e.end,
+            "minutes": idle_intervals.duration(e.start, e.end),
+            "stopped": bool(e.stopped),
+            "note": e.note or "",
+        })
+
+    days: dict[str, list] = {}
+    for d, per_cell in grouped.items():
+        out = []
+        for cid, ivs in per_cell.items():
+            c = by_cell.get(cid)
+            if not c:
+                continue
+            ivs.sort(key=lambda r: (idle_intervals.to_min(r["start"]) or 0, r["end"]))
+            # The union of exactly the rows above — on the To'xtaganda half that
+            # is the cell's downtime, the same figure the загрузка reads; on the
+            # other it is how long the cell carried a wait it kept working
+            # through. `sum_min` rides along so the header can say what the
+            # overlap cost when the two differ.
+            merged = idle_intervals.merged_spans(ivs, stopped_only=False)
+            out.append({
+                "cell_id": c.id,
+                "code": c.verifix_code,
+                "leader": leaders.get(c.leader_id),
+                "total": sum(s["minutes"] for s in merged),
+                "sum_min": sum(r["minutes"] for r in ivs),
+                "intervals": ivs,
+                "summary": {"merged": merged},
+            })
+        # Code order — the cell IS its code, so that is the order a reader scans.
+        out.sort(key=lambda r: (r["code"] or "").lower())
+        days[d] = out
+    return {"cells_days": cells_days, "days": days}
+
+
+# ── the same detail as a workbook ────────────────────────────────────────────
+_DT_HEAD_FONT = Font(bold=True, size=10, color="FFFFFF")
+_DT_HEAD_FILL = PatternFill("solid", fgColor="C8973F")
+_DT_BODY_FONT = Font(size=10)
+_DT_LEFT = Alignment(horizontal="left", vertical="center", wrap_text=False)
+_DT_RIGHT = Alignment(horizontal="right", vertical="center")
+_DT_CENTER = Alignment(horizontal="center", vertical="center")
+
+# key, fallback header, width, kind
+_DT_COLS = [
+    ("date",     "Sana",        12, "text"),
+    ("cell",     "Yacheyka",    11, "text"),
+    ("leader",   "Lider",       26, "text"),
+    ("category", "Kategoriya",  14, "text"),
+    ("start",    "Boshlandi",   11, "text"),
+    ("end",      "Tugadi",      11, "text"),
+    ("minutes",  "Daqiqa",      10, "num"),
+    ("stopped",  "To'xtadi",    14, "text"),
+    ("note",     "Izoh",        50, "text"),
+    ("source",   "Manba",       18, "text"),
+]
+
+
+def _dt_xl(v):
+    """A leader's name and a leader's free-text reason go into a cell verbatim,
+    so two guards: a control character makes openpyxl raise (the whole export
+    500s), and a leading = + - @ turns the text into a formula when it opens."""
+    if v is None or not isinstance(v, str):
+        return v
+    v = ILLEGAL_CHARACTERS_RE.sub("", v)
+    if v[:1] in ("=", "+", "-", "@"):
+        v = "'" + v
+    return v
+
+
+class CellDetailExportBody(BaseModel):
+    """The modal's own state, so the file is what the reader is looking at.
+    `labels` carries the headers in the viewer's language — the sheet is read by
+    the same person who read the screen, in the same words."""
+    manager_id: int
+    date_from: str
+    date_to: str
+    stopped: bool = True
+    kpi_only: bool = False
+    cats: List[str] = []
+    factory: Optional[int] = None
+    labels: dict[str, str] = {}
+    caption: Optional[str] = None
+
+
+@router.post("/downtime/cell-detail/export.xlsx")
+def export_downtime_cell_detail(
+    request: Request,
+    body: CellDetailExportBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """Excel of one supervisor's ojidaniya detail, exactly as the modal shows it
+    — one row per EVENT on a cells day, and one row per category on a day that
+    still came from the shift report, marked as such. A browser session
+    downloads it; inside Telegram it lands in the caller's chat."""
+    scoped = scoped_manager_ids(db, payload, body.factory, [body.manager_id])
+    if empty_scope(scoped) or (scoped is not None and body.manager_id not in scoped):
+        raise HTTPException(status_code=403, detail="Out of scope")
+    mgr = db.query(Manager).filter(Manager.id == body.manager_id).first()
+    if not mgr:
+        raise HTTPException(status_code=404, detail="Supervisor not found")
+    try:
+        d_from = date.fromisoformat(body.date_from)
+        d_to = date.fromisoformat(body.date_to)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date")
+
+    L = body.labels or {}
+    detail = _cell_detail(db, body.manager_id, d_from, d_to,
+                          body.stopped, body.kpi_only, body.cats)
+    cells_days = set(detail["cells_days"])
+    yes = L.get("yes") or "Ha"
+    no = L.get("no") or "Yo'q"
+    src_cells = L.get("srcCells") or "Yacheykalar"
+    src_sheet = L.get("srcSheet") or "Smena hisoboti"
+
+    rows: list[dict] = []
+    for d in sorted(detail["days"], reverse=True):
+        for c in detail["days"][d]:
+            for iv in c["intervals"]:
+                rows.append({
+                    "date": d, "cell": c["code"], "leader": c["leader"] or "",
+                    "category": iv["category"], "start": iv["start"], "end": iv["end"],
+                    "minutes": iv["minutes"], "stopped": yes if iv["stopped"] else no,
+                    "note": iv["note"], "source": src_cells,
+                })
+
+    # The sheet days — no endpoints exist for them, so they carry the category
+    # and its minutes and say plainly where the number came from. Leaving them
+    # out would make a file shorter than the screen it claims to be.
+    sheet_days = [d for d in (d_from + timedelta(days=i)
+                              for i in range((d_to - d_from).days + 1))
+                  if d.isoformat() not in cells_days]
+    if sheet_days:
+        alias = sheet_alias_map(db, [mgr.name])
+        stamps = {d.strftime("%d.%m.%Y"): d.isoformat() for d in sheet_days}
+        for r in db.query(DowntimeData).filter(
+            DowntimeData.manager_name.in_(set(alias.keys())),
+            DowntimeData.date.in_(list(stamps.keys())),
+        ).all():
+            cats = (r.by_category if body.stopped else r.by_category_ns) or {}
+            for cat, val in sorted(cats.items()):
+                if not float(val or 0):
+                    continue
+                if body.kpi_only and cat in OJIDANIYA_ONLY_CATS:
+                    continue
+                if body.cats and cat not in body.cats:
+                    continue
+                rows.append({
+                    "date": stamps[r.date], "cell": "", "leader": "", "category": cat,
+                    "start": "", "end": "", "minutes": round(float(val), 1),
+                    "stopped": yes if body.stopped else no, "note": "", "source": src_sheet,
+                })
+    rows.sort(key=lambda r: (r["date"], r["cell"], r["start"]), reverse=True)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Ojidaniya"
+    for i, (key, fallback, width, _kind) in enumerate(_DT_COLS, 1):
+        c = ws.cell(row=1, column=i, value=_dt_xl(L.get(key) or fallback))
+        c.font, c.fill, c.alignment = _DT_HEAD_FONT, _DT_HEAD_FILL, _DT_CENTER
+        ws.column_dimensions[get_column_letter(i)].width = width
+    ws.row_dimensions[1].height = 22
+    ws.freeze_panes = "A2"
+    for ri, r in enumerate(rows, 2):
+        for ci, (key, _f, _w, kind) in enumerate(_DT_COLS, 1):
+            v = r.get(key)
+            c = ws.cell(row=ri, column=ci, value=_dt_xl(v) if kind == "text" else v)
+            c.font = _DT_BODY_FONT
+            if kind == "num":
+                c.number_format = "0.#"
+                c.alignment = _DT_RIGHT
+            else:
+                c.alignment = _DT_LEFT
+    if rows:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(_DT_COLS))}{len(rows) + 1}"
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    fname = f"ojidaniya_{(mgr.name or str(mgr.id)).replace(' ', '_')}_{body.date_from}_{body.date_to}.xlsx"
+    caption = body.caption or f"📄 {mgr.name} · {body.date_from} — {body.date_to}"
+    blob = bio.read()
+    resp = deliver_xlsx(request, payload, fname, blob, caption)
+    action_log.enrich(
+        target_kind="report", target_id=fname, target_name=mgr.name,
+        details=[("file", fname), ("rows", len(rows)), ("size", len(blob)),
+                 ("from_date", body.date_from), ("to_date", body.date_to),
+                 ("half", "stopped" if body.stopped else "not_stopped"),
+                 ("scope", "kpi_only" if body.kpi_only else "all")],
+    )
+    return resp

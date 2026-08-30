@@ -109,6 +109,19 @@ def _spans_of(rows: Iterable[dict], stopped_only: bool = True) -> list[tuple[int
     return out
 
 
+def merged_spans(rows: Iterable[dict], stopped_only: bool = True) -> list[dict]:
+    """The rows' union as ``{start, end, minutes}`` segments — what a timeline
+    draws underneath the category lanes.
+
+    ``stopped_only=False`` unions whatever it is handed, which is what the
+    To'xtamaganda half needs: there the recorded fact IS the subject, and a bar
+    drawn from the stopped rows would be empty on a view that has none. It stays
+    ONE definition of "these ranges, each minute once" — a second spelling is
+    how a bar and the total printed above it start disagreeing."""
+    return [{"start": fmt_min(s), "end": fmt_min(e), "minutes": e - s}
+            for s, e in merge(_spans_of(rows, stopped_only=stopped_only))]
+
+
 def overlap_ids(rows: Iterable[dict]) -> list:
     """Ids of the STOPPED ranges that share at least one minute with another
     stopped range. Marked in the UI so an operator can see which entries the old
@@ -162,6 +175,5 @@ def summarize(rows: list[dict]) -> dict:
         "not_stopped_sum_min": sum(e - s for s, e in _spans_of(not_stopped, stopped_only=False)),
         "by_category": by_cat,
         "overlap_ids": overlap_ids(rows),
-        "merged": [{"start": fmt_min(s), "end": fmt_min(e), "minutes": e - s}
-                   for s, e in merge(spans)],
+        "merged": merged_spans(stopped, stopped_only=False),
     }

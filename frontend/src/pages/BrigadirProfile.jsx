@@ -17,7 +17,7 @@ import { useFilters } from "../context/FilterContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
-import { fmtPct, fmtTime } from "../utils/formatters";
+import { fmtPct, fmtTime, fmtNum } from "../utils/formatters";
 import { utilNumbers, utilInputs, verifixNumbers, verifixInputs, differenceNumbers, differenceInputs, hcDiffNumbers, hcDiffInputs } from "../utils/formulas";
 import api from "../utils/api";
 import { padChartParams } from "../utils/chartRange";
@@ -52,6 +52,13 @@ const STAT_TIPS = {
   "Verifix HC":     "Effective headcount derived from Verifix labor hours. Δ = difference vs official headcount. ⚠ if difference > 2 persons.",
   "Idle Time":      "Total equipment downtime recorded for this supervisor's team in the selected period.",
 };
+
+// Headcount to one decimal, AT THE SOURCE — the twin of `hc1` in
+// SupervisorPerformance.jsx, which draws the same three shapes. Verifix HC is a
+// float: a worker split across two cells counts as a fraction of a person in
+// each, so a datapoint left raw carries IEEE noise («0.6000000000000001») into
+// whatever formatter the chart applies. Nulls are gaps in the line, not zeroes.
+const hc1 = (v) => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
 
 function utilColor(val) {
   if (val === null || val === undefined) return "#94a3b8"; // no data → neutral grey, never gold
@@ -279,7 +286,7 @@ export default function BrigadirProfile() {
     ],
     headcount: [
       { name: "Official HC", data: daily.map((d) => d.official_hc), color: "#6b7280", dashed: true },
-      { name: "Verifix HC",  data: daily.map((d) => d.verifix_hc),  color: "#22c55e" },
+      { name: "Verifix HC",  data: daily.map((d) => hc1(d.verifix_hc)),  color: "#22c55e" },
     ],
     idle: [
       { name: "Equipment Downtime", data: daily.map((d) => d.equip_downtime), color: "#ef4444" },
@@ -290,8 +297,12 @@ export default function BrigadirProfile() {
     ? `${latest.difference_hrs > 0 ? "+" : ""}${unit === "hrs" ? latest.difference_hrs.toFixed(1) + " hrs" : (latest.difference_hrs * 60).toFixed(0) + " min"}`
     : "—";
 
+  // Rounded here, once — Verifix HC is fractional now (see `hc1`), so the raw
+  // subtraction prints IEEE noise beside the figure it is the difference of.
+  // Once, because the value is both rendered and handed to the formula modal:
+  // two roundings are two numbers on one screen.
   const hcDiff = latest?.verifix_hc != null && latest?.official_hc != null
-    ? latest.verifix_hc - latest.official_hc
+    ? Math.round((latest.verifix_hc - latest.official_hc) * 10) / 10
     : null;
 
   const tertiaryStats = [
@@ -484,15 +495,15 @@ export default function BrigadirProfile() {
                     style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text-1)" }}
                     onClick={() => setFormulaModal({
                       title: t("fm.verifixHcTitle"),
-                      value: String(latest?.verifix_hc ?? "—"),
+                      value: fmtNum(latest?.verifix_hc),
                       formula: `verifix_hc = total_verifix_hours ÷ shift_duration_hours\n${t("fm.verifixHcNote")}`,
                       inputs: [
-                        { label: t("fm.verifixHcDerived"), val: String(latest?.verifix_hc ?? "—"), source: t("fm.srcVerifixLaborShift") },
+                        { label: t("fm.verifixHcDerived"), val: fmtNum(latest?.verifix_hc), source: t("fm.srcVerifixLaborShift") },
                         { label: t("fm.reportedHcOfficial"), val: String(latest?.official_hc ?? "—"), source: t("fm.srcVerifixAttFile") },
                       ],
                     })}
                   >
-                    {latest?.verifix_hc ?? "—"}
+                    {fmtNum(latest?.verifix_hc)}
                   </button>
                   {hcDiff !== null && (
                     <span className="flex items-center gap-1">

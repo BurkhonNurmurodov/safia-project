@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs, staff_cells
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
         add_broadcast_failures_column, add_pp_product_op,
         add_downtime_ns_columns,
         add_attendance_supervisor_column, backfill_supervisor_attendance,
+        add_attendance_split_columns, purge_cell_exchange_sandbox,
         add_profile_identity_columns, add_activity_profile_key,
         backfill_role_profile_keys,
         backfill_task_profiles, backfill_comment_profiles,
@@ -154,6 +155,8 @@ async def lifespan(app: FastAPI):
     add_pp_product_op()
     add_downtime_ns_columns()
     add_attendance_supervisor_column()
+    add_attendance_split_columns()
+    purge_cell_exchange_sandbox()
     # After the column exists — it inserts rows carrying the flag.
     backfill_supervisor_attendance()
     add_leader_task_setting_names()
@@ -553,13 +556,6 @@ app.include_router(idle_cell.router)
 # and cell view — its own page is gone, so this self-gates via
 # require_page("staff") (and require_page("cells") for the in-load writer).
 app.include_router(cell_attendance.router)
-# The cell-level people-exchange page — the SANDBOX twin of /staff, filing one
-# document per sender CELL instead of one per unit. Every route self-gates via
-# require_page("staff-cell") (its own key: nothing about the "staff" grant is
-# folded in), and the page is grantable to shift-managers, supervisors and
-# leaders — so this must NOT join the _admin_guard cluster. It lives under
-# /api/*, so the app-wide initData dependency already covers it.
-app.include_router(staff_cells.router)
 # Single-file attendance ingest («Davomat» admin tab) — one «Отчёт по посещениям
 # сотрудников» export for the whole factory, staged for review before it reaches
 # `attendance`. Under /api/*, so the global initData guard already covers it;

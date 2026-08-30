@@ -572,7 +572,10 @@ export default function ZagruzkaCell() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(inp?.verifix_labor)}</td>
-                      <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{inp?.verifix_hc ?? "—"}</td>
+                      {/* A worker SPLIT across two cells counts as a fraction of a
+                          person in each, so this is a float now — printed raw it
+                          would read «0.6000000000000001». */}
+                      <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(inp?.verifix_hc, 1)}</td>
                       <td className="px-3 py-2 text-right" style={{ color: inp?.downtime ? "#eab308" : "var(--text-3)" }}>
                         {num(inp?.downtime)}
                         {idle && (
@@ -605,13 +608,17 @@ export default function ZagruzkaCell() {
                     <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.prod_actual)}</td>
                     <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.official_hc)}</td>
                     <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.verifix_labor)}</td>
-                    <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{unit.verifix_hc ?? "—"}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.verifix_hc, 1)}</td>
                     <td className="px-3 py-2 text-right font-semibold"
                         style={{ color: unit.equip_downtime ? "#eab308" : "var(--text-3)" }}>
                       {num(unit.equip_downtime, 1)}
+                      {/* ΣN carries a decimal since a split worker counts as a
+                          fraction in each of their cells; rounded to a whole
+                          person it would no longer divide into the figure
+                          above, which is the one thing this line is for. */}
                       {unit.idle_weight_n > 0 && (
                         <div className="text-[9px] leading-tight font-normal" style={{ color: "var(--text-3)" }}>
-                          {num(unit.idle_weight_sum)} ÷ {num(unit.idle_weight_n)}
+                          {num(unit.idle_weight_sum)} ÷ {num(unit.idle_weight_n, 1)}
                         </div>
                       )}
                     </td>

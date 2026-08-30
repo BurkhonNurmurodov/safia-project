@@ -50,7 +50,12 @@ class DailyMetrics:
     verifix_labor: float = 0.0
     labor_surplus: Optional[float] = None
     official_hc: float = 0.0
-    verifix_hc: int = 0
+    # Fractional since 2026-08-30: a worker-day split across two cells is half a
+    # person in each, so a PER-CELL headcount legitimately reads 0.4. At UNIT
+    # level both halves are in the same unit and their weights sum back to 1.0,
+    # so no unit total moves — that is the property the whole split model rests
+    # on, and it is why nothing above this line needed a second thought.
+    verifix_hc: float = 0.0
     effective_hc: Optional[float] = None
     avg_early_arrival: float = 0.0
     equip_downtime: float = 0.0
@@ -135,7 +140,13 @@ def compute_metrics(
 
     total_hours = 0.0
     total_early = 0.0
-    worker_count = 0
+    # A SUM OF WEIGHTS, not a count of rows: one worker split across two cells
+    # holds two rows and is one person. NULL weight = one whole person, which
+    # is every row that predates the split model and every unsplit row after
+    # it, so the plain case is unchanged. getattr and not row.hc_weight —
+    # compute_metrics is also handed CellAttendance-shaped rows by the
+    # /zagruzka-cell fallback branch, and those carry no such attribute.
+    worker_count = 0.0
     for row in calc_rows:
         try:
             total_hours += float(row.hours_worked or 0)
@@ -146,10 +157,13 @@ def compute_metrics(
         except (TypeError, ValueError):
             pass
         if row.worker_name and row.worker_name not in ("nan", "NaN", ""):
-            worker_count += 1
+            w = getattr(row, "hc_weight", None)
+            worker_count += 1.0 if w is None else float(w)
 
     m.verifix_labor = round(total_hours * 60 * VERIFIX_EFFICIENCY, 2)
-    m.verifix_hc = worker_count
+    # Rounded ONCE, here, so IEEE noise (0.30000000000000004) never reaches a
+    # payload, an export or a comparison downstream.
+    m.verifix_hc = round(worker_count, 2)
     m.avg_early_arrival = round(total_early / official_hc, 2) if official_hc else 0.0
 
     ratio = safe_div(prod_actual, prod_plan)

@@ -13,7 +13,7 @@ import { SkeletonBlock, SkeletonChart } from "./Skeleton";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { useAuth } from "../../context/AuthContext";
-import { fmtPct, fmtTime } from "../../utils/formatters";
+import { fmtPct, fmtTime, fmtNum } from "../../utils/formatters";
 import { utilNumbers, utilInputs, verifixNumbers, verifixInputs, differenceNumbers, differenceInputs } from "../../utils/formulas";
 import api from "../../utils/api";
 import { padChartFrom } from "../../utils/chartRange";
@@ -116,6 +116,12 @@ const STAT_TIPS = {
   "Verifix HC":   "Effective headcount derived from Verifix labor hours. ⚠ if difference > 2 persons.",
 };
 
+// Headcount to one decimal, AT THE SOURCE. Verifix HC is a float: a worker split
+// across two cells counts as a fraction of a person in each, so a datapoint left
+// raw carries IEEE noise («0.6000000000000001») into whatever formatter the chart
+// happens to apply. Nulls are gaps in the line and must stay nulls.
+const hc1 = (v) => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
+
 function utilColor(val) {
   if (val === null || val === undefined) return "#94a3b8"; // no data → neutral grey, never gold
 
@@ -216,8 +222,10 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
     ? `${latest.difference_hrs > 0 ? "+" : ""}${unit === "hrs" ? latest.difference_hrs.toFixed(1) + " hrs" : (latest.difference_hrs * 60).toFixed(0) + " min"}`
     : "—";
 
+  // Rounded here, once: Verifix HC is fractional now (see `hc1`), so the raw
+  // subtraction prints IEEE noise beside the figure it is the difference of.
   const hcDiff = latest?.verifix_hc != null && latest?.official_hc != null
-    ? latest.verifix_hc - latest.official_hc
+    ? Math.round((latest.verifix_hc - latest.official_hc) * 10) / 10
     : null;
 
   // Status from D = P − A (План − Итог), colored live by the admin thresholds.
@@ -230,7 +238,7 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
     ],
     headcount: [
       { name: "Official HC", data: daily.map(d => d.official_hc), color: "#6b7280", dashed: true },
-      { name: "Verifix HC",  data: daily.map(d => d.verifix_hc),  color: "#22c55e" },
+      { name: "Verifix HC",  data: daily.map(d => hc1(d.verifix_hc)),  color: "#22c55e" },
     ],
     idle: [
       { name: "Equipment Downtime", data: daily.map(d => d.equip_downtime), color: "#ef4444" },
@@ -325,7 +333,7 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
                   {t("profile.verifixHC")} {STAT_TIPS["Verifix HC"] && <Tooltip text={STAT_TIPS["Verifix HC"]} />}
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-bold font-mono" style={{ color: "var(--text-1)" }}>{latest?.verifix_hc ?? "—"}</span>
+                  <span className="text-sm font-bold font-mono" style={{ color: "var(--text-1)" }}>{fmtNum(latest?.verifix_hc)}</span>
                   {hcDiff !== null && (
                     <span className="flex items-center gap-1">
                       <span className="text-[10px] uppercase font-semibold" style={{ color: "var(--text-4)" }}>{t("profile.diff")}:</span>

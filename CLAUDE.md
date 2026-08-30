@@ -122,7 +122,7 @@ modal title, a tooltip, a notification or an export column.
   the workbook lost that column with it); `/cells/:id` leads with the code and
   lost the four-language «Names» card; the Quality register, ARC (both tabs,
   its charts and its export), Ojidaniya, Zagruzka-cell, Setup times, Staff,
-  StaffCells, WorkerConcerns and «Smena vaqtlari» all print the code, with the
+  WorkerConcerns and «Smena vaqtlari» all print the code, with the
   leader beside it where the payload names one.
 - **The backend prints the code too** — the approval card and the
   people-exchange notification (`_exchange_target_label`), the ARC export's
@@ -135,6 +135,130 @@ modal title, a tooltip, a notification or an export column.
   `/api/idle-cell`.
 - The stored names are untouched — nothing was migrated or deleted, so lifting
   this rule anywhere is a rendering change and nothing more.
+
+## A worker belongs to a CELL, and the supervisor says which
+
+From **2026-08-30** the cell on a worker's row is answered in two places, and
+only two: the daily file, and the receiving supervisor.
+
+- **The file still assigns the cell.** «Код подразделения» resolves to a cell,
+  the admin «Davomat» Save writes it onto every worker, and nothing about that
+  changed. Almost every row is placed before a supervisor ever looks at it.
+- **An accepted people-exchange assigns NO cell.** The sender picks the
+  receiving SUPERVISOR and nothing more; on approval the moved row's
+  `verifix_code` becomes NULL. The old flow made the sender choose one of the
+  RECEIVING unit's cells — a guess about somebody else's shopfloor, made before
+  the shift had run, by the one person who cannot know the answer.
+  `_resolve_exchange_target` no longer resolves a cell, `_build_exchange_payload`
+  no longer stores one, and all six attendance writes in the two apply paths set
+  NULL unconditionally — **including for a document filed under the old rule
+  whose payload still carries `target_cell`**, because honouring that key would
+  drop the worker into a cell the receiving supervisor never chose. The
+  sender-side `old_verifix_code` is untouched, so a revert still restores the
+  original cell exactly.
+- **The day will not close while anyone is cell-less.** `staff._unplaced_workers`
+  is THE predicate and `POST /api/staff/daily/close` answers **409** — for a
+  supervisor and for an admin closing on their behalf alike. There is no
+  override: a worker with no cell is a worker whose hours belong to no cell's
+  load and to no cell's headcount, and that is not reconstructable afterwards.
+  Three exclusions, each of which makes the gate UNCLEARABLE if dropped: the
+  unit's own **brigadir** (`is_supervisor` — written cell-less on every
+  re-projection, and no placement can ever give them one, so counting them locks
+  every unit out forever), **nameless** hours-only leftovers (the tab cannot show
+  them, so nobody could name one into a cell), and rows that did not come
+  (`CALC_ROWS_FILTER` already demands hours > 0). `CELLS_REQUIRED_FROM`
+  (2026-08-01) is the floor: every row before the single-file «Davomat» flow is
+  cell-less by construction, and an admin can reopen any historical day.
+- **The refusal is a plain STRING and it is capped at five names.**
+  `utils/api.js` rewrites any non-string `detail`, and both close dialogs render
+  `detail` only when `typeof d === "string"` — so a structured 409 arrives as the
+  generic "save failed" with the reason stripped off, which is the one outcome a
+  hard gate must never produce. `ConfirmDialog` has no max-height and no scroll,
+  so an uncapped name list pushes the buttons off-screen.
+- **`GET /api/staff/approvals/day` publishes `needs_cell` before the press**, off
+  the same predicate, so the tab badge and the refusal can never name different
+  people.
+
+### Where they are placed («Yacheykalar», a tab on /staff)
+
+`components/staff/CellPlacementPanel.jsx` over `GET`/`PUT
+/api/staff/cell-placement`. Cell-less workers first, then the unit's cells with
+their people — the admin «Davomat» tab's shape, asked one level down.
+
+- **Everything is a DRAFT until Save**, one PUT, one action-log row. A
+  supervisor rearranging their shift should be able to change their mind before
+  anything is real.
+- **The destination list is the REGISTRY**, unioned with whatever codes the day's
+  rows already carry. `/api/staff/attendance`'s `cells[]` is derived from codes
+  PRESENT in today's rows, so on its own it can only ever offer a cell that
+  already has somebody standing in it — an empty cell would be unreachable. A
+  code the registry has never heard of is shown, never dropped: the two
+  registers are allowed to disagree, in public.
+- **Reading follows the page's scope; WRITING is the unit's own business.**
+  `_can_edit_placement` — admin, or this unit's own supervisor. A supervisor
+  widened by a page grant may BROWSE another unit and must not rearrange its
+  people, the rule `canCreateHere` already applies to documents on this page.
+  The tab itself is visible to admin · supervisor · shift-manager.
+
+### A worker split across two cells
+
+A worker who moved cells mid-shift is **named in both and counted as a FRACTION
+of a person in each**, pro-rata by hours.
+
+- **Two Attendance rows**, the second carrying `hc_weight` (its share, the halves
+  summing to 1.0) and `split_of` (the primary row's id). Both keep the NAME —
+  the worker is on this supervisor's roster either way, so stripping the name off
+  the smaller side (what a cross-unit split does, where the name really does
+  leave a roster) would be a lie here.
+- **`hc_weight` is what keeps the arithmetic honest.** `idle_source` and
+  `kpi_calculator` sum weights instead of counting rows, so each cell sees a
+  fraction — and because both halves sit in the SAME unit the weights add back
+  to exactly 1.0, so **no unit total moves**. `hours_worked` is split the same
+  way and also sums to the original.
+- **`_split_hours` is deliberately NOT `_compute_split`.** That one answers how a
+  day divides between two UNITS, with an early-arrival rule, a return window and
+  a minimum-hours test that can strip a name. None of it applies inside one unit.
+  The clock is used only for the RATIO; the halves are scaled to sum to exactly
+  the recorded hours.
+- **`split_of IS NULL` makes the PRIMARY row canonical.** Seventeen name-keyed
+  `.first()` lookups in `staff.py` — admin edit, admin delete, bulk delete,
+  edit-request approve/reject/restore, and every exchange apply/revert — assumed
+  one (manager, date, worker_name) could only ever match one row. Each now
+  carries the guard, or a split worker's admin edit would land on an arbitrary
+  half.
+- **`Float`, never `Numeric`.** `hours_worked` is `Numeric(10,4)` and SQLAlchemy
+  returns `Decimal` for it, which is why every reader wraps it in `float()`. A
+  Decimal weight summed into a float accumulator raises `TypeError`.
+  `Attendance.hc_weight` must also stay in `idle_source`'s EXPLICIT column list —
+  that query selects columns, not the entity, so an omitted one is an
+  `AttributeError` inside `build_metrics_list`, i.e. Overview, the Zagruzka
+  heatmap, the comparison and the brigadir profile.
+- **`verifix_hc` is a FLOAT on the wire now.** Every render of it and of `hcDiff`
+  must be formatted, or a split prints IEEE noise.
+- **Undo is `unsplits`**, carrying the SECONDARY row's id: the halves were scaled
+  to sum to the original and the clocks were cut `C-T` / `T-O`, so both restore
+  exactly without a stored copy of either.
+
+**Known limit, inherited and NOT fixed here:** `attendance_batch._sync_manager`
+(and the per-supervisor upload in `admin.py`) DELETE the whole (manager, date)
+and rebuild from `AttendanceBatchRow`, which carries no placement and no weight.
+**Re-saving a day's batch after a supervisor has placed people undoes their
+work**, exactly as it already loses exchanged workers (`exchange-lost-workers-audit`).
+A replay for it is a separate decision — ask before building one.
+
+### /staff-cells is GONE
+
+«Verifix to'g'irlash (yacheyka)» — the cell-level exchange page — is deleted
+whole: `pages/StaffCells.jsx`, `routers/staff_cells.py`,
+`services/cell_exchange.py`, `services/cell_scope.py`, the `staff-cell` page key
+and its grants, its 245 translation keys, and the sandbox `HrDocument` rows it
+filed (`startup.purge_cell_exchange_sandbox`, flag
+`cell_exchange_sandbox_purge_2026_08_30_v1` — changing what it does needs a NEW
+flag key). Every document is real now, so `approvals.py` and `doc_audit.py` lost
+the TEST/REAL fork entirely and `_real_docs` keeps its whitelist for the other
+reason: a register that serves every type must not surface one no reader has
+decided the meaning of. `services/day_state` goes on hand-copying that tuple —
+see the comment there.
 
 ## Factory (plant) dimension
 
@@ -354,6 +478,60 @@ record of other people's paperwork.
   the five info tooltips). `role_change` documents are deliberately NOT rewound:
   they change a job title, i.e. which role column a present worker lands in,
   never whether they came.
+
+## What a supervisor's ojidaniya bar is MADE OF (the detail modal)
+
+From **2026-08-30** pressing a supervisor's bar on `/downtime` opens
+`components/idle/UnitOjidaniyaModal.jsx` — the unit's waiting date by date, and
+inside a date cell by cell: the `/idle-cell` timeline (`DayTimeline`, reused
+verbatim) over a table of that cell's own events. The bar was a number with no
+way in — 464 minutes over a fortnight and nothing about which cell stopped, when
+or why.
+
+- **It serves the EVENTS; it never computes a second "how much".**
+  `GET /api/downtime/cell-detail` answers only "what did the cells file". The
+  figure the CHART counted for a date stays the page's own `/api/downtime` row —
+  which is where the headcount-weighted unit mean and the sheet row both come
+  from — so the modal can never state a total the bar it was opened out of
+  disagrees with. `/api/downtime`'s `rows` and `summary` gained `manager_id` for
+  exactly this: the sheet spells brigadirs in two alphabets, so a name is not an
+  address.
+- **Two totals per date, both named** (the user's call). The unit's day is the
+  headcount-weighted MEAN of its cells (`Σ(N·T)÷ΣN`), so the cells listed under
+  it add up to something else — usually much more. Printing one of them either
+  contradicts the bar or leaves an unexplained gap on screen, so «Diagrammada»
+  and «Yacheykalar» sit side by side and each says what it is.
+- **A day the unit does not read from its cells says so.** Before
+  `idle_source.CELLS_FROM` (earlier where the register moved a unit) the number
+  came from the «Смена отчёт» row, which carries category minutes and no
+  endpoints. `cells_days` on the payload is what tells a sheet day from a cells
+  day nobody filed anything on — the two are indistinguishable from emptiness
+  alone, and reading one as the other makes a reported day look silent. A sheet
+  date shows its category table plus a notice, never an empty cell list.
+- **It MIRRORS the page** — the To'xtaganda/To'xtamaganda half, the
+  «загрузкада / hammasi» scope and the doughnut's category picks all narrow it,
+  **server-side**. This is a zoom-in on one bar, not a second view of the
+  register: an event the bar did not count has no business being totalled
+  underneath it. Pressing a category SEGMENT carries that category in as well
+  (only when the segment has minutes — in the Total view every category series
+  is a row of zeros).
+- **The union bar follows the half on screen.** `idle_intervals.merged_spans`
+  is the one definition and `summarize` now calls it; `stopped_only=False`
+  unions whatever it is handed, which is what the To'xtamaganda half needs —
+  there the recorded fact IS the subject, and a bar built from the stopped rows
+  would be empty under lanes that are full. `DayTimeline` gained `unionLabel`
+  so the caller that changed what is drawn is the caller that renames it.
+- Only cells that have waiting appear; dates are newest-first, collapsible, the
+  newest open. A cell's header total is the UNION of the rows shown, with the
+  plain sum in its tooltip where an overlap makes the two differ.
+- Export: `POST /api/downtime/cell-detail/export.xlsx` — one row per EVENT on a
+  cells day, one row per CATEGORY on a sheet day, marked as such, so the file is
+  never shorter than the screen it claims to be. Delivered by
+  `app/xlsx_delivery.py` like every other export (browser downloads, Telegram
+  DMs).
+- Scoped exactly as the page is: `manager_id` is a query parameter, so
+  `scoped_manager_ids` re-decides it server-side — a viewer who cannot see the
+  unit on the chart cannot read its cells here either.
 
 ## Automatic proof verification (BOTH shifts, from 13 Aug 2026)
 

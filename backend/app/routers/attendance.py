@@ -99,17 +99,27 @@ def get_attendance(
 
     rows = q.order_by(Attendance.worker_name, Attendance.date.desc()).all()
 
-    # Deduplicate: keep the most-recent row per worker_name, count appearances.
+    # Deduplicate: keep the most-recent row per worker_name, count the DAYS they
+    # appeared on.
+    #
+    # A set of dates and not a row counter (2026-08-30): a worker split across
+    # two of the unit's cells holds TWO rows for the one day they worked, so
+    # counting rows would report them present twice — and the split is invisible
+    # here, since this endpoint answers "who worked in this range", a question
+    # about people and days that says nothing about cells.
     seen: dict[str, dict] = {}
+    days: dict[str, set] = {}
     for r in rows:
         name = r.worker_name or ""
         if name not in seen:
             seen[name] = {
                 "worker_name": name,
                 "job_title": r.job_title,
-                "days_present": 1,
             }
-        else:
-            seen[name]["days_present"] += 1
+            days[name] = set()
+        days[name].add(r.date)
+
+    for name, row in seen.items():
+        row["days_present"] = len(days[name])
 
     return sorted(seen.values(), key=lambda x: x["worker_name"] or "")

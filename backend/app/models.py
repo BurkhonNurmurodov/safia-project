@@ -82,6 +82,31 @@ class Attendance(Base):
     # export happens to spell, and a blank one would otherwise be counted by the
     # "no title + hours" fallback in is_direct_role.
     is_supervisor = Column(Boolean, nullable=False, server_default="false", default=False)
+    # 2026-08-30: one worker-day SPLIT across two of the unit's own cells. The
+    # supervisor names the split on /staff; the platform then has to count the
+    # person once, not twice, so each half carries the FRACTION of a person it
+    # represents — pro-rata by the hours placed in that cell, the two halves
+    # summing to exactly 1.0.
+    #
+    # NULL means ONE WHOLE PERSON: every row that predates this, and every
+    # unsplit row forever after. The readers spell that as
+    # ``1.0 if hc_weight is None else float(hc_weight)`` rather than defaulting
+    # the column, because a stored 1.0 would be indistinguishable from "somebody
+    # split this worker and the other half is missing".
+    #
+    # Float and NOT Numeric on purpose: hours_worked is Numeric(10,4), so
+    # SQLAlchemy hands it back as Decimal and every reader already wraps it in
+    # float(). A Decimal summed into a float accumulator — which is what every
+    # headcount total on this platform is — raises TypeError, and the one place
+    # it would surface is inside a KPI nobody re-reads by hand.
+    hc_weight = Column(Float, nullable=True)
+    # The PRIMARY row's attendance.id, set only on the SECONDARY row of a split
+    # pair — so the pair is walkable in one direction and there is exactly one
+    # row that owns the worker-day. NULL on every normal row AND on the primary
+    # row of a split; "is this the second half" is therefore a NOT NULL test and
+    # never a comparison against a sentinel. Indexed because the /staff cell
+    # editor looks the secondary up by its primary on every save.
+    split_of  = Column(Integer, nullable=True, index=True)
 
     manager = relationship("Manager", back_populates="attendance")
 

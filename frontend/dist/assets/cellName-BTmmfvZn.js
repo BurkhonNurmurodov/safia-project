@@ -1,0 +1,1 @@
+var o=["ru","uz","uz_cyrl","en"];function l(n,r){const t=String(n!=null?n:"").trim(),u=String(r!=null?r:"").trim();return t&&u?"".concat(t," · ").concat(u):t||u||""}function c(n,r="ru",t="name_workshop_"){if(!n)return"";for(const u of[r,...o]){const i=n["".concat(t).concat(u)];if(i)return String(i)}return""}export{c as n,l as t};

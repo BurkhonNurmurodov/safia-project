@@ -41,7 +41,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import HrDocument, HrDocumentHistory, Manager
 from app.routers.admin import verify_admin
-from app.services import cell_exchange
 
 router = APIRouter(prefix="/api/admin/doc-audit", tags=["doc-audit"])
 
@@ -93,23 +92,21 @@ def audit(
     for h in hist:
         by_doc[h.document_id].append(h)
 
-    # Real documents only — the same clause, and for the same reason, as
-    # `staff._real_docs`. Every flag below is a question about a document that
-    # REWROTE a day: `revived` asks whether a guard on the applier was
-    # bypassed, `stale` whether a June day was rewritten from August,
-    # `flapped` whether a day was rewritten three times over. A sandbox
-    # document (`cell_exchange.TEST_DOC_TYPES`) writes no attendance row on any
-    # path it can reach, so every one of those questions has the answer "no"
-    # for it by construction — auditing it here reports a rehearsal as real
-    # work and puts an operator in front of a row there is nothing to act on.
+    # The two document types that REWRITE a day, and only those — the same
+    # clause, and for the same reason, as `staff._real_docs`. Every flag below
+    # is a question about such a rewrite: `revived` asks whether a guard on the
+    # applier was bypassed, `stale` whether a June day was rewritten from
+    # August, `flapped` whether a day was rewritten three times over.
     #
-    # TRAP, inherited from `real_clause`: it is an explicit whitelist
-    # (`cell_exchange.REAL_DOC_TYPES`), so a fifth REAL doc_type must be added
-    # there or its documents will not be audited on this tab either.
+    # TRAP: it is an explicit whitelist rather than a NOT-IN, so a third
+    # attendance-touching doc_type must be added HERE or its documents will not
+    # be audited on this tab. That is the deliberate default — a new type is
+    # ignored by this audit until somebody says it belongs, never silently
+    # flagged by a query that has never seen it.
     docs = {
         d.id: d for d in db.query(HrDocument).filter(
             HrDocument.id.in_(list(by_doc)),
-            cell_exchange.real_clause(HrDocument.doc_type),
+            HrDocument.doc_type.in_(("people_exchange", "role_change")),
         ).all()
     }
     mgr_names = {
@@ -122,8 +119,8 @@ def audit(
     counts = defaultdict(int)
     for doc_id, entries in by_doc.items():
         doc = docs.get(doc_id)
-        # Deleted since, or a sandbox document the clause above dropped —
-        # either way there is no real day this history rewrote.
+        # Deleted since, or a doc_type the clause above dropped — either way
+        # there is no day this history rewrote.
         if doc is None:
             continue
         actions = [(h.action, h.created_at, h.actor_name) for h in entries]
@@ -191,9 +188,9 @@ def audit(
         "from": d_from.isoformat(),
         "to":   d_to.isoformat(),
         # What was actually audited, not how many history groups the window
-        # held: a sandbox document dropped above was never examined, and
-        # counting it here would report a rehearsal as one more real document
-        # checked and found clean.
+        # held: a document the clause above dropped was never examined, and
+        # counting it here would report it as one more document checked and
+        # found clean.
         "docs_scanned": len(docs),
         "rows": rows,
         "summary": {

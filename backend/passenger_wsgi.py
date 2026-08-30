@@ -85,6 +85,7 @@ try:
         add_broadcast_failures_column, add_pp_product_op,
         add_downtime_ns_columns,
         add_attendance_supervisor_column, backfill_supervisor_attendance,
+        add_attendance_split_columns, purge_cell_exchange_sandbox,
         add_profile_identity_columns, add_activity_profile_key,
         backfill_role_profile_keys,
         backfill_task_profiles, backfill_comment_profiles,
@@ -161,6 +162,8 @@ try:
     add_pp_product_op()
     add_downtime_ns_columns()
     add_attendance_supervisor_column()
+    add_attendance_split_columns()
+    purge_cell_exchange_sandbox()
     # After the column exists — it inserts rows carrying the flag.
     backfill_supervisor_attendance()
     add_leader_task_setting_names()

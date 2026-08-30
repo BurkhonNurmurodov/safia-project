@@ -9,6 +9,7 @@ import DowntimeToggleChart from "../components/charts/DowntimeToggleChart";
 import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
 import KPICard from "../components/ui/KPICard";
 import CategoryLegendModal from "../components/ui/CategoryLegendModal";
+import UnitOjidaniyaModal from "../components/idle/UnitOjidaniyaModal";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
@@ -83,6 +84,12 @@ export default function Downtime() {
   const [chartView, setChartView] = usePersistentState("downtime_chart_view", "total"); // "total" | "category"
   const [selectedCats, setSelectedCats] = usePersistentState("downtime_selected_cats", []); // categories chosen via doughnut clicks → filter the left chart
   const [showCatGuide, setShowCatGuide] = useState(false); // doughnut info icon → category meanings modal
+  // Which supervisor's bar was pressed — {managerId, managerName, cat}. `cat` is
+  // set only when the press landed on a CATEGORY segment, so a reader who
+  // pressed the yellow slice is answered about that category and not about the
+  // whole unit. Deliberately NOT persisted: a modal that reopens itself on the
+  // next visit is a state nobody asked for.
+  const [detail, setDetail] = useState(null);
   const minLabel = t("general.min");
   const hrsLabel = t("general.hrs");
   // Waiting times here are routinely single-digit minutes, where fractional
@@ -506,6 +513,48 @@ export default function Downtime() {
     ),
   }));
 
+  // ── the bar you pressed, opened out ────────────────────────────────────────
+  // The categories the DETAIL is about: a category segment names one, otherwise
+  // whatever the page is filtered to. One list, read by the request, by the
+  // per-date figure below and by the modal's own header — three spellings would
+  // be three different answers to "what am I looking at".
+  const detailCats = useMemo(
+    () => (detail?.cat ? [detail.cat] : selectedCats),
+    [detail, selectedCats],
+  );
+  // Every date the page has a row for this unit, newest first, each carrying the
+  // figure the BAR counted for it. Taken from the page's own response rather
+  // than recomputed: the unit's day is a headcount-weighted mean of its cells
+  // (or, before the switch, a shift-report row), and a second derivation of it
+  // is how the modal starts contradicting the chart it was opened out of.
+  const detailDates = useMemo(() => {
+    if (!detail) return [];
+    return (data?.rows || [])
+      .filter((r) => r.manager_id === detail.managerId)
+      .map((r) => {
+        const cat = r[catKey] || {};
+        const narrowed = Object.fromEntries(
+          Object.entries(cat).filter(([k]) => !detailCats.length || detailCats.includes(k)));
+        return {
+          iso: isoOfDmy(r.date),
+          dmy: r.date,
+          // With a category picked the bar shows those categories' minutes, so
+          // the date must state the same thing the bar does.
+          counted: detailCats.length
+            ? Object.values(narrowed).reduce((a, b) => a + (Number(b) || 0), 0)
+            : (r[totalKey] || 0),
+          byCategory: narrowed,
+        };
+      })
+      .sort((a, b) => b.iso.localeCompare(a.iso));
+  }, [detail, data, catKey, totalKey, detailCats]);
+
+  const detailScopeLine = [
+    ns ? t("downtime.tabNotStopped") : t("downtime.tabStopped"),
+    kpiOnly ? t("downtime.scopeZagruzka") : t("downtime.scopeAll"),
+    detailCats.length ? detailCats.join(", ") : "",
+  ].filter(Boolean).join(" · ");
+
   const chartH = Math.max(300, summary.length * 28 + 60);
 
   // Selected-category chips (doughnut filter) — shared by the bar-chart and trend headers.
@@ -702,6 +751,15 @@ export default function Downtime() {
               gridColor={gridColor}
               labelColor={labelColor}
               tooltipTheme={tooltipTheme}
+              onPick={(row, catIdx) => {
+                const s = summary[row];
+                if (!s?.manager_id) return;
+                setDetail({
+                  managerId: s.manager_id,
+                  managerName: s.manager_name,
+                  cat: catIdx == null ? null : (catNames[catIdx] || null),
+                });
+              }}
             />
           ) : (
             <EmptyState title={t("downtime.noData")} message={t("downtime.noDataMsg")} />
@@ -816,6 +874,25 @@ export default function Downtime() {
           catNames={catNames}
           catColors={catHues}
           onClose={() => setShowCatGuide(false)}
+        />
+      )}
+
+      {/* What one supervisor's bar is made of — date by date, cell by cell. */}
+      {detail && (
+        <UnitOjidaniyaModal
+          open
+          onClose={() => setDetail(null)}
+          managerId={detail.managerId}
+          managerName={detail.managerName}
+          dates={detailDates}
+          stopped={!ns}
+          kpiOnly={kpiOnly}
+          cats={detailCats}
+          factory={factory}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          fmt={fmt}
+          scopeLine={detailScopeLine}
         />
       )}
     </Layout>

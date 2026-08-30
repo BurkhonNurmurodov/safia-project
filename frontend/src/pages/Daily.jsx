@@ -23,7 +23,6 @@ import DayStepper from "../components/ui/DayStepper";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
 import api from "../utils/api";
-import { exchangeCellSuffix } from "../utils/cellName";
 import { catColor } from "../components/idle/categories";
 import {
   AttendanceTable,
@@ -483,7 +482,7 @@ function SupervisorDaily() {
                               {DOC_TYPE_TKEY[d.doc_type] ? t(DOC_TYPE_TKEY[d.doc_type]) : (d.doc_type_label || d.doc_type)}
                             </span>
                             {isExchange
-                              ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")} · → {d.target_type === "supervisor" ? `${tl(d.target_manager_name)}${exchangeCellSuffix(d)}` : d.task_name}</span>
+                              ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")} · → {d.target_type === "supervisor" ? `${tl(d.target_manager_name)}` : d.task_name}</span>
                               : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")}{d.new_role ? ` · ${tl(d.new_role)}` : ""}</span>}
                           </td>
                           <td className="px-3 py-3 text-center">
