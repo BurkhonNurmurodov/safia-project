@@ -127,6 +127,16 @@ export const ExamplePhoto = ({ id, T, className, ...rest }) => (
     load={() => api.get(`/api/leader-tasks/examples/${id}`, { responseType: "blob" })} />
 );
 
+// A LATE proof's photo — filed after the task's own deadline, so it hangs off
+// no LeaderTaskEntry and the register's media proxy cannot reach it. Addressed
+// by (late proof, media) because the endpoint checks BOTH: a readable queue
+// must not become a fetcher for any late-proof photo on the platform.
+export const LateProofPhoto = ({ lateId, id, T, className, ...rest }) => (
+  <ProxyPhoto T={T} className={className} deps={[lateId, id]} {...rest}
+    load={() => api.get(`/api/leaders/late-proofs/${lateId}/photo/${id}`,
+      { responseType: "blob" })} />
+);
+
 /** One photo from the triage queue's `photos[]`, whichever layer filed it. */
 export const QueuePhoto = ({ photo, T, ...rest }) =>
   photo.kind === "bot"

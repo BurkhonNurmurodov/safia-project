@@ -26,7 +26,8 @@ from app.capabilities import page_scope_is_all
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    AppSetting, LeaderAiReview, LeaderChecklist, LeaderDaySource, LeaderTaskDay,
+    AppSetting, LeaderAiReview, LeaderChecklist, LeaderDaySource,
+    LeaderLateProof, LeaderLateProofMedia, LeaderLateProofShot, LeaderTaskDay,
     LeaderTaskDef, LeaderTaskEntry,
     LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskMedia,
     LeaderTaskPhoto, LeaderTaskSetting, Manager, RoleProfile,
@@ -1408,6 +1409,24 @@ def delete_submissions(
         .filter(LeaderTaskEntry.day_id.in_(day_ids))
         .delete(synchronize_session=False)
     )
+    # Late proofs and their draft shots hang off the DAY by a non-nullable FK,
+    # so they have to go before it or the whole batch dies on a foreign-key
+    # violation and the admin is given a 500 with no reason. A late proof is
+    # written while the day is open and is deliberately never deleted anywhere
+    # else, so a deleted day is the one thing that can strand one — and its
+    # photos are the day's photos, which is exactly what this tool removes.
+    late_ids = [r[0] for r in db.query(LeaderLateProof.id)
+                .filter(LeaderLateProof.day_id.in_(day_ids)).all()]
+    if late_ids:
+        db.query(LeaderLateProofMedia).filter(
+            LeaderLateProofMedia.late_id.in_(late_ids)
+        ).delete(synchronize_session=False)
+        db.query(LeaderLateProof).filter(
+            LeaderLateProof.id.in_(late_ids)
+        ).delete(synchronize_session=False)
+    db.query(LeaderLateProofShot).filter(
+        LeaderLateProofShot.day_id.in_(day_ids)
+    ).delete(synchronize_session=False)
     n_days = (
         db.query(LeaderTaskDay)
         .filter(LeaderTaskDay.id.in_(day_ids))

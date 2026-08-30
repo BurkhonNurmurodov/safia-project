@@ -59,6 +59,7 @@ try:
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
         add_cell_shift_times,
+        add_late_proof_provenance,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
         migrate_factories,
@@ -128,6 +129,7 @@ try:
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     add_cell_shift_times()
+    add_late_proof_provenance()
     create_action_log()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()

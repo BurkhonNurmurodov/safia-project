@@ -1163,6 +1163,108 @@ unit). Absent row = off, so nothing moves until an admin switches it.
 
 Related memory: `leader-per-task-submission`.
 
+## Filing a proof AFTER the deadline (late proofs)
+
+From **2026-08-30** a leader whose task deadline has gone by can still send the
+proof. It earns NO point on its own; two people decide whether it earns one at
+all. Before this the deadline had one shape for two very different people — the
+leader who did not do the work and the leader who did it and could not file it
+in time (a dead phone, a line that ran over) — and both scored 0 with nothing to
+say about it.
+
+- **Nothing about the existing close changes.** `autoclose_due` still force-closes
+  the task, `leader_close.locked()` still answers what it always answered, the
+  day still closes on its own schedule and the score is still stamped as it was.
+  The late proof is a SEPARATE row with its own photos, which is what keeps
+  every writer, reader and sweep ignorant of it.
+- **`services/leader_late_proof.py` is THE definition** — `eligible`, `create`,
+  `decide_supervisor`, `decide_admin`, `_grant`, `revoke`. A task is
+  late-fileable while: the unit closes tasks one at a time (nothing else HAS a
+  per-task deadline to miss), the task's deadline has passed, **its day is still
+  OPEN**, the task was not actually done, and no late proof exists for it yet.
+  «Its day is still open» is the window (the operator's call): the late door
+  shuts when the checklist shuts, so a proof can never arrive for a day whose
+  score has already been reported and read.
+- **The AI never sees one.** No `LeaderAiReview` row is written, so there is no
+  queue door to close — a late proof is judged on WHY it is late, which is a
+  question about a person and not about a photograph.
+- **The chain is two-stage and deliberately asymmetric.** The unit's own
+  brigadir may REJECT (final) or UPLIFT with a written case for it; only an
+  ADMIN can approve. The person closest to the leader knows best whether the
+  excuse is true and is the worst possible choice for the only person who
+  decides that it counts. The keyboards and the dashboard buttons express this
+  by being the only ones present, and every write re-checks it server-side.
+- **Approval gives FULL weight**, through the ordinary `LeaderTaskOverride`
+  overlay — the same read-time mechanism an admin's manual done/not-done ruling
+  uses, so it moves the register, the leaderboard, the day report and the
+  corrected report DM with no new scoring path. The lateness is not laundered:
+  the row, its chip and the day report all go on saying it arrived late.
+- **Nothing expires it.** An undecided row waits in both queues with a badge
+  until a person acts. The default is already 0 points, so a silent auto-reject
+  would only take the decision away from the two people the flow exists to put
+  it in front of.
+- **`status` is the stage AND the outcome**, one column: `supervisor` → `admin`
+  → `approved` | `rejected`. A separate stage column would be a second thing to
+  keep in step, and every reader would consult both to answer one question.
+- **A late proof can be SHOT IN THE APP or uploaded — both doors, side by
+  side** (the operator's call, 2026-08-30). On a camera task the late screen
+  carries «📷 Ilovada suratga olish» (a `web_app` to `/proof/camera?…&late=1`)
+  beside «🖼 Mavjud rasmni yuborish». This does NOT weaken the camera rule that
+  "a camera task has no upload path": before it, upload was the ONLY late door
+  for a camera task, so adding the camera is a tightening. The rule is about the
+  SCORING path — the stamp exists because the AI derives a date verdict
+  arithmetically — and a late proof reaches no arithmetic at all. Provenance is
+  carried and SHOWN (`source` / `stamp` / `captured_at` on each photo, a chip on
+  the card), because a stamped shot and a hand-picked file that look identical
+  teach reviewers that the stamp is decoration.
+- **`LeaderLateProofShot` is the DRAFT ROLL** — photos taken before the reason
+  is written, from either door, in one store. It is a table and not the bot's
+  `LeaderTaskCapture` because that row is per ACCOUNT, is cleared by any
+  `/tasks`, and expires in 30 minutes: a leader who shot three photos and took
+  too long writing the reason lost all three. And it is emphatically NOT
+  `leader_task_photos`: `leader_close.force_answer` turns ANY photo on that roll
+  into a `done` entry via `sync_entry`, and `leader_proof.server_clocks` feeds
+  it to `LeaderAiReview.clocks` — a shared key would auto-submit the task, score
+  it AND send it to Gemini, breaking all three rules at once. `create()`
+  CONSUMES the draft, so one place knows the draft → filing transition.
+- **`POST/DELETE/GET /api/leader-proof/late-photo`** are the camera's late door.
+  They reuse `_own_leader`, `_camera_cfg` (so CAMERA_IS_PILOT enrolment stays
+  bound in one place), `_relay` and `leader_proof.burn` verbatim — same server
+  stamp, same «no font ⇒ nothing stored» — but call `leader_late_proof.eligible`
+  instead of `_task_locked` and **never** `sync_entry`. `save_photo` goes on
+  refusing a locked task, untouched.
+- **`?late=1` is a REQUEST; the server is the authority.** `/session` serves
+  late mode only when `eligible` AND the task is genuinely LOCKED — in the
+  ≤5-minute sliver between the deadline passing and `autoclose_due` firing, the
+  leader can still file NORMALLY and their shots still count, so sending them
+  down the late path would cost them the point for nothing. With no late mode
+  the payload is byte-identical to what it has always been; that endpoint is the
+  one piece of shared code the live camera pilot executes.
+- **A draft never outlives its window**: `reset_task` and `reopen_task` call
+  `clear_draft`, `maybe_close_day` and `close_expired_days` call `drop_drafts`.
+  `eligible` requires the day OPEN, so a draft left behind could never be
+  submitted by anybody.
+- Bot: the warning screen is a SCREEN, not a line — it names the hour that
+  passed, states plainly that no point comes automatically, says who will read
+  the reason, and only then offers the way forward. Photos, then a mandatory
+  reason, then the card goes to the brigadir with its photos attached (a
+  brigadir deciding in a workshop will not open a dashboard first). Cards are
+  recorded as `ApprovalNotice` rows so one decision retires every copy. The
+  warning and the photo counter are ONE evolving message (`_lt_late_screen`), so
+  the camera's own nudge (`refresh_late_screen`) can redraw whichever is on
+  screen — deliberately not a widening of `refresh_camera_prompt`, which would
+  paint the locked-task outcome screen over the late one.
+- Dashboard: `/leaders?tab=lateproof`
+  (`components/leaders/LateProofs.jsx`). Photos are ON the card — unlike
+  «Norozliklar» next door, where the subject is a verdict that carries its own
+  prose; here the evidence IS the submission. Uplift is a FORM (the `Modal`
+  template with a required field), reject and approve are plain confirms.
+  Photos go through `ProofPhoto.jsx`'s `LateProofPhoto` — never a bare
+  `<img src>`, which carries no JWT and can only ever render broken.
+  Scoped like every read on the page, plus the LEADER, who reads their own
+  filings: the flow asks them to explain themselves, so the answer has to be
+  visible to them.
+
 ## An UNFINISHED bot day is visible («Tozalash» → «Yakunlanmagan»)
 
 Every read surface on the platform serves a CLOSED bot day — the `/leaders`

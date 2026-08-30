@@ -1836,6 +1836,186 @@ class LeaderAiDispute(Base):
     decision_note = Column(Text, nullable=True)
 
 
+class LeaderLateProof(Base):
+    """A proof filed AFTER its task's own deadline, and the two rulings on it.
+
+    The task itself is already over: the deadline sweep force-closed it, locked
+    it forever and recorded it not-done, and none of that is undone here. What
+    this row adds is the one thing the platform had no way to express — a
+    leader who did the work, missed the hour, and has something to show for it.
+    It carries its own photos and its own reason precisely so the locked entry
+    is never touched: `leader_close.locked()` goes on answering exactly what it
+    always answered, the AI queue never learns this exists, and the day's score
+    is moved only at the very end, by an admin, through the ordinary
+    LeaderTaskOverride overlay.
+
+    **It never reaches the AI.** A late proof is judged on WHY it is late, which
+    is a question about a person and not about a photograph, so the decision is
+    human at both stages by construction — there is no queue door to close
+    because no `LeaderAiReview` row is ever written for it.
+
+    The chain is two-stage and deliberately asymmetric (the operator's spec):
+
+      supervisor → the unit's own brigadir, who may REJECT (final, no points)
+                   or UPLIFT to the admins with a written case for it. They
+                   cannot grant points themselves — the person closest to the
+                   leader is the one best placed to say whether the excuse is
+                   true, and the least well placed to be the only one who says
+                   it counts.
+      admin      → approves (full weight, via LeaderTaskOverride) or rejects.
+
+    `status` is the stage AND the outcome, one column: "supervisor" → waiting on
+    the brigadir · "admin" → uplifted, waiting on an admin · "approved" ·
+    "rejected". Nothing expires it: an undecided row sits in both queues with a
+    badge until a person acts, because the default is already 0 points and a
+    silent auto-reject would take the decision away from the two people the
+    whole flow exists to put it in front of.
+
+    One live row per (day, task) — `uq_ltask_late`. A rejected late proof is not
+    re-filable: the leader had their say, two people ruled on it, and a second
+    attempt at the same missed hour is a different feature.
+    """
+    __tablename__ = "leader_late_proofs"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    day_id     = Column(Integer, ForeignKey("leader_task_days.id"), nullable=False, index=True)
+    task_id    = Column(Integer, nullable=False)
+    leader_id  = Column(Integer, nullable=False, index=True)   # role_profiles.id
+    leader_name = Column(String(160), nullable=True)           # spelling at filing time
+    manager_id = Column(Integer, nullable=True, index=True)    # the unit that owns the day
+    date       = Column(String(10), nullable=False, index=True)
+    shift      = Column(Integer, nullable=True)
+    # The report uid `/api/leaders` prints for this day ("bot-{day_id}") — held
+    # here so approval can write its LeaderTaskOverride without re-deriving an
+    # identity two surfaces would then have to agree about.
+    uid        = Column(String, nullable=True, index=True)
+    # The hour that had already gone by when this was filed, for the card: a
+    # reviewer judging "how late is late" should not have to look the rule up.
+    deadline   = Column(String(5), nullable=True)
+
+    status = Column(String(12), nullable=False, default="supervisor", index=True)
+
+    # The leader's own explanation. Mandatory — a late proof with no reason is
+    # exactly the thing the brigadir has nothing to rule on.
+    reason     = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # ── stage 1: the unit's brigadir ─────────────────────────────────────────
+    sup_action   = Column(String(10), nullable=True)   # "rejected" | "uplifted"
+    sup_note     = Column(Text, nullable=True)         # required to uplift
+    sup_by_name  = Column(String(160), nullable=True)
+    sup_by_telegram = Column(BigInteger, nullable=True)
+    sup_at       = Column(DateTime(timezone=True), nullable=True)
+
+    # ── stage 2: the admins ──────────────────────────────────────────────────
+    adm_action   = Column(String(10), nullable=True)   # "approved" | "rejected"
+    adm_note     = Column(Text, nullable=True)
+    adm_by_name  = Column(String(160), nullable=True)
+    adm_by_telegram = Column(BigInteger, nullable=True)
+    adm_at       = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (UniqueConstraint("day_id", "task_id", name="uq_ltask_late"),)
+
+
+class LeaderLateProofMedia(Base):
+    """One photo of a late proof — the ARCHIVE-CHANNEL copy, as everywhere else.
+
+    A table of its own rather than more `LeaderTaskMedia` rows: those hang off a
+    LeaderTaskEntry, and the whole point of this flow is that the entry is
+    locked and must not gain, lose or appear to gain anything. Keeping the
+    pixels apart is what lets an approved late proof move the score through the
+    override overlay while every existing reader of the day — the register, the
+    media proxy, the AI reviewer, the day report — goes on seeing the submission
+    the deadline actually caught.
+    """
+    __tablename__ = "leader_late_proof_media"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    late_id    = Column(Integer, ForeignKey("leader_late_proofs.id"), nullable=False, index=True)
+    file_id    = Column(String, nullable=False)
+    message_id = Column(BigInteger, nullable=True)
+    pos        = Column(Integer, nullable=False, default=0)
+    # WHICH DOOR this photo came through — "camera" (taken in the app, clock
+    # server-authored) or "upload" (a file the leader chose). Nullable because
+    # rows written before the camera door existed came through the upload one
+    # and are read as such.
+    #
+    # It is on the row rather than derived because the reviewer has to SEE it.
+    # A stamped camera shot and a hand-picked file that look identical on the
+    # brigadir's card teach reviewers that the stamp is decorative, which is
+    # the one way offering both doors could weaken the camera feature.
+    source      = Column(String(10), nullable=True)
+    # The server's own instant for a camera shot, and the text burnt into it.
+    # NULL for an upload: a file the leader chose has no instant this platform
+    # can vouch for, and inventing one is exactly what the camera exists to stop.
+    captured_at = Column(DateTime(timezone=True), nullable=True)
+    stamp       = Column(String(40), nullable=True)
+
+
+class LeaderLateProofShot(Base):
+    """The DRAFT roll of a late filing — shots taken (or sent) before the
+    leader has written their reason and pressed send.
+
+    Three separate arguments put this in a table of its own, and each one alone
+    would be enough:
+
+    1. **It must survive the app closing.** That is `LeaderTaskPhoto`'s own
+       reason for existing: a leader who shot two of three and closed Telegram
+       comes back to two. The late flow staged its photos in
+       `LeaderTaskCapture.media` — one row per Telegram ACCOUNT, deleted by any
+       `_lt_clear`, and expiring after 30 minutes — so a leader who opened
+       /tasks again, or simply took too long writing the reason, silently lost
+       every photo they had taken.
+
+    2. **It must not be reachable from `leader_task_photos`.** Sharing that
+       table would be actively dangerous, not merely untidy:
+       `leader_close.force_answer` turns ANY photo on a (day, task) roll into a
+       `done` LeaderTaskEntry via `sync_entry` — awarding the point with no
+       ruling at all — and `leader_proof.server_clocks` feeds that same roll
+       into `LeaderAiReview.clocks`. A late shot sharing the key would be
+       auto-submitted, scored AND sent to Gemini: all three of the rules this
+       feature is named for, broken at once. It would also collide on
+       `uq_ltask_photo_slot` with whatever the on-time roll already holds.
+
+    3. **One store for BOTH doors.** A camera shot and a chat upload land here
+       alike (`source`), so the count on screen, the durability and the submit
+       all read one place. Two stores would be two answers to "how many photos
+       does this filing have".
+
+    `client_key` is carried for the same reason `LeaderTaskPhoto` carries it:
+    the page cannot tell a request that never arrived from one whose answer
+    died on the way back, so it re-sends, and without the key the same picture
+    lands twice.
+
+    Rows live only until the filing is submitted (`leader_late_proof.create`
+    consumes them) or its window shuts — see `clear_draft` / `drop_drafts`.
+    """
+    __tablename__ = "leader_late_proof_shots"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    day_id      = Column(Integer, ForeignKey("leader_task_days.id"), nullable=False, index=True)
+    leader_id   = Column(Integer, nullable=False, index=True)   # role_profiles.id
+    task_id     = Column(Integer, nullable=False)
+    slot        = Column(Integer, nullable=False, default=0)
+    source      = Column(String(10), nullable=False, default="upload")  # camera | upload
+    file_id     = Column(String, nullable=False)                # archive-channel copy
+    message_id  = Column(BigInteger, nullable=True)
+    # Server-authored, camera only. An uploaded file carries no instant this
+    # platform can vouch for, so it carries none here either.
+    captured_at = Column(DateTime(timezone=True), nullable=True)
+    received_at = Column(DateTime(timezone=True), server_default=func.now())
+    stamp       = Column(String(40), nullable=True)
+    skew_s      = Column(Integer, nullable=True)
+    client_key  = Column(String(64), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("day_id", "task_id", "slot", name="uq_late_shot_slot"),
+        # Per LEADER, exactly as the camera roll's key is: the backstop for two
+        # copies of one upload racing out of the offline queue.
+        Index("uq_late_shot_client_key", "leader_id", "client_key", unique=True),
+    )
+
+
 class LeaderTaskOverride(Base):
     """An admin's manual ruling on ONE task of ONE report — done or not done,
     regardless of what the leader answered or what the AI thought.
