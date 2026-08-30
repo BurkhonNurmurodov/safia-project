@@ -66,7 +66,7 @@ const SUP_COLORS = CATEGORY_COLORS;
 // the table's rate column (`rateColor`) so a cell and its row's % never
 // disagree about whether a day was good. It was a single-hue green ramp while
 // the metric was present ÷ period-union — which was ~100 % for everybody, so
-// every shade meant "fine"; a real came ÷ on-the-list rate is a status, and a
+// every shade meant "fine"; a real attended ÷ on-the-list rate is a status, and a
 // 60 % day must not read as green. Shades within a hue rank days inside a band.
 const ATT_SEGMENTS = [
   { from: 0,  color: "#b91c1c" }, // < 60%   → deep red
@@ -208,13 +208,19 @@ export default function Workers() {
 
   // ── headcount aggregates ───────────────────────────────────────────────────────
   const totalWorkers  = headcount.reduce((s, m) => s + m.total, 0);
-  // Attendance = came ÷ on the list, summed over the period then divided (not
-  // an average of per-brigadir rates, which would weigh a 37-worker cell the
-  // same as a 125-worker one). avgOnList / avgCame are the same pair per
-  // average day, which is what the KPI sub-line spells out.
+  // Attendance = (came + on leave) ÷ on the list, summed over the period then
+  // divided (not an average of per-brigadir rates, which would weigh a
+  // 37-worker cell the same as a 125-worker one). avgOnList / avgCame are the
+  // same pair per average day, which is what the KPI sub-line spells out.
+  // Leave is ATTENDED: «О» is отпуск, booked by the company and standing on the
+  // list for weeks, so counting it as a no-show marked a brigadir down every
+  // one of those days for somebody nobody expected. The backend applies the
+  // same rule to `att_rate` (the table column) — one formula, four surfaces.
   const rosterSum     = headcount.reduce((s, m) => s + (m.roster_sum || 0), 0);
   const cameSum       = headcount.reduce((s, m) => s + (m.came_sum || 0), 0);
-  const attRate       = rosterSum ? Math.round((cameSum / rosterSum) * 100) : null;
+  const leaveSum      = headcount.reduce((s, m) => s + (m.leave_sum || 0), 0);
+  const attendedSum   = cameSum + leaveSum;
+  const attRate       = rosterSum ? Math.round((attendedSum / rosterSum) * 100) : null;
   const avgOnList     = headcount.reduce((s, m) => s + (m.avg_roster || 0), 0);
   const avgCame       = headcount.reduce((s, m) => s + (m.avg_came || 0), 0);
   const avgAbsent     = headcount.reduce((s, m) => s + (m.avg_absent || 0), 0);
@@ -225,9 +231,10 @@ export default function Workers() {
   const shortfall     = Math.max(0, Math.round((officialSum - presentOfOff) * 10) / 10);
   const mismatchMgrs  = headcount.filter((m) => (m.mismatch_days || 0) > 0);
 
-  // per-supervisor derived rate + shortfall. `rate` is the backend's came ÷
-  // on-the-list for the period; the old avg_daily_hc ÷ total was present over
-  // "everyone who came at least once", i.e. 100 % on any single-day range.
+  // per-supervisor derived rate + shortfall. `rate` is the backend's
+  // (came + on leave) ÷ on-the-list for the period; the old avg_daily_hc ÷
+  // total was present over "everyone who came at least once", i.e. 100 % on
+  // any single-day range.
   const rows = useMemo(() => headcount.map((m) => {
     const gap = m.official_hc != null ? Math.round((m.official_hc - (m.avg_daily_hc || 0)) * 10) / 10 : null;
     return { ...m, rate: m.att_rate ?? null, gap };
@@ -543,15 +550,16 @@ export default function Workers() {
   };
 
   // Attendance heatmap — reuses the fleet HeatmapChart (supervisor rows × day
-  // cols). Each cell is that day's came ÷ on-the-list (same metric as the
-  // `rate` column), and the counts behind it ride along for the hover text.
+  // cols). Each cell is that day's (came + on leave) ÷ on-the-list (same metric
+  // as the `rate` column, which the backend computes the same way), and the
+  // counts behind it ride along for the hover text.
   // HeatmapChart reads `net_util` as a 0–1 fraction and renders it as a %;
   // days with no list stay null → shown as "—".
   //
   // The grid follows the page's `scope` switch like every other measured
   // surface: «Jami» is the whole list, «Zagruzka» the zagruzka-counted titles
   // only (`z_*`, the same halves the backend sends for that day). Same metric
-  // either way — came ÷ on-the-list — so the two views are directly comparable
+  // either way — (came + on leave) ÷ on-the-list — so the views are comparable
   // and a cell never changes meaning, only its population.
   const heatDates = useMemo(() => {
     const set = new Set();
@@ -574,7 +582,7 @@ export default function Workers() {
         const absent   = d && (zag ? d.z_absent   ?? d.absent   : d.absent);
         const on_leave = d && (zag ? d.z_on_leave ?? d.on_leave : d.on_leave);
         row[dt] = roster
-          ? { net_util: came / roster, roster, came, absent, on_leave }
+          ? { net_util: (came + (on_leave || 0)) / roster, roster, came, absent, on_leave }
           : { net_util: null };
       });
       out[m.name] = row;
@@ -800,7 +808,7 @@ export default function Workers() {
                   tooltip={t("workers.tip.absent")} />
                 <KPICard icon={TrendingUp} color="#14b8a6" label={t("workers.kpi.attRate")}
                   value={attRate == null ? "—" : `${attRate}%`}
-                  sub={rosterSum ? `${cameSum} / ${rosterSum}` : undefined}
+                  sub={rosterSum ? `${attendedSum} / ${rosterSum}` : undefined}
                   tooltip={t("workers.tip.attRate")} />
                 {/* Штат gap — a different comparison (plan vs actual, not list
                     vs came) but it carries the verifix/official mismatch alarm,
@@ -885,7 +893,7 @@ export default function Workers() {
               : ""}>
             {dayCell && (() => {
               const c = dayCell.cell;
-              const pct = Math.round((c.came / c.roster) * 100);
+              const pct = Math.round(((c.came + (c.on_leave || 0)) / c.roster) * 100);
               const line = (label, value, color, extra) => (
                 <div className="flex items-baseline justify-between gap-3 py-1.5">
                   <span className="text-xs" style={{ color: "var(--text-3)" }}>{label}</span>
@@ -900,6 +908,15 @@ export default function Workers() {
                   <div className="text-center pb-2">
                     <div className="text-3xl font-bold tabular-nums" style={{ color: rateColor(pct) }}>{pct}%</div>
                     <div className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("workers.attRate")}</div>
+                    {/* The fraction the % came from. Leave counts as attended,
+                        so «84 came, 16 absent» no longer adds up to the number
+                        above it on its own — without this line the reader is
+                        left to guess which of the four counts it was over. */}
+                    <div className="text-[11px] tabular-nums mt-0.5" style={{ color: "var(--text-4)" }}>
+                      {c.on_leave > 0
+                        ? `${c.came} + ${c.on_leave} / ${c.roster}`
+                        : `${c.came} / ${c.roster}`}
+                    </div>
                   </div>
                   <div style={{ borderTop: "1px solid var(--border)" }}>
                     {line(t("workers.onList"), c.roster, "var(--text-1)")}
