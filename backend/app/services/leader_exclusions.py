@@ -29,6 +29,15 @@ Two rules hold this together:
 
 Lifting DELETES the row: "counts again" is the absence of a record, never a
 third state every reader has to spell out.
+
+**`excluded()` is THE door for both this and the open-ended cutoff** (a leader
+who stopped counting from a date — `services/leader_cutoffs.py`). The two are
+different decisions about different things, one about a named night and one
+about a person, but they have one arithmetic consequence, and every consumer on
+the platform already asks this module. Folding the cutoff in here is what took
+it to the four AI queue doors and the report sender's park without wiring it to
+each of them separately — and what stops the two ever disagreeing about whether
+a day counts.
 """
 from __future__ import annotations
 
@@ -38,6 +47,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import LeaderAiReview, LeaderDayExclusion, Manager, RoleProfile
+from app.services import leader_cutoffs
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +61,12 @@ def key(leader_id: int | None, leader_name: str | None, date_iso: str) -> str:
     question about the same rows, and a leader-day that is one record to the
     late-open flow and two records to this one is a day whose two admin
     decisions cannot be read together.
+
+    The half in front of the date is `leader_cutoffs.person_key`, the same
+    function the open-ended cutoff keys itself by, so a leader who is one person
+    to one tool cannot be two people to the other.
     """
-    who = f"p{leader_id}" if leader_id else f"n{(leader_name or '').strip().lower()}"
-    return f"{who}|{str(date_iso)[:10]}"
+    return f"{leader_cutoffs.person_key(leader_id, leader_name)}|{str(date_iso)[:10]}"
 
 
 # ── reading ──────────────────────────────────────────────────────────────────
@@ -77,21 +90,59 @@ def profile_days(db: Session) -> set[tuple[int, str]]:
             .filter(LeaderDayExclusion.leader_profile_id.isnot(None)).all()}
 
 
+def preload(db: Session) -> tuple[set[tuple[int, str]], dict[str, "object"]]:
+    """`(day pairs, cutoffs by person key)` — both halves for a many-row caller.
+
+    THE preload door. `excluded()` answers two questions that happen to have one
+    answer, and a caller that loaded only the first would silently keep queueing
+    and reporting a leader the platform has stopped counting. Handing both back
+    from one call is what makes forgetting the second impossible.
+    """
+    return profile_days(db), leader_cutoffs.load(db)
+
+
 def excluded(db: Session, leader_id: int | None, date: str | None, *,
-             pairs: set[tuple[int, str]] | None = None) -> bool:
+             leader_name: str | None = None,
+             pairs: set[tuple[int, str]] | None = None,
+             cuts: dict | None = None) -> bool:
     """Is this leader-day out of the results?
 
-    `pairs` is the preloaded answer for a caller already walking many rows
-    (`profile_days`); without one this asks the DB for the single pair, which is
-    what the per-row doors want.
+    TWO ways it can be, and this is THE door both answer through — every
+    consumer already asks here, so the open-ended cutoff reached all of them
+    (the four AI queue doors, the report sender's park) by being folded in here
+    rather than by being wired to each:
+
+      * an admin took THAT DAY out (`LeaderDayExclusion`), or
+      * the leader stopped counting on or before it (`LeaderCutoff`).
+
+    `pairs` / `cuts` are the preloaded answers for a caller already walking many
+    rows — see `preload()`, which returns exactly this pair. Without them this
+    asks the DB for the single row, which is what the per-row doors want.
+
+    **`leader_name` is not optional decoration on the sheet layer.** A cutoff
+    can be keyed by a folded NAME, for a leader whose sheet spelling never
+    resolved to a profile, and a caller that passes only the id would answer
+    "counts" for exactly those rows — while `queue_report`, which has the name,
+    answers "does not". The cutoff is asked BEFORE the `leader_id` guard for the
+    same reason: a name-keyed cutoff is a real answer about a row that has no
+    profile id at all.
     """
-    if not leader_id or not date:
+    if not date:
         return False
+    d = str(date)[:10]
+    if cuts is not None:
+        if leader_cutoffs.hit(cuts, leader_id, leader_name, d) is not None:
+            return True
+    elif leader_cutoffs.active(db, leader_id, leader_name, d) is not None:
+        return True
+    if not leader_id:
+        return False
+    lid = int(leader_id)
     if pairs is not None:
-        return (int(leader_id), str(date)[:10]) in pairs
+        return (lid, d) in pairs
     return db.query(LeaderDayExclusion).filter(
-        LeaderDayExclusion.leader_profile_id == int(leader_id),
-        LeaderDayExclusion.date == str(date)[:10]).first() is not None
+        LeaderDayExclusion.leader_profile_id == lid,
+        LeaderDayExclusion.date == d).first() is not None
 
 
 def row_for(db: Session, leader_id: int | None, leader_name: str | None,
@@ -99,6 +150,39 @@ def row_for(db: Session, leader_id: int | None, leader_name: str | None,
     """The exclusion on one leader-day, reached by whichever key it holds."""
     return (db.query(LeaderDayExclusion)
             .filter_by(leader_key=key(leader_id, leader_name, date)).first())
+
+
+def wire_for(db: Session, leader_id: int | None, leader_name: str | None,
+             date: str) -> dict | None:
+    """What ONE leader-day carries about not counting — either reason, one shape.
+
+    The day's own exclusion wins where both apply: it is a person's explicit
+    answer about this exact day, while the cutoff is a rule about all the days
+    after a date — the same precedence an exclusion already has over the filing
+    window void. Lifting the cutoff therefore leaves the day exclusion standing.
+    """
+    own = wire(row_for(db, leader_id, leader_name, date))
+    if own is not None:
+        return own
+    return leader_cutoffs.wire(
+        leader_cutoffs.active(db, leader_id, leader_name, date))
+
+
+def wire_in(excl: dict[str, LeaderDayExclusion], cuts: dict,
+            leader_id: int | None, leader_name: str | None,
+            date: str) -> dict | None:
+    """`wire_for` off two preloaded maps — what the register builds every row with.
+
+    A deliberate twin, and the precedence lives here ONCE for both: the register
+    (this) and the day-report page (`wire_for`) must never disagree about which
+    of the two decisions a day is carrying, or a leader reads one story on the
+    list and another on the report the list links to.
+    """
+    own = wire(excl.get(key(leader_id, leader_name, date)))
+    if own is not None:
+        return own
+    return leader_cutoffs.wire(
+        leader_cutoffs.hit(cuts, leader_id, leader_name, date))
 
 
 def wire(e: LeaderDayExclusion | None) -> dict | None:

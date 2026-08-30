@@ -314,6 +314,37 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Ваш день снова учитывается", "Дата: {date} | Этот день ({score}%) возвращён в ваши результаты. Кто: {by}"),
         "en": ("Your day counts again", "Date: {date} | This day ({score}%) is back in your results. By: {by}"),
     },
+    # ── a LEADER taken out of the results from a date on ─────────────────────
+    # Not one day: everything from `{date}` onwards, days that do not exist yet
+    # included. Sent once, at the decision, because "one message per affected
+    # day" would be a message a morning forever about one fact — and both people
+    # are told, since a leader who quietly stops appearing in a ranking and a
+    # brigadir whose unit average changes shape are exactly the two who cannot
+    # work out why on their own.
+    "leader_cutoff_report_set": {
+        "uz": ("{leader}: natijalar hisoblanmaydi", "Sana: {date} dan boshlab | Bu liderning kunlari endi o'rtacha natijaga umuman kirmaydi. Sabab: {reason} | Kim: {by}"),
+        "uz_cyrl": ("{leader}: натижалар ҳисобланмайди", "Сана: {date} дан бошлаб | Бу лидернинг кунлари энди ўртача натижага умуман кирмайди. Сабаб: {reason} | Ким: {by}"),
+        "ru": ("{leader}: результаты больше не учитываются", "С {date} | Дни этого лидера больше не входят в средний результат. Причина: {reason} | Кто: {by}"),
+        "en": ("{leader}: results no longer count", "From {date} | This leader's days no longer enter the average at all. Reason: {reason} | By: {by}"),
+    },
+    "leader_cutoff_set": {
+        "uz": ("Natijalaringiz hisoblanmaydi", "Sana: {date} dan boshlab | Kunlaringiz endi o'rtacha natijaga umuman kirmaydi — na ortiqcha, na kamchilik. Sabab: {reason} | Kim: {by}"),
+        "uz_cyrl": ("Натижаларингиз ҳисобланмайди", "Сана: {date} дан бошлаб | Кунларингиз энди ўртача натижага умуман кирмайди — на ортиқча, на камчилик. Сабаб: {reason} | Ким: {by}"),
+        "ru": ("Ваши результаты больше не учитываются", "С {date} | Ваши дни больше не входят в средний результат — ни в плюс, ни в минус. Причина: {reason} | Кто: {by}"),
+        "en": ("Your results no longer count", "From {date} | Your days no longer enter the average either way. Reason: {reason} | By: {by}"),
+    },
+    "leader_cutoff_report_lifted": {
+        "uz": ("{leader}: natijalar yana hisoblanadi", "Sana: {date} dan boshlangan cheklov bekor qilindi — kunlar o'z bahosi bilan qaytarildi. Kim: {by}"),
+        "uz_cyrl": ("{leader}: натижалар яна ҳисобланади", "Сана: {date} дан бошланган чеклов бекор қилинди — кунлар ўз баҳоси билан қайтарилди. Ким: {by}"),
+        "ru": ("{leader}: результаты снова учитываются", "Ограничение с {date} снято — дни вернулись со своими оценками. Кто: {by}"),
+        "en": ("{leader}: results count again", "The cutoff from {date} was lifted — the days are back at the scores they always had. By: {by}"),
+    },
+    "leader_cutoff_lifted": {
+        "uz": ("Natijalaringiz yana hisoblanadi", "Sana: {date} dan boshlangan cheklov bekor qilindi — kunlaringiz o'z bahosi bilan qaytarildi. Kim: {by}"),
+        "uz_cyrl": ("Натижаларингиз яна ҳисобланади", "Сана: {date} дан бошланган чеклов бекор қилинди — кунларингиз ўз баҳоси билан қайтарилди. Ким: {by}"),
+        "ru": ("Ваши результаты снова учитываются", "Ограничение с {date} снято — ваши дни вернулись со своими оценками. Кто: {by}"),
+        "en": ("Your results count again", "The cutoff from {date} was lifted — your days are back at the scores they always had. By: {by}"),
+    },
     # An admin ruled on the brigadir's objection to an automatic rejection.
     # A proof filed after the task's own deadline. The leader is told at EVERY
     # terminal stage, rejection included: somebody who explained themselves and
@@ -1079,6 +1110,94 @@ _NOTIF_TG_HTML = {
         "en": ("↩️ <b>Your day counts again</b>\n\n"
                "📅 <b>Date:</b> {date}\n"
                "📊 <b>The day scores:</b> {score}%\n"
+               "✍️ <b>By:</b> {by}"),
+    },
+    "leader_cutoff_report_set": {
+        "uz": ("⊘ <b>Lider natijalari hisoblanmaydi</b>\n\n"
+               "👤 <b>Lider:</b> {leader}\n"
+               "📅 <b>Qachondan:</b> {date}\n"
+               "✍️ <b>Kim:</b> {by}\n\n"
+               "💬 <b>Sabab:</b> {reason}\n\n"
+               "<blockquote>Shu kundan boshlab bu liderning kunlari o'rtacha natijaga umuman kirmaydi — "
+               "na ortiqcha, na kamchilik. Undan oldingi kunlar o'z bahosi bilan qoladi.</blockquote>"),
+        "uz_cyrl": ("⊘ <b>Лидер натижалари ҳисобланмайди</b>\n\n"
+                    "👤 <b>Лидер:</b> {leader}\n"
+                    "📅 <b>Қачондан:</b> {date}\n"
+                    "✍️ <b>Ким:</b> {by}\n\n"
+                    "💬 <b>Сабаб:</b> {reason}\n\n"
+                    "<blockquote>Шу кундан бошлаб бу лидернинг кунлари ўртача натижага умуман кирмайди — "
+                    "на ортиқча, на камчилик. Ундан олдинги кунлар ўз баҳоси билан қолади.</blockquote>"),
+        "ru": ("⊘ <b>Результаты лидера не учитываются</b>\n\n"
+               "👤 <b>Лидер:</b> {leader}\n"
+               "📅 <b>С какого дня:</b> {date}\n"
+               "✍️ <b>Кто:</b> {by}\n\n"
+               "💬 <b>Причина:</b> {reason}\n\n"
+               "<blockquote>С этого дня дни этого лидера не входят в средний результат — ни в плюс, "
+               "ни в минус. Более ранние дни остаются со своими оценками.</blockquote>"),
+        "en": ("⊘ <b>This leader's results no longer count</b>\n\n"
+               "👤 <b>Leader:</b> {leader}\n"
+               "📅 <b>From:</b> {date}\n"
+               "✍️ <b>By:</b> {by}\n\n"
+               "💬 <b>Reason:</b> {reason}\n\n"
+               "<blockquote>From this day on their days are out of the average entirely — neither a "
+               "plus nor a minus. Everything before it keeps the score it always had.</blockquote>"),
+    },
+    "leader_cutoff_set": {
+        "uz": ("⊘ <b>Natijalaringiz hisoblanmaydi</b>\n\n"
+               "📅 <b>Qachondan:</b> {date}\n"
+               "✍️ <b>Kim:</b> {by}\n\n"
+               "💬 <b>Sabab:</b> {reason}\n\n"
+               "<blockquote>Shu kundan boshlab kunlaringiz o'rtacha natijaga umuman kirmaydi — "
+               "na ortiqcha, na kamchilik. Undan oldingi kunlaringiz o'z bahosi bilan qoladi.</blockquote>"),
+        "uz_cyrl": ("⊘ <b>Натижаларингиз ҳисобланмайди</b>\n\n"
+                    "📅 <b>Қачондан:</b> {date}\n"
+                    "✍️ <b>Ким:</b> {by}\n\n"
+                    "💬 <b>Сабаб:</b> {reason}\n\n"
+                    "<blockquote>Шу кундан бошлаб кунларингиз ўртача натижага умуман кирмайди — "
+                    "на ортиқча, на камчилик. Ундан олдинги кунларингиз ўз баҳоси билан қолади.</blockquote>"),
+        "ru": ("⊘ <b>Ваши результаты не учитываются</b>\n\n"
+               "📅 <b>С какого дня:</b> {date}\n"
+               "✍️ <b>Кто:</b> {by}\n\n"
+               "💬 <b>Причина:</b> {reason}\n\n"
+               "<blockquote>С этого дня ваши дни не входят в средний результат — ни в плюс, ни в "
+               "минус. Более ранние дни остаются со своими оценками.</blockquote>"),
+        "en": ("⊘ <b>Your results no longer count</b>\n\n"
+               "📅 <b>From:</b> {date}\n"
+               "✍️ <b>By:</b> {by}\n\n"
+               "💬 <b>Reason:</b> {reason}\n\n"
+               "<blockquote>From this day on your days are out of the average entirely — neither a "
+               "plus nor a minus. Everything before it keeps the score it always had.</blockquote>"),
+    },
+    "leader_cutoff_report_lifted": {
+        "uz": ("↩️ <b>Lider natijalari yana hisoblanadi</b>\n\n"
+               "👤 <b>Lider:</b> {leader}\n"
+               "📅 <b>Cheklov qachondan edi:</b> {date}\n"
+               "✍️ <b>Kim:</b> {by}"),
+        "uz_cyrl": ("↩️ <b>Лидер натижалари яна ҳисобланади</b>\n\n"
+                    "👤 <b>Лидер:</b> {leader}\n"
+                    "📅 <b>Чеклов қачондан эди:</b> {date}\n"
+                    "✍️ <b>Ким:</b> {by}"),
+        "ru": ("↩️ <b>Результаты лидера снова учитываются</b>\n\n"
+               "👤 <b>Лидер:</b> {leader}\n"
+               "📅 <b>Ограничение было с:</b> {date}\n"
+               "✍️ <b>Кто:</b> {by}"),
+        "en": ("↩️ <b>This leader's results count again</b>\n\n"
+               "👤 <b>Leader:</b> {leader}\n"
+               "📅 <b>The cutoff was from:</b> {date}\n"
+               "✍️ <b>By:</b> {by}"),
+    },
+    "leader_cutoff_lifted": {
+        "uz": ("↩️ <b>Natijalaringiz yana hisoblanadi</b>\n\n"
+               "📅 <b>Cheklov qachondan edi:</b> {date}\n"
+               "✍️ <b>Kim:</b> {by}"),
+        "uz_cyrl": ("↩️ <b>Натижаларингиз яна ҳисобланади</b>\n\n"
+                    "📅 <b>Чеклов қачондан эди:</b> {date}\n"
+                    "✍️ <b>Ким:</b> {by}"),
+        "ru": ("↩️ <b>Ваши результаты снова учитываются</b>\n\n"
+               "📅 <b>Ограничение было с:</b> {date}\n"
+               "✍️ <b>Кто:</b> {by}"),
+        "en": ("↩️ <b>Your results count again</b>\n\n"
+               "📅 <b>The cutoff was from:</b> {date}\n"
                "✍️ <b>By:</b> {by}"),
     },
     "leader_day_corrected": {

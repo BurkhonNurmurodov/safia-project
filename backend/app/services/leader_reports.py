@@ -27,7 +27,9 @@ from app.models import (
     LeaderTaskDef, LeaderTaskEntry, LeaderTaskLeaderSetting, LeaderTaskSetting,
     Manager, RoleProfile,
 )
-from app.services import action_log, leader_ai, leader_bot, leader_exclusions
+from app.services import (
+    action_log, leader_ai, leader_bot, leader_cutoffs, leader_exclusions,
+)
 
 log = logging.getLogger(__name__)
 
@@ -210,8 +212,12 @@ def day_report(db: Session, uid: str) -> dict | None:
         # is still rendered (it is what the day was worth), but the page has to
         # say it counts for nobody, or the person reading their own report has
         # no way to tell it from a day that scored against them.
-        "excluded": leader_exclusions.wire(leader_exclusions.row_for(
-            db, row.get("leader_id"), row.get("leader"), row["date"])),
+        # …either because the DAY was excluded, or because the leader stopped
+        # counting on or before it. One shape for both — see
+        # `leader_exclusions.wire_for`; the extra `cutoff` + `from` keys are what
+        # let the page say which of the two it is reading.
+        "excluded": leader_exclusions.wire_for(
+            db, row.get("leader_id"), row.get("leader"), row["date"]),
         "lateState": row.get("late_state"),
         "lateBy": row.get("late_by"),
         "lateReason": row.get("late_reason"),
@@ -510,6 +516,16 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
         _park(db, key, uid, "excluded from the results")
         return False
 
+    # …and the same for a leader who stopped counting from a date on. Asked
+    # separately only because a sheet row whose name never resolved carries no
+    # profile id, and `excluded()` — which every id-keyed door calls — cannot
+    # reach a name-keyed cutoff. Same park, same reasoning: there is no number
+    # to report, and the key must leave the sweep's candidate set.
+    if leader_cutoffs.active(db, row.get("leader_id"), row.get("leader"),
+                             date) is not None:
+        _park(db, key, uid, "leader is cut off from the results")
+        return False
+
     if not key:
         return False
 
@@ -691,4 +707,55 @@ def notify_excluded(db: Session, *, leader_id: int | None, leader_name: str | No
                        "leader_day_restored" if restored else "leader_day_excluded",
                        params, type="info")
         sent += 1
+    return sent
+
+
+def notify_cutoff(db: Session, *, leader_id: int | None, leader_name: str | None,
+                  manager_id: int | None, from_date: str, reason: str,
+                  actor: str | None, restored: bool = False) -> int:
+    """Tell the leader and their brigadir that this leader stopped counting.
+
+    Sent ONCE, at the decision, and about the DECISION rather than about a day.
+    That is the whole difference from `notify_excluded` beside it: a cutoff
+    covers every day from a date on, including days that do not exist yet, so
+    "one message per affected day" is not a bounded thing to send — it would be
+    a message a morning, forever, about the same single fact.
+
+    **Both audiences, and unconditionally** — unlike `notify_excluded`, which
+    only writes where a score DM actually went out. There is no ledger row to
+    consult here: the fact being announced is not "a number you were shown has
+    changed", it is "from Monday your reports are no longer scored", and that is
+    news whether or not any particular day was ever reported. A leader who
+    quietly stops appearing in a ranking, and a brigadir whose unit average
+    silently changes shape, are exactly the two people who cannot work out on
+    their own why.
+
+    Returns how many people were notified — 0 is an ordinary outcome (a name-
+    keyed cutoff resolves to no profile and no unit) and the caller says so
+    rather than treating it as a failure.
+    """
+    from app.routers.staff import notify_profile
+    from app.identity import profile_key
+
+    params = {
+        "date": str(from_date)[:10],
+        "leader": leader_name or "—",
+        "reason": (reason or "—").strip() or "—",
+        "by": actor or "—",
+    }
+    sent = 0
+    if manager_id:
+        notify_profile(db, profile_key("supervisor", int(manager_id)),
+                       "leader_cutoff_report_lifted" if restored
+                       else "leader_cutoff_report_set",
+                       params, type="info")
+        sent += 1
+    if leader_id:
+        prof = db.query(RoleProfile).filter_by(id=int(leader_id)).first()
+        if prof is not None:
+            notify_profile(db, profile_key("leader", prof.id),
+                           "leader_cutoff_lifted" if restored
+                           else "leader_cutoff_set",
+                           params, type="info")
+            sent += 1
     return sent

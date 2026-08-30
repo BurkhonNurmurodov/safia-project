@@ -3080,3 +3080,60 @@ class LeaderDayExclusion(Base):
     score_at = Column(Float, nullable=True)
     set_by = Column(String(160), nullable=True)
     set_at = Column(DateTime, nullable=True)
+
+
+class LeaderCutoff(Base):
+    """A leader whose results STOP COUNTING from one day on — open-ended.
+
+    `LeaderDayExclusion` beside it answers a question about a NAMED DAY: the
+    platform got that night wrong, so nobody is scored on it. This answers a
+    question about a PERSON: from this date they are not a leader here any more
+    — they left, they moved to another job, their unit was handed over — and
+    every day from that one on is a day they were never expected to file.
+
+    The two cannot be spelled as each other. An exclusion is one row per day and
+    the future has no days in it yet, so expressing "from 21 August onwards" as
+    exclusions means writing rows for days that do not exist, then writing more
+    of them every morning forever — and the moment the writer stops, the person
+    starts scoring 0 again with nothing on screen saying why. One record per
+    decision is the only shape that keeps answering after the person who made it
+    has stopped looking.
+
+    **The date is the FLOOR and there is no ceiling.** A leader who comes back
+    has their cutoff LIFTED (or moved later); a gap in the middle of a career is
+    a run of day exclusions, which is exactly what that tool is for. Two dates
+    here would make "is this day counted" a question with four answers, and
+    every reader would have to spell all four.
+
+    Keyed by PERSON, through `leader_cutoffs.person_key()` — the same "p<id> or
+    n<folded name>" spelling `leader_exclusions.key()` puts before its date, so
+    a leader who is one person to the day-exclusion tool cannot be two people to
+    this one. ~18% of sheet names never resolve to a profile, and a
+    profile-only key could not reach those leaders at all.
+
+    Nothing is written onto a score. Every consumer asks this module, so lifting
+    a cutoff restores every affected day everywhere at once, with no migration
+    and no re-sync — the property that already makes a window edit free.
+    """
+    __tablename__ = "leader_cutoffs"
+    __table_args__ = (
+        UniqueConstraint("leader_key", name="uq_leader_cutoff"),
+        Index("ix_leader_cutoff_from", "from_date"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # `leader_cutoffs.person_key()` — "p<profile_id>" or "n<folded name>". The
+    # uniqueness (and the index behind it) is the named constraint above; a
+    # `unique=True, index=True` here as well would be three indexes on one
+    # column, all answering the same question.
+    leader_key = Column(String(200), nullable=False)
+    # INCLUSIVE: this day and every day after it are out of the results.
+    from_date = Column(String(10), nullable=False, index=True)        # "YYYY-MM-DD"
+    # Snapshotted for the same reason the exclusion snapshots them — a rename or
+    # a profile deletion must not rewrite what the record says happened.
+    leader_profile_id = Column(Integer, nullable=True, index=True)
+    leader_name = Column(String(160), nullable=True)
+    manager_id = Column(Integer, nullable=True, index=True)           # the unit at the time
+    reason = Column(Text, nullable=False)
+    set_by = Column(String(160), nullable=True)
+    set_at = Column(DateTime, nullable=True)

@@ -24,8 +24,8 @@ from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
 from app.services import (
-    action_log, leader_ai, leader_bot, leader_dispute, leader_exclusions,
-    leader_late_proof, leader_reports)
+    action_log, leader_ai, leader_bot, leader_cutoffs, leader_dispute,
+    leader_exclusions, leader_late_proof, leader_reports)
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -504,6 +504,13 @@ def get_leaders(
     # stamped per row: the client scores this feed, so a day it is not told
     # about is a day it counts.
     excl = leader_exclusions.load(db)
+    # …and the leaders who stopped counting from a date on. Loaded beside the
+    # day exclusions and stamped onto the SAME `excluded` field, because it is
+    # the same arithmetic — the day leaves both sides of the average — and the
+    # client already knows what an excluded row is. A second field would mean a
+    # second denominator rule on the client, which is how two readings of one
+    # ranking start disagreeing.
+    cuts = leader_cutoffs.load(db)
 
     sheet_data = []
     # Every leader-day the two FILED layers account for. An exclusion whose key
@@ -545,7 +552,13 @@ def get_leaders(
             # exclusion is a person's explicit answer about this exact day and
             # the void is a rule about all of them, the same precedence
             # `LeaderDaySource` has over `merges()`.
-            "excluded": leader_exclusions.wire(excl.get(excl_key)),
+            #
+            # Two decisions land here and the DAY's own wins, for the same
+            # reason: it names this exact night, while the cutoff is a rule
+            # about every day after a date. `wire_in` is where that precedence
+            # lives, shared with the day report's `wire_for`.
+            "excluded": leader_exclusions.wire_in(
+                excl, cuts, prof.get("id"), r.leader, r.date),
             # The PERSON: a stable profile id plus their canonical profile
             # name, so every spelling of one leader groups as one person.
             "leader_id": prof.get("id"),
@@ -585,7 +598,12 @@ def get_leaders(
             b["late_state"] = None
             bot_key = leader_exclusions.key(b.get("leader_id"), None, b["date"])
             covered.add(bot_key)
-            b["excluded"] = leader_exclusions.wire(excl.get(bot_key))
+            # The NAME goes in as well, unlike the exclusion key above: a bot
+            # day can only ever carry a profile-keyed exclusion, but a CUTOFF
+            # may have been written under a sheet spelling that never resolved,
+            # and that leader can still hold bot days.
+            b["excluded"] = leader_exclusions.wire_in(
+                excl, cuts, b.get("leader_id"), b.get("leader"), b["date"])
 
     # A closed bot day REPLACES the sheet row for the same person and date —
     # the leader answered twice through two channels, and the bot is the live

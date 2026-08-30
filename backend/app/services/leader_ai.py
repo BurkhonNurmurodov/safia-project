@@ -992,6 +992,12 @@ def discover(db: Session) -> int:
     known = _existing_refs(db)
     floor = floor_date(db)
     added = 0
+    # A day an admin took out of the results: its number counts nowhere, so a
+    # verdict on it is a Gemini call spent on a photo that can move nothing —
+    # the same reasoning as a rehearsal day. Both halves, from one call: the
+    # day's own exclusion, and the leader's open-ended cutoff. Loaded HERE, not
+    # inside the bot block, because BOTH layers below read it.
+    dropped, cut = leader_exclusions.preload(db)
 
     # ── bot layer ────────────────────────────────────────────────────────────
     days_q = db.query(LeaderTaskDay).filter(LeaderTaskDay.closed_at.isnot(None))
@@ -1002,11 +1008,7 @@ def discover(db: Session) -> int:
         shifts = {m.id: m.shift for m in db.query(Manager).all()}
         rehearsing = leader_bot.bot_from_floors(db)
         picks = leader_bot.source_overrides(db)
-        # A day an admin took out of the results: its number counts nowhere, so
-        # a verdict on it is a Gemini call spent on a photo that can move
-        # nothing — the same reasoning as a rehearsal day.
-        dropped = leader_exclusions.profile_days(db)
-        with_media = {r[0] for r in db.query(LeaderTaskMedia.entry_id).distinct().all()}
+        with_media ={r[0] for r in db.query(LeaderTaskMedia.entry_id).distinct().all()}
         entries = (
             db.query(LeaderTaskEntry)
             .filter(LeaderTaskEntry.day_id.in_(days.keys()),
@@ -1026,7 +1028,8 @@ def discover(db: Session) -> int:
                                    d.date, rehearsing,
                                    leader_id=d.leader_id, overrides=picks):
                 continue
-            if leader_exclusions.excluded(db, d.leader_id, d.date, pairs=dropped):
+            if leader_exclusions.excluded(db, d.leader_id, d.date,
+                                          pairs=dropped, cuts=cut):
                 continue
             db.add(LeaderAiReview(
                 ref=ref, source="bot", date=d.date, task_id=e.task_id,
@@ -1082,6 +1085,14 @@ def discover(db: Session) -> int:
                 # accurate the moment the pause lifts instead of carrying a
                 # stale window into its first verdict.
                 paused = review_paused(info.get("shift"))
+                # …and out of the results entirely: an admin excluded the day,
+                # or the leader stopped counting on or before it. Known refs
+                # still fall through to the drift re-stamp below — the same
+                # carve-out `paused` keeps — so a row that moved day or unit is
+                # accurate the moment somebody lifts the decision.
+                gone = leader_exclusions.excluded(
+                    db, who.get("id"), r.date, leader_name=r.leader,
+                    pairs=dropped, cuts=cut)
                 for tk in (r.tasks or []):
                     if not tk.get("done") or not _sheet_photos(tk):
                         continue
@@ -1100,7 +1111,7 @@ def discover(db: Session) -> int:
                                 {"date": r.date, "shift": info.get("shift")})
                             fixed += 1
                         continue
-                    if paused:
+                    if paused or gone:
                         continue
                     db.add(LeaderAiReview(
                         ref=ref, source="sheet", date=r.date,
@@ -1227,6 +1238,10 @@ def undiscovered(db: Session, *, date_from: str | None = None,
     known = _existing_refs(db)
     out: list[tuple[str, int | None, int | None, int | None, int | None]] = []
     approx = False
+    # Loaded for BOTH layers below — the same predicate `discover()` refuses on,
+    # because a census and a queue that disagree about one row make a counter
+    # that never settles.
+    excluded_pairs, excluded_cuts = leader_exclusions.preload(db)
 
     # ── bot layer ────────────────────────────────────────────────────────────
     # Unit and leader are stamped on the day row, so nothing here needs matching.
@@ -1249,7 +1264,6 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         # never takes — and the figure would never come down.
         rehearsing = leader_bot.bot_from_floors(db)
         picks = leader_bot.source_overrides(db)
-        excluded_pairs = leader_exclusions.profile_days(db)
         entries = (
             db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id,
                      LeaderTaskEntry.task_id)
@@ -1274,7 +1288,8 @@ def undiscovered(db: Session, *, date_from: str | None = None,
             # here would promise «N tekshirilmagan» rows that «Tekshirish» then
             # refuses to take, which is the exact mismatch the rehearsal bound
             # was added to avoid.
-            if leader_exclusions.excluded(db, ldr, when, pairs=excluded_pairs):
+            if leader_exclusions.excluded(db, ldr, when, pairs=excluded_pairs,
+                                          cuts=excluded_cuts):
                 continue
             out.append((f"bot:{day_id}", shifts.get(mgr), mgr, ldr, task_id))
 
@@ -1311,6 +1326,16 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         for r in rows:
             info = sup.get(relabel_supervisor(r.supervisor)) or {}
             who = lead.get((r.leader, info.get("id"))) or {}
+            # Out of the results, so `discover()` refuses these — counting them
+            # here would promise «N tekshirilmagan» rows the button never takes,
+            # and the figure would never come down. The same bound the bot half
+            # above keeps, and it has to be the same predicate: a census and a
+            # queue that disagree about one row is a counter that never settles.
+            if leader_exclusions.excluded(db, who.get("id"), r.date,
+                                          leader_name=r.leader,
+                                          pairs=excluded_pairs,
+                                          cuts=excluded_cuts):
+                continue
             for tk in (r.tasks or []):
                 if not tk.get("done") or not _sheet_photos(tk):
                     continue
@@ -1394,6 +1419,12 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
                 db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
                 {(row.leader, info.get("id"))},
             ) or {}).get((row.leader, info.get("id"))) or {}
+        # Out of the results — see the bot branch above. Matched by profile id
+        # AND by the sheet's own spelling, because ~18% of these names never
+        # resolve to a profile and a cutoff must still reach those rows.
+        if not force and leader_exclusions.excluded(
+                db, who.get("id"), row.date, leader_name=row.leader):
+            return 0
         for tk in (row.tasks or []):
             if not tk.get("done") or not _sheet_photos(tk):
                 continue
@@ -3245,12 +3276,24 @@ def auto_discover(db: Session) -> int:
         for r in rows if r.leader
     })
 
+    # Out of the results: an admin excluded the day, or the leader stopped
+    # counting on or before it. THE most important door to close of the four,
+    # because this one fires on a button an admin presses all day — the leaders
+    # sheet Refresh — so a day nothing can ever display would be re-queued and
+    # re-spent on Gemini every time somebody pressed it, indefinitely. The other
+    # doors are one-shots or fire once per close.
+    dropped, cut = leader_exclusions.preload(db)
+
     added = 0
     for row in rows:
         info = sup_match.get(relabel_supervisor(row.supervisor)) or {}
         if not in_auto_regime(row.date, info.get("shift")):
             continue
         who = lead_match.get((row.leader, info.get("id"))) or {}
+        if leader_exclusions.excluded(db, who.get("id"), row.date,
+                                      leader_name=row.leader,
+                                      pairs=dropped, cuts=cut):
+            continue
         for tk in (row.tasks or []):
             if added >= DISCOVER_CAP:
                 break
