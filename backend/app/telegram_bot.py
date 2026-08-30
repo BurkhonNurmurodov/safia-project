@@ -2013,6 +2013,19 @@ _LT_MESSAGES = {
         "lp_done_approved": "\u2705 Tasdiqlandi \u00B7 ball berildi",
         "lp_gone": "Bu ariza allaqachon hal qilingan.",
         "lp_not_yours": "Bu ariza sizga tegishli emas.",
+        "ad_card_sup": ("⚖️ AI QARORIGA NOROZILIK\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                        "🤖 AI xulosasi:\n{verdict}\n\n📝 Lider izohi:\n{reason}\n\n"
+                        "Rad etsangiz — AI qarori kuchida qoladi. Adminlarga yuborsangiz, "
+                        "nega ball berilishi kerakligini yozishingiz so'raladi."),
+        "btn_ad_reject": "❌ Rad etish",
+        "btn_ad_uplift": "⬆️ Adminlarga yuborish",
+        "ad_ask_note": ("📝 Nega bu vazifaga ball berilishi kerak?\n\n"
+                        "Izohingizni yozing — adminlar lider izohi bilan birga shuni "
+                        "o'qib qaror qiladi."),
+        "ad_done_rejected": "❌ Norozilik rad etildi",
+        "ad_done_uplifted": "⬆️ Adminlarga yuborildi",
+        "ad_gone": "Bu norozilik allaqachon hal qilingan.",
+        "ad_not_yours": "Bu norozilik sizga tegishli emas.",
         "adm_reopen_confirm": "📌 {task}\n\n🔓 Vazifa qayta ochiladi. Javob va rasmlar joyida qoladi, AI xulosasi esa o'chiriladi — vazifa qaytadan topshirilishi va qaytadan tekshirilishi kerak bo'ladi.\n\nTasdiqlaysizmi?",
         "adm_wipe_confirm": "📌 {task}\n\n🗑 Vazifa butunlay tozalanadi: javob, rasmlar va AI xulosasi o'chiriladi. Vazifa boshidan boshlanadi.\n\nTasdiqlaysizmi?",
         "adm_reopened_toast": "🔓 Vazifa qayta ochildi",
@@ -2131,6 +2144,19 @@ _LT_MESSAGES = {
         "lp_done_approved": "\u2705 Тасдиқланди \u00B7 балл берилди",
         "lp_gone": "Бу ариза аллақачон ҳал қилинган.",
         "lp_not_yours": "Бу ариза сизга тегишли эмас.",
+        "ad_card_sup": ("⚖️ AI ҚАРОРИГА НОРОЗИЛИК\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                        "🤖 AI хулосаси:\n{verdict}\n\n📝 Лидер изоҳи:\n{reason}\n\n"
+                        "Рад этсангиз — AI қарори кучида қолади. Админларга юборсангиз, "
+                        "нега балл берилиши кераклигини ёзишингиз сўралади."),
+        "btn_ad_reject": "❌ Рад этиш",
+        "btn_ad_uplift": "⬆️ Админларга юбориш",
+        "ad_ask_note": ("📝 Нега бу вазифага балл берилиши керак?\n\n"
+                        "Изоҳингизни ёзинг — админлар лидер изоҳи билан бирга шуни "
+                        "ўқиб қарор қилади."),
+        "ad_done_rejected": "❌ Норозилик рад этилди",
+        "ad_done_uplifted": "⬆️ Админларга юборилди",
+        "ad_gone": "Бу норозилик аллақачон ҳал қилинган.",
+        "ad_not_yours": "Бу норозилик сизга тегишли эмас.",
         "adm_reopen_confirm": "📌 {task}\n\n🔓 Вазифа қайта очилади. Жавоб ва расмлар жойида қолади, AI хулосаси эса ўчирилади — вазифа қайтадан топширилиши ва қайтадан текширилиши керак бўлади.\n\nТасдиқлайсизми?",
         "adm_wipe_confirm": "📌 {task}\n\n🗑 Вазифа бутунлай тозаланади: жавоб, расмлар ва AI хулосаси ўчирилади. Вазифа бошидан бошланади.\n\nТасдиқлайсизми?",
         "adm_reopened_toast": "🔓 Вазифа қайта очилди",
@@ -2249,6 +2275,19 @@ _LT_MESSAGES = {
         "lp_done_approved": "\u2705 Принято \u00B7 балл начислен",
         "lp_gone": "Эта заявка уже рассмотрена.",
         "lp_not_yours": "Эта заявка не для вас.",
+        "ad_card_sup": ("⚖️ ВОЗРАЖЕНИЕ НА РЕШЕНИЕ ИИ\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                        "🤖 Заключение ИИ:\n{verdict}\n\n📝 Комментарий лидера:\n{reason}\n\n"
+                        "Если отклоните — решение ИИ останется в силе. Если передадите "
+                        "администраторам, нужно будет объяснить, почему балл должен быть начислен."),
+        "btn_ad_reject": "❌ Отклонить",
+        "btn_ad_uplift": "⬆️ Передать администраторам",
+        "ad_ask_note": ("📝 Почему за эту задачу нужно начислить балл?\n\n"
+                        "Напишите свой комментарий — администраторы прочитают его "
+                        "вместе с комментарием лидера и примут решение."),
+        "ad_done_rejected": "❌ Возражение отклонено",
+        "ad_done_uplifted": "⬆️ Передано администраторам",
+        "ad_gone": "Это возражение уже рассмотрено.",
+        "ad_not_yours": "Это возражение не для вас.",
         "adm_reopen_confirm": "📌 {task}\n\n🔓 Задача будет открыта заново. Ответ и фото останутся, но заключение ИИ удалится — задачу нужно будет сдать и проверить ещё раз.\n\nПодтверждаете?",
         "adm_wipe_confirm": "📌 {task}\n\n🗑 Задача будет полностью очищена: ответ, фото и заключение ИИ удаляются. Задача начнётся с нуля.\n\nПодтверждаете?",
         "adm_reopened_toast": "🔓 Задача открыта заново",
@@ -2367,6 +2406,19 @@ _LT_MESSAGES = {
         "lp_done_approved": "\u2705 Approved \u00B7 point given",
         "lp_gone": "This request has already been decided.",
         "lp_not_yours": "This request is not yours to decide.",
+        "ad_card_sup": ("⚖️ OBJECTION TO AN AI RULING\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
+                        "🤖 AI verdict:\n{verdict}\n\n📝 The leader's note:\n{reason}\n\n"
+                        "Refuse it and the AI ruling stands. Pass it to the admins and "
+                        "you will be asked to write why the task should be pointed."),
+        "btn_ad_reject": "❌ Refuse",
+        "btn_ad_uplift": "⬆️ Pass to the admins",
+        "ad_ask_note": ("📝 Why should this task be pointed?\n\n"
+                        "Write your comment — the admins read it beside the leader's "
+                        "and decide."),
+        "ad_done_rejected": "❌ Objection refused",
+        "ad_done_uplifted": "⬆️ Passed to the admins",
+        "ad_gone": "This objection has already been settled.",
+        "ad_not_yours": "This objection is not yours to decide.",
         "adm_reopen_confirm": "📌 {task}\n\n🔓 The task will be reopened. The answer and its photos stay, but the AI verdict is dropped — the task has to be submitted and reviewed again.\n\nConfirm?",
         "adm_wipe_confirm": "📌 {task}\n\n🗑 The task will be cleared completely: the answer, the photos and the AI verdict are deleted. It starts from scratch.\n\nConfirm?",
         "adm_reopened_toast": "🔓 Task reopened",
@@ -4348,6 +4400,250 @@ def _lp_callback(call: types.CallbackQuery):
             return
 
     bot.answer_callback_query(call.id)
+
+
+# ── AI objections: stage 1, in the brigadir's own chat ────────────────────────
+# The middle stage of services/leader_dispute.py. A leader who was refused by
+# the machine files their account of the shift on their day report; it lands
+# HERE, with the verdict beside it, because the person who can say whether that
+# account is true is a brigadir standing in a workshop and not somebody who was
+# going to open a dashboard. They refuse it, or they make the case for it and it
+# goes up — the admin card is `approvals.send_leader_dispute_to_admins`, which
+# has served that stage since before this chain existed and still does, so a
+# card already sitting in an admin's chat goes on working.
+
+
+def _ad_kb(lang: str, d):
+    """The two buttons stage 1 has — and only those two.
+
+    A brigadir cannot restore the weight and an admin cannot uplift: the
+    asymmetry is the whole design, so it is expressed by the keyboard rather
+    than by a check that fires after somebody has already pressed something.
+    """
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.row(_lt_btn(_lt(lang, "btn_ad_reject"), f"ad:sr:{d.id}"),
+           _lt_btn(_lt(lang, "btn_ad_uplift"), f"ad:su:{d.id}"))
+    kb.add(types.InlineKeyboardButton(
+        "\U0001F4CB /leaders",
+        web_app=types.WebAppInfo(
+            url=f"{settings.webapp_url.rstrip('/')}/leaders?tab=disputes")))
+    return kb
+
+
+def _ad_card(db, d, lang: str) -> str:
+    """The objection as the brigadir reads it: the leader, the task, the AI's
+    own words, and the leader's answer to them.
+
+    The verdict travels WITH it. A brigadir asked «was the machine wrong» who
+    has not been shown what the machine said will rule on the wording of the
+    objection, which is how a correct rejection gets overturned and a wrong one
+    survives.
+    """
+    from app.models import LeaderAiReview
+    from app.services import leader_dispute
+
+    rev = (db.query(LeaderAiReview).filter_by(id=d.review_id).first()
+           if d.review_id else None) \
+        or db.query(LeaderAiReview).filter_by(ref=d.ref).first()
+    verdict = "—"
+    if rev is not None:
+        flags = ", ".join(rev.flags or []) or "—"
+        prose = (getattr(rev, f"reason_{lang}", None) or rev.reason_ru
+                 or rev.reason_uz or rev.reason_en or "").strip()
+        verdict = f"[{flags}] {prose}".strip()[:600]
+    return _lt(lang, "ad_card_sup").format(
+        leader=d.leader_name or "—",
+        task=leader_dispute.task_label(db, d),
+        date=d.date, verdict=verdict,
+        reason=(d.reason or "—")[:800],
+    )
+
+
+def _ad_supervisor_ids(db, d) -> set:
+    """Every account holding the unit's brigadir profile — the person, not a row."""
+    from app.identity import profile_holders, profile_key
+    if not d.manager_id:
+        return set()
+    try:
+        return set(profile_holders(db, profile_key("supervisor", int(d.manager_id))))
+    except Exception:
+        return set()
+
+
+def _ad_send_to_supervisor(db, d) -> None:
+    """Put a leader's objection in front of the brigadir who has to read it.
+
+    With no claimed brigadir account it goes to the admins instead — an
+    ordinary state, not an error — and it goes with the STAGE-1 keyboard,
+    because that is the stage the row is actually at. Admins outrank stage 1
+    (`_ad_can_supervise`), so both buttons work for them; sending them the
+    approve/refuse pair here would produce buttons answering «already decided»
+    to the only people who had been told about it.
+    """
+    from app.notify_ctx import notifications_suppressed
+    if notifications_suppressed():
+        return
+    ids = _ad_supervisor_ids(db, d) or set(_admin_ids())
+    for rid in sorted(ids):
+        lang = _get_lang(rid)
+        text = _ad_card(db, d, lang)
+        try:
+            sent = bot.send_message(rid, text, reply_markup=_ad_kb(lang, d))
+        except Exception:
+            logger.warning("dispute card to %s failed", rid, exc_info=True)
+            continue
+        db.add(ApprovalNotice(kind="leader_dispute_sup", ref=str(d.id),
+                              admin_telegram_id=rid,
+                              message_id=sent.message_id, text=text))
+    db.commit()
+
+
+def _ad_send_to_admins(db, d) -> None:
+    """Stage 2 is the card that already existed. One admin card, not two."""
+    from app.approvals import send_leader_dispute_to_admins
+    send_leader_dispute_to_admins(db, d)
+
+
+def _ad_retire(db, d, outcome_key: str) -> None:
+    """Strip the buttons off every copy of a stage-1 card that is now decided.
+
+    Takes a message KEY, never a rendered string: the card sits in several
+    chats and each reader has their own language, so a pre-rendered outcome
+    would stamp the decider's language onto everybody else's copy.
+    """
+    notes = (db.query(ApprovalNotice)
+             .filter(ApprovalNotice.kind == "leader_dispute_sup",
+                     ApprovalNotice.ref == str(d.id)).all())
+    for n in notes:
+        try:
+            bot.edit_message_text(
+                (n.text or "") + "\n\n" + _lt(_get_lang(n.admin_telegram_id), outcome_key),
+                chat_id=n.admin_telegram_id,
+                message_id=n.message_id, reply_markup=None)
+        except Exception:
+            pass
+        db.delete(n)
+    db.commit()
+
+
+def _ad_can_supervise(db, tid: int, d) -> bool:
+    """Admins outrank the stage; the unit's own brigadir owns it."""
+    return tid in _admin_ids() or tid in _ad_supervisor_ids(db, d)
+
+
+def _ad_settled(db, d, *, stage: str, uplifted: bool) -> None:
+    """What a stage-1 ruling owes the outside world. Never fatal — a DM that
+    will not send must not roll back a decision somebody already made."""
+    from app.services import leader_dispute
+    _ad_retire(db, d, "ad_done_uplifted" if uplifted else "ad_done_rejected")
+    if uplifted:
+        _ad_send_to_admins(db, d)
+    leader_dispute.notify_decided(db, d, stage=stage)
+    db.commit()
+    if not uplifted:
+        # A refusal leaves the score where it already was, so nothing re-sends;
+        # the day report still re-reads, which the leader's own notice points at.
+        try:
+            from app.routers.leaders import _report_after_ruling
+            _report_after_ruling(db, d)
+        except Exception:
+            logger.warning("dispute rescore failed", exc_info=True)
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "ad_note",
+                     content_types=["text"])
+def _ad_note(message: types.Message):
+    """The brigadir's case for an objection, on the way up to the admins.
+
+    Required, and that is the point: an admin ruling on an account of a shift
+    they were not on is a coin toss, and the one person who was there is
+    exactly the one passing it up.
+
+    The capture row is the ordinary `LeaderTaskCapture`; `task_id` carries the
+    DISPUTE's id here, not a task's. A transient text prompt does not earn a
+    table of its own, and the stage name is what says which it is.
+    """
+    from app.models import LeaderAiDispute
+    from app.services import leader_dispute
+
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    text = (message.text or "").strip()
+    with SessionLocal() as db:
+        cap = _lt_capture(db, tid, lock=True)
+        if not cap or cap.stage != "ad_note":
+            return
+        if not text or text.startswith("/"):
+            db.delete(cap)
+            db.commit()
+            bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
+            return
+        d = db.query(LeaderAiDispute).filter_by(id=cap.task_id).first()
+        db.delete(cap)
+        if d is None or d.status != leader_dispute.SUPERVISOR:
+            db.commit()
+            bot.send_message(message.chat.id, _lt(lang, "ad_gone"))
+            return
+        leader_dispute.decide_supervisor(
+            db, d, action="uplifted", note=text,
+            actor_name=_display_name_for(db, tid), actor_telegram=tid)
+        db.commit()
+        _ad_settled(db, d, stage="supervisor", uplifted=True)
+        bot.send_message(message.chat.id, _lt(lang, "ad_done_uplifted"))
+
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("ad:"))
+def _ad_callback(call: types.CallbackQuery):
+    """Stage 1, from the card in the chat.
+
+    Authority is checked HERE and not merely by which card somebody was sent: a
+    callback payload is typeable, and the whole value of the chain is that the
+    point can only come back through an admin.
+    """
+    from app.models import LeaderAiDispute
+    from app.services import leader_dispute
+
+    tid = call.from_user.id
+    lang = _get_lang(tid)
+    parts = call.data.split(":")
+    act = parts[1] if len(parts) > 1 else ""
+    try:
+        d_id = int(parts[2])
+    except (IndexError, ValueError):
+        bot.answer_callback_query(call.id)
+        return
+    if act not in ("sr", "su"):
+        bot.answer_callback_query(call.id)
+        return
+
+    with SessionLocal() as db:
+        d = db.query(LeaderAiDispute).filter_by(id=d_id).first()
+        if d is None or d.status != leader_dispute.SUPERVISOR:
+            bot.answer_callback_query(call.id, _lt(lang, "ad_gone"), show_alert=True)
+            return
+        if not _ad_can_supervise(db, tid, d):
+            bot.answer_callback_query(call.id, _lt(lang, "ad_not_yours"),
+                                      show_alert=True)
+            return
+        if act == "su":
+            # An uplift needs the case for it, so the ruling is not made until
+            # the text arrives — the capture is the pause, not a draft.
+            _lt_clear(tid)
+            sent = bot.send_message(call.message.chat.id, _lt(lang, "ad_ask_note"))
+            db.add(LeaderTaskCapture(
+                telegram_id=tid, stage="ad_note",
+                leader_id=int(d.leader_id or 0), task_id=d.id,
+                chat_id=call.message.chat.id, message_id=sent.message_id,
+                min_media=0, media=[]))
+            db.commit()
+            bot.answer_callback_query(call.id)
+            return
+        leader_dispute.decide_supervisor(
+            db, d, action="rejected", note=None,
+            actor_name=_display_name_for(db, tid), actor_telegram=tid)
+        db.commit()
+        _ad_settled(db, d, stage="supervisor", uplifted=False)
+        bot.answer_callback_query(call.id, _lt(lang, "ad_done_rejected"))
 
 
 # ── Media → file_id echo (admins only) ────────────────────────────────────────

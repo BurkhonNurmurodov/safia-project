@@ -80,6 +80,7 @@ _LABELS = {
         "date":          "Sana",
         "supervisor":    "Brigadir",
         "creator":       "Yuborgan",
+        "sup_case":      "Brigadir izohi",
         "worker":        "Xodim",
         "workers":       "Xodimlar",
         "new_role":      "Yangi lavozim",
@@ -129,6 +130,7 @@ _LABELS = {
         "date":          "Дата",
         "supervisor":    "Бригадир",
         "creator":       "Отправитель",
+        "sup_case":      "Комментарий бригадира",
         "worker":        "Сотрудник",
         "workers":       "Сотрудники",
         "new_role":      "Новая должность",
@@ -178,6 +180,7 @@ _LABELS = {
         "date":          "Date",
         "supervisor":    "Supervisor",
         "creator":       "Submitted by",
+        "sup_case":      "The brigadir's case",
         "worker":        "Worker",
         "workers":       "Workers",
         "new_role":      "New role",
@@ -739,13 +742,31 @@ def _leader_dispute_data(db, d) -> dict:
         "leader":     d.leader_name or "—",
         "task":       leader_ai.task_label(db, d.task_id, d.manager_id, d.leader_id),
         "verdict":    verdict[:600],
-        "supervisor": d.requested_by_name,
+        # WHOSE words the first note is. A brigadir may still file for a leader
+        # who resolves to no profile, and printing that as the leader's own
+        # account of their shift would be a fabrication on the card an admin
+        # rules from.
+        "author":     d.requested_by_name,
+        "author_role": (str(d.requested_by_profile or "").split(":")[0] or ""),
         "reason":     d.reason,
+        # The brigadir's case for passing it up — the middle stage, and the one
+        # an admin card that showed only the first and the last note left
+        # invisible. Absent when the brigadir IS the filer, where the two would
+        # be the same sentence twice.
+        "supervisor": d.sup_by_name if d.sup_action == "uplifted" else None,
+        "sup_note":   d.sup_note,
         "uid":        leader_reports.uid_of_ref(db, d.ref) or "",
     }
 
 
 def _render_leader_dispute(data, lang) -> str:
+    """The admin's card — the verdict, then EVERY note the chain has collected.
+
+    Both stages are printed because the admin is the only reader who has both:
+    the account of the shift from whoever was there, and the brigadir's own
+    reason for believing it. A card showing one of them asks for a ruling on
+    half the evidence, which is the flow this chain replaced.
+    """
     lines = [_L(lang, "hdr_dispute"), ""]
     lines.append(f"🏭 {_L(lang, 'unit')}: {_v(data['unit'])}")
     lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
@@ -753,8 +774,12 @@ def _render_leader_dispute(data, lang) -> str:
     lines.append(f"📋 {_L(lang, 'task')}: {_v(data['task'])}")
     lines.append("")
     lines.append(f"🤖 {_L(lang, 'ai_verdict')}: {_v(data['verdict'])}")
-    lines.append(f"✍️ {_L(lang, 'creator')}: {_v(data['supervisor'])}")
+    lines.append(f"✍️ {_L(lang, 'creator')}: {_v(data.get('author'))}")
     lines.append(f"💬 {_L(lang, 'reason')}: {_v(data['reason'])}")
+    if data.get("supervisor"):
+        lines.append("")
+        lines.append(f"👷 {_L(lang, 'sup_case')} ({_v(data['supervisor'])}): "
+                     f"{_v(data.get('sup_note'))}")
     lines.append("")
     lines.append(_L(lang, "dispute_note"))
     return "\n".join(lines)
@@ -1183,51 +1208,24 @@ def _decide_leader_dispute(dispute_id: int, status: str, call) -> None:
     panel."""
     from app.models import LeaderAiDispute
     from app.routers.leaders import _report_after_ruling, _settle_dispute
+    from app.services import leader_dispute
     from app.telegram_bot import _admin_ids
 
     if call.from_user.id not in _admin_ids():
         raise AlreadyHandled()
     with SessionLocal() as db:
         d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
-        if d is None or d.status != "pending":
+        # Stage 2 is the only one this card rules on — a row still sitting with
+        # its brigadir, or already settled, is "somebody got there first".
+        if d is None or d.status != leader_dispute.ADMIN:
             raise AlreadyHandled()   # withdrawn, or another admin got there first
         decided_by = _display_name(call.from_user)
         _settle_dispute(db, d, status, decided_by, call.from_user.id)
         _log_leader_dispute(db, call, d, status, decided_by)
-        _notify_dispute_decided(db, d, status, decided_by)
+        leader_dispute.notify_decided(db, d, stage="admin")
+        db.commit()
         _report_after_ruling(db, d)
     edit_admin_notices("leader_dispute", dispute_id, status, decided_by)
-
-
-def _notify_dispute_decided(db, d, status: str, decided_by: str) -> None:
-    """Tell the brigadir who filed it and the leader whose score it moves.
-    Never raises into a decision — a Telegram outage must not leave a ruling
-    half-applied."""
-    from app.identity import profile_key
-    from app.routers.staff import notify_profile
-    from app.services import leader_ai
-
-    # `cancelled` is a ruling being taken back, and it is told to exactly the
-    # same two people: whoever was told the objection was upheld has to hear
-    # that it no longer is, or the next report DM arrives with a number that
-    # dropped for no reason they were ever given.
-    nkey = {"approved": "leader_dispute_approved",
-            "cancelled": "leader_dispute_undone"}.get(
-                status, "leader_dispute_rejected")
-    params = {
-        "date": d.date, "by": decided_by,
-        "task": leader_ai.task_label(db, d.task_id, d.manager_id, d.leader_id),
-    }
-    try:
-        dmed = set()
-        if d.manager_id:
-            dmed = notify_profile(db, profile_key("supervisor", d.manager_id),
-                                  nkey, params, type="info")
-        if d.leader_id:
-            notify_profile(db, profile_key("leader", d.leader_id), nkey, params,
-                           type="info", skip_accounts=dmed)
-    except Exception:
-        logger.exception("leader-dispute: decision notice failed for %s", d.id)
 
 
 def _decide_hr_document(doc_id: int, status: str, call) -> None:

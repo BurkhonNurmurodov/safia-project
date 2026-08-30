@@ -2006,9 +2006,12 @@ export default function Leaders() {
   // asks, an admin decides).
   const showClearTab = isAdmin;
   const showLateTab = isAdmin || auth?.role === "supervisor";
-  // The two roles the objection flow is made of: the brigadir who files one and
-  // the admin who rules on it. Everyone else reads the outcome on the report.
-  const showDisputesTab = isAdmin || auth?.role === "supervisor";
+  // Objections reach three audiences, not two — exactly like late proofs, and
+  // for exactly the same reason: the LEADER files one, their brigadir rules at
+  // stage one, an admin at stage two. The flow asks a leader to explain
+  // themselves, so what became of that explanation has to be visible to them.
+  const showDisputesTab = isAdmin || auth?.role === "supervisor"
+    || auth?.role === "leader";
   // Late proofs reach three audiences, not two: the brigadir who rules at
   // stage one, the admin who rules at stage two, and the LEADER whose
   // filing it is. The flow asks a leader to explain themselves, so what
@@ -2072,8 +2075,9 @@ export default function Leaders() {
   // The objections queue, on the same pattern: the tab badge needs the count
   // before the tab is ever opened, and Disputes reads the SAME query key, so
   // the two share one request and can never disagree about what is waiting.
-  // `todo` is the server's answer to «whose turn» — 0 for anyone who cannot
-  // rule, so a brigadir never carries a badge they are unable to clear.
+  // `todo` is the server's answer to «whose turn» — a brigadir counts only the
+  // rows still with them, an admin only the uplifted ones, a leader none, so
+  // nobody carries a badge they cannot clear.
   const { data: dispData } = useQuery({
     queryKey: ["leader-disputes"],
     queryFn: () => api.get("/api/leaders/disputes").then((r) => r.data),

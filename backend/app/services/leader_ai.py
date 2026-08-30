@@ -3327,8 +3327,12 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
     # Live objections, so the register can say a rejection is being argued
     # rather than settled. Without this the «Norozilik» filter would be an
     # option that can never match anything — worse than not offering it.
+    # BOTH open stages — with the brigadir, and uplifted to the admins. Neither
+    # has produced a ruling, so counting only one of them would tell the
+    # register a rejection is settled while somebody is still arguing it.
+    from app.services import leader_dispute
     dq = (db.query(LeaderAiDispute.ref, func.count(LeaderAiDispute.id))
-          .filter(LeaderAiDispute.status == "pending"))
+          .filter(LeaderAiDispute.status.in_(leader_dispute.OPEN_STATES)))
     if dates is not None:
         dq = dq.filter(LeaderAiDispute.date.in_(dates))
     drows = dq.group_by(LeaderAiDispute.ref).all()

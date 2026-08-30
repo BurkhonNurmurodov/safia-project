@@ -1792,23 +1792,43 @@ class LeaderDayReport(Base):
 
 
 class LeaderAiDispute(Base):
-    """A supervisor's objection to one AI rejection, and the admin's decision.
+    """An objection to one automatic AI rejection, and the two rulings on it.
 
-    Automatic rejection needs a way back that does not require the admin to
-    have been watching: the unit's own brigadir sees the verdict on the day
-    report, files a reason, and an admin rules on it — the same shape as
-    opening a late day (LeaderLateRequest), by the same authority rule.
+    A flag costs its task the whole weight the moment it is written and nobody
+    presses anything to make that happen, so the way back has to be at least as
+    reliable as the deduction. Until 2026-08-30 it was not: only the unit's
+    BRIGADIR could object, in one step, straight to an admin — so the person
+    who was actually judged could not speak, and the admin ruled on a
+    second-hand paraphrase of an argument nobody had recorded.
+
+    It now runs the same three-stage chain as a late proof (`LeaderLateProof`),
+    because a leader who missed a deadline and a leader the machine misjudged
+    are the same person asking the same thing:
+
+      leader     files with their own note, off the day report they were sent
+      supervisor the unit's brigadir REJECTS it (final) or UPLIFTS it with
+                 their own mandatory written case — they cannot restore the
+                 weight themselves
+      admin      reads BOTH notes and decides whether it is pointed
+
+    `status` is the stage AND the outcome, one column: "supervisor" → "admin"
+    → "approved" | "rejected", plus "cancelled" for a settled ruling taken
+    back. `services/leader_dispute.py` is THE definition of the chain — which
+    stage a filing enters at is decided by who filed it, which is also what
+    makes every row written under the old one-stage flow read correctly
+    unchanged: those were all filed by a brigadir and all waiting on an admin,
+    i.e. they entered at the admin stage.
 
     Keyed by the verdict's `ref`, not by `review_id`: a review row is
     re-creatable from its ref (discovery re-inserts a deleted row, «stop and
     clear» deletes never-judged ones), so a dispute hung off the numeric id
-    would lose its subject. One LIVE row per ref — a re-filed dispute after a
+    would lose its subject. One LIVE row per ref — a re-filed objection after a
     refusal replaces the old one, exactly like a late request.
 
     Approval writes `resolution="approved"` on the review, which is what
     actually restores the task's weight; this table is the paper trail and the
-    queue the admin works from. Deciding it re-runs the day's report DM, so a
-    corrected score announces itself.
+    queue the two deciders work from. Any ruling re-runs the day's report DM,
+    so a corrected score announces itself.
     """
     __tablename__ = "leader_ai_disputes"
 
@@ -1821,15 +1841,35 @@ class LeaderAiDispute(Base):
     leader_name = Column(String(160), nullable=True)
     manager_id = Column(Integer, nullable=True, index=True)
 
-    status = Column(String(12), nullable=False, default="pending", index=True)
-    # Why the verdict is wrong. Required — an overturned rejection has to
-    # explain itself to the calibration stats as much as to the next reader.
+    # supervisor | admin | approved | rejected | cancelled
+    status = Column(String(12), nullable=False, default="supervisor", index=True)
+
+    # THE FILER'S OWN ACCOUNT — normally the leader's, since they are who the
+    # verdict judged. Required: an overturned rejection has to explain itself
+    # to the calibration stats as much as to the next reader. `requested_by_*`
+    # says whose words these are, which is what lets a row filed by a brigadir
+    # (the only route open to the ~18% of leaders who resolve to no profile)
+    # be labelled honestly instead of being printed as the leader's.
     reason = Column(Text, nullable=False)
-    requested_by_profile = Column(String, nullable=True)     # "supervisor:12"
+    requested_by_profile = Column(String, nullable=True)     # "leader:34"
     requested_by_name = Column(String(160), nullable=True)
     requested_by_telegram = Column(BigInteger, nullable=True)
     requested_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # ── stage 1: the unit's brigadir ─────────────────────────────────────────
+    # "rejected" (final) | "uplifted" (to the admins, note REQUIRED). Filled in
+    # at filing time when a supervisor or an admin files it themselves — their
+    # text IS the uplift, so the admin card never prints an empty block.
+    sup_action   = Column(String(10), nullable=True)
+    sup_note     = Column(Text, nullable=True)
+    sup_by_name  = Column(String(160), nullable=True)
+    sup_by_telegram = Column(BigInteger, nullable=True)
+    sup_at       = Column(DateTime(timezone=True), nullable=True)
+
+    # ── stage 2: the admins — the only place the weight comes back ───────────
+    # Named `decided_*` and not `adm_*` because these columns predate the chain
+    # and already hold every admin ruling ever made here. Renaming them would
+    # orphan that history to buy a symmetry nobody reads.
     decided_by_name = Column(String(160), nullable=True)
     decided_by_telegram = Column(BigInteger, nullable=True)
     decided_at = Column(DateTime(timezone=True), nullable=True)

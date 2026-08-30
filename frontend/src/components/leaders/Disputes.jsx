@@ -3,10 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquareWarning, Hourglass, ShieldCheck, Ban, RotateCcw, Sparkles,
-  Clock, CalendarCheck, ExternalLink, CircleSlash,
+  Clock, CalendarCheck, ExternalLink, CircleSlash, ArrowUpCircle, UserCheck,
+  MessageSquareQuote,
 } from "lucide-react";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
+import Modal from "../ui/Modal";
+import FormField from "../ui/FormField";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import SearchInput from "../ui/SearchInput";
 import EmptyState from "../ui/EmptyState";
@@ -18,23 +21,35 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 
 /**
- * «Norozliklar» — the queue of objections to automatic AI rejections.
+ * «Norozliklar» — the queue of objections to an automatic AI rejection.
  *
- * A flag now costs a task its weight the moment it is written, so the way back
- * is the brigadir's objection and the admin's ruling on it. That ruling was
- * reachable from exactly two places: an inline Telegram card that scrolls out
- * of the chat, and the day report of the ONE leader it belongs to. An admin
- * who missed the card had nothing to work from — no list, and no way to find
- * the report holding the objection. This is that list.
+ * A flag costs a task its whole weight the moment it is written and nobody
+ * presses anything to make that happen, so the way back has to be at least as
+ * reliable as the deduction. It runs the same three-stage chain as a late
+ * proof, because a leader who missed a deadline and a leader the machine
+ * misjudged are the same person asking the same thing:
+ *
+ *   leader     files their own account of the shift, off the day report they
+ *              were sent — they are who the verdict judged.
+ *   supervisor their brigadir REFUSES it (final) or passes it up with their
+ *              own mandatory case. They cannot restore the weight themselves.
+ *   admin      reads BOTH notes and decides whether it is pointed.
  *
  * What the card is built around:
  *  - the objection is decided AGAINST the verdict, so the verdict travels with
  *    it: the flag, the model's own prose, and the window it measured against.
- *    An admin who has to open the report to learn what was even claimed will
- *    rule on the reason alone, which is how a rejection gets overturned twice.
+ *    Whoever has to open the report to learn what was even claimed will rule on
+ *    the reason alone, which is how a rejection gets overturned twice.
+ *  - EVERY note the chain has collected is on the card, in order. A queue that
+ *    showed the first and the last would hide the middle judgement — the one
+ *    that decided whether an admin ever saw this at all.
  *  - the photos stay one tap away, not inlined. Evidence belongs on the report
  *    where the whole day can be read; a queue that carried thumbnails would be
  *    a slower day report with fewer facts.
+ *  - whose TURN it is comes from the server, per row (`canAct`), never from a
+ *    page-level flag: "you are a brigadir" is not "you are THIS unit's
+ *    brigadir", and a supervisor holding the page at scope «all» is served
+ *    every unit's rows. Deriving it here grows buttons that answer 403.
  *  - approving RESTORES the task's weight and re-scores the day for everyone,
  *    so it confirms and says so. Deciding is one tap, which is exactly why the
  *    undo exists — and it sits under the ruling it takes back.
@@ -66,26 +81,36 @@ const pick = (o, lang) => o?.[lang] || o?.ru || o?.en || o?.uz || "";
 const TXT = {
   uz: {
     title: "Norozliklar",
-    rule: "AI rad etgan vazifa o'z og'irligini darhol yo'qotadi. Brigadir bu qarorga norozilik bildiradi — sabab bilan, — va faqat admin uni hal qiladi.",
-    ruleAdmin: "Qabul qilsangiz, vazifa o'z og'irligini qaytarib oladi, kun qayta hisoblanadi va lider bilan brigadirga xabar boradi.",
-    ruleRead: "Qarorni admin qabul qiladi. Bu yerda o'z brigadangizning norozliklari va ularning holati ko'rinadi.",
-    segAll: "Barchasi", segTodo: "Kutilmoqda", segDone: "Tarix",
+    rule: "AI rad etgan vazifa o'z og'irligini darhol yo'qotadi. Lider bu qarorga norozilik bildiradi, brigadir uni o'qib rad etadi yoki adminlarga yuboradi — o'z izohi bilan, — va ball faqat admin qaroridan keyin qaytadi.",
+    ruleAdmin: "Ikkala izohni o'qing va qaror qiling: qabul qilsangiz, vazifa o'z og'irligini qaytarib oladi, kun qayta hisoblanadi va lider bilan brigadirga xabar boradi.",
+    ruleSup: "Siz birinchi bo'lib ko'rib chiqasiz: rad etsangiz — AI qarori kuchida qoladi; adminlarga yuborsangiz, nega ball berilishi kerakligini yozishingiz shart.",
+    ruleRead: "Bu yerda o'z noroziliklaringiz va ular qaysi bosqichda ekani ko'rinadi.",
+    segAll: "Barchasi", segTodo: "Sizning navbatingiz", segDone: "Tarix",
     shift1: "1-smena", shift2: "2-smena",
     searchPh: "Lider, brigadir yoki vazifa…",
-    stPending: "Admin qarorini kutmoqda", stApproved: "Qabul qilindi",
-    stRejected: "Rad etildi", stCancelled: "Qaror bekor qilindi",
+    stSupervisor: "Brigadir ko'rib chiqmoqda", stAdmin: "Admin qarorini kutmoqda",
+    stApproved: "Qabul qilindi", stRejected: "Rad etildi",
+    stCancelled: "Qaror bekor qilindi",
     task: "Vazifa", aiTitle: "AI xulosasi",
     window: "Ruxsat etilgan vaqt", needDate: "Kerakli sana", onPhoto: "Rasmda",
     by: "Yubordi", decidedBy: "Qaror qildi",
-    approve: "Qabul qilish", reject: "Rad etish", undo: "Qarorni bekor qilish",
+    noteLead: "Lider izohi", noteLeadSup: "Brigadir izohi (lider nomidan)",
+    noteSup: "Brigadir izohi", noteAdm: "Admin izohi",
+    supRejected: "Brigadir rad etdi", supUplifted: "Brigadir adminlarga yubordi",
+    approve: "Qabul qilish", reject: "Rad etish", uplift: "Adminlarga yuborish",
+    undo: "Qarorni bekor qilish", cancel: "Bekor qilish",
     openReport: "Kun hisobotini ochish",
     cApproveT: "Norozilikni qabul qilish",
     cApproveM: "{leader} — {date}, «{task}». Vazifa o'z og'irligini qaytarib oladi, kun qayta hisoblanadi va lider bilan brigadirga xabar boradi.",
     cRejectT: "Norozilikni rad etish",
-    cRejectM: "{leader} — {date}, «{task}». AI qarori kuchida qoladi, vazifa og'irligisiz qoladi. Brigadir sababni tuzatib qayta yuborishi mumkin.",
+    cRejectM: "{leader} — {date}, «{task}». AI qarori kuchida qoladi, vazifa og'irligisiz qoladi. Lider sababni tuzatib qayta yuborishi mumkin.",
+    cUpliftT: "Adminlarga yuborish",
+    cUpliftM: "Nega bu vazifaga ball berilishi kerak? Adminlar lider izohi bilan birga shuni o'qib qaror qiladi.",
     cUndoT: "Qarorni bekor qilish",
     cUndoM: "{leader} — {date}, «{task}». Qaror bekor qilinadi: AI qarori yana kuchga kiradi va kun qayta hisoblanadi.",
+    noteReq: "Izoh yozing.", notePh: "Sababni yozing…",
     okApprove: "Norozilik qabul qilindi", okReject: "Norozilik rad etildi",
+    okUplift: "Adminlarga yuborildi",
     okUndo: "Qaror bekor qilindi", fail: "Amal bajarilmadi",
     emptyT: "Norozilik yo'q", emptyM: "Hech kim AI qaroriga e'tiroz bildirmagan.",
     noMatchT: "Mos norozilik topilmadi", noMatchM: "Filtr yoki qidiruvni o'zgartiring.",
@@ -95,26 +120,36 @@ const TXT = {
   },
   uz_cyrl: {
     title: "Норозликлар",
-    rule: "AI рад этган вазифа ўз оғирлигини дарҳол йўқотади. Бригадир бу қарорга норозилик билдиради — сабаб билан, — ва фақат админ уни ҳал қилади.",
-    ruleAdmin: "Қабул қилсангиз, вазифа ўз оғирлигини қайтариб олади, кун қайта ҳисобланади ва лидер билан бригадирга хабар боради.",
-    ruleRead: "Қарорни админ қабул қилади. Бу ерда ўз бригадангизнинг норозликлари ва уларнинг ҳолати кўринади.",
-    segAll: "Барчаси", segTodo: "Кутилмоқда", segDone: "Тарих",
+    rule: "AI рад этган вазифа ўз оғирлигини дарҳол йўқотади. Лидер бу қарорга норозилик билдиради, бригадир уни ўқиб рад этади ёки админларга юборади — ўз изоҳи билан, — ва балл фақат админ қароридан кейин қайтади.",
+    ruleAdmin: "Иккала изоҳни ўқинг ва қарор қилинг: қабул қилсангиз, вазифа ўз оғирлигини қайтариб олади, кун қайта ҳисобланади ва лидер билан бригадирга хабар боради.",
+    ruleSup: "Сиз биринчи бўлиб кўриб чиқасиз: рад этсангиз — AI қарори кучида қолади; админларга юборсангиз, нега балл берилиши кераклигини ёзишингиз шарт.",
+    ruleRead: "Бу ерда ўз норозликларингиз ва улар қайси босқичда экани кўринади.",
+    segAll: "Барчаси", segTodo: "Сизнинг навбатингиз", segDone: "Тарих",
     shift1: "1-смена", shift2: "2-смена",
     searchPh: "Лидер, бригадир ёки вазифа…",
-    stPending: "Админ қарорини кутмоқда", stApproved: "Қабул қилинди",
-    stRejected: "Рад этилди", stCancelled: "Қарор бекор қилинди",
+    stSupervisor: "Бригадир кўриб чиқмоқда", stAdmin: "Админ қарорини кутмоқда",
+    stApproved: "Қабул қилинди", stRejected: "Рад этилди",
+    stCancelled: "Қарор бекор қилинди",
     task: "Вазифа", aiTitle: "AI хулосаси",
     window: "Рухсат этилган вақт", needDate: "Керакли сана", onPhoto: "Расмда",
     by: "Юборди", decidedBy: "Қарор қилди",
-    approve: "Қабул қилиш", reject: "Рад этиш", undo: "Қарорни бекор қилиш",
+    noteLead: "Лидер изоҳи", noteLeadSup: "Бригадир изоҳи (лидер номидан)",
+    noteSup: "Бригадир изоҳи", noteAdm: "Админ изоҳи",
+    supRejected: "Бригадир рад этди", supUplifted: "Бригадир админларга юборди",
+    approve: "Қабул қилиш", reject: "Рад этиш", uplift: "Админларга юбориш",
+    undo: "Қарорни бекор қилиш", cancel: "Бекор қилиш",
     openReport: "Кун ҳисоботини очиш",
     cApproveT: "Норозиликни қабул қилиш",
     cApproveM: "{leader} — {date}, «{task}». Вазифа ўз оғирлигини қайтариб олади, кун қайта ҳисобланади ва лидер билан бригадирга хабар боради.",
     cRejectT: "Норозиликни рад этиш",
-    cRejectM: "{leader} — {date}, «{task}». AI қарори кучида қолади, вазифа оғирлигисиз қолади. Бригадир сабабни тузатиб қайта юбориши мумкин.",
+    cRejectM: "{leader} — {date}, «{task}». AI қарори кучида қолади, вазифа оғирлигисиз қолади. Лидер сабабни тузатиб қайта юбориши мумкин.",
+    cUpliftT: "Админларга юбориш",
+    cUpliftM: "Нега бу вазифага балл берилиши керак? Админлар лидер изоҳи билан бирга шуни ўқиб қарор қилади.",
     cUndoT: "Қарорни бекор қилиш",
     cUndoM: "{leader} — {date}, «{task}». Қарор бекор қилинади: AI қарори яна кучга киради ва кун қайта ҳисобланади.",
+    noteReq: "Изоҳ ёзинг.", notePh: "Сабабни ёзинг…",
     okApprove: "Норозилик қабул қилинди", okReject: "Норозилик рад этилди",
+    okUplift: "Админларга юборилди",
     okUndo: "Қарор бекор қилинди", fail: "Амал бажарилмади",
     emptyT: "Норозилик йўқ", emptyM: "Ҳеч ким AI қарорига эътироз билдирмаган.",
     noMatchT: "Мос норозилик топилмади", noMatchM: "Филтр ёки қидирувни ўзгартиринг.",
@@ -124,26 +159,36 @@ const TXT = {
   },
   ru: {
     title: "Возражения",
-    rule: "Задача, отклонённая ИИ, сразу теряет свой вес. Бригадир возражает против этого решения — с причиной, — и решает только администратор.",
-    ruleAdmin: "Если вы согласитесь, задача вернёт свой вес, день пересчитается, а лидер и бригадир получат уведомление.",
-    ruleRead: "Решение принимает администратор. Здесь видны возражения вашей бригады и их состояние.",
-    segAll: "Все", segTodo: "На решении", segDone: "История",
+    rule: "Задача, отклонённая ИИ, сразу теряет свой вес. Лидер возражает против этого решения, бригадир читает возражение и либо отклоняет его, либо передаёт администраторам — со своим комментарием, — и балл возвращается только по решению администратора.",
+    ruleAdmin: "Прочитайте оба комментария и решите: если согласитесь, задача вернёт свой вес, день пересчитается, а лидер и бригадир получат уведомление.",
+    ruleSup: "Вы смотрите первым: если отклоните — решение ИИ останется в силе; если передадите администраторам, нужно будет написать, почему балл должен быть начислен.",
+    ruleRead: "Здесь видны ваши возражения и то, на какой они стадии.",
+    segAll: "Все", segTodo: "Ваша очередь", segDone: "История",
     shift1: "Смена 1", shift2: "Смена 2",
     searchPh: "Лидер, бригадир или задача…",
-    stPending: "Ждёт решения администратора", stApproved: "Принято",
-    stRejected: "Отклонено", stCancelled: "Решение отменено",
+    stSupervisor: "У бригадира", stAdmin: "Ждёт решения администратора",
+    stApproved: "Принято", stRejected: "Отклонено",
+    stCancelled: "Решение отменено",
     task: "Задача", aiTitle: "Заключение ИИ",
     window: "Допустимое время", needDate: "Нужная дата", onPhoto: "На фото",
     by: "Отправил(а)", decidedBy: "Решение",
-    approve: "Принять", reject: "Отклонить", undo: "Отменить решение",
+    noteLead: "Комментарий лидера", noteLeadSup: "Комментарий бригадира (за лидера)",
+    noteSup: "Комментарий бригадира", noteAdm: "Комментарий администратора",
+    supRejected: "Бригадир отклонил", supUplifted: "Бригадир передал администраторам",
+    approve: "Принять", reject: "Отклонить", uplift: "Передать администраторам",
+    undo: "Отменить решение", cancel: "Отмена",
     openReport: "Открыть отчёт за день",
     cApproveT: "Принять возражение",
     cApproveM: "{leader} — {date}, «{task}». Задача вернёт свой вес, день пересчитается, лидер и бригадир получат уведомление.",
     cRejectT: "Отклонить возражение",
-    cRejectM: "{leader} — {date}, «{task}». Решение ИИ остаётся в силе, задача остаётся без веса. Бригадир может подать возражение снова с уточнённой причиной.",
+    cRejectM: "{leader} — {date}, «{task}». Решение ИИ остаётся в силе, задача остаётся без веса. Лидер может подать возражение снова с уточнённой причиной.",
+    cUpliftT: "Передать администраторам",
+    cUpliftM: "Почему за эту задачу нужно начислить балл? Администраторы прочитают ваш комментарий вместе с комментарием лидера.",
     cUndoT: "Отменить решение",
     cUndoM: "{leader} — {date}, «{task}». Решение будет отменено: заключение ИИ снова вступает в силу, день пересчитается.",
+    noteReq: "Напишите комментарий.", notePh: "Напишите причину…",
     okApprove: "Возражение принято", okReject: "Возражение отклонено",
+    okUplift: "Передано администраторам",
     okUndo: "Решение отменено", fail: "Не удалось выполнить действие",
     emptyT: "Возражений нет", emptyM: "Никто не оспорил решение ИИ.",
     noMatchT: "Ничего не найдено", noMatchM: "Измените фильтр или поиск.",
@@ -153,26 +198,36 @@ const TXT = {
   },
   en: {
     title: "Objections",
-    rule: "A task the AI rejects loses its weight immediately. The unit's brigadir objects to that ruling — with a reason — and only an admin settles it.",
-    ruleAdmin: "Accepting restores the task's weight, re-scores the day and notifies both the leader and the brigadir.",
-    ruleRead: "An admin makes the decision. Your unit's objections and where they stand are listed here.",
-    segAll: "All", segTodo: "Awaiting decision", segDone: "History",
+    rule: "A task the AI rejects loses its weight immediately. The leader objects to that ruling, their brigadir reads it and either refuses it or passes it to the admins with their own case — and the point comes back only on an admin's decision.",
+    ruleAdmin: "Read both notes and decide: accepting restores the task's weight, re-scores the day and notifies both the leader and the brigadir.",
+    ruleSup: "You read it first: refuse it and the AI ruling stands; pass it up and you must write why the task should be pointed.",
+    ruleRead: "Your own objections and where each one stands are listed here.",
+    segAll: "All", segTodo: "Your turn", segDone: "History",
     shift1: "Shift 1", shift2: "Shift 2",
     searchPh: "Leader, brigadir or task…",
-    stPending: "Awaiting an admin decision", stApproved: "Upheld",
-    stRejected: "Refused", stCancelled: "Ruling undone",
+    stSupervisor: "With the brigadir", stAdmin: "Awaiting an admin decision",
+    stApproved: "Upheld", stRejected: "Refused",
+    stCancelled: "Ruling undone",
     task: "Task", aiTitle: "AI verdict",
     window: "Allowed window", needDate: "Required date", onPhoto: "On the photo",
     by: "Filed by", decidedBy: "Decided by",
-    approve: "Uphold", reject: "Refuse", undo: "Undo the ruling",
+    noteLead: "The leader's note", noteLeadSup: "The brigadir's note (for the leader)",
+    noteSup: "The brigadir's case", noteAdm: "The admin's note",
+    supRejected: "The brigadir refused it", supUplifted: "The brigadir passed it up",
+    approve: "Uphold", reject: "Refuse", uplift: "Pass to the admins",
+    undo: "Undo the ruling", cancel: "Cancel",
     openReport: "Open the day report",
     cApproveT: "Uphold the objection",
     cApproveM: "{leader} — {date}, “{task}”. The task gets its weight back, the day re-scores and both the leader and the brigadir are notified.",
     cRejectT: "Refuse the objection",
-    cRejectM: "{leader} — {date}, “{task}”. The AI ruling stands and the task stays without its weight. The brigadir may file again with a better reason.",
+    cRejectM: "{leader} — {date}, “{task}”. The AI ruling stands and the task stays without its weight. The leader may file again with a better account.",
+    cUpliftT: "Pass it to the admins",
+    cUpliftM: "Why should this task be pointed? The admins read your comment beside the leader's and decide.",
     cUndoT: "Undo the ruling",
     cUndoM: "{leader} — {date}, “{task}”. The ruling is taken back: the AI verdict applies again and the day re-scores.",
+    noteReq: "Write a comment.", notePh: "Write the reason…",
     okApprove: "Objection upheld", okReject: "Objection refused",
+    okUplift: "Passed to the admins",
     okUndo: "Ruling undone", fail: "The action did not go through",
     emptyT: "No objections", emptyM: "Nobody has contested an AI ruling.",
     noMatchT: "Nothing matches", noMatchM: "Change the filter or the search.",
@@ -183,15 +238,20 @@ const TXT = {
 };
 
 // One state → one look, shared by the chip and the card's left edge so the two
-// can never disagree. `cancelled` is colourless on purpose: an undone ruling
-// says nothing about the score any more, and red would read as «refused» —
-// the one outcome it is not.
+// can never disagree. The two OPEN stages are both amber — nothing has been
+// decided in either — and told apart by their icon and their words, because
+// colour here means outcome and neither of them has one yet. `cancelled` is
+// colourless on purpose: an undone ruling says nothing about the score any
+// more, and red would read as «refused», the one outcome it is not.
 const STATE_STYLE = {
-  pending:   { color: C_WAIT, Icon: Hourglass,  key: "stPending" },
-  approved:  { color: C_OK,   Icon: ShieldCheck, key: "stApproved" },
-  rejected:  { color: C_BAD,  Icon: Ban,         key: "stRejected" },
-  cancelled: { color: C_OFF,  Icon: CircleSlash, key: "stCancelled" },
+  supervisor: { color: C_WAIT, Icon: UserCheck,    key: "stSupervisor" },
+  admin:      { color: C_WAIT, Icon: Hourglass,    key: "stAdmin" },
+  approved:   { color: C_OK,   Icon: ShieldCheck,  key: "stApproved" },
+  rejected:   { color: C_BAD,  Icon: Ban,          key: "stRejected" },
+  cancelled:  { color: C_OFF,  Icon: CircleSlash,  key: "stCancelled" },
 };
+
+const OPEN_STATES = ["supervisor", "admin"];
 
 function StateChip({ status, T }) {
   const st = STATE_STYLE[status] || STATE_STYLE.cancelled;
@@ -201,6 +261,46 @@ function StateChip({ status, T }) {
       style={{ background: hexA(color, 0.12), border: `1px solid ${hexA(color, 0.3)}`, color }}>
       <Icon size={12} />{T[st.key]}
     </span>
+  );
+}
+
+/** One attributed block of somebody's own words — the leader's account, the
+ *  brigadir's case, the admin's note. Same shape for all three, because they
+ *  are read as one thread: what was claimed, what was argued, what was ruled. */
+function Quote({ label, text, who, at, T, tone }) {
+  const bodyText = (text || "").trim();
+  const credit = (who || at)
+    ? `${who ? `${T.by}: ${who}` : ""}${who && at ? " · " : ""}${at || ""}`
+    : "";
+  // Somebody who ruled without typing anything said nothing — so there is
+  // nothing to quote, and a box holding an em dash is worse than no box: it
+  // reads as a comment that failed to load. The attribution is the whole fact
+  // in that case, and it stands on its own line.
+  if (!bodyText) {
+    return credit ? (
+      <div className="text-[11px] mt-2" style={{ color: "var(--text-4)" }}>
+        <span className="uppercase tracking-wide">{label}</span> · {credit}
+      </div>
+    ) : null;
+  }
+  return (
+    <div className="mt-2">
+      <div className="text-[11px] uppercase tracking-wide mb-0.5"
+        style={{ color: "var(--text-4)" }}>{label}</div>
+      <div className="rounded-xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap"
+        style={{
+          background: "var(--bg-inner)",
+          borderLeft: `3px solid ${tone || "var(--border)"}`,
+          color: "var(--text-2)",
+        }}>
+        <MessageSquareQuote size={12} className="inline-block mr-1.5 -mt-0.5"
+          style={{ color: "var(--text-4)" }} />
+        {bodyText}
+      </div>
+      {credit && (
+        <div className="text-[11px] mt-1" style={{ color: "var(--text-4)" }}>{credit}</div>
+      )}
+    </div>
   );
 }
 
@@ -234,12 +334,15 @@ export default function Disputes({ scope, onClearScope }) {
   const [seg, setSeg] = useState("all");
   const [q, setQ] = useState("");
   const [confirm, setConfirm] = useState(null);   // { kind, item }
+  const [note, setNote] = useState("");
+  const [noteErr, setNoteErr] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["leader-disputes"],
     queryFn: () => api.get("/api/leaders/disputes").then((r) => r.data),
   });
   const canDecide = !!data?.canDecide;
+  const canSupervise = !!data?.canSupervise;
 
   // The endpoint ships the whole queue: a decision waiting on you must not be
   // hidden by a period somebody picked for the dashboard. The page scope
@@ -249,25 +352,38 @@ export default function Disputes({ scope, onClearScope }) {
   const all = useMemo(() => data?.items ?? [], [data]);
   const items = useMemo(() => all.filter((it) => inScope(it, scope)), [all, scope]);
 
-  // Every ruling moves a score, so the register, the leaderboard and the day
+  // Whose turn is it on THIS row? The SERVER's answer, per row, from the same
+  // `_dispute_stage_rights` the write re-checks — never re-derived here.
+  const mine = (it) => !!it.canAct;
+
+  // Every ruling can move a score, so the register, the leaderboard and the day
   // report behind this card all have to re-read.
   const settle = (msg) => {
     qc.invalidateQueries({ queryKey: ["leader-disputes"] });
     qc.invalidateQueries({ queryKey: ["leaders"] });
     qc.invalidateQueries({ queryKey: ["leaderDayReport"] });
     setConfirm(null);
+    setNote("");
+    setNoteErr("");
     toast.success(msg);
   };
   const failMsg = (e) => e?.response?.data?.detail || T.fail;
 
   const decide = useMutation({
-    mutationFn: ({ id, status }) =>
-      api.post(`/api/leaders/disputes/${id}/decide`, { status }).then((r) => r.data),
-    onSuccess: (_r, v) => settle(v.status === "approved" ? T.okApprove : T.okReject),
+    mutationFn: ({ id, action, note: n }) =>
+      api.post(`/api/leaders/disputes/${id}/decide`,
+               { action, note: n || "" }).then((r) => r.data),
+    onSuccess: (_r, v) => settle(
+      v.action === "approved" ? T.okApprove
+        : v.action === "uplifted" ? T.okUplift : T.okReject),
+    // The failure stays INSIDE the dialog: a mutation that fails must leave the
+    // dialog standing with the reason on it, never close and lose it.
+    onError: (e) => setNoteErr(failMsg(e)),
   });
   const undo = useMutation({
     mutationFn: ({ id }) => api.post(`/api/leaders/disputes/${id}/undo`).then((r) => r.data),
     onSuccess: () => settle(T.okUndo),
+    onError: (e) => setNoteErr(failMsg(e)),
   });
 
   const isDone = (it) => ["approved", "rejected", "cancelled"].includes(it.status);
@@ -275,36 +391,33 @@ export default function Disputes({ scope, onClearScope }) {
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const arr = items.filter((it) => {
-      if (seg === "todo" && it.status !== "pending") return false;
+      if (seg === "todo" && !mine(it)) return false;
       if (seg === "done" && !isDone(it)) return false;
       if (needle) {
-        const hay = `${tl(it.leader)} ${it.leader} ${it.supervisor} ${pick(it.taskName, lang)} ${it.reason} ${it.by}`;
+        const hay = `${tl(it.leader)} ${it.leader} ${it.supervisor} ${pick(it.taskName, lang)} ${it.reason} ${it.by} ${it.sup?.note || ""}`;
         if (!hay.toLowerCase().includes(needle)) return false;
       }
       return true;
     });
-    // Pending first, then the newest — the work is at the top without a default
-    // filter hiding the history behind it.
+    // Your turn first, then the newest. The work is at the top without a
+    // default filter hiding the history behind it.
     return [...arr].sort((a, b) =>
-      ((b.status === "pending") - (a.status === "pending"))
+      (mine(b) - mine(a))
       || (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
   }, [items, seg, q, tl, lang]);
 
   const counts = useMemo(() => ({
     all: items.length,
-    todo: items.filter((i) => i.status === "pending").length,
+    todo: items.filter(mine).length,
     done: items.filter(isDone).length,
   }), [items]);
 
   // What the page scope is holding back — and how much of it is still a
-  // decision, which is what turns the line amber.
+  // decision of YOURS, which is what turns the line amber.
   const out = useMemo(() => {
     const rest = all.filter((it) => !inScope(it, scope));
-    return {
-      hidden: rest.length,
-      todo: canDecide ? rest.filter((i) => i.status === "pending").length : 0,
-    };
-  }, [all, scope, canDecide]);
+    return { hidden: rest.length, todo: rest.filter(mine).length };
+  }, [all, scope]);
 
   const segLabel = (label, n) => (
     <span className="inline-flex items-center gap-1.5">
@@ -313,32 +426,46 @@ export default function Disputes({ scope, onClearScope }) {
     </span>
   );
 
-  const cfg = confirm && (() => {
-    const it = confirm.item;
-    const fill = (s) => s
-      .replaceAll("{leader}", tl(it.leader) || "—")
-      .replaceAll("{date}", day(it.date))
-      .replaceAll("{task}", pick(it.taskName, lang) || `№${it.taskId}`);
+  const close = () => {
+    setConfirm(null); setNote(""); setNoteErr("");
+    decide.reset(); undo.reset();
+  };
+  const ask = (kind, item) => {
+    setNote(""); setNoteErr(""); decide.reset(); undo.reset();
+    setConfirm({ kind, item });
+  };
+
+  const run = () => {
+    if (!confirm) return;
+    const { kind, item } = confirm;
+    if (kind === "undo") { undo.mutate({ id: item.id }); return; }
+    if (kind === "uplift" && !note.trim()) { setNoteErr(T.noteReq); return; }
+    const action = kind === "uplift" ? "uplifted"
+      : kind === "approve" ? "approved" : "rejected";
+    decide.mutate({ id: item.id, action, note: note.trim() });
+  };
+
+  const fillFor = (it) => (s) => String(s || "")
+    .replaceAll("{leader}", tl(it.leader) || "—")
+    .replaceAll("{date}", day(it.date))
+    .replaceAll("{task}", pick(it.taskName, lang) || `№${it.taskId}`);
+
+  const cText = (() => {
+    if (!confirm) return { t: "", m: "", label: "", tone: undefined };
+    const fill = fillFor(confirm.item);
     return {
-      approve: {
-        title: T.cApproveT, message: fill(T.cApproveM), tone: "warning", label: T.approve,
-        run: () => decide.mutate({ id: it.id, status: "approved" }),
-      },
-      reject: {
-        title: T.cRejectT, message: fill(T.cRejectM), tone: "danger", label: T.reject,
-        run: () => decide.mutate({ id: it.id, status: "rejected" }),
-      },
-      undo: {
-        title: T.cUndoT, message: fill(T.cUndoM), tone: "danger", label: T.undo,
-        run: () => undo.mutate({ id: it.id }),
-      },
+      uplift: { t: T.cUpliftT, m: T.cUpliftM, label: T.uplift, tone: undefined },
+      approve: { t: T.cApproveT, m: fill(T.cApproveM), label: T.approve, tone: "warning" },
+      reject: { t: T.cRejectT, m: fill(T.cRejectM), label: T.reject, tone: "danger" },
+      undo: { t: T.cUndoT, m: fill(T.cUndoM), label: T.undo, tone: "danger" },
     }[confirm.kind];
   })();
 
   return (
     <>
       {/* What this screen is, and the second sentence is the one for THIS
-          viewer's job — an admin rules here, a brigadir watches. */}
+          viewer's job — an admin rules at stage two, a brigadir at stage one,
+          a leader reads what became of their own objection. */}
       <div className="rounded-2xl p-4 mb-3 flex items-start gap-3"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <span className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
@@ -347,7 +474,8 @@ export default function Disputes({ scope, onClearScope }) {
         </span>
         <div className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
           <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>{T.title}</div>
-          {T.rule} {canDecide ? T.ruleAdmin : T.ruleRead}
+          {T.rule}{" "}
+          {canDecide ? T.ruleAdmin : canSupervise ? T.ruleSup : T.ruleRead}
         </div>
       </div>
 
@@ -387,16 +515,21 @@ export default function Disputes({ scope, onClearScope }) {
         <div className="space-y-2">
           {shown.map((it) => {
             const tone = STATE_STYLE[it.status] || STATE_STYLE.cancelled;
-            const open = it.status === "pending";
+            const turn = mine(it);
             const rev = it.verdict;
             const flags = rev?.flags || [];
             const dated = flags.some((f) => f === "no_date" || f === "date_mismatch");
             const taskName = pick(it.taskName, lang);
+            // Whose words the first note is. A brigadir may still file for a
+            // leader who resolves to no profile, and that must not be printed
+            // as the leader's own account of their shift.
+            const leadLabel = it.byRole === "leader" || !it.byRole
+              ? T.noteLead : T.noteLeadSup;
             return (
               <div key={it.id} className="rounded-2xl overflow-hidden"
                 style={{
                   background: "var(--bg-card)",
-                  border: `1px solid ${open && canDecide ? hexA(tone.color, 0.35) : "var(--border)"}`,
+                  border: `1px solid ${turn ? hexA(tone.color, 0.35) : "var(--border)"}`,
                 }}>
                 <div className="flex">
                   {/* the state's colour as a left edge: scannable down a long list */}
@@ -458,7 +591,7 @@ export default function Disputes({ scope, onClearScope }) {
                               </p>
                             )}
                             {/* The hours when hours were the rule, the required
-                                DAY when only the day was judged — an admin has
+                                DAY when only the day was judged — a decider has
                                 to read which rule the leader was measured by. */}
                             {rev.expected && (
                               <p className="text-[10px] tabular-nums mt-1 flex items-center gap-1 flex-wrap"
@@ -474,35 +607,53 @@ export default function Disputes({ scope, onClearScope }) {
                       </div>
                     )}
 
-                    {/* The objection, quoted — it is what the decision is made on. */}
-                    <div className="mt-2 rounded-xl px-3 py-2 text-xs leading-relaxed"
-                      style={{ background: hexA(tone.color, 0.08), color: "var(--text-2)" }}>
-                      “{it.reason}”
-                      <div className="mt-1" style={{ color: "var(--text-4)" }}>
-                        {T.by}: {it.by || "—"}
-                        {it.at && ` · ${stamp(it.at, it.date)}`}
-                        {it.decidedBy && ` · ${T.decidedBy}: ${it.decidedBy}`}
-                      </div>
-                    </div>
+                    {/* The whole thread, in order: what was claimed, what was
+                        argued, what was ruled. */}
+                    <Quote label={leadLabel} text={it.reason} who={it.by}
+                      at={stamp(it.at, it.date)} T={T} tone={C_WAIT} />
+                    {it.sup && (
+                      <Quote
+                        label={`${T.noteSup} · ${it.sup.action === "uplifted" ? T.supUplifted : T.supRejected}`}
+                        text={it.sup.note} who={it.sup.by}
+                        at={stamp(it.sup.at, it.date)} T={T}
+                        tone={it.sup.action === "uplifted" ? C_WAIT : C_BAD} />
+                    )}
+                    {(it.decidedBy || it.note) && (
+                      <Quote label={T.noteAdm} text={it.note} who={it.decidedBy}
+                        at={stamp(it.decidedAt, it.date)} T={T}
+                        tone={it.status === "approved" ? C_OK
+                          : it.status === "cancelled" ? C_OFF : C_BAD} />
+                    )}
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {canDecide && open && (
+                      {/* The two buttons this stage has — and only those. A
+                          brigadir cannot restore the weight and an admin does
+                          not uplift, so the asymmetry is expressed by which
+                          buttons exist rather than by a 403 after the press. */}
+                      {turn && OPEN_STATES.includes(it.status) && (
                         <>
-                          <Button size="md" tint variant="success"
-                            onClick={() => setConfirm({ kind: "approve", item: it })}>
-                            {T.approve}
-                          </Button>
                           <Button size="md" tint variant="danger"
-                            onClick={() => setConfirm({ kind: "reject", item: it })}>
-                            {T.reject}
+                            onClick={() => ask("reject", it)}>
+                            <Ban size={13} />{T.reject}
                           </Button>
+                          {it.status === "supervisor" ? (
+                            <Button size="md" tint variant="primary"
+                              onClick={() => ask("uplift", it)}>
+                              <ArrowUpCircle size={13} />{T.uplift}
+                            </Button>
+                          ) : (
+                            <Button size="md" tint variant="success"
+                              onClick={() => ask("approve", it)}>
+                              <ShieldCheck size={13} />{T.approve}
+                            </Button>
+                          )}
                         </>
                       )}
-                      {/* The way back out of a ruling still in force. A cancelled
-                          row has nothing left to undo. */}
+                      {/* The way back out of a ruling still in force. A
+                          cancelled row has nothing left to undo. */}
                       {canDecide && ["approved", "rejected"].includes(it.status) && (
                         <Button size="md" tint variant="secondary" icon={<RotateCcw size={13} />}
-                          onClick={() => setConfirm({ kind: "undo", item: it })}>
+                          onClick={() => ask("undo", it)}>
                           {T.undo}
                         </Button>
                       )}
@@ -524,19 +675,48 @@ export default function Disputes({ scope, onClearScope }) {
         </div>
       )}
 
-      {confirm && cfg && (
-        <ConfirmDialog
-          title={cfg.title}
-          message={cfg.message}
-          confirmLabel={cfg.label}
-          tone={cfg.tone}
-          loading={decide.isPending || undo.isPending}
-          error={decide.isError ? failMsg(decide.error)
-            : undo.isError ? failMsg(undo.error) : null}
-          onCancel={() => { setConfirm(null); decide.reset(); undo.reset(); }}
-          onConfirm={cfg.run}
-        />
-      )}
+      {/* Refuse, uphold and undo are plain confirms. Passing it up is a FORM —
+          it collects a required comment — so it is the Modal template, not a
+          ConfirmDialog carrying a field it was never built to hold. */}
+      <ConfirmDialog
+        open={!!confirm && confirm.kind !== "uplift"}
+        title={cText.t}
+        message={cText.m}
+        confirmLabel={cText.label}
+        tone={cText.tone}
+        loading={decide.isPending || undo.isPending}
+        error={noteErr || undefined}
+        onCancel={close}
+        onConfirm={run}
+      />
+
+      <Modal
+        open={!!confirm && confirm.kind === "uplift"}
+        onClose={close}
+        title={T.cUpliftT}
+        icon={<ArrowUpCircle size={16} />}
+        subtitle={confirm?.item ? `${tl(confirm.item.leader)} · ${day(confirm.item.date)}` : ""}
+        footer={
+          <>
+            <Button variant="secondary" onClick={close}>{T.cancel}</Button>
+            <Button variant="primary" loading={decide.isPending} onClick={run}>
+              <ArrowUpCircle size={14} />{T.uplift}
+            </Button>
+          </>
+        }
+      >
+        <FormField label={T.noteSup} required hint={T.cUpliftM} error={noteErr || undefined}>
+          <textarea
+            value={note}
+            onChange={(e) => { setNote(e.target.value); setNoteErr(""); }}
+            rows={4} maxLength={1000} placeholder={T.notePh} autoFocus
+            className="w-full rounded-xl px-3 py-2 text-sm resize-y"
+            style={{
+              background: "var(--bg-inner)", border: "1px solid var(--border)",
+              color: "var(--text-1)",
+            }} />
+        </FormField>
+      </Modal>
 
       {toast.node}
     </>

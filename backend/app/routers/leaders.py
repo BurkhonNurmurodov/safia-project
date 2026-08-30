@@ -24,8 +24,8 @@ from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
 from app.services import (
-    action_log, leader_ai, leader_bot, leader_exclusions, leader_late_proof,
-    leader_reports)
+    action_log, leader_ai, leader_bot, leader_dispute, leader_exclusions,
+    leader_late_proof, leader_reports)
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -907,11 +907,86 @@ def get_day_report(
         # a real report in another unit.
         raise HTTPException(status_code=404, detail="No such report")
 
+    return _stamp_report_rights(db, payload, row)
+
+
+def _stamp_report_rights(db: Session, payload: dict, row: dict) -> dict:
+    """What THIS viewer may do on this report — stamped in one place, because
+    the page draws its buttons from it and the endpoints re-check the same
+    rules. Two spellings would grow a button that answers 403.
+
+    `canAct` is per TASK, not per page: which of the chain's two rulings is
+    available depends on the stage that objection is actually at, and the page
+    must never offer the other one.
+    """
     role = payload.get("role")
-    row["canDispute"] = _may_request_for(payload, row["managerId"])
-    row["canDecide"] = _may_decide(payload)
+    # Objecting is the LEADER's door first — `_may_dispute_for`, not the
+    # late-DAY flow's `_may_request_for`, which answers a different question
+    # about a different table.
+    row["canDispute"] = _may_dispute_for(db, payload, row)
+    sup_ok = (role == "admin") or (
+        role == "supervisor" and row.get("managerId") is not None
+        and payload.get("role_id") == row["managerId"])
+    adm_ok = _may_decide(payload)
+    row["canSupervise"] = sup_ok
+    row["canDecide"] = adm_ok
     row["viewerRole"] = role
+    for t in (row.get("tasks") or []):
+        d = t.get("dispute")
+        if not d:
+            continue
+        d["canAct"] = bool(
+            (d.get("status") == leader_dispute.SUPERVISOR and sup_ok)
+            or (d.get("status") == leader_dispute.ADMIN and adm_ok))
     return row
+
+
+def _may_dispute_for(db: Session, payload: dict, report: dict) -> bool:
+    """Who may OBJECT to an automatic rejection on this report.
+
+    The leader the verdict judged, their unit's brigadir, or an admin — the
+    three people the chain is built out of, and nobody else. A "see all" page
+    grant deliberately does NOT widen it: it widens reading, never authority.
+
+    The LEADER is the point of the whole flow — they read the verdict on their
+    own day report and are the only person who was there — but the brigadir
+    keeps the door they already had, because about 18% of leader rows never
+    resolve to a profile (`leader-register-unlinked-rows`) and for those
+    leaders the brigadir is the only person who can raise the objection at all.
+    Where they file it lands is decided by `leader_dispute.entry_stage`, not by
+    this predicate: a supervisor's own filing is their uplift.
+
+    Deliberately NOT `_may_request_for`, which answers the same question for
+    opening a voided DAY. Two flows that happen to agree today are two flows.
+    """
+    role = payload.get("role")
+    if role == "admin":
+        return True
+    if role == "supervisor":
+        return (report.get("managerId") is not None
+                and payload.get("role_id") == report["managerId"])
+    if role == "leader":
+        lid = report.get("leaderId")
+        return bool(lid) and int(lid) in set(
+            identity.viewer_leader_profile_ids(db, payload) or [])
+    return False
+
+
+def _dispute_stage_rights(payload: dict, d: LeaderAiDispute) -> tuple[bool, bool]:
+    """(may rule at stage 1, may rule at stage 2) for this caller on this row.
+
+    Authority is per ROW, not per page: a brigadir owns their own unit's
+    objections and nobody else's, and only an admin can put a point back. The
+    same shape — and the same reason — as `_lp_stage_rights` next door: a
+    supervisor holding the leaders page at scope «all» is served every unit's
+    rows, and "you are a brigadir" is not "you are THIS unit's brigadir".
+    """
+    if payload.get("role") == "admin":
+        return True, True
+    is_sup = (payload.get("role") == "supervisor"
+              and d.manager_id is not None
+              and int(payload.get("role_id") or 0) == int(d.manager_id))
+    return is_sup, False
 
 
 @router.post("/leaders/report/{uid}/dispute")
@@ -921,10 +996,13 @@ def file_dispute(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
 ):
-    """Object to one automatic rejection. The unit's own brigadir files it with
-    a reason; every admin gets it as an inline Telegram card. An admin filing
-    one IS the decision — the same rule as opening a late day, because it is
-    the same authority question.
+    """Object to one automatic rejection, with the filer's own account of it.
+
+    A LEADER's objection goes to their unit's brigadir, who reads it and either
+    refuses it or makes the case for it to the admins. A SUPERVISOR filing goes
+    straight up — their text IS that case. An admin filing one IS the decision,
+    the same rule as opening a late day, because it is the same authority
+    question. `leader_dispute.entry_stage` owns that placement.
 
     The task is re-derived from the report the caller can actually read, so
     "is this yours" and "does this rejection exist" are one check.
@@ -932,7 +1010,7 @@ def file_dispute(
     reason = str(body.get("reason") or "").strip()
     if len(reason) < 3:
         raise HTTPException(status_code=400, detail="A reason is required")
-    if len(reason) > 1000:
+    if len(reason) > leader_dispute.REASON_MAX:
         raise HTTPException(status_code=400, detail="Reason is too long")
     try:
         task_id = int(body.get("task_id"))
@@ -945,8 +1023,8 @@ def file_dispute(
         "leader": report["leader"],
     }):
         raise HTTPException(status_code=404, detail="No such report")
-    if not _may_request_for(payload, report["managerId"]):
-        raise HTTPException(status_code=403, detail="Not your unit")
+    if not _may_dispute_for(db, payload, report):
+        raise HTTPException(status_code=403, detail="Not yours to dispute")
 
     task = next((t for t in report["tasks"] if t["id"] == task_id), None)
     if task is None:
@@ -954,7 +1032,7 @@ def file_dispute(
     if not task["ai_rejected"]:
         raise HTTPException(status_code=409, detail="This task was not rejected")
     live = task.get("dispute")
-    if live and live["status"] == "pending":
+    if live and live["status"] in leader_dispute.OPEN_STATES:
         raise HTTPException(status_code=409, detail="Already awaiting a decision")
 
     ref = leader_reports.ref_of_task(db, uid, task_id)
@@ -962,81 +1040,75 @@ def file_dispute(
     if rev is None:
         raise HTTPException(status_code=404, detail="No verdict to dispute")
 
-    # A refused dispute may be re-filed with a better reason; the new row
-    # replaces it so one verdict never carries two live objections.
-    for old in db.query(LeaderAiDispute).filter_by(ref=ref).all():
-        db.delete(old)
-    db.flush()
-
-    is_admin = payload.get("role") == "admin"
+    role = payload.get("role")
     who = payload.get("full_name") or ""
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
-    # Always born `pending`, even when an admin files it: `_settle_dispute` is
-    # the ONLY thing that writes a decision, and it refuses to act on a row
-    # that already claims to be decided. Pre-stamping the admin's own filing
-    # would make it a no-op — the paper trail would say "approved" while the
-    # verdict kept its rejection and the leader's weight never came back.
-    d = LeaderAiDispute(
-        ref=ref, review_id=rev.id, date=report["date"], task_id=task_id,
-        leader_id=report["leaderId"], leader_name=(report["leader"] or "")[:160],
-        manager_id=report["managerId"], status="pending", reason=reason,
-        requested_by_profile=identity.viewer_profile_key(db, payload),
-        requested_by_name=who, requested_by_telegram=tid,
-    )
-    db.add(d)
-    db.flush()
+    d = leader_dispute.create(
+        db, ref=ref, review_id=rev.id, report=report, task_id=task_id,
+        reason=reason, role=role,
+        profile=identity.viewer_profile_key(db, payload),
+        actor_name=who, actor_telegram=tid)
     db.commit()
 
-    if is_admin:
+    if role == "admin":
         # An admin asking themselves for permission is not a flow. Filing IS
         # the decision — the same rule as opening a late day.
-        _settle_dispute(db, d, "approved", who, tid)
+        leader_dispute.decide_admin(db, d, action="approved", note=None,
+                                    actor_name=who, actor_telegram=tid)
+        db.commit()
         _report_after_ruling(db, d)
     else:
-        try:
-            from app.approvals import send_leader_dispute_to_admins
-            send_leader_dispute_to_admins(db, d)
-        except Exception:
-            logger.exception("leader-dispute: admin card failed for %s", d.id)
-    logger.info("leader-dispute: %s filed by %s on %s task %s (%s)",
-                d.status, who, uid, task_id, reason[:80])
+        _dispute_announce(db, d)
+    logger.info("leader-dispute: %s filed by %s (%s) on %s task %s (%s)",
+                d.status, who, role, uid, task_id, reason[:80])
     # An admin's own filing IS the ruling, so the row says which of the two
-    # happened — «pending» and «approved» are different events here.
+    # happened — a stage and an outcome are different events here.
     action_log.enrich(
         target_kind="dispute", target_id=d.id, target_name=d.leader_name,
         unit_id=d.manager_id, day=d.date, reason=reason,
         details=[("leader", d.leader_name), ("task", task_id),
-                 ("status", d.status), ("report", uid)],
+                 ("filed_by", role), ("status", d.status), ("report", uid)],
     )
     return {"ok": True, "status": d.status,
-            "report": leader_reports.day_report(db, uid)}
+            "report": _stamp_report_rights(db, payload,
+                                           leader_reports.day_report(db, uid))}
+
+
+def _dispute_announce(db: Session, d: LeaderAiDispute) -> None:
+    """Put a freshly filed objection in front of whoever has to rule on it.
+
+    Never fatal: a Telegram outage must not roll back a filing the leader was
+    already told went through, and re-pressing would then be refused as a live
+    objection while nobody had ever been told about the first one.
+    """
+    try:
+        if d.status == leader_dispute.SUPERVISOR:
+            from app.telegram_bot import _ad_send_to_supervisor
+            _ad_send_to_supervisor(db, d)
+            leader_dispute.notify_filed(db, d)
+            db.commit()
+        else:
+            from app.approvals import send_leader_dispute_to_admins
+            send_leader_dispute_to_admins(db, d)
+    except Exception:
+        logger.exception("leader-dispute: card failed for %s", d.id)
 
 
 def _settle_dispute(db: Session, d: LeaderAiDispute, status: str,
-                    by_name: str | None, by_telegram: int | None) -> bool:
-    """Apply an admin's ruling on one dispute. THE decision core — the web
-    endpoint and the Telegram inline tap both run it, so a dispute decided from
-    a DM behaves exactly like one decided in the panel.
+                    by_name: str | None, by_telegram: int | None,
+                    note: str | None = None) -> bool:
+    """An ADMIN's ruling on one objection — the stage-2 core, kept under its
+    old name because the inline Telegram card in `approvals.py` runs it and
+    cards already sitting in admins' chats must go on working.
 
-    Approving writes `resolution="approved"` on the verdict, which is what
-    actually restores the task's weight; the dispute row is the paper trail.
-    Refusing writes `rejected` — the human agreeing with the machine — because
-    leaving it NULL would put the flag back in the open triage queue as though
-    nobody had ever looked at it.
+    `leader_dispute.decide_admin` is the definition; this only absorbs the
+    "already settled" case, which a stale card is exactly how you reach.
     """
-    if d.status == status and d.decided_at is not None:
+    try:
+        leader_dispute.decide_admin(db, d, action=status, note=note,
+                                    actor_name=by_name, actor_telegram=by_telegram)
+    except leader_dispute.Refused:
         return False
-    rev = db.query(LeaderAiReview).filter_by(id=d.review_id).first() \
-        or db.query(LeaderAiReview).filter_by(ref=d.ref).first()
-    d.status = status
-    d.decided_by_name = by_name
-    d.decided_by_telegram = by_telegram
-    d.decided_at = datetime.now(timezone.utc)
-    if rev is not None:
-        rev.resolution = "approved" if status == "approved" else "rejected"
-        rev.resolved_by = (by_name or "")[:160] or None
-        rev.resolved_at = d.decided_at
-        rev.resolution_note = f"dispute #{d.id}: {d.reason}"[:2000]
     db.commit()
     return True
 
@@ -1048,38 +1120,104 @@ def decide_dispute(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
 ):
-    status = str(body.get("status") or "").strip()
-    if status not in ("approved", "rejected"):
-        raise HTTPException(status_code=400, detail="status must be approved or rejected")
-    if not _may_decide(payload):
-        raise HTTPException(status_code=403, detail="Admins only")
+    """Rule on one objection. WHICH ruling is decided by the row's own stage.
+
+    One endpoint rather than two, for the same reason `decide_late_proof` is
+    one: the stage is a property of the row, so a caller naming the stage could
+    name the wrong one — and the answer to "which decision is available here"
+    must not be able to differ between the page and the server.
+
+    `status` is accepted as an alias for `action` so a tab still open on the
+    one-stage bundle can settle an uplifted row it is looking at, which is the
+    only thing that bundle could ever do here anyway.
+    """
     d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
     if d is None:
         raise HTTPException(status_code=404, detail="No such dispute")
-    if d.status != "pending":
+    action = str(body.get("action") or body.get("status") or "").strip()
+    note = str(body.get("note") or "").strip()
+    sup_ok, adm_ok = _dispute_stage_rights(payload, d)
+    who = payload.get("full_name") or "—"
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    was = d.status
+
+    if d.status == leader_dispute.SUPERVISOR:
+        if not sup_ok:
+            raise HTTPException(status_code=403, detail="Not yours to decide")
+        if action not in leader_dispute.SUP_ACTIONS:
+            raise HTTPException(status_code=400,
+                                detail="action must be rejected or uplifted")
+        if action == "uplifted" and not note:
+            raise HTTPException(status_code=400,
+                                detail="A comment is required to pass this up")
+        try:
+            leader_dispute.decide_supervisor(
+                db, d, action=action, note=note, actor_name=who,
+                actor_telegram=tid)
+        except leader_dispute.Refused as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        db.commit()
+        stage = "supervisor"
+    elif d.status == leader_dispute.ADMIN:
+        if not adm_ok:
+            raise HTTPException(status_code=403, detail="Admins only")
+        if action not in leader_dispute.ADM_ACTIONS:
+            raise HTTPException(status_code=400,
+                                detail="action must be approved or rejected")
+        try:
+            leader_dispute.decide_admin(
+                db, d, action=action, note=note or None, actor_name=who,
+                actor_telegram=tid)
+        except leader_dispute.Refused as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        db.commit()
+        stage = "admin"
+    else:
         raise HTTPException(status_code=409, detail="Already decided")
 
-    who = payload.get("full_name") or ""
-    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
-    _settle_dispute(db, d, status, who, tid)
-    # The brigadir's own words are what the ruling answered, so they travel with
-    # it — a decision recorded without the objection cannot be read later.
+    # The words the ruling answered travel with it: a decision recorded without
+    # the objection cannot be read back later.
     action_log.enrich(
         target_kind="dispute", target_id=d.id, target_name=d.leader_name,
-        unit_id=d.manager_id, day=d.date, reason=d.reason,
+        unit_id=d.manager_id, day=d.date, reason=note or d.reason,
         details=[("leader", d.leader_name), ("task", d.task_id)],
-        changes=[("status", "pending", status)],
+        changes=[("status", was, d.status)],
     )
-    try:
-        from app.approvals import _notify_dispute_decided, edit_admin_notices
-        _notify_dispute_decided(db, d, status, who)
-        # Retire the inline cards sitting in every other admin's DM, so a
-        # decided dispute cannot be decided a second time from a stale message.
-        edit_admin_notices("leader_dispute", d.id, status, who)
-    except Exception:
-        logger.exception("leader-dispute: notice edit failed for %s", d.id)
+    _dispute_after(db, d, stage=stage,
+                   uplifted=(action == "uplifted"))
     return {"ok": True, "status": d.status,
             "reported": _report_after_ruling(db, d)}
+
+
+def _dispute_after(db: Session, d: LeaderAiDispute, *, stage: str,
+                   uplifted: bool) -> None:
+    """Everything a ruling owes the outside world, and none of it fatal.
+
+    A DM that will not send must never roll back a decision somebody already
+    made — re-pressing would then find the row already decided and tell nobody
+    at all, which is strictly worse than a missing message.
+    """
+    try:
+        from app.approvals import edit_admin_notices
+        from app.telegram_bot import _ad_retire, _ad_send_to_admins
+        if stage == "supervisor":
+            # The KEY, never a rendered string: the card sits in several chats
+            # and each reader has their own language. `d.status` is a storage
+            # word ("admin") — an uplift reads as «passed up» to a person.
+            _ad_retire(db, d, "ad_done_uplifted" if uplifted else "ad_done_rejected")
+            if uplifted:
+                _ad_send_to_admins(db, d)
+        else:
+            # Retire the inline cards sitting in every admin's DM, so a decided
+            # objection cannot be decided a second time from a stale message.
+            edit_admin_notices("leader_dispute", d.id, d.status, d.decided_by_name)
+    except Exception:
+        logger.warning("leader-dispute: card retire/forward failed", exc_info=True)
+    try:
+        leader_dispute.notify_decided(db, d, stage=stage)
+        db.commit()
+    except Exception:
+        logger.warning("leader-dispute: decision notice failed", exc_info=True)
 
 
 @router.post("/leaders/disputes/{dispute_id}/undo")
@@ -1088,56 +1226,47 @@ def undo_dispute(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
 ):
-    """Take a dispute ruling back — the way out of a decision made in error.
+    """Take a ruling back — the way out of a decision made in error.
 
-    Ruling on a dispute is one tap, and an admin FILING one is its approval
-    (see `file_dispute`), so the wrong ruling is one mis-tap away and there was
-    no way back: `decide` refuses anything that is not `pending`, and clearing
-    the verdict from the AI triage tab left this row still printing «objection
-    upheld» on the report card under a task that had just lost its weight
-    again.
+    Deciding is one tap, an ADMIN's own filing IS its approval (see
+    `file_dispute`), and `decide` refuses anything already settled, so the
+    wrong outcome is one mis-tap away with no route back. It reaches a
+    brigadir's stage-1 refusal too: that is final for the brigadir, not for the
+    platform, and an admin is who fixes a leader's account of the shift being
+    ended before it was read.
 
-    So the undo reverses exactly the two writes the ruling made. The verdict
-    goes back to `open` — nobody has ruled, which in the automatic regime means
-    the flag costs its weight again, the same state the day was in before
-    anyone touched it. The dispute row is `cancelled` rather than deleted,
-    because a score that moved twice has to stay explainable afterwards, and
-    because a live `pending` row is the only thing that blocks a re-filing: a
-    cancelled one lets the brigadir object again with a better reason.
+    The undo reverses exactly the two writes the ruling made. The verdict goes
+    back to `open` — nobody has ruled, which in the automatic regime means the
+    flag costs its weight again, the state the day was in before anyone touched
+    it. The row is `cancelled` rather than deleted, because a score that moved
+    twice has to stay explainable, and because only a LIVE row blocks a
+    re-filing: a cancelled one lets the leader object again with a better
+    account.
 
     The day re-scores and re-DMs itself through the same `resend_if_changed`
-    every other correction uses, and whoever was told the objection was upheld
-    is told it was reversed.
+    every other correction uses, and whoever was told the outcome is told it
+    was reversed.
     """
     if not _may_decide(payload):
         raise HTTPException(status_code=403, detail="Admins only")
     d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
     if d is None:
         raise HTTPException(status_code=404, detail="No such dispute")
-    if d.status == "pending":
+    if d.status in leader_dispute.OPEN_STATES:
         raise HTTPException(status_code=409, detail="Not decided yet")
-    if d.status == "cancelled":
+    if d.status == leader_dispute.CANCELLED:
         raise HTTPException(status_code=409, detail="Already undone")
 
     who = payload.get("full_name") or ""
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
-    was = d.status
-    rev = (db.query(LeaderAiReview).filter_by(id=d.review_id).first()
-           if d.review_id else None) \
-        or db.query(LeaderAiReview).filter_by(ref=d.ref).first()
-    if rev is not None:
-        rev.resolution = None
-        rev.resolved_by = None
-        rev.resolved_at = None
-        rev.resolution_note = None
-    d.status = "cancelled"
-    d.decided_by_name = who or d.decided_by_name
-    d.decided_by_telegram = tid
-    d.decided_at = datetime.now(timezone.utc)
+    try:
+        was = leader_dispute.undo(db, d, actor_name=who, actor_telegram=tid)
+    except leader_dispute.Refused as e:
+        raise HTTPException(status_code=409, detail=str(e))
     db.commit()
 
-    # The score moved twice, so both moves have to stay on the record: WHAT the
-    # ruling was is the whole content of an undo.
+    # The score moved twice, so both moves stay on the record: WHAT the ruling
+    # was is the whole content of an undo.
     action_log.enrich(
         target_kind="dispute", target_id=d.id, target_name=d.leader_name,
         unit_id=d.manager_id, day=d.date, reason=d.reason,
@@ -1145,10 +1274,10 @@ def undo_dispute(
         changes=[("status", was, "cancelled"), ("verdict", was, "open")],
     )
     try:
-        from app.approvals import _notify_dispute_decided
-        _notify_dispute_decided(db, d, "cancelled", who)
+        leader_dispute.notify_decided(db, d, stage="admin")
+        db.commit()
     except Exception:
-        logger.exception("leader-dispute: undo notice failed for %s", d.id)
+        logger.warning("leader-dispute: undo notice failed", exc_info=True)
     logger.info("leader-dispute: %s undone (was %s) by %s on %s task %s",
                 d.id, was, who, d.date, d.task_id)
     return {"ok": True, "status": d.status, "was": was,
@@ -1157,35 +1286,9 @@ def undo_dispute(
 
 def supersede_dispute(db: Session, ref: str, resolution: str | None,
                       by: str | None = None) -> bool:
-    """Cancel a settled dispute that a LATER ruling on the same verdict has
-    contradicted. Does not commit — the caller's own commit carries it.
-
-    The AI triage tab rules on the verdict; this table is the paper trail the
-    day report prints beside it. Moving one without the other is how a card
-    ends up showing a rejected task under a green «objection upheld» box: two
-    sentences that were each true when written and cannot both describe the
-    score on screen now. Reopening a verdict from triage is the same undo as
-    the report page's button, so it retires the same row.
-
-    A dispute records the resolution its ruling wrote — `approved` → approved,
-    `rejected` → rejected. Anything else on the verdict now (including `open`
-    and `requeried`) means a human has overruled it.
-    """
-    expects = {"approved": "approved", "rejected": "rejected"}
-    hit = False
-    for d in (db.query(LeaderAiDispute)
-              .filter(LeaderAiDispute.ref == ref,
-                      LeaderAiDispute.status.in_(tuple(expects))).all()):
-        if expects[d.status] == resolution:
-            continue
-        d.status = "cancelled"
-        if by:
-            d.decided_by_name = by[:160]
-        d.decided_at = datetime.now(timezone.utc)
-        hit = True
-        logger.info("leader-dispute: %s superseded by a %s ruling on %s",
-                    d.id, resolution or "open", ref)
-    return hit
+    """Kept under its old name for `routers/leader_ai`, which imports it from
+    here. `leader_dispute.supersede` is the definition."""
+    return leader_dispute.supersede(db, ref, resolution, by)
 
 
 def _report_after_ruling(db: Session, d: LeaderAiDispute) -> bool:
@@ -1230,14 +1333,25 @@ def list_disputes(
     """
     role = payload.get("role")
     can_decide = _may_decide(payload)
+    empty = {"items": [], "canDecide": False, "canSupervise": False,
+             "canApprove": False, "todo": 0}
     q = db.query(LeaderAiDispute)
     if status:
         q = q.filter(LeaderAiDispute.status == status)
     if not (can_decide or role in ("shift-manager", "top-manager")
             or page_scope_is_all(db, payload, "leaders")):
-        if role != "supervisor":
-            return {"items": [], "canDecide": False, "todo": 0}
-        q = q.filter(LeaderAiDispute.manager_id == payload.get("role_id"))
+        if role == "supervisor":
+            q = q.filter(LeaderAiDispute.manager_id == payload.get("role_id"))
+        elif role == "leader":
+            # A leader reads their OWN objections. The flow asks them to
+            # explain themselves, so where the explanation got to has to be
+            # visible to them — the same rule the late-proof queue states.
+            own = identity.viewer_leader_profile_ids(db, payload)
+            if not own:
+                return empty
+            q = q.filter(LeaderAiDispute.leader_id.in_(own))
+        else:
+            return empty
     rows = q.order_by(LeaderAiDispute.id.desc()).limit(DISPUTE_CAP).all()
     uids = leader_reports.uids_of_refs(db, [r.ref for r in rows])
 
@@ -1273,10 +1387,21 @@ def list_disputes(
         return v if v and v != "\u2014" else None
 
     items = []
+    todo = 0
     for d in rows:
         who = proj.get(d.ref) or {}
+        sup_ok, adm_ok = _dispute_stage_rights(payload, d)
+        # Whether THIS caller may rule on THIS row, by the same predicate the
+        # write re-checks. Deriving it from page-level flags is a different
+        # question: a supervisor holding the page at scope «all» is served
+        # every unit's rows, and every foreign card would grow buttons that
+        # answer 403.
+        can_act = ((d.status == leader_dispute.SUPERVISOR and sup_ok)
+                   or (d.status == leader_dispute.ADMIN and adm_ok))
+        todo += 1 if can_act else 0
         items.append({
             "id": d.id, "status": d.status, "date": d.date,
+            "canAct": bool(can_act),
             "taskId": d.task_id,
             "taskName": (names.get((d.manager_id, d.leader_id)) or {}).get(d.task_id),
             # The register's spelling first; the row's own stamp is the floor
@@ -1288,7 +1413,16 @@ def list_disputes(
             "shift": shifts.get(d.ref) or mgr_shift.get(d.manager_id),
             "reason": d.reason,
             "by": d.requested_by_name,
+            # WHOSE words the first note is. A row filed by a brigadir — the
+            # only route open to a leader who resolves to no profile — must not
+            # be printed as the leader's own account of their shift.
+            "byRole": (str(d.requested_by_profile or "").split(":")[0] or None),
             "at": d.requested_at.isoformat() if d.requested_at else None,
+            "sup": {
+                "action": d.sup_action, "note": d.sup_note,
+                "by": d.sup_by_name,
+                "at": d.sup_at.isoformat() if d.sup_at else None,
+            } if d.sup_action else None,
             "decidedBy": d.decided_by_name,
             "decidedAt": d.decided_at.isoformat() if d.decided_at else None,
             "note": d.decision_note,
@@ -1297,10 +1431,16 @@ def list_disputes(
         })
     return {
         "canDecide": can_decide,
-        # What the tab badge counts: whose TURN it is. Only an admin rules on an
-        # objection, so for everybody else this is 0 — a badge on a brigadir's
-        # tab would count work they are not allowed to do and could never clear.
-        "todo": sum(1 for i in items if i["status"] == "pending") if can_decide else 0,
+        # What the two stages look like to this caller at all — the row's own
+        # `canAct` is the authority; these only decide whether the queue
+        # explains itself as a place you rule or a place you watch.
+        "canSupervise": can_decide or role == "supervisor",
+        "canApprove": can_decide,
+        # What the tab badge counts: the rows waiting on THIS caller. A brigadir
+        # never carries a badge for an uplifted row only an admin can settle,
+        # and an admin never carries one for a row still sitting with a
+        # brigadir — a badge counting work you cannot do never clears.
+        "todo": todo,
         "items": items,
     }
 

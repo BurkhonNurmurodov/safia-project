@@ -65,15 +65,25 @@ export function reportState(row) {
   return null;
 }
 
+/** The objection stages that are still OPEN — waiting on the brigadir, or
+ *  uplifted and waiting on an admin. One list, because every reader asking
+ *  "has anybody ruled on this yet" must get the same answer; spelling the two
+ *  stage names out at a call site is how one surface starts treating an
+ *  uplifted objection as settled. */
+export const DISPUTE_OPEN = ["supervisor", "admin"];
+
+export const disputeOpen = (d) => !!d && DISPUTE_OPEN.includes(d.status);
+
 /**
  * The state of ONE task on the day-report page. `t` is a task from
  * GET /api/leaders/report/:uid.
  *
- * A live dispute outranks the rejection it objects to: the number has not
- * changed yet, but what the reader should DO about it has.
+ * A live objection outranks the rejection it objects to: the number has not
+ * changed yet, but what the reader should DO about it has — and that is true
+ * at BOTH open stages, since neither has produced a ruling.
  */
 export function taskState(t) {
-  if (t.dispute?.status === "pending") return VERIFY.disputed;
+  if (disputeOpen(t.dispute)) return VERIFY.disputed;
   if (t.ai_rejected) return VERIFY.rejected;
   if (t.review?.status === "error") return VERIFY.error;
   if (t.queued) return VERIFY.checking;

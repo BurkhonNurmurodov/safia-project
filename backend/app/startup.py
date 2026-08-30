@@ -808,6 +808,83 @@ def add_late_proof_provenance() -> None:
         db.close()
 
 
+DISPUTE_STAGES_FLAG = "leader_dispute_stages_2026_08_30_v1"
+
+
+def migrate_dispute_stages() -> None:
+    """2026-08-30: an objection to an AI rejection became a THREE-stage chain —
+    leader files → the unit's brigadir rejects or uplifts with their own case →
+    an admin rules with both notes in front of them (`services/leader_dispute`).
+
+    Two jobs, and the second one is the whole point of the flag.
+
+    1. The five stage-1 columns. `create_all` builds the table on a fresh box
+       but never ALTERs an existing one, so without this the brigadir's ruling
+       has nowhere to be written. Idempotent on its own.
+
+    2. Every row filed under the OLD one-stage flow is placed in the new
+       vocabulary. Those rows were ALL filed by a brigadir and were ALL waiting
+       on an admin, which in the new chain is exactly "entered at the admin
+       stage" — so a `pending` row becomes `admin`, its text becomes the uplift
+       note it always was, and the brigadir who typed it is stamped as the
+       person who passed it up. Nothing is invented and nothing is lost: the
+       filer stays in `requested_by_*`, so a card can still say whose words
+       these are rather than printing a brigadir's paraphrase as a leader's.
+
+       `reason` is deliberately left in place as well. It is "the text this row
+       was filed with", every earlier reader knows it under that name, and
+       blanking it to make room for a leader note nobody ever wrote would turn
+       a readable history into an empty column.
+
+    Settled rows (`approved` / `rejected` / `cancelled`) already mean in the new
+    vocabulary exactly what they meant in the old one and are not touched.
+
+    Flag-guarded because step 2 must not run twice: a second pass would find
+    rows legitimately sitting at `supervisor` — a leader's objection waiting on
+    their brigadir — and there is nothing to distinguish them from the ones it
+    placed. Changing what this does needs a NEW flag key, or the old "already
+    ran" mark makes it a no-op on every box that has booted once.
+    """
+    db = SessionLocal()
+    try:
+        for col, typ in (("sup_action", "VARCHAR(10)"),
+                         ("sup_note", "TEXT"),
+                         ("sup_by_name", "VARCHAR(160)"),
+                         ("sup_by_telegram", "BIGINT"),
+                         ("sup_at", "TIMESTAMP WITH TIME ZONE")):
+            db.execute(text("ALTER TABLE leader_ai_disputes "
+                            f"ADD COLUMN IF NOT EXISTS {col} {typ}"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] dispute stage columns skipped: {exc}")
+        db.close()
+        return
+    try:
+        if db.query(AppSetting).filter_by(key=DISPUTE_STAGES_FLAG).first():
+            db.close()
+            return
+        moved = db.execute(text(
+            "UPDATE leader_ai_disputes SET "
+            "  status = 'admin', "
+            "  sup_action = 'uplifted', "
+            "  sup_note = reason, "
+            "  sup_by_name = requested_by_name, "
+            "  sup_by_telegram = requested_by_telegram, "
+            "  sup_at = requested_at "
+            "WHERE status = 'pending'"
+        )).rowcount
+        db.add(AppSetting(key=DISPUTE_STAGES_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] dispute stages: {moved} pending objection(s) placed "
+              f"at the admin stage")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] dispute stage migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_cell_shift_times() -> None:
     """2026-08-21: cells gain their working START and END clock («Smena
     vaqtlari» admin tab). Two nullable "HH:MM" columns — NULL on both means the

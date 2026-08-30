@@ -591,43 +591,49 @@ number.
   says so instead of looking final. Photos are 72px thumbnails into a lightbox
   **portaled to `document.body`** (`.page-enter`'s transform would otherwise
   contain a `position:fixed` overlay).
-- **Disputes are the way back** (`leader_ai_disputes`): the unit's own brigadir
-  objects with a mandatory reason from the report page, admins decide inline in
-  Telegram (`approvals.py` kind `leader_dispute` / code `ld`), on the page, or
-  from the «Norozliklar» QUEUE (below). `_settle_dispute` is THE decision core
-  for all of them. Approving writes `resolution="approved"` on the verdict —
-  that is what restores the weight — and the corrected score re-DMs itself.
-  Authority mirrors the late-day flow and is deliberately not grantable.
-- **The «Norozliklar» tab is the admin's list of them** (`GET
-  /leaders/disputes` → `components/leaders/Disputes.jsx`, beside
-  «Kechikkanlar» on `/leaders`, tab badge = pending, `?tab=disputes`
-  deep-links). Until it existed the ruling was reachable from exactly two
-  places — an inline Telegram card that scrolls out of the chat, and the day
-  report of the ONE leader it belongs to — so an admin who missed the card had
-  no list to work from and no way to find the report holding the objection.
-  **The card carries the VERDICT, not just the objection**: flags, the model's
-  prose and the window it measured against, all off the same `_as_verdict` /
-  `_window` / `_date_check` / `_time_check` / `_date_plus` helpers the day
-  report reads — a queue that re-derived the rule would show an admin a window
-  the leader was never judged by, and one that showed the reason alone would
-  get rulings made on wording. Photos deliberately stay one tap away on the
-  report, where the whole day can be read. Names come from `_project` (the
-  REGISTER's spelling), so the page scope bar reaches these rows exactly as it
-  reaches the dashboard's; whatever the scope hides is counted in a
-  `ScopeNotice` rather than dropped. Scoped like every other read here — admin
-  all, brigadir their own unit — and `todo` is 0 for anyone who cannot rule, so
-  a brigadir never carries a badge they are unable to clear.
+- **Objections are the way back, and they run the LATE-PROOF chain**
+  (`leader_ai_disputes`, `services/leader_dispute.py` — see the section of its
+  own below). Leader files → the unit's brigadir refuses it or uplifts it with
+  their own mandatory case → an admin rules with both notes in front of them.
+  `decide_supervisor` / `decide_admin` are THE decision cores and every door
+  runs them: the report page, the «Norozliklar» queue, the brigadir's inline
+  card in Telegram (`ad:` callbacks in `telegram_bot.py`) and the admin's
+  (`approvals.py` kind `leader_dispute` / code `ld`). Approving writes
+  `resolution="approved"` on the verdict — that is what restores the weight —
+  and the corrected score re-DMs itself. Not grantable at either stage.
+- **The «Norozliklar» tab is where all three read it** (`GET /leaders/disputes`
+  → `components/leaders/Disputes.jsx`, beside «Kechikkanlar» on `/leaders`,
+  `?tab=disputes` deep-links). Until it existed the ruling was reachable from
+  exactly two places — an inline Telegram card that scrolls out of the chat,
+  and the day report of the ONE leader it belongs to — so an admin who missed
+  the card had no list to work from and no way to find the report holding the
+  objection. **The card carries the VERDICT, not just the objection**: flags,
+  the model's prose and the window it measured against, all off the same
+  `_as_verdict` / `_window` / `_date_check` / `_time_check` / `_date_plus`
+  helpers the day report reads — a queue that re-derived the rule would show a
+  window the leader was never judged by, and one that showed the reason alone
+  would get rulings made on wording. It also carries EVERY note the chain has
+  collected, in order; showing the first and the last hides the middle
+  judgement, which is the one that decided whether an admin ever saw this.
+  Photos deliberately stay one tap away on the report, where the whole day can
+  be read. Names come from `_project` (the REGISTER's spelling), so the page
+  scope bar reaches these rows exactly as it reaches the dashboard's; whatever
+  the scope hides is counted in a `ScopeNotice` rather than dropped. Scoped
+  like every read here — admin all, brigadir their own unit, LEADER their own
+  filings — and the tab badge counts the rows waiting on THAT caller
+  (`canAct`), so nobody carries a badge they cannot clear.
 - **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
-  the «Qarorni bekor qilish» button under the dispute box on the report page).
+  the «Qarorni bekor qilish» button under the objection box on the report page).
   Deciding is one tap and an ADMIN's own filing IS the approval, so the wrong
-  outcome is one mis-tap away, while `decide` refuses anything not `pending`.
-  The undo reverses the ruling's two writes: the verdict returns to `open` (in
-  the automatic regime the flag costs its weight again) and the dispute row
-  becomes `cancelled` — never deleted, because a score that moved twice has to
-  stay explainable, and because only a `pending` row blocks a re-filing.
-  Everything reading disputes counts `pending` only, so the new status is inert
-  elsewhere. **The verdict and its dispute row move TOGETHER**: a triage ruling
-  that contradicts a settled dispute retires it through the shared
+  outcome is one mis-tap away, while `decide` refuses anything already settled.
+  It reaches a brigadir's stage-1 refusal too: that is final for the brigadir,
+  not for the platform, and an admin is who fixes an account of a shift being
+  ended before it was read. The undo reverses the ruling's two writes: the
+  verdict returns to `open` (in the automatic regime the flag costs its weight
+  again) and the row becomes `cancelled` — never deleted, because a score that
+  moved twice has to stay explainable, and because only a LIVE row blocks a
+  re-filing. **The verdict and its row move TOGETHER**: a triage ruling that
+  contradicts a settled objection retires it through the shared
   `supersede_dispute` — otherwise the card prints «objection upheld» over a task
   that just lost its weight again. The day re-scores via `resend_if_changed` and
   both people told about the ruling are told it was reversed
@@ -1264,6 +1270,101 @@ say about it.
   Scoped like every read on the page, plus the LEADER, who reads their own
   filings: the flow asks them to explain themselves, so the answer has to be
   visible to them.
+
+## Objecting to an AI rejection (the three-stage chain)
+
+From **2026-08-30** a task the AI refused is argued through the SAME chain as a
+late proof, and for the same reason. The old flow had one stage — the unit's
+BRIGADIR objected, straight to an admin — and two things were wrong with it,
+both reported from the floor:
+
+- **The person who was judged could not speak.** The leader reads the verdict on
+  their own day report (the report DM goes to them by design), sees a photo they
+  know is right refused for a reason they can answer, and had no control that
+  did anything. Their only route was to find their brigadir and persuade them to
+  type it up, so what reached the admin was a second-hand paraphrase of an
+  argument nobody recorded.
+- **The admin ruled with one side of it.** One note, from somebody who was not
+  there, about a photograph they did not take. Whether the reason is TRUE is a
+  question about the shift, and the person who can answer it is the brigadir —
+  who was being asked to be the author instead of the witness.
+
+So:
+
+    leader     files their own account, from the day report they were sent
+    supervisor the unit's brigadir REFUSES it (final) or UPLIFTS it, which
+               REQUIRES their own written case — they cannot restore the weight
+    admin      reads BOTH notes and decides whether it is pointed
+
+- **`services/leader_dispute.py` is THE definition** — `entry_stage`, `create`,
+  `decide_supervisor`, `decide_admin`, `undo`, `supersede`, `notify_filed`,
+  `notify_decided`. `status` is the stage AND the outcome, one column:
+  `supervisor` → `admin` → `approved` | `rejected`, plus `cancelled` for a
+  ruling taken back. A separate stage column would be a second thing to keep in
+  step, and every reader would consult both to answer one question.
+- **The asymmetry is the design.** The person closest to the leader knows best
+  whether the excuse is true and is the worst possible choice for the only
+  person who decides that it counts. It is expressed by WHICH BUTTONS EXIST at
+  each stage — on the card, on the report page and in the bot keyboard — not by
+  a check that fires after somebody has already pressed something; and every
+  write re-checks it anyway (`_dispute_stage_rights`, per ROW, because "you are
+  a brigadir" is not "you are THIS unit's brigadir").
+- **WHERE a filing enters is decided by WHO FILED IT** (`entry_stage`), and that
+  one rule is what keeps the old flow's capability alive without a second code
+  path: a **leader** → `supervisor`; a **supervisor** → `admin`, their own text
+  recorded as the uplift note; an **admin** → filed and settled in one act, the
+  same rule as opening a late day. The brigadir's door stays open because ~18%
+  of leader rows never resolve to a profile
+  (`leader-register-unlinked-rows`) — those leaders cannot log in as
+  themselves, so making this leader-only would have closed the route back for
+  exactly them. `requested_by_profile` says whose words `reason` is, and every
+  card labels it accordingly rather than printing a brigadir's paraphrase as a
+  leader's own account.
+- **It is also how every legacy row reads correctly with nothing rewritten.**
+  Rows filed under the one-stage flow were ALL filed by a brigadir and ALL
+  waiting on an admin — i.e. they entered at the admin stage.
+  `startup.migrate_dispute_stages` (flag `leader_dispute_stages_2026_08_30_v1`)
+  does nothing more than say so: `pending` → `admin`, the text becomes the
+  uplift note it always was, the brigadir who typed it is stamped as the person
+  who passed it up. `reason` is left in place — it is "the text this row was
+  filed with", every earlier reader knows it under that name. Changing what the
+  migration does needs a NEW flag key, or the old "already ran" mark makes it a
+  no-op on every box that has booted once.
+- **The weight still moves in exactly ONE place** — `LeaderAiReview.resolution`,
+  the field an admin's triage ruling already writes — so nothing downstream
+  learns a new rule. `approved` is the only value that restores it. `rejected`
+  is a human agreeing with the machine and is written by BOTH stages' refusals:
+  leaving it NULL would put the flag back in the open triage queue as though
+  nobody had looked at it, and somebody did.
+- **Everybody is told at every stage that takes the decision out of their
+  hands** — `leader_dispute_filed` (to the brigadir), `leader_dispute_uplifted`,
+  `leader_dispute_sup_rejected`, `leader_dispute_approved`,
+  `leader_dispute_rejected`, `leader_dispute_undone`. A leader who explained
+  themselves and heard nothing back learns that explaining is pointless, which
+  is the one outcome that makes the whole chain worthless. The brigadir hears
+  about the two rulings they did not make, never their own.
+- **Two Telegram cards, one per stage.** Stage 1 is `_ad_*` in
+  `telegram_bot.py` (`ad:sr` refuse / `ad:su` uplift, which opens an `ad_note`
+  text capture — the uplift is not made until the case arrives); stage 2 is the
+  `leader_dispute` card `approvals.py` has served since before this chain
+  existed, so a card already sitting in an admin's chat goes on working. Both
+  are `ApprovalNotice` rows, so one decision retires every copy, and both take
+  a message KEY rather than a rendered string — the card sits in several chats
+  and each reader has their own language.
+- **Both open stages are OPEN, everywhere.** `leader_dispute.OPEN_STATES` and
+  the frontend's `verifyState.disputeOpen` are the two spellings and they must
+  stay two spellings of one rule: the register's `ai.disputed` counter, the
+  day-report task state, the "already objected" guard and the queue's segments
+  all read it. Counting only one stage tells a reader a rejection is settled
+  while somebody is still arguing it.
+- **`decide` takes `action` + `note`, one endpoint for both stages** — which
+  ruling it applies is a property of the ROW, so a caller naming the stage
+  could name the wrong one. `status` is still accepted as an alias for
+  `action`, which is the only thing a tab still open on the one-stage bundle
+  could ever have sent.
+- Read surfaces: `/leaders?tab=disputes` (admin · brigadir · **leader**, their
+  own filings) and `/leaders/report/:uid`, where the objection is filed and
+  where both stage rulings can also be made inline.
 
 ## An UNFINISHED bot day is visible («Tozalash» → «Yakunlanmagan»)
 

@@ -148,7 +148,7 @@ def day_report(db: Session, uid: str) -> dict | None:
                                         _time_check(cfg, r))
                 for r in revs if r.ref in refs}
 
-    # Live disputes, so a task the brigadir already objected to offers the
+    # Live objections, so a task somebody has already objected to offers the
     # state of that objection instead of the button that files another one.
     disputes: dict[int, LeaderAiDispute] = {}
     if refs:
@@ -302,10 +302,26 @@ def names_for_pairs(db: Session, pairs, defs: dict) -> dict:
 
 
 def _dispute_out(d) -> dict:
+    """The objection, WHOLE — every note it has collected so far.
+
+    The chain is three-stage (`services/leader_dispute.py`) and each stage adds
+    a written case: the leader's account, the brigadir's reason for passing it
+    up or refusing it, and the admin's ruling. A card showing only the first
+    and the last leaves the middle person's judgement — the one that decided
+    whether an admin ever saw this at all — invisible to everybody including
+    the leader it was made about.
+    """
     return {
         "id": d.id, "status": d.status, "reason": d.reason,
         "by": d.requested_by_name,
+        # Whose words `reason` is: a brigadir may still file for a leader who
+        # resolves to no profile, and that must not read as the leader's own.
+        "byRole": (str(d.requested_by_profile or "").split(":")[0] or None),
         "at": d.requested_at.isoformat() if d.requested_at else None,
+        "sup": {
+            "action": d.sup_action, "note": d.sup_note, "by": d.sup_by_name,
+            "at": d.sup_at.isoformat() if d.sup_at else None,
+        } if d.sup_action else None,
         "decidedBy": d.decided_by_name,
         "decidedAt": d.decided_at.isoformat() if d.decided_at else None,
         "note": d.decision_note,
