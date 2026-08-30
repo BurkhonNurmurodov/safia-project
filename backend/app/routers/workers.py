@@ -47,7 +47,9 @@ _CAME = Attendance.hours_worked > 0
 # Cyrillic «О» = отпуск — a long leave (whole-period runs in the data), not a
 # skipped shift. Those rows sit on the list all month, so they are counted out
 # of the absences separately instead of reading as people who chose not to
-# turn up. `X` (the other marker) is a day off or a no-show and the export does
+# turn up — and they count as ATTENDED in the rate ((came + on leave) ÷ on the
+# list), since a brigadir cannot produce a worker the company has signed off.
+# `X` (the other marker) is a day off or a no-show and the export does
 # not distinguish the two, so it stays in the plain absent bucket.
 LEAVE_MARKER = "О"
 _ON_LEAVE = and_(
@@ -463,10 +465,21 @@ def get_headcount(
         m["avg_roster"]  = round(r_sum / n, 1)
         m["avg_came"]    = round(c_sum / n, 1)
         m["avg_absent"]  = round((r_sum - c_sum) / n, 1)
-        m["avg_leave"]   = round(sum(v["on_leave"] for v in rd.values()) / n, 1)
+        l_sum = sum(v["on_leave"] for v in rd.values())
+        m["avg_leave"]   = round(l_sum / n, 1)
         m["roster_sum"]  = r_sum
         m["came_sum"]    = c_sum
-        m["att_rate"]    = round(c_sum / r_sum * 100) if r_sum else None
+        m["leave_sum"]   = l_sum
+        # THE attendance rate: (came + on leave) ÷ on the list. The excused half
+        # of the list counts as attended, because `О` is отпуск — a booked long
+        # leave, not a skipped shift — and those rows sit on the list for weeks,
+        # so scoring them as no-shows marked a brigadir down every one of those
+        # days for people nobody expected to see. `X` (day off / no-show) is
+        # undistinguished in the export and stays a plain absence.
+        # `came` and `on_leave` are disjoint by construction (_CAME needs
+        # hours > 0, _ON_LEAVE needs the opposite) and both are subsets of the
+        # list, so the sum can never exceed `roster` and the rate never 100 %.
+        m["att_rate"]    = round((c_sum + l_sum) / r_sum * 100) if r_sum else None
         # Per-role halves of that same pair, on the same per-day basis. The
         # frontend's «Ro'yxatda / Kelgan» switch reads one of these two maps and
         # sums the roles the «Jami / Zagruzka» switch selected; summing all of
