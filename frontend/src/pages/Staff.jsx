@@ -4279,11 +4279,35 @@ export default function Staff() {
       {/* Cell placement tab — where the cell-less workers an accepted exchange
           delivered are put into the cells they actually worked in. */}
       {tab === "cells" && showCellsTab && (
-        <CellPlacementPanel
-          managerId={supervisorManagerId}
-          selectedDate={selectedDate}
-          canEdit={role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id)}
-        />
+        <div className="space-y-4">
+          {/* The SAME scope controls as the Workers tab — this tab is about one
+              unit on one DAY, so without them it silently inherits whatever the
+              other tab was last left on and there is no way to steer it. The
+              cell picker and CreateMenu are deliberately NOT here: they belong
+              to the read-only import view and the document flow. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {isManagerView && (
+              <SupervisorSelect
+                value={selectedManagerId}
+                onChange={pickSupervisorId}
+                supervisors={supervisors}
+              />
+            )}
+            <DatePicker value={selectedDate} onChange={setSelectedDate} />
+            {dayClosed && (
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
+                <Lock size={12} /> {t("staff.dayClosedBadge")}
+              </span>
+            )}
+          </div>
+
+          <CellPlacementPanel
+            managerId={supervisorManagerId}
+            selectedDate={selectedDate}
+            canEdit={role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id)}
+          />
+        </div>
       )}
 
       {/* Approvals tab */}
