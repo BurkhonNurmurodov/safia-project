@@ -264,6 +264,11 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
   });
 
   const dayClosed = !!data?.day_closed;
+  // Before the platform started recording a cell per worker, EVERY row is
+  // cell-less and the close gate ignores the day. The card still lists them —
+  // an admin may well want to place them — but it must not claim a block that
+  // does not exist. Defaults to true so an older backend reads as it always did.
+  const cellsRequired = data?.cells_required !== false;
   // Three separate answers to "may this be edited" — the caller's, the server's
   // and the day's — and the reader is told WHICH one closed the door.
   const editable = canEdit && !!data?.can_edit && !dayClosed;
@@ -616,7 +621,7 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
       {/* One line naming the three acts. Nobody has seen this surface before and
           the split rule in particular is not guessable from the controls. */}
       <div className="text-[11px] leading-snug px-1" style={{ color: "var(--text-3)" }}>
-        {t("cellPlace.intro")}
+        {cellsRequired ? t("cellPlace.intro") : t("cellPlace.introHistoric")}
       </div>
 
       {/* Why the panel is read-only — never a silently dead control. */}
@@ -775,22 +780,25 @@ export default function CellPlacementPanel({ managerId, selectedDate, canEdit = 
       {shown.loose.length > 0 && (
         <div
           className="rounded-xl overflow-hidden"
-          style={{ background: "var(--bg-card)", border: "1px solid #eab308" }}
+          style={{ background: "var(--bg-card)", border: `1px solid ${cellsRequired ? "#eab308" : "var(--border)"}` }}
         >
           <div
             className="flex items-center gap-2 px-3 py-2.5"
-            style={{ background: "color-mix(in srgb, #eab308 8%, var(--bg-inner))" }}
+            style={{ background: cellsRequired
+              ? "color-mix(in srgb, #eab308 8%, var(--bg-inner))"
+              : "var(--bg-inner)" }}
           >
-            <UserMinus size={14} className="flex-shrink-0" style={{ color: "#eab308" }} />
+            <UserMinus size={14} className="flex-shrink-0"
+                       style={{ color: cellsRequired ? "#eab308" : "var(--text-4)" }} />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
                 {t("cellPlace.unplacedTitle")}
               </div>
               <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>
-                {t("cellPlace.unplacedHint")}
+                {cellsRequired ? t("cellPlace.unplacedHint") : t("cellPlace.unplacedHistoric")}
               </div>
             </div>
-            <Chip tone="warn">{shown.loose.length}</Chip>
+            <Chip tone={cellsRequired ? "warn" : "neutral"}>{shown.loose.length}</Chip>
           </div>
           {shown.loose.map((e) => (
             <WorkerLine

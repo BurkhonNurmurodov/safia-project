@@ -5097,6 +5097,12 @@ def _merge_split_halves(db: Session, pri: Attendance) -> bool:
     sec = _split_secondary(db, pri)
     if sec is None:
         return False
+    # The rejoined clock is CANONICAL "HH:MM-HH:MM": the split re-spelled both
+    # ends through `_fmt_hhmm`, so a verifix original like "08:03 - 16:13 (7.46)"
+    # comes back as "08:03-16:13". The times are identical and both spellings
+    # parse, so nothing reads differently — but the trailing worked-hours
+    # annotation does not survive a split→unsplit round trip, and `hours_worked`
+    # is the authority for hours in any case.
     pri.hours_worked = float(pri.hours_worked or 0) + float(sec.hours_worked or 0)
     if pri.effective_hours is not None or sec.effective_hours is not None:
         pri.effective_hours = (float(pri.effective_hours or 0)
@@ -5289,6 +5295,11 @@ def cell_placement(attend_date: str, manager_id: Optional[int] = None,
         "shift":        mgr.shift if mgr else None,
         "date":         attend_date,
         "day_closed":   closed is not None,
+        # Before CELLS_REQUIRED_FROM every row is cell-less by construction, so
+        # the whole roster lands in «Yacheykasiz» while the close gate ignores
+        # the day entirely. Without this the tab would alarm about a block that
+        # does not exist on any historical day an admin steps back to.
+        "cells_required": d >= CELLS_REQUIRED_FROM,
         "can_edit":     closed is None and _can_edit_placement(caller, manager_id),
         "unplaced":     unplaced,
         "cells":        cells_out,
@@ -5308,7 +5319,10 @@ def _cell_leader_name(db: Session, c: Cell) -> Optional[str]:
     if not c.leader_id:
         return None
     p = db.query(RoleProfile).filter_by(id=c.leader_id).first()
-    return p.full_name if p else None
+    # RoleProfile's display column is `name` — there is no `full_name` on this
+    # model (that is the CALLER dict's key, from the JWT). Reading the wrong one
+    # is an AttributeError, i.e. a 500 on every unit whose cells have a leader.
+    return p.name if p else None
 
 
 def _can_edit_placement(caller: dict, manager_id: int) -> bool:
