@@ -230,7 +230,7 @@ function fitBox(w, h, ar) {
  * the leader what they already took. The object URL is revoked on unmount; the
  * endpoint sets a long cache, so a re-mount is free.
  */
-function ShotImg({ id, className, alt = "", onAspect }) {
+function ShotImg({ id, className, alt = "", onAspect, late = false }) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -238,7 +238,11 @@ function ShotImg({ id, className, alt = "", onAspect }) {
     let alive = true;
     setFailed(false);
     setUrl("");
-    api.get(`/api/leader-proof/photo/${id}`, { responseType: "blob" })
+    // Same door in, same door out: a draft shot lives in its own table and is
+    // streamed by its own endpoint, so a thumbnail asking the ordinary one
+    // would 404 on every photo the leader had just taken.
+    api.get(late ? `/api/leader-proof/late-photo/${id}`
+                 : `/api/leader-proof/photo/${id}`, { responseType: "blob" })
       .then((r) => {
         if (!alive) return;
         obj = URL.createObjectURL(r.data);
@@ -246,7 +250,7 @@ function ShotImg({ id, className, alt = "", onAspect }) {
       })
       .catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
-  }, [id]);
+  }, [id, late]);
   if (failed) {
     return (
       <div className="w-full h-full grid place-items-center"
@@ -283,7 +287,8 @@ function ShotImg({ id, className, alt = "", onAspect }) {
  * mark. Required and extra are visually distinct, because only extras can be
  * deleted and the strip is where that becomes obvious.
  */
-function Roll({ photos, queued, need, cap, active, onPick, onCancelRetake, onAdd, t }) {
+function Roll({ photos, queued, need, cap, active, onPick, onCancelRetake, onAdd, t,
+                late = false }) {
   // Queued shots hold a slot of their own — a retake keeps the slot it names,
   // an append takes the next free one. Without this a leader who shot three
   // photos with no signal would look at a roll showing none of them, which is
@@ -349,7 +354,7 @@ function Roll({ photos, queued, need, cap, active, onPick, onCancelRetake, onAdd
               </>
             ) : p ? (
               <>
-                <ShotImg id={p.id} className="w-full h-full object-cover" />
+                <ShotImg id={p.id} late={late} className="w-full h-full object-cover" />
                 <span className="absolute right-0.5 bottom-0.5 rounded-full p-0.5"
                   style={{ background: "#22c55e" }}>
                   <Check size={9} color="#06210f" strokeWidth={4} />
@@ -444,6 +449,10 @@ export default function ProofCamera() {
   });
 
   const task = data?.task;
+  // The server's verdict, not the URL's. Everything downstream — which endpoint
+  // a shot goes to, which one a thumbnail comes from, what the screen says —
+  // reads this one value, so the page can never be half in late mode.
+  const lateMode = data?.mode === "late";
   const photos = data?.photos || [];
   const need = task?.min_media || 1;
   const cap = task?.max_slots || need;
@@ -952,7 +961,7 @@ export default function ProofCamera() {
     } catch (e) {
       setConfirm((c) => (c ? { ...c, error: t("proof.err.failed") } : c));
     }
-  }, [refetch, toast, t]);
+  }, [refetch, toast, t, lateMode]);
 
   /* ── gates ──────────────────────────────────────────────────────────────── */
   if (!leaderId || !taskId) {
@@ -1076,7 +1085,7 @@ export default function ProofCamera() {
             <img src={shot.url} alt=""
               className="absolute inset-0 w-full h-full object-contain" />
           ) : mode === "slot" && viewing ? (
-            <ShotImg id={viewing.id} onAspect={setViewAR}
+            <ShotImg id={viewing.id} late={lateMode} onAspect={setViewAR}
               className="absolute inset-0 w-full h-full object-contain" />
           ) : null}
 
@@ -1130,7 +1139,15 @@ export default function ProofCamera() {
           {!online ? (
             <Banner tone="warn" icon={<WifiOff size={13} />} text={t("proof.offline")} />
           ) : null}
-          {late && mode === "live" ? (
+          {/* A late filing says so where the decision is made. It replaces the
+              ordinary out-of-window banner rather than stacking on it: that one
+              warns you are ABOUT to shoot outside the hours, which here is no
+              longer news — the hours are gone, and what the leader needs to
+              know is that this earns nothing until two people say otherwise. */}
+          {lateMode ? (
+            <Banner tone="warn" icon={<Clock size={13} />}
+              text={t("proof.late.banner").replace("{t}", task?.deadline || "—")} />
+          ) : late && mode === "live" ? (
             <Banner tone="warn" icon={<Clock size={13} />}
               text={t("proof.lateNow").replace("{lo}", task.window[0]).replace("{hi}", task.window[1])} />
           ) : null}
@@ -1145,7 +1162,7 @@ export default function ProofCamera() {
       <div className="shrink-0" style={{ borderTop: "1px solid rgba(255,255,255,0.10)" }}>
         {mode === "live" ? (
           <>
-            <Roll photos={photos} queued={queued} need={need} cap={cap}
+            <Roll photos={photos} queued={queued} need={need} cap={cap} late={lateMode}
               active={retakeSlot} t={t}
               onPick={(p) => { setViewAR(0); setViewing(p); setMode("slot"); }}
               onCancelRetake={() => setRetakeSlot(null)}
@@ -1179,10 +1196,27 @@ export default function ProofCamera() {
               style={{ color: "rgba(255,255,255,0.55)" }}>
               {retakeSlot != null
                 ? t("proof.retakingSlot").replace("{n}", retakeSlot + 1)
-                : done ? t("proof.doneHint")
-                : t("proof.needHint").replace("{n}", Math.max(0, need - photos.length - queued.length))}
+                : lateMode
+                  ? (photos.length ? t("proof.late.doneHint") : t("proof.late.needHint"))
+                  : done ? t("proof.doneHint")
+                    : t("proof.needHint").replace("{n}", Math.max(0, need - photos.length - queued.length))}
             </p>
-            {done ? (
+            {lateMode ? (
+              photos.length ? (
+                <div className="px-4 pb-3">
+                  {/* Closing the app is the WHOLE action here: the reason is
+                      written in the chat and the filing is sent from there, so
+                      the button says where the leader is going rather than
+                      «Tayyor», which would read as «submitted». No sibling
+                      hop either — leaving now with the reason unwritten would
+                      strand the shots. */}
+                  <Button size="lg" variant="success" className="w-full"
+                    onClick={() => tgApp()?.close?.()}>
+                    <Check size={17} /> {t("proof.late.finish")}
+                  </Button>
+                </div>
+              ) : null
+            ) : done ? (
               <div className="px-4 pb-3 space-y-2">
                 {/* Going back to Telegram, finding the menu, tapping the next
                     task, answering «Ha» and tapping the camera again is five

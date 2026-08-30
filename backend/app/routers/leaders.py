@@ -1999,11 +1999,19 @@ def _lp_stage_rights(db: Session, payload: dict, row) -> tuple[bool, bool]:
     return is_sup, False
 
 
-def _lp_item(db: Session, row, names: dict, mgr_names: dict) -> dict:
+def _lp_item(db: Session, row, names: dict, mgr_names: dict,
+             can_act: bool = False) -> dict:
     media = leader_late_proof.photos(db, row.id)
     return {
         "id": row.id,
         "status": row.status,
+        # Whether THIS caller may rule on THIS row, decided by the same
+        # `_lp_stage_rights` the write re-checks. The page used to derive it
+        # from two page-level flags, which is a different question: a
+        # supervisor holding the leaders page at scope «all» is served every
+        # unit's rows, and "you are a brigadir" is not "you are THIS unit's
+        # brigadir". Every foreign card then grew buttons that answered 403.
+        "canAct": bool(can_act),
         "date": row.date,
         "shift": row.shift,
         "taskId": row.task_id,
@@ -2016,7 +2024,14 @@ def _lp_item(db: Session, row, names: dict, mgr_names: dict) -> dict:
         "reason": row.reason,
         "uid": row.uid,
         "at": row.created_at.isoformat() if row.created_at else None,
-        "photos": [{"id": m.id, "pos": m.pos} for m in media],
+        # WHICH DOOR each photo came through. A stamped in-app shot and a file
+        # the leader picked must not read identically to the reviewer, or the
+        # stamp becomes decoration — the one way offering both doors could
+        # weaken the camera. NULL predates the camera door and reads as upload.
+        "photos": [{"id": m.id, "pos": m.pos,
+                    "source": m.source or "upload", "stamp": m.stamp,
+                    "at": m.captured_at.isoformat() if m.captured_at else None}
+                   for m in media],
         "sup": {
             "action": row.sup_action, "note": row.sup_note,
             "by": row.sup_by_name,
@@ -2073,13 +2088,16 @@ def list_late_proofs(
     mgr_names = {m.id: m.name for m in db.query(Manager).all()} if rows else {}
 
     todo = 0
+    acts = {}
     for r in rows:
         sup_ok, adm_ok = _lp_stage_rights(db, payload, r)
-        if (r.status == leader_late_proof.SUPERVISOR and sup_ok) or \
-           (r.status == leader_late_proof.ADMIN and adm_ok):
+        acts[r.id] = ((r.status == leader_late_proof.SUPERVISOR and sup_ok)
+                      or (r.status == leader_late_proof.ADMIN and adm_ok))
+        if acts[r.id]:
             todo += 1
     return {
-        "items": [_lp_item(db, r, names, mgr_names) for r in rows],
+        "items": [_lp_item(db, r, names, mgr_names, acts.get(r.id, False))
+                  for r in rows],
         "canSupervise": is_admin or role == "supervisor",
         "canApprove": is_admin,
         "todo": todo,
@@ -2210,7 +2228,23 @@ def late_proof_photo(
         allowed = (role in ("shift-manager", "top-manager")
                    or page_scope_is_all(db, payload, "leaders")
                    or (role == "supervisor" and row.manager_id is not None
-                       and int(payload.get("role_id") or 0) == int(row.manager_id)))
+                       and int(payload.get("role_id") or 0) == int(row.manager_id))
+                   # The LEADER reads their own. `list_late_proofs` already
+                   # serves them the row — the flow asks them to explain
+                   # themselves, so the answer has to be visible to them — and
+                   # without this every photo id it handed them 403'd, which is
+                   # exactly when a leader goes looking for the shot they just
+                   # took.
+                   #
+                   # Fenced on `role == "leader"`, as every other caller of
+                   # this helper is. It matches leader profiles by NAME FOLD,
+                   # which is unique across the leader roster and across
+                   # nothing else — unfenced it would let any authenticated
+                   # session whose full name folds the same (a supervisor, a
+                   # guest, a worker) read that leader's proofs.
+                   or (role == "leader" and row.leader_id is not None
+                       and int(row.leader_id) in
+                       identity.viewer_leader_profile_ids(db, payload)))
         if not allowed:
             raise HTTPException(status_code=403, detail="Not allowed")
     m = (db.query(LeaderLateProofMedia)

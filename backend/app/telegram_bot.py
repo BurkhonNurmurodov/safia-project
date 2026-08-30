@@ -3172,8 +3172,24 @@ def _lt_callback(call: types.CallbackQuery):
 
             # lsend — the write. Everything before this was a draft; this is the
             # moment it becomes a filing somebody must answer.
-            cap = _lt_capture(db, tid)
-            reason = (cap.reason or "").strip() if cap else ""
+            #
+            # The capture is BOUND to this task before its reason is used, and
+            # that check is load-bearing: `LeaderTaskCapture` is keyed by
+            # telegram_id, so one account has exactly one row and it belongs to
+            # whatever the leader touched LAST — while this «Saqlash» button
+            # stays in the chat forever. Without the binding a leader who wrote
+            # a reason for task A, then went and answered task C, and then
+            # scrolled back and pressed A's Save would file A's photos under
+            # C's excuse. The reason is the entire basis on which the brigadir
+            # and then an admin rule, so a filing decided on somebody else's
+            # sentence is decided on nothing.
+            cap = _lt_capture(db, tid, lock=True)
+            if (not cap or cap.stage != "late_confirm"
+                    or cap.leader_id != pid or cap.task_id != task_id):
+                bot.answer_callback_query(call.id, _lt(lang, "late_need_reason"),
+                                          show_alert=True)
+                return
+            reason = (cap.reason or "").strip()
             if not reason:
                 bot.answer_callback_query(call.id, _lt(lang, "late_need_reason"),
                                           show_alert=True)
@@ -3567,6 +3583,10 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(
                     call.id, _lt(lang, "incomplete").format(n=len(missing) or 1), show_alert=True)
                 return
+            # The third door that closes a day, beside `maybe_close_day` and
+            # `close_expired_days`. The late door shuts with the day, so a
+            # draft still staged could never be submitted by anybody again.
+            leader_late_proof.drop_drafts(db, day.id)
             day.closed_at = datetime.now(timezone.utc)
             day.completion = compute_completion(cfg, list(entries.values()))
             db.commit()
@@ -3855,10 +3875,18 @@ def _lp_supervisor_ids(db, row) -> set[int]:
 def _lp_send_to_supervisor(db, row) -> None:
     ids = _lp_supervisor_ids(db, row)
     if not ids:
-        # No claimed brigadir account: the decision cannot be delivered, so it
-        # goes straight to the people who can always make it. Silently parking
-        # it would leave the leader waiting on a card nobody was ever sent.
-        _lp_send_to_admins(db, row)
+        # No claimed brigadir account — an ordinary state, not an error. The
+        # decision still has to reach somebody, so it goes to the people who
+        # can always make it; silently parking it would leave the leader
+        # waiting on a card nobody was ever sent.
+        #
+        # It goes with the STAGE-1 keyboard, because that is the stage the row
+        # is actually at. Sending admins the approve/reject pair here produced
+        # buttons that answered «this is already decided» to the only people
+        # who had been told about it, and left those cards live-looking
+        # forever. Admins outrank stage 1 (`_lp_can_supervise`), so reject and
+        # pass-up both work for them.
+        _lp_deliver(db, row, set(_admin_ids()), "sup")
         return
     _lp_deliver(db, row, ids, "sup")
 

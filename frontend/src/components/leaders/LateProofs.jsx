@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Clock, Hourglass, ShieldCheck, Ban, ArrowUpCircle, CalendarClock,
-  MessageSquareQuote, User,
+  MessageSquareQuote, User, Camera, ImageUp,
 } from "lucide-react";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
@@ -91,6 +91,7 @@ const TXT = {
     emptyM: "Vaqtidan keyin yuborilgan isbotlar shu yerda ko'rinadi.",
     noMatchT: "Mos yozuv yo'q", noMatchM: "Filtr yoki qidiruvni o'zgartiring.",
     by: "Kim", cancel: "Bekor qilish", photoFailed: "Rasm yuklanmadi", retry: "Qayta urinish",
+    srcCam: "ilovada", srcUpload: "yuklangan",
   },
   uz_cyrl: {
     title: "Кечиккан исботлар",
@@ -121,6 +122,7 @@ const TXT = {
     emptyM: "Вақтидан кейин юборилган исботлар шу ерда кўринади.",
     noMatchT: "Мос ёзув йўқ", noMatchM: "Филтр ёки қидирувни ўзгартиринг.",
     by: "Ким", cancel: "Бекор қилиш", photoFailed: "Расм юкланмади", retry: "Қайта уриниш",
+    srcCam: "иловада", srcUpload: "юкланган",
   },
   ru: {
     title: "Поздние подтверждения",
@@ -151,6 +153,7 @@ const TXT = {
     emptyM: "Здесь появятся подтверждения, присланные после срока.",
     noMatchT: "Ничего не найдено", noMatchM: "Измените фильтр или поиск.",
     by: "Кто", cancel: "Отмена", photoFailed: "Фото не загрузилось", retry: "Повторить",
+    srcCam: "в приложении", srcUpload: "файл",
   },
   en: {
     title: "Late proofs",
@@ -181,6 +184,7 @@ const TXT = {
     emptyM: "Proofs sent after the deadline show up here.",
     noMatchT: "Nothing matches", noMatchM: "Change the filter or the search.",
     by: "By", cancel: "Cancel", photoFailed: "Photo failed to load", retry: "Retry",
+    srcCam: "in-app", srcUpload: "uploaded",
   },
 };
 
@@ -231,11 +235,15 @@ export default function LateProofs({ scope, onClearScope }) {
   const all = useMemo(() => data?.items ?? [], [data]);
   const items = useMemo(() => all.filter((it) => inScope(it, scope)), [all, scope]);
 
-  // Whose turn is it on THIS row? The card renders from this and nothing else,
-  // so a viewer is never shown a button the server would refuse.
-  const mine = (it) =>
-    (it.status === "supervisor" && canSupervise)
-    || (it.status === "admin" && canApprove);
+  // Whose turn is it on THIS row? The SERVER's answer, per row, from the same
+  // `_lp_stage_rights` the write re-checks — never re-derived here.
+  //
+  // It used to be computed from two page-level flags, and that is a different
+  // question: "you are a brigadir" is not "you are THIS unit's brigadir", and
+  // a supervisor holding the leaders page at scope «all» is served every
+  // unit's rows. Every foreign card then grew buttons that answered 403, and
+  // the in-tab count disagreed with the tab badge the server computes.
+  const mine = (it) => !!it.canAct;
 
   const settle = (msg) => {
     // An approval moves a score, so everything that reads one re-reads.
@@ -279,21 +287,18 @@ export default function LateProofs({ scope, onClearScope }) {
     return [...arr].sort((a, b) =>
       (mine(b) - mine(a))
       || (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, seg, q, tl, lang, canSupervise, canApprove]);
+  }, [items, seg, q, tl, lang]);
 
   const counts = useMemo(() => ({
     all: items.length,
     todo: items.filter(mine).length,
     done: items.filter(isDone).length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [items, canSupervise, canApprove]);
+  }), [items]);
 
   const out = useMemo(() => {
     const rest = all.filter((it) => !inScope(it, scope));
     return { hidden: rest.length, todo: rest.filter(mine).length };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, scope, canSupervise, canApprove]);
+  }, [all, scope]);
 
   const close = () => { setConfirm(null); setNote(""); setNoteErr(""); };
 
@@ -417,12 +422,33 @@ export default function LateProofs({ scope, onClearScope }) {
                       {T.photos} · {it.photos.length}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {it.photos.map((p) => (
-                        <div key={p.id} style={{ width: 72, height: 72 }}>
-                          <LateProofPhoto lateId={it.id} id={p.id} T={T} thumb
-                            className="" onClick={(u) => setShot(u)} />
-                        </div>
-                      ))}
+                      {it.photos.map((p) => {
+                        // A shot taken in the app carries a clock the leader
+                        // could not author; a file they chose carries nothing
+                        // this platform can vouch for. Showing the two the same
+                        // way would teach reviewers that the stamp is
+                        // decoration — so each says which it is, and the
+                        // in-app one shows the second it was taken.
+                        const cam = p.source === "camera";
+                        return (
+                          <div key={p.id} className="flex flex-col gap-1"
+                            style={{ width: 72 }}>
+                            <div style={{ width: 72, height: 72 }}>
+                              <LateProofPhoto lateId={it.id} id={p.id} T={T} thumb
+                                className="" onClick={(u) => setShot(u)} />
+                            </div>
+                            <span
+                              title={cam ? (p.stamp || T.srcCam) : T.srcUpload}
+                              className="inline-flex items-center gap-1 text-[9px] leading-tight"
+                              style={{ color: cam ? C_OK : "var(--text-4)" }}>
+                              {cam ? <Camera size={9} /> : <ImageUp size={9} />}
+                              <span className="truncate">
+                                {cam ? (p.stamp?.slice(-8) || T.srcCam) : T.srcUpload}
+                              </span>
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
