@@ -2618,6 +2618,25 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
     weight = int(entry_cfg.get("weight") or 0)
     kb = types.InlineKeyboardMarkup(row_width=1)
 
+    # ── past the deadline, the LATE door is the only door ────────────────────
+    # Checked before the lock, because a task can be past its deadline and not
+    # locked: `autoclose_due` only walks days that EXIST, and a leader who
+    # filed nothing all day has no day row at all. That is the commonest way
+    # into this screen and it used to fall through to the ordinary camera —
+    # which then produced an out-of-window proof the AI rejects, i.e. exactly
+    # the 0 this feature exists to give the leader a way out of.
+    #
+    # It REPLACES the ordinary flow rather than sitting beside it. Filing
+    # normally after the hour has gone is not a better outcome the leader is
+    # being denied: the photo is out of window, the verdict is `date_mismatch`,
+    # and the task scores 0 with nobody to appeal to.
+    if not leader_close.locked(entry, day) and leader_late_proof.eligible(
+            db, day=day, task_id=task_id, cfg_entry=entry_cfg, shift=shift,
+            per_task=leader_tasks_per_task(db, prof)):
+        _lt_late_open(db, tid, pid, lang, chat_id, msg_id, task_id,
+                      entry_cfg, shift, day)
+        return
+
     # `locked()` rather than the entry's own lock, because this screen is also
     # where an admin lands on a CLOSED DAY — in day mode the entry never carries
     # a `closed_at` of its own, and the two locks mean the same thing to the
@@ -2905,6 +2924,16 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                 if st == "open" and s.get("proof_kind") == "camera":
                     k = shot.get(td_id, 0)
                     mark = f"📷 {k}/{s['min_media']} · " if k else "📷 "
+                # An untouched task whose hour has gone reads as ⏱, not as one
+                # still waiting to be done. Both were "open" and both showed
+                # 📷, so a leader scanning thirteen rows could not tell which
+                # ones they had already lost — and the late door is behind
+                # exactly those. Asked only for a row that is still open, so
+                # the menu costs no extra query for anything already answered.
+                if st == "open" and leader_late_proof.eligible(
+                        db, day=day, task_id=td_id, cfg_entry=s, shift=shift,
+                        per_task=True):
+                    mark = "⏱ "
                 label = f"{mark}{config_name(s, lang)}"
             elif e:
                 label = f"{'✅ ' if e.done else '❌ '}{config_name(s, lang)}"
@@ -3249,6 +3278,20 @@ def _lt_callback(call: types.CallbackQuery):
                 return
             entries = _lt_entries(db, day)
             bot.answer_callback_query(call.id)
+            # A task past its deadline goes to its own screen FIRST, whatever
+            # state it is in, because that screen is where the late door lives.
+            # Without this an untouched task — no entry, no roll, which is the
+            # commonest way a deadline gets missed — fell through to the Ha/Yo'q
+            # question below and then to the ordinary camera, so the late door
+            # was unreachable for exactly the leader it exists for (found in
+            # production, 2026-08-30). The DECISION stays in `_lt_pt_task_view`;
+            # this only stops the router from routing around it.
+            if leader_late_proof.eligible(
+                    db, day=day, task_id=task_id, cfg_entry=cfg[task_id],
+                    shift=shift, per_task=leader_tasks_per_task(db, prof)):
+                _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
+                                 cfg[task_id], prof, day, shift)
+                return
             # On a per-task unit every task has a screen of its own — draft or
             # submitted — and that screen is the only place work happens. It
             # takes precedence over both branches below: the reset confirm is
@@ -3953,6 +3996,17 @@ def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
     (`_lt_camera_no_upload`, bound to stage «camera») entirely untouched while
     the chat-upload door on this screen stays open.
     """
+    # The day row is created HERE and nowhere else in this flow. A leader who
+    # filed nothing all day has none, and the draft roll, the filing and the
+    # camera's own `open_day(create=False)` all need one — so it is materialised
+    # at the moment the leader chooses to file late, exactly as the ordinary
+    # flow materialises it on the first saved task. Never by a sweep: an
+    # untouched day must not sprout a row just because a deadline passed.
+    if day is None:
+        prof = db.query(RoleProfile).filter_by(id=pid).first()
+        if prof is not None:
+            day = leader_proof.open_day(db, prof, create=True)
+            db.commit()
     k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
     text, kb = _lt_late_screen(db, lang, pid, task_id, cfg_entry, shift, k)
     cap = _lt_capture(db, tid)

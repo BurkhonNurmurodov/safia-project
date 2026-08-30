@@ -85,17 +85,34 @@ def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
     deadline to be late for, and the day's own deadline is where its checklist
     ends altogether.
     """
-    if not per_task or day is None or day.closed_at is not None:
+    if not per_task:
         return False
     if not cfg_entry or not cfg_entry.get("enabled"):
         return False
+    # A DAY ROW MAY NOT EXIST, and that is the commonest case this feature is
+    # for. `LeaderTaskDay` is created lazily by the first SAVED task, so a
+    # leader who filed nothing all day has none — and `autoclose_due` only
+    # walks days that exist, so nothing was force-closed and nothing is locked.
+    # Refusing on a missing day made the whole flow unreachable for exactly the
+    # leader it was built for (found in production, 2026-08-30).
+    #
+    # Absent means "open and holding nothing", which is open. The row is
+    # created when the leader actually commits to filing late, never by a
+    # sweep, so an untouched day is never conjured.
+    if day is not None and day.closed_at is not None:
+        return False
+    date = day.date if day is not None else leader_tasks.effective_date(shift)
     # A task an admin handed back is on the DAY's deadline and is not late.
-    if task_id in leader_close.reopened_tasks(day):
+    if day is not None and task_id in leader_close.reopened_tasks(day):
         return False
-    if not leader_close.past_deadline(cfg_entry, shift, day.date, now):
+    if not leader_close.past_deadline(cfg_entry, shift, date, now):
         return False
-    if leader_close.not_started(cfg_entry, shift, day.date, now):
+    if leader_close.not_started(cfg_entry, shift, date, now):
         return False
+    if day is None:
+        # Nothing filed, nothing locked, nothing already late-filed — and the
+        # deadline has gone by. That is precisely a late filing.
+        return True
     entry = (db.query(LeaderTaskEntry)
              .filter_by(day_id=day.id, task_id=task_id).first())
     # A task the leader actually DID has nothing to file late. Only the two

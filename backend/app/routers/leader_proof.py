@@ -501,22 +501,25 @@ def _shot_wire(sh: LeaderLateProofShot) -> dict:
 def _late_ctx(db: Session, prof: RoleProfile, task_id: int, entry: dict):
     """`(day, shift, open)` for a late filing on this task.
 
-    `open` is TWO conditions and both are needed. `leader_late_proof.eligible`
-    is the rule every other door reads. The task being LOCKED is what keeps
-    this door from opening in the sliver between the deadline passing and
-    `autoclose_due` closing the task — in that gap `eligible` already answers
-    True (it permits a task with no entry yet), but the leader can still file
-    NORMALLY and their shots still count, so sending them down the late path
-    would cost them the point for nothing.
+    `leader_late_proof.eligible` is the rule, and it is the ONLY rule — the
+    same one the bot's own screen reads, so the two doors cannot disagree about
+    whether a late filing is open.
+
+    It deliberately does NOT also require the task to be locked. A task can be
+    past its deadline and unlocked: `autoclose_due` walks only days that exist,
+    and a leader who filed nothing all day has no day row, so nothing was ever
+    force-closed. Requiring the lock made this refuse the commonest case there
+    is (found in production, 2026-08-30). Nor is filing normally in that state
+    a better outcome being withheld — the hour has gone, so the proof is out of
+    window and the AI rejects it.
+
+    The day may legitimately be absent here; the BOT creates it when the leader
+    commits to filing late, and the camera is only ever reached from that
+    screen, so by the time a shot arrives there is one.
     """
     shift = leader_proof.leader_shift(db, prof)
     day = leader_proof.open_day(db, prof, create=False)
-    if day is None:
-        return None, shift, False
-    task_entry = (db.query(LeaderTaskEntry)
-                  .filter_by(day_id=day.id, task_id=task_id).first())
-    locked = leader_close.locked(task_entry, day)
-    ok = locked and leader_late_proof.eligible(
+    ok = leader_late_proof.eligible(
         db, day=day, task_id=task_id, cfg_entry=entry, shift=shift,
         per_task=leader_tasks.per_task_close(db, prof.manager_id))
     return day, shift, bool(ok)
@@ -548,6 +551,11 @@ async def post_late_photo(
     day, shift, ok = _late_ctx(db, prof, task, entry)
     if not ok:
         raise HTTPException(status_code=409, detail="late_gone")
+    if day is None:
+        # The bot's late screen creates the day when the leader commits, and
+        # the camera is only reachable from there. No day means this request
+        # did not come through that door.
+        raise HTTPException(status_code=409, detail="late_not_started")
 
     key = (client_key or "").strip()
     if key and (len(key) > 64 or not _KEY_OK.fullmatch(key)):
