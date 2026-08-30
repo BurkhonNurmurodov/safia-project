@@ -24,11 +24,14 @@ from app import identity
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    LeaderTaskDay, LeaderTaskPhoto, RoleProfile, TelegramUserRole,
+    LeaderLateProofShot, LeaderTaskDay, LeaderTaskEntry, LeaderTaskPhoto,
+    RoleProfile, TelegramUserRole,
 )
 from app.security import require_auth
 from app.routers.admin import _TG_API, _tg_file_meta
-from app.services import action_log, leader_proof
+from app.services import (
+    action_log, leader_close, leader_late_proof, leader_proof, leader_tasks,
+)
 from app.services.leader_tasks import (
     channel_chat_id, config_name, effective_leader_config,
 )
@@ -156,6 +159,7 @@ def _photo_wire(p: LeaderTaskPhoto) -> dict:
 
 @router.get("/api/leader-proof/session")
 def proof_session(leader: int | None = Query(None), task: int = Query(...),
+                  late: int = Query(0),
                   db: Session = Depends(get_db),
                   payload: dict = Depends(require_auth)):
     """Everything the camera page needs in ONE read: the clock, the task's rule,
@@ -194,6 +198,47 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
                if s.get("enabled") and s.get("proof_kind") == "camera"]
     have = leader_proof.counts(db, day.id if day else None, cam_ids)
     now = datetime.now(timezone.utc)
+
+    # ── late mode ────────────────────────────────────────────────────────────
+    # `?late=1` is a REQUEST, never the authority: the server decides, because
+    # the parameter is typeable and because the ordinary payload must stay
+    # byte-identical for the camera pilot running right now. When the answer is
+    # no, `mode` is absent and the page falls straight through to the ordinary
+    # refusal it already renders for a closed task.
+    if late:
+        lday, lshift, ok = _late_ctx(db, prof, task, entry)
+        if ok and lday is not None:
+            shots = leader_late_proof.draft_shots(db, lday.id, task)
+            return {
+                "mode": "late",
+                "server": {"iso": now.isoformat(), "ms": int(now.timestamp() * 1000)},
+                "leader": {"id": prof.id, "name": prof.name},
+                "day": {"date": lday.date, "closed": False, "shift": lshift},
+                "task_closed": False,
+                "task": {
+                    "id": task,
+                    "name": config_name(entry, lang),
+                    "criteria": entry.get("criteria") or "",
+                    # A late filing has no min_media contract — one photo is
+                    # enough and the submit refuses none. Serving 1 keeps every
+                    # arithmetic the page already does valid (slot 0 is
+                    # retake-only, everything above it is an extra) without
+                    # forking the roll UI.
+                    "min_media": 1,
+                    "max_slots": leader_proof.max_slots(
+                        int(entry.get("min_media") or 1)),
+                    "window": list(entry.get("window") or ()),
+                    "date_check": False,
+                    "time_check": False,
+                    "deadline": leader_close.task_deadline(entry, lshift),
+                },
+                "photos": [_shot_wire(p) for p in shots],
+                "complete": len(shots) >= 1,
+                # No siblings: a late filing is one task's errand, and offering
+                # to hop to the next camera task from inside it would leave the
+                # first one's reason unwritten and its shots unsubmitted.
+                "siblings": [],
+            }
 
     return {
         "server": {"iso": now.isoformat(), "ms": int(now.timestamp() * 1000)},
@@ -354,28 +399,7 @@ def get_photo(photo_id: int, db: Session = Depends(get_db),
     if not row:
         raise HTTPException(status_code=404, detail="not_found")
     _own_leader(db, payload, row.leader_id)
-
-    meta = _tg_file_meta(row.file_id)
-    url = f"{_TG_API}/file/bot{settings.telegram_bot_token}/{meta['file_path']}"
-    try:
-        upstream = requests.get(url, stream=True, timeout=60)
-    except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Telegram unreachable: {e}")
-    if upstream.status_code != 200:
-        upstream.close()
-        raise HTTPException(status_code=404, detail="not_found")
-
-    def _chunks():
-        try:
-            yield from upstream.iter_content(chunk_size=64 * 1024)
-        finally:
-            upstream.close()
-
-    # A stored shot never changes — a retake writes a NEW row — so the page may
-    # cache it hard, which is what keeps the roll's thumbnails instant.
-    return StreamingResponse(
-        _chunks(), media_type=meta["mime_type"],
-        headers={"Cache-Control": "private, max-age=86400"})
+    return _stream_shot(row.file_id)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -415,3 +439,213 @@ def _nudge_bot(db: Session, prof: RoleProfile, task_id: int) -> None:
         refresh_camera_prompt(db, prof.id, task_id)
     except Exception:
         log.debug("camera prompt refresh skipped", exc_info=True)
+
+
+def _stream_shot(file_id: str) -> StreamingResponse:
+    """Stream one archive-channel photo back to the page.
+
+    Lifted out of `get_photo` when the late door needed the identical thing:
+    two copies of "fetch a file_id through the token-hiding proxy" is two places
+    to get the caching, the timeout and the 404 wrong.
+    """
+    meta = _tg_file_meta(file_id)
+    url = f"{_TG_API}/file/bot{settings.telegram_bot_token}/{meta['file_path']}"
+    try:
+        upstream = requests.get(url, stream=True, timeout=60)
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Telegram unreachable: {e}")
+    if upstream.status_code != 200:
+        upstream.close()
+        raise HTTPException(status_code=404, detail="not_found")
+
+    def _chunks():
+        try:
+            yield from upstream.iter_content(chunk_size=64 * 1024)
+        finally:
+            upstream.close()
+
+    # A stored shot never changes — a retake writes a NEW row — so the page may
+    # cache it hard, which is what keeps the roll's thumbnails instant.
+    return StreamingResponse(
+        _chunks(), media_type=meta["mime_type"],
+        headers={"Cache-Control": "private, max-age=86400"})
+
+
+# ── the late door ────────────────────────────────────────────────────────────
+#
+# A task whose deadline has gone by is LOCKED, so `leader_proof.save_photo`
+# refuses it and must go on refusing it — that predicate is the one answer to
+# "is this editable" and punching a mode-shaped hole through it would reach far
+# past this feature. The late door is therefore a door of its own, sharing
+# exactly the parts that must not have a second spelling: `_own_leader` for who
+# may act, `_camera_cfg` for whether this unit is enrolled in camera capture,
+# `_relay` for the archive copy, `leader_proof.burn` for the stamp, and
+# `leader_late_proof.eligible` for whether a late filing is open at all.
+
+
+def _shot_wire(sh: LeaderLateProofShot) -> dict:
+    """A draft shot in the shape the camera page already renders a roll in.
+
+    `late` is TRUE by construction here — that is what this filing IS — and it
+    is reported for display only: no deduction hangs off it, because a late
+    proof scores nothing until a person says otherwise.
+    """
+    return {
+        "id": sh.id, "slot": sh.slot,
+        "captured_at": sh.captured_at.isoformat() if sh.captured_at else None,
+        "stamp": sh.stamp, "late": True, "deferred": False,
+        "source": sh.source,
+    }
+
+
+def _late_ctx(db: Session, prof: RoleProfile, task_id: int, entry: dict):
+    """`(day, shift, open)` for a late filing on this task.
+
+    `open` is TWO conditions and both are needed. `leader_late_proof.eligible`
+    is the rule every other door reads. The task being LOCKED is what keeps
+    this door from opening in the sliver between the deadline passing and
+    `autoclose_due` closing the task — in that gap `eligible` already answers
+    True (it permits a task with no entry yet), but the leader can still file
+    NORMALLY and their shots still count, so sending them down the late path
+    would cost them the point for nothing.
+    """
+    shift = leader_proof.leader_shift(db, prof)
+    day = leader_proof.open_day(db, prof, create=False)
+    if day is None:
+        return None, shift, False
+    task_entry = (db.query(LeaderTaskEntry)
+                  .filter_by(day_id=day.id, task_id=task_id).first())
+    locked = leader_close.locked(task_entry, day)
+    ok = locked and leader_late_proof.eligible(
+        db, day=day, task_id=task_id, cfg_entry=entry, shift=shift,
+        per_task=leader_tasks.per_task_close(db, prof.manager_id))
+    return day, shift, bool(ok)
+
+
+@router.post("/api/leader-proof/late-photo")
+async def post_late_photo(
+    leader: int = Form(...),
+    task: int = Form(...),
+    captured_ms: int = Form(...),
+    phone_ms: int | None = Form(None),
+    slot: int | None = Form(None),
+    client_key: str | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """One shot for a LATE filing — same stamp, same archive, different home.
+
+    Every guard `post_photo` applies applies here too, in the same order and
+    for the same reasons; what differs is only the destination and the fact
+    that nothing here ever calls `sync_entry`. That last point is the whole
+    safety argument: `sync_entry` at `min_media` writes a DONE entry and
+    rebuilds the media the AI reads, so a late shot reaching it would award the
+    point with no ruling and send the proof to Gemini.
+    """
+    prof = _own_leader(db, payload, leader)
+    _, entry = _camera_cfg(db, prof, task)
+    day, shift, ok = _late_ctx(db, prof, task, entry)
+    if not ok:
+        raise HTTPException(status_code=409, detail="late_gone")
+
+    key = (client_key or "").strip()
+    if key and (len(key) > 64 or not _KEY_OK.fullmatch(key)):
+        raise HTTPException(status_code=400, detail="bad_key")
+
+    data = await file.read()
+    if not data or len(data) > _MAX_UPLOAD:
+        raise HTTPException(status_code=400, detail="bad_size")
+    if not data.startswith(_JPEG_MAGIC):
+        raise HTTPException(status_code=400, detail="invalid_image")
+
+    now = datetime.now(timezone.utc)
+    captured = datetime.fromtimestamp(max(0, int(captured_ms)) / 1000, timezone.utc)
+    if captured > now:
+        captured = now
+    floor = _day_floor(db, prof)
+    if floor and captured < floor:
+        captured = floor
+    skew = int((int(phone_ms) - int(captured_ms)) / 1000) if phone_ms else None
+
+    try:
+        row = leader_late_proof.save_shot(
+            db, prof=prof, day=day, task_id=task,
+            cap=leader_proof.max_slots(int(entry.get("min_media") or 1)),
+            data=data, captured_at=captured, slot=slot, skew_s=skew,
+            relay=_relay, source="camera", client_key=key or None)
+    except (leader_late_proof.ShotError, leader_proof.ProofError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    db.commit()
+
+    shots = leader_late_proof.draft_shots(db, day.id, task)
+    _nudge_late_bot(db, prof, task)
+    action_log.enrich(
+        target_kind="photo", target_id=row.id, target_name=prof.name,
+        unit_id=prof.manager_id, day=day.date,
+        details=[("leader", prof.name), ("task", task), ("slot", row.slot),
+                 ("late_shots", len(shots)), ("source", "camera")],
+    )
+    return {"photo": _shot_wire(row),
+            "photos": [_shot_wire(p) for p in shots],
+            "complete": len(shots) >= 1,
+            "day": {"date": day.date, "closed": False}}
+
+
+@router.delete("/api/leader-proof/late-photo/{shot_id}")
+def drop_late_photo(shot_id: int, db: Session = Depends(get_db),
+                    payload: dict = Depends(require_auth)):
+    """Drop one draft shot.
+
+    Unlike the on-time roll there is no required slot to protect: a late filing
+    has no `min_media` contract, so any shot may go — and the submit refuses an
+    empty roll, which is the only floor that matters.
+    """
+    row = db.query(LeaderLateProofShot).filter_by(id=shot_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="not_found")
+    prof = _own_leader(db, payload, row.leader_id)
+    _, entry = _camera_cfg(db, prof, row.task_id)
+    day, _shift, ok = _late_ctx(db, prof, row.task_id, entry)
+    if not ok or day is None or day.id != row.day_id:
+        raise HTTPException(status_code=409, detail="late_gone")
+    day_id, task_id, slot = row.day_id, row.task_id, row.slot
+    leader_late_proof.delete_shot(db, row)
+    db.commit()
+    shots = leader_late_proof.draft_shots(db, day_id, task_id)
+    _nudge_late_bot(db, prof, task_id)
+    action_log.enrich(
+        target_kind="photo", target_id=shot_id, target_name=prof.name,
+        unit_id=prof.manager_id,
+        details=[("leader", prof.name), ("task", task_id), ("slot", slot),
+                 ("late_shots", len(shots))],
+    )
+    return {"photos": [_shot_wire(p) for p in shots],
+            "complete": len(shots) >= 1}
+
+
+@router.get("/api/leader-proof/late-photo/{shot_id}")
+def get_late_photo(shot_id: int, db: Session = Depends(get_db),
+                   payload: dict = Depends(require_auth)):
+    """Stream back one of the caller's OWN draft shots — same narrow scope as
+    `get_photo`: a photo belonging to a leader profile this account holds."""
+    row = db.query(LeaderLateProofShot).filter_by(id=shot_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="not_found")
+    _own_leader(db, payload, row.leader_id)
+    return _stream_shot(row.file_id)
+
+
+def _nudge_late_bot(db: Session, prof: RoleProfile, task_id: int) -> None:
+    """Re-draw the bot's late screen with the new count.
+
+    Deliberately NOT a widening of `refresh_camera_prompt`'s `stage="camera"`
+    filter: that one re-renders the ordinary task view, which for a LOCKED task
+    takes the early-return locked branch and would repaint the outcome screen
+    over the late one the leader is working in.
+    """
+    try:
+        from app.telegram_bot import refresh_late_screen
+        refresh_late_screen(db, prof.id, task_id)
+    except Exception:
+        log.debug("late screen refresh skipped", exc_info=True)

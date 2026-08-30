@@ -1935,6 +1935,85 @@ class LeaderLateProofMedia(Base):
     file_id    = Column(String, nullable=False)
     message_id = Column(BigInteger, nullable=True)
     pos        = Column(Integer, nullable=False, default=0)
+    # WHICH DOOR this photo came through — "camera" (taken in the app, clock
+    # server-authored) or "upload" (a file the leader chose). Nullable because
+    # rows written before the camera door existed came through the upload one
+    # and are read as such.
+    #
+    # It is on the row rather than derived because the reviewer has to SEE it.
+    # A stamped camera shot and a hand-picked file that look identical on the
+    # brigadir's card teach reviewers that the stamp is decorative, which is
+    # the one way offering both doors could weaken the camera feature.
+    source      = Column(String(10), nullable=True)
+    # The server's own instant for a camera shot, and the text burnt into it.
+    # NULL for an upload: a file the leader chose has no instant this platform
+    # can vouch for, and inventing one is exactly what the camera exists to stop.
+    captured_at = Column(DateTime(timezone=True), nullable=True)
+    stamp       = Column(String(40), nullable=True)
+
+
+class LeaderLateProofShot(Base):
+    """The DRAFT roll of a late filing — shots taken (or sent) before the
+    leader has written their reason and pressed send.
+
+    Three separate arguments put this in a table of its own, and each one alone
+    would be enough:
+
+    1. **It must survive the app closing.** That is `LeaderTaskPhoto`'s own
+       reason for existing: a leader who shot two of three and closed Telegram
+       comes back to two. The late flow staged its photos in
+       `LeaderTaskCapture.media` — one row per Telegram ACCOUNT, deleted by any
+       `_lt_clear`, and expiring after 30 minutes — so a leader who opened
+       /tasks again, or simply took too long writing the reason, silently lost
+       every photo they had taken.
+
+    2. **It must not be reachable from `leader_task_photos`.** Sharing that
+       table would be actively dangerous, not merely untidy:
+       `leader_close.force_answer` turns ANY photo on a (day, task) roll into a
+       `done` LeaderTaskEntry via `sync_entry` — awarding the point with no
+       ruling at all — and `leader_proof.server_clocks` feeds that same roll
+       into `LeaderAiReview.clocks`. A late shot sharing the key would be
+       auto-submitted, scored AND sent to Gemini: all three of the rules this
+       feature is named for, broken at once. It would also collide on
+       `uq_ltask_photo_slot` with whatever the on-time roll already holds.
+
+    3. **One store for BOTH doors.** A camera shot and a chat upload land here
+       alike (`source`), so the count on screen, the durability and the submit
+       all read one place. Two stores would be two answers to "how many photos
+       does this filing have".
+
+    `client_key` is carried for the same reason `LeaderTaskPhoto` carries it:
+    the page cannot tell a request that never arrived from one whose answer
+    died on the way back, so it re-sends, and without the key the same picture
+    lands twice.
+
+    Rows live only until the filing is submitted (`leader_late_proof.create`
+    consumes them) or its window shuts — see `clear_draft` / `drop_drafts`.
+    """
+    __tablename__ = "leader_late_proof_shots"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    day_id      = Column(Integer, ForeignKey("leader_task_days.id"), nullable=False, index=True)
+    leader_id   = Column(Integer, nullable=False, index=True)   # role_profiles.id
+    task_id     = Column(Integer, nullable=False)
+    slot        = Column(Integer, nullable=False, default=0)
+    source      = Column(String(10), nullable=False, default="upload")  # camera | upload
+    file_id     = Column(String, nullable=False)                # archive-channel copy
+    message_id  = Column(BigInteger, nullable=True)
+    # Server-authored, camera only. An uploaded file carries no instant this
+    # platform can vouch for, so it carries none here either.
+    captured_at = Column(DateTime(timezone=True), nullable=True)
+    received_at = Column(DateTime(timezone=True), server_default=func.now())
+    stamp       = Column(String(40), nullable=True)
+    skew_s      = Column(Integer, nullable=True)
+    client_key  = Column(String(64), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("day_id", "task_id", "slot", name="uq_late_shot_slot"),
+        # Per LEADER, exactly as the camera roll's key is: the backstop for two
+        # copies of one upload racing out of the offline queue.
+        Index("uq_late_shot_client_key", "leader_id", "client_key", unique=True),
+    )
 
 
 class LeaderTaskOverride(Base):

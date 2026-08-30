@@ -333,9 +333,15 @@ def maybe_close_day(db: Session, day: LeaderTaskDay, cfg: dict) -> bool:
     want = {t for t, s in cfg.items() if s.get("enabled")}
     if not want or not want <= closed_tasks(db, day):
         return False
+    from app.services import leader_late_proof   # cycle: see reset_task
     entries = db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()
     day.closed_at = datetime.now(timezone.utc)
     day.completion = leader_tasks.compute_completion(cfg, entries)
+    # The late door shuts with the day (`leader_late_proof.eligible` requires an
+    # OPEN day), so any draft still staged can never be submitted by anybody.
+    # Left behind it would be a pile of photos with no route to any reader —
+    # precisely the state this feature exists to abolish rather than create.
+    leader_late_proof.drop_drafts(db, day.id)
     db.commit()
     return True
 
@@ -382,7 +388,13 @@ def reopen_task(db: Session, *, day: LeaderTaskDay | None, task_id: int,
     if task_id not in reopened_tasks(day):
         # A NEW list, never an in-place append: SQLAlchemy only sees the change
         # when the attribute is reassigned.
+        from app.services import leader_late_proof   # cycle: see reset_task
         day.reopened = sorted(reopened_tasks(day) | {task_id})
+        # A reopened task is back on the DAY's own deadline and is no longer
+        # late-fileable at all (`leader_late_proof.eligible`), so any draft
+        # staged against it is unreachable from this moment on. Dropping it
+        # here is what stops it sitting on the day forever with no door.
+        leader_late_proof.clear_draft(db, day.id, task_id)
     if day.closed_at is not None:
         day.closed_at = None
         day.completion = None          # an open day is not a scored one
@@ -464,7 +476,12 @@ def reset_task(db: Session, day: LeaderTaskDay | None, task_id: int) -> bool:
     if e:  # channel posts stay (audit trail); only our rows go
         db.query(LeaderTaskMedia).filter_by(entry_id=e.id).delete()
         db.delete(e)
+    from app.services import leader_late_proof   # cycle: it imports this module
     hit = leader_proof.clear_roll(db, day.id, task_id) or hit
+    # A late DRAFT goes with it. «Empty» has to mean one thing, and a half-shot
+    # late roll surviving a reset would be photos staged for a filing the
+    # leader was just told no longer exists.
+    hit = bool(leader_late_proof.clear_draft(db, day.id, task_id)) or hit
     db.commit()
     return bool(hit)
 
@@ -690,9 +707,13 @@ def close_expired_days(db: Session, prof, shift: int,
                 db.add(LeaderTaskEntry(day_id=day.id, task_id=tid,
                                        done=False, reason=reason))
         db.flush()
+        from app.services import leader_late_proof   # cycle: see reset_task
         day.closed_at = now
         day.completion = leader_tasks.compute_completion(
             cfg, db.query(LeaderTaskEntry).filter_by(day_id=day.id).all())
+        # Same rule as `maybe_close_day`: the late door shuts with the day, so
+        # a draft left staged here could never be submitted by anyone again.
+        leader_late_proof.drop_drafts(db, day.id)
         # Snapshotted HERE, while the instances are loaded: the commit below
         # expires them, and re-reading four columns per day to describe the
         # work would make the audit trail cost a query round for every close.

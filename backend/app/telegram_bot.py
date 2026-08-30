@@ -19,9 +19,9 @@ from app.config import settings
 from app.database import SessionLocal
 from app.identity import find_role_row
 from app.models import (
-    Admin, ApprovalNotice, BroadcastDraft, LeaderLateProof, LeaderTaskCapture,
-    LeaderTaskDay, LeaderTaskEntry, LeaderTaskMedia, Manager, RegistrationNotice,
-    RoleProfile, TelegramUser, TelegramUserRole, Translation,
+    Admin, ApprovalNotice, BroadcastDraft, LeaderLateProof, LeaderLateProofShot,
+    LeaderTaskCapture, LeaderTaskDay, LeaderTaskEntry, LeaderTaskMedia, Manager,
+    RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole, Translation,
 )
 from app.reg_token import make_reg_token
 from app.services import (
@@ -2016,6 +2016,15 @@ _LT_MESSAGES = {
         "btn_adm_wipe": "🗑 Tozalash (admin)",
         # ── kechikib topshirish ──────────────────────────────────────────
         "btn_late_file": "\U0001F4E4 Kechikib topshirish",
+        "btn_late_resume": "\U0001F4E4 Davom ettirish",
+        "btn_late_cam": "\U0001F4F7 Ilovada suratga olish",
+        "btn_late_upload": "\U0001F5BC Mavjud rasmni yuborish",
+        "btn_late_clear": "\U0001F5D1 Rasmlarni tozalash",
+        "late_have": "\n\n\U0001F4F8 {k} ta rasm tayyor.",
+        "late_send_now": "Rasmni shu yerga yuboring",
+        "late_cleared": "\U0001F5D1 Rasmlar o'chirildi",
+        "late_need_reason": "Avval sababni yozing.",
+        "late_roll_full": "Rasmlar soni chegaraga yetdi.",
         "late_warn": ("\u23F1 {task}\n\nBu vazifa vaqti {t} da tugagan.\n\n"
                       "\u26A0\uFE0F Kechikkani uchun ball AVTOMATIK berilmaydi.\n\n"
                       "Isbot rasmlarini yuborib, nega kechikkaningizni yozishingiz mumkin. "
@@ -2106,6 +2115,15 @@ _LT_MESSAGES = {
         "btn_adm_reopen": "🔓 Қайта очиш (админ)",
         "btn_adm_wipe": "🗑 Тозалаш (админ)",
         "btn_late_file": "\U0001F4E4 Кечикиб топшириш",
+        "btn_late_resume": "\U0001F4E4 Давом эттириш",
+        "btn_late_cam": "\U0001F4F7 Иловада суратга олиш",
+        "btn_late_upload": "\U0001F5BC Мавжуд расмни юбориш",
+        "btn_late_clear": "\U0001F5D1 Расмларни тозалаш",
+        "late_have": "\n\n\U0001F4F8 {k} та расм тайёр.",
+        "late_send_now": "Расмни шу ерга юборинг",
+        "late_cleared": "\U0001F5D1 Расмлар ўчирилди",
+        "late_need_reason": "Аввал сабабни ёзинг.",
+        "late_roll_full": "Расмлар сони чегарага етди.",
         "late_warn": ("\u23F1 {task}\n\nБу вазифа вақти {t} да тугаган.\n\n"
                       "\u26A0\uFE0F Кечиккани учун балл АВТОМАТИК берилмайди.\n\n"
                       "Исбот расмларини юбориб, нега кечикканингизни ёзишингиз мумкин. "
@@ -2196,6 +2214,15 @@ _LT_MESSAGES = {
         "btn_adm_reopen": "🔓 Открыть заново (админ)",
         "btn_adm_wipe": "🗑 Очистить (админ)",
         "btn_late_file": "\U0001F4E4 Сдать с опозданием",
+        "btn_late_resume": "\U0001F4E4 Продолжить",
+        "btn_late_cam": "\U0001F4F7 Снять в приложении",
+        "btn_late_upload": "\U0001F5BC Прислать готовое фото",
+        "btn_late_clear": "\U0001F5D1 Очистить фото",
+        "late_have": "\n\n\U0001F4F8 Готово фото: {k}.",
+        "late_send_now": "Пришлите фото сюда",
+        "late_cleared": "\U0001F5D1 Фото удалены",
+        "late_need_reason": "Сначала напишите причину.",
+        "late_roll_full": "Достигнут предел числа фото.",
         "late_warn": ("\u23F1 {task}\n\nВремя этой задачи истекло в {t}.\n\n"
                       "\u26A0\uFE0F За опоздание балл АВТОМАТИЧЕСКИ не начисляется.\n\n"
                       "Вы можете прислать фото-подтверждение и написать, почему опоздали. "
@@ -2286,6 +2313,15 @@ _LT_MESSAGES = {
         "btn_adm_reopen": "🔓 Reopen (admin)",
         "btn_adm_wipe": "🗑 Clear (admin)",
         "btn_late_file": "\U0001F4E4 Submit late",
+        "btn_late_resume": "\U0001F4E4 Continue",
+        "btn_late_cam": "\U0001F4F7 Take it in the app",
+        "btn_late_upload": "\U0001F5BC Send an existing photo",
+        "btn_late_clear": "\U0001F5D1 Clear the photos",
+        "late_have": "\n\n\U0001F4F8 {k} photo(s) ready.",
+        "late_send_now": "Send the photo here",
+        "late_cleared": "\U0001F5D1 Photos removed",
+        "late_need_reason": "Write the reason first.",
+        "late_roll_full": "The photo limit is reached.",
         "late_warn": ("\u23F1 {task}\n\nThis task's time ran out at {t}.\n\n"
                       "\u26A0\uFE0F No point is awarded AUTOMATICALLY for a late submission.\n\n"
                       "You can still send proof photos and write why you were late. "
@@ -2627,7 +2663,17 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
         elif leader_late_proof.eligible(
                 db, day=day, task_id=task_id, cfg_entry=entry_cfg, shift=shift,
                 per_task=leader_tasks_per_task(db, prof)):
-            kb.add(_lt_btn(_lt(lang, "btn_late_file"), f"lt:late:{pid}:{task_id}"))
+            # A draft roll OUTLIVES the screen that made it — that is what the
+            # table is for. The capture row expires after 30 minutes and any
+            # /tasks clears it, so a leader who shot three photos and came back
+            # an hour later must be told the photos are still there rather than
+            # be offered «file late» as if nothing existed.
+            staged = leader_late_proof.draft_count(db, day.id if day else None,
+                                                   task_id)
+            if staged:
+                text += _lt(lang, "late_have").format(k=staged)
+            kb.add(_lt_btn(_lt(lang, "btn_late_resume" if staged else "btn_late_file"),
+                           f"lt:late:{pid}:{task_id}"))
 
         # The one way back out of a submission, and it belongs to admins alone.
         # Both buttons say so in their own label: this screen is the leader's
@@ -3051,7 +3097,7 @@ def _lt_callback(call: types.CallbackQuery):
         # WRITE something: a button lives in a chat for as long as the leader
         # leaves the message there, so «was this still allowed when it was
         # pressed» cannot be answered by the fact that it was offered.
-        if action in ("late", "lgo", "lrsn", "lsend"):
+        if action in ("late", "lgo", "lrsn", "lsend", "lclr", "lback"):
             try:
                 task_id = int(parts[3])
             except (IndexError, ValueError):
@@ -3059,81 +3105,89 @@ def _lt_callback(call: types.CallbackQuery):
                 return
             s_cfg = cfg.get(task_id) or {}
             per_task = leader_tasks_per_task(db, prof)
+            live = leader_late_proof.eligible(
+                db, day=day, task_id=task_id, cfg_entry=s_cfg,
+                shift=shift, per_task=per_task)
 
-            if action == "late":
-                if not leader_late_proof.eligible(
-                        db, day=day, task_id=task_id, cfg_entry=s_cfg,
-                        shift=shift, per_task=per_task):
-                    bot.answer_callback_query(call.id, _lt(lang, "late_gone_alert"),
-                                              show_alert=True)
-                    return
+            # «Orqaga» from the late screen retires the staging row. A dangling
+            # `late_photos` capture would silently swallow any photo the leader
+            # sent to the chat afterwards, for a filing they had walked away
+            # from. The draft roll itself SURVIVES — it is a durable roll, and
+            # coming back to the shots you already took is the whole reason it
+            # is a table.
+            if action == "lback":
+                _lt_clear(tid)
+                db.commit()
                 bot.answer_callback_query(call.id)
-                _lt_late_view(db, tid, pid, lang, chat_id, msg_id, task_id,
+                _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
+                                 s_cfg, prof, day, shift)
+                return
+
+            if not live:
+                bot.answer_callback_query(call.id, _lt(lang, "late_gone_alert"),
+                                          show_alert=True)
+                return
+
+            # «late» opens the screen; «lgo» is the upload door, which on a
+            # camera task means «send an existing photo» and on every other task
+            # is simply the way forward. Both land on the same screen, because
+            # the screen IS the staging area.
+            if action in ("late", "lgo"):
+                bot.answer_callback_query(
+                    call.id, _lt(lang, "late_send_now") if action == "lgo" else None)
+                _lt_late_open(db, tid, pid, lang, chat_id, msg_id, task_id,
                               s_cfg, shift, day)
                 return
 
-            if action == "lgo":
-                if not leader_late_proof.eligible(
-                        db, day=day, task_id=task_id, cfg_entry=s_cfg,
-                        shift=shift, per_task=per_task):
-                    bot.answer_callback_query(call.id, _lt(lang, "late_gone_alert"),
-                                              show_alert=True)
-                    return
-                _lt_clear(tid)
-                text, kb = _lt_late_counter(db, lang, pid, task_id, s_cfg, 0)
-                sent = bot.send_message(chat_id, text, reply_markup=kb)
-                db.add(LeaderTaskCapture(
-                    telegram_id=tid, stage="late_photos", leader_id=pid,
-                    task_id=task_id, chat_id=chat_id, message_id=sent.message_id,
-                    min_media=1, media=[]))
+            if action == "lclr":
+                leader_late_proof.clear_draft(db, day.id if day else None, task_id)
                 db.commit()
-                bot.answer_callback_query(call.id)
+                bot.answer_callback_query(call.id, _lt(lang, "late_cleared"))
+                _lt_late_open(db, tid, pid, lang, chat_id, msg_id, task_id,
+                              s_cfg, shift, day)
                 return
 
-            cap = _lt_capture(db, tid)
-            if not cap or cap.leader_id != pid or cap.task_id != task_id:
-                bot.answer_callback_query(call.id, _lt(lang, "expired"),
+            shots = leader_late_proof.draft_shots(db, day.id, task_id) if day else []
+            if not shots:
+                bot.answer_callback_query(call.id, _lt(lang, "late_need_photo"),
                                           show_alert=True)
                 return
 
             if action == "lrsn":
-                if not (cap.media or []):
-                    bot.answer_callback_query(call.id, _lt(lang, "late_need_photo"),
-                                              show_alert=True)
-                    return
-                try:
-                    bot.delete_message(chat_id, cap.message_id)
-                except Exception:
-                    pass
                 sent = bot.send_message(chat_id, _lt(lang, "late_ask_reason"))
-                cap.stage = "late_reason"
-                cap.message_id = sent.message_id
+                cap = _lt_capture(db, tid)
+                if cap and cap.stage == "late_photos" and cap.task_id == task_id:
+                    cap.stage = "late_reason"
+                    cap.message_id = sent.message_id
+                    cap.chat_id = chat_id
+                else:
+                    _lt_clear(tid)
+                    db.add(LeaderTaskCapture(
+                        telegram_id=tid, stage="late_reason", leader_id=pid,
+                        task_id=task_id, chat_id=chat_id,
+                        message_id=sent.message_id, min_media=1, media=[]))
                 db.commit()
                 bot.answer_callback_query(call.id)
                 return
 
-            # lsend — the write. Everything up to here was a draft in a capture
-            # row; this is the moment it becomes a filing somebody must answer.
-            if not (cap.reason or "").strip() or not (cap.media or []):
+            # lsend — the write. Everything before this was a draft; this is the
+            # moment it becomes a filing somebody must answer.
+            cap = _lt_capture(db, tid)
+            reason = (cap.reason or "").strip() if cap else ""
+            if not reason:
+                bot.answer_callback_query(call.id, _lt(lang, "late_need_reason"),
+                                          show_alert=True)
+                return
+            try:
+                row = leader_late_proof.create(
+                    db, day=day, task_id=task_id, prof=prof, shift=shift,
+                    cfg_entry=s_cfg, reason=reason, actor_telegram=tid)
+            except leader_late_proof.ShotError:
                 bot.answer_callback_query(call.id, _lt(lang, "late_need_photo"),
                                           show_alert=True)
                 return
-            if not leader_late_proof.eligible(
-                    db, day=day, task_id=task_id, cfg_entry=s_cfg,
-                    shift=shift, per_task=per_task):
-                _lt_clear(tid)
-                db.commit()
-                bot.answer_callback_query(call.id, _lt(lang, "late_gone_alert"),
-                                          show_alert=True)
-                _lt_menu(db, tid, pid, lang, chat_id, None)
-                return
-            row = leader_late_proof.create(
-                db, day=day, task_id=task_id, prof=prof, shift=shift,
-                cfg_entry=s_cfg, reason=cap.reason,
-                media=[(m[0], m[1] if len(m) > 1 else None)
-                       for m in (cap.media or [])],
-                actor_telegram=tid)
-            db.delete(cap)
+            if cap:
+                db.delete(cap)
             db.commit()
             _lp_send_to_supervisor(db, row)
             try:
@@ -3818,68 +3872,197 @@ def _lp_can_supervise(db, tid: int, row) -> bool:
     return tid in _admin_ids() or tid in _lp_supervisor_ids(db, row)
 
 
-def _lt_late_view(db, tid: int, pid: int, lang: str, chat_id: int,
-                  msg_id: int | None, task_id: int, cfg_entry: dict,
-                  shift: int | None, day) -> None:
-    """The warning screen — the ONE place the leader is told what late costs.
+def _lt_late_screen(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
+                    shift: int | None, k: int):
+    """THE late screen — warning and photo counter in ONE evolving message.
 
-    It is a screen and not a line on the task view because it is the moment the
-    leader decides: it names the hour that passed, states plainly that no point
-    comes automatically, says who will read the reason, and only then offers the
-    way forward. A warning folded into a button label is a warning nobody reads.
+    They were two renderers and that was wrong: the warning is what the leader
+    reads before deciding, the counter is the same message once they have, and
+    the camera's own nudge has to be able to redraw whichever is on screen. One
+    function means it can.
+
+    It stays a SCREEN rather than a line on the task view, because this is the
+    moment the leader decides: it names the hour that passed, states plainly
+    that no point comes automatically, and says who will read the reason. A
+    warning folded into a button label is a warning nobody reads.
+
+    A CAMERA task gets BOTH doors, side by side. The in-app camera is first —
+    its clock is the server's, so it is the stronger evidence and the one a
+    reviewer can trust — and «send an existing photo» sits beside it, which is
+    what already ships and is what a leader with a photo already taken needs.
     """
+    camera = (cfg_entry or {}).get("proof_kind") == "camera"
+    text = _lt(lang, "late_warn").format(
+        task=config_name(cfg_entry, lang),
+        t=leader_close.task_deadline(cfg_entry, shift))
+    if k:
+        text += _lt(lang, "late_have").format(k=k)
     kb = types.InlineKeyboardMarkup(row_width=1)
-    kb.add(_lt_btn(_lt(lang, "btn_late_go"), f"lt:lgo:{pid}:{task_id}"))
-    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{pid}:{task_id}"))
-    _lt_edit(chat_id, msg_id,
-             _lt(lang, "late_warn").format(
-                 task=config_name(cfg_entry, lang),
-                 t=leader_close.task_deadline(cfg_entry, shift)),
-             kb)
-
-
-def _lt_late_counter(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
-                     k: int):
-    kb = types.InlineKeyboardMarkup(row_width=1)
+    if camera:
+        url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
+               f"?leader={pid}&task={task_id}&late=1")
+        kb.add(types.InlineKeyboardButton(_lt(lang, "btn_late_cam"),
+                                          web_app=types.WebAppInfo(url=url)))
+        kb.add(_lt_btn(_lt(lang, "btn_late_upload"), f"lt:lgo:{pid}:{task_id}"))
+    else:
+        kb.add(_lt_btn(_lt(lang, "btn_late_go"), f"lt:lgo:{pid}:{task_id}"))
     if k:
         kb.add(_lt_btn(_lt(lang, "btn_late_send"), f"lt:lrsn:{pid}:{task_id}"))
-    kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
-    return _lt(lang, "late_photos").format(
-        task=config_name(cfg_entry, lang), k=k), kb
+        kb.add(_lt_btn(_lt(lang, "btn_late_clear"), f"lt:lclr:{pid}:{task_id}"))
+    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:lback:{pid}:{task_id}"))
+    return text, kb
+
+
+def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
+                  msg_id: int | None, task_id: int, cfg_entry: dict,
+                  shift: int | None, day) -> None:
+    """Show the late screen and arm the staging row that photos land in.
+
+    The capture is created HERE rather than after a second tap, because a
+    camera task's forward button is a `web_app` — Telegram opens it directly
+    and there is no callback in between to arm anything. It carries the
+    `late_photos` stage, which is what keeps the ordinary camera refusal
+    (`_lt_camera_no_upload`, bound to stage «camera») entirely untouched while
+    the chat-upload door on this screen stays open.
+    """
+    k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
+    text, kb = _lt_late_screen(db, lang, pid, task_id, cfg_entry, shift, k)
+    cap = _lt_capture(db, tid)
+    if not (cap and cap.stage == "late_photos"
+            and cap.leader_id == pid and cap.task_id == task_id):
+        _lt_clear(tid)
+        db.add(LeaderTaskCapture(
+            telegram_id=tid, stage="late_photos", leader_id=pid,
+            task_id=task_id, chat_id=chat_id, message_id=msg_id,
+            min_media=1, media=[]))
+    else:
+        cap.message_id = msg_id
+        cap.chat_id = chat_id
+    db.commit()
+    _lt_edit(chat_id, msg_id, text, kb)
+
+
+def refresh_late_screen(db, leader_id: int, task_id: int) -> None:
+    """Re-draw the late screen after the mini-app saved or dropped a shot.
+
+    The twin of `refresh_camera_prompt`, and deliberately NOT a widening of it:
+    that one re-renders the ordinary task view, which for a LOCKED task takes
+    the early-return locked branch and would paint the outcome screen over the
+    late one the leader is working in.
+    """
+    caps = (db.query(LeaderTaskCapture)
+            .filter_by(stage="late_photos", leader_id=leader_id,
+                       task_id=task_id).all())
+    if not caps:
+        return
+    prof = db.query(RoleProfile).filter_by(id=leader_id).first()
+    if not prof:
+        return
+    shift = _lt_shift(db, prof)
+    entry = effective_leader_config(db, prof, shift).get(task_id)
+    if not entry:
+        return
+    day = leader_proof.open_day(db, prof, create=False)
+    k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
+    for cap in caps:
+        if not cap.message_id:
+            continue
+        lang = _get_lang(cap.telegram_id)
+        text, kb = _lt_late_screen(db, lang, cap.leader_id, task_id, entry,
+                                   shift, k)
+        try:
+            bot.edit_message_text(text, chat_id=cap.chat_id,
+                                  message_id=cap.message_id, reply_markup=kb)
+        except Exception:
+            pass
 
 
 @bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "late_photos",
                      content_types=["photo"])
 def _lt_late_photo(message: types.Message):
-    """A proof photo for a late filing — relayed to the archive like any other."""
+    """A photo sent to the chat for a late filing — the upload door.
+
+    It lands on the same DRAFT ROLL the in-app camera writes to, so the count
+    on screen, the durability and the submit all read one store. It carries
+    `source="upload"` and no `captured_at`: a file the leader chose has no
+    instant this platform can vouch for, and inventing one is exactly what the
+    camera exists to stop.
+
+    This handler is bound to stage `late_photos`, which is why the ordinary
+    camera's refusal (`_lt_camera_no_upload`, bound to stage «camera») needed
+    no relaxing at all — it is untouched, and a camera task outside the late
+    flow still accepts no file whatsoever.
+    """
     tid = message.from_user.id
     lang = _get_lang(tid)
     with SessionLocal() as db:
         cap = _lt_capture(db, tid, lock=True)
         if not cap or cap.stage != "late_photos":
             return
+        pid, task_id = cap.leader_id, cap.task_id
+        prof = db.query(RoleProfile).filter_by(id=pid).first()
+        if not prof:
+            db.commit()
+            return
+        shift = _lt_shift(db, prof)
+        cfg = effective_leader_config(db, prof, shift)
+        s_cfg = cfg.get(task_id) or {}
+        day = _lt_day(db, pid, effective_date(shift))
+        # Re-checked on every shot, not just when the screen opened: the day can
+        # close, or an admin can reopen the task, while the leader is mid-roll.
+        if not leader_late_proof.eligible(
+                db, day=day, task_id=task_id, cfg_entry=s_cfg, shift=shift,
+                per_task=leader_tasks_per_task(db, prof)):
+            db.delete(cap)
+            db.commit()
+            bot.send_message(message.chat.id, _lt(lang, "late_gone_alert"))
+            return
         relayed = _lt_relay_photo(db, message)
         if not relayed:
             db.commit()
             bot.send_message(message.chat.id, _lt(lang, "relay_fail"))
             return
-        cap.media = (cap.media or []) + [list(relayed)]
-        k = len(cap.media)
-        pid, task_id = cap.leader_id, cap.task_id
-        chat, old = cap.chat_id, cap.message_id
-        prof = db.query(RoleProfile).filter_by(id=pid).first()
-        cfg = effective_leader_config(db, prof, _lt_shift(db, prof)) if prof else {}
-        text, kb = _lt_late_counter(db, lang, pid, task_id, cfg.get(task_id) or {}, k)
         try:
-            bot.delete_message(chat, old)
+            leader_late_proof.save_shot(
+                db, prof=prof, day=day, task_id=task_id,
+                cap=leader_proof.max_slots(int(s_cfg.get("min_media") or 1)),
+                data=None, captured_at=None, slot=None, skew_s=None,
+                relay=None, source="upload", relayed=relayed)
+        except leader_late_proof.ShotError as exc:
+            db.commit()
+            bot.send_message(message.chat.id,
+                             _lt(lang, "late_roll_full") if str(exc) == "roll_full"
+                             else _lt(lang, "relay_fail"))
+            return
+        k = leader_late_proof.draft_count(db, day.id, task_id)
+        chat, old_mid = cap.chat_id, cap.message_id
+        text, kb = _lt_late_screen(db, lang, pid, task_id, s_cfg, shift, k)
+        # The screen FOLLOWS the chat: the old one is deleted and a fresh copy
+        # sent below the uploads, so «Sababni yozish» is never stranded above
+        # the photos it belongs to.
+        try:
+            bot.delete_message(chat, old_mid)
         except Exception:
             pass
         try:
             sent = bot.send_message(chat, text, reply_markup=kb)
             cap.message_id = sent.message_id
         except Exception:
-            logger.warning("late-proof counter re-send failed", exc_info=True)
+            logger.warning("late screen re-send failed", exc_info=True)
         db.commit()
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "late_photos",
+                     content_types=["video", "document", "audio", "voice",
+                                    "animation", "video_note", "sticker"])
+def _lt_late_wrong_media(message: types.Message):
+    """A late filing takes photos, and says so when handed anything else.
+
+    The twin of `_lt_wrong_media` for the ordinary photo stage — without it a
+    leader who sent a video to a late screen got total silence, which reads as
+    «accepted».
+    """
+    bot.send_message(message.chat.id, _lt(_get_lang(message.from_user.id), "photos_only"))
 
 
 @bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "late_reason",
@@ -3900,7 +4083,10 @@ def _lt_late_reason(message: types.Message):
             return
         pid, task_id = cap.leader_id, cap.task_id
         prof = db.query(RoleProfile).filter_by(id=pid).first()
-        cfg = effective_leader_config(db, prof, _lt_shift(db, prof)) if prof else {}
+        shift = _lt_shift(db, prof) if prof else None
+        cfg = effective_leader_config(db, prof, shift) if prof else {}
+        day = _lt_day(db, pid, effective_date(shift)) if prof else None
+        k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
         try:
             bot.delete_message(cap.chat_id, cap.message_id)
         except Exception:
@@ -3912,7 +4098,7 @@ def _lt_late_reason(message: types.Message):
             message.chat.id,
             _lt(lang, "late_confirm").format(
                 task=config_name(cfg.get(task_id) or {}, lang),
-                k=len(cap.media or []), reason=text[:800]),
+                k=k, reason=text[:800]),
             reply_markup=kb)
         cap.stage = "late_confirm"
         cap.reason = text[:800]

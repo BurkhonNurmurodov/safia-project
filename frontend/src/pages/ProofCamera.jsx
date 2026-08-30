@@ -401,6 +401,12 @@ export default function ProofCamera() {
   const params = new URLSearchParams(window.location.search);
   const leaderId = Number(params.get("leader")) || null;
   const [taskId, setTaskId] = useState(Number(params.get("task")) || null);
+  // `?late=1` is a REQUEST, never the authority. The parameter is typeable, so
+  // the server decides whether a late filing is actually open for this task and
+  // answers `mode: "late"`; the page reads that and nothing else. A page that
+  // could talk itself into late mode would send shots to the draft roll for a
+  // task the leader could still file normally, costing them the point.
+  const lateAsked = params.get("late") === "1";
 
   const videoRef = useRef(null);
   const frameRef = useRef(null);
@@ -427,9 +433,10 @@ export default function ProofCamera() {
 
   /* ── session: the task's rule, the roll, and the server's clock ─────────── */
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["proof-session", leaderId, taskId],
+    queryKey: ["proof-session", leaderId, taskId, lateAsked],
     queryFn: () => api
-      .get("/api/leader-proof/session", { params: { leader: leaderId, task: taskId } })
+      .get("/api/leader-proof/session",
+        { params: { leader: leaderId, task: taskId, ...(lateAsked ? { late: 1 } : {}) } })
       .then((r) => r.data),
     enabled: !!taskId,
     retry: false,
@@ -810,7 +817,14 @@ export default function ProofCamera() {
     if (item.slot != null) fd.append("slot", String(item.slot));
     if (item.key) fd.append("client_key", String(item.key));
     fd.append("file", item.blob, "proof.jpg");
-    return api.post("/api/leader-proof/photo", fd).then((r) => r.data);
+    // The DOOR travels with the SHOT, not with the page: a photo taken in late
+    // mode and flushed out of the offline queue after a reload must still land
+    // where it was taken for. A queued row from before this existed has no
+    // `late` field, reads falsy, and goes to the ordinary endpoint — which is
+    // exactly right.
+    return api.post(item.late ? "/api/leader-proof/late-photo"
+                              : "/api/leader-proof/photo", fd)
+      .then((r) => r.data);
   }, []);
 
   const drain = useCallback(async () => {
@@ -897,7 +911,7 @@ export default function ProofCamera() {
     const item = {
       leader: leaderId, task: taskId, slot: retakeSlot,
       capturedMs: shot.ms, phoneMs: shot.phoneMs, blob: shot.blob,
-      key: shot.key,
+      key: shot.key, late: lateMode,
     };
     try {
       if (!navigator.onLine) throw Object.assign(new Error("offline"), { offline: true });
@@ -925,11 +939,12 @@ export default function ProofCamera() {
     setRetakeSlot(null);
     discardShot();
   }, [shot, saving, leaderId, taskId, retakeSlot, upload, refetch, toast, t, tf,
-      reloadQueue, discardShot]);
+      reloadQueue, discardShot, lateMode]);
 
   const doDelete = useCallback(async (photo) => {
     try {
-      await api.delete(`/api/leader-proof/photo/${photo.id}`);
+      await api.delete(lateMode ? `/api/leader-proof/late-photo/${photo.id}`
+                                : `/api/leader-proof/photo/${photo.id}`);
       await refetch();
       setViewing(null);
       setConfirm(null);

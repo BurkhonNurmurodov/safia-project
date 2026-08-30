@@ -45,11 +45,13 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
+
 from sqlalchemy.orm import Session
 
 from app.models import (
-    LeaderLateProof, LeaderLateProofMedia, LeaderTaskDay, LeaderTaskEntry,
-    LeaderTaskOverride, Manager, RoleProfile,
+    LeaderLateProof, LeaderLateProofMedia, LeaderLateProofShot, LeaderTaskDay,
+    LeaderTaskEntry, LeaderTaskOverride, Manager, RoleProfile,
 )
 from app.services import action_log, leader_bot, leader_close, leader_tasks
 
@@ -116,18 +118,182 @@ def by_day(db: Session, day_id: int) -> dict[int, LeaderLateProof]:
             db.query(LeaderLateProof).filter_by(day_id=day_id).all()}
 
 
+# ── the draft roll: photos taken before the reason is written ────────────────
+#
+# BOTH doors land here — the in-app camera and a photo sent to the bot chat —
+# so the count on screen, the durability and the submit all read one store.
+#
+# It is a table and not the bot's `LeaderTaskCapture` staging row because that
+# row is per Telegram ACCOUNT, is deleted by any `_lt_clear` (a plain /tasks
+# does one) and expires after 30 minutes: a leader who took three photos and
+# then spent too long writing the reason lost all three. And it is not
+# `leader_task_photos` because that table is READ by the scoring path — see the
+# model docstring; the short version is that `force_answer` would turn a late
+# shot into a done entry and hand it to Gemini.
+
+
+class ShotError(ValueError):
+    """The shot cannot be stored — the same vocabulary the camera page reads."""
+
+
+def draft_shots(db: Session, day_id: int, task_id: int) -> list[LeaderLateProofShot]:
+    """Everything staged for this (day, task), in slot order."""
+    return (db.query(LeaderLateProofShot)
+            .filter_by(day_id=day_id, task_id=task_id)
+            .order_by(LeaderLateProofShot.slot).all())
+
+
+def draft_count(db: Session, day_id: int | None, task_id: int) -> int:
+    if not day_id:
+        return 0
+    return (db.query(LeaderLateProofShot)
+            .filter_by(day_id=day_id, task_id=task_id).count())
+
+
+def _next_slot(current: list[LeaderLateProofShot], cap: int) -> int:
+    taken = {p.slot for p in current}
+    nxt = next((i for i in range(cap) if i not in taken), None)
+    if nxt is None:
+        raise ShotError("roll_full")
+    return nxt
+
+
+def save_shot(db: Session, *, prof: RoleProfile, day: LeaderTaskDay, task_id: int,
+              cap: int, data: bytes | None, captured_at: datetime | None,
+              slot: int | None, skew_s: int | None, relay,
+              source: str, client_key: str | None = None,
+              relayed: tuple[str, int | None] | None = None) -> LeaderLateProofShot:
+    """Put one shot on the draft roll.
+
+    Deliberately NOT a call into `leader_proof.save_photo`, and the difference
+    is the whole safety argument: that function checks `_task_locked` (a late
+    task is ALWAYS locked, so it would refuse every real filing), allocates a
+    slot in the on-time roll's key space, and ends by calling `sync_entry`,
+    which at `min_media` writes a `done` LeaderTaskEntry and rebuilds the media
+    the AI reads. Punching a mode-shaped hole through those three would reach
+    far past this feature. What IS shared is everything that should be — the
+    stamp (`leader_proof.burn`) and the archive relay — because those are the
+    parts that must not have a second spelling.
+
+    `relayed` lets the bot pass an ALREADY-relayed chat photo straight in; the
+    camera passes raw `data` and gets the server stamp burnt into it here.
+    """
+    from app.services import leader_proof
+
+    if client_key:
+        seen = (db.query(LeaderLateProofShot)
+                .filter_by(leader_id=prof.id, task_id=task_id,
+                           client_key=client_key).first())
+        if seen:
+            logger.info("late proof replay ignored: leader=%s task=%s key=%s",
+                        prof.id, task_id, client_key)
+            return seen
+
+    current = draft_shots(db, day.id, task_id)
+    if slot is None:
+        slot = _next_slot(current, cap)
+    elif slot < 0 or slot >= cap:
+        raise ShotError("bad_slot")
+
+    stamp_text = None
+    if relayed is None:
+        # The stamp is burnt on the SERVER or the shot is not stored — an
+        # unstamped camera photo is indistinguishable from the third-party
+        # shots this whole feature replaces.
+        try:
+            stamped, stamp_text = leader_proof.burn(data, captured_at)
+        except leader_proof.ProofError:
+            raise
+        got = relay(stamped)
+        if not got:
+            raise ShotError("relay_failed")
+    else:
+        got = relayed
+    file_id, message_id = got
+
+    now = datetime.now(timezone.utc)
+    old = next((p for p in current if p.slot == slot), None)
+    if old is not None:
+        # A retake REPLACES the slot; the channel post stays, because the
+        # archive is the audit trail exactly as it is everywhere else here.
+        db.delete(old)
+        db.flush()
+    row = LeaderLateProofShot(
+        day_id=day.id, leader_id=prof.id, task_id=task_id, slot=slot,
+        source=source, file_id=file_id, message_id=message_id,
+        captured_at=captured_at, received_at=now, stamp=stamp_text,
+        skew_s=skew_s, client_key=client_key,
+    )
+    db.add(row)
+    try:
+        db.flush()
+    except IntegrityError:
+        # Two copies of one shot in flight — the offline drain can fire from
+        # the mount effect and from `online` in the same second. The unique
+        # index settles it; the loser answers with the winner's row rather than
+        # failing a save the leader already made.
+        db.rollback()
+        seen = (db.query(LeaderLateProofShot)
+                .filter_by(leader_id=prof.id, task_id=task_id,
+                           client_key=client_key).first() if client_key else None)
+        if seen:
+            return seen
+        raise
+    return row
+
+
+def delete_shot(db: Session, shot: LeaderLateProofShot) -> None:
+    db.delete(shot)
+    db.flush()
+
+
+def clear_draft(db: Session, day_id: int | None, task_id: int) -> int:
+    """Drop one task's draft roll. Returns how many shots went."""
+    if not day_id:
+        return 0
+    n = (db.query(LeaderLateProofShot)
+         .filter_by(day_id=day_id, task_id=task_id).delete())
+    db.flush()
+    return n
+
+
+def drop_drafts(db: Session, day_id: int | None) -> int:
+    """Drop every draft on a day whose window has shut.
+
+    `eligible` requires the day OPEN, so once it closes nothing can ever submit
+    these — and a draft roll left behind on a closed day is a pile of photos
+    with no route to any reader, which is the state this feature exists to
+    abolish rather than create.
+    """
+    if not day_id:
+        return 0
+    n = db.query(LeaderLateProofShot).filter_by(day_id=day_id).delete()
+    db.flush()
+    return n
+
+
 # ── filing ───────────────────────────────────────────────────────────────────
 
 def create(db: Session, *, day: LeaderTaskDay, task_id: int,
            prof: RoleProfile, shift: int | None, cfg_entry: dict | None,
-           reason: str, media: list[tuple[str, int | None]],
-           actor_telegram: int | None = None) -> LeaderLateProof:
-    """File one late proof. The caller has already checked `eligible`.
+           reason: str, actor_telegram: int | None = None) -> LeaderLateProof:
+    """File one late proof, CONSUMING its draft roll. Caller has checked `eligible`.
 
-    Photos are stored as the ARCHIVE-CHANNEL copies the relay returns, exactly
-    as an ordinary proof is — the private-chat original is never kept, so the
-    audit trail is the same one every other photo on the platform leaves.
+    The photos are not passed in: they are whatever is on the draft roll for
+    this (day, task), whichever door put them there. One place knows the
+    draft → filing transition, so there is no way for a caller to submit a
+    different set of photos from the ones the leader was looking at.
+
+    Provenance travels with each photo (`source`, `captured_at`, `stamp`) —
+    a camera shot must stay distinguishable from an uploaded file all the way
+    to the brigadir's card, or the stamp reads as decoration.
+
+    Raises `ShotError("no_photos")` rather than filing an empty proof: a late
+    filing with nothing to show is exactly what the brigadir cannot rule on.
     """
+    shots = draft_shots(db, day.id, task_id)
+    if not shots:
+        raise ShotError("no_photos")
     row = LeaderLateProof(
         day_id=day.id, task_id=task_id,
         leader_id=prof.id, leader_name=prof.name,
@@ -138,16 +304,21 @@ def create(db: Session, *, day: LeaderTaskDay, task_id: int,
     )
     db.add(row)
     db.flush()
-    for i, (file_id, msg_id) in enumerate(media):
-        db.add(LeaderLateProofMedia(late_id=row.id, file_id=file_id,
-                                    message_id=msg_id, pos=i))
+    for i, sh in enumerate(shots):
+        db.add(LeaderLateProofMedia(
+            late_id=row.id, file_id=sh.file_id, message_id=sh.message_id,
+            pos=i, source=sh.source, captured_at=sh.captured_at, stamp=sh.stamp,
+        ))
+        db.delete(sh)
     db.flush()
+    cam = sum(1 for sh in shots if sh.source == "camera")
     action_log.record_bot(
         db, actor_telegram, "leader_review", "checklist.late_proof_filed",
         actor_name=prof.name, target_kind="task", target_id=row.id,
         target_name=prof.name, unit_id=day.manager_id, day=day.date,
         details=[("leader", prof.name), ("task_id", task_id),
-                 ("photos", len(media)), ("deadline", row.deadline)],
+                 ("photos", len(shots)), ("in_app", cam),
+                 ("uploaded", len(shots) - cam), ("deadline", row.deadline)],
     )
     return row
 

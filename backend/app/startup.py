@@ -774,6 +774,40 @@ def migrate_cell_in_load_column() -> None:
         db.close()
 
 
+def add_late_proof_provenance() -> None:
+    """2026-08-30: a late proof's photos say WHICH DOOR they came through.
+
+    Three nullable columns on `leader_late_proof_media` — `source`
+    ("camera" | "upload"), `captured_at` and `stamp`. `create_all` builds the
+    table on a fresh box but never ALTERs an existing one, and this feature's
+    first cut shipped the table without them.
+
+    They exist because the reviewer has to SEE the difference. A shot taken in
+    the app carries a clock the leader could not author; a file they chose
+    carries nothing this platform can vouch for. Rendering the two identically
+    on the brigadir's card would teach reviewers that the stamp is decorative —
+    the one way offering both doors could weaken the camera feature.
+
+    NULL reads as "uploaded", which is what every row written before the camera
+    door existed actually was. Idempotent, so it needs no one-shot flag; the
+    draft-roll table `leader_late_proof_shots` comes from create_all.
+    """
+    db = SessionLocal()
+    try:
+        for col, typ in (("source", "VARCHAR(10)"),
+                         ("captured_at", "TIMESTAMP WITH TIME ZONE"),
+                         ("stamp", "VARCHAR(40)")):
+            db.execute(text("ALTER TABLE leader_late_proof_media "
+                            f"ADD COLUMN IF NOT EXISTS {col} {typ}"))
+        db.commit()
+        print("[startup] late-proof media: provenance columns present")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] late-proof provenance migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_cell_shift_times() -> None:
     """2026-08-21: cells gain their working START and END clock («Smena
     vaqtlari» admin tab). Two nullable "HH:MM" columns — NULL on both means the
