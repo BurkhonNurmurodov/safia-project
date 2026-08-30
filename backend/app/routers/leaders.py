@@ -740,13 +740,36 @@ def get_leaders(
             name_people.setdefault(label, set()).add(who)
         unit = _unit_of(r)
         if unit:
-            seen = unit_filers.setdefault(int(unit), {})
-            d = str(r.date)[:10]
-            if d > seen.get(who, ""):
-                seen[who] = d
+            # A row naming nobody is nobody: it can never carry a cutoff, so
+            # counting it as a filer would make its unit permanently un-cuttable
+            # for a reason no operator could see.
+            if who[0] or who[1]:
+                seen = unit_filers.setdefault(int(unit), {})
+                d = str(r.date)[:10]
+                if d > seen.get(who, ""):
+                    seen[who] = d
             spelling = _relabel(r.supervisor)
             if spelling:
                 unit_labels.setdefault(int(unit), set()).add(spelling)
+
+    # The BOT layer's people too — `all_rows` above is the SHEET, and the client
+    # groups leaders over the MERGED feed. A census taken off the sheet alone
+    # misses every leader who files only in the bot, which on SHIFT 2 is all of
+    # them: no `cutoffs` entry would be written for them at all, so the days they
+    # filed after a cutoff would still be stamped row by row while the unfiled
+    # ones — the whole reason the decision has to travel — went on counting. A
+    # bot row is labelled `prof.name` (`leader_bot.dashboard_rows`), which is the
+    # same key `name_people` is built on.
+    #
+    # `unit_filers` deliberately does NOT need this: a bot day is keyed by leader
+    # PROFILE, so everybody who can file one is already on the unit's roster.
+    bot_filed = {int(lid) for (lid,) in
+                 db.query(LeaderTaskDay.leader_id)
+                 .filter(LeaderTaskDay.leader_id.isnot(None),
+                         LeaderTaskDay.closed_at.isnot(None)).distinct().all()}
+    for p in leader_profiles:
+        if p.id in bot_filed and p.name:
+            name_people.setdefault(p.name, set()).add((p.id, p.name))
 
     # A display NAME leaves the results only when EVERY person the register
     # merges into it is cut — and then from the LAST of their floors.
@@ -792,6 +815,8 @@ def get_leaders(
             continue
         unit_members.setdefault(int(p.manager_id), []).append(p)
     cut_units: dict[str, dict] = {}
+    # Per UNIT first — an absent key is a unit still counting.
+    unit_floor: dict[int, str] = {}
     for uid_, members in unit_members.items():
         floors = [leader_cutoffs.stopped_from(cuts, p.id, p.name) for p in members]
         if not floors or any(f is None for f in floors):
@@ -818,15 +843,29 @@ def get_leaders(
             continue
         if extra:
             frm = max([frm] + [str(c.from_date)[:10] for c in extra])
-        # Under EVERY spelling this unit answers to, not just the majority one:
-        # each is its own standings key, and a key left out goes on counting.
-        # The `sup_display` fallback is what bot rows carry.
+        unit_floor[uid_] = frm
+
+    # …and only THEN by label, because a label is what the client keys on and
+    # two units can answer to one. Every spelling a unit's rows print is its own
+    # standings key, so a cutoff written against `sup_display`'s majority alone
+    # left the others counting — and where two units share a label (the
+    # `Manager.name` fallback, which carries no unique constraint) the key is cut
+    # only when BOTH are, from the later floor. The same "everybody merged into
+    # this key" rule as `cut_leaders`, in the currency units are grouped by.
+    label_units: dict[str, set[int]] = {}
+    for uid_ in unit_members:
         labels = set(unit_labels.get(uid_, ()))
         head = sup_display.get(uid_) or (by_unit[uid_].name if uid_ in by_unit else None)
         if head:
             labels.add(head)
         for label in labels:
-            cut_units[label] = {"from": frm}
+            label_units.setdefault(label, set()).add(uid_)
+
+    for label, uids in label_units.items():
+        floors = [unit_floor.get(u) for u in uids]
+        if not floors or any(f is None for f in floors):
+            continue
+        cut_units[label] = {"from": max(floors)}
 
     # Scoped to the keys this viewer's own rows carry. A cutoff is only ever
     # applied to a standings key, and the client builds those keys from the rows

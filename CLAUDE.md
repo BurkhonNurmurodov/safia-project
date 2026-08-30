@@ -1816,11 +1816,27 @@ decision about somebody else:
   then belongs to somebody already cut by then.
 - The floor is the LAST, never the first: between an earlier and a later floor
   the key still has an active person filing under it.
-- `cutUnits` is emitted under **every spelling the unit's rows print**, not just
-  `sup_display`'s majority one. A sheet row carries its own `_relabel(...)`
-  spelling and only a BOT row adopts the majority, so a unit the form collected
-  under two names is genuinely two standings keys — and a cutoff written against
-  the majority alone left the other one counting.
+- **`name_people` must see BOTH collection layers.** It was built from the sheet
+  alone while the client groups leaders over the MERGED feed — so it missed
+  every leader who files only in the bot, which on **shift 2 is all of them**:
+  no `cutoffs` entry was written for them at all, and the load-bearing half
+  never travelled. Their filed days were still stamped row by row, so the bug
+  read as "the cutoff half works" while every UNFILED day went on counting —
+  exactly the thing a cutoff exists to stop. Bot identities are folded in from
+  `LeaderTaskDay` (a bot row is labelled `prof.name`, the same key). The unit
+  census needs no such fold: a bot day is keyed by leader PROFILE, so everybody
+  who can file one is already on that unit's roster.
+- `cutUnits` is computed **per unit, then grouped per LABEL**. A sheet row
+  carries its own `_relabel(...)` spelling and only a BOT row adopts the
+  majority, so a unit the form collected under two names is genuinely two
+  standings keys and a cutoff written against `sup_display`'s majority alone
+  left the others counting. And because two units can answer to one label (the
+  `Manager.name` fallback carries no unique constraint), a label is cut only
+  when EVERY unit under it is — the same "everybody merged into this key" rule,
+  in the currency units are grouped by.
+- A row naming **nobody** is nobody: it is kept out of `unit_filers`, or it
+  would make its unit permanently un-cuttable for a reason nothing on screen
+  could explain.
 - **Both censuses are built over the UNSCOPED rows**, which is why `lead_match`
   is hoisted above the supervisor scoping (`sup_display` already was, for the
   same reason). Whether a key is cut in full is a fact about the key, not about
