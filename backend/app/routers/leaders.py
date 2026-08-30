@@ -726,6 +726,12 @@ def get_leaders(
     # unlinked leader — the whole reason this census exists — can only ever
     # appear in the sheet layer.
     unit_filers: dict[int, dict[tuple[int | None, str | None], str]] = {}
+    # …and every SPELLING that unit's rows print for it. `sup_display` is only
+    # the most frequent one, and a sheet row carries its OWN (`_relabel`) while
+    # a bot row adopts the majority — so a unit the form collected under two
+    # names is genuinely two standings keys, and a cutoff written against the
+    # majority alone left the other one counting.
+    unit_labels: dict[int, set[str]] = {}
     for r in all_rows:
         prof = _leader_of(r) or {}
         who = (prof.get("id"), r.leader)
@@ -738,6 +744,9 @@ def get_leaders(
             d = str(r.date)[:10]
             if d > seen.get(who, ""):
                 seen[who] = d
+            spelling = _relabel(r.supervisor)
+            if spelling:
+                unit_labels.setdefault(int(unit), set()).add(spelling)
 
     # A display NAME leaves the results only when EVERY person the register
     # merges into it is cut — and then from the LAST of their floors.
@@ -809,10 +818,15 @@ def get_leaders(
             continue
         if extra:
             frm = max([frm] + [str(c.from_date)[:10] for c in extra])
-        label = sup_display.get(uid_) or (by_unit[uid_].name if uid_ in by_unit else None)
-        if not label:
-            continue
-        cut_units[label] = {"from": frm}
+        # Under EVERY spelling this unit answers to, not just the majority one:
+        # each is its own standings key, and a key left out goes on counting.
+        # The `sup_display` fallback is what bot rows carry.
+        labels = set(unit_labels.get(uid_, ()))
+        head = sup_display.get(uid_) or (by_unit[uid_].name if uid_ in by_unit else None)
+        if head:
+            labels.add(head)
+        for label in labels:
+            cut_units[label] = {"from": frm}
 
     # Scoped to the keys this viewer's own rows carry. A cutoff is only ever
     # applied to a standings key, and the client builds those keys from the rows

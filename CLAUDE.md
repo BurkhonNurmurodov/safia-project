@@ -1816,6 +1816,11 @@ decision about somebody else:
   then belongs to somebody already cut by then.
 - The floor is the LAST, never the first: between an earlier and a later floor
   the key still has an active person filing under it.
+- `cutUnits` is emitted under **every spelling the unit's rows print**, not just
+  `sup_display`'s majority one. A sheet row carries its own `_relabel(...)`
+  spelling and only a BOT row adopts the majority, so a unit the form collected
+  under two names is genuinely two standings keys — and a cutoff written against
+  the majority alone left the other one counting.
 - **Both censuses are built over the UNSCOPED rows**, which is why `lead_match`
   is hoisted above the supervisor scoping (`sup_display` already was, for the
   same reason). Whether a key is cut in full is a fact about the key, not about
