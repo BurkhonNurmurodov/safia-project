@@ -1794,27 +1794,50 @@ were never expected to file. Same arithmetic, different subject.
   would otherwise bury the days that matter under hundreds that already cost
   nobody anything.
 
-**Three known limits, all inherited from how the register already groups people
-and none of them a wrong number in the common case:**
+**A KEY is cut only when every person the register merges into it is cut, and
+then from the LAST of their floors** (`name_people` / `unit_filers` in
+`routers/leaders.py`). Both halves were bought by getting them wrong first, and
+both mistakes had the same shape — a denominator shrinking on the strength of a
+decision about somebody else:
 
-1. **An unlinked sheet spelling cannot be cut.** The tab writes from the ROSTER,
-   so every cutoff is profile-keyed. A sheet row whose spelling `leader_match`
-   never resolved is already a SEPARATE person to the register (it groups under
-   its raw spelling, not under the profile's name), so the cutoff correctly does
-   not reach it — but there is no way to cut that entity either. The
-   `n<folded name>` key exists and every reader tries it, so a writer for it is
-   a UI question, not a model change.
-2. **Namesakes merge, because the register merges them.** `cutoffs` is keyed by
-   display name and two profiles sharing a `RoleProfile.name` are already ONE
-   standings row, so cutting one applies to the merged row. Two cutoff records
-   under one name settle on the EARLIER floor — the conservative direction.
-3. **`cutUnits` reads a unit's roster, which omits unlinked leaders**, and it is
-   keyed by the unit's MAJORITY sheet spelling (`unit_display_names`) while
-   sheet rows carry their own per-row spelling. So it can declare a unit fully
-   cut when an unlinked leader is still filing, and it misses a minority-spelled
-   row group. It fires only when every PROFILED leader of a unit is cut, which
-   is rare; the leader half of the feature — the part that was actually asked
-   for — does not depend on it.
+- `slotsBy` groups leaders by the NAME printed on the row, and `RoleProfile`
+  enforces name uniqueness per UNIT, not per platform. Keying `cutoffs` off the
+  cutoff record meant cutting X shrank the row X shares with an uncut namesake
+  Y, so Y's missed days left the average. It is now keyed off the census of
+  people the register actually groups under that name, all of whom must be cut.
+- `cutUnits` read the unit's ROSTER, and ~18% of the register's leader names
+  never resolve to a profile at all — a leader who cannot be cut is also a
+  leader the roster cannot see. So a unit was declared gone while an unlinked
+  leader went on working in it. It now also asks `unit_filers`: everybody whose
+  LAST row falls on or after the roster's floor must be cut too, and their
+  floors raise the unit's. Only people still filing AT the floor are asked
+  about, so somebody who left years ago cannot block a decision about today —
+  and the check is self-closing, since every row on or after the final floor
+  then belongs to somebody already cut by then.
+- The floor is the LAST, never the first: between an earlier and a later floor
+  the key still has an active person filing under it.
+- **Both censuses are built over the UNSCOPED rows**, which is why `lead_match`
+  is hoisted above the supervisor scoping (`sup_display` already was, for the
+  same reason). Whether a key is cut in full is a fact about the key, not about
+  who is looking: a leader viewer holds only their own rows, so a census taken
+  after the scoping would report their whole unit gone on the strength of the
+  one leader in it they can see. `leader_match` resolves each (name, unit) pair
+  independently, so widening its input cannot change any single answer.
+- The two maps are then **scoped to the keys the viewer's own rows carry**. A
+  cutoff only ever applies to a standings key, and the client builds those keys
+  from the rows in the payload — so a key the payload lacks can move no number
+  and is a name the viewer must not be handed.
+
+**One known limit remains, inherited from how the register groups people:**
+
+- **An unlinked sheet spelling cannot be cut.** The tab writes from the ROSTER,
+  so every cutoff an admin can create is profile-keyed. A sheet row whose
+  spelling `leader_match` never resolved is already a SEPARATE person to the
+  register (it groups under its raw spelling, not under the profile's name), so
+  the cutoff correctly does not reach it — but there is no way to cut that
+  entity either. It can only ever make the two censuses above REFUSE to cut a
+  merged key, never wrongly cut one. The `n<folded name>` key exists and every
+  reader tries it, so a writer for it is a UI question, not a model change.
 
 ## The action register (`/admin/upload?tab=logs`)
 

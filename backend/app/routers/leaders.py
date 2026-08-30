@@ -442,30 +442,37 @@ def get_leaders(
         sup_match, Counter(r.supervisor for r in rows).items()
     )
 
-    if role == "supervisor" and not sees_all:
-        # Scope by the matched unit id, not name equality: the sheet name never
-        # string-equals the JWT/Manager short canonical name (alphabet + patronymic
-        # + spelling drift), which used to drop every row for supervisors.
-        rows = [
-            r
-            for r in rows
-            if (sup_match.get(_relabel(r.supervisor)) or {}).get("id")
-            == payload.get("role_id")
-        ]
+    def _unit_of(r):
+        return (sup_match.get(_relabel(r.supervisor)) or {}).get("id")
+
     # Resolve every row's «Лидер ФИО» to a leader PROFILE — the person. The sheet
     # spells people freely, so identity-by-name split one leader's score across
     # two spellings and merged two same-named leaders from different units; the
     # matched unit disambiguates. Unmatched rows keep their raw spelling.
+    #
+    # Built BEFORE the scoping pass, over EVERY row — exactly as `sup_display`
+    # above is, and for the same reason. Whether a standings key has been cut
+    # off in full is a fact about that key, not about who is looking, and the
+    # census further down has to see every leader the register groups under it:
+    # a leader viewer holds only their OWN rows, so a census taken after the
+    # scoping would report their whole unit as gone on the strength of the one
+    # leader in it they can see. Widening the input cannot change any single
+    # answer — `leader_match` resolves each (name, unit) pair on its own — it
+    # only asks more of them.
+    all_rows = rows
     lead_match = leader_match(
         db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
-        {(r.leader, (sup_match.get(_relabel(r.supervisor)) or {}).get("id"))
-         for r in rows if r.leader},
+        {(r.leader, _unit_of(r)) for r in all_rows if r.leader},
     )
 
     def _leader_of(r):
-        return lead_match.get(
-            (r.leader, (sup_match.get(_relabel(r.supervisor)) or {}).get("id"))
-        )
+        return lead_match.get((r.leader, _unit_of(r)))
+
+    if role == "supervisor" and not sees_all:
+        # Scope by the matched unit id, not name equality: the sheet name never
+        # string-equals the JWT/Manager short canonical name (alphabet + patronymic
+        # + spelling drift), which used to drop every row for supervisors.
+        rows = [r for r in rows if _unit_of(r) == payload.get("role_id")]
 
     # Every leader profile record that IS this viewer (see
     # `identity.viewer_leader_profile_ids`) — the set both halves of the
@@ -704,31 +711,60 @@ def get_leaders(
     # leader is `prof.name or r.leader` on every row, a unit is its sheet
     # spelling. Resolving a person from a name is the server's job; the client
     # must never do it twice and get two answers.
-    prof_by_id = {p.id: p for p in leader_profiles}
+
+    # What the register actually groups under one key, taken over EVERY row and
+    # not the viewer's slice (see `_leader_of` above). A "person" here is the
+    # same identity a cutoff is keyed by — the profile where the sheet name
+    # resolved to one, the raw spelling where it did not.
+    name_people: dict[str, set[tuple[int | None, str | None]]] = {}
+    # …and, per unit, every identity that ever filed in it with the NEWEST day it
+    # did. That last date is what lets a leader who left long ago be left out of
+    # the question below without leaving out the one who is still there.
+    #
+    # Sheet rows only, deliberately: a bot day is keyed by leader PROFILE, so
+    # everybody who can file one is already on the unit's roster, while an
+    # unlinked leader — the whole reason this census exists — can only ever
+    # appear in the sheet layer.
+    unit_filers: dict[int, dict[tuple[int | None, str | None], str]] = {}
+    for r in all_rows:
+        prof = _leader_of(r) or {}
+        who = (prof.get("id"), r.leader)
+        label = prof.get("name") or r.leader
+        if label:
+            name_people.setdefault(label, set()).add(who)
+        unit = _unit_of(r)
+        if unit:
+            seen = unit_filers.setdefault(int(unit), {})
+            d = str(r.date)[:10]
+            if d > seen.get(who, ""):
+                seen[who] = d
+
+    # A display NAME leaves the results only when EVERY person the register
+    # merges into it is cut — and then from the LAST of their floors.
+    #
+    # Both halves are load-bearing. `slotsBy` groups leaders by the name printed
+    # on the row, and two profiles in two units may legitimately carry one name
+    # (`RoleProfile` enforces uniqueness per unit, not per platform), so keying
+    # this off the cutoff RECORD meant a decision about X shrank the denominator
+    # of the row X shares with an uncut namesake Y: Y's missed days left the
+    # average on the strength of a decision about somebody else. And the floor
+    # has to be the last, not the first — between an earlier and a later floor
+    # the key still has an active person filing under it.
     cut_leaders: dict[str, dict] = {}
-    for c in cuts.values():
-        pid = int(c.leader_profile_id) if c.leader_profile_id else None
-        prof = prof_by_id.get(pid) if pid else None
-        name = (prof.name if prof else None) or c.leader_name
-        if not name:
+    for name, people in name_people.items():
+        recs = [leader_cutoffs.record(cuts, lid, nm) for lid, nm in people]
+        if not recs or any(c is None for c in recs):
             continue
-        if leader_ids is not None and (pid is None or pid not in leader_ids):
-            continue
-        if manager_ids is not None:
-            unit = (prof.manager_id if prof else None) or c.manager_id
-            if unit is None or int(unit) not in manager_ids:
-                continue
-        prev = cut_leaders.get(name)
-        # Two records under one display name (a namesake, a re-keyed row) settle
-        # on the EARLIER floor: the register groups them as one person, and the
-        # later date would go on counting days one of them is already out of.
-        if prev is None or str(c.from_date)[:10] < prev["from"]:
-            cut_leaders[name] = {
-                "from": str(c.from_date)[:10],
-                "reason": c.reason or "",
-                "by": c.set_by or None,
-                "at": c.set_at.isoformat() if c.set_at else None,
-            }
+        # The reason and the author shown are the ones belonging to the floor
+        # actually being applied — a different person's words against this date
+        # is worse than none.
+        src = max(recs, key=lambda c: str(c.from_date)[:10])
+        cut_leaders[name] = {
+            "from": str(src.from_date)[:10],
+            "reason": src.reason or "",
+            "by": src.set_by or None,
+            "at": src.set_at.isoformat() if src.set_at else None,
+        }
 
     # A UNIT leaves its own denominator only when EVERY leader it has is cut —
     # and then from the LAST of their floors, because the unit is only gone once
@@ -746,26 +782,49 @@ def get_leaders(
         if unit is None or unit.archived:
             continue
         unit_members.setdefault(int(p.manager_id), []).append(p)
-    # A LEADER viewer is scoped by profile id everywhere else, which says
-    # nothing about units — so their unit scope is derived: the units their own
-    # profiles sit in, and no others. Without it a leader would be handed the
-    # names of every fully-cut unit on the platform.
-    own_units = ({int(p.manager_id) for p in leader_profiles
-                  if p.id in leader_ids and p.manager_id}
-                 if leader_ids is not None else None)
     cut_units: dict[str, dict] = {}
     for uid_, members in unit_members.items():
-        if manager_ids is not None and uid_ not in manager_ids:
-            continue
-        if own_units is not None and uid_ not in own_units:
-            continue
         floors = [leader_cutoffs.stopped_from(cuts, p.id, p.name) for p in members]
         if not floors or any(f is None for f in floors):
             continue
+        frm = max(floors)
+        # …and so is everybody the PROFILE TABLE does not carry who was still
+        # filing here at that point. `unit_members` is the roster, and ~18% of
+        # the register's leader names never resolve to a profile at all — a
+        # leader who cannot be cut is also a leader the roster cannot see, so
+        # the roster on its own declared a unit gone while an unlinked leader
+        # went on working in it, and every day THEY missed then left the unit's
+        # denominator.
+        #
+        # Only people whose LAST row falls on or after the roster's floor are
+        # asked about: somebody who left years ago must not be able to block a
+        # decision about today. Their own floors then raise the unit's, because
+        # the unit is gone only once the last person in it is — which also makes
+        # the check self-closing, since every row dated on or after the final
+        # floor now belongs to somebody already cut by then.
+        active = [who for who, last in unit_filers.get(uid_, {}).items()
+                  if last >= frm]
+        extra = [leader_cutoffs.record(cuts, lid, nm) for lid, nm in active]
+        if any(c is None for c in extra):
+            continue
+        if extra:
+            frm = max([frm] + [str(c.from_date)[:10] for c in extra])
         label = sup_display.get(uid_) or (by_unit[uid_].name if uid_ in by_unit else None)
         if not label:
             continue
-        cut_units[label] = {"from": max(floors)}
+        cut_units[label] = {"from": frm}
+
+    # Scoped to the keys this viewer's own rows carry. A cutoff is only ever
+    # applied to a standings key, and the client builds those keys from the rows
+    # in this payload — so a key the payload does not contain can move no number
+    # and is a name the viewer must not be handed. Replaces the per-record
+    # profile/unit filtering the two loops above used to do, which asked about
+    # the DECISION's unit where the question is about the ROW's.
+    if not sees_all and role in ("supervisor", "leader"):
+        seen_names = {r.get("leader") for r in data if r.get("leader")}
+        seen_units = {r.get("supervisor") for r in data if r.get("supervisor")}
+        cut_leaders = {k: v for k, v in cut_leaders.items() if k in seen_names}
+        cut_units = {k: v for k, v in cut_units.items() if k in seen_units}
 
     return _json_response({
         "role": role,

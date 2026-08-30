@@ -84,25 +84,37 @@ def load(db: Session) -> dict[str, LeaderCutoff]:
     return {c.leader_key: c for c in db.query(LeaderCutoff).all()}
 
 
-def stopped_from(cuts: dict[str, LeaderCutoff], leader_id: int | None,
-                 leader_name: str | None) -> str | None:
-    """The day this leader stopped counting, out of a preloaded map. Or None.
+def record(cuts: dict[str, LeaderCutoff], leader_id: int | None,
+           leader_name: str | None) -> LeaderCutoff | None:
+    """The cutoff on this leader, whatever its date — THE lookup in the map.
 
-    Both spellings are tried — a register row carries a profile id when the
-    sheet name resolved and only a name when it did not, and the SAME leader can
-    appear both ways across a period (a Refresh that newly matched them). Asking
-    for one key only is how a cutoff set from the roster silently misses that
-    leader's unmatched rows.
+    Both spellings are tried, in that order — a register row carries a profile
+    id when the sheet name resolved and only a name when it did not, and the
+    SAME leader can appear both ways across a period (a Refresh that newly
+    matched them). Asking for one key only is how a cutoff set from the roster
+    silently misses that leader's unmatched rows.
+
+    The DECISION, not just its date, because a caller weighing several people
+    merged into one standings key has to be able to name the one whose floor it
+    ends up applying — a reason and an author from a different person's record
+    is worse than none.
     """
     if leader_id:
-        hit = cuts.get(person_key(int(leader_id), None))
-        if hit is not None:
-            return str(hit.from_date)[:10]
+        c = cuts.get(person_key(int(leader_id), None))
+        if c is not None:
+            return c
     if leader_name:
-        hit = cuts.get(person_key(None, leader_name))
-        if hit is not None:
-            return str(hit.from_date)[:10]
+        c = cuts.get(person_key(None, leader_name))
+        if c is not None:
+            return c
     return None
+
+
+def stopped_from(cuts: dict[str, LeaderCutoff], leader_id: int | None,
+                 leader_name: str | None) -> str | None:
+    """The day this leader stopped counting, out of a preloaded map. Or None."""
+    c = record(cuts, leader_id, leader_name)
+    return str(c.from_date)[:10] if c is not None else None
 
 
 def hit(cuts: dict[str, LeaderCutoff], leader_id: int | None,
