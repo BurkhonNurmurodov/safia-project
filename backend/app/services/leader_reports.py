@@ -311,15 +311,27 @@ def _dispute_out(d) -> dict:
     whether an admin ever saw this at all — invisible to everybody including
     the leader it was made about.
     """
+    from app.services import leader_dispute
     return {
         "id": d.id, "status": d.status, "reason": d.reason,
+        # The unit STAMPED on the objection, which is what authority is decided
+        # by. A SHEET report re-resolves its own `managerId` live on every read
+        # (`_relabel` + `supervisor_match`, over a table the Refresh rewrites),
+        # so the report's unit and the row's can drift apart — and a `canAct`
+        # derived from the report's would then draw a button the endpoint
+        # refuses.
+        "managerId": d.manager_id,
         "by": d.requested_by_name,
         # Whose words `reason` is: a brigadir may still file for a leader who
         # resolves to no profile, and that must not read as the leader's own.
         "byRole": (str(d.requested_by_profile or "").split(":")[0] or None),
         "at": d.requested_at.isoformat() if d.requested_at else None,
+        # `sup_case` is None when `sup_note` merely echoes the text the row was
+        # FILED with (a supervisor's own filing, and every migrated legacy row),
+        # so one sentence is never printed twice as two people's notes.
         "sup": {
-            "action": d.sup_action, "note": d.sup_note, "by": d.sup_by_name,
+            "action": d.sup_action, "note": leader_dispute.sup_case(d),
+            "by": d.sup_by_name,
             "at": d.sup_at.isoformat() if d.sup_at else None,
         } if d.sup_action else None,
         "decidedBy": d.decided_by_name,

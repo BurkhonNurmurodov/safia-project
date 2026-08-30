@@ -4531,15 +4531,52 @@ def _ad_can_supervise(db, tid: int, d) -> bool:
     return tid in _admin_ids() or tid in _ad_supervisor_ids(db, d)
 
 
+def _ad_log(db, d, tid: int, who: str, *, action: str, note: str | None,
+            was: str) -> None:
+    """Record a bot-side ruling in the action register.
+
+    The web endpoints call `action_log.enrich`, which fills the row the
+    middleware already opened for the request — but a Telegram tap goes through
+    no HTTP route of ours, so without this a brigadir's ruling (which ENDS the
+    objection) leaves no trace at all in the append-only register, while the
+    same ruling made on the page is fully recorded. `record_bot` is the door for
+    exactly that, and the late-proof twin uses it for the same reason.
+    """
+    try:
+        action_log.record_bot(
+            db, tid, "leader_review", "checklist.dispute_decided",
+            actor_name=who, target_kind="dispute", target_id=d.id,
+            target_name=d.leader_name, unit_id=d.manager_id, day=d.date,
+            details=[("leader", d.leader_name), ("task", d.task_id),
+                     ("stage", was), ("action", action)],
+            reason=(note or d.reason or None),
+        )
+        db.commit()
+    except Exception:
+        logger.warning("dispute action-log failed", exc_info=True)
+
+
 def _ad_settled(db, d, *, stage: str, uplifted: bool) -> None:
-    """What a stage-1 ruling owes the outside world. Never fatal — a DM that
-    will not send must not roll back a decision somebody already made."""
+    """What a stage-1 ruling owes the outside world, and NONE of it fatal.
+
+    The ruling is already committed by the time this runs. A Telegram outage
+    while forwarding the card must not skip the leader's notification, and must
+    not raise into the caller — re-pressing would then find the objection
+    already settled and tell nobody at all, which is strictly worse than a
+    missing message. Each side effect therefore stands on its own.
+    """
     from app.services import leader_dispute
-    _ad_retire(db, d, "ad_done_uplifted" if uplifted else "ad_done_rejected")
-    if uplifted:
-        _ad_send_to_admins(db, d)
-    leader_dispute.notify_decided(db, d, stage=stage)
-    db.commit()
+    try:
+        _ad_retire(db, d, "ad_done_uplifted" if uplifted else "ad_done_rejected")
+        if uplifted:
+            _ad_send_to_admins(db, d)
+    except Exception:
+        logger.warning("dispute card retire/forward failed", exc_info=True)
+    try:
+        leader_dispute.notify_decided(db, d, stage=stage)
+        db.commit()
+    except Exception:
+        logger.warning("dispute leader notice failed", exc_info=True)
     if not uplifted:
         # A refusal leaves the score where it already was, so nothing re-sends;
         # the day report still re-reads, which the leader's own notice points at.
@@ -4584,10 +4621,13 @@ def _ad_note(message: types.Message):
             db.commit()
             bot.send_message(message.chat.id, _lt(lang, "ad_gone"))
             return
+        who = _display_name_for(db, tid)
         leader_dispute.decide_supervisor(
             db, d, action="uplifted", note=text,
-            actor_name=_display_name_for(db, tid), actor_telegram=tid)
+            actor_name=who, actor_telegram=tid)
         db.commit()
+        _ad_log(db, d, tid, who, action="uplifted", note=text,
+                was=leader_dispute.SUPERVISOR)
         _ad_settled(db, d, stage="supervisor", uplifted=True)
         bot.send_message(message.chat.id, _lt(lang, "ad_done_uplifted"))
 
@@ -4638,10 +4678,13 @@ def _ad_callback(call: types.CallbackQuery):
             db.commit()
             bot.answer_callback_query(call.id)
             return
+        who = _display_name_for(db, tid)
         leader_dispute.decide_supervisor(
             db, d, action="rejected", note=None,
-            actor_name=_display_name_for(db, tid), actor_telegram=tid)
+            actor_name=who, actor_telegram=tid)
         db.commit()
+        _ad_log(db, d, tid, who, action="rejected", note=None,
+                was=leader_dispute.SUPERVISOR)
         _ad_settled(db, d, stage="supervisor", uplifted=False)
         bot.answer_callback_query(call.id, _lt(lang, "ad_done_rejected"))
 

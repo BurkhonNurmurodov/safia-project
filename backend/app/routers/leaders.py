@@ -935,8 +935,16 @@ def _stamp_report_rights(db: Session, payload: dict, row: dict) -> dict:
         d = t.get("dispute")
         if not d:
             continue
+        # Stage 1 is answered against the OBJECTION's own unit, never the
+        # report's. They are the same value at filing time, but a sheet report
+        # re-resolves `managerId` on every read from a supervisor name the next
+        # Refresh may respell — and `_dispute_stage_rights`, which the write
+        # re-checks, reads the row. Two sources here is a button that 403s.
+        d_sup = adm_ok or (
+            role == "supervisor" and d.get("managerId") is not None
+            and int(payload.get("role_id") or 0) == int(d["managerId"]))
         d["canAct"] = bool(
-            (d.get("status") == leader_dispute.SUPERVISOR and sup_ok)
+            (d.get("status") == leader_dispute.SUPERVISOR and d_sup)
             or (d.get("status") == leader_dispute.ADMIN and adm_ok))
     return row
 
@@ -1418,8 +1426,11 @@ def list_disputes(
             # be printed as the leader's own account of their shift.
             "byRole": (str(d.requested_by_profile or "").split(":")[0] or None),
             "at": d.requested_at.isoformat() if d.requested_at else None,
+            # None when the note merely echoes the text the row was FILED with
+            # — see `leader_dispute.sup_case`. One sentence must never appear
+            # twice as two different people's accounts.
             "sup": {
-                "action": d.sup_action, "note": d.sup_note,
+                "action": d.sup_action, "note": leader_dispute.sup_case(d),
                 "by": d.sup_by_name,
                 "at": d.sup_at.isoformat() if d.sup_at else None,
             } if d.sup_action else None,

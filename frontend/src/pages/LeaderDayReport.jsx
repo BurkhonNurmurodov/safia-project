@@ -578,6 +578,10 @@ export default function LeaderDayReport() {
       api.post(`/api/leaders/report/${encodeURIComponent(uid)}/dispute`, body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leaderDayReport", uid] });
+      // The «Norozliklar» queue and the /leaders tab badge both read this key —
+      // a filing that does not invalidate it leaves the queue one objection
+      // behind and the badge under-counting whoever now has to rule.
+      qc.invalidateQueries({ queryKey: ["leader-disputes"] });
       setDisputeTask(null); setReason("");
       show(T.sent, "success");
     },
@@ -613,8 +617,10 @@ export default function LeaderDayReport() {
     mutationFn: ({ id }) => api.post(`/api/leaders/disputes/${id}/undo`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leaderDayReport", uid] });
-      // The register and the leaderboard print this score too.
+      // The register and the leaderboard print this score too — and the
+      // objections queue still shows an Undo button for a ruling that is gone.
       qc.invalidateQueries({ queryKey: ["leaders"] });
+      qc.invalidateQueries({ queryKey: ["leader-disputes"] });
       setUndoTask(null); setUndoErr(null);
       show(T.undone, "success");
     },

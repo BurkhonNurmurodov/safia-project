@@ -725,7 +725,7 @@ def _leader_dispute_data(db, d) -> dict:
     verdict travels with it: an admin ruling on "was the machine wrong" needs
     to read what the machine actually said, and asking them to open the panel
     first would make the inline buttons decoration."""
-    from app.services import leader_ai, leader_reports
+    from app.services import leader_ai, leader_dispute, leader_reports
     from app.models import LeaderAiReview
 
     mgr = db.query(Manager).filter_by(id=d.manager_id).first() if d.manager_id else None
@@ -751,10 +751,14 @@ def _leader_dispute_data(db, d) -> dict:
         "reason":     d.reason,
         # The brigadir's case for passing it up — the middle stage, and the one
         # an admin card that showed only the first and the last note left
-        # invisible. Absent when the brigadir IS the filer, where the two would
-        # be the same sentence twice.
-        "supervisor": d.sup_by_name if d.sup_action == "uplifted" else None,
-        "sup_note":   d.sup_note,
+        # invisible. Absent when the brigadir IS the filer: `sup_case` is None
+        # when the note merely echoes the text the row was filed with, which
+        # is exactly that case (and every migrated legacy row). Testing
+        # `sup_action == "uplifted"` instead never suppressed anything —
+        # `leader_dispute.create` sets precisely that on such a filing — so the
+        # card printed one sentence twice under two labels.
+        "supervisor": (d.sup_by_name if leader_dispute.sup_case(d) else None),
+        "sup_note":   leader_dispute.sup_case(d),
         "uid":        leader_reports.uid_of_ref(db, d.ref) or "",
     }
 

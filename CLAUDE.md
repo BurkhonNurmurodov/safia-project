@@ -1332,10 +1332,34 @@ So:
   no-op on every box that has booted once.
 - **The weight still moves in exactly ONE place** — `LeaderAiReview.resolution`,
   the field an admin's triage ruling already writes — so nothing downstream
-  learns a new rule. `approved` is the only value that restores it. `rejected`
-  is a human agreeing with the machine and is written by BOTH stages' refusals:
-  leaving it NULL would put the flag back in the open triage queue as though
-  nobody had looked at it, and somebody did.
+  learns a new rule. `approved` is the only value that restores it, and
+  **only the ADMIN stage writes that column at all**. A brigadir's refusal
+  settles the objection ROW and touches no scoring column, exactly as
+  `leader_late_proof.decide_supervisor` does. The first cut of this module
+  wrote `rejected` there on a stage-1 refusal, and it broke twice over —
+  `leader_ai.rejected_by_uid` matches `resolution == "rejected"` OUTSIDE
+  `_auto_clause()`, so on a manual-regime day a brigadir would newly take the
+  weight off; and an open objection does not remove its verdict from the triage
+  queue (`resolution.is_(None)`), so an admin could rule `approved` there while
+  the objection still sat at stage 1 — `supersede` retires only SETTLED rows —
+  and the brigadir's still-live card would then overwrite it. `undo` carries
+  the same rule in reverse: it clears the verdict only when `decided_at` says
+  this objection is what wrote it, or it would blank somebody else's ruling
+  under cover of reversing its own. A flag staying in the ADMIN's triage queue
+  after a brigadir declined to argue for it is correct, not a leak.
+- **One sentence is never printed twice as two people's notes.**
+  `leader_dispute.sup_case` / `echoes_reason` is THE guard and all three
+  renderers call it — the admin's Telegram card, the queue and the day report.
+  A supervisor's or admin's own filing IS the uplift, and every row
+  `migrate_dispute_stages` moved has `sup_note == reason` by construction, so a
+  reader that showed both fields blindly attributed the same words to the leader
+  and to the brigadir on the very card somebody weighs two accounts from.
+- **Stage-1 authority is answered against the OBJECTION's stamped unit, never
+  the report's.** They agree at filing time, but a SHEET report re-resolves its
+  `managerId` on every read (`_relabel` + `supervisor_match`) over a table the
+  leaders Refresh rewrites wholesale — so the two drift, and a `canAct` derived
+  from the report's would draw a button `_dispute_stage_rights` then refuses.
+  `_dispute_out` ships `managerId` for exactly this.
 - **Everybody is told at every stage that takes the decision out of their
   hands** — `leader_dispute_filed` (to the brigadir), `leader_dispute_uplifted`,
   `leader_dispute_sup_rejected`, `leader_dispute_approved`,
