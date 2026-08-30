@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserMinus, RotateCcw, CalendarDays, Users, Check } from "lucide-react";
+import { UserMinus, RotateCcw, CalendarDays, Users, AlertTriangle, X } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -59,7 +59,8 @@ import { useToast } from "../../components/ui/Toast";
 
 const TXT = {
   uz: {
-    lead: "Tanlangan liderning natijalari shu kundan boshlab hech qayerda hisobga olinmaydi — na o'z ballida, na brigadaning o'rtachasida. Undan oldingi kunlar o'z bahosi bilan qoladi va hech narsa o'chirilmaydi.",
+    leadWhat: "Tanlangan liderning natijalari shu kundan boshlab hech qayerda hisobga olinmaydi — na o'z ballida, na brigadaning o'rtachasida.",
+    leadSafe: "Undan oldingi kunlar o'z bahosi bilan qoladi va hech narsa o'chirilmaydi.",
     tabOn: "Hisobga olinadi", tabOff: "Hisobdan chiqarilgan",
     search: "Lider yoki brigadir...",
     fShift: "Smena", fSup: "Brigadir", fLeader: "Lider", all: "Barchasi",
@@ -83,7 +84,8 @@ const TXT = {
     okOn: "{n} ta lider hisobdan chiqarildi", okOff: "{n} ta lider qaytarildi",
     told: "{n} kishiga xabar berildi",
     failed: "Saqlanmadi",
-    needFrom: "Sanani tanlang",
+    needFrom: "Sanani tanlang", needReason: "Sababni yozing",
+    andMore: "va yana {n} ta",
     emptyOn: "Lider yo'q",
     emptyOnBody: "Filtrlarni o'zgartiring.",
     emptyOff: "Hisobdan chiqarilgan lider yo'q",
@@ -91,7 +93,8 @@ const TXT = {
     loadFailed: "Ma'lumot yuklanmadi",
   },
   uz_cyrl: {
-    lead: "Танланган лидернинг натижалари шу кундан бошлаб ҳеч қаерда ҳисобга олинмайди — на ўз баллида, на бригаданинг ўртачасида. Ундан олдинги кунлар ўз баҳоси билан қолади ва ҳеч нарса ўчирилмайди.",
+    leadWhat: "Танланган лидернинг натижалари шу кундан бошлаб ҳеч қаерда ҳисобга олинмайди — на ўз баллида, на бригаданинг ўртачасида.",
+    leadSafe: "Ундан олдинги кунлар ўз баҳоси билан қолади ва ҳеч нарса ўчирилмайди.",
     tabOn: "Ҳисобга олинади", tabOff: "Ҳисобдан чиқарилган",
     search: "Лидер ёки бригадир...",
     fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер", all: "Барчаси",
@@ -115,7 +118,8 @@ const TXT = {
     okOn: "{n} та лидер ҳисобдан чиқарилди", okOff: "{n} та лидер қайтарилди",
     told: "{n} кишига хабар берилди",
     failed: "Сақланмади",
-    needFrom: "Санани танланг",
+    needFrom: "Санани танланг", needReason: "Сабабни ёзинг",
+    andMore: "ва яна {n} та",
     emptyOn: "Лидер йўқ",
     emptyOnBody: "Филтрларни ўзгартиринг.",
     emptyOff: "Ҳисобдан чиқарилган лидер йўқ",
@@ -123,7 +127,8 @@ const TXT = {
     loadFailed: "Маълумот юкланмади",
   },
   ru: {
-    lead: "Результаты выбранного лидера с этого дня нигде не учитываются — ни в его балле, ни в среднем по бригаде. Более ранние дни остаются со своими оценками, ничего не удаляется.",
+    leadWhat: "Результаты выбранного лидера с этого дня нигде не учитываются — ни в его балле, ни в среднем по бригаде.",
+    leadSafe: "Более ранние дни остаются со своими оценками, ничего не удаляется.",
     tabOn: "Учитываются", tabOff: "Не учитываются",
     search: "Лидер или бригадир...",
     fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер", all: "Все",
@@ -147,7 +152,8 @@ const TXT = {
     okOn: "Исключено лидеров: {n}", okOff: "Возвращено лидеров: {n}",
     told: "Уведомлено: {n}",
     failed: "Не сохранено",
-    needFrom: "Выберите дату",
+    needFrom: "Выберите дату", needReason: "Укажите причину",
+    andMore: "и ещё {n}",
     emptyOn: "Нет лидеров",
     emptyOnBody: "Измените фильтры.",
     emptyOff: "Нет исключённых лидеров",
@@ -155,7 +161,8 @@ const TXT = {
     loadFailed: "Не удалось загрузить данные",
   },
   en: {
-    lead: "From this day on the selected leader's results count nowhere — not in their own score, not in their unit's average. Earlier days keep the scores they always had, and nothing is deleted.",
+    leadWhat: "From this day on the selected leader's results count nowhere — not in their own score, not in their unit's average.",
+    leadSafe: "Earlier days keep the scores they always had, and nothing is deleted.",
     tabOn: "Counted", tabOff: "Not counted",
     search: "Leader or supervisor...",
     fShift: "Shift", fSup: "Supervisor", fLeader: "Leader", all: "All",
@@ -179,7 +186,8 @@ const TXT = {
     okOn: "{n} leader(s) taken out of the results", okOff: "{n} leader(s) put back",
     told: "{n} notified",
     failed: "Not saved",
-    needFrom: "Pick a date",
+    needFrom: "Pick a date", needReason: "Write a reason",
+    andMore: "and {n} more",
     emptyOn: "No leaders",
     emptyOnBody: "Change the filters.",
     emptyOff: "No leaders are out of the results",
@@ -223,6 +231,12 @@ export default function LeaderCutoffs() {
   const [act, setAct] = useState("cut");        // "cut" | "restore"
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // The date and the reason are both required, and the button used to be
+  // DISABLED until they were filled — a 60%-opacity red button that says
+  // nothing about which of the two is missing. It presses now and points at the
+  // empty field instead (the `bulkTried` model on «Smena vaqtlari»): a blocked
+  // action the operator cannot diagnose is worse than one that answers back.
+  const [tried, setTried] = useState(false);
 
   // The SAME cache key the register and the exclusions tab use, so one write
   // invalidates one thing and every leader surface re-reads together.
@@ -302,7 +316,7 @@ export default function LeaderCutoffs() {
   // questions, and carrying ticks across would arm a bulk action against rows
   // the operator can no longer see.
   const switchView = (v) => {
-    setView(v); setPicked(new Set()); setErr(""); setAct("cut");
+    setView(v); setPicked(new Set()); setErr(""); setAct("cut"); setTried(false);
   };
 
   const chosen = useMemo(
@@ -325,6 +339,7 @@ export default function LeaderCutoffs() {
       setConfirm(false);
       setPicked(new Set());
       setReason("");
+      setTried(false);
       show(fill(cutting ? T.okOn : T.okOff, { n: res.changed })
         + (res.notified ? ` · ${fill(T.told, { n: res.notified })}` : ""), "success");
       qc.invalidateQueries({ queryKey: ["leaders"] });
@@ -339,6 +354,25 @@ export default function LeaderCutoffs() {
   };
 
   const nm = (s) => tl(s || "");
+
+  // WHO. A count is not an identity, and until this line nothing between the
+  // tick and the toast ever said a name: the bar read «1 ta tanlandi», the
+  // dialog «{n} ta lider», the toast «{n} ta lider hisobdan chiqarildi». The
+  // list this is armed over is a page of near-identical names — a search for
+  // «erkin» returns «Tursunboyeva Lobar Erkinovna» beside «Urolov Erkin
+  // Murodjon O'g'li» — so a one-row mis-tick was invisible all the way through
+  // to a decision that has no end date.
+  const NAMED = 4;
+  const names = chosen.slice(0, NAMED).map((r) => nm(r.name)).join(", ")
+    + (chosen.length > NAMED ? `, ${fill(T.andMore, { n: chosen.length - NAMED })}` : "");
+
+  const missFrom = !from;
+  const missReason = !reason.trim();
+  const arm = () => {
+    setAct("cut"); setErr("");
+    if (missFrom || missReason) { setTried(true); return; }
+    setTried(false); setConfirm(true);
+  };
   // A leader pick the brigadir filter no longer offers is dropped rather than
   // left naming a scope the list cannot show — the platform's cascade rule.
   const sections = [
@@ -374,10 +408,29 @@ export default function LeaderCutoffs() {
       {toastNode}
       {/* No title here — the AdminPanel shell already renders this
         * destination's name and its one-line `admin.desc.*` description. */}
-      <p className="text-xs leading-relaxed mb-3"
-        style={{ color: "var(--text-3)", maxWidth: 760 }}>
-        {T.lead}
-      </p>
+      {/* The one paragraph that says what the button does used to be the
+        * LEAST emphatic text on the page — two sentences run together at
+        * 12px/--text-3, the weight this file's own `hint` rule reserves for
+        * copy the eye is allowed to skip. It is split in two because an
+        * operator reads them as two different facts: what stops (everywhere,
+        * with no end date) and what does not (the past, and nothing is
+        * deleted). Amber, not red: nothing here is destroyed. */}
+      <div className="mb-3 rounded-2xl p-3 flex items-start gap-2.5"
+        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
+                 maxWidth: 760 }}>
+        <span className="flex items-center justify-center rounded-lg flex-shrink-0"
+          style={{ width: 28, height: 28, background: "rgba(234,179,8,0.12)" }}>
+          <AlertTriangle size={15} style={{ color: "#eab308" }} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[13px] leading-snug font-medium" style={{ color: "var(--text-2)" }}>
+            {T.leadWhat}
+          </p>
+          <p className="mt-1 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+            {T.leadSafe}
+          </p>
+        </div>
+      </div>
 
       <div className="mb-3">
         <SegmentedToggle asTabs value={view} onChange={switchView}
@@ -390,25 +443,37 @@ export default function LeaderCutoffs() {
         right={<span className="text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
           {fill(T.rows, { n: shown.length })}
         </span>}
+        wrap
         toolbar={<>
           <FilterPanel sections={sections} />
+          {/* Capped: `flex-1` alone gave a name search 860px of an 1,100px
+            * toolbar and pushed the select-all button 900px away from the
+            * checkboxes it controlled. That button is gone — select-all now
+            * lives in the header cell every table puts it in. */}
           <SearchInput value={q} onChange={setQ} placeholder={T.search}
-            className="flex-1 min-w-[180px]" />
-          {shown.length > 0 && (
-            <Button size="lg" variant="secondary" onClick={toggleAll}>
-              {allPicked ? T.selNone : fill(T.selAll, { n: shown.length })}
-            </Button>
-          )}
+            className="flex-1 min-w-[180px] max-w-[340px]" />
         </>}>
         <thead>
           <tr>
-            <Th label="" cls="w-[38px]" />
+            <Th cls="w-[38px]" label={
+              <input
+                type="checkbox"
+                checked={allPicked}
+                // Partial selection reads as partial, rather than as "none".
+                ref={(el) => { if (el) el.indeterminate = chosen.length > 0 && !allPicked; }}
+                disabled={shown.length === 0}
+                onChange={toggleAll}
+                aria-label={fill(T.selAll, { n: shown.length })}
+                title={fill(T.selAll, { n: shown.length })}
+                style={{ accentColor: "var(--brand)" }}
+              />
+            } />
             <Th label={T.thLeader} />
             <Th label={T.thSup} />
             <Th label={T.thShift} align="center" />
             {off && <Th label={T.thFrom} align="center" />}
             {off && <Th label={T.thWhy} />}
-            {off && <Th label={T.thBy} />}
+            {off && <Th label={T.thBy} cls="hidden sm:table-cell" />}
           </tr>
         </thead>
         <tbody>
@@ -433,14 +498,19 @@ export default function LeaderCutoffs() {
                 style={{ cursor: "pointer",
                          background: sel ? "var(--brand-bg)" : undefined }}>
                 <td className="px-3 py-2">
-                  <span className="flex items-center justify-center rounded"
-                    style={{
-                      width: 17, height: 17,
-                      border: `1.5px solid ${sel ? "var(--brand)" : "var(--border)"}`,
-                      background: sel ? "var(--brand)" : "transparent",
-                    }}>
-                    {sel && <Check size={12} color="#fff" strokeWidth={3} />}
-                  </span>
+                  {/* A real input, the «Smena vaqtlari» / «Zavodlar» pattern.
+                      The hand-rolled <span> it replaces was a picture of a
+                      checkbox: no tab stop, no focus ring, no aria-checked —
+                      so the whole selection mechanism, on the one screen that
+                      ends a person's scoring, was reachable by mouse only. */}
+                  <input
+                    type="checkbox"
+                    checked={sel}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggle(r.id)}
+                    aria-label={nm(r.name)}
+                    style={{ accentColor: "var(--brand)" }}
+                  />
                 </td>
                 <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{nm(r.name)}</td>
                 <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
@@ -460,7 +530,7 @@ export default function LeaderCutoffs() {
                   </td>
                 )}
                 {off && (
-                  <td className="px-3 py-2" style={{ color: "var(--text-4)" }}>
+                  <td className="px-3 py-2 hidden sm:table-cell" style={{ color: "var(--text-4)" }}>
                     {r.cutoff_by || "—"}
                   </td>
                 )}
@@ -473,49 +543,79 @@ export default function LeaderCutoffs() {
       <Pagination page={page} pageCount={Math.ceil(shown.length / PAGE_SIZE)}
         total={shown.length} pageSize={PAGE_SIZE} onPage={setPage} />
 
-      {/* The bulk bar names the count in its own label — a button that acts on
-        * a selection has to say how big that selection is. */}
+      {/* Three stacked rows — WHO · WITH WHAT · DO IT — and the split is what
+        * fixes the alignment as well as the anonymity. As one `items-end` row
+        * the count and the buttons aligned to the bottom of the FormField
+        * HINTS, parking them a whole line below the controls they belong to;
+        * with the actions on a footer of their own, every control in the middle
+        * row shares one baseline and the actions land where the modal-footer
+        * rule already puts them on every dialog in this app. */}
       {chosen.length > 0 && (
-        <div className="sticky bottom-0 mt-3 rounded-2xl p-3 flex flex-wrap items-end gap-3"
+        <div className="sticky bottom-0 mt-3 rounded-2xl overflow-hidden"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border)",
-                   boxShadow: "0 -4px 18px rgba(0,0,0,.10)" }}>
-          <span className="text-sm font-semibold whitespace-nowrap"
-            style={{ color: "var(--text-1)" }}>
-            {fill(T.picked, { n: chosen.length })}
-          </span>
-          <div className="min-w-[210px]">
-            <FormField label={T.from} required hint={T.fromHint}>
-              <DateRangePicker single dateFrom={from} dateTo={from}
-                setDateFrom={(v) => setFrom(v || "")} setDateTo={() => {}}
-                triggerClassName="px-3 py-2 text-sm" />
-            </FormField>
+                   zIndex: 20, boxShadow: "0 -6px 20px rgba(0,0,0,.18)" }}>
+
+          {/* 1 · WHO — the count, then the people it stands for. */}
+          <div className="flex items-center gap-2 px-3 py-2.5"
+            style={{ background: "var(--bg-inner)", borderBottom: "1px solid var(--border)" }}>
+            <span className="text-xs font-semibold tabular-nums whitespace-nowrap rounded-lg px-2 py-0.5"
+              style={{ background: "var(--brand-bg)", color: "var(--brand-text)",
+                       border: "1px solid var(--brand-border)" }}>
+              {fill(T.picked, { n: chosen.length })}
+            </span>
+            <span className="text-xs truncate min-w-0 flex-1" title={names}
+              style={{ color: "var(--text-2)" }}>
+              {names}
+            </span>
+            <Button size="sm" variant="ghost" icon={<X size={14} />}
+              title={T.selNone} aria-label={T.selNone}
+              onClick={() => { setPicked(new Set()); setTried(false); }} />
           </div>
-          <div className="flex-1 min-w-[240px]">
-            <FormField label={T.reason} required hint={T.reasonHint}>
-              <input value={reason} onChange={(e) => setReason(e.target.value)}
-                placeholder={T.reasonPh}
-                className="w-full rounded-xl px-3 py-2 text-sm"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
-                         color: "var(--text-1)" }} />
-            </FormField>
+
+          {/* 2 · WITH WHAT — required, and each field says so on its own line
+            * once the operator has pressed. */}
+          <div className="flex flex-wrap items-start gap-3 px-3 py-3">
+            <div className="min-w-[200px] flex-1 sm:flex-none sm:w-[230px]">
+              <FormField label={T.from} required hint={T.fromHint}
+                error={tried && missFrom ? T.needFrom : undefined}>
+                <DateRangePicker single dateFrom={from} dateTo={from}
+                  setDateFrom={(v) => setFrom(v || "")} setDateTo={() => {}}
+                  triggerClassName="px-3 py-2 text-sm" />
+              </FormField>
+            </div>
+            <div className="flex-1 min-w-[240px]">
+              <FormField label={T.reason} required hint={T.reasonHint}
+                error={tried && missReason ? T.needReason : undefined}>
+                <input value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={T.reasonPh}
+                  aria-label={T.reason}
+                  className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
+                           color: "var(--text-1)" }} />
+              </FormField>
+            </div>
           </div>
-          {/* Two actions in the «Hisobdan chiqarilgan» view, and they are not
-            * variants of each other: MOVE the floor (the date beside them) or
+
+          {/* 3 · DO IT. Two actions in the «Hisobdan chiqarilgan» view, and they
+            * are not variants of each other: MOVE the floor (the date above) or
             * lift it entirely. The reversible one sits left and the one that
             * takes days away sits right — the modal-footer rule. The date and
             * reason are required for the move and ignored by the lift, which is
-            * why only the right-hand button is gated on them. */}
-          {off && (
-            <Button size="lg" variant="secondary"
-              onClick={() => { setAct("restore"); setErr(""); setConfirm(true); }}>
-              {fill(T.restore, { n: chosen.length })}
+            * why only the right-hand button is validated. */}
+          <div className="flex items-center justify-end gap-2 px-3 py-2.5"
+            style={{ borderTop: "1px solid var(--border)",
+                     paddingBottom: "calc(0.625rem + var(--tg-safe-bottom, 0px))" }}>
+            {off && (
+              <Button size="lg" variant="secondary"
+                onClick={() => { setAct("restore"); setErr(""); setConfirm(true); }}>
+                {fill(T.restore, { n: chosen.length })}
+              </Button>
+            )}
+            <Button size="lg" variant="danger" onClick={arm}>
+              {fill(off ? T.move : T.cut, { n: chosen.length })}
             </Button>
-          )}
-          <Button size="lg" variant="danger"
-            disabled={!reason.trim() || !from}
-            onClick={() => { setAct("cut"); setErr(""); setConfirm(true); }}>
-            {fill(off ? T.move : T.cut, { n: chosen.length })}
-          </Button>
+          </div>
         </div>
       )}
 
@@ -528,8 +628,21 @@ export default function LeaderCutoffs() {
         open={confirm}
         tone={cutting ? "danger" : "warning"}
         title={cutting ? (off ? T.confirmMove : T.confirmOn) : T.confirmOff}
-        message={fill(cutting ? T.confirmOnBody : T.confirmOffBody,
-                      { n: chosen.length, d: from })}
+        message={<>
+          {fill(cutting ? T.confirmOnBody : T.confirmOffBody,
+                { n: chosen.length, d: from })}
+          {/* Capped at five, the same rule the day-close refusal carries:
+            * ConfirmDialog has no max-height and no scroll, so an uncapped list
+            * pushes its own buttons off the screen. */}
+          <ul className="mt-2 space-y-0.5">
+            {chosen.slice(0, 5).map((r) => (
+              <li key={r.id} style={{ color: "var(--text-2)" }}>· {nm(r.name)}</li>
+            ))}
+            {chosen.length > 5 && (
+              <li>{fill(T.andMore, { n: chosen.length - 5 })}</li>
+            )}
+          </ul>
+        </>}
         challenge={cutting ? from : undefined}
         challengeLabel={cutting ? T.challengeLabel : undefined}
         confirmLabel={fill(cutting ? (off ? T.move : T.cut) : T.restore,

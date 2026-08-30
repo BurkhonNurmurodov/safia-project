@@ -238,6 +238,45 @@ of a person in each**, pro-rata by hours.
 - **Undo is `unsplits`**, carrying the SECONDARY row's id: the halves were scaled
   to sum to the original and the clocks were cut `C-T` / `T-O`, so both restore
   exactly without a stored copy of either.
+- **`_merge_split_halves` is THE fold-back and it must run wherever a row LEAVES
+  the unit or stops existing.** A split is a fact about a worker inside ONE
+  unit, so the moment their row moves the halves must stop existing too —
+  otherwise the same worker-day is named on two units at once, each counting a
+  FRACTION of them. Six sites change a row's unit and all four exchange paths
+  need it: both applies and both reverts. The round-1 fix landed on three of the
+  four and the missing one (`_revert_split_exchange`) orphaned the secondary on
+  the unit the worker left. `_drop_split_secondary` is its twin for the four
+  DELETE paths — there the worker-day is going away, so there is nothing to fold
+  the hours back into.
+- **A fold-back INVALIDATES the exchange's stored snapshot, so it is re-taken.**
+  This is the subtlest trap in the whole feature and it destroys hours silently.
+  The payload snapshots the worker's row when the document is FILED; for a split
+  worker that row holds only `h1` and the cut clock `C-T`. Folding the halves
+  back at APPLY time restores it to `h1+h2` / `C-O` — and `_compute_split` then
+  divides the STALE snapshot, CLAMPING the transfer time into the old window
+  instead of refusing, so `part1+part2` sums to `h1`, the writes overwrite the
+  row with it, and `h2` is gone from every load figure with no leftover row to
+  show for it. `_snapshot_row` is the one shape and both applies re-take it
+  whenever the fold-back returns True.
+- **`effective_hours` divides pro-rata too**, and the merge sums it back. It is
+  what the загрузка reads where it is set, so blanking it on a split would
+  quietly move a cell's load the moment somebody was placed.
+- **An admin edit reaches BOTH halves, and an HOURS edit folds first.**
+  `job_title` and `schedule` describe the person and belong on both rows —
+  leaving one behind puts the halves on opposite sides of `is_direct_role`.
+  `hours_worked` restates the whole DAY, and a division of the old total cannot
+  describe the new one, so the split is folded back and the supervisor re-makes
+  it. Every DELETE and EDIT snapshot records `_whole_day_hours`, or the undo
+  restores the worker with a fraction of their day and the rest existing nowhere.
+- **`unsplits` is de-duplicated.** `SessionLocal` is `autoflush=False`, so a
+  `db.delete(sec)` that has not been flushed is still returned by the next query
+  and re-mapped onto the same instance — a repeated id folds the same hours in
+  twice.
+- **Anything counting PEOPLE must sum `hc_weight`, not rows.** The /staff KPI
+  cards, the role chips and the load denominator all do; `/api/staff/attendance`
+  deliberately returns BOTH halves (the tab needs them), so a plain `.length`
+  there reports a split worker as two people on the very page the split is made
+  from.
 
 **Known limit, inherited and NOT fixed here:** `attendance_batch._sync_manager`
 (and the per-supervisor upload in `admin.py`) DELETE the whole (manager, date)

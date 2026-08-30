@@ -544,9 +544,18 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     [allWorkers, filters]
   );
 
-  const totalWorkers = workers.length;
+  // PEOPLE, not rows. A worker split across two of the unit's cells is TWO
+  // attendance rows carrying the same name and a `hc_weight` share each (the
+  // halves summing to 1.0), so counting rows would report them as two people on
+  // the very page the split is made from — and every ratio built on these
+  // counts would be wrong by one. `?? 1` is the whole of the old behaviour for
+  // every unsplit row, which is all of them until somebody splits one.
+  const headcount = (rows) => rows.reduce((n, w) => n + (w.hc_weight ?? 1), 0);
+  const roundHc   = (n) => Math.round(n * 100) / 100;
+
+  const totalWorkers = roundHc(headcount(workers));
   const cameWorkers = useMemo(() => workers.filter(hasWorked), [workers]);
-  const cameToWorkCount = cameWorkers.length;
+  const cameToWorkCount = roundHc(headcount(cameWorkers));
   // Count of workers who came to work, broken down by exact job_title,
   // sorted by count desc then title. Blank titles are skipped so each entry
   // maps cleanly onto the job_titles column filter.
@@ -556,7 +565,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
       if (!hasWorked(w)) continue;
       const title = w.job_title || "";
       if (!title) continue;
-      map.set(title, (map.get(title) || 0) + 1);
+      map.set(title, (map.get(title) || 0) + (w.hc_weight ?? 1));
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [chipBase]);
@@ -565,11 +574,12 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     () => workers.filter(isZagruzkaCalcWorker),
     [workers]
   );
-  const zagruzkaCount    = zagruzkaWorkers.length;
+  const zagruzkaCount    = roundHc(headcount(zagruzkaWorkers));
   // Denominator for the load card: everyone in a load role among the rows on
   // screen, present or not — the same population the numerator is drawn from.
   const zagruzkaRoleTotal = useMemo(
-    () => workers.filter(isZagruzkaCalcRole).length,
+    () => roundHc(headcount(workers.filter(isZagruzkaCalcRole))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [workers]
   );
   const totalWorkedHours = useMemo(() => sumHours(zagruzkaWorkers), [zagruzkaWorkers]);
@@ -755,7 +765,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                         color: active ? "var(--bg-card)" : "var(--text-1)",
                       }}
                     >
-                      {count}
+                      {Math.round(count * 100) / 100}
                     </span>
                   </button>
                 );

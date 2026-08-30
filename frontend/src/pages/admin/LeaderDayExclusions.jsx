@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CircleSlash, RotateCcw, AlertTriangle, CalendarDays, CalendarOff, Users, Check,
+  CircleSlash, RotateCcw, AlertTriangle, CalendarDays, CalendarOff, Users,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -513,16 +513,24 @@ export default function LeaderDayExclusions() {
             triggerClassName="px-3 py-2 text-sm" />
           <FilterPanel sections={sections} />
           <SearchInput value={q} onChange={setQ} placeholder={T.search}
-            className="flex-1 min-w-[180px]" />
-          {shown.length > 0 && (
-            <Button size="lg" variant="secondary" onClick={toggleAll}>
-              {allPicked ? T.selNone : fill(T.selAll, { n: shown.length })}
-            </Button>
-          )}
+            className="flex-1 min-w-[180px] max-w-[340px]" />
         </>}>
         <thead>
           <tr>
-            <Th label="" cls="w-[38px]" />
+            <Th cls="w-[38px]" label={
+              <input
+                type="checkbox"
+                checked={allPicked}
+                ref={(el) => {
+                  if (el) el.indeterminate = pickedShown.length > 0 && !allPicked;
+                }}
+                disabled={shown.length === 0}
+                onChange={toggleAll}
+                aria-label={fill(T.selAll, { n: shown.length })}
+                title={fill(T.selAll, { n: shown.length })}
+                style={{ accentColor: "var(--brand)" }}
+              />
+            } />
             <Th label={T.thDate} />
             <Th label={T.thLeader} />
             <Th label={T.thSup} />
@@ -569,14 +577,17 @@ export default function LeaderDayExclusions() {
                 style={{ cursor: "pointer",
                          background: sel ? "var(--brand-bg)" : undefined }}>
                 <td className="px-3 py-2">
-                  <span className="flex items-center justify-center rounded"
-                    style={{
-                      width: 17, height: 17,
-                      border: `1.5px solid ${sel ? "var(--brand)" : "var(--border)"}`,
-                      background: sel ? "var(--brand)" : "transparent",
-                    }}>
-                    {sel && <Check size={12} color="#fff" strokeWidth={3} />}
-                  </span>
+                  {/* A real input: the <span> it replaces was a picture of a
+                      checkbox with no tab stop, no focus ring and no
+                      aria-checked, so selection here was mouse-only. */}
+                  <input
+                    type="checkbox"
+                    checked={sel}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggle(k)}
+                    aria-label={`${String(r.date).slice(0, 10)} · ${nm(r.leader)}`}
+                    style={{ accentColor: "var(--brand)" }}
+                  />
                 </td>
                 <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>
                   {String(r.date).slice(0, 10)}

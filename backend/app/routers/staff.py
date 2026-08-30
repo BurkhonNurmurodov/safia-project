@@ -1900,16 +1900,29 @@ def admin_update(body: DirectUpdateBody, caller=Depends(_require_staff), db: Ses
     original = {
         "job_title":    row.job_title   or "",
         "schedule":     row.schedule    or "",
-        "hours_worked": float(row.hours_worked) if row.hours_worked is not None else None,
+        "hours_worked": _whole_day_hours(db, row),
     }
     changes = {}
     if body.job_title    is not None: changes["job_title"]    = body.job_title
     if body.schedule     is not None: changes["schedule"]     = body.schedule
     if body.hours_worked is not None: changes["hours_worked"] = body.hours_worked
 
+    # A split worker is TWO rows. `job_title` and `schedule` describe the person
+    # and belong on both — leaving one behind puts the halves on opposite sides
+    # of `is_direct_role`, i.e. in and out of the load at once. `hours_worked`
+    # is different: it restates the whole DAY, and a division of the old total
+    # cannot describe the new one, so the split is folded back first and the
+    # supervisor re-makes it. Both are done BEFORE the write, so the edit lands
+    # on a row that means what the admin thinks it means.
+    if body.hours_worked is not None:
+        _merge_split_halves(db, row)
+    sec = _split_secondary(db, row)
     if body.job_title    is not None: row.job_title    = body.job_title
     if body.schedule     is not None: row.schedule     = body.schedule
     if body.hours_worked is not None: row.hours_worked = body.hours_worked
+    if sec is not None:
+        if body.job_title is not None: sec.job_title = body.job_title
+        if body.schedule  is not None: sec.schedule  = body.schedule
 
     if changes:
         _log_admin_action(
@@ -1964,7 +1977,7 @@ def admin_delete(body: AdminDeleteBody, caller=Depends(_require_staff), db: Sess
     original = {
         "job_title":    row.job_title   or "",
         "schedule":     row.schedule    or "",
-        "hours_worked": float(row.hours_worked) if row.hours_worked is not None else None,
+        "hours_worked": _whole_day_hours(db, row),
     }
 
     _log_admin_action(
@@ -2058,7 +2071,7 @@ def bulk_delete_attendance(
             original = {
                 "job_title":    row.job_title   or "",
                 "schedule":     row.schedule    or "",
-                "hours_worked": float(row.hours_worked) if row.hours_worked is not None else None,
+                "hours_worked": _whole_day_hours(db, row),
             }
             _log_admin_action(
                 db, manager_id, d, worker_name,
@@ -2111,7 +2124,7 @@ def bulk_delete_attendance(
             original = {
                 "job_title":    row.job_title   or "",
                 "schedule":     row.schedule    or "",
-                "hours_worked": float(row.hours_worked) if row.hours_worked is not None else None,
+                "hours_worked": _whole_day_hours(db, row),
             }
             db.add(EditRequest(
                 manager_id=manager_id,
@@ -3423,7 +3436,16 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
         # Same rule as the plain apply: a cell split inside the sending unit is
         # folded back before a transfer-time split divides the day between two
         # UNITS. Two splits on one row cannot both be true.
-        _merge_split_halves(db, att)
+        #
+        # And the fold-back CHANGES the row the snapshot describes — h1 becomes
+        # h1+h2 and the cut clock "C-T" becomes the whole "C-O". The snapshot
+        # was taken when the document was FILED, so it must be re-taken here or
+        # `_compute_split` divides half a day: it clamps T into the snapshot's
+        # window instead of refusing, so part1+part2 sums to h1 and the writes
+        # below silently destroy h2 with no leftover row to show for it.
+        if _merge_split_halves(db, att):
+            emp["snapshot"] = _snapshot_row(att)
+            emp["old_verifix_code"] = att.verifix_code
         plan = _compute_split(emp.get("snapshot") or {}, ttime, rtime)
         if not plan or (not is_task and not target):
             # Can't split → fall back to a plain full move.
@@ -3578,6 +3600,15 @@ def _revert_split_exchange(db: Session, doc: HrDocument):
             Attendance.split_of.is_(None),   # the PRIMARY half of a split is canonical
         ).first()
         if att:
+            # The fourth of four exchange paths, and the one the round-1 fix
+            # missed: the RECEIVING supervisor may have split the arrived worker
+            # across two of THEIR cells, so those halves are folded back before
+            # the row returns to the sender. Without it the secondary is
+            # orphaned on a unit whose roster no longer names the worker, and
+            # the returned row keeps a stale `hc_weight` — a fraction of a
+            # person on a unit that holds them whole.
+            _merge_split_halves(db, att)
+            att.hc_weight         = None
             att.manager_id        = emp.get("old_manager_id") or doc.manager_id
             att.job_title         = snap.get("job_title")
             att.schedule          = snap.get("schedule")
@@ -3628,7 +3659,12 @@ def _apply_people_exchange(db: Session, doc: HrDocument):
         # the row goes anywhere. Not a legacy case — a draft filed today can be
         # approved after the sender split the worker tomorrow — so it is checked
         # here and not only at filing time.
-        _merge_split_halves(db, att)
+        if _merge_split_halves(db, att) and emp.get("snapshot"):
+            # Same reason as the split path: a → task revert restores from this
+            # snapshot, and after the fold-back the old one is half a day.
+            emp["snapshot"] = _snapshot_row(att)
+            emp["old_verifix_code"] = att.verifix_code
+            flag_modified(doc, "payload")
         if ttype == "supervisor" and target:
             att.manager_id = target
             # Cell-less on arrival, unconditionally — including for a document
@@ -3760,14 +3796,7 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
         # task moves (which blank the row) and for transfer-time splits (which
         # mutate clock-out / hours and may relocate the row to the receiver).
         if target_type == "task" or transfer_time:
-            row["snapshot"] = {
-                "job_title":         att.job_title,
-                "schedule":          att.schedule,
-                "clock_in_out":      att.clock_in_out,
-                "hours_worked":      float(att.hours_worked)      if att.hours_worked      is not None else None,
-                "early_arrival_min": float(att.early_arrival_min) if att.early_arrival_min is not None else None,
-                "effective_hours":   float(att.effective_hours)   if att.effective_hours   is not None else None,
-            }
+            row["snapshot"] = _snapshot_row(att)
         emp_rows.append(row)
     return {
         "target_type":         target_type,
@@ -4983,6 +5012,39 @@ class ApprovalBody(BaseModel):
 # mind before anything is real, and one write means one action-log row.
 
 
+def _whole_day_hours(db: Session, pri: Attendance) -> Optional[float]:
+    """The worker-day's hours with BOTH halves of a split counted.
+
+    What an admin edit or delete must record as "before": the secondary is
+    dropped with the primary and the undo recreates ONE unsplit row, so the
+    primary's own `hours_worked` — h1 alone, once a split has been made — is
+    only ever part of the answer, and restoring it would put the worker back
+    with a fraction of their day and the rest existing nowhere.
+    """
+    if pri.hours_worked is None:
+        return None
+    sec = _split_secondary(db, pri)
+    return float(pri.hours_worked) + (float(sec.hours_worked or 0) if sec is not None else 0.0)
+
+
+def _snapshot_row(att: Attendance) -> dict:
+    """The row as an exchange payload records it.
+
+    ONE spelling, because it is taken at TWO moments: when the document is
+    filed, and again at apply time if folding a cell split back changed the row
+    underneath it. A second spelling is how those two snapshots would come to
+    describe different shapes of the same worker-day.
+    """
+    return {
+        "job_title":         att.job_title,
+        "schedule":          att.schedule,
+        "clock_in_out":      att.clock_in_out,
+        "hours_worked":      float(att.hours_worked)      if att.hours_worked      is not None else None,
+        "early_arrival_min": float(att.early_arrival_min) if att.early_arrival_min is not None else None,
+        "effective_hours":   float(att.effective_hours)   if att.effective_hours   is not None else None,
+    }
+
+
 def _split_secondary(db: Session, pri: Attendance) -> Optional[Attendance]:
     """The SECOND half of a split, or None. Keyed on the primary's id."""
     return db.query(Attendance).filter(Attendance.split_of == pri.id).first()
@@ -5036,6 +5098,9 @@ def _merge_split_halves(db: Session, pri: Attendance) -> bool:
     if sec is None:
         return False
     pri.hours_worked = float(pri.hours_worked or 0) + float(sec.hours_worked or 0)
+    if pri.effective_hours is not None or sec.effective_hours is not None:
+        pri.effective_hours = (float(pri.effective_hours or 0)
+                               + float(sec.effective_hours or 0))
     pri.hc_weight    = None
     pri_start = (pri.clock_in_out or "").partition("-")[0]
     sec_end   = (sec.clock_in_out or "").rpartition("-")[2]
@@ -5332,7 +5397,10 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
 
     moved = split_n = unsplit_n = 0
 
-    for u in body.unsplits:
+    # SessionLocal is autoflush=False, so a `db.delete(sec)` that has not been
+    # flushed is still returned by the next query and re-mapped onto the same
+    # instance — a repeated id would fold the same hours in again (5+3+3=11).
+    for u in dict.fromkeys(body.unsplits):
         sec = _own_row(u)
         if sec.split_of is None:
             raise HTTPException(status_code=400, detail="That row is not the second half of a split")
@@ -5370,6 +5438,7 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
                 detail=f"{r.worker_name}: «{sp.split_at}» bu xodimning ish vaqtidan tashqarida")
         h1, h2 = parts
         total = h1 + h2
+        eff = float(r.effective_hours) if r.effective_hours is not None else None
         # The verifix clock arrives in several shapes («07:49 - 17:04 (8.43)»),
         # so the two ends are re-canonicalised rather than sliced raw — a
         # half-clock reading "07:49 -13:00" would be printed at the operator.
@@ -5391,7 +5460,8 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
             clock_in_out      = f"{sp.split_at}-{end_s}" if end_s else None,
             hours_worked      = h2,
             early_arrival_min = 0,          # early belongs to the first half
-            effective_hours   = None,
+            effective_hours   = (round(eff - round(eff * (h1 / total), 4), 4)
+                                 if eff is not None else None),
             verifix_code      = second,
             is_supervisor     = bool(r.is_supervisor),
             hc_weight         = round(1.0 - round(h1 / total, 6), 6),
@@ -5399,7 +5469,12 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
         )
         r.verifix_code    = first
         r.hours_worked    = h1
-        r.effective_hours = None
+        # `effective_hours` (hours with early arrival netted out) is divided in
+        # the same proportion, not blanked: it is what the загрузка reads where
+        # it is set, so dropping it on a split would quietly change a cell's
+        # load the moment somebody was placed. The two halves sum back to the
+        # original exactly, like the hours they mirror.
+        r.effective_hours = round(eff * (h1 / total), 4) if eff is not None else None
         r.hc_weight       = round(h1 / total, 6)
         if start_s:
             r.clock_in_out = f"{start_s}-{sp.split_at}"
