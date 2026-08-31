@@ -2563,7 +2563,42 @@ back on the first walk.
 
 ## Workflow
 
-- **`gitea` is THE remote** — `git.safiabakery.uz/Safia-Outsource/production` (private). `main` tracks `gitea/main`, so a bare `git pull` / `git push` means gitea. GitHub (`origin`) is a mirror only: it is pushed last, best-effort, and never gated on.
+### The standing rule for EVERY change (mandatory, in this order)
+
+Every task that touches shipped code runs these six steps, in this exact order.
+No step is optional and none is reordered. This is the operator's standing
+directive (2026-08-31) and it applies to all future changes.
+
+1. **Verify local and production agree — BEFORE editing anything.** `git fetch`
+   the deploy remote and compare `main` against it. More than one person works
+   on this repo, and an edit made on a stale tree becomes a merge conflict at
+   push time, i.e. at deploy time.
+2. **Pull.** Fast-forward ONLY (`git pull --ff-only`). Never merge, never
+   rebase automatically. A diverged branch or a dirty tree stops the work and is
+   reported — the `auto-pull.sh` rule, applied by hand.
+3. **Make the change** the user asked for, and only that.
+4. **Bump `VERSION` by SCOPE** — patch / minor / major per the Versioning table
+   below, judged from what the change DOES, never from how large the diff is.
+   One turn = at most one bump.
+5. **Build the frontend** — `cd frontend && npx vite build`. A failed build
+   STOPS here: nothing is committed and nothing is pushed.
+6. **Commit and push to the deploy remote.** That push IS the production
+   deploy — there is no staging step and no review window.
+
+**The deploy remote is identified by its URL, not by its name** —
+`git.safiabakery.uz/Safia-Outsource/production`. In this checkout it is called
+`origin`, and no GitHub mirror remote is configured; resolve it with
+`git remote -v` rather than assuming a name.
+
+**Steps 1–2 and 4–6 are automated by the two hooks below ONLY when those hooks
+are registered in `.claude/settings.local.json`.** Having
+`.claude/hooks/*.sh` on disk is not the same as having them wired: the scripts
+are committed, the registration is gitignored, so a fresh checkout has the files
+and none of the automation. **Check for a `hooks` block before assuming the loop
+ran** — when it is absent (a cloud session, a fresh clone, a hook that did not
+fire), perform all six steps by hand. The rule is the ORDER, not the mechanism.
+
+- **gitea is THE remote** — `git.safiabakery.uz/Safia-Outsource/production` (private). `main` tracks it, so a bare `git pull` / `git push` means gitea. **Its local NAME varies by checkout** — it is `gitea` where a GitHub mirror is also configured and `origin` where it is the only remote (this checkout), so read `git remote -v` instead of hard-coding a name. Where a GitHub mirror exists it is a mirror ONLY: pushed last, best-effort, never gated on.
 - **Pushing to `main` deploys to production.** `.gitea/workflows/deploy.yaml` runs `deploy/deploy.sh` on the VPS on every push — see the Deployment section below.
 - **The whole loop is automated by two hooks in `.claude/settings.local.json`: pull → edit → build → commit → push.**
   - `SessionStart` → `.claude/hooks/auto-pull.sh` fetches gitea and **fast-forwards `main`** before anything is edited. It never merges or rebases: on a diverged branch, or when uncommitted work blocks the fast-forward, it reports and leaves the tree untouched. Log: `.claude/auto-pull.log`.
