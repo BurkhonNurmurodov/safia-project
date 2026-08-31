@@ -392,54 +392,6 @@ function ActionBtn({ icon: Icon, label, color, onClick, loading }) {
   );
 }
 
-// ── section header strip ─────────────────────────────────────────────────────
-// ── reconciliation panel (manual) ───────────────────────────────────────────
-const RECON_FIELDS = [
-  { key: "po_shtatke_fact", labelKey: "production.recon.poShtatkeFact" },
-  { key: "brigadir", labelKey: "production.recon.brigadir" },
-  { key: "lider", labelKey: "production.recon.lider" },
-  { key: "mitsu", labelKey: "production.recon.mitsu" },
-  { key: "otdihaet", labelKey: "production.recon.otdihaet" },
-];
-
-function ReconciliationCard({ data, onSave, saving }) {
-  const { t } = useLang();
-  const [draft, setDraft] = useState(() => ({ ...data }));
-  const set = (k, v) => setDraft((d) => ({ ...d, [k]: v === "" ? null : Number(v) }));
-  return (
-    <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-          {t("production.reconTitle")}
-        </span>
-        <button
-          onClick={() => onSave(draft)}
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity"
-          style={{ background: "var(--brand)", color: "#fff", opacity: saving ? 0.6 : 1 }}
-        >
-          {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {t("production.save")}
-        </button>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {RECON_FIELDS.map((f) => (
-          <label key={f.key} className="flex items-center justify-between gap-2 text-xs px-2.5 py-1.5 rounded-lg"
-            style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
-            <span>{t(f.labelKey)}</span>
-            <input
-              type="number"
-              value={draft[f.key] ?? ""}
-              onChange={(e) => set(f.key, e.target.value)}
-              className="w-14 text-right px-1.5 py-1 rounded-md outline-none tabular-nums"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-            />
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── raw SAP file view (Фаза / Заголовок) ─────────────────────────────────────
 function RawView({ fileType, date, managerParam, ready = true }) {
   const { t } = useLang();
@@ -976,10 +928,6 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
     },
-  });
-  const recon = useMutation({
-    mutationFn: (payload) => api.post("/api/production/reconciliation", { date, data: payload }, { params: managerParam }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["production", date] }),
   });
   // Staffing-card pin (O.soni / штатка) for one work center on the SELECTED date.
   // Admin-only; both fields ride every call, null = drop the pin and go back to
@@ -1754,13 +1702,6 @@ export default function Production() {
               })}
             </tbody>
       </TableCard>
-
-      {/* reconciliation — the WHOLE unit's manual headcount block, which cannot
-          be split per cell, so a cell-scoped leader doesn't get it (the backend
-          sends no values and refuses the save either) */}
-      {!cellScope && (
-        <ReconciliationCard data={data?.reconciliation ?? {}} onSave={(d) => recon.mutate(d)} saving={recon.isPending} />
-      )}
 
       {/* staffing pin (admin) — O.soni / штатка for ONE work center on ONE date */}
       {wcEdit && (
