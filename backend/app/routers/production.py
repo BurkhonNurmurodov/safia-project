@@ -67,11 +67,11 @@ POSITIONS_TITLE = {"uz": "Pozitsiyalar", "uz_cyrl": "Позициялар", "ru"
 
 # «ABC форма» workbook layout — the Excel export reproduces the brigadirs' manual
 # ABC form («Форма ABC … 8 соатлик») sheet-for-sheet: shift totals in row 1,
-# headers in row 2, position rows from row 3, the per-team block (M:W), the
-# indicator block (X:Y) and the staffing block (Z:AA).
+# headers in row 2, position rows from row 3, the per-team block (M:W) and the
+# indicator block (X:Y).
 #
 # Only the four true inputs are written as values — Трудоемкость (C), Команда
-# (D), Факт (G), ПЛАН (H) — plus Штатка (W) and the reconciliation counts.
+# (D), Факт (G), ПЛАН (H) — plus Штатка (W).
 # EVERYTHING else is a live formula, so editing any of those recalculates the
 # whole sheet exactly as the manual form does. Labels stay in the template's
 # original mixed ru/uz wording regardless of UI language.
@@ -80,7 +80,7 @@ ABC_HEADERS = ["Сап код", "SKU", "Трудоемкость", "Команд
 ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 8, "G": 9.5,
               "H": 9, "I": 12.5, "J": 8.5, "K": 8.5, "L": 4.5, "M": 10, "N": 8.5,
               "O": 15, "P": 10, "Q": 9, "R": 8.5, "S": 9.5, "T": 8.5, "U": 7.5,
-              "V": 3, "W": 8.5, "X": 34, "Y": 11, "Z": 24, "AA": 9}
+              "V": 3, "W": 8.5, "X": 34, "Y": 11}
 ABC_SPARE_ROWS = 15   # bordered formula rows under the data for hand-added SKUs
 ABC_DATA_START = 3    # first position row (row 1 = totals, row 2 = headers)
 ABC_TEAM_START = 6    # first row of the M:W per-team block, as in the form
@@ -428,17 +428,17 @@ def export_positions(
     day's dashboard and delivered to the caller's private Telegram chat.
 
     The layout mirrors that form cell-for-cell — totals in row 1, headers in row
-    2, positions from row 3, the per-team block in M:W, indicators in X:Y and the
-    staffing block in Z:AA. Only the true inputs are values (Трудоемкость, Команда,
-    Факт, ПЛАН, Штатка and the reconciliation counts); every derived cell is a live
-    formula — ЛЮДИ via VLOOKUP into the M:N team table, Общ.трудаёмкост =C*H/60,
-    Парето against the I1 shift sum, per-team SUMIFS loading — so the file keeps
-    recalculating as the brigadir edits it during the shift.
+    2, positions from row 3, the per-team block in M:W and the indicator block in
+    X:Y. Only the true inputs are values (Трудоемкость, Команда, Факт, ПЛАН and
+    Штатка); every derived cell is a live formula — ЛЮДИ via VLOOKUP into the M:N
+    team table, Общ.трудаёмкост =C*H/60, Парето against the I1 shift sum, per-team
+    SUMIFS loading — so the file keeps recalculating as the brigadir edits it
+    during the shift.
 
-    Two deliberate departures from the manual form: the indicator block's three
-    headcount figures are independent instead of all pointing at one cell (see the
-    X:Y section), and division-prone cells are wrapped in IFERROR so the spare rows
-    stay clean. Rows render in the exact order the client sends (`body.order`)."""
+    Two deliberate departures from the manual form: the indicator block carries
+    only «Nechta odam keldi» and «Общ.трудаёмкост» (see the X:Y section), and
+    division-prone cells are wrapped in IFERROR so the spare rows stay clean. Rows
+    render in the exact order the client sends (`body.order`)."""
     lang = body.lang
     mid = _resolve_manager_id(payload, body.manager_id, db)
     day = _parse_date(body.date)
@@ -449,7 +449,6 @@ def export_positions(
         by_id = {r.get("id"): r for r in rows}
         rows = [by_id[i] for i in body.order if i in by_id]
     wcs = dash.get("work_centers") or []
-    recon = dash.get("reconciliation") or {}
     # the day's own efficiency (pinned on the «Odamlar soni» tab), so the
     # workbook's =W*<pm> capacity formulas match what the page shows
     consts = dash.get("constants") or {}
@@ -495,8 +494,7 @@ def export_positions(
         c = ws.cell(row=2, column=i, value=h)
         c.font, c.alignment, c.border = bold, head_al, border
     for col, h in ((13, "Команда"), (14, "O. SONI"), (15, "Загруженность"),
-                   (23, "Штатка"), (24, "Показатель"), (25, "Кол-во"),
-                   (26, "Сколько должна на штатке")):
+                   (23, "Штатка"), (24, "Показатель"), (25, "Кол-во")):
         c = ws.cell(row=2, column=col, value=h)
         c.font, c.alignment, c.border = bold, head_al, border
     ws.row_dimensions[2].height = 25.35
@@ -577,22 +575,17 @@ def export_positions(
         c.border, c.alignment, c.font, c.number_format = border, center, bold, nf
 
     # --- X:Y — indicator block ------------------------------------------------
-    # The manual form points «keldi», «kelishi kerak edi» and «kerak» at the same
-    # cell, which pins spare-people to 0, обеспеч to 100% and абсетеизм to 0%.
-    # Here they are three independent figures:
-    #   keldi           = AA8 «Сравнение» — roster minus brigadir/лидер/мицу/отдихает
-    #   kelishi kerak   = AA3 «По штатке Факт» — the roster the day was planned on
-    #   kerak           = N<ttot> — headcount the workload actually requires
+    # TWO figures, by the operator's call (2026-08-31): the people standing in the
+    # cells, and the shift's total labour. Everything else the manual form prints
+    # here — kelishi kerak edi, kerak, spare people, the two bandlik rates,
+    # обеспеч, абсетеизм — was computed off the hand-entered «Сколько должна на
+    # штатке» counts, which nobody fills in, so each of them read 0 or 100% on
+    # every exported file. That block (Z:AA) is gone with them.
+    #   keldi = ΣШтатка (W) — the workers assigned to the cells. A live SUM, so it
+    #           follows the brigadir's own edits to W exactly as the M:W block does.
     indicators = [
-        ("Nechta odam keldi",                   "=AA8",                          "0"),
-        ("Nechta odam kelishi kerak edi",       "=AA3",                          "0"),
-        ("Nechta odam kerak",                   f"=N{ttot}",                     "0"),
-        ("Bo`sh odam/kerakli odam",             "=+Y3-Y5",                       "0"),
-        ("Kerakli odam bilan o`rtacha bandlik", f"=IFERROR(I1/(Y5*{sm}),0)",     "0%"),
-        ("Hozirgi odam bilan o`rtacha bandlik", f"=IFERROR(I1/(Y3*{sm}),0)",     "0%"),
-        ("% обеспеч",                           "=IFERROR(Y3/Y5,0)",             "0%"),
-        ("% абсетеизм",                         '=IFERROR(1-(Y3/Y4),"")',        "0%"),
-        ("Общ.трудаёмкост",                     "=I1",                           "#\\ ##0.00"),
+        ("Nechta odam keldi", f"=SUM(W{t0}:W{t1})", "0"),
+        ("Общ.трудаёмкост",   "=I1",                "#\\ ##0.00"),
     ]
     for idx, (label, formula, nf) in enumerate(indicators):
         rn = ds + idx
@@ -601,26 +594,6 @@ def export_positions(
         xc.font, xc.alignment, xc.border = bold, left, border
         yc.alignment, yc.border, yc.number_format = center, border, nf
         xc.fill = yc.fill = green_head
-
-    # --- Z:AA — staffing (штатка) block, pre-filled from the reconciliation ---
-    staffing = [
-        ("По штатке Факт", recon.get("po_shtatke_fact")),
-        ("Бригадир",       recon.get("brigadir")),
-        ("Лидер",          recon.get("lider")),
-        ("Мицу",           recon.get("mitsu")),
-        ("Отдихает",       recon.get("otdihaet")),
-        ("Сравнение",      "=AA3-AA4-AA5-AA6-AA7"),
-        ("Верифекс",       "=AA8+AA6+AA5+AA4"),
-    ]
-    for idx, (label, val) in enumerate(staffing):
-        rn = ds + idx
-        zc = ws.cell(row=rn, column=26, value=label)
-        ac = ws.cell(row=rn, column=27, value=val)
-        zc.font, zc.alignment, zc.border = bold, center, border
-        ac.alignment, ac.border, ac.number_format = center, border, "0"
-        zc.fill = green_head
-        if not (isinstance(val, str) and val.startswith("=")):
-            ac.fill = yellow          # hand-entered counts
 
     ws.freeze_panes = "A3"
     for col, w in ABC_WIDTHS.items():
