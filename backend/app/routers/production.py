@@ -75,7 +75,7 @@ POSITIONS_TITLE = {"uz": "Pozitsiyalar", "uz_cyrl": "Позициялар", "ru"
 # whole sheet exactly as the manual form does. Labels stay in the template's
 # original mixed ru/uz wording regardless of UI language.
 ABC_HEADERS = ["Сап код", "SKU", "Трудоемкость", "Команда", "ЛЮДИ", "вып %",
-               "Факт План", "ПЛАН", "Общ.трудаёмкост", "Минут", "Парето"]
+               "Факт", "ПЛАН", "Общ.трудаёмкост", "Минут", "Парето"]
 ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 8, "G": 9.5,
               "H": 9, "I": 12.5, "J": 8.5, "K": 8.5, "L": 4.5, "M": 10, "N": 8.5,
               "O": 15, "P": 50, "Q": 11}
@@ -495,7 +495,7 @@ def export_positions(
         c = ws.cell(row=2, column=col, value=h)
         c.font, c.alignment, c.border = bold, head_al, border
     # The headers wrap (head_al), and the form's 25.35 fits only ~1.7 lines, so
-    # the second line of «Факт План» and «Общ.трудаёмкост» was cut off. Two
+    # the second line of «Общ.трудаёмкост» was cut off. Two
     # lines of 11pt need 30; 32 leaves margin. An explicit height is what
     # stops Excel auto-fitting, so it has to be tall enough on its own.
     ws.row_dimensions[2].height = 32
