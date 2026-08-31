@@ -77,15 +77,26 @@ export default function DayTimeline({ intervals, summary, t, onPick, unionLabel 
       <div style={{ paddingLeft: GUTTER }}>
       {/* hour axis */}
       <div className="relative h-4 mb-1">
-        {ticks.map((m) => (
-          <span
-            key={m}
-            className="absolute text-[10px] tabular-nums -translate-x-1/2"
-            style={{ left: `${pct(m)}%`, color: "var(--text-4)" }}
-          >
-            {fmtHHMM(m)}
-          </span>
-        ))}
+        {ticks.map((m) => {
+          const p = pct(m);
+          // The window is rounded out to whole hours, so the LAST tick sits
+          // exactly on the plot's right edge — and a label centred on it hangs
+          // half its width past the card, where `overflow-hidden` cut it to
+          // «18:0» on the very axis whose job is naming the hour. The closing
+          // label is pulled inside instead: the tick still marks the moment,
+          // the text simply stops overhanging. The opening one is left centred
+          // — the label gutter is what it sits over.
+          const tx = p > 99 ? "-100%" : "-50%";
+          return (
+            <span
+              key={m}
+              className="absolute text-[10px] tabular-nums"
+              style={{ left: `${p}%`, transform: `translateX(${tx})`, color: "var(--text-4)" }}
+            >
+              {fmtHHMM(m)}
+            </span>
+          );
+        })}
       </div>
 
       <div className="relative" style={{ height: lanes.length * LANE_H }}>

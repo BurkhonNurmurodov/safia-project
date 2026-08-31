@@ -43,6 +43,14 @@ import api from "../../utils/api";
  *    filed nothing" looks like.
  */
 
+// The five measured columns (category · start · end · minutes · status) come
+// to 528px and the note takes whatever is left — but never less than this.
+// Under the sum of the two the table scrolls inside its own container instead
+// of crushing the reason column: a phone reads the note by scrolling to it,
+// not by guessing at three words.
+const NOTE_MIN_W = 260;
+const TABLE_MIN_W = 528 + NOTE_MIN_W;
+
 const codeOf = (name) => {
   const c = CATS.find((x) => x.name === name);
   return c ? c.code : String(name || "").replace(/^Cat\s*/i, "");
@@ -364,7 +372,7 @@ function CellBlock({ cell, t, tl, fmt, unionLabel }) {
       />
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[12px]" style={{ borderCollapse: "collapse", minWidth: 620 }}>
+        <table className="w-full text-[12px]" style={{ borderCollapse: "collapse", minWidth: TABLE_MIN_W }}>
           <thead>
             <tr style={{ background: "var(--bg-inner)" }}>
               {[
@@ -373,14 +381,18 @@ function CellBlock({ cell, t, tl, fmt, unionLabel }) {
                 [t("idleCell.endTime"), "left", 84],
                 [t("idleCell.colMinutes"), "right", 90],
                 [t("idleCell.colStatus"), "left", 120],
-                [t("idleCell.colNote"), "left", null],
-              ].map(([label, align, w]) => (
+                // The note has no fixed width — it takes whatever the five
+                // measured columns leave — but it does have a FLOOR, because a
+                // reason squeezed into 90px is a reason nobody reads.
+                [t("idleCell.colNote"), "left", null, NOTE_MIN_W],
+              ].map(([label, align, w, minW]) => (
                 <th
                   key={label}
                   className="px-3 py-2 text-[10px] uppercase tracking-wider font-semibold"
                   style={{
                     color: "var(--text-3)", textAlign: align,
                     width: w ? `${w}px` : undefined,
+                    minWidth: minW ? `${minW}px` : undefined,
                     borderBottom: "1px solid var(--border)",
                   }}
                 >
@@ -411,8 +423,18 @@ function CellBlock({ cell, t, tl, fmt, unionLabel }) {
                     {iv.stopped ? t("idleCell.stopped") : t("idleCell.notStopped")}
                   </span>
                 </td>
-                <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
-                  <span className="line-clamp-2" title={iv.note}>{iv.note}</span>
+                <td
+                  className="px-3 py-2 align-top"
+                  style={{ color: "var(--text-3)", minWidth: NOTE_MIN_W }}
+                >
+                  {/* The note is the whole of WHY the cell stopped, and it was
+                      clamped to two lines with the remainder behind a hover
+                      title — i.e. unreachable on the phone this is mostly read
+                      on, and cut off mid-sentence everywhere else. It wraps in
+                      full now and the row grows instead. */}
+                  <span className="block whitespace-pre-wrap break-words leading-snug">
+                    {iv.note}
+                  </span>
                 </td>
               </tr>
             ))}
