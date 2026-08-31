@@ -494,7 +494,11 @@ def export_positions(
                    (16, "Показатель"), (17, "Кол-во")):
         c = ws.cell(row=2, column=col, value=h)
         c.font, c.alignment, c.border = bold, head_al, border
-    ws.row_dimensions[2].height = 25.35
+    # The headers wrap (head_al), and the form's 25.35 fits only ~1.7 lines, so
+    # the second line of «Факт План» and «Общ.трудаёмкост» was cut off. Two
+    # lines of 11pt need 30; 32 leaves margin. An explicit height is what
+    # stops Excel auto-fitting, so it has to be tall enough on its own.
+    ws.row_dimensions[2].height = 32
 
     # --- position rows (row 3+), then spare formula rows for hand-added SKUs --
     for idx, r in enumerate(rows):
