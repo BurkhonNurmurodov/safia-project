@@ -108,8 +108,8 @@ export function commentActualFormula(cell, t) {
     formula: `${num(pa, 0)} ÷ (${num(ehc, 2)} × (${num(base, 1)} − ${num(dt, 0)} − ${num(early, 1)} − ${KAIZEN_BUFFER})) × 100% = ${pct}%`,
     legend: [
       { num: num(pa, 0), label: t("comment.legend.prodActual") },
-      { num: num(ehc, 2), label: t("comment.legend.effectiveHc") },
-      { num: num(base, 1), label: t("comment.legend.availMin") },
+      { num: num(ehc, 2), label: t("comment.legend.effectiveHc"), key: "effectiveHc" },
+      { num: num(base, 1), label: t("comment.legend.availMin"), key: "availMin" },
       { num: num(dt, 0), label: t("comment.legend.downtime") },
       { num: num(early, 1), label: t("comment.legend.earlyArr") },
       { num: String(KAIZEN_BUFFER), label: t("comment.legend.kaizen") },
@@ -141,6 +141,30 @@ export function commentEffectiveHcFormula(cell, t) {
       { num: num(cell.official_hc, 0), label: t("comment.legend.headcount") },
       { num: num(labor, 0), label: t("comment.legend.verifixLabor") },
       { num: signed(surplus, 2), label: t("comment.legend.laborSurplus") },
+    ],
+  };
+}
+
+// ── Available minutes per person = 480 × (prod_actual ÷ prod_plan) ────────────
+// The SECOND derived input of the Actual formula, and the one that most often
+// reads as arbitrary: a shift is 480 minutes, so a reader who is handed 326.9
+// with no arithmetic cannot tell it from a typo. It is the backend's `base`
+// (kpi_calculator: 480 × ratio) — the standard shift scaled by how much of the
+// plan the day actually produced, which is why a day that ran behind its plan
+// had fewer PLANNED minutes per person to spend. The ratio itself is named in
+// the legend, since it is the whole of why the number is not simply 480.
+export function commentAvailMinFormula(cell, t) {
+  const base = availMin(cell);
+  const pa = cell?.prod_actual;
+  const pp = cell?.prod_plan;
+  if (base == null || pa == null || !pp) return null;
+  return {
+    formula: `480 × (${num(pa, 0)} ÷ ${num(pp, 0)}) = ${num(base, 1)}`,
+    legend: [
+      { num: "480", label: t("comment.legend.shiftStd") },
+      { num: num(pa, 0), label: t("comment.legend.prodActual") },
+      { num: num(pp, 0), label: t("comment.legend.prodPlan") },
+      { num: num(pa / pp, 3), label: t("comment.legend.planRatio") },
     ],
   };
 }

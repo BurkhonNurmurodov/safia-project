@@ -1572,6 +1572,8 @@ const t = {
     "comment.legend.verifixLabor":"Verifix mehnat daqiqalari — qayd etilgan soatlar × 60 × 0.85",
     "comment.legend.laborSurplus":"Ortiqcha mehnat — qayd etilgan soatlardan kelib chiqadigan qo'shimcha kishi-smena",
     "comment.effectiveHcTitle":  "Samarali xodimlar soni qanday chiqadi",
+    "comment.availMinTitle":     "Mavjud ish daqiqalari qanday chiqadi",
+    "comment.legend.planRatio":  "Reja bajarilishi — haqiqiy ÷ reja",
 
     // ── Attendance Modal ──────────────────────────────────────────────────────
     "attendance.title":      "Ishchi Davomati",
@@ -5729,6 +5731,8 @@ const t = {
     "comment.legend.verifixLabor":"Verifix меҳнат дақиқалари — қайд этилган соатлар × 60 × 0.85",
     "comment.legend.laborSurplus":"Ортиқча меҳнат — қайд этилган соатлардан келиб чиқадиган қўшимча киши-смена",
     "comment.effectiveHcTitle":  "Самарали ходимлар сони қандай чиқади",
+    "comment.availMinTitle":     "Мавжуд иш дақиқалари қандай чиқади",
+    "comment.legend.planRatio":  "Режа бажарилиши — ҳақиқий ÷ режа",
 
     // ── Attendance Modal ──────────────────────────────────────────────────────
     "attendance.title":      "Ишчи Давомати",
@@ -9886,6 +9890,8 @@ const t = {
     "comment.legend.verifixLabor":"Трудовые минуты Verifix — учтённые часы × 60 × 0,85",
     "comment.legend.laborSurplus":"Избыток труда — дополнительные человеко-смены по учтённым часам",
     "comment.effectiveHcTitle":  "Как получается эффективная численность",
+    "comment.availMinTitle":     "Как получаются доступные минуты на человека",
+    "comment.legend.planRatio":  "Выполнение плана — факт ÷ план",
 
     // ── Attendance Modal ──────────────────────────────────────────────────────
     "attendance.title":      "Посещаемость сотрудников",
@@ -14043,6 +14049,8 @@ const t = {
     "comment.legend.verifixLabor":"Verifix labor minutes — recorded hours × 60 × 0.85",
     "comment.legend.laborSurplus":"Labor surplus — extra person-shifts from the recorded hours",
     "comment.effectiveHcTitle":  "How the effective headcount is derived",
+    "comment.availMinTitle":     "How the available minutes per person are derived",
+    "comment.legend.planRatio":  "Plan fulfilment — actual ÷ planned",
 
     // ── Attendance Modal ──────────────────────────────────────────────────────
     "attendance.title":      "Worker Attendance",

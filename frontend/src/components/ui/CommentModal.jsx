@@ -6,7 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import { commentPlanFormula, commentActualFormula, commentEffectiveHcFormula } from "../../utils/formulas";
+import { commentPlanFormula, commentActualFormula, commentEffectiveHcFormula, commentAvailMinFormula } from "../../utils/formulas";
 
 // Convert DD.MM.YYYY → YYYY-MM-DD for API calls
 function toIsoDate(date) {
@@ -14,6 +14,13 @@ function toIsoDate(date) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date; // already ISO
   const [dd, mm, yyyy] = date.split(".");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+// A formula builder answers null when the payload lacks its inputs; a nested
+// breakdown is offered only when there is one, so the title rides along here
+// instead of being checked at every render site.
+function withTitle(built, title) {
+  return built ? { ...built, title } : null;
 }
 
 export default function CommentModal({ managerId, managerName, date, rawCell, mode, onClose, formulaOnly = false, formulaCollapsible = false }) {
@@ -28,6 +35,11 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
   // Formula section is collapsible only when requested (comparison table); starts
   // collapsed so the comments are visible first — the user expands the breakdown.
   const [formulaOpen, setFormulaOpen] = useState(false);
+  // Which derived input of the Actual formula has its own arithmetic open.
+  // Collapsed by default: the breakdown answers "where does 84.23 come from",
+  // a question the reader only has once they have read the row that names it.
+  const [openCalc, setOpenCalc] = useState({});
+  const toggleCalc = (k) => setOpenCalc((o) => ({ ...o, [k]: !o[k] }));
   const qc = useQueryClient();
   const qKey = ["comments", managerId, isoDate];
 
@@ -97,19 +109,58 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
         {rawCell && (() => {
           const plan = commentPlanFormula(rawCell, t);
           const actual = commentActualFormula(rawCell, t);
-          // Effective headcount is the one input of the Actual formula that is
-          // itself computed, so it gets its own nested breakdown right under it
-          // — a number the reader is asked to trust is a number the popup owes
-          // them the arithmetic for.
-          const ehc = commentEffectiveHcFormula(rawCell, t);
+          // The two inputs of the Actual formula that are themselves COMPUTED —
+          // a number the reader is asked to trust is a number the popup owes
+          // them the arithmetic for. Each hangs off the legend row that names
+          // it (`key` on the legend item) rather than sitting in a block below,
+          // so the answer appears where the question was asked.
+          const details = {
+            effectiveHc: withTitle(commentEffectiveHcFormula(rawCell, t), t("comment.effectiveHcTitle")),
+            availMin: withTitle(commentAvailMinFormula(rawCell, t), t("comment.availMinTitle")),
+          };
           const Legend = ({ items }) => (
             <div className="mt-1.5 space-y-1">
-              {items.map(({ num, label }) => (
-                <div key={`${num}-${label}`} className="flex items-baseline gap-2 text-[10px]" style={{ color: "var(--text-4)" }}>
-                  <span className="font-mono font-semibold flex-shrink-0" style={{ color: "var(--text-2)" }}>{num}</span>
-                  <span>{label}</span>
-                </div>
-              ))}
+              {items.map(({ num, label, key }) => {
+                const detail = key ? details[key] : null;
+                if (!detail) return (
+                  <div key={`${num}-${label}`} className="flex items-baseline gap-2 text-[10px]" style={{ color: "var(--text-4)" }}>
+                    <span className="font-mono font-semibold flex-shrink-0" style={{ color: "var(--text-2)" }}>{num}</span>
+                    <span>{label}</span>
+                  </div>
+                );
+                const open = !!openCalc[key];
+                return (
+                  <div key={`${num}-${label}`}>
+                    <button
+                      type="button"
+                      onClick={() => toggleCalc(key)}
+                      aria-expanded={open}
+                      className="w-full flex items-baseline gap-2 text-left text-[10px] rounded-md -mx-1.5 px-1.5 py-1 transition-colors"
+                      style={{ color: "var(--text-4)", background: open ? "var(--brand-bg)" : "transparent" }}
+                    >
+                      <span className="font-mono font-semibold flex-shrink-0" style={{ color: "var(--text-2)" }}>{num}</span>
+                      <span className="flex-1">{label}</span>
+                      <ChevronDown
+                        size={12}
+                        className="flex-shrink-0 transition-transform"
+                        style={{ color: "var(--brand-text)", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+                      />
+                    </button>
+                    {open && (
+                      <div className="mt-1 mb-1.5 ml-0.5 pl-2.5" style={{ borderLeft: "2px solid var(--brand-border)" }}>
+                        <div className="text-[10px] mb-1" style={{ color: "var(--text-4)" }}>{detail.title}</div>
+                        <div
+                          className="text-[11px] font-mono rounded-lg px-2.5 py-2"
+                          style={{ background: "var(--bg-card)", color: "var(--text-2)" }}
+                        >
+                          {detail.formula}
+                        </div>
+                        <Legend items={detail.legend} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
           return (
@@ -172,20 +223,6 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
                       {actual?.formula || "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100%"}
                     </div>
                     {actual && <Legend items={actual.legend} />}
-                    {actual && ehc && (
-                      <div className="mt-2.5 pl-2.5" style={{ borderLeft: "2px solid var(--border-md)" }}>
-                        <div className="text-[10px] mb-1" style={{ color: "var(--text-4)" }}>
-                          {t("comment.effectiveHcTitle")}
-                        </div>
-                        <div
-                          className="text-[11px] font-mono rounded-lg px-2.5 py-2"
-                          style={{ background: "var(--bg-card)", color: "var(--text-2)" }}
-                        >
-                          {ehc.formula}
-                        </div>
-                        <Legend items={ehc.legend} />
-                      </div>
-                    )}
                   </div>
                 </>
               )}
