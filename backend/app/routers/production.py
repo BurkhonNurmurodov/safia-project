@@ -78,7 +78,7 @@ ABC_HEADERS = ["Сап код", "SKU", "Трудоемкость", "Команд
                "Факт План", "ПЛАН", "Общ.трудаёмкост", "Минут", "Парето"]
 ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 8, "G": 9.5,
               "H": 9, "I": 12.5, "J": 8.5, "K": 8.5, "L": 4.5, "M": 10, "N": 8.5,
-              "O": 15, "P": 34, "Q": 11}
+              "O": 15, "P": 50, "Q": 11}
 ABC_SPARE_ROWS = 15   # bordered formula rows under the data for hand-added SKUs
 ABC_DATA_START = 3    # first position row (row 1 = totals, row 2 = headers)
 ABC_TEAM_START = 3    # first row of the M:O per-team block — level with the
@@ -560,18 +560,27 @@ def export_positions(
     tot.border, tot.alignment, tot.font, tot.number_format = border, center, bold, "0.0"
 
     # --- P:Q — indicator block ------------------------------------------------
-    # TWO figures, by the operator's call (2026-08-31): the people standing in the
-    # cells, and the shift's total labour. Everything else the manual form prints
-    # here — kelishi kerak edi, kerak, spare people, the two bandlik rates,
-    # обеспеч, абсетеизм — was computed off the hand-entered «Сколько должна на
-    # штатке» counts, which nobody fills in, so each of them read 0 or 100% on
-    # every exported file. That block (Z:AA) is gone with them.
-    #   keldi = ΣO. SONI (N) — the people assigned to the cells that day, the same
-    #           total the block prints under itself. A live SUM, so it follows the
-    #           brigadir's own edits to N.
+    # THREE figures, by the operator's call (2026-08-31): the people standing in
+    # the cells, how loaded they are, and the shift's total labour. The rest of
+    # what the manual form prints here — kelishi kerak edi, kerak, spare people,
+    # the kerakli-odam bandlik, обеспеч, абсетеизм — was computed off the
+    # hand-entered «Сколько должна на штатке» counts, which nobody fills in, so
+    # each of them read 0 or 100% on every exported file. That block (Z:AA) is
+    # gone with them.
+    #   keldi   = ΣO. SONI (N) — the people assigned to the cells that day, the
+    #             same total the block prints under itself. A live SUM, so it
+    #             follows the brigadir's own edits to N.
+    #   bandlik = I1 ÷ (keldi × shift_min) — the unit's average load for the day,
+    #             the same arithmetic as pp_calc's `avg_load`, so the file and the
+    #             page answer with one number. Divides by the row above it, so it
+    #             re-reads whatever headcount the brigadir leaves in N.
     indicators = [
-        ("Nechta odam keldi", f"=SUM(N{t0}:N{t1})", "0"),
-        ("Общ.трудаёмкост",   "=I1",                "#\\ ##0.00"),
+        ("Nechta odam keldi",                                   f"=SUM(N{t0}:N{t1})",
+         "0"),
+        ("Hozirgi odam bilan o`rtacha bandlik(smena boshida)",  f"=IFERROR(I1/(Q{ds}*{sm}),0)",
+         "0%"),
+        ("Общ.трудаёмкост",                                     "=I1",
+         "#\\ ##0.00"),
     ]
     for idx, (label, formula, nf) in enumerate(indicators):
         rn = ds + idx
