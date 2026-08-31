@@ -2123,6 +2123,23 @@ destination; an upload may still name its own targets for one file.
   and the register lists only CONFIGURED units — so it is also the list the
   upload's target picker is built from, and the two can never disagree about who
   exists.
+- **The default is THREE units** (the operator's call, 2026-08-31): Suvonov
+  Elshod OF, Aripova Manzura and Talipova Mamura are auto-filled, everybody else
+  is manual. `startup.seed_pp_autofill_default` (flag
+  `pp_autofill_default_2026_08_31_v1`) writes it once — **changing the three
+  needs a NEW flag key**, or the old "already ran" mark makes it a no-op on every
+  box that has booted once. It states an END state rather than declining when the
+  register already holds rows; the flag is what protects every LATER admin edit.
+  Matching is by NAME (the ids in `startup.MANAGERS` are a stale seed and no
+  longer describe production), exact first, then a both-ways prefix accepted only
+  when exactly one unit matches. **All three must resolve or NOTHING is written
+  and no flag is set** — switching everyone off while failing to switch the three
+  on leaves the next upload with nobody to write to; the roster is printed so the
+  fix is one corrected string. It writes config only: no `pp_daily` row, override
+  or catalog is touched, so it moves no number by itself.
+  Every non-archived unit is switched off, not only the CONFIGURED ones, so a
+  brigadir given a catalog later starts manual too — a unit CREATED afterwards is
+  on, since an absent row still reads as ON.
 
 ## The action register (`/admin/upload?tab=logs`)
 

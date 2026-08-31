@@ -3912,3 +3912,110 @@ def report_leader_deadline_rules() -> None:
                 pass
     except Exception as exc:
         print(f"[startup] deadline-rule alert not delivered: {exc}")
+
+
+PP_AUTOFILL_DEFAULT_FLAG = "pp_autofill_default_2026_08_31_v1"
+PP_AUTOFILL_DEFAULT_UNITS = ("Suvonov Elshod OF", "Aripova Manzura", "Talipova Mamura")
+
+
+def _fold_name(s: str) -> str:
+    """Casefolded, whitespace-collapsed — the only normalisation applied when
+    matching a unit by name. Deliberately nothing more: a looser rule here would
+    silently switch off the wrong brigadir."""
+    return " ".join((s or "").split()).casefold()
+
+
+def seed_pp_autofill_default() -> None:
+    """2026-08-31 (the operator's call): the plant-wide SAP фаза/заголовок upload
+    fills ONLY these three units by default — Suvonov Elshod OF, Aripova Manzura
+    and Talipova Mamura. Every other brigadir's ПЛАН/ФАКТ is entered by hand, so
+    every other unit gets `pp_manager_settings.auto_fill = False`.
+
+    Config only: no pp_daily row, override or catalog is touched, so this moves
+    no number by itself — it only decides who the NEXT unattended upload reaches.
+    An upload naming its targets explicitly still reaches a switched-off unit.
+
+    Three guards, each closing a way this could quietly do the wrong thing:
+
+    * ALL THREE names must resolve, or NOTHING is written and no flag is set.
+      Switching everyone off while failing to switch the three on would leave the
+      next upload with nobody to write to — the endpoint answers 400, so it is
+      loud rather than lossy, but it is still not a state to boot into. A name
+      that did not match is printed, and 4 presses on the «SAP avto-to'ldirish»
+      register do the same job by hand.
+    * It states an END STATE and writes it, rather than declining when the
+      register already holds rows. The three units were named by the operator
+      AFTER the register shipped, so a row toggled in the meantime is not an
+      opinion this must yield to — it is the very thing being answered. The
+      flag is what protects every LATER edit: this runs exactly once, and from
+      the next boot on the register is entirely the admin's.
+    * Every non-archived unit is switched off, not just the CONFIGURED ones, so a
+      brigadir who is given a catalog later starts off manual too — which is what
+      "only these three" means. Absent row still reads as ON, so a unit created
+      after this ran is on until an admin says otherwise.
+
+    Guarded by an AppSetting flag so it runs exactly once. Changing the three
+    units needs a NEW flag key, or the old "already ran" mark makes the change a
+    no-op on every box that has booted once.
+    """
+    from app.models import PPManagerSetting
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PP_AUTOFILL_DEFAULT_FLAG).first():
+            return
+
+        units = db.query(Manager).filter(Manager.archived.is_(False)).all()
+        by_fold: dict[str, list] = {}
+        for m in units:
+            by_fold.setdefault(_fold_name(m.name), []).append(m)
+
+        keep, unresolved = set(), []
+        for want in PP_AUTOFILL_DEFAULT_UNITS:
+            w = _fold_name(want)
+            # Exact first. The prefix fallback runs BOTH ways because the unit
+            # suffix drifts between the register and how people write the name
+            # («Suvonov Elshod» vs «Suvonov Elshod OF»), and it is accepted only
+            # when exactly ONE unit matches — an ambiguous prefix names nobody.
+            hit = by_fold.get(w) or [
+                m for m in units
+                if _fold_name(m.name).startswith(w) or w.startswith(_fold_name(m.name))
+            ]
+            if len(hit) == 1:
+                keep.add(hit[0].id)
+            else:
+                unresolved.append(f"{want} ({'ambiguous' if hit else 'not found'})")
+
+        if unresolved:
+            # No flag: the guard stays honest about never having run, so fixing
+            # a spelling and redeploying still applies it. The roster is printed
+            # because the whole fix is one corrected string, and without it the
+            # operator has to go and look the spellings up.
+            print("[startup] pp autofill default: NOT applied — "
+                  + "; ".join(unresolved)
+                  + " | units on this box: "
+                  + ", ".join(sorted(m.name or f"#{m.id}" for m in units)))
+            return
+
+        rows = {r.manager_id: r for r in db.query(PPManagerSetting).all()}
+        for m in units:
+            want_on = m.id in keep
+            row = rows.get(m.id)
+            if row is None:
+                # An absent row already reads as ON, so only the OFF half needs
+                # writing — and writing the ON half anyway would be a row that
+                # says exactly what its absence says.
+                if not want_on:
+                    db.add(PPManagerSetting(manager_id=m.id, auto_fill=False))
+            elif bool(row.auto_fill) != want_on:
+                row.auto_fill = want_on
+        print(f"[startup] pp autofill default: auto-fill ON for "
+              f"{', '.join(sorted(m.name for m in units if m.id in keep))}; "
+              f"{len(units) - len(keep)} other unit(s) manual")
+        db.add(AppSetting(key=PP_AUTOFILL_DEFAULT_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] pp autofill default skipped: {exc}")
+    finally:
+        db.close()
