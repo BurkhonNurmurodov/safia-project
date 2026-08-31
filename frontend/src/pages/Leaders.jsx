@@ -3318,20 +3318,26 @@ export default function Leaders() {
     </div>
   );
 
-  // A run is STARTED from the register (Monitoring) and WATCHED from the AI
-  // tab, so the bar is bolted to the tab strip rather than to either view — a
-  // progress bar you have to navigate to is one nobody sees. It renders nothing
-  // unless a run is live, so it costs the other tabs no space.
   const pageChrome = (
     <>
       {scopeBar}
       {tabsBar}
+    </>
+  );
+
+  // The run itself — the queued note and the progress strip — lives on the AI
+  // tab and nowhere else. A run can be STARTED from the register, but watching
+  // it is AI work, and a permanent band of run chrome above every other tab's
+  // charts is noise for the people who came to read those charts. The tab's
+  // own badge is what tells them there is something to look at.
+  const aiRunStrip = isAdmin ? (
+    <>
       {/* Shift 1's automatic hand-off, reported at the moment it happens. It
           sits directly above the progress strip because that strip is what
           carries the work from here — the note says «12 went in», the bar
           underneath shows them being judged. Transient by design: it is
           feedback for a press, not a standing statistic. */}
-      {isAdmin && aiQueued > 0 && (
+      {aiQueued > 0 && (
         <div className="mb-3 rounded-xl px-3 py-2 flex items-center gap-2 text-xs"
           style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)",
                    color: "var(--brand-text)" }} role="status">
@@ -3339,9 +3345,9 @@ export default function Leaders() {
           <span className="tabular-nums">{T.aiQueuedN.replace("{n}", aiQueued.toLocaleString())}</span>
         </div>
       )}
-      {isAdmin && <AiProgress showIdle={tab === "ai"} />}
+      <AiProgress showIdle />
     </>
-  );
+  ) : null;
 
   if (tab === "tasks") {
     return (
@@ -3401,6 +3407,7 @@ export default function Leaders() {
       <Layout title={pageTitle}>
         {headerBar}
         {pageChrome}
+        {aiRunStrip}
         {/* The request control belongs where an admin looks for AI actions.
             It stays in the register header too — that is where you notice a
             suspect row — but this tab is where you come to run one. */}

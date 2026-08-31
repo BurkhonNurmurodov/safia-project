@@ -14,9 +14,10 @@ import api from "../../utils/api";
  * itself over hours; without a bar the only observable difference between
  * "working" and "broken" is that the numbers eventually change.
  *
- * So: one strip, directly under the page tabs, on EVERY tab of /leaders — the
- * run is started from the register on Monitoring and watched from the AI tab,
- * and a progress bar you have to navigate to is a progress bar nobody sees.
+ * So: one strip, directly under the page tabs of the AI tab — the run may be
+ * started from the register on Monitoring, but it is watched here, where the
+ * rest of the reviewer's controls live. The other tabs stay clear of it: their
+ * readers came for their own charts, and the tab badge is their AI news.
  *
  * It polls only while a run is live, and it survives a reload because the run
  * is a server-side record rather than component state. When the queue empties
@@ -370,8 +371,9 @@ const OpenDetails = ({ onClick, title, children }) => (
 
 /** `showIdle` — also render the standing "how much is checked" bar when no run
  *  is going. True on the AI tab, where that is the subject; false elsewhere,
- *  where a permanent statistic would just be chrome. A LIVE run renders on
- *  every tab regardless: somebody started it and it costs quota. */
+ *  where a permanent statistic would just be chrome. The strip as a whole —
+ *  live run included — is mounted only by the AI tab: the other tabs came for
+ *  their own charts, and their AI news is the tab badge. */
 export default function AiProgress({ showIdle = false }) {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.ru;
@@ -452,8 +454,7 @@ export default function AiProgress({ showIdle = false }) {
 
   // IDLE: no run, but there is still a true answer to "how much of my data has
   // been checked". Only where it was asked for — the AI tab — because a
-  // standing statistic on the Monitoring tab is noise, whereas a LIVE run
-  // belongs on every tab (it is a page-wide event somebody started).
+  // standing statistic on the Monitoring tab is noise.
   if (p && !p.active && !finished) {
     const cov = p.coverage;
     // Nothing has ever been queued: the feature is off or brand new, and an
