@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload, CheckCircle2, XCircle, Factory, Save, BookOpen, AlertTriangle, Users,
+  Wand2, PencilLine,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -15,6 +16,8 @@ import TableCard, { Th, SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import UploadDropzone, { FileStateList, useFileStates } from "../../components/ui/UploadDropzone";
+import Modal from "../../components/ui/Modal";
+import SegmentedToggle from "../../components/ui/SegmentedToggle";
 
 /**
  * «Ishlab chiqarish» — the daily SAP production-plan upload, the per-brigadir
@@ -163,6 +166,175 @@ function WorkCenters({ managerId, managerName }) {
   );
 }
 
+// ── SAP auto-fill register ───────────────────────────────────────────────────
+/**
+ * Who an unattended SAP upload reaches. The фаза/заголовок export is ONE
+ * plant-wide file and used to fan out to every configured brigadir — which in
+ * «Reja + Fakt» deletes the date's rows and clears their manual overrides, so a
+ * unit whose ПЛАН/ФАКТ is kept by hand had its figures wiped by somebody else's
+ * upload.
+ *
+ * The switch is a STANDING default, not a lock: the upload's own target picker
+ * can still name a manual unit for one file. Both surfaces read this one list,
+ * so what the register says and what the picker offers can never disagree.
+ */
+function AutoFillRegister({ rows, isLoading, onSet, saving }) {
+  const { t } = useLang();
+  const on = rows.filter((r) => r.auto_fill).length;
+  const allIds = rows.map((r) => r.manager_id);
+
+  return (
+    <TableCard
+      icon={Wand2}
+      title={t("admin.prod.afTitle")}
+      right={
+        rows.length > 0 ? (
+          <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+            {t("admin.prod.afCount").replace("{n}", on).replace("{m}", rows.length)}
+          </span>
+        ) : null
+      }
+      toolbar={
+        rows.length > 0 ? (
+          <div className="flex items-center gap-2">
+            <Button size="md" variant="secondary" disabled={saving || on === rows.length}
+                    onClick={() => onSet(allIds, true)}>
+              {t("admin.prod.afAllOn")}
+            </Button>
+            <Button size="md" variant="secondary" disabled={saving || on === 0}
+                    onClick={() => onSet(allIds, false)}>
+              {t("admin.prod.afAllOff")}
+            </Button>
+          </div>
+        ) : null
+      }
+    >
+      <thead>
+        <tr>
+          <Th label={t("admin.prod.afBrigadir")} />
+          <Th label={t("admin.prod.shift")} align="right" />
+          <Th label={t("admin.prod.afMode")} align="right" />
+        </tr>
+      </thead>
+      <tbody>
+        {isLoading ? (
+          [...Array(4)].map((_, i) => (
+            <tr key={i}><td colSpan={3} className="px-3 py-2"><SkeletonBlock className="h-6 rounded" /></td></tr>
+          ))
+        ) : rows.length === 0 ? (
+          <tr>
+            <td colSpan={3} className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-3)" }}>
+              {t("admin.prod.afEmpty")}
+            </td>
+          </tr>
+        ) : (
+          rows.map((r) => (
+            <tr key={r.manager_id}>
+              <td className="px-3 py-2 font-semibold" style={{ color: "var(--text-1)" }}>{r.name}</td>
+              <td className="px-3 py-2 text-right text-xs" style={{ color: "var(--text-3)" }}>
+                {r.shift ? r.shift : "—"}
+              </td>
+              <td className="px-3 py-2">
+                <div className="flex justify-end">
+                  {/* Two mutually-exclusive options ⇒ the platform's toggle
+                      template, never a hand-rolled on/off chip. */}
+                  <SegmentedToggle
+                    size="sm"
+                    value={r.auto_fill ? "auto" : "manual"}
+                    onChange={(v) => onSet([r.manager_id], v === "auto")}
+                    ariaLabel={r.name}
+                    options={[
+                      { value: "auto", label: t("admin.prod.afAuto") },
+                      { value: "manual", label: t("admin.prod.afManual") },
+                    ]}
+                  />
+                </div>
+              </td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </TableCard>
+  );
+}
+
+// ── the upload's own target picker (per-file override of the register) ───────
+function TargetsModal({ open, rows, value, onCancel, onApply }) {
+  const { t } = useLang();
+  const defaults = rows.filter((r) => r.auto_fill).map((r) => r.manager_id);
+  const [sel, setSel] = useState(value ?? defaults);
+
+  // Re-seed each time it opens: the register may have changed underneath, and a
+  // stale tick list would name a unit the register no longer offers.
+  useEffect(() => { if (open) setSel(value ?? defaults); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = (id) => setSel((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const sameAsDefault = sel.length === defaults.length && defaults.every((d) => sel.includes(d));
+
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      icon={<Users size={16} />}
+      title={t("admin.prod.tgTitle")}
+      subtitle={t("admin.prod.tgSub")}
+      maxWidth="max-w-md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel}>{t("common.cancel")}</Button>
+          {/* null = "follow the register", which is not the same as ticking the
+              same names by hand: it keeps tracking the register if it changes. */}
+          <Button onClick={() => onApply(sameAsDefault ? null : sel)}>{t("common.save")}</Button>
+        </>
+      }
+    >
+      <div className="flex items-center gap-2 pb-1">
+        <Button size="sm" variant="ghost" onClick={() => setSel(rows.map((r) => r.manager_id))}>
+          {t("admin.prod.tgAll")}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setSel([])}>{t("admin.prod.tgNone")}</Button>
+        <Button size="sm" variant="ghost" onClick={() => setSel(defaults)}>{t("admin.prod.tgDefault")}</Button>
+      </div>
+
+      <div className="max-h-[46vh] overflow-y-auto rounded-xl" style={{ border: "1px solid var(--border)" }}>
+        {rows.length === 0 ? (
+          <div className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-3)" }}>
+            {t("admin.prod.afEmpty")}
+          </div>
+        ) : rows.map((r) => (
+          <label
+            key={r.manager_id}
+            className="flex items-center gap-2.5 px-3 py-2 cursor-pointer"
+            style={{ borderBottom: "1px solid var(--border)" }}
+          >
+            <input
+              type="checkbox"
+              checked={sel.includes(r.manager_id)}
+              onChange={() => toggle(r.manager_id)}
+              style={{ accentColor: "var(--brand)" }}
+            />
+            <span className="text-sm flex-1 min-w-0 truncate" style={{ color: "var(--text-1)" }}>
+              {r.name}
+              {r.shift ? <span className="text-[11px] ml-1.5" style={{ color: "var(--text-4)" }}>
+                {t("admin.prod.shift")} {r.shift}
+              </span> : null}
+            </span>
+            {/* A unit switched off is still pickable — that is the whole point of
+                the override — but it must SAY it is being reached against its
+                standing setting, or a stray tick reads like an ordinary target. */}
+            {!r.auto_fill && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold flex items-center gap-1 flex-shrink-0"
+                    style={{ background: "rgba(234,179,8,0.12)", color: "#a16207" }}>
+                <PencilLine size={10} /> {t("admin.prod.afManual")}
+              </span>
+            )}
+          </label>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 // ── catalog import (Sheet1 …) ────────────────────────────────────────────────
 function CatalogImport({ managerId, managerName }) {
   const { t } = useLang();
@@ -184,6 +356,9 @@ function CatalogImport({ managerId, managerName }) {
       setState({ status: "ok", data });
       setConfirm(false);
       qc.invalidateQueries({ queryKey: ["pp-wc", managerId] });
+      // A first-ever catalog is what makes a unit "configured", i.e. what puts
+      // it in the auto-fill register and in the upload's target picker.
+      qc.invalidateQueries({ queryKey: ["pp-autofill"] });
     } catch (e) {
       setState({ status: "error", detail: e?.response?.data?.detail || t("admin.prod.catalogFailed") });
     }
@@ -255,6 +430,12 @@ function CatalogImport({ managerId, managerName }) {
             </span>
           </div>
         )}
+        {state.status === "ok" && state.data.backfill_skipped && (
+          <div className="mt-2 flex items-start gap-2 text-xs" style={{ color: "#a16207" }}>
+            <PencilLine size={13} className="flex-shrink-0 mt-0.5" />
+            <span className="leading-snug">{t("admin.prod.catalogNoBackfill")}</span>
+          </div>
+        )}
         {state.status === "error" && (
           <div className="mt-3 flex items-start gap-2 text-sm" style={{ color: "#ef4444" }}>
             <XCircle size={14} className="flex-shrink-0 mt-0.5" />
@@ -302,13 +483,47 @@ export default function ProductionUpload() {
 
   const managerName = brigadirs.find((b) => b.manager_id === managerId)?.name || "";
 
+  // ── who this file reaches ────────────────────────────────────────────────
+  // The standing register, and a per-upload override on top of it. `targets`
+  // null = follow the register (the request then names nobody and the backend
+  // resolves it), an array = this file goes to exactly these.
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { data: afData, isLoading: afLoading } = useQuery({
+    queryKey: ["pp-autofill"],
+    queryFn: () => api.get("/admin/production/autofill").then((r) => r.data.managers),
+  });
+  const afRows = afData ?? [];
+  const [targets, setTargets] = useState(null);
+  const [pickOpen, setPickOpen] = useState(false);
+
+  const setAutoFill = useMutation({
+    mutationFn: ({ ids, on }) =>
+      api.put("/admin/production/autofill", { manager_ids: ids, auto_fill: on }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pp-autofill"] });
+      toast.success(t("admin.prod.afSaved"));
+    },
+    onError: (e) => toast.error(e?.response?.data?.detail || t("admin.saveFailed")),
+  });
+
+  // A hand-picked list may name a unit the register has since dropped (its
+  // catalog was deleted) — such an id can only ever earn a 400, so drop it.
+  const known = afRows.map((r) => r.manager_id);
+  const resolved = targets === null
+    ? afRows.filter((r) => r.auto_fill).map((r) => r.manager_id)
+    : targets.filter((id) => known.includes(id));
+  const manualPicked = resolved.filter((id) => afRows.some((r) => r.manager_id === id && !r.auto_fill));
+
   async function doUpload(picked) {
     const entries = begin(picked);
     setState({ status: "uploading" });
     const form = new FormData();
     picked.forEach((f) => form.append("files", f));
-    // No manager_id → the SAP file is global; the backend fans it out to every
-    // configured brigadir (each filtered by their own catalog).
+    // Naming nobody = "follow the register", so the backend stays the one place
+    // that resolves the auto-fill set. An explicit list is the per-upload
+    // override and reaches a switched-off unit too.
+    if (targets !== null) resolved.forEach((id) => form.append("manager_ids", id));
     form.append("date", date);
     form.append("mode", mode);
     if (fileType !== "auto") form.append("file_type", fileType);
@@ -354,6 +569,7 @@ export default function ProductionUpload() {
               {t("admin.prod.globalFile")}
             </span>
           }
+          subtitle={t("admin.prod.globalSub")}
         />
         <div className="p-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
@@ -396,7 +612,62 @@ export default function ProductionUpload() {
             </FormField>
           </div>
 
+          {/* ── who this file reaches ── */}
+          <div
+            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-2.5 mb-4"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+          >
+            <Users size={14} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
+            <div className="text-xs min-w-0 flex-1" style={{ color: "var(--text-2)" }}>
+              <span className="font-semibold" style={{ color: "var(--text-1)" }}>
+                {targets === null ? t("admin.prod.tgFollowReg") : t("admin.prod.tgPicked")}
+              </span>{" "}
+              <span style={{ color: "var(--text-3)" }}>
+                {t("admin.prod.tgSummary")
+                  .replace("{n}", resolved.length)
+                  .replace("{m}", afRows.length)}
+              </span>
+              {resolved.length > 0 && (
+                <div className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-4)" }}>
+                  {afRows.filter((r) => resolved.includes(r.manager_id)).map((r) => r.name).join(" · ")}
+                </div>
+              )}
+            </div>
+            <Button size="md" variant="secondary" onClick={() => setPickOpen(true)}>
+              {t("admin.prod.tgChange")}
+            </Button>
+            {targets !== null && (
+              <Button size="md" variant="ghost" onClick={() => setTargets(null)}>
+                {t("admin.prod.tgReset")}
+              </Button>
+            )}
+          </div>
+
+          {/* Nothing to write is a state the admin must see BEFORE sending a
+              multi-MB file, not as a 400 after it. */}
+          {!afLoading && resolved.length === 0 && (
+            <div
+              className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs mb-4"
+              style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.30)", color: "#a16207" }}
+            >
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+              <span className="leading-snug">{t("admin.prod.tgNobody")}</span>
+            </div>
+          )}
+          {manualPicked.length > 0 && (
+            <div
+              className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs mb-4"
+              style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.30)", color: "#a16207" }}
+            >
+              <PencilLine size={13} className="flex-shrink-0 mt-0.5" />
+              <span className="leading-snug">
+                {t("admin.prod.tgManualWarn").replace("{n}", manualPicked.length)}
+              </span>
+            </div>
+          )}
+
           <UploadDropzone
+            disabled={resolved.length === 0}
             accept={{ "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] }}
             // A manual type tags the WHOLE request, so picking one forces a
             // single file rather than silently mislabelling the other.
@@ -464,6 +735,22 @@ export default function ProductionUpload() {
         </div>
       </div>
 
+      {/* ── Who an unattended upload reaches — the standing register ── */}
+      <AutoFillRegister
+        rows={afRows}
+        isLoading={afLoading}
+        saving={setAutoFill.isPending}
+        onSet={(ids, on) => setAutoFill.mutate({ ids, on })}
+      />
+
+      <TargetsModal
+        open={pickOpen}
+        rows={afRows}
+        value={targets}
+        onCancel={() => setPickOpen(false)}
+        onApply={(v) => { setTargets(v); setPickOpen(false); }}
+      />
+
       {/* ── Scope: everything below acts on ONE brigadir ── */}
       <div className="rounded-2xl p-4" style={CARD}>
         <FormField label={t("admin.prod.scope")} hint={t("admin.prod.scopeHint")}>
@@ -486,6 +773,7 @@ export default function ProductionUpload() {
       <div className="flex items-center gap-1.5 text-[11px] px-1" style={{ color: "var(--text-4)" }}>
         <Users size={11} /> {t("admin.prod.scopeFooter").replace("{name}", managerName)}
       </div>
+      {toast.node}
     </div>
   );
 }

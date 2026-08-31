@@ -2077,6 +2077,53 @@ decision about somebody else:
   merged key, never wrongly cut one. The `n<folded name>` key exists and every
   reader tries it, so a writer for it is a UI question, not a model change.
 
+## Who a SAP upload fills (`/admin/upload?tab=production`)
+
+From **2026-08-31** the plant-wide фаза/заголовок export no longer reaches every
+brigadir. `PPManagerSetting.auto_fill` is the standing switch, per SUPERVISOR,
+edited on the «SAP avto-to'ldirish» register at the top of the Production admin
+destination; an upload may still name its own targets for one file.
+
+- **Why it exists:** the SAP export is ONE file for the plant and used to fan out
+  to every configured brigadir. In mode «Reja + Fakt» `_ingest_for_manager`
+  DELETES the date's `pp_daily` rows and clears `plan_override` /
+  `actual_override`, so a unit whose ПЛАН/ФАКТ is kept by hand had its figures
+  wiped by somebody else's upload, with nothing on screen saying it had
+  happened.
+- **`_autofill_manager_ids` is THE set an upload reaches when it names nobody** —
+  configured MINUS switched off. **Configured is the load-bearing half and must
+  never be dropped**: `_ingest_for_manager` scopes by the unit's own work centers
+  and catalog SKUs and both filters FALL THROUGH when the unit has neither, so an
+  unconfigured unit would be written the ENTIRE plant file. The explicit
+  `manager_ids` path re-checks it for the same reason and answers 400.
+- **Absent row = ON.** Nothing moved when this shipped; every unit goes on being
+  auto-filled until an admin switches one off. `_autofill_off_ids` is the whole of
+  what the register says — never invert it into an "on" list, or a unit created
+  later starts life excluded.
+- **It is a DEFAULT, not a lock.** `manager_ids` (repeated form field) on
+  `POST /admin/production/upload` is the per-upload override and reaches a
+  switched-off unit deliberately — that is how a manual unit is filled from a
+  file when somebody wants it to be. The client sends NOTHING when it is
+  following the register, so the backend stays the one place that resolves the
+  set; the picker warns, by name, when a «Qo'lda» unit is among the ticks.
+  Legacy single `manager_id` still wins over it.
+- **The catalog import is the SECOND door and it carries the same rule.**
+  `_backfill_manager` writes exactly what the fan-out writes — every stored date
+  replaced, every override cleared — so honouring the flag on the upload and
+  ignoring it there would wipe a manual unit's figures the next time anybody
+  re-imported its catalog. It returns `skipped`, `import_catalog` publishes
+  `backfill_skipped`, and the card SAYS so: a silent absence of «N days
+  recalculated» reads as "there was nothing to recalculate".
+- **Switching a unit either way writes NOTHING to `pp_daily`.** Off leaves its
+  existing rows and overrides exactly as they are; on does not backfill — a file
+  naming that unit is what fills it. `PUT /admin/production/autofill` takes a
+  LIST, so a row toggle and a bulk press are one writer and one transaction,
+  never parallel inserts racing the unique key.
+- Admin-only, like every other `/admin/production/*` endpoint (`_verify_admin`),
+  and the register lists only CONFIGURED units — so it is also the list the
+  upload's target picker is built from, and the two can never disagree about who
+  exists.
+
 ## The action register (`/admin/upload?tab=logs`)
 
 From **2026-08-23** every change on the platform lands in ONE append-only table,

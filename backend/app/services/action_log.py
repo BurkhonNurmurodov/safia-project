@@ -261,6 +261,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/admin/production/catalog/{}",              "shopfloor", "production.catalog_edited"),
     (("DELETE",), "/admin/production/catalog/{}",              "shopfloor", "production.catalog_deleted"),
     (("PUT",),    "/admin/production/work-centers/{}",         "shopfloor", "production.work_center_edited"),
+    (("PUT",),    "/admin/production/autofill",                "shopfloor", "production.autofill_set"),
     (("POST",),   "/api/setup-times/fact/refresh",             "shopfloor", "setup.fact_refreshed"),
     (("POST",),   "/api/setup-times/fact",                     "shopfloor", "setup.fact_saved"),
     (("DELETE",), "/api/setup-times/fact/{}",                  "shopfloor", "setup.fact_deleted"),

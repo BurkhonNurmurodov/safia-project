@@ -43,8 +43,8 @@ from app.config import settings
 from app.database import get_db
 from app.models import (
     Manager, AppSetting, Cell, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
-    PPDaily, PPDaySetting, PPReconciliation, PPUpload, ForecastCallNotice, TelegramUser,
-    TelegramUserRole, RoleProfile,
+    PPDaily, PPDaySetting, PPReconciliation, PPUpload, PPManagerSetting, ForecastCallNotice,
+    TelegramUser, TelegramUserRole, RoleProfile,
 )
 from app.capabilities import page_scope_is_all
 from app.identity import viewer_leader_profile_id
@@ -141,6 +141,23 @@ def _configured_manager_ids(db: Session) -> set[int]:
     ids = {m for (m,) in db.query(PPProduct.manager_id).distinct()}
     ids |= {m for (m,) in db.query(PPDaily.manager_id).distinct()}
     return ids
+
+
+def _autofill_off_ids(db: Session) -> set[int]:
+    """Brigadirs an admin has switched OFF. An absent row means ON, so this is
+    the whole of what the register says — never invert it into an "on" list."""
+    return {m for (m,) in db.query(PPManagerSetting.manager_id).filter(
+        PPManagerSetting.auto_fill.is_(False)).all()}
+
+
+def _autofill_manager_ids(db: Session) -> set[int]:
+    """THE set an SAP upload reaches when it names nobody: every CONFIGURED
+    brigadir minus the ones switched off.
+
+    Configured is the load-bearing half and must never be dropped: an unconfigured
+    unit has no catalog and no work centers, so _ingest_for_manager's two scope
+    filters both fall through and it would be written the ENTIRE plant file."""
+    return _configured_manager_ids(db) - _autofill_off_ids(db)
 
 
 def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) -> int:
@@ -1033,7 +1050,15 @@ def _backfill_manager(db, manager_id: int) -> dict:
     """Ingest EVERY date whose raw SAP slices are already stored, for a brigadir
     who has just been given a catalog. Without this, a фаза/заголовок upload
     that predates the catalog import leaves the unit with no pp_daily rows and
-    the files would have to be uploaded again."""
+    the files would have to be uploaded again.
+
+    A unit with auto-fill switched OFF is the second door the flag has to close:
+    this writes exactly what the fan-out writes (mode 'both' — every stored date
+    replaced, every manual override cleared), so honouring the flag on the upload
+    and ignoring it here would wipe a manual unit's figures the next time somebody
+    re-imported its catalog. `skipped` says so; nothing is written."""
+    if manager_id in _autofill_off_ids(db):
+        return {"days": 0, "rows": 0, "skipped": True}
     days = [d for (d,) in db.query(PPUpload.date).filter(
         PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()]
     filled_days = filled_rows = 0
@@ -1046,13 +1071,14 @@ def _backfill_manager(db, manager_id: int) -> dict:
         if n:
             filled_days += 1
             filled_rows += n
-    return {"days": filled_days, "rows": filled_rows}
+    return {"days": filled_days, "rows": filled_rows, "skipped": False}
 
 
 @router.post("/admin/production/upload")
 async def upload_phase(
     files: list[UploadFile] = File(...),
-    manager_id: Optional[int] = Form(None),  # None → fan out to every configured brigadir
+    manager_id: Optional[int] = Form(None),  # legacy single target; wins over manager_ids
+    manager_ids: Optional[list[int]] = Form(None),  # this upload's targets; None → the auto-fill set
     date: str = Form(...),
     mode: str = Form("both"),           # 'plan' | 'actual' | 'both'
     file_type: Optional[str] = Form(None),  # 'faza' | 'zaga' | None (auto-detect)
@@ -1134,17 +1160,41 @@ async def upload_phase(
     if zaga_present:
         _upsert_upload(db, None, day, "zaga", zaga_cols, zaga_rows_all, zaga_file)
 
-    # Target: a specific brigadir if requested, else every configured one.
-    if manager_id is not None:
-        if not db.query(Manager).filter(Manager.id == manager_id).first():
-            raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
-        targets = [manager_id]
-    else:
-        targets = sorted(_configured_manager_ids(db))
-        if not targets:
+    # Target: whoever this upload names, else the standing auto-fill set. An
+    # explicit list is the per-upload override — it reaches a switched-off unit
+    # too, which is the deliberate way to fill a manual one from a file.
+    named = [manager_id] if manager_id is not None else list(manager_ids or [])
+    if named:
+        targets = sorted({int(m) for m in named})
+        known = {m for (m,) in db.query(Manager.id).filter(Manager.id.in_(targets)).all()}
+        missing = [m for m in targets if m not in known]
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Manager {', '.join(str(m) for m in missing)} not found")
+        # A unit with neither catalog nor work centers has no scope to filter by,
+        # so it would be written the whole plant file. Refuse, loudly.
+        configured = _configured_manager_ids(db)
+        unconfigured = [m for m in targets if m not in configured]
+        if unconfigured:
+            names = {m.id: m.name for m in db.query(Manager).filter(
+                Manager.id.in_(unconfigured)).all()}
             raise HTTPException(
                 status_code=400,
-                detail="Нет настроенных бригадиров — сначала импортируйте каталог хотя бы одному.",
+                detail="Нет каталога у бригадира: "
+                       + ", ".join(names.get(m, str(m)) for m in unconfigured)
+                       + ". Сначала импортируйте каталог.",
+            )
+    else:
+        targets = sorted(_autofill_manager_ids(db))
+        if not targets:
+            configured = _configured_manager_ids(db)
+            raise HTTPException(
+                status_code=400,
+                detail=("Автозаполнение выключено у всех бригадиров — выберите, "
+                        "кому загрузить этот файл.")
+                if configured else
+                "Нет настроенных бригадиров — сначала импортируйте каталог хотя бы одному.",
             )
 
     total_rows = 0
@@ -1161,11 +1211,13 @@ async def upload_phase(
                  ("type", "+".join(t for t, on in (("faza", faza_present),
                                                    ("zaga", zaga_present)) if on)),
                  ("rows", total_rows), ("count", len(targets)),
+                 ("note", "picked" if named else "auto-fill"),
                  ("total", len(faza_ops) if faza_present else 0)],
     )
     return {
         "status": "ok", "date": day.isoformat(), "mode": mode,
         "brigadirs": len(targets), "rows_written": total_rows,
+        "targets": targets, "picked": bool(named),
         "faza_operations": len(faza_ops) if faza_present else 0,
         "zaga_orders": len(order_sku),
         "files": file_reports,
@@ -1246,7 +1298,9 @@ async def import_catalog(
     Then re-derive pp_daily for every date whose raw SAP slices are stored, so
     a catalog imported AFTER the фаза/заголовок upload still produces numbers.
     That rewrites this brigadir's snapshots (and clears their manual overrides)
-    on the backfilled dates — other brigadirs are untouched."""
+    on the backfilled dates — other brigadirs are untouched. A unit with SAP
+    auto-fill switched off is NOT backfilled (`backfill_skipped`): the catalog is
+    replaced, its numbers stay whatever was entered by hand."""
     if not db.query(Manager).filter(Manager.id == manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
     content = await file.read()
@@ -1298,15 +1352,91 @@ async def import_catalog(
         details=[("file", file.filename), ("name", parsed["sheet"]),
                  ("added", len(parsed["products"])), ("removed", replaced or 0),
                  ("work_center", f"+{wc_added} / ~{wc_updated}"),
-                 ("note", f"backfilled {filled['days']} day(s), "
-                          f"{filled['rows']} row(s)")],
+                 ("note", "auto-fill off — not backfilled" if filled["skipped"]
+                          else f"backfilled {filled['days']} day(s), "
+                               f"{filled['rows']} row(s)")],
     )
     return {
         "status": "ok", "manager_id": manager_id, "sheet": parsed["sheet"],
         "products": len(parsed["products"]),
         "work_centers_added": wc_added, "work_centers_updated": wc_updated,
         "backfilled_days": filled["days"], "backfilled_rows": filled["rows"],
+        "backfill_skipped": filled["skipped"],
     }
+
+
+# ── SAP auto-fill register ────────────────────────────────────────────────────
+
+@router.get("/admin/production/autofill")
+def admin_autofill(_: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
+    """Every CONFIGURED brigadir with the flag deciding whether an unattended SAP
+    upload reaches them. Only configured units are listed, because only they are
+    safe to write (see _autofill_manager_ids) — so this is also the list the
+    upload's own target picker is built from."""
+    configured = _configured_manager_ids(db)
+    off = _autofill_off_ids(db)
+    mgrs = db.query(Manager).filter(
+        Manager.archived.is_(False), Manager.id.in_(sorted(configured))
+    ).order_by(Manager.name).all() if configured else []
+    return {"managers": [
+        {"manager_id": m.id, "name": m.name, "shift": m.shift,
+         "factory_id": m.factory_id, "auto_fill": m.id not in off}
+        for m in mgrs
+    ]}
+
+
+class AutoFillBody(BaseModel):
+    manager_ids: list[int]
+    auto_fill: bool
+
+
+@router.put("/admin/production/autofill")
+def admin_set_autofill(body: AutoFillBody, _: dict = Depends(_verify_admin),
+                       db: Session = Depends(get_db)):
+    """Switch the standing flag for one or several brigadirs. ONE endpoint for
+    both, so a bulk press and a row toggle can never write the row two ways —
+    and every id is written inside one transaction, never as parallel inserts
+    racing the unique key.
+
+    Switching a unit OFF changes nothing that is already stored: its existing
+    pp_daily rows and overrides stay exactly as they are. Switching one ON does
+    not backfill either — a file naming that unit is what fills it."""
+    ids = sorted({int(m) for m in body.manager_ids})
+    if not ids:
+        raise HTTPException(status_code=400, detail="manager_ids is required")
+    mgrs = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(ids)).all()}
+    missing = [m for m in ids if m not in mgrs]
+    if missing:
+        raise HTTPException(status_code=404,
+                            detail=f"Manager {', '.join(str(m) for m in missing)} not found")
+
+    rows = {r.manager_id: r for r in db.query(PPManagerSetting).filter(
+        PPManagerSetting.manager_id.in_(ids)).all()}
+    changed = []
+    for mid in ids:
+        row = rows.get(mid)
+        was = row.auto_fill if row else True
+        if bool(was) == body.auto_fill:
+            continue
+        if not row:
+            row = PPManagerSetting(manager_id=mid)
+            db.add(row)
+        row.auto_fill = body.auto_fill
+        changed.append(mid)
+    db.commit()
+    one = ids[0] if len(ids) == 1 else None
+    action_log.enrich(
+        target_kind="autofill",
+        # Bounded on purpose: the register rides in every db-dump, so a batch is
+        # a COUNT and only a single-unit press names anybody.
+        target_id=str(one) if one else f"batch:{len(ids)}",
+        target_name=(mgrs[one].name or str(one)) if one else None,
+        unit_id=one,
+        details=[("count", len(ids)), ("note", "on" if body.auto_fill else "off"),
+                 ("rows", len(changed))],
+        changes=[("auto_fill", not body.auto_fill, body.auto_fill)] if changed else None,
+    )
+    return {"status": "ok", "changed": changed, "auto_fill": body.auto_fill}
 
 
 @router.get("/admin/production/work-centers")

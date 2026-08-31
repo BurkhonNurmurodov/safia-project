@@ -1184,6 +1184,28 @@ class PPUpload(Base):
     )
 
 
+class PPManagerSetting(Base):
+    """Per-brigadir production-planning switches. Today exactly one:
+
+    ``auto_fill`` — does an UNATTENDED SAP upload reach this unit? The фаза /
+    заголовок export is one plant-wide file and used to fan out to every
+    configured brigadir, which in mode 'both' deletes the date's pp_daily rows
+    and clears their overrides — so a unit whose ПЛАН/ФАКТ is kept by hand had
+    its figures wiped by somebody else's upload. Switched off, the unit is
+    skipped by the fan-out and by the catalog-import backfill, and its numbers
+    are entered on the Production page.
+
+    Absent row = ON, so nothing moves until an admin switches a unit off. This
+    is a DEFAULT, not a lock: an upload may still name the unit explicitly
+    (``manager_ids``), which is how a manual unit is filled deliberately."""
+    __tablename__ = "pp_manager_settings"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, unique=True, index=True)
+    auto_fill  = Column(Boolean, nullable=False, server_default="true", default=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class KaizenTask(Base):
     """One row (task) from any of the eight Kaizen-session Notion databases.
 
