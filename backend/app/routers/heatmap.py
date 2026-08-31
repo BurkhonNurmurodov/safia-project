@@ -51,6 +51,10 @@ def get_heatmap(
             "official_hc": m.official_hc,
             "avail_min": m.avail_min,
             "effective_hc": m.effective_hc,
+            # The two components effective_hc is built from, so the comment
+            # popup can spell out where it came from instead of asserting it.
+            "labor_surplus": m.labor_surplus,
+            "verifix_labor": m.verifix_labor,
             "equip_downtime": m.equip_downtime,
             "avg_early_arrival": m.avg_early_arrival,
         }

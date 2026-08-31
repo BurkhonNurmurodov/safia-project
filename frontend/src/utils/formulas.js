@@ -117,6 +117,34 @@ export function commentActualFormula(cell, t) {
   };
 }
 
+// ── Effective headcount = official_hc + labor_surplus ─────────────────────────
+// The one number in the Actual formula that is itself derived, so the popup
+// spells it out instead of asserting it. The surplus is the extra person-shifts
+// implied by the hours Verifix actually recorded:
+//   labor_surplus = (verifix_labor − prod_actual) ÷ (60 × 8 × prod_actual/prod_plan)
+// and 60 × 8 × ratio IS avail_min — the plan-adjusted person-shift already named
+// in the Actual legend above — so the divisor reuses a number the reader has in
+// front of them rather than introducing a fourth ratio to hold in their head.
+// Both components are taken from the payload when it carries them and derived
+// otherwise (an older backend, a tab open across a deploy), since
+// effective_hc − official_hc is the surplus by definition.
+export function commentEffectiveHcFormula(cell, t) {
+  const ehc = effectiveHc(cell);
+  const base = availMin(cell);
+  const pa = cell?.prod_actual;
+  if (ehc == null || !base || cell?.official_hc == null || pa == null) return null;
+  const surplus = cell.labor_surplus != null ? cell.labor_surplus : ehc - cell.official_hc;
+  const labor = cell.verifix_labor != null ? cell.verifix_labor : pa + surplus * base;
+  return {
+    formula: `${num(cell.official_hc, 0)} + (${num(labor, 0)} − ${num(pa, 0)}) ÷ ${num(base, 1)} = ${num(ehc, 2)}`,
+    legend: [
+      { num: num(cell.official_hc, 0), label: t("comment.legend.headcount") },
+      { num: num(labor, 0), label: t("comment.legend.verifixLabor") },
+      { num: signed(surplus, 2), label: t("comment.legend.laborSurplus") },
+    ],
+  };
+}
+
 // ── Verifix labor (minutes) = reported_hours × 60 × 0.85 ──────────────────────
 export function verifixNumbers(d, approx = false) {
   if (d?.verifix_labor == null) return null;

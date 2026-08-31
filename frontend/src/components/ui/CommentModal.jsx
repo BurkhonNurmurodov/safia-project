@@ -6,7 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import { commentPlanFormula, commentActualFormula } from "../../utils/formulas";
+import { commentPlanFormula, commentActualFormula, commentEffectiveHcFormula } from "../../utils/formulas";
 
 // Convert DD.MM.YYYY → YYYY-MM-DD for API calls
 function toIsoDate(date) {
@@ -97,6 +97,11 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
         {rawCell && (() => {
           const plan = commentPlanFormula(rawCell, t);
           const actual = commentActualFormula(rawCell, t);
+          // Effective headcount is the one input of the Actual formula that is
+          // itself computed, so it gets its own nested breakdown right under it
+          // — a number the reader is asked to trust is a number the popup owes
+          // them the arithmetic for.
+          const ehc = commentEffectiveHcFormula(rawCell, t);
           const Legend = ({ items }) => (
             <div className="mt-1.5 space-y-1">
               {items.map(({ num, label }) => (
@@ -167,6 +172,20 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
                       {actual?.formula || "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100%"}
                     </div>
                     {actual && <Legend items={actual.legend} />}
+                    {actual && ehc && (
+                      <div className="mt-2.5 pl-2.5" style={{ borderLeft: "2px solid var(--border-md)" }}>
+                        <div className="text-[10px] mb-1" style={{ color: "var(--text-4)" }}>
+                          {t("comment.effectiveHcTitle")}
+                        </div>
+                        <div
+                          className="text-[11px] font-mono rounded-lg px-2.5 py-2"
+                          style={{ background: "var(--bg-card)", color: "var(--text-2)" }}
+                        >
+                          {ehc.formula}
+                        </div>
+                        <Legend items={ehc.legend} />
+                      </div>
+                    )}
                   </div>
                 </>
               )}

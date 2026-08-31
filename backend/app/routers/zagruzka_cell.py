@@ -541,6 +541,9 @@ def cell_zagruzka(
                 "official_hc": m.official_hc,
                 "avail_min": m.avail_min,
                 "effective_hc": m.effective_hc,
+                # Components of effective_hc, for the comment popup's breakdown.
+                "labor_surplus": m.labor_surplus,
+                "verifix_labor": m.verifix_labor,
                 "equip_downtime": m.equip_downtime,
                 "avg_early_arrival": m.avg_early_arrival,
             }
@@ -624,6 +627,7 @@ def cell_zagruzka(
             "official_hc": m.official_hc,
             "avail_min": m.avail_min,
             "effective_hc": m.effective_hc,
+            "labor_surplus": m.labor_surplus,
             "equip_downtime": m.equip_downtime,
             "avg_early_arrival": m.avg_early_arrival,
             "verifix_labor": m.verifix_labor,
