@@ -81,7 +81,9 @@ ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 8, "G": 9.5
               "O": 15, "P": 34, "Q": 11}
 ABC_SPARE_ROWS = 15   # bordered formula rows under the data for hand-added SKUs
 ABC_DATA_START = 3    # first position row (row 1 = totals, row 2 = headers)
-ABC_TEAM_START = 6    # first row of the M:W per-team block, as in the form
+ABC_TEAM_START = 3    # first row of the M:O per-team block — level with the
+                      # positions and the indicators. The manual form started it
+                      # at 6, under a header row that lived in the departed P:W.
 
 # Per-команда identity colour — MUST stay in sync with `WC_PALETTE` / `wcColor`
 # in frontend/src/pages/Production.jsx so a team wears the same colour in the
