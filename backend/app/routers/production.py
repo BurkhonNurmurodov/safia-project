@@ -79,7 +79,10 @@ ABC_HEADERS = ["Сап код", "SKU", "Трудоемкость", "Команд
 ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 8, "G": 9.5,
               "H": 9, "I": 12.5, "J": 8.5, "K": 8.5, "L": 4.5, "M": 10, "N": 8.5,
               "O": 15, "P": 50, "Q": 11}
-ABC_SPARE_ROWS = 15   # bordered formula rows under the data for hand-added SKUs
+# Bordered formula rows under the data, for SKUs the brigadir adds by hand. 0 by
+# the operator's call (2026-08-31): 15 of them printed a block of 0.0 / 0% rows
+# under every catalog, which reads as data. Raising it again is this one number.
+ABC_SPARE_ROWS = 0
 ABC_DATA_START = 3    # first position row (row 1 = totals, row 2 = headers)
 ABC_TEAM_START = 3    # first row of the M:O per-team block — level with the
                       # positions and the indicators. The manual form started it
@@ -436,9 +439,9 @@ def export_positions(
     during the shift.
 
     Two deliberate departures from the manual form: the indicator block carries
-    only «Nechta odam keldi» and «Общ.трудаёмкост» (see the X:Y section), and
-    division-prone cells are wrapped in IFERROR so the spare rows stay clean. Rows
-    render in the exact order the client sends (`body.order`)."""
+    three rows and not nine (see the P:Q section), and division-prone cells are
+    wrapped in IFERROR, so a position with no people or no plan prints 0 instead
+    of #DIV/0!. Rows render in the exact order the client sends (`body.order`)."""
     lang = body.lang
     mid = _resolve_manager_id(payload, body.manager_id, db)
     day = _parse_date(body.date)
@@ -471,7 +474,9 @@ def export_positions(
     head_al = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     ds = ABC_DATA_START
-    data_end = ds + len(rows) + ABC_SPARE_ROWS - 1        # incl. spare formula rows
+    # …never above the first data row: an empty catalog with no spare rows would
+    # otherwise hand row 1's SUMs a backwards range ending on the header row.
+    data_end = max(ds + len(rows) + ABC_SPARE_ROWS - 1, ds)
     t0 = ABC_TEAM_START                                   # first team row
     t1 = t0 + max(len(wcs), 1) - 1                        # last team row
     ttot = t1 + 1                                         # SUM row under the block
@@ -500,7 +505,7 @@ def export_positions(
     # stops Excel auto-fitting, so it has to be tall enough on its own.
     ws.row_dimensions[2].height = 32
 
-    # --- position rows (row 3+), then spare formula rows for hand-added SKUs --
+    # --- position rows (row 3+) ----------------------------------------------
     for idx, r in enumerate(rows):
         rn = ds + idx
         ws.cell(row=rn, column=1, value=r.get("sap_code") or "")
