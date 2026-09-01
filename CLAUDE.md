@@ -2141,6 +2141,50 @@ destination; an upload may still name its own targets for one file.
   brigadir given a catalog later starts manual too — a unit CREATED afterwards is
   on, since an absent row still reads as ON.
 
+## A closed day shuts the «Zagruzka fayli» page too
+
+From **2026-09-01** the day-close a supervisor presses on «Verifix to'g'irlash»
+(`/staff`) locks `/production` for that (unit, date), exactly as it already
+locked `/idle-cell`. Before this the two pages disagreed about the same closing:
+ojidaniya was frozen while ПЛАН/ФАКТ, the staffing pins and the reconciliation
+block stayed editable — so a number the unit had signed off on could still be
+rewritten afterwards, by anyone, with nothing on screen saying the day was shut.
+
+- **`services/idle_lock.py` is THE lock and it is UNCHANGED.** The page reads
+  the existing ladder (`services/day_state.day_state`) through that one module
+  rather than inventing a production closing of its own — the same reasoning
+  the idle-cell lock was built on. A second switch would let the two disagree,
+  and there is no way to render "the day is closed but also open". The name is
+  now a misnomer (it serves two pages, not one); the module is not renamed
+  because every consumer would have to move at once for a cosmetic gain.
+- **All four per-day writers are guarded**: `override` (ПЛАН/ФАКТ),
+  `wc-override`, `staffing`, `reconciliation`. The catalog endpoints are
+  deliberately NOT — a catalog is configuration for every date, not a fact about
+  this one, so a closed day must not lock it.
+- **Closed is closed for admins too.** `wc-override` is admin-only and is still
+  refused; an admin re-opens the day first, exactly as they do for ojidaniya.
+  One ladder means one way back, and `POST /api/staff/approvals/reopen` is it —
+  the SAME endpoint `/idle-cell` calls, never a second re-opening.
+- **The dashboard publishes the lock** (`day` on `/api/production/dashboard`,
+  from `idle_lock.day_info`), so the page states it ONCE at the top instead of
+  leaving the reader to notice that saving stopped working. Banner, wording and
+  the re-open button mirror `/idle-cell`, because it is the same act — only the
+  hint line differs, since «kutishlar faqat ko'rish uchun» is the wrong sentence
+  on a page that is not about waiting. A missing `day` reads as OPEN, so the
+  page can only ever fail toward the behaviour it always had.
+- **The affordances go, not just the saves.** `QtyCell` gains `readOnly`: on a
+  closed day it renders an ordinary cell — no grid coordinates, no `cursor: cell`,
+  no hover pencil, no tab stop. Leaving a spreadsheet editor over a cell whose
+  save the API refuses teaches the operator that editing here silently does
+  nothing.
+- **A refusal is still possible and is SAID.** The page can be open when somebody
+  else closes the day, and a spreadsheet cell commits on blur — so all three
+  mutations carry `onError`, and `writeErr` (a twin of IdleCell's `errText`)
+  reads the code off **`detail_raw`**: `utils/api.js` flattens every non-string
+  `detail` to text and keeps the original there, so reading `detail` alone finds
+  a JSON blob where the code should be. On `day_closed` it refetches, so the
+  banner appears and the cells go read-only under the operator's hands.
+
 ## The action register (`/admin/upload?tab=logs`)
 
 From **2026-08-23** every change on the platform lands in ONE append-only table,

@@ -51,6 +51,7 @@ from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
 from app.services import action_log
+from app.services import idle_lock
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import compute_dashboard, daily_key, is_local_key, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
@@ -268,7 +269,8 @@ def _parse_date(s: Optional[str]) -> date:
 
 
 def _build_dashboard(db: Session, manager_id: int, day: date,
-                     wc_scope: Optional[set[str]] = None) -> dict:
+                     wc_scope: Optional[set[str]] = None,
+                     payload: Optional[dict] = None) -> dict:
     """The unit's dashboard for one day, optionally narrowed to ``wc_scope`` —
     the work centers of a leader's own cells.
 
@@ -399,6 +401,15 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     for wc in result["work_centers"]:
         wc["cell"] = resolve_sap(sap_tbl, wc.get("work_center"))
 
+    # The day's lock rides on every dashboard, so the page can state it once at
+    # the top instead of leaving the reader to notice that saving stopped
+    # working. Same shape and same source as /idle-cell's banner — one ladder
+    # (services/day_state), read through services/idle_lock, never a second
+    # closing of this page's own. `payload` is optional so the export path,
+    # which needs the numbers and not the lock, can go on calling this without
+    # one; it only ever costs `can_reopen`, which is a question about a caller.
+    result["day"] = idle_lock.day_info(db, manager_id, day, payload)
+
     if wc_scope is not None:
         # Tell the client the page is pinned to the caller's own cells, and
         # which ones — so it can label the view and tell "no cells assigned to
@@ -422,7 +433,8 @@ def get_dashboard(
     db: Session = Depends(get_db),
 ):
     mid = _resolve_manager_id(payload, manager_id, db)
-    return _build_dashboard(db, mid, _parse_date(date), _leader_wc_scope(db, payload))
+    return _build_dashboard(db, mid, _parse_date(date), _leader_wc_scope(db, payload),
+                            payload)
 
 
 class PositionsExportBody(BaseModel):
@@ -721,6 +733,11 @@ def set_override(
     scope = _leader_wc_scope(db, payload)
     if not _in_scope(scope, body.work_center):
         raise HTTPException(status_code=403, detail="This team is not one of your cells")
+    # A day the unit has signed off on is immutable here for the same reason it
+    # is on /idle-cell: ПЛАН/ФАКТ is what the загрузка divides, so editing it
+    # behind a closed day rewrites a number the unit has already signed. An
+    # admin re-opens the day first (`can_reopen` on the payload says who may).
+    idle_lock.require_open(db, mid, day)
 
     row = db.query(PPDaily).filter(
         PPDaily.manager_id == mid, PPDaily.date == day,
@@ -745,7 +762,7 @@ def set_override(
         changes=[("plan" if body.field == "plan" else "fact",
                   float(was) if was is not None else None, body.value)],
     )
-    return _build_dashboard(db, mid, day, scope)
+    return _build_dashboard(db, mid, day, scope, payload)
 
 
 class WcOverrideBody(BaseModel):
@@ -775,6 +792,7 @@ def set_wc_override(
     code = (body.work_center or "").strip()
     if not code:
         raise HTTPException(status_code=400, detail="work_center is required")
+    idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
     for name, val in (("people", body.people), ("shtatka", body.shtatka)):
         if val is not None and not (0 <= val <= 9999):
             raise HTTPException(status_code=400, detail=f"{name} must be between 0 and 9999")
@@ -802,7 +820,7 @@ def set_wc_override(
                              ("staffing", was[1], body.shtatka))
                  if c[1] != c[2]],
     )
-    return _build_dashboard(db, mid, day)
+    return _build_dashboard(db, mid, day, None, payload)
 
 
 class StaffingRow(BaseModel):
@@ -841,6 +859,7 @@ def save_staffing(
         raise HTTPException(status_code=403, detail="Not allowed to edit staffing")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
+    idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
     shift_min, _ = _constants(db)
 
     # An explicit save always pins — the box opens at the unit's OWN rate, not at
@@ -899,7 +918,7 @@ def save_staffing(
         changes=(cell_changes +
                  ([("minutes", was_pm, pm)] if was_pm != pm else [])),
     )
-    return _build_dashboard(db, mid, day)
+    return _build_dashboard(db, mid, day, None, payload)
 
 
 class ReconciliationBody(BaseModel):
@@ -920,6 +939,7 @@ def save_reconciliation(
         raise HTTPException(status_code=403, detail="Reconciliation belongs to the whole unit")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
+    idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
     row = db.query(PPReconciliation).filter(
         PPReconciliation.manager_id == mid, PPReconciliation.date == day).first()
     was = dict(row.data or {}) if row else {}

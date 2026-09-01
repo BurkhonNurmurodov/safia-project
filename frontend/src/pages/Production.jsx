@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronDown,
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
-  Download, CheckCircle,
+  Download, CheckCircle, Lock, Unlock,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -21,6 +21,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Field from "../components/ui/FormField";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
+import { useToast } from "../components/ui/Toast";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -189,7 +190,7 @@ const moveCell = (el, dCol, dRow) => {
 // the editor FILLS the cell instead of floating a small box inside it. Enter
 // commits and drops to the cell below, Tab commits and steps right, Escape
 // cancels, Delete clears the override.
-function QtyCell({ col, row, value, onSave }) {
+function QtyCell({ col, row, value, onSave, readOnly = false }) {
   const { t } = useLang();
   const tdRef = useRef(null);
   const [editing, setEditing] = useState(false);
@@ -258,6 +259,18 @@ function QtyCell({ col, row, value, onSave }) {
     else if (k === "ArrowLeft") { e.preventDefault(); moveCell(e.currentTarget, -1, 0); }
     else if (k.length === 1 && /[\d.,-]/.test(k)) { e.preventDefault(); start(k); }
   };
+
+  // A day the unit has signed off on is read-only, and it renders as an ORDINARY
+  // cell: no grid coordinates, no cursor, no hover pencil, no tab stop. Leaving
+  // the affordances on a cell whose save the API refuses teaches the operator
+  // that editing here silently does nothing.
+  if (readOnly) {
+    return (
+      <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-1)" }}>
+        {fmt(value, 0)}
+      </td>
+    );
+  }
 
   return (
     <td
@@ -774,6 +787,7 @@ export default function Production() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
+  const toast = useToast();
   const [date, setDate] = usePersistentState("production_date", todayISO());
   const [view, setView] = usePersistentState("production_view", "zagruzka"); // zagruzka | people | faza | zaga
   const [unknownOpen, setUnknownOpen] = useState(false);
@@ -873,10 +887,10 @@ export default function Production() {
   // only — supervisors keep the read-only cells and just edit Факт/ПЛАН.
   const canEditCatalog = auth?.role === "admin";
   // Staffing-card pins (O.soni / штатка, per date) are admin-only as well.
-  const canEditStaffing = auth?.role === "admin";
+  const canEditStaffingRole = auth?.role === "admin";
   // The «Odamlar soni» tab is the brigadir's own entry point for the same pins —
   // they type the day's real headcount there, so supervisors edit it too.
-  const canEditPeople = ["admin", "supervisor"].includes(auth?.role);
+  const canEditPeopleRole = ["admin", "supervisor"].includes(auth?.role);
 
   const { data, isLoading, isPlaceholderData, isError, error } = useQuery({
     queryKey: ["production", date, managerParam.manager_id ?? "self"],
@@ -888,6 +902,53 @@ export default function Production() {
   // isn't cached yet, so keepPreviousData hands back the old date's snapshot). Drives
   // skeletons so stale numbers don't linger after the user switches dates.
   const loading = isLoading || isPlaceholderData;
+
+  // The day's lock, straight off the dashboard — the SAME ladder /idle-cell
+  // reads (services/day_state via services/idle_lock), never a second closing of
+  // this page's own. A closed day is read-only here for every role, admins
+  // included: they re-open it on «Verifix to'g'irlash» first, exactly as they do
+  // for ojidaniya. Missing (an older backend, a placeholder frame) reads as
+  // OPEN, so the page can only ever fail toward the behaviour it always had.
+  // A refusal the operator can act on. The STRUCTURE lives on `detail_raw` —
+  // api.js flattens every non-string `detail` to text and keeps the original
+  // there, so reading `detail` alone would find a JSON blob where the code is.
+  // Twin of IdleCell's `errText`, for the one 409 shape idle_lock raises.
+  const writeErr = (e) => {
+    const raw = e?.response?.data?.detail_raw;
+    const d = e?.response?.data?.detail;
+    if (raw && typeof raw === "object" && raw.code === "day_closed") {
+      // The page was open when somebody closed the day: refetch so the banner
+      // appears and the cells go read-only, instead of leaving live-looking
+      // editors over a day the API refuses.
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      return t("production.dayClosedErr");
+    }
+    return (typeof d === "string" && d) || t("admin.saveFailed");
+  };
+
+  const dayLock = data?.day ?? null;
+  const dayOpen = dayLock ? dayLock.can_write !== false : true;
+  // Per-day editing is gated by ROLE **and** by the day. Catalog editing is not:
+  // a catalog is configuration for every date, not a fact about this one, so a
+  // closed day must not lock it (the backend doesn't either).
+  const canEditStaffing = canEditStaffingRole && dayOpen;
+  const canEditPeople = canEditPeopleRole && dayOpen;
+
+  // Re-opening is the ONE way back, and it is the Staff page's own endpoint —
+  // there is exactly one closing, so there must be exactly one re-opening.
+  const [reopen, setReopen] = useState(false);
+  const [reopenErr, setReopenErr] = useState("");
+  const reopenMut = useMutation({
+    mutationFn: () => api.post("/api/staff/approvals/reopen",
+                               { manager_id: data?.manager_id, date }),
+    onSuccess: () => {
+      setReopen(false);
+      qc.invalidateQueries({ queryKey: ["production", date] });
+    },
+    // The dialog stays standing with the reason ON it: a failure that closed the
+    // dialog would be a failure the operator never read.
+    onError: (e) => setReopenErr(e?.response?.data?.detail || t("admin.saveFailed")),
+  });
 
   // Positions-table column visibility/order — Notion-style picker, persisted
   // per ACTIVE profile via /api/ui-prefs (follows the user across devices).
@@ -928,6 +989,9 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
     },
+    // A spreadsheet cell commits on blur, so a refusal with no toast is a value
+    // that simply springs back with nothing said about why.
+    onError: (e) => toast.error(writeErr(e)),
   });
   // Staffing-card pin (O.soni / штатка) for one work center on the SELECTED date.
   // Admin-only; both fields ride every call, null = drop the pin and go back to
@@ -938,6 +1002,7 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production", date] });
       setWcEdit(null);
     },
+    onError: (e) => toast.error(writeErr(e)),
   });
   // «Odamlar soni» tab — the day's efficiency + every cell's actual O.soni /
   // штатка in ONE commit, after which the whole page recomputes off them.
@@ -948,6 +1013,7 @@ export default function Production() {
       setStaffingSaved(true);
       setTimeout(() => setStaffingSaved(false), 2500);
     },
+    onError: (e) => toast.error(writeErr(e)),
   });
   // Catalog line edit (PPProduct: sap_code / name / labor_time / work_center).
   // Admin-only endpoint; renaming sap_code/work_center re-points the SKU/unit.
@@ -1110,12 +1176,12 @@ export default function Production() {
       // has to be what owns it (padding box, borders and all).
       case "fact":
         return (
-          <QtyCell key={key} col={key} row={i}
+          <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
             value={r.actual_qty} onSave={saveOverride(r, "actual")} />
         );
       case "plan":
         return (
-          <QtyCell key={key} col={key} row={i}
+          <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
             value={r.plan_qty} onSave={saveOverride(r, "plan")} />
         );
       case "actual_labor":
@@ -1342,6 +1408,7 @@ export default function Production() {
 
   return (
     <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`}>
+      {toast.node}
       {/* Export success toast — fixed top-right, outside normal flow */}
       {exportDone && (
         <div
@@ -1379,6 +1446,37 @@ export default function Production() {
           />
         )}
       </div>
+
+      {/* The day's lock, stated ONCE at the top rather than as an absence of
+          editors the reader has to notice. Same banner, same words and the same
+          way out as /idle-cell — the two pages are shut by one closing, so they
+          must not explain it two different ways. */}
+      {dayLock && !dayOpen && (
+        <div
+          className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl text-xs mb-3"
+          style={{
+            background: "rgba(100,116,139,0.14)",
+            border: "1px solid rgba(100,116,139,0.35)",
+            color: "var(--text-2)",
+          }}
+        >
+          <Lock size={14} style={{ color: "#94a3b8", flexShrink: 0 }} />
+          <span className="font-semibold">{t("production.dayClosedTitle")}</span>
+          {dayLock.closed_by && <span style={{ color: "var(--text-3)" }}>· {tl(dayLock.closed_by)}</span>}
+          <span className="w-full sm:w-auto sm:ml-1" style={{ color: "var(--text-3)" }}>
+            {t("production.dayClosedHint")}
+          </span>
+          {dayLock.can_reopen && (
+            <Button
+              size="sm" variant="secondary" tint icon={<Unlock size={13} />}
+              className="ml-auto"
+              onClick={() => { setReopenErr(""); setReopen(true); }}
+            >
+              {t("production.reopenDay")}
+            </Button>
+          )}
+        </div>
+      )}
 
       {noManagers ? (
         <EmptyState
@@ -1792,6 +1890,18 @@ export default function Production() {
         cancelLabel={t("production.cancelEdit")}
         tone="danger"
         loading={deleteCatalog.isPending}
+      />
+
+      {/* re-open the day — same wording as /idle-cell, because it is the same act */}
+      <ConfirmDialog
+        open={reopen}
+        title={t("production.reopenTitle")}
+        message={t("staff.apprReopenConfirm")}
+        confirmLabel={t("production.reopenDay")}
+        loading={reopenMut.isPending}
+        error={reopenErr || null}
+        onCancel={() => { setReopen(false); setReopenErr(""); }}
+        onConfirm={() => reopenMut.mutate()}
       />
       </>)}
       </>)}
