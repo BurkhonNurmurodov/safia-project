@@ -14,14 +14,12 @@ import {
   Grid3x3, TestTubes, Megaphone, ClipboardList,
 } from "lucide-react";
 import api from "../../utils/api";
-import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import VersionBadge from "./VersionBadge";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
-import { useTranslit } from "../../utils/transliterate";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
-import { canAccessPage, ROLE_LABEL_KEYS } from "../../config/pages";
+import { canAccessPage } from "../../config/pages";
 
 const ALL_LINKS = [
   { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard, group: "top" },
@@ -98,8 +96,6 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const location = useLocation();
   const { auth } = useAuth();
   const { t }    = useLang();
-  const { tl }   = useTranslit();
-  const { data: me } = useMyProfileDetails();
   const { access } = usePageAccess();
   // Personal capability grants unlock nav entries too — a granted approver
   // needs the /staff link to reach the queue they were given.
@@ -590,43 +586,6 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               "how current is what I'm looking at", one about the data, one
               about the app itself. */}
           <VersionBadge expanded={expanded} />
-
-          {/* The person — bottom-most, the anchor of the rail. Opens /profile. */}
-          {auth?.status === "approved" && (
-            <div className="mt-1 pt-1.5" style={{ borderTop: "1px solid var(--border)" }}>
-            <NavLink
-              to="/profile"
-              onClick={onClose}
-              title={!expanded ? tl(auth.full_name || "") : undefined}
-              className="flex items-center rounded-lg transition-colors"
-              style={({ isActive }) => ({
-                gap: "10px",
-                padding: "8px",
-                background: isActive ? "var(--bg-inner)" : "transparent",
-                justifyContent: !expanded ? "center" : undefined,
-              })}
-            >
-              <ProfileAvatar
-                name={tl(auth.full_name || "")}
-                colorKey={auth.full_name || ""}
-                profileKey={me?.profile_key}
-                photoVer={me?.photo_ver}
-                size={30}
-              />
-              <div
-                className="leading-tight transition-all duration-200 min-w-0"
-                style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 170 : 0, overflow: "hidden" }}
-              >
-                <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>
-                  {tl(auth.full_name || "")}
-                </div>
-                <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>
-                  {ROLE_LABEL_KEYS[auth.role] ? t(ROLE_LABEL_KEYS[auth.role]) : (auth.role ?? "")}
-                </div>
-              </div>
-            </NavLink>
-            </div>
-          )}
         </div>
       </aside>
     </>
