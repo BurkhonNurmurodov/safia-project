@@ -133,7 +133,7 @@ def compute_dashboard(
     rows: list[dict] = []
     q_by_wc: dict[str, float] = {}
 
-    for p in products:
+    for i, p in enumerate(products, start=1):
         wc = p.get("work_center") or ""
         key = daily_key(p.get("sap_code"), p.get("name"))
         q = quantities.get((key, wc), {})
@@ -152,6 +152,13 @@ def compute_dashboard(
 
         rows.append({
             "id": p.get("id"),               # PPProduct id — lets the client edit this catalog line
+            # «№» — the line's 1-based place in the CATALOG, which is the order
+            # `products` arrives in (sort_order, id). It belongs to the line and
+            # not to where the client happens to be printing it: a reader who
+            # sorts by Парето still sees the number that position has in the
+            # catalog, so two people looking at differently sorted tables can
+            # name the same row. Never a row counter over the rendered rows.
+            "seq": i,
             "sap_code": p.get("sap_code"),
             # what pp_daily is keyed by for this line (= sap_code, unless the
             # line has none) — the client echoes it back when overriding a qty

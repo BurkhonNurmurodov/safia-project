@@ -84,6 +84,7 @@ const pickCellName = (cell, lang) => {
 // Column definitions — labels/hints resolved via t() at render (see COLS map below).
 // Order matches the ABC Excel ("Sheet1 ...").
 const COLS = [
+  { key: "seq", labelKey: "production.col.seq", align: "center", hintKey: "production.col.seqHint" },
   { key: "sap_code", labelKey: "production.col.sapCode", align: "left" },
   { key: "op", labelKey: "production.col.op", align: "center", hintKey: "production.col.opHint" },
   { key: "name", labelKey: "production.col.name", align: "left" },
@@ -109,6 +110,7 @@ const LOCKED_COLS = new Set(["name"]);
 // (no labour / no plan) so they sink to the bottom regardless of direction.
 const sortVal = (r, key) => {
   switch (key) {
+    case "seq":          return r.seq ?? null;
     case "sap_code":     return r.sap_code;
     case "op":           return r.op ?? null;
     case "name":         return r.name;
@@ -960,11 +962,26 @@ export default function Production() {
   const [colsLocal, setColsLocal] = useState(null); // user edits this session — wins over the fetch
   const colCfg = useMemo(() => {
     // Reconcile the saved pref against the current catalog: drop keys that no
-    // longer exist, append new columns at the end, never let a locked one hide.
+    // longer exist, seat new ones where COLS puts them, never let a locked one
+    // hide.
     const saved = colsLocal ?? savedCols;
     const keys = COLS.map((c) => c.key);
     const savedOrder = Array.isArray(saved?.order) ? saved.order.filter((k) => keys.includes(k)) : [];
-    const order = [...savedOrder, ...keys.filter((k) => !savedOrder.includes(k))];
+    // A column added to COLS lands where COLS puts it — straight after the
+    // nearest column ahead of it that the saved order still has — instead of
+    // being appended. Appending is what a column added at the FRONT cannot
+    // survive: «№» would have shown up past Парето for everyone who has ever
+    // touched the picker, i.e. for exactly the people who use it.
+    const order = [...savedOrder];
+    keys.forEach((k, idx) => {
+      if (order.includes(k)) return;
+      let at = 0;
+      for (let j = idx - 1; j >= 0; j--) {
+        const prev = order.indexOf(keys[j]);
+        if (prev >= 0) { at = prev + 1; break; }
+      }
+      order.splice(at, 0, k);
+    });
     const hidden = Array.isArray(saved?.hidden)
       ? saved.hidden.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k))
       : [];
@@ -1140,6 +1157,17 @@ export default function Production() {
   // is the exact cell markup the table previously hard-coded in SAP order.
   const posCell = (key, r, vyp, wc, i) => {
     switch (key) {
+      case "seq":
+        // The catalog's own number for this line, served with the row — NOT a
+        // counter over what is on screen. It stays with the position through a
+        // search, a Команда filter or a sort by Парето, which is what lets two
+        // people name the same row; sorting on this column puts the table back
+        // in catalog order.
+        return (
+          <td key={key} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>
+            {r.seq ?? "—"}
+          </td>
+        );
       case "sap_code":
         // a line without a SAP code is a real position (dough mixes, unlisted
         // pastries) — mark the gap the same way the «Опер.» column does
