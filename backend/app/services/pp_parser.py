@@ -12,8 +12,9 @@ the order number: zaga gives order→SKU, faza gives the per-order operations.
 
 Real column layout (1-based) — фаза:
     A Заказ(order) · B Операция · C Ресурс(work center) · D Кратк.текст(name)
-    E Кол-во операции(PLAN) · F unit · G Системный статус · H start date
-    I СамРанЗплДатаКнцВыплн(DATE filter) · J ПодтвВыходПрод(ACTUAL) · K work-place
+    E Кол-во операции(PLAN) · F unit · G Системный статус
+    H СамРанДатаНчлВыполнен(DATE filter) · I СамРанЗплДатаКнцВыплн(scheduled finish)
+    J ПодтвВыходПрод(ACTUAL) · K work-place
 Real column layout (1-based) — заголовок:
     A Заказ(order) · B Материал(SKU) · D Завод · E Кол-во заказа · F ПоставлКол-во
     G подтв.выход · J БазисСрокКонца(date) · L Краткий текст материала(name) · M статус
@@ -24,8 +25,17 @@ import re
 from datetime import date, datetime
 from io import BytesIO
 
-# фаза (operations)
-FZ_ORDER, FZ_OP, FZ_WC, FZ_NAME, FZ_PLAN, FZ_STATUS, FZ_DATE, FZ_CONF = 1, 2, 3, 4, 5, 7, 9, 10
+# фаза (operations). FZ_DATE is the day an operation is BOOKED TO, and it is the
+# operation's START (col H «СамРанДатаНчлВыполнен»), never its scheduled finish.
+# A shift is credited on the day it started the work — which is what the Positions
+# page reads as "today" — and an operation that begins in the evening and finishes
+# the next morning is the ordinary shape of shift 2, not an exception. Anchoring on
+# the finish date (col I) silently dropped every such row from its own day: on
+# 29.08.2026 that was 28 operations over 17 SKUs, each reading ПЛАН 0 / ФАКТ 0 on a
+# page whose own file plainly held them (order 1744141 → F00000033, 55 шт on A1431,
+# started 29.08, due 30.08). Exactly ONE date may be read here — a row kept on both
+# days is counted in FULL twice, in the loaded minutes as well as the quantity.
+FZ_ORDER, FZ_OP, FZ_WC, FZ_NAME, FZ_PLAN, FZ_STATUS, FZ_DATE, FZ_CONF = 1, 2, 3, 4, 5, 7, 8, 10
 # заголовок (order headers)
 ZG_ORDER, ZG_SKU, ZG_PLANT, ZG_ORDQTY, ZG_DELIV, ZG_CONF, ZG_DATE, ZG_NAME, ZG_STATUS = 1, 2, 4, 5, 6, 7, 10, 12, 13
 
