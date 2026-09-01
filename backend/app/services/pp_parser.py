@@ -44,7 +44,30 @@ FAZA_COLUMNS = ["Заказ", "Опер.", "Команда", "SKU", "Наиме�
 ZAGA_COLUMNS = ["Заказ", "SKU", "Завод", "Кол-во заказа", "Поставлено", "Подтв.", "Дата", "Наименование", "Статус"]
 
 _SAP_RE = re.compile(r"^[A-Za-z]\d{5,}$")    # material / SKU: F00002310, S00000101
-_WC4_RE = re.compile(r"^[A-Za-z]\d{4}$")      # work center: A1431, A2682 (plant W001 = 3 digits, excluded)
+
+# A work center is a LETTER + AT LEAST FOUR DIGITS, optionally suffixed: A1431,
+# A2682, and the sub-lines a team is split into — A14310/A14311/A14312 under
+# A1431, A28910/A28911 under A2891, B08210…B08213 under B0821, plus lettered
+# variants like A1451Z. The plant code W001 (3 digits) is still excluded, which
+# is the whole reason a pattern is applied here at all.
+#
+# Two patterns, because ONE cannot do both jobs. A five-digit work center is
+# shape-identical to a short material code — «A28910» satisfies _SAP_RE — so the
+# distinction is carried by the COLUMN a value sits in, never by the value alone:
+#   • _WC_RE  reads a known column (фаза col C «Ресурс», the catalog's staffing
+#     block), where anything present is a work center by position. Widened.
+#   • _WC4_RE is for _classify, which scans arbitrary cells to tell фаза from
+#     заголовок and has only the SHAPE to go on. It must stay strict: widened,
+#     every material code in a заголовок file matches, and the order→SKU export
+#     is parsed as an operations file — the day then resolves no SKU at all.
+#
+# Widening the column gates recovers what the strict form dropped SILENTLY on
+# every date: on 29.08.2026, 134 фаза rows over 10 work centers, of which
+# A28910 (Abdukarimov Sanjar) and A14310 (Muxriddin aka) are named by a
+# brigadir's own catalog — so those positions read ПЛАН 0 / ФАКТ 0 on a page
+# whose own file plainly held them, exactly as F00000033 did before v4.12.0.
+_WC_RE  = re.compile(r"^[A-Za-z]\d{4}[A-Za-z0-9]*$")   # work center, by column
+_WC4_RE = re.compile(r"^[A-Za-z]\d{4}$")               # shape-only, for _classify
 _ERR_RE = re.compile(r"^0x[0-9A-Fa-f]{1,2}$")  # pyxlsb renders a formula error as its code ('0x17' = #REF!)
 
 
@@ -125,7 +148,7 @@ def _extract_faza(ws, target_date: date | None, own_wcs: set[str]) -> dict:
     seen = 0
     for row in ws.iter_rows(values_only=True):
         wc = _str(_get(row, FZ_WC))
-        if not _WC4_RE.match(wc):           # skips header + non-operation rows
+        if not _WC_RE.match(wc):            # skips header + non-operation rows
             continue
         order = _str(_get(row, FZ_ORDER))
         if not order:
@@ -336,7 +359,7 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
     so = 0
     for row in rows:
         code = _str(_get(row, CAT_WCM))
-        if not _WC4_RE.match(code):
+        if not _WC_RE.match(code):
             continue
         cap = _get(row, CAT_CAP)
         sht = _get(row, CAT_SHT)
