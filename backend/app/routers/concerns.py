@@ -165,6 +165,15 @@ def _cell_leader_name(db: Session, cell_code: str) -> str:
     return (rec[2] if rec else "") or ""
 
 
+def _no(c) -> int:
+    """The concern's REGISTER NUMBER — the «№» the page prints and the one the
+    notifications name it by, so a DM and the register can be read side by side.
+    `id` is the floor for a row written before `seq` existed, exactly as
+    _serialize serves it: two spellings of this fallback would let a bell name a
+    concern the table calls something else."""
+    return c.seq or c.id
+
+
 def _snippet(text: str) -> str:
     """Concern/reason text trimmed to one notification line."""
     text = text or ""
@@ -273,7 +282,7 @@ def _serialize(
         # a property of the concern rather than of the view (see models.py).
         # `id` is the floor for any row the backfill has not reached — an honest
         # number beats a blank cell.
-        "seq": c.seq or c.id,
+        "seq": _no(c),
         "leader_profile_id": c.leader_profile_id,
         "leader_role_ref": c.leader_role_ref,
         "leader_name": c.leader_name,
@@ -1086,6 +1095,7 @@ def create_concern(
     sent = _notify_recipients(
         db, created, "concern_created",
         {
+            "concern_no": _no(c),
             "leader_name": c.leader_name or (rec[2] if rec else "") or "",
             "owner": c.concern_owner,
             "date": entry,
@@ -1101,6 +1111,7 @@ def create_concern(
         sent |= _notify_recipients(
             db, [(None, rec[1])], "concern_assigned",
             {
+                "concern_no": _no(c),
                 "actor_name": payload.get("full_name") or "",
                 "owner": c.concern_owner,
                 "date": entry,
@@ -1241,6 +1252,7 @@ def update_concern(
     if nkey and _notify_recipients(
         db, _interested(db, c), nkey,
         {
+            "concern_no": _no(c),
             "actor_name": payload.get("full_name") or "",
             "leader_name": c.leader_name or _cell_leader_name(db, c.cell_code),
             "date": c.entry_date,
@@ -1510,6 +1522,7 @@ def escalate_concern(
     # account never gets the DM twice however many profiles it holds.
     author = int(payload["sub"])
     params = {
+        "concern_no": _no(c),
         "actor_name": payload.get("full_name") or "",
         "leader_name": c.leader_name or _cell_leader_name(db, c.cell_code),
         "date": c.entry_date,
@@ -1788,6 +1801,7 @@ def add_concern_comment(
     _notify_recipients(
         db, _interested(db, c), "concern_comment",
         {
+            "concern_no": _no(c),
             "author_name": payload.get("full_name") or "",
             "comment": _snippet(body.text),
             "concern": _snippet(c.concern_text),
