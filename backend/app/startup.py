@@ -4019,3 +4019,72 @@ def seed_pp_autofill_default() -> None:
         print(f"[startup] pp autofill default skipped: {exc}")
     finally:
         db.close()
+
+
+PP_COLS_PLAN_FIRST_FLAG = "pp_positions_plan_before_fact_2026_09_01_v1"
+PP_COLS_PREF_KEY = "production.positions.cols"
+
+
+def reorder_positions_plan_before_fact() -> None:
+    """2026-09-01 (the operator's call): on the Production «Позиции» table ПЛАН
+    comes before Факт. `COLS` in `Production.jsx` is the default and answers for
+    everybody who has never touched the column picker — but the picker persists
+    an ORDER per profile (`ui_prefs`, key `production.positions.cols`), and the
+    page's reconciler deliberately keeps a saved order for every key it already
+    knows. So a supervisor who once hid a column — i.e. exactly the people who
+    use the table hardest — would go on reading Факт first forever.
+
+    This moves `plan` to sit directly BEFORE `fact` in each saved order, and
+    changes nothing else: the rest of that profile's arrangement, and its
+    `hidden` list, are untouched, so a hidden column stays hidden and a column
+    somebody moved stays where they put it. A profile that already reads
+    plan-then-fact is left alone.
+
+    Config only — no production figure is read or written, and the picker is
+    still the operator's: anyone who wants the old order back drags it back on
+    their own row, and this never runs again.
+
+    Guarded by an AppSetting flag so it runs exactly once. Changing what it does
+    needs a NEW flag key, or the old "already ran" mark makes the change a no-op
+    on every box that has booted once.
+    """
+    import json
+
+    from app.models import UiPref
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PP_COLS_PLAN_FIRST_FLAG).first():
+            return
+
+        moved = 0
+        for row in db.query(UiPref).filter(UiPref.pref_key == PP_COLS_PREF_KEY).all():
+            try:
+                cfg = json.loads(row.value or "")
+            except Exception:
+                continue  # an unreadable blob is one the page already ignores
+            if not isinstance(cfg, dict):
+                continue
+            order = cfg.get("order")
+            if not isinstance(order, list):
+                continue
+            try:
+                fi, pi = order.index("fact"), order.index("plan")
+            except ValueError:
+                continue  # a pref written before both columns existed
+            if pi < fi:
+                continue
+            order.pop(pi)
+            order.insert(order.index("fact"), "plan")
+            cfg["order"] = order
+            row.value = json.dumps(cfg)
+            moved += 1
+
+        print(f"[startup] positions columns: ПЛАН moved ahead of Факт on {moved} saved layout(s)")
+        db.add(AppSetting(key=PP_COLS_PLAN_FIRST_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] positions column reorder skipped: {exc}")
+    finally:
+        db.close()

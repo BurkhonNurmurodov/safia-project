@@ -70,6 +70,7 @@ try:
         migrate_attendance_batches, seed_att_included_from_last_day,
         seed_idle_source_pilot,
         seed_pp_autofill_default,
+        reorder_positions_plan_before_fact,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_level_since, add_concern_escalation_names,
@@ -143,6 +144,7 @@ try:
     seed_att_included_from_last_day()
     seed_idle_source_pilot()
     seed_pp_autofill_default()
+    reorder_positions_plan_before_fact()
     add_concern_profile_columns()
     add_concern_done_at()
     add_concern_level_columns()

@@ -82,7 +82,11 @@ const pickCellName = (cell, lang) => {
 };
 
 // Column definitions — labels/hints resolved via t() at render (see COLS map below).
-// Order matches the ABC Excel ("Sheet1 ...").
+// Order follows the ABC Excel ("Sheet1 ...") with ONE deliberate departure: ПЛАН
+// comes before Факт (the operator's call, 2026-09-01). A row reads as "what was
+// asked for, then what came of it", and the form's own order put the answer
+// first. The export is unaffected — it emits the fixed ABC template, whose
+// columns are set by that form and never by this catalog.
 const COLS = [
   { key: "seq", labelKey: "production.col.seq", align: "center", hintKey: "production.col.seqHint" },
   { key: "sap_code", labelKey: "production.col.sapCode", align: "left" },
@@ -92,8 +96,8 @@ const COLS = [
   { key: "wc", labelKey: "production.col.wc", align: "center" },
   { key: "people", labelKey: "production.col.people", align: "center" },
   { key: "vyp", labelKey: "production.col.vyp", align: "center", hintKey: "production.col.vypHint" },
-  { key: "fact", labelKey: "production.col.fact", align: "center", edit: true, hintKey: "production.col.factHint" },
   { key: "plan", labelKey: "production.col.plan", align: "center", edit: true, hintKey: "production.col.planHint" },
+  { key: "fact", labelKey: "production.col.fact", align: "center", edit: true, hintKey: "production.col.factHint" },
   { key: "actual_labor", labelKey: "production.col.actualLabor", align: "center", hintKey: "production.col.actualLaborHint" },
   { key: "labor_total", labelKey: "production.col.totalLabor", align: "center", hintKey: "production.col.totalLaborHint" },
   { key: "minutes", labelKey: "production.col.minutes", align: "center" },
@@ -170,13 +174,13 @@ function VypCell({ value }) {
   );
 }
 
-// ── editable qty cells (Факт / ПЛАН) — Excel-style: the CELL is the editor ───
+// ── editable qty cells (ПЛАН / Факт) — Excel-style: the CELL is the editor ───
 // Grid coordinates live in the DOM, not in React state: every editable cell tags
 // itself with its column key and row index, so sorting, filtering or hiding a
 // column can never leave a stale coordinate behind. `qCells` reads them back in
 // document order.
 const qCells = (el) => Array.from(el.closest("table")?.querySelectorAll("[data-qcol]") ?? []);
-// Tab walks them in reading order — …, Факт, ПЛАН, next row's Факт.
+// Tab walks them in reading order — …, ПЛАН, Факт, next row's ПЛАН.
 const stepCell = (el, delta) => { const all = qCells(el); all[all.indexOf(el) + delta]?.focus(); };
 // Enter and the arrows keep the column and move by row (clamped, never wrapped).
 const moveCell = (el, dCol, dRow) => {
