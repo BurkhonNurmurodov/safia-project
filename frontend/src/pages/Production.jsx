@@ -109,6 +109,11 @@ const COLS = [
 // the columns that can never be hidden (the row's identity).
 const COL_PREF_KEY = "production.positions.cols";
 const LOCKED_COLS = new Set(["name"]);
+// Hidden until the reader unhides it (the operator's call, 2026-09-02): «Опер.»
+// is blank on almost every row, so it spent a column on nothing. Applied only
+// while a profile has never saved a visibility choice — a saved `hidden` list,
+// an empty one included («Show all»), is that person's answer and stands.
+const DEFAULT_HIDDEN = ["op"];
 
 // Sort accessor per column — mirrors how each cell derives its value, so a header
 // click sorts on exactly what the row shows. Returns null for "missing" cells
@@ -1014,7 +1019,7 @@ export default function Production() {
     });
     const hidden = Array.isArray(saved?.hidden)
       ? saved.hidden.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k))
-      : [];
+      : DEFAULT_HIDDEN.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k));
     return { order, hidden };
   }, [colsLocal, savedCols]);
   const saveCols = useMutation({
