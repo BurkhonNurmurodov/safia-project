@@ -1181,7 +1181,7 @@ export default function Production() {
       case "name":
         return (
           <td key={key} className="px-3 py-2 text-left max-w-[220px]">
-            <span className="block max-w-[200px] truncate" title={r.name}>{r.name}</span>
+            <span className="block max-w-[200px] truncate font-medium" title={r.name}>{r.name}</span>
           </td>
         );
       case "labor":
