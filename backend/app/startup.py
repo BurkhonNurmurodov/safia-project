@@ -4088,3 +4088,67 @@ def reorder_positions_plan_before_fact() -> None:
         print(f"[startup] positions column reorder skipped: {exc}")
     finally:
         db.close()
+
+
+SNABJENETS_EN_FLAG = "job_title_snabjenets_en_2026_09_02_v1"
+SNABJENETS_FOLD = "снабженец"
+SNABJENETS_EN = "Mitsu"
+
+
+def seed_snabjenets_english_label() -> None:
+    """2026-09-02 (the operator's call): the «Снабженец» job title reads
+    **Mitsu** in English.
+
+    A job title is DB text, so the UI renders it through `tl()` — an admin
+    override (`translations`, key `name.<raw value>`, edited in Admin →
+    Translations) where one exists, automatic transliteration otherwise. Left
+    alone the transliterator answers «Snabjenets», which is the Russian word in
+    Latin letters and not a word an English reader knows. So this writes exactly
+    the row the Translations editor would write, and from the next boot on that
+    editor owns it: this only ever INSERTS, and only for `en`.
+
+    Every spelling the register actually carries gets its own row, because the
+    override is keyed by the RAW value. `tl()`'s folded index already catches a
+    case or whitespace variant of a key that EXISTS, so the canonical spelling
+    is seeded whether or not this box has the title yet — a title that arrives
+    with a later import is then covered without a second boot.
+
+    The other three languages are untouched: ru and uz_cyrl print the Cyrillic
+    as filed, uz keeps its transliteration.
+
+    Guarded by an AppSetting flag so it runs exactly once. Changing the word
+    needs a NEW flag key, or the old "already ran" mark makes the change a no-op
+    on every box that has booted once — and an admin who has since retyped it in
+    the editor keeps their value either way.
+    """
+    from app.models import Translation
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=SNABJENETS_EN_FLAG).first():
+            return
+
+        spellings = {"Снабженец"} | {
+            (r[0] or "").strip()
+            for r in db.query(Attendance.job_title).distinct().all()
+            if _fold_name(r[0] or "") == SNABJENETS_FOLD
+        }
+        spellings.discard("")
+
+        added = []
+        for raw in sorted(spellings):
+            key = f"name.{raw}"
+            if db.query(Translation).filter_by(lang="en", key=key).first():
+                continue          # an admin has already answered this one
+            db.add(Translation(lang="en", key=key, value=SNABJENETS_EN))
+            added.append(raw)
+
+        print(f"[startup] job title EN label «{SNABJENETS_EN}» set for "
+              + (", ".join(f"«{s}»" for s in added) or "nothing (already set)"))
+        db.add(AppSetting(key=SNABJENETS_EN_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] job title EN label skipped: {exc}")
+    finally:
+        db.close()
