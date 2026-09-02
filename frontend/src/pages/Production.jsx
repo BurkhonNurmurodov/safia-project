@@ -413,6 +413,11 @@ function ActionBtn({ icon: Icon, label, color, onClick, loading }) {
 }
 
 // ── raw SAP file view (Фаза / Заголовок) ─────────────────────────────────────
+// The two views RawView serves. THE list — the tab options, the render guard and
+// the persisted-pick fallback all read it, so a role that cannot see these tabs
+// cannot be left sitting on one of them either.
+const RAW_VIEWS = ["faza", "zaga"];
+
 function RawView({ fileType, date, managerParam, ready = true }) {
   const { t } = useLang();
   const [search, setSearch] = usePersistentState("production_raw_search", "");
@@ -796,7 +801,19 @@ export default function Production() {
   const qc = useQueryClient();
   const toast = useToast();
   const [date, setDate] = usePersistentState("production_date", todayISO());
-  const [view, setView] = usePersistentState("production_view", "zagruzka"); // zagruzka | people | faza | zaga
+  const [viewPref, setView] = usePersistentState("production_view", "zagruzka"); // zagruzka | people | faza | zaga
+  // The two RAW views print the plant's whole SAP upload — фаза and заголовок as
+  // the file was sent — so they are not a LEADER's to read: their page is pinned
+  // to the cells they own, and a raw file view answers a question about every
+  // unit. The predicate is a deliberate twin of the backend's `_leader_wc_scope`
+  // (leader, minus anyone holding «Ishlab chiqarish» at "all", the grant that
+  // unpins this page) and is read off the session rather than off `data.scope`,
+  // so the tabs never flash up while the dashboard is still loading.
+  const cellPinned = auth?.role === "leader" && !seesAllOn("production");
+  // The pick is PERSISTED, so a leader who chose фаза before this rule — or one
+  // whose "all" grant was withdrawn — would land on a tab that no longer exists
+  // beside a panel nothing renders. Fall back to the dashboard instead.
+  const view = cellPinned && RAW_VIEWS.includes(viewPref) ? "zagruzka" : viewPref;
   const [unknownOpen, setUnknownOpen] = useState(false);
   // table controls: free-text search (Сап код + Наименование), Команда multi-select, sort
   const [search, setSearch] = usePersistentState("production_search", "");
@@ -1687,21 +1704,24 @@ export default function Production() {
         </div>
       )}
 
-      {/* view switcher: computed dashboard / staffing / raw фаза / raw заголовок */}
-      <div className="overflow-x-auto mb-4">
+      {/* view switcher: computed dashboard / staffing / raw фаза / raw заголовок
+          (the two raw ones only for a viewer the page is not cell-pinned to) */}
+      <div className="mb-4">
         <SegmentedToggle
           value={view}
           onChange={setView}
           options={[
             ["zagruzka", t("production.viewZagruzka")],
             ["people", t("production.viewPeople")],
-            ["faza", t("production.viewFaza")],
-            ["zaga", t("production.viewZaga")],
+            ...(cellPinned ? [] : [
+              ["faza", t("production.viewFaza")],
+              ["zaga", t("production.viewZaga")],
+            ]),
           ]}
         />
       </div>
 
-      {(view === "faza" || view === "zaga") && (
+      {RAW_VIEWS.includes(view) && (
         <RawView fileType={view} date={date} managerParam={managerParam} ready={managerReady} />
       )}
 
