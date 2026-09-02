@@ -50,7 +50,8 @@ only: it removes controls whose every option the server would answer the same
 way, and can never widen what a caller reaches."""
 import logging
 from collections import defaultdict
-from datetime import date as date_t, datetime
+from datetime import date as date_t, datetime, timedelta, timezone
+from html import escape
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -513,7 +514,8 @@ def _cell_of(db: Session, cell_id: int) -> Optional[Cell]:
     return db.query(Cell).filter(Cell.id == cell_id).first()
 
 
-def _tell(db: Session, profile: Optional[str], nkey: str, params: dict) -> None:
+def _tell(db: Session, profile: Optional[str], nkey: str, params: dict,
+          markup_fn=None, rich_fn=None) -> None:
     """Tell one person what was entered on their unit — bell row plus a DM to
     every account holding that profile.
 
@@ -532,11 +534,186 @@ def _tell(db: Session, profile: Optional[str], nkey: str, params: dict) -> None:
         return
     try:
         from app.routers.staff import notify_profile
-        notify_profile(db, profile, nkey, params)
+        notify_profile(db, profile, nkey, params,
+                       markup_fn=markup_fn, rich_fn=rich_fn)
         db.commit()
     except Exception:
         db.rollback()
         log.exception("idle-cell: could not notify %s about %s", profile, nkey)
+
+
+# ── the «new ojidaniya» Rich card ─────────────────────────────────────────────
+#
+# What the brigadir is DMed when a leader files an entry on their unit. The
+# bell row keeps the one-line ``idle_request_new`` template; the DM is a rich
+# message (sendRichMessage) laid out so the reader can judge the entry from
+# the phone without opening anything: who filed it, on which cell, the cause
+# in words rather than a code, the window and its length, whether the cell
+# actually stood still, whether the загрузка will count it, the leader's own
+# note, and where the cell's day now stands. It degrades to the classic DM on
+# a client that cannot render it (``send_tg_notification``).
+
+_TASHKENT = timezone(timedelta(hours=5))
+
+_RICH_L = {
+    "uz": {
+        "title": "Yangi kutish kiritildi",
+        "intro": "{who} <b>{cell}</b> yacheykasiga yangi kutish kiritdi. Yozuv hisobga olindi — kunni yopishdan oldin ko'rib chiqing.",
+        "th_field": "Maydon", "th_value": "Qiymat",
+        "cell": "Yacheyka", "leader": "Lider", "unit": "Brigada", "date": "Sana",
+        "category": "Kategoriya", "time": "Vaqt", "duration": "Davomiyligi",
+        "state": "Holat", "load": "Zagruzkada",
+        "stopped": "🔴 Yacheyka to'xtagan", "not_stopped": "🟡 Yacheyka to'xtamagan",
+        "load_yes": "✅ Hisobga olinadi",
+        "load_no_ns": "➖ Hisobga olinmaydi (yacheyka to'xtamagan)",
+        "load_no_cat": "➖ Hisobga olinmaydi («{label}» faqat Ojidaniya sahifasida)",
+        "note": "Izoh", "today": "Bugun shu yacheykada",
+        "today_line": "{n} ta kutish · to'xtaganda jami <b>{m} daq</b> (har daqiqa bir marta hisoblangan)",
+        "hint": "Kunni yopish — kutishlarni ko'rib chiqish demakdir: xato yozuvni brigadir tuzatadi yoki o'chiradi.",
+        "when": "Kiritildi: {when}", "btn": "Kutishlarni ochish", "min": "daq",
+    },
+    "uz_cyrl": {
+        "title": "Янги кутиш киритилди",
+        "intro": "{who} <b>{cell}</b> ячейкасига янги кутиш киритди. Ёзув ҳисобга олинди — кунни ёпишдан олдин кўриб чиқинг.",
+        "th_field": "Майдон", "th_value": "Қиймат",
+        "cell": "Ячейка", "leader": "Лидер", "unit": "Бригада", "date": "Сана",
+        "category": "Категория", "time": "Вақт", "duration": "Давомийлиги",
+        "state": "Ҳолат", "load": "Загрузкада",
+        "stopped": "🔴 Ячейка тўхтаган", "not_stopped": "🟡 Ячейка тўхтамаган",
+        "load_yes": "✅ Ҳисобга олинади",
+        "load_no_ns": "➖ Ҳисобга олинмайди (ячейка тўхтамаган)",
+        "load_no_cat": "➖ Ҳисобга олинмайди («{label}» фақат Ожидания саҳифасида)",
+        "note": "Изоҳ", "today": "Бугун шу ячейкада",
+        "today_line": "{n} та кутиш · тўхтаганда жами <b>{m} дақ</b> (ҳар дақиқа бир марта ҳисобланган)",
+        "hint": "Кунни ёпиш — кутишларни кўриб чиқиш демакдир: хато ёзувни бригадир тузатади ёки ўчиради.",
+        "when": "Киритилди: {when}", "btn": "Кутишларни очиш", "min": "дақ",
+    },
+    "ru": {
+        "title": "Внесено новое ожидание",
+        "intro": "{who} внёс(ла) новое ожидание по ячейке <b>{cell}</b>. Запись уже учтена — проверьте её до закрытия дня.",
+        "th_field": "Поле", "th_value": "Значение",
+        "cell": "Ячейка", "leader": "Лидер", "unit": "Бригада", "date": "Дата",
+        "category": "Категория", "time": "Время", "duration": "Длительность",
+        "state": "Состояние", "load": "В загрузке",
+        "stopped": "🔴 Ячейка стояла", "not_stopped": "🟡 Ячейка не останавливалась",
+        "load_yes": "✅ Учитывается",
+        "load_no_ns": "➖ Не учитывается (ячейка не останавливалась)",
+        "load_no_cat": "➖ Не учитывается («{label}» — только на странице Ожидания)",
+        "note": "Комментарий", "today": "Сегодня по этой ячейке",
+        "today_line": "{n} ожид. · итого при остановке <b>{m} мин</b> (каждая минута учтена один раз)",
+        "hint": "Закрытие дня и есть проверка ожиданий: ошибочную запись бригадир исправляет или удаляет.",
+        "when": "Внесено: {when}", "btn": "Открыть ожидания", "min": "мин",
+    },
+    "en": {
+        "title": "New idle time entered",
+        "intro": "{who} entered a new idle interval for cell <b>{cell}</b>. It already counts — review it before closing the day.",
+        "th_field": "Field", "th_value": "Value",
+        "cell": "Cell", "leader": "Leader", "unit": "Unit", "date": "Date",
+        "category": "Category", "time": "Time", "duration": "Duration",
+        "state": "State", "load": "In the load",
+        "stopped": "🔴 Cell was stopped", "not_stopped": "🟡 Cell kept running",
+        "load_yes": "✅ Counted",
+        "load_no_ns": "➖ Not counted (the cell kept running)",
+        "load_no_cat": "➖ Not counted («{label}» shows only on the Ojidaniya page)",
+        "note": "Note", "today": "Today at this cell",
+        "today_line": "{n} interval(s) · stopped total <b>{m} min</b> (each minute counted once)",
+        "hint": "Closing the day is the review: the brigadir corrects or deletes a wrong entry.",
+        "when": "Entered: {when}", "btn": "Open idle times", "min": "min",
+    },
+}
+
+
+def _new_entry_card(db: Session, e: CellOjidaniyaInterval, cell: Optional[Cell],
+                    who: str):
+    """``(rich_fn, markup_fn)`` for the brigadir's «new ojidaniya» DM — both
+    per-language, both built off facts gathered ONCE here so the card the
+    unit's several holders read is the same card.
+
+    The day's standing is the UNION of the cell's stopped ranges
+    (``idle_intervals.merged_spans``), the same arithmetic the /idle-cell
+    timeline and the загрузка use — a plain sum would double-count the very
+    overlap this entry may have just created."""
+    from app.services.ojidaniya_svodka import CAT_LABELS, WEEKDAYS
+    from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
+    from app.routers.staff import _fmt_date
+    from app.config import settings
+
+    code = getattr(cell, "verifix_code", None) or f"#{e.cell_id}"
+    leader = (identity.profile_display_name(
+        db, identity.profile_key("leader", getattr(cell, "leader_id", None)))
+        if cell is not None else None)
+    unit = None
+    if cell is not None and cell.manager_id:
+        unit = db.query(Manager.name).filter(Manager.id == cell.manager_id).scalar()
+    minutes = idle_intervals.duration(e.start, e.end)
+    rows = (db.query(CellOjidaniyaInterval)
+            .filter(CellOjidaniyaInterval.cell_id == e.cell_id,
+                    CellOjidaniyaInterval.date == e.date,
+                    CellOjidaniyaInterval.status == "approved").all())
+    day_n = len(rows)
+    day_m = sum(sp["minutes"] for sp in idle_intervals.merged_spans(
+        [{"start": r.start, "end": r.end, "stopped": bool(r.stopped)} for r in rows]))
+    try:
+        wd = date_t.fromisoformat(e.date).weekday()
+    except ValueError:
+        wd = None
+    when = datetime.now(_TASHKENT).strftime("%d.%m.%Y %H:%M")
+    url = f"{settings.webapp_url.rstrip('/')}/idle-cell"
+
+    def rich(lang: str) -> str:
+        t = _RICH_L.get(lang) or _RICH_L["ru"]
+        labels = CAT_LABELS.get(lang) or CAT_LABELS["uz"]
+        cat_label = labels.get(e.category, e.category)
+        day = _fmt_date(e.date, lang)
+        if wd is not None:
+            day += f", {(WEEKDAYS.get(lang) or WEEKDAYS['uz'])[wd]}"
+        if e.category in OJIDANIYA_ONLY_CATS:
+            load = t["load_no_cat"].format(label=escape(cat_label))
+        elif not e.stopped:
+            load = t["load_no_ns"]
+        else:
+            load = t["load_yes"]
+
+        def row(k, v):
+            return f"<tr><td>{escape(t[k])}</td><td>{v}</td></tr>"
+
+        trs = [row("cell", f"<code>{escape(code)}</code>")]
+        if leader:
+            trs.append(row("leader", escape(leader)))
+        if unit:
+            trs.append(row("unit", escape(unit)))
+        trs += [
+            row("date", escape(day)),
+            row("category", f"<b>{escape(cat_label)}</b> <i>({escape(e.category)})</i>"),
+            row("time", f"<b>{escape(e.start)} – {escape(e.end)}</b>"),
+            row("duration", f"<b>{minutes} {escape(t['min'])}</b>"),
+            row("state", t["stopped"] if e.stopped else t["not_stopped"]),
+            row("load", load),
+        ]
+        parts = [
+            f"<h4>🕒 {escape(t['title'])}</h4>",
+            "<p>" + t["intro"].format(who=escape(who), cell=escape(code)) + "</p>",
+            "<table bordered striped>"
+            f"<tr><th>{escape(t['th_field'])}</th><th>{escape(t['th_value'])}</th></tr>"
+            + "".join(trs) + "</table>",
+        ]
+        if e.note:
+            parts.append(f"<blockquote>📝 <b>{escape(t['note'])}:</b> {escape(e.note)}</blockquote>")
+        parts.append(
+            f"<p>📊 <b>{escape(t['today'])}:</b> "
+            + t["today_line"].format(n=day_n, m=day_m) + "</p>")
+        parts.append(f"<p><i>{escape(t['hint'])}</i></p>")
+        parts.append(f"<p>🕒 {escape(t['when'].format(when=when))}</p>")
+        return "".join(parts)
+
+    def markup(lang: str):
+        from telebot import types
+        t = _RICH_L.get(lang) or _RICH_L["ru"]
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton(t["btn"], web_app=types.WebAppInfo(url=url)))
+        return kb
+
+    return rich, markup
 
 
 def _row_facts(e: CellOjidaniyaInterval, cell: Optional[Cell]) -> dict:
@@ -608,10 +785,12 @@ def create_interval(
         # The unit's brigadir is the one who reviews it. Admins are deliberately
         # not DMed per entry: a chat carrying every cell's waits is a chat
         # nobody reads.
+        who = identity.profile_display_name(db, viewer) or "—"
+        rich_fn, markup_fn = _new_entry_card(db, e, cell, who)
         _tell(db, identity.profile_key("supervisor", cell.manager_id),
               "idle_request_new",
-              {**_row_facts(e, cell),
-               "leader_name": identity.profile_display_name(db, viewer) or "—"})
+              {**_row_facts(e, cell), "leader_name": who},
+              markup_fn=markup_fn, rich_fn=rich_fn)
 
     return _interval_json(e, _names_for(db, [e.entered_by_profile]),
                           _row_perm(e, decides, True))

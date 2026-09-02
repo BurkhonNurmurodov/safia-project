@@ -1286,19 +1286,50 @@ def _record_dm_outcome(telegram_id: int, error: str | None) -> None:
         pass        # bookkeeping must never break the notification itself
 
 
+def _send_rich_message(chat_id: int, rich_html: str, reply_markup=None) -> None:
+    """sendRichMessage (Bot API 10.1+) with one Rich-HTML body. The pinned
+    telebot predates the method, so this goes through the raw HTTP door the
+    Broadcast tab already uses. Raises on any refusal — the caller decides what
+    to fall back to."""
+    from app.routers.broadcast import _tg_api
+    data = {"chat_id": chat_id,
+            "rich_message": json.dumps({"html": rich_html, "is_rtl": False})}
+    if reply_markup is not None:
+        data["reply_markup"] = (reply_markup.to_json()
+                                if hasattr(reply_markup, "to_json")
+                                else json.dumps(reply_markup))
+    _tg_api("sendRichMessage", data)
+
+
 def send_tg_notification(telegram_id: int, title: str, body: str,
-                         html: str | None = None, markup=None) -> bool:
+                         html: str | None = None, markup=None,
+                         rich: str | None = None) -> bool:
     """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
     it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
     labels + <blockquote>); otherwise falls back to the default Markdown layout.
     Returns True if Telegram accepted the message, False if the send failed (e.g.
     the user never started the bot, or blocked it). Failures are logged at
-    WARNING — an in-app bell with no matching DM is otherwise invisible to debug."""
+    WARNING — an in-app bell with no matching DM is otherwise invisible to debug.
+
+    ``rich`` is a Rich-HTML body (headings, tables, details — the
+    sendRichMessage dialect) tried FIRST. It is the try-rich-then-degrade shape
+    the capability alerts and the bot's /ojidaniya card already use: a client
+    that cannot render rich messages, or an API that refuses the body, still
+    gets the classic ``html``/Markdown DM, so a notification never goes silent
+    on an old client for the sake of a nicer one on a new one."""
     # Piggyback a menu-button refresh on every notification so the persistent
     # WebApp button picks up label changes without the user re-running /start.
     # _set_menu_button guards its own errors, so this can't block the DM.
     _set_menu_button(telegram_id, _get_lang(telegram_id))
     msg = f"🔔 *{title}*\n{body}"
+    if rich is not None:
+        try:
+            _send_rich_message(telegram_id, rich, reply_markup=markup)
+            _record_dm_outcome(telegram_id, None)
+            return True
+        except Exception as e:
+            logger.info("Rich notification to %s not accepted, sending the "
+                        "classic DM instead: %s", telegram_id, e)
     try:
         if html is not None:
             _send_html_message(telegram_id, html, reply_markup=markup)

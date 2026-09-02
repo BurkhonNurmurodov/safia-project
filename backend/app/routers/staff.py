@@ -1350,7 +1350,7 @@ def flush_queued_supervisor_dms(db: Session, telegram_id: int, manager_id: int) 
 def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
                    type: str = "info", exclude_account: int | None = None,
                    skip_accounts: set[int] | None = None,
-                   markup_fn=None) -> set[int]:
+                   markup_fn=None, rich_fn=None) -> set[int]:
     """Notify a PROFILE — the person — wherever they are.
 
     Writes ONE bell row addressed to the profile (so every account holding it
@@ -1378,6 +1378,13 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
     recipient language — a notification whose whole point is "go and look at
     this" is a dead end without the button, and the bell row (which carries no
     keyboard) is not a substitute on a phone.
+
+    ``rich_fn(lang)`` returns a Rich-HTML body (the sendRichMessage dialect:
+    headings, tables, blockquotes) rendered per recipient language. It is
+    tried FIRST and degrades to the classic DM when the client or the API
+    refuses it (see ``send_tg_notification``), so a key that defines one is
+    never worse off than a key that does not. The bell row is unchanged — it
+    still reads the ``_NOTIF_STRINGS`` template.
     """
     if notifications_suppressed() or not profile:
         return set()
@@ -1410,8 +1417,16 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
                 markup = markup_fn(lang)
             except Exception:
                 logger.exception("notify_profile: markup build failed for %s", nkey)
+        rich = None
+        if rich_fn is not None:
+            try:
+                rich = rich_fn(lang)
+            except Exception:
+                # A broken card must cost the reader the CARD, never the DM.
+                logger.exception("notify_profile: rich build failed for %s", nkey)
         try:
-            send_tg_notification(tid, title, body, html=html, markup=markup)
+            send_tg_notification(tid, title, body, html=html, markup=markup,
+                                 rich=rich)
         except Exception:
             pass
         dmed.add(tid)
