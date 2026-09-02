@@ -86,13 +86,6 @@ const GROUP_THRESHOLD = 10;
 // restore it on mount so the list stays where the user left it.
 let savedNavScroll = 0;
 
-function fmtDate(iso) {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-");
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return `${parseInt(d)} ${months[parseInt(m) - 1]} ${y}`;
-}
-
 export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const [hovered, setHovered] = useState(false);
   const location = useLocation();
@@ -157,12 +150,6 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const [openGroup, setOpenGroup] = useState(activeGroup);
   useEffect(() => { setOpenGroup(activeGroup); }, [activeGroup]);
   const toggleGroup = (id) => setOpenGroup(cur => (cur === id ? null : id));
-
-  const { data: range } = useQuery({
-    queryKey: ["attendance-range"],
-    queryFn: () => api.get("/api/attendance/range").then(r => r.data),
-    staleTime: 300_000,
-  });
 
   // Sidebar is expanded when: mobile drawer open, pinned, or hovered on desktop
   const expanded = open || pinned || hovered;
@@ -561,32 +548,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
             </a>
           )}
 
-          {range?.date_to && (
-            <div
-              className="flex items-center rounded-lg overflow-hidden"
-              title={!expanded ? `${t("nav.dataThrough")} ${fmtDate(range.date_to)}` : undefined}
-              style={{ gap: "12px", padding: "8px 10px", justifyContent: !expanded ? "center" : undefined }}
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
-              <div
-                className="text-[10px] leading-tight whitespace-nowrap transition-all duration-200"
-                style={{
-                  color:    "var(--text-4)",
-                  opacity:  expanded ? 1 : 0,
-                  maxWidth: expanded ? 200 : 0,
-                  overflow: "hidden",
-                  display:  "block",
-                }}
-              >
-                {t("nav.dataThrough")}{" "}
-                <span style={{ color: "var(--text-3)" }}>{fmtDate(range.date_to)}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Which build this is. Sits with the data-freshness line: both answer
-              "how current is what I'm looking at", one about the data, one
-              about the app itself. */}
+          {/* Which build this is — the last thing on the rail. The
+              data-freshness line that used to sit above it is gone. */}
           <VersionBadge expanded={expanded} />
         </div>
       </aside>
