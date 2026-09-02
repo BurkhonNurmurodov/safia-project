@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.capabilities import CAP_FACTORIES_MANAGE, require_cap
 from app.database import get_db
-from app.models import AppSetting, Factory, Manager
+from app.models import AppSetting, Factory, Manager, RoleProfile
 from app.security import require_auth
 from app.services import action_log
 from app.services.factory_scope import (
@@ -48,6 +48,15 @@ class AssignIn(BaseModel):
     """Move supervisor units to a factory. ``factory_id=None`` unassigns, which
     parks the units on «All factories» until someone decides where they live."""
     manager_ids: list[int]
+    factory_id: Optional[int] = None
+
+
+class AssignShiftManagersIn(BaseModel):
+    """Move shift-manager PROFILES to a factory. ``factory_id=None`` unassigns,
+    which puts that person back on every plant of their shift — the behaviour
+    they had before the plant column existed, and the safe direction to fail
+    in (see services/shift_scope.py)."""
+    profile_ids: list[int]
     factory_id: Optional[int] = None
 
 
@@ -116,15 +125,33 @@ def admin_factories(db: Session = Depends(get_db), _: dict = Depends(_admin)):
     for m in managers:
         if m.factory_id and not m.archived:
             counts[m.factory_id] = counts.get(m.factory_id, 0) + 1
+    # Shift-managers ride in the same payload as the units, for the same reason
+    # the units do: the assignment screen must never have to correlate two
+    # fetches to say who runs which shift where.
+    shift_managers = (
+        db.query(RoleProfile)
+        .filter(RoleProfile.role == "shift-manager")
+        .order_by(RoleProfile.shift, RoleProfile.name)
+        .all()
+    )
+    sm_counts: dict[int, int] = {}
+    for p in shift_managers:
+        if p.factory_id:
+            sm_counts[p.factory_id] = sm_counts.get(p.factory_id, 0) + 1
     return {
         "factories": [
-            {**serialize(f), "manager_count": counts.get(f.id, 0)}
+            {**serialize(f), "manager_count": counts.get(f.id, 0),
+             "shift_manager_count": sm_counts.get(f.id, 0)}
             for f in list_factories(db, include_archived=True)
         ],
         "managers": [
             {"id": m.id, "name": m.name, "shift": m.shift,
              "archived": m.archived, "factory_id": m.factory_id}
             for m in managers
+        ],
+        "shift_managers": [
+            {"id": p.id, "name": p.name, "shift": p.shift, "factory_id": p.factory_id}
+            for p in shift_managers
         ],
         "default_factory": (
             str(default_factory_id(db)) if default_factory_id(db) is not None else "all"
@@ -208,6 +235,15 @@ def delete_factory(factory_id: int, db: Session = Depends(get_db), _: dict = Dep
             status_code=409,
             detail=f"{held} supervisor(s) still belong to this factory — move them first, or archive it.",
         )
+    # Shift-managers are pinned to a plant too. Deleting the plant out from
+    # under one would silently widen them back to every factory on their shift.
+    sm_held = db.query(RoleProfile).filter(
+        RoleProfile.role == "shift-manager", RoleProfile.factory_id == factory_id).count()
+    if sm_held:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{sm_held} shift-manager(s) still belong to this factory — move them first, or archive it.",
+        )
     # Drop a default that pointed HERE — compared against the stored raw value,
     # not default_factory_id(), which already reconciles away a dead id and so
     # would never report the factory being deleted.
@@ -252,6 +288,35 @@ def assign_managers(body: AssignIn, db: Session = Depends(get_db), _: dict = Dep
         target_kind="factory", target_id=body.factory_id,
         target_name=_fname(target),
         details=[("factory", _fname(target) or "—"), ("count", moved)],
+    )
+    return {"ok": True, "moved": moved}
+
+
+@router.put("/assign/shift-managers")
+def assign_shift_managers(body: AssignShiftManagersIn,
+                          db: Session = Depends(get_db), _: dict = Depends(_admin)):
+    """Move shift-manager profiles between factories (bulk).
+
+    A shift-manager runs one shift in one plant: from here on they read, act on
+    and are notified about exactly the units matching BOTH (services/
+    shift_scope.py). Unassigning is a real answer — it restores the plant-wide
+    reach they had before this column existed — so ``factory_id=None`` is
+    accepted, not refused.
+    """
+    target = _get(db, body.factory_id) if body.factory_id is not None else None
+    ids = [int(p) for p in body.profile_ids or []]
+    if not ids:
+        return {"ok": True, "moved": 0}
+    moved = (
+        db.query(RoleProfile)
+        .filter(RoleProfile.id.in_(ids), RoleProfile.role == "shift-manager")
+        .update({"factory_id": body.factory_id}, synchronize_session=False)
+    )
+    db.commit()
+    action_log.enrich(
+        target_kind="factory", target_id=body.factory_id,
+        target_name=_fname(target),
+        details=[("factory", _fname(target) or "—"), ("shift_managers", moved)],
     )
     return {"ok": True, "moved": moved}
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Factory, Plus, Pencil, Trash2, Archive, ArchiveRestore,
-  ChevronUp, ChevronDown, AlertTriangle, Users, Settings2, ArrowRightLeft,
+  ChevronUp, ChevronDown, AlertTriangle, Users, Settings2, ArrowRightLeft, UserCog,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -39,6 +39,12 @@ import { useToast } from "../../components/ui/Toast";
  * drop. This app's primary device is a phone inside Telegram's WebView, where
  * dragging fights the page scroll and there is no hover state to advertise that
  * a row is draggable at all.
+ *
+ * A fourth block assigns SHIFT-MANAGERS, who are pinned to a plant through
+ * their profile rather than through a unit (services/shift_scope.py): a
+ * shift-manager runs one shift in one plant, and a blank plant means the
+ * pre-factory reach — that shift in every plant — so it is stated on the row
+ * rather than flagged as an error.
  *
  * Unassigned supervisors are pinned to the top under a warning, never sorted
  * into the middle of the list: a unit with no factory shows up on NO factory
@@ -231,6 +237,37 @@ export default function Factories() {
   const allVisibleSelected = visibleManagers.length > 0
     && visibleManagers.every((m) => sel.includes(m.id));
 
+  // ── assignment: shift-managers ─────────────────────────────────────────────
+  // Same shape as the units above, one level up: a shift-manager runs ONE shift
+  // in ONE plant, and until this column is filled in they reach their shift in
+  // every plant — which is what they did before factories existed, so a blank
+  // is stated plainly rather than flagged as a fault.
+  const shiftManagers = useMemo(() => data?.shift_managers || [], [data]);
+  const [smSel, setSmSel] = useState([]);
+  const [smBulkTo, setSmBulkTo] = useState("");
+  const [smBusy, setSmBusy] = useState([]);
+
+  const assignSm = async (ids, factoryId) => {
+    if (!ids.length) return;
+    setSmBusy(ids);
+    try {
+      await api.put("/api/factories/assign/shift-managers", {
+        profile_ids: ids,
+        factory_id: factoryId === "" || factoryId == null ? null : Number(factoryId),
+      });
+      setSmSel([]);
+      refresh();
+      toast.success(t("factories.smMoved").replace("{n}", String(ids.length)));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || e?.message || t("common.error"));
+    } finally {
+      setSmBusy([]);
+    }
+  };
+
+  const allSmSelected = shiftManagers.length > 0
+    && shiftManagers.every((p) => smSel.includes(p.id));
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -324,6 +361,9 @@ export default function Factories() {
                     <div className="text-[11px] mt-0.5 flex items-center gap-1.5" style={{ color: "var(--text-4)" }}>
                       <Users size={11} />
                       {t("factories.supCount").replace("{n}", String(f.manager_count))}
+                      {f.shift_manager_count > 0 && (
+                        <span>· {t("factories.smCount").replace("{n}", String(f.shift_manager_count))}</span>
+                      )}
                       {f.archived && <span>· {t("factories.archived")}</span>}
                     </div>
                   </div>
@@ -507,6 +547,99 @@ export default function Factories() {
                     ...factoryOptions,
                     { value: "__none__", label: t("factories.unassign") },
                   ]}
+                  triggerClassName="w-full px-2.5 py-1.5 text-xs"
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </TableCard>
+
+      {/* ── 4. Assignment: shift-managers ───────────────────────────────── */}
+      <TableCard
+        icon={UserCog}
+        title={t("factories.smTitle")}
+        subtitle={t("factories.smSub")}
+        right={
+          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
+            {shiftManagers.length}
+          </span>
+        }
+        toolbar={
+          smSel.length > 0 ? (
+            <div className="flex items-center gap-2 ml-auto flex-wrap">
+              <span className="text-[11px] font-semibold" style={{ color: "var(--text-2)" }}>
+                {t("factories.selected").replace("{n}", String(smSel.length))}
+              </span>
+              <StyledSelect
+                value={smBulkTo}
+                onChange={(v) => { setSmBulkTo(v); assignSm(smSel, v === "__none__" ? null : v); setSmBulkTo(""); }}
+                options={[...factoryOptions, { value: "__none__", label: t("factories.smAll") }]}
+                placeholder={t("factories.moveTo")}
+                triggerClassName="px-3 py-2 text-sm"
+              />
+              <Button size="lg" variant="ghost" onClick={() => setSmSel([])}>
+                {t("common.cancel")}
+              </Button>
+            </div>
+          ) : null
+        }
+        minWidth="560px"
+      >
+        <thead>
+          <tr>
+            <Th label={
+              <input
+                type="checkbox"
+                checked={allSmSelected}
+                onChange={(e) => setSmSel(e.target.checked ? shiftManagers.map((p) => p.id) : [])}
+                aria-label={t("common.selectAll")}
+                style={{ accentColor: "var(--brand)" }}
+              />
+            } cls="w-9" />
+            <Th label={t("roles.shift-manager")} />
+            <Th label={t("filter.shift")} cls="w-20" />
+            <Th label={t("factory.label")} cls="w-56" />
+          </tr>
+        </thead>
+        <tbody>
+          {shiftManagers.length === 0 ? (
+            <tr>
+              <td colSpan={4} className="text-center py-8 text-xs" style={{ color: "var(--text-4)" }}>
+                {t("factories.smEmpty")}
+              </td>
+            </tr>
+          ) : shiftManagers.map((p) => (
+            <tr key={p.id}>
+              <td className="px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={smSel.includes(p.id)}
+                  onChange={(e) => setSmSel((v) => e.target.checked ? [...v, p.id] : v.filter((x) => x !== p.id))}
+                  aria-label={tl(p.name)}
+                  style={{ accentColor: "var(--brand)" }}
+                />
+              </td>
+              <td className="px-3 py-2">
+                <span style={{ color: "var(--text-1)" }}>{tl(p.name)}</span>
+                {/* Not a fault — it is what every shift-manager did before this
+                    column existed — so it is stated, not flagged. */}
+                {p.factory_id == null && (
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded"
+                        style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                    {t("factories.smAll")}
+                  </span>
+                )}
+              </td>
+              <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
+                {p.shift ? `S${p.shift}` : "—"}
+              </td>
+              <td className="px-3 py-2">
+                <StyledSelect
+                  value={p.factory_id == null ? "__none__" : String(p.factory_id)}
+                  onChange={(v) => assignSm([p.id], v === "__none__" ? null : v)}
+                  disabled={smBusy.includes(p.id)}
+                  options={[...factoryOptions, { value: "__none__", label: t("factories.smAll") }]}
                   triggerClassName="w-full px-2.5 py-1.5 text-xs"
                 />
               </td>

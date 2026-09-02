@@ -315,9 +315,12 @@ no correct way to render that.
   supervisor filter AND enforces the viewer lock. `None` = no narrowing;
   an EMPTY list is a real answer ("no supervisor matches") — always test it with
   `empty_scope()` or the empty factory reads as the whole plant.
-- **Supervisors and leaders are locked** to their own plant server-side
-  (`resolve_factory` overrides whatever `?factory=` says). Hiding the tab is not
-  the mechanism — the query parameter is typeable.
+- **Supervisors, leaders and shift-managers are locked** to their own plant
+  server-side (`resolve_factory` overrides whatever `?factory=` says). Hiding
+  the tab is not the mechanism — the query parameter is typeable. The first two
+  are answered through their UNIT (`managers.factory_id`); a shift-manager is a
+  PERSON, so theirs is `role_profiles.factory_id` and `viewer_factory_id` reads
+  it through `shift_scope.factory_of`. Only admin and top-manager switch freely.
 - Factory-aware pages: Overview, Zagruzka, Ojidaniya (`Downtime`), Workers,
   Quality, Concerns. Frontend state is ONE shared value in
   `context/FactoryContext.jsx` (`useFactoryParams` merges it into request
@@ -332,7 +335,55 @@ no correct way to render that.
   narrowed, inert chip for locked viewers). See the UI-template table.
 - Admin: `pages/admin/Factories.jsx` (`admin.factories.manage` capability) owns
   the register, tab order, the ONE global default tab, the «All» tab switch, and
-  supervisor assignment.
+  both assignments — supervisor units and shift-manager profiles.
+
+## A shift-manager works ONE shift in ONE plant
+
+From **2026-09-02** (the operator's directive) a shift-manager's reach is the
+INTERSECTION of their shift and their plant: the shift-1 manager of Keles covers
+the shift-1 supervisors of Keles and nobody else.
+
+- **`services/shift_scope.py` is THE definition** — `shift_of`, `factory_of`,
+  `unit_ids`, `covers`, `role_ids_for_unit`. Before it, "the units this
+  shift-manager covers" was spelled TEN times — six in `routers/staff.py`, one
+  in `routers/concerns.py`, two in `routers/production.py` and one in
+  `capabilities.profile_unit_ids` — every one of them `Manager.shift == shift`
+  with no plant in it. Ten spellings of one rule is how a shift-manager comes to
+  read one plant's day on /staff and approve another plant's edit request from
+  the same screen. Never re-spell the intersection at a call site.
+- **`role_profiles.factory_id` is not a second copy of the data dimension.**
+  `managers.factory_id` still decides which plant a ROW belongs to; this says
+  where a PERSON works, exactly as `role_profiles.shift` already says which
+  shift they work. A supervisor and a leader answer the same question through
+  their unit, which is why `factory_scope.viewer_factory_id` reads it off
+  `managers` for them and off the profile through `shift_scope` here.
+- **NULL = every plant, and that is the DEFAULT.** Nothing moved when this
+  shipped: the migration is deliberately not backfilled, so each shift-manager
+  keeps the plant-wide reach they had until an admin narrows them on «Zavodlar».
+  Same rule `viewer_factory_id` already applies to an unassigned unit — pinning
+  somebody to nothing would empty their pages — so the answer degrades toward
+  the OLD behaviour, never toward an empty one.
+- **`role_ids_for_unit` is the inverse of `covers` and must stay the inverse.**
+  It decides who is NOTIFIED about a unit and who a supervisor may escalate a
+  concern to; addressing "every manager on shift 1" is what sent one plant's
+  decisions to the other plant's chat. `concerns._sm_names` is its in-memory
+  twin (one pass instead of a query per unit) and carries the same rule,
+  plant-less profiles included.
+- **The picker and the validator read ONE set.** `concerns._shift_manager_profile`
+  is constrained by `role_ids_for_unit`, the same call the picker list is built
+  from, so the list a supervisor is shown and the choice the endpoint accepts
+  can never be two different sets.
+- **An empty scope is a real answer.** `unit_ids` returning `[]` means "no unit
+  matches", and every caller must keep treating it as such (`empty_scope`) — an
+  empty list read as "no filter" is the whole plant.
+- Deliberately unchanged: `/leaders` still treats a shift-manager as plant-wide
+  (it never applied the shift either, so narrowing it is a separate decision),
+  and the bot's `_caller_shift` still answers the shift alone — its cards go
+  through the factory-aware endpoints, which apply the lock themselves.
+- Admin: the «Smena menejerlarini biriktirish» block on «Zavodlar»
+  (`PUT /api/factories/assign/shift-managers`). Deleting a factory is refused
+  while shift-managers still belong to it, for the same reason it is refused
+  while units do.
 
 ## Cell shift times (`/admin/upload?tab=shifttimes`)
 

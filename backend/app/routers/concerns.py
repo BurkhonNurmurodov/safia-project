@@ -1391,11 +1391,10 @@ def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[O
             # The specifically picked shift-manager holds it.
             out.append((None, _profile_key("shift-manager", c.shift_manager_profile_id)))
         elif c.brigadir_manager_id:
-            # Legacy rows without a picked holder: everyone on the unit's shift.
-            mgr = db.query(Manager).filter_by(id=c.brigadir_manager_id).first()
-            if mgr:
-                for p in db.query(RoleProfile).filter_by(role="shift-manager", shift=mgr.shift).all():
-                    out.append((None, _profile_key("shift-manager", p.id)))
+            # Legacy rows without a picked holder: everyone answerable for the
+            # unit — its shift AND its plant, the one rule in shift_scope.
+            for rid in shift_scope.role_ids_for_unit(db, c.brigadir_manager_id):
+                out.append((None, _profile_key("shift-manager", rid)))
     elif level == "top-manager":
         if c.top_manager_profile_id:
             out.append((None, _profile_key("top-manager", c.top_manager_profile_id)))

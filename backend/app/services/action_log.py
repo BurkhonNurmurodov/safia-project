@@ -191,6 +191,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # ── org registers ─────────────────────────────────────────────────────────
     (("PUT",),    "/api/factories/reorder/all",                "org", "org.factories_reordered"),
     (("PUT",),    "/api/factories/assign/managers",            "org", "org.factory_units_assigned"),
+    (("PUT",),    "/api/factories/assign/shift-managers",      "org", "org.factory_sm_assigned"),
     (("PUT",),    "/api/factories/settings/defaults",          "org", "org.factory_default_set"),
     (("POST",),   "/api/factories",                            "org", "org.factory_created"),
     (("PUT",),    "/api/factories/{}",                         "org", "org.factory_edited"),
