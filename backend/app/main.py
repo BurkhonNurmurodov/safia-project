@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
         seed_pp_autofill_default,
         reorder_positions_plan_before_fact,
         seed_snabjenets_english_label,
+        fix_orazov_schedule_2026_09_01,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_level_since, add_concern_escalation_names,
@@ -142,6 +143,7 @@ async def lifespan(app: FastAPI):
     seed_pp_autofill_default()
     reorder_positions_plan_before_fact()
     seed_snabjenets_english_label()
+    fix_orazov_schedule_2026_09_01()
     add_concern_profile_columns()
     add_concern_done_at()
     add_concern_level_columns()

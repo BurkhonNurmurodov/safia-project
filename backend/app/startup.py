@@ -4261,3 +4261,181 @@ def add_leader_task_cell() -> None:
         print(f"[startup] leader per-cell migration skipped: {exc}")
     finally:
         db.close()
+
+
+# ── 01.09.2026: a schedule change that arrived a day early ────────────────────
+# The verifix export for 01.09 was downloaded on 02.09, by which time the unit's
+# «График работы» had already been moved to 20:00–05:00 — a change that takes
+# effect FROM 02.09. So the export stamped tomorrow's schedule onto yesterday's
+# day, and every derived timing figure on those rows is wrong.
+SCHED_FIX_FLAG  = "attendance_schedule_fix_orazov_2026_09_01_v1"
+SCHED_FIX_DATE  = date(2026, 9, 1)
+SCHED_FIX_UNIT  = "O'razov Asqar"
+SCHED_FIX_WRONG = ("20-00", "05-00")
+SCHED_FIX_RIGHT = "17-00 до 02-00"
+
+
+def _sched_pair(s: str) -> tuple:
+    """The two clocks a «График работы» string names, as ("HH-MM", "HH-MM").
+
+    Matched on the CLOCKS rather than on the whole string, because the
+    separator between them is spelled several ways in the register («до», «do»)
+    and the hour is not always zero-padded — none of which is a different
+    schedule.
+    """
+    import re
+    parts = re.findall(r"(\d{1,2})\s*[-:.]\s*(\d{2})", s or "")
+    return tuple(f"{int(h):02d}-{m}" for h, m in parts[:2])
+
+
+def _squeeze_name(s: str) -> str:
+    return " ".join((s or "").split()).upper()
+
+
+def fix_orazov_schedule_2026_09_01() -> None:
+    """2026-09-02 (the operator's report): put 01.09.2026 back on the schedule
+    the unit actually worked.
+
+    The verifix «Отчёт по посещениям» for 01.09 was downloaded on 02.09. The
+    unit's schedule had by then been moved to 20:00–05:00 — from 02.09 — but the
+    export carries whatever the schedule says AT DOWNLOAD TIME, not what it said
+    on the day, so 01.09 arrived stamped 20-00 до 05-00 for a shift whose people
+    clocked in between 16:55 and 17:21.
+
+    `verifix_parser.calc_early_arrival` then read those clock-ins as arriving
+    ~3 hours EARLY (159–185 min each), and `effective_hours = worked − early/60`
+    took that straight off the загрузка: the unit's day is short by roughly
+    2.7 hours per worker across nine people. So this is not a cosmetic label —
+    the schedule string is an INPUT to two stored numbers, which is why all
+    three are rewritten together, by the platform's own `clock_metrics`, rather
+    than the schedule alone.
+
+    Scoped by (unit, date, schedule), which on this day names exactly the rows
+    in question: within the unit's 01.09 every 20-00 → 05-00 row belongs to the
+    two cells that moved, and no other row on the day carries that pair. Rows
+    are counted and NAMED in the boot output so the correction can be read
+    against the export it came from.
+
+    Both layers are corrected. `attendance` is what every KPI reads, and the
+    day's `attendance_batch_rows` are what a later re-upload or re-save of 01.09
+    would project into it — leaving the draft wrong would hand the bad schedule
+    back the next time anybody touched that day. Those rows are marked `edited`
+    for the same reason an admin's own row edit is: a correction outranks the
+    file, and the file will go on saying 20:00 forever.
+
+    A worker SPLIT across two cells is skipped and named, never guessed at: the
+    halves carry pro-rata `hours_worked` / `effective_hours` and a zeroed early
+    on the secondary, so `worked − early/60` is not the relationship they hold
+    and recomputing it would silently move headcount-weighted hours. None is
+    expected on this day; if one appears, the two halves are re-made on /staff.
+
+    Nothing is staged for re-save (`attendance` is written here, so there is
+    nothing pending) and the day is left closed — this corrects a number the
+    day was closed on, it does not reopen the day.
+
+    Guarded by an AppSetting flag so it runs exactly once. Correcting a
+    DIFFERENT unit or day needs a NEW flag key, or the old "already ran" mark
+    makes it a no-op on every box that has booted since.
+    """
+    from app.models import AttendanceBatch, AttendanceBatchRow
+    from app.services.attendance_sheet import clock_metrics
+    from app.services import action_log
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=SCHED_FIX_FLAG).first():
+            return
+
+        def _apos(s: str) -> str:
+            for ch in "`‘’ʻʼ":
+                s = s.replace(ch, "'")
+            return _fold_name(s)
+
+        want = _apos(SCHED_FIX_UNIT)
+        units = db.query(Manager).all()
+        hit = [m for m in units if _apos(m.name or "") == want]
+        if len(hit) != 1:
+            # No flag: the guard stays honest about never having run, so fixing
+            # the spelling and redeploying still applies it. The roster is
+            # printed because the whole fix is one corrected string.
+            print(f"[startup] 01.09 schedule fix: NOT applied — «{SCHED_FIX_UNIT}» "
+                  f"matched {len(hit)} unit(s) | units on this box: "
+                  + ", ".join(sorted(m.name or f"#{m.id}" for m in units)))
+            return
+        mgr = hit[0]
+
+        day_rows = db.query(Attendance).filter(
+            Attendance.manager_id == mgr.id,
+            Attendance.date == SCHED_FIX_DATE,
+        ).all()
+        targets = [r for r in day_rows if _sched_pair(r.schedule) == SCHED_FIX_WRONG]
+        if not targets:
+            print(f"[startup] 01.09 schedule fix: nothing to correct for "
+                  f"{mgr.name} (already right, or the day is gone)")
+            db.add(AppSetting(key=SCHED_FIX_FLAG, value="1"))
+            db.commit()
+            return
+
+        primaries_with_halves = {r.split_of for r in day_rows if r.split_of is not None}
+
+        fixed, skipped, keys = [], [], set()
+        for r in targets:
+            if r.split_of is not None or r.id in primaries_with_halves:
+                skipped.append(r.worker_name)
+                continue
+            _in, _out, _h, early, _off = clock_metrics(SCHED_FIX_RIGHT, r.clock_in_out or "")
+            hw = float(r.hours_worked) if r.hours_worked is not None else None
+            r.schedule = SCHED_FIX_RIGHT
+            r.early_arrival_min = early
+            r.effective_hours = round(hw - early / 60, 4) if hw is not None else None
+            fixed.append(r.worker_name)
+            keys.add((_squeeze_name(r.worker_name), r.verifix_code))
+
+        # The draft the day would be rebuilt from. Same rows, matched by the
+        # (worker, cell) pairs just corrected, so this can never reach another
+        # supervisor's rows in the same plant-wide batch.
+        draft = 0
+        batch = db.query(AttendanceBatch).filter(
+            AttendanceBatch.date == SCHED_FIX_DATE).first()
+        if batch:
+            for br in db.query(AttendanceBatchRow).filter(
+                    AttendanceBatchRow.batch_id == batch.id).all():
+                if (_squeeze_name(br.worker_name), br.verifix_code) not in keys:
+                    continue
+                if _sched_pair(br.schedule) != SCHED_FIX_WRONG:
+                    continue
+                _i, _o, _h, early, _f = clock_metrics(SCHED_FIX_RIGHT, br.clock_in_out or "")
+                hw = float(br.hours_worked) if br.hours_worked is not None else None
+                br.schedule = SCHED_FIX_RIGHT
+                br.early_arrival_min = early
+                br.effective_hours = round(hw - early / 60, 4) if hw is not None else None
+                br.edited = True        # outranks the file on any later re-upload
+                br.file_values = None   # the correction has now spoken
+                draft += 1
+
+        db.add(AppSetting(key=SCHED_FIX_FLAG, value="1"))
+        db.commit()
+
+        print(f"[startup] 01.09 schedule fix: {mgr.name} — {len(fixed)} row(s) "
+              f"{SCHED_FIX_WRONG[0]}→{SCHED_FIX_WRONG[1]} set to «{SCHED_FIX_RIGHT}» "
+              f"({draft} draft row(s) too): " + ", ".join(sorted(fixed))
+              + (f" | SKIPPED (split across cells, fix on /staff): "
+                 + ", ".join(sorted(skipped)) if skipped else ""))
+
+        action_log.record_system(
+            "attendance", "row_edited",
+            target_kind="unit", target_id=mgr.id, target_name=mgr.name,
+            unit_id=mgr.id, unit_name=mgr.name, day=SCHED_FIX_DATE,
+            details=[("workers", len(fixed)), ("draft rows", draft),
+                     ("skipped (split)", len(skipped))],
+            changes=[("schedule",
+                      f"{SCHED_FIX_WRONG[0]} до {SCHED_FIX_WRONG[1]}",
+                      SCHED_FIX_RIGHT)],
+            reason="Verifix export taken on 02.09 carried the new 20:00 schedule "
+                   "onto 01.09; early arrival and effective hours recomputed",
+        )
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] 01.09 schedule fix skipped: {exc}")
+    finally:
+        db.close()
