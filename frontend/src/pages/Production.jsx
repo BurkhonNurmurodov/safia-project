@@ -812,18 +812,24 @@ export default function Production() {
   const toast = useToast();
   const [date, setDate] = usePersistentState("production_date", todayISO());
   const [viewPref, setView] = usePersistentState("production_view", "zagruzka"); // zagruzka | people | faza | zaga
-  // The two RAW views print the plant's whole SAP upload — фаза and заголовок as
-  // the file was sent — so they are not a LEADER's to read: their page is pinned
-  // to the cells they own, and a raw file view answers a question about every
-  // unit. The predicate is a deliberate twin of the backend's `_leader_wc_scope`
-  // (leader, minus anyone holding «Ishlab chiqarish» at "all", the grant that
-  // unpins this page) and is read off the session rather than off `data.scope`,
-  // so the tabs never flash up while the dashboard is still loading.
+  // A LEADER owns CELLS, not a unit, so the backend pins their whole page to the
+  // cells they own. A deliberate twin of `_leader_wc_scope`: leader, minus
+  // anyone holding «Ishlab chiqarish» at "all", the grant that unpins this page.
+  // Read off the SESSION rather than off `data.scope`, so nothing gated on it
+  // flickers while the dashboard is still loading.
   const cellPinned = auth?.role === "leader" && !seesAllOn("production");
-  // The pick is PERSISTED, so a leader who chose фаза before this rule — or one
-  // whose "all" grant was withdrawn — would land on a tab that no longer exists
-  // beside a panel nothing renders. Fall back to the dashboard instead.
-  const view = cellPinned && RAW_VIEWS.includes(viewPref) ? "zagruzka" : viewPref;
+  // The two RAW views print the SAP upload as the file was sent — фаза and
+  // заголовок, unreconciled, plant-wide — so they answer a question about the
+  // FILE and not about anybody's shopfloor. ADMINS ONLY (the operator's call):
+  // the same spelling `canEditCatalog` / `canEditStaffingRole` use below, so one
+  // word means one thing on this page. Deliberately NOT `cellPinned` — that one
+  // now also gates the efficiency pin, and two rules on one predicate is how
+  // widening a role's reach silently hands it a tab nobody meant to give it.
+  const canSeeRaw = auth?.role === "admin";
+  // The pick is PERSISTED, so anyone who chose фаза before this rule — or whose
+  // role changed since — would land on a tab that no longer exists beside a
+  // panel nothing renders. Fall back to the dashboard instead.
+  const view = !canSeeRaw && RAW_VIEWS.includes(viewPref) ? "zagruzka" : viewPref;
   const [unknownOpen, setUnknownOpen] = useState(false);
   // table controls: free-text search (Сап код + Наименование), Команда multi-select, sort
   const [search, setSearch] = usePersistentState("production_search", "");
@@ -1723,7 +1729,7 @@ export default function Production() {
       )}
 
       {/* view switcher: computed dashboard / staffing / raw фаза / raw заголовок
-          (the two raw ones only for a viewer the page is not cell-pinned to) */}
+          (the two raw file views are admin-only) */}
       <div className="mb-4">
         <SegmentedToggle
           value={view}
@@ -1731,10 +1737,10 @@ export default function Production() {
           options={[
             ["zagruzka", t("production.viewZagruzka")],
             ["people", t("production.viewPeople")],
-            ...(cellPinned ? [] : [
+            ...(canSeeRaw ? [
               ["faza", t("production.viewFaza")],
               ["zaga", t("production.viewZaga")],
-            ]),
+            ] : []),
           ]}
         />
       </div>
