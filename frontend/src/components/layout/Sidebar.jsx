@@ -31,6 +31,9 @@ const ALL_LINKS = [
   { to: "/workers",  page: "workers",  key: "nav.workers",         icon: Users, group: "people" },
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "lab" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
+  // «Ojidaniya kiritish» — the leaders' entry form for the same minutes the
+  // /downtime page reads, so it sits beside it in Production, not in the lab.
+  { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell",   icon: Timer, group: "prod" },
   { to: "/staff",    page: "staff",    key: "nav.staff",           icon: Fingerprint, group: "people" },
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
@@ -49,7 +52,6 @@ const ALL_LINKS = [
   { to: "/worker-concerns", page: "worker-concerns", key: "nav.workerConcerns", icon: Megaphone, group: "leaders" },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
-  { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell", icon: Timer, group: "lab" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },
 ];
 

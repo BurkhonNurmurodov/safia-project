@@ -90,7 +90,7 @@ const t = {
     "nav.quality":         "Sifat va shikoyatlar",
     "nav.activity":        "Foydalanuvchilar faolligi",
     "nav.setupTimes":      "Perenaladka vaqtlari",
-    "nav.idleCell":        "Kutish / yacheyka",
+    "nav.idleCell":        "Ojidaniya kiritish",
     // ── Cell details page (/cells/:id) ──
     "cellPage.title":            "Yacheyka",
     "cellPage.notFound":         "Yacheyka topilmadi",
@@ -426,7 +426,7 @@ const t = {
     "arc.dTimeline":            "Status tarixi",
     "arc.dComments":            "Izohlar ({n})",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
-    "nav.zagruzkaCell":         "Yuklama / yacheyka",
+    "nav.zagruzkaCell":         "Yacheyka zagruzkasi",
     "zcell.title":              "Yacheykalar bo'yicha yuklama",
     "zcell.subtitle":           "Yacheykalar bo'yicha yuklama — test",
     "zcell.testNote":           "Test — yacheyka jadvallaridan hisoblanadi, hech narsaga ta'sir qilmaydi",
@@ -4261,7 +4261,7 @@ const t = {
     "nav.quality":         "Сифат ва шикоятлар",
     "nav.activity":        "Фойдаланувчилар фаоллиги",
     "nav.setupTimes":      "Переналадка вақтлари",
-    "nav.idleCell":        "Кутиш / ячейка",
+    "nav.idleCell":        "Ожидания киритиш",
     // ── Cell details page (/cells/:id) ──
     "cellPage.title":            "Ячейка",
     "cellPage.notFound":         "Ячейка топилмади",
@@ -4597,7 +4597,7 @@ const t = {
     "arc.dTimeline":            "Статус тарихи",
     "arc.dComments":            "Изоҳлар ({n})",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
-    "nav.zagruzkaCell":         "Юкламa / ячейка",
+    "nav.zagruzkaCell":         "Ячейка загрузкаси",
     "zcell.title":              "Ячейкалар бўйича юклама",
     "zcell.subtitle":           "Ячейкалар бўйича юклама — тест",
     "zcell.testNote":           "Тест — ячейка жадвалларидан ҳисобланади, ҳеч нарсага таъсир қилмайди",
@@ -8431,7 +8431,7 @@ const t = {
     "nav.quality":         "Качество и жалобы",
     "nav.activity":        "Активность пользователей",
     "nav.setupTimes":      "Время переналадки",
-    "nav.idleCell":        "Простой / ячейка",
+    "nav.idleCell":        "Ввод ожиданий",
     // ── Cell details page (/cells/:id) ──
     "cellPage.title":            "Ячейка",
     "cellPage.notFound":         "Ячейка не найдена",
@@ -8767,7 +8767,7 @@ const t = {
     "arc.dTimeline":            "История статусов",
     "arc.dComments":            "Комментарии ({n})",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
-    "nav.zagruzkaCell":         "Загрузка / ячейка",
+    "nav.zagruzkaCell":         "Загрузка ячейки",
     "zcell.title":              "Загрузка по ячейкам",
     "zcell.subtitle":           "Загрузка по ячейкам — тест",
     "zcell.testNote":           "Тест — считается по ячейковым таблицам, ни на что не влияет",
@@ -12601,7 +12601,7 @@ const t = {
     "nav.quality":         "Quality & Complaints",
     "nav.activity":        "Users Activity",
     "nav.setupTimes":      "Setup Times",
-    "nav.idleCell":        "Idle time / cell",
+    "nav.idleCell":        "Idle time entry",
     // ── Cell details page (/cells/:id) ──
     "cellPage.title":            "Cell",
     "cellPage.notFound":         "Cell not found",
@@ -12937,7 +12937,7 @@ const t = {
     "arc.dTimeline":            "Status history",
     "arc.dComments":            "Comments ({n})",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
-    "nav.zagruzkaCell":         "Workload / cell",
+    "nav.zagruzkaCell":         "Cell workload",
     "zcell.title":              "Load per cell",
     "zcell.subtitle":           "Load per cell — test",
     "zcell.testNote":           "Test — computed from the per-cell tables, affects nothing",
