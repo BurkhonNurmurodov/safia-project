@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronDown,
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
-  Download, CheckCircle, Lock, Unlock,
+  Download, CheckCircle, Lock, Unlock, Undo2, Redo2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -26,6 +26,7 @@ import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
+import useUndoStack, { useUndoHotkeys } from "../hooks/useUndoStack";
 import { useLang } from "../context/LangContext";
 import { useFactory } from "../context/FactoryContext";
 import { useFactorySection } from "../components/ui/FactorySelect";
@@ -1066,6 +1067,91 @@ export default function Production() {
     },
   });
 
+  // ── undo / redo over the day's writes ─────────────────────────────────────
+  // Ctrl+Z takes back the last per-day write on this page; Ctrl+Y (or
+  // Ctrl/⌘+Shift+Z) puts it back. Three writers are on the stack — the
+  // Факт/ПЛАН cells, the staffing pin and the «Odamlar soni» commit — because
+  // each is ONE idempotent call whose previous value is on screen at the moment
+  // it is made, so the inverse is the same endpoint with that value. The
+  // CATALOG writes are deliberately NOT: adding, renaming and deleting a
+  // position is configuration for every date rather than a fact about this one,
+  // and a delete's inverse would be a re-create under a NEW id — a lossy
+  // reverser, which is the one kind this platform does not ship (the
+  // `task.status_changed` lesson). Its confirm still says it cannot be undone,
+  // and that stays true.
+  //
+  // The stack is scoped to the (date, unit) pair the writes were made against
+  // and empties when either moves: replaying an edit onto a different day would
+  // write a plausible-looking figure with nothing on screen saying it happened.
+  const undoScope = `${date}|${managerParam.manager_id ?? "self"}`;
+  const history = useUndoStack({ scope: undoScope });
+
+  // A write that can be taken back. `forward` performs it, `back` is its exact
+  // inverse. Nothing reaches the stack until the server has ACCEPTED the write —
+  // an entry for a write that never landed offers to reverse a change that never
+  // happened. The refusal itself is already on screen: every one of these
+  // mutations toasts `writeErr` from its own onError.
+  const tracked = async ({ label, forward, back }) => {
+    try {
+      await forward();
+      history.push({ label, undo: back, redo: forward });
+    } catch { /* the mutation's own onError already said why */ }
+  };
+
+  const doUndo = async () => {
+    if (!history.canUndo) return;
+    const label = await history.undo();
+    if (label != null) toast.info(t("production.undo.undone").replace("{x}", label));
+  };
+  const doRedo = async () => {
+    if (!history.canRedo) return;
+    const label = await history.redo();
+    if (label != null) toast.info(t("production.undo.redone").replace("{x}", label));
+  };
+
+  // The shortcut mirrors the cells: a closed day is read-only for everyone, so
+  // the keystroke is inert there too rather than firing a write the API refuses.
+  // It also stands down while a dialog is open — the operator's context is the
+  // dialog, and Ctrl+Z inside one means the field they are typing in — and on
+  // the two RAW file views, which edit nothing and show no undo control: a
+  // keystroke that silently rewrites a figure on a tab the operator cannot see
+  // is the one thing an undo must never do.
+  const editableView = view === "zagruzka" || view === "people";
+  useUndoHotkeys({
+    undo: doUndo,
+    redo: doRedo,
+    enabled: editableView && dayOpen && !editRow && !createOpen && !confirmDel && !wcEdit && !reopen,
+  });
+
+  // The pair is rendered on the page bar, not only in the Позиции toolbar: the
+  // history spans BOTH computed views (the people tab's commit is on it), and
+  // this platform is used on phones inside Telegram, where there is no keyboard
+  // at all — a keyboard-only undo would reach nobody on the primary device.
+  const undoBar = editableView && (history.canUndo || history.canRedo) ? (
+    <div className="flex items-center gap-1.5">
+      <Button
+        size="lg" variant="secondary" tint
+        icon={<Undo2 size={15} />}
+        aria-label={t("production.undo.undoTitle")}
+        title={t("production.undo.undoTitle")}
+        disabled={!history.canUndo || !dayOpen || history.busy === "redo"}
+        loading={history.busy === "undo"}
+        onClick={doUndo}
+        style={{ width: 38, height: 38, padding: 0 }}
+      />
+      <Button
+        size="lg" variant="secondary" tint
+        icon={<Redo2 size={15} />}
+        aria-label={t("production.undo.redoTitle")}
+        title={t("production.undo.redoTitle")}
+        disabled={!history.canRedo || !dayOpen || history.busy === "undo"}
+        loading={history.busy === "redo"}
+        onClick={doRedo}
+        style={{ width: 38, height: 38, padding: 0 }}
+      />
+    </div>
+  ) : null;
+
   // Dates that actually have an uploaded snapshot — drives the switcher.
   const { data: datesData } = useQuery({
     queryKey: ["production-dates", managerParam.manager_id ?? "self"],
@@ -1154,8 +1240,47 @@ export default function Production() {
   // `qty_key` is what pp_daily is keyed by for this line — the SAP code, or a
   // name-derived token for a code-less line (several of those can share one
   // Команда, so keying them by a blank code would make them one row).
-  const saveOverride = (row, field) => (value) =>
-    override.mutate({ date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center, field, value });
+  // «Odamlar soni» commits the day's efficiency and EVERY cell's pins in one
+  // call, so its inverse is that same shape rebuilt from the state before the
+  // press — a complete snapshot either way, which is why one entry can put the
+  // whole tab back rather than leaving half of it moved.
+  // `constants.productive_min` is the rate IN FORCE, which on an unpinned day is
+  // derived rather than stored — so the inverse of a save that pinned it is
+  // `null`, the value that DELETES the day's pin and hands the unit back to the
+  // global/derived rate. Restoring the number instead would leave the day pinned
+  // at a figure that reads identically today and stops moving with the platform
+  // the moment either changes. `productive_pinned` is what tells the two apart.
+  const staffingSnapshot = () => ({
+    productive_min: data?.constants?.productive_pinned
+      ? Number(data.constants.productive_min)
+      : null,
+    rows: wcs.map((w) => ({
+      work_center: w.work_center,
+      people: w.people_overridden ? w.people : null,
+      shtatka: w.shtatka_overridden ? w.shtatka : null,
+    })),
+  });
+  const saveStaffing = (body) => {
+    const prev = staffingSnapshot();
+    tracked({
+      label: t("production.viewPeople"),
+      forward: () => staffing.mutateAsync(body),
+      back: () => staffing.mutateAsync(prev),
+    });
+  };
+
+  // The inverse is the SAME call with the figure that stood in the cell before —
+  // `null` included, which is what clears the override back to the SAP file's own
+  // number, so Delete on a cell is as reversible as typing over it.
+  const saveOverride = (row, field) => (value) => {
+    const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center, field };
+    const prev = (field === "actual" ? row.actual_qty : row.plan_qty) ?? null;
+    tracked({
+      label: `${row.name} · ${t(field === "actual" ? "production.col.fact" : "production.col.plan")}`,
+      forward: () => override.mutateAsync({ ...at, value }),
+      back: () => override.mutateAsync({ ...at, value: prev }),
+    });
+  };
 
   // One renderer per column so the picker can hide/reorder freely — each case
   // is the exact cell markup the table previously hard-coded in SAP order.
@@ -1354,10 +1479,19 @@ export default function Production() {
       const n = Number(s.replace(",", "."));
       return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
     };
-    wcOverride.mutate({
-      work_center: wcEdit.work_center,
-      people: num(wcDraft.people),
-      shtatka: num(wcDraft.shtatka),
+    // Both fields ride every call, so the inverse is the pins as they stood —
+    // `null` where nothing was pinned, which is what puts the card back on the
+    // computed N / configured штатка rather than freezing today's figure.
+    const at = { work_center: wcEdit.work_center };
+    const prev = {
+      people: wcEdit.people_overridden ? wcEdit.people : null,
+      shtatka: wcEdit.shtatka_overridden ? wcEdit.shtatka : null,
+    };
+    const next = { people: num(wcDraft.people), shtatka: num(wcDraft.shtatka) };
+    tracked({
+      label: `${t("production.wcEditTitle")} · ${wcEdit.work_center}`,
+      forward: () => wcOverride.mutateAsync({ ...at, ...next }),
+      back: () => wcOverride.mutateAsync({ ...at, ...prev }),
     });
   };
 
@@ -1466,6 +1600,10 @@ export default function Production() {
         {pageSections.length > 0 && (
           <FilterPanel sections={pageSections} />
         )}
+        {/* Undo / redo for the day's writes. It appears only once there IS a
+            history — an always-visible pair of dead buttons says the page can
+            take something back when there is nothing to take back. */}
+        {undoBar}
 
         {/* switcher — jump to a date that has uploaded data */}
         {availableDates.length > 0 && (
@@ -1580,7 +1718,7 @@ export default function Production() {
           constants={data?.constants}
           loading={loading}
           canEdit={canEditPeople}
-          onSave={(body) => staffing.mutate(body)}
+          onSave={saveStaffing}
           saving={staffing.isPending}
           savedAt={staffingSaved}
         />
