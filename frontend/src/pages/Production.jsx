@@ -529,7 +529,12 @@ const roundHalfUp = (x) => Math.floor(x + 0.5);
 // the table. Tall enough to clear the inputs (34px + padding).
 const PT_ROW = "h-[48px]";
 
-function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }) {
+// `canEditEff` gates the EFFICIENCY box separately from the cell rows: it pins
+// the whole brigadir's unit for the day, so a leader — whose page is cut to
+// their own cells — may type their cells' headcount but never re-time cells
+// that are not theirs. Their save carries rows only; the backend refuses a
+// `productive_min` from a cell-scoped caller and leaves the unit's pin alone.
+function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hint, onSave, saving, savedAt }) {
   const { t, lang } = useLang();
   const shiftMin = Number(constants?.shift_min) || 480;
   const curPm = Number(constants?.productive_min) || 408;
@@ -580,7 +585,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
   };
 
   const dirty =
-    (pctValid && Math.abs(previewPm - curPm) > 0.001) ||
+    (canEditEff && pctValid && Math.abs(previewPm - curPm) > 0.001) ||
     wcs.some((w) => {
       const d = draft[w.work_center] || { people: "", shtatka: "" };
       return String(w.people_overridden ? w.people : "") !== String(d.people).trim() ||
@@ -589,10 +594,10 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
 
   const apply = () => { if (pctValid) setAppliedPm(previewPm); };
   const save = () => {
-    if (!pctValid) return;
-    setAppliedPm(previewPm);           // committing also lands it in the preview
+    if (canEditEff && !pctValid) return;
+    if (canEditEff) setAppliedPm(previewPm);   // committing also lands it in the preview
     onSave({
-      productive_min: Math.round(previewPm * 100) / 100,
+      ...(canEditEff ? { productive_min: Math.round(previewPm * 100) / 100 } : {}),
       rows: wcs.map((w) => {
         const d = draft[w.work_center] || { people: "", shtatka: "" };
         return { work_center: w.work_center, people: num(d.people), shtatka: num(d.shtatka) };
@@ -636,7 +641,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
           value={effPct}
           type="number"
           step="0.1"
-          disabled={!canEdit}
+          disabled={!canEditEff}
           onChange={(e) => setEffPct(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") apply(); }}
           className="w-20 rounded-lg px-3 py-2 text-sm outline-none tabular-nums"
@@ -653,7 +658,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
         style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
         = {fmt(previewPm, 0)} {t("production.minUnit")} / {t("production.perPerson")}
       </span>
-      {canEdit && (
+      {canEditEff && (
         <Button size="lg" variant="secondary" className="ml-auto" onClick={apply}
           disabled={!pctValid || Math.abs(previewPm - appliedPm) < 0.001}>
           {t("production.apply")}
@@ -773,13 +778,13 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
         {canEdit && (
           <div className="flex items-center justify-between gap-3 mt-2.5 flex-wrap">
             <p className="text-[11px] leading-relaxed flex-1 min-w-[200px]" style={{ color: "var(--text-3)" }}>
-              {t("production.peopleHint")}
+              {hint || t("production.peopleHint")}
             </p>
             <Button
               size="lg"
               icon={savedAt ? <CheckCircle size={14} /> : <Save size={14} />}
               loading={saving}
-              disabled={!dirty || !pctValid}
+              disabled={!dirty || (canEditEff && !pctValid)}
               onClick={save}
             >
               {savedAt ? t("production.savedOk") : t("production.save")}
@@ -913,8 +918,11 @@ export default function Production() {
   // Staffing-card pins (O.soni / штатка, per date) are admin-only as well.
   const canEditStaffingRole = auth?.role === "admin";
   // The «Odamlar soni» tab is the brigadir's own entry point for the same pins —
-  // they type the day's real headcount there, so supervisors edit it too.
-  const canEditPeopleRole = ["admin", "supervisor"].includes(auth?.role);
+  // they type the day's real headcount there, so supervisors edit it too. A
+  // LEADER edits it as well (2026-09-02), for their own cells only: the backend
+  // pins their write to the same cell scope that pins their read, and the
+  // unit-wide efficiency box stays theirs to look at, not to move.
+  const canEditPeopleRole = ["admin", "supervisor", "leader"].includes(auth?.role);
 
   const { data, isLoading, isPlaceholderData, isError, error } = useQuery({
     queryKey: ["production", date, managerParam.manager_id ?? "self"],
@@ -1267,10 +1275,15 @@ export default function Production() {
   // global/derived rate. Restoring the number instead would leave the day pinned
   // at a figure that reads identically today and stops moving with the platform
   // the moment either changes. `productive_pinned` is what tells the two apart.
+  // A cell-pinned caller never touches the efficiency pin, so their snapshot
+  // must not carry it either — sending `null` back would read as "delete the
+  // unit's pin", which is exactly the write the backend refuses them.
   const staffingSnapshot = () => ({
-    productive_min: data?.constants?.productive_pinned
-      ? Number(data.constants.productive_min)
-      : null,
+    ...(cellPinned ? {} : {
+      productive_min: data?.constants?.productive_pinned
+        ? Number(data.constants.productive_min)
+        : null,
+    }),
     rows: wcs.map((w) => ({
       work_center: w.work_center,
       people: w.people_overridden ? w.people : null,
@@ -1738,6 +1751,8 @@ export default function Production() {
           constants={data?.constants}
           loading={loading}
           canEdit={canEditPeople}
+          canEditEff={canEditPeople && !cellPinned}
+          hint={cellPinned ? t("production.peopleHintLeader") : undefined}
           onSave={saveStaffing}
           saving={staffing.isPending}
           savedAt={staffingSaved}

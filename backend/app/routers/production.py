@@ -856,13 +856,32 @@ def save_staffing(
 
     Same per-day store as the staffing-card pin (pp_work_center_daily), so the
     master pp_work_centers config and every other date stay untouched. Open to
-    admins and to supervisors — a brigadir enters their own unit's real numbers;
+    admins, to supervisors — a brigadir enters their own unit's real numbers;
     _resolve_manager_id pins a supervisor to their own unit regardless of the
-    manager_id they send."""
-    if payload.get("role") not in ("admin", "supervisor"):
+    manager_id they send — and, from 2026-09-02, to LEADERS for their own cells,
+    exactly as /override already lets them edit ПЛАН/ФАКТ on those cells.
+
+    A leader's write is pinned by the same `_leader_wc_scope` that pins their
+    read: a row naming a work center outside it is refused whole, and the
+    day's efficiency pin (`productive_min`) is off limits to them altogether —
+    it governs EVERY cell of the brigadir's unit, so a leader saving it would
+    re-time cells that are not theirs. Their save carries rows only, and the
+    unit's existing pin is left exactly as it stands (a scoped caller never
+    reaches the PPDaySetting block below, so an omitted value cannot delete it
+    the way it does for a brigadir's explicit save)."""
+    if payload.get("role") not in ("admin", "supervisor", "leader"):
         raise HTTPException(status_code=403, detail="Not allowed to edit staffing")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
+    scope = _leader_wc_scope(db, payload)
+    if scope is not None:
+        if body.productive_min is not None:
+            raise HTTPException(status_code=403,
+                                detail="Efficiency belongs to the whole unit")
+        for r in body.rows:
+            if (r.work_center or "").strip() and not _in_scope(scope, r.work_center):
+                raise HTTPException(status_code=403,
+                                    detail="This team is not one of your cells")
     idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
     shift_min, _ = _constants(db)
 
@@ -902,16 +921,18 @@ def save_staffing(
             db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
                                      people=r.people, shtatka=r.shtatka))
 
-    ds = db.query(PPDaySetting).filter(
-        PPDaySetting.manager_id == mid, PPDaySetting.date == day).first()
-    was_pm = float(ds.productive_min) if ds and ds.productive_min is not None else None
-    if pm is None:
-        if ds:
-            db.delete(ds)
-    elif ds:
-        ds.productive_min = pm
-    else:
-        db.add(PPDaySetting(manager_id=mid, date=day, productive_min=pm))
+    was_pm = pm
+    if scope is None:
+        ds = db.query(PPDaySetting).filter(
+            PPDaySetting.manager_id == mid, PPDaySetting.date == day).first()
+        was_pm = float(ds.productive_min) if ds and ds.productive_min is not None else None
+        if pm is None:
+            if ds:
+                db.delete(ds)
+        elif ds:
+            ds.productive_min = pm
+        else:
+            db.add(PPDaySetting(manager_id=mid, date=day, productive_min=pm))
 
     db.commit()
     action_log.enrich(
@@ -922,7 +943,7 @@ def save_staffing(
         changes=(cell_changes +
                  ([("minutes", was_pm, pm)] if was_pm != pm else [])),
     )
-    return _build_dashboard(db, mid, day, None, payload)
+    return _build_dashboard(db, mid, day, scope, payload)
 
 
 class ReconciliationBody(BaseModel):
