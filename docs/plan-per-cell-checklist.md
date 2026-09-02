@@ -1,22 +1,41 @@
-# Moving the leader checklist from PER LEADER to PER CELL
+# The leader checklist, PER CELL — the switching plan
 
-**Status: PLAN ONLY — nothing implemented.** Written 2026-08-30 against `VERSION` 3.72.1; citations re-verified against `main` at 4.23.1 on 2026-09-02.
-This document is the map of the current flow and the executable plan for the change.
-Read it whole before touching a line; the ordering of the stages is the plan.
+**Status: PLAN ONLY — nothing implemented.** Analysis 2026-08-30, decisions taken with the
+operator 2026-09-02, citations verified against `main` at `VERSION` 4.23.1.
+Read it whole before touching a line; the order of the stages is the plan.
+
+---
+
+## 0. The decisions (2026-09-02, the operator's — do not relitigate)
+
+| # | Question | Ruling |
+|---|---|---|
+| D1 | What "per cell" means | **A full, separate checklist per cell.** Each cell-day has its own day row, score, report page and DM. |
+| D2 | Workshop-wide tasks (cascade meeting, walk, shift report) | **Repeated per cell, fresh photos each time.** No sharing, no task scope flag. |
+| D3 | Which cells a leader files for | **Every cell assigned to them on `/cells` (`cells.leader_id`), automatically.** Not `in_load`. |
+| D4 | Where the switch lives | **Admin panel, per brigadir unit, from a date** — turn on one, a selection, or all (the «Zavodlar» / «Smena vaqtlari» checkbox + bulk-bar model). |
+| D5 | History | **Applies only from the chosen date (usually today or tomorrow). Old results never change.** |
+| D6 | Report DMs | **One per cell**, exactly as the sender works today. |
+| D7 | Ranking | **A leader's day = the mean of their cell checklists. No cell ranking.** The register table gains a cell column, nothing else on the page moves. |
+| D8 | Exclusions / late-open / bot-vs-sheet | **Per cell-day, with an «all this leader's cells» shortcut.** (Only exclusions actually reach a bot day — see §5.6.) |
+| D9 | Google Form | **History only.** Every unit already files in the bot. The register keeps reading old Form rows; the Form is not edited. |
+| D10 | A leader with no cell | **Files nothing.** `/tasks` says «no cell assigned»; the boot self-check names them. |
+
+**Pre-flight, on the local mirror of prod's seed (93 leaders · 108 cells · 18 units):**
+every leader owns ≥ 1 cell, every cell has a leader, 78 leaders own one cell and **15 own
+two** (nobody owns three). So on today's data D3 and D10 leave **zero gaps**, and total
+checklists per day go from 93 to 108 — **+16 %**, concentrated on fifteen people.
 
 ---
 
 ## 1. What a submission IS today
 
-One leader files **one** checklist **per day**. That sentence is enforced in exactly one
-place and everything else derives from it:
+One leader files **one** checklist **per day**, enforced in exactly one place:
 
 ```
 backend/app/models.py:1539
     UniqueConstraint("leader_id", "date", name="uq_ltask_day")
 ```
-
-Around it:
 
 | Layer | Table | Keyed by |
 |---|---|---|
@@ -29,387 +48,299 @@ Around it:
 | Report page URL | `/leaders/report/bot-{day_id}` | `leader_bot.day_uid` — `leader_bot.py:68` |
 | Objection | `leader_ai_disputes.ref` | the review ref |
 | Late proof | `leader_late_proofs` | (day_id, task_id) |
+| Exclusion | `leader_day_exclusions.leader_key` | `person|date` — `leader_exclusions.py:57` |
 
-There are **two collection doors** and one rule that picks between them:
-
-* **Sheet** — the Google Form → `LeaderChecklist` (`models.py:157`). Wiped and reloaded on
-  every Refresh, **no unique constraint** (the docstring says a leader may legitimately
-  submit twice for one day and both rows count), and **no cell column at all**.
-* **Bot** — `/tasks` → `LeaderTaskDay`.
-* `leader_bot.merges()` (`leader_bot.py:132`) decides; `LeaderDaySource` (unique on
-  `(leader_profile_id, date)`, `models.py:3070`) is the admin's per-day override.
-* The register displaces one with the other here — **the single most important line in
-  the whole change**:
-
-```python
-# backend/app/routers/leaders.py:618
-filed = {(b["leader_id"], b["date"]) for b in bot_rows}
-data  = [r for r in sheet_data if (r["leader_id"], r["date"]) not in filed] + bot_rows
-```
-
-**Scale (from `backend/seed_leader_profiles.py`, recorded in memory `leader-profiles-bulk-seed`):
-93 leaders · 108 cells · 18 units. 15 leaders run 2–3 cells; the other 78 run one.**
-That number governs every judgement below: going per-cell multiplies total submissions by
-about **1.16×**, not by 3. The cost is concentrated on 15 people, not spread over 93.
+The Form layer (`LeaderChecklist`, `models.py:157`) has no cell column and, per D9, receives
+nothing new. The register still displaces a Form row with a bot day on `(leader_id, date)`
+at `routers/leaders.py:618` — under per-cell that displaces one historical row with N bot
+rows, which is the correct reading.
 
 ---
 
-## 2. What already survives N submissions per leader-day — FOR FREE
+## 2. What survives untouched — and why A is affordable
 
-This is the good news, and it is most of the system. Two independent reasons:
+**Every downstream key is a ROW ID, not a (leader, date) pair.** Because A puts the cell on
+the *day row*, every new cell-day gets a fresh `day_id` and every entry a fresh `entry_id`,
+so all of this addresses the new rows correctly with no code change:
 
-**(a) Every downstream key is a ROW ID, not a (leader, date) pair.** `bot_ref` names an
-entry, `report_key` and `day_uid` name a day, disputes name a ref, late proofs and camera
-rolls name a day+task. The moment more day rows or more entry rows exist, all of these
-address the new rows correctly with **no code change**:
+* the AI pipeline — discovery, queue, drain, refs, dedupe, verdicts (`leader_ai.py`)
+* the day report, its DM ledger, `resend_if_changed`, `sweep_unreported` (`leader_reports.py`) — one DM per cell is D6
+* the three-stage objection chain (`leader_dispute.py`)
+* late proofs and their draft roll (`leader_late_proof.py`)
+* the camera roll `uq_ltask_photo_slot (day_id, task_id, slot)` and the server stamp
+* per-task closing: `close_task`, `maybe_close_day`, `autoclose_due`, `close_expired_days`
+  all iterate **days** (`leader_close.py:537`, `:657` — `.all()` over the leader's open days)
+* `compute_completion` — each cell-day is a full checklist, so the weight sum is right as-is
+* cutoffs — a fact about a person (`leader_cutoffs.person_key`)
 
-* the whole AI pipeline — discovery, the queue, the drain, refs, dedupe, verdicts
-* the day report and its DM ledger, `resend_if_changed`, `sweep_unreported`
-* the three-stage objection chain
-* late proofs and their draft roll
-* the camera roll and the server stamp
-
-**(b) The frontend scoring core already averages several rows onto one day.** It was built
-for the sheet layer's double-filings and for the two-shift case, and it is exactly the
-arithmetic a per-cell model needs:
+**The frontend scoring core already averages several rows onto one day** — built for the
+Form's double filings and the two-shift case, and it is D7 exactly:
 
 ```js
-// frontend/src/pages/Leaders.jsx:942  slotsBy
-day.sum += r.completion; day.n++;      // …then sum += day.sum / day.n
-// frontend/src/pages/Leaders.jsx:2557 taskStats — slots keyed `leader|date`
-a.n++; if (effDone(tk)) a.done++;      // …then t.done += a.done / a.n
+// frontend/src/pages/Leaders.jsx:942  slotsBy    day.sum += r.completion; day.n++   → sum += day.sum/day.n
+// frontend/src/pages/Leaders.jsx:2557 taskStats  a.n++; if (effDone(tk)) a.done++   → t.done += a.done/a.n
 ```
 
-So the standings, the rating, Barqarorlik, the heatmap, the trend line, the sparkline and
-the per-question chart all keep computing **the leader's daily mean across their cells**
-without being touched. `winDays` is a count of *days*, not of rows — no denominator
-multiplies. (Since the cutoffs feature shipped, `slotsBy` is `(rows, keyFn, cuts, dates)` —
-the extra arguments expand a person's cutoff over the window and leave the per-day
-averaging above exactly as it was.)
-
-**Do not rebuild any of this.** The temptation will be to "make the scoring cell-aware";
-it already is, in the only sense that matters.
+Standings, rating, Barqarorlik, heatmap, trend, sparkline, per-question chart: **do not
+touch them.** `winDays` counts days, not rows; no denominator multiplies.
 
 ---
 
-## 3. What actually breaks
+## 3. What actually changes
 
-Ordered by severity. These are the whole cost of the change.
-
-### Blockers
-
-| # | Site | Today | Under per-cell |
+| # | Site | Today | Work |
 |---|---|---|---|
-| B1 | `models.py:1539` `uq_ltask_day` | one day per (leader, date) | second cell's day is **rejected at insert** |
-| B2 | `telegram_bot.py:2537` `_lt_day()` | `.filter_by(leader_id, date).first()` | silently returns **one arbitrary** day of N |
-| B3 | `leader_tasks.py:979` `compute_completion` | sums each entry's weight | a task done on 3 cells earns **3× its weight** → scores above 100 |
-| B4 | `leader_close.py:62` `closed_tasks` | returns `{task_id}` | cannot tell "task 4 closed on cell A" from "on all cells"; `maybe_close_day` (`:323`) closes the day early |
-| B5 | `models.py:1727` `uq_ltask_photo_slot` | (day_id, task_id, slot) | two cells collide on slot 0 |
-| B6 | `models.py:1564` `uq_ltask_entry` | (day_id, task_id) | one answer per task per day |
+| B1 | `models.py:1539` `uq_ltask_day` | (leader_id, date) | widen to `(leader_id, date, COALESCE(cell_id,0))` — expression index, see §5.1 |
+| B2 | `telegram_bot.py:2537` `_lt_day()` | `.first()` on (leader, date) | takes `cell_id`; NULL-safe filter |
+| B3 | `telegram_bot.py` — 23 `lt:` callback shapes | carry `pid` | carry `pid` **and** `cid` — §5.3 |
+| B4 | `models.py:1567` `LeaderTaskCapture` | no cell | `cell_id` column |
+| B5 | `leader_proof.py:272` `save_photo` + `/api/leader-proof/session` + late-photo | resolve the day from `prof` | take `cell_id` |
+| B6 | `ProofCamera.jsx:407` | `?leader=&task=` | `&cell=` |
+| B7 | `leader_bot.dashboard_rows` (`leader_bot.py:282`) | no cell on the row | `cell_id` + `cell_code` |
+| B8 | `Leaders.jsx:3810` register table | no way to tell two rows apart | «Yacheyka» column (`CellLink`), sort key; day-detail header names the cell |
+| B9 | `leader_reports.day_report` + `LeaderDayReport.jsx` | no cell in the DM / header | print the cell code |
+| B10 | `leader_exclusions.key()` + `LeaderDayExclusion` | `person|date` | `+ cell_id`; batch endpoint = the shortcut — §5.6 |
+| B11 | `routers/leaders.py:691` `roster` («Topshirilmagan») | leader-days | leader-**cell**-days on switched units, from the floor |
+| B12 | `LeaderUnitSetting` + `set_unit_settings` (`leader_tasks.py:1039`) | `per_task_close`, `bot_from` | `+ cell_from`, same single writer |
+| B13 | admin panel | — | the enrolment register — §5.7 |
+| B14 | `leader_close.self_check()` (`:973`) | closing-rule invariants | + the per-cell invariants — §6 |
+| B15 | `GET /admin/leader-tasks/submissions` + `LeaderDailyTasks.jsx` | no cell | cell column |
 
-### Major
-
-| # | Site | Problem |
-|---|---|---|
-| M1 | `leaders.py:618` `filed` set | one sheet row is displaced by N bot rows — correct, but the sheet layer can never express per-cell (`LeaderChecklist` has no cell column) |
-| M2 | `models.py:3070` `uq_leader_day_source` | the admin's bot-vs-sheet choice cannot address one cell |
-| M3 | `leader_exclusions.py:57` `key()` = `person|date` | an exclusion takes out **all** of a leader's cells that day; there is no way to forgive one cell |
-| M4 | `models.py:1567` `LeaderTaskCapture` (PK `telegram_id`) | the in-flight photo capture has no cell, so shots land on the wrong day |
-| M5 | `leader_proof.py:272` `save_photo(prof, task_id, cfg)` | resolves the day itself from `prof` + `effective_date` — no cell to resolve with |
-| M6 | `ProofCamera.jsx:407` `?leader=&task=` | the camera page cannot name a cell |
-| M7 | `leader_close.py:537` `autoclose_due`, `close_expired_days` | iterate open days — they work, but fire N× and must not close cell A's day because cell B finished |
-| M8 | `leader_reports.py` | one DM per day row → a 3-cell leader and their brigadir get **3 DMs a night** |
-| M9 | `Leaders.jsx:3810` register table | Date · Submitted · Leader · Supervisor · Score · Failed — N identical-looking rows per day, nothing distinguishing them |
-
-### Minor / informational
-
-* `leader_bot.merges()` / `training()` take `(leader_id, date)` — need a cell to stay one rule.
-* `LeaderLateRequest` is keyed (leader, day) — the shift-1 filing-window opener.
-* `leader_cutoffs.person_key` is **fine as-is**: a cutoff is a fact about a person, not a day.
-* The config chain (`leader_tasks.effective_leader_config`, `:233`) resolves
-  global → supervisor → leader. **There is no cell level.**
+Deliberately unchanged, and why, in §5.6.
 
 ---
 
-## 4. The four candidate shapes
+## 4. Rejected shapes (for the record)
 
-### A — Per-cell DAY
-`uq_ltask_day` → `(leader_id, cell_id, date)`. A leader with 3 cells files 3 complete
-checklists, each with its own score, report page and DM.
-
-* **For:** every row-id-keyed layer (§2a) works untouched. Conceptually blunt and obvious.
-* **Against:** the 15 multi-cell leaders re-do and re-photograph **leader-scoped** work per
-  cell — task 4 is a workshop walk at 9:00/11:00/15:00, task 2 a cascade meeting, task 13
-  the leader's shift report. Photographing one meeting three times is a rule that teaches
-  leaders the platform is not reading what they send. Also triggers every Major in §3
-  (M1–M9): three register rows, three DMs, key collisions on source/exclusions.
-
-### B — Per-cell ENTRY
-One day per leader; `uq_ltask_entry` → `(day_id, task_id, cell_id)`. Every task is answered
-once per cell.
-
-* Same duplicated-work problem as A, with the completion math (B3) on top. Strictly worse
-  than A unless the scope is selective — which is D.
-
-### C — The CELL owns the day
-`(cell_id, date)`; the leader is recorded as the filer.
-
-* Cleanest against the "a cell is its CODE" philosophy and survives a mid-period leader
-  change. But the register's entire spine is the **person** — standings, leaderboard,
-  cutoffs, disputes, the `profile-is-the-person` rule. A leader with 0 cells could not file
-  at all, and all eight leader-scoped tasks would have nowhere to live. This is a rewrite,
-  not a migration. **Rejected.**
-
-### D — The TASK declares its scope ★ RECOMMENDED
-`LeaderTaskDef.scope ∈ {"leader", "cell"}`, resolved down the **existing**
-global → supervisor → leader chain exactly like `proof_kind`, `min_media` and `date_check`.
-The day stays per leader. A **cell-scoped** task fans out into one entry per cell the leader
-owns; a **leader-scoped** task is answered once, as today.
-
-**Why the 13 seeded tasks make this the honest answer** (`leader_tasks.py:36`):
-
-| Cell-scoped by their own wording | Leader / workshop-scoped |
-|---|---|
-| 1 «Yacheykaning kunlik planini qayd qilish» — *the cell's* daily plan | 2 Cascade meeting (briefing) |
-| 3 SOP standard — «Qo'shni **yacheykalarni** qayd qilish» | 4 Workshop walk, 3×/day at fixed hours |
-| 7 Control-board filling (SAP) | 5 Raw-material receipt (fridge, warehouse) |
-| 9 «Smena davomida rejaning 50% ni qayd qilish» | 6 Internal logistics timing |
-| 10 SAP plan closure | 8 Concern reporting |
-| | 11 Scheduling · 12 Assistant-leader control · 13 Leader's shift report |
-
-Five of thirteen are about a cell. Making the other eight per-cell is not the request being
-served — it is collateral damage from expressing the request as a day-level key.
+* **B — per-cell entries under one day**, and **D — the task declares its scope** (only
+  cell-specific tasks fan out): both rejected by D1/D2. D would have been cheaper and would
+  have avoided B7–B11, but the operator wants each cell to be an independent submission with
+  its own score, report and DM. That is A.
+* **C — the cell owns the day**: rejected; the register's spine is the person.
 
 ---
 
-## 5. Why D wins, stated plainly
+## 5. The design
 
-**D is a superset of A in capability and a subset of A in churn.**
-
-* *Superset:* declare all 13 tasks `scope="cell"` and D produces exactly what A produces —
-  a full checklist's worth of answers per cell — while still costing one report and one DM.
-  Per-cell **scores** (the likely reason for the request: "which cell is being run badly?")
-  are derivable from D, because every cell-scoped entry carries its cell.
-* *Subset of churn:* D leaves the day row alone, so **M1, M2, M3, M8, M9 never happen** —
-  no key collisions on `LeaderDaySource` or exclusions, one register row, one DM, one report
-  page, one score per leader-day. A causes all of them.
-
-D's own cost is exactly three things, all local: the completion math (B3), the
-`(task, cell)` closing set (B4), and one extra level in the bot menu. That is it.
-
-**The single strongest argument against D:** it is not literally "submissions become per
-cell". If the operator's requirement is that **a cell must have its own independent
-submission, its own score, its own report link and its own DM** — for example because
-different people effectively run different cells under one leader profile — then D does not
-satisfy it and **A is the answer**. §9 is where that decision is recorded.
-
----
-
-## 6. The recommended design (D), in detail
-
-### 6.1 Schema
+### 5.1 Schema
 
 ```python
-# LeaderTaskDef / LeaderTaskSetting / LeaderTaskLeaderSetting
-scope = Column(String(8), nullable=False, default="leader")   # def:  "leader" | "cell"
-scope = Column(String(8), nullable=True)                      # overrides: NULL = inherit
-
-# LeaderTaskEntry
+# LeaderTaskDay
 cell_id = Column(Integer, ForeignKey("cells.id"), nullable=True, index=True)
-# NULL = the task is leader-scoped, or the leader owns no cell. Exactly today's rows.
-
-# LeaderTaskPhoto
-cell_id = Column(Integer, ForeignKey("cells.id"), nullable=True, index=True)
+# NULL = a day filed before the unit's floor, or on an un-switched unit — exactly today's rows.
 
 # LeaderTaskCapture
 cell_id = Column(Integer, nullable=True)
+
+# LeaderUnitSetting
+cell_from = Column(String(10), nullable=True)   # "YYYY-MM-DD"; NULL = not switched
+
+# LeaderDayExclusion
+cell_id = Column(Integer, nullable=True, index=True)
 ```
 
-**The NULL trap — read this twice.** Postgres treats NULLs as *distinct* in a unique
-constraint, so `UNIQUE(day_id, task_id, cell_id)` would happily accept two leader-scoped
-rows for one task. Both widened constraints must be expression indexes:
+**The NULL trap.** Postgres treats NULLs as *distinct* inside a unique constraint, so
+`UNIQUE(leader_id, date, cell_id)` would accept two cell-less days for one leader. Both
+widened keys are **expression indexes**, and every existing row (`cell_id IS NULL`) keeps
+behaving exactly as under the old constraint — **no data migration**:
 
 ```sql
-CREATE UNIQUE INDEX uq_ltask_entry     ON leader_task_entries (day_id, task_id, COALESCE(cell_id, 0));
-CREATE UNIQUE INDEX uq_ltask_photo_slot ON leader_task_photos  (day_id, task_id, COALESCE(cell_id, 0), slot);
+ALTER TABLE leader_task_days DROP CONSTRAINT IF EXISTS uq_ltask_day;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ltask_day
+  ON leader_task_days (leader_id, date, COALESCE(cell_id, 0));
+
+ALTER TABLE leader_day_exclusions DROP CONSTRAINT IF EXISTS uq_leader_day_exclusion;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_leader_day_exclusion
+  ON leader_day_exclusions (leader_key, date, COALESCE(cell_id, 0));
 ```
 
-Every existing row has `cell_id IS NULL`, so `COALESCE(...,0)` reproduces today's constraint
-exactly and **no data migration is needed**.
+`create_all` never ALTERs, so this is a startup migration under a **new flag key**
+(`leader_task_per_cell_2026_09_XX_v1`), wired in **both** the FastAPI lifespan and
+`passenger_wsgi.py`. The SQLAlchemy `__table_args__` must declare the same expression
+`Index(..., func.coalesce(cell_id, 0), unique=True)` so a fresh box's `create_all` does not
+recreate the old constraint.
 
-### 6.2 One new module: `backend/app/services/leader_cells.py`
+### 5.2 One new module — `backend/app/services/leader_cells.py`
 
-THE definition of "which cells does this leader file for", in the idiom of
-`leader_close.py` and `idle_source.py` — one function, because the bot menu, the closing
-sweep, the completion math, the day report and the boot self-check all ask it and three
-spellings would give one leader three different checklists.
+THE definition of "which cells does this leader file for, and is this unit per-cell on this
+day". One module because the bot menu, the sweeps, the register, the roster, the admin panel
+and the self-check all ask it, and two spellings would give one leader two checklists.
 
 ```python
-def filing_cells(db, prof) -> list[Cell]:
-    """The cells a leader answers cell-scoped tasks for, in verifix order.
-    Empty list is a REAL answer — see fanout()."""
-
-def fanout(db, prof, cfg) -> dict[int, list[int | None]]:
-    """task_id -> the cell ids that task must be answered for.
-    Leader-scoped task            -> [None]
-    Cell-scoped, leader has cells -> [cell ids]
-    Cell-scoped, leader has NONE  -> [None]   ← see the rule below
-    """
+def unit_floor(db, manager_id) -> str | None        # LeaderUnitSetting.cell_from
+def floors(db) -> dict[int, str]                    # one query, for bulk readers
+def per_cell(floor: str | None, date: str) -> bool  # floor set and date >= floor
+def filing_cells(db, prof) -> list[Cell]            # Cell.leader_id == prof.id, by verifix_code
+def expected_days(db, prof, date) -> list[int | None]
+    # not per_cell           -> [None]        (one cell-less day, exactly today)
+    # per_cell, cells        -> [cell ids]
+    # per_cell, NO cells     -> []            (D10: files nothing)
 ```
 
-**The rule for a leader with no cells: they answer a cell-scoped task ONCE, with
-`cell_id = NULL`.** The alternative — dropping the task — silently shrinks their weight
-denominator and scores them on a shorter checklist than everybody else, which is the same
-class of invisible unfairness the exclusions feature exists to abolish. The boot self-check
-(§8) names how many such leaders there are so it is never a surprise.
+The floor is compared against **`effective_date(shift)`**, the same day the bot already
+computes — so a floor of "today" set at 15:00 makes shift 2's coming night the first per-cell
+night, and shift 1's next morning the first per-cell day. D5 falls out of that comparison:
+a day before the floor is created with `cell_id = NULL` and reads exactly as it always did.
 
-**A cell with no leader is filed by nobody**, and `self_check` names that count too.
+### 5.3 The bot (`telegram_bot.py`)
 
-**Which cells count** is a decision, not a derivation — see §9 D2.
+**Flow.** `/tasks` → profile pick (existing, `_lt_profile_kb`) → **if `per_cell` for today's
+effective date:** a **cell menu** — one row per `filing_cells`, labelled by verifix code
+(`cellLabel` — the code, never the workshop name), each row carrying that cell's state:
+`✅ 92%` closed · `3/13` answered · `⏳` awaiting verdicts · blank not started. Tapping a
+cell opens the existing task menu for that cell's day, whose title names the cell and whose
+«Orqaga» returns to the cell menu, not to the profile pick. **Zero cells:** «Sizga yacheyka
+biriktirilmagan — brigadiringizga murojaat qiling», and nothing else (D10). **Not per-cell:**
+the flow is byte-for-byte today's.
 
-### 6.3 The three local changes
-
-**B3 — completion.** `leader_tasks.compute_completion` earns a cell-scoped task's weight as
-the **mean over its cells**:
+**Threading the cell through 23 callback shapes without re-indexing a single handler.**
+Every `lt:` callback puts the profile id at `parts[2]`; `_lt_callback` parses
+`parts = call.data.split(":")` (`:3176`). Encode the cell **inside that segment** —
+`"192"` (no cell) or `"192c108"` — with two helpers:
 
 ```python
-# group entries by task_id; per task: share = done_cells / answered_cells
-# done += weight * share
+def _lt_ref(pid: int, cid: int | None) -> str          # "192" | "192c108"
+def _lt_who(seg: str) -> tuple[int, int | None]        # the inverse
 ```
 
-This is not a new rule — it is the platform's existing "several rows settle one day"
-arithmetic (`slotsBy`, `taskStats`) applied one level down, so the bot's running score, the
-stamped `completion` and the frontend mean all agree by construction.
+Every `f"lt:…:{pid}…"` becomes `f"lt:…:{_lt_ref(pid, cid)}…"` and every `pid = int(parts[2])`
+becomes `pid, cid = _lt_who(parts[2])`. Segment counts do not change, so no handler's
+indexing moves; the longest shape (`lt:tcconf:192c108:13`) is 21 bytes against Telegram's 64.
 
-**B4 — closing.** `leader_close.closed_tasks` returns `set[(task_id, cell_id)]`;
-`maybe_close_day` compares it against `leader_cells.fanout(...)`'s expected pair set.
-`autoclose_due` iterates pairs. `task_state` and `score_line` are already per row.
+**Writers.** `_lt_day(db, pid, date, cid)`; `_lt_save_entry(..., cid)` creates the day with
+`cell_id=cid, manager_id=prof.manager_id` (a cell's supervisor is kept equal to its leader's
+unit by `profiles.py`, so the two never disagree); `LeaderTaskCapture.cell_id` set when a
+capture starts and read when its photos land; `_lt_open_camera` appends `&cell=`; the late-
+proof screens (`_lt_late_*`) carry the same `pid`/`cid` segment. `leader_close.reset_task`,
+`reopen_task`, `score_line`, `task_state` are per day and unchanged.
 
-**Bot menu.** A leader-scoped task row is unchanged. A cell-scoped task row shows aggregate
-progress (`2/3 yacheyka`) and opens a **cell sub-menu** — the same shape the flow already
-has for a multi-profile account (`_lt_profile_kb`, `telegram_bot.py:2528`), so this is a
-pattern the code and the leaders both already know. Callback data
-`lt:task:{pid}:{tid}` → `lt:task:{pid}:{tid}:{cid}` stays far inside Telegram's 64-byte cap.
+**Sweeps.** `_lt_autoclose` → `close_expired_days` already collects **all** of a leader's
+open days (`leader_close.py:683`, `.all()`) and `autoclose_due` walks every open day of
+per-task units — both are per-day and need nothing. Verify only that the log line and the
+action-register row name the cell.
 
-### 6.4 What is NOT touched
+### 5.4 Camera (`/proof/camera`, `routers/leader_proof.py`, `services/leader_proof.py`)
 
-`leader_ai.py` · `leader_reports.py` · `leader_dispute.py` · `leader_late_proof.py` ·
-`leader_exclusions.py` · `leader_cutoffs.py` · `leader_bot.merges()` · `LeaderDaySource` ·
-the register's `filed` dedupe · `slotsBy` / `scoreSlots` / `taskStats` / the heatmap /
-the trend / the standings.
+`?leader=&task=&cell=`; `/session` and `POST /photo` and the late-photo trio take `cell_id`
+and resolve the day through `_lt_day`'s twin with it. `LeaderTaskPhoto` is keyed by `day_id`
+and needs nothing. `proofQueue.js`'s offline rows carry the cell with the blob, or a shot
+flushed after a cell switch lands on the wrong day.
 
-If a stage of the implementation finds itself editing one of these, **stop** — it means the
-change has drifted from D toward A.
+### 5.5 Reads
+
+* **`leader_bot.dashboard_rows`** ships `cell_id` and `cell_code` (one `Cell` query per call,
+  ids → codes). The register's `filed` dedupe stays `(leader_id, date)`.
+* **`/leaders` table** (`Leaders.jsx:3810`): «Yacheyka» column rendered with `CellLink`
+  (`id` = cells.id), sortable; blank on a pre-floor row. The day-detail header and
+  `LeaderDayReport.jsx` print `cellLabel(code)` beside the date. Any export mirroring the
+  register gains the column. **Nothing else on the page changes** (D7).
+* **Report DM** (`leader_reports.day_report`): the cell code in the first line; one DM per
+  cell-day (D6), ledger keyed per day already.
+* **Admin «Liderlar kunlik vazifalari»** (`LeaderDailyTasks.jsx`, `/submissions`): cell
+  column; the detail modal header names the cell. `_pair_state` (which submission counts)
+  is unaffected — a per-cell day never has a Form twin (D9).
+* **«Vazifalar» tab** (`TaskRequirements.jsx`): one sentence on a switched unit — «Har bir
+  yacheyka uchun alohida topshiriladi (N ta)».
+
+### 5.6 Admin decisions on a day (D8)
+
+* **Exclusions** — `leader_exclusions.key(leader_id, name, date, cell_id)` →
+  `person|date` stays the string, `cell_id` a column beside it (the unique index in §5.1).
+  `load()` keys by `(leader_key, cell_id)`; `wire` / `wire_in` / `excluded` / `orphan_rows`
+  / `drop_pending_reviews` carry the cell through. **Per-cell exclusion is arithmetically
+  free on the client**: `slotsBy` marks a date `off` only when it has *no surviving slot*, so
+  excluding cell 6722's night leaves the day standing on 6732 — the leader's mean is over the
+  cell that counted. The «all this leader's cells» shortcut is the exclusions tab selecting
+  every row of that leader-date and sending the batch it already sends; `POST
+  /api/leaders/exclusions` items gain an optional `cell_id`. The «Topshirilmagan» view
+  lists **(leader, cell, day)** for switched units from the floor — `roster` ships each
+  leader's cells (B11).
+* **Late-open (`LeaderLateRequest`)** — **unchanged.** The filing-window rule voids Form
+  rows only; a bot day is never voided (its close is refused after the window), so this never
+  reaches a per-cell day.
+* **Bot-vs-sheet (`LeaderDaySource`)** — **unchanged.** Offered only for a pair that holds
+  both submissions; after the floor no such pair exists (D9).
+
+### 5.7 The admin panel switch (D4)
+
+A register block at the top of the ltasks admin destination — the shape of «SAP
+avto-to'ldirish» on Production and the selection model of «Smena vaqtlari»:
+
+* one row per non-archived unit: name · shift · leaders · cells · **«Yacheyka bo'yicha
+  dan»** (the floor, or «—»);
+* a per-row toggle (opens a `DateRangePicker single`, default **tomorrow** for shift 1 and
+  **today** for shift 2 — the next shift that has not started);
+* checkbox rows + «select all visible» + a sticky bulk bar: «N ta brigada · Yoqish (sana) ·
+  O'chirish»;
+* the same field on «Brigada sozlamalari» beside `1×1` and `bot_from`.
+
+**One endpoint, one writer:** `PUT /admin/leader-tasks/cell-from` takes a **list** of
+`{manager_id, cell_from | null}` (the `PUT /admin/production/autofill` shape) and calls
+`set_unit_settings(manager_id, per_task_close, bot_from, cell_from)` — the row's single
+writer, extended, so a row toggle and a bulk press are one transaction and never two
+inserts racing the key (`leader_tasks._sup_row`, `:622`, is the lesson).
+
+**The confirm names the count** and, per unit, how many leaders × cells it will produce
+tomorrow. It **warns** when a unit already has OPEN per-cell days today and the new floor
+would leave them stranded (clearing the floor mid-day, or moving it later) — such days
+still close on their own deadline, but the leader's menu stops showing them.
+
+**Rollback = clear the floor.** New days are cell-less again from the next effective date;
+per-cell days already written stay readable and scored. No migration either way.
 
 ---
 
-## 7. Implementation stages
+## 6. Boot self-check additions (`leader_close.self_check`)
 
-Each stage is independently shippable and leaves the platform working. Stages 1–3 are
-**inert**: nothing changes for any leader until Stage 4 enrols a unit.
+This repo has **no test suite** and a push to `main` **is** a deploy; `self_check()` already
+prints to the deploy output and DMs the admins. For every switched unit it must newly report:
 
-| Stage | Work | Ships as |
+1. every leader with **zero** cells (they will file nothing — D10) — by name;
+2. every cell of the unit with **no** leader (nobody files it) — by code;
+3. the expected cell-days per shift (Σ cells over leaders) — so a unit that will produce 40
+   checklists a night is seen before the night;
+4. that `uq_ltask_day` is the **expression** index (query `pg_indexes`): a box whose migration
+   did not run rejects the second cell's day at insert, with nothing on screen.
+
+On today's data 1 and 2 are both empty; the check exists for the day they are not.
+
+---
+
+## 7. Stages
+
+Each ships alone and leaves the platform working. **Stages 1–4 are inert** — nothing changes
+for any leader until an admin sets a floor in Stage 5.
+
+| Stage | Work | Bump |
 |---|---|---|
-| **1** | Schema: the four `cell_id` / `scope` columns, the two expression indexes, the startup migration (flag `leader_task_cell_scope_2026_XX_XX_v1`). Wire it in **both** the FastAPI lifespan and `passenger_wsgi.py`. | PATCH — inert |
-| **2** | `services/leader_cells.py` (`filing_cells`, `fanout`) + `resolve_scope` / `set_scope` on the existing chain + `PUT /admin/leader-tasks/scope`. **`CELL_SCOPE_IS_PILOT = True`** refuses the GLOBAL level, exactly as `CAMERA_IS_PILOT` does (`leader_tasks.py:213`) — the camera setting reached every leader on the platform on its first day (2026-08-19) because it was writable globally. | MINOR — inert |
-| **3** | The three local changes of §6.3: completion, the `(task, cell)` closing set, the bot cell sub-menu. Plus `LeaderTaskCapture.cell_id` (M4), `save_photo(..., cell_id=)` (M5) and `ProofCamera` `?cell=` (M6). Still inert: every task resolves `scope="leader"`. | MINOR — inert |
-| **4** | Enrolment: `LeaderUnitSetting.cell_scope_from` (§8) + the ltasks matrix control + the boot self-check assertions. **The first unit goes live here.** | MINOR |
-| **5** | Read surfaces: the day report groups a cell-scoped task's sub-rows by cell code; the admin day-detail modal gains a cell column; the «Vazifalar» tab says which tasks are per-cell. | MINOR |
-| **6** | *(Optional, only if asked)* a per-cell score breakdown on `/leaders` — this is what A was really wanted for, and D can produce it without A's cost. | MINOR |
+| **1** | §5.1 schema + startup migration (new flag key, both entrypoints) + `services/leader_cells.py` + `set_unit_settings(cell_from)` | PATCH — inert |
+| **2** | §5.3 bot: `_lt_ref`/`_lt_who`, cell menu, `_lt_day`/`_lt_save_entry`/capture, late screens; the zero-cell message | MINOR — inert |
+| **3** | §5.4 camera: `?cell=`, session/photo/late-photo, `proofQueue` | MINOR — inert |
+| **4** | §5.5 + §5.6 reads: `dashboard_rows` cell, register column + detail header, report DM + page, admin submissions column, exclusions key + shortcut + roster | MINOR — inert |
+| **5** | §5.7 admin switch + §6 self-check. **First unit goes live here.** | MINOR |
+| **6** | «Vazifalar» sentence, exports, action-register rows naming the cell | PATCH |
 
-**Cell labels everywhere use `utils/cellName.js#cellLabel(code, leader)`** — the verifix
-CODE, never the workshop name (CLAUDE.md, the operator's standing directive of 2026-08-29).
-The bot must print the code too.
+**Version: MINOR** throughout. The floor `MIN_CLIENT` is derived from MAJOR, so MAJOR is the
+one level the platform enforces — for a shape an already-open tab can no longer read.
+Nothing here qualifies: `cell_id`/`cell_code` on a row is additive, a day still has one
+`uid`, and an old bundle handed two rows for one leader-date averages them (`slotsBy`) —
+the correct answer. PATCH is automatic; edit `VERSION` by hand once in each shipping turn.
 
----
-
-## 8. Rollout, and how it is taken back
-
-The platform has three precedents and they all say the same thing: **never a global switch.**
-
-* `CAMERA_IS_PILOT` — a global write reached every leader mid-shift, five tasks each, and
-  needed a one-shot to undo (`startup.reset_leader_camera_pilot`).
-* `LeaderUnitSetting.bot_from` — the rehearsal window: a unit learns the new flow on a day
-  that does not count.
-* `per_task_close` — deliberately kept **off** the task chain, because a chain has a level
-  that means "everybody".
-
-So:
-
-**Enrolment = `LeaderUnitSetting.cell_scope_from` — a per-supervisor DATE floor**, set on
-the «Brigada sozlamalari» modal beside `per_task_close` and `bot_from`. Written through
-`set_unit_settings` in the **same** call as its neighbours: they are one row, and two
-parallel writes race its unique key — the trap that broke the camera pilot's first unit
-(`leader_tasks._sup_row`, `leader_tasks.py:622`).
-
-* Before the floor, the unit files exactly as today. History is never rewritten.
-* The floor can only move a day **later**, never resurrect one — clamp it the way
-  `merges()` clamps `bot_from` against `MERGE_FROM` (`leader_bot.py:132`).
-* **Rollback is clearing the floor.** Because `cell_id` is nullable and leader-scoped is the
-  chain's floor, a unit reverts to today's behaviour with no migration; the cell-scoped rows
-  already written stay readable. This is the property that makes the change safe to try
-  mid-week.
-
-**Startup migrations need NEW flag keys.** An old "already ran" mark makes a re-dated
-migration a no-op on every box that has booted once — the rule CLAUDE.md states three times
-(the review floor, the ARC reset, the dispute stages).
-
-**Boot self-check.** This repo has **no test suite** and a push to `main` **is** a deploy, so
-`leader_close.self_check()` (`leader_close.py:973`) — already printed to the deploy output
-and DMed to admins — must newly assert, for every enrolled unit:
-
-1. every leader has ≥1 filing cell, or is named in the report (they answer cell-scoped tasks once);
-2. no cell is owned by two leaders;
-3. the expected `(task, cell)` pair count per leader is > 0 and < a sane cap;
-4. `compute_completion` over a synthetic full day still returns exactly 100.0.
-
-Twice already a task has closed at an hour nobody intended and the only signal both times
-was a leader losing points. Assertion 4 is what stops a per-cell weight bug from reaching a
-score before a human sees it.
+**Volume after the switch:** +15 checklists a day (108 vs 93), +16 % AI reviews
+(`gemini_batch_size` 40 per pass, chained every 5 s — comfortably inside the drain), +15 DMs
+a night to leaders and the same to brigadirs. The Suvonov/Aripova/Talipova-scale units are
+unaffected: their leaders own one cell each.
 
 ---
 
-## 9. Decisions that are the operator's, not mine
+## 8. Things the implementation turn must NOT do
 
-Answer these before Stage 4; Stages 1–3 do not depend on any of them.
-
-**D1 — The fork.** Is the requirement *"the tasks that are about a cell are answered per
-cell"* (**D**, recommended) or *"a cell has its own complete, separately-scored,
-separately-reported checklist"* (**A**)?
-→ If A: Stages 1–3 still apply almost unchanged; the day key widens instead of the entry
-key, and §3's M1–M3, M8–M9 all become work. Budget roughly double.
-
-**D2 — Which cells does a leader file for?** All cells with `Cell.leader_id == prof.id`?
-Only `in_load` cells? There is no `active` flag on `Cell` today, and closed cells were
-removed by hand during the 2026-07-11 seed. A new opt-out (`Cell.checklist`) may be wanted.
-
-**D3 — Which of the 13 tasks are cell-scoped?** §4's table is my reading of the wording,
-not a ruling. Tasks 1, 3, 7, 9, 10 look cell-scoped; 2, 4, 5, 6, 8, 11, 12, 13 look
-workshop-scoped. The operator decides, per task, and can change it later per unit.
-
-**D4 — `min_media` per cell or per task?** A cell-scoped task with `min_media = 3` and 3
-cells means 9 photos. Recommendation: `min_media` stays **per cell** (it is a property of
-the proof, not of the day) and the burden is managed by D3 keeping the list short.
-
-**D5 — The sheet layer.** `LeaderChecklist` has no cell column and is wiped on every
-Refresh. Options: (i) leave it per-leader — an enrolled unit simply reads from the bot, which
-`merges()` already does for shift 2 and camera units; (ii) add a cell column to the Google
-Form. Recommendation: **(i)**, and enrol only units that already file in the bot.
-
----
-
-## 10. Version
-
-**MINOR** (`3.(72+1).0`), for every stage.
-
-The compatibility floor is `MIN_CLIENT = <MAJOR>.0.0` and is DERIVED, so MAJOR is the one
-level the platform enforces — reserved for a shape an already-open tab stops being able to
-read. Nothing here qualifies: `cell_id` on a task row is additive, a day still has one
-`uid`, and an old bundle handed several entries with the same task `id` averages them
-(`taskStats`, `Leaders.jsx:2557`) — which is the correct answer, not a broken one.
-
-Under option **A** this stays MINOR too, for the same reason: an old bundle reads N day rows
-as duplicate filings and `slotsBy` averages them.
-
-**PATCH is automatic** (the Stop hook). Edit `VERSION` by hand in the turn that ships each
-stage, once per turn, highest level wins.
+* Rebuild the scoring core, add a cell ranking, or change the heatmap — D7.
+* Add a task scope flag, a "same for all cells" button, or copy answers between cells — D2.
+* Write a global constant or a platform-wide switch — D4/D5; the floor is per unit.
+* Print a workshop name anywhere — the standing rule: a cell is its CODE.
+* Touch `leader_ai.py`, `leader_reports.py` (beyond the cell code in the text),
+  `leader_dispute.py`, `leader_late_proof.py`, `leader_cutoffs.py`, `merges()`,
+  `LeaderDaySource`, `LeaderLateRequest`, `compute_completion`, `maybe_close_day`,
+  `autoclose_due`, `close_expired_days`. If a stage finds itself editing one of these,
+  stop and re-read §2.
