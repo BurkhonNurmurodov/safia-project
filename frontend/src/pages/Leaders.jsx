@@ -23,8 +23,6 @@ import { SectionHead, Th } from "../components/ui/DataTable";
 import Pagination from "../components/ui/Pagination";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
-import BotDataClear from "../components/leaders/BotDataClear";
-import LateReports from "../components/leaders/LateReports";
 import Disputes from "../components/leaders/Disputes";
 import LateProofs from "../components/leaders/LateProofs";
 import TaskRequirements from "../components/leaders/TaskRequirements";
@@ -83,8 +81,8 @@ const tipHTML = (label, val, color, wrap = false) => `
 const TXT = {
   uz: {
     title: "Lider nazorati", shift1: "1-smena", shift2: "2-smena",
-    tabMonitor: "Monitoring", tabTasks: "Vazifalar", tabClear: "Ma'lumotlarni tozalash", srcBot: "Bot orqali",
-    tabLate: "Kechikkanlar", tabDisputes: "Norozliklar",
+    tabMonitor: "Monitoring", tabTasks: "Vazifalar", srcBot: "Bot orqali",
+    tabDisputes: "Norozliklar",
     tabLateProofs: "Kechikkan isbotlar", reasonLbl: "Sabab",
     pendChip: "So'rov yuborilgan", pendTitle: "Kunni ochish so'ralgan — admin qarori kutilmoqda",
     lateOkChip: "Kechikkan — qabul qilingan", lateOkTitle: "Kechikkan hisobot: {by} ochgan, kun o'z natijasi bilan hisoblanadi",
@@ -255,8 +253,8 @@ const TXT = {
   },
   uz_cyrl: {
     title: "Лидер назорати", shift1: "1-смена", shift2: "2-смена",
-    tabMonitor: "Мониторинг", tabTasks: "Вазифалар", tabClear: "Маълумотларни тозалаш", srcBot: "Бот орқали",
-    tabLate: "Кечикканлар", tabDisputes: "Норозликлар",
+    tabMonitor: "Мониторинг", tabTasks: "Вазифалар", srcBot: "Бот орқали",
+    tabDisputes: "Норозликлар",
     tabLateProofs: "Кечиккан исботлар", reasonLbl: "Сабаб",
     pendChip: "Сўров юборилган", pendTitle: "Кунни очиш сўралган — админ қарори кутилмоқда",
     lateOkChip: "Кечиккан — қабул қилинган", lateOkTitle: "Кечиккан ҳисобот: {by} очган, кун ўз натижаси билан ҳисобланади",
@@ -427,8 +425,8 @@ const TXT = {
   },
   ru: {
     title: "Контроль лидеров", shift1: "Смена 1", shift2: "Смена 2",
-    tabMonitor: "Мониторинг", tabTasks: "Задачи", tabClear: "Очистка данных", srcBot: "Из бота",
-    tabLate: "Опоздавшие", tabDisputes: "Возражения",
+    tabMonitor: "Мониторинг", tabTasks: "Задачи", srcBot: "Из бота",
+    tabDisputes: "Возражения",
     tabLateProofs: "Поздние подтв.", reasonLbl: "Причина",
     pendChip: "Запрос отправлен", pendTitle: "Запрошено открытие дня — ждём решения администратора",
     lateOkChip: "Опоздал — засчитан", lateOkTitle: "Опоздавший отчёт: открыл(а) {by}, день засчитан со своим результатом",
@@ -599,8 +597,8 @@ const TXT = {
   },
   en: {
     title: "Leader Monitoring", shift1: "Shift 1", shift2: "Shift 2",
-    tabMonitor: "Monitoring", tabTasks: "Tasks", tabClear: "Clear data", srcBot: "Filed in bot",
-    tabLate: "Late reports", tabDisputes: "Objections",
+    tabMonitor: "Monitoring", tabTasks: "Tasks", srcBot: "Filed in bot",
+    tabDisputes: "Objections",
     tabLateProofs: "Late proofs", reasonLbl: "Reason",
     pendChip: "Request sent", pendTitle: "Opening this day was requested — awaiting an admin decision",
     lateOkChip: "Late — accepted", lateOkTitle: "Late report: opened by {by}; the day counts at its own score",
@@ -2056,13 +2054,16 @@ export default function Leaders() {
 
   // The page's tool tabs are shift-specific WORKFLOWS, not shift-filtered
   // views — each carries its own filters, so both stay put no matter where the
-  // Smena filter points. The bot-data clear tool is admin-only (shift 2 is
-  // where the bot files days, so deleting one changes what everybody sees);
-  // «Kechikkan hisobotlar» is the review queue for days the shift-1 submission
-  // window voided, shown to the two roles that act in that flow (a brigadir
-  // asks, an admin decides).
-  const showClearTab = isAdmin;
-  const showLateTab = isAdmin || auth?.role === "supervisor";
+  // Smena filter points.
+  //
+  // TWO of them are gone from this strip (the operator's call, 2026-09-02):
+  // «Kechikkanlar», the shift-1 late-day queue, which is ruled on from the
+  // Telegram card the request arrives as; and «Ma'lumotlarni tozalash», whose
+  // delete lives on the admin «Liderlar kunlik vazifalari» destination
+  // (`/admin/upload?tab=ltdaily`), beside the submission it deletes and beside
+  // the day detail that says what is in it. Neither component was deleted —
+  // nothing renders them today, and the backend still deep-links `?tab=late`,
+  // which `tabOk` now refuses like any other tab a viewer cannot open.
   // Objections reach three audiences, not two — exactly like late proofs, and
   // for exactly the same reason: the LEADER files one, their brigadir rules at
   // stage one, an admin at stage two. The flow asks a leader to explain
@@ -2114,50 +2115,49 @@ export default function Leaders() {
   // «Vazifalar» is reference material for every viewer of the page — a leader
   // reads their own chain, a supervisor their unit's, everyone else follows
   // the filters — so it is never role-gated.
-  const tabOk = { monitor: true, tasks: true, clear: showClearTab, late: showLateTab,
-                  disputes: showDisputesTab, lateproof: showLateProofsTab,
-                  ai: isAdmin };
+  const tabOk = { monitor: true, tasks: true, ai: isAdmin,
+                  disputes: showDisputesTab, lateproof: showLateProofsTab };
   const tab = tabOk[tabSaved] ? tabSaved : "monitor";
 
-  // The queue's own feed: the tab badge needs the count before the tab is ever
-  // opened, and LateReports reads the SAME query key, so the two share one
-  // request and can never disagree about how much work is waiting.
-  const { data: lateData } = useQuery({
-    queryKey: ["leaders-late"],
-    queryFn: () => api.get("/api/leaders/late").then((r) => r.data),
-    enabled: showLateTab,
-  });
-  const lateTodo = lateData?.todo ?? 0;
-
-  // The objections queue, on the same pattern: the tab badge needs the count
-  // before the tab is ever opened, and Disputes reads the SAME query key, so
-  // the two share one request and can never disagree about what is waiting.
-  // `todo` is the server's answer to «whose turn» — a brigadir counts only the
-  // rows still with them, an admin only the uplifted ones, a leader none, so
-  // nobody carries a badge they cannot clear.
+  // The objections queue: the tab badge needs the count before the tab is ever
+  // opened, and Disputes reads the SAME query key, so the two share one
+  // request and can never disagree about what is waiting.
+  //
+  // What the badge COUNTS is the queue's «Adminlarda» half — the rows waiting
+  // on an admin ruling, which is the sub-tab the queue opens on (the
+  // operator's call, 2026-09-02). It supersedes the server's per-viewer `todo`
+  // («whose turn is it»), so a brigadir now reads the same number an admin
+  // does: the badge answers «how much is with the admins», not «how much is
+  // with you». `status` is the stage AND the outcome, one column, so an open
+  // admin-stage row is exactly `admin` — and the count can never disagree with
+  // the sub-tab it names, because both read that one field off one payload.
   const { data: dispData } = useQuery({
     queryKey: ["leader-disputes"],
     queryFn: () => api.get("/api/leaders/disputes").then((r) => r.data),
     enabled: showDisputesTab,
   });
-  const dispTodo = dispData?.todo ?? 0;
+  const dispTodo = useMemo(
+    () => (dispData?.items ?? []).filter((it) => it.status === "admin").length,
+    [dispData]);
 
   // The late-proof queue, on the same pattern and for the same reason: the tab
   // badge needs the count before the tab is opened, and LateProofs reads the
-  // SAME query key, so the two share one request. `todo` is the server's answer
-  // to «whose turn» — a brigadir counts only rows still with them, an admin
-  // only the uplifted ones, a leader none, so nobody carries a badge they
-  // cannot clear.
+  // SAME query key, so the two share one request. The badge is the «Adminlarda»
+  // half here too — the same rule, in the same words, as the objections above.
   const { data: lpData } = useQuery({
     queryKey: ["leader-late-proofs"],
     queryFn: () => api.get("/api/leaders/late-proofs").then((r) => r.data),
     enabled: showLateProofsTab,
   });
-  const lpTodo = lpData?.todo ?? 0;
+  const lpTodo = useMemo(
+    () => (lpData?.items ?? []).filter((it) => it.status === "admin").length,
+    [lpData]);
 
-  // The admin's Telegram card links here with ?tab=late — a decision is one tap
-  // from the DM. Deliberately once per mount: the deep link opens the tab, and
-  // whatever the operator switches to afterwards is theirs to keep.
+  // The bot's cards link straight at a tab — a decision is one tap from the
+  // DM. Deliberately once per mount: the deep link opens the tab, and whatever
+  // the operator switches to afterwards is theirs to keep. A link naming a tab
+  // this page no longer carries (`?tab=late`) fails `tabOk` and leaves the
+  // saved tab standing, rather than opening onto nothing.
   const deepLinked = useRef(false);
   useEffect(() => {
     if (deepLinked.current) return;
@@ -3306,53 +3306,8 @@ export default function Leaders() {
         options={[
           ["monitor", T.tabMonitor],
           ["tasks", T.tabTasks],
-          // The badge is what this viewer still owes — an admin's pending
-          // decisions, a brigadir's un-asked days — so the tab is a to-do
-          // count, not a total that never goes down.
-          ...(showLateTab ? [{
-            value: "late",
-            label: (
-              <span className="inline-flex items-center gap-1.5">
-                {T.tabLate}
-                {lateTodo > 0 && (
-                  <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
-                    style={{ background: "#eab308", color: "#1a1a1a" }}>{lateTodo}</span>
-                )}
-              </span>
-            ),
-          }] : []),
-          // Same to-do logic, beside the queue it reads like: the badge is what
-          // is left to RULE ON, so it is 0 for a brigadir, who files objections
-          // but never settles them.
-          ...(showDisputesTab ? [{
-            value: "disputes",
-            label: (
-              <span className="inline-flex items-center gap-1.5">
-                {T.tabDisputes}
-                {dispTodo > 0 && (
-                  <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
-                    style={{ background: "#eab308", color: "#1a1a1a" }}>{dispTodo}</span>
-                )}
-              </span>
-            ),
-          }] : []),
-          // Beside the objections, because it is the other way a task that
-          // scored 0 can get its weight back — and the badge means the same
-          // thing on both: what is left for THIS viewer to rule on.
-          ...(showLateProofsTab ? [{
-            value: "lateproof",
-            label: (
-              <span className="inline-flex items-center gap-1.5">
-                {T.tabLateProofs}
-                {lpTodo > 0 && (
-                  <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
-                    style={{ background: "#eab308", color: "#1a1a1a" }}>{lpTodo}</span>
-                )}
-              </span>
-            ),
-          }] : []),
-          // Same to-do logic as «Kechikkan»: the badge is what is left to
-          // decide, so an admin who works the queue watches it reach zero.
+          // The badge is what is left to decide, so an admin who works the
+          // queue watches it reach zero.
           ...(isAdmin ? [{
             value: "ai",
             label: (
@@ -3365,7 +3320,35 @@ export default function Leaders() {
               </span>
             ),
           }] : []),
-          ...(showClearTab ? [["clear", T.tabClear]] : []),
+          // The two ways a task that scored 0 can get its weight back, side by
+          // side. The badge means one thing on both: what is waiting on an
+          // ADMIN — the «Adminlarda» sub-tab each of them opens on, counted off
+          // the same payload the queue itself renders, so the strip and the
+          // sub-tab can never disagree.
+          ...(showDisputesTab ? [{
+            value: "disputes",
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                {T.tabDisputes}
+                {dispTodo > 0 && (
+                  <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
+                    style={{ background: "#eab308", color: "#1a1a1a" }}>{dispTodo}</span>
+                )}
+              </span>
+            ),
+          }] : []),
+          ...(showLateProofsTab ? [{
+            value: "lateproof",
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                {T.tabLateProofs}
+                {lpTodo > 0 && (
+                  <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
+                    style={{ background: "#eab308", color: "#1a1a1a" }}>{lpTodo}</span>
+                )}
+              </span>
+            ),
+          }] : []),
         ]} />
     </div>
   );
@@ -3409,27 +3392,6 @@ export default function Leaders() {
         <TaskRequirements scope={scope} rows={rows}
           isLeader={isLeader} isSupervisor={isSupervisor} nm={nm}
           focusTaskId={taskFocus} onFocusDone={() => setTaskFocus(null)} />
-      </Layout>
-    );
-  }
-
-  if (tab === "clear") {
-    return (
-      <Layout title={pageTitle}>
-        {headerBar}
-        {pageChrome}
-        <BotDataClear scope={scope} onClearScope={clearScope} />
-      </Layout>
-    );
-  }
-
-  if (tab === "late") {
-    return (
-      <Layout title={pageTitle}>
-        {headerBar}
-        {pageChrome}
-        <LateReports canDecide={!!lateData?.can_decide}
-          scope={scope} onClearScope={clearScope} />
       </Layout>
     );
   }

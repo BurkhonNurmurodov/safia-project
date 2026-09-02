@@ -819,8 +819,8 @@ number.
   `resolution="approved"` on the verdict — that is what restores the weight —
   and the corrected score re-DMs itself. Not grantable at either stage.
 - **The «Norozliklar» tab is where all three read it** (`GET /leaders/disputes`
-  → `components/leaders/Disputes.jsx`, beside «Kechikkanlar» on `/leaders`,
-  `?tab=disputes` deep-links). Until it existed the ruling was reachable from
+  → `components/leaders/Disputes.jsx`, beside «Kechikkan isbotlar» on
+  `/leaders`, `?tab=disputes` deep-links). Until it existed the ruling was reachable from
   exactly two places — an inline Telegram card that scrolls out of the chat,
   and the day report of the ONE leader it belongs to — so an admin who missed
   the card had no list to work from and no way to find the report holding the
@@ -837,8 +837,26 @@ number.
   scope bar reaches these rows exactly as it reaches the dashboard's; whatever
   the scope hides is counted in a `ScopeNotice` rather than dropped. Scoped
   like every read here — admin all, brigadir their own unit, LEADER their own
-  filings — and the tab badge counts the rows waiting on THAT caller
-  (`canAct`), so nobody carries a badge they cannot clear.
+  filings.
+- **The queue is SPLIT IN TWO by stage, and the tab badge counts the admin
+  half** (the operator's call, 2026-09-02). `stageOf` — the same shape in
+  `Disputes.jsx` and `LateProofs.jsx` — reads `status`, which is the stage AND
+  the outcome in one column: «Adminlarda» is what waits on an admin ruling,
+  «Brigadirlarda» what is still with the unit. It opens on «Adminlarda», the
+  half the badge counts and the only stage where the weight comes back. An OPEN
+  row belongs to whoever must rule on it next; a SETTLED one to whoever ENDED
+  it, so a ruling — and, for an admin, its undo — stays where it was made and
+  no decision drops off the page. Only a stage-1 refusal ends on the brigadirs'
+  side: an approval, an admin's refusal and a cancelled ruling are all admin
+  acts. The split is the FIRST cut, ahead of the «Barchasi / Sizning
+  navbatingiz / Tarix» segment and the search, so every count under it
+  describes the stage on screen. **The badge is computed on the CLIENT off the
+  one payload the queue itself renders** (`status == "admin"`), so the strip and
+  the sub-tab can never disagree — and it supersedes the server's per-viewer
+  `todo` («whose turn is it», from `canAct`), which is still served and now read
+  by nothing. Consequence to know: the badge answers «how much is with the
+  admins» for EVERY viewer, so a brigadir does now carry a number only an admin
+  can clear.
 - **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
   the «Qarorni bekor qilish» button under the objection box on the report page).
   Deciding is one tap and an ADMIN's own filing IS the approval, so the wrong
@@ -1478,7 +1496,9 @@ say about it.
   screen — deliberately not a widening of `refresh_camera_prompt`, which would
   paint the locked-task outcome screen over the late one.
 - Dashboard: `/leaders?tab=lateproof`
-  (`components/leaders/LateProofs.jsx`). Photos are ON the card — unlike
+  (`components/leaders/LateProofs.jsx`). Split by stage and badged exactly like
+  «Norozliklar» next door — one rule, two queues; see that section. Photos are
+  ON the card — unlike
   «Norozliklar» next door, where the subject is a verdict that carries its own
   prose; here the evidence IS the submission. Uplift is a FORM (the `Modal`
   template with a required field), reject and approve are plain confirms.
@@ -1487,6 +1507,27 @@ say about it.
   Scoped like every read on the page, plus the LEADER, who reads their own
   filings: the flow asks them to explain themselves, so the answer has to be
   visible to them.
+
+## What is ON the `/leaders` tab strip
+
+From **2026-09-02** (the operator's call) the strip is exactly five tabs, in
+this order: **Monitoring · Vazifalar · AI tekshiruvi · Norozliklar · Kechikkan
+isbotlar**. The two review queues sit last and together — they are the two ways
+a task that scored 0 gets its weight back — with the AI queue that produced
+those rejections directly above them.
+
+- **«Kechikkanlar» and «Ma'lumotlarni tozalash» are GONE from it.** The
+  shift-1 late-day queue is ruled on from the Telegram card the request arrives
+  as (`approvals.py`, kind `leader_late`), and the bot-day delete lives on the
+  admin «Liderlar kunlik vazifalari» destination (`/admin/upload?tab=ltdaily`),
+  beside the submission it deletes and the day detail that says what is in it.
+- **Neither component was deleted** — `components/leaders/LateReports.jsx` and
+  `BotDataClear.jsx` are simply rendered by nothing today, so putting either
+  tab back is one entry in `tabOk` and one in the strip.
+- **A deep link naming a tab this page no longer has is IGNORED, not obeyed.**
+  `telegram_bot.py` and `approvals.py` still link `?tab=late`; `tabOk` refuses
+  it exactly as it refuses a tab the viewer's role cannot open, and the saved
+  tab stands. Fix the two links only if the queue never comes back.
 
 ## Objecting to an AI rejection (the three-stage chain)
 
@@ -1662,7 +1703,12 @@ which door reached the day first.
   `delete_submissions` re-filters `closed_at IS NOT NULL` itself, so an open day
   can never be selected, armed or dropped — pulling the table out from under a
   running `/tasks` flow would strand the leader in it.
-- The tab is now TWO views behind a `SegmentedToggle` (`components/leaders/BotDataClear.jsx`):
+- **It is no longer a tab on `/leaders`** (removed 2026-09-02, the operator's
+  call): the admin «Liderlar kunlik vazifalari» destination
+  (`/admin/upload?tab=ltdaily`) reads both filing layers whole and carries the
+  same whole-day, closed-only delete. `BotDataClear.jsx` is left in the tree,
+  rendered by nothing — what follows describes it as it stands.
+- The tab is TWO views behind a `SegmentedToggle` (`components/leaders/BotDataClear.jsx`):
   «Yuborilgan» is the delete tool, unchanged; «Yakunlanmagan» deletes nothing and
   carries no delete controls at all — a greyed-out «O'chirish» reads as "not
   yet", not as "never". The two registers are split BEFORE the page scope is

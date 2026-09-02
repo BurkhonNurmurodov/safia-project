@@ -69,6 +69,7 @@ const TXT = {
     ruleAdmin: "Tasdiqlasangiz, vazifa to'liq og'irligini oladi, kun qayta hisoblanadi va lider bilan brigadirga xabar boradi.",
     ruleRead: "Qarorni brigadir va adminlar qabul qiladi. Bu yerda o'z isbotlaringiz va ularning holati ko'rinadi.",
     segAll: "Barchasi", segTodo: "Sizning javobingiz", segDone: "Tarix",
+    stageAdm: "Adminlarda", stageSup: "Brigadirlarda",
     search: "Lider, vazifa yoki sabab bo'yicha qidirish",
     stSupervisor: "Brigadirda", stAdmin: "Adminlarda",
     stApproved: "Tasdiqlangan", stRejected: "Rad etilgan",
@@ -100,6 +101,7 @@ const TXT = {
     ruleAdmin: "Тасдиқласангиз, вазифа тўлиқ оғирлигини олади, кун қайта ҳисобланади ва лидер билан бригадирга хабар боради.",
     ruleRead: "Қарорни бригадир ва админлар қабул қилади. Бу ерда ўз исботларингиз ва уларнинг ҳолати кўринади.",
     segAll: "Барчаси", segTodo: "Сизнинг жавобингиз", segDone: "Тарих",
+    stageAdm: "Админларда", stageSup: "Бригадирларда",
     search: "Лидер, вазифа ёки сабаб бўйича қидириш",
     stSupervisor: "Бригадирда", stAdmin: "Админларда",
     stApproved: "Тасдиқланган", stRejected: "Рад этилган",
@@ -131,6 +133,7 @@ const TXT = {
     ruleAdmin: "Если примете, задача получит полный вес, день пересчитается, а лидер и бригадир получат уведомление.",
     ruleRead: "Решение принимают бригадир и администраторы. Здесь видны ваши подтверждения и их статус.",
     segAll: "Все", segTodo: "Ждут вас", segDone: "История",
+    stageAdm: "У админов", stageSup: "У бригадиров",
     search: "Поиск по лидеру, задаче или причине",
     stSupervisor: "У бригадира", stAdmin: "У администраторов",
     stApproved: "Принято", stRejected: "Отклонено",
@@ -162,6 +165,7 @@ const TXT = {
     ruleAdmin: "Approve and the task gets its full weight, the day is re-scored, and the leader and brigadir are told.",
     ruleRead: "The brigadir and the admins decide. Your own filings and their status are shown here.",
     segAll: "All", segTodo: "Waiting on you", segDone: "History",
+    stageAdm: "On admins", stageSup: "On supervisors",
     search: "Search by leader, task or reason",
     stSupervisor: "With the brigadir", stAdmin: "With the admins",
     stApproved: "Approved", stRejected: "Rejected",
@@ -211,6 +215,17 @@ const inScope = (it, s) => {
   return true;
 };
 
+// Which STAGE owns a row — the split the two sub-tabs make, off `status`, which
+// is the stage AND the outcome in one column. An OPEN row belongs to whoever
+// has to rule on it next; a SETTLED one to whoever ended it, so a ruling stays
+// where it was made and, for an admin, where its undo is. Only a stage-1
+// refusal ends on the brigadirs' side: an approval, an admin's refusal and a
+// cancelled ruling are all admin acts.
+const stageOf = (it) =>
+  it.status === "supervisor" ? "sup"
+    : it.status === "admin" ? "adm"
+      : (it.status === "rejected" && it.sup?.action === "rejected") ? "sup" : "adm";
+
 export default function LateProofs({ scope, onClearScope }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
@@ -218,6 +233,9 @@ export default function LateProofs({ scope, onClearScope }) {
   const qc = useQueryClient();
   const toast = useToast();
 
+  // WHOSE stage is on screen. Opens on «Adminlarda» — the half the page's own
+  // tab badge counts, and the only stage where the point can come back.
+  const [stage, setStage] = useState("adm");
   const [seg, setSeg] = useState("all");
   const [q, setQ] = useState("");
   const [confirm, setConfirm] = useState(null);   // { kind, item }
@@ -271,9 +289,15 @@ export default function LateProofs({ scope, onClearScope }) {
 
   const isDone = (it) => it.status === "approved" || it.status === "rejected";
 
+  // The sub-tab is the FIRST cut, ahead of the segment and the search: every
+  // count under it describes the stage on screen, so «Tarix · 12» can never
+  // promise rows the other tab is holding.
+  const staged = useMemo(
+    () => items.filter((it) => stageOf(it) === stage), [items, stage]);
+
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const arr = items.filter((it) => {
+    const arr = staged.filter((it) => {
       if (seg === "todo" && !mine(it)) return false;
       if (seg === "done" && !isDone(it)) return false;
       if (needle) {
@@ -287,12 +311,20 @@ export default function LateProofs({ scope, onClearScope }) {
     return [...arr].sort((a, b) =>
       (mine(b) - mine(a))
       || (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
-  }, [items, seg, q, tl, lang]);
+  }, [staged, seg, q, tl, lang]);
 
   const counts = useMemo(() => ({
-    all: items.length,
-    todo: items.filter(mine).length,
-    done: items.filter(isDone).length,
+    all: staged.length,
+    todo: staged.filter(mine).length,
+    done: staged.filter(isDone).length,
+  }), [staged]);
+
+  // What each sub-tab still OWES — an open row, never a decision somebody has
+  // already made. «Adminlarda» is the same number the page's tab badge carries,
+  // read off the same field of the same payload.
+  const stageTodo = useMemo(() => ({
+    adm: items.filter((it) => it.status === "admin").length,
+    sup: items.filter((it) => it.status === "supervisor").length,
   }), [items]);
 
   const out = useMemo(() => {
@@ -345,6 +377,17 @@ export default function LateProofs({ scope, onClearScope }) {
       {!isLoading && (
         <ScopeNotice hidden={out.hidden} todo={out.todo} onClear={onClearScope} />
       )}
+
+      {/* Whose ruling the queue is waiting for. Two questions of one register:
+          what sits with the ADMINS — where the point can come back, and where
+          this page's badge points — and what is still with the brigadirs. A
+          settled row stays under the stage that ended it, so a ruling is found
+          where it was made. */}
+      <SegmentedToggle asTabs ariaLabel={T.title} value={stage} onChange={setStage}
+        options={[
+          ["adm", stageTodo.adm ? `${T.stageAdm} · ${stageTodo.adm}` : T.stageAdm],
+          ["sup", stageTodo.sup ? `${T.stageSup} · ${stageTodo.sup}` : T.stageSup],
+        ]} />
 
       <div className="flex flex-wrap items-center gap-2">
         <SegmentedToggle

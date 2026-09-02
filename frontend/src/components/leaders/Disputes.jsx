@@ -57,6 +57,18 @@ import api from "../../utils/api";
 
 const C_OK = "#22c55e", C_WAIT = "#eab308", C_BAD = "#ef4444", C_OFF = "#94a3b8";
 
+// Which STAGE owns a row — the split the two sub-tabs make, off `status`, which
+// is the stage AND the outcome in one column. An OPEN row belongs to whoever
+// has to rule on it next; a SETTLED one to whoever ended it, so a ruling stays
+// where it was made and, for an admin, where its undo is. Only a stage-1
+// refusal ends on the brigadirs' side: an approval, an admin's refusal and a
+// cancelled ruling are all admin acts.
+const stageOf = (it) =>
+  it.status === "supervisor" ? "sup"
+    : it.status === "admin" ? "adm"
+      : (it.status === "rejected" && it.sup?.action === "rejected") ? "sup" : "adm";
+
+
 const hexA = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
@@ -86,6 +98,7 @@ const TXT = {
     ruleSup: "Siz birinchi bo'lib ko'rib chiqasiz: rad etsangiz — AI qarori kuchida qoladi; adminlarga yuborsangiz, nega ball berilishi kerakligini yozishingiz shart.",
     ruleRead: "Bu yerda o'z noroziliklaringiz va ular qaysi bosqichda ekani ko'rinadi.",
     segAll: "Barchasi", segTodo: "Sizning navbatingiz", segDone: "Tarix",
+    stageAdm: "Adminlarda", stageSup: "Brigadirlarda",
     shift1: "1-smena", shift2: "2-smena",
     searchPh: "Lider, brigadir yoki vazifa…",
     stSupervisor: "Brigadir ko'rib chiqmoqda", stAdmin: "Admin qarorini kutmoqda",
@@ -125,6 +138,7 @@ const TXT = {
     ruleSup: "Сиз биринчи бўлиб кўриб чиқасиз: рад этсангиз — AI қарори кучида қолади; админларга юборсангиз, нега балл берилиши кераклигини ёзишингиз шарт.",
     ruleRead: "Бу ерда ўз норозликларингиз ва улар қайси босқичда экани кўринади.",
     segAll: "Барчаси", segTodo: "Сизнинг навбатингиз", segDone: "Тарих",
+    stageAdm: "Админларда", stageSup: "Бригадирларда",
     shift1: "1-смена", shift2: "2-смена",
     searchPh: "Лидер, бригадир ёки вазифа…",
     stSupervisor: "Бригадир кўриб чиқмоқда", stAdmin: "Админ қарорини кутмоқда",
@@ -164,6 +178,7 @@ const TXT = {
     ruleSup: "Вы смотрите первым: если отклоните — решение ИИ останется в силе; если передадите администраторам, нужно будет написать, почему балл должен быть начислен.",
     ruleRead: "Здесь видны ваши возражения и то, на какой они стадии.",
     segAll: "Все", segTodo: "Ваша очередь", segDone: "История",
+    stageAdm: "У админов", stageSup: "У бригадиров",
     shift1: "Смена 1", shift2: "Смена 2",
     searchPh: "Лидер, бригадир или задача…",
     stSupervisor: "У бригадира", stAdmin: "Ждёт решения администратора",
@@ -203,6 +218,7 @@ const TXT = {
     ruleSup: "You read it first: refuse it and the AI ruling stands; pass it up and you must write why the task should be pointed.",
     ruleRead: "Your own objections and where each one stands are listed here.",
     segAll: "All", segTodo: "Your turn", segDone: "History",
+    stageAdm: "On admins", stageSup: "On supervisors",
     shift1: "Shift 1", shift2: "Shift 2",
     searchPh: "Leader, brigadir or task…",
     stSupervisor: "With the brigadir", stAdmin: "Awaiting an admin decision",
@@ -331,6 +347,9 @@ export default function Disputes({ scope, onClearScope }) {
   const toast = useToast();
   const nav = useNavigate();
 
+  // WHOSE stage is on screen. Opens on «Adminlarda» — the half the page's own
+  // tab badge counts, and the only stage where the weight can come back.
+  const [stage, setStage] = useState("adm");
   const [seg, setSeg] = useState("all");
   const [q, setQ] = useState("");
   const [confirm, setConfirm] = useState(null);   // { kind, item }
@@ -388,9 +407,15 @@ export default function Disputes({ scope, onClearScope }) {
 
   const isDone = (it) => ["approved", "rejected", "cancelled"].includes(it.status);
 
+  // The sub-tab is the FIRST cut, ahead of the segment and the search: every
+  // count under it describes the stage on screen, so «Tarix 12» can never
+  // promise rows the other tab is holding.
+  const staged = useMemo(
+    () => items.filter((it) => stageOf(it) === stage), [items, stage]);
+
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const arr = items.filter((it) => {
+    const arr = staged.filter((it) => {
       if (seg === "todo" && !mine(it)) return false;
       if (seg === "done" && !isDone(it)) return false;
       if (needle) {
@@ -404,12 +429,20 @@ export default function Disputes({ scope, onClearScope }) {
     return [...arr].sort((a, b) =>
       (mine(b) - mine(a))
       || (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
-  }, [items, seg, q, tl, lang]);
+  }, [staged, seg, q, tl, lang]);
 
   const counts = useMemo(() => ({
-    all: items.length,
-    todo: items.filter(mine).length,
-    done: items.filter(isDone).length,
+    all: staged.length,
+    todo: staged.filter(mine).length,
+    done: staged.filter(isDone).length,
+  }), [staged]);
+
+  // What each sub-tab still OWES — an open row, never a decision somebody has
+  // already made. «Adminlarda» is the same number the page's tab badge carries,
+  // read off the same field of the same payload.
+  const stageTodo = useMemo(() => ({
+    adm: items.filter((it) => it.status === "admin").length,
+    sup: items.filter((it) => it.status === "supervisor").length,
   }), [items]);
 
   // What the page scope is holding back — and how much of it is still a
@@ -480,6 +513,18 @@ export default function Disputes({ scope, onClearScope }) {
       </div>
 
       {!isLoading && <ScopeNotice hidden={out.hidden} todo={out.todo} onClear={onClearScope} />}
+
+      {/* Whose ruling the queue is waiting for. Two questions of one register:
+          what sits with the ADMINS — where the weight can come back, and where
+          this page's badge points — and what is still with the brigadirs. A
+          settled row stays under the stage that ended it, so the history of a
+          ruling (and its undo) is found where the ruling was made. */}
+      <SegmentedToggle asTabs ariaLabel={T.title} value={stage} onChange={setStage}
+        className="mb-3"
+        options={[
+          { value: "adm", label: segLabel(T.stageAdm, stageTodo.adm) },
+          { value: "sup", label: segLabel(T.stageSup, stageTodo.sup) },
+        ]} />
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex-1 min-w-[180px] max-w-sm">
