@@ -1,6 +1,6 @@
 # Moving the leader checklist from PER LEADER to PER CELL
 
-**Status: PLAN ONLY — nothing implemented.** Written 2026-08-30 against `VERSION` 3.72.1.
+**Status: PLAN ONLY — nothing implemented.** Written 2026-08-30 against `VERSION` 3.72.1; citations re-verified against `main` at 4.23.1 on 2026-09-02.
 This document is the map of the current flow and the executable plan for the change.
 Read it whole before touching a line; the ordering of the stages is the plan.
 
@@ -12,7 +12,7 @@ One leader files **one** checklist **per day**. That sentence is enforced in exa
 place and everything else derives from it:
 
 ```
-backend/app/models.py:1486
+backend/app/models.py:1539
     UniqueConstraint("leader_id", "date", name="uq_ltask_day")
 ```
 
@@ -21,11 +21,11 @@ Around it:
 | Layer | Table | Keyed by |
 |---|---|---|
 | The day | `leader_task_days` | **(leader_id, date)** ← the constraint |
-| One task's answer | `leader_task_entries` | (day_id, task_id) — `models.py:1511` |
+| One task's answer | `leader_task_entries` | (day_id, task_id) — `models.py:1564` |
 | Chat proof photos | `leader_task_media` | entry_id |
-| Camera roll | `leader_task_photos` | (day_id, task_id, slot) — `models.py:1674` |
-| AI verdict | `leader_ai_reviews.ref` | `"bot:{entry_id}"` — `leader_ai.py:168` |
-| Report ledger | `leader_day_reports.report_key` | `"bot:{day_id}"` — `leader_ai.py:184` |
+| Camera roll | `leader_task_photos` | (day_id, task_id, slot) — `models.py:1727` |
+| AI verdict | `leader_ai_reviews.ref` | `"bot:{entry_id}"` — `leader_ai.py:166` |
+| Report ledger | `leader_day_reports.report_key` | `"bot:{day_id}"` — `leader_ai.py:182` |
 | Report page URL | `/leaders/report/bot-{day_id}` | `leader_bot.day_uid` — `leader_bot.py:68` |
 | Objection | `leader_ai_disputes.ref` | the review ref |
 | Late proof | `leader_late_proofs` | (day_id, task_id) |
@@ -37,12 +37,12 @@ There are **two collection doors** and one rule that picks between them:
   submit twice for one day and both rows count), and **no cell column at all**.
 * **Bot** — `/tasks` → `LeaderTaskDay`.
 * `leader_bot.merges()` (`leader_bot.py:132`) decides; `LeaderDaySource` (unique on
-  `(leader_profile_id, date)`, `models.py:3017`) is the admin's per-day override.
+  `(leader_profile_id, date)`, `models.py:3070`) is the admin's per-day override.
 * The register displaces one with the other here — **the single most important line in
   the whole change**:
 
 ```python
-# backend/app/routers/leaders.py:592
+# backend/app/routers/leaders.py:618
 filed = {(b["leader_id"], b["date"]) for b in bot_rows}
 data  = [r for r in sheet_data if (r["leader_id"], r["date"]) not in filed] + bot_rows
 ```
@@ -74,16 +74,18 @@ for the sheet layer's double-filings and for the two-shift case, and it is exact
 arithmetic a per-cell model needs:
 
 ```js
-// frontend/src/pages/Leaders.jsx:915  slotsBy
+// frontend/src/pages/Leaders.jsx:942  slotsBy
 day.sum += r.completion; day.n++;      // …then sum += day.sum / day.n
-// frontend/src/pages/Leaders.jsx:2435 taskStats — slots keyed `leader|date`
+// frontend/src/pages/Leaders.jsx:2557 taskStats — slots keyed `leader|date`
 a.n++; if (effDone(tk)) a.done++;      // …then t.done += a.done / a.n
 ```
 
 So the standings, the rating, Barqarorlik, the heatmap, the trend line, the sparkline and
 the per-question chart all keep computing **the leader's daily mean across their cells**
 without being touched. `winDays` is a count of *days*, not of rows — no denominator
-multiplies.
+multiplies. (Since the cutoffs feature shipped, `slotsBy` is `(rows, keyFn, cuts, dates)` —
+the extra arguments expand a person's cutoff over the window and leave the per-day
+averaging above exactly as it was.)
 
 **Do not rebuild any of this.** The temptation will be to "make the scoring cell-aware";
 it already is, in the only sense that matters.
@@ -98,26 +100,26 @@ Ordered by severity. These are the whole cost of the change.
 
 | # | Site | Today | Under per-cell |
 |---|---|---|---|
-| B1 | `models.py:1486` `uq_ltask_day` | one day per (leader, date) | second cell's day is **rejected at insert** |
-| B2 | `telegram_bot.py:2506` `_lt_day()` | `.filter_by(leader_id, date).first()` | silently returns **one arbitrary** day of N |
+| B1 | `models.py:1539` `uq_ltask_day` | one day per (leader, date) | second cell's day is **rejected at insert** |
+| B2 | `telegram_bot.py:2537` `_lt_day()` | `.filter_by(leader_id, date).first()` | silently returns **one arbitrary** day of N |
 | B3 | `leader_tasks.py:979` `compute_completion` | sums each entry's weight | a task done on 3 cells earns **3× its weight** → scores above 100 |
 | B4 | `leader_close.py:62` `closed_tasks` | returns `{task_id}` | cannot tell "task 4 closed on cell A" from "on all cells"; `maybe_close_day` (`:323`) closes the day early |
-| B5 | `models.py:1674` `uq_ltask_photo_slot` | (day_id, task_id, slot) | two cells collide on slot 0 |
-| B6 | `models.py:1511` `uq_ltask_entry` | (day_id, task_id) | one answer per task per day |
+| B5 | `models.py:1727` `uq_ltask_photo_slot` | (day_id, task_id, slot) | two cells collide on slot 0 |
+| B6 | `models.py:1564` `uq_ltask_entry` | (day_id, task_id) | one answer per task per day |
 
 ### Major
 
 | # | Site | Problem |
 |---|---|---|
-| M1 | `leaders.py:592` `filed` set | one sheet row is displaced by N bot rows — correct, but the sheet layer can never express per-cell (`LeaderChecklist` has no cell column) |
-| M2 | `models.py:3017` `uq_leader_day_source` | the admin's bot-vs-sheet choice cannot address one cell |
+| M1 | `leaders.py:618` `filed` set | one sheet row is displaced by N bot rows — correct, but the sheet layer can never express per-cell (`LeaderChecklist` has no cell column) |
+| M2 | `models.py:3070` `uq_leader_day_source` | the admin's bot-vs-sheet choice cannot address one cell |
 | M3 | `leader_exclusions.py:57` `key()` = `person|date` | an exclusion takes out **all** of a leader's cells that day; there is no way to forgive one cell |
-| M4 | `models.py:1514` `LeaderTaskCapture` (PK `telegram_id`) | the in-flight photo capture has no cell, so shots land on the wrong day |
+| M4 | `models.py:1567` `LeaderTaskCapture` (PK `telegram_id`) | the in-flight photo capture has no cell, so shots land on the wrong day |
 | M5 | `leader_proof.py:272` `save_photo(prof, task_id, cfg)` | resolves the day itself from `prof` + `effective_date` — no cell to resolve with |
-| M6 | `ProofCamera.jsx:406` `?leader=&task=` | the camera page cannot name a cell |
+| M6 | `ProofCamera.jsx:407` `?leader=&task=` | the camera page cannot name a cell |
 | M7 | `leader_close.py:537` `autoclose_due`, `close_expired_days` | iterate open days — they work, but fire N× and must not close cell A's day because cell B finished |
 | M8 | `leader_reports.py` | one DM per day row → a 3-cell leader and their brigadir get **3 DMs a night** |
-| M9 | `Leaders.jsx:3633` register table | Date · Submitted · Leader · Supervisor · Score · Failed — N identical-looking rows per day, nothing distinguishing them |
+| M9 | `Leaders.jsx:3810` register table | Date · Submitted · Leader · Supervisor · Score · Failed — N identical-looking rows per day, nothing distinguishing them |
 
 ### Minor / informational
 
@@ -285,7 +287,7 @@ stamped `completion` and the frontend mean all agree by construction.
 
 **Bot menu.** A leader-scoped task row is unchanged. A cell-scoped task row shows aggregate
 progress (`2/3 yacheyka`) and opens a **cell sub-menu** — the same shape the flow already
-has for a multi-profile account (`_lt_profile_kb`, `telegram_bot.py:2497`), so this is a
+has for a multi-profile account (`_lt_profile_kb`, `telegram_bot.py:2528`), so this is a
 pattern the code and the leaders both already know. Callback data
 `lt:task:{pid}:{tid}` → `lt:task:{pid}:{tid}:{cid}` stays far inside Telegram's 64-byte cap.
 
@@ -404,7 +406,7 @@ The compatibility floor is `MIN_CLIENT = <MAJOR>.0.0` and is DERIVED, so MAJOR i
 level the platform enforces — reserved for a shape an already-open tab stops being able to
 read. Nothing here qualifies: `cell_id` on a task row is additive, a day still has one
 `uid`, and an old bundle handed several entries with the same task `id` averages them
-(`taskStats`, `Leaders.jsx:2435`) — which is the correct answer, not a broken one.
+(`taskStats`, `Leaders.jsx:2557`) — which is the correct answer, not a broken one.
 
 Under option **A** this stays MINOR too, for the same reason: an old bundle reads N day rows
 as duplicate filings and `slotsBy` averages them.
