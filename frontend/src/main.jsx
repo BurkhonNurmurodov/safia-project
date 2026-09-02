@@ -2,9 +2,15 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { installDomGuard } from './utils/domGuard'
 
 // Read by the boot-diagnostics overlay in index.html
 window.__bootStage = 'bundle-start'
+
+// Before the first commit React performs — a DOM somebody else rewrote (a
+// translator, a WebView add-on) makes React's own node removal throw, and a
+// commit-phase throw costs the whole page. See utils/domGuard.js.
+installDomGuard()
 
 // Expand / fullscreen the WebApp as early as possible (before React renders).
 // Wrapped in try/catch: a half-initialized Telegram object must never prevent

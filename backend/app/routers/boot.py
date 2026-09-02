@@ -8,7 +8,9 @@ Two kinds, one delivery path — never add a third endpoint for a fourth kind:
     Intentionally UNAUTHENTICATED: the whole point is that it works when the
     app failed to boot and the user may not be logged in.
   * /api/crash-report — the app started and then a render threw. Posted
-    automatically by the ErrorBoundary, with no user involvement.
+    automatically by the ErrorBoundary, with no user involvement. The same
+    door carries `kind="recovered"`: a DOM desync utils/domGuard.js absorbed
+    before it could reach a boundary at all.
 
 Both are throttled and size-capped so neither can be turned into a spam relay,
 and the automatic one is de-duplicated by fingerprint as well: one crash that
@@ -141,6 +143,14 @@ class CrashReport(BaseModel):
     url: str = Field("", max_length=500)
     version: str = Field("", max_length=40)
     ua: str = Field("", max_length=500)
+    # "crash" — a render threw and the boundary caught it, the page is gone.
+    # "recovered" — utils/domGuard.js caught a DOM the app no longer recognised
+    # (a translator or add-on had moved React's nodes) and kept the page alive.
+    # The two are told apart HERE and nowhere else: a recovery announced as a
+    # crash costs somebody a morning chasing a page that never broke, and a
+    # recovery announced as nothing at all is a guard nobody can see firing.
+    # Optional and defaulted, so a tab still open on an older bundle is unmoved.
+    kind: str = Field("crash", max_length=20)
 
 
 def _crash_who(db: Session, request: Request) -> str:
@@ -194,8 +204,10 @@ def crash_report(body: CrashReport, request: Request, db: Session = Depends(get_
     # The log line lands regardless of throttling, de-duplication or whether
     # Telegram is reachable — it is the record that survives.
     logger.error(
-        "[CLIENT-CRASH] %s | v%s | %s | %s\n%s\n%s",
+        "[CLIENT-%s] %s | v%s | %s | %s | %s\n%s\n%s",
+        "RECOVERED" if body.kind == "recovered" else "CRASH",
         who, body.version or "?", path, body.message or "(no message)",
+        body.ua or "(no UA)",
         (body.stack or "").strip(), (body.component or "").strip(),
     )
 
@@ -221,11 +233,20 @@ def crash_report(body: CrashReport, request: Request, db: Session = Depends(get_
     # chunk it came from — that is what identifies the PAGE in a minified build,
     # so it is the part worth carrying into the message.
     where = "\n".join((body.component or "").strip().splitlines()[:6]) or "(no component stack)"
+    recovered = body.kind == "recovered"
     lines = [
-        "🐞 <b>App crash</b>" + (f" · v{html.escape(body.version)}" if body.version else ""),
+        ("🩹 <b>DOM desync recovered</b>" if recovered else "🐞 <b>App crash</b>")
+        + (f" · v{html.escape(body.version)}" if body.version else ""),
         f"Who: {html.escape(who)}",
         f"Page: {html.escape(path or '?')}",
     ]
+    # Which browser/WebView it happened in is most of the diagnosis for anything
+    # that goes wrong in the DOM, and it was the one field collected and never
+    # printed. Trimmed: the DM is read on a phone.
+    if body.ua:
+        lines.append(f"Device: {html.escape(body.ua[:140])}")
+    if recovered:
+        lines.append("The page kept running — nobody saw an error screen.")
     if repeats:
         lines.append(f"Also seen {repeats}× in the previous hour")
     text = "\n".join(lines) + (

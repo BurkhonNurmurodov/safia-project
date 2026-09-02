@@ -1,7 +1,15 @@
 <!doctype html>
-<html lang="en">
+<!-- `translate="no"` + the notranslate meta: Chrome's translator rewrites
+     text nodes IN PLACE, which desynchronises React's DOM and makes the
+     next removeChild throw — a page-killing crash reported from /quality.
+     utils/domGuard.js survives it; this is what stops it happening. The
+     document declares English while the UI runs in four languages, which
+     is precisely the mismatch a translator offers to fix, so
+     components/DocumentTitle.jsx keeps <html lang> on the ACTIVE one. -->
+<html lang="en" translate="no">
   <head>
     <meta charset="UTF-8" />
+    <meta name="google" content="notranslate" />
     <!-- Favicons rendered from public/logo.png. The tab icons keep the logo's
          transparent corners; apple-touch-icon is flattened onto the ring gold
          because iOS composites transparency onto black. -->
