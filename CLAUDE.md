@@ -1272,6 +1272,97 @@ SERVER's; the phone never authors it.
 
 Related memory: `leader-camera-proof-pilot`.
 
+## ONE checklist per CELL (`cell_from`)
+
+From **2026-09-02** (the operator's directive) a supervisor unit can be switched
+so its leaders stop filing ONE checklist a day and file a **complete separate
+checklist for each cell they own** — its own day row, its own score, its own
+report page and its own DM. **Nobody is switched by default**: units are
+enrolled by hand, one, several or all at once, on the ltasks admin destination.
+
+- **`services/leader_cells.py` is THE definition** — `unit_floor`, `floors`,
+  `per_cell`, `is_per_cell`, `filing_cells`, `cell_ids`, `expected_days`,
+  `self_check`. The bot menu, the register, the admin panel and the boot check
+  all ask it; three spellings would give one leader three different checklists.
+  `expected_days` is the one every caller should reach for: `[None]` = the
+  single cell-less day the platform always had, `[ids…]` = one checklist per
+  cell, `[]` = a switched leader with no cell, who files NOTHING.
+- **The switch is a DATE, never a boolean** — `LeaderUnitSetting.cell_from`,
+  beside `per_task_close` and `bot_from` and written by the SAME single writer
+  (`set_unit_settings`; two parallel writes race that row's key — the trap the
+  five ltasks fields fell into on 2026-08-19). Days before the floor are read
+  exactly as they were filed, so **old results never change** — enforced by a
+  comparison every reader makes, not by a migration that leaves history alone.
+  **Clearing the floor is the rollback**: new days are cell-less again from the
+  next effective date and the per-cell days already filed stay readable and
+  scored, with no migration either way.
+- **The floor is compared against the SHIFT's effective date**, never the
+  calendar day. Shift 2's night belongs to the date its 17:00 boundary opened,
+  so a floor of "today" set at 15:00 makes tonight the first per-cell night.
+  Comparing against `date.today()` starts a night shift a day late — the class
+  of bug that closed shift-2 tasks before their windows opened.
+- **`uq_ltask_day` is an EXPRESSION index and that is load-bearing**:
+  `(leader_id, date, COALESCE(cell_id, 0))`. Postgres treats NULLs as DISTINCT
+  inside a unique key, so a plain three-column constraint would accept two
+  cell-less days for one leader and hand the bot an arbitrary one — the very
+  breakage the original constraint prevented, reintroduced by widening it
+  naively. `COALESCE` folds every pre-switch row onto one value, so the
+  guarantee for a cell-less day is byte-for-byte the old one and **no data
+  migration is needed**. Same shape for `uq_leader_day_exclusion`. Every
+  `cell_id` lookup must use `IS NULL`, never `== None`.
+- **Which cells: plain OWNERSHIP** (`cells.leader_id`), automatically — assign
+  one on `/cells` and the checklist follows. `in_load` is deliberately NOT
+  consulted: it answers whether a cell counts toward the загрузка, a different
+  question about a different register, and it is unticked on all 108 cells.
+- **A leader with no cell files NOTHING** on a switched unit and the bot says
+  so («Sizga yacheyka biriktirilmagan»), rather than showing an empty menu.
+  Enrolment is REFUSED for a unit whose leaders own no cells at all, naming the
+  count, because that would switch a unit into silence.
+- **The bot threads the cell inside the `pid` SEGMENT** — `_lt_ref` / `_lt_who`,
+  `"192"` or `"192c108"`. There are forty `lt:` emitters and ONE parser, so no
+  callback grows a field and no handler's `parts[…]` indexing moves; the longest
+  shape is 21 bytes against Telegram's 64. `/tasks` → profile pick → **cell
+  pick** → that cell's task menu, and «Orqaga» returns to the cell picker. A
+  button minted before the switch carries no cell, so `_lt_menu` sends it back
+  to the picker rather than opening — and on the first answer creating — a
+  cell-less day nothing belongs to. `LeaderTaskCapture.cell_id` carries it
+  through the photo/reason handlers, which run off the capture row, not a
+  button.
+- **Everything downstream came along for free**, because every key there is a
+  ROW id: `bot_ref` (`bot:{entry_id}`), `report_key` / `day_uid`
+  (`bot:{day_id}` / `bot-{day_id}`), disputes on `ref`, late proofs and camera
+  rolls on `(day_id, task_id)`. The AI pipeline, the day report and its DM
+  ledger, the objection chain, late proofs and `compute_completion` are all
+  untouched. **The frontend scoring core is untouched too** — `slotsBy` already
+  averages several rows onto one day (built for the sheet layer's double
+  filings), so a leader's day is the MEAN of their cells and `winDays` counts
+  days, not rows. **Never "make the scoring cell-aware": it already is.**
+- **One DM per cell** (the operator's call), the sender unchanged; the cell code
+  is appended to the `date` param so the four templates carry it untranslated.
+- **The register grows ONE column** — «Yacheyka», `CellLink` on the verifix
+  CODE, rendered only when a row on screen has one. No cell ranking (the
+  operator's call). `/leaders/report/:uid` prints the code as a chip.
+- **Exclusions are per cell-day, and `cell_id IS NULL` means the whole
+  leader-day** — that is both every exclusion recorded before this existed AND
+  the «all this leader's cells» shortcut, stored as one row rather than N.
+  `leader_exclusions.for_row` honours both, narrower first. `profile_days` (the
+  AI queue doors, the report park) deliberately reads WHOLE-day rows only: a
+  per-cell exclusion silences one checklist, not the day.
+- **The boot self-check names the consequences** (`leader_cells.self_check`,
+  printed with the deploy output): every switched leader with no cell, every
+  cell with no leader, the checklist volume each unit now produces, and any
+  per-cell day whose unit is no longer switched. This repo has no test suite and
+  a push to `main` is a deploy.
+- Admin: the «Brigada sozlamalari» modal on the ltasks matrix (a blue `Grid3x3`
+  chip marks a switched unit) → `PUT /admin/leader-tasks/cell-from`, which takes
+  a **LIST** so one toggle and a bulk press are one call and one transaction.
+- Deliberately NOT changed: the Google Form (history only — every unit files in
+  the bot), `merges()`, `LeaderDaySource`, `LeaderLateRequest`, cutoffs, and the
+  per-task closing sweeps, which are all per-DAY and needed nothing.
+
+Related memory: `per-cell-checklist-decisions`. Full plan and the rejected
+shapes: `docs/plan-per-cell-checklist.md`.
+
 ## Per-task submission (`per_task_close`)
 
 From **2026-08-19** a supervisor's unit can be switched from closing a DAY to

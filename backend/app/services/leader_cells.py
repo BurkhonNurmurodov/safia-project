@@ -156,3 +156,71 @@ def owes_nothing(db: Session, prof: RoleProfile, date: str | None,
     them to file. The one state the bot must explain rather than show an empty
     menu for — and the one the boot self-check names by leader."""
     return expected_days(db, prof, date, floor=floor) == []
+
+
+# ── the boot self-check ──────────────────────────────────────────────────────
+
+def self_check(db: Session) -> list[str]:
+    """Report what per-cell filing would do WRONG on the units switched to it.
+
+    This repo has no test suite and a push to `main` is a deploy, so the app
+    saying its own configuration is broken at boot is the earliest anybody can
+    find out — the pattern `leader_close.self_check` already follows, and for
+    the same scar: twice a checklist has closed at an hour nobody intended and
+    both times the only signal was a leader losing points.
+
+    What it looks for, on switched units only:
+
+    1. **A leader with no cell**, who therefore files NOTHING (the operator's
+       ruling). That is a correct behaviour and a terrible surprise, so it is
+       named rather than silently obeyed.
+    2. **A cell whose leader nobody set**, which no checklist covers.
+    3. **The volume the switch produces**, so a unit that quietly went from six
+       submissions a night to twenty-two says so on the deploy that did it.
+    4. **A day filed per cell on a unit that is no longer switched**, which
+       means a floor was cleared or moved forward over days already filed —
+       those rows are still scored and still shown, and an operator who cleared
+       the floor to "undo" needs to know they are there.
+    """
+    from app.models import Cell, LeaderTaskDay, Manager
+
+    out: list[str] = []
+    fl = floors(db)
+    if not fl:
+        return out
+
+    mgrs = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(fl)).all()}
+    for mid, floor in sorted(fl.items()):
+        mgr = mgrs.get(mid)
+        name = mgr.name if mgr else f"unit {mid}"
+        leaders = (db.query(RoleProfile)
+                   .filter(RoleProfile.role == "leader",
+                           RoleProfile.manager_id == mid).all())
+        if not leaders:
+            out.append(f"«{name}» files per cell from {floor} but has no leaders")
+            continue
+        total = 0
+        for p in leaders:
+            n = len(cell_ids(db, p))
+            total += n
+            if n == 0:
+                out.append(f"«{name}» / {p.name}: no cell assigned — files "
+                           f"NOTHING from {floor}")
+        orphan = (db.query(Cell)
+                  .filter(Cell.manager_id == mid, Cell.leader_id.is_(None))
+                  .count())
+        if orphan:
+            out.append(f"«{name}»: {orphan} cell(s) have no leader — nobody "
+                       f"files a checklist for them")
+        if total:
+            out.append(f"«{name}»: {len(leaders)} leader(s) → {total} "
+                       f"checklist(s) per shift from {floor}")
+
+    stray = (db.query(LeaderTaskDay)
+             .filter(LeaderTaskDay.cell_id.isnot(None),
+                     ~LeaderTaskDay.manager_id.in_(list(fl)))
+             .count())
+    if stray:
+        out.append(f"{stray} per-cell day(s) belong to units that are NOT "
+                   f"switched — a floor was cleared or moved after they were filed")
+    return out

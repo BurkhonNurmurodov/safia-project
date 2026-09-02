@@ -283,7 +283,8 @@ def _task_locked(db: Session, day: LeaderTaskDay, task_id: int) -> bool:
 def save_photo(db: Session, *, prof: RoleProfile, task_id: int, cfg: dict,
                data: bytes, captured_at: datetime, slot: int | None,
                skew_s: int | None, relay,
-               client_key: str | None = None) -> LeaderTaskPhoto:
+               client_key: str | None = None,
+               cell_id: int | None = None) -> LeaderTaskPhoto:
     """Stamp one shot, archive it, and put it on the roll.
 
     `relay(bytes) -> (file_id, message_id)` is the archive-channel upload,
@@ -317,7 +318,7 @@ def save_photo(db: Session, *, prof: RoleProfile, task_id: int, cfg: dict,
                         prof.id, task_id, client_key)
             return seen
 
-    day = open_day(db, prof, create=True)
+    day = open_day(db, prof, create=True, cell_id=cell_id)
     if day is None:
         raise ProofError("day_closed")
     if _task_locked(db, day, task_id):

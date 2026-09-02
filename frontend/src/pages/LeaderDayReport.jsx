@@ -709,6 +709,17 @@ export default function LeaderDayReport() {
             <span className="inline-flex items-center gap-1 tabular-nums">
               <CalendarDays size={12} style={{ color: "var(--text-4)" }} />{data.date}
             </span>
+            {/* WHICH cell's checklist this is — a leader on a per-cell unit
+                files several a day, and without the code every one of their
+                reports looks like the same one. The verifix code, never the
+                workshop name. */}
+            {data.cell && (
+              <span className="px-1.5 py-0.5 rounded font-semibold tabular-nums"
+                style={{ background: "rgba(59,130,246,0.12)", color: "#3b82f6",
+                         border: "1px solid rgba(59,130,246,0.30)" }}>
+                {data.cell}
+              </span>
+            )}
             {data.shift != null && (
               <span className="px-1.5 py-0.5 rounded font-semibold"
                 style={{ background: "var(--bg-inner)", color: "var(--text-3)",

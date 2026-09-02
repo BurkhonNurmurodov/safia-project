@@ -30,7 +30,8 @@ from app.models import (
 from app.security import require_auth
 from app.routers.admin import _TG_API, _tg_file_meta
 from app.services import (
-    action_log, leader_close, leader_late_proof, leader_proof, leader_tasks,
+    action_log, leader_cells, leader_close, leader_late_proof, leader_proof,
+    leader_tasks,
 )
 from app.services.leader_tasks import (
     channel_chat_id, config_name, effective_leader_config,
@@ -90,6 +91,26 @@ def _own_leader(db: Session, payload: dict, leader_id: int | None) -> RoleProfil
         if p.id == leader_id:
             return p
     raise HTTPException(status_code=404, detail="not_a_leader")
+
+
+def _own_cell(db: Session, prof: RoleProfile, cell_id: int | None) -> int | None:
+    """The cell these shots belong to — checked, never taken on trust.
+
+    `?cell=` reaches us from a `web_app` URL the leader's own Telegram built,
+    but the page is a plain URL and the parameter is typeable, so it is
+    verified against `leader_cells.filing_cells` exactly as `?leader=` is
+    verified against the profiles the account holds. A cell that is not this
+    leader's — or any cell at all on a unit that does not file per cell — is
+    dropped to None, which lands the shots on the ordinary cell-less day
+    instead of on somebody else's checklist.
+    """
+    if not cell_id:
+        return None
+    from app.services.leader_tasks import effective_date
+    date = effective_date(leader_proof.leader_shift(db, prof))
+    if not leader_cells.is_per_cell(db, prof.manager_id, date):
+        return None
+    return int(cell_id) if int(cell_id) in leader_cells.cell_ids(db, prof) else None
 
 
 def _camera_cfg(db: Session, prof: RoleProfile, task_id: int) -> tuple[dict, dict]:
@@ -159,7 +180,7 @@ def _photo_wire(p: LeaderTaskPhoto) -> dict:
 
 @router.get("/api/leader-proof/session")
 def proof_session(leader: int | None = Query(None), task: int = Query(...),
-                  late: int = Query(0),
+                  late: int = Query(0), cell: int | None = Query(None),
                   db: Session = Depends(get_db),
                   payload: dict = Depends(require_auth)):
     """Everything the camera page needs in ONE read: the clock, the task's rule,
@@ -174,14 +195,19 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
     cfg, entry = _camera_cfg(db, prof, task)
     lang = (payload.get("language") or "uz")
     shift = leader_proof.leader_shift(db, prof)
-    day = leader_proof.open_day(db, prof, create=False)
+    # WHICH checklist these shots belong to. `?cell=` is typeable, so it is
+    # checked against the cells this leader actually files for — a cell that is
+    # not theirs, or one named on a unit that does not file per cell, is
+    # ignored rather than obeyed, which lands the shots on the ordinary day.
+    cell = _own_cell(db, prof, cell)
+    day = leader_proof.open_day(db, prof, create=False, cell_id=cell)
 
     from app.services.leader_tasks import effective_date
     date = effective_date(shift)
     # `open_day` answers None for BOTH "no day yet" and "already closed", so the
     # closed state is read separately — the page must be able to say which.
     stored = (db.query(LeaderTaskDay)
-              .filter_by(leader_id=prof.id, date=date).first())
+              .filter_by(leader_id=prof.id, date=date, cell_id=cell).first())
     closed = bool(stored and stored.closed_at)
 
     photos = leader_proof.roll(db, day.id, task) if day else []
@@ -206,7 +232,7 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
     # no, `mode` is absent and the page falls straight through to the ordinary
     # refusal it already renders for a closed task.
     if late:
-        lday, lshift, ok = _late_ctx(db, prof, task, entry)
+        lday, lshift, ok = _late_ctx(db, prof, task, entry, cell)
         if ok and lday is not None:
             shots = leader_late_proof.draft_shots(db, lday.id, task)
             return {
@@ -274,6 +300,7 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
 async def post_photo(
     leader: int = Form(...),
     task: int = Form(...),
+    cell: int | None = Form(None),
     captured_ms: int = Form(...),
     phone_ms: int | None = Form(None),
     slot: int | None = Form(None),
@@ -326,19 +353,23 @@ async def post_photo(
     if phone_ms:
         skew = int((int(phone_ms) - int(captured_ms)) / 1000)
 
+    cell = _own_cell(db, prof, cell)
     try:
         row = leader_proof.save_photo(
             db, prof=prof, task_id=task, cfg=entry, data=data,
             captured_at=captured, slot=slot, skew_s=skew, relay=_relay,
-            client_key=key or None,
+            client_key=key or None, cell_id=cell,
         )
     except leader_proof.ProofError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
     day = db.query(LeaderTaskDay).filter_by(id=row.day_id).first()
+    # off the STORED day, so a replay answered from an existing row still
+    # redraws the prompt of the cell that row belongs to
+    row_cell = day.cell_id if day else cell
     photos = leader_proof.roll(db, row.day_id, task)
     need = int(entry.get("min_media") or 1)
-    _nudge_bot(db, prof, task)
+    _nudge_bot(db, prof, task, row_cell)
 
     lines = [("leader", prof.name), ("task", task), ("slot", row.slot),
              ("photos", f"{len(photos)}/{need}")]
@@ -372,7 +403,8 @@ def drop_photo(photo_id: int, db: Session = Depends(get_db),
     except leader_proof.ProofError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     photos = leader_proof.roll(db, day_id, task_id)
-    _nudge_bot(db, prof, task_id)
+    _dropped = db.query(LeaderTaskDay).filter_by(id=day_id).first()
+    _nudge_bot(db, prof, task_id, _dropped.cell_id if _dropped else None)
     need = int(entry.get("min_media") or 1)
     action_log.enrich(
         target_kind="photo", target_id=photo_id, target_name=prof.name,
@@ -425,7 +457,8 @@ def _day_floor(db: Session, prof: RoleProfile) -> datetime | None:
     return start.astimezone(timezone.utc)
 
 
-def _nudge_bot(db: Session, prof: RoleProfile, task_id: int) -> None:
+def _nudge_bot(db: Session, prof: RoleProfile, task_id: int,
+               cell_id: int | None = None) -> None:
     """Re-draw the bot's waiting camera prompt with the new count.
 
     The leader's attention is in the mini-app, but the message they came FROM is
@@ -436,7 +469,7 @@ def _nudge_bot(db: Session, prof: RoleProfile, task_id: int) -> None:
     """
     try:
         from app.telegram_bot import refresh_camera_prompt
-        refresh_camera_prompt(db, prof.id, task_id)
+        refresh_camera_prompt(db, prof.id, task_id, cell_id)
     except Exception:
         log.debug("camera prompt refresh skipped", exc_info=True)
 
@@ -498,7 +531,8 @@ def _shot_wire(sh: LeaderLateProofShot) -> dict:
     }
 
 
-def _late_ctx(db: Session, prof: RoleProfile, task_id: int, entry: dict):
+def _late_ctx(db: Session, prof: RoleProfile, task_id: int, entry: dict,
+               cell_id: int | None = None):
     """`(day, shift, open)` for a late filing on this task.
 
     `leader_late_proof.eligible` is the rule, and it is the ONLY rule — the
@@ -518,7 +552,7 @@ def _late_ctx(db: Session, prof: RoleProfile, task_id: int, entry: dict):
     screen, so by the time a shot arrives there is one.
     """
     shift = leader_proof.leader_shift(db, prof)
-    day = leader_proof.open_day(db, prof, create=False)
+    day = leader_proof.open_day(db, prof, create=False, cell_id=cell_id)
     ok = leader_late_proof.eligible(
         db, day=day, task_id=task_id, cfg_entry=entry, shift=shift,
         per_task=leader_tasks.per_task_close(db, prof.manager_id))
@@ -529,6 +563,7 @@ def _late_ctx(db: Session, prof: RoleProfile, task_id: int, entry: dict):
 async def post_late_photo(
     leader: int = Form(...),
     task: int = Form(...),
+    cell: int | None = Form(None),
     captured_ms: int = Form(...),
     phone_ms: int | None = Form(None),
     slot: int | None = Form(None),
@@ -548,7 +583,8 @@ async def post_late_photo(
     """
     prof = _own_leader(db, payload, leader)
     _, entry = _camera_cfg(db, prof, task)
-    day, shift, ok = _late_ctx(db, prof, task, entry)
+    cell = _own_cell(db, prof, cell)
+    day, shift, ok = _late_ctx(db, prof, task, entry, cell)
     if not ok:
         raise HTTPException(status_code=409, detail="late_gone")
     if day is None:
@@ -587,7 +623,7 @@ async def post_late_photo(
     db.commit()
 
     shots = leader_late_proof.draft_shots(db, day.id, task)
-    _nudge_late_bot(db, prof, task)
+    _nudge_late_bot(db, prof, task, day.cell_id if day else None)
     action_log.enrich(
         target_kind="photo", target_id=row.id, target_name=prof.name,
         unit_id=prof.manager_id, day=day.date,
@@ -614,14 +650,16 @@ def drop_late_photo(shot_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="not_found")
     prof = _own_leader(db, payload, row.leader_id)
     _, entry = _camera_cfg(db, prof, row.task_id)
-    day, _shift, ok = _late_ctx(db, prof, row.task_id, entry)
+    _rowday = db.query(LeaderTaskDay).filter_by(id=row.day_id).first()
+    day, _shift, ok = _late_ctx(db, prof, row.task_id, entry,
+                                _rowday.cell_id if _rowday else None)
     if not ok or day is None or day.id != row.day_id:
         raise HTTPException(status_code=409, detail="late_gone")
     day_id, task_id, slot = row.day_id, row.task_id, row.slot
     leader_late_proof.delete_shot(db, row)
     db.commit()
     shots = leader_late_proof.draft_shots(db, day_id, task_id)
-    _nudge_late_bot(db, prof, task_id)
+    _nudge_late_bot(db, prof, task_id, day.cell_id if day else None)
     action_log.enrich(
         target_kind="photo", target_id=shot_id, target_name=prof.name,
         unit_id=prof.manager_id,
@@ -644,7 +682,8 @@ def get_late_photo(shot_id: int, db: Session = Depends(get_db),
     return _stream_shot(row.file_id)
 
 
-def _nudge_late_bot(db: Session, prof: RoleProfile, task_id: int) -> None:
+def _nudge_late_bot(db: Session, prof: RoleProfile, task_id: int,
+                    cell_id: int | None = None) -> None:
     """Re-draw the bot's late screen with the new count.
 
     Deliberately NOT a widening of `refresh_camera_prompt`'s `stage="camera"`
@@ -654,6 +693,6 @@ def _nudge_late_bot(db: Session, prof: RoleProfile, task_id: int) -> None:
     """
     try:
         from app.telegram_bot import refresh_late_screen
-        refresh_late_screen(db, prof.id, task_id)
+        refresh_late_screen(db, prof.id, task_id, cell_id)
     except Exception:
         log.debug("late screen refresh skipped", exc_info=True)

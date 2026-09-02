@@ -42,6 +42,7 @@ from typing import Iterable
 from sqlalchemy.orm import Session
 
 from app.models import (
+    Cell,
     LeaderTaskDay,
     LeaderTaskDef,
     LeaderTaskEntry,
@@ -132,7 +133,8 @@ def source_overrides(db: Session) -> dict[tuple[int, str], str]:
 def merges(shift: int | None, manager_id: int | None, date: str | None,
            cams: set[int], floors: dict[int, str] | None = None,
            *, leader_id: int | None = None,
-           overrides: dict[tuple[int, str], str] | None = None) -> bool:
+           overrides: dict[tuple[int, str], str] | None = None,
+           per_cell: bool = False) -> bool:
     """Does this closed bot day replace its (leader, date) sheet row?
 
     THE merge rule, in one place: both readers below call it, so the register
@@ -153,6 +155,17 @@ def merges(shift: int | None, manager_id: int | None, date: str | None,
     picked = (overrides or {}).get((leader_id, str(date or ""))) if leader_id else None
     if picked:
         return picked == "bot"
+    # A day filed PER CELL always merges, and it has to. Such a day exists only
+    # because an admin switched the unit (`LeaderUnitSetting.cell_from`), and
+    # there is no per-cell row in the Google Form for it to fall back to — the
+    # Form has no cell column at all. Without this a switched shift-1 unit
+    # outside the camera pilot would file a complete checklist per cell that
+    # the register, the score and the day report all refuse to show: filed, and
+    # visible nowhere, which is the precise trap the camera exception was
+    # written to avoid. Checked after the admin's own per-day choice, which
+    # still outranks every rule.
+    if per_cell:
+        return True
     if shift == MERGE_SHIFT:
         return True
     if manager_id not in cams:
@@ -164,7 +177,8 @@ def merges(shift: int | None, manager_id: int | None, date: str | None,
 def training(shift: int | None, manager_id: int | None, date: str | None,
              floors: dict[int, str] | None = None,
              *, leader_id: int | None = None,
-             overrides: dict[tuple[int, str], str] | None = None) -> bool:
+             overrides: dict[tuple[int, str], str] | None = None,
+             per_cell: bool = False) -> bool:
     """Is this closed bot day a REHEARSAL — filed in the bot on a day whose
     counted submission is still the sheet row?
 
@@ -186,7 +200,9 @@ def training(shift: int | None, manager_id: int | None, date: str | None,
         # answer: no score DM that contradicts the register. Choosing the BOT
         # day makes it the record whatever the rule said, rehearsal included.
         return picked == "sheet"
-    if shift == MERGE_SHIFT:
+    # A per-cell day is never rehearsal: it is the only record of itself, so
+    # parking it would silence a score with no sheet row standing behind it.
+    if per_cell or shift == MERGE_SHIFT:
         return False
     floor = (floors or {}).get(manager_id)
     return bool(floor) and str(date or "") < str(floor)
@@ -227,7 +243,8 @@ def closed_days(
     picks = source_overrides(db)
     return [d for d in days
             if merges(shifts.get(d.manager_id), d.manager_id, d.date, cams, floors,
-                      leader_id=d.leader_id, overrides=picks)]
+                      leader_id=d.leader_id, overrides=picks,
+                      per_cell=d.cell_id is not None)]
 
 
 def entries_of(db: Session, days: list[LeaderTaskDay]) -> dict[int, list[LeaderTaskEntry]]:
@@ -306,6 +323,13 @@ def dashboard_rows(
         m.id: m
         for m in db.query(Manager).filter(Manager.id.in_({d.manager_id for d in days})).all()
     }
+    # The cell each day was filed FOR, named by its verifix CODE — one query
+    # for the page, not one per row. The workshop name is never printed (the
+    # standing rule): a cell is its code.
+    cell_ids = {d.cell_id for d in days if d.cell_id}
+    cells = {c.id: c for c in db.query(Cell).filter(Cell.id.in_(cell_ids)).all()} \
+        if cell_ids else {}
+
     by_day = entries_of(db, days)
     by_entry = media_of(db, [e.id for es in by_day.values() for e in es])
     caps = captures_of(db, days)
@@ -327,6 +351,13 @@ def dashboard_rows(
                 "shift": mgr.shift if mgr else None,
                 "leader_id": prof.id,
                 "leader": prof.name,
+                # Present only on a per-cell filing; NULL/absent everywhere
+                # else, which is every day filed before a unit was switched.
+                # The register needs it to tell two of one leader's rows for
+                # one date apart — without it they render identically.
+                "cell_id": d.cell_id,
+                "cell": (cells[d.cell_id].verifix_code
+                         if d.cell_id in cells else None),
                 "completion": float(d.completion or 0),
                 "tasks": [
                     {

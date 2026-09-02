@@ -19,6 +19,7 @@ from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageOps
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import identity
@@ -26,7 +27,7 @@ from app.capabilities import page_scope_is_all
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    AppSetting, LeaderAiReview, LeaderChecklist, LeaderDaySource,
+    AppSetting, Cell, LeaderAiReview, LeaderChecklist, LeaderDaySource,
     LeaderLateProof, LeaderLateProofMedia, LeaderLateProofShot, LeaderTaskDay,
     LeaderTaskDef, LeaderTaskEntry,
     LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskMedia,
@@ -37,7 +38,8 @@ from app.security import require_auth
 from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services import (
-    action_log, leader_ai, leader_bot, leader_close, leader_reports)
+    action_log, leader_ai, leader_bot, leader_cells, leader_close,
+    leader_reports)
 from app.services.leader_tasks import (
     CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_leader_config, effective_settings, ensure_task_defs,
@@ -138,6 +140,20 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     overrides = leader_overrides(db, [p.id for p in leaders])
     per_task = per_task_units(db)
     bot_from = unit_bot_from_map(db)
+    cell_from = leader_cells.floors(db)
+    # How many checklists a unit would produce once switched — the count the
+    # enrolment confirm names, so nobody turns a unit on without seeing that it
+    # goes from 6 submissions a night to 11.
+    cell_n: dict[int, int] = {}
+    lead_n: dict[int, int] = {}
+    for mid, lid, n in (db.query(RoleProfile.manager_id, RoleProfile.id,
+                                 func.count(Cell.id))
+                        .outerjoin(Cell, Cell.leader_id == RoleProfile.id)
+                        .filter(RoleProfile.role == "leader",
+                                RoleProfile.manager_id.isnot(None))
+                        .group_by(RoleProfile.manager_id, RoleProfile.id).all()):
+        cell_n[mid] = cell_n.get(mid, 0) + int(n or 0)
+        lead_n[mid] = lead_n.get(mid, 0) + 1
     # Example-proof photo ids per task — ids only, the bytes stream from
     # /admin/leader-tasks/examples/{id} when the modal actually shows them.
     examples: dict[int, list[int]] = {}
@@ -182,7 +198,12 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                       "per_task_close": m.id in per_task,
                       # "" = no rehearsal window; before it the unit's bot days
                       # are practice and its sheet row is what the register shows.
-                      "bot_from": bot_from.get(m.id) or ""} for m in managers],
+                      "bot_from": bot_from.get(m.id) or "",
+                      # "" = not switched. From this day the unit's leaders file
+                      # ONE CHECKLIST PER CELL; days before it are untouched.
+                      "cell_from": cell_from.get(m.id) or "",
+                      "leaders_n": lead_n.get(m.id, 0),
+                      "cells_n": cell_n.get(m.id, 0)} for m in managers],
         "settings": {
             str(m.id): {str(t): s for t, s in effective_settings(db, m.id).items()}
             for m in managers
@@ -984,6 +1005,95 @@ class UnitIn(BaseModel):
     bot_from: str = ""
 
 
+class CellFromRow(BaseModel):
+    manager_id: int
+    # "" / null = clear the floor, i.e. the unit goes back to one checklist a
+    # day from its next effective date. That IS the rollback, so it has to stay
+    # expressible and cannot mean "leave alone".
+    cell_from: str | None = ""
+
+
+class CellFromIn(BaseModel):
+    rows: list[CellFromRow]
+
+
+@router.put("/admin/leader-tasks/cell-from")
+def put_cell_from(body: CellFromIn, db: Session = Depends(get_db),
+                  _: dict = Depends(verify_admin)):
+    """Switch units to filing ONE CHECKLIST PER CELL, from a date.
+
+    A LIST, always — one row toggled and a bulk press over a selection are the
+    same call and the same transaction. Two parallel single writes would race
+    the `leader_unit_settings` primary key, which is the trap the five ltasks
+    task fields fell into (2026-08-19) and the reason `set_unit_settings` is
+    that row's one writer.
+
+    **Nothing is switched by default and nothing is backfilled.** A unit files
+    per cell only because an admin set its date here, and days before that date
+    keep the shape they were filed in — `services/leader_cells.py` compares the
+    floor against the SHIFT's effective date on every read, so history is not
+    rewritten and no score anybody has been told moves. Clearing the date is
+    the rollback: new days are cell-less again and the per-cell days already
+    filed stay readable and scored, with no migration either way.
+
+    Refused for a unit whose leaders own NO cells — every one of them would
+    file nothing (`leader_cells.expected_days` answers `[]`), which is a unit
+    switched into silence. The count is named so the refusal says what to fix.
+    """
+    if not body.rows:
+        return {"ok": True, "changed": 0}
+    if len(body.rows) > 200:
+        raise HTTPException(status_code=400, detail="too many units in one call")
+
+    ids = [r.manager_id for r in body.rows]
+    mgrs = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(ids)).all()}
+    # Leaders per unit and cells per leader, in two queries rather than per row.
+    owned: dict[int, int] = {}
+    have: dict[int, int] = {}
+    for mid, n in (db.query(RoleProfile.manager_id, func.count(Cell.id))
+                   .outerjoin(Cell, Cell.leader_id == RoleProfile.id)
+                   .filter(RoleProfile.role == "leader",
+                           RoleProfile.manager_id.in_(ids))
+                   .group_by(RoleProfile.manager_id).all()):
+        owned[mid] = int(n or 0)
+    for mid, n in (db.query(RoleProfile.manager_id, func.count(RoleProfile.id))
+                   .filter(RoleProfile.role == "leader",
+                           RoleProfile.manager_id.in_(ids))
+                   .group_by(RoleProfile.manager_id).all()):
+        have[mid] = int(n or 0)
+
+    changed, lines = 0, []
+    for r in body.rows:
+        mgr = mgrs.get(r.manager_id)
+        if not mgr:
+            raise HTTPException(status_code=404,
+                                detail=f"unit {r.manager_id} not found")
+        val = (r.cell_from or "").strip()
+        if val and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", val):
+            raise HTTPException(status_code=400,
+                                detail="cell_from must be YYYY-MM-DD")
+        if val and not owned.get(mgr.id):
+            raise HTTPException(
+                status_code=400,
+                detail=(f"«{mgr.name}»: no cell is assigned to any of its "
+                        f"{have.get(mgr.id, 0)} leader(s), so every one of them "
+                        f"would have nothing to file. Assign cells on /cells first."))
+        set_unit_settings(db, manager_id=mgr.id,
+                          per_task_close=mgr.id in per_task_units(db),
+                          bot_from=unit_bot_from_map(db).get(mgr.id),
+                          cell_from=val or None)
+        changed += 1
+        lines.append((mgr.name, val or "off"))
+
+    action_log.enrich(
+        target_kind="unit", target_id=body.rows[0].manager_id,
+        target_name=(mgrs.get(body.rows[0].manager_id).name
+                     if mgrs.get(body.rows[0].manager_id) else None),
+        details=[("units", changed)] + lines[:20],
+    )
+    return {"ok": True, "changed": changed}
+
+
 @router.put("/admin/leader-tasks/unit")
 def put_unit(body: UnitIn, db: Session = Depends(get_db),
              _: dict = Depends(verify_admin)):
@@ -1258,6 +1368,11 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
     by_day = leader_bot.entries_of(db, days)
     entry_ids = [e.id for es in by_day.values() for e in es]
     media_by_entry = leader_bot.media_of(db, entry_ids)
+    # Cell codes for the rows on this page — one query, not one per row.
+    _cids = {d.cell_id for d in days if d.cell_id}
+    sub_cells = {c.id: c.verifix_code
+                 for c in db.query(Cell).filter(Cell.id.in_(_cids)).all()} \
+        if _cids else {}
 
     # ── what each OPEN day is still waiting for ──────────────────────────────
     # The camera roll is read straight from `leader_task_photos`, not through
@@ -1293,6 +1408,11 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
             # the dashboard feed, from the same function.
             "uid": leader_bot.day_uid(d.id),
             "date": d.date,
+            # The cell this checklist was filed FOR, by verifix CODE. Absent on
+            # a day filed before its unit was switched — several rows can share
+            # one (leader, date) now, and this is what tells them apart.
+            "cell_id": d.cell_id,
+            "cell": sub_cells.get(d.cell_id),
             "leader_id": d.leader_id,
             "leader": prof.name if prof else f"#{d.leader_id}",
             "manager_id": d.manager_id,
@@ -1549,7 +1669,8 @@ def _pair_state(db: Session, *, want_sheet: bool = True):
     for d in days:
         counted[(d.leader_id, str(d.date))] = "bot" if leader_bot.merges(
             shifts.get(d.manager_id), d.manager_id, d.date, cams, floors,
-            leader_id=d.leader_id, overrides=picks) else "sheet"
+            leader_id=d.leader_id, overrides=picks,
+            per_cell=d.cell_id is not None) else "sheet"
     return counted, picks, (_sheet_pairs(db) if want_sheet else set()), by
 
 

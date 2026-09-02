@@ -16,6 +16,7 @@ import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import Modal from "../components/ui/Modal";
+import CellLink from "../components/ui/CellLink";
 import Button from "../components/ui/Button";
 import FormField from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
@@ -117,7 +118,7 @@ const TXT = {
     exclNone: "Bu kunda hech narsa topshirilmagan",
     cutTitle: "{d} dan boshlab bu liderning natijalari hisobga olinmaydi",
     tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
-    thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
+    thDate: "Sana", thLeader: "Lider", thCell: "Yacheyka", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun", shiftAbbr: "smena",
     voidChip: "Vaqtdan tashqari",
     voidTitle: "Hisobot o'z smenasining oynasida yuborilishi kerak ({win}) — bu hisobot qabul qilinmadi va kun 0% hisoblanadi",
@@ -289,7 +290,7 @@ const TXT = {
     exclNone: "Бу кунда ҳеч нарса топширилмаган",
     cutTitle: "{d} дан бошлаб бу лидернинг натижалари ҳисобга олинмайди",
     tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
-    thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
+    thDate: "Сана", thLeader: "Лидер", thCell: "Ячейка", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
     thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун", shiftAbbr: "смена",
     voidChip: "Вақтдан ташқари",
     voidTitle: "Ҳисобот ўз сменасининг ойнасида юборилиши керак ({win}) — бу ҳисобот қабул қилинмади ва кун 0% ҳисобланади",
@@ -461,7 +462,7 @@ const TXT = {
     exclNone: "В этот день ничего не сдавалось",
     cutTitle: "С {d} результаты этого лидера не учитываются",
     tableTitle: "Последние отчёты (сначала низкий балл)",
-    thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
+    thDate: "Дата", thLeader: "Лидер", thCell: "Ячейка", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
     thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.", shiftAbbr: "смена",
     voidChip: "Вне окна",
     voidTitle: "Отчёт должен быть отправлен в окно своей смены ({win}) — этот отчёт не засчитан, день считается за 0%",
@@ -633,7 +634,7 @@ const TXT = {
     exclNone: "Nothing was submitted on this day",
     cutTitle: "From {d} this leader's results are not counted",
     tableTitle: "Recent Submissions (Low Score First)",
-    thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
+    thDate: "Date", thLeader: "Leader", thCell: "Cell", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d", shiftAbbr: "shift",
     voidChip: "Out of window",
     voidTitle: "A checklist must be filed inside its shift's window ({win}) — this one was not accepted, so the day scores 0%",
@@ -2170,6 +2171,10 @@ export default function Leaders() {
   // table-level filters (independent of the page filters above)
   const [tSearch, setTSearch] = usePersistentState(`${prefix}_table_search`, "");
   const [tBand, setTBand] = usePersistentState(`${prefix}_table_band`, "all"); // all | good | mid | bad
+  // Whether the CELL column is worth a column at all — true only once a
+  // switched unit's rows are on screen. Computed off the rows themselves, so
+  // the table never shows a column of dashes for units filing one a day.
+  const anyCell = useMemo(() => rows.some((r) => r.cell), [rows]);
   const [tSort, setTSort] = usePersistentState(`${prefix}_table_sort`, { key: "score", dir: "asc" });
 
   const { data, isLoading, isFetching, isError, error } = useQuery({
@@ -3019,6 +3024,9 @@ export default function Leaders() {
     arr.sort((a, b) => {
       if (tSort.key === "date") return a.date < b.date ? -dir : a.date > b.date ? dir : 0;
       if (tSort.key === "leader") return tl(a.leader).localeCompare(tl(b.leader)) * dir;
+      // Cell code, plain string order — a row with no cell sorts last either
+      // way, because "" is not a code and must not read as one.
+      if (tSort.key === "cell") return String(a.cell || "\uffff").localeCompare(String(b.cell || "\uffff")) * dir;
       // an unmatched row (no supervisor) sorts to the bottom either way — a
       // blank cell at the top reads as "the sort broke"
       if (tSort.key === "supervisor") {
@@ -3810,6 +3818,12 @@ export default function Leaders() {
                     <Th label={T.thDate}      k="date"      sort={tSort} onSort={toggleSort} />
                     <Th label={T.thSubmitted} k="submitted" sort={tSort} onSort={toggleSort} />
                     <Th label={T.thLeader}    k="leader"    sort={tSort} onSort={toggleSort} />
+                    {/* Only when something on screen actually has one: a unit
+                        filing per cell puts several rows on one leader-date,
+                        and without this they render identically. Hidden
+                        entirely otherwise, so no unit that files one checklist
+                        a day pays a column for a feature it does not use. */}
+                    {anyCell && <Th label={T.thCell} k="cell" sort={tSort} onSort={toggleSort} />}
                     <Th label={T.supervisor}  k="supervisor" sort={tSort} onSort={toggleSort} />
                     <Th label={T.thScore}     k="score"     sort={tSort} onSort={toggleSort} align="center" />
                     <Th label={T.thFailed}    k="failed"    sort={tSort} onSort={toggleSort} />
@@ -3843,6 +3857,16 @@ export default function Leaders() {
                           {aiOn && <AiChip n={r.ai?.open} T={T} />}
                         </span>
                       </td>
+                      {anyCell && (
+                        <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>
+                          {/* A cell is its CODE — the workshop name is never
+                              printed. Blank on a row filed before the unit was
+                              switched, which is not missing data: that day
+                              genuinely belonged to no single cell. */}
+                          {r.cell ? <CellLink id={r.cell_id}>{r.cell}</CellLink>
+                                  : <span style={{ color: "var(--text-4)" }}>—</span>}
+                        </td>
+                      )}
                       {/* The unit's brigadir — who a leader answers to, and the
                           only way to read a run of low rows as one unit's
                           problem rather than N unrelated people's. */}

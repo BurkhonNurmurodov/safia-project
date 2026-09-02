@@ -71,10 +71,31 @@ def key(leader_id: int | None, leader_name: str | None, date_iso: str) -> str:
 
 # ── reading ──────────────────────────────────────────────────────────────────
 
-def load(db: Session) -> dict[str, LeaderDayExclusion]:
-    """Every live exclusion, by leader-day key. One query for a whole register."""
-    return {e.leader_key: e
+def load(db: Session) -> dict[tuple[str, int | None], LeaderDayExclusion]:
+    """Every live exclusion, by (leader-day key, cell). One query for a register.
+
+    From 2026-09-02 the map is keyed by the CELL as well, because a leader on a
+    per-cell unit files a separate checklist per cell and an incident that cost
+    one of them says nothing about the others.
+
+    **`cell_id is None` means the whole leader-day** — every cell of it — and
+    that is not a special case bolted on: it is what every exclusion recorded
+    before per-cell filing existed already means, and it is exactly the «all
+    this leader's cells» shortcut the tab offers, stored as one row rather than
+    as N. `for_row()` is the lookup that honours both.
+    """
+    return {(e.leader_key, e.cell_id): e
             for e in db.query(LeaderDayExclusion).all()}
+
+
+def for_row(excl: dict, leader_key: str, cell_id: int | None):
+    """The exclusion covering ONE filed row, or None.
+
+    A per-cell exclusion covers its own cell; a cell-less one covers the whole
+    leader-day, so it is the fallback for every cell. Checked in that order —
+    the narrower record is the more deliberate one.
+    """
+    return excl.get((leader_key, cell_id)) or excl.get((leader_key, None))
 
 
 def profile_days(db: Session) -> set[tuple[int, str]]:
@@ -87,7 +108,13 @@ def profile_days(db: Session) -> set[tuple[int, str]]:
     """
     return {(int(e.leader_profile_id), str(e.date))
             for e in db.query(LeaderDayExclusion)
-            .filter(LeaderDayExclusion.leader_profile_id.isnot(None)).all()}
+            .filter(LeaderDayExclusion.leader_profile_id.isnot(None),
+                    # WHOLE-day exclusions only. The AI queue and the report
+                    # sender act on a leader-DAY, and a per-cell exclusion
+                    # silences one checklist, not the day — treating it as the
+                    # day would stop reviewing and reporting the cells that
+                    # were never excluded.
+                    LeaderDayExclusion.cell_id.is_(None)).all()}
 
 
 def preload(db: Session) -> tuple[set[tuple[int, str]], dict[str, "object"]]:
@@ -168,9 +195,9 @@ def wire_for(db: Session, leader_id: int | None, leader_name: str | None,
         leader_cutoffs.active(db, leader_id, leader_name, date))
 
 
-def wire_in(excl: dict[str, LeaderDayExclusion], cuts: dict,
+def wire_in(excl: dict, cuts: dict,
             leader_id: int | None, leader_name: str | None,
-            date: str) -> dict | None:
+            date: str, cell_id: int | None = None) -> dict | None:
     """`wire_for` off two preloaded maps — what the register builds every row with.
 
     A deliberate twin, and the precedence lives here ONCE for both: the register
@@ -178,7 +205,7 @@ def wire_in(excl: dict[str, LeaderDayExclusion], cuts: dict,
     of the two decisions a day is carrying, or a leader reads one story on the
     list and another on the report the list links to.
     """
-    own = wire(excl.get(key(leader_id, leader_name, date)))
+    own = wire(for_row(excl, key(leader_id, leader_name, date), cell_id))
     if own is not None:
         return own
     return leader_cutoffs.wire(

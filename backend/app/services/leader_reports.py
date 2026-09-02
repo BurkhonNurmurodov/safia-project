@@ -197,6 +197,11 @@ def day_report(db: Session, uid: str) -> dict | None:
     return {
         "uid": row["uid"],
         "date": row["date"],
+        # The cell this checklist was filed FOR — its verifix CODE, never the
+        # workshop name. Absent on a day filed before the unit was switched,
+        # which is not missing data: that day belonged to no single cell.
+        "cell": row.get("cell"),
+        "cellId": row.get("cell_id"),
         "shift": row.get("shift"),
         "source": row.get("source"),
         "submittedAt": row.get("submitted_at"),
@@ -490,7 +495,8 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     if uid.startswith("bot:") and leader_bot.training(
             shift, row.get("manager_id"), date, leader_bot.bot_from_floors(db),
             leader_id=row.get("leader_id"),
-            overrides=leader_bot.source_overrides(db)):
+            overrides=leader_bot.source_overrides(db),
+            per_cell=row.get("cell_id") is not None):
         _park(db, key, uid, "rehearsal day — the fill-out row is the record")
         return False
 
@@ -558,7 +564,11 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
         if row.get("leader_id") else None
     )
     params = {
-        "date": date,
+        # The cell is APPENDED to the date rather than given a field of its
+        # own, so the four `leader_day_report_*` templates carry it without
+        # every one of them being re-translated. Empty on a unit filing one
+        # checklist a day, where the message reads exactly as it always has.
+        "date": f"{date} · {row['cell']}" if row.get("cell") else date,
         "leader": row.get("leader") or "—",
         "supervisor": row.get("supervisor") or (mgr.name if mgr else "—"),
         "score": score,

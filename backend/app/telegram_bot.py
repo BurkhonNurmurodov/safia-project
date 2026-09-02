@@ -25,8 +25,8 @@ from app.models import (
 )
 from app.reg_token import make_reg_token
 from app.services import (
-    action_log, leader_ai, leader_close, leader_late_proof, leader_proof,
-    leader_tasks,
+    action_log, leader_ai, leader_cells, leader_close, leader_late_proof,
+    leader_proof, leader_tasks,
 )
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
@@ -1935,18 +1935,8 @@ _LT_MESSAGES = {
     "uz": {
         "not_leader": "Siz lider emassiz.",
         "pick_profile": "Qaysi profil bilan davom etasiz?",
-        "pick_cell": "🏭 {name}\n📅 {date}\n\nWhich cell are you reporting for?",
-        "no_cells": "🏭 {name}\n\nNo cell is assigned to you, so there is no checklist to fill in today.\n\nAsk your supervisor — once a cell is assigned, continue with /tasks.",
-        "cell_pick_hint": "\n\nA separate checklist is filled in for each cell.",
-        "pick_cell": "🏭 {name}\n📅 {date}\n\nПо какой ячейке отчитываетесь?",
-        "no_cells": "🏭 {name}\n\nЗа вами не закреплена ни одна ячейка, поэтому чек-листа на сегодня нет.\n\nОбратитесь к бригадиру — после закрепления ячейки продолжите через /tasks.",
-        "cell_pick_hint": "\n\nПо каждой ячейке заполняется отдельный чек-лист.",
-        "pick_cell": "🏭 {name}\n📅 {date}\n\nҚайси ячейка учун ҳисобот берасиз?",
-        "no_cells": "🏭 {name}\n\nСизга ячейка бириктирилмаган, шунинг учун бугун тўлдирадиган чек-лист йўқ.\n\nБригадирингизга мурожаат қилинг — ячейка бириктирилгач, /tasks орқали давом этасиз.",
-        "cell_pick_hint": "\n\nҲар бир ячейка учун алоҳида чек-лист тўлдирилади.",
-        "pick_cell": "🏭 {name}\n📅 {date}\n\nQaysi yacheyka uchun hisobot berasiz?",
+        "pick_cell": "🏭 {name}\n📅 {date}\n\nQaysi yacheyka uchun hisobot berasiz?\nHar bir yacheyka uchun alohida chek-list to‘ldiriladi.",
         "no_cells": "🏭 {name}\n\nSizga yacheyka biriktirilmagan, shuning uchun bugun to‘ldiradigan chek-list yo‘q.\n\nBrigadiringizga murojaat qiling — yacheyka biriktirilgach, /tasks orqali davom etasiz.",
-        "cell_pick_hint": "\n\nHar bir yacheyka uchun alohida chek-list to‘ldiriladi.",
         "menu_title": "📋 {name}\n📅 {date}\n\nVazifani tanlang:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Kun yopilgan. Natija: {score}%",
         "btn_back": "⬅️ Orqaga",
@@ -2079,6 +2069,8 @@ _LT_MESSAGES = {
     "uz_cyrl": {
         "not_leader": "Сиз лидер эмассиз.",
         "pick_profile": "Қайси профил билан давом этасиз?",
+        "pick_cell": "🏭 {name}\n📅 {date}\n\nҚайси ячейка учун ҳисобот берасиз?\nҲар бир ячейка учун алоҳида чек-лист тўлдирилади.",
+        "no_cells": "🏭 {name}\n\nСизга ячейка бириктирилмаган, шунинг учун бугун тўлдирадиган чек-лист йўқ.\n\nБригадирингизга мурожаат қилинг — ячейка бириктирилгач, /tasks орқали давом этасиз.",
         "menu_title": "📋 {name}\n📅 {date}\n\nВазифани танланг:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Кун ёпилган. Натижа: {score}%",
         "btn_back": "⬅️ Орқага",
@@ -2210,6 +2202,8 @@ _LT_MESSAGES = {
     "ru": {
         "not_leader": "Вы не лидер.",
         "pick_profile": "С каким профилем продолжить?",
+        "pick_cell": "🏭 {name}\n📅 {date}\n\nПо какой ячейке отчитываетесь?\nПо каждой ячейке заполняется отдельный чек-лист.",
+        "no_cells": "🏭 {name}\n\nЗа вами не закреплена ни одна ячейка, поэтому чек-листа на сегодня нет.\n\nОбратитесь к бригадиру — после закрепления ячейки продолжите через /tasks.",
         "menu_title": "📋 {name}\n📅 {date}\n\nВыберите задачу:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 День закрыт. Результат: {score}%",
         "btn_back": "⬅️ Назад",
@@ -2341,6 +2335,8 @@ _LT_MESSAGES = {
     "en": {
         "not_leader": "You're not a leader.",
         "pick_profile": "Which profile do you want to continue with?",
+        "pick_cell": "🏭 {name}\n📅 {date}\n\nWhich cell are you reporting for?\nA separate checklist is filled in for each cell.",
+        "no_cells": "🏭 {name}\n\nNo cell is assigned to you, so there is no checklist to fill in today.\n\nAsk your supervisor — once a cell is assigned, continue with /tasks.",
         "menu_title": "📋 {name}\n📅 {date}\n\nPick a task:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Day closed. Score: {score}%",
         "btn_back": "⬅️ Back",
@@ -2653,7 +2649,8 @@ def _lt_camera_kb(lang: str, pid: int, task_id: int,
     (`lt:crst`) because it deletes evidence.
     """
     url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
-           f"?leader={pid}&task={task_id}")
+           f"?leader={pid}&task={task_id}"
+           + (f"&cell={cid}" if cid else ""))
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(types.InlineKeyboardButton(_lt(lang, "btn_camera"),
                                       web_app=types.WebAppInfo(url=url)))
@@ -2865,7 +2862,8 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
 
     if entry_cfg.get("proof_kind") == "camera":
         url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
-               f"?leader={pid}&task={task_id}")
+               f"?leader={pid}&task={task_id}"
+               + (f"&cell={cid}" if cid else ""))
         kb.add(types.InlineKeyboardButton(_lt(lang, "btn_camera"),
                                           web_app=types.WebAppInfo(url=url)))
         # The camera page refuses a closed task, and a chat photo for a camera
@@ -2992,6 +2990,60 @@ def _lt_autoclose(db, prof, shift: int) -> None:
         leader_ai.run_async(discover_first=False)
 
 
+def _lt_cell_menu(db, tid: int, pid: int, lang: str, chat_id: int,
+                  msg_id: int | None) -> bool:
+    """The cell picker — one row per cell this leader files a checklist for.
+
+    Returns True when it drew something, so the caller knows the leader has
+    been dealt with. False means this unit is not filing per cell and the
+    ordinary task menu is what should be shown.
+
+    A leader on a switched unit files a COMPLETE checklist per cell, so this is
+    the first thing they see and the thing «Orqaga» comes back to. Each row
+    carries that cell's own state, because the whole point of the switch is
+    that the cells are separate submissions and a picker that showed only names
+    would hide which of them is still owed. Cells are named by their VERIFIX
+    CODE and nothing else — the workshop name is never printed (the standing
+    rule); the leader's own plant says the code.
+
+    Zero cells is a SCREEN, not an empty list: the leader is owed an
+    explanation and an action, and a menu with no buttons is neither.
+    """
+    prof = db.query(RoleProfile).filter_by(id=pid).first()
+    if not prof:
+        return False
+    shift = _lt_shift(db, prof)
+    date = effective_date(shift)
+    if not leader_cells.is_per_cell(db, prof.manager_id, date):
+        return False
+
+    cells = leader_cells.filing_cells(db, prof)
+    if not cells:
+        _lt_edit(chat_id, msg_id,
+                 _lt(lang, "no_cells").format(name=prof.name), None)
+        return True
+
+    cfg = effective_leader_config(db, prof, shift)
+    want = {t for t, c in cfg.items() if c.get("enabled")}
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    for c in cells:
+        day = _lt_day(db, pid, date, c.id)
+        if day and day.closed_at:
+            mark = f"✅ {round(float(day.completion or 0))}%"
+        elif day:
+            done = len({e.task_id for e in db.query(LeaderTaskEntry)
+                        .filter_by(day_id=day.id).all()} & want)
+            mark = f"{done}/{len(want)}"
+        else:
+            mark = "—"
+        kb.add(_lt_btn(f"{c.verifix_code} · {mark}",
+                       f"lt:menu:{_lt_ref(pid, c.id)}"))
+    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{_lt_ref(pid, None)}"))
+    _lt_edit(chat_id, msg_id,
+             _lt(lang, "pick_cell").format(name=prof.name, date=date), kb)
+    return True
+
+
 def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None,
              cid: int | None = None):
     """Render the task list (or the closed-day view) — edit msg_id in place
@@ -3003,7 +3055,14 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
     shift = _lt_shift(db, prof)
     date = effective_date(shift)
     promote_due(db, shift, date)  # apply staged config due at this boundary
-    day = _lt_day(db, pid, date)
+    # A button minted BEFORE this unit was switched carries no cell, and
+    # following it would open — and on the first answer create — the cell-less
+    # day that no longer belongs to anything. A leader's chat keeps yesterday's
+    # keyboards, so this is the ordinary case on switch day, not an edge one:
+    # send them to the cell picker instead.
+    if cid is None and _lt_cell_menu(db, tid, pid, lang, chat_id, msg_id):
+        return
+    day = _lt_day(db, pid, date, cid)
     entries = _lt_entries(db, day)
     cfg = effective_leader_config(db, prof, shift)
 
@@ -3219,7 +3278,8 @@ def _lt_cmd(message: types.Message):
         for p in profs:  # finalize any bygone open days before showing the menu
             _lt_autoclose(db, p, _lt_shift(db, p))
         if len(profs) == 1:
-            _lt_menu(db, tid, profs[0].id, lang, message.chat.id, None)
+            if not _lt_cell_menu(db, tid, profs[0].id, lang, message.chat.id, None):
+                _lt_menu(db, tid, profs[0].id, lang, message.chat.id, None)
         else:
             bot.send_message(message.chat.id, _lt(lang, "pick_profile"),
                              reply_markup=_lt_profile_kb(db, profs))
@@ -3267,7 +3327,8 @@ def _lt_callback(call: types.CallbackQuery):
         if action == "prof":
             _lt_clear(tid)
             bot.answer_callback_query(call.id)
-            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
+            if not _lt_cell_menu(db, tid, pid, lang, chat_id, msg_id):
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         if action == "menu":
@@ -3402,6 +3463,8 @@ def _lt_callback(call: types.CallbackQuery):
         if action == "back":
             _lt_clear(tid)
             bot.answer_callback_query(call.id)
+            if cid and _lt_cell_menu(db, tid, pid, lang, chat_id, msg_id):
+                return
             if len(profs) > 1:
                 try:
                     bot.edit_message_text(_lt(lang, "pick_profile"), chat_id=chat_id,
@@ -3746,7 +3809,7 @@ def _lt_callback(call: types.CallbackQuery):
             # menu that looks finished.
             if leader_tasks_per_task(db, prof):
                 _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
-                                 cfg[task_id], prof, _lt_day(db, pid, date), shift)
+                                 cfg[task_id], prof, _lt_day(db, pid, date, cid), shift, cid)
                 return
             _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
@@ -4136,7 +4199,8 @@ def _lt_late_screen(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
     kb = types.InlineKeyboardMarkup(row_width=1)
     if camera:
         url = (f"{settings.webapp_url.rstrip('/')}/proof/camera"
-               f"?leader={pid}&task={task_id}&late=1")
+               f"?leader={pid}&task={task_id}&late=1"
+               + (f"&cell={cid}" if cid else ""))
         kb.add(types.InlineKeyboardButton(_lt(lang, "btn_late_cam"),
                                           web_app=types.WebAppInfo(url=url)))
         kb.add(_lt_btn(_lt(lang, "btn_late_upload"), f"lt:lgo:{_lt_ref(pid, cid)}:{task_id}"))

@@ -3920,6 +3920,21 @@ def report_leader_deadline_rules() -> None:
     except Exception as exc:
         print(f"[startup] leader deadline self-check skipped: {exc}")
         return
+    # The per-cell configuration is checked in the same breath and reported
+    # through the same door: an operator who switched a unit on wants ONE
+    # message about what that unit will now do, not two.
+    try:
+        from app.database import SessionLocal
+        from app.services.leader_cells import self_check as _cell_check
+        db = SessionLocal()
+        try:
+            for line in _cell_check(db):
+                print(f"[startup]   · per-cell: {line}")
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[startup] per-cell self-check skipped: {exc}")
+
     if not bad:
         print("[startup] leader deadline rules: OK")
         return

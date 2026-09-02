@@ -1026,7 +1026,8 @@ def discover(db: Session) -> int:
                 continue
             if leader_bot.training(shifts.get(d.manager_id), d.manager_id,
                                    d.date, rehearsing,
-                                   leader_id=d.leader_id, overrides=picks):
+                                   leader_id=d.leader_id, overrides=picks,
+                                   per_cell=d.cell_id is not None):
                 continue
             if leader_exclusions.excluded(db, d.leader_id, d.date,
                                           pairs=dropped, cuts=cut):
@@ -1246,7 +1247,8 @@ def undiscovered(db: Session, *, date_from: str | None = None,
     # ── bot layer ────────────────────────────────────────────────────────────
     # Unit and leader are stamped on the day row, so nothing here needs matching.
     days_q = db.query(LeaderTaskDay.id, LeaderTaskDay.manager_id,
-                      LeaderTaskDay.leader_id, LeaderTaskDay.date).filter(
+                      LeaderTaskDay.leader_id, LeaderTaskDay.date,
+                      LeaderTaskDay.cell_id).filter(
         LeaderTaskDay.closed_at.isnot(None))
     if floor:
         days_q = days_q.filter(LeaderTaskDay.date >= floor)
@@ -1254,7 +1256,7 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         days_q = days_q.filter(LeaderTaskDay.date >= date_from)
     if date_to:
         days_q = days_q.filter(LeaderTaskDay.date <= date_to)
-    days = {d: (m, l, dt) for d, m, l, dt in days_q.all()}
+    days = {d: (m, l, dt, c) for d, m, l, dt, c in days_q.all()}
 
     if days:
         # A day's shift is its unit's shift — the rule discovery stamps with.
@@ -1280,9 +1282,10 @@ def undiscovered(db: Session, *, date_from: str | None = None,
         for eid, day_id, task_id in entries:
             if bot_ref(eid) in known:
                 continue
-            mgr, ldr, when = days.get(day_id, (None, None, None))
+            mgr, ldr, when, cell = days.get(day_id, (None, None, None, None))
             if leader_bot.training(shifts.get(mgr), mgr, when, rehearsing,
-                                   leader_id=ldr, overrides=picks):
+                                   leader_id=ldr, overrides=picks,
+                                   per_cell=cell is not None):
                 continue
             # Excluded days are not "unchecked work waiting" — counting them
             # here would promise «N tekshirilmagan» rows that «Tekshirish» then
@@ -1383,7 +1386,8 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
                 mgr.shift if mgr else None, day.manager_id, day.date,
                 leader_bot.bot_from_floors(db),
                 leader_id=day.leader_id,
-                overrides=leader_bot.source_overrides(db)):
+                overrides=leader_bot.source_overrides(db),
+                per_cell=day.cell_id is not None):
             return 0
         # Excluded from the results by an admin: nothing this verdict could say
         # can move a number, and the day sends no report. `force` — the admin's
@@ -1499,7 +1503,8 @@ def queue_task(db: Session, day: LeaderTaskDay, entry: LeaderTaskEntry, *,
     if not force and leader_bot.training(
             mgr.shift if mgr else None, day.manager_id, day.date,
             leader_bot.bot_from_floors(db),
-            leader_id=day.leader_id, overrides=leader_bot.source_overrides(db)):
+            leader_id=day.leader_id, overrides=leader_bot.source_overrides(db),
+            per_cell=day.cell_id is not None):
         return 0                       # rehearsal — see queue_report
     if not force and leader_exclusions.excluded(db, day.leader_id, day.date):
         return 0                       # out of the results — see queue_report

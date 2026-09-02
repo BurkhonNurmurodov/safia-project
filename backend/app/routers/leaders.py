@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    AppSetting, LeaderAiDispute, LeaderAiReview, LeaderChecklist,
+    AppSetting, Cell, LeaderAiDispute, LeaderAiReview, LeaderChecklist,
     LeaderLateProof, LeaderLateProofMedia, LeaderLateRequest, LeaderSyncMeta,
     LeaderTaskDay, LeaderTaskOverride, Manager,
 )
@@ -24,8 +24,8 @@ from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
 from app.services import (
-    action_log, leader_ai, leader_bot, leader_cutoffs, leader_dispute,
-    leader_exclusions, leader_late_proof, leader_reports)
+    action_log, leader_ai, leader_bot, leader_cells, leader_cutoffs,
+    leader_dispute, leader_exclusions, leader_late_proof, leader_reports)
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -610,11 +610,16 @@ def get_leaders(
             # may have been written under a sheet spelling that never resolved,
             # and that leader can still hold bot days.
             b["excluded"] = leader_exclusions.wire_in(
-                excl, cuts, b.get("leader_id"), b.get("leader"), b["date"])
+                excl, cuts, b.get("leader_id"), b.get("leader"), b["date"],
+                b.get("cell_id"))
 
     # A closed bot day REPLACES the sheet row for the same person and date —
     # the leader answered twice through two channels, and the bot is the live
     # one. Sheet rows the bot never covered stay as history.
+    # A closed bot day displaces the sheet row for its (leader, date). On a
+    # per-cell unit several bot rows share that pair — the sheet row is
+    # displaced once, by all of them together, which is what «the bot is the
+    # live layer for this day» means when the day is filed cell by cell.
     filed = {(b["leader_id"], b["date"]) for b in bot_rows}
     data = [r for r in sheet_data if (r["leader_id"], r["date"]) not in filed] + bot_rows
 
@@ -659,6 +664,17 @@ def get_leaders(
         # carries the count, not the links (see _wire_task).
         row["tasks"] = [_wire_task(t) for t in (row.get("tasks") or [])]
 
+    # The per-cell floors and each leader's cells, for the roster below: on a
+    # switched unit a leader owes one checklist PER CELL, and a "not filed" view
+    # built on one-per-leader would understate exactly the units that changed.
+    cell_floors = leader_cells.floors(db)
+    roster_cells: dict[int, list] = {}
+    if cell_floors:
+        for c in (db.query(Cell)
+                  .filter(Cell.leader_id.isnot(None))
+                  .order_by(Cell.verifix_code).all()):
+            roster_cells.setdefault(c.leader_id, []).append(c)
+
     # Who was SUPPOSED to file. The feed above answers "what was submitted", and
     # nothing on the platform answered "by whom, on a day where the answer was
     # nothing" — which is the only question the exclusions tab can build a
@@ -694,6 +710,15 @@ def get_leaders(
                 "manager_id": p.manager_id,
                 "supervisor": sup_display.get(p.manager_id) or unit.name,
                 "shift": unit.shift,
+                # What this leader OWES on a day their unit files per cell:
+                # one checklist per cell, so «Topshirilmagan» counts the cells
+                # they did not file rather than a single missing day. The floor
+                # travels with it because the answer changes on that date and
+                # the client scores whole periods — a leader owed one checklist
+                # on Monday and three from Tuesday.
+                "cell_from": cell_floors.get(p.manager_id) or None,
+                "cells": [{"id": c.id, "code": c.verifix_code}
+                          for c in roster_cells.get(p.id, [])],
                 "cutoff": str(cut.from_date)[:10] if cut else None,
                 "cutoff_reason": (cut.reason or "") if cut else None,
                 "cutoff_by": (cut.set_by or None) if cut else None,

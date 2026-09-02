@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, Calendar, Camera, CheckCircle, ChevronDown, ChevronRight,
-  Clock, GraduationCap, History, ImagePlus, ListChecks, Radio, RotateCcw,
+  Clock, GraduationCap, Grid3x3, History, ImagePlus, ListChecks, Radio, RotateCcw,
   Trash2, Type, UserCog, Users, X,
 } from "lucide-react";
 import Modal from "../../components/ui/Modal";
@@ -256,6 +256,14 @@ export default function LeaderTasksAdmin() {
   // Opening a rehearsal window takes the day's already-queued proofs back out
   // of the AI queue, so the press says how many — a silent drop of work the
   // admin can see queued on the strip reads as the strip being wrong.
+  // Per-cell filing has its OWN mutation and its own endpoint: it takes a
+  // LIST, so this one row and a future bulk press are one call and one
+  // transaction — two parallel single writes would race the unit row's key.
+  const cellFromMut = useMutation({
+    mutationFn: (b) => api.put("/admin/leader-tasks/cell-from", b).then((r) => r.data),
+    onSuccess: () => { invalidate(); setUnit(null); ping(); },
+    onError: onErr,
+  });
   const ptMut = useMutation({
     mutationFn: (b) => api.put("/admin/leader-tasks/unit", b).then((r) => r.data),
     onSuccess: (d) => {
@@ -1166,7 +1174,7 @@ export default function LeaderTasksAdmin() {
                               className="p-0.5 -ml-1 rounded transition-opacity hover:opacity-70 disabled:opacity-30 flex-shrink-0" style={{ color: "var(--text-3)" }}>
                               {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
-                            <button type="button" onClick={() => setUnit({ mid: m.id, per_task_close: !!m.per_task_close, bot_from: m.bot_from || "" })}
+                            <button type="button" onClick={() => setUnit({ mid: m.id, per_task_close: !!m.per_task_close, bot_from: m.bot_from || "", cell_from: m.cell_from || "" })}
                               title={t("admin.ltasks.unitSettings")}
                               className="font-medium truncate text-left hover:opacity-70 transition-opacity"
                               style={{ textDecorationLine: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3, textDecorationColor: "var(--border-md)" }}>
@@ -1186,6 +1194,16 @@ export default function LeaderTasksAdmin() {
                                 className="inline-flex items-center gap-0.5 flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-bold"
                                 style={{ background: "rgba(234,179,8,0.14)", color: C_WARN, border: "1px solid rgba(234,179,8,0.35)" }}>
                                 <GraduationCap size={10} />{m.bot_from.slice(5).replace("-", ".")}
+                              </span>
+                            )}
+                            {/* Files ONE CHECKLIST PER CELL from this day. Marked
+                                here because it multiplies what the unit's leaders
+                                are asked for and nothing else on the grid says so. */}
+                            {m.cell_from && (
+                              <span title={t("admin.ltasks.cellFromChip").replace("{date}", m.cell_from).replace("{n}", m.cells_n ?? 0)}
+                                className="inline-flex items-center gap-0.5 flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-bold"
+                                style={{ background: "rgba(59,130,246,0.14)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.35)" }}>
+                                <Grid3x3 size={10} />{m.cell_from.slice(5).replace("-", ".")}
                               </span>
                             )}
                             {m.shift && <span className="px-1 py-0.5 rounded text-[10px] font-bold flex-shrink-0" style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}>S{m.shift}</span>}
@@ -1427,6 +1445,46 @@ export default function LeaderTasksAdmin() {
             <p className="text-[11px] leading-snug rounded-lg px-2 py-1.5"
               style={{ background: "rgba(234,179,8,0.10)", color: "var(--text-2)", border: "1px solid rgba(234,179,8,0.30)" }}>
               {t("admin.ltasks.perTaskWarn")}
+            </p>
+          )}
+
+          {/* Per-cell filing. Its own mutation, not part of the Save above:
+              this is the switch that changes how many checklists the unit's
+              leaders owe, and it is applied — and rolled back — on its own. */}
+          <FormField label={t("admin.ltasks.cellFrom")}
+            hint={unit.cell_from
+              ? t("admin.ltasks.cellFromHint.on").replace("{date}", unit.cell_from)
+                  .replace("{n}", mgrById.get(unit.mid)?.cells_n ?? 0)
+              : t("admin.ltasks.cellFromHint.off")}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <DateRangePicker single dateFrom={unit.cell_from || ""} dateTo={unit.cell_from || ""}
+                setDateFrom={(v) => setUnit((u) => ({ ...u, cell_from: v || "" }))}
+                setDateTo={() => {}} triggerClassName="px-3 py-2 text-sm" />
+              {(() => {
+                const next = nextForShift(mgrById.get(unit.mid)?.shift);
+                return next && unit.cell_from !== next ? (
+                  <Button size="md" variant="secondary"
+                    onClick={() => setUnit((u) => ({ ...u, cell_from: next }))}>
+                    {t("admin.ltasks.botFromNext")}
+                  </Button>
+                ) : null;
+              })()}
+              {unit.cell_from && (
+                <Button size="md" variant="ghost"
+                  onClick={() => setUnit((u) => ({ ...u, cell_from: "" }))}>
+                  {t("admin.ltasks.botFromClear")}
+                </Button>
+              )}
+              <Button size="md" loading={cellFromMut.isPending}
+                onClick={() => cellFromMut.mutate({ rows: [{ manager_id: unit.mid, cell_from: unit.cell_from || "" }] })}>
+                {t("admin.ltasks.save")}
+              </Button>
+            </div>
+          </FormField>
+          {(mgrById.get(unit.mid)?.cells_n ?? 0) === 0 && (
+            <p className="text-[11px] leading-snug rounded-lg px-2 py-1.5"
+              style={{ background: "rgba(239,68,68,0.10)", color: "var(--text-2)", border: "1px solid rgba(239,68,68,0.30)" }}>
+              {t("admin.ltasks.cellFromNoCells")}
             </p>
           )}
 

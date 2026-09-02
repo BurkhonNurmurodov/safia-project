@@ -405,6 +405,10 @@ export default function ProofCamera() {
 
   const params = new URLSearchParams(window.location.search);
   const leaderId = Number(params.get("leader")) || null;
+  // WHICH cell's checklist these shots belong to, on a unit that files one per
+  // cell. Absent on every other unit, and the server re-checks it against the
+  // cells this leader actually owns — the parameter is typeable.
+  const cellId = Number(params.get("cell")) || null;
   const [taskId, setTaskId] = useState(Number(params.get("task")) || null);
   // `?late=1` is a REQUEST, never the authority. The parameter is typeable, so
   // the server decides whether a late filing is actually open for this task and
@@ -438,10 +442,11 @@ export default function ProofCamera() {
 
   /* ── session: the task's rule, the roll, and the server's clock ─────────── */
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["proof-session", leaderId, taskId, lateAsked],
+    queryKey: ["proof-session", leaderId, taskId, lateAsked, cellId],
     queryFn: () => api
       .get("/api/leader-proof/session",
-        { params: { leader: leaderId, task: taskId, ...(lateAsked ? { late: 1 } : {}) } })
+        { params: { leader: leaderId, task: taskId, ...(cellId ? { cell: cellId } : {}),
+                    ...(lateAsked ? { late: 1 } : {}) } })
       .then((r) => r.data),
     enabled: !!taskId,
     retry: false,
@@ -821,6 +826,10 @@ export default function ProofCamera() {
     const fd = new FormData();
     fd.append("leader", String(item.leader));
     fd.append("task", String(item.task));
+    // The cell travels WITH the blob through the offline queue: a shot flushed
+    // after the leader moved to another cell's checklist must still land on the
+    // one it was taken for.
+    if (item.cell) fd.append("cell", String(item.cell));
     fd.append("captured_ms", String(Math.round(item.capturedMs)));
     if (item.phoneMs) fd.append("phone_ms", String(Math.round(item.phoneMs)));
     if (item.slot != null) fd.append("slot", String(item.slot));
@@ -918,7 +927,7 @@ export default function ProofCamera() {
     if (!shot || saving) return;
     setSaving(true);
     const item = {
-      leader: leaderId, task: taskId, slot: retakeSlot,
+      leader: leaderId, task: taskId, cell: cellId, slot: retakeSlot,
       capturedMs: shot.ms, phoneMs: shot.phoneMs, blob: shot.blob,
       key: shot.key, late: lateMode,
     };

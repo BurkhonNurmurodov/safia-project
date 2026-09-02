@@ -1,7 +1,10 @@
 # The leader checklist, PER CELL — the switching plan
 
-**Status: PLAN ONLY — nothing implemented.** Analysis 2026-08-30, decisions taken with the
-operator 2026-09-02, citations verified against `main` at `VERSION` 4.23.1.
+**Status: IMPLEMENTED in v4.24.0 (2026-09-02).** Analysis 2026-08-30, decisions taken with
+the operator 2026-09-02. Shipped inert — every unit's `cell_from` is NULL, so nobody files
+per cell until an admin enrols a unit by hand on the ltasks matrix. See the «ONE checklist
+per CELL» section of CLAUDE.md for what actually landed; this document keeps the analysis,
+the rejected shapes and the reasoning behind each decision.
 Read it whole before touching a line; the order of the stages is the plan.
 
 ---
