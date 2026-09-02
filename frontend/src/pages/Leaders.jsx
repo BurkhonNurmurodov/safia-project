@@ -2171,10 +2171,6 @@ export default function Leaders() {
   // table-level filters (independent of the page filters above)
   const [tSearch, setTSearch] = usePersistentState(`${prefix}_table_search`, "");
   const [tBand, setTBand] = usePersistentState(`${prefix}_table_band`, "all"); // all | good | mid | bad
-  // Whether the CELL column is worth a column at all — true only once a
-  // switched unit's rows are on screen. Computed off the rows themselves, so
-  // the table never shows a column of dashes for units filing one a day.
-  const anyCell = useMemo(() => rows.some((r) => r.cell), [rows]);
   const [tSort, setTSort] = usePersistentState(`${prefix}_table_sort`, { key: "score", dir: "asc" });
 
   const { data, isLoading, isFetching, isError, error } = useQuery({
@@ -2185,6 +2181,10 @@ export default function Leaders() {
   // under «All» and drop out when the Smena filter narrows — visible somewhere,
   // never padded onto a shift they may not belong to.
   const rows = useMemo(() => data?.data ?? [], [data]);
+  // Whether the CELL column is worth a column at all — true only once a
+  // switched unit's rows are on screen. Computed off the rows themselves, so
+  // the table never shows a column of dashes for units filing one a day.
+  const anyCell = useMemo(() => rows.some((r) => r.cell), [rows]);
   // Who stopped counting, and from when — one entry per DECISION, keyed by the
   // same display name `slotsBy` groups by. Rows carry the cutoff on the days a
   // cut leader actually FILED; these carry the days nobody filed, which is most
