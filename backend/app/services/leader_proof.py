@@ -207,20 +207,31 @@ def leader_shift(db: Session, prof: RoleProfile) -> int:
     return mgr.shift if (mgr and mgr.shift in (1, 2)) else 1
 
 
-def open_day(db: Session, prof: RoleProfile, *, create: bool) -> LeaderTaskDay | None:
+def open_day(db: Session, prof: RoleProfile, *, create: bool,
+             cell_id: int | None = None) -> LeaderTaskDay | None:
     """The leader's CURRENT checklist day, or None when it is already closed.
 
     `create=False` for reads, so merely opening the camera page never leaves a
     day row behind for a leader who looked and left.
+
+    `cell_id` names WHICH checklist on a unit filing per cell — a leader there
+    holds one open day per cell, so a caller that omits it would always get the
+    cell-less one. It is matched with `IS NULL` rather than `== None`, because
+    an equality test against NULL matches nothing and would hand every camera
+    read a freshly created duplicate day.
     """
     shift = leader_shift(db, prof)
     date = leader_tasks.effective_date(shift)
     leader_tasks.promote_due(db, shift, date)  # staged config due at this boundary
-    day = db.query(LeaderTaskDay).filter_by(leader_id=prof.id, date=date).first()
+    q = db.query(LeaderTaskDay).filter_by(leader_id=prof.id, date=date)
+    q = q.filter(LeaderTaskDay.cell_id == cell_id) if cell_id \
+        else q.filter(LeaderTaskDay.cell_id.is_(None))
+    day = q.first()
     if day and day.closed_at:
         return None
     if not day and create:
-        day = LeaderTaskDay(leader_id=prof.id, manager_id=prof.manager_id, date=date)
+        day = LeaderTaskDay(leader_id=prof.id, manager_id=prof.manager_id, date=date,
+                            cell_id=cell_id)
         db.add(day)
         db.flush()
     return day

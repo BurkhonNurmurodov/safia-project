@@ -1036,9 +1036,12 @@ def unit_bot_from_map(db: Session) -> dict[int, str]:
                                       LeaderUnitSetting.bot_from).all() if f}
 
 
+_KEEP = object()   # "this call is not about that field" — see set_unit_settings
+
+
 def set_unit_settings(db: Session, *, manager_id: int, per_task_close: bool,
-                      bot_from: str | None) -> None:
-    """Write a unit's settings — BOTH fields, in ONE call, on purpose.
+                      bot_from: str | None, cell_from=_KEEP) -> None:
+    """Write a unit's settings — its fields, in ONE call, on purpose.
 
     They materialise the same `leader_unit_settings` row, and a unit that has
     never been edited has none: fired as two requests, two of them INSERT it
@@ -1057,16 +1060,28 @@ def set_unit_settings(db: Session, *, manager_id: int, per_task_close: bool,
     `bot_from` moves only which layer is READ, so it is safe to set, clear or
     move at any time and takes effect on the next page load — including
     backwards, which un-does a rehearsal window opened by mistake.
+
+    `cell_from` is the per-cell filing floor (`services/leader_cells.py`) and is
+    the one field a caller may DECLINE to mention: it is written from its own
+    admin register, while the «Brigada sozlamalari» modal writes the other two,
+    so it defaults to the `_KEEP` sentinel and is left exactly as it is unless
+    the caller passes something. `None` CLEARS it — that is the rollback, and it
+    has to stay expressible, which is why "not mentioned" and "cleared" cannot
+    be the same value.
     """
     bot_from = (bot_from or "").strip() or None
+    keep_cell = cell_from is _KEEP
+    cell_from = None if keep_cell else ((cell_from or "").strip() or None)
     row = db.query(LeaderUnitSetting).filter_by(manager_id=manager_id).first()
     if not row:
-        if not per_task_close and not bot_from:
+        if not per_task_close and not bot_from and not cell_from:
             return                       # nothing stored, nothing to clear
         row = LeaderUnitSetting(manager_id=manager_id)
         db.add(row)
     row.per_task_close = bool(per_task_close)
     row.bot_from = bot_from
+    if not keep_cell:
+        row.cell_from = cell_from
     db.commit()
 
 

@@ -1518,13 +1518,26 @@ class LeaderTaskDay(Base):
     (leader, date) still wins over this one. The `date` follows the leader's
     shift boundary (services/leader_tasks.effective_date): shift 1 is the plain
     calendar day, shift 2 turns at 17:00 — the hour that shift starts, and the
-    hour its 17:00 → 09:00 filing window opens."""
+    hour its 17:00 → 09:00 filing window opens.
+
+    2026-09-02: a day may also belong to ONE CELL. On a unit switched to
+    per-cell filing (`LeaderUnitSetting.cell_from`), a leader files a COMPLETE
+    separate checklist for each cell they own — own day row, own score, own
+    report page, own DM — so `cell_id` is what tells those days apart. NULL =
+    filed before the unit's floor, or on a unit that was never switched: those
+    rows are exactly what they always were, which is why the switch can be
+    cleared and why history never moves. See `services/leader_cells.py`."""
     __tablename__ = "leader_task_days"
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
     leader_id  = Column(Integer, ForeignKey("role_profiles.id"), nullable=False, index=True)
     manager_id = Column(Integer, nullable=False, index=True)  # supervisor unit at save time
     date       = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
+    # The cell this checklist is FOR — NULL on every pre-switch day. Read
+    # through `leader_cells.expected_days()`; never derived from the leader's
+    # current cell list, because a cell reassigned tomorrow must not rewrite
+    # which cell yesterday's checklist was filed against.
+    cell_id    = Column(Integer, ForeignKey("cells.id"), nullable=True, index=True)
     closed_at  = Column(DateTime(timezone=True), nullable=True)
     completion = Column(Numeric(6, 2), nullable=True)  # weighted %, stamped at close
     # Task ids an ADMIN took back on this day (leader_close.reopen_task). Kept
@@ -1536,7 +1549,20 @@ class LeaderTaskDay(Base):
     # deadline, never off a deadline altogether.
     reopened   = Column(JSONB, nullable=True)
 
-    __table_args__ = (UniqueConstraint("leader_id", "date", name="uq_ltask_day"),)
+    # ONE checklist per (leader, date, cell) — an EXPRESSION index, not a plain
+    # UniqueConstraint, and that is load-bearing. Postgres treats NULLs as
+    # DISTINCT inside a unique key, so `UNIQUE(leader_id, date, cell_id)` would
+    # cheerfully accept two cell-less days for one leader and hand the bot an
+    # arbitrary one of them — the exact breakage this constraint exists to
+    # prevent, reintroduced by widening it naively. `COALESCE(cell_id, 0)`
+    # folds every pre-switch row onto one value, so the guarantee for a
+    # cell-less day is byte-for-byte the old one and no data migration is
+    # needed. `startup.add_leader_task_cell` swaps the constraint for this
+    # index on an existing box; `create_all` builds it directly on a new one.
+    __table_args__ = (
+        Index("uq_ltask_day", "leader_id", "date",
+              func.coalesce(cell_id, 0), unique=True),
+    )
 
 
 class LeaderTaskEntry(Base):
@@ -1577,6 +1603,13 @@ class LeaderTaskCapture(Base):
     stage       = Column(String, nullable=False)  # photos | reason | confirm_reason
     leader_id   = Column(Integer, nullable=False)  # role_profiles.id
     task_id     = Column(Integer, nullable=False)
+    # WHICH CELL's checklist this capture belongs to on a per-cell unit. NULL =
+    # a cell-less day, i.e. every capture before the switch. It must be stored
+    # rather than re-derived when the photos land: the leader can leave the
+    # capture open, walk to another cell's menu and come back, and a capture
+    # that re-resolved the cell at save time would file the shots against
+    # whichever cell was touched last.
+    cell_id     = Column(Integer, nullable=True)
     chat_id     = Column(BigInteger, nullable=False)
     message_id  = Column(BigInteger, nullable=True)   # counter / prompt message
     min_media   = Column(Integer, nullable=False, default=1)
@@ -1629,6 +1662,24 @@ class LeaderUnitSetting(Base):
     # where the merge rule lives; a floor earlier than the camera pilot's own
     # MERGE_FROM cannot resurrect bot days that predate it.
     bot_from       = Column(String(10), nullable=True)
+    # `cell_from` is the third, and the same shape for the same reason: the day
+    # this unit's leaders start filing ONE CHECKLIST PER CELL instead of one per
+    # day. NULL = not switched, which is every unit until an admin turns one on
+    # — the operator's standing instruction (2026-09-02) is that nobody is
+    # switched by default and units are enrolled by hand.
+    #
+    # A DATE and not a boolean, because the switch must not reach backwards:
+    # days before it were filed as one-per-leader and are read exactly as they
+    # always were, so turning a unit on cannot move a score anybody has already
+    # been told. Clearing it is the rollback and needs no migration — new days
+    # go back to being cell-less from the next effective date, and the per-cell
+    # days already filed stay readable and scored.
+    #
+    # Compared against `leader_tasks.effective_date(shift)`, never against the
+    # calendar day: shift 2's night belongs to the date its 17:00 boundary
+    # opened, so a floor of "today" set at 15:00 makes tonight the first
+    # per-cell night. `services/leader_cells.py` is THE reader.
+    cell_from      = Column(String(10), nullable=True)
 
 
 class IdleSourceSetting(Base):
@@ -3111,15 +3162,23 @@ class LeaderDayExclusion(Base):
     record, never a third state every reader would have to spell out.
     """
     __tablename__ = "leader_day_exclusions"
-    __table_args__ = (
-        UniqueConstraint("leader_key", "date", name="uq_leader_day_exclusion"),
-        Index("ix_leader_day_excl_date", "date"),
-    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     # `leader_exclusions.key()` — "p<profile_id>" or "n<folded name>"
     leader_key = Column(String(200), nullable=False, index=True)
     date = Column(String(10), nullable=False, index=True)            # "YYYY-MM-DD"
+    # WHICH of that leader's cell-checklists this forgives, on a per-cell unit.
+    # NULL = the whole leader-day, which is every exclusion recorded before
+    # per-cell filing existed and every one on an un-switched unit.
+    #
+    # Per CELL because a per-cell day is a submission of its own: an incident
+    # that cost cell 6722 its night says nothing about 6732, and forgiving both
+    # would take a real filing out of the average. Excluding one is
+    # arithmetically free on the client — `slotsBy` marks a date `off` only
+    # when it has NO surviving slot, so the day stands on the cell that
+    # counted. The «all this leader's cells» shortcut is the tab sending one
+    # batch of per-cell rows, not a second kind of record.
+    cell_id = Column(Integer, nullable=True, index=True)
     # Snapshotted so the register can name who was excluded even after a rename
     # or a profile deletion — the log's rule: a rename must not rewrite what the
     # record says happened.
@@ -3133,6 +3192,16 @@ class LeaderDayExclusion(Base):
     score_at = Column(Float, nullable=True)
     set_by = Column(String(160), nullable=True)
     set_at = Column(DateTime, nullable=True)
+
+    # Expression index for the same reason `uq_ltask_day` is one: NULLs are
+    # DISTINCT in a Postgres unique key, so a plain three-column constraint
+    # would let one leader-day be excluded twice over. Declared after the
+    # columns because it names one of them.
+    __table_args__ = (
+        Index("uq_leader_day_exclusion", "leader_key", "date",
+              func.coalesce(cell_id, 0), unique=True),
+        Index("ix_leader_day_excl_date", "date"),
+    )
 
 
 class LeaderCutoff(Base):

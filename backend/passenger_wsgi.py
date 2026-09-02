@@ -59,6 +59,7 @@ try:
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
         add_cell_shift_times,
+        add_leader_task_cell,
         add_late_proof_provenance,
         migrate_dispute_stages,
         create_action_log, report_unclassified_routes,
@@ -134,6 +135,7 @@ try:
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     add_cell_shift_times()
+    add_leader_task_cell()
     add_late_proof_provenance()
     migrate_dispute_stages()
     create_action_log()

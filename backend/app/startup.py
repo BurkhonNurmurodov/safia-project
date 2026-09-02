@@ -4184,3 +4184,65 @@ def seed_snabjenets_english_label() -> None:
         print(f"[startup] job title EN label skipped: {exc}")
     finally:
         db.close()
+
+
+def add_leader_task_cell() -> None:
+    """2026-09-02: the leader checklist can be filed ONCE PER CELL.
+
+    On a unit switched by `LeaderUnitSetting.cell_from`, a leader files a
+    COMPLETE separate checklist for each cell they own — own day row, own
+    score, own report page, own DM — so `leader_task_days` gains `cell_id` and
+    its uniqueness widens to (leader, date, cell).
+
+    **The constraint becomes an EXPRESSION index and that is the whole point of
+    this migration.** Postgres treats NULLs as DISTINCT inside a unique key, so
+    a plain `UNIQUE(leader_id, date, cell_id)` would accept two cell-less days
+    for one leader and hand the bot an arbitrary one of them — reintroducing,
+    by widening it, exactly the breakage the original constraint prevented.
+    `COALESCE(cell_id, 0)` folds every pre-switch row onto one value, so the
+    guarantee for a cell-less day is byte-for-byte the old one.
+
+    Nothing is backfilled and nothing is switched on: every existing row keeps
+    `cell_id NULL` and every unit keeps `cell_from NULL`, which is the state
+    the platform behaved in yesterday. The operator enrols units by hand.
+
+    Idempotent by construction (ADD COLUMN IF NOT EXISTS / DROP CONSTRAINT IF
+    EXISTS / CREATE UNIQUE INDEX IF NOT EXISTS), so it carries no one-shot flag
+    — there is no decision here to re-run, only a shape to reach.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE leader_task_days "
+                        "ADD COLUMN IF NOT EXISTS cell_id INTEGER"))
+        db.execute(text("ALTER TABLE leader_task_captures "
+                        "ADD COLUMN IF NOT EXISTS cell_id INTEGER"))
+        db.execute(text("ALTER TABLE leader_unit_settings "
+                        "ADD COLUMN IF NOT EXISTS cell_from VARCHAR(10)"))
+        db.execute(text("ALTER TABLE leader_day_exclusions "
+                        "ADD COLUMN IF NOT EXISTS cell_id INTEGER"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_ltask_day_cell "
+                        "ON leader_task_days (cell_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_leader_day_excl_cell "
+                        "ON leader_day_exclusions (cell_id)"))
+
+        # Swap each old two-column constraint for the three-column expression
+        # index. Order matters: the index is created BEFORE the constraint is
+        # dropped would be ideal, but the two cannot coexist under one name —
+        # so drop, then create, inside one transaction, which holds the
+        # guarantee across the gap.
+        db.execute(text("ALTER TABLE leader_task_days "
+                        "DROP CONSTRAINT IF EXISTS uq_ltask_day"))
+        db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_ltask_day "
+                        "ON leader_task_days (leader_id, date, COALESCE(cell_id, 0))"))
+        db.execute(text("ALTER TABLE leader_day_exclusions "
+                        "DROP CONSTRAINT IF EXISTS uq_leader_day_exclusion"))
+        db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_leader_day_exclusion "
+                        "ON leader_day_exclusions (leader_key, date, COALESCE(cell_id, 0))"))
+        db.commit()
+        print("[startup] leader checklist per-cell columns ready "
+              "(nothing switched on — units are enrolled by hand)")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] leader per-cell migration skipped: {exc}")
+    finally:
+        db.close()

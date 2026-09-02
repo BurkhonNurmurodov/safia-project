@@ -1935,6 +1935,18 @@ _LT_MESSAGES = {
     "uz": {
         "not_leader": "Siz lider emassiz.",
         "pick_profile": "Qaysi profil bilan davom etasiz?",
+        "pick_cell": "🏭 {name}\n📅 {date}\n\nWhich cell are you reporting for?",
+        "no_cells": "🏭 {name}\n\nNo cell is assigned to you, so there is no checklist to fill in today.\n\nAsk your supervisor — once a cell is assigned, continue with /tasks.",
+        "cell_pick_hint": "\n\nA separate checklist is filled in for each cell.",
+        "pick_cell": "🏭 {name}\n📅 {date}\n\nПо какой ячейке отчитываетесь?",
+        "no_cells": "🏭 {name}\n\nЗа вами не закреплена ни одна ячейка, поэтому чек-листа на сегодня нет.\n\nОбратитесь к бригадиру — после закрепления ячейки продолжите через /tasks.",
+        "cell_pick_hint": "\n\nПо каждой ячейке заполняется отдельный чек-лист.",
+        "pick_cell": "🏭 {name}\n📅 {date}\n\nҚайси ячейка учун ҳисобот берасиз?",
+        "no_cells": "🏭 {name}\n\nСизга ячейка бириктирилмаган, шунинг учун бугун тўлдирадиган чек-лист йўқ.\n\nБригадирингизга мурожаат қилинг — ячейка бириктирилгач, /tasks орқали давом этасиз.",
+        "cell_pick_hint": "\n\nҲар бир ячейка учун алоҳида чек-лист тўлдирилади.",
+        "pick_cell": "🏭 {name}\n📅 {date}\n\nQaysi yacheyka uchun hisobot berasiz?",
+        "no_cells": "🏭 {name}\n\nSizga yacheyka biriktirilmagan, shuning uchun bugun to‘ldiradigan chek-list yo‘q.\n\nBrigadiringizga murojaat qiling — yacheyka biriktirilgach, /tasks orqali davom etasiz.",
+        "cell_pick_hint": "\n\nHar bir yacheyka uchun alohida chek-list to‘ldiriladi.",
         "menu_title": "📋 {name}\n📅 {date}\n\nVazifani tanlang:",
         "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Kun yopilgan. Natija: {score}%",
         "btn_back": "⬅️ Orqaga",
@@ -2534,8 +2546,41 @@ def _lt_profile_kb(db, profs: list[RoleProfile]) -> types.InlineKeyboardMarkup:
     return kb
 
 
-def _lt_day(db, pid: int, date: str) -> LeaderTaskDay | None:
-    return db.query(LeaderTaskDay).filter_by(leader_id=pid, date=date).first()
+def _lt_ref(pid: int, cid: int | None) -> str:
+    """The `pid` SEGMENT of an `lt:` callback — "192", or "192c108" per cell.
+
+    The cell rides INSIDE the segment that already carries the profile id, so
+    no callback grows a field and no handler's `parts[…]` indexing moves: there
+    are forty emitters and one parser, and re-indexing the emitters is how a
+    button silently starts meaning something else. The longest shape this makes
+    (`lt:tcconf:192c108:13`) is 21 bytes against Telegram's 64-byte cap.
+    """
+    return f"{pid}c{cid}" if cid else str(pid)
+
+
+def _lt_who(seg: str) -> tuple[int, int | None]:
+    """The inverse of `_lt_ref` — (profile id, cell id or None).
+
+    A segment with no "c" is a pre-switch button, or a unit that files one
+    checklist a day: both mean "the cell-less day", which is what None selects.
+    """
+    s = str(seg or "")
+    pid, _, cell = s.partition("c")
+    return int(pid), (int(cell) if cell else None)
+
+
+def _lt_day(db, pid: int, date: str, cid: int | None = None) -> LeaderTaskDay | None:
+    """This leader's checklist day — for ONE cell on a per-cell unit.
+
+    `cell_id` must be matched with `IS NULL` and not `== None`: on a unit that
+    files per cell, a leader holds several days for one date and an equality
+    test against NULL matches nothing, so the pre-switch day would come back as
+    "not started" and the leader would file a second one.
+    """
+    q = db.query(LeaderTaskDay).filter_by(leader_id=pid, date=date)
+    q = q.filter(LeaderTaskDay.cell_id == cid) if cid \
+        else q.filter(LeaderTaskDay.cell_id.is_(None))
+    return q.first()
 
 
 def _lt_counter_text(lang: str, entry: dict | None, task: str, need: int, k: int) -> str:
@@ -2592,7 +2637,7 @@ def _lt_camera_text(lang: str, entry: dict | None, task: str, need: int, k: int)
 
 
 def _lt_camera_kb(lang: str, pid: int, task_id: int,
-                  can_reset: bool = False) -> types.InlineKeyboardMarkup:
+                  can_reset: bool = False, cid: int | None = None) -> types.InlineKeyboardMarkup:
     """The ONE way into a camera task: a web_app button, a reset, and a way back.
 
     Deliberately no «send photos» affordance anywhere near it — the whole point
@@ -2613,16 +2658,16 @@ def _lt_camera_kb(lang: str, pid: int, task_id: int,
     kb.add(types.InlineKeyboardButton(_lt(lang, "btn_camera"),
                                       web_app=types.WebAppInfo(url=url)))
     if can_reset:
-        kb.add(_lt_btn(_lt(lang, "btn_reset"), f"lt:crst:{pid}:{task_id}"))
-    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
+        kb.add(_lt_btn(_lt(lang, "btn_reset"), f"lt:crst:{_lt_ref(pid, cid)}:{task_id}"))
+    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"))
     return kb
 
 
-def _lt_camera_state(db, prof, task_id: int) -> tuple[int, bool]:
+def _lt_camera_state(db, prof, task_id: int, cid: int | None = None) -> tuple[int, bool]:
     """(shots on the roll, an answer already recorded) for one camera task —
     the two facts the prompt needs: the counter, and whether a reset has
     anything to delete."""
-    day = leader_proof.open_day(db, prof, create=False)
+    day = leader_proof.open_day(db, prof, create=False, cell_id=cid)
     if not day:
         return 0, False
     k = len(leader_proof.roll(db, day.id, task_id))
@@ -2631,12 +2676,13 @@ def _lt_camera_state(db, prof, task_id: int) -> tuple[int, bool]:
     return k, answered
 
 
-def _lt_roll_count(db, prof, task_id: int) -> int:
-    return _lt_camera_state(db, prof, task_id)[0]
+def _lt_roll_count(db, prof, task_id: int, cid: int | None = None) -> int:
+    return _lt_camera_state(db, prof, task_id, cid)[0]
 
 
 def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
-                    msg_id: int | None, task_id: int, entry: dict, prof) -> None:
+                    msg_id: int | None, task_id: int, entry: dict, prof,
+                    cid: int | None = None) -> None:
     """Show (or re-show) a camera task's prompt and mark this account as being
     on it.
 
@@ -2647,15 +2693,16 @@ def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
     account is on one task at a time, whichever mode that task uses.
     """
     need = int(entry.get("min_media") or 1)
-    k, answered = _lt_camera_state(db, prof, task_id)
+    k, answered = _lt_camera_state(db, prof, task_id, cid)
     db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
     db.add(LeaderTaskCapture(
         telegram_id=tid, stage="camera", leader_id=pid, task_id=task_id,
         chat_id=chat_id, message_id=msg_id, min_media=need, media=[],
+        cell_id=cid,
     ))
     db.commit()
     text = _lt_camera_text(lang, entry, config_name(entry, lang), need, k)
-    kb = _lt_camera_kb(lang, pid, task_id, can_reset=bool(k or answered))
+    kb = _lt_camera_kb(lang, pid, task_id, can_reset=bool(k or answered), cid=cid)
     if msg_id:
         try:
             bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id,
@@ -2670,7 +2717,8 @@ def _lt_open_camera(db, tid: int, pid: int, lang: str, chat_id: int,
         db.commit()
 
 
-def _lt_pt_close_btn(lang: str, pid: int, task_id: int, ready: bool):
+def _lt_pt_close_btn(lang: str, pid: int, task_id: int, ready: bool,
+                     cid: int | None = None):
     """The submit button — offered ONLY when the task is finished.
 
     Not offered-and-disabled: Telegram has no disabled button, so an unusable
@@ -2678,12 +2726,12 @@ def _lt_pt_close_btn(lang: str, pid: int, task_id: int, ready: bool):
     whether they pressed it wrong or the bot is broken. Absent means "not yet",
     and the line above it says what is still missing.
     """
-    return _lt_btn(_lt(lang, "btn_close_task"), f"lt:tclose:{pid}:{task_id}") if ready else None
+    return _lt_btn(_lt(lang, "btn_close_task"), f"lt:tclose:{_lt_ref(pid, cid)}:{task_id}") if ready else None
 
 
 def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
                      msg_id: int | None, task_id: int, entry_cfg: dict,
-                     prof, day, shift: int | None) -> None:
+                     prof, day, shift: int | None, cid: int | None = None) -> None:
     """One task's own screen: draft, or locked.
 
     This is where per-task submission lives for the leader — the menu only
@@ -2721,7 +2769,7 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
             db, day=day, task_id=task_id, cfg_entry=entry_cfg, shift=shift,
             per_task=leader_tasks_per_task(db, prof)):
         _lt_late_open(db, tid, pid, lang, chat_id, msg_id, task_id,
-                      entry_cfg, shift, day)
+                      entry_cfg, shift, day, cid=cid)
         return
 
     # `locked()` rather than the entry's own lock, because this screen is also
@@ -2779,7 +2827,7 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
             if staged:
                 text += _lt(lang, "late_have").format(k=staged)
             kb.add(_lt_btn(_lt(lang, "btn_late_resume" if staged else "btn_late_file"),
-                           f"lt:late:{pid}:{task_id}"))
+                           f"lt:late:{_lt_ref(pid, cid)}:{task_id}"))
 
         # The one way back out of a submission, and it belongs to admins alone.
         # Both buttons say so in their own label: this screen is the leader's
@@ -2787,15 +2835,15 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
         # name whose it is.
         if tid in _admin_ids():
             text += _lt(lang, "adm_locked_hint")
-            kb.add(_lt_btn(_lt(lang, "btn_adm_reopen"), f"lt:aop:{pid}:{task_id}"))
-            if entry is not None or _lt_roll_count(db, prof, task_id):
-                kb.add(_lt_btn(_lt(lang, "btn_adm_wipe"), f"lt:awp:{pid}:{task_id}"))
-        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
+            kb.add(_lt_btn(_lt(lang, "btn_adm_reopen"), f"lt:aop:{_lt_ref(pid, cid)}:{task_id}"))
+            if entry is not None or _lt_roll_count(db, prof, task_id, cid):
+                kb.add(_lt_btn(_lt(lang, "btn_adm_wipe"), f"lt:awp:{_lt_ref(pid, cid)}:{task_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"))
         _lt_edit(chat_id, msg_id, text, kb)
         return
 
     # ── still a draft ───────────────────────────────────────────────────────
-    k = _lt_roll_count(db, prof, task_id) if entry_cfg.get("proof_kind") == "camera" \
+    k = _lt_roll_count(db, prof, task_id, cid) if entry_cfg.get("proof_kind") == "camera" \
         else (db.query(LeaderTaskMedia).filter_by(entry_id=entry.id).count()
               if entry is not None else 0)
     if entry is not None and not entry.done:
@@ -2826,13 +2874,14 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
         db.add(LeaderTaskCapture(
             telegram_id=tid, stage="camera", leader_id=pid, task_id=task_id,
             chat_id=chat_id, message_id=msg_id, min_media=max(1, need), media=[],
+        cell_id=cid,
         ))
         db.commit()
     else:
-        kb.add(_lt_btn(_lt(lang, "btn_reset"), f"lt:rconf:{pid}:{task_id}"))
-    if btn := _lt_pt_close_btn(lang, pid, task_id, ready):
+        kb.add(_lt_btn(_lt(lang, "btn_reset"), f"lt:rconf:{_lt_ref(pid, cid)}:{task_id}"))
+    if btn := _lt_pt_close_btn(lang, pid, task_id, ready, cid):
         kb.add(btn)
-    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
+    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"))
     _lt_edit(chat_id, msg_id, text, kb)
 
 
@@ -2857,7 +2906,8 @@ def _lt_edit(chat_id: int, msg_id: int | None, text: str, kb) -> None:
     bot.send_message(chat_id, text, reply_markup=kb)
 
 
-def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
+def refresh_camera_prompt(db, leader_id: int, task_id: int,
+                          cid: int | None = None) -> None:
     """Re-draw the waiting camera prompt after the app saved or dropped a shot.
 
     Called from the camera API (routers/leader_proof), which is why it takes a
@@ -2868,7 +2918,8 @@ def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
     because one profile may be held by several accounts.
     """
     caps = (db.query(LeaderTaskCapture)
-            .filter_by(stage="camera", leader_id=leader_id, task_id=task_id).all())
+            .filter_by(stage="camera", leader_id=leader_id, task_id=task_id,
+                       cell_id=cid).all())
     if not caps:
         return
     prof = db.query(RoleProfile).filter_by(id=leader_id).first()
@@ -2878,7 +2929,7 @@ def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
     if not entry:
         return
     need = int(entry.get("min_media") or 1)
-    k, answered = _lt_camera_state(db, prof, task_id)
+    k, answered = _lt_camera_state(db, prof, task_id, cid)
     shift = _lt_shift(db, prof)
     # On a per-task unit the message behind the camera is the TASK's screen, so
     # the «Vazifani yopish» button has to appear on it the moment the roll is
@@ -2886,7 +2937,7 @@ def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
     # leader with a finished task and no way to submit it without going back to
     # the menu first — the one step this mode exists to remove.
     per_task = leader_tasks_per_task(db, prof)
-    day = leader_proof.open_day(db, prof, create=False) if per_task else None
+    day = leader_proof.open_day(db, prof, create=False, cell_id=cid) if per_task else None
     for cap in caps:
         if not cap.message_id:
             continue
@@ -2894,13 +2945,15 @@ def refresh_camera_prompt(db, leader_id: int, task_id: int) -> None:
         try:
             if per_task and day is not None:
                 _lt_pt_task_view(db, cap.telegram_id, leader_id, lang, cap.chat_id,
-                                 cap.message_id, task_id, entry, prof, day, shift)
+                                 cap.message_id, task_id, entry, prof, day, shift,
+                                 cid)
                 continue
             bot.edit_message_text(
                 _lt_camera_text(lang, entry, config_name(entry, lang), need, k),
                 chat_id=cap.chat_id, message_id=cap.message_id,
                 reply_markup=_lt_camera_kb(lang, leader_id, task_id,
-                                           can_reset=bool(k or answered)))
+                                           can_reset=bool(k or answered),
+                                           cid=cid))
         except Exception:
             pass  # the message was deleted, or nothing changed — neither matters
 
@@ -2939,7 +2992,8 @@ def _lt_autoclose(db, prof, shift: int) -> None:
         leader_ai.run_async(discover_first=False)
 
 
-def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None):
+def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None,
+             cid: int | None = None):
     """Render the task list (or the closed-day view) — edit msg_id in place
     when given, else send a fresh message."""
     prof = db.query(RoleProfile).filter_by(id=pid).first()
@@ -2973,8 +3027,8 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
             e = entries.get(td_id)
             mark = "✅ " if (e and e.done) else ("❌ " if e else "")
             kb.add(_lt_btn(f"{mark}{config_name(s, lang)}",
-                           f"lt:task:{pid}:{td_id}" if adm else f"lt:noop:{pid}"))
-        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
+                           f"lt:task:{_lt_ref(pid, cid)}:{td_id}" if adm else f"lt:noop:{_lt_ref(pid, cid)}"))
+        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{_lt_ref(pid, cid)}"))
     else:
         text = _lt(lang, "menu_title").format(name=prof.name, date=date)
         # Camera tasks say how far along their roll is, right in the menu. A
@@ -3039,13 +3093,13 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                          if k else f"📷 {config_name(s, lang)}")
             else:
                 label = config_name(s, lang)
-            kb.add(_lt_btn(label, f"lt:task:{pid}:{td_id}"))
-        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
+            kb.add(_lt_btn(label, f"lt:task:{_lt_ref(pid, cid)}:{td_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{_lt_ref(pid, cid)}"))
         # No «KUNNI YOPISH» in per-task mode: the day closes itself when the
         # last task is submitted, so a button for it would be a second, weaker
         # way to end a day that is already ending correctly.
         if not per_task:
-            kb.add(_lt_btn(_lt(lang, "btn_close_day"), f"lt:close:{pid}"))
+            kb.add(_lt_btn(_lt(lang, "btn_close_day"), f"lt:close:{_lt_ref(pid, cid)}"))
 
     if msg_id:
         try:
@@ -3076,7 +3130,8 @@ def _lt_relay_photo(db, message: types.Message) -> tuple[str, int] | None:
 
 
 def _lt_save_entry(db, pid: int, task_id: int, done: bool,
-                   reason: str | None, media: list[tuple[str, int]]) -> bool:
+                   reason: str | None, media: list[tuple[str, int]],
+                   cid: int | None = None) -> bool:
     """Persist one task's answer. False when the day is already closed."""
     prof = db.query(RoleProfile).filter_by(id=pid).first()
     if not prof:
@@ -3084,11 +3139,12 @@ def _lt_save_entry(db, pid: int, task_id: int, done: bool,
     shift = _lt_shift(db, prof)
     date = effective_date(shift)
     promote_due(db, shift, date)  # apply staged config due at this boundary
-    day = _lt_day(db, pid, date)
+    day = _lt_day(db, pid, date, cid)
     if day and day.closed_at:
         return False
     if not day:
-        day = LeaderTaskDay(leader_id=pid, manager_id=prof.manager_id, date=date)
+        day = LeaderTaskDay(leader_id=pid, manager_id=prof.manager_id, date=date,
+                            cell_id=cid)
         db.add(day)
         db.flush()
     old = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
@@ -3186,7 +3242,7 @@ def _lt_callback(call: types.CallbackQuery):
             return
 
         try:
-            pid = int(parts[2])
+            pid, cid = _lt_who(parts[2])
         except (IndexError, ValueError):
             bot.answer_callback_query(call.id)
             return
@@ -3197,7 +3253,10 @@ def _lt_callback(call: types.CallbackQuery):
 
         shift = _lt_shift(db, prof)
         date = effective_date(shift)
-        day = _lt_day(db, pid, date)
+        # On a per-cell unit `cid` selects WHICH of this leader's checklists the
+        # button belongs to; everywhere else it is None and this is the one
+        # cell-less day the platform has always had.
+        day = _lt_day(db, pid, date, cid)
         closed = bool(day and day.closed_at)
         cfg = effective_leader_config(db, prof, shift)
 
@@ -3208,13 +3267,13 @@ def _lt_callback(call: types.CallbackQuery):
         if action == "prof":
             _lt_clear(tid)
             bot.answer_callback_query(call.id)
-            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         if action == "menu":
             _lt_clear(tid)
             bot.answer_callback_query(call.id)
-            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         # ── filing a proof after the task's own deadline ─────────────────────
@@ -3289,7 +3348,7 @@ def _lt_callback(call: types.CallbackQuery):
                     _lt_clear(tid)
                     db.add(LeaderTaskCapture(
                         telegram_id=tid, stage="late_reason", leader_id=pid,
-                        task_id=task_id, chat_id=chat_id,
+                        task_id=task_id, chat_id=chat_id, cell_id=cid,
                         message_id=sent.message_id, min_media=1, media=[]))
                 db.commit()
                 bot.answer_callback_query(call.id)
@@ -3337,7 +3396,7 @@ def _lt_callback(call: types.CallbackQuery):
             except Exception:
                 bot.send_message(chat_id, _lt(lang, "late_sent"))
             bot.answer_callback_query(call.id)
-            _lt_menu(db, tid, pid, lang, chat_id, None)
+            _lt_menu(db, tid, pid, lang, chat_id, None, cid)
             return
 
         if action == "back":
@@ -3365,7 +3424,7 @@ def _lt_callback(call: types.CallbackQuery):
                 return
             if task_id not in cfg or not cfg[task_id]["enabled"]:
                 bot.answer_callback_query(call.id)
-                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
                 return
             if closed:  # admin, guarded above → the locked-task screen
                 bot.answer_callback_query(call.id)
@@ -3397,7 +3456,7 @@ def _lt_callback(call: types.CallbackQuery):
             if leader_tasks_per_task(db, prof) and (
                     task_id in entries
                     or (cfg[task_id].get("proof_kind") == "camera"
-                        and _lt_roll_count(db, prof, task_id))):
+                        and _lt_roll_count(db, prof, task_id, cid))):
                 _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
                                  cfg[task_id], prof, day, shift)
                 return
@@ -3406,15 +3465,15 @@ def _lt_callback(call: types.CallbackQuery):
             # Its «Qayta topshirish» lives on that prompt (`lt:crst`) rather
             # than here, so the reset sits beside the counter it empties.
             if cfg[task_id].get("proof_kind") == "camera" and (
-                    task_id in entries or _lt_roll_count(db, prof, task_id)):
+                    task_id in entries or _lt_roll_count(db, prof, task_id, cid)):
                 _lt_open_camera(db, tid, pid, lang, chat_id, msg_id, task_id,
                                 cfg[task_id], prof)
                 return
             if task_id in entries:
                 # already answered → confirm reset-for-resubmission
                 kb = types.InlineKeyboardMarkup()
-                kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"),
-                       _lt_btn(_lt(lang, "btn_reset"), f"lt:rconf:{pid}:{task_id}"))
+                kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"),
+                       _lt_btn(_lt(lang, "btn_reset"), f"lt:rconf:{_lt_ref(pid, cid)}:{task_id}"))
                 try:
                     bot.edit_message_text(_lt(lang, "reset_confirm").format(task=tname(task_id)),
                                           chat_id=chat_id, message_id=msg_id, reply_markup=kb)
@@ -3422,9 +3481,9 @@ def _lt_callback(call: types.CallbackQuery):
                     pass
             else:
                 kb = types.InlineKeyboardMarkup()
-                kb.row(_lt_btn(_lt(lang, "btn_yes"), f"lt:yes:{pid}:{task_id}"),
-                       _lt_btn(_lt(lang, "btn_no"), f"lt:no:{pid}:{task_id}"))
-                kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
+                kb.row(_lt_btn(_lt(lang, "btn_yes"), f"lt:yes:{_lt_ref(pid, cid)}:{task_id}"),
+                       _lt_btn(_lt(lang, "btn_no"), f"lt:no:{_lt_ref(pid, cid)}:{task_id}"))
+                kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"))
                 try:
                     bot.edit_message_text(_lt(lang, "did_you").format(task=tname(task_id)),
                                           chat_id=chat_id, message_id=msg_id, reply_markup=kb)
@@ -3446,8 +3505,8 @@ def _lt_callback(call: types.CallbackQuery):
                                           show_alert=True)
                 return
             kb = types.InlineKeyboardMarkup()
-            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{pid}:{task_id}"),
-                   _lt_btn(_lt(lang, "btn_confirm"), f"lt:tcconf:{pid}:{task_id}"))
+            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{_lt_ref(pid, cid)}:{task_id}"),
+                   _lt_btn(_lt(lang, "btn_confirm"), f"lt:tcconf:{_lt_ref(pid, cid)}:{task_id}"))
             bot.answer_callback_query(call.id)
             _lt_edit(chat_id, msg_id,
                      _lt(lang, "close_task_confirm").format(task=config_name(cfg[task_id], lang)),
@@ -3463,7 +3522,7 @@ def _lt_callback(call: types.CallbackQuery):
             if e is None or leader_close.locked(e, day):
                 bot.answer_callback_query(call.id, _lt(lang, "task_locked_alert"),
                                           show_alert=True)
-                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
                 return
             leader_close.close_task(db, day=day, entry=e, cfg=cfg, actor=prof.name)
             _lt_log(db, tid, prof, date, "checklist.task_closed",
@@ -3477,7 +3536,7 @@ def _lt_callback(call: types.CallbackQuery):
             leader_ai.run_async(discover_first=False)
             _lt_clear(tid)
             bot.answer_callback_query(call.id, _lt(lang, "task_closed_ok"))
-            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         if action in ("aop", "awp", "aopok", "awpok"):
@@ -3497,9 +3556,9 @@ def _lt_callback(call: types.CallbackQuery):
                 # The confirm names which of the two it is: one keeps the
                 # photos and one deletes them, and they sit next to each other.
                 kb = types.InlineKeyboardMarkup()
-                kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{pid}:{task_id}"),
+                kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{_lt_ref(pid, cid)}:{task_id}"),
                        _lt_btn(_lt(lang, "btn_confirm"),
-                               f"lt:{'awpok' if wipe else 'aopok'}:{pid}:{task_id}"))
+                               f"lt:{'awpok' if wipe else 'aopok'}:{_lt_ref(pid, cid)}:{task_id}"))
                 bot.answer_callback_query(call.id)
                 _lt_edit(chat_id, msg_id,
                          _lt(lang, "adm_wipe_confirm" if wipe
@@ -3510,7 +3569,7 @@ def _lt_callback(call: types.CallbackQuery):
             if not leader_close.locked(e, day):
                 bot.answer_callback_query(call.id, _lt(lang, "adm_not_locked"),
                                           show_alert=True)
-                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
                 return
             lifted = leader_close.reopen_task(db, day=day, task_id=task_id,
                                               entry=e, actor=prof.name)
@@ -3532,7 +3591,7 @@ def _lt_callback(call: types.CallbackQuery):
             bot.answer_callback_query(
                 call.id, _lt(lang, "adm_wiped_toast" if wipe
                              else "adm_reopened_toast"))
-            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         if action == "rconf":
@@ -3546,7 +3605,7 @@ def _lt_callback(call: types.CallbackQuery):
                         target_kind="task", target_id=task_id,
                         target_name=tname(task_id))
             bot.answer_callback_query(call.id)
-            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         if action == "crst":  # camera task → confirm before emptying it
@@ -3555,8 +3614,8 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
             kb = types.InlineKeyboardMarkup()
-            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{pid}:{task_id}"),
-                   _lt_btn(_lt(lang, "btn_reset"), f"lt:crok:{pid}:{task_id}"))
+            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:task:{_lt_ref(pid, cid)}:{task_id}"),
+                   _lt_btn(_lt(lang, "btn_reset"), f"lt:crok:{_lt_ref(pid, cid)}:{task_id}"))
             bot.answer_callback_query(call.id)
             try:
                 bot.edit_message_text(
@@ -3586,7 +3645,7 @@ def _lt_callback(call: types.CallbackQuery):
                 _lt_open_camera(db, tid, pid, lang, chat_id, msg_id, task_id,
                                 tcfg, prof)
             else:
-                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         if action == "yes":
@@ -3596,13 +3655,13 @@ def _lt_callback(call: types.CallbackQuery):
                 return
             need = cfg.get(task_id, {}).get("min_media", 1)
             if need <= 0:  # no proof required — save instantly
-                if _lt_save_entry(db, pid, task_id, True, None, []):
+                if _lt_save_entry(db, pid, task_id, True, None, [], cid):
                     _lt_log(db, tid, prof, date, "checklist.task_answered",
                             target_kind="task", target_id=task_id,
                             target_name=tname(task_id),
                             details=[("status", "done"), ("photos", 0)])
                 bot.answer_callback_query(call.id, _lt(lang, "saved_toast"))
-                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
                 return
             if cfg[task_id].get("proof_kind") == "camera":
                 bot.answer_callback_query(call.id)
@@ -3613,10 +3672,11 @@ def _lt_callback(call: types.CallbackQuery):
             db.add(LeaderTaskCapture(
                 telegram_id=tid, stage="photos", leader_id=pid, task_id=task_id,
                 chat_id=chat_id, message_id=msg_id, min_media=need, media=[],
+                cell_id=cid,
             ))
             db.commit()
             kb = types.InlineKeyboardMarkup(row_width=1)
-            kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
+            kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{_lt_ref(pid, cid)}"))
             bot.answer_callback_query(call.id)
             try:
                 bot.edit_message_text(
@@ -3634,11 +3694,11 @@ def _lt_callback(call: types.CallbackQuery):
             db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
             db.add(LeaderTaskCapture(
                 telegram_id=tid, stage="reason", leader_id=pid, task_id=task_id,
-                chat_id=chat_id, message_id=msg_id,
+                chat_id=chat_id, message_id=msg_id, cell_id=cid,
             ))
             db.commit()
             kb = types.InlineKeyboardMarkup(row_width=1)
-            kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
+            kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{_lt_ref(pid, cid)}"))
             bot.answer_callback_query(call.id)
             try:
                 bot.edit_message_text(_lt(lang, "reason_prompt").format(task=tname(task_id)),
@@ -3662,10 +3722,10 @@ def _lt_callback(call: types.CallbackQuery):
                     bot.answer_callback_query(call.id)
                     return
                 done, why, shots = True, None, len(media)
-                ok = _lt_save_entry(db, pid, task_id, True, None, media)
+                ok = _lt_save_entry(db, pid, task_id, True, None, media, cid)
             elif cap.stage == "confirm_reason":
                 done, why, shots = False, cap.reason or "", 0
-                ok = _lt_save_entry(db, pid, task_id, False, cap.reason or "", [])
+                ok = _lt_save_entry(db, pid, task_id, False, cap.reason or "", [], cid)
             else:
                 bot.answer_callback_query(call.id)
                 return
@@ -3688,7 +3748,7 @@ def _lt_callback(call: types.CallbackQuery):
                 _lt_pt_task_view(db, tid, pid, lang, chat_id, msg_id, task_id,
                                  cfg[task_id], prof, _lt_day(db, pid, date), shift)
                 return
-            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
         if action == "close":
@@ -3702,8 +3762,8 @@ def _lt_callback(call: types.CallbackQuery):
                     call.id, _lt(lang, "incomplete").format(n=len(missing)), show_alert=True)
                 return
             kb = types.InlineKeyboardMarkup()
-            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"),
-                   _lt_btn(_lt(lang, "btn_confirm"), f"lt:cconf:{pid}"))
+            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"),
+                   _lt_btn(_lt(lang, "btn_confirm"), f"lt:cconf:{_lt_ref(pid, cid)}"))
             bot.answer_callback_query(call.id)
             try:
                 bot.edit_message_text(_lt(lang, "close_confirm"),
@@ -3775,7 +3835,7 @@ def _lt_callback(call: types.CallbackQuery):
             leader_ai.run_async(discover_first=False)
             bot.answer_callback_query(call.id, _lt(lang, "closed_done").format(
                 score=round(float(day.completion))))
-            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
             return
 
     bot.answer_callback_query(call.id)
@@ -3800,6 +3860,7 @@ def _lt_photo(message: types.Message):
         cap.media = (cap.media or []) + [list(relayed)]  # reassign → JSONB change tracked
         k, need = len(cap.media), cap.min_media
         pid, task_id = cap.leader_id, cap.task_id
+        cid = cap.cell_id
         chat, old_counter = cap.chat_id, cap.message_id
         prof = db.query(RoleProfile).filter_by(id=pid).first()
         cfg = effective_leader_config(db, prof, _lt_shift(db, prof)) if prof else {}
@@ -3807,8 +3868,8 @@ def _lt_photo(message: types.Message):
         tname = config_name(entry, lang) if entry else f"T{task_id}"
         kb = types.InlineKeyboardMarkup(row_width=1)
         if k >= need:
-            kb.add(_lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
-        kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
+            kb.add(_lt_btn(_lt(lang, "btn_save"), f"lt:save:{_lt_ref(pid, cid)}:{task_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{_lt_ref(pid, cid)}"))
         # The counter FOLLOWS the chat: delete the old counter message and send
         # a fresh one below the uploads — editing in place left the Save button
         # stranded above the photos. Album items are serialized by the row lock,
@@ -3865,6 +3926,7 @@ def _lt_reason(message: types.Message):
             bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
             return
         pid, task_id = cap.leader_id, cap.task_id
+        cid = cap.cell_id
         old_chat, old_mid = cap.chat_id, cap.message_id
         prof = db.query(RoleProfile).filter_by(id=pid).first()
         cfg = effective_leader_config(db, prof) if prof else {}
@@ -3877,8 +3939,8 @@ def _lt_reason(message: types.Message):
         except Exception:
             pass
         kb = types.InlineKeyboardMarkup()
-        kb.row(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"),
-               _lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
+        kb.row(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{_lt_ref(pid, cid)}"),
+               _lt_btn(_lt(lang, "btn_save"), f"lt:save:{_lt_ref(pid, cid)}:{task_id}"))
         sent = bot.send_message(
             message.chat.id,
             _lt(lang, "reason_confirm").format(task=tname, reason=text[:800]),
@@ -4040,7 +4102,8 @@ def _lp_can_supervise(db, tid: int, row) -> bool:
 
 
 def _lt_late_screen(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
-                    shift: int | None, k: int, awaiting: bool = False):
+                    shift: int | None, k: int, awaiting: bool = False,
+                    cid: int | None = None):
     """THE late screen — warning and photo counter in ONE evolving message.
 
     They were two renderers and that was wrong: the warning is what the leader
@@ -4076,19 +4139,20 @@ def _lt_late_screen(db, lang: str, pid: int, task_id: int, cfg_entry: dict,
                f"?leader={pid}&task={task_id}&late=1")
         kb.add(types.InlineKeyboardButton(_lt(lang, "btn_late_cam"),
                                           web_app=types.WebAppInfo(url=url)))
-        kb.add(_lt_btn(_lt(lang, "btn_late_upload"), f"lt:lgo:{pid}:{task_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_late_upload"), f"lt:lgo:{_lt_ref(pid, cid)}:{task_id}"))
     else:
-        kb.add(_lt_btn(_lt(lang, "btn_late_go"), f"lt:lgo:{pid}:{task_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_late_go"), f"lt:lgo:{_lt_ref(pid, cid)}:{task_id}"))
     if k:
-        kb.add(_lt_btn(_lt(lang, "btn_late_send"), f"lt:lrsn:{pid}:{task_id}"))
-        kb.add(_lt_btn(_lt(lang, "btn_late_clear"), f"lt:lclr:{pid}:{task_id}"))
-    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:lback:{pid}:{task_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_late_send"), f"lt:lrsn:{_lt_ref(pid, cid)}:{task_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_late_clear"), f"lt:lclr:{_lt_ref(pid, cid)}:{task_id}"))
+    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:lback:{_lt_ref(pid, cid)}:{task_id}"))
     return text, kb
 
 
 def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
                   msg_id: int | None, task_id: int, cfg_entry: dict,
-                  shift: int | None, day, awaiting: bool = False) -> None:
+                  shift: int | None, day, awaiting: bool = False,
+                  cid: int | None = None) -> None:
     """Show the late screen and arm the staging row that photos land in.
 
     The capture is created HERE rather than after a second tap, because a
@@ -4107,7 +4171,7 @@ def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
     if day is None:
         prof = db.query(RoleProfile).filter_by(id=pid).first()
         if prof is not None:
-            day = leader_proof.open_day(db, prof, create=True)
+            day = leader_proof.open_day(db, prof, create=True, cell_id=cid)
             db.commit()
     k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
     text, kb = _lt_late_screen(db, lang, pid, task_id, cfg_entry, shift, k,
@@ -4119,7 +4183,7 @@ def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
         db.add(LeaderTaskCapture(
             telegram_id=tid, stage="late_photos", leader_id=pid,
             task_id=task_id, chat_id=chat_id, message_id=msg_id,
-            min_media=1, media=[]))
+            cell_id=cid, min_media=1, media=[]))
     else:
         cap.message_id = msg_id
         cap.chat_id = chat_id
@@ -4127,7 +4191,8 @@ def _lt_late_open(db, tid: int, pid: int, lang: str, chat_id: int,
     _lt_edit(chat_id, msg_id, text, kb)
 
 
-def refresh_late_screen(db, leader_id: int, task_id: int) -> None:
+def refresh_late_screen(db, leader_id: int, task_id: int,
+                        cid: int | None = None) -> None:
     """Re-draw the late screen after the mini-app saved or dropped a shot.
 
     The twin of `refresh_camera_prompt`, and deliberately NOT a widening of it:
@@ -4137,7 +4202,7 @@ def refresh_late_screen(db, leader_id: int, task_id: int) -> None:
     """
     caps = (db.query(LeaderTaskCapture)
             .filter_by(stage="late_photos", leader_id=leader_id,
-                       task_id=task_id).all())
+                       task_id=task_id, cell_id=cid).all())
     if not caps:
         return
     prof = db.query(RoleProfile).filter_by(id=leader_id).first()
@@ -4147,14 +4212,14 @@ def refresh_late_screen(db, leader_id: int, task_id: int) -> None:
     entry = effective_leader_config(db, prof, shift).get(task_id)
     if not entry:
         return
-    day = leader_proof.open_day(db, prof, create=False)
+    day = leader_proof.open_day(db, prof, create=False, cell_id=cid)
     k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
     for cap in caps:
         if not cap.message_id:
             continue
         lang = _get_lang(cap.telegram_id)
         text, kb = _lt_late_screen(db, lang, cap.leader_id, task_id, entry,
-                                   shift, k)
+                                   shift, k, cid=cid)
         try:
             bot.edit_message_text(text, chat_id=cap.chat_id,
                                   message_id=cap.message_id, reply_markup=kb)
@@ -4270,15 +4335,16 @@ def _lt_late_reason(message: types.Message):
         prof = db.query(RoleProfile).filter_by(id=pid).first()
         shift = _lt_shift(db, prof) if prof else None
         cfg = effective_leader_config(db, prof, shift) if prof else {}
-        day = _lt_day(db, pid, effective_date(shift)) if prof else None
+        cid = cap.cell_id
+        day = _lt_day(db, pid, effective_date(shift), cid) if prof else None
         k = leader_late_proof.draft_count(db, day.id if day else None, task_id)
         try:
             bot.delete_message(cap.chat_id, cap.message_id)
         except Exception:
             pass
         kb = types.InlineKeyboardMarkup()
-        kb.row(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"),
-               _lt_btn(_lt(lang, "btn_save"), f"lt:lsend:{pid}:{task_id}"))
+        kb.row(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{_lt_ref(pid, cid)}"),
+               _lt_btn(_lt(lang, "btn_save"), f"lt:lsend:{_lt_ref(pid, cid)}:{task_id}"))
         sent = bot.send_message(
             message.chat.id,
             _lt(lang, "late_confirm").format(
