@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Info, ChevronDown, Flag, Repeat2, Plus, Trash2, Layers, UserRound, Boxes,
-  Layers2, Archive, Play, Square, Pencil, Sunrise, FlaskConical,
+  Layers2, Archive, Play, Square, Pencil, Sunrise,
   GanttChartSquare, ListTree, Clock, Timer, MessageSquareText,
   Lock, Unlock,
 } from "lucide-react";
@@ -973,16 +973,6 @@ export default function IdleCell() {
         >
           {t("idleCell.catGuideBtn")}
         </Button>
-        <span
-          className="w-full md:w-auto md:ml-auto text-xs inline-flex items-center gap-1.5"
-          style={{ color: "var(--text-4)" }}
-        >
-          <FlaskConical size={12} className="flex-shrink-0" />
-          {/* «does not replace the sheet import» answers a question only an
-              admin has. What a leader needs from this chip is that the page is
-              a trial — the rest is vocabulary from a job they do not do. */}
-          {t(locked ? "idleCell.testNoteShort" : "idleCell.testNote")}
-        </span>
       </div>
 
       {isPeren ? (

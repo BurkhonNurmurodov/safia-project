@@ -123,8 +123,6 @@ const t = {
     "cellPage.saved":            "Saqlandi",
     // ── Idle time per cell (ojidaniya) — TEST manual entry ──
     "idleCell.title":             "Yacheykalar bo'yicha kutish",
-    "idleCell.testNote":          "Test — jadval importini almashtirmaydi",
-    "idleCell.testNoteShort":     "Sinov rejimi",
     "idleCell.cellsWord":         "yacheyka",
     "idleCell.searchPlaceholder": "Yacheyka qidirish…",
     "idleCell.colStatus":         "Holat",
@@ -4301,8 +4299,6 @@ const t = {
     "cellPage.saved":            "Сақланди",
     // ── Idle time per cell (ojidaniya) — TEST manual entry ──
     "idleCell.title":             "Ячейкалар бўйича кутиш",
-    "idleCell.testNote":          "Тест — жадвал импортини алмаштирмайди",
-    "idleCell.testNoteShort":     "Синов режими",
     "idleCell.cellsWord":         "ячейка",
     "idleCell.searchPlaceholder": "Ячейка қидириш…",
     "idleCell.colStatus":         "Ҳолат",
@@ -8478,8 +8474,6 @@ const t = {
     "cellPage.saved":            "Сохранено",
     // ── Idle time per cell (ojidaniya) — TEST manual entry ──
     "idleCell.title":             "Простой по ячейкам",
-    "idleCell.testNote":          "Тест — не заменяет импорт из таблицы",
-    "idleCell.testNoteShort":     "Тестовый режим",
     "idleCell.cellsWord":         "ячеек",
     "idleCell.searchPlaceholder": "Поиск ячейки…",
     "idleCell.colStatus":         "Статус",
@@ -12655,8 +12649,6 @@ const t = {
     "cellPage.saved":            "Saved",
     // ── Idle time per cell (ojidaniya) — TEST manual entry ──
     "idleCell.title":             "Idle time per cell",
-    "idleCell.testNote":          "Test — does not replace the sheet import",
-    "idleCell.testNoteShort":     "Test mode",
     "idleCell.cellsWord":         "cells",
     "idleCell.searchPlaceholder": "Search cell…",
     "idleCell.colStatus":         "Status",
