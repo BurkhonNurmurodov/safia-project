@@ -29,15 +29,18 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.models import AppSetting, Factory, Manager
+from app.services import shift_scope
 
 # Global default tab + whether «All factories» is offered. Both are set in the
 # admin Factories destination and read by /api/factories.
 DEFAULT_FACTORY_SETTING = "default_factory_id"
 FACTORY_ALL_TAB_SETTING = "factory_all_tab_enabled"
 
-# Roles pinned to the factory of their own supervisor unit. Everyone else
-# (admin, top-manager, shift-manager) may switch freely — management is
-# plant-wide by decision, see the feature's access model.
+# Roles pinned to the factory of their own supervisor unit. A shift-manager is
+# pinned too, but through their PROFILE (services/shift_scope.py) rather than
+# through a unit, so they are handled separately in viewer_factory_id — the
+# tuple stays the "ask managers.factory_id" list. Only admin and top-manager
+# switch freely now; management above the shift is plant-wide by decision.
 LOCKED_ROLES = ("supervisor", "leader")
 
 
@@ -84,11 +87,21 @@ def viewer_factory_id(db: Session, payload: dict) -> Optional[int]:
 
     Supervisors and leaders both carry their supervisor unit's id in
     ``role_id`` (see RoleProfile: leader role rows keep pointing at the unit),
-    so one lookup covers both. A locked caller whose unit has no factory yet
-    returns None too — pinning them to nothing would empty their pages, so they
-    keep the unfiltered view until an admin assigns the unit.
+    so one lookup covers both. A shift-manager carries a PROFILE id instead and
+    their plant is a column on that profile — a shift-manager is a person, not
+    a unit — so they are resolved through ``shift_scope`` and then locked the
+    same way: they run one shift in one plant, and ``?factory=`` must not be
+    able to hand them another (2026-09-02, the operator's directive).
+
+    A locked caller with no factory yet returns None too — pinning them to
+    nothing would empty their pages, so they keep the unfiltered view until an
+    admin assigns them. For a shift-manager that IS the default, which is what
+    makes the plant column inert until somebody fills it in.
     """
-    if payload.get("role") not in LOCKED_ROLES:
+    role = payload.get("role")
+    if role == "shift-manager":
+        return shift_scope.factory_of(db, payload.get("role_id"))
+    if role not in LOCKED_ROLES:
         return None
     unit_id = payload.get("role_id")
     if not unit_id:

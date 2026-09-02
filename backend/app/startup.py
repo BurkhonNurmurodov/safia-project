@@ -1096,6 +1096,38 @@ def migrate_factories() -> None:
         db.close()
 
 
+def add_role_profile_factory() -> None:
+    """2026-09-02: a shift-manager belongs to a PLANT as well as to a shift.
+
+    ``role_profiles.shift`` already answered half the question — which shift
+    this person runs — and every reader intersected it with nothing else, so a
+    shift-1 manager reached the shift-1 supervisors of every plant. This adds
+    the other half; ``services/shift_scope.py`` is the one place the two are
+    intersected.
+
+    Deliberately NOT backfilled. NULL means "every plant", which is exactly
+    today's behaviour, so this migration moves no number and locks nobody out:
+    each shift-manager starts where they already were and an admin narrows them
+    on «Zavodlar». Backfilling them into the first factory the way
+    ``migrate_factories`` backfills UNITS would silently cut every existing
+    shift-manager off from the second plant on the boot this ships.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS factory_id INTEGER "
+            "REFERENCES factories(id)"))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_role_profiles_factory_id "
+            "ON role_profiles (factory_id)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] role_profile factory migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_task_criteria() -> None:
     """2026-08-05: the AI proof reviewer needs a written "what makes this task
     truly done" to judge a photo against. It rides the SAME global → supervisor

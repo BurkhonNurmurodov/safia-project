@@ -407,6 +407,12 @@ class RoleProfile(Base):
     name_ru      = Column(String, nullable=True)
     name_en      = Column(String, nullable=True)
     shift      = Column(Integer, nullable=True)              # shift-managers only: 1 | 2
+    # shift-managers only: the PLANT they run that shift in. NULL = every plant
+    # — the pre-factory behaviour, and the default, so nothing moves until an
+    # admin assigns one (see services/shift_scope.py). This is not a second
+    # copy of the data dimension: managers.factory_id still decides which plant
+    # a ROW belongs to; this says where a PERSON works, exactly as `shift` does.
+    factory_id = Column(Integer, ForeignKey("factories.id"), nullable=True)
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)  # leaders only: their supervisor's unit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

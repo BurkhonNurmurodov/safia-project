@@ -109,6 +109,7 @@ from app.models import (
     UserCapability,
 )
 from app.permissions import PAGE_KEYS
+from app.services import shift_scope
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
@@ -559,11 +560,14 @@ def profile_unit_ids(db: Session, key: Optional[str]) -> Optional[list[int]]:
     if role == "supervisor":
         return [ref] if ref else []
     if role == "shift-manager":
+        # Shift AND plant — services/shift_scope.py, the same intersection
+        # /staff, /concerns and /production read. A grantee whose "own scope"
+        # was a whole shift could act on the other plant's units from a page
+        # that never shows them.
         p = db.query(RoleProfile).filter_by(id=ref, role="shift-manager").first() if ref else None
         if not p or not p.shift:
             return []
-        return [m.id for m in db.query(Manager).filter(
-            Manager.shift == p.shift, Manager.archived.is_(False)).all()]
+        return shift_scope.unit_ids(db, ref)
     return None
 
 

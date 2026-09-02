@@ -42,7 +42,7 @@ from app.models import (
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
     TelegramUserRole,
 )
-from app.services import action_log
+from app.services import action_log, shift_scope
 from app.services.day_state import confirmed_pairs, day_state
 from app.xlsx_delivery import deliver_xlsx
 
@@ -55,27 +55,10 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 STAFF_ROLES = {"admin", "supervisor", "shift-manager"}
 
 
-def _sm_shift(db: Session, role_id: Optional[int]) -> Optional[int]:
-    """shift-manager role_id (a shift-manager RoleProfile id) → its shift.
-    Pre-profile JWTs still carry the old fixed slot numbers 1-4; the rollout
-    backfill created the slot profiles under those very ids, so the lookup
-    covers them, with the historic 1/2→shift-1, 3/4→shift-2 mapping as a last
-    resort for tokens issued before the migration ran."""
-    if not role_id:
-        return None
-    p = db.query(RoleProfile).filter_by(id=role_id, role="shift-manager").first()
-    if p and p.shift in (1, 2):
-        return p.shift
-    return 1 if role_id in (1, 2) else 2
-
-
-def _sm_role_ids_for_shift(db: Session, shift: Optional[int]) -> list[int]:
-    """All shift-manager profile ids working the given shift — the role_id
-    values to notify when something happens on that shift."""
-    return [
-        p.id for p in db.query(RoleProfile)
-        .filter_by(role="shift-manager", shift=shift).all()
-    ]
+# "Which units does this shift-manager cover" is services/shift_scope.py and
+# nothing else — shift AND plant, in one place. The six sites below used to
+# spell it as `Manager.shift == _sm_shift(...)`, which reached the same shift in
+# every factory; see that module's docstring.
 
 # Roles that exist only as verifix-imported job titles and may NOT be chosen as
 # the target of a Role Change document — staff can only acquire them via verifix
@@ -1455,11 +1438,6 @@ _role_row_profile_key = identity.role_row_profile_key
 _viewer_profile_key = identity.viewer_profile_key
 
 
-def _get_shift_for_manager(db: Session, manager_id: int) -> int:
-    mgr = db.query(Manager).filter_by(id=manager_id).first()
-    return mgr.shift if mgr else 1
-
-
 def _assert_day_open(db: Session, manager_id: int, d: date):
     """Supervisors may not submit changes once they have closed the day."""
     if db.query(DayApproval).filter_by(manager_id=manager_id, date=d).first():
@@ -1539,10 +1517,11 @@ def _notify_all_parties(
         _profile_key("admin", a.profile_id) for a in admin_rows if a.profile_id
     }
 
-    # Shift-managers for this manager's shift — the profiles themselves, so a
-    # profile is addressed once whether it is held by nobody, one person or three.
-    shift    = _get_shift_for_manager(db, manager_id)
-    role_ids = _sm_role_ids_for_shift(db, shift)
+    # Shift-managers answerable for THIS unit — its shift and its plant — as
+    # profiles, so a profile is addressed once whether it is held by nobody,
+    # one person or three. Addressing every manager on the shift instead sent
+    # one plant's decisions to the other plant's chat.
+    role_ids = shift_scope.role_ids_for_unit(db, manager_id)
     profiles.update(_profile_key("shift-manager", rid) for rid in role_ids)
 
     # Supervisor
@@ -2378,9 +2357,7 @@ def pending_count(caller=Depends(_require_staff), db: Session = Depends(get_db))
         sm_slot = caller.get("role_id")
         if not sm_slot:
             return {"count": 0}
-        shift   = _sm_shift(db, sm_slot)
-        mgr_ids = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
-        q = q.filter(EditRequest.manager_id.in_(mgr_ids))
+        q = q.filter(EditRequest.manager_id.in_(shift_scope.unit_ids(db, sm_slot)))
 
     return {"count": q.count()}
 
@@ -2408,11 +2385,10 @@ def list_requests(caller=Depends(_require_staff), db: Session = Depends(get_db))
     elif role == "shift-manager":
         if not role_id:
             return []
-        # The shift comes from the PROFILE. The old id<=2 guess sent every
-        # shift-1 profile created after the original four slots to shift 2.
-        shift       = _sm_shift(db, role_id)
-        mgr_ids     = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
-        q = q.filter(EditRequest.manager_id.in_(mgr_ids))
+        # The shift comes from the PROFILE (the old id<=2 guess sent every
+        # shift-1 profile created after the original four slots to shift 2),
+        # and so does the plant.
+        q = q.filter(EditRequest.manager_id.in_(shift_scope.unit_ids(db, role_id)))
     # admin sees all
 
     rows = q.order_by(EditRequest.created_at.desc()).all()
@@ -2459,15 +2435,15 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
         if units is not None and req.manager_id not in units:
             raise HTTPException(status_code=403, detail="Not authorised")
 
-    # A native shift-manager may act only on their own shift's requests — the
+    # A native shift-manager may act only on their own units' requests — the
     # same rule undo_request enforces. Without this, approve/reject was looser
     # than undo, letting a shift-1 manager edit shift-2 attendance.
     if caller.get("role") == "shift-manager":
         sm_slot = caller.get("role_id")
         if not sm_slot:
             raise HTTPException(status_code=403, detail="No shift assigned")
-        if _sm_shift(db, sm_slot) != _get_shift_for_manager(db, req.manager_id):
-            raise HTTPException(status_code=403, detail="Not responsible for this shift")
+        if not shift_scope.covers(db, sm_slot, req.manager_id):
+            raise HTTPException(status_code=403, detail="Not responsible for this unit")
 
     processor_tg_id = int(caller["sub"])
     processor_name  = caller.get("full_name", "")
@@ -2630,15 +2606,13 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
     if req.status != "approved":
         raise HTTPException(status_code=409, detail="Can only undo approved requests")
 
-    # Shift-manager: verify they're responsible for this manager's shift
+    # Shift-manager: verify they're responsible for this unit (shift AND plant)
     if role == "shift-manager":
         sm_slot = caller.get("role_id")
         if not sm_slot:
             raise HTTPException(status_code=403, detail="No shift assigned")
-        sm_shift  = _sm_shift(db, sm_slot)
-        mgr_shift = _get_shift_for_manager(db, req.manager_id)
-        if sm_shift != mgr_shift:
-            raise HTTPException(status_code=403, detail="Not responsible for this shift")
+        if not shift_scope.covers(db, sm_slot, req.manager_id):
+            raise HTTPException(status_code=403, detail="Not responsible for this unit")
 
     changes  = req.changes  or {}
     original = req.original or {}
@@ -3042,9 +3016,8 @@ def _scope_deletion_requests(caller, db: Session):
     elif role == "shift-manager":
         if not role_id:
             return []
-        shift   = _sm_shift(db, role_id)   # from the profile, not an id guess
-        mgr_ids = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
-        q = q.filter(EditRequest.manager_id.in_(mgr_ids))
+        # from the profile, not an id guess — and their plant with it
+        q = q.filter(EditRequest.manager_id.in_(shift_scope.unit_ids(db, role_id)))
     # admin → all
     return q.order_by(EditRequest.date.desc()).all()
 
@@ -3099,9 +3072,8 @@ def _scope_documents(q, caller, db: Session):
     if role == "shift-manager":
         if not role_id:
             return q.filter(HrDocument.id < 0)   # always-empty
-        shift   = _sm_shift(db, role_id)   # from the profile, not an id guess
-        mgr_ids = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
-        return q.filter(HrDocument.manager_id.in_(mgr_ids))
+        # from the profile, not an id guess — and their plant with it
+        return q.filter(HrDocument.manager_id.in_(shift_scope.unit_ids(db, role_id)))
     # admin → everything
     return q
 
@@ -3148,10 +3120,9 @@ def _native_can_approve_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
     payload = doc.payload or {}
     if payload.get("target_type") == "supervisor":
         return role == "supervisor" and caller.get("role_id") == payload.get("target_manager_id")
-    # task target → a shift-manager of the sending unit's shift
+    # task target → a shift-manager answerable for the SENDING unit
     if role == "shift-manager":
-        shift = _get_shift_for_manager(db, doc.manager_id)
-        return _sm_shift(db, caller.get("role_id")) == shift
+        return shift_scope.covers(db, caller.get("role_id"), doc.manager_id)
     return False
 
 
@@ -4873,9 +4844,7 @@ def _visible_manager_ids(db: Session, caller) -> Optional[List[int]]:
     if role == "supervisor":
         return [role_id] if role_id else []
     if role == "shift-manager":
-        shift = _sm_shift(db, role_id)
-        return [m.id for m in db.query(Manager)
-                .filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
+        return shift_scope.unit_ids(db, role_id)
     return []
 
 

@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
         migrate_dispute_stages,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
-        migrate_factories,
+        migrate_factories, add_role_profile_factory,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
         migrate_idle_interval_status, approve_pending_idle_requests,
@@ -204,6 +204,7 @@ async def lifespan(app: FastAPI):
     # After the manager seed, so freshly seeded units land in the first factory
     # instead of staying unassigned.
     migrate_factories()
+    add_role_profile_factory()
     repoint_shift_report_sheet()
     wipe_cell_perenaladka_history()
     purge_leader_ai_history()

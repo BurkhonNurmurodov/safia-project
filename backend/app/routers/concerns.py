@@ -58,7 +58,7 @@ from app.models import (
 from app.capabilities import page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
-from app.services import action_log
+from app.services import action_log, shift_scope
 from app.services.factory_scope import factory_manager_ids, resolve_factory
 # Reuse the shared notification helpers: notify_profile addresses a PERSON (one
 # bell row on the profile + a DM to every account holding it), _notify is the
@@ -91,24 +91,31 @@ PICKER_ROLES = ("admin", "shift-manager", "supervisor")
 
 
 def _sm_names(db: Session) -> dict:
-    """manager_id → shift-manager profile name(s) covering that unit's shift.
+    """manager_id → the shift-manager name(s) answerable for that unit.
     Feeds responsible_name for shift-manager-level rows (the only level whose
-    holder isn't already a column on the concern); several managers sharing a
-    shift render comma-joined."""
-    by_shift: dict = {}
-    for prof in (
-        db.query(RoleProfile)
+    holder isn't already a column on the concern); several managers covering
+    one unit render comma-joined.
+
+    The in-memory twin of ``shift_scope.role_ids_for_unit`` — same rule, one
+    pass instead of a query per unit — so it must keep answering shift AND
+    plant, with a plant-less profile covering every factory on its shift.
+    """
+    profs = (
+        db.query(RoleProfile.name, RoleProfile.shift, RoleProfile.factory_id)
         .filter(RoleProfile.role == "shift-manager", RoleProfile.shift.isnot(None))
-        .order_by(RoleProfile.name)
-    ):
-        by_shift.setdefault(prof.shift, []).append(prof.name)
-    if not by_shift:
+        .order_by(RoleProfile.name).all()
+    )
+    if not profs:
         return {}
-    return {
-        mid: ", ".join(by_shift[shift])
-        for mid, shift in db.query(Manager.id, Manager.shift).all()
-        if shift in by_shift
-    }
+    out: dict = {}
+    for mid, shift, fac in db.query(Manager.id, Manager.shift, Manager.factory_id).all():
+        names = [
+            p.name for p in profs
+            if p.shift == shift and (p.factory_id is None or p.factory_id == fac)
+        ]
+        if names:
+            out[mid] = ", ".join(names)
+    return out
 
 
 def _cell_leaders(db: Session) -> dict:
@@ -380,40 +387,31 @@ class ConcernIn(BaseModel):
 
 # ── role scope helpers ───────────────────────────────────────────────────────
 
-def _viewer_shift(db: Session, payload: dict) -> Optional[int]:
-    """A shift-manager's shift (1|2) — the JWT has no shift field, so it is
-    resolved from their claimed profile (role_id → role_profiles.id)."""
-    prof = db.query(RoleProfile).filter(
-        RoleProfile.id == payload.get("role_id"),
-        RoleProfile.role == "shift-manager",
-    ).first()
-    return prof.shift if prof else None
+def _shift_manager_profile(db: Session, profile_id: Optional[int],
+                           unit_id: Optional[int] = None) -> Optional[RoleProfile]:
+    """Validate a picked shift-manager profile, optionally constrained to the
+    people answerable for one UNIT (used to keep a supervisor on their own
+    shift — and, since 2026-09-02, in their own plant).
 
-
-def _supervisor_shift(db: Session, payload: dict) -> Optional[int]:
-    """A supervisor's shift (1|2) — a supervisor IS a manager (role_id =
-    managers.id), so their shift is that unit's shift."""
-    mgr = db.query(Manager).filter(Manager.id == payload.get("role_id")).first()
-    return mgr.shift if mgr else None
-
-
-def _shift_manager_profile(db: Session, profile_id: Optional[int], shift: Optional[int] = None) -> Optional[RoleProfile]:
-    """Validate a picked shift-manager profile, optionally constrained to a
-    given shift (used to keep supervisors on their own shift)."""
+    Constrained by the same ``shift_scope.role_ids_for_unit`` the picker list is
+    built from, so the list a supervisor is shown and the choice this accepts
+    can never be two different sets.
+    """
     if not profile_id:
         return None
     prof = db.query(RoleProfile).filter_by(id=profile_id, role="shift-manager").first()
     if not prof:
         return None
-    if shift is not None and prof.shift != shift:
+    if unit_id is not None and prof.id not in shift_scope.role_ids_for_unit(db, unit_id):
         return None
     return prof
 
 
-def _shift_unit_ids(db: Session, shift: Optional[int]) -> list[int]:
-    if shift is None:
-        return []
-    return [mid for (mid,) in db.query(Manager.id).filter(Manager.shift == shift).all()]
+def _shift_unit_ids(db: Session, role_id: Optional[int]) -> list[int]:
+    """The units a shift-manager covers — shift AND plant, from shift_scope.
+    Archived units stay in: a concern's history must not vanish the day its
+    unit is archived."""
+    return shift_scope.unit_ids(db, role_id, include_archived=True)
 
 
 def _own_profile(db: Session, payload: dict) -> Optional[RoleProfile]:
@@ -459,7 +457,7 @@ def _scope_query(query, payload: dict, db: Session):
     if role in ("admin", "top-manager") or page_scope_is_all(db, payload, "concerns"):
         return query
     if role == "shift-manager":
-        unit_ids = _shift_unit_ids(db, _viewer_shift(db, payload))
+        unit_ids = _shift_unit_ids(db, payload.get("role_id"))
         return query.filter(or_(
             LeaderConcern.brigadir_manager_id.in_(unit_ids),
             LeaderConcern.shift_manager_profile_id == payload.get("role_id"),
@@ -488,7 +486,7 @@ def _viewer_ctx(db: Session, payload: dict) -> dict:
         prof = _own_profile(db, payload)
         ctx["own_profile_id"] = prof.id if prof else None
     elif role == "shift-manager":
-        ctx["shift_units"] = set(_shift_unit_ids(db, _viewer_shift(db, payload)))
+        ctx["shift_units"] = set(_shift_unit_ids(db, payload.get("role_id")))
     return ctx
 
 
@@ -690,9 +688,9 @@ def _resolve_target(payload: dict, body: ConcernIn, db: Session) -> dict:
         return tgt
 
     if role == "supervisor":
-        prof = _shift_manager_profile(db, body.shift_manager_profile_id, _supervisor_shift(db, payload))
+        prof = _shift_manager_profile(db, body.shift_manager_profile_id, payload.get("role_id"))
         if not prof:
-            raise HTTPException(status_code=400, detail="Select a shift-manager from your shift")
+            raise HTTPException(status_code=400, detail="Select a shift-manager responsible for your unit")
         mgr = db.query(Manager).filter(Manager.id == payload.get("role_id")).first()
         tgt.update(
             level="shift-manager",
@@ -827,16 +825,13 @@ def list_supervisor_units(
     payload: dict = Depends(require_page("concerns")),
 ):
     """Supervisor step of the create cascade: active units for admins, the
-    caller's shift's units for shift-managers."""
+    units a shift-manager covers (their shift, in their plant) for them."""
     role = payload.get("role")
     if role not in ("admin", "shift-manager"):
         raise HTTPException(status_code=403, detail="Admin or shift-manager only")
     q = db.query(Manager).filter(Manager.archived.is_(False))
     if role == "shift-manager":
-        shift = _viewer_shift(db, payload)
-        if shift is None:
-            return []
-        q = q.filter(Manager.shift == shift)
+        q = q.filter(Manager.id.in_(_shift_unit_ids(db, payload.get("role_id"))))
     return [
         {"manager_id": m.id, "name": m.name, "shift": m.shift}
         for m in q.order_by(Manager.name).all()
@@ -862,7 +857,7 @@ def list_cells(
         .filter(RoleProfile.role == "leader")
     )
     if role == "shift-manager":
-        q = q.filter(RoleProfile.manager_id.in_(_shift_unit_ids(db, _viewer_shift(db, payload))))
+        q = q.filter(RoleProfile.manager_id.in_(_shift_unit_ids(db, payload.get("role_id"))))
     elif role == "supervisor":
         q = q.filter(RoleProfile.manager_id == payload.get("role_id"))
     elif role == "leader":
@@ -900,7 +895,7 @@ def list_leader_profiles(
         q = q.filter(RoleProfile.manager_id == payload.get("role_id"))
     elif role == "shift-manager":
         q = q.filter(RoleProfile.manager_id.in_(
-            _shift_unit_ids(db, _viewer_shift(db, payload))
+            _shift_unit_ids(db, payload.get("role_id"))
         ))
 
     mgrs = {m.id: m for m in db.query(Manager).all()}
@@ -957,7 +952,12 @@ def list_shift_manager_profiles(
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     q = db.query(RoleProfile).filter(RoleProfile.role == "shift-manager")
     if role == "supervisor":
-        q = q.filter(RoleProfile.shift == _supervisor_shift(db, payload))
+        # Exactly the people answerable for this supervisor's own unit — their
+        # shift and their plant. Narrowing by shift alone offered a supervisor
+        # in one factory the shift-managers of another, who would then hold a
+        # concern about a unit they cannot see.
+        q = q.filter(RoleProfile.id.in_(
+            shift_scope.role_ids_for_unit(db, payload.get("role_id"))))
     elif shift is not None:
         q = q.filter(RoleProfile.shift == shift)
     claimed = {
@@ -1450,9 +1450,10 @@ def escalate_concern(
             raise HTTPException(status_code=400, detail="Already at the top level")
         new_level = LEVELS[idx + 1]
         if new_level == "shift-manager":
-            # A supervisor uplifting picks a shift-manager from their own shift.
-            shift = _supervisor_shift(db, payload) if payload.get("role") == "supervisor" else None
-            prof = _shift_manager_profile(db, body.shift_manager_profile_id, shift)
+            # A supervisor uplifting picks one of the shift-managers answerable
+            # for their own unit — their shift, in their plant.
+            unit = payload.get("role_id") if payload.get("role") == "supervisor" else None
+            prof = _shift_manager_profile(db, body.shift_manager_profile_id, unit)
             if not prof:
                 raise HTTPException(status_code=400, detail="Select a shift-manager")
             c.shift_manager_profile_id = prof.id

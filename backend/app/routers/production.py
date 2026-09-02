@@ -52,6 +52,7 @@ from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
 from app.services import action_log
 from app.services import idle_lock
+from app.services import shift_scope
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import compute_dashboard, daily_key, is_local_key, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
@@ -122,17 +123,20 @@ def _verify_admin(token: Annotated[str, Depends(_oauth2)]) -> dict:
     return payload
 
 
-def _shift_manager_shift(payload: dict, db: Session) -> int:
-    """The shift (1|2) a shift-manager profile covers. Their JWT role_id points
-    at role_profiles.id, and the shift lives there — the JWT itself has no shift
-    field."""
+def _shift_manager_units(payload: dict, db: Session) -> list[int]:
+    """The units a shift-manager covers — their shift, in their plant.
+
+    Their JWT ``role_id`` points at ``role_profiles.id``; both halves live on
+    that row and are intersected in ``services/shift_scope.py``, so this page
+    cannot disagree with /staff about who somebody manages.
+    """
     rp = db.query(RoleProfile).filter(
         RoleProfile.id == payload.get("role_id"),
         RoleProfile.role == "shift-manager",
     ).first()
     if not rp or rp.shift is None:
         raise HTTPException(status_code=403, detail="No shift assigned to this shift-manager profile")
-    return int(rp.shift)
+    return shift_scope.unit_ids(db, payload.get("role_id"))
 
 
 def _configured_manager_ids(db: Session) -> set[int]:
@@ -195,8 +199,8 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
         if not mgr:
             raise HTTPException(status_code=404, detail=f"Manager {mid} not found")
         if (role == "shift-manager" and not sees_all
-                and mgr.shift != _shift_manager_shift(payload, db)):
-            raise HTTPException(status_code=403, detail="This unit is not in your shift")
+                and not shift_scope.covers(db, payload.get("role_id"), mid)):
+            raise HTTPException(status_code=403, detail="This unit is not yours to read")
         return mid
     raise HTTPException(status_code=403, detail="Not allowed to view production data")
 
@@ -689,7 +693,7 @@ def list_production_managers(
         mgrs = q.filter(Manager.id == payload.get("role_id")).all()
     elif sees_all or role in ("admin", "top-manager", "shift-manager"):
         if role == "shift-manager" and not sees_all:
-            q = q.filter(Manager.shift == _shift_manager_shift(payload, db))
+            q = q.filter(Manager.id.in_(_shift_manager_units(payload, db)))
         configured = _configured_manager_ids(db)
         mgrs = [m for m in q.order_by(Manager.name).all() if m.id in configured]
     else:
