@@ -62,10 +62,18 @@ const mix = (hex, amt) => {                          // amt > 0 → lighter, < 0
   return `#${((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1)}`;
 };
 
+// A tooltip label is raw HTML, so anything that came out of the database — a
+// task name an admin typed — is escaped before it reaches the markup.
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => (
+  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
 // premium glassy tooltip shared by every chart on the page (padding · blur · shadow)
-const tipHTML = (label, val, color) => `
-  <div style="padding:8px 12px;background:rgba(18,21,31,0.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.10);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.45);">
-    <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af;margin-bottom:3px;">${label}</div>
+// `wrap` is for a label that is a SENTENCE rather than a category — a task's
+// own name — where the uppercase single line would run off the screen: it stays
+// sentence case, caps its width and wraps instead.
+const tipHTML = (label, val, color, wrap = false) => `
+  <div style="padding:8px 12px;max-width:280px;background:rgba(18,21,31,0.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.10);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.45);">
+    <div style="font-size:${wrap ? "11px" : "10px"};letter-spacing:${wrap ? "0" : ".06em"};text-transform:${wrap ? "none" : "uppercase"};color:#9ca3af;margin-bottom:3px;${wrap ? "white-space:normal;line-height:1.35;" : ""}">${esc(label)}</div>
     <div style="display:flex;align-items:center;gap:7px;font-size:14px;font-weight:700;color:#f5f6f8;line-height:1;">
       <span style="width:9px;height:9px;border-radius:9px;background:${color};box-shadow:0 0 8px ${color}88;"></span>${val}
     </div>
@@ -2356,6 +2364,43 @@ export default function Leaders() {
     onSuccess: (d) => { qc.setQueryData(["leader-tiers"], d); setTierEdit(null); },
   });
 
+  // What each question on the checklist is CALLED — the per-task chart's hover
+  // names the task instead of its number, and a number is the one thing a
+  // reader of that chart cannot look up anywhere on the page.
+  //
+  // Read off the live chain (global → supervisor → leader), never the seeded
+  // catalogue: a renamed task or a unit's own wording is what the leaders were
+  // actually asked, and the «Vazifalar» tab beside this one already prints it.
+  // Scoped by the page filters exactly as that tab is — the server decides what
+  // the caller may see, the client only chooses which level to ask for.
+  const reqLeaderId = useMemo(() => {
+    if (effLeader === "All") return null;
+    // The filter carries a NAME; the profile id rides on the rows, so any row
+    // of that person resolves it. An unmatched sheet spelling stays unresolved
+    // and the server answers with the level above.
+    return rows.find((r) => r.leader === effLeader && r.leader_id)?.leader_id ?? null;
+  }, [effLeader, rows]);
+  const { data: taskReq } = useQuery({
+    queryKey: ["leader-task-names", reqLeaderId, effSup, effShift],
+    queryFn: () => api.get("/api/leader-tasks/requirements", {
+      params: {
+        ...(reqLeaderId ? { leader_id: reqLeaderId } : {}),
+        ...(effSup !== "All" ? { supervisor: effSup } : {}),
+        ...(effShift ? { shift: effShift } : {}),
+      },
+    }).then((r) => r.data),
+  });
+  // The name in force, in the reader's own language, falling back to Russian —
+  // what the platform falls back to everywhere. A question the chain does not
+  // carry (one disabled at this level still keeps its axis slot) falls back to
+  // the seeded catalogue, and only then to nothing, so the caller can print the
+  // bare «T4» rather than an empty tooltip.
+  const taskName = useCallback((id) => {
+    const live = (taskReq?.tasks || []).find((t) => Number(t.id) === Number(id));
+    const n = live ? (live.names?.[lang] || live.names?.ru || live.names?.uz || "") : "";
+    return String(n || taskDetail(id, lang).n || "").trim();
+  }, [taskReq, lang]);
+
   // supervisor → leaders cascade
   const supLeaderMap = useMemo(() => {
     const map = { All: new Set() };
@@ -3081,12 +3126,19 @@ export default function Leaders() {
     dataLabels: { enabled: false },
     legend: { show: false },
     grid: grid("y"),
-    xaxis: { categories: chartTasks.map((t) => `T${t.id}`), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    // The axis stays «T1…T13» — thirteen names cannot be read sideways under a
+    // bar — and Apex's own axis chip, which only ever repeats that number, is
+    // off: the hover below is where the question is NAMED, and two tooltips
+    // saying the same nothing is what sent the reader looking for a name.
+    xaxis: { categories: chartTasks.map((t) => `T${t.id}`), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false } },
     yaxis: { min: 0, max: 100, tickAmount: 4, labels: axisLabel },
     tooltip: { custom: ({ dataPointIndex }) => {
       const t = chartTasks[dataPointIndex];
-      if (t.rate == null) return tipHTML(`${T.task} ${t.id}`, T.notAsked, "#94a3b8");
-      return tipHTML(`${T.task} ${t.id}`, `${t.rate}%`, scoreColor(t.rate));
+      // The task's own name, and the number only for a question nothing on the
+      // platform has a name for — an empty title says less than «T4» did.
+      const label = taskName(t.id) || `${T.task} ${t.id}`;
+      if (t.rate == null) return tipHTML(label, T.notAsked, "#94a3b8", true);
+      return tipHTML(label, `${t.rate}%`, scoreColor(t.rate), true);
     } },
   };
 
