@@ -290,6 +290,7 @@ export default function Zagruzka() {
             commentedCells={commentedCells}
             calcFactors={calcFactors}
             onCalcFactorsChange={setCalcFactors}
+            columnSummary
             onToggleFullscreen={() => setCompFullscreen(true)}
           />
         </div>
@@ -315,6 +316,7 @@ export default function Zagruzka() {
               commentedCells={commentedCells}
               calcFactors={calcFactors}
               onCalcFactorsChange={setCalcFactors}
+              columnSummary
               fullscreen
               onToggleFullscreen={() => setCompFullscreen(false)}
             />
