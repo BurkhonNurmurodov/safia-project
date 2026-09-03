@@ -614,11 +614,16 @@ or why.
 - Only cells that have waiting appear; dates are newest-first, collapsible, the
   newest open. A cell's header total is the UNION of the rows shown, with the
   plain sum in its tooltip where an overlap makes the two differ.
-- Export: `POST /api/downtime/cell-detail/export.xlsx` — one row per EVENT on a
-  cells day, one row per CATEGORY on a sheet day, marked as such, so the file is
-  never shorter than the screen it claims to be. Delivered by
-  `app/xlsx_delivery.py` like every other export (browser downloads, Telegram
-  DMs).
+- **The modal carries NO export** (the operator's call, 2026-09-03): its footer
+  is the close button alone. The page's own «Excel» button one level up is the
+  export for this register, and it already carries these events on its
+  «Yacheykalar» sheet — a second file offering one bar's slice of the same rows
+  is a second answer to «what did the cells file». `POST
+  /api/downtime/cell-detail/export.xlsx` still exists and still works (one row
+  per EVENT on a cells day, one row per CATEGORY on a sheet day, marked as such,
+  delivered by `app/xlsx_delivery.py`), but nothing in the UI calls it — putting
+  the button back is one `Button` in the footer, deleting the endpoint is a
+  separate decision.
 - Scoped exactly as the page is: `manager_id` is a query parameter, so
   `scoped_manager_ids` re-decides it server-side — a viewer who cannot see the
   unit on the chart cannot read its cells here either.

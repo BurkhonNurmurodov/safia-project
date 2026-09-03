@@ -1,18 +1,16 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, FileSpreadsheet, Boxes, CalendarDays, Info } from "lucide-react";
+import { ChevronDown, ChevronRight, Boxes, CalendarDays, Info } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
 import { SkeletonChart } from "../ui/Skeleton";
-import { useToast } from "../ui/Toast";
 import DayTimeline from "./DayTimeline";
 import { CATS, catColor } from "./categories";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { fmtDur } from "../../utils/idleTime";
 import { cellLabel } from "../../utils/cellName";
-import { exportXlsx } from "../../utils/exportXlsx";
 import api from "../../utils/api";
 
 /**
@@ -119,9 +117,7 @@ export default function UnitOjidaniyaModal({
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
-  const toast = useToast({ position: "bottom" });
   const [openDates, setOpenDates] = useState(() => new Set(dates.slice(0, 1).map((d) => d.iso)));
-  const [busy, setBusy] = useState(false);
 
   const params = useMemo(() => ({
     manager_id: managerId,
@@ -149,44 +145,6 @@ export default function UnitOjidaniyaModal({
   });
 
   const unionLabel = stopped ? undefined : t("downtime.dt.unionNs");
-
-  const onExport = async () => {
-    setBusy(true);
-    try {
-      const where = await exportXlsx("/api/downtime/cell-detail/export.xlsx", {
-        body: {
-          manager_id: managerId,
-          date_from: dateFrom,
-          date_to: dateTo,
-          stopped,
-          kpi_only: kpiOnly,
-          cats,
-          factory,
-          labels: {
-            date: t("downtime.colDate"),
-            cell: t("downtime.dt.colCell"),
-            leader: t("idleCell.leader"),
-            category: t("idleCell.category"),
-            start: t("idleCell.startTime"),
-            end: t("idleCell.endTime"),
-            minutes: t("idleCell.colMinutes"),
-            stopped: t("idleCell.colStatus"),
-            note: t("idleCell.colNote"),
-            source: t("downtime.dt.colSource"),
-            yes: t("idleCell.stopped"),
-            no: t("idleCell.notStopped"),
-            srcCells: t("downtime.dt.srcCells"),
-            srcSheet: t("downtime.dt.srcSheet"),
-          },
-        },
-      });
-      toast.success(t(where === "download" ? "downtime.dt.downloaded" : "downtime.dt.sentToChat"));
-    } catch {
-      toast.error(t("downtime.dt.exportFailed"));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const body = () => {
     if (isLoading) return <SkeletonChart className="h-48" />;
@@ -280,17 +238,9 @@ export default function UnitOjidaniyaModal({
       icon={Boxes}
       maxWidth="max-w-5xl"
       bodyClassName="px-4 py-4 space-y-3"
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>{t("idleCell.cancel")}</Button>
-          <Button onClick={onExport} loading={busy} icon={FileSpreadsheet}>
-            {t("downtime.dt.export")}
-          </Button>
-        </>
-      }
+      footer={<Button variant="secondary" onClick={onClose}>{t("idleCell.cancel")}</Button>}
     >
       {body()}
-      {toast.node}
     </Modal>
   );
 }
