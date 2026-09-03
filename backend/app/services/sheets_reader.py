@@ -16,6 +16,10 @@ _gc: Optional[gspread.Client] = None
 # Ojidaniya «To'xtaganda» tab and the загрузка KPIs, the second feeds the
 # «To'xtamaganda» tab. Confirmed intentional 2026-07-22 — never merge them.
 #
+# Cat A2 is «Категория A2» (Xoladilnikdan GP mahsulot kutish — waiting for
+# FINISHED goods from the cooler, where Cat A is the raw one), added
+# 2026-09-03 by user directive and seated straight after Cat A.
+#
 # Cat H is the sheet's «Категория H (Тозалаш)» — cleaning. Cat I is «Категория
 # I» (Oldingi smena ishi tugashini kutish — waiting for the previous shift to
 # finish). Both are keyed by the sheet's own letter, as every category here is:
@@ -26,7 +30,7 @@ _gc: Optional[gspread.Client] = None
 # into the not-stopped series. That falls out of matching on the header — the
 # column simply carries neither marker — instead of being special-cased.
 SHIFT_CATEGORY_ORDER = [
-    "Cat A", "Cat B", "Cat C", "Cat D", "Cat D2", "Cat D3",
+    "Cat A", "Cat A2", "Cat B", "Cat C", "Cat D", "Cat D2", "Cat D3",
     "Cat E", "Cat F", "Cat G", "Cat H", "Cat I",
 ]
 

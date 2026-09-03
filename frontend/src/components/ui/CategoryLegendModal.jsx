@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import {
   X,
   Snowflake,
+  PackageCheck,
   Wrench,
   Container,
   Warehouse,
@@ -19,6 +20,7 @@ import { useLang } from "../../context/LangContext";
 /** Themed icon per category code (keyed by name minus the "Cat " prefix). */
 const CAT_ICON = {
   A: Snowflake,      // waiting for product from the cooler
+  A2: PackageCheck,  // waiting for FINISHED goods (GP) from the cooler
   B: Wrench,         // equipment breakdown
   C: Container,      // trays / trolleys / containers / lids
   D: Warehouse,      // goods / raw material from the warehouse
@@ -42,7 +44,7 @@ const CAT_ICON = {
  *
  * Each category's label + note live in translations.js under
  * `downtime.cat.<CODE>.label` / `.note`, where CODE is the name minus the
- * "Cat " prefix (A, B, C, D, D2, D3, E, F, G) — so all four languages work.
+ * "Cat " prefix (A, A2, B, C, D, D2, D3, E, F, G) — so all four languages work.
  */
 export default function CategoryLegendModal({ catNames = [], catColors = [], onClose }) {
   const { t } = useLang();

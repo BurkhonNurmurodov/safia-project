@@ -16,7 +16,9 @@ TZ = timezone(timedelta(hours=5))
 
 CAT_LABELS = {
     "uz": {
-        "Cat A": "Xoladilnikdan mahsulot kutish", "Cat B": "Oborudivaniya buzilishi",
+        "Cat A": "Xoladilnikdan mahsulot kutish",
+        "Cat A2": "Xoladilnikdan GP mahsulot kutish",
+        "Cat B": "Oborudivaniya buzilishi",
         "Cat C": "List/vaganetka kutish", "Cat D": "Skladdan mahsulot yoki hom ashyo kutish",
         "Cat D2": "Skladdan qo'shimcha zayavka orqali hom ashyo kutish",
         "Cat D3": "Otdellardan mahsulot kutish",
@@ -25,7 +27,9 @@ CAT_LABELS = {
         "Cat H": "Tozalash", "Cat I": "Oldingi smena ishi tugashini kutish",
     },
     "uz_cyrl": {
-        "Cat A": "Холодильникдан маҳсулот кутиш", "Cat B": "Ускуна бузилиши",
+        "Cat A": "Холодильникдан маҳсулот кутиш",
+        "Cat A2": "Холодильникдан ГП маҳсулот кутиш",
+        "Cat B": "Ускуна бузилиши",
         "Cat C": "Лист/вагонетка кутиш", "Cat D": "Складдан маҳсулот ёки хом ашё кутиш",
         "Cat D2": "Складдан қўшимча заявка орқали хом ашё кутиш",
         "Cat D3": "Бўлимлардан маҳсулот кутиш",
@@ -34,7 +38,9 @@ CAT_LABELS = {
         "Cat H": "Тозалаш", "Cat I": "Олдинги смена иши тугашини кутиш",
     },
     "ru": {
-        "Cat A": "Ожидание продукции из холодильника", "Cat B": "Поломка оборудования",
+        "Cat A": "Ожидание продукции из холодильника",
+        "Cat A2": "Ожидание готовой продукции (ГП) из холодильника",
+        "Cat B": "Поломка оборудования",
         "Cat C": "Ожидание листов/вагонеток", "Cat D": "Ожидание продукции или сырья со склада",
         "Cat D2": "Ожидание сырья по дополнительной заявке со склада",
         "Cat D3": "Ожидание продукции из других отделов",
@@ -43,7 +49,9 @@ CAT_LABELS = {
         "Cat H": "Уборка", "Cat I": "Ожидание окончания работы предыдущей смены",
     },
     "en": {
-        "Cat A": "Waiting for product from the cooler", "Cat B": "Equipment breakdown",
+        "Cat A": "Waiting for product from the cooler",
+        "Cat A2": "Waiting for finished goods (GP) from the cooler",
+        "Cat B": "Equipment breakdown",
         "Cat C": "Waiting for trays/trolleys", "Cat D": "Waiting for goods or raw material from the warehouse",
         "Cat D2": "Waiting for raw material via an extra warehouse request",
         "Cat D3": "Waiting for product from other departments",

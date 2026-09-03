@@ -78,8 +78,8 @@ PAGE = "idle-cell"
 # Canonical Ojidaniya categories — mirrors backend/app/services/sheets_reader.py
 # SHIFT_CATEGORY_ORDER. Cat H never had a To'xtamaganda half (its 2nd source
 # column is a people-count), so an ojidaniya on it is always a real stop.
-IDLE_CATEGORIES = ["Cat A", "Cat B", "Cat C", "Cat D", "Cat D2", "Cat D3",
-                   "Cat E", "Cat F", "Cat G", "Cat H", "Cat I"]
+IDLE_CATEGORIES = ["Cat A", "Cat A2", "Cat B", "Cat C", "Cat D", "Cat D2",
+                   "Cat D3", "Cat E", "Cat F", "Cat G", "Cat H", "Cat I"]
 _VALID = set(IDLE_CATEGORIES)
 _ALWAYS_STOPPED = {"Cat H"}
 

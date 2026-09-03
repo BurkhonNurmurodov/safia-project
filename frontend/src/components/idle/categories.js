@@ -1,6 +1,6 @@
 import {
-  Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
-  FlaskConical, ClipboardList, Sparkles, Hourglass, Layers,
+  Snowflake, PackageCheck, Wrench, Container, Warehouse, PackagePlus, Building2,
+  Truck, FlaskConical, ClipboardList, Sparkles, Hourglass, Layers,
 } from "lucide-react";
 import { CATEGORY_COLORS } from "../../utils/chartPalette";
 
@@ -11,6 +11,7 @@ import { CATEGORY_COLORS } from "../../utils/chartPalette";
 // stopped/not-stopped question is not asked of it on either side.
 export const CATS = [
   { code: "A",  name: "Cat A" },
+  { code: "A2", name: "Cat A2" },
   { code: "B",  name: "Cat B" },
   { code: "C",  name: "Cat C" },
   { code: "D",  name: "Cat D" },
@@ -25,8 +26,9 @@ export const CATS = [
 
 // Themed icon per category — mirrors CategoryLegendModal.jsx CAT_ICON.
 export const CAT_ICON = {
-  A: Snowflake, B: Wrench, C: Container, D: Warehouse, D2: PackagePlus,
-  D3: Building2, E: Truck, F: FlaskConical, G: ClipboardList, H: Sparkles, I: Hourglass,
+  A: Snowflake, A2: PackageCheck, B: Wrench, C: Container, D: Warehouse,
+  D2: PackagePlus, D3: Building2, E: Truck, F: FlaskConical, G: ClipboardList,
+  H: Sparkles, I: Hourglass,
 };
 
 export const iconFor = (code) => CAT_ICON[code] || Layers;
