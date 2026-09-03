@@ -68,9 +68,15 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
 PROFILE_TYPES = {"top-manager", "shift-manager", "supervisor", "leader", "admin", "guest"}
 
-# Every relational column that keys on managers.id — used when an admin
-# re-keys a supervisor's Verifix ID. (JSONB payloads inside hr_documents may
-# embed manager ids too; those are historical snapshots and stay untouched.)
+# The columns that key on managers.id and make a unit HISTORY — a record of
+# something it DID. `_manager_has_data` reads this list to decide whether a
+# deleted unit is archived (history stays queryable) or dropped outright, so a
+# per-unit CONFIG row must never be added here: a unit whose only trace is its
+# assigned cells or its shift times is a unit with nothing to preserve, and
+# listing those would make every such unit un-deletable. Config lives in
+# `_MANAGER_REKEY_EXTRA_REFS` below, and only the re-key walks both.
+# (JSONB payloads inside hr_documents may embed manager ids too; those are
+# historical snapshots and stay untouched.)
 _MANAGER_ID_REFS = [
     ("attendance", "manager_id"),
     ("comments", "manager_id"),
@@ -92,6 +98,54 @@ _MANAGER_ID_REFS = [
     ("leader_task_days", "manager_id"),
     ("role_profiles", "manager_id"),
 ]
+
+# The rest of what points at managers.id. A re-key DELETES the old managers row,
+# so every pointer must follow it — and the two halves fail differently, which
+# is why neither may be dropped. A column with a live FK (`ON DELETE NO ACTION`
+# everywhere) makes that DELETE raise, so the whole re-key rolls back with a
+# 500 and the admin is told nothing about why. A column WITHOUT one — the soft
+# integer references below, and `cells.manager_id` on any database whose cells
+# table predates the column — is silently orphaned instead, which is worse:
+# these are live scope predicates, not decoration, so the unit's own supervisor
+# quietly stops seeing its AI verdicts, its late proofs, its objections and its
+# rows in the action register.
+_MANAGER_REKEY_EXTRA_REFS = [
+    # Per-unit config. Deliberately NOT history — see the comment above.
+    ("cells", "manager_id"),
+    ("setup_times", "manager_id"),
+    ("idle_source_settings", "manager_id"),
+    ("leader_task_settings", "manager_id"),
+    ("leader_unit_settings", "manager_id"),
+    ("leader_task_pending_changes", "manager_id"),
+    ("pp_manager_settings", "manager_id"),
+    # Per-day production rows: the efficiency pin and the «O. SONI» / штатка
+    # pins. Orphaning these leaves the Production «Odamlar soni» tab and the
+    # staffing cards silently falling back to the derived and global values.
+    ("pp_day_settings", "manager_id"),
+    ("pp_work_center_daily", "manager_id"),
+    # Filed work and the register of it.
+    ("attendance_batch_cells", "manager_id"),
+    ("attendance_batch_cells", "prev_manager_id"),
+    ("forecast_call_notices", "manager_id"),
+    ("leader_ai_reviews", "manager_id"),
+    ("leader_ai_disputes", "manager_id"),
+    ("leader_day_reports", "manager_id"),
+    ("leader_day_exclusions", "manager_id"),
+    ("leader_cutoffs", "manager_id"),
+    ("leader_late_requests", "manager_id"),
+    ("leader_late_proofs", "manager_id"),
+    ("leader_task_config_audit", "manager_id"),
+    # The action register is append-only, and this is not an exception to that:
+    # nothing is deleted and no row's SNAPSHOT is rewritten. `unit_name` still
+    # says what the unit was called when it happened; `unit_id` is a pointer to
+    # a unit that is about to stop existing under the old number, and leaving it
+    # behind splits one unit's history across two ids the Jurnal's unit filter
+    # can never join back together.
+    ("action_logs", "unit_id"),
+]
+
+# What a re-key must re-point: the unit's history AND its config.
+_MANAGER_REKEY_REFS = _MANAGER_ID_REFS + _MANAGER_REKEY_EXTRA_REFS
 
 
 def _caller(token: Annotated[str, Depends(_oauth2)]) -> dict:
@@ -1349,7 +1403,7 @@ def _rekey_manager_id(db: Session, mgr: Manager, new_id: int) -> int:
     old_id = mgr.id
     db.add(Manager(id=new_id, name=mgr.name, shift=mgr.shift, archived=mgr.archived))
     db.flush()
-    for table, col in _MANAGER_ID_REFS:
+    for table, col in _MANAGER_REKEY_REFS:
         db.execute(text(f"UPDATE {table} SET {col} = :new WHERE {col} = :old"),
                    {"new": new_id, "old": old_id})
     db.execute(text(
