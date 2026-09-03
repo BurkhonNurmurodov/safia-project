@@ -1525,6 +1525,22 @@ const t = {
     "downtime.cat.I.label":  "Oldingi smena ishi tugashini kutish",
     "downtime.cat.I.note":   "Oldingi smena o'z ishini tugatmagani sababli yacheyka to'xtab kutib qolish vaqti.",
 
+    // ── Weekly PPTX deck (/downtime → «Haftalik hisobot») ──
+    "downtime.deck.btn": "Haftalik hisobot",
+    "downtime.deck.title": "Haftalik hisobotni tayyorlash",
+    "downtime.deck.intro": "Ojidaniya bo'yicha haftalik taqdimot (PPTX) tayyorlanadi va yuklab olinadi.",
+    "downtime.deck.rowPeriod": "Davr",
+    "downtime.deck.rowFactory": "Zavod",
+    "downtime.deck.rowShift": "Smena",
+    "downtime.deck.rowCats": "Toifalar",
+    "downtime.deck.bothShifts": "Ikkalasi ham",
+    "downtime.deck.ignoresFilters": "Diqqat: bu hisobot sahifadagi filtrlarga bog'liq emas — davr, zavod va qamrov har doim yuqoridagicha bo'ladi.",
+    "downtime.deck.aiNote": "Izoh matnlari sun'iy intellekt tomonidan yoziladi; raqamlar va grafiklar ma'lumotlar bazasidan olinadi. Bu bir necha soniya vaqt oladi.",
+    "downtime.deck.confirm": "Tayyorlash",
+    "downtime.deck.downloaded": "Haftalik hisobot yuklab olindi",
+    "downtime.deck.sentToChat": "Haftalik hisobot Telegramga yuborildi",
+    "downtime.deck.failed": "Hisobotni tayyorlab bo'lmadi",
+
     // ── Brigadir Profile ──────────────────────────────────────────────────────
     "profile.title":         "Brigadir Profili",
     "profile.notFound":      "Topilmadi.",
@@ -5745,6 +5761,22 @@ const t = {
     "downtime.cat.H.note":   "Ячейка тозалаш ишлари сабабли тўхтаб турган вақт.",
     "downtime.cat.I.label":  "Олдинги смена иши тугашини кутиш",
     "downtime.cat.I.note":   "Олдинги смена ўз ишини тугатмагани сабабли ячейка тўхтаб кутиб қолиш вақти.",
+
+    // ── Weekly PPTX deck (/downtime → «Haftalik hisobot») ──
+    "downtime.deck.btn": "Ҳафталик ҳисобот",
+    "downtime.deck.title": "Ҳафталик ҳисоботни тайёрлаш",
+    "downtime.deck.intro": "Ожиданя бўйича ҳафталик тақдимот (PPTX) тайёрланади ва юклаб олинади.",
+    "downtime.deck.rowPeriod": "Давр",
+    "downtime.deck.rowFactory": "Завод",
+    "downtime.deck.rowShift": "Смена",
+    "downtime.deck.rowCats": "Тоифалар",
+    "downtime.deck.bothShifts": "Иккаласи ҳам",
+    "downtime.deck.ignoresFilters": "Диққат: бу ҳисобот саҳифадаги фильтрларга боғлиқ эмас — давр, завод ва қамров ҳар доим юқоридагича бўлади.",
+    "downtime.deck.aiNote": "Изоҳ матнлари сунъий интеллект томонидан ёзилади; рақамлар ва графиклар маълумотлар базасидан олинади. Бу бир неча сония вақт олади.",
+    "downtime.deck.confirm": "Тайёрлаш",
+    "downtime.deck.downloaded": "Ҳафталик ҳисобот юклаб олинди",
+    "downtime.deck.sentToChat": "Ҳафталик ҳисобот Телеграмга юборилди",
+    "downtime.deck.failed": "Ҳисоботни тайёрлаб бўлмади",
 
     // ── Brigadir Profile ──────────────────────────────────────────────────────
     "profile.title":         "Бригадир Профили",
@@ -9967,6 +9999,22 @@ const t = {
     "downtime.cat.I.label":  "Ожидание окончания работы предыдущей смены",
     "downtime.cat.I.note":   "Время простоя ячейки из-за того, что предыдущая смена не завершила свою работу.",
 
+    // ── Weekly PPTX deck (/downtime → «Haftalik hisobot») ──
+    "downtime.deck.btn": "Недельный отчёт",
+    "downtime.deck.title": "Сформировать недельный отчёт",
+    "downtime.deck.intro": "Будет подготовлена и скачана недельная презентация (PPTX) по ожиданиям.",
+    "downtime.deck.rowPeriod": "Период",
+    "downtime.deck.rowFactory": "Завод",
+    "downtime.deck.rowShift": "Смена",
+    "downtime.deck.rowCats": "Категории",
+    "downtime.deck.bothShifts": "Обе",
+    "downtime.deck.ignoresFilters": "Внимание: отчёт не зависит от фильтров на странице — период, завод и охват всегда такие, как указано выше.",
+    "downtime.deck.aiNote": "Комментарии пишет искусственный интеллект; цифры и графики берутся из базы данных. Это займёт несколько секунд.",
+    "downtime.deck.confirm": "Сформировать",
+    "downtime.deck.downloaded": "Недельный отчёт скачан",
+    "downtime.deck.sentToChat": "Недельный отчёт отправлен в Telegram",
+    "downtime.deck.failed": "Не удалось сформировать отчёт",
+
     // ── Brigadir Profile ──────────────────────────────────────────────────────
     "profile.title":         "Профиль бригадира",
     "profile.notFound":      "Не найдено.",
@@ -14187,6 +14235,22 @@ const t = {
     "downtime.cat.H.note":   "Cell idle time caused by cleaning work.",
     "downtime.cat.I.label":  "Waiting for the previous shift to finish",
     "downtime.cat.I.note":   "Cell idle time caused by the previous shift not finishing its work.",
+
+    // ── Weekly PPTX deck (/downtime → «Haftalik hisobot») ──
+    "downtime.deck.btn": "Weekly report",
+    "downtime.deck.title": "Build the weekly report",
+    "downtime.deck.intro": "A weekly Ojidaniya presentation (PPTX) will be built and downloaded.",
+    "downtime.deck.rowPeriod": "Period",
+    "downtime.deck.rowFactory": "Factory",
+    "downtime.deck.rowShift": "Shift",
+    "downtime.deck.rowCats": "Categories",
+    "downtime.deck.bothShifts": "Both",
+    "downtime.deck.ignoresFilters": "Note: this report ignores the filters on the page — the period, factory and scope are always as shown above.",
+    "downtime.deck.aiNote": "The commentary is written by AI; the figures and charts come from the database. This takes a few seconds.",
+    "downtime.deck.confirm": "Build",
+    "downtime.deck.downloaded": "Weekly report downloaded",
+    "downtime.deck.sentToChat": "Weekly report sent to Telegram",
+    "downtime.deck.failed": "Could not build the report",
 
     // ── Brigadir Profile ──────────────────────────────────────────────────────
     "profile.title":         "Supervisor Profile",

@@ -997,11 +997,16 @@ def export_downtime_deck(
     name = ojidaniya_deck.filename(data)
 
     action_log.enrich(
-        request,
-        target=f"{factory.name_uz or factory.code} · {report_week.label(win)}",
-        detail={"events": data["events"], "minutes": round(data["total"]),
-                "supervisors": data["sup_count"], "cells": data["cell_count"],
-                "narrative": bool(narrative), "bytes": len(deck)},
+        target_kind="report", target_id=name,
+        target_name=factory.name_uz or factory.code,
+        details=[("file", name), ("from_date", win[0].isoformat()),
+                 ("to_date", win[1].isoformat()), ("factory", factory.name_uz or factory.code),
+                 ("events", data["events"]), ("minutes", round(data["total"])),
+                 ("supervisors", data["sup_count"]), ("cells", data["cell_count"]),
+                 # Whether the prose came out, so a deck an operator remembers
+                 # as thin can be told from one Gemini simply did not answer for.
+                 ("narrative", "yes" if narrative else "no"),
+                 ("size", len(deck))],
     )
     return deliver_file(
         request, payload, name, deck, PPTX_MIME,

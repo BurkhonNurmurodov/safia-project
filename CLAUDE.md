@@ -628,6 +628,92 @@ or why.
   `scoped_manager_ids` re-decides it server-side — a viewer who cannot see the
   unit on the chart cannot read its cells here either.
 
+## The weekly deck (`/downtime` → «Haftalik hisobot»)
+
+From **2026-09-03** the toolbar of `/downtime` carries a second export beside
+«Excel»: a fourteen-slide PowerPoint report of the week — `POST
+/api/downtime/export.pptx` → `services/ojidaniya_deck.py`, with the prose
+written by Gemini in `services/deck_narrative.py`. It replaces a deck somebody
+was building by hand every week (read every leader's entry, total the minutes
+per category and per brigadir, find the three that matter, write the root
+causes, lay out the slides).
+
+- **It is a FIXED report, not a view of the page.** One plant, both shifts,
+  every supervisor, all categories, the stopped half as the headline with the
+  not-stopped half named beside it. The toolbar's filters change nothing —
+  which is exactly why the button never fires without its `ConfirmDialog`,
+  which writes the whole scope out. `GET /api/downtime/deck-window` serves the
+  period to that dialog rather than the browser computing it: the window is a
+  RULE, and a JavaScript copy of it would drift until the confirm named one
+  week and the file carried another.
+- **`services/report_week.py` is THE window** — last Wednesday back to the
+  Wednesday before it, **both included**, so eight calendar days and two
+  consecutive reports SHARE their boundary day (the operator's call, mirroring
+  the hand-made deck it replaces). `last_wednesday` is strictly before today,
+  so a Wednesday press is about the week that just closed. The comparison
+  window is the eight days ending where this one begins — same length, so the
+  percentage means something.
+- **Every figure comes from the page's own computation.** `_downtime()` and
+  `_cell_detail()` are what `/downtime` itself reads; the deck module is HANDED
+  their output and never queries. The router does the fetching, so nothing in
+  `services/` imports a router.
+- **Two totals, and both are named.** A unit's day is the headcount-weighted
+  mean of its cells, so the events listed under a brigadir add up to something
+  else — usually much more. The KPI slides carry the weighted figure the page
+  charts; the per-cell and per-event slides carry the cells' own sums and SAY
+  so. Same rule `UnitOjidaniyaModal` already follows.
+- **A comparison across a SOURCE change is never called an improvement.**
+  `collect()` computes `comparable` — false when ≥40% of the comparison window
+  was read off the «Смена отчёт» row rather than the cells — and the cover, the
+  summary KPI and the comparison slide all read it. It is not a cosmetic guard:
+  on the first real run the previous window was **100%** sheet-based, the delta
+  read −64.5%, and Gemini duly wrote «to'xtashlar 65% ga kamayib» into the
+  headline. The percentage is still SHOWN (hiding it leaves a reader
+  wondering); it is labelled «taqqoslab bo'lmaydi (manba o'zgargan)», the
+  comparison slide carries a red caveat, and `_brief` tells the model in as
+  many words not to present it as an achievement.
+- **Gemini writes the commentary AROUND the notes; it never rewrites one.**
+  A leader's note is the recorded evidence of a shift, so it is quoted verbatim
+  — transliterated to Latin where it was typed in Cyrillic (about a third of
+  them are, in the same column), and otherwise reproduced with its typos. The
+  model is given the already-computed figures and told to reuse them as given;
+  it is asked for synthesis only. `_VOCAB` hands it the plant's own words
+  (yacheyka, sklad, bozorlik, zayavka, smena topshiruvi) because a general
+  model reaches for dictionary synonyms and a report that renames the shopfloor
+  reads as though written by somebody who has never been on it, and `_STYLE`
+  demands Uzbek that sounds native rather than translated.
+- **A Gemini failure must not cost the operator the deck.** `write()` returns
+  None on anything — no key, quota, malformed answer — and each prose slot
+  falls back to a plain statement of its own numbers. `narrative: false` on the
+  body skips the call outright.
+- **`cat_key()` normalises whatever spelling the model returns** («Cat D3» /
+  «D3» / «D3 — Otdellararo mahsulot»), because it answers differently in
+  different fields of the SAME response, and a strict lookup silently dropped
+  the root-cause line off a slide.
+- **Always Uzbek Latin**, whoever presses it, so the words live in the module
+  rather than travelling from the client as they do for the workbook. The
+  category labels are a copy of the `downtime.cat.*` uz bundle and the colours
+  mirror `catColor()` — keep them in step.
+- **Admin only**, checked in the endpoint and not merely by hiding the button:
+  the deck covers the whole plant — every unit's minutes, cells and note text —
+  which `/downtime` deliberately withholds from a supervisor, and the endpoint
+  is reachable without the UI.
+- **The plant is resolved by NAME, never by id** (`DECK_FACTORY = "Uchtepa"`,
+  matched against `code` and all four name columns). An unresolved name is a
+  hard 500 naming the factories that DO exist — a silent fallback to «all
+  factories» would produce a file that looks right and carries another plant's
+  units. Ids differ between a checkout and production; `startup.MANAGERS`
+  already records that lesson.
+- Deliberately NOT built: a scheduled weekly send (the operator chose the
+  button), a PDF (`soffice` is the route if it is ever wanted), and slide 12 of
+  the original deck — it scored whether each problem was FIXED, off a «yechim
+  sanasi» column in the old Google-Sheets journals that
+  `cell_ojidaniya_intervals` has no equivalent of. Adding one is a schema and
+  form change, not a deck change.
+- Logged as `export.ojidaniya_deck`; delivered by `xlsx_delivery.deliver_file`
+  (browser downloads, Telegram DMs), which is the old `deliver_xlsx`
+  generalised over the MIME type — the WHERE decision stays in one place.
+
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 
 From **2026-09-03** the toolbar of `/downtime` carries an «Excel» button at its
