@@ -20,6 +20,7 @@ from fastapi import Request, Response
 log = logging.getLogger(__name__)
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
 def wants_download(request: Request, payload: dict) -> bool:
@@ -33,7 +34,7 @@ def wants_download(request: Request, payload: dict) -> bool:
     return bool(payload.get("web")) and request.query_params.get("download") == "1"
 
 
-def xlsx_response(filename: str, data: bytes) -> Response:
+def file_response(filename: str, data: bytes, mime: str) -> Response:
     """The workbook as a downloadable response.
 
     ``filename*=UTF-8''…`` carries the real name — these are Cyrillic and Uzbek
@@ -44,7 +45,7 @@ def xlsx_response(filename: str, data: bytes) -> Response:
     encoded = quote(filename)
     return Response(
         content=data,
-        media_type=XLSX_MIME,
+        media_type=mime,
         headers={
             "Content-Disposition": f"attachment; filename=\"{encoded}\"; filename*=UTF-8''{encoded}",
             "Access-Control-Expose-Headers": "Content-Disposition",
@@ -52,17 +53,31 @@ def xlsx_response(filename: str, data: bytes) -> Response:
     )
 
 
-def deliver_xlsx(request: Request, payload: dict, filename: str, data: bytes,
-                 caption: str = "", chat_id: int | None = None):
+def deliver_file(request: Request, payload: dict, filename: str, data: bytes,
+                 mime: str, caption: str = "", chat_id: int | None = None):
     """Download it, or DM it — and say which one happened.
 
     Returns either the file Response or the usual ``{"ok": True}`` JSON, so an
-    endpoint adopts this by returning whatever comes back.
+    endpoint adopts this by returning whatever comes back. The MIME type is the
+    only thing that varies between a workbook and a deck; the decision about
+    WHERE the bytes go is the same one for both, and lives here so it is made
+    once rather than per export.
     """
     if wants_download(request, payload):
-        return xlsx_response(filename, data)
+        return file_response(filename, data, mime)
 
     target = chat_id if chat_id is not None else int(payload["sub"])
     from app.telegram_bot import bot
     bot.send_document(chat_id=target, document=(filename, data), caption=caption)
     return {"ok": True, "sent": True}
+
+
+def deliver_xlsx(request: Request, payload: dict, filename: str, data: bytes,
+                 caption: str = "", chat_id: int | None = None):
+    """A workbook, delivered. The original name, kept so the half-dozen export
+    endpoints that already call it need no edit."""
+    return deliver_file(request, payload, filename, data, XLSX_MIME, caption, chat_id)
+
+
+def xlsx_response(filename: str, data: bytes) -> Response:
+    return file_response(filename, data, XLSX_MIME)

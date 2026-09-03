@@ -319,11 +319,27 @@ def collect(*, cur: dict, prev: dict, events: list[dict], cell_days: list[dict],
 
     # ── which days answered from where, and how thin the register is ────────
     sheet_days = sorted({r["date"] for r in cur["rows"] if r.get("source") == "sheet"})
+    # The comparison window's mix matters MORE than this one's. Before
+    # `idle_source.CELLS_FROM` a unit's minutes came off the «Смена отчёт» row,
+    # which is a different measurement of a different thing — so a week mostly
+    # read that way, set against a week read off the cells, produces a
+    # percentage that describes the change of source and not the change of
+    # anything on the shopfloor.
+    prev_sheet = sorted({r["date"] for r in prev["rows"] if r.get("source") == "sheet"})
+    prev_days = sorted({r["date"] for r in prev["rows"]})
     filed = {e["supervisor"] for e in events}
     silent = sorted(s["name"] for s in supervisors if s["name"] not in filed)
     thin = [e for e in ev_on if len(latin(e["note"])) < THIN_NOTE_CHARS]
 
     delta = ((total - p_total) / p_total * 100) if p_total else 0.0
+    # Whether that percentage means anything. Before `idle_source.CELLS_FROM` a
+    # unit's minutes came off the «Смена отчёт» row — a different measurement
+    # of a different thing — so a comparison week read mostly that way against
+    # a week read off the cells produces a number that describes the change of
+    # SOURCE. It is still shown, because hiding it would leave a reader
+    # wondering; it is just never called an improvement.
+    comparable = bool(p_total) and (len(prev_sheet) / len(prev_days) * 100
+                                    if prev_days else 0.0) < 40
 
     return {
         "factory": factory_name,
@@ -331,6 +347,7 @@ def collect(*, cur: dict, prev: dict, events: list[dict], cell_days: list[dict],
         "period": period_words(win), "prev_period": period_words(prev_win),
         "days": days, "daily": daily,
         "total": total, "prev_total": p_total, "delta_pct": delta,
+        "comparable": comparable,
         "total_ns": total_ns, "prev_total_ns": p_total_ns,
         "events": len(ev_on), "events_ns": len(ev_off),
         "avg_event": (sum(e["minutes"] for e in ev_on) / len(ev_on)) if ev_on else 0.0,
@@ -345,6 +362,8 @@ def collect(*, cur: dict, prev: dict, events: list[dict], cell_days: list[dict],
         "by_sup_events": {k: v for k, v in ev_by_sup.items()},
         "quality": {
             "sheet_days": sheet_days,
+            "prev_sheet_days": prev_sheet,
+            "prev_sheet_share": (len(prev_sheet) / len(prev_days) * 100) if prev_days else 0.0,
             "silent_supervisors": silent,
             "thin_notes": len(thin),
             "cyrillic_notes": sum(1 for e in ev_on
@@ -540,8 +559,9 @@ def _cover(prs, d: dict, narr):
     _text(s, M, 4.05, 5.0, 1.0, f"{hours(d['total'])} soat",
           size=52, color=GOLD2, font=HEAD_FONT, bold=True)
     shifts = f"{d['total'] / SHIFT_MIN:.1f}".replace(".", ",")
-    move = (f" · o'tgan haftadan {signed_pct(d['delta_pct'])}"
-            if d["prev_total"] else " · o'tgan hafta bilan solishtirib bo'lmaydi")
+    move = (f" · o'tgan haftadan {signed_pct(d['delta_pct'])}" if d["comparable"]
+            else (" · o'tgan hafta bilan taqqoslab bo'lmaydi (manba o'zgargan)"
+                  if d["prev_total"] else " · taqqoslash uchun ma'lumot yo'q"))
     _text(s, M, 5.05, 7.4, 0.5,
           f"jami kutish — {num(d['total'])} daqiqa (≈ {shifts} smena){move}",
           size=11.5, color=ONDARK)
@@ -572,7 +592,7 @@ def _summary(prs, d: dict, narr, page: int, footer: str):
     _chrome(s, "Qisqacha", "Asosiy xulosalar", page, footer)
 
     shifts = f"{d['total'] / SHIFT_MIN:.1f}".replace(".", ",")
-    move = signed_pct(d["delta_pct"]) if d["prev_total"] else "—"
+    move = signed_pct(d["delta_pct"]) if d["comparable"] else "taqqoslanmaydi"
     kpis = [
         (f"{num(d['total'])} min", "jami kutish vaqti",
          f"≈ {hours(d['total'])} soat = {shifts} smena ({move})"),
@@ -718,8 +738,9 @@ def _comparison(prs, d: dict, narr, page: int, footer: str):
     worse = _ai(narr, "compare_worse")
     cw = (CW - 0.2) / 2
     for i, (title, body, tone, bg) in enumerate([
-        (f"Yaxshilandi — jami {signed_pct(d['delta_pct'])}" if d["delta_pct"] < 0
-         else "Yaxshilangan yo'nalishlar", better, GREEN, GREENBG),
+        (f"Yaxshilandi — jami {signed_pct(d['delta_pct'])}"
+         if d["comparable"] and d["delta_pct"] < 0 else "Yaxshilangan yo'nalishlar",
+         better, GREEN, GREENBG),
         ("Diqqat talab qiladi", worse, RED, REDBG),
     ]):
         x = M + i * (cw + 0.2)
@@ -764,12 +785,52 @@ def _comparison(prs, d: dict, narr, page: int, footer: str):
         _rect(s, M + 0.2, y + 0.31, CW - 0.4, 0.008, fill=LINE)
         y += 0.36
 
-    if d["quality"]["sheet_days"]:
+    # The one caveat that can invalidate this whole slide, so it is ON the
+    # slide and not only in the appendix: if the comparison week was largely
+    # read off the shift report and this one off the cells, the percentage
+    # measures the change of SOURCE, not a change on the shopfloor.
+    q = d["quality"]
+    share = q["prev_sheet_share"]
+    if share >= 40:
+        _rect(s, M, H - 1.05, CW, 0.62, fill=REDBG, radius=0.08)
+        _text(s, M + 0.22, H - 0.95, CW - 0.44, 0.46,
+              f"Diqqat: taqqoslanayotgan davr ({d['prev_period']}) kunlarining "
+              f"{pct(share)} qismi «Smena hisoboti» satridan o'qilgan, "
+              f"yacheykalardan emas. Bu ikki xil o'lchov, shuning uchun "
+              f"yuqoridagi foiz manba o'zgarishini ham o'z ichiga oladi — "
+              f"uni sof yaxshilanish deb o'qib bo'lmaydi.",
+              size=8.5, color=RED, line=1.2)
+    elif q["sheet_days"] or q["prev_sheet_days"]:
         _text(s, M, H - 0.86, CW, 0.28,
-              f"Izoh: taqqoslanayotgan davrlarning {len(d['quality']['sheet_days'])} kuni "
-              f"«Smena hisoboti» satridan o'qilgan, yacheykalardan emas — "
-              f"o'sha kunlar uchun hodisalar ro'yxati yo'q.",
+              f"Izoh: ikki davrda jami "
+              f"{len(q['sheet_days']) + len(q['prev_sheet_days'])} kun "
+              f"«Smena hisoboti» satridan o'qilgan — o'sha kunlar uchun "
+              f"hodisalar ro'yxati yo'q, faqat toifa daqiqalari bor.",
               size=8.5, color=FAINT, line=1.2)
+
+
+def cat_key(raw: str) -> str:
+    """«Cat D3» / «D3» / «D3 — Otdellararo mahsulot» → «D3».
+
+    The model is asked for a category code and answers with whatever reads
+    naturally to it — sometimes the bare code, sometimes the code with its
+    label attached, and the two arrive in the SAME response from different
+    fields. A lookup that only accepted one spelling silently dropped the
+    other, so a slide lost its root-cause line for no reason a reader could
+    see. Everything after the first separator is discarded, and the result is
+    matched case-insensitively against the canonical codes.
+    """
+    t = (raw or "").strip()
+    if not t:
+        return ""
+    if t.lower().startswith("cat "):
+        t = t[4:]
+    for sep in ("—", "–", "-", ":", "·", "("):
+        if sep in t:
+            t = t.split(sep, 1)[0]
+    t = t.strip().upper()
+    codes = {c[1].upper(): c[1] for c in CATS}
+    return codes.get(t, t)
 
 
 def _top_events(events: list[dict], n: int) -> list[dict]:
@@ -846,7 +907,8 @@ def _top_categories(prs, d: dict, narr, page: int, footer: str):
     _rect(s, 0, 0, W, H, fill=CREAM)
     _chrome(s, "So'ralgan kesim", "Top-3 toifa: aynan nima kutildi?", page, footer)
 
-    roots = {r.get("cat"): r.get("root") for r in _ai_list(narr, "category_roots", 6)}
+    roots = {cat_key(r.get("cat")): r.get("root")
+             for r in _ai_list(narr, "category_roots", 6)}
     three = d["categories"][:3]
     cw = (CW - 2 * 0.18) / 3
     for i, c in enumerate(three):
@@ -871,7 +933,7 @@ def _top_categories(prs, d: dict, narr, page: int, footer: str):
             _event_line(s, x + 0.18, y, cw - 0.36, e, colour=c["colour"])
             y += 0.5
 
-        root = roots.get(c["code"]) or roots.get(c["name"])
+        root = roots.get(c["code"])
         _rect(s, x + 0.18, 5.42, cw - 0.36, 0.62, fill=INNER, radius=0.06)
         _text(s, x + 0.32, 5.5, cw - 0.64, 0.48,
               ("Ildiz: " + root) if root else _clip(c["full"], 120),
@@ -966,3 +1028,285 @@ def _supervisors(prs, d: dict, narr, page: int, footer: str):
               "Jurnal bermagan brigadirlar: "
               + _clip(" · ".join(d["quality"]["silent_supervisors"]), 150),
               size=8.5, color=FAINT)
+
+
+# ── slide 10 · the week, day by day ──────────────────────────────────────────
+def _daily(prs, d: dict, narr, page: int, footer: str):
+    s = _blank(prs)
+    _rect(s, 0, 0, W, H, fill=CREAM)
+    peak = max(d["daily"], key=lambda x: x["minutes"]) if d["daily"] else None
+    title = (f"Cho'qqi — {day_full(peak['date'])}" if peak and peak["minutes"]
+             else "Hafta dinamikasi")
+    _chrome(s, "Hafta dinamikasi", title, page, footer)
+
+    vals = [x["minutes"] for x in d["daily"]]
+    top = max(vals) if vals else 0
+    colours = [RED if v == top and v else RGBColor(0xC9, 0x9E, 0x63) for v in vals]
+    _bar_chart(s, M - 0.1, 1.35, 8.6, 4.3,
+               [x["label"] for x in d["daily"]], vals, colours,
+               horizontal=False, gap=45)
+
+    x = M + 8.75
+    cw = CW - 8.75
+    if peak and peak["minutes"]:
+        _card(s, x, 1.35, cw, 1.5, fill=INK)
+        _text(s, x + 0.22, 1.5, cw - 0.44, 0.5, f"{num(peak['minutes'])} min",
+              size=26, color=GOLD2, font=HEAD_FONT, bold=True)
+        _text(s, x + 0.22, 2.02, cw - 0.44, 0.7, day_full(peak["date"]),
+              size=10, color=ONDARK, line=1.18)
+
+        same = [e for e in d["events_on"] if e["date_obj"] == peak["date"]]
+        y = 3.0
+        for e in _top_events(same, 4):
+            _event_line(s, x, y, cw, e, colour=cat_meta(e["category"])[3])
+            y += 0.5
+
+    note = _ai(narr, "daily_note")
+    _rect(s, M, 5.86, 8.5, 0.82, fill=INNER, line=LINE, radius=0.08)
+    _text(s, M + 0.22, 5.99, 8.1, 0.6, _clip(note or NO_AI, 320),
+          size=9.5, color=INK2 if note else FAINT, line=1.2)
+
+    avg = (sum(vals) / len([v for v in vals if v])) if any(vals) else 0
+    _text(s, M, H - 0.86, 8.5, 0.26,
+          f"Kunlik o'rtacha (kutish bo'lgan kunlar bo'yicha): {num(avg)} daqiqa.",
+          size=8.5, color=FAINT)
+
+
+# ── slide 11 · which cells stopped most ──────────────────────────────────────
+def _cells(prs, d: dict, narr, page: int, footer: str):
+    s = _blank(prs)
+    _rect(s, 0, 0, W, H, fill=CREAM)
+    _chrome(s, "Yacheykalar kesimida", "Eng ko'p to'xtagan yacheykalar", page, footer)
+
+    rows = d["cells"][:12]
+    if rows:
+        rev = list(reversed(rows))
+        _bar_chart(s, M - 0.1, 1.3, 8.15, 4.7,
+                   [r["code"] for r in rev], [r["minutes"] for r in rev],
+                   [RGBColor(0x14, 0xB8, 0xA6)] * len(rev))
+
+    x = M + 8.3
+    cw = CW - 8.3
+    _text(s, x, 1.32, cw, 0.24, "ENG OG'IRLARI", size=9, color=GOLD, bold=True)
+    y = 1.62
+    for r in rows[:4]:
+        _card(s, x, y, cw, 0.82)
+        _text(s, x + 0.18, y + 0.12, cw - 0.36, 0.24,
+              f"{r['code']} — {num(r['minutes'])} min", size=11, color=INK,
+              font=HEAD_FONT, bold=True)
+        who = " · ".join(v for v in (r.get("leader"), r.get("supervisor")) if v)
+        _text(s, x + 0.18, y + 0.38, cw - 0.36, 0.34,
+              f"{_clip(who, 40)}\n{r['events']} hodisa", size=8.5, color=MUTED, line=1.18)
+        y += 0.9
+
+    note = _ai(narr, "cells_note")
+    _rect(s, M, 6.06, 8.5, 0.62, fill=INNER, line=LINE, radius=0.08)
+    _text(s, M + 0.22, 6.17, 8.1, 0.44, _clip(note or NO_AI, 260),
+          size=9.5, color=INK2 if note else FAINT, line=1.2)
+
+    # The bar chart above is the cells' OWN arithmetic and does not add up to
+    # the headline — saying so here is cheaper than a reader discovering it.
+    _text(s, M, H - 0.86, CW, 0.28,
+          "Yacheyka jamlanmasi — o'sha yacheykaning kunlik kutish oralig'i "
+          "birlashmasi. Brigadir ko'rsatkichi esa yacheykalarning odam soniga "
+          "vaznlangan o'rtachasi, shuning uchun bu ustunlar yig'indisi umumiy "
+          "raqamdan katta chiqadi.", size=8.5, color=FAINT, line=1.2)
+
+
+# ── slide 12 · what to do ────────────────────────────────────────────────────
+def _actions(prs, d: dict, narr, page: int, footer: str):
+    s = _blank(prs)
+    _rect(s, 0, 0, W, H, fill=CREAM)
+    _chrome(s, "Tavsiyalar", "Nima qilish kerak?", page, footer)
+
+    actions = _ai_list(narr, "actions", 4)
+    if not actions:
+        actions = [{"cat": c["code"],
+                    "text": f"{c['label']} — {num(c['minutes'])} daqiqa, "
+                            f"{c['events']} hodisa. Sabablarini brigadirlar bilan ko'rib chiqish."}
+                   for c in d["categories"][:3]]
+
+    by_code = {c["code"]: c for c in d["categories"]}
+    y = 1.36
+    for i, a in enumerate(actions):
+        code = cat_key(a.get("cat"))
+        c = by_code.get(code)
+        h = 1.06
+        _card(s, M, y, CW, h)
+        _rect(s, M, y, 0.055, h, fill=c["colour"] if c else GOLD)
+        _chip(s, M + 0.24, y + 0.2, 0.5, 0.3, code or str(i + 1),
+              fill=c["colour"] if c else GOLD, color=WHITE, size=10.5)
+        if c:
+            _text(s, M + 0.86, y + 0.18, 3.2, 0.24, c["label"], size=10.5,
+                  color=INK, bold=True)
+            _text(s, M + 0.86, y + 0.42, 3.2, 0.22,
+                  f"{num(c['minutes'])} min · {pct(c['share'])}",
+                  size=9, color=BROWN, bold=True)
+        _text(s, M + 4.25, y + 0.2, CW - 4.5, 0.72,
+              _clip(a.get("text", ""), 300), size=10, color=INK2, line=1.22)
+        y += h + 0.13
+
+    covered = sum(by_code[c]["minutes"]
+                  for c in {cat_key(a.get("cat")) for a in actions} if c in by_code)
+    if covered and d["total"]:
+        _rect(s, M, y + 0.06, CW, 0.62, fill=INK, radius=0.08)
+        _text(s, M + 0.24, y + 0.2, CW - 0.48, 0.36,
+              f"Bu choralar {num(covered)} daqiqani — jami yo'qotishning "
+              f"{pct(covered / d['total'] * 100)} qismini qamrab oladi.",
+              size=10.5, color=GOLD2, bold=True)
+
+
+# ── slide 13 · the conclusion ────────────────────────────────────────────────
+def _conclusion(prs, d: dict, narr, page: int, footer: str):
+    s = _blank(prs)
+    _rect(s, 0, 0, W, H, fill=DARK)
+    _rect(s, 0, 0, W, 0.09, fill=GOLD)
+    _chrome(s, "Xulosa", "", page, footer, dark=True)
+
+    head = _ai(narr, "conclusion_headline")
+    _text(s, M, 1.1, CW - 1.0, 1.1,
+          _clip(head or f"{hours(d['total'])} soat kutish — {d['events']} hodisa, "
+                        f"{d['cell_count']} yacheykada.", 190),
+          size=26, color=WHITE, font=HEAD_FONT, bold=True, line=1.12)
+
+    three = d["supervisors"][:3]
+    tcat = d["categories"][:3]
+    _text(s, M, 2.42, CW, 0.3,
+          f"Top-3 brigadir — {pct(sum(x['share'] for x in three))}; "
+          f"top-3 toifa ({' · '.join(c['code'] for c in tcat)}) — "
+          f"{pct(sum(c['share'] for c in tcat))}.",
+          size=11, color=ONDARK)
+
+    points = _ai_list(narr, "conclusion_points", 3)
+    if not points:
+        points = [{"title": c["label"],
+                   "body": f"{num(c['minutes'])} daqiqa, {c['events']} hodisa."}
+                  for c in tcat]
+    cw = (CW - 2 * 0.2) / 3
+    for i, p in enumerate(points):
+        x = M + i * (cw + 0.2)
+        _rect(s, x, 3.0, cw, 2.5, fill=RGBColor(0x3A, 0x28, 0x1C), radius=0.12)
+        _chip(s, x + 0.22, 3.2, 0.34, 0.34, str(i + 1), fill=GOLD2, color=DARK, size=12)
+        _text(s, x + 0.22, 3.72, cw - 0.44, 0.5,
+              _clip(_sentence(p.get("title", "")), 60), size=13, color=WHITE,
+              font=HEAD_FONT, bold=True, line=1.1)
+        _text(s, x + 0.22, 4.3, cw - 0.44, 1.05,
+              _clip(p.get("body", ""), 220), size=9.5, color=ONDARK, line=1.22)
+
+    nxt = d["window"][1] + timedelta(days=7)
+    _text(s, M, 5.72, CW, 0.3,
+          f"Keyingi hisobot: {day_label(nxt)} chorshanba yakunida.",
+          size=10, color=GOLD2)
+
+
+# ── slide 14 · how this was made, and where it is thin ───────────────────────
+def _appendix(prs, d: dict, narr, page: int, footer: str):
+    s = _blank(prs)
+    _rect(s, 0, 0, W, H, fill=CREAM)
+    _chrome(s, "Ilova", "Metodika va ma'lumot sifati", page, footer)
+
+    q = d["quality"]
+    cw = (CW - 0.2) / 2
+
+    _card(s, M, 1.32, cw, 2.5)
+    _text(s, M + 0.24, 1.48, cw - 0.48, 0.26, "Ma'lumot qanday olindi",
+          size=11.5, color=INK, font=HEAD_FONT, bold=True)
+    lines = [
+        f"Manba: liderlarning «Yacheykalar kutishi» yozuvlari "
+        f"(/idle-cell). Faqat {d['period']} oralig'i olindi.",
+        f"To'xtagan hodisalar: {d['events']} ta, {num(d['total'])} daqiqa.",
+        f"Brigadir ko'rsatkichi — yacheykalarning odam soniga vaznlangan "
+        f"o'rtachasi: Σ(N·T)÷ΣN. Shu sababli yacheykalar yig'indisi undan katta.",
+        f"Toifalar bo'yicha barcha kategoriyalar hisobga olindi, "
+        f"zagruzkaga kirmaydiganlari ham.",
+    ]
+    y = 1.82
+    for t in lines:
+        _rect(s, M + 0.24, y + 0.06, 0.055, 0.2, fill=GOLD)
+        _text(s, M + 0.42, y, cw - 0.7, 0.46, t, size=9, color=MUTED, line=1.2)
+        y += 0.5
+
+    _card(s, M + cw + 0.2, 1.32, cw, 2.5)
+    _text(s, M + cw + 0.44, 1.48, cw - 0.48, 0.26, "Hisobga KIRMAGANI",
+          size=11.5, color=INK, font=HEAD_FONT, bold=True)
+    out = [
+        f"«To'xtatmagan» kutishlar: {d['events_ns']} ta, {num(d['total_ns'])} "
+        f"daqiqa — yacheyka ishlashda davom etgan, shuning uchun asosiy "
+        f"raqamga qo'shilmadi.",
+    ]
+    if q["sheet_days"]:
+        out.append(f"«Smena hisoboti»dan o'qilgan kunlar: {len(q['sheet_days'])} ta "
+                   f"({', '.join(q['sheet_days'][:4])}) — u yerda hodisalar "
+                   f"ro'yxati yo'q, faqat toifa daqiqalari bor.")
+    if q["silent_supervisors"]:
+        out.append(f"Jurnal bermagan brigadirlar: {len(q['silent_supervisors'])} ta — "
+                   f"{_clip(' · '.join(q['silent_supervisors']), 110)}.")
+    y = 1.82
+    for t in out:
+        _rect(s, M + cw + 0.44, y + 0.06, 0.055, 0.2, fill=RED)
+        _text(s, M + cw + 0.62, y, cw - 0.7, 0.6, t, size=9, color=MUTED, line=1.2)
+        y += 0.62
+
+    _card(s, M, 3.98, CW, 1.72)
+    _text(s, M + 0.24, 4.14, CW - 0.48, 0.26, "Sifat bo'yicha kuzatuvlar",
+          size=11.5, color=INK, font=HEAD_FONT, bold=True)
+    facts = [
+        (f"{q['thin_notes']} hodisada izoh juda qisqa "
+         f"({THIN_NOTE_CHARS} belgidan kam) — sabab tiklanmaydi.",
+         RED if q["thin_notes"] else GREEN),
+        (f"{q['cyrillic_notes']} izoh kirill alifbosida yozilgan — bu faylda "
+         f"lotinga o'girildi, matn o'zgartirilmadi.", MUTED),
+        (f"{q['flag_days']} brigadir-kun 50 daqiqadan oshdi.",
+         RED if q["flag_days"] else GREEN),
+        (f"Taqqoslash davri: {d['prev_period']} ({num(d['prev_total'])} daqiqa). "
+         f"Ikkala davr ham 8 kunlik va bir kunni baham ko'radi.", MUTED),
+        (f"Taqqoslash davri kunlarining {pct(q['prev_sheet_share'])} qismi "
+         f"«Smena hisoboti»dan o'qilgan."
+         + (" Foizni sof yaxshilanish deb o'qib bo'lmaydi."
+            if q["prev_sheet_share"] >= 40 else ""),
+         RED if q["prev_sheet_share"] >= 40 else MUTED),
+    ]
+    y = 4.48
+    for t, tone in facts:
+        _rect(s, M + 0.24, y + 0.05, 0.055, 0.2, fill=tone)
+        _text(s, M + 0.42, y, CW - 0.7, 0.3, t, size=9, color=MUTED, line=1.2)
+        y += 0.32
+
+    ai_line = ("Sahifalardagi izoh matnlari sun'iy intellekt tomonidan "
+               "yozilgan; raqamlar, jadvallar va grafiklar to'g'ridan-to'g'ri "
+               "ma'lumotlar bazasidan olingan. Liderlar yozuvlari qayta "
+               "yozilmagan — faqat qo'shtirnoq ichida keltirilgan."
+               if narr else
+               "Bu faylda AI izohlari yo'q — barcha matn ma'lumotlar bazasidan "
+               "olingan raqamlardan iborat.")
+    _rect(s, M, 5.88, CW, 0.7, fill=INNER, line=LINE, radius=0.08)
+    _text(s, M + 0.24, 6.0, CW - 0.48, 0.5, ai_line, size=8.5, color=FAINT, line=1.2)
+
+
+# ── the deck ─────────────────────────────────────────────────────────────────
+_SLIDES = [
+    _summary, _glossary, _categories, _comparison, _top_supervisors,
+    _top_categories, _other_categories, _supervisors, _daily, _cells,
+    _actions, _conclusion, _appendix,
+]
+
+
+def build(d: dict, narrative: dict | None = None) -> bytes:
+    """The finished .pptx. `narrative` may be None — see `deck_narrative`."""
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(W), Inches(H)
+
+    footer = f"Yacheykalardagi kutish vaqtlari · {d['period']} · {d['factory']}"
+    _cover(prs, d, narrative)
+    for i, fn in enumerate(_SLIDES, start=2):
+        fn(prs, d, narrative, i, footer)
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
+def filename(d: dict) -> str:
+    a, b = d["window"]
+    return (f"Yacheykalar_kutish_tahlili_{a.strftime('%d-%m')}_"
+            f"{b.strftime('%d-%m-%Y')}.pptx")

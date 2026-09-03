@@ -25,8 +25,10 @@ import { fmtTime, fmtDuration } from "../utils/formatters";
 import { useChartTheme } from "../hooks/useChartTheme";
 import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { useAuth } from "../context/AuthContext";
 import { padChartParams } from "../utils/chartRange";
-import { Info, Layers, UserRound, Tag, FileSpreadsheet } from "lucide-react";
+import { Info, Layers, UserRound, Tag, FileSpreadsheet, Presentation } from "lucide-react";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 
 // Downtime-category identity colors — the shared generic-first order, one hue
@@ -96,6 +98,21 @@ export default function Downtime() {
   const [detail, setDetail] = useState(null);
   // «Excel» on the toolbar — see onExport below.
   const [exporting, setExporting] = useState(false);
+
+  // «Haftalik hisobot» — the PPTX deck. Admin only, and deliberately NOT
+  // driven by the filters on screen: it is a fixed weekly report about one
+  // plant, so the confirm writes its whole scope out before anything is built.
+  const { auth } = useAuth();
+  const isAdmin = auth?.role === "admin";
+  const [deckAsk, setDeckAsk] = useState(false);
+  const [deckBusy, setDeckBusy] = useState(false);
+  const [deckErr, setDeckErr] = useState("");
+  const { data: deckWin } = useQuery({
+    queryKey: ["deck-window"],
+    queryFn: () => api.get("/api/downtime/deck-window").then((r) => r.data),
+    enabled: isAdmin,
+    staleTime: 30 * 60 * 1000,
+  });
   const toast = useToast();
   const minLabel = t("general.min");
   const hrsLabel = t("general.hrs");
@@ -706,6 +723,31 @@ export default function Downtime() {
     }
   };
 
+  // ── «Haftalik hisobot»: the fixed weekly deck ───────────────────────────
+  // Nothing on screen changes what this produces. The server owns the period
+  // (services/report_week), the plant and the scope; the client sends nothing
+  // but the press, so the confirm above it can state the whole thing and be
+  // right. A Gemini failure does not fail the export — the deck arrives with
+  // its commentary slots marked unavailable — so the only errors worth
+  // wording here are the plant not resolving and the caller not being admin.
+  const onDeck = async () => {
+    setDeckBusy(true);
+    setDeckErr("");
+    try {
+      const where = await exportXlsx("/api/downtime/export.pptx", {
+        body: {},
+        fallbackName: "haftalik-hisobot.pptx",
+      });
+      setDeckAsk(false);
+      toast.success(t(where === "download" ? "downtime.deck.downloaded" : "downtime.deck.sentToChat"));
+    } catch (e) {
+      const why = e?.response?.data?.detail;
+      setDeckErr(typeof why === "string" && why ? why : t("downtime.deck.failed"));
+    } finally {
+      setDeckBusy(false);
+    }
+  };
+
   const chartH = Math.max(300, summary.length * 28 + 60);
 
   // Selected-category chips (doughnut filter) — shared by the bar-chart and trend headers.
@@ -831,6 +873,24 @@ export default function Downtime() {
         >
           <span className="hidden sm:inline">{t("downtime.dt.export")}</span>
         </Button>
+        {/* The weekly deck. Admin only — it covers the whole plant, which this
+            page deliberately withholds from a supervisor. It is NOT filtered
+            by the toolbar beside it, so it never renders without its confirm:
+            pressing «Excel» and pressing this one produce reports about
+            different periods and different scopes, and only the dialog says so. */}
+        {isAdmin && (
+          <Button
+            size="lg"
+            variant="secondary"
+            loading={deckBusy}
+            icon={!deckBusy ? <Presentation size={14} /> : null}
+            onClick={() => { setDeckErr(""); setDeckAsk(true); }}
+            title={t("downtime.deck.btn")}
+            aria-label={t("downtime.deck.btn")}
+          >
+            <span className="hidden lg:inline">{t("downtime.deck.btn")}</span>
+          </Button>
+        )}
       </div>
 
       {/* Page view tabs — «тўхтаганда» / «тўхтамаганда» halves of the same report.
@@ -1091,6 +1151,48 @@ export default function Downtime() {
           dateTo={dateTo}
           fmt={fmt}
           scopeLine={detailScopeLine}
+        />
+      )}
+      {/* The weekly deck's confirm. It exists because this button ignores the
+          toolbar it sits on: an admin who has narrowed the page to one
+          brigadir and one day would otherwise press it and get a whole-plant
+          file about a different week, with nothing having said so. The period
+          comes from the server (GET /downtime/deck-window), never from a
+          second copy of the rule in the browser. */}
+      {deckAsk && (
+        <ConfirmDialog
+          open
+          tone="warning"
+          icon={<Presentation size={18} />}
+          title={t("downtime.deck.title")}
+          message={
+            <div className="space-y-2 text-sm">
+              <p style={{ color: "var(--text-2)" }}>{t("downtime.deck.intro")}</p>
+              <div
+                className="rounded-xl p-3 space-y-1.5"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+              >
+                {[
+                  [t("downtime.deck.rowPeriod"), deckWin?.label || "…"],
+                  [t("downtime.deck.rowFactory"), deckWin?.factory || "…"],
+                  [t("downtime.deck.rowShift"), t("downtime.deck.bothShifts")],
+                  [t("downtime.deck.rowCats"), t("downtime.allCats")],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex items-baseline justify-between gap-3">
+                    <span className="text-[11px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>{k}</span>
+                    <span className="text-xs font-medium text-right" style={{ color: "var(--text-1)" }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("downtime.deck.ignoresFilters")}</p>
+              <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("downtime.deck.aiNote")}</p>
+            </div>
+          }
+          confirmLabel={t("downtime.deck.confirm")}
+          loading={deckBusy}
+          error={deckErr || null}
+          onCancel={() => { if (!deckBusy) { setDeckAsk(false); setDeckErr(""); } }}
+          onConfirm={onDeck}
         />
       )}
       {toast.node}

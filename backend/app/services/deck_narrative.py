@@ -28,6 +28,7 @@ import json
 import logging
 
 from app.services import gemini
+from app.translit import transliterate
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +146,18 @@ def _brief(data: dict) -> str:
     add(f"Jami kutish (to'xtagan): {d['total']:.0f} daqiqa "
         f"= {d['total'] / 60:.1f} soat; o'tgan davr {d['prev_total']:.0f} daqiqa; "
         f"o'zgarish {d['delta_pct']:+.0f}%")
+    if not d.get("comparable"):
+        # Without this the model states the fall as an achievement — it did,
+        # on the first run against real data («to'xtashlar 65% ga kamayib»),
+        # because a percentage with no caveat attached reads as one.
+        add("  !! MUHIM: o'tgan davr raqami YACHEYKALARDAN emas, «Smena "
+            "hisoboti» satridan olingan — bu boshqa o'lchov. Shuning uchun "
+            "yuqoridagi foizni YAXSHILANISH deb ATAMA va uni yutuq sifatida "
+            "ko'rsatma. Faqat 'o'lchov usuli o'zgargani uchun raqamlarni "
+            "to'g'ridan-to'g'ri solishtirib bo'lmaydi' deb yoz. "
+            "compare_better va compare_worse maydonlarida ham shu qoidaga "
+            "amal qil: umumiy foizni emas, TOIFALAR ichidagi o'zgarishlarni "
+            "va shu haftaning o'z holatini tasvirla.")
     add(f"To'xtatmagan kutishlar: {d['total_ns']:.0f} daqiqa, {d['events_ns']} hodisa")
     add(f"Hodisalar soni (to'xtagan): {d['events']}")
     add(f"O'rtacha bitta hodisa: {d['avg_event']:.0f} daqiqa")
@@ -178,11 +191,15 @@ def _brief(data: dict) -> str:
 
     add("== HODISALAR VA LIDERLAR YOZUVLARI (dalil — qayta yozma, faqat "
         "qo'shtirnoqda keltir) ==")
-    for e in d["events"]:
+    # `events` is the COUNT; `events_on` is the list. The notes go in
+    # transliterated, because roughly a third of them are typed in Cyrillic and
+    # the deck is Latin — the model must not be the thing that converts them,
+    # or "quote verbatim" and "write in Latin" become contradictory orders.
+    for e in d["events_on"]:
         mark = "" if e["stopped"] else " [to'xtatmagan]"
         add(f"  {e['date']} {e['start']}-{e['end']} {e['cell']} "
             f"({e['supervisor']}) {e['category']} {e['minutes']:.0f}daq{mark}: "
-            f"\"{e['note']}\"")
+            f"\"{transliterate((e['note'] or '').strip(), 'uz')}\"")
 
     return "\n".join(lines)
 

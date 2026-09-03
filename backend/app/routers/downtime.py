@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.permissions import require_page
-from app.models import Cell, CellOjidaniyaInterval, DowntimeData, Manager, RoleProfile
+from app.models import (Cell, CellOjidaniyaInterval, DowntimeData, Factory, Manager,
+                        RoleProfile)
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services import action_log, idle_intervals, idle_source
-from app.xlsx_delivery import deliver_xlsx
+from app.services import (action_log, deck_narrative, idle_intervals, idle_source,
+                          ojidaniya_deck, report_week)
+from app.xlsx_delivery import PPTX_MIME, deliver_file, deliver_xlsx
 from app.services.ojidaniya_export import build_ojidaniya_workbook
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
@@ -839,3 +841,170 @@ def export_downtime(
                  ("supervisors", len(summary))],
     )
     return resp
+
+
+# ── the weekly deck ──────────────────────────────────────────────────────────
+# One plant, by the operator's ruling (2026-09-03). Resolved by NAME rather
+# than by id: ids differ between this checkout and production, and a seeded id
+# goes stale the moment somebody rebuilds the register — the lesson
+# `startup.seed_pp_autofill_default` already records about `startup.MANAGERS`.
+DECK_FACTORY = "Uchtepa"
+
+
+def _deck_factory(db: Session) -> Factory:
+    """The plant the weekly deck is about, or a 500 that says what is wrong.
+
+    A silent fallback to «all factories» would be the worst outcome available:
+    the file would look right, carry another plant's units, and nothing on it
+    would say so.
+    """
+    wanted = DECK_FACTORY.strip().casefold()
+    rows = db.query(Factory).filter(Factory.archived.is_(False)).all()
+    for f in rows:
+        names = (f.code, f.name_uz, f.name_uz_cyrl, f.name_ru, f.name_en)
+        if any((n or "").strip().casefold() == wanted for n in names):
+            return f
+    raise HTTPException(
+        status_code=500,
+        detail=(f"«{DECK_FACTORY}» zavodi topilmadi. Mavjud: "
+                + ", ".join(f.code or f.name_uz or str(f.id) for f in rows)))
+
+
+def _deck_events(db: Session, managers: list[Manager],
+                 d_from: date, d_to: date) -> tuple[list[dict], list[dict]]:
+    """Every event the plant's cells filed in the window, both halves, flat.
+
+    `_cell_detail` answers for ONE unit and ONE half at a time — it is the bar
+    modal's reader — so the deck asks it once per unit per half and flattens
+    the result. The per-cell DAY unions come back alongside, because a cell's
+    week is the sum of its daily unions and never the sum of its events: two
+    causes overlapping on one clock would otherwise be counted twice.
+    """
+    events: list[dict] = []
+    cell_days: list[dict] = []
+    for m in managers:
+        for stopped in (True, False):
+            detail = _cell_detail(db, m.id, d_from, d_to, stopped, False, [])
+            for iso, cells in detail["days"].items():
+                d_obj = date.fromisoformat(iso)
+                for c in cells:
+                    cell_days.append({
+                        "date": iso, "date_obj": d_obj, "cell": c["code"],
+                        "leader": c.get("leader"), "supervisor": m.name,
+                        "union_minutes": float(c["total"] or 0),
+                        "sum_minutes": float(c["sum_min"] or 0),
+                        "stopped": stopped,
+                    })
+                    for iv in c["intervals"]:
+                        events.append({
+                            "date": iso, "date_obj": d_obj,
+                            "cell": c["code"], "leader": c.get("leader"),
+                            "supervisor": m.name, "supervisor_id": m.id,
+                            "shift": m.shift, "category": iv["category"],
+                            "start": iv["start"], "end": iv["end"],
+                            "minutes": float(iv["minutes"] or 0),
+                            "stopped": bool(iv["stopped"]), "note": iv["note"] or "",
+                        })
+    return events, cell_days
+
+
+@router.get("/downtime/deck-window")
+def get_deck_window(payload: dict = Depends(require_page("downtime", "daily"))):
+    """Which week the deck button is about to build, and for which plant.
+
+    A label, but served rather than computed in the browser: the window is a
+    rule (`services/report_week`), and a JavaScript copy of it would be a
+    second spelling that drifts — the confirm would then name one week while
+    the file carried another. Admin-only like the export it describes, so the
+    button cannot even learn the scope it is not allowed to produce.
+    """
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
+    win = report_week.window()
+    return {
+        "date_from": win[0].isoformat(),
+        "date_to": win[1].isoformat(),
+        "label": report_week.label(win),
+        "days": (win[1] - win[0]).days + 1,
+        "factory": DECK_FACTORY,
+    }
+
+
+class DeckExportBody(BaseModel):
+    """The deck takes no filters — it is a fixed weekly report, not a view of
+    the page. The two dates exist only so an operator can re-run an EARLIER
+    week; left out, `report_week` answers for the week that just closed."""
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    # Off only for a re-run when Gemini is down or its quota is spent and the
+    # operator wants the numbers now. The deck already survives a failure on
+    # its own; this skips the wait.
+    narrative: bool = True
+
+
+@router.post("/downtime/export.pptx")
+def export_downtime_deck(
+    request: Request,
+    body: DeckExportBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """The weekly Ojidaniya report as a PowerPoint deck.
+
+    **Admin only**, checked here and not merely by hiding the button: the deck
+    covers the whole plant — every unit's minutes, cells and note text — which
+    /downtime deliberately withholds from a supervisor, and this endpoint is
+    reachable without the UI.
+
+    Scope is fixed and ignores whatever the page is filtered to: one plant,
+    both shifts, every supervisor, all categories, the stopped half as the
+    headline with the not-stopped half named beside it.
+    """
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
+
+    if body.date_from and body.date_to:
+        try:
+            win = (date.fromisoformat(body.date_from), date.fromisoformat(body.date_to))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date")
+        if win[0] > win[1]:
+            raise HTTPException(status_code=400, detail="date_from is after date_to")
+        if (win[1] - win[0]).days > 31:
+            raise HTTPException(status_code=400, detail="Period longer than 31 days")
+    else:
+        win = report_week.window()
+    prev_win = report_week.previous(win)
+
+    factory = _deck_factory(db)
+    managers = (db.query(Manager)
+                .filter(Manager.archived.is_(False), Manager.factory_id == factory.id)
+                .order_by(Manager.name).all())
+
+    cur = _downtime(db, payload, win[0], win[1], None, [], False, factory.id)
+    prev = _downtime(db, payload, prev_win[0], prev_win[1], None, [], False, factory.id)
+    events, cell_days = _deck_events(db, managers, win[0], win[1])
+
+    data = ojidaniya_deck.collect(
+        cur=cur, prev=prev, events=events, cell_days=cell_days,
+        win=win, prev_win=prev_win,
+        factory_name=(factory.name_uz or factory.code or DECK_FACTORY),
+        supervisors=[{"id": m.id, "name": m.name, "shift": m.shift} for m in managers],
+    )
+
+    narrative = deck_narrative.write(data) if body.narrative else None
+    deck = ojidaniya_deck.build(data, narrative)
+    name = ojidaniya_deck.filename(data)
+
+    action_log.enrich(
+        request,
+        target=f"{factory.name_uz or factory.code} · {report_week.label(win)}",
+        detail={"events": data["events"], "minutes": round(data["total"]),
+                "supervisors": data["sup_count"], "cells": data["cell_count"],
+                "narrative": bool(narrative), "bytes": len(deck)},
+    )
+    return deliver_file(
+        request, payload, name, deck, PPTX_MIME,
+        caption=(f"📊 Yacheykalardagi kutish vaqtlari · {data['period']}\n"
+                 f"{data['factory']} · {ojidaniya_deck.num(data['total'])} daqiqa · "
+                 f"{data['events']} hodisa"))
