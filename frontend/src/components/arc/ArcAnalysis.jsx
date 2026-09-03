@@ -522,20 +522,41 @@ export default function ArcAnalysis({ view, filters, enabled }) {
   // One options builder + one series builder, so «green closed · yellow
   // waiting · red overdue · grey cancelled» reads identically on every chart —
   // learn the legend once, read four charts. The bar's end label is the total.
-  const stackSeries = (rows) => [
-    { name: t("arc.kDone"), data: rows.map((r) => r.done || 0) },
-    { name: t("arc.kOpen"), data: rows.map((r) => Math.max(0, (r.open || 0) - (r.overdue || 0))) },
-    { name: t("arc.kOverdue"), data: rows.map((r) => r.overdue || 0) },
-    { name: t("arc.stateCancelled"), data: rows.map((r) => r.cancelled || 0) },
+  // The four values one row splits into — «open» is NET of overdue, so the
+  // stack sums to the number the bar's end label prints. One expression, so
+  // what stackPad measures is what Apex draws.
+  const stackParts = (r) => [
+    r.done || 0,
+    Math.max(0, (r.open || 0) - (r.overdue || 0)),
+    r.overdue || 0,
+    r.cancelled || 0,
   ];
-  const stackOpts = (labels) => ({
+  const stackSeries = (rows) => {
+    const parts = rows.map(stackParts);
+    return [t("arc.kDone"), t("arc.kOpen"), t("arc.kOverdue"), t("arc.stateCancelled")]
+      .map((name, i) => ({ name, data: parts.map((p) => p[i]) }));
+  };
+  // The total is drawn PAST the bar's end, and the longest bar reaches the
+  // axis maximum by construction — so on every one of these charts the top
+  // row's label lands outside the plot area and is clipped by the card
+  // («443» printing as «44»). Apex reserves nothing for it, so the room is
+  // bought here, sized to the widest total THIS chart actually plots: a fixed
+  // padding is wrong on one of the five by construction, since a four-digit
+  // fleet total is twice the width of a two-digit unit's.
+  const TOTAL_OFFSET_X = 4;   // plotOptions.bar.dataLabels.total.offsetX below
+  const TOTAL_DIGIT_PX = 7;   // one 10px bold digit, with its tracking
+  const stackPad = (rows) => {
+    const max = Math.max(0, ...(rows || []).map((r) => stackParts(r).reduce((a, b) => a + b, 0)));
+    return TOTAL_OFFSET_X + String(max).length * TOTAL_DIGIT_PX + 6;
+  };
+  const stackOpts = (labels, rows) => ({
     chart: { ...baseChart, type: "bar", stacked: true },
     theme: chartTheme,
     colors: [C_DONE, C_DOING, C_OVERDUE, C_GREY],
     plotOptions: {
       bar: {
         horizontal: true, borderRadius: 3, barHeight: "68%",
-        dataLabels: { total: { enabled: true, offsetX: 4, style: { fontSize: "10px", fontWeight: 700, color: legendColor } } },
+        dataLabels: { total: { enabled: true, offsetX: TOTAL_OFFSET_X, style: { fontSize: "10px", fontWeight: 700, color: legendColor } } },
       },
     },
     dataLabels: { enabled: false },
@@ -545,7 +566,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
       axisBorder: { show: false }, axisTicks: { show: false },
     },
     yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, maxWidth: 190 } },
-    grid: { borderColor: gridColor, strokeDashArray: 3 },
+    grid: { borderColor: gridColor, strokeDashArray: 3, padding: { right: stackPad(rows) } },
     legend: { position: "top", horizontalAlign: "right", markers: { radius: 4 }, labels: { colors: legendColor }, fontSize: "11px" },
     tooltip: { theme: chartTheme.mode, shared: true, intersect: false },
   });
@@ -682,7 +703,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
       empty={catRows.length === 0} emptyText={t("arc.noMatch")} ready={ready}
       height={stackHeight(catRows.length)}
       right={topOf(catRows.length, cats.length)}>
-      <ReactApexChart options={stackOpts(catLabels)} series={stackSeries(catRows)}
+      <ReactApexChart options={stackOpts(catLabels, catRows)} series={stackSeries(catRows)}
         type="bar" height={stackHeight(catRows.length)} />
     </ChartCard>
   );
@@ -726,7 +747,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
                     options={[["sup", t("arc.fSup")], ["leader", t("arc.fLeader")]]} />
                 </div>
               }>
-              <ReactApexChart options={stackOpts(unitLabels)} series={stackSeries(units)}
+              <ReactApexChart options={stackOpts(unitLabels, units)} series={stackSeries(units)}
                 type="bar" height={stackHeight(units.length)} />
             </ChartCard>
           </div>
@@ -739,7 +760,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
           empty={cellRows.length === 0} emptyText={t("arc.noMatch")} ready={ready}
           height={stackHeight(cellRows.length)}
           right={topOf(cellRows.length, A?.cells_n || cellRows.length)}>
-          <ReactApexChart options={stackOpts(cellLabels)} series={stackSeries(cellRows)}
+          <ReactApexChart options={stackOpts(cellLabels, cellRows)} series={stackSeries(cellRows)}
             type="bar" height={stackHeight(cellRows.length)} />
         </ChartCard>
         {slaCard}
@@ -761,7 +782,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
           empty={divs.length === 0} emptyText={t("arc.noMatch")} ready={ready}
           height={stackHeight(divs.length)}
           right={topOf(divs.length, A?.divisions_n || divs.length)}>
-          <ReactApexChart options={stackOpts(divLabels)} series={stackSeries(divs)}
+          <ReactApexChart options={stackOpts(divLabels, divs)} series={stackSeries(divs)}
             type="bar" height={stackHeight(divs.length)} />
         </ChartCard>
         <ChartCard icon={Timer} title={t("arc.anSpeed")} subtitle={t("arc.anSpeedSub")}
@@ -787,7 +808,7 @@ export default function ArcAnalysis({ view, filters, enabled }) {
         empty={brig.length === 0} emptyText={t("arc.noMatch")} ready={ready}
         height={stackHeight(brig.length)}
         right={topOf(brig.length, A?.brigadas_n || brig.length)}>
-        <ReactApexChart options={stackOpts(brigLabels)} series={stackSeries(brig)}
+        <ReactApexChart options={stackOpts(brigLabels, brig)} series={stackSeries(brig)}
           type="bar" height={stackHeight(brig.length)} />
       </ChartCard>
     </div>
