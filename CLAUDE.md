@@ -2333,14 +2333,21 @@ so this was ~15% of the catalog, not an edge case.
   fallback is TOTAL: no combination of catalog state and stored rows resolves to
   "nothing", which is the one answer a quantity must never have. A unit that
   never touches the feature reads byte-for-byte what it read before.
-- **`pp_calc.line_numbers` is THE definition of `line_no`** — the line's rank
-  inside its (`daily_key`, work centre) group, ordered by (`sort_order`, `id`).
-  A PPProduct **id cannot be used**: `import_catalog` DELETES and re-creates
-  every row, so ids do not survive a catalog import. The rank is computed over
-  **ALL** of the unit's lines, active or not, so unticking a line never
-  re-points its neighbour's stored value. Deleting a line from the ABC sheet
-  DOES shift the ranks below it — the same caveat `daily_key` already carries
-  for renaming a code-less line.
+- **`pp_calc.line_keys` is THE identity of a line, and it is CONTENT, not a
+  position.** A PPProduct id cannot be used — `import_catalog` DELETES and
+  re-creates every row, so ids do not survive — and a RANK cannot either, which
+  is the trap v4.31.1 fell into for the few minutes it was live. Insert one
+  operation into the middle of a group in the ABC sheet, delete one, or retype a
+  line's SAP code, and every rank below it shifts: a quantity typed for «Замес»
+  silently becomes «Выпечка»'s number, on every historical date at once. **A
+  wrong number on the wrong operation is worse than no number.** So the key is
+  the line's own name and Трудоемкость (`name|labor#n`), which travel with it
+  wherever the sheet moves it. The `#n` suffix separates lines identical in
+  BOTH — 3 of the 118 groups — which is the smallest set position can be left
+  responsible for. Editing a line's name or its Трудоемкость re-points what it
+  tracks, the caveat `daily_key` already carries for renaming a code-less line;
+  the value is not moved to a neighbour, it is simply no longer found, and the
+  line falls back to the group's figure — a visible revert, never a silent lie.
 - **`pp_calc.line_minutes` is the second reader and exists so the rule has ONE
   spelling.** `/zagruzka-cell` sums **Σ over lines of labor·qty**, never
   (Σ labor)×one quantity — two operations may now carry two quantities, so the
@@ -2352,15 +2359,33 @@ so this was ~15% of the catalog, not an edge case.
   would watch a number they never touched change on a row they never edited.
   Exploding first means every line keeps precisely what it was already showing,
   and only the edited one moves.
-- **`line_no` is OPTIONAL on the wire, and its absence is the legacy path.** A
-  browser tab still running the older bundle sends no line and goes on writing
-  the group's shared override exactly as before. That is what makes this MINOR
-  rather than MAJOR — the compatibility floor is derived from MAJOR, so a
-  change that stopped an open tab from working could only be expressed by one.
-- **A rank the group does not have is a 400, never a silent insert.** `line_no`
+- **A caller that names no line sets EVERY line of the group** (`_set_whole_group`),
+  and that is the only correct answer. A browser tab older than v4.32.0 knows
+  nothing about lines, and writing `pp_daily.*_override` for it — the obvious
+  reading of "keep the legacy path" — is silently wrong in BOTH directions,
+  because the reader resolves per-line FIRST: on a line that already carries its
+  own value the write is invisible, so the operator types a number, gets a 200
+  and watches the cell spring back; and on the lines that do not, it lands on
+  rows they never edited, which is the very bug this exists to remove. Writing
+  every line reproduces exactly what such a tab means and expects to see — one
+  figure for this position — and the shared level is cleared with it, so one
+  level answers. This is what keeps the change MINOR rather than MAJOR.
+- **A line the group does not have is a 400, never a silent insert.** `line_key`
   arrives over the wire; storing a row no reader can look up is the "control
   that reports success and writes nowhere" failure, which is the worst thing
-  this endpoint could do.
+  this endpoint could do. A `line_no` from a v4.31.1 tab is resolved through the
+  catalog into a key rather than refused, so such a tab keeps editing the line
+  it is pointing at.
+- **Every first edit of a line on a day is an INSERT, so the write RETRIES once
+  on `IntegrityError`.** ПЛАН and ФАКТ saved in one breath, or a re-send after a
+  dropped connection, both miss the SELECT and both insert `uq_pp_line_daily_key`;
+  the loser escaped as a 500 and the operator watched their number spring back
+  out of the cell for no stated reason. Re-reading the winner's row is the answer
+  `leader_tasks._sup_row` already gives to the same race.
+- `startup.migrate_pp_line_daily_key` converted the ranks v4.31.1 stored into
+  keys, in Python and losslessly, because a rank only means anything against the
+  catalog it was written under. A row whose rank no longer existed was DELETED
+  rather than guessed at. Changing what it does needs a NEW flag key.
 - **A SAP upload resets a per-line value exactly as it resets a shared one** —
   mode `both` deletes the date's overlay rows with the snapshot, `plan`/`actual`
   null that one field for the keys the file restated. The closed-day lock

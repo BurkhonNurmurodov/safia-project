@@ -76,10 +76,11 @@ def daily_key(sap_code, name) -> str:
 def line_numbers(products) -> dict:
     """{product id: rank of that line inside its (daily_key, work centre) group}.
 
-    THE definition of which catalog line a stored per-line quantity belongs to
-    (models.PPLineDaily). One function, because the reader, the writer and the
-    загрузка must agree — three spellings of a rank is how a hand-typed ПЛАН
-    lands on the neighbouring line.
+    NOT the identity of a per-line quantity — `line_keys` is, and the docstring
+    there says why a rank cannot be. This survives for exactly two jobs: the
+    one-shot startup migration that converts the ranks v4.31.1 briefly stored
+    into durable keys, and resolving a `line_no` sent by a bundle from that same
+    build. Do not key anything new by it.
 
     `products` is an iterable of objects or dicts carrying id / sap_code / name /
     work_center / sort_order. Ordered by (sort_order, id), the catalog's own
@@ -116,6 +117,66 @@ def line_numbers(products) -> dict:
     return out
 
 
+def line_keys(products) -> dict:
+    """{product id: the DURABLE identity of that catalog line inside its
+    (daily_key, work centre) group} — what models.PPLineDaily stores.
+
+    A POSITION cannot be this identity, and that was the first attempt's defect.
+    `import_catalog` DELETES and re-creates every catalog row from the ABC sheet,
+    so a row id does not survive; but a rank does not survive either, in a way
+    that is far worse than losing the value. Insert one operation into the middle
+    of a group in the sheet, or delete one, or retype a line's SAP code, and every
+    rank below it shifts — so a quantity somebody typed for «Замес» silently
+    becomes «Выпечка»'s number, on every historical date at once, with nothing on
+    screen saying anything moved. A wrong number attributed to the wrong
+    operation is worse than no number.
+
+    So the identity is the line's own CONTENT: its name and its labor time, the
+    two columns the ABC sheet actually carries. Those travel with the line
+    wherever the sheet moves it, so inserting, deleting or reordering rows around
+    it changes nothing.
+
+    Ambiguity is answered honestly rather than hidden. Where several lines of one
+    group share a name AND a labor time they are indistinguishable by content —
+    3 of the platform's 118 duplicate groups — so a positional suffix separates
+    them, ordered by (sort_order, id). That is the smallest set position can be
+    responsible for, instead of all of them.
+
+    The caveat this leaves is the one the platform already documents for a
+    code-less line (see daily_key): EDITING a line's name or its Трудоемкость
+    re-points which quantities it tracks. The value does not move to a
+    neighbour — it is simply no longer found, and the line falls back to the
+    group's shared figure, which is a visible revert rather than a silent lie.
+    """
+    def field(p, k):
+        return p.get(k) if isinstance(p, dict) else getattr(p, k, None)
+
+    def base(p) -> str:
+        name = " ".join(str(field(p, "name") or "").split()).lower()[:120]
+        lt = field(p, "labor_time")
+        if lt is None:
+            labor = ""
+        else:
+            labor = ("%.4f" % _f(lt)).rstrip("0").rstrip(".")
+        return f"{name}|{labor}"
+
+    rows = sorted(
+        ((_f(field(p, "sort_order")), field(p, "id") or 0, p) for p in products),
+        key=lambda r: (r[0], r[1]),
+    )
+    seen: dict = {}
+    out: dict = {}
+    for _so, _id, p in rows:
+        grp = (daily_key(field(p, "sap_code"), field(p, "name")), field(p, "work_center") or "")
+        b = base(p)
+        n = seen.get((grp, b), 0)
+        seen[(grp, b)] = n + 1
+        pid = field(p, "id")
+        if pid is not None:
+            out[pid] = f"{b}#{n}"
+    return out
+
+
 def group_sizes(products) -> dict:
     """{(daily_key, work centre): how many catalog lines share that quantity}.
 
@@ -141,9 +202,9 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0):
     places, and two spellings of it is how `/zagruzka-cell` and the Positions
     table start reporting different minutes for one day.
 
-      lines_by_key {(wc, qty_key): [(line_no, labor_seconds), …]}  active lines
-      shared       {(wc, qty_key, date): (plan, actual)}           pp_daily
-      per_line     {(wc, qty_key, date, line_no): (plan|None, actual|None)}
+      lines_by_key {(wc, qty_key): [(line_key, labor_seconds), …]}  active lines
+      shared       {(wc, qty_key, date): (plan, actual)}            pp_daily
+      per_line     {(wc, qty_key, date, line_key): (plan|None, actual|None)}
 
     Minutes are Σ over LINES of labor_i × qty_i, never (Σ labor) × one quantity:
     two lines of one SKU are two operations with their own labor times, and since
@@ -165,8 +226,8 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0):
     for (wc, key), lines in lines_by_key.items():
         for d in days.get((wc, key), ()):
             sp, sa = shared.get((wc, key, d), (0.0, 0.0))
-            for line_no, labor in lines:
-                lp, la = per_line.get((wc, key, d, line_no), (None, None))
+            for line_key, labor in lines:
+                lp, la = per_line.get((wc, key, d, line_key), (None, None))
                 plan_min[(wc, d)] = plan_min.get((wc, d), 0.0) + \
                     labor * (lp if lp is not None else sp) / sec_per_min
                 actual_min[(wc, d)] = actual_min.get((wc, d), 0.0) + \
@@ -216,12 +277,12 @@ def compute_dashboard(
     quantities:  {(daily_key, work_center): {plan_qty, actual_qty}}  (already
                  override-resolved by the caller; the key is pp_daily.sap_code —
                  see daily_key(), which a code-less line derives from its name)
-    line_overrides: {(daily_key, work_center, line_no): {plan, actual}} — the
+    line_overrides: {(daily_key, work_center, line_key): {plan, actual}} — the
                  per-CATALOG-LINE manual values (models.PPLineDaily). They sit ON
                  TOP of `quantities`, which stays the group's shared answer, so a
                  line with no entry here reads exactly what it read before this
-                 existed. Each product dict carries its own `line_no`
-                 (see line_numbers).
+                 existed. Each product dict carries its own `line_key`
+                 (see line_keys).
     work_centers:[{code, shtatka, sort_order}, ...]
     wc_overrides:{code: {people, shtatka}} — per-DAY manual pins for the staffing
                  panel (pp_work_center_daily). A non-None штатка replaces W before
@@ -251,8 +312,8 @@ def compute_dashboard(
         # what it read before per-line quantities existed. The fallback is TOTAL:
         # there is no combination of catalog state and stored rows that resolves
         # to "nothing", which is the one outcome a quantity must never have.
-        line_no = p.get("line_no") or 0
-        lo = line_overrides.get((key, wc, line_no), {})
+        line_key = p.get("line_key") or ""
+        lo = line_overrides.get((key, wc, line_key), {})
         plan_own = lo.get("plan")
         actual_own = lo.get("actual")
         plan_qty = _f(plan_own) if plan_own is not None else _f(q.get("plan_qty"))
@@ -293,7 +354,7 @@ def compute_dashboard(
             "plan_overridden": plan_own is not None or bool(q.get("plan_overridden")),
             "actual_overridden": actual_own is not None or bool(q.get("actual_overridden")),
             # what the client echoes back when it overrides this line's quantity
-            "line_no": line_no,
+            "line_key": line_key,
             # how many catalog lines currently share this quantity record, and
             # whether THIS row is still reading the shared one. The page says so
             # rather than leaving the reader to discover it by typing.

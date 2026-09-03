@@ -278,7 +278,7 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
   // that editing here silently does nothing.
   if (readOnly) {
     return (
-      <td title={title} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-1)" }}>
+      <td title={title || undefined} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-1)" }}>
         {fmt(value, 0)}
       </td>
     );
@@ -290,7 +290,10 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
       tabIndex={0}
       data-qcol={col}
       data-qrow={row}
-      title={t("production.editManually")}
+      // ONE title. The shared-quantity sentence replaces the edit hint only on the
+      // rows that carry it — a second `title` attribute here silently won over
+      // this one and stripped the edit affordance off every cell in the table.
+      title={title || t("production.editManually")}
       onKeyDown={onKeyDown}
       // The cell's OWN focus only. React's onFocus/onBlur are focusin/focusout,
       // which bubble — unguarded, the editor's focus marked the cell selected and
@@ -314,10 +317,6 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
         else e.currentTarget.focus();  // some WebViews don't focus a tapped cell — arm it by hand
       }}
       onDoubleClick={() => start()}
-      // Says the number is still the group's shared one — several catalog lines
-      // are separate operations of one SAP code, and until this cell is typed in
-      // they all read the same figure. It goes the moment the line has its own.
-      title={title}
       className="px-3 py-2 text-center relative select-none group outline-none"
       style={{
         cursor: "cell",
@@ -1317,13 +1316,15 @@ export default function Production() {
   // The inverse is the SAME call with the figure that stood in the cell before —
   // `null` included, which is what clears the override back to the SAP file's own
   // number, so Delete on a cell is as reversible as typing over it.
-  // `line_no` is WHICH catalog line of the (SAP, Команда) group this row is —
+  // `line_key` is WHICH catalog line of the (SAP, Команда) group this row is —
   // several lines share one SAP code because they are separate operations, and
-  // without it the write lands on the group and moves every one of them. It rides
-  // the undo too, so the inverse edit reaches the same line.
+  // without it the write lands on the group and moves every one of them. It is
+  // the line's own name and Трудоемкость rather than its position, so a catalog
+  // import that reorders the sheet cannot hand this number to another operation.
+  // It rides the undo too, so the inverse edit reaches the same line.
   const saveOverride = (row, field) => (value) => {
     const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center,
-                 field, line_no: row.line_no ?? 0 };
+                 field, line_key: row.line_key };
     const prev = (field === "actual" ? row.actual_qty : row.plan_qty) ?? null;
     tracked({
       label: `${row.name} · ${t(field === "actual" ? "production.col.fact" : "production.col.plan")}`,

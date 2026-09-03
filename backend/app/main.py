@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
         migrate_attendance_batches, seed_att_included_from_last_day,
         seed_idle_source_pilot,
         seed_pp_autofill_default,
+        migrate_pp_line_daily_key,
         reorder_positions_plan_before_fact,
         seed_snabjenets_english_label,
         fix_orazov_schedule_2026_09_01,
@@ -141,6 +142,7 @@ async def lifespan(app: FastAPI):
     seed_att_included_from_last_day()
     seed_idle_source_pilot()
     seed_pp_autofill_default()
+    migrate_pp_line_daily_key()
     reorder_positions_plan_before_fact()
     seed_snabjenets_english_label()
     fix_orazov_schedule_2026_09_01()

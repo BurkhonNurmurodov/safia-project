@@ -37,6 +37,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from pydantic import BaseModel
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -55,7 +56,8 @@ from app.services import idle_lock
 from app.services import shift_scope
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
-                                   group_sizes, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
+                                   line_keys, group_sizes, DEFAULT_SHIFT_MIN,
+                                   DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
@@ -304,7 +306,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # re-point a stored per-line value the moment a line above it was unticked,
     # or give a leader a different rank for the same line than the writer used.
     all_products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
-    ranks = line_numbers(all_products)
+    keys = line_keys(all_products)
     sizes = group_sizes(all_products)
     line_daily = db.query(PPLineDaily).filter(
         PPLineDaily.manager_id == manager_id, PPLineDaily.date == day).all()
@@ -315,11 +317,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         wc_daily = [o for o in wc_daily if _in_scope(wc_scope, o.work_center)]
     wc_overrides = {o.work_center: {"people": o.people, "shtatka": o.shtatka} for o in wc_daily}
 
-    line_overrides: dict[tuple[str, str, int], dict] = {}
+    line_overrides: dict[tuple[str, str, str], dict] = {}
     for lo in line_daily:
         if wc_scope is not None and not _in_scope(wc_scope, lo.work_center):
             continue
-        line_overrides[(lo.qty_key, lo.work_center, lo.line_no)] = {
+        line_overrides[(lo.qty_key, lo.work_center, lo.line_key)] = {
             "plan": (float(lo.plan_override) if lo.plan_override is not None else None),
             "actual": (float(lo.actual_override) if lo.actual_override is not None else None),
         }
@@ -346,7 +348,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             "sap_code": p.sap_code, "name": p.name, "work_center": p.work_center,
             "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
             "sort_order": p.sort_order,
-            "line_no": ranks.get(p.id, 0),
+            "line_key": keys.get(p.id, ""),
             "group_size": sizes.get((daily_key(p.sap_code, p.name), p.work_center or ""), 1),
         } for p in products],
         quantities=quantities,
@@ -736,10 +738,12 @@ class OverrideBody(BaseModel):
     field: str            # 'plan' | 'actual'
     value: Optional[float]  # null clears the override
     # WHICH catalog line of the (qty_key, work centre) group this is — the row's
-    # own `line_no` (pp_calc.line_numbers). Optional, and its absence is the
-    # legacy path: a bundle shipped before per-line quantities existed sends no
-    # line and keeps writing the group's shared override exactly as it always
-    # did. That is what makes this a MINOR change — an open tab goes on working.
+    # own `line_key` (pp_calc.line_keys). Absent = the caller does not know about
+    # lines, which is a bundle older than v4.32.0; see `_set_whole_group`.
+    line_key: Optional[str] = None
+    # v4.31.1 only, and briefly: that build addressed a line by its RANK. Resolved
+    # to a line_key server-side so a tab still open on it keeps editing the line
+    # it is pointing at, rather than falling through to the whole-group path.
     line_no: Optional[int] = None
 
 
@@ -772,60 +776,156 @@ def set_override(
     idle_lock.require_open(db, mid, day)
 
     col = "plan_override" if body.field == "plan" else "actual_override"
+    line = _resolve_line(db, mid, body)
 
-    if body.line_no is None:
-        # Legacy path — an older bundle, which knows nothing about lines. It
-        # writes the group's shared override, exactly as before.
-        was = _set_group_override(db, mid, day, body.sap_code, body.work_center,
-                                  col, body.value)
-    else:
-        was = _set_line_override(db, mid, day, body.sap_code, body.work_center,
-                                 body.line_no, col, body.value)
+    # ONE writer either way, and the retry is what makes it safe to run twice.
+    # Every first edit of a line on a day is an INSERT against
+    # uq_pp_line_daily_key, so two saves racing — ПЛАН and ФАКТ committed in the
+    # same breath, or a re-send after a dropped connection — both miss the SELECT
+    # and both insert. The loser used to escape as a 500 and the operator watched
+    # their number spring back out of the cell for no stated reason. Re-reading
+    # the winner's row is the same answer `leader_tasks._sup_row` gives to the
+    # same race on the checklist settings key.
+    for attempt in (0, 1):
+        try:
+            was = (_set_whole_group(db, mid, day, body.sap_code, body.work_center,
+                                    col, body.value)
+                   if line is None else
+                   _set_line_override(db, mid, day, body.sap_code, body.work_center,
+                                      line, col, body.value))
+            db.commit()
+            break
+        except IntegrityError:
+            db.rollback()
+            if attempt:
+                raise HTTPException(status_code=409,
+                                    detail="another save touched this line — try again")
 
-    db.commit()
     action_log.enrich(
         target_kind="override",
         target_id=(f"{mid}:{day}:{body.sap_code}:{body.work_center}"
-                   + (f":#{body.line_no}" if body.line_no is not None else "")),
+                   + (f":{line}" if line else "")),
         target_name=body.sap_code, unit_id=mid, day=day,
         details=[("date", str(day)), ("sap_code", body.sap_code),
-                 ("work_center", body.work_center),
-                 ("line", body.line_no if body.line_no is not None else None)],
+                 ("work_center", body.work_center), ("line", line)],
         changes=[("plan" if body.field == "plan" else "fact",
                   float(was) if was is not None else None, body.value)],
     )
     return _build_dashboard(db, mid, day, scope, payload)
 
 
-def _set_group_override(db, mid: int, day: date, key: str, wc: str,
-                        col: str, value):
-    """Write the SHARED (SKU, work centre) override — pp_daily, the pre-per-line
-    behaviour. Returns the value that stood there before."""
-    row = db.query(PPDaily).filter(
+def _resolve_line(db, mid: int, body: "OverrideBody") -> Optional[str]:
+    """Which catalog line this write is aimed at, or None for "the whole group".
+
+    `line_key` is what a current bundle sends. `line_no` is the rank v4.31.1 sent
+    for the few minutes that build was live; it is resolved through the catalog
+    here so such a tab goes on editing the line it is pointing at.
+    """
+    if body.line_key:
+        return body.line_key
+    if body.line_no is None:
+        return None
+    prods = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+    ranks, keys = line_numbers(prods), line_keys(prods)
+    for p in prods:
+        if (daily_key(p.sap_code, p.name) == body.sap_code
+                and (p.work_center or "") == body.work_center
+                and ranks.get(p.id) == body.line_no):
+            return keys.get(p.id)
+    raise HTTPException(status_code=400,
+                        detail="that line is not one of this position's catalog lines")
+
+
+def _group_lines(db, mid: int, key: str, wc: str) -> list:
+    """Every catalog line of one (qty_key, work centre) group, by durable key.
+
+    Read over ALL of the unit's lines, active or not — the identity must not
+    depend on what is currently displayed, or unticking a line would change what
+    its neighbours' stored values are attached to.
+    """
+    prods = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+    keys = line_keys(prods)
+    return [keys[p.id] for p in prods
+            if p.id in keys
+            and daily_key(p.sap_code, p.name) == key and (p.work_center or "") == wc]
+
+
+def _overlay(db, mid: int, day: date, key: str, wc: str) -> dict:
+    return {r.line_key: r for r in db.query(PPLineDaily).filter(
+        PPLineDaily.manager_id == mid, PPLineDaily.date == day,
+        PPLineDaily.qty_key == key, PPLineDaily.work_center == wc).all()}
+
+
+def _row_for(db, mid: int, day: date, key: str, wc: str, line: str,
+             have: dict) -> PPLineDaily:
+    r = have.get(line)
+    if r is None:
+        r = PPLineDaily(manager_id=mid, date=day, qty_key=key,
+                        work_center=wc, line_key=line)
+        db.add(r)
+        have[line] = r
+    return r
+
+
+def _set_whole_group(db, mid: int, day: date, key: str, wc: str, col: str, value):
+    """Set EVERY line of the (SKU, work centre) group — what a caller that does
+    not know about lines is asking for.
+
+    This is the path a browser tab older than v4.32.0 takes, and writing
+    `pp_daily.*_override` here (what the first cut did) is silently wrong in both
+    directions, because the reader resolves per-line FIRST: on a line that
+    already carries its own value the write is invisible — the operator types a
+    number, gets a 200, and watches the cell spring back — and on the lines that
+    do not, it lands on rows they never edited, which is the very bug per-line
+    quantities exist to remove.
+
+    Writing every line instead reproduces exactly what such a tab means and
+    exactly what it expects to see: one figure for this position. The legacy
+    shared override is cleared with it, so one level answers.
+    """
+    lines = _group_lines(db, mid, key, wc)
+    shared = db.query(PPDaily).filter(
         PPDaily.manager_id == mid, PPDaily.date == day,
         PPDaily.sap_code == key, PPDaily.work_center == wc,
     ).first()
-    if not row:
-        # allow overriding a row that has no SAP snapshot yet
-        row = PPDaily(manager_id=mid, date=day, sap_code=key,
-                      work_center=wc, plan_qty=0, actual_qty=0)
-        db.add(row)
-    was = getattr(row, col)
-    setattr(row, col, value)
+
+    if not lines:
+        # No catalog line claims this key — an unknown SKU the SAP file carries.
+        # It has no line to write, so the group row IS the only answer, exactly
+        # as before per-line quantities existed.
+        if not shared:
+            shared = PPDaily(manager_id=mid, date=day, sap_code=key,
+                             work_center=wc, plan_qty=0, actual_qty=0)
+            db.add(shared)
+        was = getattr(shared, col)
+        setattr(shared, col, value)
+        return was
+
+    have = _overlay(db, mid, day, key, wc)
+    was = None
+    for line in lines:
+        r = _row_for(db, mid, day, key, wc, line, have)
+        if was is None:
+            was = getattr(r, col)
+        setattr(r, col, value)
+    if was is None and shared is not None:
+        was = getattr(shared, col)
+    if shared is not None:
+        setattr(shared, col, None)
     return was
 
 
-def _set_line_override(db, mid: int, day: date, key: str, wc: str, line_no: int,
+def _set_line_override(db, mid: int, day: date, key: str, wc: str, line: str,
                        col: str, value):
-    """Write ONE catalog line's own quantity (pp_line_daily), leaving every other
-    line of the (SKU, work centre) group exactly where it was.
+    """Write ONE catalog line's own quantity, leaving every other line of the
+    (SKU, work centre) group exactly where it was.
 
     Two rules earn their keep here.
 
-    (1) The rank is CHECKED against the catalog. `line_no` arrives over the wire,
-    and a rank the group does not have would store a row no reader can ever look
-    up — a cell that reports success and writes nowhere, which is the worst thing
-    this endpoint could do. It is a 400, not a silent insert.
+    (1) The line is CHECKED against the catalog. `line_key` arrives over the
+    wire, and a key the group does not have would store a row no reader can ever
+    look up — a cell that reports success and writes nowhere, which is the worst
+    thing this endpoint could do. It is a 400, not a silent insert.
 
     (2) The group's legacy shared override is EXPLODED onto its lines before the
     first per-line write lands, and then cleared. Without it the write would be
@@ -836,46 +936,30 @@ def _set_line_override(db, mid: int, day: date, key: str, wc: str, line_no: int,
     means every line keeps precisely the number it was already showing, and only
     the edited one moves.
     """
-    prods = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
-    ranks = line_numbers(prods)
-    group = {ranks[p.id] for p in prods
-             if p.id in ranks
-             and daily_key(p.sap_code, p.name) == key and (p.work_center or "") == wc}
-    if line_no not in group:
+    lines = _group_lines(db, mid, key, wc)
+    if line not in lines:
         raise HTTPException(
             status_code=400,
-            detail=f"line {line_no} is not one of this position's catalog lines")
+            detail="that line is not one of this position's catalog lines")
 
     shared = db.query(PPDaily).filter(
         PPDaily.manager_id == mid, PPDaily.date == day,
         PPDaily.sap_code == key, PPDaily.work_center == wc,
     ).first()
-    existing = {r.line_no: r for r in db.query(PPLineDaily).filter(
-        PPLineDaily.manager_id == mid, PPLineDaily.date == day,
-        PPLineDaily.qty_key == key, PPLineDaily.work_center == wc).all()}
-
-    def _row(n: int) -> PPLineDaily:
-        r = existing.get(n)
-        if r is None:
-            r = PPLineDaily(manager_id=mid, date=day, qty_key=key,
-                            work_center=wc, line_no=n)
-            db.add(r)
-            existing[n] = r
-        return r
-
-    was = getattr(existing[line_no], col) if line_no in existing else None
+    have = _overlay(db, mid, day, key, wc)
+    was = getattr(have[line], col) if line in have else None
 
     if shared is not None and getattr(shared, col) is not None:
         carry = getattr(shared, col)
-        for n in group:
-            r = _row(n)
+        for other in lines:
+            r = _row_for(db, mid, day, key, wc, other, have)
             if getattr(r, col) is None:
                 setattr(r, col, carry)
         setattr(shared, col, None)
         if was is None:
             was = carry
 
-    setattr(_row(line_no), col, value)
+    setattr(_row_for(db, mid, day, key, wc, line, have), col, value)
     return was
 
 

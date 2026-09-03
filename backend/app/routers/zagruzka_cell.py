@@ -83,7 +83,7 @@ from app.routers.brigadirs import build_metrics_list
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
 from app.services.kpi_calculator import compute_metrics, is_direct_role
-from app.services.pp_calc import _round_half_up, daily_key, line_numbers, line_minutes
+from app.services.pp_calc import _round_half_up, daily_key, line_keys, line_minutes
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
 router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
@@ -211,7 +211,7 @@ def cell_zagruzka(
     # multiplying by one quantity — what this did before — cannot express that,
     # and would make this page disagree with the Positions table it mirrors.
     all_products = db.query(PPProduct).filter(PPProduct.manager_id == mgr.id).all()
-    ranks = line_numbers(all_products)
+    keys = line_keys(all_products)
     lines_by_key: dict[tuple[str, str], list[tuple[int, float]]] = defaultdict(list)
     products_missing_labor: set[str] = set()
     for p in all_products:
@@ -221,7 +221,7 @@ def cell_zagruzka(
             products_missing_labor.add(f"{p.work_center}/{p.sap_code or p.name}")
             continue
         lines_by_key[(p.work_center, daily_key(p.sap_code, p.name))].append(
-            (ranks.get(p.id, 0), float(p.labor_time)))
+            (keys.get(p.id, ""), float(p.labor_time)))
 
     # The two quantity levels, read exactly as the Positions table reads them:
     # the line's own value wins, else the group's, else the SAP snapshot.
@@ -245,7 +245,7 @@ def cell_zagruzka(
     ).all():
         if lo.work_center not in wanted_wcs:
             continue
-        per_line[(lo.work_center, lo.qty_key, lo.date, lo.line_no)] = (
+        per_line[(lo.work_center, lo.qty_key, lo.date, lo.line_key)] = (
             (float(lo.plan_override) if lo.plan_override is not None else None),
             (float(lo.actual_override) if lo.actual_override is not None else None),
         )

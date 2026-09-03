@@ -3961,6 +3961,104 @@ def report_leader_deadline_rules() -> None:
         print(f"[startup] deadline-rule alert not delivered: {exc}")
 
 
+PP_LINE_KEY_FLAG = "pp_line_daily_line_key_2026_09_03_v1"
+
+
+def migrate_pp_line_daily_key() -> None:
+    """Move pp_line_daily from a positional `line_no` to the durable `line_key`.
+
+    v4.31.1 shipped the per-line quantity overlay keyed by the line's RANK inside
+    its (SKU, work centre) group. A rank does not survive the catalog: inserting
+    or deleting one line in the ABC sheet shifts every rank below it, so a
+    quantity typed for one operation silently becomes another operation's number.
+    pp_calc.line_keys replaces it with the line's own name and labor time.
+
+    The conversion is LOSSLESS and that is why it is done in Python rather than
+    SQL: a rank only means anything against the catalog it was written under, and
+    the catalog cannot have moved in the window that build was live (an import is
+    a deliberate admin act). So each stored row is matched to the product sitting
+    at its rank today and re-stamped with that line's key. A row whose rank no
+    longer exists is DELETED rather than guessed at — an unreachable row that
+    resurrects onto whatever line later occupies the rank is the exact defect
+    this migration exists to remove — and the count is printed.
+
+    Guarded by an AppSetting flag so it runs exactly once. Changing what it does
+    needs a NEW flag key, or the "already ran" mark makes it a no-op on every box
+    that has booted since.
+    """
+    from sqlalchemy import text as _text
+    from app.models import PPProduct
+    from app.services.pp_calc import daily_key, line_numbers, line_keys
+
+    db = SessionLocal()
+    try:
+        # The column swap is pure DDL and idempotent by construction; it must run
+        # even on a box that never held a row, because create_all does not ALTER
+        # an existing table and v4.31.1 already created this one.
+        db.execute(_text(
+            "ALTER TABLE pp_line_daily ADD COLUMN IF NOT EXISTS line_key VARCHAR"))
+        db.commit()
+
+        if db.query(AppSetting).filter_by(key=PP_LINE_KEY_FLAG).first():
+            _finish_pp_line_key(db, _text)
+            return
+
+        rows = db.execute(_text(
+            "SELECT id, manager_id, qty_key, work_center, line_no FROM pp_line_daily "
+            "WHERE line_key IS NULL AND line_no IS NOT NULL")).fetchall()
+        by_mgr: dict = {}
+        moved = dropped = 0
+        for rid, mid, qkey, wc, rank in rows:
+            if mid not in by_mgr:
+                prods = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+                by_mgr[mid] = (prods, line_numbers(prods), line_keys(prods))
+            prods, ranks, keys = by_mgr[mid]
+            hit = next((p for p in prods
+                        if daily_key(p.sap_code, p.name) == qkey
+                        and (p.work_center or "") == wc
+                        and ranks.get(p.id) == rank), None)
+            if hit is None:
+                db.execute(_text("DELETE FROM pp_line_daily WHERE id = :i"), {"i": rid})
+                dropped += 1
+                continue
+            db.execute(_text("UPDATE pp_line_daily SET line_key = :k WHERE id = :i"),
+                       {"k": keys[hit.id], "i": rid})
+            moved += 1
+
+        db.add(AppSetting(key=PP_LINE_KEY_FLAG, value="1"))
+        db.commit()
+        _finish_pp_line_key(db, _text)
+        print(f"[startup] pp_line_daily line_key: {moved} converted, {dropped} unmatched dropped")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] pp_line_daily line_key migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def _finish_pp_line_key(db, _text) -> None:
+    """Drop the old rank column and move the unique key onto `line_key`.
+
+    Separate from the data pass so a re-boot after the flag is set still repairs
+    a box where the DDL half failed. Every statement is IF EXISTS / IF NOT
+    EXISTS, so running it again costs nothing. The constraint is dropped BEFORE
+    the index is created because a Postgres UNIQUE constraint owns a backing
+    index of the same name — leaving it in place would make the CREATE a silent
+    no-op and the table would keep the old shape.
+    """
+    db.execute(_text("DELETE FROM pp_line_daily WHERE line_key IS NULL"))
+    db.execute(_text(
+        "ALTER TABLE pp_line_daily ALTER COLUMN line_key SET NOT NULL"))
+    db.execute(_text(
+        "ALTER TABLE pp_line_daily DROP CONSTRAINT IF EXISTS uq_pp_line_daily_key"))
+    db.execute(_text("DROP INDEX IF EXISTS uq_pp_line_daily_key"))
+    db.execute(_text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_pp_line_daily_key ON pp_line_daily "
+        "(manager_id, date, qty_key, work_center, line_key)"))
+    db.execute(_text("ALTER TABLE pp_line_daily DROP COLUMN IF EXISTS line_no"))
+    db.commit()
+
+
 PP_AUTOFILL_DEFAULT_FLAG = "pp_autofill_default_2026_08_31_v1"
 PP_AUTOFILL_DEFAULT_UNITS = ("Suvonov Elshod OF", "Aripova Manzura", "Talipova Mamura")
 

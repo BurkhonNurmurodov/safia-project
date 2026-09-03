@@ -1174,13 +1174,12 @@ class PPLineDaily(Base):
     touches the feature reads byte-for-byte what it read before, and no lookup
     here can ever miss into a zero.
 
-    `line_no` is the line's rank inside its (qty_key, work centre) group, ordered
-    by (sort_order, id) — see pp_calc.line_numbers. A row id cannot be used: the
-    catalog is DELETED and re-created on every import, so ids do not survive. The
-    rank is computed over ALL of the group's lines, active or not, so deactivating
-    one never re-points another's stored value. Deleting a line from the sheet
-    DOES shift the ranks below it, exactly as it already re-points a code-less
-    line's quantities when it is renamed (see pp_calc.daily_key)."""
+    `line_key` is the line's DURABLE identity inside its (qty_key, work centre)
+    group — its name and labor time, plus a positional suffix only where those
+    two are identical on several lines. See pp_calc.line_keys, which explains why
+    a rank cannot be used: the catalog is deleted and re-created on every import,
+    and a rank shifts whenever a line above it is added or removed, silently
+    handing one operation's quantity to another."""
     __tablename__ = "pp_line_daily"
 
     id              = Column(Integer, primary_key=True, autoincrement=True)
@@ -1188,7 +1187,7 @@ class PPLineDaily(Base):
     date            = Column(Date, nullable=False, index=True)
     qty_key         = Column(String, nullable=False)   # pp_calc.daily_key — SAP code, or ~name
     work_center     = Column(String, nullable=False)
-    line_no         = Column(Integer, nullable=False)  # rank within the (qty_key, wc) group
+    line_key        = Column(String, nullable=False)   # pp_calc.line_keys — name|labor#n
     plan_override   = Column(Numeric(14, 4), nullable=True)
     actual_override = Column(Numeric(14, 4), nullable=True)
     updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -1197,7 +1196,7 @@ class PPLineDaily(Base):
     # COALESCE-expression index the leader per-cell key needs (Postgres treats
     # NULLs as DISTINCT inside a unique key) has nothing to guard against here.
     __table_args__ = (
-        UniqueConstraint("manager_id", "date", "qty_key", "work_center", "line_no",
+        UniqueConstraint("manager_id", "date", "qty_key", "work_center", "line_key",
                          name="uq_pp_line_daily_key"),
     )
 
