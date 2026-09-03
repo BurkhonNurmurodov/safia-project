@@ -3961,6 +3961,125 @@ def report_leader_deadline_rules() -> None:
         print(f"[startup] deadline-rule alert not delivered: {exc}")
 
 
+PP_FAZA_FOLD_FLAG = "pp_faza_per_order_fold_2026_09_03_v1"
+
+
+def correct_pp_double_counted_days() -> None:
+    """Re-derive every stored pp_daily row under the corrected фаза fold.
+
+    Until v4.33.0 the ingest added «Поставлено» once per фаза row (it is an
+    ORDER-level figure) and summed «Кол-во операции» across operations that were
+    the same units passing through sequential steps. Both are STORED numbers, so
+    unlike a derived figure they do not correct themselves when the rule changes —
+    and `backfill_pp_actual_from_deliv` wrote the same defect into history when it
+    ran, so past days are inflated exactly as new ones were.
+
+    Replays each stored date through pp_calc.faza_quantities, the same function
+    the live upload now uses, and UPDATEs only where the figure actually moves.
+
+    Three things it deliberately does NOT do:
+      • it never touches `plan_override` / `actual_override` — those are the
+        operator's own numbers, and no rule change may overwrite them;
+      • it never creates or deletes a row, so a unit's set of positions for a day
+        stays exactly what it was (the ingest's own catalog scoping is not
+        re-applied, because a catalog edited since would silently drop or add
+        positions on a day nobody re-uploaded);
+      • it leaves a date alone unless BOTH its фаза and заголовок slices are
+        stored, since «Поставлено» cannot be re-derived without the header.
+
+    Guarded by an AppSetting flag so it runs exactly once. Changing what it does
+    needs a NEW flag key, or the "already ran" mark makes it a no-op on every box
+    that has booted since.
+    """
+    from app.models import PPDaily, PPUpload
+    from app.services.pp_calc import faza_quantities
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PP_FAZA_FOLD_FLAG).first():
+            return
+
+        faza_by_day: dict = {}
+        zaga_by_day: dict = {}
+        for u in db.query(PPUpload).all():
+            if u.file_type == "faza":
+                faza_by_day.setdefault(u.date, []).append(u)
+            elif u.file_type == "zaga":
+                zaga_by_day.setdefault(u.date, []).append(u)
+
+        days = plan_moved = actual_moved = kept_override = 0
+        for day, fzs in sorted(faza_by_day.items()):
+            zgs = zaga_by_day.get(day)
+            if not zgs:
+                continue          # no «Поставлено» source — leave the day as filed
+            # The global (manager_id NULL) slice is the whole plant file; older
+            # per-brigadir slices are disjoint crops, so fall back to all of them.
+            fz = [u for u in fzs if u.manager_id is None] or fzs
+            zg = [u for u in zgs if u.manager_id is None] or zgs
+
+            order_sku: dict = {}
+            order_deliv: dict = {}
+            for u in zg:
+                for r in (u.rows or []):
+                    # [order, sku, plant, ordqty, deliv, …]
+                    if r and r[0] is not None and len(r) > 4:
+                        order_sku[str(r[0])] = str(r[1] or "")
+                        try:
+                            order_deliv[str(r[0])] = float(r[4] or 0)
+                        except (TypeError, ValueError):
+                            pass
+            if not order_sku:
+                continue
+
+            rows = []
+            for u in fz:
+                for r in (u.rows or []):
+                    # [order, op, wc, sku, name, plan, …]
+                    if not r or len(r) < 6 or not r[0]:
+                        continue
+                    sku = order_sku.get(str(r[0]))
+                    if not sku:
+                        continue
+                    try:
+                        plan = float(r[5] or 0)
+                    except (TypeError, ValueError):
+                        plan = 0.0
+                    rows.append((sku, str(r[2] or ""), str(r[0]), plan,
+                                 order_deliv.get(str(r[0]), 0.0)))
+            if not rows:
+                continue
+
+            agg = faza_quantities(rows)
+            touched = False
+            for d in db.query(PPDaily).filter(PPDaily.date == day).all():
+                a = agg.get((str(d.sap_code), str(d.work_center)))
+                if a is None:
+                    continue
+                if float(d.plan_qty or 0) != a["plan_qty"]:
+                    d.plan_qty = a["plan_qty"]
+                    plan_moved += 1
+                    touched = True
+                if float(d.actual_qty or 0) != a["actual_qty"]:
+                    d.actual_qty = a["actual_qty"]
+                    actual_moved += 1
+                    touched = True
+                if d.plan_override is not None or d.actual_override is not None:
+                    kept_override += 1
+            if touched:
+                days += 1
+
+        db.add(AppSetting(key=PP_FAZA_FOLD_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] pp фаза fold correction: {plan_moved} ПЛАН + "
+              f"{actual_moved} ФАКТ re-derived across {days} day(s); "
+              f"{kept_override} manual override(s) left untouched")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] pp фаза fold correction skipped: {exc}")
+    finally:
+        db.close()
+
+
 PP_LINE_KEY_FLAG = "pp_line_daily_line_key_2026_09_03_v1"
 
 

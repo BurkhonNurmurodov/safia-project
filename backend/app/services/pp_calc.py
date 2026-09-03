@@ -117,6 +117,57 @@ def line_numbers(products) -> dict:
     return out
 
 
+def faza_quantities(rows) -> dict:
+    """Fold raw «фаза» operation rows into {(SKU, work centre): {plan_qty,
+    actual_qty}} — THE definition of what one day's SAP export says a position
+    planned and delivered.
+
+    `rows` is an iterable of (sku, work_centre, order, operation_qty, delivered),
+    already scoped to the unit. Both figures are folded PER ORDER first, and that
+    is the whole point of this function.
+
+    **ФАКТ.** «Поставлено» is an ORDER-header field, so it is counted ONCE per
+    order per work centre. Adding it per фаза row — what this did before —
+    multiplied it by the number of operations the order happens to have there.
+    Verified on 2026-08-28: order 1743544 delivered 102 and was stored as 204,
+    1743551 delivered 714 and was stored as 1428.
+
+    **ПЛАН.** «Кол-во операции» is per operation, and a production order reaches
+    one work centre through several of them. Where every operation of one order
+    at one work centre carries the SAME quantity, they are the same units passing
+    through sequential steps and the quantity counts ONCE — on 2026-08-28 that
+    held for 31 of the 58 multi-operation groups, and in ALL 31 that single
+    quantity equals the order's own «Кол-во заказа» while their sum never does.
+    S00001104 at A2733 is the case that started this: op 0020 «Замес» 120 and op
+    0040 «# ПФ Эклер» 120 are one batch of 120 eclairs mixed and then finished,
+    stored as 240.
+
+    Where the quantities DIFFER the sum is kept, unchanged, because there is no
+    correct single answer and this must not guess. Those 27 groups are one batch
+    measured in two units — «ПФ Чизкейк песочка» 21000 (grams of dough) beside
+    «# ПФ Чизкейк» 840 (cheesecakes) — and in none of them does either the sum or
+    any one operation match the order quantity. A single scalar cannot describe
+    them; only attributing each operation to its own catalog line can, and no
+    line on the platform names its operation yet. Summing at least leaves the
+    existing behaviour rather than silently substituting a different wrong number.
+    """
+    per_order: dict = {}
+    for sku, wc, order, plan, deliv in rows:
+        e = per_order.setdefault((sku, wc, order), {"plans": [], "deliv": 0.0})
+        e["plans"].append(_f(plan))
+        # order-level, identical on every row of the order — assigned, not added
+        e["deliv"] = _f(deliv)
+
+    out: dict = {}
+    for (sku, wc, _order), e in per_order.items():
+        plans = e["plans"]
+        qty = plans[0] if plans and min(plans) == max(plans) else sum(plans)
+        a = out.setdefault((sku, wc), {"plan_qty": 0.0, "actual_qty": 0.0})
+        a["plan_qty"] += qty
+        a["actual_qty"] += e["deliv"]
+    return out
+
+
 def line_keys(products) -> dict:
     """{product id: the DURABLE identity of that catalog line inside its
     (daily_key, work centre) group} — what models.PPLineDaily stores.

@@ -72,6 +72,7 @@ try:
         seed_idle_source_pilot,
         seed_pp_autofill_default,
         migrate_pp_line_daily_key,
+        correct_pp_double_counted_days,
         reorder_positions_plan_before_fact,
         seed_snabjenets_english_label,
         fix_orazov_schedule_2026_09_01,
@@ -150,6 +151,7 @@ try:
     seed_idle_source_pilot()
     seed_pp_autofill_default()
     migrate_pp_line_daily_key()
+    correct_pp_double_counted_days()
     reorder_positions_plan_before_fact()
     seed_snabjenets_english_label()
     fix_orazov_schedule_2026_09_01()

@@ -56,8 +56,8 @@ from app.services import idle_lock
 from app.services import shift_scope
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
-                                   line_keys, group_sizes, DEFAULT_SHIFT_MIN,
-                                   DEFAULT_PRODUCTIVE_MIN)
+                                   line_keys, group_sizes, faza_quantities,
+                                   DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
@@ -1211,20 +1211,20 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     # brigadir has no catalog at all", not "no line of it carries a code".
     catalog_skus = {p.sap_code for p in products if p.sap_code}
 
-    # Join фаза operations → SKU, aggregate plan/actual by (SKU, work center).
-    #   ПЛАН  = Σ «Кол-во операции» over the matching operations          (Excel col F)
-    #   ФАКТ  = Σ order «Поставлено» over the matching operations          (Excel «План пост», col M)
-    # «Поставлено» is order-level and repeats per operation, exactly like the
-    # Excel SUMIFS over «План пост» — so we add it once per matching фаза row.
-    faza_agg: dict[tuple[str, str], dict] = {}
+    # Join фаза operations → SKU, then fold to (SKU, work center) through the ONE
+    # rule — pp_calc.faza_quantities, which counts «Поставлено» once per order and
+    # collapses operations that repeat one quantity. Folding here instead would be
+    # a second spelling of it, and the startup migration that corrects already
+    # stored days reads the same function.
+    scoped = []
     for op in faza_ops:
         if own_wcs and op["wc"] not in own_wcs:   # not this brigadir's work center
             continue
         sku = order_sku.get(op["order"])
         if sku and (not products or sku in catalog_skus):
-            a = faza_agg.setdefault((sku, op["wc"]), {"plan_qty": 0.0, "actual_qty": 0.0})
-            a["plan_qty"] += op["plan"]
-            a["actual_qty"] += order_deliv.get(op["order"], 0.0)
+            scoped.append((sku, op["wc"], op["order"], op["plan"],
+                           order_deliv.get(op["order"], 0.0)))
+    faza_agg = faza_quantities(scoped)
 
     updated = 0
     if faza_agg:

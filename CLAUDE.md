@@ -2396,20 +2396,45 @@ so this was ~15% of the catalog, not an edge case.
   `production.qty.shared` — «shared by N lines of this SAP code» — which goes
   the moment the line has a value of its own.
 
-**Known and NOT fixed here — the SAP ingest double-counts a multi-operation
-order.** `_ingest_for_manager` sums «Кол-во операции» over every фаза row of a
-(SKU, work centre) and adds the order-level «Поставлено» once per фаза row. When
-one order passes through two operations at one Команда the file holds two rows,
-so both figures are doubled. Verified on 2026-08-28: manager 2 / A2733 /
-S00001104 stores ПЛАН 240 where the order made 120, and ФАКТ 204 where
-«Поставлено» was 102. It is not a per-line bug — it inflates a single-line
-position too — and it cannot be fixed by attributing operations to lines,
-because on that date 65 of the duplicate pairs carry **one** фаза operation
-across several catalog lines while 17 pairs carry several operations against a
-**single** line. Fixing it moves every historical ПЛАН and ФАКТ on days units
-have already signed off, so it is the operator's call, not a side effect of this
-change. `startup.backfill_pp_actual_from_deliv` wrote the same rule into
-history, so a correction needs its own NEW flag key.
+### What one day's SAP file actually says (`pp_calc.faza_quantities`)
+
+From **2026-09-03** (v4.33.0) the фаза fold is ONE function, and both figures are
+folded **per ORDER** before they reach a (SKU, work centre) bucket. Before it,
+the ingest added the order-level «Поставлено» once per фаза ROW and summed
+«Кол-во операции» across operations that were the same units passing through
+sequential steps, so a position whose order touched one Команда twice was
+inflated on both sides.
+
+- **ФАКТ is counted ONCE per order per work centre.** «Поставлено» is an
+  order-header field; multiplying it by an order's operation count is
+  indefensible under any reading. Verified on 2026-08-28: order 1743544
+  delivered 102 and was stored as 204, 1743551 delivered 714 and was stored as
+  1428.
+- **ПЛАН collapses only where the operations PROVE they are the same units.**
+  All the operations of one order at one work centre carrying the SAME quantity
+  count once — on 2026-08-28 that held for 31 of the 58 multi-operation groups,
+  and in **all 31** that single quantity equals the order's own «Кол-во заказа»
+  while their sum never does. S00001104 at A2733 is the case that started this:
+  op 0020 «Замес» 120 and op 0040 «# ПФ Эклер» 120 are one batch of 120 eclairs
+  mixed and then finished, stored as 240.
+- **Where the quantities DIFFER the sum is kept, unchanged, and that is
+  deliberate.** Those 27 groups are one batch measured in two units — «ПФ Чизкейк
+  песочка» 21000 (grams of dough) beside «# ПФ Чизкейк» 840 (cheesecakes) — and
+  in none of them does the sum or any single operation match the order quantity.
+  No scalar can describe them; only attributing each operation to its own catalog
+  line can, and no line on the platform names its operation yet. **Never make
+  this function guess** — substituting a different wrong number for the existing
+  one is worse than leaving a known one in place.
+- **Consequence to know: past ПЛАН and ФАКТ moved.** These are STORED numbers, so
+  unlike a derived figure they do not re-read themselves, and
+  `startup.backfill_pp_actual_from_deliv` had written the same defect into
+  history. `startup.correct_pp_double_counted_days` (flag
+  `pp_faza_per_order_fold_2026_09_03_v1` — changing it needs a NEW key) replays
+  every stored date through the same function: **435 ПЛАН and 580 ФАКТ figures
+  across 48 days**, all downward bar one float-representation no-op, out of
+  38,514 rows. It never touches a `*_override` (the operator's own numbers), and
+  never creates or deletes a row, so a day's set of positions is exactly what it
+  was.
 
 ## Who a SAP upload fills (`/admin/upload?tab=production`)
 
