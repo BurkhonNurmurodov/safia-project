@@ -114,10 +114,19 @@ export default function UnitOjidaniyaModal({
   // the reader picked on the toolbar.
   fmt,
   scopeLine = "",
+  // The date the reader PRESSED, when they came in off a matrix cell rather
+  // than off a row or a bar. That date is the one that opens: landing on the
+  // newest day and leaving them to hunt for the one they pressed answers a
+  // question nobody asked.
+  openDate = null,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
-  const [openDates, setOpenDates] = useState(() => new Set(dates.slice(0, 1).map((d) => d.iso)));
+  // The pressed date opens, or the newest when none was named. The caller keys
+  // this component on what it opened, so a different press is a fresh mount and
+  // this initialiser is always the one that decides.
+  const [openDates, setOpenDates] = useState(
+    () => new Set([openDate || dates[0]?.iso].filter(Boolean)));
 
   const params = useMemo(() => ({
     manager_id: managerId,

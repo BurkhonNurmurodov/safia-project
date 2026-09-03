@@ -18,7 +18,8 @@ number. Layout follows the page's reading order across five tabs:
     Umumiy       banner · the scope the numbers were taken under · KPI cards ·
                  per-brigadir table with data bars + bar chart · category share
                  with a doughnut in the platform's category colours
-    Kunlik       brigadir × date matrix (colour scale, >50 min in red) with
+    Kunlik       brigadir × date matrix (the page's own bands: green at 0,
+                 red past the 50-min flag) with
                  the fleet-per-day trend beneath it
     Reyestr      one row per brigadir-day, every category a column, filterable
     Yacheykalar  one row per EVENT the cells filed (cell, leader, clock, note);
@@ -38,13 +39,13 @@ from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.chart import BarChart, DoughnutChart, LineChart, Reference
 from openpyxl.chart.marker import DataPoint
-from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule
-from openpyxl.styles import Alignment, Border, Font
+from openpyxl.formatting.rule import CellIsRule, DataBarRule, FormulaRule
+from openpyxl.styles import Alignment, Border, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.services.quality_export import (
-    AMBER, BAND, BOX, BRAND, BRAND_SOFT, FONT, INK, INK_FAINT, INK_SOFT,
+    BAND, BOX, BRAND, BRAND_SOFT, FONT, INK, INK_FAINT, INK_SOFT,
     NUM, PANEL, PCT1, RED, RIGHT, SLATE, TINT,
     _banner, _block, _fill, _head_row, _kpi_cards, _meta_strip, _section,
     _sheet, _side,
@@ -289,6 +290,48 @@ def _overview(wb: Workbook, p: dict) -> None:
     ws.print_title_rows = "1:3"
 
 
+# The screen's ramp for this same matrix (frontend components/idle/OjidaniyaMatrix
+# .jsx, IDLE_SEGMENTS) as discrete BANDS, so a cell means the same thing in the
+# file as it does on the page: 0 minutes is the best a day can go and reads
+# green, the hue turns at the 50-minute flag, and 100+ is its own darkest red.
+# It replaced a continuous white→amber→red colour scale, under which 0 and 12
+# minutes were indistinguishable and nothing marked the threshold but the ink.
+#
+# Rendered in the workbook's own idiom — a light fill under band-coloured ink —
+# rather than the screen's saturated fills: this sheet is landscape and meant to
+# be printed, and a page of solid dark green costs the toner and the legibility
+# without adding a fact. The BANDS are what has to match, and they do.
+#
+# Guarded on LEN() where the band touches zero: an empty cell is a day nobody
+# reported, and Excel reads it as 0 — without the guard every unreported day
+# would be filled as though the unit had reported a perfect one.
+_MX_BANDS = [
+    ("AND(LEN({c})>0,{c}=0)",        "D7F0DF", "15803D", True),   # nothing waited
+    ("AND(LEN({c})>0,{c}>0,{c}<15)", "E7F8EE", "15803D", False),  # under 15 min
+    ("AND({c}>=15,{c}<30)",          "EFF7D8", "4D7C0F", False),  # 15–29
+    ("AND({c}>=30,{c}<50)",          "FBF4DA", "854D0E", False),  # 30–49
+    ("AND({c}>=50,{c}<100)",         "FDEAEA", RED,      True),   # over the flag
+    ("{c}>=100",                     "F7D5D5", "B91C1C", True),   # 100+
+]
+
+
+def _band_matrix(ws: Worksheet, rng: str, col: str, row: int) -> None:
+    """Paint the brigadir × day range in the page's own bands."""
+    anchor = f"{col}{row}"                      # rules are relative to the range's first cell
+    for formula, fill, ink, bold in _MX_BANDS:
+        ws.conditional_formatting.add(rng, FormulaRule(
+            formula=[formula.format(c=anchor)],
+            # NOT `_fill()`: that writes fgColor alone, which is what a normal
+            # cell style wants and what a DIFFERENTIAL one (a conditional
+            # format) reads as the pattern colour rather than the background —
+            # Excel then paints nothing and the whole matrix comes out white,
+            # with the file otherwise perfectly valid. Setting both ends emits
+            # fgColor AND bgColor, which every reader renders the same way.
+            fill=PatternFill("solid", start_color=fill, end_color=fill),
+            font=Font(name=FONT, size=9.5, bold=bold, color=ink),
+        ))
+
+
 # ── tab 2: brigadir × date matrix + trend ────────────────────────────────────
 def _daily(wb: Workbook, p: dict) -> None:
     L = p.get("labels") or {}
@@ -351,15 +394,7 @@ def _daily(wb: Workbook, p: dict) -> None:
     row += 2
 
     rng = f"{get_column_letter(C1 + 3)}{first}:{get_column_letter(C2)}{last}"
-    ws.conditional_formatting.add(rng, ColorScaleRule(
-        start_type="num", start_value=0, start_color="FFFFFF",
-        mid_type="num", mid_value=THRESHOLD, mid_color=TINT[AMBER],
-        end_type="max", end_color="F3A5A5",
-    ))
-    ws.conditional_formatting.add(rng, CellIsRule(
-        operator="greaterThan", formula=[str(THRESHOLD)],
-        font=Font(name=FONT, size=9.5, bold=True, color=RED),
-    ))
+    _band_matrix(ws, rng, get_column_letter(C1 + 3), first)
     ws.freeze_panes = ws.cell(first, C1 + 3)
 
     # ── trend: one small table (date · total · threshold) and a line chart ──

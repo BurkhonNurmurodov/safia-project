@@ -1046,7 +1046,13 @@ export default function Downtime() {
             dates={data?.dates || []}
             rows={matrix.rows}
             fleet={matrix.fleet}
-            onPick={(r) => setDetail({ managerId: r.managerId, managerName: r.key, cat: null })}
+            /* A press on a CELL names the day it landed on, so the modal
+               opens ON that date instead of the newest one; a press on the
+               identity columns names none, i.e. the whole period. */
+            onPick={(r, d) => setDetail({
+              managerId: r.managerId, managerName: r.key, cat: null,
+              date: d ? isoOfDmy(d) : null,
+            })}
           />
         ) : (
           <EmptyState title={t("downtime.noData")} message={t("downtime.noDataMsg")} height="h-32" />
@@ -1138,6 +1144,9 @@ export default function Downtime() {
       {/* What one supervisor's bar is made of — date by date, cell by cell. */}
       {detail && (
         <UnitOjidaniyaModal
+          /* Keyed on what was pressed: the modal decides which date it opens on
+             at mount, so a second press must arrive as a new mount. */
+          key={`${detail.managerId}|${detail.date || ""}|${detail.cat || ""}`}
           open
           onClose={() => setDetail(null)}
           managerId={detail.managerId}
@@ -1151,6 +1160,7 @@ export default function Downtime() {
           dateTo={dateTo}
           fmt={fmt}
           scopeLine={detailScopeLine}
+          openDate={detail.date || null}
         />
       )}
       {/* The weekly deck's confirm. It exists because this button ignores the
