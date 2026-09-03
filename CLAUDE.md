@@ -623,6 +623,47 @@ or why.
   `scoped_manager_ids` re-decides it server-side — a viewer who cannot see the
   unit on the chart cannot read its cells here either.
 
+## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
+
+From **2026-09-03** the toolbar of `/downtime` carries an «Excel» button at its
+right edge (icon-only on a phone) — `POST /api/downtime/export.xlsx` →
+`services/ojidaniya_export.py`. It does, once, what a person otherwise does by
+hand before a raw dump is fit to forward — freeze the header, widen the
+columns, format the numbers, sort by the biggest, add totals, zebra the rows,
+add filters, turn codes into words, pull out the per-person and per-category
+summaries, colour what is over the threshold, add the chart, name the sheets,
+and put a title with the period and the filters on top — so the file opens
+ready to read and ready to print.
+
+- **Every number comes from the page's own code.** `routers/downtime.py`
+  `_downtime()` IS the page's computation, refactored out of `GET /api/downtime`
+  so the endpoint and the export read ONE function; the events come from
+  `_cell_detail`, the bar modal's own reader. The client sends the SCOPE (its
+  filter state) and the WORDS (supervisor names in the viewer's alphabet via
+  `tl`, the labels, each category's label/note/colour off `catColor`) — never
+  a figure. The formatter is pure and imports its primitives from
+  `quality_export.py` (the house report style: gold banner, scope strip, KPI
+  cards, sections, zebra, data bars, native charts, no gridlines, print setup).
+- **Five tabs in the page's reading order**: Umumiy (banner · scope strip ·
+  six KPI cards · per-brigadir table with data bars + a bar chart coloured
+  red/indigo by the 50-min flag · category share with a doughnut in the
+  category colours) · Kunlik (brigadir × date matrix under a colour scale,
+  >50 in red, a fleet-total row, and the trend as a table + line chart with the
+  50-min dashed line) · Reyestr (one row per brigadir-day, a column per
+  category, autofilter, frozen header) · Yacheykalar (one row per EVENT the
+  cells filed — cell, leader, clock, note; a day still read off the shift
+  report is one row per category marked «Smena hisoboti», so the file is never
+  shorter than the screen) · Toifalar izohi (what each category means and
+  whether the загрузка counts it).
+- **The doughnut's category picks narrow the totals exactly as the chart does**
+  (a bar = the sum of the picked categories); the 50-min flag stays a fact about
+  the unit's WHOLE day, as on the page. `stopped` / `kpi_only` ride in like
+  every other narrowing.
+- `rows[].source` («cells» | «sheet») was added to `/api/downtime` for the
+  export — additive. The period is capped at 400 days. Logged as
+  `export.ojidaniya`; delivered by `xlsx_delivery` (browser downloads,
+  Telegram DMs).
+
 ## Automatic proof verification (BOTH shifts, from 13 Aug 2026)
 
 Leader-checklist proof photos are reviewed by Gemini. Since **2026-08-13** that

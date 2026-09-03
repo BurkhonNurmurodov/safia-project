@@ -11,6 +11,8 @@ import KPICard from "../components/ui/KPICard";
 import CategoryLegendModal from "../components/ui/CategoryLegendModal";
 import UnitOjidaniyaModal from "../components/idle/UnitOjidaniyaModal";
 import EmptyState from "../components/ui/EmptyState";
+import Button from "../components/ui/Button";
+import { useToast } from "../components/ui/Toast";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -21,13 +23,14 @@ import { useTranslit } from "../utils/transliterate";
 import { fmtTime, fmtDuration } from "../utils/formatters";
 import { useChartTheme } from "../hooks/useChartTheme";
 import api from "../utils/api";
+import { exportXlsx } from "../utils/exportXlsx";
 import { padChartParams } from "../utils/chartRange";
-import { Info, Layers, UserRound, Tag } from "lucide-react";
+import { Info, Layers, UserRound, Tag, FileSpreadsheet } from "lucide-react";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 
 // Downtime-category identity colors — the shared generic-first order, one hue
 // per category index, shared by the merged bar chart, the doughnut and the chips.
-import { catColor } from "../components/idle/categories";
+import { catColor, CATS } from "../components/idle/categories";
 
 // ── date helpers for the seasonality card's weekly axis ──────────────────────
 // Local-calendar ISO stamps (never toISOString — that shifts UTC+5 back a day).
@@ -90,6 +93,9 @@ export default function Downtime() {
   // whole unit. Deliberately NOT persisted: a modal that reopens itself on the
   // next visit is a state nobody asked for.
   const [detail, setDetail] = useState(null);
+  // «Excel» on the toolbar — see onExport below.
+  const [exporting, setExporting] = useState(false);
+  const toast = useToast();
   const minLabel = t("general.min");
   const hrsLabel = t("general.hrs");
   // Waiting times here are routinely single-digit minutes, where fractional
@@ -555,6 +561,105 @@ export default function Downtime() {
     detailCats.length ? detailCats.join(", ") : "",
   ].filter(Boolean).join(" · ");
 
+  // ── «Excel»: the whole page as a report, under exactly the filters on screen ──
+  // The server re-runs the page's own computation (`_downtime`, the same one
+  // this page reads, and `_cell_detail`, the one the bar's modal reads) and
+  // lays it out through services/ojidaniya_export.py — banner, scope strip,
+  // KPI cards, the per-brigadir table with its bars, the category doughnut,
+  // the brigadir × day matrix, the trend, the daily register, every event the
+  // cells filed, and what each category means. What travels from here is the
+  // SCOPE and the WORDS — the filter state, names in the viewer's alphabet, the
+  // labels, each category's meaning and colour — never a number.
+  const onExport = async () => {
+    setExporting(true);
+    try {
+      const fmtD = (s) => (s ? s.split("-").reverse().join(".") : "");
+      const periodTxt = `${fmtD(dateFrom)} — ${fmtD(dateTo)}`;
+      const supNames = brigadirIds.length
+        ? brigadirIds.map((id) => supOptions.find((o) => o.value === String(id))?.label || `#${id}`).join(", ")
+        : t("tasks.allSupervisors");
+      const catMeta = {};
+      CATS.forEach(({ name, code }) => {
+        catMeta[name] = {
+          label: t(`downtime.cat.${code}.label`),
+          note: t(`downtime.cat.${code}.note`),
+          color: catColor(name),
+        };
+      });
+      const names = {};
+      allSupervisors.forEach((b) => { names[String(b.manager_id)] = tl(b.name); });
+      const title = t("downtime.xl.title");
+      const where = await exportXlsx("/api/downtime/export.xlsx", {
+        body: {
+          date_from: dateFrom, date_to: dateTo, shift, manager_id: brigadirIds, factory,
+          stopped: !ns, kpi_only: kpiOnly, cats: selectedCats,
+          names, cat_meta: catMeta, cat_order: CATS.map((c) => c.name),
+          title,
+          subtitle: `${t("downtime.xl.subtitle")} · ${periodTxt}`,
+          filename: `${title} ${fmtD(dateFrom)}-${fmtD(dateTo)}.xlsx`,
+          caption: `📊 ${title} · ${periodTxt}`,
+          sheets: {
+            overview: t("downtime.xl.shOverview"), daily: t("downtime.xl.shDaily"),
+            register: t("downtime.xl.shRegister"), events: t("downtime.xl.shEvents"),
+            legend: t("downtime.xl.shLegend"),
+          },
+          // The scope the numbers were taken under, in the viewer's words — so a
+          // forwarded file explains itself.
+          meta: [
+            { label: t("downtime.xl.period"), value: periodTxt },
+            ...(factorySection ? [{
+              label: t("downtime.xl.factory"),
+              value: factorySection.active ? factorySection.display : t("factory.all"),
+            }] : []),
+            { label: t("filter.shift"), value: shift ? `S${shift}` : t("filter.all") },
+            { label: t("tasks.colSupervisor"), value: supNames },
+            { label: t("downtime.filterCat"), value: selectedCats.length ? selectedCats.join(", ") : t("downtime.allCats") },
+            { label: t("downtime.xl.view"), value: ns ? t("downtime.tabNotStopped") : t("downtime.tabStopped") },
+            { label: t("downtime.xl.scope"), value: kpiOnly ? t("downtime.scopeZagruzka") : t("downtime.scopeAll") },
+            { label: t("downtime.xl.generated"), value: new Date().toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) },
+          ],
+          labels: {
+            kpi: t("downtime.xl.kpi"),
+            kpiTotal: t("downtime.totalDowntime"), kpiFlagged: t("downtime.flaggedDays"),
+            kpiWorst: t("downtime.worstCategory"), kpiSups: t("downtime.xl.kpiSupervisors"),
+            kpiDays: t("downtime.xl.kpiDays"), kpiAvg: t("downtime.xl.kpiAvg"),
+            hintFlagged: t("downtime.xl.hintFlagged"), hintWorst: t("downtime.xl.hintWorst"),
+            hintDays: t("downtime.xl.hintDays"), hintAvg: t("downtime.xl.hintAvg"), hintSups: t("downtime.xl.hintSups"),
+            unitHour: t("general.unitHour"), unitMin: t("general.unitMin"),
+            bySup: t("downtime.byBrigadir"), bySupSub: t("downtime.redSub"),
+            supervisor: t("downtime.name"), shift: t("downtime.colShift"), totalMin: t("downtime.total"),
+            hours: t("downtime.xl.hours"), days: t("downtime.days"), flaggedDays: t("downtime.xl.flaggedDays"),
+            avgDay: t("downtime.xl.avgDay"), topCat: t("downtime.topCategory"), share: t("downtime.xl.share"),
+            total: t("downtime.viewTotal"),
+            catShare: t("downtime.catShare"), catShareSub: t("downtime.xl.catShareSub"),
+            cat: t("downtime.filterCat"), catName: t("downtime.xl.catName"), catNote: t("downtime.xl.catNote"),
+            minutes: t("idleCell.colMinutes"), counted: t("downtime.xl.counted"),
+            yes: t("common.yes"), no: t("common.no"),
+            matrix: t("downtime.xl.matrix"), matrixSub: t("downtime.xl.matrixSub"),
+            fleetTotal: t("downtime.xl.fleetTotal"), trend: t("downtime.trend"), trendSub: t("downtime.trendSub"),
+            threshold: t("downtime.threshold"), date: t("downtime.colDate"),
+            register: t("downtime.detail"), rows: t("downtime.xl.rows"), flagged: t("downtime.flagged"),
+            source: t("downtime.dt.colSource"), srcCells: t("downtime.dt.srcCells"), srcSheet: t("downtime.dt.srcSheet"),
+            events: t("downtime.xl.events"), noEvents: t("downtime.xl.noEvents"),
+            cell: t("downtime.dt.colCell"), leader: t("idleCell.leader"), start: t("idleCell.startTime"),
+            end: t("idleCell.endTime"), status: t("idleCell.colStatus"),
+            stoppedYes: t("idleCell.stopped"), stoppedNo: t("idleCell.notStopped"), note: t("idleCell.colNote"),
+            legendTitle: t("downtime.catGuide"), legendSub: t("downtime.catGuideSub"),
+          },
+        },
+        fallbackName: "ojidaniya.xlsx",
+      });
+      toast.success(t(where === "download" ? "downtime.dt.downloaded" : "downtime.dt.sentToChat"));
+    } catch (e) {
+      const why = e?.response?.data?.detail;
+      toast.error(typeof why === "string" && why
+        ? `${t("downtime.dt.exportFailed")}: ${why}`
+        : t("downtime.dt.exportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const chartH = Math.max(300, summary.length * 28 + 60);
 
   // Selected-category chips (doughnut filter) — shared by the bar-chart and trend headers.
@@ -662,6 +767,24 @@ export default function Downtime() {
             },
           ]}
         />
+        {/* The whole page as a report, under exactly the filters on screen —
+            last on the row so it sits at the toolbar's right edge. A DIRECT
+            child of the row on purpose: FilterPanel's fit check measures the
+            row's children, and this button is one of them. Icon only on a
+            phone, where the row has no room for a word. */}
+        <Button
+          size="lg"
+          variant="secondary"
+          className="ml-auto"
+          loading={exporting}
+          disabled={isLoading || !summary.length}
+          icon={!exporting ? <FileSpreadsheet size={14} /> : null}
+          onClick={onExport}
+          title={t("downtime.dt.export")}
+          aria-label={t("downtime.dt.export")}
+        >
+          <span className="hidden sm:inline">{t("downtime.dt.export")}</span>
+        </Button>
       </div>
 
       {/* Page view tabs — «тўхтаганда» / «тўхтамаганда» halves of the same report.
@@ -895,6 +1018,7 @@ export default function Downtime() {
           scopeLine={detailScopeLine}
         />
       )}
+      {toast.node}
     </Layout>
   );
 }

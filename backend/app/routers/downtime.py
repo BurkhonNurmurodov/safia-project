@@ -17,6 +17,7 @@ from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services import action_log, idle_intervals, idle_source
 from app.xlsx_delivery import deliver_xlsx
+from app.services.ojidaniya_export import build_ojidaniya_workbook
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -46,7 +47,15 @@ def get_downtime(
         date_to = date.today()
     if not date_from:
         date_from = date_to - timedelta(days=13)
+    return _downtime(db, payload, date_from, date_to, shift, manager_id, kpi_only, factory)
 
+
+def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
+              shift: Optional[int], manager_id: List[int], kpi_only: bool,
+              factory: Optional[int]) -> dict:
+    """The page's own numbers — ONE computation, read by the endpoint above and
+    by the workbook export at the bottom of this file, so the file can never
+    state a figure the screen it was pressed on does not."""
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
     managers = db.query(Manager).filter(Manager.archived.is_(False))
     if shift:
@@ -182,6 +191,9 @@ def get_downtime(
                 "manager_name": mgr.name,
                 "shift": mgr.shift,
                 "date": d_str,
+                # Which source answered this day — the cells' interval model or
+                # the «Смена отчёт» row. Additive; the export prints it.
+                "source": "cells" if idle_source.uses_cells(units, mgr.id, d_obj) else "sheet",
                 "total": total,
                 "flagged": total > 50,
                 "by_category": cats,
@@ -618,5 +630,212 @@ def export_downtime_cell_detail(
                  ("from_date", body.date_from), ("to_date", body.date_to),
                  ("half", "stopped" if body.stopped else "not_stopped"),
                  ("scope", "kpi_only" if body.kpi_only else "all")],
+    )
+    return resp
+
+
+# ── the WHOLE page as a workbook ─────────────────────────────────────────────
+#
+# The toolbar's «Excel» button. Everything the page shows — the KPI strip, the
+# per-brigadir bars, the category doughnut, the trend, the daily table and, one
+# level down, every event the cells filed — under exactly the filters on screen.
+#
+# The client sends the SCOPE (its filter state) and the WORDS (names in the
+# viewer's alphabet, labels, what each category means and which colour it
+# wears). Every number is computed here, through `_downtime` — the same function
+# the page reads — and `_cell_detail`, the same one the bar's modal reads. Then
+# `services/ojidaniya_export.py` lays it out as a report: the formatting a person
+# would otherwise do by hand before the file was fit to forward is done once,
+# there.
+class OjidaniyaExportBody(BaseModel):
+    date_from: str
+    date_to: str
+    shift: Optional[int] = None
+    manager_id: List[int] = []
+    factory: Optional[int] = None
+    stopped: bool = True
+    kpi_only: bool = True
+    cats: List[str] = []
+    names: dict[str, str] = {}          # manager_id → display name (viewer's alphabet)
+    cat_meta: dict[str, dict] = {}      # category → {label, note, color}
+    cat_order: List[str] = []           # canonical A→Z order for the legend tab
+    labels: dict[str, str] = {}
+    sheets: dict[str, str] = {}
+    meta: List[dict] = []               # [{label, value}] — the scope, in the viewer's words
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    caption: Optional[str] = None
+    filename: Optional[str] = None
+
+
+_EXPORT_MAX_DAYS = 400
+
+
+@router.post("/downtime/export.xlsx")
+def export_downtime(
+    request: Request,
+    body: OjidaniyaExportBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """Excel report of the Ojidaniya page for the period and filters on screen.
+    A browser session downloads it; inside Telegram it lands in the caller's chat."""
+    try:
+        d_from = date.fromisoformat(body.date_from)
+        d_to = date.fromisoformat(body.date_to)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date")
+    if d_from > d_to:
+        raise HTTPException(status_code=400, detail="date_from is after date_to")
+    if (d_to - d_from).days > _EXPORT_MAX_DAYS:
+        raise HTTPException(status_code=400, detail=f"Period longer than {_EXPORT_MAX_DAYS} days")
+
+    data = _downtime(db, payload, d_from, d_to, body.shift, body.manager_id,
+                     body.kpi_only, body.factory)
+    L = body.labels or {}
+    tkey = "total" if body.stopped else "total_ns"
+    ckey = "by_category" if body.stopped else "by_category_ns"
+    fkey = "flagged" if body.stopped else "flagged_ns"
+    cats = list(data["cat_names"])
+    # The doughnut's picks narrow the bars to those categories' sum, exactly as
+    # the chart does; the 50-min flag stays a fact about the unit's WHOLE day.
+    wanted = [c for c in cats if c in body.cats] if body.cats else cats
+
+    def disp(mid: int, name: str) -> str:
+        return body.names.get(str(mid)) or name or ""
+
+    def narrowed(row: dict) -> dict[str, float]:
+        by = row.get(ckey) or {}
+        return {c: float(by.get(c) or 0) for c in wanted}
+
+    per: dict[int, dict] = {}
+    matrix: dict[int, dict[str, float]] = defaultdict(dict)
+    fleet: dict[str, float] = defaultdict(float)
+    cat_tot: dict[str, float] = defaultdict(float)
+    daily_rows: list[dict] = []
+    for r in data["rows"]:
+        iso = datetime.strptime(r["date"], "%d.%m.%Y").date().isoformat()
+        by = narrowed(r)
+        tot = float(sum(by.values())) if body.cats else float(r.get(tkey) or 0)
+        mid = r["manager_id"]
+        s = per.get(mid)
+        if s is None:
+            s = per[mid] = {
+                "key": mid, "name": disp(mid, r["manager_name"]), "shift": r.get("shift"),
+                "total": 0.0, "days": 0, "flagged_days": 0, "by_cat": defaultdict(float),
+            }
+        s["total"] += tot
+        s["days"] += 1
+        s["flagged_days"] += 1 if r.get(fkey) else 0
+        for c, v in by.items():
+            s["by_cat"][c] += v
+            cat_tot[c] += v
+        matrix[mid][iso] = round(tot, 1)
+        fleet[iso] += tot
+        daily_rows.append({
+            "date": iso, "name": s["name"], "shift": r.get("shift"), "total": round(tot, 1),
+            "flagged": bool(r.get(fkey)), "by_cat": {c: round(v, 1) for c, v in by.items()},
+            "source": r.get("source"),
+        })
+
+    summary = sorted(per.values(), key=lambda x: -x["total"])
+    for s in summary:
+        s["total"] = round(s["total"], 1)
+        s["avg"] = round(s["total"] / s["days"], 1) if s["days"] else 0
+        top = max(s["by_cat"].items(), key=lambda kv: kv[1], default=(None, 0.0))
+        s["top_cat"] = top[0] if top[1] > 0 else ""
+        s["by_cat"] = dict(s["by_cat"])
+    daily_rows.sort(key=lambda x: (-x["total"], x["name"]))
+    daily_rows.sort(key=lambda x: x["date"], reverse=True)
+
+    grand = round(sum(s["total"] for s in summary), 1)
+    days_n = sum(s["days"] for s in summary)
+    flagged_sups = sum(1 for s in summary if s["flagged_days"])
+    top_all = max(cat_tot.items(), key=lambda kv: kv[1], default=(None, 0.0))
+    worst = top_all[0] if top_all[1] > 0 else ""
+    totals = {
+        "total": grand, "days": days_n,
+        "flagged_days": sum(s["flagged_days"] for s in summary),
+        "avg": round(grand / days_n, 1) if days_n else 0, "top_cat": worst,
+    }
+    cat_share = sorted(
+        ({"name": c, "label": (body.cat_meta.get(c) or {}).get("label", ""),
+          "minutes": round(cat_tot.get(c, 0.0), 1), "counted": c not in OJIDANIYA_ONLY_CATS}
+         for c in wanted),
+        key=lambda x: -x["minutes"],
+    )
+    h, m = divmod(int(round(grand)), 60)
+    hours_txt = f"{h} {L.get('unitHour', 'h')} {m} {L.get('unitMin', 'min')}"
+    worst_meta = body.cat_meta.get(worst) or {}
+    kpis = [
+        {"value": grand, "label": L.get("kpiTotal", ""), "hint": hours_txt,
+         "color": "#C8973F", "fmt": "#,##0.#"},
+        {"value": flagged_sups, "label": L.get("kpiFlagged", ""), "hint": L.get("hintFlagged", ""),
+         "color": "#ef4444" if flagged_sups else "#94a3b8"},
+        {"value": worst or "—", "label": L.get("kpiWorst", ""),
+         "hint": worst_meta.get("label") or L.get("hintWorst", ""),
+         "color": worst_meta.get("color") or "#94a3b8"},
+        {"value": len(summary), "label": L.get("kpiSups", ""), "hint": L.get("hintSups", ""),
+         "color": "#6366f1"},
+        {"value": days_n, "label": L.get("kpiDays", ""), "hint": L.get("hintDays", ""),
+         "color": "#22c55e"},
+        {"value": totals["avg"], "label": L.get("kpiAvg", ""), "hint": L.get("hintAvg", ""),
+         "color": "#eab308", "fmt": "#,##0.#"},
+    ]
+
+    # One level down: every event the cells filed, for every unit on the chart —
+    # the bar's own modal, for all bars at once. A day still read off the shift
+    # report has no events, so it is one row per category, marked as such.
+    events: list[dict] = []
+    for s in summary:
+        det = _cell_detail(db, s["key"], d_from, d_to, body.stopped, body.kpi_only, body.cats)
+        for d, cells in det["days"].items():
+            for c in cells:
+                for iv in c["intervals"]:
+                    events.append({
+                        "date": d, "name": s["name"], "cell": c["code"] or "",
+                        "leader": c["leader"] or "", "category": iv["category"],
+                        "start": iv["start"], "end": iv["end"], "minutes": iv["minutes"],
+                        "stopped": bool(iv["stopped"]), "note": iv["note"], "source": "cells",
+                    })
+    for r in daily_rows:
+        if r["source"] != "sheet":
+            continue
+        for c, v in sorted(r["by_cat"].items()):
+            if v:
+                events.append({
+                    "date": r["date"], "name": r["name"], "cell": "", "leader": "",
+                    "category": c, "start": "", "end": "", "minutes": v,
+                    "stopped": body.stopped, "note": "", "source": "sheet",
+                })
+    events.sort(key=lambda e: (e["name"], e["cell"], e["start"]))
+    events.sort(key=lambda e: e["date"], reverse=True)
+
+    dates_iso = [datetime.strptime(d, "%d.%m.%Y").date().isoformat() for d in data["dates"]]
+    p = {
+        "title": body.title or "Ojidaniya", "subtitle": body.subtitle or "",
+        "sheets": body.sheets, "labels": L, "meta": body.meta, "kpis": kpis,
+        "cats": wanted, "cat_meta": body.cat_meta,
+        "cat_order": body.cat_order or list(body.cat_meta.keys()),
+        "summary": summary, "totals": totals, "cat_share": cat_share,
+        "dates": dates_iso, "matrix": {k: v for k, v in matrix.items()},
+        "fleet_by_day": {k: round(v, 1) for k, v in fleet.items()},
+        "daily_rows": daily_rows, "events": events,
+    }
+    bio = build_ojidaniya_workbook(p)
+    blob = bio.read()
+
+    fname = (body.filename or f"ojidaniya_{body.date_from}_{body.date_to}.xlsx").replace("/", "-").replace("\\", "-")
+    if not fname.lower().endswith(".xlsx"):
+        fname += ".xlsx"
+    caption = body.caption or f"📊 Ojidaniya · {body.date_from} — {body.date_to}"
+    resp = deliver_xlsx(request, payload, fname, blob, caption)
+    action_log.enrich(
+        target_kind="report", target_id=fname,
+        details=[("file", fname), ("rows", len(daily_rows)), ("events", len(events)),
+                 ("size", len(blob)), ("from_date", body.date_from), ("to_date", body.date_to),
+                 ("half", "stopped" if body.stopped else "not_stopped"),
+                 ("scope", "kpi_only" if body.kpi_only else "all"),
+                 ("supervisors", len(summary))],
     )
     return resp
