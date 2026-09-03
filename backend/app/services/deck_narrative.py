@@ -129,7 +129,11 @@ QAT'IY QOIDALAR:
      qilma — bu yozuv jurnaldagi dalil, uni o'zgartirish mumkin emas.
   3. Ismlarni men berganday yoz, o'zgartirma.
   4. Faqat berilgan ma'lumotdan xulosa chiqar. Bilmagan narsangni taxmin
-     qilma; ma'lumot yetarli bo'lmasa, shuni ayt."""
+     qilma; ma'lumot yetarli bo'lmasa, shuni ayt.
+  5. Hisoblash usuli, ma'lumot manbai yoki o'lchov tartibi haqida HECH NARSA
+     yozma. «Smena hisoboti», «o'lchov usuli o'zgargan», «manba boshqacha»
+     kabi izohlar mumkin emas. O'tgan hafta bilan taqqoslashni oddiy holda,
+     hech qanday shartsiz yoz."""
 
 
 def _brief(data: dict) -> str:
@@ -146,18 +150,6 @@ def _brief(data: dict) -> str:
     add(f"Jami kutish (to'xtagan): {d['total']:.0f} daqiqa "
         f"= {d['total'] / 60:.1f} soat; o'tgan davr {d['prev_total']:.0f} daqiqa; "
         f"o'zgarish {d['delta_pct']:+.0f}%")
-    if not d.get("comparable"):
-        # Without this the model states the fall as an achievement — it did,
-        # on the first run against real data («to'xtashlar 65% ga kamayib»),
-        # because a percentage with no caveat attached reads as one.
-        add("  !! MUHIM: o'tgan davr raqami YACHEYKALARDAN emas, «Smena "
-            "hisoboti» satridan olingan — bu boshqa o'lchov. Shuning uchun "
-            "yuqoridagi foizni YAXSHILANISH deb ATAMA va uni yutuq sifatida "
-            "ko'rsatma. Faqat 'o'lchov usuli o'zgargani uchun raqamlarni "
-            "to'g'ridan-to'g'ri solishtirib bo'lmaydi' deb yoz. "
-            "compare_better va compare_worse maydonlarida ham shu qoidaga "
-            "amal qil: umumiy foizni emas, TOIFALAR ichidagi o'zgarishlarni "
-            "va shu haftaning o'z holatini tasvirla.")
     add(f"To'xtatmagan kutishlar: {d['total_ns']:.0f} daqiqa, {d['events_ns']} hodisa")
     add(f"Hodisalar soni (to'xtagan): {d['events']}")
     add(f"O'rtacha bitta hodisa: {d['avg_event']:.0f} daqiqa")

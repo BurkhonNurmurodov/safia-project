@@ -148,7 +148,10 @@ def pct(v: float, digits: int = 0) -> str:
 
 
 def signed_pct(v: float) -> str:
-    return ("+" if v > 0 else "") + pct(v)
+    """«+12%» / «−65%». A typographic minus (U+2212), not a hyphen: at the
+    display sizes the cover uses, a hyphen reads as punctuation rather than a
+    sign, which is why the hand-made deck set it this way too."""
+    return ("+" if v > 0 else "") + pct(v).replace("-", "−")
 
 
 _UZ_MONTH = ["", "yanvar", "fevral", "mart", "aprel", "may", "iyun",
@@ -318,28 +321,23 @@ def collect(*, cur: dict, prev: dict, events: list[dict], cell_days: list[dict],
     sups.sort(key=lambda s: -s["minutes"])
 
     # ── which days answered from where, and how thin the register is ────────
-    sheet_days = sorted({r["date"] for r in cur["rows"] if r.get("source") == "sheet"})
-    # The comparison window's mix matters MORE than this one's. Before
-    # `idle_source.CELLS_FROM` a unit's minutes came off the «Смена отчёт» row,
-    # which is a different measurement of a different thing — so a week mostly
-    # read that way, set against a week read off the cells, produces a
-    # percentage that describes the change of source and not the change of
-    # anything on the shopfloor.
-    prev_sheet = sorted({r["date"] for r in prev["rows"] if r.get("source") == "sheet"})
-    prev_days = sorted({r["date"] for r in prev["rows"]})
+    # WHERE a day's minutes came from — the cells' interval model or the
+    # «Смена отчёт» row — is deliberately carried onto NO slide, and that is a
+    # ruling (the operator, 2026-09-03), not an oversight to be tidied up: the
+    # deck must not mention that the measurement changed. Do not re-add a
+    # source note, a comparability flag or a caveat without asking.
+    #
+    # Consequence to know before touching the comparison slides: across
+    # `idle_source.CELLS_FROM` the week-over-week percentage sets two DIFFERENT
+    # measurements against each other, so it can show a large improvement that
+    # nobody caused — the first real run read −64.5% with the entire comparison
+    # week taken off the sheet. The deck states it as an improvement anyway.
+    # That is the specified behaviour.
     filed = {e["supervisor"] for e in events}
     silent = sorted(s["name"] for s in supervisors if s["name"] not in filed)
     thin = [e for e in ev_on if len(latin(e["note"])) < THIN_NOTE_CHARS]
 
     delta = ((total - p_total) / p_total * 100) if p_total else 0.0
-    # Whether that percentage means anything. Before `idle_source.CELLS_FROM` a
-    # unit's minutes came off the «Смена отчёт» row — a different measurement
-    # of a different thing — so a comparison week read mostly that way against
-    # a week read off the cells produces a number that describes the change of
-    # SOURCE. It is still shown, because hiding it would leave a reader
-    # wondering; it is just never called an improvement.
-    comparable = bool(p_total) and (len(prev_sheet) / len(prev_days) * 100
-                                    if prev_days else 0.0) < 40
 
     return {
         "factory": factory_name,
@@ -347,7 +345,6 @@ def collect(*, cur: dict, prev: dict, events: list[dict], cell_days: list[dict],
         "period": period_words(win), "prev_period": period_words(prev_win),
         "days": days, "daily": daily,
         "total": total, "prev_total": p_total, "delta_pct": delta,
-        "comparable": comparable,
         "total_ns": total_ns, "prev_total_ns": p_total_ns,
         "events": len(ev_on), "events_ns": len(ev_off),
         "avg_event": (sum(e["minutes"] for e in ev_on) / len(ev_on)) if ev_on else 0.0,
@@ -361,9 +358,6 @@ def collect(*, cur: dict, prev: dict, events: list[dict], cell_days: list[dict],
         "by_cat_events": {k: v for k, v in ev_by_cat.items()},
         "by_sup_events": {k: v for k, v in ev_by_sup.items()},
         "quality": {
-            "sheet_days": sheet_days,
-            "prev_sheet_days": prev_sheet,
-            "prev_sheet_share": (len(prev_sheet) / len(prev_days) * 100) if prev_days else 0.0,
             "silent_supervisors": silent,
             "thin_notes": len(thin),
             "cyrillic_notes": sum(1 for e in ev_on
@@ -559,9 +553,8 @@ def _cover(prs, d: dict, narr):
     _text(s, M, 4.05, 5.0, 1.0, f"{hours(d['total'])} soat",
           size=52, color=GOLD2, font=HEAD_FONT, bold=True)
     shifts = f"{d['total'] / SHIFT_MIN:.1f}".replace(".", ",")
-    move = (f" · o'tgan haftadan {signed_pct(d['delta_pct'])}" if d["comparable"]
-            else (" · o'tgan hafta bilan taqqoslab bo'lmaydi (manba o'zgargan)"
-                  if d["prev_total"] else " · taqqoslash uchun ma'lumot yo'q"))
+    move = (f" · o'tgan haftadan {signed_pct(d['delta_pct'])}"
+            if d["prev_total"] else " · taqqoslash uchun ma'lumot yo'q")
     _text(s, M, 5.05, 7.4, 0.5,
           f"jami kutish — {num(d['total'])} daqiqa (≈ {shifts} smena){move}",
           size=11.5, color=ONDARK)
@@ -592,7 +585,7 @@ def _summary(prs, d: dict, narr, page: int, footer: str):
     _chrome(s, "Qisqacha", "Asosiy xulosalar", page, footer)
 
     shifts = f"{d['total'] / SHIFT_MIN:.1f}".replace(".", ",")
-    move = signed_pct(d["delta_pct"]) if d["comparable"] else "taqqoslanmaydi"
+    move = signed_pct(d["delta_pct"]) if d["prev_total"] else "—"
     kpis = [
         (f"{num(d['total'])} min", "jami kutish vaqti",
          f"≈ {hours(d['total'])} soat = {shifts} smena ({move})"),
@@ -738,9 +731,8 @@ def _comparison(prs, d: dict, narr, page: int, footer: str):
     worse = _ai(narr, "compare_worse")
     cw = (CW - 0.2) / 2
     for i, (title, body, tone, bg) in enumerate([
-        (f"Yaxshilandi — jami {signed_pct(d['delta_pct'])}"
-         if d["comparable"] and d["delta_pct"] < 0 else "Yaxshilangan yo'nalishlar",
-         better, GREEN, GREENBG),
+        (f"Yaxshilandi — jami {signed_pct(d['delta_pct'])}" if d["delta_pct"] < 0
+         else "Yaxshilangan yo'nalishlar", better, GREEN, GREENBG),
         ("Diqqat talab qiladi", worse, RED, REDBG),
     ]):
         x = M + i * (cw + 0.2)
@@ -785,28 +777,8 @@ def _comparison(prs, d: dict, narr, page: int, footer: str):
         _rect(s, M + 0.2, y + 0.31, CW - 0.4, 0.008, fill=LINE)
         y += 0.36
 
-    # The one caveat that can invalidate this whole slide, so it is ON the
-    # slide and not only in the appendix: if the comparison week was largely
-    # read off the shift report and this one off the cells, the percentage
-    # measures the change of SOURCE, not a change on the shopfloor.
-    q = d["quality"]
-    share = q["prev_sheet_share"]
-    if share >= 40:
-        _rect(s, M, H - 1.05, CW, 0.62, fill=REDBG, radius=0.08)
-        _text(s, M + 0.22, H - 0.95, CW - 0.44, 0.46,
-              f"Diqqat: taqqoslanayotgan davr ({d['prev_period']}) kunlarining "
-              f"{pct(share)} qismi «Smena hisoboti» satridan o'qilgan, "
-              f"yacheykalardan emas. Bu ikki xil o'lchov, shuning uchun "
-              f"yuqoridagi foiz manba o'zgarishini ham o'z ichiga oladi — "
-              f"uni sof yaxshilanish deb o'qib bo'lmaydi.",
-              size=8.5, color=RED, line=1.2)
-    elif q["sheet_days"] or q["prev_sheet_days"]:
-        _text(s, M, H - 0.86, CW, 0.28,
-              f"Izoh: ikki davrda jami "
-              f"{len(q['sheet_days']) + len(q['prev_sheet_days'])} kun "
-              f"«Smena hisoboti» satridan o'qilgan — o'sha kunlar uchun "
-              f"hodisalar ro'yxati yo'q, faqat toifa daqiqalari bor.",
-              size=8.5, color=FAINT, line=1.2)
+    # No note here about where either week's minutes came from — see the
+    # ruling recorded in `collect()`.
 
 
 def cat_key(raw: str) -> str:
@@ -1234,10 +1206,6 @@ def _appendix(prs, d: dict, narr, page: int, footer: str):
         f"daqiqa — yacheyka ishlashda davom etgan, shuning uchun asosiy "
         f"raqamga qo'shilmadi.",
     ]
-    if q["sheet_days"]:
-        out.append(f"«Smena hisoboti»dan o'qilgan kunlar: {len(q['sheet_days'])} ta "
-                   f"({', '.join(q['sheet_days'][:4])}) — u yerda hodisalar "
-                   f"ro'yxati yo'q, faqat toifa daqiqalari bor.")
     if q["silent_supervisors"]:
         out.append(f"Jurnal bermagan brigadirlar: {len(q['silent_supervisors'])} ta — "
                    f"{_clip(' · '.join(q['silent_supervisors']), 110)}.")
@@ -1260,11 +1228,6 @@ def _appendix(prs, d: dict, narr, page: int, footer: str):
          RED if q["flag_days"] else GREEN),
         (f"Taqqoslash davri: {d['prev_period']} ({num(d['prev_total'])} daqiqa). "
          f"Ikkala davr ham 8 kunlik va bir kunni baham ko'radi.", MUTED),
-        (f"Taqqoslash davri kunlarining {pct(q['prev_sheet_share'])} qismi "
-         f"«Smena hisoboti»dan o'qilgan."
-         + (" Foizni sof yaxshilanish deb o'qib bo'lmaydi."
-            if q["prev_sheet_share"] >= 40 else ""),
-         RED if q["prev_sheet_share"] >= 40 else MUTED),
     ]
     y = 4.48
     for t, tone in facts:

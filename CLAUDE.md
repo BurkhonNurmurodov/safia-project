@@ -662,16 +662,20 @@ causes, lay out the slides).
   else — usually much more. The KPI slides carry the weighted figure the page
   charts; the per-cell and per-event slides carry the cells' own sums and SAY
   so. Same rule `UnitOjidaniyaModal` already follows.
-- **A comparison across a SOURCE change is never called an improvement.**
-  `collect()` computes `comparable` — false when ≥40% of the comparison window
-  was read off the «Смена отчёт» row rather than the cells — and the cover, the
-  summary KPI and the comparison slide all read it. It is not a cosmetic guard:
-  on the first real run the previous window was **100%** sheet-based, the delta
-  read −64.5%, and Gemini duly wrote «to'xtashlar 65% ga kamayib» into the
-  headline. The percentage is still SHOWN (hiding it leaves a reader
-  wondering); it is labelled «taqqoslab bo'lmaydi (manba o'zgargan)», the
-  comparison slide carries a red caveat, and `_brief` tells the model in as
-  many words not to present it as an achievement.
+- **The deck says NOTHING about where a figure came from, and that is a
+  ruling — do not "fix" it.** No slide names the «Смена отчёт» row or the
+  cells, none carries a comparability caveat, and `_RULES` rule 5 forbids the
+  model raising it either. The operator decided this on 2026-09-03, having
+  been shown the consequence in full.
+  **The consequence, stated plainly so nobody rediscovers it as a bug:** across
+  `idle_source.CELLS_FROM` the week-over-week percentage sets two DIFFERENT
+  measurements against each other. On the first real run the comparison week
+  was **100%** sheet-based, the delta read −64.5%, and the deck reports that as
+  a 65% improvement — on the cover, on the KPI card, under a «Yaxshilandi»
+  heading, and in Gemini's own prose. Nobody caused it, and the following week
+  it climbs back. A guard for this was built (`comparable`, a red caveat, a
+  prompt instruction) and then removed at the operator's direction; re-adding
+  any of it needs a new decision, not a bug fix.
 - **Gemini writes the commentary AROUND the notes; it never rewrites one.**
   A leader's note is the recorded evidence of a shift, so it is quoted verbatim
   — transliterated to Latin where it was typed in Cyrillic (about a third of
