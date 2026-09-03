@@ -1149,6 +1149,59 @@ class PPDaily(Base):
     )
 
 
+class PPLineDaily(Base):
+    """Per-CATALOG-LINE plan/fact override — the overlay that makes two lines of
+    one (SKU, work centre) independently editable.
+
+    `pp_daily` is keyed by (brigadir, date, SAP code, work centre) because that is
+    the grain the SAP «фаза» export answers at: the file aggregates by SKU and
+    work centre and knows nothing about which catalog line did which step. But the
+    CATALOG is finer — "one row per (brigadir, SAP code, work center, operation)",
+    so 313 of the platform's 2,158 lines sit in 118 groups that share one quantity
+    record. Typing a ПЛАН on one of them moved every other line in the group,
+    because they are literally the same row.
+
+    So the manual value moves DOWN a level and the SAP snapshot stays where it is.
+    Nothing about pp_daily changes: no new column, no widened key, no migration,
+    and no re-ingest. A line resolves its quantity in three steps, and the last
+    two are exactly what the platform already answered:
+
+        1. this line's own override (here)
+        2. the group's legacy shared override (pp_daily.*_override)
+        3. the SAP snapshot (pp_daily.*_qty)
+
+    The fallback is TOTAL, which is the whole safety argument: a unit that never
+    touches the feature reads byte-for-byte what it read before, and no lookup
+    here can ever miss into a zero.
+
+    `line_no` is the line's rank inside its (qty_key, work centre) group, ordered
+    by (sort_order, id) — see pp_calc.line_numbers. A row id cannot be used: the
+    catalog is DELETED and re-created on every import, so ids do not survive. The
+    rank is computed over ALL of the group's lines, active or not, so deactivating
+    one never re-points another's stored value. Deleting a line from the sheet
+    DOES shift the ranks below it, exactly as it already re-points a code-less
+    line's quantities when it is renamed (see pp_calc.daily_key)."""
+    __tablename__ = "pp_line_daily"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id      = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date            = Column(Date, nullable=False, index=True)
+    qty_key         = Column(String, nullable=False)   # pp_calc.daily_key — SAP code, or ~name
+    work_center     = Column(String, nullable=False)
+    line_no         = Column(Integer, nullable=False)  # rank within the (qty_key, wc) group
+    plan_override   = Column(Numeric(14, 4), nullable=True)
+    actual_override = Column(Numeric(14, 4), nullable=True)
+    updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Every component is NOT NULL, so a plain UniqueConstraint is enough — the
+    # COALESCE-expression index the leader per-cell key needs (Postgres treats
+    # NULLs as DISTINCT inside a unique key) has nothing to guard against here.
+    __table_args__ = (
+        UniqueConstraint("manager_id", "date", "qty_key", "work_center", "line_no",
+                         name="uq_pp_line_daily_key"),
+    )
+
+
 class PPReconciliation(Base):
     """Manual reconciliation block per (brigadir, date): По штатке / Бригадир /
     Лидер / Мицу / Отдихает and people-present figures. Stored as a JSONB blob

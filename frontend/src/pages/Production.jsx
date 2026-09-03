@@ -202,7 +202,7 @@ const moveCell = (el, dCol, dRow) => {
 // the editor FILLS the cell instead of floating a small box inside it. Enter
 // commits and drops to the cell below, Tab commits and steps right, Escape
 // cancels, Delete clears the override.
-function QtyCell({ col, row, value, onSave, readOnly = false }) {
+function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
   const { t } = useLang();
   const tdRef = useRef(null);
   const [editing, setEditing] = useState(false);
@@ -278,7 +278,7 @@ function QtyCell({ col, row, value, onSave, readOnly = false }) {
   // that editing here silently does nothing.
   if (readOnly) {
     return (
-      <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-1)" }}>
+      <td title={title} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-1)" }}>
         {fmt(value, 0)}
       </td>
     );
@@ -314,6 +314,10 @@ function QtyCell({ col, row, value, onSave, readOnly = false }) {
         else e.currentTarget.focus();  // some WebViews don't focus a tapped cell — arm it by hand
       }}
       onDoubleClick={() => start()}
+      // Says the number is still the group's shared one — several catalog lines
+      // are separate operations of one SAP code, and until this cell is typed in
+      // they all read the same figure. It goes the moment the line has its own.
+      title={title}
       className="px-3 py-2 text-center relative select-none group outline-none"
       style={{
         cursor: "cell",
@@ -1313,8 +1317,13 @@ export default function Production() {
   // The inverse is the SAME call with the figure that stood in the cell before —
   // `null` included, which is what clears the override back to the SAP file's own
   // number, so Delete on a cell is as reversible as typing over it.
+  // `line_no` is WHICH catalog line of the (SAP, Команда) group this row is —
+  // several lines share one SAP code because they are separate operations, and
+  // without it the write lands on the group and moves every one of them. It rides
+  // the undo too, so the inverse edit reaches the same line.
   const saveOverride = (row, field) => (value) => {
-    const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center, field };
+    const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center,
+                 field, line_no: row.line_no ?? 0 };
     const prev = (field === "actual" ? row.actual_qty : row.plan_qty) ?? null;
     tracked({
       label: `${row.name} · ${t(field === "actual" ? "production.col.fact" : "production.col.plan")}`,
@@ -1375,11 +1384,13 @@ export default function Production() {
       case "fact":
         return (
           <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
+            title={r.actual_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
             value={r.actual_qty} onSave={saveOverride(r, "actual")} />
         );
       case "plan":
         return (
           <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
+            title={r.plan_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
             value={r.plan_qty} onSave={saveOverride(r, "plan")} />
         );
       case "actual_labor":

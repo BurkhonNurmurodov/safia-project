@@ -2311,6 +2311,81 @@ decision about somebody else:
   merged key, never wrongly cut one. The `n<folded name>` key exists and every
   reader tries it, so a writer for it is a UI question, not a model change.
 
+## A ПЛАН belongs to ONE catalog line (`pp_line_daily`)
+
+From **2026-09-03** a hand-typed ПЛАН or ФАКТ on `/production` belongs to the
+**catalog line** it was typed on, not to every line that shares its SAP code.
+
+`pp_products` is documented as "one row per (brigadir, SAP code, work center,
+operation)" — the same SAP code at one Команда appears several times, each a
+distinct operation with its own Трудоемкость. `pp_daily` was keyed one level
+coarser, by (brigadir, date, SAP code, work centre), so those lines were not
+merely linked: **they were the same database row**. Typing 17 on one moved every
+other line in the group. **118 groups hold 313 of the platform's 2,158 lines**,
+so this was ~15% of the catalog, not an edge case.
+
+- **`pp_line_daily` is an OVERLAY, and that is the whole safety argument.**
+  `pp_daily` is untouched — no new column, no widened key, no data migration and
+  no re-ingest, so nothing that already worked could be re-keyed into silence. A
+  line resolves its quantity in three steps, and the last two are exactly what
+  the platform already answered: **its own override → the group's legacy shared
+  override (`pp_daily.*_override`) → the SAP snapshot (`pp_daily.*_qty`)**. The
+  fallback is TOTAL: no combination of catalog state and stored rows resolves to
+  "nothing", which is the one answer a quantity must never have. A unit that
+  never touches the feature reads byte-for-byte what it read before.
+- **`pp_calc.line_numbers` is THE definition of `line_no`** — the line's rank
+  inside its (`daily_key`, work centre) group, ordered by (`sort_order`, `id`).
+  A PPProduct **id cannot be used**: `import_catalog` DELETES and re-creates
+  every row, so ids do not survive a catalog import. The rank is computed over
+  **ALL** of the unit's lines, active or not, so unticking a line never
+  re-points its neighbour's stored value. Deleting a line from the ABC sheet
+  DOES shift the ranks below it — the same caveat `daily_key` already carries
+  for renaming a code-less line.
+- **`pp_calc.line_minutes` is the second reader and exists so the rule has ONE
+  spelling.** `/zagruzka-cell` sums **Σ over lines of labor·qty**, never
+  (Σ labor)×one quantity — two operations may now carry two quantities, so the
+  product cannot be factored out. Two spellings is how that page and the
+  Positions table start reporting different minutes for one day.
+- **The first per-line write EXPLODES the group's shared override onto every
+  line, then clears it.** Without that step the edited line would show its new
+  number while its neighbours silently fell back to the SAP figure — a reader
+  would watch a number they never touched change on a row they never edited.
+  Exploding first means every line keeps precisely what it was already showing,
+  and only the edited one moves.
+- **`line_no` is OPTIONAL on the wire, and its absence is the legacy path.** A
+  browser tab still running the older bundle sends no line and goes on writing
+  the group's shared override exactly as before. That is what makes this MINOR
+  rather than MAJOR — the compatibility floor is derived from MAJOR, so a
+  change that stopped an open tab from working could only be expressed by one.
+- **A rank the group does not have is a 400, never a silent insert.** `line_no`
+  arrives over the wire; storing a row no reader can look up is the "control
+  that reports success and writes nowhere" failure, which is the worst thing
+  this endpoint could do.
+- **A SAP upload resets a per-line value exactly as it resets a shared one** —
+  mode `both` deletes the date's overlay rows with the snapshot, `plan`/`actual`
+  null that one field for the keys the file restated. The closed-day lock
+  (`idle_lock.require_open`) and the leader work-centre scope guard both write
+  paths, unchanged.
+- The cell says so before it is typed in: `plan_shared` / `actual_shared` +
+  `group_size` ride on every row and the ПЛАН/ФАКТ cell carries
+  `production.qty.shared` — «shared by N lines of this SAP code» — which goes
+  the moment the line has a value of its own.
+
+**Known and NOT fixed here — the SAP ingest double-counts a multi-operation
+order.** `_ingest_for_manager` sums «Кол-во операции» over every фаза row of a
+(SKU, work centre) and adds the order-level «Поставлено» once per фаза row. When
+one order passes through two operations at one Команда the file holds two rows,
+so both figures are doubled. Verified on 2026-08-28: manager 2 / A2733 /
+S00001104 stores ПЛАН 240 where the order made 120, and ФАКТ 204 where
+«Поставлено» was 102. It is not a per-line bug — it inflates a single-line
+position too — and it cannot be fixed by attributing operations to lines,
+because on that date 65 of the duplicate pairs carry **one** фаза operation
+across several catalog lines while 17 pairs carry several operations against a
+**single** line. Fixing it moves every historical ПЛАН and ФАКТ on days units
+have already signed off, so it is the operator's call, not a side effect of this
+change. `startup.backfill_pp_actual_from_deliv` wrote the same rule into
+history, so a correction needs its own NEW flag key.
+
 ## Who a SAP upload fills (`/admin/upload?tab=production`)
 
 From **2026-08-31** the plant-wide фаза/заголовок export no longer reaches every

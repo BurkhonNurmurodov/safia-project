@@ -73,6 +73,107 @@ def daily_key(sap_code, name) -> str:
     return LOCAL_PREFIX + " ".join((name or "").split()).lower()
 
 
+def line_numbers(products) -> dict:
+    """{product id: rank of that line inside its (daily_key, work centre) group}.
+
+    THE definition of which catalog line a stored per-line quantity belongs to
+    (models.PPLineDaily). One function, because the reader, the writer and the
+    загрузка must agree — three spellings of a rank is how a hand-typed ПЛАН
+    lands on the neighbouring line.
+
+    `products` is an iterable of objects or dicts carrying id / sap_code / name /
+    work_center / sort_order. Ordered by (sort_order, id), the catalog's own
+    order — the same order `_build_dashboard` lists positions in, so rank 0 is
+    the group's first line on screen.
+
+    Pass EVERY line of the unit, active or not. The rank is a position in the
+    catalog, not in what is currently displayed: computing it over the active
+    lines alone would re-point a stored value the moment somebody unticks a line
+    above it. A group of one always answers 0, which is why a unit with no
+    duplicate lines can never grow a per-line row it did not ask for.
+    """
+    def field(p, k):
+        return p.get(k) if isinstance(p, dict) else getattr(p, k, None)
+
+    rows = []
+    for p in products:
+        rows.append((
+            _f(field(p, "sort_order")),
+            field(p, "id") or 0,
+            field(p, "id"),
+            daily_key(field(p, "sap_code"), field(p, "name")),
+            field(p, "work_center") or "",
+        ))
+    rows.sort(key=lambda r: (r[0], r[1]))
+
+    seen: dict[tuple[str, str], int] = {}
+    out: dict = {}
+    for _so, _id, pid, key, wc in rows:
+        n = seen.get((key, wc), 0)
+        seen[(key, wc)] = n + 1
+        if pid is not None:
+            out[pid] = n
+    return out
+
+
+def group_sizes(products) -> dict:
+    """{(daily_key, work centre): how many catalog lines share that quantity}.
+
+    A size above 1 is the whole definition of "this number is shared", which is
+    what the page tells the reader before they have split it.
+    """
+    def field(p, k):
+        return p.get(k) if isinstance(p, dict) else getattr(p, k, None)
+
+    out: dict = {}
+    for p in products:
+        k = (daily_key(field(p, "sap_code"), field(p, "name")), field(p, "work_center") or "")
+        out[k] = out.get(k, 0) + 1
+    return out
+
+
+def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0):
+    """Planned / actual MINUTES per (work centre, date), summed per catalog LINE.
+
+    THE second reader of the per-line quantity rule (models.PPLineDaily), after
+    compute_dashboard — and the reason it is a function rather than a loop inside
+    the загрузка router: the resolution order is the same three steps in both
+    places, and two spellings of it is how `/zagruzka-cell` and the Positions
+    table start reporting different minutes for one day.
+
+      lines_by_key {(wc, qty_key): [(line_no, labor_seconds), …]}  active lines
+      shared       {(wc, qty_key, date): (plan, actual)}           pp_daily
+      per_line     {(wc, qty_key, date, line_no): (plan|None, actual|None)}
+
+    Minutes are Σ over LINES of labor_i × qty_i, never (Σ labor) × one quantity:
+    two lines of one SKU are two operations with their own labor times, and since
+    they may now carry their own quantities the product cannot be factored out.
+
+    The day set is the UNION of both sources. A hand-typed line value can sit on a
+    date the SAP file never covered, and walking the snapshot's dates alone would
+    drop precisely those.
+    """
+    plan_min: dict = {}
+    actual_min: dict = {}
+
+    days: dict = {}
+    for (wc, key, d) in shared:
+        days.setdefault((wc, key), set()).add(d)
+    for (wc, key, d, _n) in per_line:
+        days.setdefault((wc, key), set()).add(d)
+
+    for (wc, key), lines in lines_by_key.items():
+        for d in days.get((wc, key), ()):
+            sp, sa = shared.get((wc, key, d), (0.0, 0.0))
+            for line_no, labor in lines:
+                lp, la = per_line.get((wc, key, d, line_no), (None, None))
+                plan_min[(wc, d)] = plan_min.get((wc, d), 0.0) + \
+                    labor * (lp if lp is not None else sp) / sec_per_min
+                actual_min[(wc, d)] = actual_min.get((wc, d), 0.0) + \
+                    labor * (la if la is not None else sa) / sec_per_min
+    return plan_min, actual_min
+
+
 def is_local_key(key) -> bool:
     """True for a key minted by :func:`daily_key` for a code-less line."""
     return str(key or "").startswith(LOCAL_PREFIX)
@@ -108,12 +209,19 @@ def compute_dashboard(
     productive_min: float = DEFAULT_PRODUCTIVE_MIN,
     wc_overrides: Optional[dict[str, dict]] = None,
     ignore_capacity: bool = False,
+    line_overrides: Optional[dict[tuple[str, str, int], dict]] = None,
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
     quantities:  {(daily_key, work_center): {plan_qty, actual_qty}}  (already
                  override-resolved by the caller; the key is pp_daily.sap_code —
                  see daily_key(), which a code-less line derives from its name)
+    line_overrides: {(daily_key, work_center, line_no): {plan, actual}} — the
+                 per-CATALOG-LINE manual values (models.PPLineDaily). They sit ON
+                 TOP of `quantities`, which stays the group's shared answer, so a
+                 line with no entry here reads exactly what it read before this
+                 existed. Each product dict carries its own `line_no`
+                 (see line_numbers).
     work_centers:[{code, shtatka, sort_order}, ...]
     wc_overrides:{code: {people, shtatka}} — per-DAY manual pins for the staffing
                  panel (pp_work_center_daily). A non-None штатка replaces W before
@@ -133,12 +241,22 @@ def compute_dashboard(
     rows: list[dict] = []
     q_by_wc: dict[str, float] = {}
 
+    line_overrides = line_overrides or {}
     for i, p in enumerate(products, start=1):
         wc = p.get("work_center") or ""
         key = daily_key(p.get("sap_code"), p.get("name"))
         q = quantities.get((key, wc), {})
-        plan_qty = _f(q.get("plan_qty"))
-        actual_qty = _f(q.get("actual_qty"))
+        # Three steps, narrowest first, and the last two are what the platform
+        # already answered — so a line with no override of its own reads exactly
+        # what it read before per-line quantities existed. The fallback is TOTAL:
+        # there is no combination of catalog state and stored rows that resolves
+        # to "nothing", which is the one outcome a quantity must never have.
+        line_no = p.get("line_no") or 0
+        lo = line_overrides.get((key, wc, line_no), {})
+        plan_own = lo.get("plan")
+        actual_own = lo.get("actual")
+        plan_qty = _f(plan_own) if plan_own is not None else _f(q.get("plan_qty"))
+        actual_qty = _f(actual_own) if actual_own is not None else _f(q.get("actual_qty"))
 
         labor = p.get("labor_time")
         has_labor = labor is not None
@@ -171,8 +289,17 @@ def compute_dashboard(
             "actual_qty": actual_qty,
             "total_labor": total_labor,
             "actual_labor": actual_labor,
-            "plan_overridden": bool(q.get("plan_overridden")),
-            "actual_overridden": bool(q.get("actual_overridden")),
+            # true = a person typed this number, at either level
+            "plan_overridden": plan_own is not None or bool(q.get("plan_overridden")),
+            "actual_overridden": actual_own is not None or bool(q.get("actual_overridden")),
+            # what the client echoes back when it overrides this line's quantity
+            "line_no": line_no,
+            # how many catalog lines currently share this quantity record, and
+            # whether THIS row is still reading the shared one. The page says so
+            # rather than leaving the reader to discover it by typing.
+            "group_size": p.get("group_size", 1),
+            "plan_shared": plan_own is None and (p.get("group_size", 1) or 1) > 1,
+            "actual_shared": actual_own is None and (p.get("group_size", 1) or 1) > 1,
             "sort_order": p.get("sort_order", 0),
         })
 

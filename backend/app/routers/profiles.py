@@ -81,6 +81,7 @@ _MANAGER_ID_REFS = [
     ("pp_products", "manager_id"),
     ("pp_work_centers", "manager_id"),
     ("pp_daily", "manager_id"),
+    ("pp_line_daily", "manager_id"),
     ("pp_reconciliation", "manager_id"),
     ("pp_uploads", "manager_id"),
     ("leader_concerns", "brigadir_manager_id"),

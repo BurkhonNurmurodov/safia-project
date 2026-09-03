@@ -76,14 +76,14 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (
     Attendance, Cell, CellAttendance, CellOjidaniya, CellOjidaniyaInterval,
-    Manager, PPDaily, PPDaySetting, PPProduct, PPWorkCenter, PPWorkCenterDaily,
+    Manager, PPDaily, PPLineDaily, PPDaySetting, PPProduct, PPWorkCenter, PPWorkCenterDaily,
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
 from app.services.kpi_calculator import compute_metrics, is_direct_role
-from app.services.pp_calc import _round_half_up, daily_key
+from app.services.pp_calc import _round_half_up, daily_key, line_numbers, line_minutes
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
 router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
@@ -205,20 +205,27 @@ def cell_zagruzka(
     # quantity is per (daily key, WC, date). Same grain, the same key (a code-less
     # line is keyed by its name — pp_calc.daily_key) and the same override
     # resolution as the Production dashboard, so the numbers agree with it.
-    labor_by_wc_sap: dict[tuple[str, str], float] = defaultdict(float)
+    # Per CATALOG LINE, never per (work centre, SKU): two lines of one SKU are two
+    # operations with their own labor_time, and since v4.32.0 they may carry their
+    # own quantities too (models.PPLineDaily). Summing the labor first and
+    # multiplying by one quantity — what this did before — cannot express that,
+    # and would make this page disagree with the Positions table it mirrors.
+    all_products = db.query(PPProduct).filter(PPProduct.manager_id == mgr.id).all()
+    ranks = line_numbers(all_products)
+    lines_by_key: dict[tuple[str, str], list[tuple[int, float]]] = defaultdict(list)
     products_missing_labor: set[str] = set()
-    for p in db.query(PPProduct).filter(
-        PPProduct.manager_id == mgr.id, PPProduct.active.is_(True)
-    ).all():
-        if p.work_center not in wanted_wcs:
+    for p in all_products:
+        if not p.active or p.work_center not in wanted_wcs:
             continue
         if p.labor_time is None:
             products_missing_labor.add(f"{p.work_center}/{p.sap_code or p.name}")
             continue
-        labor_by_wc_sap[(p.work_center, daily_key(p.sap_code, p.name))] += float(p.labor_time)
+        lines_by_key[(p.work_center, daily_key(p.sap_code, p.name))].append(
+            (ranks.get(p.id, 0), float(p.labor_time)))
 
-    plan_min: dict[tuple[str, date], float] = defaultdict(float)
-    actual_min: dict[tuple[str, date], float] = defaultdict(float)
+    # The two quantity levels, read exactly as the Positions table reads them:
+    # the line's own value wins, else the group's, else the SAP snapshot.
+    shared: dict[tuple[str, str, date], tuple] = {}
     for d in db.query(PPDaily).filter(
         PPDaily.manager_id == mgr.id,
         PPDaily.date >= date_from,
@@ -226,13 +233,26 @@ def cell_zagruzka(
     ).all():
         if d.work_center not in wanted_wcs:
             continue
-        labor = labor_by_wc_sap.get((d.work_center, d.sap_code))
-        if not labor:
+        shared[(d.work_center, d.sap_code, d.date)] = (
+            float((d.plan_override if d.plan_override is not None else d.plan_qty) or 0),
+            float((d.actual_override if d.actual_override is not None else d.actual_qty) or 0),
+        )
+    per_line: dict[tuple[str, str, date, int], tuple] = {}
+    for lo in db.query(PPLineDaily).filter(
+        PPLineDaily.manager_id == mgr.id,
+        PPLineDaily.date >= date_from,
+        PPLineDaily.date <= date_to,
+    ).all():
+        if lo.work_center not in wanted_wcs:
             continue
-        plan_qty = d.plan_override if d.plan_override is not None else d.plan_qty
-        actual_qty = d.actual_override if d.actual_override is not None else d.actual_qty
-        plan_min[(d.work_center, d.date)] += labor * float(plan_qty or 0) / _SEC_PER_MIN
-        actual_min[(d.work_center, d.date)] += labor * float(actual_qty or 0) / _SEC_PER_MIN
+        per_line[(lo.work_center, lo.qty_key, lo.date, lo.line_no)] = (
+            (float(lo.plan_override) if lo.plan_override is not None else None),
+            (float(lo.actual_override) if lo.actual_override is not None else None),
+        )
+
+    _pm, _am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN)
+    plan_min: dict[tuple[str, date], float] = defaultdict(float, _pm)
+    actual_min: dict[tuple[str, date], float] = defaultdict(float, _am)
 
     # ── O. SONI (N) per (work centre, day) — the formula's headcount ─────────
     # Same derivation as the Production dashboard (services/pp_calc.py), so the

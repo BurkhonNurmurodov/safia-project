@@ -43,7 +43,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import (
     Manager, AppSetting, Cell, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
-    PPDaily, PPDaySetting, PPReconciliation, PPUpload, PPManagerSetting, ForecastCallNotice,
+    PPDaily, PPLineDaily, PPDaySetting, PPReconciliation, PPUpload, PPManagerSetting, ForecastCallNotice,
     TelegramUser, TelegramUserRole, RoleProfile,
 )
 from app.capabilities import page_scope_is_all
@@ -54,7 +54,8 @@ from app.services import action_log
 from app.services import idle_lock
 from app.services import shift_scope
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
-from app.services.pp_calc import compute_dashboard, daily_key, is_local_key, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
+from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
+                                   group_sizes, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
@@ -298,12 +299,30 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     daily = db.query(PPDaily).filter(PPDaily.manager_id == manager_id, PPDaily.date == day).all()
     wc_daily = db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == manager_id, PPWorkCenterDaily.date == day).all()
+    # The line ranking is read off EVERY line of the unit, active or not — see
+    # pp_calc.line_numbers. Computing it over the scoped/active set instead would
+    # re-point a stored per-line value the moment a line above it was unticked,
+    # or give a leader a different rank for the same line than the writer used.
+    all_products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
+    ranks = line_numbers(all_products)
+    sizes = group_sizes(all_products)
+    line_daily = db.query(PPLineDaily).filter(
+        PPLineDaily.manager_id == manager_id, PPLineDaily.date == day).all()
     if wc_scope is not None:
         products = [p for p in products if _in_scope(wc_scope, p.work_center)]
         wcs = [w for w in wcs if _in_scope(wc_scope, w.code)]
         daily = [d for d in daily if _in_scope(wc_scope, d.work_center)]
         wc_daily = [o for o in wc_daily if _in_scope(wc_scope, o.work_center)]
     wc_overrides = {o.work_center: {"people": o.people, "shtatka": o.shtatka} for o in wc_daily}
+
+    line_overrides: dict[tuple[str, str, int], dict] = {}
+    for lo in line_daily:
+        if wc_scope is not None and not _in_scope(wc_scope, lo.work_center):
+            continue
+        line_overrides[(lo.qty_key, lo.work_center, lo.line_no)] = {
+            "plan": (float(lo.plan_override) if lo.plan_override is not None else None),
+            "actual": (float(lo.actual_override) if lo.actual_override is not None else None),
+        }
 
     quantities: dict[tuple[str, str], dict] = {}
     for d in daily:
@@ -327,6 +346,8 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             "sap_code": p.sap_code, "name": p.name, "work_center": p.work_center,
             "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
             "sort_order": p.sort_order,
+            "line_no": ranks.get(p.id, 0),
+            "group_size": sizes.get((daily_key(p.sap_code, p.name), p.work_center or ""), 1),
         } for p in products],
         quantities=quantities,
         work_centers=[{
@@ -338,6 +359,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         productive_min=productive_min,
         wc_overrides=wc_overrides,
         ignore_capacity=pinned_pm is not None,
+        line_overrides=line_overrides,
     )
 
     # SKUs present in the SAP snapshot but absent from the catalog. A code-less
@@ -713,6 +735,12 @@ class OverrideBody(BaseModel):
     work_center: str
     field: str            # 'plan' | 'actual'
     value: Optional[float]  # null clears the override
+    # WHICH catalog line of the (qty_key, work centre) group this is — the row's
+    # own `line_no` (pp_calc.line_numbers). Optional, and its absence is the
+    # legacy path: a bundle shipped before per-line quantities existed sends no
+    # line and keeps writing the group's shared override exactly as it always
+    # did. That is what makes this a MINOR change — an open tab goes on working.
+    line_no: Optional[int] = None
 
 
 @router.post("/api/production/override")
@@ -743,30 +771,112 @@ def set_override(
     # admin re-opens the day first (`can_reopen` on the payload says who may).
     idle_lock.require_open(db, mid, day)
 
-    row = db.query(PPDaily).filter(
-        PPDaily.manager_id == mid, PPDaily.date == day,
-        PPDaily.sap_code == body.sap_code, PPDaily.work_center == body.work_center,
-    ).first()
-    if not row:
-        # allow overriding a row that has no SAP snapshot yet
-        row = PPDaily(manager_id=mid, date=day, sap_code=body.sap_code,
-                      work_center=body.work_center, plan_qty=0, actual_qty=0)
-        db.add(row)
+    col = "plan_override" if body.field == "plan" else "actual_override"
 
-    if body.field == "plan":
-        was, row.plan_override = row.plan_override, body.value
+    if body.line_no is None:
+        # Legacy path — an older bundle, which knows nothing about lines. It
+        # writes the group's shared override, exactly as before.
+        was = _set_group_override(db, mid, day, body.sap_code, body.work_center,
+                                  col, body.value)
     else:
-        was, row.actual_override = row.actual_override, body.value
+        was = _set_line_override(db, mid, day, body.sap_code, body.work_center,
+                                 body.line_no, col, body.value)
+
     db.commit()
     action_log.enrich(
-        target_kind="override", target_id=f"{mid}:{day}:{body.sap_code}:{body.work_center}",
+        target_kind="override",
+        target_id=(f"{mid}:{day}:{body.sap_code}:{body.work_center}"
+                   + (f":#{body.line_no}" if body.line_no is not None else "")),
         target_name=body.sap_code, unit_id=mid, day=day,
         details=[("date", str(day)), ("sap_code", body.sap_code),
-                 ("work_center", body.work_center)],
+                 ("work_center", body.work_center),
+                 ("line", body.line_no if body.line_no is not None else None)],
         changes=[("plan" if body.field == "plan" else "fact",
                   float(was) if was is not None else None, body.value)],
     )
     return _build_dashboard(db, mid, day, scope, payload)
+
+
+def _set_group_override(db, mid: int, day: date, key: str, wc: str,
+                        col: str, value):
+    """Write the SHARED (SKU, work centre) override — pp_daily, the pre-per-line
+    behaviour. Returns the value that stood there before."""
+    row = db.query(PPDaily).filter(
+        PPDaily.manager_id == mid, PPDaily.date == day,
+        PPDaily.sap_code == key, PPDaily.work_center == wc,
+    ).first()
+    if not row:
+        # allow overriding a row that has no SAP snapshot yet
+        row = PPDaily(manager_id=mid, date=day, sap_code=key,
+                      work_center=wc, plan_qty=0, actual_qty=0)
+        db.add(row)
+    was = getattr(row, col)
+    setattr(row, col, value)
+    return was
+
+
+def _set_line_override(db, mid: int, day: date, key: str, wc: str, line_no: int,
+                       col: str, value):
+    """Write ONE catalog line's own quantity (pp_line_daily), leaving every other
+    line of the (SKU, work centre) group exactly where it was.
+
+    Two rules earn their keep here.
+
+    (1) The rank is CHECKED against the catalog. `line_no` arrives over the wire,
+    and a rank the group does not have would store a row no reader can ever look
+    up — a cell that reports success and writes nowhere, which is the worst thing
+    this endpoint could do. It is a 400, not a silent insert.
+
+    (2) The group's legacy shared override is EXPLODED onto its lines before the
+    first per-line write lands, and then cleared. Without it the write would be
+    invisible in one direction and destructive in the other: the shared value
+    outranks nothing, so the edited line would show its new number while its
+    neighbours silently fell back to the SAP figure — the reader would watch a
+    number they never touched change on a row they did not edit. Exploding first
+    means every line keeps precisely the number it was already showing, and only
+    the edited one moves.
+    """
+    prods = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+    ranks = line_numbers(prods)
+    group = {ranks[p.id] for p in prods
+             if p.id in ranks
+             and daily_key(p.sap_code, p.name) == key and (p.work_center or "") == wc}
+    if line_no not in group:
+        raise HTTPException(
+            status_code=400,
+            detail=f"line {line_no} is not one of this position's catalog lines")
+
+    shared = db.query(PPDaily).filter(
+        PPDaily.manager_id == mid, PPDaily.date == day,
+        PPDaily.sap_code == key, PPDaily.work_center == wc,
+    ).first()
+    existing = {r.line_no: r for r in db.query(PPLineDaily).filter(
+        PPLineDaily.manager_id == mid, PPLineDaily.date == day,
+        PPLineDaily.qty_key == key, PPLineDaily.work_center == wc).all()}
+
+    def _row(n: int) -> PPLineDaily:
+        r = existing.get(n)
+        if r is None:
+            r = PPLineDaily(manager_id=mid, date=day, qty_key=key,
+                            work_center=wc, line_no=n)
+            db.add(r)
+            existing[n] = r
+        return r
+
+    was = getattr(existing[line_no], col) if line_no in existing else None
+
+    if shared is not None and getattr(shared, col) is not None:
+        carry = getattr(shared, col)
+        for n in group:
+            r = _row(n)
+            if getattr(r, col) is None:
+                setattr(r, col, carry)
+        setattr(shared, col, None)
+        if was is None:
+            was = carry
+
+    setattr(_row(line_no), col, value)
+    return was
 
 
 class WcOverrideBody(BaseModel):
@@ -1037,6 +1147,12 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
         # mode 'both' = fresh daily snapshot → replace the date (also clears overrides).
         if mode == "both":
             db.query(PPDaily).filter(PPDaily.manager_id == manager_id, PPDaily.date == day).delete()
+            # The per-line overlay is a manual value like any other, so the same
+            # sentence in the docstring governs it: a SAP upload resets what was
+            # typed. Leaving it behind would let a hand-typed line outlive the
+            # figure it was correcting, on a date the file has just restated.
+            db.query(PPLineDaily).filter(PPLineDaily.manager_id == manager_id,
+                                         PPLineDaily.date == day).delete()
             db.flush()
         for (sap, wc), agg in faza_agg.items():
             row = db.query(PPDaily).filter(
@@ -1053,6 +1169,20 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
                 row.actual_qty = agg["actual_qty"]
                 row.actual_override = None
             updated += 1
+
+        # A plan-only or actual-only upload does not replace the date, so the
+        # overlay is cleared field by field for exactly the keys the file
+        # restated — never wholesale, which would drop the other field's
+        # hand-typed values on a upload that says nothing about them.
+        touched = {k for k in faza_agg}
+        if touched and mode in ("plan", "actual", "both"):
+            col = {"plan": "plan_override", "actual": "actual_override"}.get(mode)
+            for lo in db.query(PPLineDaily).filter(
+                    PPLineDaily.manager_id == manager_id, PPLineDaily.date == day).all():
+                if (lo.qty_key, lo.work_center) not in touched:
+                    continue
+                if col:
+                    setattr(lo, col, None)
     return updated
 
 
