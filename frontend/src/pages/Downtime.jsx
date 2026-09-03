@@ -10,6 +10,7 @@ import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
 import KPICard from "../components/ui/KPICard";
 import CategoryLegendModal from "../components/ui/CategoryLegendModal";
 import UnitOjidaniyaModal from "../components/idle/UnitOjidaniyaModal";
+import OjidaniyaMatrix from "../components/idle/OjidaniyaMatrix";
 import EmptyState from "../components/ui/EmptyState";
 import Button from "../components/ui/Button";
 import { useToast } from "../components/ui/Toast";
@@ -555,6 +556,51 @@ export default function Downtime() {
       .sort((a, b) => b.iso.localeCompare(a.iso));
   }, [detail, data, catKey, totalKey, detailCats]);
 
+  // ── «Brigadir × kun»: the workbook's «Kunlik» sheet, on the page ──────────
+  // Columns are every calendar day of the period (`dates` carries the silent
+  // ones too, which is what makes a blank cell mean «no report»); a cell is the
+  // figure the BAR counted for that unit-day — with categories picked, the
+  // picked categories' sum, otherwise the whole day — the same rule
+  // `detailDates` above uses, so bars, matrix and modal state one thing.
+  // Keyed by manager NAME because that is what the backend's `summary` merges
+  // on: keying by id here would split a name two units answer to and the row
+  // totals would stop matching the bar beside them.
+  const matrix = useMemo(() => {
+    const per = {};
+    const fleetByDate = {};
+    (data?.rows || []).forEach((r) => {
+      const cat = r[catKey] || {};
+      const v = selectedCats.length
+        ? selectedCats.reduce((a, c) => a + (Number(cat[c]) || 0), 0)
+        : (r[totalKey] || 0);
+      const byDate = (per[r.manager_name] ||= {});
+      byDate[r.date] = (byDate[r.date] || 0) + v;
+      fleetByDate[r.date] = (fleetByDate[r.date] || 0) + v;
+    });
+    // The bar chart's order, not a second sort: the two cards sit one above the
+    // other and must read top-to-bottom alike.
+    const rows = summary.map((s) => {
+      const byDate = per[s.manager_name] || {};
+      return {
+        key: s.manager_name,
+        managerId: s.manager_id,
+        name: tl(s.manager_name),
+        shift: s.shift,
+        byDate,
+        // With a filter on, the row total is the sum of the cells ON SCREEN — a
+        // stated total its own row does not add up to is worse than none.
+        total: selectedCats.length
+          ? Object.values(byDate).reduce((a, b) => a + b, 0)
+          : s.total,
+        flagged: (s.flagged_days || 0) > 0,
+      };
+    });
+    return {
+      rows,
+      fleet: { byDate: fleetByDate, total: rows.reduce((a, r) => a + r.total, 0) },
+    };
+  }, [data, summary, catKey, totalKey, selectedCats, tl, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const detailScopeLine = [
     ns ? t("downtime.tabNotStopped") : t("downtime.tabStopped"),
     kpiOnly ? t("downtime.scopeZagruzka") : t("downtime.scopeAll"),
@@ -916,6 +962,35 @@ export default function Downtime() {
             <EmptyState title={t("downtime.noCatData")} message={t("downtime.noDataMsg")} />
           )}
         </div>
+      </div>
+
+      {/* «Brigadir × kun» — the register as a matrix, exactly as the workbook's
+          «Kunlik» sheet lays it out. Sits between the bars it breaks down and
+          the trend its fleet row is drawn from — the sheet's own order. */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
+            {t("downtime.xl.matrix")}
+          </div>
+          {catChips}
+        </div>
+        {/* The legend the workbook prints under the same title — the words are
+            shared on purpose, so the file and the screen name one table alike. */}
+        <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
+          {t("downtime.xl.matrixSub")}
+        </div>
+        {isLoading ? (
+          <SkeletonChart className="h-64" />
+        ) : matrix.rows.length ? (
+          <OjidaniyaMatrix
+            dates={data?.dates || []}
+            rows={matrix.rows}
+            fleet={matrix.fleet}
+            onPick={(r) => setDetail({ managerId: r.managerId, managerName: r.key, cat: null })}
+          />
+        ) : (
+          <EmptyState title={t("downtime.noData")} message={t("downtime.noDataMsg")} height="h-32" />
+        )}
       </div>
 
       {/* Downtime trend over time */}

@@ -303,6 +303,16 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   position: relative;
 }
 
+/* ── Ojidaniya «Brigadir × kun» matrix — row hover ───────────────────────────
+   A row is pressable (it opens that unit's waiting, date by date), so the whole
+   row lifts under the pointer rather than one cell: the target is the ROW, and
+   a cell-only highlight would promise a per-cell action that does not exist.
+   Touch never fires hover, so this is decoration on top of the cursor — the
+   affordance itself is the pointer and the name cell's title. */
+.idle-matrix tbody tr:hover td {
+  filter: brightness(1.09);
+}
+
 /* ── Attendance-trend: tooltip rendered BELOW the chart ───────────────────────
    9–10 stacked roles make the tooltip tall enough to cover the plot wherever
    Apex pins it (the card is overflow-hidden, so it can't escape upward either).
