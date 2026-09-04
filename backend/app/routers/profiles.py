@@ -2022,6 +2022,53 @@ def admin_reveal_web_login(payload: WebLoginPayload, db: Session = Depends(get_d
     return {"ok": True, "username": cred.username, "password": password}
 
 
+@router.post("/admin/web-login/impersonate")
+def admin_impersonate_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
+                                caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Open the platform AS this profile — the code half of it.
+
+    ADMINS ONLY, the same step narrower than the rest of this tab that
+    ``reveal`` takes, and for a stronger version of the same reason: reading a
+    password hands somebody the ability to sign in as this person, and this IS
+    that sign-in, without the password ever being typed. Everything else here
+    CHANGES a credential and is therefore visible to its owner; this leaves the
+    owner nothing to notice, so it stays with the role that already answers for
+    the whole platform rather than with a delegated one.
+
+    Nothing that could open a session is returned: the answer is a one-time code
+    (see ``web_auth.mint_impersonation``), and only the tab that redeems it at
+    ``/api/auth/web/impersonate`` is ever given a token.
+
+    The login must EXIST and be ENABLED. A disabled login is an admin's standing
+    decision that this profile may not be entered from a browser, and a door
+    that ignored it would not be a shortcut past a password — it would be a
+    shortcut past that decision.
+    """
+    key = payload.profile_key
+    _web_guard(caller, key)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin_only")
+    cred = _web_row(db, key)
+    if not cred.enabled:
+        raise HTTPException(status_code=403, detail="login_disabled")
+    # Same refusal the login itself makes: with no approved holder there is no
+    # (telegram_id, role, role_ref) tuple to BE, so there is nothing to open.
+    if not web_auth.session_identity(db, key):
+        raise HTTPException(status_code=400, detail="no_holder")
+
+    pname = profile_display_name(db, key) or ""
+    code = web_auth.mint_impersonation(key, cred.username, caller)
+    # Audited exactly like a reveal — entering somebody's account without
+    # touching it is the other way to use a login while leaving no mark on it.
+    web_auth.audit("impersonated", caller, pname, cred.username)
+    action_log.enrich(
+        target_kind="weblogin", target_id=key, target_name=pname,
+        details=[("profile", pname), ("login", cred.username)],
+    )
+    return {"ok": True, "code": code, "expires_in": web_auth.IMPERSONATE_TTL_SEC,
+            "username": cred.username, "name": pname}
+
+
 @router.post("/admin/web-login/bulk")
 def admin_bulk_web_login(payload: WebLoginBulkPayload, db: Session = Depends(get_db),
                          caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):

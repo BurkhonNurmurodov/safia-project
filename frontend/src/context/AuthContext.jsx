@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../utils/api";
-import { clearToken, getToken, inTelegram, isRemembered, isWebSession, setToken } from "../utils/session";
+import { clearToken, getToken, inTelegram, isRemembered, isTabSession, isWebSession, setToken } from "../utils/session";
 import { findProfile, listProfiles, removeProfile, saveProfile } from "../utils/profileWallet";
 
 const AuthContext = createContext(null);
@@ -11,6 +11,38 @@ const COUNTDOWN_SEC = 3;
 // the password screen would never be reachable there. ?weblogin=1 forces it.
 const FORCE_WEB_LOGIN =
   new URLSearchParams(window.location.search).get("weblogin") === "1";
+
+/**
+ * The one-time code an admin's «open as this profile» put in this tab's URL.
+ *
+ * Read and STRIPPED at module scope, before anything renders: the code is
+ * spendable once and dead in a minute, but a credential-shaped string has no
+ * business surviving in the address bar, in the history entry, or in the
+ * referrer of whatever this page loads next.
+ */
+const IMPERSONATE_CODE = (() => {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("as") || "";
+  if (!code) return "";
+  params.delete("as");
+  const qs = params.toString();
+  try {
+    window.history.replaceState({}, "",
+      window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
+  } catch { /* nothing to strip is not a reason to fail the open */ }
+  return code;
+})();
+
+// StrictMode runs effects twice in development and the code is spendable ONCE,
+// so the request itself is the single-flight guard: the second call awaits the
+// first answer instead of spending a code that no longer exists.
+let impersonateExchange = null;
+function exchangeImpersonation(code) {
+  if (!impersonateExchange) {
+    impersonateExchange = api.post("/api/auth/web/impersonate", { code });
+  }
+  return impersonateExchange;
+}
 
 export function AuthProvider({ children }) {
   const [auth, setAuth]               = useState(null);
@@ -28,6 +60,11 @@ export function AuthProvider({ children }) {
     const username = data?.web_login?.username;
     const token = getToken();
     if (!username || !token) return;
+    // An impersonated session is never added: the wallet holds profiles this
+    // browser may re-enter WITHOUT a password, and an admin looking around as
+    // somebody else must not leave a standing key to that person's account
+    // behind in the machine's storage.
+    if (data?.impersonated || isTabSession()) return;
     saveProfile({
       username,
       full_name: data.full_name,
@@ -51,6 +88,26 @@ export function AuthProvider({ children }) {
     }
 
     const initData = tg?.initData || "";
+
+    // ── Opened AS somebody else (admin impersonation) ────────────────────────
+    // First, and whatever else this tab holds: the code is an explicit
+    // instruction to be this profile here, and it outranks the session the tab
+    // inherited from the one that opened it. The token is TAB-SCOPED, so the
+    // admin's own session in the tabs beside this one is untouched.
+    if (IMPERSONATE_CODE) {
+      exchangeImpersonation(IMPERSONATE_CODE)
+        .then((r) => {
+          setToken(r.data.token, { web: true, tab: true });
+          setWebSession(true);
+          setAuth(r.data);
+        })
+        // Spent, expired, or the login was disabled in between. Say so instead
+        // of falling through to the ordinary boot, which would quietly open the
+        // ADMIN's own session in a tab they asked to be somebody else in.
+        .catch(() => setAuth({ status: "impersonate_failed" }))
+        .finally(() => setLoading(false));
+      return;
+    }
 
     // ── Browser (not a Telegram client) ──────────────────────────────────────
     // A stored browser token is re-validated against the server rather than
@@ -150,6 +207,16 @@ export function AuthProvider({ children }) {
     // its row is dropped and the next profile takes over, so signing out never
     // silently ends a colleague's session too. When it was the last row there is
     // nothing to fall back to and the login screen is the honest destination.
+    // An impersonated tab signs out of the IMPERSONATION, never out of the
+    // wallet: its rows are the admin's own profiles, and switching into one of
+    // them here would write a token to localStorage — the store this tab has
+    // deliberately never touched. Clearing the tab-scoped session drops it back
+    // to whatever the admin's own tabs are signed in as, in this tab alone.
+    if (auth?.impersonated) {
+      clearToken();
+      window.location.assign("/");
+      return;
+    }
     if (webSession) {
       const active = auth?.web_login?.username;
       if (active) removeProfile(active);
@@ -235,7 +302,9 @@ export function AuthProvider({ children }) {
    *  tab the person is typing in does not log itself out. */
   function replaceWebToken(token) {
     if (!token) return;
-    setToken(token, { remember: isRemembered(), web: true });
+    // `tab` rides along: without it the re-issued token lands in localStorage
+    // and an impersonated tab takes over every other tab on the machine.
+    setToken(token, { remember: isRemembered(), web: true, tab: isTabSession() });
     // The wallet row for this profile still holds the token the password change
     // just revoked; leaving it there would demand the new password the moment
     // the person switched away and back.

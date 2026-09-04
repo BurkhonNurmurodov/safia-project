@@ -34,9 +34,19 @@ PURGE_TEST_UNITS_FLAG = "purge_test_units_2026_09_04_v1"
 # either of them ever filed.
 #
 # An EMPTY list makes this do NOTHING — no query, no delete, and no flag, so
-# filling it in later still runs. It ships empty on purpose: a destructive pass
-# whose targets nobody has named must not be able to fire by being deployed.
-PURGE_TEST_UNITS: list[str] = []
+# filling it in later still runs. It shipped empty for one version on purpose: a
+# destructive pass whose targets nobody has named must not be able to fire by
+# being deployed.
+#
+# ARMED 2026-09-04 (the operator's instruction). «Test Brigadir» is the unit
+# somebody made to try the platform out; its one leader profile, «Test Lider»,
+# comes along because it hangs off `role_profiles.manager_id` and is not named
+# here. In the production copy the pair holds 4 filed checklist days, 51
+# entries, 12 proof photos, 12 AI verdicts and 2 day reports, and no attendance,
+# day approval, production figure or cell at all — which is also why the
+# Profiles tab could not do this: `_manager_has_data` counts those 4 days, so
+# its Delete button ARCHIVES the unit instead of removing it.
+PURGE_TEST_UNITS: list[str] = ["Test Brigadir"]
 
 # The Jurnal (`action_logs`) is documented as append-only forever — no delete
 # route, no purge tool, no retention job. Erasing rows from it reverses that

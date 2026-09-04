@@ -126,6 +126,88 @@ def web_login(body: LoginBody, request: Request, db: Session = Depends(get_db)):
     }
 
 
+class ImpersonateBody(BaseModel):
+    code: str
+
+
+@router.post("/impersonate")
+def web_impersonate(body: ImpersonateBody, request: Request, db: Session = Depends(get_db)):
+    """Redeem the one-time code an admin's «open as this profile» produced.
+
+    Unauthenticated by construction, and exempt in ``security.py`` for the same
+    reason ``/login`` is: the tab redeeming this has no session yet, and on a
+    machine whose admin is signed in through TELEGRAM it has no initData either
+    (a plain browser tab is not a WebView). The code IS the proof — minted only
+    for an admin who passed every check on the other side, single-use, and dead
+    in a minute.
+
+    ``last_login_at`` is deliberately NOT touched. That field answers when this
+    PERSON last signed in, and it is read back to them on their own profile
+    page; an admin looking around is not that, and writing it there would make
+    the register quietly lie to the one person it is for.
+    """
+    ip = _client_ip(request)
+    if web_auth.ip_throttled(ip):
+        raise HTTPException(status_code=429, detail="too_many_attempts")
+    web_auth.record_ip_attempt(ip)
+
+    rec = web_auth.redeem_impersonation(body.code)
+    if not rec:
+        # Never spent, already spent, or older than a minute — one answer for
+        # all three, because the caller can do nothing different about any of
+        # them but press the button again.
+        raise HTTPException(status_code=400, detail="invalid_code")
+
+    cred = db.query(WebCredential).filter(
+        WebCredential.profile_key == rec["profile_key"]).first()
+    # Re-checked here and not only at minting time: a login disabled or deleted
+    # in the seconds between the two presses must not still open.
+    if not cred or not cred.enabled:
+        raise HTTPException(status_code=403, detail="login_disabled")
+
+    identity = web_auth.session_identity(db, cred.profile_key)
+    if not identity:
+        raise HTTPException(status_code=403, detail="profile_unavailable")
+
+    # Never "remember me": an impersonated session belongs to the tab it was
+    # opened in and to nothing else — see utils/session.js, which keeps it out
+    # of localStorage so it can neither outlive the tab nor disturb the admin's
+    # own session in the tabs beside it.
+    token = web_auth.create_web_jwt(identity, cred, False, impersonated_by=rec["by"])
+    log.info("WEB-LOGIN impersonate_open | login=%s | profile=%s | by=%s | ip=%s",
+             cred.username, cred.profile_key, (rec["by"] or {}).get("name") or "?", ip)
+    action_log.enrich(
+        target_kind="weblogin", target_id=cred.profile_key,
+        target_name=identity["full_name"],
+        details=[("login", cred.username), ("role", identity["role"]),
+                 ("by", (rec["by"] or {}).get("name") or "")],
+    )
+
+    user = db.query(TelegramUser).filter_by(telegram_id=identity["telegram_id"]).first()
+    admin = db.query(Admin).filter_by(telegram_id=identity["telegram_id"]).first()
+    return {
+        "status":      "approved",
+        "role":        identity["role"],
+        "role_id":     identity["role_id"],
+        "full_name":   identity["full_name"],
+        "token":       token,
+        "telegram_id": identity["telegram_id"],
+        "language":    (user.language if user else None) or (admin.language if admin else None) or "uz",
+        "roles":           [],
+        "active_role_ref": identity["role_ref"],
+        "profile_key":     cred.profile_key,
+        "photo_ver":       photo_versions(db, [cred.profile_key]).get(cred.profile_key),
+        "web":             True,
+        # What makes the tab say so instead of looking like an ordinary login.
+        "impersonated":    rec["by"],
+        "web_login": {
+            "username":      cred.username,
+            "profile":       profile_display_name(db, cred.profile_key),
+            "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
+        },
+    }
+
+
 class ForgotBody(BaseModel):
     username: str
 
@@ -265,7 +347,11 @@ def change_password(body: ChangePasswordBody, payload: dict = Depends(_any_calle
     if not identity:
         raise HTTPException(status_code=403, detail="profile_unavailable")
     remember = _is_long_session(payload)
-    return {"ok": True, "token": web_auth.create_web_jwt(identity, cred, remember)}
+    # The re-issued token inherits ``imp``: dropping it would leave an
+    # impersonated tab looking like an ordinary session of the person whose
+    # password was just changed.
+    return {"ok": True, "token": web_auth.create_web_jwt(
+        identity, cred, remember, impersonated_by=payload.get("imp"))}
 
 
 def _is_long_session(payload: dict) -> bool:
@@ -309,6 +395,10 @@ def web_session(payload: dict = Depends(_web_caller), db: Session = Depends(get_
         "profile_key":     cred.profile_key,
         "photo_ver":       photo_versions(db, [cred.profile_key]).get(cred.profile_key),
         "web":             True,
+        # Re-derived from the TOKEN, so an impersonated tab goes on saying so
+        # after a reload and a navigation. Nothing about what the session may do
+        # depends on it — only what the screen admits to being.
+        "impersonated":    payload.get("imp") or None,
         "web_login": {
             "username":      cred.username,
             "profile":       profile_display_name(db, cred.profile_key),

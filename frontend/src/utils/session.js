@@ -14,6 +14,17 @@
  * Reads check sessionStorage first: a per-tab token is always the more recent
  * intent when both happen to exist.
  *
+ * ── A tab-scoped session ─────────────────────────────────────────────────────
+ * `tab: true` is the third storage mode and it exists for one caller: the
+ * admin's «open as this profile», which opens a NEW TAB signed in as somebody
+ * else. localStorage is shared by every tab of the origin, so a session that
+ * wrote there — or, just as bad, DELETED the key there on its way in, which is
+ * what `remember: false` does — would reach across into the admin's own tabs
+ * and sign them out of their own account. A tab session therefore touches
+ * sessionStorage and nothing else, in either direction: it never writes to
+ * localStorage, never removes from it, and `clearToken()` leaves it alone. It
+ * dies with the tab, which is exactly the life an impersonated session wants.
+ *
  * ── Web Storage is not guaranteed ────────────────────────────────────────────
  * Every touch below is wrapped, and not defensively-for-its-own-sake: quota
  * exhaustion (this app writes a `usePersistentState` key per page per filter),
@@ -30,11 +41,13 @@
  */
 const TOKEN_KEY = "tg_token";
 const WEB_KEY = "web_session";
+const TAB_KEY = "tab_session";
 
 // The live session, independent of whether storage agreed to hold it.
 let memToken = "";
 let memWeb = false;
 let memRemember = true;
+let memTab = false;
 // Set when a write failed. The mirror is then the ONLY current copy and must
 // outrank storage, which may still be holding the PREVIOUS session's token.
 let memOnly = false;
@@ -60,16 +73,18 @@ export function getToken() {
   );
 }
 
-export function setToken(token, { remember = true, web = false } = {}) {
+export function setToken(token, { remember = true, web = false, tab = false } = {}) {
   // Mirror first and unconditionally: whatever storage does below, this page
   // load has a working session.
   memToken = token;
   memWeb = web;
-  memRemember = remember;
+  // A tab session is never "remembered" — it lives in this tab and nowhere else.
+  memRemember = tab ? false : remember;
+  memTab = tab;
   memOnly = false;
 
   try {
-    const store = remember ? localStorage : sessionStorage;
+    const store = remember && !tab ? localStorage : sessionStorage;
     // Write BEFORE clearing anything. The old order (clearToken() first, then
     // write) turned any storage failure into a total session loss: the previous
     // token was already gone and the new one never landed.
@@ -79,30 +94,46 @@ export function setToken(token, { remember = true, web = false } = {}) {
     // inherit web_session=1 and stop sending its initData header.
     if (web) store.setItem(WEB_KEY, "1");
     else store.removeItem(WEB_KEY);
+    if (tab) store.setItem(TAB_KEY, "1");
+    else store.removeItem(TAB_KEY);
   } catch {
     memOnly = true;
   }
 
-  // The losing store must not keep a second, older token around.
+  // The losing store must not keep a second, older token around — EXCEPT for a
+  // tab session, whose losing store is the shared one every other tab reads.
+  if (tab) return;
   try {
     const other = remember ? sessionStorage : localStorage;
     other.removeItem(TOKEN_KEY);
     other.removeItem(WEB_KEY);
+    other.removeItem(TAB_KEY);
   } catch {
     /* blocked — then nothing was ever written there either */
   }
 }
 
 export function clearToken() {
+  // Asked BEFORE the mirror is reset: ending a tab-scoped session must not
+  // reach into localStorage, where the session of every other tab lives. This
+  // is not only about the sign-out button — the dead-session handler in
+  // utils/api.js clears the token too, and a 401 in an impersonated tab used to
+  // be enough to sign the admin out of their own.
+  const tabOnly = isTabSession();
   memToken = "";
   memWeb = false;
   memRemember = true;
+  memTab = false;
   memOnly = false;
-  for (const pick of [() => localStorage, () => sessionStorage]) {
+  const stores = tabOnly
+    ? [() => sessionStorage]
+    : [() => localStorage, () => sessionStorage];
+  for (const pick of stores) {
     try {
       const store = pick();
       store.removeItem(TOKEN_KEY);
       store.removeItem(WEB_KEY);
+      store.removeItem(TAB_KEY);
     } catch { /* storage blocked */ }
   }
 }
@@ -115,6 +146,14 @@ export function isWebSession() {
     read(() => localStorage, WEB_KEY) === "1" ||
     memWeb
   );
+}
+
+/** True when the live session belongs to THIS TAB alone — the impersonation
+ *  session an admin opened. Callers re-issuing a token must preserve it, or the
+ *  new token lands in localStorage and takes over every other tab. */
+export function isTabSession() {
+  if (memOnly) return memTab;
+  return read(() => sessionStorage, TAB_KEY) === "1" || memTab;
 }
 
 /**

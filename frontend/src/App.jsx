@@ -113,6 +113,7 @@ import ErrorBoundary, { ScopedErrorBoundary } from "./components/ui/ErrorBoundar
 import ErrorScreen from "./components/ui/ErrorScreen";
 import {
   ArrowUpCircle, SmartphoneNfc, UserPlus, Clock, UserX, WifiOff, AlertTriangle, Lock, ChevronRight,
+  UserRoundCog,
 } from "lucide-react";
 import FindInPage from "./components/FindInPage";
 import DocumentTitle from "./components/DocumentTitle";
@@ -143,6 +144,23 @@ function AuthGate({ children }) {
       <Suspense fallback={<PageLoader />}>
         <WebLogin onSuccess={webLogin} />
       </Suspense>
+    );
+  }
+
+  // The «open as this profile» link was spent, expired (a minute), or the login
+  // was disabled between the two presses. This tab was opened to BE somebody
+  // else, so it says the link is dead rather than quietly signing the admin in
+  // as themselves — the one outcome that looks like it worked and is not.
+  if (auth?.status === "impersonate_failed") {
+    return (
+      <ErrorScreen
+        tone="warning"
+        icon={UserRoundCog}
+        title={t("weblogin.impFailedTitle")}
+        message={t("weblogin.impFailedMsg")}
+        action={{ label: t("weblogin.impClose"), onClick: () => window.close() }}
+        secondary={{ label: t("weblogin.impContinue"), href: "/" }}
+      />
     );
   }
 

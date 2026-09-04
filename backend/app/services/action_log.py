@@ -181,6 +181,8 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/auth/web/forgot",                      "sessions", "session.web_password_forgotten"),
     (("POST",),   "/api/auth/web/password",                    "sessions", "session.web_password_changed"),
     (("POST",),   "/api/profiles/admin/web-login/reveal",      "sessions", "weblogin.revealed"),
+    (("POST",),   "/api/profiles/admin/web-login/impersonate", "sessions", "weblogin.impersonated"),
+    (("POST",),   "/api/auth/web/impersonate",                 "sessions", "session.web_impersonated"),
     (("POST",),   "/api/profiles/admin/web-login/bulk",        "sessions", "weblogin.bulk_created"),
     (("POST",),   "/api/profiles/admin/web-login/toggle",      "sessions", "weblogin.toggled"),
     (("POST",),   "/api/profiles/admin/web-login/revoke",      "sessions", "weblogin.sessions_revoked"),

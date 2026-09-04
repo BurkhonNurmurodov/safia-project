@@ -58,6 +58,11 @@ from app.routers.auth import _validate_init_data
 #   * /api/translations            — public UI strings (no user data); fetched at boot
 #   * /api/auth/web/login          — the browser login exchange itself
 #   * /api/auth/web/forgot         — password recovery; answers identically either way
+#   * /api/auth/web/impersonate    — an admin's «open as this profile», redeemed by a
+#                                    tab that has no session yet (and, when that admin
+#                                    is signed in through Telegram, no initData either).
+#                                    The one-time code IS the proof: minted only for an
+#                                    admin, spent on first use, dead in a minute.
 _EXEMPT_PATHS = frozenset({
     "/api/auth/webapp",
     "/api/auth/bot-info",
@@ -67,6 +72,7 @@ _EXEMPT_PATHS = frozenset({
     "/api/translations",
     "/api/auth/web/login",
     "/api/auth/web/forgot",
+    "/api/auth/web/impersonate",
 })
 
 _INIT_DATA_HEADER = "X-Telegram-Init-Data"
