@@ -1075,6 +1075,22 @@ export default function ComparisonTable({
               handle on that one control, not a second control. */}
           {(unitVals || columnStats) && (
             <tfoot>
+              {/* One blank row of air between the grid and the footer. The
+                  footer answers a different question from the rows above it
+                  (a measurement and a statistic, not more brigadirs), so it
+                  reads as a separate block rather than as the last two lines
+                  of the table. Borderless and background-only: a bordered
+                  spacer would read as an empty brigadir. */}
+              <tr aria-hidden="true">
+                <td
+                  colSpan={1 + dates.length * 2 + pads.length * 2 + (isMobile ? 0 : 1)}
+                  style={{
+                    padding: 0, height: 30, border: "none",
+                    background: "var(--bg-card)",
+                  }}
+                />
+              </tr>
+
               {/* The unit's own load — the row the cells above belong to,
                   computed from the unit's summed inputs, not from them. It
                   leads the footer because it is a measurement; the AVG row

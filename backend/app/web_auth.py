@@ -386,11 +386,21 @@ def session_identity(db: Session, key: str) -> Optional[dict]:
 
 # ── the token ─────────────────────────────────────────────────────────────────
 
-def create_web_jwt(identity: dict, cred: WebCredential, remember: bool) -> str:
+def create_web_jwt(identity: dict, cred: WebCredential, remember: bool,
+                   impersonated_by: Optional[dict] = None) -> str:
     """Same shape as ``auth.create_jwt`` plus the two claims that make it a
     browser session: ``web`` (what ``security.py`` accepts in place of initData)
     and ``wv`` (the token version, so an admin can revoke every browser session
-    for a profile without touching anything else)."""
+    for a profile without touching anything else).
+
+    ``impersonated_by`` adds a third, ``imp`` — who opened this session as
+    somebody else. It changes NOTHING about what the session may do: the whole
+    point of impersonation is to see the platform exactly as that person sees
+    it, so a token that behaved differently would answer a different question.
+    It is carried so the app can SAY so on screen, and so the fact survives a
+    reload, a page navigation and a password change rather than living in the
+    tab that opened it.
+    """
     ttl = timedelta(days=REMEMBER_DAYS) if remember else timedelta(hours=SESSION_HOURS)
     payload = {
         "sub":       str(identity["telegram_id"]),
@@ -403,6 +413,8 @@ def create_web_jwt(identity: dict, cred: WebCredential, remember: bool) -> str:
         "wu":        cred.username,
         "exp":       datetime.utcnow() + ttl,
     }
+    if impersonated_by:
+        payload["imp"] = impersonated_by
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
@@ -417,6 +429,69 @@ def web_session_is_live(db: Session, payload: dict) -> bool:
     if not cred or not cred.enabled:
         return False
     return int(payload.get("wv") or 0) == int(cred.token_version or 0)
+
+
+# ── impersonation: opening the app AS somebody else ───────────────────────────
+#
+# An admin presses «open as this profile» and a new tab comes up signed in as
+# that person — the fastest honest answer to "what does this page look like for
+# a leader?" and to a bug nobody can reproduce from an admin account.
+#
+# What crosses between the two tabs is NOT a token. The admin's tab is handed a
+# one-time CODE and only the tab that redeems it is ever given a session, so no
+# session for another identity exists until the moment it is used. A JWT put in
+# a URL instead would sit in the browser history, in the referrer of the first
+# outbound request and in nginx's access log — three places a credential must
+# never reach, none of which a short expiry cleans up.
+#
+# The store is process memory, deliberately, exactly like the per-IP throttle
+# above: the unit runs a single worker, a code is redeemed within seconds of
+# being minted, and a restart inside that window costs one re-press. Writing a
+# credential-equivalent to the database — where it would ride in every dbdump —
+# to survive a case that cannot outlive a page load is the worse trade.
+#
+# Two properties make the code safe to put in a URL: it is deleted on first use
+# (a replayed link opens nothing) and it expires in a minute (a link copied out
+# of the history bar is already dead).
+
+IMPERSONATE_TTL_SEC = 60
+
+# code → {profile_key, username, by, exp}
+_imp_codes: dict[str, dict] = {}
+
+
+def _prune_imp_codes(now: float) -> None:
+    for code in [c for c, rec in _imp_codes.items() if rec["exp"] <= now]:
+        _imp_codes.pop(code, None)
+
+
+def mint_impersonation(profile_key: str, username: str, actor: dict) -> str:
+    """Issue the one-time code for one (admin, profile) press. Caller has
+    already checked that the admin may do this and that the login is live."""
+    now = time.time()
+    _prune_imp_codes(now)
+    code = secrets.token_urlsafe(32)
+    _imp_codes[code] = {
+        "profile_key": profile_key,
+        "username":    username,
+        # WHO opened it — stamped into the session's own token below, so the
+        # tab can say whose doing this is for as long as it is open.
+        "by": {"sub": actor.get("sub"), "name": actor.get("full_name") or ""},
+        "exp": now + IMPERSONATE_TTL_SEC,
+    }
+    return code
+
+
+def redeem_impersonation(code: str) -> Optional[dict]:
+    """Spend a code, or None when it never existed, has already been spent, or
+    has expired. Popped BEFORE the expiry test, so a stale code cannot be
+    retried while it ages out."""
+    now = time.time()
+    _prune_imp_codes(now)
+    rec = _imp_codes.pop(code or "", None)
+    if not rec or rec["exp"] <= now:
+        return None
+    return rec
 
 
 # ── audit ─────────────────────────────────────────────────────────────────────
