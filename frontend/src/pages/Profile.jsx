@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive, ArchiveRestore, ArrowLeft, Ban, BellOff, Camera, Check, Clock, Copy, Eye, EyeOff,
   Factory as FactoryIcon, Flag, Globe, Hash, IdCard, KeyRound, Languages,
-  LayoutGrid, Link2, LogOut, Pencil, Plus, RotateCcw, Shield, Star, Trash2,
+  LayoutGrid, Link2, LogIn, LogOut, Pencil, Plus, RotateCcw, Shield, Star, Trash2,
   UserCog, UserRound, Users, X,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -1149,6 +1149,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
 // lingering as the answer to a question that has moved on.
 function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, notify, onDone }) {
   const { t } = useLang();
+  const { tl } = useTranslit();
   const { auth } = useAuth();
   const web = item?.web || null;
 
@@ -1160,6 +1161,9 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
   const [shownPw, setShownPw] = useState("");
   const [pwBusy, setPwBusy] = useState("");   // "" | "show" | "copy"
   const [pwError, setPwError] = useState("");
+  const [confirmOpenAs, setConfirmOpenAs] = useState(false);
+  const [openAsBusy, setOpenAsBusy] = useState(false);
+  const [openAsError, setOpenAsError] = useState("");
 
   useEffect(() => {
     setUsername(web?.username || "");
@@ -1175,11 +1179,17 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
   // DM, a disable stops their access), so those are safe to delegate through
   // `admin.profiles.manage`. Reading one leaves nothing the owner can notice.
   const canReveal = auth?.role === "admin";
+  // Opening the app AS this person is strictly MORE than reading their
+  // password — it is the sign-in the password would buy — so it is at least as
+  // narrow: admins only, refused server-side too, and never on your own row,
+  // where it would open a second tab as the person already using it.
+  const canOpenAs = auth?.role === "admin" && !own;
 
   function failText(e) {
     const detail = e?.response?.data?.detail;
     if (detail === "username_taken") return t("weblogin.taken");
     if (detail === "no_holder")      return t("weblogin.noHolder");
+    if (detail === "login_disabled") return t("weblogin.impDisabled");
     return typeof detail === "string" ? detail : t("weblogin.saveFailed");
   }
   function fail(e) { setError(failText(e)); }
@@ -1265,6 +1275,39 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
   async function copyPassword() {
     const value = shownPw || await fetchPassword("copy");
     if (value) await copyValue(value);
+  }
+
+  /** Open a new tab signed in as this profile.
+   *
+   *  The tab is opened SYNCHRONOUSLY, inside the click that asked for it: a
+   *  window.open() after an await is a pop-up as far as the browser is
+   *  concerned and is blocked silently. So the blank tab is claimed first, the
+   *  code is minted second, and the tab is sent where it was always going —
+   *  and if the browser refused the tab, nothing is minted and the dialog says
+   *  why instead of appearing to have done nothing.
+   *
+   *  What travels in the URL is a one-time code, never a token: it is spent by
+   *  the tab that opens and dead a minute later either way. */
+  async function openAsProfile() {
+    setOpenAsError("");
+    const tab = window.open("", "_blank");
+    if (!tab) {
+      setOpenAsError(t("weblogin.impBlocked"));
+      return;
+    }
+    setOpenAsBusy(true);
+    try {
+      const r = await post("/api/profiles/admin/web-login/impersonate", {});
+      // Absolute: a relative URL on about:blank resolves against a base this
+      // tab does not own.
+      tab.location.replace(`${window.location.origin}/?as=${encodeURIComponent(r.data.code)}`);
+      setConfirmOpenAs(false);
+    } catch (e) {
+      tab.close();
+      setOpenAsError(failText(e));
+    } finally {
+      setOpenAsBusy(false);
+    }
   }
 
   // Renaming an existing login is a deferred edit, so the page's save button
@@ -1381,7 +1424,18 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
                   {t("weblogin.changeTitle")}
                 </Button>
               )}
-              <Button size="sm" tint variant={own ? "secondary" : "primary"} icon={<RotateCcw size={11} />}
+              {/* A disabled login is a standing decision that this profile may
+                  not be entered from a browser; this must not be the way round
+                  it, so the button goes with it. */}
+              {canOpenAs && (
+                <Button size="sm" tint variant="primary" icon={<LogIn size={11} />}
+                        loading={openAsBusy} disabled={busy || !web.enabled}
+                        onClick={() => { setOpenAsError(""); setConfirmOpenAs(true); }}>
+                  {t("weblogin.impersonate")}
+                </Button>
+              )}
+              <Button size="sm" tint variant={own || canOpenAs ? "secondary" : "primary"}
+                      icon={<RotateCcw size={11} />}
                       disabled={busy} onClick={() => setConfirmReset(true)}>
                 {t("weblogin.reset")}
               </Button>
@@ -1400,6 +1454,21 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
           </>
         )}
       </div>
+
+      {/* Says what the tab will be able to do before it exists: everything done
+          in it is recorded as this person, which is the whole reason the door
+          is admin-only and written to the register. */}
+      <ConfirmDialog
+        open={confirmOpenAs}
+        icon={LogIn}
+        title={t("weblogin.impTitle")}
+        message={t("weblogin.impBody").replace("{name}", tl(item.name) || "")}
+        confirmLabel={t("weblogin.impConfirm")}
+        loading={openAsBusy}
+        error={openAsError || undefined}
+        onCancel={() => { setConfirmOpenAs(false); setOpenAsError(""); }}
+        onConfirm={openAsProfile}
+      />
 
       <ConfirmDialog
         open={confirmReset}

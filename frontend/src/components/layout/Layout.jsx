@@ -4,7 +4,7 @@ import { useTheme } from "../../context/ThemeContext";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
-import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2 } from "lucide-react";
+import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2, UserRoundCog } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
@@ -449,6 +449,38 @@ function rememberScroll(pathname, top) {
   });
 }
 
+/**
+ * The tab is signed in as somebody else — say so, on every page, for as long as
+ * it is.
+ *
+ * Everything done here is recorded as that person, and the only other sign of
+ * it is their name in a 12px line beside the avatar, which is exactly what an
+ * ordinary session looks like too. A bar that cannot be dismissed is the point:
+ * the confusion it prevents is an admin acting in good faith and leaving the
+ * trail under a name that is not theirs.
+ */
+function ImpersonationBar() {
+  const { auth, logout } = useAuth();
+  const { t } = useLang();
+  const { tl } = useTranslit();
+  if (!auth?.impersonated) return null;
+  return (
+    <div
+      className="flex items-center gap-2 px-4 md:px-6 py-1.5 text-[11px] leading-snug"
+      style={{ background: "rgba(234,179,8,0.12)", borderTop: "1px solid rgba(234,179,8,0.25)", color: "#eab308" }}
+      role="status"
+    >
+      <UserRoundCog size={13} className="flex-shrink-0" />
+      <span className="min-w-0 flex-1 truncate">
+        {t("weblogin.impBanner").replace("{name}", tl(auth.full_name || "") || "")}
+      </span>
+      <button onClick={logout} className="flex-shrink-0 underline underline-offset-2 font-medium">
+        {t("weblogin.impExit")}
+      </button>
+    </div>
+  );
+}
+
 export default function Layout({ children, title }) {
   const notif = useNotifications();
   useActivityPing(); // heartbeat for the Users-Activity dashboard
@@ -559,6 +591,9 @@ export default function Layout({ children, title }) {
               <UserProfile />
             </div>
           </div>
+
+          {/* Only ever present in a tab an admin opened as somebody else. */}
+          <ImpersonationBar />
         </header>
 
         {/* Content viewport. Layout remounts on every route change, so the
