@@ -27,6 +27,15 @@ import { canAccessPage } from "../../config/pages";
 // sentence. The link is offered only to somebody who can OPEN /idle-cell,
 // decided by the same helper the sidebar uses for the nav entry, so the dialog
 // never points at a page that would answer «no access».
+//
+// The sentence NAMES the day it counted. It used to say «today» in all four
+// languages while the dialog is opened for whatever day is being closed — and
+// closing a past day is ordinary here, the Staff calendar's whole point — so a
+// brigadir shutting the 30th read a correct count of the 30th as today's
+// figure and reported it as a bug. The count was never wrong; the one word
+// that said which day it was about was.
+const ddmmyyyy = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join(".") : "");
+
 export default function CloseDayIdleNote({ managerId, date }) {
   const { t } = useLang();
   const { auth } = useAuth();
@@ -51,7 +60,7 @@ export default function CloseDayIdleNote({ managerId, date }) {
     >
       <Timer size={13} className="flex-shrink-0 mt-0.5" style={{ color: "#eab308" }} />
       <span className="min-w-0 leading-snug">
-        <span className="font-semibold">{t("daily.closeLeaderIdleN").replace("{n}", n)}</span>
+        <span className="font-semibold">{t("daily.closeLeaderIdleN").replace("{n}", n).replace("{date}", ddmmyyyy(date))}</span>
         {canOpen && (
           <>
             {" "}
