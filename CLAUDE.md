@@ -808,6 +808,81 @@ ready to read and ready to print.
   `export.ojidaniya`; delivered by `xlsx_delivery` (browser downloads,
   Telegram DMs).
 
+## The «Toifalar bo'yicha» matrix (`/downtime`, page view tab 2)
+
+From **2026-09-04** `/downtime` is TWO views over one register, switched by a
+`SegmentedToggle asTabs` that is the page's FIRST row — above the filters,
+because every filter, and both the To'xtaganda/To'xtamaganda and
+Zagruzkada/Barchasi toggles, narrow BOTH views. «Tahlil» is the page as it was.
+«Toifalar bo'yicha» is a matrix: categories down (expandable to their
+brigadirs), the days of a MONTH across.
+
+- **Its figure is NOT the one the rest of the platform reads, and that is the
+  operator's ruling, not an oversight.** A leaf cell is a brigadir's minutes in
+  one category on one day **divided by the cells that had people standing in
+  them that day** — an UNWEIGHTED mean over a cell count. Every other ojidaniya
+  number here is the headcount-weighted mean `Σ(Nᵢ·Tᵢ) ÷ ΣN` (`idle_source`),
+  where a 20-person cell outweighs a 2-person one. **Consequence to know: this
+  tab's totals do not match the Analysis tab's**, and the card says so in its
+  own words before anybody reads a cell.
+- **So the tab carries NO KPI cards and no charts.** «Jami ojidaniya» on those
+  cards is the day's UNION; this table's total is the sum of the category rows,
+  and per-category minutes overlap (one cell stopped for two causes is counted
+  under both). Two totals of two different kinds, one above the other, read as
+  a bug — which is exactly why `UnitOjidaniyaModal` names both of its own.
+- **`idle_source.cell_counts` is THE divisor**, for a cells day and a «Смена
+  отчёт» day alike — one function, so the two sources can never be divided by
+  two different things. It is deliberately not `unit_downtime`'s own
+  `cells_with_att` (a sheet day never reaches that function at all), but shares
+  its cell→unit map, its `_counted_hc` predicate and its weight test, so for a
+  cells day the two answers are identical by construction. **A (unit, day) with
+  no counted attendance is ABSENT from it** — that day has no average, and the
+  matrix prints «·», never 0.
+- **`unit_downtime` gained `by_category_sum` / `by_category_ns_sum`** — the same
+  per-category minutes UNWEIGHTED, i.e. the numerator. The weighted pair beside
+  them is what every KPI reads; mixing the two up is the one mistake this
+  feature can make silently.
+- **`_downtime(with_avg=True)`** attaches `by_category_avg`,
+  `by_category_ns_avg` and the divisor `cells_att` to every row. Off by default
+  (`?avg=1`), because the Analysis tab asks for up to 400 days and has no use
+  for it, so every existing caller's payload is byte-identical.
+- **`services/ojidaniya_matrix.build()` owns every roll-up** and is handed
+  `_downtime`'s output — it never queries, exactly as `ojidaniya_deck` is
+  handed the page's own numbers. A category row is the **sum of the brigadir
+  averages** under it (so it scales with how many brigadirs are in scope and is
+  not itself an average); the last row is the **sum of the category rows**, i.e.
+  the whole column. Categories sort by month total, brigadirs by theirs.
+- **A brigadir with nothing at all in a category is COUNTED, never dropped** —
+  the group ends with «yana N brigadirda bu toifada kutish yo'q», on screen and
+  in the workbook.
+- **Blank means ZERO and «·» means NO DIVISOR.** Keeping the zeros blank is what
+  lets the non-zero values read across 31 columns; both glyphs are named in the
+  legend under the table, because neither is guessable.
+- **The ramp is GOLD and carries no threshold.** The 50-daq flag is defined over
+  a unit's whole-day UNION, so it says nothing about a per-category average — a
+  red cell here would be a number pretending to be a verdict. `--brand-rgb` was
+  added to both themes for it (`rgba(var(--brand-rgb), a)`); `_MX_BANDS`
+  (green→red) must NOT be reused for this table. Category rows and brigadir
+  rows get their own ramp DOMAIN: a category row is the sum of the rows under
+  it and always larger, so one shared scale washes every brigadir row out.
+- **Minutes only, one decimal.** The page's min/hrs switch is deliberately not
+  applied — «1 soat 35 daq» cannot be read in a 46px column.
+- **The period is a MONTH**, via `DateRangePicker`'s new `month` mode (a year
+  stepper + a 12-month grid) — the same template with a prop, never a second
+  control; the day-calendar path is untouched by it. It is clamped to today, so
+  a month still running never opens columns for days that have not happened.
+  The tab keeps its OWN month key, so switching views never rewrites the period
+  the other one was read at.
+- **Its own Excel button**, `POST /api/downtime/matrix.xlsx` →
+  `ojidaniya_export.build_matrix_workbook` — the same table, with the brigadirs
+  as a collapsible Excel outline under each category. A SEPARATE file from the
+  five-tab report beside it, because it carries a different measure; two
+  measures in one workbook is how a reader compares two columns that cannot be
+  compared. Logged as `export.ojidaniya_matrix`.
+- Visible to everyone who can open `/downtime` and scoped exactly as the page is
+  (`_downtime` calls `scoped_manager_ids`), so a supervisor sees their own row
+  under each category. The period is capped at `_MATRIX_MAX_DAYS` (62).
+
 ## Automatic proof verification (BOTH shifts, from 13 Aug 2026)
 
 Leader-checklist proof photos are reviewed by Gemini. Since **2026-08-13** that

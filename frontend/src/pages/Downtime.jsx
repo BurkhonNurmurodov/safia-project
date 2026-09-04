@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
-import DateRangePicker from "../components/ui/DateRangePicker";
+import DateRangePicker, { localISO } from "../components/ui/DateRangePicker";
 import StyledSelect from "../components/ui/StyledSelect";
 import DowntimeToggleChart from "../components/charts/DowntimeToggleChart";
 import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
@@ -25,10 +25,12 @@ import { fmtTime, fmtDuration } from "../utils/formatters";
 import { useChartTheme } from "../hooks/useChartTheme";
 import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
+import CategoryMatrix from "../components/idle/CategoryMatrix";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { useAuth } from "../context/AuthContext";
 import { padChartParams } from "../utils/chartRange";
-import { Info, Layers, UserRound, Tag, FileSpreadsheet, Presentation } from "lucide-react";
+import { Info, Layers, UserRound, Tag, FileSpreadsheet, Presentation, Table2 } from "lucide-react";
+import { SectionHead } from "../components/ui/DataTable";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 
 // Downtime-category identity colors — the shared generic-first order, one hue
@@ -74,6 +76,18 @@ export default function Downtime() {
   // cell («тўхтаганда») or it did not («тўхтамаганда»). One fetch carries both
   // halves, so the tab only swaps which fields the whole page reads; filters, the
   // 50-min threshold and the doughnut selection are shared across both.
+  // ── Page VIEW tabs (row 1) — two questions about one register ──────────
+  // «Tahlil» is the page as it was. «Toifalar bo'yicha» is the category ×
+  // date matrix, whose figure is the per-cell average and NOT the weighted
+  // mean charted here (see components/idle/CategoryMatrix). Every filter and
+  // both toggles below narrow BOTH views; only the period control differs,
+  // because a matrix is selected a month at a time.
+  const [view, setView] = usePersistentState("downtime_view", "analysis"); // "analysis" | "percat"
+  const percat = view === "percat";
+  // The matrix keeps its OWN period, so switching views never silently
+  // rewrites the range the other one was read at.
+  const [monthKey, setMonthKey] = usePersistentState(
+    "downtime_month", localISO(new Date()).slice(0, 7));
   const [tab, setTab] = usePersistentState("downtime_tab", "stopped"); // "stopped" | "notStopped"
   const ns = tab === "notStopped";
   // Second axis, orthogonal to the halves above: WHICH categories count.
@@ -150,6 +164,32 @@ export default function Downtime() {
     queryKey: ["downtime", chartParams],
     queryFn: () => api.get("/api/downtime", { params: chartParams }).then((r) => r.data),
     enabled: ready,
+  });
+
+  // ── «Toifalar bo'yicha»: its own month, its own fetch ──────────────────
+  // The month is clamped to today, so a month still running never opens
+  // columns for days that have not happened — a reader would take an empty
+  // future column for "nothing waited".
+  const todayISO = useMemo(() => localISO(new Date()), []);
+  const mFrom = `${monthKey}-01`;
+  const mTo = useMemo(() => {
+    const [y, m] = monthKey.split("-").map(Number);
+    const last = new Date(y, m, 0);
+    const iso = `${y}-${String(m).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`;
+    return iso > todayISO ? todayISO : iso;
+  }, [monthKey, todayISO]);
+  // Same filter set as the page — plant, shift, brigadir — with the period
+  // swapped for the month and the half/scope toggles riding along, so the
+  // matrix can never total an event the page's own narrowings excluded.
+  const matrixParams = useMemo(() => {
+    const { date_from, date_to, ...rest } = fparams;
+    return { ...rest, date_from: mFrom, date_to: mTo,
+             stopped: ns ? 0 : 1, ...(kpiOnly ? { kpi_only: 1 } : {}) };
+  }, [fparams, mFrom, mTo, ns, kpiOnly]);
+  const { data: catMatrix, isLoading: catMatrixLoading } = useQuery({
+    queryKey: ["downtime-matrix", matrixParams],
+    queryFn: () => api.get("/api/downtime/matrix", { params: matrixParams }).then((r) => r.data),
+    enabled: ready && percat,
   });
 
   // Full (period-independent) supervisor list for the inline picker — shares the
@@ -633,6 +673,65 @@ export default function Downtime() {
   // cells filed, and what each category means. What travels from here is the
   // SCOPE and the WORDS — the filter state, names in the viewer's alphabet, the
   // labels, each category's meaning and colour — never a number.
+  // ── «Toifalar bo'yicha» → its own workbook ─────────────────────────────
+  // The tab's own table, formatted. Scope + WORDS go up; every figure is
+  // recomputed by `_downtime` + `ojidaniya_matrix.build`, the same pair the
+  // tab reads, so the file and the screen state one month one way.
+  const onExportMatrix = async () => {
+    setExporting(true);
+    try {
+      const fmtD = (v) => (v ? v.split("-").reverse().join(".") : "");
+      const monthTxt = `${t(`cal.m${Number(monthKey.split("-")[1]) - 1}`)} ${monthKey.split("-")[0]}`;
+      const catMeta = {};
+      CATS.forEach(({ name, code }) => {
+        catMeta[name] = { label: t(`downtime.cat.${code}.label`), color: catColor(name) };
+      });
+      const names = {};
+      allSupervisors.forEach((b) => { names[String(b.manager_id)] = tl(b.name); });
+      const title = t("downtime.mx.xlTitle");
+      const where = await exportXlsx("/api/downtime/matrix.xlsx", {
+        body: {
+          date_from: mFrom, date_to: mTo, shift, manager_id: brigadirIds, factory,
+          stopped: !ns, kpi_only: kpiOnly, names, cat_meta: catMeta,
+          title,
+          subtitle: `${monthTxt} · ${fmtD(mFrom)} — ${fmtD(mTo)}`,
+          filename: `${title} ${monthKey}.xlsx`,
+          caption: `📊 ${title} · ${monthTxt}`,
+          sheets: { matrix: t("downtime.mx.xlSheet") },
+          meta: [
+            { label: t("downtime.xl.period"), value: `${fmtD(mFrom)} — ${fmtD(mTo)}` },
+            ...(factorySection ? [{
+              label: t("downtime.xl.factory"),
+              value: factorySection.active ? factorySection.display : t("factory.all"),
+            }] : []),
+            { label: t("filter.shift"), value: shift ? `S${shift}` : t("filter.all") },
+            { label: t("downtime.xl.view"), value: ns ? t("downtime.tabNotStopped") : t("downtime.tabStopped") },
+            { label: t("downtime.xl.scope"), value: kpiOnly ? t("downtime.scopeZagruzka") : t("downtime.scopeAll") },
+            { label: t("downtime.xl.generated"), value: new Date().toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) },
+          ],
+          labels: {
+            matrix: t("downtime.mx.title"),
+            matrixSub: t("downtime.mx.explain"),
+            catCol: t("downtime.mx.catCol"),
+            total: t("downtime.mx.total"),
+            grandRow: t("downtime.mx.total"),
+            noData: "·",
+            hidden: t("downtime.mx.hidden"),
+          },
+        },
+        fallbackName: "ojidaniya-toifalar.xlsx",
+      });
+      toast.success(t(where === "download" ? "downtime.dt.downloaded" : "downtime.dt.sentToChat"));
+    } catch (e) {
+      const why = e?.response?.data?.detail;
+      toast.error(typeof why === "string" && why
+        ? `${t("downtime.dt.exportFailed")}: ${why}`
+        : t("downtime.dt.exportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const onExport = async () => {
     setExporting(true);
     try {
@@ -795,17 +894,48 @@ export default function Downtime() {
 
   return (
     <Layout title={t("downtime.title")}>
+      {/* ROW 1 — page VIEW tabs. Above the filters because every filter below
+          narrows BOTH views: this switches which question is being asked of
+          one register, not which rows are in it. */}
+      <div className="flex items-center mb-3">
+        <SegmentedToggle
+          asTabs
+          value={view}
+          onChange={setView}
+          options={[
+            ["analysis", t("downtime.viewAnalysis")],
+            ["percat", t("downtime.viewPerCat")],
+          ]}
+        />
+      </div>
+
       {/* ONE-ROW filter bar: period inline; plant / shift / supervisor / category
           live inside the shared FilterPanel and surface as chips when active. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <DateRangePicker
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          setDateFrom={setDateFrom}
-          setDateTo={setDateTo}
-          compactLabel
-          triggerClassName="px-3 py-2 text-sm"
-        />
+        {/* A matrix is read a month at a time, so this view selects a whole
+            month — the SAME template in `month` mode, never a second control.
+            It writes the tab's own month key, so the Analysis period is not
+            rewritten behind the reader's back. */}
+        {percat ? (
+          <DateRangePicker
+            month
+            dateFrom={mFrom}
+            dateTo={mTo}
+            setDateFrom={(iso) => setMonthKey(String(iso).slice(0, 7))}
+            setDateTo={() => {}}
+            max={todayISO}
+            triggerClassName="px-3 py-2 text-sm"
+          />
+        ) : (
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            setDateFrom={setDateFrom}
+            setDateTo={setDateTo}
+            compactLabel
+            triggerClassName="px-3 py-2 text-sm"
+          />
+        )}
         <FilterPanel
           sections={[
             ...(factorySection ? [factorySection] : []),
@@ -865,9 +995,10 @@ export default function Downtime() {
           variant="secondary"
           className="ml-auto"
           loading={exporting}
-          disabled={isLoading || !summary.length}
+          disabled={percat ? (catMatrixLoading || !(catMatrix?.cats || []).length)
+                           : (isLoading || !summary.length)}
           icon={!exporting ? <FileSpreadsheet size={14} /> : null}
-          onClick={onExport}
+          onClick={percat ? onExportMatrix : onExport}
           title={t("downtime.dt.export")}
           aria-label={t("downtime.dt.export")}
         >
@@ -878,7 +1009,7 @@ export default function Downtime() {
             by the toolbar beside it, so it never renders without its confirm:
             pressing «Excel» and pressing this one produce reports about
             different periods and different scopes, and only the dialog says so. */}
-        {isAdmin && (
+        {isAdmin && !percat && (
           <Button
             size="lg"
             variant="secondary"
@@ -921,6 +1052,42 @@ export default function Downtime() {
           {kpiOnly ? t("downtime.scopeZagruzkaSub") : t("downtime.scopeAllSub")}
         </span>
       </div>
+
+      {/* ── «Toifalar bo'yicha»: the matrix, and NOTHING else ────────────────
+          No KPI cards and no charts, deliberately. «Jami ojidaniya» on those
+          cards is the UNION figure; this table's total is the sum of the
+          category rows — per-category minutes overlap, so it is the larger of
+          two different measures. One above the other, they read as a bug. */}
+      {percat ? (
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden mb-6">
+          <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: "var(--border)" }}>
+            <div className="flex items-center gap-3 flex-wrap">
+              <SectionHead icon={Table2} title={t("downtime.mx.title")} />
+              <span className="ml-auto flex items-baseline gap-2">
+                <span className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+                  {t("downtime.mx.grandLabel")}
+                </span>
+                <span className="text-lg font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
+                  {catMatrixLoading ? "—" : `${(catMatrix?.grand ?? 0).toFixed(1)} ${t("general.min")}`}
+                </span>
+              </span>
+            </div>
+            {/* The figure is unusual, so the card states what a cell IS before
+                anybody reads one. */}
+            <p className="mt-2 text-[12px] max-w-[78ch]" style={{ color: "var(--text-3)" }}>
+              {t("downtime.mx.explain")}
+            </p>
+          </div>
+          <CategoryMatrix
+            data={catMatrix}
+            loading={catMatrixLoading}
+            monthLabel={catMatrix?.supervisors
+              ? t("downtime.mx.supCount").replace("{n}", String(catMatrix.supervisors))
+              : ""}
+          />
+        </div>
+      ) : (
+      <>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:gap-4 mb-6">
         {isLoading ? (
@@ -1132,6 +1299,8 @@ export default function Downtime() {
           <EmptyState title={t("downtime.noCatData")} message={t("downtime.noDataMsg")} height="h-32" />
         )}
       </div>
+      </>
+      )}
 
       {showCatGuide && (
         <CategoryLegendModal

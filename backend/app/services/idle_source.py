@@ -237,6 +237,13 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
             a = acc[key] = {
                 "w_total": 0.0, "w_total_all": 0.0, "w_total_ns": 0.0,
                 "w_cat": defaultdict(float), "w_cat_ns": defaultdict(float),
+                # The same per-category minutes UNWEIGHTED — Σ Tᵢ over the
+                # cells, with no headcount in it. The weighted pair above is
+                # what every KPI reads; this one is the numerator of the
+                # per-cell AVERAGE the «Toifalar bo\'yicha» matrix asks for
+                # (Σ T ÷ cells that had people), and the two must never be
+                # mixed up: they answer different questions about one day.
+                "p_cat": defaultdict(float), "p_cat_ns": defaultdict(float),
                 "n_sum": 0.0, "cells_with_att": 0, "cells_with_idle": 0,
             }
         a["n_sum"] += n
@@ -263,6 +270,7 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
         for cat, c in s_all["by_category"].items():
             if c["union_min"]:
                 a["w_cat"][cat] += n * float(c["union_min"])
+                a["p_cat"][cat] += float(c["union_min"])
         # Not-stopped: plain sum of spans per category — they never entered a
         # union, so there is nothing to merge.
         for r in rows:
@@ -271,6 +279,7 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
             mins = idle_intervals.duration(r["start"], r["end"])
             if mins:
                 a["w_cat_ns"][r["category"]] += n * float(mins)
+                a["p_cat_ns"][r["category"]] += float(mins)
                 a["w_total_ns"] += n * float(mins)
 
     out: dict[tuple[int, str], dict] = {}
@@ -286,12 +295,71 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
             "total_ns": round(a["w_total_ns"] / n_sum, 2),
             "by_category_ns": {cat: round(v / n_sum, 2)
                                for cat, v in a["w_cat_ns"].items()},
+            # Unweighted Σ T per category — the matrix's numerator. Divided by
+            # `cell_counts` (never by `cells_with_att` at a call site), so the
+            # denominator has ONE definition on both sources.
+            "by_category_sum": {cat: round(v, 2) for cat, v in a["p_cat"].items()},
+            "by_category_ns_sum": {cat: round(v, 2) for cat, v in a["p_cat_ns"].items()},
             "n_sum": n_sum,
             "cells": cells_per_unit.get(key[0], 0),
             "cells_with_att": a["cells_with_att"],
             "cells_with_idle": a["cells_with_idle"],
         }
     return out
+
+
+def cell_counts(db: Session, manager_ids: Iterable[int],
+                date_from: date, date_to: date) -> dict[tuple[int, str], int]:
+    """THE denominator of the per-cell average: how many of a unit's cells had
+    people standing in them on a given day.
+
+    Returns ``{(manager_id, "YYYY-MM-DD"): count}``; a (unit, day) with no
+    counted attendance in any cell is ABSENT, which is the honest answer — a
+    day with no cells to divide by has no average, not an average of zero.
+
+    Deliberately its own function rather than `unit_downtime`'s own
+    `cells_with_att`: the matrix divides BOTH sources by this, and a
+    «Смена отчёт» day never reaches `unit_downtime` at all. Same cell→unit map
+    and the same `_counted_hc` predicate, and a cell is counted only once its
+    weight is positive, so for a cells day the two answers are identical by
+    construction.
+    """
+    ids = sorted({int(m) for m in manager_ids})
+    if not ids or date_from > date_to:
+        return {}
+
+    cells = db.query(Cell).filter(Cell.manager_id.in_(ids)).all()
+    code_to_cell = {c.verifix_code: c.id for c in cells if c.verifix_code}
+    if not code_to_cell:
+        return {}
+    cell_unit = {c.id: int(c.manager_id) for c in cells}
+
+    # Weight per (cell, day), exactly as unit_downtime accumulates N — a split
+    # worker is a fraction of a person, and a cell is "worked" once the weight
+    # standing in it is above zero.
+    w: dict[tuple[int, str], float] = defaultdict(float)
+    for r in db.query(
+        Attendance.verifix_code, Attendance.date, Attendance.job_title,
+        Attendance.hours_worked, Attendance.is_supervisor,
+        Attendance.worker_name, Attendance.hc_weight,
+    ).filter(
+        Attendance.verifix_code.in_(list(code_to_cell)),
+        Attendance.date >= date_from,
+        Attendance.date <= date_to,
+        Attendance.is_supervisor.is_(False),
+    ).all():
+        cid = code_to_cell.get(r.verifix_code)
+        if cid is None or not _counted_hc(r):
+            continue
+        w[(cid, r.date.isoformat())] += (
+            1.0 if r.hc_weight is None else float(r.hc_weight)
+        )
+
+    out: dict[tuple[int, str], int] = defaultdict(int)
+    for (cid, day), weight in w.items():
+        if weight > 0:
+            out[(cell_unit[cid], day)] += 1
+    return dict(out)
 
 
 def switched_in_range(units: dict[int, date], manager_ids: Iterable[int],

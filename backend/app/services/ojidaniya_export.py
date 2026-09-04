@@ -39,7 +39,7 @@ from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.chart import BarChart, DoughnutChart, LineChart, Reference
 from openpyxl.chart.marker import DataPoint
-from openpyxl.formatting.rule import CellIsRule, DataBarRule, FormulaRule
+from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
@@ -618,6 +618,149 @@ def build_ojidaniya_workbook(p: dict) -> BytesIO:
         ws = _sheet(wb, (p.get("sheets") or {}).get("overview", "Overview"),
                     {c: 13.0 for c in range(2, 14)})
         _banner(ws, 2, 2, 13, p.get("title") or "", p.get("subtitle") or "")
+    wb.properties.title = p.get("title") or "Ojidaniya"
+    wb.properties.creator = "Safia Dashboard"
+    wb.properties.created = datetime.now()
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
+
+
+# ── the «Toifalar bo'yicha» matrix, as its own workbook ──────────────────────
+#
+# A SEPARATE file from the five-tab report next to it, because it carries a
+# different measure: the per-cell average (Σ T ÷ cells that had people), not
+# the headcount-weighted mean every other sheet in this module prints. Two
+# measures in one workbook is how a reader ends up comparing two columns that
+# cannot be compared — see `services/ojidaniya_matrix` for the rule.
+#
+# No traffic light either, and that is deliberate: the 50-min flag is defined
+# over a unit's WHOLE-day union, so it says nothing about a per-category
+# average. The cells carry an INTENSITY ramp in the brand gold instead — more
+# is darker, and nothing on the sheet claims a verdict the figure cannot
+# support. `_MX_BANDS` (green→red) must not be reused here.
+MX_RAMP_LO = "FFFFFF"
+MX_RAMP_MID = "F0DDB8"
+MX_RAMP_HI = "C8973F"
+
+
+def _ramp(ws: Worksheet, ranges: list[str]) -> None:
+    """Gold intensity over a set of ranges — one scale, so every cell in it is
+    comparable with every other. Category rows and brigadir rows get their own
+    call: a category row is the SUM of the rows under it and always larger, so
+    one shared scale would wash every brigadir row out to nothing."""
+    if not ranges:
+        return
+    ws.conditional_formatting.add(" ".join(ranges), ColorScaleRule(
+        start_type="num", start_value=0, start_color=MX_RAMP_LO,
+        mid_type="percentile", mid_value=70, mid_color=MX_RAMP_MID,
+        end_type="max", end_color=MX_RAMP_HI,
+    ))
+
+
+def build_matrix_workbook(p: dict) -> BytesIO:
+    """One sheet: categories down, the month across, brigadirs grouped under
+    each category and collapsible in Excel exactly as they expand on screen."""
+    L = p.get("labels") or {}
+    dates = p.get("dates") or []
+    cats = p.get("cats") or []
+    n = len(dates)
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    C1 = 2
+    ncol = 2 + n                                   # name + dates + total
+    C2 = C1 + ncol - 1
+    widths = {C1: 34.0, C2: 10.5}
+    widths.update({c: 6.6 for c in range(C1 + 1, C2)})
+    ws = _sheet(wb, (p.get("sheets") or {}).get("matrix", "Matritsa"), widths,
+                landscape=True)
+    # The category row is the summary of the group BELOW it, which is the
+    # opposite of Excel's default and the only arrangement that matches the
+    # screen (press the category, its brigadirs appear underneath).
+    ws.sheet_properties.outlinePr.summaryBelow = False
+
+    row = _banner(ws, 2, C1, C2, p.get("title") or "", p.get("subtitle") or "")
+    if p.get("meta"):
+        row = _meta_strip(ws, row, C1, C2, p["meta"])
+    row = _section(ws, row, C1, C2, L.get("matrix", ""), L.get("matrixSub", ""))
+
+    head = [L.get("catCol", "")] + [
+        _iso(d).strftime("%d.%m") if hasattr(_iso(d), "strftime") else d for d in dates
+    ] + [L.get("total", "")]
+    _head_row(ws, row, C1, head, height=26)
+    row += 1
+    first = row                      # freeze everything above this
+
+    nod = L.get("noData", "·")
+    cat_ranges: list[str] = []
+    sup_ranges: list[str] = []
+
+    def _cells(r: int, days: list, *, bg, border, bold: bool, ink: str) -> None:
+        for j in range(n):
+            v = days[j] if j < len(days) else None
+            _block(ws, r, C1 + 1 + j, r, C1 + 1 + j,
+                   nod if v is None else v, fill=bg, border=border, align=CENTER,
+                   fmt=None if v is None else MIN,
+                   font=Font(name=FONT, size=9.5, bold=bold,
+                             color=INK_FAINT if v is None else (ink if v else INK_FAINT)))
+
+    for c in cats:
+        tint = _hex(c.get("color"), SLATE)
+        ws.row_dimensions[row].height = 18
+        bg = _fill(BRAND_SOFT)
+        bd = Border(left=_side(), right=_side(), top=_side(tint, "medium"), bottom=_side())
+        label = c.get("label") or c.get("name") or ""
+        _block(ws, row, C1, row, C1, _xl(label), fill=bg, border=bd,
+               font=Font(name=FONT, size=10, bold=True, color=INK))
+        _cells(row, c.get("days") or [], bg=bg, border=bd, bold=True, ink=INK)
+        _block(ws, row, C2, row, C2, c.get("total") or 0, fill=bg, border=bd,
+               align=RIGHT, fmt=MIN, font=Font(name=FONT, size=10, bold=True, color=INK))
+        cat_ranges.append(
+            f"{get_column_letter(C1 + 1)}{row}:{get_column_letter(C2 - 1)}{row}")
+        row += 1
+
+        for i, sp in enumerate(c.get("sups") or []):
+            ws.row_dimensions[row].height = 15.5
+            ws.row_dimensions[row].outlineLevel = 1
+            sbg = _fill(PANEL if i % 2 == 0 else BAND)
+            _block(ws, row, C1, row, C1, _xl("    " + (sp.get("name") or "")),
+                   fill=sbg, border=BOX, font=Font(name=FONT, size=9.5, color=INK_SOFT))
+            _cells(row, sp.get("days") or [], bg=sbg, border=BOX, bold=False, ink=INK)
+            _block(ws, row, C2, row, C2, sp.get("total") or 0, fill=sbg, border=BOX,
+                   align=RIGHT, fmt=MIN, font=Font(name=FONT, size=9.5, color=INK_SOFT))
+            sup_ranges.append(
+                f"{get_column_letter(C1 + 1)}{row}:{get_column_letter(C2 - 1)}{row}")
+            row += 1
+
+        # A brigadir with nothing in this category is counted, never silently
+        # dropped — the same sentence the tab prints under the group.
+        if c.get("hidden"):
+            ws.row_dimensions[row].height = 14
+            ws.row_dimensions[row].outlineLevel = 1
+            _block(ws, row, C1, row, C2,
+                   (L.get("hidden") or "{n}").replace("{n}", str(c["hidden"])),
+                   fill=_fill(PANEL), border=BOX,
+                   font=Font(name=FONT, size=9, italic=True, color=INK_FAINT))
+            row += 1
+
+    # ── the total row: the sum of the category rows, and it says so ──────────
+    ws.row_dimensions[row].height = 20
+    tb = Border(left=_side(), right=_side(), top=_side(BRAND, "medium"), bottom=_side())
+    bold = Font(name=FONT, size=10.5, bold=True, color=INK)
+    _block(ws, row, C1, row, C1, L.get("grandRow", "Jami"), fill=_fill(BRAND_SOFT),
+           border=tb, font=bold)
+    _cells(row, p.get("col_totals") or [], bg=_fill(BRAND_SOFT), border=tb,
+           bold=True, ink=INK)
+    _block(ws, row, C2, row, C2, p.get("grand") or 0, fill=_fill(BRAND_SOFT),
+           border=tb, align=RIGHT, fmt=MIN,
+           font=Font(name=FONT, size=10.5, bold=True, color=BRAND))
+
+    _ramp(ws, cat_ranges)
+    _ramp(ws, sup_ranges)
+    ws.freeze_panes = ws.cell(row=first, column=C1 + 1)
+
     wb.properties.title = p.get("title") or "Ojidaniya"
     wb.properties.creator = "Safia Dashboard"
     wb.properties.created = datetime.now()

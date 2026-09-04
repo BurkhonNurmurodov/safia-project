@@ -5,7 +5,7 @@ import { useLang } from "../../context/LangContext";
 
 // ── date helpers ──────────────────────────────────────────────────────────────
 
-function localISO(d) {
+export function localISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 function todayISO() { return localISO(new Date()); }
@@ -128,6 +128,11 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max }) {
 export default function DateRangePicker({
   dateFrom, dateTo, setDateFrom, setDateTo,
   single = false,
+  // Whole-month mode: the panel is a year + a 12-month grid, and a pick sets
+  // the range to that whole month (clamped to `max`, so a month in progress
+  // never offers columns for days that have not happened). The day-calendar
+  // path below is untouched by it.
+  month = false,
   max = null,          // ISO upper bound — days after it are muted/unpickable
   weekday = false,     // single mode: prefix the trigger label with the weekday
   compactLabel = false, // show a numeric dd.mm.yy label below sm, verbose above —
@@ -159,7 +164,7 @@ export default function DateRangePicker({
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return null;
     const vw = window.innerWidth, vh = window.innerHeight;
-    const width = Math.min(single ? 440 : 660, vw - 16);
+    const width = Math.min(month ? 320 : single ? 440 : 660, vw - 16);
     let left = rect.right - width;                 // right-align to trigger
     left = Math.min(left, vw - width - 8);
     left = Math.max(8, left);
@@ -246,7 +251,9 @@ export default function DateRangePicker({
     && dateFrom <= ALL_TIME_FROM && dateTo >= allTimeTo(max);
 
   // Trigger label — single mode can lead with the localized weekday
-  const triggerLabel = isAllTime
+  const triggerLabel = month
+    ? (dateFrom ? `${t(`cal.m${selM}`)} ${selY}` : t("filter.selectDates"))
+    : isAllTime
     ? t("filter.allTime")
     : weekday && single && dateFrom
     ? `${t(`cal.d${(new Date(dateFrom + "T00:00:00").getDay() + 6) % 7}`)}, ${fmtRange(dateFrom, dateFrom, t)}`
@@ -264,6 +271,58 @@ export default function DateRangePicker({
     background: active ? "var(--brand)" : "transparent",
     color:      active ? "#fff"         : "var(--text-2)",
   });
+
+  // ── Whole-month mode ──────────────────────────────────────────────────────
+  const mPad = (n) => String(n).padStart(2, "0");
+  const mFirst = (y, m) => `${y}-${mPad(m + 1)}-01`;
+  const mLast  = (y, m) => `${y}-${mPad(m + 1)}-${mPad(new Date(y, m + 1, 0).getDate())}`;
+  const selY = dateFrom ? parseInt(dateFrom.split("-")[0]) : parseInt(todayISO().split("-")[0]);
+  const selM = dateFrom ? parseInt(dateFrom.split("-")[1]) - 1 : parseInt(todayISO().split("-")[1]) - 1;
+  const [navY, setNavY] = useState(selY);
+  useEffect(() => { if (open && month) setNavY(selY); }, [open, month, selY]);
+  const nextYearOk = !max || mFirst(navY + 1, 0) <= max;
+  const pickMonth = (y, m) => {
+    const to = mLast(y, m);
+    setDateFrom(mFirst(y, m));
+    // Clamp so a month still running never opens columns for days that have
+    // not happened — the reader would read them as "nothing waited".
+    setDateTo(max && to > max ? max : to);
+    setOpen(false);
+  };
+  const monthBody = (
+    <div className="p-3">
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => setNavY((y) => y - 1)} aria-label={t("filter.prev")}
+          className="p-1.5 rounded-lg hover:bg-white/10" style={{ color: "var(--text-3)" }}>
+          <ChevronLeft size={16} />
+        </button>
+        <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{navY}</span>
+        <button onClick={() => nextYearOk && setNavY((y) => y + 1)} disabled={!nextYearOk}
+          aria-label={t("filter.next")}
+          className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30" style={{ color: "var(--text-3)" }}>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {Array.from({ length: 12 }, (_, i) => {
+          const off = !!max && mFirst(navY, i) > max;
+          const on  = navY === selY && i === selM;
+          return (
+            <button key={i} onClick={() => !off && pickMonth(navY, i)} disabled={off}
+              aria-pressed={on}
+              className="py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+              style={{
+                background: on ? "var(--brand)" : "var(--bg-inner)",
+                color: on ? "#fff" : "var(--text-2)",
+                border: `1px solid ${on ? "var(--brand)" : "var(--border)"}`,
+              }}>
+              {t(`cal.m${i}`)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   const inputBorder = (active) => `1px solid ${active ? "var(--brand)" : "var(--border-md)"}`;
 
@@ -296,7 +355,31 @@ export default function DateRangePicker({
           the animated `.page-enter` wrapper (its transform makes it the
           containing block for fixed descendants), so the backdrop covered only
           the content region and the sheet landed in the wrong place. ── */}
-      {open && isMobile && createPortal(
+      {open && month && createPortal(
+        isMobile ? (
+          <div ref={popRef} data-popover-portal className="fixed inset-0 z-[300] flex flex-col justify-end"
+            style={{ background: "rgba(0,0,0,0.6)" }}
+            onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+            <div className="rounded-t-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}>
+              <div className="flex items-center justify-between px-4 pt-3 pb-2" style={{ borderBottom: "1px solid var(--border)" }}>
+                <span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("filter.selectMonth")}</span>
+                <button onClick={() => setOpen(false)} style={{ color: "var(--text-3)" }}><X size={18} /></button>
+              </div>
+              {monthBody}
+            </div>
+          </div>
+        ) : (
+          <div ref={popRef} data-popover-portal className="rounded-xl shadow-2xl overflow-hidden"
+            style={{
+              position: "fixed", top: pos?.top ?? 0, left: pos?.left ?? 0,
+              width: pos?.width ?? 320, visibility: pos ? "visible" : "hidden",
+              zIndex: 200, background: "var(--bg-card)", border: "1px solid var(--border-md)",
+            }}>
+            {monthBody}
+          </div>
+        ), document.body)}
+
+      {open && !month && isMobile && createPortal(
         <div ref={popRef} data-popover-portal className="fixed inset-0 z-[300] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={e => { if (e.target===e.currentTarget) setOpen(false); }}>
           <div className="rounded-t-2xl flex flex-col max-h-[90dvh]"
@@ -392,7 +475,7 @@ export default function DateRangePicker({
       )}
 
       {/* ── Desktop: portaled fixed dropdown (escapes parent overflow) ── */}
-      {open && !isMobile && createPortal(
+      {open && !month && !isMobile && createPortal(
         <div ref={popRef} data-popover-portal className="rounded-xl shadow-2xl flex overflow-hidden"
           style={{
             position:"fixed",

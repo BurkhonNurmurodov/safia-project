@@ -17,9 +17,10 @@ from app.models import (Cell, CellOjidaniyaInterval, DowntimeData, Factory, Mana
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services import (action_log, deck_narrative, idle_intervals, idle_source,
-                          ojidaniya_deck, report_week)
+                          ojidaniya_deck, ojidaniya_matrix, report_week)
 from app.xlsx_delivery import PPTX_MIME, deliver_file, deliver_xlsx
-from app.services.ojidaniya_export import build_ojidaniya_workbook
+from app.services.ojidaniya_export import (build_matrix_workbook,
+                                           build_ojidaniya_workbook)
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -42,6 +43,10 @@ def get_downtime(
     # supervisor NAME, so the factory narrows the manager set first and the
     # alias map then resolves only those names (services/factory_scope).
     factory: Optional[int] = Query(default=None),
+    # avg=1: also carry the per-cell average («Toifalar bo'yicha» tab). See
+    # `_downtime`. Additive and off by default, so every existing caller gets
+    # a byte-identical payload.
+    avg: bool = Query(default=False),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime", "daily")),
 ):
@@ -49,15 +54,32 @@ def get_downtime(
         date_to = date.today()
     if not date_from:
         date_from = date_to - timedelta(days=13)
-    return _downtime(db, payload, date_from, date_to, shift, manager_id, kpi_only, factory)
+    return _downtime(db, payload, date_from, date_to, shift, manager_id, kpi_only,
+                     factory, with_avg=avg)
+
+
+# A month is what the tab selects, so the cap only ever catches a hand-typed
+# range — but the payload is a value per (category, brigadir, day) and grows
+# with the cube, so it is capped rather than left to whatever is asked for.
+_MATRIX_MAX_DAYS = 62
 
 
 def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
               shift: Optional[int], manager_id: List[int], kpi_only: bool,
-              factory: Optional[int]) -> dict:
+              factory: Optional[int], with_avg: bool = False) -> dict:
     """The page's own numbers — ONE computation, read by the endpoint above and
     by the workbook export at the bottom of this file, so the file can never
-    state a figure the screen it was pressed on does not."""
+    state a figure the screen it was pressed on does not.
+
+    `with_avg` adds the «Toifalar bo'yicha» tab's own figure to every row:
+    per category, the unit's minutes DIVIDED BY the cells that had people that
+    day (`by_category_avg` / `by_category_ns_avg`, plus the `cells_att` divisor
+    itself). It is a different measure from `by_category` beside it — that one
+    is the headcount-weighted mean every KPI on the platform reads — so the two
+    are never interchangeable and the matrix must not be built from the wrong
+    one. Off by default: the Analysis tab asks for up to 400 days and has no
+    use for it.
+    """
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
     managers = db.query(Manager).filter(Manager.archived.is_(False))
     if shift:
@@ -116,6 +138,11 @@ def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
     switched, lo = idle_source.switched_in_range(
         units, (m.id for m in managers), date_from, date_to)
     derived_days: list[tuple[str, str]] = []      # (manager name, d_str) overridden
+    # (manager name, d_str) → the UNWEIGHTED Σ T per category, i.e. the
+    # numerator of the per-cell average. A day absent here fell through to its
+    # own `by_category`, which is the sheet's whole-unit figure on a «Смена
+    # отчёт» day and zeros on a cells day nobody filed — both correct numerators.
+    derived_sums: dict[tuple[str, str], tuple[dict, dict]] = {}
     if switched:
         derived = idle_source.unit_downtime(db, switched, lo, date_to)
         by_id = {m.id: m for m in managers}
@@ -132,11 +159,16 @@ def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
                     continue
                 cats = dict(row["by_category"])
                 cats_ns = dict(row["by_category_ns"])
+                sums = dict(row.get("by_category_sum") or {})
+                sums_ns = dict(row.get("by_category_ns_sum") or {})
                 total = float(row["total"] if kpi_only else row["total_all"])
                 total_ns = float(row["total_ns"])
                 if kpi_only:
                     cats = {k: v for k, v in cats.items() if k not in OJIDANIYA_ONLY_CATS}
                     cats_ns = {k: v for k, v in cats_ns.items() if k not in OJIDANIYA_ONLY_CATS}
+                    sums = {k: v for k, v in sums.items() if k not in OJIDANIYA_ONLY_CATS}
+                    sums_ns = {k: v for k, v in sums_ns.items()
+                               if k not in OJIDANIYA_ONLY_CATS}
                     # A weighted plain sum is linear, so the not-stopped total
                     # without the Ojidaniya-only categories is exactly the sum
                     # of the remaining ones.
@@ -147,6 +179,7 @@ def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
                 dt_by_cat_ns.setdefault(name, {})[d_str] = cats_ns
                 cat_names_set.update(cats.keys())
                 cat_names_set.update(cats_ns.keys())
+                derived_sums[(name, d_str)] = (sums, sums_ns)
                 derived_days.append((name, d_str))
 
     cat_names = sorted(cat_names_set)
@@ -162,6 +195,12 @@ def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
     # Day-close state — here it decides only whether an unreported day counts as
     # a reported zero (see the loop below), not whether reported data is shown.
     confirmed = confirmed_pairs(db, date_from, date_to, [m.id for m in managers])
+
+    # THE divisor of the per-cell average — one definition for a cells day and
+    # a «Смена отчёт» day alike. Absent for a (unit, day) whose cells carried
+    # nobody, which is what makes such a day read as «no answer» rather than 0.
+    cell_att = (idle_source.cell_counts(db, [m.id for m in managers], date_from, date_to)
+                if with_avg else {})
 
     rows = []
     for mgr in sorted(managers, key=lambda m: m.name or ""):
@@ -203,6 +242,18 @@ def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
                 "flagged_ns": total_ns > 50,
                 "by_category_ns": cats_ns,
             })
+            if with_avg:
+                den = cell_att.get((mgr.id, d_obj.isoformat()), 0)
+                num, num_ns = derived_sums.get((mgr.name, d_str), (cats, cats_ns))
+                rows[-1].update({
+                    "cells_att": den,
+                    "by_category_avg": (
+                        {c: round(float(num.get(c) or 0) / den, 2) for c in cat_names}
+                        if den else None),
+                    "by_category_ns_avg": (
+                        {c: round(float(num_ns.get(c) or 0) / den, 2) for c in cat_names}
+                        if den else None),
+                })
 
     summary: dict[str, dict] = {}
     for r in rows:
@@ -226,6 +277,38 @@ def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
         "rows": rows,
         "summary": sorted(summary.values(), key=lambda x: x["total"], reverse=True),
     }
+
+
+@router.get("/downtime/matrix")
+def get_downtime_matrix(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    shift: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    kpi_only: bool = Query(default=False),
+    # Which half of the report — «тўхтаганда» (default) or «тўхтамаганда».
+    # The matrix mirrors the page: a narrowing the bars applied applies here.
+    stopped: bool = Query(default=True),
+    factory: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """The «Toifalar bo\'yicha» tab: categories down, the month across.
+
+    Scoped exactly as the page is — `_downtime` calls `scoped_manager_ids`, so a
+    viewer who cannot see a unit on the chart cannot total it here either. The
+    figure is the per-cell average and NOT the weighted mean the Analysis tab
+    charts; see `services/ojidaniya_matrix`.
+    """
+    if date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from is after date_to")
+    if (date_to - date_from).days > _MATRIX_MAX_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Period longer than {_MATRIX_MAX_DAYS} days")
+    data = _downtime(db, payload, date_from, date_to, shift, manager_id,
+                     kpi_only, factory, with_avg=True)
+    return ojidaniya_matrix.build(data, stopped=stopped)
 
 
 @router.get("/downtime/seasonality")
@@ -950,6 +1033,97 @@ def get_deck_window(payload: dict = Depends(require_page("downtime", "daily"))):
         "days": (win[1] - win[0]).days + 1,
         "factory": DECK_FACTORY,
     }
+
+
+class MatrixExportBody(BaseModel):
+    """Scope + WORDS. The client sends its filter state and the viewer\'s own
+    labels; every figure is recomputed here through `_downtime` +
+    `ojidaniya_matrix.build`, the same pair the tab reads, so the file and the
+    screen can never disagree about one month."""
+    date_from: str
+    date_to: str
+    shift: Optional[int] = None
+    manager_id: List[int] = []
+    factory: Optional[int] = None
+    stopped: bool = True
+    kpi_only: bool = True
+    names: dict[str, str] = {}          # manager_id → display name (viewer's alphabet)
+    cat_meta: dict[str, dict] = {}      # category → {label, color}
+    labels: dict[str, str] = {}
+    sheets: dict[str, str] = {}
+    meta: List[dict] = []               # [{label, value}] — the scope, in the viewer's words
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    caption: Optional[str] = None
+    filename: Optional[str] = None
+
+
+@router.post("/downtime/matrix.xlsx")
+def export_downtime_matrix(
+    request: Request,
+    body: MatrixExportBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """The «Toifalar bo\'yicha» tab as a workbook — the same table, formatted.
+    A browser session downloads it; inside Telegram it lands in the caller\'s chat."""
+    try:
+        d_from = date.fromisoformat(body.date_from)
+        d_to = date.fromisoformat(body.date_to)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date")
+    if d_from > d_to:
+        raise HTTPException(status_code=400, detail="date_from is after date_to")
+    if (d_to - d_from).days > _MATRIX_MAX_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Period longer than {_MATRIX_MAX_DAYS} days")
+
+    data = _downtime(db, payload, d_from, d_to, body.shift, body.manager_id,
+                     body.kpi_only, body.factory, with_avg=True)
+    mx = ojidaniya_matrix.build(data, stopped=body.stopped)
+
+    def disp(mid, name):
+        return body.names.get(str(mid)) or name or ""
+
+    cats = []
+    for c in mx["cats"]:
+        meta = body.cat_meta.get(c["name"]) or {}
+        lbl = meta.get("label")
+        cats.append({
+            **c,
+            # «Cat I — Oldingi smena ishi tugashini kutish»: the code is the
+            # identity, the words are why anybody would recognise it.
+            "label": f"{c['name']} — {lbl}" if lbl else c["name"],
+            "color": meta.get("color"),
+            "sups": [{**sp, "name": disp(sp["manager_id"], sp["name"])}
+                     for sp in c["sups"]],
+        })
+
+    dates_iso = [datetime.strptime(d, "%d.%m.%Y").date().isoformat()
+                 for d in mx["dates"]]
+    bio = build_matrix_workbook({
+        "title": body.title or "Ojidaniya", "subtitle": body.subtitle or "",
+        "sheets": body.sheets, "labels": body.labels, "meta": body.meta,
+        "dates": dates_iso, "cats": cats,
+        "col_totals": mx["col_totals"], "grand": mx["grand"],
+    })
+    blob = bio.read()
+
+    fname = (body.filename
+             or f"ojidaniya_toifalar_{body.date_from}_{body.date_to}.xlsx"
+             ).replace("/", "-").replace("\\", "-")
+    if not fname.lower().endswith(".xlsx"):
+        fname += ".xlsx"
+    caption = body.caption or f"📊 Ojidaniya · {body.date_from} — {body.date_to}"
+    resp = deliver_xlsx(request, payload, fname, blob, caption)
+    action_log.enrich(
+        target_kind="report", target_id=fname,
+        summary=f"{body.date_from} — {body.date_to}",
+        extra={"rows": len(data.get("rows") or []), "cats": len(cats),
+               "bytes": len(blob)},
+    )
+    return resp
 
 
 class DeckExportBody(BaseModel):
