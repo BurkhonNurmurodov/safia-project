@@ -239,39 +239,6 @@ export default function DateRangePicker({
     setDateFrom(tempFrom); setDateTo(tempTo||tempFrom); setOpen(false);
   }
 
-  // single-date mode only offers single-day quick picks (no ranges);
-  // an upper bound drops presets that reach past it
-  const presets = (single ? getPresets(t, max).filter((p) => p.from === p.to) : getPresets(t, max))
-    .filter((p) => !max || p.to <= max);
-
-  // A range covering everything says so on the trigger: the spelled-out
-  // "1 Jan 2015 – 25 Aug 2026" is the same fact, told in the one form a reader
-  // has to decode before they can tell that nothing is being filtered out.
-  const isAllTime = !single && dateFrom && dateTo
-    && dateFrom <= ALL_TIME_FROM && dateTo >= allTimeTo(max);
-
-  // Trigger label — single mode can lead with the localized weekday
-  const triggerLabel = month
-    ? (dateFrom ? `${t(`cal.m${selM}`)} ${selY}` : t("filter.selectDates"))
-    : isAllTime
-    ? t("filter.allTime")
-    : weekday && single && dateFrom
-    ? `${t(`cal.d${(new Date(dateFrom + "T00:00:00").getDay() + 6) % 7}`)}, ${fmtRange(dateFrom, dateFrom, t)}`
-    : fmtRange(dateFrom, dateTo, t);
-
-  // Numeric fallback for compact toolbars: "16.07.25 – 16.07.26" (dd.mm.yy).
-  const short = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${d}.${m}.${y.slice(2)}`; };
-  const compactRange = isAllTime
-    ? t("filter.allTime")
-    : !dateFrom
-    ? t("filter.selectDates")
-    : (!dateTo || dateFrom === dateTo) ? short(dateFrom) : `${short(dateFrom)} – ${short(dateTo)}`;
-
-  const btnStyle = (active) => ({
-    background: active ? "var(--brand)" : "transparent",
-    color:      active ? "#fff"         : "var(--text-2)",
-  });
-
   // ── Whole-month mode ──────────────────────────────────────────────────────
   const mPad = (n) => String(n).padStart(2, "0");
   const mFirst = (y, m) => `${y}-${mPad(m + 1)}-01`;
@@ -323,6 +290,39 @@ export default function DateRangePicker({
       </div>
     </div>
   );
+
+  // single-date mode only offers single-day quick picks (no ranges);
+  // an upper bound drops presets that reach past it
+  const presets = (single ? getPresets(t, max).filter((p) => p.from === p.to) : getPresets(t, max))
+    .filter((p) => !max || p.to <= max);
+
+  // A range covering everything says so on the trigger: the spelled-out
+  // "1 Jan 2015 – 25 Aug 2026" is the same fact, told in the one form a reader
+  // has to decode before they can tell that nothing is being filtered out.
+  const isAllTime = !single && dateFrom && dateTo
+    && dateFrom <= ALL_TIME_FROM && dateTo >= allTimeTo(max);
+
+  // Trigger label — single mode can lead with the localized weekday
+  const triggerLabel = month
+    ? (dateFrom ? `${t(`cal.m${selM}`)} ${selY}` : t("filter.selectDates"))
+    : isAllTime
+    ? t("filter.allTime")
+    : weekday && single && dateFrom
+    ? `${t(`cal.d${(new Date(dateFrom + "T00:00:00").getDay() + 6) % 7}`)}, ${fmtRange(dateFrom, dateFrom, t)}`
+    : fmtRange(dateFrom, dateTo, t);
+
+  // Numeric fallback for compact toolbars: "16.07.25 – 16.07.26" (dd.mm.yy).
+  const short = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${d}.${m}.${y.slice(2)}`; };
+  const compactRange = isAllTime
+    ? t("filter.allTime")
+    : !dateFrom
+    ? t("filter.selectDates")
+    : (!dateTo || dateFrom === dateTo) ? short(dateFrom) : `${short(dateFrom)} – ${short(dateTo)}`;
+
+  const btnStyle = (active) => ({
+    background: active ? "var(--brand)" : "transparent",
+    color:      active ? "#fff"         : "var(--text-2)",
+  });
 
   const inputBorder = (active) => `1px solid ${active ? "var(--brand)" : "var(--border-md)"}`;
 
