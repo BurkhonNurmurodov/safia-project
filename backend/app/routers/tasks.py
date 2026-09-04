@@ -1,5 +1,12 @@
 """
-Leader tasks ("DAILY протокол") API.
+Leader tasks ("DAILY протокол") API — the brigadir → lider tier.
+
+This board serves ``assignee_kind == "leader"`` rows and NOTHING else. The
+brigadir tier (smena menejeri → brigadir) lives on the same table and is served
+by ``routers/brigadir_tasks.py``; a task is READ wherever a viewer's scope
+reaches it but MUTATED only on the board that owns it, so neither router has to
+reason about the other's rights. The queue engine both share is
+``services/task_board.py`` — never re-spell it here.
 
 Supervisors assign tasks to the leaders of their unit; admins act for any
 leader; leaders work their own queue. Access is gated by the ``tasks`` page in
@@ -37,8 +44,7 @@ from app.models import (
 )
 from app.capabilities import page_scope_is_all
 from app.permissions import require_page
-from app.services import action_log
-from app.routers.auth import ADMIN_ROLE_REF
+from app.services import action_log, task_board as tb
 # Shared notification helpers: _notify writes a single bell row; notify_profile
 # addresses the PERSON — one bell row on the profile plus a DM to every account
 # holding it, so co-holders and successors are never silently skipped.
@@ -46,12 +52,8 @@ from app.routers.staff import _notify, notify_profile
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
-VALID_STATUSES = {"todo", "doing", "done"}
-
-
-def _snippet(text: str, n: int = 140) -> str:
-    text = (text or "").strip()
-    return text if len(text) <= n else text[: n - 1] + "…"
+VALID_STATUSES = tb.VALID_STATUSES
+_snippet = tb.snippet
 
 
 def _serialize(t: LeaderTask, comment_count: int, payload: dict,
@@ -109,6 +111,11 @@ def _get_visible_task(task_id: int, payload: dict, db: Session) -> LeaderTask:
     t = db.query(LeaderTask).filter(LeaderTask.id == task_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
+    if tb.kind_of(t) != tb.KIND_LEADER:
+        # Belongs to /brigadir-tasks. 404 rather than 403: on THIS board the row
+        # does not exist, and saying "forbidden" would confirm an id to somebody
+        # who has no business enumerating the other tier.
+        raise HTTPException(status_code=404, detail="Task not found")
     role = payload.get("role")
     # Matches the list: a "see all" page grant makes every task readable. The
     # _assert_can_* guards below still gate every mutation.
@@ -158,33 +165,15 @@ def _assert_can_comment(db: Session, payload: dict, t: LeaderTask):
 # shared by all their logins. Keying it to a registration gave one person as
 # many independent queues as they had accounts, each with its own "priority 1".
 
-def _owned_by(t: LeaderTask):
-    """Filter matching every task of the same leader as ``t`` — by profile when
-    it has one, else by the legacy registration key."""
-    if t.leader_profile_id is not None:
-        return LeaderTask.leader_profile_id == t.leader_profile_id
-    return and_(LeaderTask.leader_profile_id.is_(None),
-                LeaderTask.leader_role_ref == t.leader_role_ref)
+_owned_by = tb.owner_filter
+_active_tasks = tb.active_tasks
+_close_ranks_behind = tb.close_ranks_behind
 
 
 def _lock_leader_queue(db: Session, profile_id: Optional[int]):
     """Serialise a leader's priority mutations by locking their PROFILE row —
     the one object all their registrations share."""
-    if profile_id is not None:
-        db.query(RoleProfile).filter(RoleProfile.id == profile_id).with_for_update().first()
-
-
-def _active_tasks(db: Session, owner):
-    return db.query(LeaderTask).filter(owner, LeaderTask.status != "done")
-
-
-def _close_ranks_behind(db: Session, owner, gone_priority: Optional[int]):
-    """After a task leaves the active queue at ``gone_priority``, pull every
-    task behind it one position forward."""
-    if gone_priority is None:
-        return
-    for row in _active_tasks(db, owner).filter(LeaderTask.priority > gone_priority).all():
-        row.priority = row.priority - 1
+    tb.lock_queue(db, kind=tb.KIND_LEADER, leader_profile_id=profile_id)
 
 
 # ── list + picker ─────────────────────────────────────────────────────────────
@@ -202,7 +191,10 @@ def list_tasks(
     # not touch the reported `role` / `can_create`: what this person may create
     # or edit is still their role's business, decided per row further down.
     sees_all = page_scope_is_all(db, payload, "tasks")
-    q = db.query(LeaderTask)
+    # The leader tier only. A brigadir task carries the same unit id, so without
+    # this a supervisor's own board would silently absorb the tasks their shift
+    # manager set them — rows this page can neither name nor reorder.
+    q = db.query(LeaderTask).filter(LeaderTask.assignee_kind == tb.KIND_LEADER)
     if role == "supervisor" and not sees_all:
         q = q.filter(LeaderTask.supervisor_manager_id == payload.get("role_id"))
     elif role == "leader" and not sees_all:
@@ -336,10 +328,11 @@ def create_task(
 
     mgr = db.query(Manager).filter(Manager.id == prof.manager_id).first()
     sub = int(payload["sub"])
-    owner = LeaderTask.leader_profile_id == prof.id
+    owner = tb.leader_owner_filter(prof.id)
 
     _lock_leader_queue(db, prof.id)
     t = LeaderTask(
+        assignee_kind=tb.KIND_LEADER,
         leader_profile_id=prof.id,
         leader_name=prof.name,
         supervisor_manager_id=prof.manager_id,
@@ -547,20 +540,7 @@ def set_priority(
         raise HTTPException(status_code=400, detail=f"Priority must be between 1 and {n}")
 
     if new_p != old_p:
-        if body.mode == "swap":
-            other = _active_tasks(db, owner).filter(LeaderTask.priority == new_p).first()
-            if other:
-                other.priority = old_p
-        else:
-            # Re-insert at new_p: the span between old and new shifts by one.
-            span = _active_tasks(db, owner)
-            if new_p > old_p:
-                for row in span.filter(LeaderTask.priority > old_p, LeaderTask.priority <= new_p).all():
-                    row.priority = row.priority - 1
-            else:
-                for row in span.filter(LeaderTask.priority >= new_p, LeaderTask.priority < old_p).all():
-                    row.priority = row.priority + 1
-        t.priority = new_p
+        tb.reinsert(db, owner, t, new_p, body.mode)
         db.commit()
         db.refresh(t)
 
@@ -578,41 +558,9 @@ def set_priority(
 
 # ── comments ──────────────────────────────────────────────────────────────────
 
-def _profile_ref(payload: dict) -> Optional[int]:
-    """Stable id of the acting profile: telegram_user_roles.id of the active
-    role, or the admin sentinel (admin JWTs carry role_ref=None)."""
-    return ADMIN_ROLE_REF if payload.get("role") == "admin" else payload.get("role_ref")
-
-
-def _is_comment_author(c: LeaderTaskComment, payload: dict, db: Session) -> bool:
-    """Ownership is per-PROFILE, not per-account: the profile wrote it, so any
-    account working as that profile may edit or delete it — including a
-    successor after a handover — while the same account switched into a
-    different profile may not. Rows predating author_profile fall back to the
-    old (account + role row) pair."""
-    if c.author_profile:
-        return identity.same_profile(c.author_profile,
-                                     identity.viewer_profile_key(db, payload))
-    if c.author_telegram_id != int(payload["sub"]):
-        return False
-    return c.author_role_ref is None or c.author_role_ref == _profile_ref(payload)
-
-
-def _serialize_comment(c: LeaderTaskComment, payload: dict, db: Session) -> dict:
-    return {
-        "id": c.id,
-        "task_id": c.task_id,
-        "author_telegram_id": c.author_telegram_id,
-        "author_role_ref": c.author_role_ref,
-        "author_profile": c.author_profile,
-        "author_name": c.author_name,
-        "text": c.text,
-        "created_at": c.created_at.isoformat() if c.created_at else None,
-        "edited_at": c.edited_at.isoformat() if c.edited_at else None,
-        # Edit/delete rights of the CALLER, resolved server-side so the client
-        # never has to re-derive the profile-ownership rule.
-        "is_own": _is_comment_author(c, payload, db),
-    }
+_profile_ref = tb.profile_ref
+_is_comment_author = tb.is_comment_author
+_serialize_comment = tb.serialize_comment
 
 
 class CommentIn(BaseModel):

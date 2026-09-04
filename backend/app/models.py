@@ -2540,6 +2540,16 @@ class LeaderTask(Base):
     __tablename__ = "leader_tasks"
 
     id                    = Column(Integer, primary_key=True, autoincrement=True)
+    # WHICH TIER this task belongs to — the one field that says who the assignee
+    # column is. "leader" (every row that predates the column, hence the server
+    # default): the assignee is ``leader_profile_id`` and ``supervisor_manager_id``
+    # is merely their unit — the /tasks board, brigadir → lider. "supervisor":
+    # the assignee IS ``supervisor_manager_id`` (the brigadir's own unit),
+    # ``leader_profile_id`` is NULL, and ``leader_name`` carries the brigadir's
+    # name snapshot — the /brigadir-tasks board, smena menejeri → brigadir.
+    # A row is READ on both boards where the scope reaches it, but MUTATED only
+    # on its own: one task, one board that owns it.
+    assignee_kind         = Column(String, nullable=False, server_default="leader", index=True)
     # OWNERSHIP KEY: the assigned leader PROFILE (role_profiles.id). The profile
     # is the person — every account holding it sees and works the same queue,
     # and the task survives an unassign→re-claim (role rows churn, profiles do

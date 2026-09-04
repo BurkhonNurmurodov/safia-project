@@ -85,6 +85,7 @@ try:
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
         add_task_comment_author_ref, add_concern_comment_kind_column,
+        add_task_assignee_kind_column,
         migrate_concern_solutions_to_thread,
         add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns,
@@ -169,6 +170,7 @@ try:
     add_concern_owner_columns()
     add_task_comment_author_ref()
     add_concern_comment_kind_column()
+    add_task_assignee_kind_column()
     migrate_concern_solutions_to_thread()
     add_leader_submission_columns()
     add_broadcast_rich_columns()

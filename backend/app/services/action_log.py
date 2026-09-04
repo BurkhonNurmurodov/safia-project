@@ -292,6 +292,17 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/tasks",                                "collab", "task.created"),
     (("PUT",),    "/api/tasks/{}",                             "collab", "task.edited"),
     (("DELETE",), "/api/tasks/{}",                             "collab", "task.deleted"),
+    # Brigadir tasks — the same board one tier up (shift manager → brigadir).
+    # Distinct action keys so the register can tell which tier a change was on;
+    # the "{}/comments/{}" shapes must stay ABOVE the "{}" ones, first match wins.
+    (("PATCH",),  "/api/brigadir-tasks/{}/status",             "collab", "btask.status_changed"),
+    (("PATCH",),  "/api/brigadir-tasks/{}/priority",           "collab", "btask.priority_changed"),
+    (("POST",),   "/api/brigadir-tasks/{}/comments",           "collab", "btask.comment_added"),
+    (("PUT",),    "/api/brigadir-tasks/{}/comments/{}",        "collab", "btask.comment_edited"),
+    (("DELETE",), "/api/brigadir-tasks/{}/comments/{}",        "collab", "btask.comment_deleted"),
+    (("POST",),   "/api/brigadir-tasks",                       "collab", "btask.created"),
+    (("PUT",),    "/api/brigadir-tasks/{}",                    "collab", "btask.edited"),
+    (("DELETE",), "/api/brigadir-tasks/{}",                    "collab", "btask.deleted"),
     (("POST",),   "/api/comments",                             "collab", "comment.added"),
     (("PUT",),    "/api/comments/{}",                          "collab", "comment.edited"),
     (("DELETE",), "/api/comments/{}",                          "collab", "comment.deleted"),

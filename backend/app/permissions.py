@@ -40,7 +40,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "brigadir-tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -88,6 +88,12 @@ DEFAULT_PAGE_ACCESS = {
     # Leader tasks ("DAILY протокол") board. Supervisors assign tasks to their
     # leaders; leaders work their own queue; admins see everything.
     "tasks": ["supervisor", "leader"],
+    # Brigadir tasks board — the same assignment flow one tier up: shift
+    # managers set tasks for the brigadirs of their shift (∩ their plant, per
+    # services/shift_scope), brigadirs work their own queue. Shift managers also
+    # read the leader tasks inside their units here, without being able to touch
+    # them — those are governed on /tasks by the unit's own brigadir.
+    "brigadir-tasks": ["shift-manager", "supervisor"],
     # Users-activity & usage statistics (who's active, time-in-app, contribution
     # calendar). Admin-only by default; open up roles from the Access tab.
     "activity": [],

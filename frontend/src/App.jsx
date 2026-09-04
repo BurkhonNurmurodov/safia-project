@@ -95,6 +95,7 @@ const Quality = lazyWithReload(() => import("./pages/Quality"));
 const WorkerConcerns = lazyWithReload(() => import("./pages/WorkerConcerns"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
 const Tasks = lazyWithReload(() => import("./pages/Tasks"));
+const BrigadirTasks = lazyWithReload(() => import("./pages/BrigadirTasks"));
 const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
 const SetupTimes = lazyWithReload(() => import("./pages/SetupTimes"));
 const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
@@ -476,6 +477,7 @@ function AppWithLang() {
             <Route path="/concerns" element={<AuthGate><RequirePage page="concerns"><Concerns /></RequirePage></AuthGate>} />
             <Route path="/worker-concerns" element={<AuthGate><RequirePage page="worker-concerns"><WorkerConcerns /></RequirePage></AuthGate>} />
             <Route path="/tasks" element={<AuthGate><RequirePage page="tasks"><Tasks /></RequirePage></AuthGate>} />
+            <Route path="/brigadir-tasks" element={<AuthGate><RequirePage page="brigadir-tasks"><BrigadirTasks /></RequirePage></AuthGate>} />
             <Route path="/activity" element={<AuthGate><RequirePage page="activity"><UsersActivity /></RequirePage></AuthGate>} />
             <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />
             <Route path="/idle-cell" element={<AuthGate><RequirePage page="idle-cell"><IdleCell /></RequirePage></AuthGate>} />

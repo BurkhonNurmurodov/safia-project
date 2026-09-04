@@ -266,6 +266,34 @@ def add_task_comment_author_ref() -> None:
         db.close()
 
 
+def add_task_assignee_kind_column() -> None:
+    """Add assignee_kind to leader_tasks (idempotent).
+
+    "leader" is the DEFAULT and every pre-existing row is one by construction:
+    before the column existed a task could only ever be a brigadir → lider
+    assignment. So nothing is migrated and nothing moves — the /tasks board
+    reads exactly the rows it always read. "supervisor" is the new tier
+    (smena menejeri → brigadir), written only by routers/brigadir_tasks.py.
+    NOT NULL with a server default, so a row inserted by a process that has not
+    seen the column still lands on the honest value."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_tasks ADD COLUMN IF NOT EXISTS "
+            "assignee_kind VARCHAR NOT NULL DEFAULT 'leader'"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_leader_tasks_assignee_kind "
+            "ON leader_tasks (assignee_kind)"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader_tasks assignee_kind migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_comment_kind_column() -> None:
     """Add kind to leader_concern_comments (idempotent). NULL is an ordinary
     message; "resolution" is the mandatory note written when the concern was

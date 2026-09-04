@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
         add_task_comment_author_ref, add_concern_comment_kind_column,
+        add_task_assignee_kind_column,
         migrate_concern_solutions_to_thread,
         add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns,
@@ -165,6 +166,7 @@ async def lifespan(app: FastAPI):
     add_concern_owner_columns()
     add_task_comment_author_ref()
     add_concern_comment_kind_column()
+    add_task_assignee_kind_column()
     migrate_concern_solutions_to_thread()
     add_leader_submission_columns()
     add_broadcast_rich_columns()
@@ -554,6 +556,7 @@ app.include_router(kaizen.router)
 app.include_router(activity.router)
 app.include_router(concerns.router)
 app.include_router(tasks.router)
+app.include_router(brigadir_tasks.router)
 app.include_router(profiles.router)
 app.include_router(leaderboard.router)
 app.include_router(quality.router)

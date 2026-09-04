@@ -1,0 +1,830 @@
+/**
+ * /brigadir-tasks — the smena menejeri → brigadir board.
+ *
+ * The same board as /tasks one tier up the org chart, and deliberately the same
+ * controls: the queue pill, the two-step priority editor and the comment thread
+ * are imported, not re-drawn (components/ui/TaskQueue.jsx, CommentsModal.jsx).
+ *
+ * TWO TABS OVER ONE PAYLOAD. «Brigadirlarga» is this board's own work — the
+ * tasks a shift manager sets; «Liderlarga» is the rest of the cascade inside
+ * the same units, READ-ONLY, because a leader task is governed on /tasks by
+ * that unit's own brigadir. Every filter narrows both, exactly as ARC's two
+ * tabs read one filtered set.
+ *
+ * RIGHTS ARE PER ROW AND COME FROM THE SERVER (`can_edit` / `can_status` /
+ * `can_reorder` / `can_comment`). /tasks can derive them from the viewer's role
+ * because its board is homogeneous; this one is not — it mixes rows the viewer
+ * governs with rows they may only read — so deriving them here would draw
+ * controls the endpoints then refuse.
+ */
+import { useState, useMemo, useEffect, Fragment } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import ReactApexChart from "react-apexcharts";
+import {
+  Plus, Pencil, Trash2, AlertTriangle, ClipboardList, MessageSquare,
+  CalendarClock, UserCheck, ShieldCheck, FileText, CircleDot, Hash,
+  TrendingUp, PieChart, Layers, Lock,
+} from "lucide-react";
+import Layout from "../components/layout/Layout";
+import StyledSelect from "../components/ui/StyledSelect";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
+import DateRangePicker from "../components/ui/DateRangePicker";
+import Modal from "../components/ui/Modal";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import Button from "../components/ui/Button";
+import Field from "../components/ui/FormField";
+import SearchInput from "../components/ui/SearchInput";
+import TableCard, { Th } from "../components/ui/DataTable";
+import {
+  STATUSES, STATUS_COLOR, CHART_BRAND, CHART_TODO, CHART_OVERDUE,
+  StatusSelect, PrioritySelect, ActionBtn,
+} from "../components/ui/TaskQueue";
+import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
+import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
+import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
+import api from "../utils/api";
+import { useLang } from "../context/LangContext";
+import { useTranslit } from "../utils/transliterate";
+import { useChartTheme } from "../hooks/useChartTheme";
+import { usePersistentState } from "../hooks/usePersistentState";
+import { padChartFrom } from "../utils/chartRange";
+
+const KIND_SUP = "supervisor";
+const KIND_LEADER = "leader";
+
+// Localized ISO-date formatter (same as Tasks/Concerns/Leaders).
+const MONTHS = {
+  en:      ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+  ru:      ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"],
+  uz:      ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"],
+  uz_cyrl: ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"],
+};
+const fmtDate = (iso, lang) => {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).split(/[T ]/)[0].split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const mn = (MONTHS[lang] || MONTHS.uz)[m - 1];
+  if (lang === "en" || lang === "ru") return `${d} ${mn} ${y}`;
+  return `${d}-${mn}, ${y}`;
+};
+const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const localTodayIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+const isoMinusDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
+// The queue a row belongs to. A brigadir queue and a leader queue can both hold
+// a "priority 1" inside ONE unit — they are two different people's lists — so
+// the active-count that drives the priority editor must be keyed by ASSIGNEE,
+// never by unit.
+const queueKey = (r) =>
+  r.assignee_kind === KIND_SUP ? `s${r.supervisor_manager_id}` : `l${r.leader_profile_id}`;
+
+const emptyForm = () => ({
+  id: null,
+  supervisor_manager_id: null,
+  assignee_name: "",
+  task_text: "",
+  due_date: "",
+  comment: "",
+});
+
+export default function BrigadirTasks() {
+  const { t, lang } = useLang();
+  const { tl } = useTranslit();
+  const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
+  const qc = useQueryClient();
+
+  const statusLabel = (s) => t(`tasks.status.${s}`);
+
+  const [tab, setTab] = usePersistentState("btasks_tab", KIND_SUP);
+  const [startDate, setStartDate] = usePersistentState("btasks_date_from", () => isoMinusDays(localTodayIso(), 6));
+  const [endDate, setEndDate] = usePersistentState("btasks_date_to", () => localTodayIso());
+  const [fShift, setFShift] = usePersistentState("btasks_shift", null);      // null = both shifts
+  const [fSup, setFSup] = usePersistentState("btasks_brigadir", "All");
+  const [search, setSearch] = usePersistentState("btasks_search", "");
+  const [statusSel, setStatusSel] = usePersistentState("btasks_status_sel", []);
+  const [sort, setSort] = usePersistentState("btasks_sort", { key: "priority", dir: "asc" });
+
+  const [expandedId, setExpandedId] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm());
+  const [formError, setFormError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [commentsTask, setCommentsTask] = useState(null);
+
+  // Both tiers of the viewer's units in one payload; the tab picks which half is
+  // on screen. The backend scopes by shift ∩ plant (services/shift_scope).
+  const { data: listResp, isLoading } = useQuery({
+    queryKey: ["brigadir-tasks"],
+    queryFn: () => api.get("/api/brigadir-tasks").then((r) => r.data),
+  });
+  const allRows = listResp?.data || [];
+  const canCreate = !!listResp?.can_create;
+
+  // Create-form picker source — the units this viewer may actually run, so the
+  // list offered and what the endpoint accepts are one set.
+  const { data: brigadirs = [] } = useQuery({
+    queryKey: ["btask-brigadirs"],
+    queryFn: () => api.get("/api/brigadir-tasks/brigadirs").then((r) => r.data),
+    enabled: canCreate,
+  });
+
+  // Hold charts back until the grid has its final width (same fix as Kaizen).
+  const [chartsReady, setChartsReady] = useState(false);
+  useEffect(() => {
+    if (isLoading) return undefined;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setChartsReady(true));
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+  }, [isLoading]);
+
+  const onLeaderTab = tab === KIND_LEADER;
+  const rows = useMemo(() => allRows.filter((r) => r.assignee_kind === tab), [allRows, tab]);
+
+  // Active-queue size per ASSIGNEE — drives the priority editor's option list.
+  // Counted over ALL rows, not the filtered ones: the queue is 1..N whatever the
+  // page happens to be showing, and offering a shorter list would let somebody
+  // move a task to a position the backend then rejects.
+  const activeCounts = useMemo(() => {
+    const m = new Map();
+    for (const r of allRows) {
+      if (r.status === "done") continue;
+      const k = queueKey(r);
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+    return m;
+  }, [allRows]);
+
+  // Brigadir options follow the shift, and are built from BOTH tabs' rows so the
+  // filter does not change its own option list when the tab flips.
+  const supOptions = useMemo(() => {
+    const m = new Map();
+    for (const r of allRows) {
+      if (r.supervisor_manager_id == null) continue;
+      if (fShift != null && r.supervisor_shift !== fShift) continue;
+      if (!m.has(r.supervisor_manager_id)) m.set(r.supervisor_manager_id, r.supervisor_name || "—");
+    }
+    return [...m.entries()]
+      .map(([id, name]) => ({ value: String(id), label: tl(name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allRows, fShift, tl]);
+
+  const createdDay = (r) => (r.created_at || "").slice(0, 10);
+
+  const inScope = (r, from) => {
+    const day = createdDay(r);
+    if (from && !(day && day >= from)) return false;
+    if (endDate && !(day && day <= endDate)) return false;
+    if (fShift != null && r.supervisor_shift !== fShift) return false;
+    if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) return false;
+    return true;
+  };
+
+  const scoped = useMemo(() => rows.filter((r) => inScope(r, startDate)),
+    [rows, startDate, endDate, fShift, fSup]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trend-chart scope: same filters with the period start pulled back so the
+  // chart never spans fewer than 7 days. KPIs, donut and table keep the period.
+  const chartStart = padChartFrom(startDate, endDate);
+  const chartScoped = useMemo(() => {
+    if (chartStart === startDate) return scoped;
+    return rows.filter((r) => inScope(r, chartStart));
+  }, [rows, scoped, chartStart, startDate, endDate, fShift, fSup]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tableFilterPred = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (r) => {
+      if (statusSel.length && !statusSel.includes(r.status)) return false;
+      if (q) {
+        const hit =
+          (r.task_text || "").toLowerCase().includes(q) ||
+          (r.assignee_name || "").toLowerCase().includes(q) ||
+          (r.supervisor_name || "").toLowerCase().includes(q) ||
+          (r.created_by_name || "").toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    };
+  }, [search, statusSel]);
+
+  const filtered = useMemo(() => scoped.filter(tableFilterPred), [scoped, tableFilterPred]);
+  const chartFiltered = useMemo(
+    () => (chartScoped === scoped ? null : chartScoped.filter(tableFilterPred)),
+    [chartScoped, scoped, tableFilterPred]);
+
+  const today = localTodayIso();
+  const isOverdue = (r) => r.status !== "done" && r.due_date && r.due_date < today;
+
+  const stats = useMemo(() => {
+    let done = 0, doing = 0, todo = 0, overdue = 0;
+    for (const r of filtered) {
+      if (r.status === "done") done += 1;
+      else if (isOverdue(r)) overdue += 1;
+      else if (r.status === "doing") doing += 1;
+      else todo += 1;
+    }
+
+    const trendRows = chartFiltered ?? filtered;
+    const opened = new Map(), closed = new Map();
+    let trendOpen = 0;
+    for (const r of trendRows) {
+      if (r.status !== "done") trendOpen += 1;
+      const day = createdDay(r);
+      if (!day) continue;
+      opened.set(day, (opened.get(day) || 0) + 1);
+      if (r.status === "done") {
+        const closeIso = (r.completed_at || "").slice(0, 10);
+        const eff = closeIso && closeIso >= day ? closeIso : day;
+        closed.set(eff, (closed.get(eff) || 0) + 1);
+      }
+    }
+
+    const dayKeys = [...opened.keys(), ...closed.keys()].sort();
+    const trend = [];
+    let maxOpen = 0;
+    if (dayKeys.length) {
+      let firstIso = dayKeys[0];
+      if (chartStart && chartStart < firstIso) firstIso = chartStart;
+      let lastIso = dayKeys[dayKeys.length - 1];
+      if (trendOpen > 0 && lastIso < today) lastIso = today;
+      if (endDate && endDate > lastIso) lastIso = endDate;
+      const end = new Date(lastIso + "T00:00:00");
+      let run = 0;
+      for (const d = new Date(firstIso + "T00:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
+        const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+        run += (opened.get(iso) || 0) - (closed.get(iso) || 0);
+        const open = Math.max(0, run);
+        if (open > maxOpen) maxOpen = open;
+        trend.push({ day: iso, open });
+      }
+    }
+    const total = filtered.length;
+    return { done, doing, todo, overdue, total, trend, maxOpen };
+  }, [filtered, chartFiltered, chartStart, endDate, today]);
+
+  // ── column sort (asc → desc → off). Done tasks always sit below the active
+  // queue; sorting applies within each group.
+  const onSort = (k) => setSort((s) =>
+    s.key !== k ? { key: k, dir: "asc" }
+      : s.dir === "asc" ? { key: k, dir: "desc" }
+      : { key: null, dir: "asc" });
+
+  const sorted = useMemo(() => {
+    const active = filtered.filter((r) => r.status !== "done");
+    const done = filtered.filter((r) => r.status === "done");
+
+    if (!sort.key) {
+      active.sort((a, b) =>
+        tl(a.assignee_name || "").localeCompare(tl(b.assignee_name || "")) || (a.priority || 0) - (b.priority || 0));
+      done.sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || ""));
+      return [...active, ...done];
+    }
+
+    const val = (r) => {
+      switch (sort.key) {
+        case "task":       return tl(r.task_text || "");
+        case "priority":   return r.priority ?? Infinity;
+        case "brigadir":   return tl(r.supervisor_name || "");
+        case "assignee":   return tl(r.assignee_name || "");
+        case "status":     return STATUSES.indexOf(r.status);
+        case "due":        return r.due_date || "";
+        case "comments":   return r.comment_count || 0;
+        default:           return "";
+      }
+    };
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const cmp = (a, b) => {
+      const va = val(a), vb = val(b);
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
+    };
+    active.sort(cmp);
+    done.sort(cmp);
+    return [...active, ...done];
+  }, [filtered, sort, tl]);
+
+  // ── mutations ────────────────────────────────────────────────────────────
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["brigadir-tasks"] });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      form.id
+        ? api.put(`/api/brigadir-tasks/${form.id}`, { task_text: form.task_text.trim(), due_date: form.due_date }).then((r) => r.data)
+        : api.post("/api/brigadir-tasks", {
+            task_text: form.task_text.trim(),
+            supervisor_manager_id: form.supervisor_manager_id,
+            due_date: form.due_date,
+            comment: form.comment.trim() || null,
+          }).then((r) => r.data),
+    onSuccess: () => { invalidate(); closeModal(); },
+    onError: (e) => setFormError(e?.response?.data?.detail || t("tasks.saveError")),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/api/brigadir-tasks/${id}`),
+    onSuccess: () => { invalidate(); setConfirmDelete(null); setExpandedId(null); },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }) => api.patch(`/api/brigadir-tasks/${id}/status`, { status }).then((r) => r.data),
+    onSuccess: invalidate,
+  });
+  const savingStatusId = statusMutation.isPending ? statusMutation.variables?.id : null;
+
+  const priorityMutation = useMutation({
+    mutationFn: ({ id, priority, mode }) => api.patch(`/api/brigadir-tasks/${id}/priority`, { priority, mode }).then((r) => r.data),
+    onSuccess: invalidate,
+  });
+  const savingPriorityId = priorityMutation.isPending ? priorityMutation.variables?.id : null;
+
+  // ── modal helpers ─────────────────────────────────────────────────────────
+  function openCreate() {
+    setForm({ ...emptyForm(), supervisor_manager_id: fSup !== "All" ? Number(fSup) : null });
+    setFormError("");
+    setModalOpen(true);
+  }
+  function openEdit(r) {
+    setForm({
+      id: r.id,
+      supervisor_manager_id: r.supervisor_manager_id,
+      assignee_name: r.assignee_name || "",
+      task_text: r.task_text || "",
+      due_date: r.due_date || "",
+      comment: "",
+    });
+    setFormError("");
+    setModalOpen(true);
+  }
+  function closeModal() {
+    setModalOpen(false);
+    setForm(emptyForm());
+    setFormError("");
+  }
+  function submit() {
+    if (!form.id && !form.supervisor_manager_id) return setFormError(t("btasks.pickBrigadir"));
+    if (!form.task_text.trim()) return setFormError(t("tasks.textRequired"));
+    if (!form.due_date) return setFormError(t("tasks.dueRequired"));
+    saveMutation.mutate();
+  }
+
+  const brigadirOptions = brigadirs.map((b) => ({
+    value: String(b.supervisor_manager_id),
+    label: b.shift ? `${tl(b.name)} · S${b.shift}` : tl(b.name),
+  }));
+
+  // ── one consolidated filter zone ───────────────────────────────────────────
+  // Every section narrows BOTH tabs, so the counts under the tab strip always
+  // describe the rows on screen.
+  const filterSections = [
+    {
+      key: "shift", icon: Layers, label: t("filter.shift"),
+      active: fShift != null,
+      display: fShift != null ? `S${fShift}` : "",
+      onClear: () => { setFShift(null); setFSup("All"); },
+      render: () => (
+        <SegmentedToggle
+          fill
+          value={fShift}
+          onChange={(v) => { setFShift(v); setFSup("All"); }}
+          options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+        />
+      ),
+    },
+    {
+      key: "brigadir", icon: ShieldCheck, label: t("btasks.colBrigadir"),
+      active: fSup !== "All",
+      display: fSup !== "All" ? (supOptions.find((o) => o.value === fSup)?.label || "") : "",
+      onClear: () => setFSup("All"),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[{ value: "All", label: t("btasks.allBrigadirs") }, ...supOptions]}
+          value={fSup}
+          onChange={setFSup} />
+      ),
+    },
+    {
+      key: "status", icon: CircleDot, label: t("tasks.colStatus"),
+      active: statusSel.length > 0,
+      display: `${statusSel.length} ${t("filter.selected2")}`,
+      onClear: () => setStatusSel([]),
+      render: () => (
+        <OptsFilter opts={STATUSES} sel={statusSel} onChange={setStatusSel} render={(s) => statusLabel(s)} />
+      ),
+    },
+  ];
+
+  // ── table columns (tab-dependent) ──────────────────────────────────────────
+  // The leader tab adds the LIDER the task was set for; the brigadir column is
+  // the unit either way, so it never changes meaning between the two.
+  const COLS = [
+    { key: "task",     icon: FileText,      label: t("tasks.colTask"),     align: "left" },
+    { key: "priority", icon: Hash,          label: t("tasks.colPriority"), align: "center" },
+    { key: "brigadir", icon: ShieldCheck,   label: t("btasks.colBrigadir"), align: "left" },
+    ...(onLeaderTab ? [{ key: "assignee", icon: UserCheck, label: t("tasks.colLeader"), align: "left" }] : []),
+    { key: "status",   icon: CircleDot,     label: t("tasks.colStatus"),   align: "left" },
+    { key: "due",      icon: CalendarClock, label: t("tasks.colDue"),      align: "left" },
+    { key: "comments", icon: MessageSquare, label: t("tasks.colComments"), align: "center" },
+  ];
+
+  // ── charts ─────────────────────────────────────────────────────────────────
+  const trendDays = stats.trend.map((p) => p.day);
+  const dayTick = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
+  const lineSeries = [{ name: t("tasks.seriesOpen"), data: stats.trend.map((p) => p.open) }];
+  const lineOpts = {
+    chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
+    theme: chartTheme,
+    colors: [CHART_BRAND],
+    stroke: { curve: "smooth", width: 2.5 },
+    fill: { type: "solid", opacity: 0.15 },
+    dataLabels: { enabled: false },
+    xaxis: {
+      type: "category",
+      categories: trendDays,
+      tickAmount: Math.min(Math.max(trendDays.length - 1, 1), 10),
+      labels: { rotate: 0, hideOverlappingLabels: true, formatter: dayTick, style: { colors: labelColor, fontSize: "11px" } },
+      axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false },
+    },
+    yaxis: {
+      min: 0,
+      max: Math.max(stats.maxOpen, 1),
+      tickAmount: Math.min(Math.max(stats.maxOpen, 1), 5),
+      labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) },
+    },
+    grid: { borderColor: gridColor, strokeDashArray: 3, padding: { left: 6, right: 6 } },
+    markers: { size: stats.trend.length === 1 ? 4 : 0, hover: { size: 5 } },
+    legend: { show: false },
+    tooltip: {
+      theme: tooltipTheme,
+      x: { formatter: (_v, { dataPointIndex }) => fmtDate(trendDays[dataPointIndex] || "", lang) },
+    },
+  };
+
+  const openCards = [
+    { label: t("tasks.cardOpen"),   color: CHART_BRAND,        n: stats.todo + stats.doing + stats.overdue },
+    { label: statusLabel("todo"),   color: CHART_TODO,         n: stats.todo },
+    { label: statusLabel("doing"),  color: STATUS_COLOR.doing, n: stats.doing },
+    { label: t("tasks.kpiOverdue"), color: CHART_OVERDUE,      n: stats.overdue },
+  ];
+
+  const donutRows = [
+    { label: statusLabel("done"),   color: STATUS_COLOR.done,  n: stats.done },
+    { label: statusLabel("doing"),  color: STATUS_COLOR.doing, n: stats.doing },
+    { label: statusLabel("todo"),   color: CHART_TODO,         n: stats.todo },
+    { label: t("tasks.kpiOverdue"), color: CHART_OVERDUE,      n: stats.overdue },
+  ];
+  const donutSeries = donutRows.map((r) => r.n);
+  const donutOpts = {
+    chart: { type: "donut", fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
+    labels: donutRows.map((r) => r.label),
+    colors: donutRows.map((r) => r.color),
+    legend: { show: false },
+    dataLabels: { enabled: false },
+    stroke: { width: 0 },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("tasks.itemsUnit")}` } },
+    plotOptions: { pie: { donut: {
+      size: "72%",
+      labels: {
+        show: true,
+        name: { offsetY: 20, color: legendColor, fontSize: "11px" },
+        value: { offsetY: -16, color: "var(--text-1)", fontSize: "28px", fontWeight: 700 },
+        total: { show: true, label: t("tasks.kpiTotal"), color: legendColor, fontSize: "11px", formatter: () => String(stats.total) },
+      },
+    } } },
+  };
+
+  const tabCounts = useMemo(() => {
+    let sup = 0, lead = 0;
+    for (const r of allRows) (r.assignee_kind === KIND_SUP ? sup++ : lead++);
+    return { sup, lead };
+  }, [allRows]);
+
+  return (
+    <Layout title={t("btasks.title")}>
+      {/* View tabs FIRST: both halves of one payload, and every filter below
+          narrows both — so the tab says which question is on screen, never
+          which data was fetched. */}
+      <div className="mb-3">
+        <SegmentedToggle
+          asTabs
+          value={tab}
+          onChange={(v) => { setTab(v); setExpandedId(null); }}
+          options={[
+            { value: KIND_SUP,    label: `${t("btasks.tabBrigadir")}${tabCounts.sup ? ` · ${tabCounts.sup}` : ""}` },
+            { value: KIND_LEADER, label: `${t("btasks.tabLeader")}${tabCounts.lead ? ` · ${tabCounts.lead}` : ""}` },
+          ]}
+        />
+      </div>
+
+      {/* ONE-ROW filter bar: period inline; shift / brigadir / status live in
+          the consolidated panel and surface as chips when active. */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <DateRangePicker
+          dateFrom={startDate}
+          dateTo={endDate}
+          setDateFrom={setStartDate}
+          setDateTo={setEndDate}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        <FilterPanel sections={filterSections} />
+      </div>
+
+      {/* Why the leader tab has no controls — said once, up front, instead of
+          leaving the reader to discover that nothing responds. */}
+      {onLeaderTab && (
+        <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-xl text-[11px]"
+             style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+          <Lock size={13} className="flex-shrink-0 mt-px" />
+          <span>{t("btasks.leaderTabNote")}</span>
+        </div>
+      )}
+
+      {/* Charts — open-task trend + status donut over the fully filtered rows */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+        <div className="lg:col-span-2 rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
+          <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+              <TrendingUp size={14} style={{ color: "var(--brand-text)" }} />
+              {t("tasks.chartTrend")}
+            </div>
+            <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{t("tasks.chartTrendSub")}</div>
+          </div>
+          {isLoading ? (
+            <div className="p-4"><SkeletonChart className="h-52" /></div>
+          ) : stats.trend.length ? (
+            <>
+              <div className="px-1 pt-1">
+                {chartsReady
+                  ? <ReactApexChart options={lineOpts} series={lineSeries} type="area" height={232} />
+                  : <div style={{ height: 232 }} />}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 mt-auto">
+                {openCards.map((c) => (
+                  <div key={c.label} className="px-4 py-3 flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--border)", borderRight: "1px solid var(--border)" }}>
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-3)" }}>
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color }} />
+                      <span className="truncate">{c.label}</span>
+                    </div>
+                    <div className="text-xl font-bold font-mono leading-none" style={{ color: c.color }}>{c.n}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="grid place-items-center text-xs" style={{ color: "var(--text-4)", height: 232 }}>{t("tasks.noData")}</div>
+          )}
+        </div>
+
+        <div className="rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
+          <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+            <PieChart size={14} style={{ color: "var(--brand-text)" }} />
+            {t("tasks.chartStatusTitle")}
+          </div>
+          {isLoading ? (
+            <div className="p-4"><SkeletonChart className="h-52" /></div>
+          ) : stats.total ? (
+            <div className="p-4 flex flex-col items-center gap-3">
+              {chartsReady
+                ? <ReactApexChart options={donutOpts} series={donutSeries} type="donut" height={180} />
+                : <div style={{ height: 180 }} />}
+              <div className="w-full space-y-2">
+                {donutRows.map((r) => (
+                  <div key={r.label} className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                    <span className="flex-1 truncate" style={{ color: "var(--text-2)" }}>{r.label}</span>
+                    <span className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{r.n}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="grid place-items-center text-xs flex-1" style={{ color: "var(--text-4)", minHeight: 180 }}>{t("tasks.noData")}</div>
+          )}
+        </div>
+      </div>
+
+      {/* Task table — canonical POSITIONS-style TableCard with per-column sort. */}
+      <TableCard
+        className="mb-8"
+        icon={ClipboardList}
+        title={onLeaderTab ? t("btasks.listTitleLeader") : t("btasks.listTitle")}
+        wrap
+        right={
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+            {sorted.length}{sorted.length !== rows.length ? ` / ${rows.length}` : ""}
+          </span>
+        }
+        toolbar={
+          <>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder={t("tasks.search")}
+              className="w-44"
+            />
+            {canCreate && !onLeaderTab && (
+              <Button size="lg" icon={<Plus size={14} />} onClick={openCreate}>{t("btasks.add")}</Button>
+            )}
+          </>
+        }
+      >
+              <thead>
+                <tr>
+                  {COLS.map((c) => (
+                    <Th key={c.key} label={c.label} icon={c.icon} k={c.key} sort={sort} onSort={onSort} align={c.align} />
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading && Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={`sk-${i}`}>
+                    {COLS.map((c, j) => (
+                      <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
+                ))}
+                {!isLoading && sorted.length === 0 && (
+                  <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                    {rows.length === 0
+                      ? (onLeaderTab ? t("btasks.emptyLeader") : t("btasks.empty"))
+                      : t("tasks.noMatch")}
+                  </td></tr>
+                )}
+                {!isLoading && sorted.map((r) => {
+                  const expanded = expandedId === r.id;
+                  const overdue = isOverdue(r);
+                  const nActive = activeCounts.get(queueKey(r)) || 0;
+                  return (
+                    <Fragment key={r.id}>
+                      <tr
+                        onClick={() => r.can_edit && setExpandedId(expanded ? null : r.id)}
+                        className={`align-top transition-colors hover:bg-[var(--bg-inner)] ${r.can_edit ? "cursor-pointer" : ""}`}
+                        style={{ background: expanded ? "var(--bg-inner)" : "transparent", opacity: r.status === "done" ? 0.75 : 1 }}
+                      >
+                        <td className="px-3 py-2.5 min-w-[240px] max-w-md">
+                          <div className="line-clamp-2" title={r.task_text}>{tl(r.task_text)}</div>
+                        </td>
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          {r.status === "done" || r.priority == null ? (
+                            <span style={{ color: "var(--text-4)" }}>—</span>
+                          ) : (
+                            <PrioritySelect
+                              priority={r.priority}
+                              count={nActive}
+                              saving={savingPriorityId === r.id}
+                              editable={r.can_reorder && nActive > 1}
+                              onApply={(p, mode) => priorityMutation.mutate({ id: r.id, priority: p, mode })}
+                              t={t}
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.supervisor_name) || "—"}</td>
+                        {onLeaderTab && (
+                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.assignee_name) || "—"}</td>
+                        )}
+                        <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <StatusSelect
+                            status={r.status}
+                            statusLabel={statusLabel}
+                            saving={savingStatusId === r.id}
+                            editable={r.can_status}
+                            onChange={(s) => statusMutation.mutate({ id: r.id, status: s })}
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : 400 }}>
+                          <span className="inline-flex items-center gap-1.5">
+                            {overdue && <AlertTriangle size={11} />}
+                            {fmtDate(r.due_date, lang)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <CommentsButton
+                            count={r.comment_count}
+                            label={t("tasks.commentsTitle")}
+                            onClick={() => setCommentsTask(r)}
+                          />
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr style={{ background: "var(--bg-inner)" }}>
+                          <td colSpan={COLS.length} className="px-3 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <ActionBtn icon={Pencil} label={t("tasks.edit")} onClick={() => openEdit(r)} />
+                              <ActionBtn icon={Trash2} label={t("tasks.delete")} color="#ef4444" onClick={() => setConfirmDelete(r)} />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+      </TableCard>
+
+      {/* Create / edit modal */}
+      {modalOpen && (
+        <Modal
+          onClose={closeModal}
+          title={form.id ? t("btasks.editTitle") : t("btasks.addTitle")}
+          footer={
+            <>
+              <Button variant="secondary" onClick={closeModal}>{t("tasks.cancel")}</Button>
+              <Button loading={saveMutation.isPending} onClick={submit}>{t("tasks.save")}</Button>
+            </>
+          }
+        >
+              <Field label={t("tasks.fieldTask")} required>
+                <textarea
+                  value={form.task_text}
+                  onChange={(e) => setForm((f) => ({ ...f, task_text: e.target.value }))}
+                  rows={3}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                />
+              </Field>
+
+              {/* Brigadir — fixed on edit (re-queueing across units is not supported) */}
+              <Field label={t("btasks.fieldBrigadir")} required={!form.id}>
+                {form.id ? (
+                  <div
+                    className="w-full rounded-lg px-3 py-2 text-sm"
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
+                  >
+                    {tl(form.assignee_name) || "—"}
+                  </div>
+                ) : (
+                  <StyledSelect
+                    value={form.supervisor_manager_id ? String(form.supervisor_manager_id) : ""}
+                    onChange={(v) => setForm((f) => ({ ...f, supervisor_manager_id: v ? Number(v) : null }))}
+                    options={brigadirOptions}
+                    placeholder={t("btasks.pickBrigadir")}
+                  />
+                )}
+              </Field>
+
+              <Field label={t("tasks.fieldDue")} required>
+                <DateRangePicker
+                  single
+                  dateFrom={form.due_date}
+                  dateTo={form.due_date}
+                  setDateFrom={(v) => setForm((f) => ({ ...f, due_date: v }))}
+                  setDateTo={() => {}}
+                />
+              </Field>
+
+              {/* Optional first comment — becomes the opening message of the thread */}
+              {!form.id && (
+                <Field label={t("tasks.fieldComment")}>
+                  <textarea
+                    value={form.comment}
+                    onChange={(e) => setForm((f) => ({ ...f, comment: e.target.value }))}
+                    rows={2}
+                    className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                  />
+                </Field>
+              )}
+
+              {formError && (
+                <div className="flex items-center gap-1.5 text-xs text-red-400">
+                  <AlertTriangle size={13} /> {formError}
+                </div>
+              )}
+        </Modal>
+      )}
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => deleteMutation.mutate(confirmDelete.id)}
+        title={t("tasks.deleteTitle")}
+        message={t("tasks.deleteConfirm")}
+        confirmLabel={t("tasks.delete")}
+        cancelLabel={t("tasks.cancel")}
+        tone="danger"
+        loading={deleteMutation.isPending}
+      />
+
+      {/* Chat-style comments */}
+      {commentsTask && (
+        <CommentsModal
+          endpoint={`/api/brigadir-tasks/${commentsTask.id}/comments`}
+          queryKey={["btask-comments", commentsTask.id]}
+          refreshKeys={[["brigadir-tasks"]]}   // comment_count on the row
+          title={t("tasks.commentsTitle")}
+          subtitle={tl(commentsTask.task_text)}
+          canComment={!!commentsTask.can_comment}
+          onClose={() => setCommentsTask(null)}
+        />
+      )}
+    </Layout>
+  );
+}
