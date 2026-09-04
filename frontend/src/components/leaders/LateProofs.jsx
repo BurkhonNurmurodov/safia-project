@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Clock, Hourglass, ShieldCheck, Ban, ArrowUpCircle, CalendarClock,
-  MessageSquareQuote, User, Camera, ImageUp,
+  MessageSquareQuote, User, Camera, ImageUp, Timer,
 } from "lucide-react";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
@@ -18,6 +18,7 @@ import ScopeNotice from "./ScopeNotice";
 import { LateProofPhoto } from "./ProofPhoto";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import { fmtDuration } from "../../utils/formatters";
 import api from "../../utils/api";
 
 /**
@@ -60,6 +61,18 @@ const stamp = (ts) => {
   return `${day(ts)} ${String(ts).slice(11, 16)}`;
 };
 const pick = (o, lang) => o?.[lang] || o?.ru || o?.en || o?.uz || "";
+/** Just the clock off an instant the server already put in Tashkent terms. */
+const hhmm = (ts) => (ts ? String(ts).slice(11, 16) : "");
+
+/** How late, in the reader's own words. `lateMin` is the SERVER's subtraction
+ *  (`leader_late_proof.late_minutes`) and null is a real answer there — a row
+ *  filed before the deadline instant was recorded has no measurable lateness,
+ *  and printing 0 for it would say "filed exactly on the hour", which is a
+ *  different thing to tell somebody deciding whether to give a point back. */
+const lateText = (mins, T) =>
+  (mins === null || mins === undefined)
+    ? T.lateNone
+    : fmtDuration(mins, { day: T.unitD, hour: T.unitH, min: T.unitM });
 
 const TXT = {
   uz: {
@@ -74,6 +87,8 @@ const TXT = {
     stSupervisor: "Brigadirda", stAdmin: "Adminlarda",
     stApproved: "Tasdiqlangan", stRejected: "Rad etilgan",
     deadline: "Muddat", filed: "Yuborilgan", task: "Vazifa",
+    lateBy: "Kechikish", lateNone: "aniqlanmadi",
+    unitD: "kun", unitH: "soat", unitM: "daq",
     reasonLead: "Lider sababi", noteSup: "Brigadir izohi", noteAdm: "Admin izohi",
     photos: "Isbot rasmlari",
     btnReject: "Rad etish", btnUplift: "Adminlarga yuborish",
@@ -106,6 +121,8 @@ const TXT = {
     stSupervisor: "Бригадирда", stAdmin: "Админларда",
     stApproved: "Тасдиқланган", stRejected: "Рад этилган",
     deadline: "Муддат", filed: "Юборилган", task: "Вазифа",
+    lateBy: "Кечикиш", lateNone: "аниқланмади",
+    unitD: "кун", unitH: "соат", unitM: "дақ",
     reasonLead: "Лидер сабаби", noteSup: "Бригадир изоҳи", noteAdm: "Админ изоҳи",
     photos: "Исбот расмлари",
     btnReject: "Рад этиш", btnUplift: "Админларга юбориш",
@@ -138,6 +155,8 @@ const TXT = {
     stSupervisor: "У бригадира", stAdmin: "У администраторов",
     stApproved: "Принято", stRejected: "Отклонено",
     deadline: "Срок", filed: "Отправлено", task: "Задача",
+    lateBy: "Опоздание", lateNone: "не определено",
+    unitD: "д", unitH: "ч", unitM: "мин",
     reasonLead: "Причина лидера", noteSup: "Комментарий бригадира", noteAdm: "Комментарий админа",
     photos: "Фото-подтверждение",
     btnReject: "Отклонить", btnUplift: "Передать администраторам",
@@ -170,6 +189,8 @@ const TXT = {
     stSupervisor: "With the brigadir", stAdmin: "With the admins",
     stApproved: "Approved", stRejected: "Rejected",
     deadline: "Due", filed: "Filed", task: "Task",
+    lateBy: "Late by", lateNone: "not measurable",
+    unitD: "d", unitH: "h", unitM: "m",
     reasonLead: "Leader's reason", noteSup: "Brigadir's comment", noteAdm: "Admin's comment",
     photos: "Proof photos",
     btnReject: "Reject", btnUplift: "Pass to the admins",
@@ -438,10 +459,26 @@ export default function LateProofs({ scope, onClearScope }) {
                     · {tl(it.supervisor)}
                   </span>
                 )}
-                <span className="ml-auto inline-flex items-center gap-1.5 text-xs tabular-nums"
+                <span className="ml-auto inline-flex items-center gap-2 text-xs tabular-nums"
                   style={{ color: "var(--text-3)" }}>
-                  <CalendarClock size={12} />{day(it.date)}
-                  {it.deadline && <> · {T.deadline} {it.deadline}</>}
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarClock size={12} />{day(it.date)}
+                  </span>
+                  {/* HOW LATE, at scanning level. The deadline used to sit here
+                      and it is the wrong half of the subtraction to show twice:
+                      the strip below states it in full, and the question a
+                      reviewer is scanning this queue with is not "when was it
+                      due" but "how far past that was it".
+
+                      ONE tone, and deliberately no threshold: this is a
+                      magnitude, not a verdict. Splitting it red/amber at some
+                      number would be the platform ruling on the filing in the
+                      colour bar of the card somebody is opening in order to
+                      rule on it themselves. */}
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg font-semibold"
+                    style={{ background: hexA(C_WAIT, 0.12), color: C_WAIT }}>
+                    <Timer size={11} />{T.lateBy} {lateText(it.lateMin, T)}
+                  </span>
                 </span>
               </div>
 
@@ -454,8 +491,34 @@ export default function LateProofs({ scope, onClearScope }) {
                   </div>
                 </div>
 
+                {/* The whole question this queue exists to answer, written as
+                    the subtraction it is: when the task stopped accepting work,
+                    when the leader actually sent the proof, and the gap.
+
+                    All three are the SERVER's — the deadline as an instant
+                    (`dueAt`, seated on the day the shift anchor puts it on, a
+                    rule no JavaScript copy should own) and the gap already
+                    subtracted. The instants arrive in the plant's own wall
+                    clock; before that the filing time was served in UTC beside
+                    a Tashkent deadline, so a proof sent one minute late read as
+                    five hours early on the card it is judged from. */}
+                <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl px-3 py-2"
+                  style={{ background: "var(--bg-inner)" }}>
+                  <Fact label={T.deadline}
+                    value={it.dueAt ? stamp(it.dueAt) : (it.deadline || "—")} />
+                  <Fact label={T.filed} value={stamp(it.at) || "—"} />
+                  <Fact label={T.lateBy} value={lateText(it.lateMin, T)}
+                    tone={it.lateMin == null ? undefined : C_WAIT} />
+                </div>
+
+                {/* No timestamp on the credit line: it is the same instant
+                    the strip above states under a label, and an unlabelled bare
+                    clock beside a labelled deadline is what made this card
+                    unreadable in the first place. The two rulings below DO
+                    carry theirs — those are different instants nothing else
+                    names. */}
                 <Quote label={T.reasonLead} text={it.reason}
-                  who={tl(it.leader)} at={stamp(it.at)} T={T} />
+                  who={tl(it.leader)} T={T} />
 
                 {/* The evidence, on the card. See the component docstring. */}
                 {!!it.photos?.length && (
@@ -472,7 +535,18 @@ export default function LateProofs({ scope, onClearScope }) {
                         // way would teach reviewers that the stamp is
                         // decoration — so each says which it is, and the
                         // in-app one shows the second it was taken.
+                        //
+                        // BOTH now say WHEN, though, and they say two different
+                        // things by it. A camera shot's stamp is when it was
+                        // TAKEN; `got` is when the server received it, which is
+                        // the only instant an uploaded file has and the one a
+                        // reviewer asking "when did they send this" wants. An
+                        // upload carried neither before, so the door that
+                        // produced the proof in the screenshot said «yuklangan»
+                        // and nothing at all about the hour.
                         const cam = p.source === "camera";
+                        const when = cam ? (p.stamp?.slice(-8) || hhmm(p.at)) : hhmm(p.got);
+                        const label = cam ? T.srcCam : T.srcUpload;
                         return (
                           <div key={p.id} className="flex flex-col gap-1"
                             style={{ width: 72 }}>
@@ -481,13 +555,11 @@ export default function LateProofs({ scope, onClearScope }) {
                                 className="" onClick={(u) => setShot(u)} />
                             </div>
                             <span
-                              title={cam ? (p.stamp || T.srcCam) : T.srcUpload}
+                              title={`${label}${when ? ` · ${when}` : ""}`}
                               className="inline-flex items-center gap-1 text-[9px] leading-tight"
                               style={{ color: cam ? C_OK : "var(--text-4)" }}>
                               {cam ? <Camera size={9} /> : <ImageUp size={9} />}
-                              <span className="truncate">
-                                {cam ? (p.stamp?.slice(-8) || T.srcCam) : T.srcUpload}
-                              </span>
+                              <span className="truncate">{when || label}</span>
                             </span>
                           </div>
                         );
@@ -577,6 +649,19 @@ export default function LateProofs({ scope, onClearScope }) {
             }} />
         </FormField>
       </Modal>
+    </div>
+  );
+}
+
+/** One labelled fact of the deadline → filed → gap strip. A bare row of three
+ *  timestamps is unreadable; each one has to say which of the three it is. */
+function Fact({ label, value, tone }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-wide"
+        style={{ color: "var(--text-4)" }}>{label}</div>
+      <div className="text-xs font-semibold tabular-nums"
+        style={{ color: tone || "var(--text-2)" }}>{value}</div>
     </div>
   );
 }

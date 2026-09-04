@@ -1978,6 +1978,38 @@ say about it.
   the camera's own nudge (`refresh_late_screen`) can redraw whichever is on
   screen — deliberately not a widening of `refresh_camera_prompt`, which would
   paint the locked-task outcome screen over the late one.
+- **The card states HOW LATE, because that is the only question it asks.**
+  `leader_late_proof.late_minutes` is THE subtraction and `LeaderLateProof.due_at`
+  is what makes it possible: the row already snapshotted `deadline` ("HH:MM"),
+  which a human can read and nothing can subtract, because which DAY that hour
+  falls on is the shift anchor's answer (`leader_close.due_at`, seated by
+  `leader_ai.window_offset`). Snapshotted at filing time for the same reason
+  `deadline` is — a window an admin edits next week must not restate how late
+  somebody was last week. **NULL is a real answer and must never render as 0**:
+  a row the backfill could not place has no measurable lateness, and "filed
+  exactly on the hour" is a different thing to tell somebody deciding whether to
+  give a point back. A NEGATIVE delta reads as NULL too — a row exists only
+  because `eligible` found the deadline past, so a filing measuring as early
+  means the two stamps disagree.
+- **Every instant on this payload is the plant's WALL CLOCK**
+  (`leader_late_proof.local`, Tashkent, converted on the way out). The card sets
+  a filing time against a deadline, and the deadline is a Tashkent clock while
+  the timestamp columns are `timestamptz` the driver hands back in the DB's own
+  zone — UTC in production, though not on every box (a dev box on Asia/Samarkand
+  makes the bug invisible locally). Serving them unconverted did not read as a
+  timezone bug: it read as a leader who filed five hours EARLY on a queue whose
+  entry condition is that they filed late. Reported 2026-09-04 — a proof one
+  minute past 09:00 printed «04:01». Never convert in the browser: that is the
+  viewer's zone, not the plant's.
+- **A photo says WHEN as well as which door.** `LeaderLateProofMedia.received_at`
+  is carried over from the draft roll at `create()` — the instant the SERVER got
+  it, which both doors can answer, unlike `captured_at` (camera only, because a
+  file the leader picked carries no moment this platform can vouch for). Without
+  it an uploaded photo reached the reviewer with no hour at all. Not
+  backfillable: the draft shot that knew it is deleted by `create`.
+- Bot: the same two facts are on the Telegram card (`{sent}` on all eight
+  `lp_card_*` templates, built once in `_lp_card`), because a brigadir deciding
+  in a workshop will not open the dashboard first.
 - Dashboard: `/leaders?tab=lateproof`
   (`components/leaders/LateProofs.jsx`). Split by stage and badged exactly like
   «Norozliklar» next door — one rule, two queues; see that section. Photos are

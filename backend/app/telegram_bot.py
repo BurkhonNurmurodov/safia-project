@@ -2028,14 +2028,17 @@ _LT_MESSAGES = {
         "late_state_approved": "\n\n\u2705 Kechikkan isbot tasdiqlandi \u00B7 {w}/{w} ball",
         "late_state_rejected": "\n\n\u274C Kechikkan isbot rad etildi \u00B7 0/{w} ball",
         "lp_card_sup": ("\u23F1 KECHIKKAN ISBOT\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
-                        "\U0001F4C5 {date} \u00B7 muddat {t}\n\n\U0001F4DD Sabab:\n{reason}\n\n"
+                        "\U0001F4C5 {date} \u00B7 muddat {t}\n{sent}\n\n\U0001F4DD Sabab:\n{reason}\n\n"
                         "Rad etsangiz \u2014 ball berilmaydi. Adminlarga yuborsangiz, "
                         "nega tasdiqlash kerakligini yozishingiz so'raladi."),
         "lp_card_adm": ("\u23F1 KECHIKKAN ISBOT \u00B7 brigadir yubordi\n\n\U0001F464 {leader}\n"
-                        "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 muddat {t}\n\n"
+                        "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 muddat {t}\n{sent}\n\n"
                         "\U0001F4DD Lider sababi:\n{reason}\n\n"
                         "\U0001F464 Brigadir ({by}) izohi:\n{note}\n\n"
                         "Tasdiqlasangiz \u2014 vazifa to'liq ball oladi."),
+        "lp_sent": "\U0001F4E4 Yuborildi: {when}",
+        "lp_sent_late": "\U0001F4E4 Yuborildi: {when} \u00B7 {dur} kech",
+        "dur_d": "kun", "dur_h": "soat", "dur_m": "daq",
         "btn_lp_reject": "\u274C Rad etish",
         "btn_lp_uplift": "\u2B06\uFE0F Adminlarga yuborish",
         "btn_lp_approve": "\u2705 Tasdiqlash",
@@ -2161,14 +2164,17 @@ _LT_MESSAGES = {
         "late_state_approved": "\n\n\u2705 Кечиккан исбот тасдиқланди \u00B7 {w}/{w} балл",
         "late_state_rejected": "\n\n\u274C Кечиккан исбот рад этилди \u00B7 0/{w} балл",
         "lp_card_sup": ("\u23F1 КЕЧИККАН ИСБОТ\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
-                        "\U0001F4C5 {date} \u00B7 муддат {t}\n\n\U0001F4DD Сабаб:\n{reason}\n\n"
+                        "\U0001F4C5 {date} \u00B7 муддат {t}\n{sent}\n\n\U0001F4DD Сабаб:\n{reason}\n\n"
                         "Рад этсангиз \u2014 балл берилмайди. Админларга юборсангиз, "
                         "нега тасдиқлаш кераклигини ёзишингиз сўралади."),
         "lp_card_adm": ("\u23F1 КЕЧИККАН ИСБОТ \u00B7 бригадир юборди\n\n\U0001F464 {leader}\n"
-                        "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 муддат {t}\n\n"
+                        "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 муддат {t}\n{sent}\n\n"
                         "\U0001F4DD Лидер сабаби:\n{reason}\n\n"
                         "\U0001F464 Бригадир ({by}) изоҳи:\n{note}\n\n"
                         "Тасдиқласангиз \u2014 вазифа тўлиқ балл олади."),
+        "lp_sent": "\U0001F4E4 Юборилди: {when}",
+        "lp_sent_late": "\U0001F4E4 Юборилди: {when} \u00B7 {dur} кеч",
+        "dur_d": "кун", "dur_h": "соат", "dur_m": "дақ",
         "btn_lp_reject": "\u274C Рад этиш",
         "btn_lp_uplift": "\u2B06\uFE0F Админларга юбориш",
         "btn_lp_approve": "\u2705 Тасдиқлаш",
@@ -2294,14 +2300,17 @@ _LT_MESSAGES = {
         "late_state_approved": "\n\n\u2705 Позднее подтверждение принято \u00B7 {w}/{w} баллов",
         "late_state_rejected": "\n\n\u274C Позднее подтверждение отклонено \u00B7 0/{w} баллов",
         "lp_card_sup": ("\u23F1 ПОЗДНЕЕ ПОДТВЕРЖДЕНИЕ\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
-                        "\U0001F4C5 {date} \u00B7 срок {t}\n\n\U0001F4DD Причина:\n{reason}\n\n"
+                        "\U0001F4C5 {date} \u00B7 срок {t}\n{sent}\n\n\U0001F4DD Причина:\n{reason}\n\n"
                         "Если отклоните \u2014 балл не начислят. Если передадите админам, "
                         "нужно будет написать, почему это стоит принять."),
         "lp_card_adm": ("\u23F1 ПОЗДНЕЕ ПОДТВЕРЖДЕНИЕ \u00B7 передал бригадир\n\n\U0001F464 {leader}\n"
-                        "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 срок {t}\n\n"
+                        "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 срок {t}\n{sent}\n\n"
                         "\U0001F4DD Причина лидера:\n{reason}\n\n"
                         "\U0001F464 Комментарий бригадира ({by}):\n{note}\n\n"
                         "Если примете \u2014 задача получит полный балл."),
+        "lp_sent": "\U0001F4E4 Отправлено: {when}",
+        "lp_sent_late": "\U0001F4E4 Отправлено: {when} \u00B7 опоздание {dur}",
+        "dur_d": "д", "dur_h": "ч", "dur_m": "мин",
         "btn_lp_reject": "\u274C Отклонить",
         "btn_lp_uplift": "\u2B06\uFE0F Передать администраторам",
         "btn_lp_approve": "\u2705 Принять",
@@ -2427,14 +2436,17 @@ _LT_MESSAGES = {
         "late_state_approved": "\n\n\u2705 Late proof accepted \u00B7 {w}/{w} points",
         "late_state_rejected": "\n\n\u274C Late proof rejected \u00B7 0/{w} points",
         "lp_card_sup": ("\u23F1 LATE PROOF\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
-                        "\U0001F4C5 {date} \u00B7 due {t}\n\n\U0001F4DD Reason:\n{reason}\n\n"
+                        "\U0001F4C5 {date} \u00B7 due {t}\n{sent}\n\n\U0001F4DD Reason:\n{reason}\n\n"
                         "Reject and no point is given. Pass it to the admins and you will be "
                         "asked why it should be accepted."),
         "lp_card_adm": ("\u23F1 LATE PROOF \u00B7 passed up by the brigadir\n\n\U0001F464 {leader}\n"
-                        "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 due {t}\n\n"
+                        "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 due {t}\n{sent}\n\n"
                         "\U0001F4DD Leader's reason:\n{reason}\n\n"
                         "\U0001F464 Brigadir ({by}) says:\n{note}\n\n"
                         "Approve and the task gets its full weight."),
+        "lp_sent": "\U0001F4E4 Filed: {when}",
+        "lp_sent_late": "\U0001F4E4 Filed: {when} \u00B7 {dur} late",
+        "dur_d": "d", "dur_h": "h", "dur_m": "m",
         "btn_lp_reject": "\u274C Reject",
         "btn_lp_uplift": "\u2B06\uFE0F Pass to the admins",
         "btn_lp_approve": "\u2705 Approve",
@@ -4051,12 +4063,46 @@ def _lp_kb(lang: str, row, stage: str):
     return kb
 
 
+def _lp_dur(lang: str, mins: int) -> str:
+    """A span of minutes in the reader's own words — "1 soat 35 daq".
+
+    Empty leading units are dropped and minutes are always emitted when nothing
+    larger is present, so a value never renders as an empty string. The twin of
+    the dashboard's `fmtDuration`; the two must keep saying the same thing about
+    the same number, because a brigadir ruling from the chat and an admin ruling
+    from the page are looking at ONE filing.
+    """
+    d, h, m = mins // 1440, (mins % 1440) // 60, mins % 60
+    parts = []
+    if d:
+        parts.append(f"{d} {_lt(lang, 'dur_d')}")
+    if h:
+        parts.append(f"{h} {_lt(lang, 'dur_h')}")
+    if m or not parts:
+        parts.append(f"{m} {_lt(lang, 'dur_m')}")
+    return " ".join(parts)
+
+
 def _lp_card(db, row, lang: str, stage: str) -> str:
     key = "lp_card_sup" if stage == "sup" else "lp_card_adm"
+    # WHEN it was sent, and how far past the hour that was. The card named the
+    # deadline and never the filing, so "how late is late" — the only question
+    # this whole flow asks — could not be answered from the card it is asked on.
+    #
+    # Tashkent, via the one converter: the deadline printed on the line above is
+    # a plant wall clock and the timestamp column is UTC, so serving them
+    # unconverted would set two clocks five hours apart against each other.
+    at = leader_late_proof.local(row.created_at)
+    when = at.strftime("%d.%m %H:%M") if at else "—"
+    late = leader_late_proof.late_minutes(row)
+    # An unmeasurable lateness prints the filing time alone. There is no honest
+    # number to show, and 0 would read as "filed exactly on the hour".
+    sent = (_lt(lang, "lp_sent_late").format(when=when, dur=_lp_dur(lang, late))
+            if late is not None else _lt(lang, "lp_sent").format(when=when))
     return _lt(lang, key).format(
         leader=row.leader_name or "—",
         task=leader_late_proof.task_name(db, row, lang),
-        date=row.date, t=row.deadline or "—",
+        date=row.date, t=row.deadline or "—", sent=sent,
         reason=(row.reason or "—")[:800],
         by=row.sup_by_name or "—",
         note=(row.sup_note or "—")[:800],
