@@ -167,17 +167,21 @@ export default function Downtime() {
   });
 
   // ── «Toifalar bo'yicha»: its own month, its own fetch ──────────────────
-  // The month is clamped to today, so a month still running never opens
-  // columns for days that have not happened — a reader would take an empty
-  // future column for "nothing waited".
+  // The period is the WHOLE month, ends included, even one still running (the
+  // operator's call, 2026-09-04): on the 4th of September the table still
+  // carries all thirty columns. It used to be clamped to today, on the reading
+  // that an empty future column would be taken for "nothing waited" — the fix
+  // for that is to SAY which columns are days that have not happened, not to
+  // hide the shape of the month. `future` on the payload says it
+  // (`services/ojidaniya_matrix`), and the tab and the workbook both draw
+  // those columns as outside the reported period.
   const todayISO = useMemo(() => localISO(new Date()), []);
   const mFrom = `${monthKey}-01`;
   const mTo = useMemo(() => {
     const [y, m] = monthKey.split("-").map(Number);
     const last = new Date(y, m, 0);
-    const iso = `${y}-${String(m).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`;
-    return iso > todayISO ? todayISO : iso;
-  }, [monthKey, todayISO]);
+    return `${y}-${String(m).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`;
+  }, [monthKey]);
   // Same filter set as the page — plant, shift, brigadir — with the period
   // swapped for the month and the half/scope toggles riding along, so the
   // matrix can never total an event the page's own narrowings excluded.
@@ -717,6 +721,10 @@ export default function Downtime() {
             grandRow: t("downtime.mx.total"),
             noData: "·",
             hidden: t("downtime.mx.hidden"),
+            // The three states a cell can be in, named for the file exactly as
+            // the legend under the tab names them on screen.
+            legend: `«·» ${t("downtime.mx.legendNoData")}   ·   ${t("downtime.mx.legendZero")}`
+              + `   ·   ${t("downtime.mx.legendFuture")}`,
           },
         },
         fallbackName: "ojidaniya-toifalar.xlsx",

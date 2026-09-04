@@ -1105,7 +1105,11 @@ def export_downtime_matrix(
     bio = build_matrix_workbook({
         "title": body.title or "Ojidaniya", "subtitle": body.subtitle or "",
         "sheets": body.sheets, "labels": body.labels, "meta": body.meta,
-        "dates": dates_iso, "cats": cats,
+        # `future` rides along so the file draws a month still running exactly
+        # as the tab does — the remaining columns present and visibly outside
+        # the reported period, never blank (which reads as a zero) and never
+        # «·» (which reads as "no cell had anybody in it").
+        "dates": dates_iso, "future": mx["future"], "cats": cats,
         "col_totals": mx["col_totals"], "grand": mx["grand"],
     })
     blob = bio.read()

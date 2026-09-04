@@ -19,11 +19,19 @@ import EmptyState from "../ui/EmptyState";
  * other, read as a bug. The backend (`services/ojidaniya_matrix`) owns every
  * roll-up; this file only draws what it is handed.
  *
- * Three rules the drawing has to keep honest:
+ * Four rules the drawing has to keep honest:
  *   · a BLANK cell is a real zero — cells ran and nothing waited. Keeping the
  *     zeros blank is what lets the non-zero values read across 31 columns.
  *   · «·» is the gap: no cell had anybody in it, so there is nothing to divide
  *     by and the average does not exist. It is never rendered as 0.
+ *   · a HATCHED column is a day the month has not reached. A month still
+ *     running keeps all of its columns (the operator's call, 2026-09-04), and
+ *     neither glyph above can say why one is empty — blank would read as "cells
+ *     ran and nothing waited", «·» as "nobody was in any cell". So it is drawn
+ *     as its own thing and named in the legend, and it carries no value at all.
+ *     Which columns those are is `future` on the payload, decided once by
+ *     `services/ojidaniya_matrix` — never re-derived here from the browser's
+ *     own clock, or the file and the screen could disagree about one month.
  *   · the ramp is GOLD and carries no threshold. The 50-daq flag is defined
  *     over a unit's whole-day UNION, so it says nothing about a per-category
  *     average — a red cell here would be a number pretending to be a verdict.
@@ -35,6 +43,13 @@ import EmptyState from "../ui/EmptyState";
  * Minutes only, one decimal. The page's min/hrs switch is deliberately not
  * applied — «1 soat 35 daq» cannot be read in a 46px column.
  */
+
+// A day the month has not reached yet. Drawn from ONE slate at a low alpha
+// rather than from a theme token, so it reads the same faint diagonal in both
+// themes without a second definition — and as an IMAGE, so a cell keeps
+// whatever background colour it already had (the Sunday tint) underneath.
+const FUTURE_HATCH =
+  "repeating-linear-gradient(135deg, transparent 0 4px, rgba(148,163,184,0.16) 4px 8px)";
 
 const COL_W = 46;      // one day
 const NAME_W = 238;    // the frozen category / brigadir column
@@ -64,6 +79,8 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
 
   const dates = data?.dates || [];
   const cats = data?.cats || [];
+  const future = data?.future || [];
+  const hasFuture = future.some(Boolean);
 
   // Two domains — see the header comment.
   const { maxCat, maxLeaf } = useMemo(() => {
@@ -105,8 +122,12 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
     );
   }
 
-  // A cell: blank for a real zero, «·» for no divisor, the figure otherwise.
+  // A cell: hatched and EMPTY for a day that has not happened, blank for a real
+  // zero, «·» for no divisor, the figure otherwise. A future cell carries no
+  // tooltip either — there is nothing about it to explain, and the two the grid
+  // has both describe a measurement that was taken.
   const cell = (v, max, i, key, tipFn) => {
+    const fut = !!future[i];
     const none = v == null;
     return (
       <td
@@ -115,18 +136,20 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
         style={{
           width: COL_W, minWidth: COL_W,
           borderColor: "var(--border)",
-          background: isSunday(dates[i]) ? "rgba(239,68,68,0.05)" : undefined,
+          backgroundColor: isSunday(dates[i]) ? "rgba(239,68,68,0.05)" : undefined,
           ...(none ? null : shade(v, max)),
+          ...(fut ? { backgroundImage: FUTURE_HATCH } : null),
         }}
         onMouseEnter={(e) => {
           setHotCol(i);
+          if (fut) { setTip(null); return; }
           if (tipFn) {
             const r = e.currentTarget.getBoundingClientRect();
             setTip({ ...tipFn(), x: r.left + r.width / 2, y: r.top });
           }
         }}
       >
-        {none ? (
+        {fut ? null : none ? (
           <span style={{ color: "var(--text-4)" }}>·</span>
         ) : v ? (
           fmt1(v)
@@ -165,12 +188,16 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
                   className="sticky top-0 z-[3] border-b border-r"
                   style={{
                     width: COL_W, minWidth: COL_W, height: 44,
-                    background: hotCol === i ? "var(--hover-bg)" : "var(--bg-inner)",
+                    backgroundColor: hotCol === i ? "var(--hover-bg)" : "var(--bg-inner)",
                     borderColor: "var(--border)",
+                    ...(future[i] ? { backgroundImage: FUTURE_HATCH } : null),
                   }}
                 >
                   <span className="block text-[12.5px] font-semibold leading-tight tabular-nums"
-                    style={{ color: hotCol === i ? "var(--brand-text)" : "var(--text-2)" }}>
+                    style={{
+                      color: future[i] ? "var(--text-4)"
+                        : hotCol === i ? "var(--brand-text)" : "var(--text-2)",
+                    }}>
                     {dayNum(d)}
                   </span>
                   <span className="block text-[9.5px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>
@@ -338,11 +365,12 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
                   className="sticky bottom-0 z-[4] text-center text-[12px] font-bold border-t border-r tabular-nums"
                   style={{
                     width: COL_W, minWidth: COL_W, height: 44,
-                    background: "var(--bg-inner)", borderColor: "var(--border)",
+                    backgroundColor: "var(--bg-inner)", borderColor: "var(--border)",
                     color: "var(--text-1)",
+                    ...(future[i] ? { backgroundImage: FUTURE_HATCH } : null),
                   }}
                 >
-                  {data.col_totals?.[i] == null ? (
+                  {future[i] ? null : data.col_totals?.[i] == null ? (
                     <span style={{ color: "var(--text-4)" }}>·</span>
                   ) : (
                     fmt1(data.col_totals[i])
@@ -378,6 +406,13 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
         </span>
         <span><span className="inline-block w-4 text-center" style={{ color: "var(--text-4)" }}>·</span> {t("downtime.mx.legendNoData")}</span>
         <span><span className="inline-block w-4" /> {t("downtime.mx.legendZero")}</span>
+        {hasFuture ? (
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-4 h-2.5 rounded-sm border"
+              style={{ borderColor: "var(--border)", backgroundImage: FUTURE_HATCH }} />
+            {t("downtime.mx.legendFuture")}
+          </span>
+        ) : null}
         <span>{t("downtime.mx.legendSort")}</span>
         {monthLabel ? <span className="ml-auto tabular-nums" style={{ color: "var(--text-4)" }}>{monthLabel}</span> : null}
       </div>

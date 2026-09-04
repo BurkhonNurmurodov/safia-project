@@ -644,6 +644,12 @@ MX_RAMP_LO = "FFFFFF"
 MX_RAMP_MID = "F0DDB8"
 MX_RAMP_HI = "C8973F"
 
+# A day the month has not reached yet. It is neither a zero (a blank cell) nor
+# a missing divisor («·»), so it is drawn as its own thing: no value at all on
+# a flat slate ground, under a greyed header. The colour scale ignores an empty
+# cell, so the ramp beside it is unaffected.
+MX_FUTURE = "F1F5F9"
+
 
 def _ramp(ws: Worksheet, ranges: list[str]) -> None:
     """Gold intensity over a set of ranges — one scale, so every cell in it is
@@ -661,11 +667,22 @@ def _ramp(ws: Worksheet, ranges: list[str]) -> None:
 
 def build_matrix_workbook(p: dict) -> BytesIO:
     """One sheet: categories down, the month across, brigadirs grouped under
-    each category and collapsible in Excel exactly as they expand on screen."""
+    each category and collapsible in Excel exactly as they expand on screen.
+
+    A month still running keeps ALL its columns: `future[i]` (from
+    `ojidaniya_matrix.build`, the one place that decides it) marks the days
+    that have not happened, and those are drawn empty on a slate ground under a
+    greyed header — never «·», which on this sheet means "no cell had anybody
+    in it", and never a plain blank, which means a recorded zero.
+    """
     L = p.get("labels") or {}
     dates = p.get("dates") or []
     cats = p.get("cats") or []
     n = len(dates)
+    fut = p.get("future") or []
+
+    def is_fut(j: int) -> bool:
+        return bool(fut[j]) if j < len(fut) else False
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -690,6 +707,14 @@ def build_matrix_workbook(p: dict) -> BytesIO:
         _iso(d).strftime("%d.%m") if hasattr(_iso(d), "strftime") else d for d in dates
     ] + [L.get("total", "")]
     _head_row(ws, row, C1, head, height=26)
+    # `_head_row` styles one band; the days the month has not reached are then
+    # greyed in place, so the column says what it is before a reader looks for
+    # a value in it.
+    for j in range(n):
+        if is_fut(j):
+            c = ws.cell(row, C1 + 1 + j)
+            c.fill = _fill(MX_FUTURE)
+            c.font = Font(name=FONT, size=9, bold=True, color=INK_FAINT)
     row += 1
     first = row                      # freeze everything above this
 
@@ -699,9 +724,12 @@ def build_matrix_workbook(p: dict) -> BytesIO:
 
     def _cells(r: int, days: list, *, bg, border, bold: bool, ink: str) -> None:
         for j in range(n):
-            v = days[j] if j < len(days) else None
+            fu = is_fut(j)
+            v = None if fu else (days[j] if j < len(days) else None)
             _block(ws, r, C1 + 1 + j, r, C1 + 1 + j,
-                   nod if v is None else v, fill=bg, border=border, align=CENTER,
+                   None if fu else (nod if v is None else v),
+                   fill=_fill(MX_FUTURE) if fu else bg,
+                   border=border, align=CENTER,
                    fmt=None if v is None else MIN,
                    font=Font(name=FONT, size=9.5, bold=bold,
                              color=INK_FAINT if v is None else (ink if v else INK_FAINT)))
@@ -756,6 +784,17 @@ def build_matrix_workbook(p: dict) -> BytesIO:
     _block(ws, row, C2, row, C2, p.get("grand") or 0, fill=_fill(BRAND_SOFT),
            border=tb, align=RIGHT, fmt=MIN,
            font=Font(name=FONT, size=10.5, bold=True, color=BRAND))
+
+    # What the three states of a cell mean, in the viewer's own words. The
+    # sheet already distinguishes «·» from a blank, and a month still running
+    # adds a third; none of them is guessable, so all three are named — the
+    # same rule the legend under the tab keeps.
+    legend = L.get("legend")
+    if legend:
+        row += 2
+        ws.row_dimensions[row].height = 15
+        _block(ws, row, C1, row, C2, legend,
+               font=Font(name=FONT, size=8.5, italic=True, color=INK_FAINT))
 
     _ramp(ws, cat_ranges)
     _ramp(ws, sup_ranges)

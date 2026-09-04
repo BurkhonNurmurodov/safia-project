@@ -30,28 +30,71 @@ Three roll-up rules, all of them the operator's:
   * `None` is a real answer and never 0 — the (unit, day) had no cell with
     anybody in it, so there is nothing to divide by. A day with cells and no
     waiting is 0.
+
+A MONTH STILL RUNNING KEEPS ITS REMAINING COLUMNS
+-------------------------------------------------
+The period is a whole calendar month, ends included, so on the 4th of September
+the matrix still carries all thirty columns (the operator's call, 2026-09-04).
+The days that have not happened are a THIRD fact, and the two glyphs already on
+the table cannot express it: rendered blank they would read as «cells ran and
+nothing waited», rendered «·» as «no cell had anybody in it». So `future` — one
+flag per date, computed HERE and by nothing else — travels beside `dates`, and
+both readers (the tab and the workbook) draw those columns as visibly outside
+the reported period instead of as an answer.
+
+Today is never future: it is a day in progress and its figures are real as far
+as they go. The clock is the plant's own wall clock, because the box's local
+zone is not contracted anywhere (`scheduler.py` names Asia/Tashkent explicitly
+for the same reason).
 """
 
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+
+TZ = timezone(timedelta(hours=5))       # Tashkent, the platform's wall clock
+
+
+def today_local() -> date:
+    return datetime.now(TZ).date()
 
 
 def _r(v: float) -> float:
     return round(v, 2)
 
 
-def build(data: dict, stopped: bool = True) -> dict:
+def _after(d_str: str, ref: date) -> bool:
+    """Is this «DD.MM.YYYY» column a day that has not happened yet?
+
+    A date the page cannot parse is NOT called future: the honest failure is
+    an ordinary column, never a whole month silently blanked.
+    """
+    try:
+        return datetime.strptime(d_str, "%d.%m.%Y").date() > ref
+    except (TypeError, ValueError):
+        return False
+
+
+def build(data: dict, stopped: bool = True,
+          today: Optional[date] = None) -> dict:
     """Arrange `_downtime(..., with_avg=True)` output into the matrix.
 
     `stopped` picks the half of the report on screen — the «тўхтаганда»
     averages or the «тўхтамаганда» ones — the same narrowing every other
     reader of this page applies, so the matrix can never total an event the
     bar it sits under did not count.
+
+    `today` is the day the period is read against; it decides nothing but
+    `future`, the flag that tells the two readers which columns are days that
+    have not happened yet. It is a parameter so a test can pin it, never so a
+    caller can answer the question differently.
     """
     key = "by_category_avg" if stopped else "by_category_ns_avg"
     dates: list[str] = list(data.get("dates") or [])
     cat_names: list[str] = list(data.get("cat_names") or [])
     n = len(dates)
     di = {d: i for i, d in enumerate(dates)}
+    now = today or today_local()
+    future = [_after(d, now) for d in dates]
 
     # cat → manager_id → per-date value (None = no divisor that day)
     leaf: dict[str, dict[int, list[Optional[float]]]] = {c: {} for c in cat_names}
@@ -117,6 +160,10 @@ def build(data: dict, stopped: bool = True) -> dict:
 
     return {
         "dates": dates,
+        # One flag per date: this day has not happened yet. Neither glyph on
+        # the table can say that, so both readers draw these columns as
+        # outside the reported period rather than as an answer.
+        "future": future,
         "cats": out_cats,
         "col_totals": col_totals,
         "grand": _r(sum(v for v in col_totals if v is not None)),

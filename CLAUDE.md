@@ -855,9 +855,10 @@ brigadirs), the days of a MONTH across.
 - **A brigadir with nothing at all in a category is COUNTED, never dropped** —
   the group ends with «yana N brigadirda bu toifada kutish yo'q», on screen and
   in the workbook.
-- **Blank means ZERO and «·» means NO DIVISOR.** Keeping the zeros blank is what
-  lets the non-zero values read across 31 columns; both glyphs are named in the
-  legend under the table, because neither is guessable.
+- **Blank means ZERO, «·» means NO DIVISOR, and a HATCHED column is a day that
+  has not happened yet.** Keeping the zeros blank is what lets the non-zero
+  values read across 31 columns; all three are named in the legend under the
+  table and in the workbook's own footnote, because none of them is guessable.
 - **The ramp is GOLD and carries no threshold.** The 50-daq flag is defined over
   a unit's whole-day UNION, so it says nothing about a per-category average — a
   red cell here would be a number pretending to be a verdict. `--brand-rgb` was
@@ -869,10 +870,29 @@ brigadirs), the days of a MONTH across.
   applied — «1 soat 35 daq» cannot be read in a 46px column.
 - **The period is a MONTH**, via `DateRangePicker`'s new `month` mode (a year
   stepper + a 12-month grid) — the same template with a prop, never a second
-  control; the day-calendar path is untouched by it. It is clamped to today, so
-  a month still running never opens columns for days that have not happened.
-  The tab keeps its OWN month key, so switching views never rewrites the period
-  the other one was read at.
+  control; the day-calendar path is untouched by it. The tab keeps its OWN
+  month key, so switching views never rewrites the period the other one was
+  read at.
+- **A month still running keeps ALL of its columns** (the operator's call,
+  2026-09-04): on the 4th of September the table and the workbook both carry
+  thirty. The period used to be clamped to today, on the reading that an empty
+  future column would be taken for «nothing waited» — but the fix for that is to
+  SAY which columns are days that have not happened, not to hide the shape of
+  the month, and a reader comparing two exports could not tell a short month
+  from a truncated one. **`ojidaniya_matrix` decides it and nothing else does**:
+  `future`, one flag per date against the plant's own wall clock (`today_local`,
+  Tashkent — the box's zone is not contracted anywhere), rides beside `dates` to
+  the tab and, through the export endpoint, into the workbook. Deriving it a
+  second time from the browser's clock is how the file and the screen would
+  disagree about one month. **TODAY is never future** — it is a day in progress
+  and its figures are real as far as they go — and a date that will not parse is
+  an ordinary column, never a silently blanked month. Such a column carries **no
+  value at all**: on screen a faint diagonal hatch (one slate at low alpha, so
+  it reads in both themes) under a dimmed date, in the file an empty cell on a
+  slate ground under a greyed header. Neither existing glyph could say it —
+  blank would read as «cells ran and nothing waited», «·» as «no cell had
+  anybody in it». The DateRangePicker's `max` still stands, so a month entirely
+  in the future is not selectable.
 - **Its own Excel button**, `POST /api/downtime/matrix.xlsx` →
   `ojidaniya_export.build_matrix_workbook` — the same table, with the brigadirs
   as a collapsible Excel outline under each category. A SEPARATE file from the
