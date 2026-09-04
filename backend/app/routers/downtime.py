@@ -850,6 +850,24 @@ def export_downtime(
 # `startup.seed_pp_autofill_default` already records about `startup.MANAGERS`.
 DECK_FACTORY = "Uchtepa"
 
+# The deck reports the ЗАГРУЗКА scope, and nothing else (the operator's ruling,
+# 2026-09-04). `sheets_reader.OJIDANIYA_ONLY_CATS` — «Cat H», Тозалаш — is
+# planned work the shift does rather than a stoppage it suffered, and the
+# operator does not want it in this file: not in a total, not in a ranking, not
+# on a chart, not in the glossary.
+#
+# It is expressed as `kpi_only` on the two readers the deck already goes
+# through, never as a filter of its own inside `ojidaniya_deck`: that flag IS
+# the platform's one door for "which categories the загрузка counts", and a
+# second spelling of the rule is how this file and the page it is built from
+# start disagreeing about one week. The deck therefore never sees a dropped
+# category at all — no total to subtract, no row to hide.
+#
+# Consequence to know: the deck's figures no longer match the /downtime page
+# with its «Barchasi» scope selected — they match its «Zagruzkada hisoblanadi»
+# scope, which is the default the page itself opens on.
+DECK_KPI_ONLY = True
+
 
 def _deck_factory(db: Session) -> Factory:
     """The plant the weekly deck is about, or a 500 that says what is wrong.
@@ -879,12 +897,16 @@ def _deck_events(db: Session, managers: list[Manager],
     the result. The per-cell DAY unions come back alongside, because a cell's
     week is the sum of its daily unions and never the sum of its events: two
     causes overlapping on one clock would otherwise be counted twice.
+
+    `kpi_only=True` — see `DECK_KPI_ONLY` below. It is applied HERE, before the
+    union, so a dropped category cannot survive inside a cell's merged span.
     """
     events: list[dict] = []
     cell_days: list[dict] = []
     for m in managers:
         for stopped in (True, False):
-            detail = _cell_detail(db, m.id, d_from, d_to, stopped, False, [])
+            detail = _cell_detail(db, m.id, d_from, d_to, stopped,
+                                  DECK_KPI_ONLY, [])
             for iso, cells in detail["days"].items():
                 d_obj = date.fromisoformat(iso)
                 for c in cells:
@@ -981,8 +1003,9 @@ def export_downtime_deck(
                 .filter(Manager.archived.is_(False), Manager.factory_id == factory.id)
                 .order_by(Manager.name).all())
 
-    cur = _downtime(db, payload, win[0], win[1], None, [], False, factory.id)
-    prev = _downtime(db, payload, prev_win[0], prev_win[1], None, [], False, factory.id)
+    cur = _downtime(db, payload, win[0], win[1], None, [], DECK_KPI_ONLY, factory.id)
+    prev = _downtime(db, payload, prev_win[0], prev_win[1], None, [],
+                     DECK_KPI_ONLY, factory.id)
     events, cell_days = _deck_events(db, managers, win[0], win[1])
 
     data = ojidaniya_deck.collect(

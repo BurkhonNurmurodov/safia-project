@@ -22,10 +22,26 @@ sums and SAY they are the cells' own sums. Printing one of them everywhere
 would either contradict the page or leave an unexplained gap.
 
 **The deck ignores the page's filters.** It is a fixed weekly report about one
-plant, both shifts, every supervisor, all categories, headline on the stopped
-half with the not-stopped half kept as an aside — the shape of the hand-made
-deck it replaces. What is on screen when the button is pressed changes nothing,
-which is why the button confirms with the scope written out.
+plant, both shifts, every supervisor, headline on the stopped half with the
+not-stopped half kept as an aside — the shape of the hand-made deck it
+replaces. What is on screen when the button is pressed changes nothing, which
+is why the button confirms with the scope written out.
+
+**Its category scope is the ЗАГРУЗКА's** (the operator's ruling, 2026-09-04):
+`sheets_reader.OJIDANIYA_ONLY_CATS` — «Cat H», Тозалаш, the cleaning the shift
+does rather than a stoppage it suffers — is not in this file at all. The
+filtering happens where the data is fetched, `DECK_KPI_ONLY` in
+`routers/downtime.py`, so this module never sees a dropped category and has
+nothing to subtract. Do not add a second filter here.
+
+**No text on a slide may ever land on other text.** Everything here is
+absolutely positioned and a PowerPoint text box does not clip, so a string
+longer than its box is drawn over whatever is underneath — which is what
+happened to the event notes on 2026-09-04. The rule is held in TWO places and
+neither is a call site: `_text` wraps and trims every string against the box it
+was handed (`services/deck_text.py`), and `deck_text.check_layout` verifies on
+the finished file that no two boxes intersect. A slide author states a box; the
+box is the promise.
 
 **It is always Uzbek**, whoever presses it, so the words live here rather than
 travelling from the client as they do for the workbook. The category labels are
@@ -50,8 +66,10 @@ from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.text.text import Font as _Font
 from pptx.util import Emu, Inches, Pt
 
+from app.services import deck_text
 from app.translit import transliterate
 
 log = logging.getLogger(__name__)
@@ -116,9 +134,20 @@ _PALETTE = [
 ]
 
 # Categories that show on the Ojidaniya page but never enter the загрузка —
-# `sheets_reader.OJIDANIYA_ONLY_CATS`, restated here only so the glossary slide
-# can say which is which. Nothing in this file filters on it: the deck counts
-# all categories, by the operator's choice.
+# `sheets_reader.OJIDANIYA_ONLY_CATS`, restated here only so a slide can name
+# the scope it is describing.
+#
+# **They do not reach this module at all** (the operator's ruling, 2026-09-04).
+# The filtering happens where the deck's data is fetched — `DECK_KPI_ONLY` in
+# `routers/downtime.py`, i.e. the platform's own `kpi_only` door — so `collect`
+# is handed the загрузка scope already and there is nothing here to subtract or
+# hide. Never add a second filter in this file: two spellings of the rule is
+# how the deck and the page start disagreeing about one week.
+#
+# `kpi` therefore rides on every category row and is true for all of them
+# today. It stays because it is a true statement about a category rather than
+# about this week's data, and because lifting the ruling must not mean
+# rediscovering which categories the flag was about.
 OJIDANIYA_ONLY = {"Cat H"}
 
 
@@ -190,6 +219,42 @@ def latin(s: str) -> str:
 def _clip(s: str, n: int) -> str:
     s = " ".join((s or "").split())
     return s if len(s) <= n else s[: n - 1].rstrip() + "…"
+
+
+def _one(text: str, width: float, size: float, *, font=BODY_FONT,
+         bold=False) -> str:
+    """`text` cut to a SINGLE line at `width`.
+
+    For a string that shares a box with a line below it inside the same
+    paragraph: `_text` trims a paragraph from the END, so a first segment that
+    ran to two lines would push the second one out of the box entirely and the
+    reader would lose the line nobody was worried about.
+    """
+    return deck_text.fit(text, width, size, font, bold, 1)[0][0]
+
+
+def short_name(name: str, width: float, size: float, *, font=BODY_FONT,
+               bold=False) -> str:
+    """A person's name, shortened only as far as it has to be.
+
+    A brigadir's name is the identity of the card it heads, so «Абдурахмонова
+    Гулнора Шухратовна» must not become «Абдурахмонова Гулнора Шухрат…»: an
+    ellipsis says the platform ran out of room, initials say who this is. The
+    full name is used wherever it fits, then trailing parts become initials one
+    at a time — the most informative form that fits wins — and a name still too
+    wide is left to `_text`, which can always trim it.
+    """
+    parts = (name or "").split()
+    if not parts:
+        return ""
+    avail = width * 72.0
+    if deck_text.width_pt(name, size, font, bold) <= avail:
+        return name
+    for keep in range(len(parts) - 1, 0, -1):
+        trial = " ".join(parts[:keep] + [f"{p[0]}." for p in parts[keep:]])
+        if deck_text.width_pt(trial, size, font, bold) <= avail:
+            return trial
+    return name
 
 
 def _sentence(s: str) -> str:
@@ -411,35 +476,81 @@ def _tb(slide, x, y, w, h, anchor=MSO_ANCHOR.TOP):
     return tf
 
 
-def _p(tf, text, *, size=11, color=INK2, bold=False, font=BODY_FONT,
+# How many strings this build had to trim. A trim is not a failure — it is the
+# guarantee working — but it is the one thing worth knowing about a finished
+# file, so `build()` logs the tally and names each trimmed string at DEBUG.
+# Silence here means every slide showed everything it was given.
+_TRIMS: list[str] = []
+
+
+def _p(tf, text, *, width, size=11, color=INK2, bold=False, font=BODY_FONT,
        align=PP_ALIGN.LEFT, space_before=0, space_after=0, line=None,
-       first=False, caps=False):
-    """One paragraph. `first` reuses the frame's own empty paragraph, which
-    python-pptx always creates — appending without it leaves a blank line at
-    the top of every text box."""
+       first=False, caps=False, max_lines=1):
+    """One paragraph, broken into lines HERE rather than by the renderer.
+
+    `width` and `max_lines` come from the BOX, never from the caller's
+    judgement — see `_text`. Every line is its own run separated by an explicit
+    break, so the number of lines measured is the number of lines drawn and a
+    paragraph can never grow taller than the box it was given.
+
+    `first` reuses the frame's own empty paragraph, which python-pptx always
+    creates — appending without it leaves a blank line at the top of every text
+    box.
+    """
     para = tf.paragraphs[0] if first else tf.add_paragraph()
     para.alignment = align
     para.space_before = Pt(space_before)
     para.space_after = Pt(space_after)
     if line:
         para.line_spacing = line
-    run = para.add_run()
-    run.text = text
-    f = run.font
-    f.size = Pt(size)
-    f.bold = bold
-    f.name = font
-    f.color.rgb = color
-    if caps:
-        run.text = text.upper()
+    # Capitals are WIDER, so the case change happens before the measurement and
+    # not after the run was written, as it used to.
+    body = (text or "").upper() if caps else (text or "")
+    lines, trimmed = deck_text.fit(body, width, size, font, bold, max_lines)
+    if trimmed:
+        _TRIMS.append(body)
+        log.debug("deck: trimmed to %d line(s) in %.2f in: %s", max_lines, width, body)
+
+    for i, ln in enumerate(lines):
+        if i:
+            # The break carries the same size as the text around it: an
+            # <a:br/> with no properties of its own is laid out at the theme's
+            # default 18pt, which would make a two-line block taller than the
+            # two lines that were measured.
+            para.add_line_break()
+            brk = _Font(para._p[-1].get_or_add_rPr())
+            brk.size = Pt(size)
+            brk.name = font
+        run = para.add_run()
+        run.text = ln
+        f = run.font
+        f.size = Pt(size)
+        f.bold = bold
+        f.name = font
+        f.color.rgb = color
     return para
 
 
 def _text(slide, x, y, w, h, text, **kw):
-    """The common case: one paragraph in its own box."""
+    """The common case: one paragraph in its own box — and THE place the deck's
+    no-overflow rule is enforced.
+
+    A PowerPoint text box does not clip, so a string longer than its box is
+    drawn straight over whatever sits below it. Every call already states a
+    real height; this works out from that height how many lines the box can
+    show, wraps the text to the box's own width and trims the remainder. A
+    caller cannot opt out and does not have to remember to. `max_lines` is
+    accepted only so a block measured elsewhere (the event stack) can say what
+    it measured, and it is still capped by what the box holds.
+    """
     anchor = kw.pop("anchor", MSO_ANCHOR.TOP)
+    size = kw.get("size", 11)
+    font = kw.get("font", BODY_FONT)
+    room = deck_text.lines_that_fit(h, size, font, kw.get("line"))
+    asked = kw.pop("max_lines", None)
     tf = _tb(slide, x, y, w, h, anchor)
-    _p(tf, text, first=True, **kw)
+    _p(tf, text, first=True, width=w,
+       max_lines=min(room, asked) if asked else room, **kw)
     return tf
 
 
@@ -619,14 +730,14 @@ def _summary(prs, d: dict, narr, page: int, footer: str):
         _card(s, M, y, CW, h)
         _rect(s, M, y, 0.055, h, fill=GOLD)
         _text(s, M + 0.28, y + 0.16, CW - 0.56, 0.28,
-              _clip(_sentence(p.get("title", "")), 130), size=12.5, color=INK,
+              _sentence(p.get("title", "")), size=12.5, color=INK,
               font=HEAD_FONT, bold=True)
         _text(s, M + 0.28, y + 0.47, CW - 0.56, 0.4,
-              _clip(p.get("body", ""), 300), size=10, color=MUTED, line=1.18)
+              p.get("body", ""), size=10, color=MUTED, line=1.18)
         y += h + 0.14
 
     head = _ai(narr, "summary_headline")
-    _text(s, M, y + 0.04, CW, 0.42, _clip(head or NO_AI, 260),
+    _text(s, M, y + 0.04, CW, 0.46, head or NO_AI,
           size=10.5, color=INK2 if head else FAINT, bold=bool(head), line=1.2)
 
 
@@ -651,23 +762,23 @@ def _glossary(prs, d: dict, narr, page: int, footer: str):
         _card(s, x, y, col_w, rh)
         _chip(s, x + 0.12, y + 0.11, 0.46, 0.31, c["code"],
               fill=c["colour"], color=WHITE, size=10.5)
-        _text(s, x + 0.68, y + 0.09, col_w - 2.0, 0.22, c["label"],
+        # The four boxes on a glossary row are stacked in two columns and must
+        # not overlap even by a hundredth of an inch — see `_no_overlap` in
+        # `self_check`: a box that overlaps its neighbour is a box whose text
+        # will overlap the moment the text grows.
+        _text(s, x + 0.68, y + 0.09, col_w - 2.0, 0.21, c["label"],
               size=10.5, color=INK, bold=True)
         note = c["full"] if c["full"] != c["label"] else ""
-        if not c["kpi"]:
-            note = (note + " · zagruzkaga kirmaydi").strip(" ·")
-        _text(s, x + 0.68, y + 0.3, col_w - 2.0, 0.2, _clip(note, 74),
-              size=8, color=FAINT)
-        _text(s, x + col_w - 1.26, y + 0.1, 1.14, 0.24,
+        _text(s, x + 0.68, y + 0.3, col_w - 2.0, 0.2, note, size=8, color=FAINT)
+        _text(s, x + col_w - 1.26, y + 0.1, 1.14, 0.2,
               f"{num(c['minutes'])} min", size=11, color=INK, bold=True,
               align=PP_ALIGN.RIGHT, font=HEAD_FONT)
         _text(s, x + col_w - 1.26, y + 0.31, 1.14, 0.2,
               f"{c['events']} hodisa", size=8.5, color=MUTED, align=PP_ALIGN.RIGHT)
 
-    _text(s, M, H - 0.92, CW, 0.3,
+    _text(s, M, H - 0.96, CW, 0.34,
           f"Jami {num(d['total'])} daqiqa · {d['events']} hodisa. "
-          f"«Zagruzkaga kirmaydi» — bu toifa Ojidaniya sahifasida ko'rinadi, "
-          f"lekin yacheyka zagruzkasi hisobiga qo'shilmaydi.",
+          f"Ro'yxatda shu hafta qayd etilgan toifalar keltirilgan.",
           size=9, color=FAINT, line=1.2)
 
 
@@ -709,12 +820,11 @@ def _categories(prs, d: dict, narr, page: int, footer: str):
         _text(s, x + 0.74, y + 0.37, cw - 0.94, 0.22,
               f"{num(c['minutes'])} min · {c['events']} hodisa · {pct(c['share'])}",
               size=9, color=MUTED)
-        _text(s, x + 0.2, y + 0.6, cw - 0.4, 0.2,
-              _clip(c["full"], 62), size=8, color=FAINT)
+        _text(s, x + 0.2, y + 0.6, cw - 0.4, 0.2, c["full"], size=8, color=FAINT)
         y += 0.94
 
     note = _ai(narr, "others_note")
-    _text(s, M, 6.42, CW, 0.6, _clip(note or NO_AI, 300),
+    _text(s, M, 6.42, CW, 0.6, note or NO_AI,
           size=9.5, color=MUTED if note else FAINT, line=1.2)
 
 
@@ -739,7 +849,7 @@ def _comparison(prs, d: dict, narr, page: int, footer: str):
         _card(s, x, 1.6, cw, 1.5)
         _rect(s, x, 1.6, cw, 0.36, fill=bg)
         _text(s, x + 0.2, 1.67, cw - 0.4, 0.24, title, size=10.5, color=tone, bold=True)
-        _text(s, x + 0.2, 2.08, cw - 0.4, 0.9, _clip(body or NO_AI, 340),
+        _text(s, x + 0.2, 2.08, cw - 0.4, 0.9, body or NO_AI,
               size=9.5, color=INK2 if body else FAINT, line=1.22)
 
     # Every category, both weeks, biggest mover first — the table is what makes
@@ -811,17 +921,60 @@ def _top_events(events: list[dict], n: int) -> list[dict]:
     return sorted(events, key=lambda e: -e["minutes"])[:n]
 
 
-def _event_line(slide, x, y, w, e: dict, *, colour=None):
-    """One event, as the register recorded it: the leader's own words, then
-    where and when. The note is quoted — transliterated to Latin where it was
-    typed in Cyrillic, and otherwise untouched."""
-    _rect(slide, x, y, 0.035, 0.42, fill=colour or GOLD)
-    _text(slide, x + 0.16, y - 0.01, w - 0.16, 0.24,
-          f"«{_clip(_sentence(latin(e['note'])), 96)}»", size=9, color=INK2)
+# An event's note is the one string on this deck whose length nobody here
+# controls — a leader types it into `/idle-cell`. It gets up to EV_NOTE_LINES
+# lines, and the meta line beneath it is placed at whatever height the note
+# actually took. That is the fix for the overlap of 2026-09-04: the note used
+# to be capped at 96 CHARACTERS inside a box one line tall, with the meta line
+# nailed 0.21" below it, so any note that ran to two lines was drawn straight
+# through it. A character cap cannot express «one line» — the card is a third
+# of the page on one slide and a quarter of it on another.
+EV_NOTE_LINES = 2
+EV_NOTE_SIZE = 9
+EV_META_SIZE = 8
+EV_GAP = 0.09          # the air between one event and the next
+
+
+def _event_block(e: dict, w: float) -> tuple[list[str], str, float]:
+    """(note lines, meta line, total height) for one event, measured before
+    anything is drawn — a stack has to know what an item costs to know whether
+    it still fits."""
+    tw = w - 0.16
+    note, _ = deck_text.fit(f"«{_sentence(latin(e['note']))}»", tw, EV_NOTE_SIZE,
+                            BODY_FONT, max_lines=EV_NOTE_LINES)
     mark = "" if e["stopped"] else " · to'xtatmagan"
-    _text(slide, x + 0.16, y + 0.21, w - 0.16, 0.2,
-          f"{num(e['minutes'])} min · {e['cell']} · {day_label(e['date_obj'])}"
-          f" {e['start']}–{e['end']}{mark}", size=8, color=FAINT)
+    meta = (f"{num(e['minutes'])} min · {e['cell']} · {day_label(e['date_obj'])}"
+            f" {e['start']}–{e['end']}{mark}")
+    h = (deck_text.block_h_in(len(note), EV_NOTE_SIZE)
+         + deck_text.block_h_in(1, EV_META_SIZE) + EV_GAP)
+    return note, meta, h
+
+
+def _events(slide, x, y: float, w: float, events: list[dict], *, bottom: float,
+            colour=None, colour_fn=None) -> float:
+    """A stack of events drawn against a vertical BUDGET, returning where it
+    ended.
+
+    `bottom` is the first inch this stack may not touch — the card's own edge,
+    or whatever is drawn under it. Events are laid out while they fit and the
+    stack stops when the next one would cross it. The step used to be a
+    constant 0.5", which is only correct while every note happens to be one
+    line: two long notes in a row walked the last event off its card.
+    """
+    for e in events:
+        note, meta, h = _event_block(e, w)
+        if y + h - EV_GAP > bottom:
+            break
+        nh = deck_text.block_h_in(len(note), EV_NOTE_SIZE)
+        _rect(slide, x, y, 0.035, h - EV_GAP, fill=(colour_fn(e) if colour_fn
+                                                    else colour) or GOLD)
+        _text(slide, x + 0.16, y, w - 0.16, nh, "\n".join(note),
+              size=EV_NOTE_SIZE, color=INK2, max_lines=len(note))
+        _text(slide, x + 0.16, y + nh, w - 0.16,
+              deck_text.block_h_in(1, EV_META_SIZE), meta,
+              size=EV_META_SIZE, color=FAINT)
+        y += h
+    return y
 
 
 # ── slide 6 · the three units the week cost most ─────────────────────────────
@@ -840,7 +993,8 @@ def _top_supervisors(prs, d: dict, narr, page: int, footer: str):
         _rect(s, x, 1.32, cw, 0.055, fill=GOLD)
 
         _chip(s, x + 0.18, 1.5, 0.3, 0.3, str(i + 1), fill=INK, color=GOLD2, size=11)
-        _text(s, x + 0.58, 1.5, cw - 0.76, 0.28, _clip(sup["name"], 32),
+        _text(s, x + 0.58, 1.5, cw - 0.76, 0.28,
+              short_name(sup["name"], cw - 0.76, 13, font=HEAD_FONT, bold=True),
               size=13, color=INK, font=HEAD_FONT, bold=True)
         _text(s, x + 0.58, 1.8, cw - 0.76, 0.22,
               f"{num(sup['minutes'])} min · jamining {pct(sup['share'])}",
@@ -852,17 +1006,14 @@ def _top_supervisors(prs, d: dict, narr, page: int, footer: str):
               _clip(" · ".join(codes), 46) if codes else "yacheyka qayd etilmagan",
               size=8.5, color=FAINT)
 
-        y = 2.44
-        for e in _top_events(own, 5):
-            colour = cat_meta(e["category"])[3]
-            _event_line(s, x + 0.18, y, cw - 0.36, e, colour=colour)
-            y += 0.5
+        _events(s, x + 0.18, 2.44, cw - 0.36, _top_events(own, 5),
+                bottom=5.36, colour_fn=lambda e: cat_meta(e["category"])[3])
 
         pain = pains.get(sup["name"])
-        _rect(s, x + 0.18, 5.42, cw - 0.36, 0.62, fill=INNER, radius=0.06)
-        _text(s, x + 0.32, 5.5, cw - 0.64, 0.48,
-              _clip(pain or (f"{sup['events']} hodisa · eng ko'p: "
-                             f"{cat_meta(sup['top_cat'])[1] if sup['top_cat'] else '—'}"), 150),
+        _rect(s, x + 0.18, 5.42, cw - 0.36, 0.72, fill=INNER, radius=0.06)
+        _text(s, x + 0.32, 5.5, cw - 0.64, 0.58,
+              pain or (f"{sup['events']} hodisa · eng ko'p: "
+                       f"{cat_meta(sup['top_cat'])[1] if sup['top_cat'] else '—'}"),
               size=8.5, color=INK2 if pain else FAINT, line=1.18)
 
     rest = d["supervisors"][3:]
@@ -900,15 +1051,13 @@ def _top_categories(prs, d: dict, narr, page: int, footer: str):
         _text(s, x + 0.18, 2.1, cw - 0.36, 0.24,
               _clip(" · ".join(who), 46) if who else "—", size=8.5, color=FAINT)
 
-        y = 2.44
-        for e in _top_events(own, 5):
-            _event_line(s, x + 0.18, y, cw - 0.36, e, colour=c["colour"])
-            y += 0.5
+        _events(s, x + 0.18, 2.44, cw - 0.36, _top_events(own, 5),
+                bottom=5.36, colour=c["colour"])
 
         root = roots.get(c["code"])
-        _rect(s, x + 0.18, 5.42, cw - 0.36, 0.62, fill=INNER, radius=0.06)
-        _text(s, x + 0.32, 5.5, cw - 0.64, 0.48,
-              ("Ildiz: " + root) if root else _clip(c["full"], 120),
+        _rect(s, x + 0.18, 5.42, cw - 0.36, 0.72, fill=INNER, radius=0.06)
+        _text(s, x + 0.32, 5.5, cw - 0.64, 0.58,
+              ("Ildiz: " + root) if root else c["full"],
               size=8.5, color=INK2 if root else FAINT, line=1.18)
 
     _text(s, M, 6.35, CW, 0.4,
@@ -943,14 +1092,13 @@ def _other_categories(prs, d: dict, narr, page: int, footer: str):
         _text(s, x + 0.74, 1.8, cw - 0.92, 0.22,
               f"{num(c['minutes'])} min · {c['events']} hodisa{move}",
               size=9.5, color=BROWN, bold=True)
-        y = 2.2
-        for e in _top_events(d["by_cat_events"].get(c["name"], []), 5):
-            _event_line(s, x + 0.18, y, cw - 0.36, e, colour=c["colour"])
-            y += 0.5
+        _events(s, x + 0.18, 2.2, cw - 0.36,
+                _top_events(d["by_cat_events"].get(c["name"], []), 5),
+                bottom=5.18, colour=c["colour"])
 
     note = _ai(narr, "others_note")
     _rect(s, M, 5.52, CW, 0.86, fill=INNER, line=LINE, radius=0.08)
-    _text(s, M + 0.24, 5.66, CW - 0.48, 0.62, _clip(note or NO_AI, 400),
+    _text(s, M + 0.24, 5.66, CW - 0.48, 0.62, note or NO_AI,
           size=9.5, color=INK2 if note else FAINT, line=1.2)
 
 
@@ -980,9 +1128,10 @@ def _supervisors(prs, d: dict, narr, page: int, footer: str):
     for i, r in enumerate(three):
         _card(s, x, y, cw, 0.78)
         _text(s, x + 0.18, y + 0.12, cw - 0.36, 0.24,
-              f"{i + 1}. {_clip(r['name'], 26)}", size=10.5, color=INK, bold=True)
+              f"{i + 1}. {short_name(r['name'], cw - 0.72, 10.5, bold=True)}",
+              size=10.5, color=INK, bold=True)
         top = cat_meta(r["top_cat"])[1] if r["top_cat"] else "—"
-        _text(s, x + 0.18, y + 0.38, cw - 0.36, 0.32,
+        _text(s, x + 0.18, y + 0.38, cw - 0.36, 0.36,
               f"{num(r['minutes'])} min · {r['events']} hodisa\neng ko'p: {top}",
               size=8.5, color=MUTED, line=1.18)
         y += 0.86
@@ -1028,14 +1177,12 @@ def _daily(prs, d: dict, narr, page: int, footer: str):
               size=10, color=ONDARK, line=1.18)
 
         same = [e for e in d["events_on"] if e["date_obj"] == peak["date"]]
-        y = 3.0
-        for e in _top_events(same, 4):
-            _event_line(s, x, y, cw, e, colour=cat_meta(e["category"])[3])
-            y += 0.5
+        _events(s, x, 3.0, cw, _top_events(same, 4), bottom=6.82,
+                colour_fn=lambda e: cat_meta(e["category"])[3])
 
     note = _ai(narr, "daily_note")
     _rect(s, M, 5.86, 8.5, 0.82, fill=INNER, line=LINE, radius=0.08)
-    _text(s, M + 0.22, 5.99, 8.1, 0.6, _clip(note or NO_AI, 320),
+    _text(s, M + 0.22, 5.99, 8.1, 0.6, note or NO_AI,
           size=9.5, color=INK2 if note else FAINT, line=1.2)
 
     avg = (sum(vals) / len([v for v in vals if v])) if any(vals) else 0
@@ -1068,12 +1215,13 @@ def _cells(prs, d: dict, narr, page: int, footer: str):
               font=HEAD_FONT, bold=True)
         who = " · ".join(v for v in (r.get("leader"), r.get("supervisor")) if v)
         _text(s, x + 0.18, y + 0.38, cw - 0.36, 0.34,
-              f"{_clip(who, 40)}\n{r['events']} hodisa", size=8.5, color=MUTED, line=1.18)
+              f"{_one(who, cw - 0.36, 8.5)}\n{r['events']} hodisa",
+              size=8.5, color=MUTED, line=1.18)
         y += 0.9
 
     note = _ai(narr, "cells_note")
     _rect(s, M, 6.06, 8.5, 0.62, fill=INNER, line=LINE, radius=0.08)
-    _text(s, M + 0.22, 6.17, 8.1, 0.44, _clip(note or NO_AI, 260),
+    _text(s, M + 0.22, 6.17, 8.1, 0.44, note or NO_AI,
           size=9.5, color=INK2 if note else FAINT, line=1.2)
 
     # The bar chart above is the cells' OWN arithmetic and does not add up to
@@ -1115,7 +1263,7 @@ def _actions(prs, d: dict, narr, page: int, footer: str):
                   f"{num(c['minutes'])} min · {pct(c['share'])}",
                   size=9, color=BROWN, bold=True)
         _text(s, M + 4.25, y + 0.2, CW - 4.5, 0.72,
-              _clip(a.get("text", ""), 300), size=10, color=INK2, line=1.22)
+              a.get("text", ""), size=10, color=INK2, line=1.22)
         y += h + 0.13
 
     covered = sum(by_code[c]["minutes"]
@@ -1136,14 +1284,14 @@ def _conclusion(prs, d: dict, narr, page: int, footer: str):
     _chrome(s, "Xulosa", "", page, footer, dark=True)
 
     head = _ai(narr, "conclusion_headline")
-    _text(s, M, 1.1, CW - 1.0, 1.1,
-          _clip(head or f"{hours(d['total'])} soat kutish — {d['events']} hodisa, "
-                        f"{d['cell_count']} yacheykada.", 190),
+    _text(s, M, 1.1, CW - 1.0, 1.42,
+          head or f"{hours(d['total'])} soat kutish — {d['events']} hodisa, "
+                  f"{d['cell_count']} yacheykada.",
           size=26, color=WHITE, font=HEAD_FONT, bold=True, line=1.12)
 
     three = d["supervisors"][:3]
     tcat = d["categories"][:3]
-    _text(s, M, 2.42, CW, 0.3,
+    _text(s, M, 2.62, CW, 0.3,
           f"Top-3 brigadir — {pct(sum(x['share'] for x in three))}; "
           f"top-3 toifa ({' · '.join(c['code'] for c in tcat)}) — "
           f"{pct(sum(c['share'] for c in tcat))}.",
@@ -1160,10 +1308,10 @@ def _conclusion(prs, d: dict, narr, page: int, footer: str):
         _rect(s, x, 3.0, cw, 2.5, fill=RGBColor(0x3A, 0x28, 0x1C), radius=0.12)
         _chip(s, x + 0.22, 3.2, 0.34, 0.34, str(i + 1), fill=GOLD2, color=DARK, size=12)
         _text(s, x + 0.22, 3.72, cw - 0.44, 0.5,
-              _clip(_sentence(p.get("title", "")), 60), size=13, color=WHITE,
+              _sentence(p.get("title", "")), size=13, color=WHITE,
               font=HEAD_FONT, bold=True, line=1.1)
         _text(s, x + 0.22, 4.3, cw - 0.44, 1.05,
-              _clip(p.get("body", ""), 220), size=9.5, color=ONDARK, line=1.22)
+              p.get("body", ""), size=9.5, color=ONDARK, line=1.22)
 
     nxt = d["window"][1] + timedelta(days=7)
     _text(s, M, 5.72, CW, 0.3,
@@ -1189,8 +1337,8 @@ def _appendix(prs, d: dict, narr, page: int, footer: str):
         f"To'xtagan hodisalar: {d['events']} ta, {num(d['total'])} daqiqa.",
         f"Brigadir ko'rsatkichi — yacheykalarning odam soniga vaznlangan "
         f"o'rtachasi: Σ(N·T)÷ΣN. Shu sababli yacheykalar yig'indisi undan katta.",
-        f"Toifalar bo'yicha barcha kategoriyalar hisobga olindi, "
-        f"zagruzkaga kirmaydiganlari ham.",
+        f"Toifalar: yacheyka zagruzkasi hisobiga kiradigan kutish "
+        f"toifalari olindi.",
     ]
     y = 1.82
     for t in lines:
@@ -1256,6 +1404,7 @@ _SLIDES = [
 
 def build(d: dict, narrative: dict | None = None) -> bytes:
     """The finished .pptx. `narrative` may be None — see `deck_narrative`."""
+    _TRIMS.clear()
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(W), Inches(H)
 
@@ -1263,6 +1412,19 @@ def build(d: dict, narrative: dict | None = None) -> bytes:
     _cover(prs, d, narrative)
     for i, fn in enumerate(_SLIDES, start=2):
         fn(prs, d, narrative, i, footer)
+
+    if _TRIMS:
+        # Not a failure — the no-overflow rule doing its job — but the one
+        # thing worth knowing about a finished file. A box that trims week
+        # after week is a box that should be bigger.
+        log.info("DECK built with %d trimmed text block(s)", len(_TRIMS))
+
+    # The other half of the rule, checked on the real week rather than trusted:
+    # `_text` keeps every string inside its own box, and this keeps the boxes
+    # off each other. Findings are logged, never raised — an operator waiting
+    # on Wednesday's report is not served by being handed nothing.
+    for problem in deck_text.check_layout(prs, W, H):
+        log.warning("DECK layout: %s", problem)
 
     buf = io.BytesIO()
     prs.save(buf)

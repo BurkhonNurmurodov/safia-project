@@ -639,10 +639,59 @@ per category and per brigadir, find the three that matter, write the root
 causes, lay out the slides).
 
 - **It is a FIXED report, not a view of the page.** One plant, both shifts,
-  every supervisor, all categories, the stopped half as the headline with the
-  not-stopped half named beside it. The toolbar's filters change nothing —
-  which is exactly why the button never fires without its `ConfirmDialog`,
-  which writes the whole scope out. `GET /api/downtime/deck-window` serves the
+  every supervisor, the stopped half as the headline with the not-stopped half
+  named beside it. The toolbar's filters change nothing — which is exactly why
+  the button never fires without its `ConfirmDialog`, which writes the whole
+  scope out.
+- **Its categories are the ЗАГРУЗКА's, not the page's «Barchasi»** (the
+  operator's ruling, 2026-09-04). `sheets_reader.OJIDANIYA_ONLY_CATS` — «Cat
+  H», Тозалаш — is out of the deck entirely: no total, no ranking, no chart, no
+  glossary row. It is expressed as **`DECK_KPI_ONLY` in `routers/downtime.py`**,
+  i.e. the platform's own `kpi_only` flag on the two readers the deck already
+  goes through, and applied BEFORE the per-cell union so a dropped category
+  cannot survive inside a merged span. `ojidaniya_deck` filters nothing itself
+  and must not start — that flag IS the one door for «which categories the
+  загрузка counts», and a second spelling is how the file and the page start
+  disagreeing about one week. The confirm dialog names this scope
+  (`downtime.scopeZagruzka`), because a confirm that exists to write the scope
+  out must not write it out wrongly. **Consequence to know:** the deck's totals
+  no longer match `/downtime` with «Barchasi» selected — they match
+  «Zagruzkada hisoblanadi», which is what the page opens on.
+- **No text on a slide can land on other text, and that is structural.**
+  Everything is absolutely positioned and a PowerPoint text box does not clip,
+  so a string longer than its box is drawn straight over what sits underneath.
+  On 2026-09-04 that reached the operator: an event note capped at 96
+  CHARACTERS took two lines in a box built for one, and its second line landed
+  on the «61 min · 8811 · 30-avgust» meta line nailed 0.21" below it. A
+  character cap cannot express «one line» — the card is a third of the page on
+  one slide and a quarter of it on another — and there were forty such guesses.
+  The rule now lives in two places, neither of which is a call site:
+  - **`services/deck_text.py` measures**, and `_text` is where it bites: it
+    works out from the BOX how many lines fit, wraps to the box's own width and
+    trims the rest with an ellipsis at a word boundary. A caller cannot opt out
+    and does not have to remember to. Widths are Calibri's own advance table
+    (with Cyrillic — the register spells brigadirs in two alphabets) biased
+    WIDE by `SAFETY`: over-estimating breaks a line one word early, which
+    nobody notices; under-estimating puts text back on top of text. **Never
+    tune those numbers to make something fit — widen the box.** Lines are
+    broken here and drawn as explicit `<a:br/>` breaks (each stamped with the
+    run's own size, or the theme's 18pt default makes the block taller than was
+    measured), so the lines measured are the lines drawn.
+  - **`deck_text.check_layout` verifies the other half on the finished file** —
+    no text box off the page, no two text boxes intersecting. Trimming alone
+    only promises a string stays inside its own rectangle; if two rectangles
+    overlap, two well-behaved strings still collide. It runs inside `build()`
+    on the real week and LOGS its findings rather than raising: an operator
+    waiting on Wednesday's report is not served by being handed nothing.
+  - **A stack of variable-height items is drawn against a BUDGET, never a
+    constant step.** `_events` measures each note (up to `EV_NOTE_LINES`),
+    places the meta line at whatever height that note actually took, and stops
+    when the next event would cross the `bottom` it was given. The old constant
+    0.5" step was only correct while every note happened to be one line.
+  - A person's name shortens rather than truncates (`short_name`): the full
+    name where it fits, then trailing parts to initials one at a time.
+    «Абдурахмонова Г. Ш.» says who this is; «Абдурахмонова Гулнора Шухрат…»
+    says the platform ran out of room. `GET /api/downtime/deck-window` serves the
   period to that dialog rather than the browser computing it: the window is a
   RULE, and a JavaScript copy of it would drift until the confirm named one
   week and the file carried another.

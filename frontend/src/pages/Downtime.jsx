@@ -1186,7 +1186,11 @@ export default function Downtime() {
                   [t("downtime.deck.rowPeriod"), deckWin?.label || "…"],
                   [t("downtime.deck.rowFactory"), deckWin?.factory || "…"],
                   [t("downtime.deck.rowShift"), t("downtime.deck.bothShifts")],
-                  [t("downtime.deck.rowCats"), t("downtime.allCats")],
+                  // The deck reads the ЗАГРУЗКА scope (DECK_KPI_ONLY on the
+                  // backend), so this row names that and not «all categories»:
+                  // the confirm exists to write the scope out, and a scope
+                  // stated wrongly is worse than one not stated at all.
+                  [t("downtime.deck.rowCats"), t("downtime.scopeZagruzka")],
                 ].map(([k, v]) => (
                   <div key={k} className="flex items-baseline justify-between gap-3">
                     <span className="text-[11px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>{k}</span>
