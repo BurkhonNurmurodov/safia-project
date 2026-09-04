@@ -926,6 +926,83 @@ def add_late_proof_timing() -> None:
         db.close()
 
 
+def merge_brigadir_tasks_page() -> None:
+    """2026-09-04: the two task boards became ONE page under the one page key
+    ``tasks``, and ``brigadir-tasks`` left ``permissions.PAGE_KEYS``. Two
+    records still spell the old key, and each would silently cost somebody a
+    page they held:
+
+    1. The saved Access matrix. ``get_page_access`` drops unknown keys and lets
+       a stored per-page list shadow the code default — so a matrix saved while
+       shift managers held «brigadir-tasks» and not «tasks» would, unfolded,
+       lock every shift manager out of the merged board on the next request.
+       The old key's roles are folded INTO the ``tasks`` list and the old key
+       is removed from the blob.
+    2. Per-person page grants (``page.view.brigadir-tasks``, on profiles and on
+       accounts). A GRANT is renamed to ``page.view.tasks`` where the holder
+       has no such row yet (its scope carried), and dropped where they do —
+       the existing row already opens the merged page and the unique key
+       forbids two. A DENY is dropped, not renamed: it said «not the brigadir
+       board», and the only page it could now close is the merged one, which
+       would take away the leader tasks the person was never blocked from.
+
+    No flag: the trigger state — the old key present anywhere — cannot recur,
+    since nothing writes it any more, so a second pass finds nothing to do.
+    """
+    import json
+    from app.models import ProfilePermission, UserCapability
+    from app.permissions import DEFAULT_PAGE_ACCESS, SETTING_KEY
+
+    OLD_PAGE, NEW_PAGE = "brigadir-tasks", "tasks"
+    OLD_CAP, NEW_CAP = f"page.view.{OLD_PAGE}", f"page.view.{NEW_PAGE}"
+    db = SessionLocal()
+    try:
+        folded = None
+        row = db.query(AppSetting).filter(AppSetting.key == SETTING_KEY).first()
+        if row:
+            try:
+                blob = json.loads(row.value or "{}")
+            except (ValueError, TypeError):
+                blob = None
+            if isinstance(blob, dict) and OLD_PAGE in blob:
+                old = blob.pop(OLD_PAGE)
+                old = old if isinstance(old, list) else []
+                cur = blob.get(NEW_PAGE)
+                if not isinstance(cur, list):
+                    cur = list(DEFAULT_PAGE_ACCESS.get(NEW_PAGE, []))
+                folded = cur + [r for r in old if r not in cur]
+                blob[NEW_PAGE] = folded
+                row.value = json.dumps(blob)
+
+        moved = {}
+        for model, holder_col in ((ProfilePermission, "profile_key"),
+                                  (UserCapability, "telegram_id")):
+            renamed = dropped = 0
+            for r in db.query(model).filter(model.capability == OLD_CAP).all():
+                holder = getattr(r, holder_col)
+                if r.mode == "grant":
+                    has = db.query(model).filter(
+                        getattr(model, holder_col) == holder,
+                        model.capability == NEW_CAP,
+                    ).first()
+                    if has is None:
+                        r.capability = NEW_CAP
+                        renamed += 1
+                        continue
+                db.delete(r)
+                dropped += 1
+            moved[model.__tablename__] = (renamed, dropped)
+        db.commit()
+        if folded is not None or any(v != (0, 0) for v in moved.values()):
+            print(f"[startup] brigadir-tasks page folded into tasks: "
+                  f"matrix={folded} grants={moved}")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] brigadir-tasks page merge skipped: {exc}")
+    finally:
+        db.close()
+
+
 DISPUTE_STAGES_FLAG = "leader_dispute_stages_2026_08_30_v1"
 
 

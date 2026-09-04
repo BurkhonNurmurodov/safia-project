@@ -60,6 +60,7 @@ async def lifespan(app: FastAPI):
         add_late_proof_provenance,
         add_late_proof_timing,
         migrate_dispute_stages,
+        merge_brigadir_tasks_page,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
         migrate_factories, add_role_profile_factory,
@@ -141,6 +142,7 @@ async def lifespan(app: FastAPI):
     add_late_proof_provenance()
     add_late_proof_timing()
     migrate_dispute_stages()
+    merge_brigadir_tasks_page()
     create_action_log()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()

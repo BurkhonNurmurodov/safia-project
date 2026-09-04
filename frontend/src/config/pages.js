@@ -77,7 +77,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // Worker-concerns KPI («Ishchi havotirlari») — synced from the per-cell sheets;
   // supervisors see their unit, leaders their own numbers (server-scoped).
   "worker-concerns": ["supervisor", "leader"],
-  tasks: ["supervisor", "leader"], // Leader tasks ("DAILY протокол") — supervisors assign, leaders execute
+  // THE task board — both tiers on one page: shift managers set tasks for
+  // brigadirs, brigadirs for leaders, each assignee works their own queue.
+  tasks: ["shift-manager", "supervisor", "leader"],
   activity: [], // Users activity & usage stats — admin-only until enabled
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
   "idle-cell": [], // Manual per-cell idle-time (ojidaniya) TEST entry — admin-only until enabled

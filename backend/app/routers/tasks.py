@@ -1,12 +1,17 @@
 """
 Leader tasks ("DAILY протокол") API — the brigadir → lider tier.
 
-This board serves ``assignee_kind == "leader"`` rows and NOTHING else. The
-brigadir tier (smena menejeri → brigadir) lives on the same table and is served
-by ``routers/brigadir_tasks.py``; a task is READ wherever a viewer's scope
-reaches it but MUTATED only on the board that owns it, so neither router has to
-reason about the other's rights. The queue engine both share is
-``services/task_board.py`` — never re-spell it here.
+The WRITE endpoints here serve ``assignee_kind == "leader"`` rows and NOTHING
+else. The brigadir tier (smena menejeri → brigadir) lives on the same table and
+is written through ``routers/brigadir_tasks.py``; a task is READ wherever a
+viewer's scope reaches it but MUTATED only through the router that owns it, so
+neither router has to reason about the other's rights. The queue engine both
+share is ``services/task_board.py`` — never re-spell it here.
+
+Since 2026-09-04 there is ONE page for both tiers (`/tasks`), fed by ``board``
+below: every row the viewer may see, from either tier, with the rights on each
+row. ``GET /api/tasks`` (the leader tier alone) stays for a tab still open on
+an older bundle.
 
 Supervisors assign tasks to the leaders of their unit; admins act for any
 leader; leaders work their own queue. Access is gated by the ``tasks`` page in
@@ -44,11 +49,14 @@ from app.models import (
 )
 from app.capabilities import page_scope_is_all
 from app.permissions import require_page
-from app.services import action_log, task_board as tb
+from app.services import action_log, shift_scope, task_board as tb
 # Shared notification helpers: _notify writes a single bell row; notify_profile
 # addresses the PERSON — one bell row on the profile plus a DM to every account
 # holding it, so co-holders and successors are never silently skipped.
 from app.routers.staff import _notify, notify_profile
+# The brigadir tier's picker/creation rule, asked by the one board below so the
+# «can create» flag and the list the endpoint accepts can never be two sets.
+from app.routers import brigadir_tasks as _bt
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -241,6 +249,164 @@ def list_tasks(
     return {
         "role": role,
         "can_create": role in ("admin", "supervisor"),
+        "data": [_row(r) for r in rows],
+    }
+
+
+# ── the ONE board ─────────────────────────────────────────────────────────────
+
+def _creator_role(profile_key: Optional[str]) -> Optional[str]:
+    """The creator's ROLE off their profile key (``"supervisor:12"`` →
+    ``supervisor``) — what the analysis board badges a name with. Legacy rows
+    that predate ``created_by_profile`` carry none."""
+    if not profile_key or ":" not in profile_key:
+        return None
+    return profile_key.split(":", 1)[0]
+
+
+@router.get("/board")
+def board(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("tasks")),
+):
+    """BOTH tiers of everything in the viewer's reach, with the rights on each
+    row — what `/tasks` renders since the two boards became one page.
+
+    Reach is the UNION of what the two tier lists served: an admin (or a "see
+    all" page grant) everything; a shift manager both tiers inside their shift
+    ∩ plant (`services/shift_scope`, archived units kept — a unit's history
+    must not vanish the day it is archived); a brigadir both tiers of their own
+    unit (the tasks set FOR them and the ones they set their leaders); a leader
+    their own queue and nothing above it. Any other role toggled onto the page
+    reads everything and writes nothing.
+
+    Rights are PER ROW because the board is not homogeneous: a shift manager
+    governs the brigadir rows and only reads the leader rows, a brigadir the
+    reverse. Each right is the same predicate the owning router's write
+    endpoint applies (``_assert_can_*`` here, ``_can_manage`` /
+    ``_is_assignee`` / ``_owns_row`` in brigadir_tasks), resolved ONCE per
+    request rather than once per row, so a control drawn on the page is never
+    one the endpoint then refuses. Which router owns a row is ``assignee_kind``
+    — leader rows write through ``/api/tasks``, brigadir rows through
+    ``/api/brigadir-tasks``.
+    """
+    role = payload.get("role")
+    is_admin = role == "admin"
+    sees_all = is_admin or page_scope_is_all(db, payload, "tasks")
+    q = db.query(LeaderTask)
+    if not sees_all:
+        if role == "shift-manager":
+            units = shift_scope.unit_ids(db, payload.get("role_id"), include_archived=True)
+            q = q.filter(LeaderTask.supervisor_manager_id.in_(units)) if units else q.filter(False)
+        elif role == "supervisor":
+            q = q.filter(LeaderTask.supervisor_manager_id == payload.get("role_id"))
+        elif role == "leader":
+            pid = identity.viewer_leader_profile_id(db, payload)
+            own = [LeaderTask.leader_profile_id == pid] if pid else []
+            if payload.get("role_ref"):
+                own.append(and_(LeaderTask.leader_profile_id.is_(None),
+                                LeaderTask.leader_role_ref == payload.get("role_ref")))
+            q = q.filter(LeaderTask.assignee_kind == tb.KIND_LEADER)
+            q = q.filter(or_(*own)) if own else q.filter(False)
+
+    rows = q.order_by(
+        LeaderTask.assignee_kind,
+        LeaderTask.supervisor_manager_id,
+        LeaderTask.leader_profile_id,
+        LeaderTask.leader_role_ref,
+        LeaderTask.priority.is_(None),          # active first
+        LeaderTask.priority,
+        LeaderTask.completed_at.desc().nullslast(),
+    ).all()
+
+    counts = dict(
+        db.query(LeaderTaskComment.task_id, func.count(LeaderTaskComment.id))
+        .filter(LeaderTaskComment.task_id.in_([r.id for r in rows] or [0]))
+        .group_by(LeaderTaskComment.task_id)
+        .all()
+    )
+    mgrs = {m.id: m for m in db.query(Manager).all()}
+    live_names = {
+        p.id: p.name for p in db.query(RoleProfile).filter(
+            RoleProfile.id.in_([r.leader_profile_id for r in rows if r.leader_profile_id] or [0])
+        )
+    }
+
+    # The viewer, resolved once: their profile (creator rights), their own
+    # leader profile (assignee rights on the leader tier), their own unit
+    # (brigadir rights on both tiers) and the units a shift manager RUNS —
+    # `shift_scope.covers` per unit is shift ∩ plant, which is exactly
+    # `unit_ids(include_archived=True)` as a set.
+    viewer_key = identity.viewer_profile_key(db, payload)
+    viewer_pid = identity.viewer_leader_profile_id(db, payload) if role == "leader" else None
+    own_unit = payload.get("role_id") if role == "supervisor" else None
+    managed = (set(shift_scope.unit_ids(db, payload.get("role_id"), include_archived=True))
+               if role == "shift-manager" else set())
+    try:
+        sub = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        sub = None
+
+    def _owns(t: LeaderTask) -> bool:
+        if is_admin:
+            return True
+        if t.created_by_profile:
+            return identity.same_profile(t.created_by_profile, viewer_key)
+        return t.created_by is not None and sub is not None and int(t.created_by) == sub
+
+    def _owning_leader(t: LeaderTask) -> bool:
+        if role != "leader":
+            return False
+        if t.leader_profile_id is not None:
+            return t.leader_profile_id == viewer_pid
+        return t.leader_role_ref is not None and t.leader_role_ref == payload.get("role_ref")
+
+    def _rights(t: LeaderTask, kind: str) -> dict:
+        unit_mine = own_unit is not None and t.supervisor_manager_id == own_unit
+        if kind == tb.KIND_SUPERVISOR:
+            manage = is_admin or t.supervisor_manager_id in managed
+            return {"can_edit": _owns(t), "can_status": manage or unit_mine,
+                    "can_reorder": manage, "can_comment": manage or unit_mine}
+        lead = _owning_leader(t)
+        return {"can_edit": _owns(t), "can_status": is_admin or unit_mine or lead,
+                "can_reorder": is_admin or unit_mine, "can_comment": is_admin or unit_mine or lead}
+
+    def _row(t: LeaderTask) -> dict:
+        kind = tb.kind_of(t)
+        sup_kind = kind == tb.KIND_SUPERVISOR
+        m = mgrs.get(t.supervisor_manager_id)
+        # Read live off the registers so a renamed unit or leader does not read
+        # as two people.
+        unit_name = (m.name if m else None) or t.supervisor_name
+        leader_name = None if sup_kind else (live_names.get(t.leader_profile_id) or t.leader_name)
+        return {
+            "id": t.id,
+            "assignee_kind": kind,
+            # WHO the work was set for, whichever tier — one column to print.
+            "assignee_name": unit_name if sup_kind else leader_name,
+            "leader_profile_id": t.leader_profile_id,
+            "leader_name": leader_name,
+            "supervisor_manager_id": t.supervisor_manager_id,
+            "supervisor_name": unit_name,
+            "supervisor_shift": m.shift if m else None,
+            "task_text": t.task_text,
+            "priority": t.priority,
+            "status": t.status,
+            "due_date": t.due_date.isoformat() if t.due_date else None,
+            "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "created_by": t.created_by,
+            "created_by_name": t.created_by_name,
+            "created_by_profile": t.created_by_profile,
+            "creator_role": _creator_role(t.created_by_profile),
+            "comment_count": counts.get(t.id, 0),
+            **_rights(t, kind),
+        }
+
+    return {
+        "role": role,
+        "can_create_leader": role in ("admin", "supervisor"),
+        "can_create_brigadir": _bt._can_create_anywhere(db, payload),
         "data": [_row(r) for r in rows],
     }
 

@@ -1,7 +1,7 @@
 """
 Brigadir tasks API — the smena menejeri → brigadir tier.
 
-The same board as ``/tasks`` one level up the org chart: a shift manager sets
+The same board as the leader tier one level up the org chart: a shift manager sets
 tasks for the brigadirs of their shift, each brigadir works a dense 1..N queue,
 every task carries a chat thread, and the bell tells the people concerned. The
 queue engine, the assignee rule and the comment-ownership rule are NOT restated
@@ -11,10 +11,12 @@ here — they live in ``services/task_board.py`` and both boards call them, so
 WHAT THIS BOARD OWNS. Only ``assignee_kind == "supervisor"`` rows. Leader tasks
 inside the viewer's units are SERVED here (a shift manager is answerable for
 their shift and asked to see the whole cascade) but are strictly read-only:
-every mutation refuses them, and they are edited on ``/tasks``, where the
-unit's own brigadir governs them. One task, one board that owns it — otherwise
-two routers with two rights models can both claim the same row and only one of
-them is right.
+every mutation refuses them, and they are edited through ``/api/tasks``, where
+the unit's own brigadir governs them. One task, one router that owns it —
+otherwise two routers with two rights models can both claim the same row and
+only one of them is right. Since 2026-09-04 the PAGE is one (`/tasks`, both
+tiers, `routers/tasks.py::board`); the client routes each mutation to the
+router that owns the row by its ``assignee_kind``.
 
 WHO REACHES WHAT. Never re-spelled: ``services/shift_scope`` is THE definition
 of a shift manager's reach (their shift ∩ their plant), and it is asked twice —
@@ -49,7 +51,11 @@ from app.routers.staff import _notify, notify_profile
 
 router = APIRouter(prefix="/api/brigadir-tasks", tags=["brigadir-tasks"])
 
-PAGE = "brigadir-tasks"
+# Gated on the ONE task page (from 2026-09-04 both tiers are read on /tasks;
+# see routers/tasks.py `board`). The write endpoints keep their own prefix
+# because the row's tier decides which router may touch it — a client picks
+# the prefix by `assignee_kind`.
+PAGE = "tasks"
 _snippet = tb.snippet
 
 

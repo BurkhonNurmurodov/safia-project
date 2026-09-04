@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
-  ListChecks,
+ 
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList,
@@ -49,10 +49,9 @@ const ALL_LINKS = [
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
   // ARC service-ticket register — synced from the ARC API, admin-only by default.
   { to: "/arc", page: "arc", key: "nav.arc", icon: ClipboardList, group: "quality" },
+  // THE task board — both tiers (smena menejeri → brigadir, brigadir → lider)
+  // on one page since 2026-09-04; the level is a column, not a second page.
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },
-  // The same board one tier up — shift managers set tasks for their brigadirs.
-  // Sits beside /tasks: they are one flow read at two levels of the org chart.
-  { to: "/brigadir-tasks", page: "brigadir-tasks", key: "nav.brigadirTasks", icon: ListChecks, group: "leaders" },
   { to: "/worker-concerns", page: "worker-concerns", key: "nav.workerConcerns", icon: Megaphone, group: "leaders" },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },

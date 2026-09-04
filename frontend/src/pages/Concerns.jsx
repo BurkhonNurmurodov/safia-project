@@ -27,6 +27,10 @@ import ColumnsPicker from "../components/ui/ColumnsPicker";
 import { FilterPanel, OptsFilter, RngFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import CellLink from "../components/ui/CellLink";
+import {
+  LEVEL_COLOR, LevelChip, InsightCard, Metric, Subject, ChartCard, Chart, NoChart,
+  Empty, StackLegend, RankedList, useRowFit,
+} from "../components/ui/AnalysisBoard";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
@@ -101,16 +105,6 @@ const shortPerson = (full) => {
 // with no holder is a gap somebody has to close, not a row to drop off the
 // board.
 const NO_RESP = "__none__";
-
-// Level → identity hue in the shared generic-first order (red → green → blue
-// as the concern climbs the chain — identity, not traffic-light). "leader" is
-// the step below the chain's opening level, so it stays neutral grey.
-const LEVEL_COLOR = {
-  leader: "#94a3b8",
-  supervisor: "#ef4444",
-  "shift-manager": "#22c55e",
-  "top-manager": "#3b82f6",
-};
 
 // status → traffic-light tint from the admin-panel palette. Not-started stays
 // neutral grey on purpose (a project exists but no process yet):
@@ -301,24 +295,6 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, 
   );
 }
 
-// Non-interactive level pill (same silhouette as the status pill so the two
-// chip columns read as one visual family). The optional title carries the
-// assigned top-manager's name on top-level rows — a tooltip, so row heights
-// stay uniform.
-function LevelChip({ level, label, title }) {
-  const color = LEVEL_COLOR[level] || "var(--text-3)";
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-      style={{ background: `${color}24`, color }}
-      title={title}
-    >
-      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
-      {label}
-    </span>
-  );
-}
-
 // One side of a handover in the history timeline: the level step with the
 // PERSON who sat on it underneath. The name is the whole point of the trail —
 // a step reading "supervisor → shift-manager" answers "to whom?" for nobody.
@@ -394,197 +370,25 @@ function ActionBtn({ icon: Icon, label, color, onClick }) {
   );
 }
 
-// ── rich KPI card primitives ────────────────────────────────────────────────
-// Card shell: tinted icon chip + uppercase label pinned top, body (subject
-// headline + compact metric) pinned bottom so cards align across the KPI row
-// regardless of how the labels wrap. Corner glow is a radial gradient (smooth
-// falloff, no blur-filter banding).
-function InsightCard({ icon: Icon, tint, label, children }) {
-  return (
-    <div className="relative rounded-2xl p-4 flex flex-col overflow-hidden" style={cardStyle}>
-      <div aria-hidden className="absolute inset-0 pointer-events-none"
-           style={{ background: `radial-gradient(140px 140px at calc(100% - 8px) -8px, ${tint}29, transparent 70%)` }} />
-      <div className="flex items-center gap-2.5 relative">
-        <span className="inline-flex items-center justify-center w-8 h-8 rounded-[10px] flex-shrink-0"
-              style={{ background: `${tint}1f`, color: tint }}>
-          <Icon size={16} />
-        </span>
-        <span className="text-[11px] uppercase tracking-[0.08em] font-semibold leading-tight" style={{ color: "var(--text-3)" }}>
-          {label}
-        </span>
-      </div>
-      <div className="relative flex flex-col gap-1 mt-4 grow justify-end min-h-[56px]">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-// Compact colour-coded number + terse unit, with an optional quieter qualifier
-// ("avg per concern"). Sits under the subject line as supporting detail.
-function Metric({ value, unit, color, suffix }) {
-  return (
-    <div className="flex items-baseline gap-1 leading-none">
-      <span className="text-base font-bold tabular-nums" style={{ color }}>{value}</span>
-      {unit && <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{unit}</span>}
-      {suffix && <span className="text-[10px] font-medium" style={{ color: "var(--text-4)" }}>· {suffix}</span>}
-    </div>
-  );
-}
-
-// Headline of the card body (problem text / name / date), clamped to a single
-// line so every card body has identical height.
-function Subject({ text, title }) {
-  return (
-    <div className="text-lg font-bold leading-snug truncate" style={{ color: "var(--text-1)" }} title={title || text}>
-      {text}
-    </div>
-  );
-}
-
-// ── chart board primitives ──────────────────────────────────────────────────
-// Card shell for every chart on the analytics tab: cardStyle + the canonical
-// SectionHead, so all boards carry identical chrome.
-function ChartCard({ icon, title, subtitle, right, className = "", children }) {
-  return (
-    <div className={`rounded-2xl overflow-hidden flex flex-col ${className}`} style={cardStyle}>
-      <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} />
-      {children}
-    </div>
-  );
-}
-
-// Mount guard: holds a fixed-height slot until the grid cell has settled, so
-// ApexCharts measures its final width once (see `chartsReady`).
-function Chart({ ready, height, ...rest }) {
-  return ready ? <ReactApexChart height={height} {...rest} /> : <div style={{ height }} />;
-}
-
-// One responsible holder on the analytics board: their chain-step badge, name
-// and total on the first line, the four-bucket status stack under it. Every bar
-// on ONE board shares a max — the busiest holder in whatever the level toggle
-// is showing — so widths compare straight down the list. The max is re-taken
-// per selection rather than fixed to the whole board: measured against a board
-// whose top holder carries 43, a level whose own top carries 2 draws nothing
-// but slivers, and the reader cannot tell its four people apart at all.
-// Drawn natively rather than as an SVG axis because a badge is a chip, and an
-// ApexCharts category label can only ever be a string.
-function ResponsibleBar({ row, max, parts, levelLabel, unit }) {
-  const width = max ? (row.total / max) * 100 : 0;
-  return (
-    <div className="min-w-0">
-      <div className="flex items-center gap-2 mb-1">
-        {/* The badge says which step the person answers on — the same hue and
-            silhouette the register's level column uses, so one name reads the
-            same way on both surfaces. */}
-        {row.level ? (
-          <LevelChip level={row.level} label={levelLabel(row.level)} />
-        ) : (
-          <span
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-            style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}
-          >
-            —
-          </span>
-        )}
-        <span className="flex-1 truncate text-xs" style={{ color: "var(--text-1)" }} title={row.title}>
-          {row.label}
-        </span>
-        <span className="text-xs font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
-          {row.total}
-        </span>
-      </div>
-      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
-        <div className="flex h-full rounded-full overflow-hidden" style={{ width: `${width}%` }}>
-          {parts.map((p) => (row[p.key] > 0 ? (
-            <div
-              key={p.key}
-              className="h-full"
-              style={{ background: p.color, width: `${(row[p.key] / row.total) * 100}%` }}
-              title={`${p.label}: ${row[p.key]} ${unit}`}
-            />
-          ) : null))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// The four status segments as a legend — the native rows don't get the one
-// ApexCharts draws for free. Read from STACK_PARTS, so a colour can never mean
-// two things, and shared by the card and the full-list modal.
-function StackLegend({ parts }) {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-4">
-      {parts.map((p) => (
-        <span key={p.key} className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-          <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: p.color }} />
-          {p.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// One column of holders. The card shows the slice that fits beside the
-// categories chart and the modal shows all of them — same component both
-// times, so the two can never drift into two different boards.
+// ── ranked responsible board ────────────────────────────────────────────────
+// Concerns' reading of the shared ranked list (components/ui/AnalysisBoard):
+// every holder is badged with the chain step they answer on — the same hue and
+// silhouette the register's level column uses, so one name reads the same way
+// on both surfaces. The un-named bucket answers on no step and keeps a neutral
+// dash. Same component on the card and in the full-list modal, so the two can
+// never drift into two different boards.
 function ResponsibleList({ rows, max, parts, levelLabel, unit }) {
-  return (
-    <div className="space-y-3">
-      {rows.map((r) => (
-        <ResponsibleBar key={r.key} row={r} max={max} parts={parts} levelLabel={levelLabel} unit={unit} />
-      ))}
-    </div>
-  );
-}
-
-// How many rows fit in a box whose height somebody else decides. The
-// responsible card sits in a stretch row beside the categories chart, so its
-// list area is handed a height — MEASURE it rather than predicting it from a
-// formula that would have to guess a wrapped header, four languages of legend
-// and the neighbour's own row count. No feedback loop: the area is flex-1 with
-// min-h-0, so its height never depends on how many rows we put in it.
-function useRowFit(rowH, gap, initial) {
-  const [fit, setFit] = useState(initial);
-  const roRef = useRef(null);
-  // A ref CALLBACK, not a ref + effect: the measured box only mounts once the
-  // query resolves, and an effect whose deps never change would have run once
-  // against the loading skeleton, found no node, and never observed anything.
-  const ref = useCallback((el) => {
-    roRef.current?.disconnect();
-    roRef.current = null;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const measure = () => {
-      const h = el.clientHeight;
-      if (h > 0) setFit(Math.max(1, Math.floor((h + gap) / rowH)));
-    };
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    roRef.current = ro;
-    measure();
-  }, [rowH, gap]);
-  return [ref, fit];
-}
-
-// "No data" body for a chart card — centred in the slot the chart would fill.
-function NoChart({ height, text }) {
-  return (
-    <div className="grid place-items-center text-xs flex-1" style={{ color: "var(--text-4)", minHeight: height }}>
-      {text}
-    </div>
-  );
-}
-
-// Placeholder body when a card has nothing meaningful to surface; my-auto
-// centres it inside the reserved body height so empty cards don't collapse.
-function Empty({ icon: Icon, color, text }) {
-  return (
-    <div className="flex items-center gap-2 my-auto">
-      <Icon size={18} className="flex-shrink-0" style={{ color }} />
-      <span className="text-sm font-medium" style={{ color: "var(--text-3)" }}>{text}</span>
-    </div>
-  );
+  const badge = (row) => (row.level ? (
+    <LevelChip level={row.level} label={levelLabel(row.level)} />
+  ) : (
+    <span
+      className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}
+    >
+      —
+    </span>
+  ));
+  return <RankedList rows={rows} max={max} parts={parts} unit={unit} badge={badge} />;
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);

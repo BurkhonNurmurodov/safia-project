@@ -2871,6 +2871,71 @@ rewritten afterwards, by anyone, with nothing on screen saying the day was shut.
   a JSON blob where the code should be. On `day_closed` it refetches, so the
   banner appears and the cells go read-only under the operator's hands.
 
+## THE task board (`/tasks`) — both tiers, one page
+
+From **2026-09-04** the two task boards are ONE page. `/brigadir-tasks`
+(smena menejeri → brigadir) is retired: its route redirects to `/tasks`, its
+page key is gone from `PAGE_KEYS`, and `pages/Tasks.jsx` renders both tiers the
+way `/concerns` renders every level of its chain — one register, a LEVEL on
+each row, an analysis tab beside it.
+
+- **`GET /api/tasks/board` is THE read** — every task the viewer may see from
+  either tier, with the rights ON EACH ROW (`can_edit` / `can_status` /
+  `can_reorder` / `can_comment`). Reach is the UNION of what the two lists
+  served: admin everything, a shift manager both tiers inside their shift ∩
+  plant (`services/shift_scope`, archived units kept), a brigadir both tiers
+  of their own unit, a leader their own queue. The board is not homogeneous —
+  a shift manager governs the brigadir rows and only reads the leader rows, a
+  brigadir the reverse — so the page derives NOTHING from the viewer's role.
+  Each right is the same predicate the owning router's write endpoint applies,
+  resolved once per request, never once per row.
+- **Writes still go to the router that owns the tier**, and that split is the
+  whole of what survives: leader rows through `/api/tasks`, brigadir rows
+  through `/api/brigadir-tasks` (now gated on the `tasks` page). The client
+  picks the prefix by `assignee_kind` (`endpointFor`). One task, one router
+  that owns it — two routers with two rights models claiming one row is how
+  only one of them is right.
+- **`GET /api/tasks` (the leader tier alone) stays** for a tab open on an
+  older bundle, which is why this shipped as a MINOR: nothing an old tab sends
+  is refused.
+- **Status is the PARTITION; overdue is a FLAG.** The donut, the KPI cards and
+  every ranked stack count what the status column says — todo / doing / done —
+  and «muddati o'tgan» is the open rows past their date, printed BESIDE them
+  (the donut's legend carries it under a rule as «shu jumladan», the ranked
+  bars as a red mark before the total). The earlier reading pulled an overdue
+  task out of its status bucket, so a board of twelve overdue «to do» tasks
+  printed «to do: 0» over a table of twelve «to do» rows. Never re-introduce a
+  fourth "overdue" bucket on this page; the Concerns board still keeps its four
+  disjoint buckets and has not been asked to change.
+- **The page-key merge is a startup fold, not a flag**
+  (`startup.merge_brigadir_tasks_page`): the saved Access matrix's
+  `brigadir-tasks` roles are unioned into `tasks` and the key removed; a
+  personal `page.view.brigadir-tasks` GRANT is renamed to `page.view.tasks`
+  where no such row exists (else dropped, the unique key forbids two); a DENY
+  is dropped, because the only page it could now close is the merged one. The
+  trigger state cannot recur, so a second pass is a no-op. Default access is
+  `tasks: shift-manager + supervisor + leader`.
+- **Controls follow the payload, not the role.** The tier filter and column
+  exist only while both kinds are present, the shift / brigadir sections and
+  the unit column only while more than one unit is; a leader sees neither an
+  assignee column nor a leader filter. The org chain is grouped «Kim va
+  qayerda», the record filters «Vazifa», and the leader list under a brigadir
+  pick says so (`note`) and offers the way back (`empty`).
+- **The analysis tab** (`tasks_view`): four insight cards (who sets the most,
+  the longest queue, the oldest open task, the on-time share of done tasks),
+  the open-task trend with its status strip, the status donut, opened-vs-closed
+  per day, a status stack per unit, and two ranked boards — by CREATOR (badged
+  with the role they set it from) and by ASSIGNEE (badged with the tier) —
+  plus the completion-time histogram. All computed client-side over the SAME
+  filtered rows as the register, so the two views tell one story.
+- **`components/ui/AnalysisBoard.jsx` is THE home of the analysis vocabulary**
+  — `InsightCard` / `Metric` / `Subject` / `Empty`, `ChartCard` / `Chart` /
+  `NoChart`, `StackLegend`, `RankedBar` / `RankedList` (badge and extra are
+  render props), `useRowFit`, `LevelChip` + `LEVEL_COLOR`. They were private to
+  `Concerns.jsx`, which now imports them and keeps only its own
+  `ResponsibleList` wrapper (a `RankedList` badged with the chain step). A
+  third board copies nothing from either page.
+
 ## The action register (`/admin/upload?tab=logs`)
 
 From **2026-08-23** every change on the platform lands in ONE append-only table,

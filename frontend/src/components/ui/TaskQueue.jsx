@@ -1,8 +1,8 @@
 /**
  * Task-queue controls — the status pill and the two-step priority editor.
  *
- * Shared by BOTH task boards: /tasks (brigadir → lider) and /brigadir-tasks
- * (smena menejeri → brigadir). They are one interaction asked one tier apart —
+ * Shared by BOTH tiers of the task board on /tasks (brigadir → lider and
+ * smena menejeri → brigadir). They are one interaction asked one tier apart —
  * the same traffic-light pill, the same "pick a position, then say how the rest
  * of the queue reacts" flow — so they live here rather than being copied. Two
  * copies of a two-step editor drift into two different ways to reorder a queue,
