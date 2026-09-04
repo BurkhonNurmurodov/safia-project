@@ -26,9 +26,9 @@ import { shortPerson } from "../utils/personName";
  * Read top to bottom it answers four questions, in order: is the team OK
  * (the KPI strip), who leads (the podium), where does everybody stand (the
  * register, a row opening into its breakdown against the team average), and
- * how did the places move (the trajectory chart). One card family, one
- * traffic-light grammar, the Leaders page's own podium idiom — nothing on this
- * surface is drawn in a style the rest of the platform does not use.
+ * how did the places move (the trajectory chart). The podium is the one
+ * deliberately theatrical element — three big player cards, kept by the
+ * operator's call — everything else is the platform's own card grammar.
  *
  * ⚠ DUMMY DATA. Everything below the `── dummy data ──` banner is a
  * deterministic mock so the page is fully interactive in prod without a
@@ -73,18 +73,18 @@ const LAST = WEEKS.length - 1;
 
 /* ────────────────────────── dummy data ──────────────────────────────── */
 const RAW = [
-  { name: "Malika Qodirova",   unit: "2-uchastka",  image: "/images/supervisors/malika.png",   s: { zag: 92, naz: 88, kai: 90, xav: 84, kir: 96 } },
-  { name: "Dilshod Karimov",   unit: "5-uchastka",  image: "/images/supervisors/dilshod.png",  s: { zag: 90, naz: 92, kai: 78, xav: 88, kir: 91 } },
-  { name: "Aziza Tosheva",     unit: "1-uchastka",  image: "/images/supervisors/aziza.png",    s: { zag: 87, naz: 74, kai: 92, xav: 90, kir: 88 } },
-  { name: "Murodali Ochilov",  unit: "7-uchastka",  image: "/images/supervisors/murodali.png", s: { zag: 84, naz: 81, kai: 70, xav: 76, kir: 90 } },
-  { name: "Sherzod Aliyev",    unit: "3-uchastka",  image: "/images/supervisors/sherzod.png",  s: { zag: 86, naz: 70, kai: 75, xav: 72, kir: 84 } },
-  { name: "Nodira Yusupova",   unit: "4-uchastka",  image: "/images/supervisors/nodira.png",   s: { zag: 78, naz: 85, kai: 80, xav: 74, kir: 81 } },
-  { name: "Jasur Rahimov",     unit: "9-uchastka",  image: "/images/supervisors/jasur.png",    s: { zag: 83, naz: 62, kai: 68, xav: 80, kir: 77 } },
-  { name: "Gulnora Ismoilova", unit: "8-uchastka",  image: "/images/supervisors/gulnora.png",  s: { zag: 71, naz: 78, kai: 74, xav: 70, kir: 79 } },
-  { name: "Bekzod Tursunov",   unit: "6-uchastka",  image: "/images/supervisors/bekzod.png",   s: { zag: 74, naz: 66, kai: null, xav: 72, kir: 76 } },
-  { name: "Kamola Ergasheva",  unit: "11-uchastka", image: "/images/supervisors/kamola.png",   s: { zag: 69, naz: 72, kai: 60, xav: 66, kir: 74 } },
-  { name: "Rustam Nazarov",    unit: "10-uchastka", image: "/images/supervisors/rustam.png",   s: { zag: 66, naz: 58, kai: 55, xav: 62, kir: 70 } },
-  { name: "Sardor Xolmatov",   unit: "12-uchastka", image: "/images/supervisors/sardor.png",   s: { zag: 58, naz: 52, kai: 48, xav: 60, kir: 63 } },
+  { name: "Malika Qodirova",   unit: "2-uchastka",  image: "/images/supervisors/malika.png", render: "/images/supervisors/malika_cut.png",   s: { zag: 92, naz: 88, kai: 90, xav: 84, kir: 96 } },
+  { name: "Dilshod Karimov",   unit: "5-uchastka",  image: "/images/supervisors/dilshod.png", render: "/images/supervisors/dilshod_cut.png",  s: { zag: 90, naz: 92, kai: 78, xav: 88, kir: 91 } },
+  { name: "Aziza Tosheva",     unit: "1-uchastka",  image: "/images/supervisors/aziza.png", render: "/images/supervisors/aziza_cut.png",    s: { zag: 87, naz: 74, kai: 92, xav: 90, kir: 88 } },
+  { name: "Murodali Ochilov",  unit: "7-uchastka",  image: "/images/supervisors/murodali.png", render: "/images/supervisors/murodali_cut.png", s: { zag: 84, naz: 81, kai: 70, xav: 76, kir: 90 } },
+  { name: "Sherzod Aliyev",    unit: "3-uchastka",  image: "/images/supervisors/sherzod.png", render: "/images/supervisors/sherzod_cut.png",  s: { zag: 86, naz: 70, kai: 75, xav: 72, kir: 84 } },
+  { name: "Nodira Yusupova",   unit: "4-uchastka",  image: "/images/supervisors/nodira.png", render: "/images/supervisors/nodira_cut.png",   s: { zag: 78, naz: 85, kai: 80, xav: 74, kir: 81 } },
+  { name: "Jasur Rahimov",     unit: "9-uchastka",  image: "/images/supervisors/jasur.png", render: "/images/supervisors/jasur_cut.png",    s: { zag: 83, naz: 62, kai: 68, xav: 80, kir: 77 } },
+  { name: "Gulnora Ismoilova", unit: "8-uchastka",  image: "/images/supervisors/gulnora.png", render: "/images/supervisors/gulnora_cut.png",  s: { zag: 71, naz: 78, kai: 74, xav: 70, kir: 79 } },
+  { name: "Bekzod Tursunov",   unit: "6-uchastka",  image: "/images/supervisors/bekzod.png", render: "/images/supervisors/bekzod_cut.png",   s: { zag: 74, naz: 66, kai: null, xav: 72, kir: 76 } },
+  { name: "Kamola Ergasheva",  unit: "11-uchastka", image: "/images/supervisors/kamola.png", render: "/images/supervisors/kamola_cut.png",   s: { zag: 69, naz: 72, kai: 60, xav: 66, kir: 74 } },
+  { name: "Rustam Nazarov",    unit: "10-uchastka", image: "/images/supervisors/rustam.png", render: "/images/supervisors/rustam_cut.png",   s: { zag: 66, naz: 58, kai: 55, xav: 62, kir: 70 } },
+  { name: "Sardor Xolmatov",   unit: "12-uchastka", image: "/images/supervisors/sardor.png", render: "/images/supervisors/sardor_cut.png",   s: { zag: 58, naz: 52, kai: 48, xav: 60, kir: 63 } },
 ];
 
 function mulberry32(a) {
@@ -136,7 +136,7 @@ function buildData(seed) {
       for (let w = 0; w <= LAST; w++) arr.push(w === LAST ? v : clamp(Math.round(v - trend * (LAST - w) * 0.8 + (rnd() - 0.5) * 9), 8, 99));
       sparks[c.key] = arr;
     });
-    return { id: i, name: r.name, unit: r.unit, shift: unitShift(r.unit), image: r.image, s, comp, hist, sparks };
+    return { id: i, name: r.name, unit: r.unit, shift: unitShift(r.unit), image: r.image, render: r.render, s, comp, hist, sparks, scoreDelta: +(trend * 1.6 + (rnd() - 0.5)).toFixed(1) };
   });
   return rankPool(sups);
 }
@@ -272,56 +272,162 @@ function FloatTip({ tip }) {
   );
 }
 
-/* ═══════════════════════ podium card ═════════════════════════════════
- * The Leaders page's StandCard, one level up: bg-inner card, medal rim
- * (heavier on first place), ghost place numeral, photo + name + medallion,
- * the overall score against /100, the week's movement, and the five
- * statistics as labelled micro-gauges — never three-letter codes. */
-function CardStat({ label, full, value, st }) {
+/* ═══════════════════════ podium — player cards ═══════════════════════
+ * Back by the operator's call (2026-09-04): the three big cards are the
+ * page's hero and stand on their own above the KPI strip.
+ * The top three ride metal player cards: the gold / silver / bronze plate,
+ * FIDE-style decoration — engraved arcs radiating from behind the brigadir's
+ * cut-out render under a top spotlight — the big rank number over a dark
+ * score flag on the left, the engraved cup top-right, and a frosted-glass
+ * foot (progressive backdrop blur) the render's legs melt into, carrying the
+ * name band and the five ranked statistics.
+ *
+ * A card is its own surface, so its palette is fixed in both themes (like the
+ * chart identity colours): three stops of the medal metal, the dark ink
+ * written on the plate, the bright edge that lights the decoration, and the
+ * deep tone tinting the frosted foot. */
+const PLATE = {
+  1: { hi: "#F9E7A8", mid: "#DBAB2C", lo: "#8A6410", ink: "#3B2A06", edge: "#FFF6CE", deep: "#4E3604" },
+  2: { hi: "#F1F5FA", mid: "#A9B3BF", lo: "#5C6673", ink: "#1E2530", edge: "#FFFFFF", deep: "#2E3742" },
+  3: { hi: "#F2CBA0", mid: "#C68249", lo: "#7A4A20", ink: "#33190A", edge: "#FFE6CC", deep: "#472409" },
+};
+
+function PlayerCard({ s, place, selected, onSelect, catMeta, st, t, nm }) {
+  const first = place === 1;
+  const p = PLATE[place];
+  const up = s.scoreDelta >= 0;
   return (
-    <span className="block min-w-0" title={`${full}: ${value == null ? "—" : `${fmt(value)}%`}`}>
-      <span className="block text-[10px] uppercase truncate" style={{ color: "var(--text-4)" }}>{label}</span>
-      <span className="block text-[14px] font-bold tabular-nums leading-tight mt-0.5" style={{ color: bandInk(st, value) }}>{fmt(value)}</span>
-      <Meter pct={value} color={bandFill(st, value)} />
-    </span>
+    <button
+      onClick={onSelect}
+      className={`fut-card place-${place}${first ? " fut-champ" : ""} relative flex flex-col overflow-hidden rounded-2xl`}
+      style={{
+        aspectRatio: "0.73",
+        color: p.ink,
+        background: `linear-gradient(158deg, ${p.hi} 0%, ${p.mid} 46%, ${p.lo} 100%)`,
+        border: `1px solid ${hexA(p.mid, 0.8)}`,
+        boxShadow: selected
+          ? `0 24px 50px -20px ${hexA(p.mid, 0.7)}, 0 0 0 3px var(--brand-ring)`
+          : `0 24px 50px -22px ${hexA(p.mid, 0.6)}`,
+      }}
+    >
+      {/* plate finish — a raking highlight and a glow off the top edge */}
+      <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `linear-gradient(104deg, transparent 6%, ${hexA(p.edge, 0.5)} 20%, transparent 33%), radial-gradient(120% 55% at 50% -4%, ${hexA(p.edge, 0.55)} 0%, transparent 64%)` }} />
+      {/* engraved arcs — the FIDE-poster decoration translated onto metal:
+          thin rings radiating from behind the head, fading out well before
+          the frosted foot so the band stays calm */}
+      <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `repeating-radial-gradient(circle at 50% 24%, transparent 0 42px, ${hexA(p.edge, 0.45)} 42px 43.5px)`, opacity: 0.55, maskImage: "linear-gradient(to bottom, black 0%, black 50%, transparent 74%)", WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 50%, transparent 74%)" }} />
+      {/* champion halo — a slow breathing glow behind the render */}
+      {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "2% 10% auto 10%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(p.edge, 0.8)} 0%, transparent 62%)` }} />}
+
+      {/* the render — contain + bottom-anchored, so any portrait ratio stands
+          on the name band instead of being cropped through the face */}
+      {s.render
+        ? <img src={s.render} alt="" aria-hidden className="absolute pointer-events-none select-none" style={{ left: 0, right: 0, top: "4%", height: "78%", width: "100%", objectFit: "contain", objectPosition: "bottom center", filter: "drop-shadow(0 12px 16px rgba(0,0,0,0.3))" }} />
+        : <span aria-hidden className="absolute left-0 right-0 text-center font-black select-none" style={{ top: "24%", fontSize: first ? 60 : 44, opacity: 0.3 }}>{initials(s.name)}</span>}
+
+      {/* frosted foot — progressive backdrop blur (the render's legs melt into
+          the glass; the mask fades the blur in so there is no hard seam) plus
+          a deep-metal tint that keeps the band legible and stands in as the
+          scrim when backdrop-filter is unsupported (old Telegram WebViews) */}
+      <span aria-hidden className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ height: "44%", backdropFilter: "blur(14px) saturate(1.2)", WebkitBackdropFilter: "blur(14px) saturate(1.2)", maskImage: "linear-gradient(to top, black 58%, transparent 100%)", WebkitMaskImage: "linear-gradient(to top, black 58%, transparent 100%)" }} />
+      <span aria-hidden className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ height: "50%", background: `linear-gradient(to top, ${hexA(p.deep, 0.88)} 0%, ${hexA(p.deep, 0.5)} 55%, transparent 100%)` }} />
+      {first && <span aria-hidden className="fut-sheen absolute pointer-events-none" style={{ top: "-25%", bottom: "-25%", width: "36%", background: `linear-gradient(90deg, transparent, ${hexA("#FFFFFF", 0.42)}, transparent)` }} />}
+
+      {/* rank column — the big embossed place number over its skewed dark
+          score flag, underscored by the composite's traffic-light band */}
+      <span className="absolute flex flex-col items-start" style={{ top: first ? 8 : 6, left: first ? 14 : 10, lineHeight: 1 }}>
+        <b className="tabular-nums" style={{ fontSize: first ? 44 : 33, fontWeight: 900, letterSpacing: "-0.04em", textShadow: `0 1px 0 ${hexA(p.edge, 0.65)}` }}>{s.rank}</b>
+        <span className="tabular-nums" style={{ marginTop: 5, marginLeft: 3, padding: first ? "3px 9px" : "2px 7px", fontSize: first ? 15 : 12.5, fontWeight: 900, color: p.hi, background: hexA(p.ink, 0.88), transform: "skewX(-10deg)", borderRadius: 3, boxShadow: `0 4px 14px -6px ${hexA(p.deep, 0.8)}` }}>
+          <span style={{ display: "inline-block", transform: "skewX(10deg)" }}>{fmt(s.comp)}</span>
+        </span>
+        <span className="flex items-center gap-1" style={{ marginTop: 5, marginLeft: 3 }}>
+          <i className="rounded-full" style={{ width: 6, height: 6, background: bandFill(st, s.comp) }} />
+          <span style={{ fontSize: first ? 10 : 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.88 }}>{t("leaderboard.overallShort")}</span>
+        </span>
+      </span>
+
+      {/* the cup — a medallion struck into the plate, not an icon laid on it:
+          a recessed coin (dark-to-light recess, inset top shadow, lit bottom
+          lip, frosted so the arcs melt away beneath it) holding the trophy as
+          a clean engraved stroke — no fill: lucide glyphs are stroke-drawn and
+          flooding them blots the open bowl — lit by the same 1px edge-light
+          the rank numeral carries. The period's score movement rides under it
+          on the coin's own center axis. */}
+      <span className="absolute flex flex-col items-center gap-1.5" style={{ top: first ? 10 : 8, right: first ? 12 : 9 }}>
+        <span aria-hidden className="flex items-center justify-center rounded-full" style={{
+          width: first ? 40 : 31, height: first ? 40 : 31,
+          background: `linear-gradient(168deg, ${hexA(p.lo, 0.34)} 0%, ${hexA(p.mid, 0.18)} 52%, ${hexA(p.edge, 0.4)} 100%)`,
+          border: `1px solid ${hexA(p.ink, 0.16)}`,
+          boxShadow: `inset 0 1.5px 3px ${hexA(p.deep, 0.34)}, inset 0 -1px 1px ${hexA(p.edge, 0.5)}, 0 1px 0 ${hexA(p.edge, 0.5)}`,
+          backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+        }}>
+          <Trophy size={first ? 21 : 16} strokeWidth={first ? 2.25 : 2.5} style={{ color: p.ink, filter: `drop-shadow(0 1px 0 ${hexA(p.edge, 0.55)})` }} />
+        </span>
+        <span className="inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ fontSize: 10, fontWeight: 800, padding: "1.5px 7px", background: hexA("#FFFFFF", 0.78), border: `1px solid ${hexA(p.ink, 0.1)}`, boxShadow: `0 2px 6px -3px ${hexA(p.deep, 0.6)}`, color: up ? "#15803D" : "#B91C1C" }}>
+          {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
+        </span>
+      </span>
+
+      {/* name band + stat grid — riding the frosted foot in light ink */}
+      <span className="relative mt-auto w-full" style={{ padding: first ? "0 11px 11px" : "0 7px 8px", color: "#FFFFFF", textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
+        <span className="block truncate text-center" style={{ fontSize: first ? 15.5 : 12.5, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.02em", padding: "5px 2px 0" }}>{nm(s.name)}</span>
+        <span className="flex items-center justify-center gap-1.5" style={{ fontSize: first ? 10 : 9, fontWeight: 600, color: "rgba(255,255,255,0.82)", padding: "2px 0 6px" }}>
+          {s.unit}
+          <span className="rounded tabular-nums" style={{ fontSize: first ? 9.5 : 9, fontWeight: 800, letterSpacing: "0.05em", padding: "1px 5px", background: "rgba(255,255,255,0.16)", color: "#FFFFFF" }}>S{s.shift}</span>
+        </span>
+        <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.hi, 0.6)}, transparent)` }} />
+        <span className="grid" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))", paddingTop: 6 }}>
+          {CATS.map((c, i) => (
+            <span key={c.key} title={`${catMeta[c.key].name}: ${fmt(s.s[c.key])}%`} className="flex flex-col items-center" style={{ borderLeft: i ? "1px solid rgba(255,255,255,0.2)" : undefined }}>
+              <b className="tabular-nums" style={{ fontSize: first ? 15 : 12.5, fontWeight: 900, lineHeight: 1 }}>{fmt(s.s[c.key])}</b>
+              <span className="truncate max-w-full" style={{ fontSize: first ? 9 : 8.5, fontWeight: 800, letterSpacing: "0.02em", textTransform: "uppercase", opacity: 0.88, marginTop: 3 }}>{catMeta[c.key].short}</span>
+            </span>
+          ))}
+        </span>
+      </span>
+    </button>
   );
 }
 
-function PodiumCard({ s, place, selected, onSelect, catMeta, st, tone, t, nm, showShift }) {
-  const rim = place === 1 ? 0.6 : 0.38;
+function Podium({ byRank, selectedId, onSelect, catMeta, st, t, nm }) {
+  // A filtered pool can hold fewer than 3 brigadirs — render only real places,
+  // centered, instead of assuming a full podium.
+  const full = byRank.length >= 3;
   return (
-    <button type="button" onClick={onSelect} aria-pressed={selected}
-      className="relative text-left rounded-2xl overflow-hidden p-3 transition-shadow"
-      style={{ background: "var(--bg-inner)", border: `1px solid ${hexA(tone, rim)}`, boxShadow: selected ? "0 0 0 2px var(--brand-ring)" : "none" }}>
-      <span aria-hidden className="absolute select-none tabular-nums font-black leading-none pointer-events-none"
-        style={{ right: 6, bottom: -18, fontSize: 76, color: hexA(tone, 0.14) }}>{place}</span>
-
-      <span className="relative flex items-center gap-2.5">
-        <Avatar sup={s} size={36} />
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text-1)" }}>{nm(s.name)}</span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] leading-tight" style={{ color: "var(--text-3)" }}>
-            {s.unit}{showShift && <ShiftChip shift={s.shift} t={t} />}
-          </span>
-        </span>
-        <span className="flex-shrink-0 inline-flex items-center gap-1 rounded-full pl-1.5 pr-2 py-1 text-[13px] font-black tabular-nums leading-none"
-          style={{ background: hexA(tone, 0.18), border: `1px solid ${hexA(tone, 0.5)}`, color: tone }}>
-          <Trophy size={14} />{place}
-        </span>
-      </span>
-
-      <span className="relative mt-2.5 flex items-end gap-2">
-        <span className="tabular-nums leading-none" style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", color: bandInk(st, s.comp) }}>{fmt1(s.comp)}</span>
-        <span className="text-[11px] pb-0.5" style={{ color: "var(--text-4)" }}>/100 · {t("leaderboard.overallShort")}</span>
-        <span className="ml-auto pb-0.5"><MoveChip prev={s.prevRank} now={s.rank} st={st} t={t} /></span>
-      </span>
-
-      <span className="relative grid grid-cols-5 gap-1.5 mt-2.5">
-        {CATS.map((c) => (
-          <CardStat key={c.key} label={catMeta[c.key].short} full={catMeta[c.key].name} value={s.s[c.key]} st={st} />
-        ))}
-      </span>
-    </button>
+    <div
+      className={`podium-grid${full ? "" : " podium-short"}`}
+      style={full ? undefined : { gridTemplateColumns: `repeat(${byRank.length}, minmax(0, 300px))`, justifyContent: "center" }}
+    >
+      <style>{`
+        /* Phone: the champion takes the full width on its own row, the two
+           runners-up share the row underneath. Desktop unfolds the classic
+           2 · 1 · 3 podium with the champion taller and lifted. */
+        .podium-grid { display:grid; gap:10px; align-items:end; padding-top:14px; grid-template-columns:1fr 1fr; }
+        .podium-grid > .place-1 { grid-column:1 / -1; justify-self:center; width:100%; max-width:264px; }
+        .podium-short > .place-1 { grid-column:auto; width:auto; max-width:none; }
+        @media (min-width: 700px) {
+          .podium-grid:not(.podium-short) { gap:14px; grid-template-columns:1fr 1.14fr 1fr; }
+          /* a card is a card — it keeps its size on a wide screen instead of
+             stretching into a poster */
+          .podium-grid > .fut-card { justify-self:center; width:100%; max-width:300px; }
+          .podium-grid:not(.podium-short) > .place-1 { grid-column:auto; max-width:344px; order:2; transform:translateY(-14px); }
+          .podium-grid:not(.podium-short) > .place-2 { order:1; }
+          .podium-grid:not(.podium-short) > .place-3 { order:3; }
+        }
+        @keyframes podiumHalo { 0%,100% { opacity:.45; transform:scale(1); } 50% { opacity:.9; transform:scale(1.08); } }
+        .podium-halo { animation: podiumHalo 3.6s ease-in-out infinite; }
+        @keyframes futSheen { 0% { transform:translateX(-140%) skewX(-14deg); } 55%,100% { transform:translateX(300%) skewX(-14deg); } }
+        .fut-sheen { transform:translateX(-140%) skewX(-14deg); animation: futSheen 5s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .podium-halo { animation:none; opacity:.7; }
+          .fut-sheen { animation:none; opacity:0; }
+        }
+      `}</style>
+      {byRank.slice(0, 3).map((s, i) => (
+        <PlayerCard key={s.id} s={s} place={i + 1} selected={s.id === selectedId}
+          onSelect={() => onSelect(s.id)} catMeta={catMeta} st={st} t={t} nm={nm} />
+      ))}
+    </div>
   );
 }
 
@@ -610,7 +716,6 @@ export default function Leaderboard() {
   }, [sups, sortKey, query, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showShift = shiftF == null;
-  const showPodium = sortKey === "overall" && !query.trim() && byRank.length >= 3;
   const sortOptions = [["overall", t("leaderboard.overallShort")], ...CATS.map((c) => [c.key, catMeta[c.key].short])];
   const muted = { color: "var(--text-4)" };
   const dAvgIcon = kpi && (kpi.dAvg > 0.05 ? <ArrowUp size={11} /> : kpi.dAvg < -0.05 ? <ArrowDown size={11} /> : <Minus size={11} />);
@@ -652,6 +757,9 @@ export default function Leaderboard() {
           </div>
         </div>
 
+        {/* ── podium: the three big cards ── */}
+        <Podium byRank={byRank} selectedId={effSelectedId} onSelect={selectSup} catMeta={catMeta} st={st} t={t} nm={nm} />
+
         {/* ── the five-second answer: is the team OK, and who is moving ── */}
         {kpi && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -683,14 +791,6 @@ export default function Leaderboard() {
           toolbar={<>
             <SearchInput value={query} onChange={setQuery} placeholder={t("leaderboard.searchPlaceholder")} className="w-full sm:w-56" />
             <SegmentedToggle value={sortKey} onChange={setSortKey} options={sortOptions} className="sm:ml-auto" ariaLabel={t("leaderboard.score")} />
-            {showPodium && (
-              <div className="basis-full grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-1">
-                {byRank.slice(0, 3).map((s, i) => (
-                  <PodiumCard key={s.id} s={s} place={i + 1} tone={medal[i + 1]} selected={s.id === effSelectedId}
-                    onSelect={() => selectSup(s.id)} catMeta={catMeta} st={st} t={t} nm={nm} showShift={showShift} />
-                ))}
-              </div>
-            )}
           </>}
           maxHeight="none"
           mobile={rows.length
