@@ -261,6 +261,12 @@ try:
     # main.py. Mirrored here per the startup-migration rule.
     report_leader_deadline_rules()
 
+    # ⚠ TEMPORARY one-shot — remove this line and its module in the NEXT
+    # version. Inert until a unit is named in `PURGE_TEST_UNITS`. Runs last, so
+    # every table it deletes from is guaranteed to exist by now.
+    from app.onetime_purge_test_units import purge_test_units
+    purge_test_units()
+
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()
 

@@ -120,6 +120,9 @@ async def lifespan(app: FastAPI):
         drop_paused_shift_reviews,
         queue_shift2_backlog,
     )
+    # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
+    # version. Its own file, so removal is a delete rather than surgery here.
+    from app.onetime_purge_test_units import purge_test_units
     add_last_seen_column()
     add_tg_name_column()
     add_edit_requests_batch_id()
@@ -291,6 +294,10 @@ async def lifespan(app: FastAPI):
     # and a push to main is a deploy, so boot is the earliest a
     # regression can be caught.
     report_leader_deadline_rules()
+    # ⚠ TEMPORARY one-shot — remove this line and its module in the NEXT
+    # version. Inert until a unit is named in `PURGE_TEST_UNITS`. Runs last, so
+    # every table it deletes from is guaranteed to exist by now.
+    purge_test_units()
     yield
     shutdown_scheduler()
 
