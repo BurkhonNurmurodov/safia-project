@@ -607,6 +607,17 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
       .map(([value, label]) => ({ value, label }));
   }, [allWorkers]);
 
+  // OptsFilter's option is an opaque VALUE — it renders it, keys on it, ticks
+  // it with `sel.includes` and reports it back through `onChange` — so it gets
+  // the CODES, with the «code · leader» label supplied by `render`. Handing it
+  // the {value,label} pairs printed the object itself (React #31: the /daily
+  // crash the moment the Yacheyka filter was opened) and ticked by object
+  // identity, so no saved pick could ever match.
+  const cellCodes  = useMemo(() => distinctCells.map((o) => o.value), [distinctCells]);
+  const cellLabels = useMemo(
+    () => new Map(distinctCells.map((o) => [o.value, o.label])),
+    [distinctCells]);
+
   // A pick the day no longer offers — including one saved under the old
   // «code · workshop» spelling — is dropped rather than left narrowing the
   // table to nothing while its chip still reads like a real cell.
@@ -861,7 +872,8 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                 {showCellCol && (
                   <th className={thCls} style={{ borderColor: "var(--border)" }}>
                     <ColFilter label={t("staff.colCell")} active={filters.cells.length > 0}>
-                      <OptsFilter searchable opts={distinctCells} sel={filters.cells} onChange={v => setF("cells", v)} />
+                      <OptsFilter searchable opts={cellCodes} sel={filters.cells} onChange={v => setF("cells", v)}
+                        render={c => cellLabels.get(c) || c} />
                     </ColFilter>
                   </th>
                 )}
