@@ -1300,6 +1300,48 @@ def add_leader_task_date_plus() -> None:
         db.close()
 
 
+def add_leader_task_example_scope() -> None:
+    """2026-09-04: an EXAMPLE proof photo belongs to a LEVEL of the same
+    global → supervisor → leader chain the written criteria walks.
+
+    Idempotent and deliberately NOT backfilled. Both columns are nullable and
+    every row written before today carries NULL/NULL, which `example_ids_map`
+    reads as GLOBAL — exactly what those rows already were — so a box that runs
+    this migration serves precisely the photos it served yesterday, and one
+    that never runs it behaves as it always did. Moving an existing row onto a
+    level would be a guess about which unit an admin meant it for, and a
+    picture attributed to the wrong unit is worse than one attributed to
+    nobody.
+
+    An admin who uploaded a scoped example under the OLD keying (a filtered
+    column modal, where only the criteria beside it was scoped) has a global
+    row that should not be one: it is deleted from the unfiltered column modal
+    and re-uploaded under the filter, which is now what scopes it.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_task_examples "
+            "ADD COLUMN IF NOT EXISTS manager_id INTEGER"))
+        db.execute(text(
+            "ALTER TABLE leader_task_examples "
+            "ADD COLUMN IF NOT EXISTS leader_id INTEGER"))
+        # Every read filters on these two beside task_id, and the table is
+        # scanned on every admin config load and every AI review.
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_leader_task_examples_manager_id "
+            "ON leader_task_examples (manager_id)"))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_leader_task_examples_leader_id "
+            "ON leader_task_examples (leader_id)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("add_leader_task_example_scope skipped: %s", exc)
+    finally:
+        db.close()
+
+
 def add_leader_task_proof_kind() -> None:
     """2026-08-19: a task declares HOW its proof is collected — "screenshot"
     (sent to the bot chat, what every task has always done) or "camera" (taken

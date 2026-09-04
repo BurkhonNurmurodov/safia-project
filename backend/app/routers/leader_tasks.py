@@ -156,10 +156,29 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         lead_n[mid] = lead_n.get(mid, 0) + 1
     # Example-proof photo ids per task — ids only, the bytes stream from
     # /admin/leader-tasks/examples/{id} when the modal actually shows them.
-    examples: dict[int, list[int]] = {}
-    for eid, tid in (db.query(LeaderTaskExample.id, LeaderTaskExample.task_id)
-                     .order_by(LeaderTaskExample.id).all()):
-        examples.setdefault(tid, []).append(eid)
+    # Split by LEVEL, exactly as `criteria` is: the global list per task, then
+    # the supervisor and leader overrides SPARSELY, keyed "<row id>:<task id>"
+    # like the matrix's other per-row maps. Sparse because almost no row has
+    # one — a dense map would be 13 tasks × 120 rows of empty lists on every
+    # config load — and split rather than pre-resolved because this payload
+    # feeds an EDITOR: the modal has to be able to tell an example the level
+    # owns from one it merely inherits, which is the whole distinction a
+    # flattened list destroys.
+    ex_global: dict[int, list[int]] = {}
+    ex_sup: dict[str, list[int]] = {}
+    ex_lead: dict[str, list[int]] = {}
+    for eid, tid, mid, lid in (
+        db.query(LeaderTaskExample.id, LeaderTaskExample.task_id,
+                 LeaderTaskExample.manager_id, LeaderTaskExample.leader_id)
+        .order_by(LeaderTaskExample.id).all()
+    ):
+        if lid:
+            ex_lead.setdefault(f"{lid}:{tid}", []).append(eid)
+        elif mid:
+            ex_sup.setdefault(f"{mid}:{tid}", []).append(eid)
+        else:
+            ex_global.setdefault(tid, []).append(eid)
+    examples = ex_global
     return {
         "tasks": [
             {
@@ -217,6 +236,12 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
             str(lid): {str(t): s for t, s in by_task.items()}
             for lid, by_task in overrides.items()
         },
+        # Sparse per-level example ids, "<manager|leader id>:<task id>" →
+        # [example id]. Absent key = this level has none of its own and
+        # inherits the level above; the modal says which of the two it is
+        # showing rather than letting an inherited photo look owned.
+        "example_sup": ex_sup,
+        "example_lead": ex_lead,
         "channel": {"chat_id": channel_chat_id(db) or ""},
         # What a BLANK window end falls back to, per shift — sent rather than
         # duplicated in the UI so the placeholder can never disagree with the
@@ -1164,6 +1189,12 @@ def put_unit(body: UnitIn, db: Session = Depends(get_db),
 
 _EXAMPLE_MAX_BYTES = 10 * 1024 * 1024
 _EXAMPLES_PER_TASK = 3
+# How many rows ONE upload may fan out to. An example is stored bytes, so a
+# fan-out is a copy per target; this is generous enough for a unit's leaders
+# (the largest carries far fewer) and small enough that nobody can put a
+# hundred copies of one screenshot into every database dump by mis-clicking a
+# filter.
+_EXAMPLES_FANOUT_MAX = 40
 # Matches services/gemini's request-side shrink, so what is stored is exactly
 # what the model receives — keeping more would be dead weight in every dump.
 _EXAMPLE_EDGE = 1280
@@ -1185,12 +1216,86 @@ def get_example(example_id: int, db: Session = Depends(get_db),
 
 @router.post("/admin/leader-tasks/examples")
 def post_example(task_id: int = Form(...), file: UploadFile = File(...),
+                 manager_ids: list[int] = Form([]),
+                 leader_ids: list[int] = Form([]),
+                 level: str = Form(""),
                  db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """Store one example photo at ONE level of the chain, or fan it out across
+    the rows a filtered matrix is showing.
+
+    Naming NEITHER list writes the GLOBAL level — which is what this endpoint
+    has always done and what a tab open on an earlier bundle still sends, so
+    nothing about that case moves. Naming leaders (or supervisors) writes one
+    row EACH: an example is bytes, not a pointer, so "these two leaders" is two
+    rows, exactly as the criteria fan-out beside it is two rows. That is also
+    why the breadth is capped — a careless fan-out across every leader would
+    put a hundred copies of one screenshot in the database and in every dump.
+
+    `leader_ids` wins over `manager_ids` when both arrive, the same precedence
+    `colScope()` applies on the client: a leader filter means the admin is
+    looking at leader rows, and writing the parents would reach every OTHER
+    leader under them — precisely the rows they filtered away.
+
+    `level` STATES the intent instead of leaving it to be inferred from an
+    empty list, and exists because those two cases are indistinguishable on the
+    wire and mean opposite things: a filter matching no row must write NOTHING,
+    while naming no rows at all means "global". Inferred, a caller whose filter
+    emptied would silently write the global level — the exact accident this
+    scoping was built to end. Blank = infer, which is what a tab open on an
+    earlier bundle sends and what has always meant global.
+    """
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
     if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
-    if db.query(LeaderTaskExample).filter_by(task_id=task_id).count() >= _EXAMPLES_PER_TASK:
-        raise HTTPException(status_code=400, detail="examples_full")
+
+    lead_ids = sorted({int(i) for i in (leader_ids or []) if i})
+    mgr_ids = sorted({int(i) for i in (manager_ids or []) if i})
+    if lead_ids:
+        mgr_ids = []
+    want = (level or "").strip().lower()
+    if want == "global":
+        lead_ids, mgr_ids = [], []
+    elif want == "leader" and not lead_ids:
+        raise HTTPException(status_code=400, detail="no_targets")
+    elif want == "supervisor" and not mgr_ids:
+        raise HTTPException(status_code=400, detail="no_targets")
+    if len(lead_ids) + len(mgr_ids) > _EXAMPLES_FANOUT_MAX:
+        raise HTTPException(status_code=400, detail="examples_too_many_targets")
+    # An id that names nothing is refused rather than skipped: a row written
+    # against a leader who does not exist is a row no reader can ever resolve,
+    # and a silently shortened fan-out reports success for photos it did not
+    # store.
+    if lead_ids:
+        known = {p.id for p in db.query(RoleProfile.id)
+                 .filter(RoleProfile.id.in_(lead_ids),
+                         RoleProfile.role == "leader").all()}
+        if len(known) != len(lead_ids):
+            raise HTTPException(status_code=400, detail="unknown_leader")
+    if mgr_ids:
+        known = {m.id for m in db.query(Manager.id)
+                 .filter(Manager.id.in_(mgr_ids)).all()}
+        if len(known) != len(mgr_ids):
+            raise HTTPException(status_code=400, detail="unknown_manager")
+
+    # One (task, level) target holds at most _EXAMPLES_PER_TASK photos. Checked
+    # for EVERY target before anything is written, so a fan-out is refused
+    # whole rather than landing on the rows that happened to have room — the
+    # same all-or-nothing rule `window_shift_problems` applies to its own
+    # fan-out.
+    targets: list[tuple[int | None, int | None]] = (
+        [(None, lid) for lid in lead_ids] if lead_ids
+        else [(mid, None) for mid in mgr_ids] if mgr_ids
+        else [(None, None)]
+    )
+    for mid, lid in targets:
+        q = db.query(LeaderTaskExample).filter(LeaderTaskExample.task_id == task_id)
+        q = (q.filter(LeaderTaskExample.leader_id == lid) if lid
+             else q.filter(LeaderTaskExample.leader_id.is_(None)))
+        q = (q.filter(LeaderTaskExample.manager_id == mid) if mid
+             else q.filter(LeaderTaskExample.manager_id.is_(None)))
+        if q.count() >= _EXAMPLES_PER_TASK:
+            raise HTTPException(status_code=400, detail="examples_full")
+
     content = file.file.read(_EXAMPLE_MAX_BYTES + 1)
     if len(content) > _EXAMPLE_MAX_BYTES:
         raise HTTPException(status_code=400, detail="photo_too_large")
@@ -1208,14 +1313,23 @@ def post_example(task_id: int = Form(...), file: UploadFile = File(...),
     buf = BytesIO()
     img.save(buf, "JPEG", quality=85)
     blob = buf.getvalue()
-    row = LeaderTaskExample(task_id=task_id, mime="image/jpeg", data=blob)
-    db.add(row)
+    rows = [LeaderTaskExample(task_id=task_id, manager_id=mid, leader_id=lid,
+                              mime="image/jpeg", data=blob)
+            for mid, lid in targets]
+    for row in rows:
+        db.add(row)
     db.commit()
+    level = ("leader" if lead_ids else "supervisor" if mgr_ids else "global")
     action_log.enrich(
-        target_kind="example", target_id=row.id, target_name=td.name_uz,
-        details=[("level", "global"), ("task", task_id), ("size", len(blob))],
+        target_kind="example", target_id=rows[0].id, target_name=td.name_uz,
+        # The COUNT, never the id list: the register rides in every db-dump, so
+        # anything unbounded belongs here as a number.
+        details=[("level", level), ("task", task_id), ("size", len(blob)),
+                 ("targets", len(rows))],
     )
-    return {"ok": True, "id": row.id}
+    # `id` is kept beside `ids` for a tab open on an earlier bundle.
+    return {"ok": True, "id": rows[0].id, "ids": [r.id for r in rows],
+            "n": len(rows), "level": level}
 
 
 @router.delete("/admin/leader-tasks/examples/{example_id}")
@@ -1225,11 +1339,15 @@ def delete_example(example_id: int, db: Session = Depends(get_db),
     if not row:
         raise HTTPException(status_code=404, detail="No example")
     task_id = row.task_id
+    # The level is read off the ROW, never assumed: an admin taking back a
+    # wrongly-global photo and one tidying a single leader's are two different
+    # acts, and the register is where the difference has to survive.
+    level = leader_ai.example_level(row)
     db.delete(row)
     db.commit()
     action_log.enrich(
         target_kind="example", target_id=example_id,
-        details=[("level", "global"), ("task", task_id)],
+        details=[("level", level), ("task", task_id)],
     )
     return {"ok": True}
 
@@ -2184,9 +2302,15 @@ def leader_task_requirements(
 @router.get("/api/leader-tasks/examples/{example_id}")
 def leader_task_example(example_id: int, db: Session = Depends(get_db),
                         _: dict = Depends(require_page("leaders"))):
-    """An example proof photo for the «Vazifalar» tab. Page-gated only — the
-    examples are global per task and carry nobody's data, so there is no row to
-    scope them to (unlike the media streamer above)."""
+    """An example proof photo for the «Vazifalar» tab. Page-gated only.
+
+    An example may now sit at a supervisor's or a leader's level of the chain,
+    but it stays what it always was: an ADMIN-authored picture of what a
+    correct proof looks like, carrying nobody's data and proving nothing about
+    anybody's day — so there is still no row to scope it to, unlike the media
+    streamer above, which serves a leader's own evidence. Which ids a reader is
+    handed is already decided for them by `requirements_for`, which resolves
+    their own chain."""
     row = db.query(LeaderTaskExample).filter_by(id=example_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="No example")

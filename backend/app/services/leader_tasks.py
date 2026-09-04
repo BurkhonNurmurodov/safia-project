@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     LeaderUnitSetting,
     AppSetting, LeaderTaskConfigAudit, LeaderTaskDef, LeaderTaskEntry,
-    LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskPendingChange,
+    LeaderTaskLeaderSetting, LeaderTaskPendingChange,
     LeaderTaskSetting, Manager, RoleProfile,
 )
 # The photo window's shape, defaults and re-derivation live with the reviewer
@@ -313,7 +313,8 @@ def requirements_for(db: Session, *, prof=None, manager=None,
     unit (`manager`, its level of the chain: no per-leader rows), or the global
     catalog (neither) — each with its display names, proof-type note, the
     definition of done, weight, min photos, photo window, deadline and example
-    photo ids. `shift` decides the window default and the day's filing window;
+    photo ids (resolved down the chain like the criteria, so each subject is
+    shown the examples in force for it and not the level above). `shift` decides the window default and the day's filing window;
     a subject with a unit takes the unit's shift, the global catalog the one
     the caller asks for (1 when unstated — the regime the tab was built for).
 
@@ -369,10 +370,16 @@ def requirements_for(db: Session, *, prof=None, manager=None,
     from app.services import leader_close
     per_task = manager is not None and manager.id in per_task_units(db)
 
-    examples: dict[int, list[int]] = {}
-    for eid, tid in (db.query(LeaderTaskExample.id, LeaderTaskExample.task_id)
-                     .order_by(LeaderTaskExample.id).all()):
-        examples.setdefault(tid, []).append(eid)
+    # The examples in force FOR THIS SUBJECT, down the same chain as the
+    # criteria they sit beside — a leader reading "what a correct proof looks
+    # like" must be shown the picture that was uploaded for them, not the one
+    # it replaced. A subject with neither level (the global catalog view) gets
+    # the global set, which is what that view is asking for.
+    examples = leader_ai.example_ids_map(
+        db,
+        manager_id=manager.id if manager is not None else None,
+        leader_id=prof.id if prof is not None else None,
+    )
 
     tasks = []
     for td in defs:

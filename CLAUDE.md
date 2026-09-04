@@ -1097,9 +1097,53 @@ number.
   `/api/leaders` (a leader → own, a supervisor → own unit or one of its leaders,
   everyone else follows the page filters; global standard when nothing is
   picked). Examples stream from the page-gated `GET /api/leader-tasks/examples/{id}`
-  (reference material, no row scope). Day-detail task rows carry an ⓘ that
+  (reference material — an admin-authored picture, nobody's evidence — so it
+  keeps no row scope of its own; which ids a reader is handed is already
+  decided by `requirements_for`). Day-detail task rows carry an ⓘ that
   jumps to that task's card. The old ⓘ table built from the hard-coded
   `TASK_DETAILS` is gone — never resurrect a config view from the seed.
+- **An EXAMPLE photo sits at a LEVEL of the chain, exactly like the criteria
+  beside it** (2026-09-04). `leader_task_examples.manager_id` / `.leader_id`
+  say which — both NULL = global — and **`leader_ai.example_ids_map` is THE
+  resolver**, whose one rule is that the NARROWEST level holding any photos
+  wins **WHOLE**: a leader with their own example sees theirs INSTEAD of the
+  global one, never both, mirroring `criteria_for`'s first-non-blank. A union
+  would hand the leader two answers to "what should this look like" and nothing
+  saying which was meant for them. All three readers go through it — the
+  reviewer (`task_examples`, now resolved against the report's own
+  `manager_id`/`leader_id`, because a photo must be judged against the example
+  the leader was actually shown), the «Vazifalar» tab (`requirements_for`) and
+  the admin matrix.
+  - **Why**: the criteria and the example are ONE statement of what a correct
+    proof looks like — one written, one shown — edited in the same block of the
+    same modal. Keyed by task alone they could not be: an admin who wrote a
+    definition of done for two leaders and uploaded the matching screenshot
+    beside it got the text scoped and the PICTURE on every leader on the
+    platform. Same shape as the camera setting that reached everybody on
+    2026-08-19.
+  - **Nothing was migrated and nothing moved.** Both columns are nullable and
+    every pre-existing row carries NULL/NULL, which reads as global — precisely
+    what those rows already were. Attributing one to a unit would be a guess,
+    and a picture attributed to the wrong unit is worse than one attributed to
+    nobody. A global row that should not be one is deleted from the unfiltered
+    column modal and re-uploaded under the filter.
+  - **An upload names its targets and fans out one ROW EACH** (`manager_ids` /
+    `leader_ids` on `POST /admin/leader-tasks/examples`): an example is bytes,
+    not a pointer. `leader_ids` wins over `manager_ids`, the same precedence
+    `colScope()` applies on the client. Sending NEITHER writes global, which is
+    what an unfiltered column modal means and what a tab open on an earlier
+    bundle still sends — so that case is byte-for-byte unchanged. The per-level
+    cap is `_EXAMPLES_PER_TASK`, checked for EVERY target before anything is
+    written so a fan-out is refused whole, and `_EXAMPLES_FANOUT_MAX` bounds
+    the breadth: a mis-clicked filter must not put a hundred copies of one
+    screenshot into every db-dump.
+  - **All three ltasks modals carry the strip now**, each scoped to what it
+    writes — the brigadir cell (that unit), the leader cell (that leader, THE
+    control this exists for), the column modal (global, or the filtered rows).
+    An INHERITED photo is dimmed and carries **no delete button**: deleting it
+    would reach every other row inheriting the same one, which is the accident
+    this scoping ends. Unlike every other field in those modals an example
+    applies AT ONCE — bytes, not a staged draft — and each note says so.
 - **Because leaders READ the criteria, they are ordinary prose — and there is a
   bulk editor for that.** «Matnlarni tuzatish» on the ltasks matrix header
   (`pages/admin/CriteriaTextsModal.jsx` + `utils/textCase.js`) lists every

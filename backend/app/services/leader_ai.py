@@ -267,16 +267,86 @@ def task_note(db: Session, task_id: int) -> str:
     return (td.note_ru or td.note_uz or td.note_en or "").strip()
 
 
-def task_examples(db: Session, task_id: int) -> list[tuple[bytes, str]]:
+def example_ids_map(db: Session, *, manager_id: int | None = None,
+                    leader_id: int | None = None) -> dict[int, list[int]]:
+    """THE example-photo chain: for one subject, the example ids in force per
+    task, resolved leader → supervisor → global.
+
+    The rule is the one `criteria_for` uses one field over: the NARROWEST level
+    holding any photos wins WHOLE. A leader with an example of their own sees
+    theirs INSTEAD of the unit's, and the unit's instead of the global one —
+    never a union. The two fields state the same thing in two media ("here is
+    what a correct proof looks like"), they are written side by side in the
+    same modal, and a leader shown their own picture stacked on top of the one
+    it was meant to replace has been handed two answers with nothing saying
+    which is theirs.
+
+    Ids only — no blobs — so this is cheap enough for the admin matrix and the
+    «Vazifalar» tab to call it per subject. One query: the SQL narrows to the
+    three levels that can possibly apply, and the pick happens in memory
+    because it is per task and there are at most a handful of rows per level.
+    Callers naming neither level get the global set, which is the right answer
+    for any register-style listing that has no subject.
+    """
+    conds = [and_(LeaderTaskExample.manager_id.is_(None),
+                  LeaderTaskExample.leader_id.is_(None))]
+    if manager_id:
+        conds.append(and_(LeaderTaskExample.manager_id == manager_id,
+                          LeaderTaskExample.leader_id.is_(None)))
+    if leader_id:
+        conds.append(LeaderTaskExample.leader_id == leader_id)
+    rows = (db.query(LeaderTaskExample.id, LeaderTaskExample.task_id,
+                     LeaderTaskExample.manager_id, LeaderTaskExample.leader_id)
+            .filter(or_(*conds))
+            .order_by(LeaderTaskExample.id).all())
+
+    # Three buckets per task, filled in id order so a level's own photos keep
+    # the order they were uploaded in.
+    lead: dict[int, list[int]] = {}
+    sup: dict[int, list[int]] = {}
+    glob: dict[int, list[int]] = {}
+    for eid, tid, mid, lid in rows:
+        if lid:
+            lead.setdefault(tid, []).append(eid)
+        elif mid:
+            sup.setdefault(tid, []).append(eid)
+        else:
+            glob.setdefault(tid, []).append(eid)
+
+    out: dict[int, list[int]] = {}
+    for tid in set(lead) | set(sup) | set(glob):
+        ids = lead.get(tid) or sup.get(tid) or glob.get(tid)
+        if ids:
+            out[tid] = ids
+    return out
+
+
+def example_level(row: LeaderTaskExample) -> str:
+    """Which level one stored example sits at — the word the audit log and the
+    admin strip both use, so a row is never described two ways."""
+    return "leader" if row.leader_id else "supervisor" if row.manager_id else "global"
+
+
+def task_examples(db: Session, task_id: int, manager_id: int | None = None,
+                  leader_id: int | None = None) -> list[tuple[bytes, str]]:
     """Admin-uploaded EXAMPLE proof photos — "a correct proof looks like this".
 
-    Global per task, like `note_*`. Already stored at the edge size the Gemini
-    request shrinks to, so sending them costs no extra processing. They ride in
-    FRONT of the proof photos on every review of the task; the prompt tells the
-    model they are reference-only (see `_prompt`), most importantly that their
-    own — old by definition — timestamps are exempt from the date question.
+    Resolved down the same chain as the written criteria beside them (see
+    `example_ids_map`): the reviewer must judge a photo against the example the
+    leader was actually shown, exactly as `task_label` and `criteria_for`
+    already refuse to judge it against a wording nobody involved ever read.
+    Already stored at the edge size the Gemini request shrinks to, so sending
+    them costs no extra processing. They ride in FRONT of the proof photos on
+    every review of the task; the prompt tells the model they are
+    reference-only (see `_prompt`), most importantly that their own — old by
+    definition — timestamps are exempt from the date question.
     """
-    rows = (db.query(LeaderTaskExample).filter_by(task_id=task_id)
+    ids = example_ids_map(db, manager_id=manager_id,
+                          leader_id=leader_id).get(task_id, [])
+    if not ids:
+        return []
+    rows = (db.query(LeaderTaskExample)
+            .filter(LeaderTaskExample.id.in_(ids))
             .order_by(LeaderTaskExample.id).all())
     return [(r.data, r.mime or "image/jpeg") for r in rows]
 
@@ -1620,7 +1690,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         db.commit()
         return "image"
 
-    examples = task_examples(db, rev.task_id)
+    examples = task_examples(db, rev.task_id, rev.manager_id, rev.leader_id)
     # Resolved BEFORE the call, not just after it: the rule decides what the
     # model is asked to read (a date-only task's date lives inside the app, and
     # the strict prompt forbids reading it), and the same values then judge what

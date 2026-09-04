@@ -88,40 +88,59 @@ function WhenBar({ when, setWhen, nextDate, t }) {
 }
 
 // Optional EXAMPLE proof photos for one task — reference images the AI
-// reviewer receives beside the written criteria (global per task, never shown
-// to the leader). Uploads apply at once, exactly like the criteria text; the
-// ids come from the live config query, so the strip re-renders on invalidate.
+// reviewer receives beside the written criteria, and what the leader is shown
+// on «Vazifalar» as "a correct proof looks like this". Uploads apply at once,
+// exactly like the criteria text; the ids come from the live config query, so
+// the strip re-renders on invalidate.
+//
+// They sit at a LEVEL of the same global → supervisor → leader chain as the
+// criteria beside them, so the strip must always answer two questions the
+// admin cannot otherwise tell apart: is what I am looking at THIS row's own
+// photo or the one it inherits, and where will the next upload land. An
+// inherited photo is dimmed and carries NO delete button — deleting it would
+// reach every other row inheriting the same one, which is exactly the accident
+// this scoping exists to end.
 const EXAMPLES_MAX = 3;
-function TaskExamples({ ids, busy, note, onUpload, onAskDelete, t }) {
+function TaskExamples({ ids, own, fromLabel, scopeNote, busy, disabled, onUpload, onAskDelete, t }) {
   const fileRef = useRef(null);
-  const full = ids.length >= EXAMPLES_MAX;
+  const full = own && ids.length >= EXAMPLES_MAX;
   const T = { photoFailed: t("admin.ltasks.photoFailed"), retry: t("common.retry") };
   return (
-    <FormField label={t("admin.ltasks.examples")}
-      hint={note ? `${t("admin.ltasks.examplesHint")} ${note}` : t("admin.ltasks.examplesHint")}>
+    <FormField label={t("admin.ltasks.examples")} hint={scopeNote || t("admin.ltasks.examplesHint")}>
       <div className="space-y-2">
         {ids.length > 0 && (
           <div className="grid grid-cols-3 gap-2">
             {ids.map((id) => (
-              <div key={id} className="relative">
+              <div key={id} className="relative" style={own ? undefined : { opacity: 0.55 }}>
                 <ProxyPhoto T={T} deps={[id]} className="h-20" maxHeight={80}
                   load={() => api.get(`/admin/leader-tasks/examples/${id}`, { responseType: "blob" })} />
-                <button type="button" aria-label={t("admin.ltasks.exampleDelTitle")}
-                  onClick={() => onAskDelete(id)}
-                  className="absolute top-1 right-1 w-6 h-6 rounded-md grid place-items-center"
-                  style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>
-                  <Trash2 size={13} />
-                </button>
+                {own && (
+                  <button type="button" aria-label={t("admin.ltasks.exampleDelTitle")}
+                    onClick={() => onAskDelete(id)}
+                    className="absolute top-1 right-1 w-6 h-6 rounded-md grid place-items-center"
+                    style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
         )}
+        {/* Said under the photos, not over them: the reader has just seen a
+            picture and the only thing left to establish is whose it is. */}
+        {ids.length > 0 && !own && (
+          <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltasks.examplesInherited").replace("{from}", fromLabel || "")}
+          </p>
+        )}
         <input ref={fileRef} type="file" className="hidden"
           accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
           onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onUpload(f); }} />
-        <Button size="sm" tint icon={<ImagePlus size={13} />} loading={busy} disabled={full}
+        <Button size="sm" tint icon={<ImagePlus size={13} />} loading={busy} disabled={full || disabled}
           onClick={() => fileRef.current?.click()}>
-          {full ? t("admin.ltasks.examplesFull") : t("admin.ltasks.exampleAdd")}
+          {full ? t("admin.ltasks.examplesFull")
+            : ids.length > 0 && !own ? t("admin.ltasks.exampleReplace")
+              : t("admin.ltasks.exampleAdd")}
         </Button>
       </div>
     </FormField>
@@ -273,23 +292,34 @@ export default function LeaderTasksAdmin() {
     },
     onError: onErr,
   });
-  // Example proof photos live beside the criteria: instant like it (nothing
-  // the leader sees changes), ids come from the live config so an upload or
-  // delete re-renders the strip through the same invalidate.
+  // Example proof photos live beside the criteria and are SCOPED like it: the
+  // ids ride along so the photo lands on the same rows the text does. Sending
+  // neither list writes the global level, which is what an unfiltered column
+  // modal means. Instant, like the criteria; ids come from the live config so
+  // an upload or delete re-renders the strip through the same invalidate.
   const exAddMut = useMutation({
-    mutationFn: ({ taskId, file }) => {
+    mutationFn: ({ taskId, file, manager_ids, leader_ids, level }) => {
       const fd = new FormData();
       fd.append("task_id", taskId);
       fd.append("file", file);
+      (leader_ids || []).forEach((id) => fd.append("leader_ids", id));
+      (manager_ids || []).forEach((id) => fd.append("manager_ids", id));
+      // States the intent rather than leaving the backend to infer it from an
+      // empty list — "the filter matched nobody" and "no filter at all" look
+      // identical on the wire and mean opposite things.
+      fd.append("level", level || (leader_ids?.length ? "leader"
+        : manager_ids?.length ? "supervisor" : "global"));
       return api.post("/admin/leader-tasks/examples", fd);
     },
     onSuccess: () => { invalidate(); ping(); },
     onError: (e) => {
       const d = e?.response?.data?.detail;
       toast2.error(d === "examples_full" ? t("admin.ltasks.examplesFull")
-        : d === "photo_too_large" ? t("profile.photoTooLarge")
-        : d === "invalid_image" ? t("profile.photoInvalid")
-        : (typeof d === "string" && d) || t("admin.ltasks.fail"));
+        : d === "examples_too_many_targets" ? t("admin.ltasks.examplesTooMany")
+          : d === "no_targets" ? t("admin.ltasks.examplesNoTargets")
+          : d === "photo_too_large" ? t("profile.photoTooLarge")
+            : d === "invalid_image" ? t("profile.photoInvalid")
+              : (typeof d === "string" && d) || t("admin.ltasks.fail"));
     },
   });
   const exDelMut = useMutation({
@@ -308,6 +338,10 @@ export default function LeaderTasksAdmin() {
   const settings = data?.settings ?? {};
   const leaders = data?.leaders ?? [];
   const leaderSettings = data?.leader_settings ?? {};
+  // Sparse per-level example ids, "<row id>:<task id>". Absent key = this level
+  // has none of its own and inherits the level above.
+  const exSup = data?.example_sup ?? {};
+  const exLead = data?.example_lead ?? {};
   const pending = data?.pending ?? [];
   const nextDates = data?.next_dates ?? {};
   const nextForShift = (shift) => nextDates[String(shift === 2 ? 2 : 1)] || "";
@@ -376,6 +410,20 @@ export default function LeaderTasksAdmin() {
   // chain the backend reviewer walks: leader → supervisor → global.
   const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
   const supCrit = (mid, tid) => getCell(mid, tid).criteria || critOf(tid);
+  // The example photos in force for a row, walking the chain the backend walks
+  // (services/leader_ai.example_ids_map): the NARROWEST level holding any wins
+  // WHOLE, never a union. Returns the level too, because every modal has to
+  // say whether what it is showing belongs to the row or is merely inherited.
+  const exOf = (tid, mid, lid) => {
+    const lead = lid ? exLead[`${lid}:${tid}`] : null;
+    if (lead?.length) return { ids: lead, level: "leader" };
+    const sup = mid ? exSup[`${mid}:${tid}`] : null;
+    if (sup?.length) return { ids: sup, level: "supervisor" };
+    return { ids: tasks.find((x) => x.id === tid)?.examples || [], level: "global" };
+  };
+  // Where an inherited photo came from, in the admin's own words.
+  const exFromLabel = (level) => (level === "supervisor"
+    ? t("admin.ltasks.examplesFromSup") : t("admin.ltasks.examplesFromGlobal"));
 
   // Every definition-of-done actually STORED, flattened for the bulk editor:
   // the global level first (what every uncustomised row inherits), then the
@@ -918,9 +966,6 @@ export default function LeaderTasksAdmin() {
   ];
 
   const cellTask = cell && (tasks.find((task) => task.id === cell.tid) || {});
-  // Live task row behind the column modal — example ids must come from the
-  // query (not the col draft) so an upload/delete re-renders the strip.
-  const colTask = col && (tasks.find((task) => task.id === col.tid) || {});
   // Column modal saves the way its cell twins do: ONE footer button, name and
   // criteria routed to their own endpoints, each skipped when unchanged so a
   // no-op save writes no history entry. «Apply to all» keeps its own inline
@@ -934,6 +979,22 @@ export default function LeaderTasksAdmin() {
     !anyFilter ? {}
       : applyScope.level === "leader"
         ? { leader_ids: applyScope.ids } : { manager_ids: applyScope.ids }
+  );
+  // The example photos this modal is SHOWING and whether the scope it writes
+  // owns them. Seeded off the first visible row like the criteria and the
+  // window, which is the whole modal's rule for a filter covering many rows.
+  const colLead0 = anyFilter && applyScope.level === "leader" ? rows[0]?.kids[0] : null;
+  const colMid0 = colLead0 ? colLead0.manager_id : (anyFilter ? rows[0]?.m.id : null);
+  const colExR = col ? exOf(col.tid, colMid0, colLead0?.id) : { ids: [], level: "global" };
+  const colExLevel = !anyFilter ? "global"
+    : applyScope.level === "leader" ? "leader" : "supervisor";
+  const colEx = { ...colExR, own: colExR.level === colExLevel };
+  // What the next upload will do, in the currency the scope banner uses.
+  const colExNote = () => (
+    !anyFilter ? t("admin.ltasks.examplesScopeGlobal")
+      : (applyScope.level === "leader"
+        ? t("admin.ltasks.examplesScopeLeads") : t("admin.ltasks.examplesScopeMgrs")
+      ).replace("{n}", applyN)
   );
   // Under a filter the modal WRITES the visible rows, so it must also SHOW
   // those rows' current values — the numeric trio always seeded from the first
@@ -1046,9 +1107,12 @@ export default function LeaderTasksAdmin() {
     tone: "danger", confirmLabel: t("common.delete"),
     onConfirm: () => exDelMut.mutate(id),
   });
-  const uploadExample = (file) => {
+  // ONE uploader for all three modals. The scope rides in explicitly — never
+  // inferred from which modal is open — so a photo can no more reach past the
+  // rows on screen than the criteria beside it can.
+  const uploadExampleTo = (taskId, scope) => (file) => {
     if (file.size > 10 * 1024 * 1024) { toast2.error(t("profile.photoTooLarge")); return; }
-    exAddMut.mutate({ taskId: col.tid, file });
+    exAddMut.mutate({ taskId, file, ...scope });
   };
   const cellNext = cell && nextForShift(managers.find((m) => m.id === cell.mid)?.shift);
   const lcellNext = lcell && nextForShift(managers.find((m) => m.id === lcell.mid)?.shift);
@@ -1056,6 +1120,12 @@ export default function LeaderTasksAdmin() {
   // numbers/status, the resolved chain for the texts (see leadInherit).
   const lBase = lcell && getCell(lcell.mid, lcell.tid);
   const lInh = lcell && leadInherit(lcell.mid, lcell.tid);
+  // Example photos in force for each cell modal's ONE row, and whether that
+  // row owns them or is showing what it inherits.
+  const cellExR = cell ? exOf(cell.tid, cell.mid, null) : { ids: [], level: "global" };
+  const cellEx = { ...cellExR, own: cellExR.level === "supervisor" };
+  const lcellExR = lcell ? exOf(lcell.tid, lcell.mid, lcell.lid) : { ids: [], level: "global" };
+  const lcellEx = { ...lcellExR, own: lcellExR.level === "leader" };
 
   return (
     <div className="space-y-6">
@@ -1276,6 +1346,14 @@ export default function LeaderTasksAdmin() {
           {proofKindField(cell, (v) => setCell((c) => ({ ...c, ...v })), null, "unit")}
           {numField(t("admin.ltasks.weight"), cell.weight, (v) => setCell((c) => ({ ...c, weight: v })), 100)}
           {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
+          {/* The picture of a correct proof belongs beside the words for one,
+              at the same level: this unit's leaders. Unlike every other field
+              here it applies AT ONCE (bytes, not a staged draft), which the
+              note says out loud. */}
+          <TaskExamples ids={cellEx.ids} own={cellEx.own} fromLabel={exFromLabel(cellEx.level)}
+            scopeNote={t("admin.ltasks.examplesScopeUnit")} busy={exAddMut.isPending}
+            onUpload={uploadExampleTo(cell.tid, { manager_ids: [cell.mid], level: "supervisor" })}
+            onAskDelete={askDeleteExample} t={t} />
           {windowField(cell, (v) => setCell((c) => ({ ...c, ...v })),
             supWinPh(cell.mid, cell.tid, "win_from"), supWinPh(cell.mid, cell.tid, "win_to"))}
           {dateRuleField(cell, (v) => setCell((c) => ({ ...c, ...v })))}
@@ -1309,6 +1387,15 @@ export default function LeaderTasksAdmin() {
             lcell.weight, (v) => setLcell((c) => ({ ...c, weight: v })), 100)}
           {criteriaField(lcell.criteria, (v) => setLcell((c) => ({ ...c, criteria: v })), lInh.criteria,
             changedPill(ownText(lcell.criteria, lInh.criteria) !== ""))}
+          {/* This leader's own example, the picture beside their own words.
+              THE control this whole scoping exists for: before it, the only
+              way to give one leader an example was the column modal, which
+              wrote the photo to everybody. Applies at once, like its twin in
+              the brigadir modal. */}
+          <TaskExamples ids={lcellEx.ids} own={lcellEx.own} fromLabel={exFromLabel(lcellEx.level)}
+            scopeNote={t("admin.ltasks.examplesScopeLeader")} busy={exAddMut.isPending}
+            onUpload={uploadExampleTo(lcell.tid, { leader_ids: [lcell.lid], level: "leader" })}
+            onAskDelete={askDeleteExample} t={t} />
           {windowField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.win_from, lInh.win_to,
             changedPill(ownText(lcell.win_from, lInh.win_from) !== "" || ownText(lcell.win_to, lInh.win_to) !== ""))}
           {dateRuleField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
@@ -1390,12 +1477,17 @@ export default function LeaderTasksAdmin() {
             )}
             {deadlineField(col, (v) => setCol((c) => ({ ...c, ...v })), "")}
             <div className="pt-1">
-              {/* Examples are keyed per TASK — there is no per-row storage, so
-                  the filter genuinely cannot scope them. Say so rather than
-                  letting the scope banner above imply otherwise. */}
-              <TaskExamples ids={colTask.examples || []} busy={exAddMut.isPending}
-                note={anyFilter ? t("admin.ltasks.examplesGlobalNote") : null}
-                onUpload={uploadExample} onAskDelete={askDeleteExample} t={t} />
+              {/* Scoped exactly like the criteria above it: unfiltered this
+                  writes the global level, filtered it writes the rows on
+                  screen. What is SHOWN is what the first visible row resolves
+                  to — the same seed rule every other field in this modal uses
+                  — so an inherited photo reads as inherited instead of looking
+                  like something this scope owns. */}
+              <TaskExamples ids={colEx.ids} own={colEx.own} fromLabel={exFromLabel(colEx.level)}
+                scopeNote={colExNote()} busy={exAddMut.isPending}
+                disabled={anyFilter && !applyN}
+                onUpload={uploadExampleTo(col.tid, { ...colScope(), level: colExLevel })}
+                onAskDelete={askDeleteExample} t={t} />
             </div>
           </div>
           <div style={{ borderTop: "1px solid var(--border)" }} className="my-3" />

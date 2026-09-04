@@ -1544,18 +1544,40 @@ class LeaderTaskLeaderSetting(Base):
 
 class LeaderTaskExample(Base):
     """An admin-uploaded EXAMPLE proof photo for one checklist task — "a correct
-    proof looks like this". Global per task like `note_*` (no supervisor/leader
-    chain to walk), optional, capped at a few per task. Read by the AI proof
-    reviewer as reference images beside the written criteria, and shown to the
-    leader on the /leaders «Vazifalar» tab (page-gated, no row scope — it is
-    reference material, not evidence). Bytes live in the DB for the same reason ProfilePhoto's
-    do — a row survives deploys, restores and the dbdump tab — and are
-    re-encoded to a ≤1280px JPEG before landing here, the exact size the Gemini
-    request would shrink them to anyway."""
+    proof looks like this". Read by the AI proof reviewer as reference images
+    beside the written criteria, and shown to the leader on the /leaders
+    «Vazifalar» tab. Bytes live in the DB for the same reason ProfilePhoto's do
+    — a row survives deploys, restores and the dbdump tab — and are re-encoded
+    to a ≤1280px JPEG before landing here, the exact size the Gemini request
+    would shrink them to anyway.
+
+    2026-09-04: an example belongs to a LEVEL of the same global → supervisor
+    → leader chain `criteria` walks, because the two are one statement of what
+    a correct proof looks like — one written, one shown — and they are edited
+    in the same block of the same modal. Keyed by task alone, they could not
+    be: an admin who wrote a definition of done for two leaders and uploaded
+    the matching screenshot beside it got the text scoped and the PICTURE on
+    every leader on the platform, which is precisely the shape of the camera
+    setting that reached everybody on 2026-08-19.
+
+    `manager_id` / `leader_id` say which level a row sits at — both NULL =
+    global, which is what every row written before this carried and why the
+    migration moves nothing. Resolved by `leader_ai.example_ids_map`, whose one
+    rule is that the NARROWEST level holding any photos wins WHOLE: a leader
+    with their own example sees theirs INSTEAD of the global one, never both,
+    mirroring `criteria_for`'s first-non-blank. A union would hand the leader
+    two answers to "what should this look like" and no way to tell which of
+    them was meant for them."""
     __tablename__ = "leader_task_examples"
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
     task_id    = Column(Integer, ForeignKey("leader_task_defs.id"), nullable=False, index=True)
+    # The level this example sits at. Both NULL = global (the chain's floor);
+    # manager_id alone = that supervisor's whole unit; leader_id set = that one
+    # leader. Nullable on purpose — an ADD COLUMN cannot be anything else, and
+    # NULL is exactly the "global" every pre-existing row already meant.
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    leader_id  = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
     mime       = Column(String, nullable=False, default="image/jpeg")
     data       = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
