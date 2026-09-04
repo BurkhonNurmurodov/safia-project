@@ -23,6 +23,8 @@ two different kinds, one above the other, read as a bug.
 Three roll-up rules, all of them the operator's:
   * a CATEGORY row is the **sum of the brigadir averages** under it — so it
     scales with how many brigadirs are in scope, and is not itself an average;
+    EVERY brigadir the scope holds is listed under it, whether or not they
+    waited (2026-09-05) — see below;
   * the TOTAL row is the **sum of the category rows**, i.e. the whole column.
     Per-category minutes overlap (one cell stopped for two causes is counted
     under both, while a day's own total is a UNION), so this can and does
@@ -30,6 +32,24 @@ Three roll-up rules, all of them the operator's:
   * `None` is a real answer and never 0 — the (unit, day) had no cell with
     anybody in it, so there is nothing to divide by. A day with cells and no
     waiting is 0.
+
+EVERY BRIGADIR IN SCOPE, UNDER EVERY CATEGORY
+---------------------------------------------
+A group used to end with «yana N brigadirda bu toifada kutish yo'q» and fold the
+zero rows away, on the reading that fifteen all-zero rows bury the two that
+carry the category. The operator's call (2026-09-05) is to list them: the row
+set then does not change from category to category, so two groups can be read
+against each other and a brigadir can be followed down the sheet. The ones that
+carry the category still sort to the TOP, so a long group is read from the top
+exactly as the short one was, and the fold's own argument is answered by the
+ORDER rather than by hiding anybody.
+
+`data["managers"]` — the scope's own list, which `_downtime` attaches only when
+it is asked for the averages — is what makes "every brigadir" mean every
+brigadir rather than every brigadir who happened to file. A unit that reported
+nothing all month is a row of «·», which is a fact about the month and not an
+absence of one. With no such key the matrix falls back to the units its rows
+name, exactly as it always did.
 
 A MONTH STILL RUNNING KEEPS ITS REMAINING COLUMNS
 -------------------------------------------------
@@ -101,6 +121,17 @@ def build(data: dict, stopped: bool = True,
     meta: dict[int, dict] = {}
     cells: dict[int, list[Optional[int]]] = {}
 
+    # Every brigadir the scope holds, whether or not they filed anything —
+    # see «EVERY BRIGADIR IN SCOPE» above. Seeded first so the rows loop below
+    # finds them already present and only fills their figures in.
+    for m in data.get("managers") or []:
+        mid = m.get("manager_id")
+        if mid is None or mid in meta:
+            continue
+        meta[mid] = {"manager_id": mid, "name": m.get("manager_name") or "",
+                     "shift": m.get("shift")}
+        cells[mid] = [None] * n
+
     for r in data.get("rows") or []:
         i = di.get(r.get("date"))
         if i is None:
@@ -125,7 +156,8 @@ def build(data: dict, stopped: bool = True,
     for c in cat_names:
         sups = []
         cat_days: list[Optional[float]] = [None] * n
-        for mid, per in leaf[c].items():
+        for mid in meta:
+            per = leaf[c].get(mid) or [None] * n
             total = _r(sum(v for v in per if v is not None))
             sups.append({**meta[mid], "cells": cells[mid],
                          "days": [None if v is None else _r(v) for v in per],
@@ -141,18 +173,14 @@ def build(data: dict, stopped: bool = True,
                 continue
             col_totals[i] = v if col_totals[i] is None else col_totals[i] + v
 
-        # A brigadir with nothing at all in this category is COUNTED, not
-        # listed: fifteen all-zero rows under a small category bury the two
-        # that carry it, and a hidden row the reader is not told about is the
-        # one thing worse than a long list.
-        shown = sorted([s for s in sups if s["total"] > 0],
-                       key=lambda s: (-s["total"], s["name"]))
+        # Carriers first, then the rest by name — the order is what keeps a
+        # long group readable now that nobody is folded out of it.
+        shown = sorted(sups, key=lambda s: (-s["total"], s["name"]))
         out_cats.append({
             "name": c,
             "days": cat_days,
             "total": _r(sum(v for v in cat_days if v is not None)),
             "sups": shown,
-            "hidden": len(sups) - len(shown),
         })
 
     out_cats.sort(key=lambda c: (-c["total"], c["name"]))
@@ -168,6 +196,7 @@ def build(data: dict, stopped: bool = True,
         "col_totals": col_totals,
         "grand": _r(sum(v for v in col_totals if v is not None)),
         # How many brigadirs the scope holds — the category rows are SUMS over
-        # them, so the reader has to be able to see what they are sums over.
+        # them, so the reader has to be able to see what they are sums over,
+        # and every one of them is now a row under every category.
         "supervisors": len(meta),
     }

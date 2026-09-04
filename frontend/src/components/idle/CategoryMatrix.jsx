@@ -40,6 +40,14 @@ import EmptyState from "../ui/EmptyState";
  * the SUM of the rows under it and always larger, so one shared scale would
  * wash every brigadir row out to nothing.
  *
+ * EVERY brigadir in scope is listed under EVERY category (the operator's call,
+ * 2026-09-05), including the ones who waited nothing and the ones who filed
+ * nothing at all. The group used to end with «yana N brigadirda…» and fold them
+ * away; the row set then changed from category to category, so two groups could
+ * not be read against each other. The backend sorts the carriers to the top, so
+ * a long group is still read from the top — the ORDER is what answers the fold's
+ * old argument, not hiding anybody.
+ *
  * Minutes only, one decimal. The page's min/hrs switch is deliberately not
  * applied — «1 soat 35 daq» cannot be read in a 46px column.
  */
@@ -320,23 +328,6 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
                         </td>
                       </tr>
                     ))
-                  : []),
-
-                // A brigadir with nothing at all in this category is COUNTED,
-                // never silently dropped.
-                ...(isOpen && c.hidden
-                  ? [
-                      <tr key={`${c.name}:hidden`}>
-                        <th
-                          scope="row"
-                          colSpan={dates.length + 2}
-                          className="sticky left-0 z-[2] text-left pl-8 pr-3 text-[10.5px] font-normal border-b"
-                          style={{ height: 26, background: "var(--bg-card)", borderColor: "var(--border)", color: "var(--text-4)" }}
-                        >
-                          {t("downtime.mx.hidden").replace("{n}", String(c.hidden))}
-                        </th>
-                      </tr>,
-                    ]
                   : []),
               ];
             })}

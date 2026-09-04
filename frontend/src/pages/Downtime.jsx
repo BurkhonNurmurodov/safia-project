@@ -720,7 +720,6 @@ export default function Downtime() {
             total: t("downtime.mx.total"),
             grandRow: t("downtime.mx.total"),
             noData: "·",
-            hidden: t("downtime.mx.hidden"),
             // The three states a cell can be in, named for the file exactly as
             // the legend under the tab names them on screen.
             legend: `«·» ${t("downtime.mx.legendNoData")}   ·   ${t("downtime.mx.legendZero")}`

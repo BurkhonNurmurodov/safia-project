@@ -669,6 +669,12 @@ def build_matrix_workbook(p: dict) -> BytesIO:
     """One sheet: categories down, the month across, brigadirs grouped under
     each category and collapsible in Excel exactly as they expand on screen.
 
+    The groups open COLLAPSED, as the tab's own categories do: the sheet now
+    lists every brigadir in scope under every category, so opening it expanded
+    would bury the summary the reader came for under a few hundred rows. The
+    outline gutter (or the «2» button above it) opens whichever group is wanted,
+    and «1» closes them all again.
+
     A month still running keeps ALL its columns: `future[i]` (from
     `ojidaniya_matrix.build`, the one place that decides it) marks the days
     that have not happened, and those are drawn empty on a slate ground under a
@@ -736,6 +742,7 @@ def build_matrix_workbook(p: dict) -> BytesIO:
 
     for c in cats:
         tint = _hex(c.get("color"), SLATE)
+        cat_row = row               # the summary row; `summaryBelow` is False
         ws.row_dimensions[row].height = 18
         bg = _fill(BRAND_SOFT)
         bd = Border(left=_side(), right=_side(), top=_side(tint, "medium"), bottom=_side())
@@ -752,6 +759,10 @@ def build_matrix_workbook(p: dict) -> BytesIO:
         for i, sp in enumerate(c.get("sups") or []):
             ws.row_dimensions[row].height = 15.5
             ws.row_dimensions[row].outlineLevel = 1
+            # Hidden here + `collapsed` on the summary row below is the pair
+            # Excel reads as "this group is closed"; either alone leaves the
+            # gutter and the rows disagreeing about the state.
+            ws.row_dimensions[row].hidden = True
             sbg = _fill(PANEL if i % 2 == 0 else BAND)
             _block(ws, row, C1, row, C1, _xl("    " + (sp.get("name") or "")),
                    fill=sbg, border=BOX, font=Font(name=FONT, size=9.5, color=INK_SOFT))
@@ -762,16 +773,8 @@ def build_matrix_workbook(p: dict) -> BytesIO:
                 f"{get_column_letter(C1 + 1)}{row}:{get_column_letter(C2 - 1)}{row}")
             row += 1
 
-        # A brigadir with nothing in this category is counted, never silently
-        # dropped — the same sentence the tab prints under the group.
-        if c.get("hidden"):
-            ws.row_dimensions[row].height = 14
-            ws.row_dimensions[row].outlineLevel = 1
-            _block(ws, row, C1, row, C2,
-                   (L.get("hidden") or "{n}").replace("{n}", str(c["hidden"])),
-                   fill=_fill(PANEL), border=BOX,
-                   font=Font(name=FONT, size=9, italic=True, color=INK_FAINT))
-            row += 1
+        if row > cat_row + 1:
+            ws.row_dimensions[cat_row].collapsed = True
 
     # ── the total row: the sum of the category rows, and it says so ──────────
     ws.row_dimensions[row].height = 20

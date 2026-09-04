@@ -78,7 +78,10 @@ def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
     is the headcount-weighted mean every KPI on the platform reads — so the two
     are never interchangeable and the matrix must not be built from the wrong
     one. Off by default: the Analysis tab asks for up to 400 days and has no
-    use for it.
+    use for it. It also attaches `managers`, the scope's own unit list, which is
+    what lets the matrix put EVERY brigadir under every category rather than
+    only the ones whose rows it happens to hold; it rides the same flag so every
+    other caller's payload stays byte-identical.
     """
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
     managers = db.query(Manager).filter(Manager.archived.is_(False))
@@ -271,12 +274,20 @@ def _downtime(db: Session, payload: dict, date_from: date, date_to: date,
         if r["flagged_ns"]:
             summary[n]["flagged_days_ns"] += 1
 
-    return {
+    out = {
         "dates": dates,
         "cat_names": cat_names,
         "rows": rows,
         "summary": sorted(summary.values(), key=lambda x: x["total"], reverse=True),
     }
+    if with_avg:
+        # The scope itself, not the units that filed — a brigadir who reported
+        # nothing all month is still a brigadir the matrix owes a row.
+        out["managers"] = [
+            {"manager_id": m.id, "manager_name": m.name, "shift": m.shift}
+            for m in sorted(managers, key=lambda m: m.name or "")
+        ]
+    return out
 
 
 @router.get("/downtime/matrix")

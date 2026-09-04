@@ -852,9 +852,19 @@ brigadirs), the days of a MONTH across.
   averages** under it (so it scales with how many brigadirs are in scope and is
   not itself an average); the last row is the **sum of the category rows**, i.e.
   the whole column. Categories sort by month total, brigadirs by theirs.
-- **A brigadir with nothing at all in a category is COUNTED, never dropped** —
-  the group ends with «yana N brigadirda bu toifada kutish yo'q», on screen and
-  in the workbook.
+- **EVERY brigadir in scope is listed under EVERY category** (the operator's
+  call, 2026-09-05) — the ones who waited nothing in it, and the ones who filed
+  nothing all month (a row of «·»). The group used to end with «yana N
+  brigadirda bu toifada kutish yo'q» and fold them away, on the reading that
+  fifteen all-zero rows bury the two that carry the category; the row set then
+  changed from category to category, so two groups could not be read against
+  each other and a brigadir could not be followed down the sheet. The fold's
+  argument is answered by the ORDER instead — carriers sort to the top of each
+  group, so a long group is read from the top exactly as the short one was.
+  `_downtime` attaches `managers` (the scope's own unit list) for this, under
+  the same `with_avg` flag as the averages, so every other caller's payload is
+  byte-identical; with no such key the matrix falls back to the units its rows
+  name. `hidden` is gone from the payload, both renderers and all four locales.
 - **Blank means ZERO, «·» means NO DIVISOR, and a HATCHED column is a day that
   has not happened yet.** Keeping the zeros blank is what lets the non-zero
   values read across 31 columns; all three are named in the legend under the
@@ -895,7 +905,14 @@ brigadirs), the days of a MONTH across.
   in the future is not selectable.
 - **Its own Excel button**, `POST /api/downtime/matrix.xlsx` →
   `ojidaniya_export.build_matrix_workbook` — the same table, with the brigadirs
-  as a collapsible Excel outline under each category. A SEPARATE file from the
+  as a collapsible Excel outline under each category, **opening COLLAPSED** as
+  the tab's own categories do (2026-09-05): the sheet lists every brigadir in
+  scope under every category, so an expanded file would bury the summary the
+  reader came for under a few hundred rows. Excel reads a closed group as a
+  PAIR — `hidden` + `outlineLevel` on the detail rows and `collapsed` on the
+  summary row, which is the one ABOVE them because `summaryBelow` is False —
+  and either half alone leaves the gutter and the rows disagreeing about the
+  state. A SEPARATE file from the
   five-tab report beside it, because it carries a different measure; two
   measures in one workbook is how a reader compares two columns that cannot be
   compared. Logged as `export.ojidaniya_matrix`.
