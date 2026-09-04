@@ -2542,6 +2542,10 @@ def _lp_stage_rights(db: Session, payload: dict, row) -> tuple[bool, bool]:
     return is_sup, False
 
 
+def _iso(ts) -> str | None:
+    return ts.isoformat() if ts else None
+
+
 def _lp_item(db: Session, row, names: dict, mgr_names: dict,
              can_act: bool = False) -> dict:
     media = leader_late_proof.photos(db, row.id)
@@ -2566,24 +2570,42 @@ def _lp_item(db: Session, row, names: dict, mgr_names: dict,
         "deadline": row.deadline,
         "reason": row.reason,
         "uid": row.uid,
-        "at": row.created_at.isoformat() if row.created_at else None,
-        # WHICH DOOR each photo came through. A stamped in-app shot and a file
-        # the leader picked must not read identically to the reviewer, or the
-        # stamp becomes decoration — the one way offering both doors could
-        # weaken the camera. NULL predates the camera door and reads as upload.
+        # EVERY instant on this card is the plant's wall clock — see
+        # `leader_late_proof.local`. The card sets a filing time against a
+        # deadline, so one of them arriving in another zone does not read as a
+        # timezone bug: it reads as a leader who filed five hours EARLY on a
+        # queue whose whole entry condition is that they filed late.
+        "at": _iso(leader_late_proof.local(row.created_at)),
+        # The deadline as an instant, and the subtraction. Served rather than
+        # computed on the client for the reason `deck-window` is: which day the
+        # hour falls on is a RULE (the shift anchor), and a JavaScript copy of
+        # it would drift until the card and the register named two numbers.
+        "dueAt": _iso(leader_late_proof.local(row.due_at)),
+        "lateMin": leader_late_proof.late_minutes(row),
+        # WHICH DOOR each photo came through, and WHEN it arrived. A stamped
+        # in-app shot and a file the leader picked must not read identically to
+        # the reviewer, or the stamp becomes decoration — the one way offering
+        # both doors could weaken the camera. NULL source predates the camera
+        # door and reads as upload.
+        #
+        # `at` is when the shot was TAKEN (camera only — an uploaded file
+        # carries no instant this platform can vouch for); `got` is when the
+        # server RECEIVED it, which both doors can answer and which is the
+        # question a reviewer asking "when did they send this" is asking.
         "photos": [{"id": m.id, "pos": m.pos,
                     "source": m.source or "upload", "stamp": m.stamp,
-                    "at": m.captured_at.isoformat() if m.captured_at else None}
+                    "at": _iso(leader_late_proof.local(m.captured_at)),
+                    "got": _iso(leader_late_proof.local(m.received_at))}
                    for m in media],
         "sup": {
             "action": row.sup_action, "note": row.sup_note,
             "by": row.sup_by_name,
-            "at": row.sup_at.isoformat() if row.sup_at else None,
+            "at": _iso(leader_late_proof.local(row.sup_at)),
         } if row.sup_action else None,
         "adm": {
             "action": row.adm_action, "note": row.adm_note,
             "by": row.adm_by_name,
-            "at": row.adm_at.isoformat() if row.adm_at else None,
+            "at": _iso(leader_late_proof.local(row.adm_at)),
         } if row.adm_action else None,
     }
 

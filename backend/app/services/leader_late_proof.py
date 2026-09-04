@@ -53,7 +53,8 @@ from app.models import (
     LeaderLateProof, LeaderLateProofMedia, LeaderLateProofShot, LeaderTaskDay,
     LeaderTaskEntry, LeaderTaskOverride, Manager, RoleProfile,
 )
-from app.services import action_log, leader_bot, leader_close, leader_tasks
+from app.services import (
+    action_log, leader_bot, leader_close, leader_proof, leader_tasks)
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +318,11 @@ def create(db: Session, *, day: LeaderTaskDay, task_id: int,
         manager_id=day.manager_id, date=day.date, shift=shift,
         uid=leader_bot.day_uid(day.id),
         deadline=leader_close.task_deadline(cfg_entry, shift),
+        # The same hour as an instant, from the same cfg in the same breath.
+        # `deadline` alone cannot say how late this is: which DAY «09:00» falls
+        # on is decided by the shift anchor, and only `closing_time` — which
+        # `due_at` reads — knows the range it came off.
+        due_at=leader_close.due_at(cfg_entry, shift, day.date),
         status=SUPERVISOR, reason=(reason or "").strip()[:1000],
     )
     db.add(row)
@@ -325,6 +331,12 @@ def create(db: Session, *, day: LeaderTaskDay, task_id: int,
         db.add(LeaderLateProofMedia(
             late_id=row.id, file_id=sh.file_id, message_id=sh.message_id,
             pos=i, source=sh.source, captured_at=sh.captured_at, stamp=sh.stamp,
+            # WHEN the leader actually sent it. The draft row is deleted on the
+            # next line, so this is the only chance to keep it — and it is the
+            # only instant an UPLOADED photo has at all (`captured_at` is
+            # camera-only by design, because a file the leader picked carries
+            # no moment this platform can vouch for).
+            received_at=sh.received_at,
         ))
         db.delete(sh)
     db.flush()
@@ -344,6 +356,63 @@ def photos(db: Session, late_id: int) -> list[LeaderLateProofMedia]:
     return (db.query(LeaderLateProofMedia)
             .filter_by(late_id=late_id)
             .order_by(LeaderLateProofMedia.pos).all())
+
+
+# ── how late is late? ────────────────────────────────────────────────────────
+
+def local(ts: datetime | None) -> datetime | None:
+    """Any stored instant as the PLANT'S WALL CLOCK — Tashkent, as everywhere.
+
+    Every deadline on this platform is a Tashkent clock and every timestamp
+    column is a `timestamptz` the driver hands back in the database's own zone,
+    which is UTC. Serving one beside the other is how a card came to print
+    «filed 04:01» under «due 09:00» for a filing that was one minute LATE: two
+    clocks, five hours apart, with nothing on screen saying so — and a reviewer
+    reading it could only conclude the platform had flagged somebody who was
+    five hours early.
+
+    So the conversion happens HERE, once, on the way out, and the client goes on
+    reading a plain ISO string. Deriving it in the browser would put the zone in
+    a second place and make it the viewer's timezone rather than the plant's.
+
+    A naive datetime is read as UTC — the zone `func.now()` writes — rather than
+    as the box's local time, which is not contracted anywhere.
+    """
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(leader_proof.TASHKENT)
+
+
+def late_minutes(row: LeaderLateProof) -> int | None:
+    """How late this filing was, in whole minutes — THE definition.
+
+    `created_at - due_at`, both of them stored ON the row, so it costs no config
+    lookup and cannot quietly restate itself when somebody edits a window next
+    week. `deadline` is the same fact for a human to read; this is the same fact
+    subtracted, and the two can never disagree because they were written from
+    one `cfg_entry` in one breath.
+
+    **None is a real answer and must stay distinguishable from 0.** A row filed
+    before `due_at` existed that the backfill could not place, or one whose
+    config could not be read, has no measurable lateness — and "filed exactly on
+    the hour" is a very different thing to tell a reviewer than "we cannot say".
+    A negative delta is None for the same reason: a row exists only because
+    `eligible` found the deadline already past, so a filing that measures as
+    EARLY means the two stamps disagree (a backfilled `due_at` read off a config
+    that has since moved), and a late proof reported as early is worse than one
+    reported as unmeasured.
+    """
+    due, at = row.due_at, row.created_at
+    if due is None or at is None:
+        return None
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    mins = int((at - due).total_seconds() // 60)
+    return mins if mins >= 0 else None
 
 
 # ── the two rulings ──────────────────────────────────────────────────────────

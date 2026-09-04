@@ -808,6 +808,96 @@ def add_late_proof_provenance() -> None:
         db.close()
 
 
+LATE_PROOF_DUE_BACKFILL_FLAG = "leader_late_proof_due_at_2026_09_04_v1"
+
+
+def add_late_proof_timing() -> None:
+    """2026-09-04: a late proof says HOW LATE it was, and when it was sent.
+
+    Two nullable columns and one backfill. `create_all` builds a table on a
+    fresh box but never ALTERs an existing one, so without this the filing has
+    nowhere to record either fact.
+
+    1. `leader_late_proofs.due_at` — the deadline as an INSTANT. The row already
+       carried `deadline` ("HH:MM"), which a human can read and nothing can
+       subtract: which DAY that hour falls on is the shift anchor's answer, so
+       «09:00» sits on the report day or the next depending on the task's own
+       range. Snapshotted rather than re-derived, for the same reason `deadline`
+       is — a window edited next week must not restate how late somebody was
+       last week.
+
+    2. `leader_late_proof_media.received_at` — when the server got that photo.
+       The draft roll knew it and `create` deleted the row that held it, so an
+       UPLOADED photo reached the reviewer carrying no instant at all: the one
+       thing the card exists to show. Not backfillable for the same reason —
+       the shot that knew the answer is gone — so old photos stay NULL and the
+       card prints the filing time alone for them.
+
+    The backfill is what the flag is for. Every row filed before this shipped is
+    placed by resolving that leader's config as it stands NOW, which is the only
+    source there is; where a task has since been reconfigured the instant may be
+    a little off, and `late_minutes` refuses a negative result rather than
+    reporting a late filing as early. A row whose leader, config or task can no
+    longer be read stays NULL and reads as "we cannot say", never as "on time".
+
+    Changing what this does needs a NEW flag key — the old "already ran" mark
+    makes an edited version a no-op on every box that has booted once.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE leader_late_proofs "
+                        "ADD COLUMN IF NOT EXISTS due_at TIMESTAMP WITH TIME ZONE"))
+        db.execute(text("ALTER TABLE leader_late_proof_media "
+                        "ADD COLUMN IF NOT EXISTS received_at TIMESTAMP WITH TIME ZONE"))
+        db.commit()
+        print("[startup] late-proof timing: columns present")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] late-proof timing migration skipped: {exc}")
+        db.close()
+        return
+
+    try:
+        if db.query(AppSetting).filter_by(key=LATE_PROOF_DUE_BACKFILL_FLAG).first():
+            return
+        from app.models import LeaderLateProof
+        from app.services import leader_close, leader_tasks
+
+        rows = (db.query(LeaderLateProof)
+                .filter(LeaderLateProof.due_at.is_(None)).all())
+        placed = 0
+        if rows:
+            profs = {p.id: p for p in db.query(RoleProfile)
+                     .filter(RoleProfile.id.in_({r.leader_id for r in rows})).all()}
+            cfgs: dict[tuple[int, int | None], dict] = {}
+            for r in rows:
+                prof = profs.get(r.leader_id)
+                if not prof:
+                    continue
+                key = (r.leader_id, r.shift)
+                if key not in cfgs:
+                    try:
+                        cfgs[key] = leader_tasks.effective_leader_config(
+                            db, prof, r.shift)
+                    except Exception:
+                        cfgs[key] = {}
+                entry = (cfgs[key] or {}).get(r.task_id)
+                if not entry:
+                    continue
+                due = leader_close.due_at(entry, r.shift, r.date)
+                if due is not None:
+                    r.due_at = due
+                    placed += 1
+        db.add(AppSetting(key=LATE_PROOF_DUE_BACKFILL_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] late-proof due_at backfilled: {placed}/{len(rows)}")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] late-proof due_at backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
 DISPUTE_STAGES_FLAG = "leader_dispute_stages_2026_08_30_v1"
 
 

@@ -2110,6 +2110,18 @@ class LeaderLateProof(Base):
     # The hour that had already gone by when this was filed, for the card: a
     # reviewer judging "how late is late" should not have to look the rule up.
     deadline   = Column(String(5), nullable=True)
+    # That same hour as an INSTANT — `leader_close.due_at`, Tashkent, seated on
+    # the day the shift anchor puts it on. The clock alone cannot answer "how
+    # late", and the answer is not derivable from it later: a shift's report day
+    # is not a calendar day, so «09:00» sits on this date or the next depending
+    # on the task's own range, which only `closing_time` knows. Snapshotted for
+    # the same reason `deadline` is — a window an admin edits next week must not
+    # silently restate how late somebody was last week.
+    #
+    # NULL where the config could not be read, and on rows filed before this
+    # column existed that a backfill could not place. The card then prints the
+    # filing time with no lateness rather than a figure it cannot stand behind.
+    due_at     = Column(DateTime(timezone=True), nullable=True)
 
     status = Column(String(12), nullable=False, default="supervisor", index=True)
 
@@ -2167,6 +2179,16 @@ class LeaderLateProofMedia(Base):
     # NULL for an upload: a file the leader chose has no instant this platform
     # can vouch for, and inventing one is exactly what the camera exists to stop.
     captured_at = Column(DateTime(timezone=True), nullable=True)
+    # When the SERVER received this photo — carried over from the draft roll's
+    # `received_at`, for BOTH doors. `captured_at` answers "when was this taken"
+    # and only a camera shot can; this answers "when did the leader send it",
+    # which is the question the reviewer is actually asking and which an upload
+    # can answer too. Without it an uploaded photo carried no instant at all, so
+    # the one thing the card could not say was the one thing it was for.
+    #
+    # NULL on rows written before this column existed: the draft shot that knew
+    # the answer is deleted by `create`, so there is nothing to backfill from.
+    received_at = Column(DateTime(timezone=True), nullable=True)
     stamp       = Column(String(40), nullable=True)
 
 

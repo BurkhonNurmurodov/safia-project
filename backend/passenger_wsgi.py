@@ -61,6 +61,7 @@ try:
         add_cell_shift_times,
         add_leader_task_cell,
         add_late_proof_provenance,
+        add_late_proof_timing,
         migrate_dispute_stages,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
@@ -141,6 +142,7 @@ try:
     add_cell_shift_times()
     add_leader_task_cell()
     add_late_proof_provenance()
+    add_late_proof_timing()
     migrate_dispute_stages()
     create_action_log()
     migrate_cell_ojidaniya_percat()
