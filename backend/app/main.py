@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
         backfill_day_approvals, backfill_day_closures, backfill_deletion_batch_ids,
         seed_admins, seed_languages, seed_managers_and_sources, seed_exchange_tasks,
         add_edit_requests_batch_id, add_last_seen_column, migrate_multi_roles,
-        migrate_leader_role_uniqueness,
+        migrate_leader_role_uniqueness, map_arc_brigadas_db,
         add_notification_template_columns, add_admin_language_column, add_tg_name_column,
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
         relax_pp_upload_manager, rescale_pp_efficiency_base,
@@ -157,6 +157,7 @@ async def lifespan(app: FastAPI):
     reorder_positions_plan_before_fact()
     seed_snabjenets_english_label()
     fix_orazov_schedule_2026_09_01()
+    map_arc_brigadas_db()
     add_concern_profile_columns()
     add_concern_done_at()
     add_concern_level_columns()

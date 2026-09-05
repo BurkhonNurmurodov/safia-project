@@ -4893,3 +4893,22 @@ def fix_orazov_schedule_2026_09_01() -> None:
         print(f"[startup] 01.09 schedule fix skipped: {exc}")
     finally:
         db.close()
+
+def map_arc_brigadas_db() -> None:
+    db = SessionLocal()
+    try:
+        flag = db.execute(text("SELECT value FROM app_settings WHERE key = 'arc_brigadas_mapped_2026_09_05'")).scalar()
+        if flag != '1':
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'Elektrik' WHERE brigada_name = 'АРС Бригада №1'"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'Universal' WHERE brigada_name = 'АРС Бригада №2'"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'Svarka' WHERE brigada_name = 'АРС Бригада №3'"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'Mexanik/Santexnik' WHERE brigada_name = 'АРС Бригада №4'"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'Universal (Keles)' WHERE brigada_name = 'АРС Бригада №5'"))
+            db.execute(text("INSERT INTO app_settings (key, value) VALUES ('arc_brigadas_mapped_2026_09_05', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"))
+            db.commit()
+            print("[startup] Mapped ARC Brigada names in arc_requests table")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] Failed to map ARC Brigadas: {exc}")
+    finally:
+        db.close()
