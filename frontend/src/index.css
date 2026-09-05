@@ -540,3 +540,56 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ── Live shift monitor (/live) ──────────────────────────────────────────
+   A wall screen that stays open for a whole shift. Motion here has one job:
+   make a CHANGE visible from across a room — a cell that just stopped pulses,
+   a new alert slides in, a row that got worse flashes, numbers count to their
+   new value instead of jumping. Every animation is decorative on top of a
+   state that is already painted, so reduced-motion simply switches them off. */
+@keyframes livePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, .55); }
+  60%      { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+}
+.live-pulse { animation: livePulse 1.7s ease-out infinite; }
+@keyframes liveGlow {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: 1; }
+}
+.live-glow { animation: liveGlow 1.4s ease-in-out infinite; }
+@keyframes liveIn {
+  from { opacity: 0; transform: translateY(-10px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+.live-in { animation: liveIn .5s var(--ease-out) both; }
+@keyframes liveFlash {
+  0%   { background-color: rgba(239, 68, 68, .28); }
+  100% { background-color: transparent; }
+}
+.live-flash { animation: liveFlash 1.6s var(--ease-out) both; }
+@keyframes liveSweep {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.live-sweep { transform-origin: left center; animation: liveSweep var(--live-interval, 30s) linear both; }
+@keyframes liveDot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.6); opacity: .45; }
+}
+.live-dot { animation: liveDot 1.5s ease-in-out infinite; }
+.live-bar { transition: width .9s var(--ease-io), background-color .4s linear; }
+.live-marker { transition: left .9s var(--ease-io); }
+/* The page root IS the fullscreen element, so the sidebar leaves with it.
+   A fullscreen element paints black behind itself unless told otherwise, and
+   a TV is read from three metres away, so everything scales up a notch. */
+.live-root:fullscreen {
+  background: var(--bg-base);
+  color: var(--text-1);
+  overflow: auto;
+  padding: 1.25rem 1.5rem;
+  zoom: 1.22;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-pulse, .live-glow, .live-in, .live-flash, .live-sweep, .live-dot { animation: none !important; }
+  .live-bar, .live-marker { transition: none !important; }
+}

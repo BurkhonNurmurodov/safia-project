@@ -48,6 +48,7 @@ export const PAGES = [
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
   { tier: "test", key: "idle-cell", route: "/idle-cell", labelKey: "nav.idleCell" },
   { tier: "test", key: "zagruzka-cell", route: "/zagruzka-cell", labelKey: "nav.zagruzkaCell" },
+  { tier: "test", key: "live", route: "/live", labelKey: "nav.live" },
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
 ];
 
@@ -86,6 +87,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // Per-cell загрузка TEST twin of /zagruzka, locked to one supervisor's cells.
   // Admin-only while the per-cell method is validated; feeds nothing downstream.
   "zagruzka-cell": [],
+  // Live shift monitor — the wall screen for shift managers (idle time and
+  // plan pace right now). Laboratory, admin-only until the operator opens it.
+  live: [],
   // ARC service-ticket register (synced from the ARC API) — admin-only until
   // a role is enabled from the Access tab.
   arc: [],

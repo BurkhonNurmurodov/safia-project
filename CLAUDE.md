@@ -3420,6 +3420,65 @@ back on the first walk.
   ticket's own) — building that register is a separate decision, not a
   side-effect of this one.
 
+## Live shift monitor (`/live`, Laboratory)
+
+From **2026-09-04** the Laboratory carries a wall-screen page for shift
+managers — `pages/LiveOverview.jsx` (+ `components/live/`) over
+`GET /api/live-overview` (`routers/live_overview.py` FETCHES,
+`services/live_overview.py` COMPUTES — the deck/matrix split, so nothing in
+`services/` imports a router). It answers two questions for the shift on the
+clock, per brigadir and per cell: how much did we wait so far, and how fast is
+the plan being filled. Page key `live`, **admin-only until the operator opens
+it** (no roles by default; the intended reader is the shift-manager, who is
+locked to their shift ∩ plant server-side via `shift_scope` whatever `?shift=`
+says; a supervisor or leader would see their own unit only).
+
+- **Every figure is one the platform already prints.** Waiting is the cells'
+  filed intervals (the `/idle-cell` rows, approved); the UNIT figure is
+  `idle_source.unit_downtime`, the headcount-weighted mean every KPI page
+  reads, so the number a brigadir is ranked by here is the number `/downtime`
+  shows tomorrow. ПЛАН/ФАКТ minutes are `pp_calc.line_minutes`, the Positions
+  table's own resolution of the per-line quantity rule; people are counted
+  under `idle_source._counted_hc` (imported, not re-spelled).
+- **The shift clock is `cell_hours.defaults`** — the two «Smena vaqtlari»
+  SHIFT defaults, printed in the page header. This is the first consumer of
+  that register (its own section says to ask before wiring one): only the
+  shift-level pair is read, never a cell's own clock, and it moves no score —
+  it decides which day is on screen and how far through it we are. Until an
+  admin confirms those two rows the page runs on the 08:00–20:00 /
+  20:00–08:00 placeholders, which is the one open decision this page carries.
+- **The day on screen is the most recent shift start** (`shift_frame`): a night
+  shift at 02:00 belongs to yesterday's date, which is also the date its
+  leaders file under. After the window closes the frame stays on that day at
+  100% until the next start, so a screen between shifts shows the last result,
+  never a blank. `?date=` (admin/top-manager only) replays a finished day for
+  looking at the design when nothing runs — marked «not live» on screen.
+- **«On pace» is a linear floor, judged late and never on silence.** Expected
+  = plan × elapsed fraction; nothing is judged in the first 10% of the shift;
+  a unit with a plan and NO ФАКТ is «fakt kiritilmagan», never «lagging» — the
+  SAP «Поставлено» often lands once, after the shift, and a screen that paints
+  every brigadir red every morning teaches them to stop reading it. Freshness
+  (`pp_daily`/`pp_line_daily` `updated_at`) is shown per unit and flagged past
+  120 min. Thresholds are the constants at the top of
+  `services/live_overview.py`, ride on the payload, and are printed in the
+  page legend so red never has to be guessed at.
+- **Until the day's attendance is uploaded the unit's waiting is an ESTIMATE**
+  (plain mean over its registered cells, marked as such); it switches to the
+  weighted figure the moment the file lands. A page dark until the file arrives
+  would be dark for exactly the hours a shift manager watches it.
+- **Events are SEATED on the shift's clock** (`live_overview.seat`): a night
+  shift's «01:00 → 01:40» reads as the small hours after opening, not the
+  morning before. Totals are untouched (the union is the union); only «stopped
+  right now» needs the placement.
+- Polls every 30 s (`refetchIntervalInBackground`), keeps the last payload
+  through an outage and says so, animates changes (count-up, FLIP reorder of
+  the board, slide-in alerts, pulsing stopped cells), all off under
+  `prefers-reduced-motion`. Fullscreen is requested on the page ROOT, so the
+  sidebar leaves with it; the button hides where the API is absent (Telegram).
+- **Grid tiles are deliberately INERT** (no `CellLink`): a dense grid on a
+  touch TV must not navigate away from the monitor. The alert feed and the
+  unit rows carry the links instead.
+
 ## Workflow
 
 ### The standing rule for EVERY change (mandatory, in this order)

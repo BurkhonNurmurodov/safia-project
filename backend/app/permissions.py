@@ -40,7 +40,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -111,6 +111,12 @@ DEFAULT_PAGE_ACCESS = {
     # services/arc_sync.py). Admin-only by default; open up roles from the
     # Access tab or per person via page.view.arc.
     "arc": [],
+    # Live shift monitor (`/live`, routers/live_overview.py) — the wall screen
+    # for shift managers: idle time and plan pace right now, per brigadir and
+    # per cell. In the Laboratory and admin-only until the operator opens it
+    # (the intended roles are shift-manager first); a shift-manager is locked
+    # to their own shift ∩ plant server-side whatever the query string says.
+    "live": [],
 }
 
 

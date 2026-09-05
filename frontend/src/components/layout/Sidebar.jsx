@@ -12,7 +12,7 @@ import {
  
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
-  Grid3x3, TestTubes, Megaphone, ClipboardList,
+  Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot,
 } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
@@ -56,6 +56,9 @@ const ALL_LINKS = [
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },
+  // Live shift monitor — the wall screen (idle time + plan pace, right now).
+  // Laboratory, admin-only until the operator opens it to shift managers.
+  { to: "/live", page: "live", key: "nav.live", icon: MonitorDot, group: "lab" },
 ];
 
 // Grouped sidebar. ALL_LINKS above stays THE register and order — `group`

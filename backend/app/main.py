@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -606,6 +606,9 @@ app.include_router(cell_hours.router)
 # tab) — same shape as cell_hours: every route self-gates via
 # require_cap(CAP_IDLE_SOURCE_MANAGE), so grantable and no _admin_guard.
 app.include_router(idle_source.router)
+# Live shift monitor (`/live`, Laboratory) — one read-only GET, self-gated via
+# require_page("live") (admin-only by default), so no admin guard here.
+app.include_router(live_overview.router)
 # Lost-worker audit («Yo'qolgan xodimlar») — the READ-ONLY report of workers an
 # approved → supervisor exchange left on no roster after an upload wiped the
 # receiving unit's day. Under /api/*, so the global initData guard covers it;
