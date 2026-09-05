@@ -389,6 +389,16 @@ def normalize_item(item: dict) -> dict:
     # survives. A non-empty list is the newer answer and does overwrite.
     raw_comments = item.get("comments")
     comments = raw_comments if isinstance(raw_comments, list) and raw_comments else None
+    brig_name = _s(brig.get("name"))
+    brigada_mapping = {
+        "АРС Бригада №1": "Elektrik",
+        "АРС Бригада №2": "Universal",
+        "АРС Бригада №3": "Svarka",
+        "АРС Бригада №4": "Mexanik/Santexnik",
+        "АРС Бригада №5": "Universal (Keles)",
+    }
+    mapped_brig_name = brigada_mapping.get(brig_name, brig_name)
+
     return {
         "remote_id": _s(item.get("id")),
         "request_num": _i(item.get("id")),
@@ -401,7 +411,7 @@ def normalize_item(item: dict) -> dict:
         "division_name": _s(div.get("name")),
         "manager_name": _s(mgr.get("name")),
         "brigada_id": _i(brig.get("id")),
-        "brigada_name": _s(brig.get("name")),
+        "brigada_name": mapped_brig_name,
         "category_id": _i(cat.get("id")),
         "category_name": _s(cat.get("name")),
         "category_urgent": _b(cat.get("urgent")),
