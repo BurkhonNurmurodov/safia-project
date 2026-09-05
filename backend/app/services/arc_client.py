@@ -391,11 +391,11 @@ def normalize_item(item: dict) -> dict:
     comments = raw_comments if isinstance(raw_comments, list) and raw_comments else None
     brig_name = _s(brig.get("name"))
     brigada_mapping = {
-        "АРС Бригада №1": "Elektrik",
-        "АРС Бригада №2": "Universal",
-        "АРС Бригада №3": "Svarka",
-        "АРС Бригада №4": "Mexanik/Santexnik",
-        "АРС Бригада №5": "Universal (Keles)",
+        "АРС Бригада №1": "АРС Бригада №1 (Elektrik)",
+        "АРС Бригада №2": "АРС Бригада №2 (Universal)",
+        "АРС Бригада №3": "АРС Бригада №3 (Svarka)",
+        "АРС Бригада №4": "АРС Бригада №4 (Mexanik/Santexnik)",
+        "АРС Бригада №5": "АРС Бригада №5 (Universal (Keles))",
     }
     mapped_brig_name = brigada_mapping.get(brig_name, brig_name)
 

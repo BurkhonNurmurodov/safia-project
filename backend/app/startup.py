@@ -4897,16 +4897,16 @@ def fix_orazov_schedule_2026_09_01() -> None:
 def map_arc_brigadas_db() -> None:
     db = SessionLocal()
     try:
-        flag = db.execute(text("SELECT value FROM app_settings WHERE key = 'arc_brigadas_mapped_2026_09_05'")).scalar()
+        flag = db.execute(text("SELECT value FROM app_settings WHERE key = 'arc_brigadas_mapped_2026_09_05_v2'")).scalar()
         if flag != '1':
-            db.execute(text("UPDATE arc_requests SET brigada_name = 'Elektrik' WHERE brigada_name = 'АРС Бригада №1'"))
-            db.execute(text("UPDATE arc_requests SET brigada_name = 'Universal' WHERE brigada_name = 'АРС Бригада №2'"))
-            db.execute(text("UPDATE arc_requests SET brigada_name = 'Svarka' WHERE brigada_name = 'АРС Бригада №3'"))
-            db.execute(text("UPDATE arc_requests SET brigada_name = 'Mexanik/Santexnik' WHERE brigada_name = 'АРС Бригада №4'"))
-            db.execute(text("UPDATE arc_requests SET brigada_name = 'Universal (Keles)' WHERE brigada_name = 'АРС Бригада №5'"))
-            db.execute(text("INSERT INTO app_settings (key, value) VALUES ('arc_brigadas_mapped_2026_09_05', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'АРС Бригада №1 (Elektrik)' WHERE brigada_name IN ('АРС Бригада №1', 'Elektrik')"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'АРС Бригада №2 (Universal)' WHERE brigada_name IN ('АРС Бригада №2', 'Universal')"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'АРС Бригада №3 (Svarka)' WHERE brigada_name IN ('АРС Бригада №3', 'Svarka')"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'АРС Бригада №4 (Mexanik/Santexnik)' WHERE brigada_name IN ('АРС Бригада №4', 'Mexanik/Santexnik')"))
+            db.execute(text("UPDATE arc_requests SET brigada_name = 'АРС Бригада №5 (Universal (Keles))' WHERE brigada_name IN ('АРС Бригада №5', 'Universal (Keles)')"))
+            db.execute(text("INSERT INTO app_settings (key, value) VALUES ('arc_brigadas_mapped_2026_09_05_v2', '1') ON CONFLICT (key) DO UPDATE SET value = '1'"))
             db.commit()
-            print("[startup] Mapped ARC Brigada names in arc_requests table")
+            print("[startup] Mapped ARC Brigada names (v2) in arc_requests table")
     except Exception as exc:
         db.rollback()
         print(f"[startup] Failed to map ARC Brigadas: {exc}")
