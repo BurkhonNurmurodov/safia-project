@@ -40,40 +40,12 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
+import { CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON } from "../utils/concernCategories";
 
 const STATUSES = ["todo", "doing", "done"];
 
-// Department categories ("по отделам") a concern is bucketed into. Keys are
-// stable; labels render per-language via concerns.category.<key>. Keep in sync
-// with CATEGORIES in backend/app/routers/concerns.py.
-const CATEGORIES = [
-  "ars", "inventory", "warehouse", "fridge", "procurement", "logistics",
-  "it", "washing", "plan", "hr", "technologist", "raw_material",
-  "security", "kitchen", "other",
-];
-
-// Per-category identity hue for the category chip — the shared generic-first
-// category order (red, green, blue, yellow, … — see utils/chartPalette), keyed
-// by the department so each one reads consistently everywhere.
-const CATEGORY_COLOR = {
-  ars: "#ef4444", inventory: "#22c55e", warehouse: "#3b82f6", fridge: "#eab308",
-  procurement: "#f97316", logistics: "#a855f7", it: "#14b8a6", washing: "#ec4899",
-  plan: "#6366f1", hr: "#84cc16", technologist: "#06b6d4", raw_material: "#d946ef",
-  security: "#0ea5e9", kitchen: "#b45309",
-  // «Другой отдел» is a catch-all, not a department with an identity — slate,
-  // the same de-emphasis every «Остальные» fold gets, so it never competes.
-  other: "#94a3b8",
-};
-
-// Icon per department — same visual language as the downtime category legend
-// (Wrench = repair service, Warehouse, Truck = logistics, FlaskConical =
-// technologist), extended to the departments the legend doesn't cover.
-const CATEGORY_ICON = {
-  ars: Wrench, inventory: Boxes, warehouse: Warehouse, fridge: Refrigerator,
-  procurement: ShoppingCart, logistics: Truck, it: MonitorCog, washing: Droplets,
-  plan: CalendarRange, hr: Users, technologist: FlaskConical, raw_material: Wheat,
-  security: Shield, kitchen: ChefHat, other: Ellipsis,
-};
+// Department categories, their identity hues and their icons all come from
+// utils/concernCategories — the ONE definition, shared with /cell-concerns.
 
 // Escalation chain, bottom → top. A concern OPENS at "supervisor" and moves one
 // step at a time by whoever can't solve it (see the uplift/send-back actions);

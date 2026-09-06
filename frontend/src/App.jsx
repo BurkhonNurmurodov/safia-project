@@ -94,6 +94,7 @@ const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const Quality = lazyWithReload(() => import("./pages/Quality"));
 const WorkerConcerns = lazyWithReload(() => import("./pages/WorkerConcerns"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
+const CellConcerns = lazyWithReload(() => import("./pages/CellConcerns"));
 const Tasks = lazyWithReload(() => import("./pages/Tasks"));
 const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
 const SetupTimes = lazyWithReload(() => import("./pages/SetupTimes"));
@@ -475,6 +476,7 @@ function AppWithLang() {
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />
             <Route path="/concerns" element={<AuthGate><RequirePage page="concerns"><Concerns /></RequirePage></AuthGate>} />
+            <Route path="/cell-concerns" element={<AuthGate><RequirePage page="cell-concerns"><CellConcerns /></RequirePage></AuthGate>} />
             <Route path="/worker-concerns" element={<AuthGate><RequirePage page="worker-concerns"><WorkerConcerns /></RequirePage></AuthGate>} />
             <Route path="/tasks" element={<AuthGate><RequirePage page="tasks"><Tasks /></RequirePage></AuthGate>} />
             {/* Retired 2026-09-04: both tiers of the task board live on /tasks. A bot
