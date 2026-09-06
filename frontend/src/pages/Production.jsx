@@ -55,8 +55,21 @@ const SHIFTS = ["all", "1", "2"];
 const GREEN = "#22c55e", AMBER = "#eab308", RED = "#ef4444";
 // completion: ≥95% good, ≥70% partial, below = behind
 const vypColor = (v) => (v == null ? "var(--text-4)" : v >= 0.95 ? GREEN : v >= 0.7 ? AMBER : RED);
-// load (Загруженность): >100% over-capacity, ≥80% well-loaded, else under-loaded
-const loadColor = (v) => (v == null ? "var(--text-4)" : v > 1.001 ? RED : v >= 0.8 ? GREEN : "var(--brand-text)");
+// load (Загруженность): ≥90% green, 80–89% yellow, below that red — the
+// operator's scale (2026-09-06), read by BOTH surfaces that print the figure:
+// each команда card and the СР. ЗАГРУЖЕННОСТЬ KPI above them.
+// Two things went with it, deliberately. Over-capacity is no longer a case of
+// its own: a cell above 100% now reads GREEN, where >100.1% used to read red.
+// And under-loaded stops being brand gold — gold is an accent on this platform,
+// never a status, so the one band that was not a traffic light now is one.
+// The bands are compared against the WHOLE percent the reader sees, because
+// `pct` rounds to one: judging the raw fraction is what paints a number on one
+// side of a threshold in the colour of the other («90%» in yellow for 0.8951).
+const loadColor = (v) => {
+  if (v == null || Number.isNaN(v)) return "var(--text-4)";
+  const p = Math.round(v * 100);
+  return p >= 90 ? GREEN : p >= 80 ? AMBER : RED;
+};
 
 // per-команда identity colour — stable for a given work-center code (hash → palette),
 // so the same team keeps its colour across the cards and the table regardless of order.

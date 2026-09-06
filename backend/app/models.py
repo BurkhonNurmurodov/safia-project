@@ -2425,6 +2425,20 @@ class LeaderConcern(Base):
     # owner_role/owner_profile_id at view time. Pre-owner-rollout rows keep
     # whatever free text was typed ("worker who raised it").
     concern_owner       = Column(String, nullable=False)
+    # The WORKER who typed this concern in on the shop-floor PC — set only by
+    # /cell-concerns, NULL on every row raised through /concerns. That NULL is
+    # also the marker: "worker-filed" is `worker_name IS NOT NULL`, so no second
+    # source column can disagree with it and every pre-existing row reads
+    # correctly as not-worker-filed with nothing migrated.
+    #
+    # It is free text by the operator's ruling (2026-09-04) — the shop floor
+    # types a name rather than picking off the day's cell roster — so one person
+    # may appear under several spellings and nothing here may be used as an
+    # identity key. `concern_owner` carries the same string, which is what the
+    # Owner column and the notifications print; owner_role/owner_profile_id stay
+    # NULL on these rows precisely so _serialize falls back to it instead of
+    # naming the leader whose session the PC happened to be logged in as.
+    worker_name         = Column(String, nullable=True, index=True)
     concern_text        = Column(Text, nullable=False)            # Хавотир
     status              = Column(String, nullable=False, server_default="todo")  # todo | doing | done
     deadline_days       = Column(Integer, nullable=True)          # Срок (days)

@@ -89,6 +89,22 @@ LEVEL_IDX = {l: i for i, l in enumerate(LEVELS)}
 # Roles that pick a leader when creating (everyone but the leader themself).
 PICKER_ROLES = ("admin", "shift-manager", "supervisor")
 
+# Pages whose grant opens the ROW-LEVEL actions on one concern — edit/status,
+# escalate, history, delete and the comment thread. «Yacheyka havotirlari»
+# (routers/cell_concerns.py) files into this very table at level="leader" and
+# uplifts through this very escalate, so its page must reach these handlers or
+# the feature would need a second spelling of "resolve a concern" and "hand a
+# concern to the brigadir" — the two rules it exists to reuse.
+#
+# Widening these is safe because the page gate is NOT what protects a row:
+# every one of these handlers re-decides access per row through _visible_concern
+# / _assert_can_edit / _can_set_status, which are unchanged. What is deliberately
+# NOT widened is the register (GET ""), the create endpoint and the pickers —
+# those answer with rows and names the caller has not been scoped to, so a
+# cell-concerns grantee reaching them would be handed the whole /concerns
+# surface for a page that only ever shows their own cells' worker filings.
+ROW_ACTION_PAGES = ("concerns", "cell-concerns")
+
 
 def _sm_names(db: Session) -> dict:
     """manager_id → the shift-manager name(s) answerable for that unit.
@@ -312,6 +328,11 @@ def _serialize(
         "concern_owner": c.concern_owner,
         "owner_name": owner_name or c.concern_owner,
         "owner_role": c.owner_role if owner_name else None,
+        # Set only on a row a WORKER typed in at a shop-floor PC
+        # (/cell-concerns). Non-null is the whole "worker-filed" fact, so
+        # /concerns can mark an uplifted row as having come from the floor
+        # rather than from a manager, and the cell page can filter on it.
+        "worker_name": c.worker_name,
         "concern_text": c.concern_text,
         "status": c.status,
         "deadline_days": c.deadline_days,
@@ -1142,7 +1163,7 @@ def update_concern(
     concern_id: int,
     body: ConcernIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("concerns")),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
     c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
     if not c:
@@ -1413,7 +1434,7 @@ def escalate_concern(
     concern_id: int,
     body: EscalateIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("concerns")),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
     """Move a concern one step up ("I can't solve this") or back down the
     leader → supervisor → shift-manager → top-manager chain. Gated by the same
@@ -1583,7 +1604,7 @@ def _span_seconds(start, end) -> Optional[int]:
 def concern_history(
     concern_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("concerns")),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
     """The concern's WHOLE life, oldest first: raised (when, by whom, onto which
     step), then every uplift and send-back with the person on BOTH sides of the
@@ -1675,7 +1696,7 @@ def concern_history(
 def delete_concern(
     concern_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("concerns")),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
     c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
     if not c:
@@ -1762,7 +1783,7 @@ class CommentIn(BaseModel):
 def list_concern_comments(
     concern_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("concerns")),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
     _visible_concern(concern_id, payload, db)
     rows = (
@@ -1779,7 +1800,7 @@ def add_concern_comment(
     concern_id: int,
     body: CommentIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("concerns")),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
     if not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Comment text is required")
@@ -1837,7 +1858,7 @@ def edit_concern_comment(
     comment_id: int,
     body: CommentIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("concerns")),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
     if not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Comment text is required")
@@ -1864,7 +1885,7 @@ def delete_concern_comment(
     concern_id: int,
     comment_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("concerns")),
+    payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
     parent = _visible_concern(concern_id, payload, db)
     c = _own_comment(concern_id, comment_id, payload, db)

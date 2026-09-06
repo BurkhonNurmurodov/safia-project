@@ -1979,6 +1979,36 @@ def add_concern_seq() -> None:
         db.close()
 
 
+def add_concern_worker_name() -> None:
+    """2026-09-05: «Yacheyka havotirlari» — the worker who typed the concern in.
+
+    Additive and deliberately un-backfilled. NULL is a real answer here — "this
+    row was NOT filed by a worker at a shop-floor PC" — and it is what every
+    concern raised through /concerns has always been, so guessing a name onto
+    the existing rows would invent a person for each of them. The column is
+    therefore both the name and the worker-filed marker; a separate `source`
+    flag would be a second thing to keep in step and a second thing to disagree.
+
+    `create_all` never ALTERs an existing table, so a box that already has
+    leader_concerns needs this; IF NOT EXISTS makes it idempotent.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS worker_name VARCHAR"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_leader_concerns_worker_name "
+            "ON leader_concerns (worker_name)"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern worker_name migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_done_at() -> None:
     """Concerns "время выполнения" column: done_at is the exact moment a concern
     flipped to done (completion_date is only day-grained, so minutes need a real
@@ -4313,6 +4343,92 @@ def correct_pp_double_counted_days() -> None:
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
         print(f"[startup] pp фаза fold correction skipped: {exc}")
+    finally:
+        db.close()
+
+
+PP_HISTORY_PURGE_FLAG = "pp_history_purge_before_2026_09_02_v1"
+PP_HISTORY_PURGE_BEFORE = date(2026, 9, 2)
+
+
+def purge_production_history() -> None:
+    """Delete every «Zagruzka fayli» (/production) day before 02.09.2026.
+
+    The operator's directive (2026-09-05): the page keeps 02.09.2026 onward and
+    nothing before it. This is a DATE THRESHOLD, not a keep-list — a date AFTER
+    the cut is left alone whatever it is, the stray 29.09.2026 upload included.
+
+    Six tables carry a /production day and all six are cleared below the cut:
+
+        pp_daily              ПЛАН/ФАКТ snapshot + the group-level overrides
+        pp_line_daily         the per-catalog-line override overlay
+        pp_work_center_daily  O. SONI / штатка pins for one date
+        pp_day_settings       that day's productive-minutes constant
+        pp_reconciliation     the manual reconciliation block
+        pp_uploads            the stored raw SAP фаза/заголовок slices
+
+    `pp_uploads` is deliberately in that list. `GET /api/production/dates` builds
+    the «Yuklangan sanalar» selector from this unit's pp_daily dates UNIONED with
+    every GLOBAL upload date, so a day whose upload survives goes on being
+    offered with nothing behind it — clearing one without the other leaves the
+    selector naming days the page cannot draw.
+
+    What is NOT touched, because none of it is dated and every FUTURE day needs
+    it: pp_products (the catalog), pp_work_centers (штатка / capacity) and
+    pp_manager_settings (the SAP auto-fill register).
+
+    Irreversible by construction: the manual overrides and the SAP files that
+    could re-derive the snapshot go in the same sweep, so nothing on the platform
+    can put these days back. The counts are therefore read BEFORE the delete and
+    reported to the deploy output and the action register, which is the only
+    record of what this took.
+
+    Guarded by an AppSetting flag so it runs exactly once. Moving the cut date
+    needs a NEW flag key, or the old "already ran" mark makes the new cut a no-op
+    on every box that has booted since.
+    """
+    from sqlalchemy import func
+    from app.services import action_log
+    from app.models import (PPDaily, PPDaySetting, PPLineDaily, PPReconciliation,
+                            PPUpload, PPWorkCenterDaily)
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PP_HISTORY_PURGE_FLAG).first():
+            return
+
+        cut = PP_HISTORY_PURGE_BEFORE
+        oldest, newest, days = (
+            db.query(func.min(PPDaily.date), func.max(PPDaily.date),
+                     func.count(func.distinct(PPDaily.date)))
+            .filter(PPDaily.date < cut).one())
+        span = f"{oldest} .. {newest}" if oldest and newest else "no pp_daily rows"
+
+        removed: list = []
+        for model in (PPLineDaily, PPDaily, PPWorkCenterDaily, PPDaySetting,
+                      PPReconciliation, PPUpload):
+            n = (db.query(model).filter(model.date < cut)
+                 .delete(synchronize_session=False))
+            removed.append((model.__tablename__, int(n or 0)))
+
+        db.add(AppSetting(key=PP_HISTORY_PURGE_FLAG, value="1"))
+        db.commit()
+
+        total = sum(n for _, n in removed)
+        print(f"[startup] production history purge (< {cut}): {total} row(s) "
+              f"across {days or 0} day(s) [{span}] — "
+              + ", ".join(f"{t} {n}" for t, n in removed))
+
+        action_log.record_system(
+            "danger", "danger.production_history_purged",
+            target_kind="page", target_name="production",
+            details=list(removed) + [("days", days or 0), ("span", span)],
+            reason=(f"Operator directive: /production keeps {cut.isoformat()} "
+                    f"onward; every earlier day deleted with its SAP source files"),
+        )
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] production history purge skipped: {exc}")
     finally:
         db.close()
 

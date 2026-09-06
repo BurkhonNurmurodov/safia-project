@@ -40,7 +40,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -80,6 +80,13 @@ DEFAULT_PAGE_ACCESS = {
     # rows, supervisors their unit's leaders, shift-managers their shift's
     # units, admins everything; top-managers get a read-only view of all.
     "concerns": ["top-manager", "shift-manager", "supervisor", "leader"],
+    # Cell concerns («Yacheyka havotirlari») — the page a WORKER types into on
+    # the shop-floor PC, which stands open on their cell leader's profile. Rows
+    # land in leader_concerns at level="leader"; uplifting one is the ordinary
+    # escalate, after which it belongs to the brigadir on /concerns and leaves
+    # this page. Leader + supervisor + admin by default: the leader answers the
+    # concerns, the brigadir sees what their unit's cells are filing.
+    "cell-concerns": ["supervisor", "leader"],
     # Worker-concerns KPI («Ishchi havotirlari») — the concerns workers file to
     # their cell leader, synced from the per-cell Google sheets. Role-scoped
     # server-side: supervisors see their own unit's leaders, leaders their own

@@ -75,6 +75,7 @@ try:
         seed_pp_autofill_default,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
+        purge_production_history,
         reorder_positions_plan_before_fact,
         seed_snabjenets_english_label,
         fix_orazov_schedule_2026_09_01,
@@ -82,7 +83,7 @@ try:
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_level_since, add_concern_escalation_names,
         add_concern_shift_manager, add_concern_category,
-        add_concern_seq,
+        add_concern_seq, add_concern_worker_name,
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
         add_task_comment_author_ref, add_concern_comment_kind_column,
@@ -158,6 +159,7 @@ try:
     seed_pp_autofill_default()
     migrate_pp_line_daily_key()
     correct_pp_double_counted_days()
+    purge_production_history()
     reorder_positions_plan_before_fact()
     seed_snabjenets_english_label()
     fix_orazov_schedule_2026_09_01()
@@ -169,6 +171,7 @@ try:
     add_concern_shift_manager()
     add_concern_category()
     add_concern_seq()
+    add_concern_worker_name()
     add_concern_owner_columns()
     add_task_comment_author_ref()
     add_concern_comment_kind_column()
