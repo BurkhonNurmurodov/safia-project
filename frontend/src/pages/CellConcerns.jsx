@@ -56,6 +56,17 @@ const STATUSES = ["todo", "doing", "done"];
 const DEADLINE_CHIPS = [1, 3, 7, 14];
 const RESET_AFTER_MS = 15000;
 
+// LangContext's t() takes a KEY and nothing else — there is no interpolation in
+// it, so a second argument is silently dropped and the placeholder renders
+// literally ("{n} kun", which is exactly what shipped). The codebase's idiom is
+// t(key).replace("{n}", v); with fifteen parameterised strings on this page
+// that is fifteen chains to get wrong, so this does it in one place.
+const tp = (t, key, params) =>
+  Object.entries(params).reduce(
+    (out, [k, v]) => out.split(`{${k}}`).join(String(v)),
+    t(key),
+  );
+
 const rgba = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
@@ -201,7 +212,7 @@ export default function CellConcerns() {
         {tab === "write" && (
           <WriteTab
             cells={cells} t={t}
-            onFiled={(row) => { refresh(); show(t("cellConcerns.filed", { no: row.seq }), "success"); }}
+            onFiled={(row) => { refresh(); show(tp(t, "cellConcerns.filed", { no: row.seq }), "success"); }}
             onError={(msg) => show(msg, "error")}
           />
         )}
@@ -234,7 +245,7 @@ export default function CellConcerns() {
           endpoint={`/api/concerns/${comments.id}/comments`}
           queryKey={["concern-comments", comments.id]}
           refreshKeys={[["cell-concerns"]]}
-          title={t("cellConcerns.commentsTitle", { no: comments.seq })}
+          title={tp(t, "cellConcerns.commentsTitle", { no: comments.seq })}
           subtitle={comments.cell_code}
           onClose={() => setComments(null)}
           zIndex={detail ? 60 : 50}
@@ -323,7 +334,7 @@ function WriteTab({ cells, t, onFiled, onError }) {
           <Button size="lg" onClick={reset}>{t("cellConcerns.done.again")}</Button>
         </div>
         <div className="text-[11px] mt-4" style={{ color: "var(--text-4)" }}>
-          {t("cellConcerns.done.countdown", { n: left })}
+          {tp(t, "cellConcerns.done.countdown", { n: left })}
         </div>
       </div>
     );
@@ -452,7 +463,7 @@ function WriteTab({ cells, t, onFiled, onError }) {
                 fontWeight: days === d ? 600 : 400,
               }}
             >
-              {t("cellConcerns.days", { n: d })}
+              {tp(t, "cellConcerns.days", { n: d })}
             </button>
           ))}
         </div>
@@ -534,7 +545,7 @@ function RegisterTab({ t, rows, loading, toolbar, onOpen, onComments, anyFilter,
     <TableCard
       icon={ListChecks}
       title={t("cellConcerns.registerTitle")}
-      right={t("cellConcerns.nRows", { n: rows.length })}
+      right={tp(t, "cellConcerns.nRows", { n: rows.length })}
       toolbar={toolbar}
       wrap
     >
@@ -619,7 +630,7 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
       cell_code: row.cell_code, category: row.category,
       deadline_days: row.deadline_days, entry_date: row.entry_date,
     }),
-    onSuccess: () => onDone(t("cellConcerns.saved", { no: row.seq })),
+    onSuccess: () => onDone(tp(t, "cellConcerns.saved", { no: row.seq })),
     onError: (e) => onError(fail(e, "cellConcerns.saveFailed")),
   });
 
@@ -627,13 +638,13 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
     mutationFn: () => api.post(`/api/concerns/${row.id}/escalate`, {
       direction: "up", reason: reason.trim(),
     }),
-    onSuccess: () => onDone(t("cellConcerns.uplifted", { no: row.seq }), "info"),
+    onSuccess: () => onDone(tp(t, "cellConcerns.uplifted", { no: row.seq }), "info"),
     onError: (e) => setErr(fail(e, "cellConcerns.saveFailed")),
   });
 
   const doDelete = useMutation({
     mutationFn: () => api.delete(`/api/concerns/${row.id}`),
-    onSuccess: () => onDone(t("cellConcerns.deleted", { no: row.seq })),
+    onSuccess: () => onDone(tp(t, "cellConcerns.deleted", { no: row.seq })),
     onError: (e) => setErr(fail(e, "cellConcerns.saveFailed")),
   });
 
@@ -649,7 +660,7 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
     <>
       <Modal
         onClose={onClose}
-        title={t("cellConcerns.detailTitle", { no: row.seq })}
+        title={tp(t, "cellConcerns.detailTitle", { no: row.seq })}
         subtitle={`${row.cell_code} · ${row.entry_date}`}
         maxWidth="max-w-2xl"
         footer={
@@ -670,7 +681,7 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
              style={{ background: "var(--bg-inner)", borderLeft: "3px solid var(--brand)", color: "var(--text-1)" }}>
           {row.concern_text}
           <div className="mt-3 text-xs flex items-center gap-2" style={{ color: "var(--text-3)" }}>
-            <UserRound size={13} /> {t("cellConcerns.filedBy", { name: row.worker_name || "—" })}
+            <UserRound size={13} /> {tp(t, "cellConcerns.filedBy", { name: row.worker_name || "—" })}
           </div>
         </div>
 
@@ -704,11 +715,11 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
 
         <div className="flex flex-wrap gap-6 pt-1">
           <Meta k={t("cellConcerns.deadlineWord")}
-                v={row.deadline_days ? t("cellConcerns.days", { n: row.deadline_days }) : "—"} />
+                v={row.deadline_days ? tp(t, "cellConcerns.days", { n: row.deadline_days }) : "—"} />
           <Meta k={t("cellConcerns.brigadir")} v={row.brigadir_name || "—"} />
           <Meta k={t("cellConcerns.col.comments")}
                 v={<Button size="sm" variant="ghost" onClick={onComments}>
-                     {t("cellConcerns.openThread", { n: row.comment_count || 0 })}
+                     {tp(t, "cellConcerns.openThread", { n: row.comment_count || 0 })}
                    </Button>} />
         </div>
       </Modal>
@@ -717,7 +728,7 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
         <Modal
           onClose={() => { setUplift(false); setErr(null); }}
           title={t("cellConcerns.uplift")}
-          subtitle={t("cellConcerns.upliftTo", { name: row.brigadir_name || "" })}
+          subtitle={tp(t, "cellConcerns.upliftTo", { name: row.brigadir_name || "" })}
           maxWidth="max-w-md" zIndex={60}
           footer={
             <>
@@ -758,7 +769,7 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
         <ConfirmDialog
           tone="danger"
           title={t("cellConcerns.deleteTitle")}
-          message={t("cellConcerns.deleteBody", { name: row.worker_name || "—" })}
+          message={tp(t, "cellConcerns.deleteBody", { name: row.worker_name || "—" })}
           confirmLabel={t("common.delete")}
           loading={doDelete.isPending}
           error={err}
@@ -792,11 +803,11 @@ function AnalysisTab({ t, stats, toolbar }) {
 
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(168px,1fr))" }}>
         <Kpi label={t("cellConcerns.kpi.total")} value={s.total} rail="var(--brand)"
-             sub={t("cellConcerns.kpi.workers", { n: s.workers })} />
+             sub={tp(t, "cellConcerns.kpi.workers", { n: s.workers })} />
         <Kpi label={t("cellConcerns.st.todo")} value={s.by_status.todo} rail={ST.todo.color} color={ST.todo.color} />
         <Kpi label={t("cellConcerns.st.doing")} value={s.by_status.doing} rail={ST.doing.color} color={ST.doing.color} />
         <Kpi label={t("cellConcerns.st.done")} value={s.by_status.done} rail={ST.done.color} color={ST.done.color}
-             sub={t("cellConcerns.kpi.pct", { n: s.resolved_pct })} />
+             sub={tp(t, "cellConcerns.kpi.pct", { n: s.resolved_pct })} />
       </div>
 
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
