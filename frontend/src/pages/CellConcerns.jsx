@@ -31,6 +31,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
 import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
+import StyledSelect from "../components/ui/StyledSelect";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
 import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
@@ -42,6 +43,9 @@ import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON } from "../utils/concernCategories";
+// A cell is its CODE; where a code alone is too thin the second fact is its
+// LEADER — never the workshop name (utils/cellName.js).
+import { cellLabel } from "../utils/cellName";
 
 // Traffic light, the platform's own semantics: "not started" is GREY (it is not
 // a fault), doing is amber, done is green. Red is reserved for OVERDUE, which
@@ -54,7 +58,19 @@ const ST = {
 };
 const STATUSES = ["todo", "doing", "done"];
 const DEADLINE_CHIPS = [1, 3, 7, 14];
+const MAX_DEADLINE_DAYS = 365;   // twin of cell_concerns.MAX_DEADLINE_DAYS
 const RESET_AFTER_MS = 15000;
+
+// Above this many cells the tile grid stops being an affordance and becomes an
+// obstacle: the register holds 108 cells, and rendering them as tiles pushed the
+// rest of the form two and a half screens down for anyone who is not a single
+// leader. Past the threshold the picker becomes the platform's own searchable
+// dropdown instead.
+//
+// The switch is on COUNT, not on ROLE. A leader who happens to own twenty cells
+// has exactly the same problem as an admin who can see every one of them, and a
+// role test would leave that leader scrolling while claiming to have fixed it.
+const MANY_CELLS = 8;
 
 // LangContext's t() takes a KEY and nothing else — there is no interpolation in
 // it, so a second argument is silently dropped and the placeholder renders
@@ -356,25 +372,49 @@ function WriteTab({ cells, t, onFiled, onError }) {
       {cells.length > 1 && (
         <Card>
           <Step n={1} label={t("cellConcerns.step.cell")} required />
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(112px,1fr))" }}>
-            {cells.map((c) => (
-              <button
-                key={c.code} type="button" aria-pressed={cell === c.code}
-                onClick={() => { setCell(c.code); setErrs((e) => ({ ...e, cell: false })); }}
-                className="h-20 rounded-xl flex flex-col items-center justify-center transition-colors"
-                style={{
-                  background: cell === c.code ? "var(--brand-bg)" : "var(--bg-inner)",
-                  border: `1px solid ${cell === c.code ? "var(--brand)" : "var(--border-md)"}`,
-                  color: cell === c.code ? "var(--brand-text)" : "var(--text-1)",
-                }}
-              >
-                <span className="text-2xl font-bold tabular-nums">{c.code}</span>
-                <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
-                  {t("cellConcerns.cellWord")}
-                </span>
-              </button>
-            ))}
-          </div>
+          {cells.length > MANY_CELLS ? (
+            // Searchable dropdown — StyledSelect is THE dropdown template, so
+            // this is the same control the rest of the platform uses rather
+            // than a scrollable tile grid nobody can find their code in. The
+            // option carries the cell's LEADER beside the code (cellLabel), the
+            // one extra fact a cell is allowed to be named by, because at this
+            // size the reader is an admin choosing among other people's cells.
+            <StyledSelect
+              value={cell}
+              onChange={(v) => { setCell(v); setErrs((e) => ({ ...e, cell: false })); }}
+              options={cells.map((c) => ({
+                value: c.code, label: cellLabel(c.code, c.leader_name), title: c.code,
+              }))}
+              placeholder={t("cellConcerns.cellPick")}
+              searchable
+              searchPlaceholder={t("cellConcerns.cellSearchPh")}
+              // Height goes in triggerClassName, NOT the `style` prop:
+              // StyledSelect documents `style` as "extra inline styles on the
+              // trigger button" but never spreads it, so anything passed there
+              // is silently dropped. 52px matches the name/text inputs above.
+              triggerClassName="px-3.5 text-base h-[52px]"
+            />
+          ) : (
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(112px,1fr))" }}>
+              {cells.map((c) => (
+                <button
+                  key={c.code} type="button" aria-pressed={cell === c.code}
+                  onClick={() => { setCell(c.code); setErrs((e) => ({ ...e, cell: false })); }}
+                  className="h-20 rounded-xl flex flex-col items-center justify-center transition-colors"
+                  style={{
+                    background: cell === c.code ? "var(--brand-bg)" : "var(--bg-inner)",
+                    border: `1px solid ${cell === c.code ? "var(--brand)" : "var(--border-md)"}`,
+                    color: cell === c.code ? "var(--brand-text)" : "var(--text-1)",
+                  }}
+                >
+                  <span className="text-2xl font-bold tabular-nums">{c.code}</span>
+                  <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
+                    {t("cellConcerns.cellWord")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           {errs.cell && <Err text={t("cellConcerns.err.cell")} />}
         </Card>
       )}
@@ -449,6 +489,26 @@ function WriteTab({ cells, t, onFiled, onError }) {
 
       <Card>
         <Step n={cells.length > 1 ? 5 : 4} label={t("cellConcerns.step.deadline")} />
+        {/* The chips are QUICK PICKS over this field, not the whole answer —
+            1/3/7/14 cannot express "5 days", and a worker who needs that had no
+            way to say it. One value behind both: typing clears the pressed chip,
+            pressing a chip fills the field. */}
+        <input
+          type="number" inputMode="numeric" min={1} max={MAX_DEADLINE_DAYS}
+          value={days ?? ""}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            if (v === "") { setDays(null); return; }
+            const n = Math.floor(Number(v));
+            if (Number.isFinite(n)) setDays(Math.min(MAX_DEADLINE_DAYS, Math.max(1, n)));
+          }}
+          placeholder={t("cellConcerns.daysPh")}
+          className="w-full px-3.5 rounded-xl text-base outline-none mb-3"
+          style={{
+            height: 52, background: "var(--bg-inner)", color: "var(--text-1)",
+            border: "1px solid var(--border-md)",
+          }}
+        />
         <div className="flex flex-wrap gap-2">
           {DEADLINE_CHIPS.map((d) => (
             <button
