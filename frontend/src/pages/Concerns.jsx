@@ -3,14 +3,11 @@ import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  Plus, Pencil, Trash2, AlertTriangle, Loader2, ClipboardList,
-  ChevronDown, Check, Eye,
-  CalendarClock, UserRound, UserCheck, ShieldCheck, FileText, CircleDot, Clock,
-  Hourglass, Gauge, TrendingUp, PieChart, Timer,
-  Layers, ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
-  MessageSquare, Hash,
-  Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
-  Droplets, CalendarRange, Users, FlaskConical, Wheat, Shield, ChefHat, Ellipsis,
+  Plus, Pencil, Trash2, AlertTriangle, Loader2, ClipboardList, ChevronDown,
+  Check, Eye, CalendarClock, UserRound, UserCheck, ShieldCheck, FileText,
+  CircleDot, Clock, Hourglass, Gauge, TrendingUp, PieChart, Timer, Layers,
+  ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
+  MessageSquare, Hash
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";

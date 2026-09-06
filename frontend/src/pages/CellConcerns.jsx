@@ -139,7 +139,7 @@ export default function CellConcerns() {
       render: ({ close }) => (
         <PickFilter
           value={fCell} close={close} onChange={setFCell}
-          opts={[{ value: "", label: t("common.all") },
+          opts={[{ value: "", label: t("cellConcerns.all") },
                  ...cells.map((c) => ({ value: c.code, label: c.code }))]}
         />
       ),
@@ -150,7 +150,7 @@ export default function CellConcerns() {
       render: ({ close }) => (
         <PickFilter
           value={fCat} close={close} onChange={setFCat} searchable
-          opts={[{ value: "", label: t("common.all") },
+          opts={[{ value: "", label: t("cellConcerns.all") },
                  ...CATEGORIES.map((k) => ({ value: k, label: t(`concerns.category.${k}`) }))]}
         />
       ),
@@ -161,7 +161,7 @@ export default function CellConcerns() {
       render: ({ close }) => (
         <PickFilter
           value={fSt} close={close} onChange={setFSt}
-          opts={[{ value: "", label: t("common.all") },
+          opts={[{ value: "", label: t("cellConcerns.all") },
                  ...STATUSES.map((s) => ({ value: s, label: t(`cellConcerns.st.${s}`) }))]}
         />
       ),
