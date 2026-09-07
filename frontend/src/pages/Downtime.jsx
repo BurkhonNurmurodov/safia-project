@@ -1208,10 +1208,13 @@ export default function Downtime() {
           </div>
           {catChips}
         </div>
-        {/* The legend the workbook prints under the same title — the words are
-            shared on purpose, so the file and the screen name one table alike. */}
+        {/* The legend names the bands ON SCREEN, and it is the grid's own key
+            rather than the workbook's: since the operator re-cut the colours
+            (2026-09-07) the two colour the same minutes differently, so one
+            sentence can no longer describe both. The «Kunlik» sheet keeps
+            `downtime.xl.matrixSub`, which still names what the FILE does. */}
         <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
-          {t("downtime.xl.matrixSub")}
+          {t("downtime.mx.bands")}
         </div>
         {isLoading ? (
           <SkeletonChart className="h-64" />

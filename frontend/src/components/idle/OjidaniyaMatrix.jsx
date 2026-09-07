@@ -15,11 +15,16 @@
 // wearing a prop-shaped coat. The two must nevertheless stay in step: a change
 // to the LOOK of one belongs in the other.
 //
-// The ramp is that grid's six hues INVERTED, because here low is good: 0 minutes
-// is the best a day can go, so it reads darkest green, and the hue turns red at
-// 50 — the threshold every surface on this page shares. A day nobody reported is
-// «—» and never a zero: a unit that reported and waited nothing and a unit that
-// filed nothing are different facts, and only one of them is an answer.
+// The bands are the operator's own (2026-09-07) and there are THREE of them,
+// in MINUTES: a day at or under ten is left UNCOLOURED, ten to twenty is yellow,
+// past twenty is red. Colour is spent only on what needs looking at — the six-hue
+// ramp this grid used to wear painted every reported day, so an ordinary fortnight
+// read as a wall of green and the two cells that mattered had to be found inside
+// it. A calm cell still PRINTS its figure, in the ordinary text colour: the number
+// is the answer, the colour is only the alarm. A day nobody reported is «—» and
+// never a zero — a unit that reported and waited nothing and a unit that filed
+// nothing are different facts, and only one of them is an answer — so a calm cell
+// must never be allowed to look like that dash.
 //
 // Every figure arrives ALREADY NARROWED by the page: the tab half
 // (тўхтаганда / тўхтамаганда), the загрузка scope and the doughnut's category
@@ -45,16 +50,13 @@ const Z_ID = 4, Z_STAT = 5, Z_ID_HEAD = 6, Z_STAT_HEAD = 7;
 // longer ones scroll.
 const BASIS_DAYS = 14;
 
-// The attendance grid's six hues, inverted: darkest = best. 50 is where the hue
-// turns, because 50 is where the day becomes a flag.
-const IDLE_SEGMENTS = [
-  { from: 0,   color: "#15803d" }, // nothing waited → darkest green
-  { from: 1,   color: "#22c55e" }, // under a quarter-hour
-  { from: 15,  color: "#84cc16" }, // 15–29 → lime
-  { from: 30,  color: "#eab308" }, // 30–49 → yellow, approaching the flag
-  { from: 50,  color: "#ef4444" }, // over the threshold → red
-  { from: 100, color: "#b91c1c" }, // 100+ → deep red
-];
+// The two cut-offs, in minutes. Both are inclusive of their own ceiling, so the
+// bands are continuous and a decimal cannot fall between two of them: 10.0 is
+// still calm, 20.0 is still yellow, 20.1 is red.
+const CALM_MAX = 10;
+const WARN_MAX = 20;
+const WARN_BG = "#eab308";           // the platform's status yellow
+const BAD_BG  = "#ef4444";           // the platform's status red
 
 // "#,##0.#" in the workbook — a decimal only when there is one.
 const fmtMin = (v) => {
@@ -71,14 +73,14 @@ function contrastText(hex) {
   return lum > 0.52 ? "#111827" : "#ffffff";
 }
 
+// null → nobody reported (no cell at all). A calm value returns a fill with NO
+// background, which is what keeps «uncoloured but reported» distinct from «—»:
+// it still carries a text colour and a weight of its own.
 function band(v) {
   if (v == null) return null;
-  let hit = IDLE_SEGMENTS[0];
-  for (const seg of IDLE_SEGMENTS) {
-    if (v >= seg.from) hit = seg;
-    else break;
-  }
-  return { bg: hit.color, fg: contrastText(hit.color) };
+  if (v <= CALM_MAX) return { bg: null, fg: "var(--text-2)" };
+  const bg = v <= WARN_MAX ? WARN_BG : BAD_BG;
+  return { bg, fg: contrastText(bg) };
 }
 
 // The pinned column, in the order the header cycles through it. The two averages
@@ -108,29 +110,36 @@ function rowStat(byDate, dates, mode) {
 }
 
 function cellStyle({ fill, width, rowHovered, colHovered, cellHovered }) {
+  // A calm cell has no fill to brighten, so it takes its share of the cross-hair
+  // as a TINT instead: brightening a transparent cell lights nothing up, and a
+  // column the reader is tracing must not go dead halfway down it.
+  const painted = !!fill?.bg;
+  let background = painted ? fill.bg : "transparent";
   let filter = "none", transform = "none", boxShadow = "none", zIndex = "auto";
   if (fill) {
     if (cellHovered) {
-      filter = "brightness(1.25)";
       transform = "scale(1.06)";
       boxShadow = "0 4px 12px rgba(0,0,0,.25)";
       zIndex = 3;
+      if (painted) filter = "brightness(1.25)";
+      else background = "var(--brand-bg)";
     } else if (rowHovered || colHovered) {
-      filter = "brightness(1.12)";
+      if (painted) filter = "brightness(1.12)";
+      else background = "var(--bg-inner)";
     }
   }
   return {
-    background: fill ? fill.bg : "transparent",
+    background,
     color: fill ? fill.fg : "var(--text-4)",
     textAlign: "center",
     fontSize: 11,
-    fontWeight: fill ? 700 : 400,
+    fontWeight: painted ? 700 : fill ? 600 : 400,
     height: 34,
     padding: 0,
     border: "1px solid var(--border)",
     letterSpacing: "-0.2px",
     verticalAlign: "middle",
-    transition: "filter .08s, transform .07s, box-shadow .07s",
+    transition: "filter .08s, transform .07s, box-shadow .07s, background .08s",
     position: "relative",
     width, minWidth: width,
     filter, transform, boxShadow, zIndex,
@@ -400,7 +409,7 @@ export default function OjidaniyaMatrix({ dates = [], rows = [], fleet, onPick }
                     style={{
                       ...cellStyle({ fill: sfill, width: STAT_W }),
                       ...stickStat(),
-                      background: sfill ? sfill.bg : "var(--bg-card)",
+                      background: sfill?.bg || "var(--bg-card)",
                     }}
                   >
                     {sv == null ? <span style={{ opacity: .25 }}>—</span> : fmtMin(sv)}
