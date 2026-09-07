@@ -16,11 +16,14 @@ import { createPortal } from "react-dom";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Maximize2, Minimize2, Info, FlaskConical, Table2, Scale, ShieldAlert,
+  Maximize2, Minimize2, Info, FlaskConical, Table2, Scale, ShieldAlert, UserRound,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
+import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
+import { useFactorySection } from "../components/ui/FactorySelect";
+import { useFactoryParams } from "../context/FactoryContext";
 import StyledSelect from "../components/ui/StyledSelect";
 import HeatmapChart, { DEFAULT_SEGMENTS } from "../components/charts/HeatmapChart";
 import ComparisonTable, { DEFAULT_DIFF_SEGMENTS, DEFAULT_CALC_FACTORS } from "../components/charts/ComparisonTable";
@@ -157,7 +160,7 @@ function DiagRow({ label, items, tone = "warn" }) {
 
 export default function ZagruzkaCell() {
   const { ready, dateFrom, dateTo, setDateFrom, setDateTo } = useFilters();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const [heatmapMode, setHeatmapMode] = usePersistentState("zagruzka_cell_heatmap_mode", "actual");
   const [heatmapFullscreen, setHeatmapFullscreen] = useState(false);
@@ -165,6 +168,16 @@ export default function ZagruzkaCell() {
   const [comment, setComment] = useState(null);
   const [calcFactors, setCalcFactors] = useState(DEFAULT_CALC_FACTORS);
   const [inputDate, setInputDate] = usePersistentState("zagruzka_cell_input_date", null); // day shown in the inputs table
+  // Which unit the page is showing. The page served ONE hard-locked supervisor
+  // until 2026-09-07; it serves every unit now, one at a time — the roll-up
+  // row, the fleet reconciliation and every diagnostic are statements about a
+  // single unit. Remembered like every other page filter; a saved pick the
+  // viewer may no longer see is not an error, the server falls back to the
+  // first unit in their scope and the effect below re-syncs the control to it.
+  const [mgrId, setMgrId] = usePersistentState("zagruzka_cell_manager", null);
+  // Plant switcher as a FilterPanel section (null on single-plant installs,
+  // an inert chip for a viewer locked to one plant).
+  const factorySection = useFactorySection();
 
   useEffect(() => {
     function onKey(e) {
@@ -177,12 +190,23 @@ export default function ZagruzkaCell() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const params = { date_from: dateFrom, date_to: dateTo };
+  const params = useFactoryParams(useMemo(
+    () => ({ date_from: dateFrom, date_to: dateTo,
+             ...(mgrId != null ? { manager_id: mgrId } : {}) }),
+    [dateFrom, dateTo, mgrId]));
   const { data: payload, isLoading } = useQuery({
-    queryKey: ["zagruzka-cell", dateFrom, dateTo],
+    queryKey: ["zagruzka-cell", params],
     queryFn: () => api.get("/api/zagruzka-cell", { params }).then((r) => r.data),
     enabled: ready && !!dateFrom,
   });
+  const units = payload?.units ?? [];
+  // The server decides which unit this viewer actually gets — a stale saved
+  // pick, or one outside their plant, falls back to the first they may see.
+  // Follow it, so the control never names a unit other than the one on screen.
+  const servedId = payload?.manager?.id ?? null;
+  useEffect(() => {
+    if (servedId != null && servedId !== mgrId) setMgrId(servedId);
+  }, [servedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Thresholds are shared with the fleet page on purpose — the two grids must be
   // read against the same colour bands or comparing them is meaningless.
@@ -276,6 +300,11 @@ export default function ZagruzkaCell() {
   }
 
   const managerName = payload?.manager?.name ? tl(payload.manager.name) : "—";
+  const supOptions = useMemo(
+    () => [...units]
+      .map((u) => ({ value: String(u.manager_id), label: tl(u.name) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [units, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Layout title={t("zcell.subtitle")}>
@@ -287,13 +316,10 @@ export default function ZagruzkaCell() {
         <FlaskConical size={14} className="flex-shrink-0 mt-px" style={{ color: "#eab308" }} />
         <div>
           <div style={{ color: "var(--text-2)" }}>{t("zcell.testNote")}</div>
-          {diag.lock_warning && (
-            <div className="mt-1" style={{ color: "#eab308" }}>{diag.lock_warning}</div>
-          )}
         </div>
       </div>
 
-      {/* ── ONE-ROW bar: period + the locked supervisor as an inert chip ── */}
+      {/* ── ONE-ROW bar: period, then the scope controls inside FilterPanel ── */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <DateRangePicker
           dateFrom={dateFrom}
@@ -303,13 +329,28 @@ export default function ZagruzkaCell() {
           compactLabel
           triggerClassName="px-3 py-2 text-sm"
         />
-        <span
-          className="inline-flex items-center px-3 text-xs rounded-full truncate max-w-[220px]"
-          title={t("zcell.lockedHint")}
-          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)", height: 30 }}
-        >
-          {managerName}
-        </span>
+        <FilterPanel
+          sections={[
+            ...(factorySection ? [factorySection] : []),
+            {
+              // Always ACTIVE: the page shows exactly one unit, so there is no
+              // «All» to fall back to and nothing to clear — the chip states
+              // which unit is on screen rather than offering to unset it.
+              key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
+              active: true,
+              display: managerName,
+              render: ({ close } = {}) => (
+                <PickFilter
+                  searchable
+                  close={close}
+                  opts={supOptions}
+                  value={servedId != null ? String(servedId) : ""}
+                  onChange={(v) => setMgrId(Number(v))}
+                />
+              ),
+            },
+          ]}
+        />
       </div>
 
       {isLoading ? (

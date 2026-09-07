@@ -1,6 +1,16 @@
 """Per-CELL загрузка — a TEST twin of the /zagruzka page, computed for the
-cells of ONE hard-locked supervisor («Suvonov Elshod Of», the sheet's SUVONOV
-TEST unit).
+cells of ONE supervisor at a time, chosen on the page.
+
+**It served exactly one hard-locked unit until 2026-09-07** («Suvonov Elshod
+Of», #5) — it was a pilot and a single unit was the point. It serves EVERY unit
+now (the operator's directive): the lock, its name regex and its id fallback
+are gone, `?manager_id=` picks the unit and `_pick_manager` decides what a
+viewer may pick through `scoped_manager_ids`, the same door every other
+factory-aware page uses — so a supervisor or leader is pinned to their own unit
+SERVER-SIDE, not by hiding a control. One unit at a time is deliberate and not
+a leftover: the roll-up row, the reconciliation against the fleet figure and
+every diagnostic below are statements about ONE unit, and a grid mixing several
+could not carry any of them.
 
 It runs the SAME formula as the fleet page (``services/kpi_calculator.compute_metrics``)
 so the two are directly comparable; only the INPUTS are re-sourced from per-cell
@@ -76,7 +86,6 @@ writes, and no existing pipeline reads it.
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Optional
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
@@ -90,6 +99,7 @@ from app.models import (
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
 from app.services import zagruzka_source
+from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
 from app.services.kpi_calculator import compute_metrics, is_direct_role
@@ -100,47 +110,48 @@ router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
 
 PAGE = "zagruzka-cell"
 
-# ── The one supervisor this page serves ──────────────────────────────────────
-# Hard-locked by request: the page must never read as factory-wide. Resolution
-# is by NAME first (the canonical-rename cascade means ids outlive spellings but
-# a name is what the user asked for), falling back to the documented unit id.
-# «Suvonov Elshod Valijon O'g'li» is a DIFFERENT unit — the "Of" / "Оф" suffix is
-# what separates them, so it is matched as a whole word, never as a substring.
-LOCKED_MANAGER_ID = 5
-_SUVONOV_RE = re.compile(r"suvonov|сувонов", re.IGNORECASE)
-_OF_SUFFIX_RE = re.compile(r"(?:^|[\s.])(?:of|оф)\b\.?", re.IGNORECASE)
-
 # Excel ROUND-trip constant shared with pp_calc: labor_time is seconds/unit.
 _SEC_PER_MIN = 60.0
 
 
-def _resolve_locked_manager(db: Session) -> tuple[Manager, Optional[str]]:
-    """The locked unit plus a warning when we had to fall back to the id.
+def _pick_manager(db: Session, payload: dict, manager_id: Optional[int],
+                  factory: Optional[int]) -> tuple[Manager, list[Manager]]:
+    """Which unit the page is showing, and which units the viewer may pick.
 
-    Returns (manager, warning|None). Raises 404 only when neither the name match
-    nor the id resolves — the page then renders the message instead of an empty
-    grid that looks like "no data"."""
-    actives = db.query(Manager).filter(Manager.archived.is_(False)).all()
-    matches = [
-        m for m in actives
-        if m.name and _SUVONOV_RE.search(m.name) and _OF_SUFFIX_RE.search(m.name)
-    ]
-    if len(matches) == 1:
-        return matches[0], None
-    fallback = db.query(Manager).filter(Manager.id == LOCKED_MANAGER_ID).first()
-    if not fallback:
+    Until 2026-09-07 this page was HARD-LOCKED to one supervisor («Suvonov
+    Elshod Of», unit 5) — it was a test twin of the fleet page and a single
+    unit was the whole point. It serves every unit now (the operator's
+    directive), so the lock, its name regex and its id fallback are gone.
+
+    The list is `scoped_manager_ids`, the same door every other factory-aware
+    page uses, so the viewer lock is decided SERVER-SIDE and not by hiding a
+    control: a supervisor or leader sees their own unit whatever `?manager=`
+    says, and only admin and top-manager pick freely. An out-of-scope pick
+    falls back to the first unit the viewer may see rather than 403-ing —
+    a stale saved pick (the page remembers it) must not lock somebody out of
+    a page they can otherwise read.
+
+    Returns (chosen, pickable). Raises 404 only when the viewer may see NO
+    unit at all, so the page renders a message instead of an empty grid that
+    reads as "this unit produced nothing".
+    """
+    scoped = scoped_manager_ids(db, payload, factory, [])
+    if empty_scope(scoped):
         raise HTTPException(
             status_code=404,
-            detail=("Supervisor «Suvonov Elshod Of» not found: no active unit matches "
-                    f"the name and unit #{LOCKED_MANAGER_ID} does not exist."),
+            detail="No unit is visible to you under the current factory filter.",
         )
-    if len(matches) > 1:
-        warn = (f"{len(matches)} units match «Suvonov … Of»; locked to "
-                f"#{fallback.id} «{fallback.name}» by id.")
-    else:
-        warn = (f"No active unit is named «Suvonov Elshod Of»; locked to "
-                f"#{fallback.id} «{fallback.name}» by id.")
-    return fallback, warn
+    q = db.query(Manager).filter(Manager.archived.is_(False))
+    if scoped is not None:
+        q = q.filter(Manager.id.in_(scoped))
+    units = q.order_by(Manager.name).all()
+    if not units:
+        raise HTTPException(status_code=404, detail="No active unit is visible to you.")
+    if manager_id is not None:
+        for m in units:
+            if m.id == manager_id:
+                return m, units
+    return units[0], units
 
 
 def _parse_range(date_from: Optional[date], date_to: Optional[date]) -> tuple[date, date]:
@@ -156,26 +167,41 @@ def _parse_range(date_from: Optional[date], date_to: Optional[date]) -> tuple[da
 
 
 def _cell_label(c: Cell) -> str:
-    """Row key for the grid. The verifix code is the cell's stable identity and
-    is what every other per-cell page shows, so it leads; the workshop name is
-    appended when known. Must be unique — the grid is keyed by it."""
-    name = c.name_workshop_ru or c.name_workshop_uz or c.name_workshop_en
-    return f"{c.verifix_code} · {name}" if name else (c.verifix_code or f"#{c.id}")
+    """Row key for the grid: the verifix CODE and nothing else.
+
+    The workshop name used to be appended, which is the regression the
+    «A cell is its CODE» directive (2026-08-29) exists to prevent — the names
+    are long, they truncate to nothing in a grid row, and two cells share one
+    («Холодная ягода» is both 1611 and 1622), so a reader holding only the name
+    cannot tell them apart while the code always can. `verifix_code` is unique
+    platform-wide, so it is also a safe key now that the page serves every
+    unit."""
+    return c.verifix_code or f"#{c.id}"
 
 
 @router.get("")
 def cell_zagruzka(
     date_from: date = Query(default=None),
     date_to: date = Query(default=None),
+    # Which unit. Omitted (or one the viewer may not see) = the first unit in
+    # their own scope — never a 403, because the page remembers the last pick
+    # and a stale one must not lock somebody out of a page they can read.
+    manager_id: Optional[int] = Query(default=None),
+    # Which plant. Omitted / null = «All factories»; supervisors and leaders are
+    # pinned to their own by the server (services/factory_scope).
+    factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(require_page(PAGE)),
 ):
     """The whole page in one payload: a cells × dates grid in the same shape
     /api/heatmap returns (so ComparisonTable and HeatmapChart consume it
     verbatim), plus the raw inputs behind every number, a rolled-up totals row,
-    and the fleet page's figure for the same unit to reconcile against."""
+    the fleet page's figure for the same unit to reconcile against, and
+    `units` — the supervisors this viewer may switch between."""
     date_from, date_to = _parse_range(date_from, date_to)
-    mgr, lock_warning = _resolve_locked_manager(db)
+    mgr, pickable = _pick_manager(db, payload, manager_id, factory)
+    units = [{"manager_id": m.id, "name": m.name, "shift": m.shift,
+              "factory_id": m.factory_id} for m in pickable]
 
     dates = []
     cur = date_from
@@ -195,9 +221,9 @@ def cell_zagruzka(
         return {
             "manager": {"id": mgr.id, "name": mgr.name, "shift": mgr.shift},
             "dates": date_keys, "managers": [], "data": {}, "cells": [],
+            "units": units,
             "inputs": {}, "totals": {}, "fleet": {},
             "diagnostics": {
-                "lock_warning": lock_warning,
                 "cells_without_sap": [],
                 "work_centers_without_cell": [],
                 "excluded_job_titles": [],
@@ -763,8 +789,10 @@ def cell_zagruzka(
         "inputs": inputs,
         "totals": totals,
         "fleet": fleet,
+        # The units this viewer may switch between — the page's own picker list,
+        # decided here so a control can never offer a unit the query refuses.
+        "units": units,
         "diagnostics": {
-            "lock_warning": lock_warning,
             # The days attendance covers. Everything outside this list is blank
             # BY DESIGN, not because the cells were idle.
             "days_with_attendance": [d.strftime("%d.%m.%Y") for d in days_with_attendance],
