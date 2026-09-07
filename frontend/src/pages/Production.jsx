@@ -637,6 +637,21 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   const totalActPeople = wcs.reduce((s, w) => s + effOf(w, "people"), 0);
   const totalActShtat = wcs.reduce((s, w) => s + effOf(w, "shtatka"), 0);
 
+  // Was this number TYPED, or is it the formula's own answer wearing the
+  // actuals column? `w.people` / `w.shtatka` RESOLVE — the pin where there is
+  // one, the derived value where there is not — so the `*_overridden` flag
+  // beside them is the only thing that tells the two apart, and the загрузка
+  // reads the typed half alone (`zagruzka_source.typed_people`, whose whole
+  // predicate is `people IS NOT NULL`). While editing, what counts as typed is
+  // what is in the INPUT rather than what was last saved, so the JAMI mark
+  // follows the operator's typing instead of lagging a save behind it.
+  const isTyped = (w, key) =>
+    canEdit
+      ? num((draft[w.work_center] || {})[key]) != null
+      : (key === "people" ? w.people_overridden : w.shtatka_overridden);
+  const allTyped = (key) => wcs.every((w) => isTyped(w, key));
+  const anyUntyped = wcs.length > 0 && (!allTyped("people") || !allTyped("shtatka"));
+
   const chip = (code, cell) => {
     const c = wcColor(code);
     // A registry-matched WC chip opens the cell's page; unmatched stays inert.
@@ -772,8 +787,28 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
                           }}
                         />
                       ) : (
-                        <span className="tabular-nums" style={{ color: "var(--text-2)" }}>
+                        // READ-ONLY — a closed day, or a viewer who may not type
+                        // here. This printed `w.people` bare, and `w.people` is
+                        // the RESOLVED value, so a cell nobody had typed showed
+                        // the suggestion from the table on the LEFT as the
+                        // brigadir's own fact: both cards read identically, cell
+                        // for cell, while the загрузка heatmap marked the same
+                        // unit-day 👥 «nobody typed the people». A closed day is
+                        // exactly the one read after the event, so this is where
+                        // the distinction matters most. Same vocabulary as the
+                        // editable branch above — typed is gold and bold, the
+                        // formula's answer is muted — plus a «*» the legend
+                        // under the card explains.
+                        <span
+                          className="tabular-nums"
+                          title={isTyped(w, key) ? undefined : t("production.peopleNotTypedCell")}
+                          style={{
+                            color: isTyped(w, key) ? "var(--brand-text)" : "var(--text-3)",
+                            fontWeight: isTyped(w, key) ? 700 : 400,
+                          }}
+                        >
                           {fmt(key === "people" ? w.people : w.shtatka, 0)}
+                          {!isTyped(w, key) && <sup style={{ color: "var(--text-4)" }}>*</sup>}
                         </span>
                       )}
                     </td>
@@ -782,12 +817,19 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
               );
             })}
             {/* mirrors the suggestion's JAMI row — same position, so the two
-                tables end level; counts typed values and formula fallbacks alike */}
+                tables end level; counts typed values and formula fallbacks
+                alike, and carries the «*» whenever any of what it added up was
+                a fallback. The total is the one number a reader quotes, so it
+                must not be the last place the distinction is dropped. */}
             {!loading && wcs.length > 0 && (
               <tr className={PT_ROW}>
                 <td className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("production.peopleTotal")}</td>
-                <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-1)" }}>{fmt(totalActPeople, 0)}</td>
-                <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-2)" }}>{fmt(totalActShtat, 0)}</td>
+                <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-1)" }}>
+                  {fmt(totalActPeople, 0)}{!allTyped("people") && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                </td>
+                <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-2)" }}>
+                  {fmt(totalActShtat, 0)}{!allTyped("shtatka") && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                </td>
               </tr>
             )}
             {!loading && wcs.length === 0 && (
@@ -795,6 +837,17 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
             )}
           </tbody>
         </TableCard>
+
+        {/* «*» legend. Renders in BOTH states, unlike the hint below it: a
+            closed day has no editing affordance to carry the meaning, and it is
+            the state in which these numbers are read back as the record of what
+            happened. --text-3 at 11px — never --text-4, where the eye skips
+            exactly the line that says the number above it is not a fact. */}
+        {!loading && anyUntyped && (
+          <p className="text-[11px] leading-relaxed mt-2.5" style={{ color: "var(--text-3)" }}>
+            {t("production.peopleNotTyped")}
+          </p>
+        )}
 
         {canEdit && (
           <div className="flex items-center justify-between gap-3 mt-2.5 flex-wrap">

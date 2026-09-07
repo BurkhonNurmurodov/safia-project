@@ -460,6 +460,24 @@ for byte**; only where three numbers come from changes.
   suggestion presented as a fact is the thing this switch replaces, and 19 of
   22 units have no `pp_work_centers.shtatka` at all, so the formula would
   answer 0 for almost the whole fleet.
+- **So «Bugungi fakt» must never print a resolved number bare.** `pp_calc`
+  publishes `people` / `shtatka` RESOLVED — the pin where one was typed, the
+  derived `people_calc` / `shtatka_cfg` where none was — beside the
+  `*_overridden` flag that is the only thing telling the two apart. The
+  read-only branch of that table (a CLOSED day, or a viewer who may not type)
+  printed the resolved value with no marker, so a unit that had typed nothing
+  showed the suggestion from the card on the LEFT as its own fact — both cards
+  identical cell for cell — while the загрузка heatmap marked that same
+  unit-day 👥. Two surfaces, one unit-day, opposite answers, and the page a
+  brigadir opens to find out why the load is blank was the one telling them
+  everything had been filled in. **The blank on the heatmap IS the warning, and
+  a fact card that answers with the formula is what stops it landing.** The
+  editable branch always distinguished them (typed = gold + bold, untyped = a
+  grey placeholder); the read-only branch now keeps that vocabulary and adds a
+  `*` plus a legend that renders in BOTH states — a closed day has no input to
+  carry the meaning and is exactly the day read back as the record. JAMI
+  carries the `*` too: a total is the number a reader quotes, so it must not be
+  the last place the distinction is dropped.
 - **Only the typed pins are summed, and the WHOLE unit's trudoyomkost is
   counted against them** (the operator's call). A unit that types 4 of its 6
   work centres therefore reads a load that is too HIGH, with nothing on screen
