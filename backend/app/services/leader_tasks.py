@@ -8,7 +8,7 @@ Base.metadata.create_all in both boot paths.
 """
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,14 @@ _LANGS = ("uz", "uz_cyrl", "ru", "en")
 
 # Tashkent has no DST; a fixed offset keeps the 09:00 boundary math trivial.
 _TASHKENT = timezone(timedelta(hours=5))
+
+# "which DAY is this call about" — a SENTINEL, because None is a real answer
+# here and means something else entirely. Unstated ⇒ the day happening right
+# now on the shift being asked about, which is what every live reader wants and
+# what keeps every existing call site byte-identical. An explicit None ⇒ no day,
+# so no floor applies and the whole catalog answers, which is what the ADMIN
+# layers need: they MARK an archived task, they do not drop it.
+_NOW = object()
 
 # The historic 13 checklist questions, in sheet question order (index+1 = id).
 # (name_uz, name_uz_cyrl, name_ru, name_en, note_uz, note_uz_cyrl, note_ru,
@@ -79,9 +87,30 @@ _SEED = [
 ]
 
 
+# The catalog's reading order. `sort_order` is what an admin rearranges; `id`
+# is the tiebreaker that keeps the sequence total — two rows handed the same
+# position must still come out in ONE order, or a reorder that half-lands
+# leaves the sheet shuffling under the reader. A box that never ran
+# `startup.add_leader_task_catalog` holds NULL there and Postgres sorts NULLs
+# last, which for a table where they are ALL null is the plain id order the
+# platform has always had.
+_ORDER = (LeaderTaskDef.sort_order, LeaderTaskDef.id)
+
+
 def ensure_task_defs(db: Session) -> list[LeaderTaskDef]:
-    """Return the catalog, seeding it on first touch."""
-    defs = db.query(LeaderTaskDef).order_by(LeaderTaskDef.id).all()
+    """Return the catalog — EVERY task, archived ones included — seeding it on
+    first touch.
+
+    Deliberately unfiltered, and it must stay that way. This is what the
+    HISTORY readers walk: `leader_reports`, `leader_ai.task_label` /
+    `task_note` / `criteria_for` / `task_weights`, `routers/leader_ai._task_cfg`
+    and `sync_date_flags`, the AiRecheck task picker. Drop an archived task here
+    and a past day's report loses its task names, while `task_weights` silently
+    rewrites completions that were scored when the task was still asked.
+
+    The ACTIVE set — what a leader is asked TODAY — is `active_defs` below.
+    """
+    defs = db.query(LeaderTaskDef).order_by(*_ORDER).all()
     if defs:
         return defs
     for i, row in enumerate(_SEED, start=1):
@@ -90,9 +119,346 @@ def ensure_task_defs(db: Session) -> list[LeaderTaskDef]:
             name_uz=row[0], name_uz_cyrl=row[1], name_ru=row[2], name_en=row[3],
             note_uz=row[4], note_uz_cyrl=row[5], note_ru=row[6], note_en=row[7],
             default_weight=row[8],
+            # The seed states the catalog columns rather than leaning on the
+            # Python-side defaults, so a freshly created database and one that
+            # ran the migration come out identical row for row.
+            sort_order=i, default_enabled=True, default_min_media=1,
         ))
     db.commit()
-    return db.query(LeaderTaskDef).order_by(LeaderTaskDef.id).all()
+    return db.query(LeaderTaskDef).order_by(*_ORDER).all()
+
+
+# ── the ACTIVE set ────────────────────────────────────────────────────────────
+# Which of the catalog's tasks a leader is actually asked on a given DAY. Two
+# rules hold it together and both are bought from scars already in this file:
+#
+# * the day is the SHIFT's effective date, never `date.today()` — shift 2's
+#   night belongs to the date its 17:00 boundary opened, so a floor read off the
+#   calendar starts a night a day late (`leader_cells` states the same rule for
+#   `cell_from`, and 26 Aug is what happens when two anchors disagree);
+# * NOTHING is deleted. An archived task leaves this set and stays in the
+#   catalog, so every history reader goes on naming it.
+
+def is_active(td, day: str | None) -> bool:
+    """Is this task asked on `day` ("YYYY-MM-DD", the SHIFT's effective date)?
+
+    A blank day means "no date to judge against", and the answer is then the
+    catalog as it stands — TRUE. That degradation is deliberate: every unknown
+    here must fall toward the behaviour the platform already had, never toward
+    hiding a task from a leader who is standing in front of the bot.
+    """
+    d = str(day or "")[:10]
+    if not d:
+        return True
+    lo = (getattr(td, "active_from", None) or "").strip()
+    if lo and d < lo:
+        return False
+    hi = (getattr(td, "archived_from", None) or "").strip()
+    if hi and d >= hi:
+        return False
+    return True
+
+
+def active_defs(db: Session, shift: int | None = None,
+                day=_NOW) -> list[LeaderTaskDef]:
+    """The tasks in force on a day, in catalog order.
+
+    `day` unstated = the day happening RIGHT NOW on `shift`, which is what every
+    live reader (the bot menu, the day close, the score, the tab) means. An
+    explicit None asks for the whole catalog and is how the ADMIN layers say
+    "show me every task, archived ones marked" rather than dropping rows the
+    sheet still has to render.
+    """
+    if day is _NOW:
+        day = effective_date(shift)
+    return [td for td in ensure_task_defs(db) if is_active(td, day)]
+
+
+def def_enabled(td) -> bool:
+    """The global floor for `enabled`.
+
+    `is not False` and not `bool(...)`: the column is added NULLABLE by the
+    migration and is NULL on a box that never ran it, and the answer there must
+    be the TRUE every resolver used to hard-code — not the False that `bool(None)`
+    would hand a leader mid-shift.
+    """
+    return getattr(td, "default_enabled", None) is not False
+
+
+def def_min_media(td) -> int:
+    """The global floor for the photo count — 1 wherever nobody has said
+    otherwise, which is the number the resolvers used to hard-code."""
+    v = getattr(td, "default_min_media", None)
+    return 1 if v is None else int(v)
+
+
+# ── the catalog: WRITING it ──────────────────────────────────────────────────
+
+def catalog_floor() -> str:
+    """The earliest day a catalog change may take effect.
+
+    The LATER of the two shifts' next effective dates, and it has to be the
+    later one because a task's floor is ONE string compared against each
+    shift's OWN effective date. At 10:00 shift 1's day is today and shift 2's
+    is yesterday, so shift 2's "tomorrow" is shift 1's TODAY — a floor set to
+    it would add or remove a task on shift 1 in the middle of the shift, which
+    is precisely what a floor exists to prevent. One night of extra delay for
+    the night shift is the price, and it is the right way round: nobody's
+    checklist ever changes under their hands.
+    """
+    return max(next_effective_date(1), next_effective_date(2))
+
+
+def _fill_names(names: dict | None) -> dict[str, str]:
+    """The four name columns are NOT NULL, so a blank language is filled from
+    the Russian one — the language the register is actually maintained in, and
+    the one every other fallback on this platform lands on. With no Russian
+    either, the first language that carries anything stands in: a task named in
+    one language is a task somebody can read, a task named in none is not a
+    task."""
+    src = {l: (str((names or {}).get(l) or "")).strip() for l in _LANGS}
+    fallback = src.get("ru") or next((v for v in src.values() if v), "")
+    if not fallback:
+        raise ValueError("no_name")
+    return {l: (src[l] or fallback) for l in _LANGS}
+
+
+def create_task(db: Session, *, names: dict, note: dict | None = None,
+                criteria: str | None = None, description: str | None = None,
+                default_weight: int = 0, default_min_media: int = 1,
+                active_from: str | None = None,
+                manager_ids: list[int] | None = None,
+                leader_ids: list[int] | None = None) -> LeaderTaskDef:
+    """Add a task to the catalog, in ONE transaction.
+
+    Three things here are not obvious and every one of them is load-bearing.
+
+    **The id is chosen explicitly and the sequence is then moved to match.**
+    `leader_task_defs` was SEEDED with explicit ids 1..13 (`ensure_task_defs`),
+    so its sequence never advanced and still answers 1 — a plain INSERT would
+    collide with row 1 on a live platform. `max(id) + 1` is picked here and
+    `setval` follows it, so the next writer through any door is safe too.
+
+    **A task NAMED for some units is created switched OFF for everybody else.**
+    `default_enabled=False` on the definition plus an explicit `enabled=True`
+    row per named unit or leader — which is the only shape the chain can
+    express, since the level that means "everybody" is the definition itself.
+    Naming nobody creates it enabled for the whole platform, which is what an
+    unfiltered create means.
+
+    **`active_from` defaults to `catalog_floor()`**, so the task appears at a
+    shift boundary and never in the middle of somebody's night. Passing a date
+    explicitly is allowed — an admin may deliberately schedule one further out —
+    but the caller is responsible for saying so on screen.
+    """
+    filled = _fill_names(names)
+    scoped = bool(manager_ids or leader_ids)
+
+    top_id = db.query(func.coalesce(func.max(LeaderTaskDef.id), 0)).scalar() or 0
+    top_ord = db.query(func.coalesce(func.max(LeaderTaskDef.sort_order), 0)).scalar() or 0
+    td = LeaderTaskDef(
+        id=int(top_id) + 1,
+        note_uz=None, note_uz_cyrl=None, note_ru=None, note_en=None,
+        criteria=(criteria or "").strip() or None,
+        description=(description or "").strip() or None,
+        default_weight=_clamp_w(default_weight),
+        default_min_media=_clamp_m(default_min_media),
+        # OFF for the platform when the create names its targets; the explicit
+        # rows below are what switch it on for them.
+        default_enabled=not scoped,
+        sort_order=int(top_ord) + 1,
+        active_from=(active_from or catalog_floor()),
+        archived_from=None,
+        # Every task ships judged the way the platform has always judged one;
+        # the definition's own floors are what an admin edits afterwards.
+        date_check=True, time_check=True, date_plus=0, proof_kind="screenshot",
+        **{f"name_{l}": filled[l] for l in _LANGS},
+    )
+    for l in _LANGS:
+        v = (str((note or {}).get(l) or "")).strip()
+        if v:
+            setattr(td, f"note_{l}", v)
+    db.add(td)
+    db.flush()
+
+    # The catalog is written with explicit ids, so the sequence has to be told
+    # where the table actually is — otherwise the next plain INSERT (from any
+    # door, now or later) collides with an existing row. `setval` is NOT
+    # transactional, so a failure after this point leaves the sequence advanced
+    # and the row unwritten — a gap, which is the harmless direction: the next
+    # id is still free.
+    db.execute(text(
+        "SELECT setval(pg_get_serial_sequence('leader_task_defs', 'id'), :v, TRUE)"
+    ), {"v": td.id})
+
+    for mid in sorted({int(i) for i in (manager_ids or []) if i}):
+        db.add(LeaderTaskSetting(
+            manager_id=mid, task_id=td.id, enabled=True,
+            min_media=def_min_media(td), weight=td.default_weight,
+        ))
+    for lid in sorted({int(i) for i in (leader_ids or []) if i}):
+        # Every column on the leader table is a nullable "inherit", so a row
+        # carrying only `enabled` overrides nothing else about the task.
+        db.add(LeaderTaskLeaderSetting(leader_id=lid, task_id=td.id, enabled=True))
+    db.commit()
+    return td
+
+
+def set_archived(db: Session, task_id: int, archived_from: str | None) -> LeaderTaskDef:
+    """Retire a task from a day on, or put it back (`archived_from=None`).
+
+    NEVER a DELETE. Three foreign keys point at this row and nine more tables
+    carry a plain-integer `task_id` — entries, photos, AI reviews, disputes,
+    late proofs, admin overrides, bot captures, pending changes and the config
+    audit — so removing it would dangle every one of them and take the task's
+    NAME off every report ever filed. The row stays; only whether the task is
+    ASKED changes, and `ensure_task_defs` goes on returning it.
+
+    The floor is `catalog_floor()`: a date earlier than that would take a task
+    away from a night already in progress, which turns a checklist somebody is
+    halfway through into a different checklist.
+    """
+    td = db.query(LeaderTaskDef).filter_by(id=int(task_id)).first()
+    if not td:
+        raise KeyError(f"task {task_id}")
+    day = (archived_from or "").strip() or None
+    if day is not None:
+        if len(day) != 10 or day[4] != "-" or day[7] != "-":
+            raise ValueError("bad_date")
+        if day < catalog_floor():
+            raise ValueError("too_early")
+    td.archived_from = day
+    db.commit()
+    return td
+
+
+def reorder_tasks(db: Session, ids: list[int]) -> int:
+    """Rewrite `sort_order` from the order the ids arrive in.
+
+    Only the ids NAMED are moved, and they take positions 1..N; anything the
+    caller left out keeps a position after them, so a partial list can never
+    silently drop a task off the end of the sheet. Reordering is pure
+    presentation — no score, no window and no day boundary reads `sort_order` —
+    which is why it applies at once and carries no floor.
+    """
+    want = [int(i) for i in (ids or [])]
+    if not want:
+        return 0
+    rows = {td.id: td for td in db.query(LeaderTaskDef)
+            .filter(LeaderTaskDef.id.in_(want)).all()}
+    missing = [i for i in want if i not in rows]
+    if missing:
+        raise KeyError(f"task {missing[0]}")
+    seen: set[int] = set()
+    pos = 0
+    for i in want:
+        if i in seen:
+            continue                      # a repeated id is one position
+        seen.add(i)
+        pos += 1
+        rows[i].sort_order = pos
+    # Everything the caller did not name keeps its relative order AFTER the
+    # named block, so an old tab sending a short list cannot bury a task.
+    tail = (db.query(LeaderTaskDef)
+            .filter(~LeaderTaskDef.id.in_(seen))
+            .order_by(*_ORDER).all())
+    for td in tail:
+        pos += 1
+        td.sort_order = pos
+    db.commit()
+    return len(seen)
+
+
+def catalog_self_check(db: Session) -> list[str]:
+    """What the CATALOG would do wrong, named at boot.
+
+    This repo has no test suite and a push to `main` is a deploy, so the app
+    saying its own configuration is broken is the earliest anybody finds out —
+    the pattern `leader_close.self_check` and `leader_cells.self_check` already
+    follow, and for the same scar: twice a checklist has behaved in a way
+    nobody intended and both times the only signal was a leader losing points.
+
+    Three questions, each one a state that is silent by construction:
+
+    1. **An archived task that units still switch ON.** Archiving takes the task
+       out of the ACTIVE set, so those `enabled = true` rows are settings for a
+       question nobody is asked any more — they change nothing today and they
+       change everything the moment somebody clears the archive date. Named
+       rather than deleted: they are an admin's own decisions.
+    2. **A task whose `active_from` has come and gone and which is asked
+       NOWHERE.** The floor is compared against the SHIFT's effective date, so
+       a date can be behind today's calendar and still be ahead of a night that
+       has not turned — but a floor behind BOTH shifts' current days is spent,
+       and a task that started and reaches nobody is one somebody meant to
+       switch on for a unit and never did. It costs nothing and it looks
+       exactly like a task that is working.
+    3. **Σ default_weight ≠ 100 over the tasks every unit inherits.** The seeded
+       weights sum to exactly 100 and every score on the platform is a share of
+       that total, so a catalog that adds up to anything else silently re-bases
+       every leader's percentage. Counted over the ACTIVE tasks that are ON at
+       the GLOBAL level — an archived task is not part of anybody's day, and a
+       task created FOR two units is deliberately off for everyone else, so
+       neither belongs in the total an untouched unit is scored against.
+    """
+    out: list[str] = []
+    try:
+        defs = ensure_task_defs(db)
+    except Exception as exc:                      # a broken CHECK must not boot-loop
+        return [f"catalog unreadable: {exc}"]
+    if not defs:
+        return out
+
+    today = {s: effective_date(s) for s in (1, 2)}
+
+    archived = [td for td in defs if (td.archived_from or "").strip()]
+    if archived:
+        ids = [td.id for td in archived]
+        on = dict(db.query(LeaderTaskSetting.task_id,
+                           func.count(LeaderTaskSetting.id))
+                  .filter(LeaderTaskSetting.task_id.in_(ids),
+                          LeaderTaskSetting.enabled.is_(True))
+                  .group_by(LeaderTaskSetting.task_id).all())
+        on_l = dict(db.query(LeaderTaskLeaderSetting.task_id,
+                             func.count(LeaderTaskLeaderSetting.id))
+                    .filter(LeaderTaskLeaderSetting.task_id.in_(ids),
+                            LeaderTaskLeaderSetting.enabled.is_(True))
+                    .group_by(LeaderTaskLeaderSetting.task_id).all())
+        for td in archived:
+            n, nl = int(on.get(td.id, 0)), int(on_l.get(td.id, 0))
+            if n or nl:
+                out.append(
+                    f"task {td.id} «{td.name_uz}» archived from "
+                    f"{td.archived_from} but still switched ON by {n} unit(s) "
+                    f"and {nl} leader(s)")
+
+    started = [td for td in defs
+               if (td.active_from or "").strip()
+               and all((td.active_from or "").strip() <= d for d in today.values())
+               and (is_active(td, today[1]) or is_active(td, today[2]))
+               and not def_enabled(td)]
+    if started:
+        ids = [td.id for td in started]
+        # Only the levels that switch it ON count — a row that exists but says
+        # False is a unit that decided AGAINST the task, not one that has it.
+        reach = {t for (t,) in db.query(LeaderTaskSetting.task_id)
+                 .filter(LeaderTaskSetting.task_id.in_(ids),
+                         LeaderTaskSetting.enabled.is_(True)).distinct().all()}
+        reach |= {t for (t,) in db.query(LeaderTaskLeaderSetting.task_id)
+                  .filter(LeaderTaskLeaderSetting.task_id.in_(ids),
+                          LeaderTaskLeaderSetting.enabled.is_(True)).distinct().all()}
+        for td in started:
+            if td.id not in reach:
+                out.append(f"task {td.id} «{td.name_uz}» started on "
+                           f"{td.active_from} and is switched on NOWHERE — "
+                           f"no unit and no leader is asked it")
+
+    live = [td for td in defs
+            if def_enabled(td) and (is_active(td, today[1]) or is_active(td, today[2]))]
+    total = sum(int(td.default_weight or 0) for td in live)
+    if live and total != 100:
+        out.append(f"Σ default_weight = {total} over {len(live)} task(s) every "
+                   f"unit inherits — a score is a share of 100")
+    return out
 
 
 def task_name(td: LeaderTaskDef, lang: str) -> str:
@@ -113,13 +479,26 @@ def config_name(entry: dict, lang: str) -> str:
     return names.get(lang) or names.get("uz") or ""
 
 
-def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
+def effective_settings(db: Session, manager_id: int, day=_NOW) -> dict[int, dict]:
     """task_id → {enabled, min_media, weight, names} for one supervisor:
-    explicit rows over virtual defaults (enabled, 1 photo, the seeded weight).
-    `names` are the RAW per-supervisor rename overrides (None = the global
-    LeaderTaskDef name) — the admin matrix needs the raw layer to show
-    divergence, so resolution stays with the caller."""
-    defs = ensure_task_defs(db)
+    explicit rows over virtual defaults (`default_enabled`, `default_min_media`,
+    the seeded weight). `names` are the RAW per-supervisor rename overrides
+    (None = the global LeaderTaskDef name) — the admin matrix needs the raw
+    layer to show divergence, so resolution stays with the caller.
+
+    `day` unstated = the tasks in force RIGHT NOW; an explicit None = every
+    task in the catalog, which is what the admin config payload and the change
+    SNAPSHOTS ask for. A snapshot in particular must not depend on the calendar:
+    it records what a write is about, and a task that fell out of the active set
+    between the write and the revert would otherwise be restored to the virtual
+    defaults instead of to what it actually held."""
+    if day is _NOW:
+        # The unit's OWN shift decides which day is happening now — a night
+        # shift's day turns at 17:00, not at midnight. One extra column read,
+        # and only on the path that did not state a day.
+        shift = db.query(Manager.shift).filter_by(id=manager_id).scalar()
+        day = effective_date(shift if shift in (1, 2) else None)
+    defs = active_defs(db, day=day)
     rows = {
         s.task_id: s
         for s in db.query(LeaderTaskSetting).filter_by(manager_id=manager_id).all()
@@ -128,8 +507,8 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
     for td in defs:
         s = rows.get(td.id)
         out[td.id] = {
-            "enabled": s.enabled if s else True,
-            "min_media": s.min_media if s else 1,
+            "enabled": s.enabled if s else def_enabled(td),
+            "min_media": s.min_media if s else def_min_media(td),
             "weight": s.weight if s else td.default_weight,
             "names": _row_names(s) if s else {l: None for l in _LANGS},
             # RAW like `names`: None = inherit the global definition-of-done.
@@ -261,7 +640,248 @@ def resolve_proof_kind(*levels) -> str:
     return "screenshot"
 
 
-def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict[int, dict]:
+# ──────────────────────────────────────────────────────────────────────────
+# What a LEVEL owns, and what merely reaches it
+#
+# The admin config page reads ONE inheritance level at a time and tags every
+# cell with the level that defined it, so it needs the answer to a question the
+# raw layers cannot give on their own: does this level DECIDE this field, or is
+# it only passing the level above through? The three functions below are that
+# answer, and they are shared by the unit level and the leader level precisely
+# so the two cannot drift — the only difference between them is which resolved
+# dict is handed in as the parent.
+
+# The fields one level of the chain can define, named exactly as
+# `effective_settings` / `leader_overrides` key them. The admin payload ships
+# these strings, so a rename here is a rename on the wire.
+OWN_FIELDS = (
+    "enabled", "min_media", "weight", "names", "criteria", "description",
+    "win_from", "win_to", "deadline", "date_check", "time_check", "proof_kind",
+)
+
+# The three clocks compare NORMALISED — "9:00" and "09:00" are one value, and a
+# level that retyped its parent's hour in another spelling has decided nothing.
+_CLOCK_FIELDS = ("win_from", "win_to", "deadline")
+# The two TRI-STATE flags. `bool(None)` here would read "inherit" as "off",
+# which is the one mistake that makes a whole column look overridden.
+_FLAG_FIELDS = ("date_check", "time_check")
+
+
+def _clean(field: str, v):
+    """One raw stored value in comparable form, or None when it says "inherit".
+
+    Blank text is inherit everywhere in this chain (`set_criteria` and its
+    siblings store "" to clear a level), a clock that is not a clock is not a
+    value, and the two flags keep their three states.
+    """
+    if v is None:
+        return None
+    if field in _FLAG_FIELDS:
+        return bool(v)
+    if field in _CLOCK_FIELDS:
+        return leader_ai.hhmm(v)
+    if isinstance(v, str):
+        return v.strip() or None
+    return v
+
+
+def global_level(td: LeaderTaskDef) -> dict:
+    """The values in force at the GLOBAL level — the floor every unit inherits.
+
+    `enabled` / `min_media` read their floor through `def_enabled` /
+    `def_min_media` — the one spelling of "what does a level with no row fall
+    through to", which also answers correctly on a box whose catalog migration
+    has not run. Spelling it a second time here is how this map and the
+    resolvers would come to disagree about the very value they are compared
+    against.
+
+    `description` is resolved down the chain ALONE, with no fall-back to
+    `criteria` — that fall-back (`_resolve_description`) is a rule about what a
+    READER is shown, and folding it in here would report a unit that wrote its
+    own description as inheriting one the moment its text matched the global
+    definition of done.
+    """
+    return {
+        "enabled": def_enabled(td),
+        "min_media": def_min_media(td),
+        "weight": td.default_weight,
+        "names": {l: getattr(td, f"name_{l}") for l in _LANGS},
+        "criteria": _clean("criteria", td.criteria),
+        "description": _clean("description", td.description),
+        "win_from": _clean("win_from", td.win_from),
+        "win_to": _clean("win_to", td.win_to),
+        "deadline": _clean("deadline", td.deadline),
+        # NOT NULL at this level — it is the floor of the tri-state, and the
+        # payload already publishes them with exactly this reading.
+        "date_check": td.date_check is not False,
+        "time_check": td.time_check is not False,
+        "proof_kind": (td.proof_kind or "screenshot"),
+    }
+
+
+def resolve_over(parent: dict, raw: dict | None) -> dict:
+    """The values in force AT a level, given its parent's resolved values and
+    this level's own raw entry (None = no row at all).
+
+    Field by field, narrowest wins — the same walk `effective_leader_config`
+    makes over ORM rows, expressed over the dicts the admin payload already
+    carries so the config page's parent chain is computed once, not per cell.
+    """
+    out = dict(parent)
+    names = (raw or {}).get("names") or {}
+    out["names"] = {
+        l: ((names.get(l) or "").strip() or (parent.get("names") or {}).get(l))
+        for l in _LANGS
+    }
+    for f in OWN_FIELDS:
+        if f == "names":
+            continue
+        v = _clean(f, (raw or {}).get(f))
+        if v is not None:
+            out[f] = v
+    return out
+
+
+def own_fields(raw: dict | None, parent: dict) -> list[str]:
+    """Which of `OWN_FIELDS` this level DECIDES for itself — the fields whose
+    value differs from what it would otherwise inherit.
+
+    **The test is the VALUE, never the existence of a row**, and that
+    distinction is the whole reason this function exists.
+    `leader_task_settings` is DENSE: every side-field write materialises a full
+    row (`_sup_row`, `set_window`, `set_deadline` all fill `enabled` /
+    `min_media` / `weight` from what the unit already resolved, because those
+    three columns are NOT NULL), so 265 of the 286 possible supervisor rows
+    exist while most of them carry nothing that differs from the global
+    catalog. Reading "a row exists" as "this unit overrides it" paints the whole
+    sheet as overridden and leaves the reader unable to find the handful of
+    cells somebody actually decided.
+
+    `enabled` / `min_media` / `weight` are therefore compared, not tested for
+    presence; the eight raw fields must ALSO be non-null (null there is a real
+    "inherit"); and the two date flags are compared with `is not None`, because
+    False is a decision and `or` would silently drop it.
+
+    `names` is a per-language map and is owned when ANY language differs from
+    the parent's resolved name for that language — a unit that renamed a task
+    in Russian alone has renamed it.
+    """
+    raw = raw or {}
+    out: list[str] = []
+    for f in OWN_FIELDS:
+        if f == "names":
+            mine = raw.get("names") or {}
+            theirs = parent.get("names") or {}
+            if any((mine.get(l) or "").strip()
+                   and (mine[l] or "").strip() != (theirs.get(l) or "")
+                   for l in _LANGS):
+                out.append(f)
+            continue
+        v = _clean(f, raw.get(f))
+        if v is None:
+            continue                      # nothing stored here: inherited
+        if v != parent.get(f):
+            out.append(f)
+    return out
+
+
+def _resolved_window(resolved: dict, shift: int | None) -> tuple[str, str]:
+    """A level's resolved window with the shift default standing in for a blank
+    end — the same two-step `leader_ai.resolve_window` makes, over the dict this
+    module resolves rather than over ORM rows."""
+    d_lo, d_hi = leader_ai.shift_window(shift)
+    return (resolved.get("win_from") or d_lo, resolved.get("win_to") or d_hi)
+
+
+def config_ownership(defs, managers, leaders, settings: dict, overrides: dict) -> dict:
+    """The three DERIVED maps the admin config payload carries: `own`,
+    `own_leader` and `problems`.
+
+    Pure — it queries nothing and is handed what the endpoint already loaded:
+    the catalog, the live units, their leaders, `effective_settings` per unit
+    and `leader_overrides` for the leaders. Which is also what keeps the two
+    levels honest: the unit's parent is the global level, the leader's parent is
+    the unit's RESOLVED value, and both are compared by the one `own_fields`.
+
+    `problems` is the 26-Aug incident class — a photo window that does not fit
+    the shift the level lands on, i.e. hours nobody on that shift can work,
+    which the platform then records against them as not-done. The fit test is
+    `leader_ai.window_fits_shift` and is never re-derived (least of all in the
+    browser, where the copy on screen would be the wrong half of a
+    disagreement). A LEADER is listed only where its own row MOVES the window:
+    a leader inheriting its unit's bad hours is the unit's problem, already
+    named once, and listing all 93 of them per bad task would bury it.
+    """
+    own: dict[str, dict[str, list[str]]] = {}
+    own_leader: dict[str, dict[str, list[str]]] = {}
+    problems: list[dict] = []
+
+    glob = {td.id: global_level(td) for td in defs}
+    # (manager_id, task_id) → the unit's resolved values: the leaders' parent,
+    # and the window the fit test is run against.
+    unit_res: dict[tuple[int, int], dict] = {}
+    shift_of = {m.id: m.shift for m in managers}
+
+    for m in managers:
+        by_task = settings.get(m.id) or {}
+        for tid, parent in glob.items():
+            raw = by_task.get(tid)
+            res = resolve_over(parent, raw)
+            unit_res[(m.id, tid)] = res
+            fields = own_fields(raw, parent)
+            if fields:
+                own.setdefault(str(m.id), {})[str(tid)] = fields
+            win = _resolved_window(res, m.shift)
+            if not leader_ai.window_fits_shift(m.shift, win):
+                problems.append({
+                    "kind": "window_outside_shift",
+                    "level": "unit",
+                    "manager_id": m.id,
+                    "leader_id": None,
+                    "task_id": tid,
+                    "win": [win[0], win[1]],
+                    "shift": m.shift,
+                    "hours": list(leader_ai.shift_window(m.shift)),
+                    # Carried so the banner can say whether anybody is being
+                    # judged by these hours today — a disabled task's window is
+                    # wrong the day it is switched on, not before.
+                    "enabled": bool(res.get("enabled")),
+                })
+
+    for p in leaders:
+        by_task = overrides.get(p.id) or {}
+        if not by_task:
+            continue
+        shift = shift_of.get(p.manager_id)
+        for tid, raw in by_task.items():
+            parent = unit_res.get((p.manager_id, tid)) or glob.get(tid)
+            if parent is None:
+                continue                  # a row for a task the catalog lost
+            fields = own_fields(raw, parent)
+            if fields:
+                own_leader.setdefault(str(p.id), {})[str(tid)] = fields
+            if not ("win_from" in fields or "win_to" in fields):
+                continue                  # inherits the unit's hours entirely
+            res = resolve_over(parent, raw)
+            win = _resolved_window(res, shift)
+            if not leader_ai.window_fits_shift(shift, win):
+                problems.append({
+                    "kind": "window_outside_shift",
+                    "level": "leader",
+                    "manager_id": p.manager_id,
+                    "leader_id": p.id,
+                    "task_id": tid,
+                    "win": [win[0], win[1]],
+                    "shift": shift,
+                    "hours": list(leader_ai.shift_window(shift)),
+                    "enabled": bool(res.get("enabled")),
+                })
+
+    return {"own": own, "own_leader": own_leader, "problems": problems}
+
+
+def effective_leader_config(db: Session, prof, shift: int | None = None,
+                            day=_NOW) -> dict[int, dict]:
     """task_id → {enabled, min_media, weight, names, window, criteria, deadline}
     fully RESOLVED for one leader (RoleProfile): global catalog → supervisor
     override → leader override, field by field. `names` here are the final
@@ -278,8 +898,17 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
     `criteria` (the definition of done) and `deadline` (informational "due by")
     resolve down the same chain and are what the /leaders «Vazifalar» tab shows
     a leader beside each task; the bot and the scorer ignore both.
+
+    `day` decides WHICH tasks are in the answer — a task not yet active, or
+    archived, is simply not in it. Unstated = the day happening right now on
+    `shift`, which is what the bot menu, both day closes and `compute_completion`
+    all mean, and which is byte-identical for every task carrying no floor. It
+    is the SHIFT's effective date and never `date.today()`: a night belongs to
+    the date its 17:00 boundary opened.
     """
-    defs = ensure_task_defs(db)
+    if day is _NOW:
+        day = effective_date(shift)
+    defs = active_defs(db, day=day)
     sup = {
         s.task_id: s
         for s in db.query(LeaderTaskSetting)
@@ -293,8 +922,8 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
     out = {}
     for td in defs:
         s, r = sup.get(td.id), own.get(td.id)
-        enabled = s.enabled if s else True
-        min_media = s.min_media if s else 1
+        enabled = s.enabled if s else def_enabled(td)
+        min_media = s.min_media if s else def_min_media(td)
         weight = s.weight if s else td.default_weight
         if r:
             enabled = r.enabled if r.enabled is not None else enabled
@@ -342,7 +971,7 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
 
 
 def requirements_for(db: Session, *, prof=None, manager=None,
-                     shift: int | None = None) -> dict:
+                     shift: int | None = None, day=_NOW) -> dict:
     """What the /leaders «Vazifalar» tab shows: the ENABLED tasks in force for
     one subject — a leader (`prof`, the fully resolved chain), a supervisor's
     unit (`manager`, its level of the chain: no per-leader rows), or the global
@@ -355,17 +984,24 @@ def requirements_for(db: Session, *, prof=None, manager=None,
 
     Returned as plain dicts keyed for the client, names/notes as per-language
     maps so the page picks its own language.
+
+    `day` picks the ACTIVE set — a task not yet asked, or archived, is not on
+    the card. Unstated = the day happening now on the resolved shift, which is
+    resolved AFTER the shift is, or a night shift would be told about its
+    tasks a day late.
     """
-    defs = ensure_task_defs(db)
     if manager is None and prof is not None and prof.manager_id:
         manager = db.query(Manager).filter_by(id=prof.manager_id).first()
     if manager is not None and manager.shift in (1, 2):
         shift = manager.shift
     if shift not in (1, 2):
         shift = 1
+    if day is _NOW:
+        day = effective_date(shift)
+    defs = active_defs(db, day=day)
 
     if prof is not None:
-        cfg = effective_leader_config(db, prof, shift)
+        cfg = effective_leader_config(db, prof, shift, day=day)
         level = "leader"
     else:
         cfg = {}
@@ -386,8 +1022,8 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                     break
             desc = _resolve_description((s, td), crit)
             cfg[td.id] = {
-                "enabled": s.enabled if s else True,
-                "min_media": s.min_media if s else 1,
+                "enabled": s.enabled if s else def_enabled(td),
+                "min_media": s.min_media if s else def_min_media(td),
                 "weight": s.weight if s else td.default_weight,
                 "names": names,
                 "window": leader_ai.resolve_window(shift, s, td),
@@ -521,8 +1157,14 @@ def set_criteria(db: Session, *, task_id: int, criteria: str,
             # Absent row = the virtual default; materialise exactly that.
             td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
             row = LeaderTaskSetting(
-                manager_id=manager_id, task_id=task_id, enabled=True,
-                min_media=1, weight=td.default_weight if td else 0,
+                manager_id=manager_id, task_id=task_id,
+                # The virtual defaults this level ALREADY resolves to — read
+                # off the definition, never hard-coded, or a task created
+                # switched off for everybody would come back on the first side
+                # write that materialised a row for it.
+                enabled=def_enabled(td) if td else True,
+                min_media=def_min_media(td) if td else 1,
+                weight=td.default_weight if td else 0,
             )
             db.add(row)
         row.criteria = text
@@ -573,8 +1215,14 @@ def set_description(db: Session, *, task_id: int, description: str,
                 return
             td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
             row = LeaderTaskSetting(
-                manager_id=manager_id, task_id=task_id, enabled=True,
-                min_media=1, weight=td.default_weight if td else 0,
+                manager_id=manager_id, task_id=task_id,
+                # The virtual defaults this level ALREADY resolves to — read
+                # off the definition, never hard-coded, or a task created
+                # switched off for everybody would come back on the first side
+                # write that materialised a row for it.
+                enabled=def_enabled(td) if td else True,
+                min_media=def_min_media(td) if td else 1,
+                weight=td.default_weight if td else 0,
             )
             db.add(row)
         row.description = text_
@@ -669,8 +1317,14 @@ def set_window(db: Session, *, task_id: int, win_from: str | None,
                 return
             td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
             row = LeaderTaskSetting(
-                manager_id=manager_id, task_id=task_id, enabled=True,
-                min_media=1, weight=td.default_weight if td else 0,
+                manager_id=manager_id, task_id=task_id,
+                # The virtual defaults this level ALREADY resolves to — read
+                # off the definition, never hard-coded, or a task created
+                # switched off for everybody would come back on the first side
+                # write that materialised a row for it.
+                enabled=def_enabled(td) if td else True,
+                min_media=def_min_media(td) if td else 1,
+                weight=td.default_weight if td else 0,
             )
             db.add(row)
     else:
@@ -744,8 +1398,12 @@ def _sup_row(db: Session, manager_id: int, task_id: int, *,
         return row
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
     row = LeaderTaskSetting(
-        manager_id=manager_id, task_id=task_id, enabled=True,
-        min_media=1, weight=td.default_weight if td else 0,
+        manager_id=manager_id, task_id=task_id,
+        # The virtual defaults this level ALREADY resolves to (see the twins
+        # above) — a materialised row must never change what the task requires.
+        enabled=def_enabled(td) if td else True,
+        min_media=def_min_media(td) if td else 1,
+        weight=td.default_weight if td else 0,
     )
     db.add(row)
     try:
@@ -835,8 +1493,14 @@ def set_deadline(db: Session, *, task_id: int, deadline: str | None,
                 return
             td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
             row = LeaderTaskSetting(
-                manager_id=manager_id, task_id=task_id, enabled=True,
-                min_media=1, weight=td.default_weight if td else 0,
+                manager_id=manager_id, task_id=task_id,
+                # The virtual defaults this level ALREADY resolves to — read
+                # off the definition, never hard-coded, or a task created
+                # switched off for everybody would come back on the first side
+                # write that materialised a row for it.
+                enabled=def_enabled(td) if td else True,
+                min_media=def_min_media(td) if td else 1,
+                weight=td.default_weight if td else 0,
             )
             db.add(row)
     else:
@@ -1328,7 +1992,12 @@ def _apply(db: Session, kind: str, payload: dict) -> None:
 def _snapshot(db: Session, kind: str, payload: dict) -> dict:
     if kind == "supervisor":
         mid = int(payload["manager_id"])
-        eff = effective_settings(db, mid)
+        # The WHOLE catalog (`day=None`), not the active set: a snapshot records
+        # what a write was about so a revert can put it back, and that fact must
+        # not depend on the calendar. A task archived between the write and the
+        # revert would otherwise be snapshotted as the virtual defaults and
+        # restored to them.
+        eff = effective_settings(db, mid, day=None)
         cells = []
         for c in payload["cells"]:
             tid = int(c["task_id"])

@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI):
         merge_brigadir_tasks_page,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
+        report_leader_task_catalog,
         migrate_factories, add_role_profile_factory,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
@@ -104,6 +105,7 @@ async def lifespan(app: FastAPI):
         add_leader_task_date_check, add_leader_task_time_check,
         add_leader_task_date_plus,
         add_leader_task_proof_kind, reset_leader_camera_pilot,
+        add_leader_task_catalog,
         add_leader_task_example_scope,
         add_leader_day_reopened, add_leader_entry_closed_at,
         add_leader_unit_bot_from,
@@ -197,6 +199,7 @@ async def lifespan(app: FastAPI):
     add_leader_task_time_check()
     add_leader_task_date_plus()
     add_leader_task_proof_kind()
+    add_leader_task_catalog()
     add_leader_task_example_scope()
     add_leader_entry_closed_at()
     add_leader_day_reopened()
@@ -304,6 +307,10 @@ async def lifespan(app: FastAPI):
     # and a push to main is a deploy, so boot is the earliest a
     # regression can be caught.
     report_leader_deadline_rules()
+    # …and whether the task CATALOG still adds up: an archived task units
+    # still switch on, a spent floor, or weights that no longer total 100 —
+    # the last of which silently re-bases every leader's percentage.
+    report_leader_task_catalog()
     # ⚠ TEMPORARY one-shot — remove this line and its module in the NEXT
     # version. Inert until a unit is named in `PURGE_TEST_UNITS`. Runs last, so
     # every table it deletes from is guaranteed to exist by now.

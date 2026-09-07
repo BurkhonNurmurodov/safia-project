@@ -1600,6 +1600,70 @@ def add_leader_task_proof_kind() -> None:
         db.close()
 
 
+def add_leader_task_catalog() -> None:
+    """2026-09-07: the thirteen tasks become a CATALOG — added to, ordered,
+    and retired — instead of a fixed list an admin could only rename.
+
+    Five columns on `leader_task_defs`, and every one of them states a value
+    the resolvers were already hard-coding, so nothing moves on the day this
+    ships:
+
+    * `default_enabled` / `default_min_media` — the virtual defaults a
+      supervisor with no `leader_task_settings` row falls through to. They were
+      literally `True` and `1` inside `effective_settings` /
+      `effective_leader_config`, which meant a NEW task could not be created
+      switched OFF for everybody and enabled for the two units it was written
+      for. Backfilled to exactly those two values.
+    * `sort_order` — where the task sits. Backfilled `= id`, i.e. the order
+      every reader already saw.
+    * `active_from` / `archived_from` — HARD floors, "YYYY-MM-DD", compared
+      against the SHIFT's effective date (`leader_tasks.effective_date`), the
+      same rule and the same string shape `LeaderUnitSetting.cell_from` uses.
+      NULL on both = asked on every day there has ever been, which is what
+      every existing row means.
+
+    The sequence is also aligned. `leader_task_defs` was SEEDED with explicit
+    ids 1..13 and its sequence therefore still sits at 1, so the first plain
+    INSERT would collide with row 1. The create endpoint picks `max(id)+1`
+    explicitly and setvals afterwards; this repairs the latent state at boot as
+    well, so no other writer can trip over it.
+
+    Idempotent. The columns are added NULLABLE — all `ADD COLUMN IF NOT EXISTS`
+    can do without rewriting the table — and then filled, and every reader
+    treats NULL as the pre-migration answer regardless
+    (`leader_tasks.def_enabled` / `def_min_media` / `is_active`), so a box that
+    never ran this behaves exactly as before.
+    """
+    db = SessionLocal()
+    try:
+        for ddl in (
+            "ADD COLUMN IF NOT EXISTS default_enabled BOOLEAN",
+            "ADD COLUMN IF NOT EXISTS default_min_media INTEGER",
+            "ADD COLUMN IF NOT EXISTS sort_order INTEGER",
+            "ADD COLUMN IF NOT EXISTS active_from VARCHAR(10)",
+            "ADD COLUMN IF NOT EXISTS archived_from VARCHAR(10)",
+        ):
+            db.execute(text(f"ALTER TABLE leader_task_defs {ddl}"))
+        db.execute(text("UPDATE leader_task_defs SET default_enabled = TRUE "
+                        "WHERE default_enabled IS NULL"))
+        db.execute(text("UPDATE leader_task_defs SET default_min_media = 1 "
+                        "WHERE default_min_media IS NULL"))
+        db.execute(text("UPDATE leader_task_defs SET sort_order = id "
+                        "WHERE sort_order IS NULL"))
+        # Only when the table actually holds rows: `setval(seq, 0)` is illegal,
+        # and on an empty table the sequence is already right.
+        db.execute(text(
+            "SELECT setval(pg_get_serial_sequence('leader_task_defs', 'id'), "
+            "       COALESCE(MAX(id), 0), TRUE) "
+            "FROM leader_task_defs HAVING COALESCE(MAX(id), 0) > 0"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task catalog migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 # Versioned like the AI purge flag below, and for the same reason: it records
 # "this exact clean-up has been applied once". A future one needs a NEW key, or
 # the old mark makes it a no-op on every box that has booted.
@@ -4260,6 +4324,53 @@ def report_leader_deadline_rules() -> None:
                 pass
     except Exception as exc:
         print(f"[startup] deadline-rule alert not delivered: {exc}")
+
+
+def report_leader_task_catalog() -> None:
+    """Say out loud what the task CATALOG would do wrong.
+
+    Same door and same reasoning as `report_leader_deadline_rules` above: no
+    test suite, a push to `main` is a deploy, and this platform has no shell, so
+    the deploy output plus a DM to the support chat is the earliest anybody can
+    learn that a task was archived while units still have it switched on, that a
+    floor is spent, or that the weights no longer sum to 100 — the last of which
+    silently re-bases every leader's percentage. Never raises: a broken CHECK
+    must not be able to take the app down.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.services.leader_tasks import catalog_self_check
+        db = SessionLocal()
+        try:
+            bad = catalog_self_check(db)
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[startup] leader task catalog self-check skipped: {exc}")
+        return
+
+    if not bad:
+        print("[startup] leader task catalog: OK")
+        return
+
+    head = f"{len(bad)} problem(s) in the leader task catalog"
+    print("[startup] LEADER TASK CATALOG: " + head)
+    for line in bad[:20]:
+        print(f"[startup]   · {line}")
+    try:
+        import html
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        msg = ("🛑 <b>Leader task catalog</b>\n"
+               f"{html.escape(head)}.\n\n<pre>"
+               + html.escape("\n".join(bad[:12])) + "</pre>")
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, msg, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] catalog alert not delivered: {exc}")
 
 
 PP_FAZA_FOLD_FLAG = "pp_faza_per_order_fold_2026_09_03_v1"

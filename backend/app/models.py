@@ -1471,6 +1471,47 @@ class LeaderTaskDef(Base):
     # this task uses this (the seeded weights sum to 100, so untouched
     # supervisors never trip the ≠100 warning).
     default_weight = Column(Integer, nullable=False, default=0)
+    # ── the catalog: where a task sits, whether it is on, and when it lives ──
+    # Added 2026-09-07, when tasks stopped being a fixed thirteen an admin could
+    # only rename and became a register an admin can add to, put in order and
+    # retire.
+    #
+    # The virtual-default `enabled` the chain never had. Every resolver read a
+    # supervisor with no row as `True`; a task created FOR two units has to be
+    # able to read as False for everybody else, and there was no level that
+    # could say so. TRUE here is exactly what the resolvers hard-coded, so
+    # every existing row and every box that never ran the migration behaves
+    # byte-for-byte as before.
+    default_enabled   = Column(Boolean, nullable=False, default=True)
+    # The same story for the photo count: `1` is the number the resolvers
+    # hard-coded, now stated where an admin can change it.
+    default_min_media = Column(Integer, nullable=False, default=1)
+    # Where this task sits in the checklist. Backfilled `= id`, so the order
+    # every reader already saw is the order it starts with; every catalog read
+    # orders by `(sort_order, id)`, the id being the tiebreaker that keeps the
+    # sequence total when two rows are handed the same position.
+    sort_order        = Column(Integer, nullable=False, default=0)
+    # WHEN this task is asked, "YYYY-MM-DD" — the same shape and the same rule
+    # as `LeaderUnitSetting.cell_from`, and a plain string for the same reason:
+    # the comparison is against `leader_tasks.effective_date(shift)`, which is
+    # an ISO string, and one type on both sides is what keeps the two from
+    # drifting.
+    #
+    # HARD floors, compared against the SHIFT's effective date and NEVER
+    # `date.today()`: shift 2's night belongs to the date its 17:00 boundary
+    # opened, so a floor read off the calendar starts a night shift a day late —
+    # the class of bug that closed shift-2 tasks before their windows opened on
+    # 26 Aug. NULL on both = the task has always been asked and still is, which
+    # is what every row that predates this holds.
+    active_from       = Column(String(10), nullable=True)
+    # …and when it stops being asked. `>=` this date the task leaves the ACTIVE
+    # set — the bot menu, the day close, the score and the «Vazifalar» tab — but
+    # NOTHING is deleted: `ensure_task_defs` still returns it, so a past day's
+    # report keeps its task names and `task_weights` keeps its historical
+    # completions. Archiving is never a DELETE: three FKs and nine plain-integer
+    # `task_id` tables (entries, photos, AI reviews, disputes, late proofs,
+    # overrides, captures, pending changes, the config audit) would dangle.
+    archived_from     = Column(String(10), nullable=True)
 
 
 class LeaderTaskSetting(Base):

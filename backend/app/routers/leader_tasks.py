@@ -42,8 +42,9 @@ from app.services import (
     leader_reports)
 from app.services.leader_tasks import (
     CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
+    catalog_floor, config_ownership, create_task,
     effective_date, effective_leader_config, effective_settings, ensure_task_defs,
-    expired_through, leader_overrides,
+    expired_through, leader_overrides, reorder_tasks, set_archived,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
     per_task_units, revert_audit, set_criteria, set_date_check, set_deadline,
     set_description, set_proof_kind, set_unit_settings, unit_bot_from_map,
@@ -138,6 +139,18 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         .all()
     )
     overrides = leader_overrides(db, [p.id for p in leaders])
+    # Resolved ONCE and reused: it is both the `settings` map on the wire and
+    # the input `config_ownership` compares against the catalog, and a second
+    # read would let the two answers describe two different loads.
+    # `day=None` = the WHOLE catalog, archived tasks included. This payload
+    # feeds an EDITOR: an archived row is MARKED on the sheet, never dropped,
+    # so its per-unit values have to be on the wire beside it.
+    sup_settings = {m.id: effective_settings(db, m.id, day=None) for m in managers}
+    # Which fields each level DECIDES (rather than passes through), plus every
+    # window that does not fit the shift it lands on. Derived in the service so
+    # the unit and leader levels cannot drift apart — see `own_fields` for why
+    # the test is the value and never the existence of a row.
+    derived = config_ownership(defs, managers, leaders, sup_settings, overrides)
     per_task = per_task_units(db)
     bot_from = unit_bot_from_map(db)
     cell_from = leader_cells.floors(db)
@@ -215,6 +228,21 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 "proof_kind": td.proof_kind or "screenshot",
                 "examples": examples.get(td.id, []),
                 "default_weight": td.default_weight,
+                # ── the catalog ──────────────────────────────────────────────
+                # Where this task sits, and the two virtual defaults the chain
+                # falls through to when a unit has no row. `default_enabled` is
+                # what lets a task exist switched OFF for the platform and ON
+                # for the two units it was written for.
+                "sort_order": (td.sort_order if td.sort_order is not None
+                               else td.id),
+                "default_enabled": td.default_enabled is not False,
+                "default_min_media": (1 if td.default_min_media is None
+                                      else int(td.default_min_media)),
+                # WHEN it is asked, "YYYY-MM-DD" or null. An ARCHIVED task is
+                # MARKED here and never dropped — the sheet still has to render
+                # its row, and every history reader still names it.
+                "active_from": td.active_from or None,
+                "archived_from": td.archived_from or None,
             }
             for td in defs
         ],
@@ -229,9 +257,21 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                       "leaders_n": lead_n.get(m.id, 0),
                       "cells_n": cell_n.get(m.id, 0)} for m in managers],
         "settings": {
-            str(m.id): {str(t): s for t, s in effective_settings(db, m.id).items()}
+            str(m.id): {str(t): s for t, s in sup_settings[m.id].items()}
             for m in managers
         },
+        # Per (manager, task): the fields this UNIT owns, i.e. whose value
+        # differs from the global level's. NOT "which columns are non-null" —
+        # the supervisor table is dense because a side-field write materialises
+        # the whole row, so row existence says nothing (services/leader_tasks
+        # .own_fields). Sparse: a unit that decides nothing has no key.
+        "own": derived["own"],
+        # Same, per (leader, task), compared against the UNIT's resolved value.
+        "own_leader": derived["own_leader"],
+        # Every resolved level whose photo window cannot be worked on the shift
+        # it lands on — the 26-Aug incident class, judged by
+        # `leader_ai.window_fits_shift` here so no reader re-derives it.
+        "problems": derived["problems"],
         "leaders": [
             {"id": p.id, "name": p.name, "manager_id": p.manager_id} for p in leaders
         ],
@@ -438,7 +478,10 @@ def _scoped_rename(db: Session, body: "TaskIn", actor: str) -> dict:
     if not ids:
         raise HTTPException(status_code=400, detail="no_rows")
     for mid in ids:
-        eff = effective_settings(db, mid).get(body.task_id, {})
+        # The whole catalog: a rename is a write about the TASK, and reading the
+        # active set here would hand a rename of an archived task the virtual
+        # defaults and write those over whatever the unit actually holds.
+        eff = effective_settings(db, mid, day=None).get(body.task_id, {})
         write_change(db, "supervisor", {"manager_id": mid, "cells": [{
             "task_id": body.task_id,
             "enabled": eff.get("enabled", True),
@@ -479,6 +522,167 @@ def put_task(body: TaskIn, db: Session = Depends(get_db), admin: dict = Depends(
                  if new_name and new_name != old_name else None),
     )
     return out
+
+
+# ── the catalog: add / archive / reorder ──────────────────────────────────────
+# Until 2026-09-07 the thirteen tasks were a fixed list an admin could rename
+# and nothing else. These three endpoints are what make it a register. All
+# admin-only (`verify_admin`), like every other write in this file, and none of
+# them is stageable through the "apply from next day" machinery: a task's
+# EXISTENCE is not a config value, it is a row, and the floors below are how it
+# is scheduled instead.
+
+class NewTaskIn(BaseModel):
+    """A new checklist task.
+
+    `manager_ids` / `leader_ids` name who it is FOR. Naming nobody creates it
+    for the whole platform, which is what an unfiltered create means; naming
+    somebody creates it switched OFF globally with an explicit ON row for each
+    of them, because the level that means "everybody" is the definition itself
+    and there is no other way for the chain to say "these two units only".
+
+    `active_from` blank = the next shift boundary (`catalog_floor`), so a task
+    never appears in the middle of somebody's night. A date may be given to
+    schedule one further out; the UI is what has to say which it did.
+    """
+    names: dict[str, str | None]
+    note: dict[str, str | None] | None = None
+    criteria: str | None = None
+    description: str | None = None
+    default_weight: int = 0
+    default_min_media: int = 1
+    active_from: str | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.post("/admin/leader-tasks/task")
+def post_task(body: NewTaskIn, db: Session = Depends(get_db),
+              admin: dict = Depends(verify_admin)):
+    mgr_ids = sorted({int(i) for i in (body.manager_ids or []) if i})
+    lead_ids = sorted({int(i) for i in (body.leader_ids or []) if i})
+    # An id that names nothing is refused rather than skipped: a row written
+    # against a unit that does not exist is a row no reader resolves, and a
+    # silently shortened fan-out reports success for rows it did not write.
+    if mgr_ids:
+        known = {i for (i,) in db.query(Manager.id)
+                 .filter(Manager.id.in_(mgr_ids)).all()}
+        if known != set(mgr_ids):
+            raise HTTPException(status_code=400, detail="unknown_supervisor")
+    if lead_ids:
+        known = {i for (i,) in db.query(RoleProfile.id)
+                 .filter(RoleProfile.id.in_(lead_ids),
+                         RoleProfile.role == "leader").all()}
+        if known != set(lead_ids):
+            raise HTTPException(status_code=400, detail="unknown_leader")
+    floor = catalog_floor()
+    day = (body.active_from or "").strip() or None
+    if day is not None and day < floor:
+        # Earlier than the next boundary would put the task into a night that
+        # is already running — a checklist changing under the leader's hands.
+        raise HTTPException(status_code=400, detail="active_from_too_early")
+    try:
+        td = create_task(
+            db, names=body.names, note=body.note, criteria=body.criteria,
+            description=body.description, default_weight=body.default_weight,
+            default_min_media=body.default_min_media, active_from=day,
+            manager_ids=mgr_ids, leader_ids=lead_ids,
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="no_name")
+    _log_cfg(task_id=td.id, level="global", task_name=td.name_uz,
+             count=(len(mgr_ids) + len(lead_ids)) or None,
+             extra=[("action", "created"),
+                    ("active_from", td.active_from or ""),
+                    ("weight", td.default_weight),
+                    ("scope", "targets" if (mgr_ids or lead_ids) else "all")])
+    return {"ok": True, "task_id": td.id, "active_from": td.active_from,
+            "sort_order": td.sort_order, "floor": floor,
+            "managers": len(mgr_ids), "leaders": len(lead_ids)}
+
+
+class ArchiveTaskIn(BaseModel):
+    """`archived_from` = the day the task stops being asked; null puts it
+    back. Never a delete — see `leader_tasks.set_archived`."""
+    task_id: int
+    archived_from: str | None = None
+
+
+@router.post("/admin/leader-tasks/task/archive")
+def post_task_archive(body: ArchiveTaskIn, db: Session = Depends(get_db),
+                      admin: dict = Depends(verify_admin)):
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
+        raise HTTPException(status_code=404, detail="Unknown task")
+    was = td.archived_from or None
+    try:
+        set_archived(db, body.task_id, body.archived_from)
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(
+            status_code=400,
+            detail="archived_from_too_early" if code == "too_early" else "bad_date")
+    _log_cfg(task_id=body.task_id, level="global", task_name=td.name_uz,
+             extra=[("action", "archived" if td.archived_from else "restored"),
+                    ("archived_from", td.archived_from or "")])
+    action_log.enrich(changes=[("archived_from", was, td.archived_from)])
+    return {"ok": True, "task_id": td.id, "archived_from": td.archived_from,
+            "floor": catalog_floor()}
+
+
+class TaskOrderIn(BaseModel):
+    """The task ids in the order they should read. Anything left out keeps a
+    position AFTER them, so a short list can never bury a task."""
+    ids: list[int]
+
+
+@router.put("/admin/leader-tasks/task/order")
+def put_task_order(body: TaskOrderIn, db: Session = Depends(get_db),
+                   admin: dict = Depends(verify_admin)):
+    try:
+        n = reorder_tasks(db, body.ids)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown task")
+    if not n:
+        raise HTTPException(status_code=400, detail="no_rows")
+    action_log.enrich(target_kind="task",
+                      details=[("level", "global"), ("action", "reordered"),
+                               ("count", n)])
+    return {"ok": True, "count": n,
+            "order": [td.id for td in ensure_task_defs(db)]}
+
+
+@router.get("/api/leader-tasks/catalog")
+def leader_task_catalog(db: Session = Depends(get_db),
+                        _: dict = Depends(require_auth)):
+    """The task catalog — EVERY definition, archived ones included.
+
+    Auth-only and page-gated by nothing, exactly like `/cells/:id` and the day
+    report: this is the list of task NAMES, which every reader of a past day
+    already sees rendered beside their own filings, and a register that only
+    resolved for `/leaders` grantees would leave the day report naming «#7».
+
+    Archived tasks are IN it and marked, because a report from before the
+    archive still has to name its tasks — the same reason `ensure_task_defs`
+    returns them. It carries no criteria, no window and no per-unit anything:
+    those are configuration, and configuration is the admin payload's business.
+    """
+    defs = ensure_task_defs(db)
+    return {
+        "tasks": [
+            {
+                "id": td.id,
+                "name": {l: getattr(td, f"name_{l}") for l in _LANGS},
+                "note": {l: getattr(td, f"note_{l}") or "" for l in _LANGS},
+                "sort_order": (td.sort_order if td.sort_order is not None
+                               else td.id),
+                "default_weight": td.default_weight,
+                "archived_from": td.archived_from or None,
+                "active_from": td.active_from or None,
+            }
+            for td in defs
+        ],
+    }
 
 
 class ApplyAllIn(BaseModel):
