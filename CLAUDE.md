@@ -998,18 +998,23 @@ number.
   for free — a morning-hours window on a night task stops flagging correct
   photos, and those tasks get their weight back with no Gemini call. No
   corrected report is re-DMed, same as a window edit.
-- **The date question has THREE modes, not two** (user, 2026-08-17) — two
-  nullable booleans on the same global → supervisor → leader chain as the photo
-  window, resolved by `leader_ai.resolve_date_check` + `resolve_time_check`
+- **The date question has FOUR modes** (three from 2026-08-17, the fourth from
+  2026-09-07) — three nullable booleans on the same global → supervisor →
+  leader chain as the photo window, resolved by `leader_ai.resolve_date_check`
+  + `resolve_day_check` + `resolve_time_check`
   (NULL = inherit, NULL everywhere = the strict answer, so nothing changes until
   an admin picks something). Read them as ONE rule, always via
-  `date_rule_for` → `(window, checked, timed, plus)` — FOUR values since the
-  `date_plus` tolerance landed (`resolve_date_plus`, the count of days AFTER the
+  `date_rule_for` → `DateRule(win, checked, dayed, timed, plus)` — a NamedTuple
+  since `day_check` landed, and FOUR values before that when the `date_plus`
+  tolerance did (`resolve_date_plus`, the count of days AFTER the
   report's that a proof may be dated; 0 everywhere until a writer exists, and
-  there is no admin control for it yet). **Unpack all four**: two call sites
-  took three and every drain pass died on the first row with «too many values to
-  unpack (expected 3)» — no verdict, no retry burned, just a strip reading «0 of
-  375 checked · AI error». The four travel together through `date_flags`,
+  there is no admin control for it yet). **Read its fields by NAME**: while it was a bare
+  tuple two call sites took three of its four values and every drain pass died
+  on the first row with «too many values to unpack (expected 3)» — no verdict,
+  no retry burned, just a strip reading «0 of 375 checked · AI error». That is
+  why it is a NamedTuple now, and why `day_check` could join it without
+  disturbing a caller that did not want it. They travel together through
+  `date_flags`,
   `date_prose`, `sync_date_flags` and both verdict payloads, or the sentence on
   a card names a day the flag beside it did not judge:
   - `date_check T` + `time_check T` — **strict**: a SYSTEM clock (OS bar, phone
@@ -1035,7 +1040,30 @@ number.
     is on screen while no OS clock is — strict mode answered `no_date`, i.e.
     rejected, on honest filings, and exempting the day threw away the one fact
     the screen does prove.
+  - `date_check T` + `day_check F` + `time_check T` — **TIME ONLY**: the HOUR
+    must be inside the window and the DAY is never compared. Both failures are
+    flags — an hour outside the window is `date_mismatch`, no readable hour at
+    all is `no_date` — so this is the strict rule with its unanswerable half
+    dropped, never a relaxation of what remains. It exists for the proof whose
+    only clock is a phone **status bar**, which by construction carries no date:
+    strict mode answered `date_mismatch`/`no_date` (a rejection) on a proof
+    whose one legible fact was exactly what the window asks about, and neither
+    escape worked — date-only throws the hour away and then demands the very
+    date the status bar cannot show, and exempting the task answers nothing.
+    The model is asked the STRICT question (`screen_dates=False`): an in-app
+    date says nothing about an hour. `plus` and `shift` say nothing here either
+    (both only move WHICH day counts), so `clock_in_window` answers this branch
+    BEFORE it parses the report day.
   - `date_check F` — **not asked at all**.
+  **`day_check` is a THIRD column and NOT the free (date_check F, time_check T)
+  corner of the old pair, and that is load-bearing**: the flags resolve down the
+  chain INDEPENDENTLY, so a unit that exempts the date while inheriting
+  `time_check` True from the global floor already sits in that corner and reads
+  as exempt — twelve supervisor rows did on the day this shipped. Giving the
+  corner a meaning would have re-armed the date question on every one of them at
+  once, silently, as a deduction. `day_check F` + `time_check F` judges nothing,
+  i.e. the exemption spelled with two extra columns; the admin never offers it
+  and `date_flags` reads it as the exemption it is.
   Some proofs are screens that carry no clock — an in-app checklist,
   a printed system report — and there the date question had only two outcomes,
   both wrong: reject every honest filing, or leave a flag nobody may act on.
@@ -1057,12 +1085,15 @@ number.
   card keeps two rows with the second asking about the day, the tab prints «sana
   kerak, vaqt shart emas», and the bot asks for a visible date instead of hours
   (`photo_date_only`) — silence there would read as "nothing about when is
-  asked", which is the third mode, not this one. Admin: ONE three-option
-  `dateRuleField` in all three ltasks modals (the four combinations have only
-  three meanings, so the fourth is never offerable) → `PUT
-  /admin/leader-tasks/date-check` + `/time-check`, both tri-state and four-way
-  addressed like `WindowIn`, written one AFTER the other (they materialise the
-  same override row, and two parallel inserts race its unique key). Three traps:
+  asked", which is the third mode, not this one. Admin: ONE four-option date-rule
+  `SegmentedToggle` in the ltasks modal → `PUT /admin/leader-tasks/date-check`
+  + `/time-check` + `/day-check`, all tri-state, four-way addressed like
+  `WindowIn` and sharing `_write_date_rule`, written one AFTER the other (they
+  materialise the same override row, and parallel inserts race its unique key).
+  What a verdict was MEASURED AGAINST is `leader_ai.expected_text` — ONE
+  definition with four shapes (dated window / accepted days / bare clocks /
+  nothing), because three surfaces print it; `verifyState.expectedLabel` is its
+  client twin for the label beside it. Three traps:
   `resolve_date_check`/`resolve_time_check` cannot use `resolve_deadline`'s
   "first non-blank" test (the meaningful value is FALSE); `_leader_row_extras`
   must count BOTH or a cell write deletes a leader row whose only override was

@@ -1618,7 +1618,7 @@ def list_disputes(
     # The verdict under objection. Local import: routers/leader_ai imports this
     # module back for `supersede_dispute`.
     from app.routers.leader_ai import (
-        _as_verdict, _date_check, _date_plus, _project, _task_cfg, _time_check,
+        _as_verdict, _date_check, _date_plus, _day_check, _project, _task_cfg, _time_check,
         _window,
     )
     revs = (db.query(LeaderAiReview)
@@ -1627,7 +1627,8 @@ def list_disputes(
     # leaves its dispute standing, and that card still has to name its task.
     cfg = _task_cfg(db, revs) if rows else None
     verdicts = {r.ref: _as_verdict(r, _window(cfg, r), _date_check(cfg, r),
-                                   _time_check(cfg, r), _date_plus(cfg, r))
+                                   _time_check(cfg, r), _date_plus(cfg, r),
+                                   _day_check(cfg, r))
                 for r in revs}
     shifts = {r.ref: r.shift for r in revs}
     proj = _project(db, revs)

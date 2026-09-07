@@ -459,18 +459,25 @@ def sync_entry(db: Session, day: LeaderTaskDay, task_id: int,
 def is_late(when: datetime, date: str, win: tuple[str, str], cfg: dict) -> bool:
     """Was this shot taken outside the hours the task allows?
 
-    Only asked in STRICT mode. With `time_check` off the window is explicitly
-    not a rule (services/leader_ai.date_flags says so), and with `date_check`
-    off nothing about when is asked at all — marking a photo late under either
-    would print a verdict the platform has decided not to reach.
+    Asked wherever the HOURS are a rule — strict mode and time-only. With
+    `time_check` off the window is explicitly not a rule (services/leader_ai
+    .date_flags says so), and with `date_check` off nothing about when is asked
+    at all — marking a photo late under either would print a verdict the
+    platform has decided not to reach.
+
+    `day_check` rides through to the comparison rather than gating it: in
+    time-only the window still decides, it simply decides on the hour alone, and
+    a warning drawn by a different rule from the verdict is a warning that will
+    eventually contradict it.
     """
     if not cfg.get("date_check", True) or not cfg.get("time_check", True):
         return False
-    return clock_ok(when, date, win, cfg.get("shift")) is False
+    return clock_ok(when, date, win, cfg.get("shift"),
+                    days=cfg.get("day_check", True)) is False
 
 
 def clock_ok(when: datetime, date: str, win: tuple[str, str],
-             shift: int | None = None) -> bool | None:
+             shift: int | None = None, *, days: bool = True) -> bool | None:
     """Does one server-recorded capture satisfy the window? Delegates to the
     reviewer's own comparison so a camera photo and a transcribed screenshot can
     never be judged by two different readings of the same hours.
@@ -478,8 +485,12 @@ def clock_ok(when: datetime, date: str, win: tuple[str, str],
     The shift travels with it for the same reason: it says which DAY the
     window's hours belong to (leader_ai.window_offset), and a night shift's
     01:41 shot marked late against the previous morning is the very bug that
-    comparison was fixed for."""
-    return leader_ai.clock_in_window([as_clock(when)], date, win, shift=shift)
+    comparison was fixed for.
+
+    `days=False` is TIME ONLY (leader_ai.resolve_day_check): the hour alone is
+    compared, exactly as the reviewer will compare it."""
+    return leader_ai.clock_in_window([as_clock(when)], date, win, shift=shift,
+                                     days=days)
 
 
 def as_clock(when: datetime) -> dict:

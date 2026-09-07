@@ -993,20 +993,32 @@ function Verdict({ item, T, lang }) {
   // line so it re-reads correctly after a window edit, which model prose could
   // not: that text was written once and froze.
   const dateWhy = item.dateReason?.[lang] || item.dateReason?.ru || item.dateReason?.en || "";
-  // The date question has three regimes, and the rows say WHICH one ran — a
+  // The date question has four regimes, and the rows say WHICH one ran — a
   // reviewer comparing two cards must not have to infer it:
   //   full  two rows, as always: was a clock read, and was it inside the window;
   //   day   two rows still, but the second asks about the DAY and is labelled as
   //         date-only, because "inside the window" over a proof whose hours
   //         nobody compared is a claim about a check that did not run;
+  //   time  two rows again, and the mirror labelling: the first asks whether a
+  //         CLOCK was read (not a date — this mode's proof is a status bar,
+  //         which never carries one), the second whether that hour was inside
+  //         the window, marked as hour-only;
   //   off   ONE neutral row — neither passed nor failed, never asked, and a green
   //         tick would claim otherwise. `skip` is that third state.
   // What the model read is shown in every regime: it is evidence either way.
   const dateOn = item.dateCheck !== false;
+  const dayOn = dateOn && item.dayCheck !== false;
   const timeOn = dateOn && item.timeCheck !== false;
   const rows = [
     ...(!dateOn ? [
       { skip: true, label: T.aiQ_noDate, val: item.imageDate || "—" },
+    ] : !dayOn ? [
+      // Time-only. Both failures are flags here — an hour outside the window,
+      // and no readable hour at all — so neither row is ever a `skip`.
+      { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_clockRead,
+        val: item.imageDate || "—" },
+      { ok: !f.has("date_mismatch") && !f.has("no_date"), label: T.aiQ_window,
+        val: `${shortWin(item.expected)} · ${T.aiQ_timeOnly}` },
     ] : timeOn ? [
       { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
       { ok: !f.has("date_mismatch") && !f.has("no_date"), label: T.aiQ_window, val: shortWin(item.expected) },

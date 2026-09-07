@@ -103,6 +103,7 @@ async def lifespan(app: FastAPI):
         add_leader_task_windows, add_leader_task_deadlines,
         add_leader_task_description,
         add_leader_task_date_check, add_leader_task_time_check,
+        add_leader_task_day_check,
         add_leader_task_date_plus,
         add_leader_task_proof_kind, reset_leader_camera_pilot,
         add_leader_task_catalog,
@@ -197,6 +198,7 @@ async def lifespan(app: FastAPI):
     add_leader_task_description()
     add_leader_task_date_check()
     add_leader_task_time_check()
+    add_leader_task_day_check()
     add_leader_task_date_plus()
     add_leader_task_proof_kind()
     add_leader_task_catalog()

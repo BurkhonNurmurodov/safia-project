@@ -1495,6 +1495,41 @@ def add_leader_task_time_check() -> None:
         db.close()
 
 
+def add_leader_task_day_check() -> None:
+    """2026-09-07: the date rule gains its fourth mode — TIME ONLY, where the
+    hour must be inside the window and the day is never compared.
+
+    A THIRD column rather than the unused (date_check False, time_check True)
+    corner of the existing pair, and the reason is the chain, not taste: the two
+    booleans resolve down leader → supervisor → global INDEPENDENTLY, so a unit
+    that exempted the date and left `time_check` NULL already sits in that
+    corner — it inherits True from the global floor — and reads as exempt today.
+    Twelve supervisor rows did when this was written. Giving the corner a meaning
+    would have re-armed the date question on every one of them at once, with no
+    admin action and no way to see it but a leader's score moving.
+
+    Idempotent and shaped like its two neighbours above: nullable columns
+    everywhere (all `ADD COLUMN IF NOT EXISTS` can do), then TRUE filled in at
+    the GLOBAL level, which is the chain's floor and inherits from nothing.
+    `leader_ai.resolve_day_check` reads NULL as "the day is judged", so a box
+    that never ran this keeps every task exactly as strict as it already was.
+    """
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            db.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS day_check BOOLEAN"))
+        db.execute(text(
+            "UPDATE leader_task_defs SET day_check = TRUE WHERE day_check IS NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task day-check migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_task_date_plus() -> None:
     """2026-08-19: a task may accept a proof dated up to N days AFTER the report
     day — 0 (only the report day) everywhere until an admin says otherwise.

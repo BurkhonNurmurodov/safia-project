@@ -39,6 +39,7 @@ import socket
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -460,6 +461,45 @@ def resolve_time_check(*levels) -> bool:
     return True
 
 
+def resolve_day_check(*levels) -> bool:
+    """Given the date question IS asked, must the DAY match the report's? The
+    chain's rows narrowest first, same order and same NULL-inherit rule as its
+    two neighbours — and read WITH them, never alone:
+
+        date_check False                          nothing is asked;
+        day_check T + time_check T                strict: a system clock,
+                                                  readable and inside the window;
+        day_check T + time_check F                DATE ONLY;
+        day_check F + time_check T                TIME ONLY: the hour must be
+                                                  inside the window, the day is
+                                                  never compared;
+        day_check F + time_check F                nothing is judged — the
+                                                  exemption spelled with two
+                                                  extra columns. Never offered,
+                                                  and `date_flags` reads it as
+                                                  the exemption it is.
+
+    TIME ONLY exists for the proof whose only readable clock is a phone status
+    bar (user, 2026-09-07). That clock proves the HOUR and by construction can
+    never carry a date, so strict mode answered `no_date` — i.e. rejected — on
+    a proof whose one legible fact was exactly what the window asks about, and
+    the only escapes were exempting the question entirely or switching to
+    date-only, which throws the hour away and then demands the very date the
+    status bar cannot show.
+
+    Defaults True for the twin of `resolve_time_check`'s reason: NULL is
+    inherit, NULL all the way up is the behaviour that predates this column, and
+    a migration that has not run must never read as a silent relaxation.
+    """
+    for row in levels:
+        if row is None:
+            continue
+        v = getattr(row, "day_check", None)
+        if v is not None:
+            return bool(v)
+    return True
+
+
 MAX_DATE_PLUS = 7          # a week; past that the report day means nothing
 
 
@@ -495,20 +535,39 @@ def resolve_date_plus(*levels) -> int:
     return 0
 
 
-def date_rule_for(db: Session, task_id: int, manager_id: int | None,
-                  leader_id: int | None,
-                  shift: int | None) -> tuple[tuple[str, str], bool, bool, int]:
-    """The whole date rule for one row — (window, checked, timed, plus) — in ONE
-    chain walk, resolved leader → supervisor → global → shift default.
+class DateRule(NamedTuple):
+    """The whole date rule for one row, as ONE value.
 
-    The four facts always travel together: a window nobody compares against is
+    A NamedTuple and not a bare tuple because this thing grows: it was three
+    fields, then four (`plus`), and the two call sites that unpacked three died
+    on every drain pass with «too many values to unpack» — no verdict, no retry
+    burned, a strip reading «0 of 375 checked · AI error». Fields are readable by
+    NAME here, so a fifth (`dayed`) costs a caller nothing unless it chose to
+    unpack positionally.
+    """
+    win: tuple[str, str]
+    checked: bool
+    dayed: bool
+    timed: bool
+    plus: int
+
+
+def date_rule_for(db: Session, task_id: int, manager_id: int | None,
+                  leader_id: int | None, shift: int | None) -> DateRule:
+    """The whole date rule for one row — window, and the three questions that
+    say what is compared to it — in ONE chain walk, resolved leader →
+    supervisor → global → shift default.
+
+    The five facts always travel together: a window nobody compares against is
     just a label, a comparison with no window has nothing to compare to, a
     window shown for a task whose hours are not judged is a rule the reader
-    cannot tell is dead, and a day shown without its tolerance names one day
-    where two or more actually pass. The per-row form; bulk readers preload the
-    three config tables and call `resolve_window`/`resolve_date_check`/
-    `resolve_time_check`/`resolve_date_plus` directly (see routers/leader_ai
-    `_hydrate` — this walk costs three queries a row).
+    cannot tell is dead, a day shown without its tolerance names one day where
+    two or more actually pass, and `dayed`/`timed` decide which HALF of "when"
+    the window is being asked about at all. The per-row form; bulk readers
+    preload the three config tables and call `resolve_window`/
+    `resolve_date_check`/`resolve_day_check`/`resolve_time_check`/
+    `resolve_date_plus` directly (see routers/leader_ai `_hydrate` — this walk
+    costs three queries a row).
     """
     own = sup = None
     if leader_id:
@@ -518,10 +577,11 @@ def date_rule_for(db: Session, task_id: int, manager_id: int | None,
         sup = db.query(LeaderTaskSetting).filter_by(
             manager_id=manager_id, task_id=task_id).first()
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
-    return (resolve_window(shift, own, sup, td),
-            resolve_date_check(own, sup, td),
-            resolve_time_check(own, sup, td),
-            resolve_date_plus(own, sup, td))
+    return DateRule(resolve_window(shift, own, sup, td),
+                    resolve_date_check(own, sup, td),
+                    resolve_day_check(own, sup, td),
+                    resolve_time_check(own, sup, td),
+                    resolve_date_plus(own, sup, td))
 
 
 def overnight(win: tuple[str, str]) -> bool:
@@ -1696,14 +1756,17 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     # the strict prompt forbids reading it), and the same values then judge what
     # came back. One walk, one answer, no chance of asking one question and
     # grading another.
-    win, checked, timed, plus = date_rule_for(db, rev.task_id, rev.manager_id,
-                                              rev.leader_id, rev.shift)
+    win, checked, dayed, timed, plus = date_rule_for(
+        db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
     prompt = _prompt(
         task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id),
         note=task_note(db, rev.task_id),
         criteria=criteria_for(db, rev.task_id, rev.manager_id, rev.leader_id),
         n_images=len(images), omitted=omitted, n_examples=len(examples),
-        screen_dates=checked and not timed,
+        # Only DATE-ONLY loosens what may be READ. Time-only asks about the
+        # hour, which is exactly what the strict prompt already transcribes —
+        # and an in-app date says nothing about it.
+        screen_dates=checked and dayed and not timed,
     )
     try:
         out = gemini.generate_json(prompt, examples + images, _SCHEMA)
@@ -1744,8 +1807,8 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     # gets every affected verdict re-derived for free.
     served = _camera_clocks(db, rev)
     rev.clocks = served if served is not None else _clean_clocks(out.get("clocks"))
-    flags += date_flags(rev.clocks, rev.date, win, check=checked, times=timed,
-                        plus=plus, shift=rev.shift)
+    flags += date_flags(rev.clocks, rev.date, win, check=checked, days=dayed,
+                        times=timed, plus=plus, shift=rev.shift)
     flags = [f for f in _FLAG_ORDER if f in set(flags)]
 
     rev.flags = flags
@@ -2540,7 +2603,7 @@ def _dated(clocks: list[dict] | None) -> list[dict]:
 
 def clock_in_window(clocks: list[dict] | None,
                     date: str, win: tuple[str, str],
-                    *, times: bool = True, plus: int = 0,
+                    *, days: bool = True, times: bool = True, plus: int = 0,
                     shift: int | None = None) -> bool | None:
     """Are ALL of a report's photo clocks inside the window? None = undecidable
     (no clock was read at all — that is `no_date`, a different answer).
@@ -2600,14 +2663,46 @@ def clock_in_window(clocks: list[dict] | None,
     day would newly reject the honest filings that mode exists to accept — so a
     window that reaches into the next date adds it beside the report day rather
     than replacing it.
+
+    `days=False` with `times` on — TIME ONLY (`resolve_day_check`) — is the
+    mirror image of `times=False`, and the simplest of the three: the hour is
+    the whole rule and the day is never compared, so neither `plus` nor `shift`
+    can say anything here (both only ever move WHICH day counts). Every entry
+    carrying a readable hour is judged, dated or not — which is the point, since
+    the proof this mode exists for is a phone status bar, an hour that by
+    construction never carries a date. `_dated` is deliberately NOT consulted:
+    preferring dated entries is how strict mode stops an undated status bar
+    outvoting a camera stamp that PROVES the day, and with no day to prove there
+    is nothing to outvote. Nothing readable anywhere ⇒ None, i.e. `no_date` —
+    an unprovable hour is exactly as unprovable as an unprovable day, and this
+    mode is the one that asks about the hour.
+
+    `days=False` with `times=False` too asks nothing at all and answers None; it
+    is the exemption written with two extra columns and `date_flags` reads it as
+    one. The admin never offers it.
     """
     if not clocks:
         return None
+    lo, hi = win
+    if not days:
+        # TIME ONLY, and it is answered BEFORE the report day is parsed — this
+        # mode never compares a day, so an unparseable one must not decide it.
+        # `plus` and `shift` say nothing here either; the window is read as a
+        # bare pair of clocks, with `overnight` its only subtlety (17:00 → 09:00
+        # means late OR early, not the empty range between them).
+        if not times:
+            return None          # nothing is asked; `date_flags` returns []
+        seen = [hhmm(c.get("time")) for c in clocks if isinstance(c, dict)]
+        seen = [c for c in seen if c]
+        if not seen:
+            return None          # no readable hour anywhere — that is `no_date`
+        over_only = overnight(win)
+        return all((clock >= lo or clock <= hi) if over_only else lo <= clock <= hi
+                   for clock in seen)
     try:
         day = datetime.strptime(str(date)[:10], "%Y-%m-%d")
     except ValueError:
         return None
-    lo, hi = win
     span = max(0, int(plus or 0))
 
     # The days a proof may carry, `k` days on from the report's. Sets, not two
@@ -2646,7 +2741,7 @@ def clock_in_window(clocks: list[dict] | None,
 
 
 def date_flags(clocks: list[dict] | None, date: str,
-               win: tuple[str, str], *, check: bool = True,
+               win: tuple[str, str], *, check: bool = True, days: bool = True,
                times: bool = True, plus: int = 0,
                shift: int | None = None) -> list[str]:
     """THE date verdict. Derived, never stored — so it is always the answer for
@@ -2683,6 +2778,21 @@ def date_flags(clocks: list[dict] | None, date: str,
     clocks, and turning it back off re-derives the strict answer from the same
     data. No Gemini call, no quota, no re-check run.
 
+    `days=False` with `times` on — TIME ONLY — is the mirror image, and keeps
+    BOTH flags: an hour outside the window is `date_mismatch`, and a proof with
+    no readable hour at all is `no_date`. There is no asymmetry to make here,
+    because the two failures are the same failure — this mode asks exactly one
+    question, and a proof that cannot answer it has not answered it. The mode
+    exists for the status-bar clock, which proves an hour and never a day, so it
+    is precisely the strict rule with the unanswerable half dropped rather than
+    a relaxation of what remains.
+
+    `days=False` AND `times=False` asks nothing and returns nothing — the same
+    answer as `check=False`, which is what that combination is. It is never
+    written by the admin; it is reachable only by an endpoint call that clears
+    both halves, and reading it as anything else would invent a rule from an
+    absence.
+
     `plus` — the task's date tolerance — is the fourth input and the only one
     that widens rather than narrows: the day may also be up to that many days
     after the report's, for a proof dated by what it is ABOUT (a schedule filed
@@ -2694,17 +2804,21 @@ def date_flags(clocks: list[dict] | None, date: str,
     on (`window_offset`). It is not a relaxation and cannot be one — it moves
     the window onto the date the shift actually runs those hours.
 
-    All four judgement keywords default to the old behaviour — checked, timed, no
-    tolerance, calendar day — deliberately: the three callers (`review_one`,
-    `sync_date_flags`, `date_prose`) all pass them explicitly, and a fourth one
-    added without them should keep judging dates and clocks rather than quietly
-    relax every task on the platform.
+    All the judgement keywords default to the old behaviour — checked, dayed,
+    timed, no tolerance, calendar day — deliberately: the three callers
+    (`review_one`, `sync_date_flags`, `date_prose`) all pass them explicitly, and
+    a fourth one added without them should keep judging dates and clocks rather
+    than quietly relax every task on the platform.
     """
-    if not check:
+    if not check or not (days or times):
         return []
-    ok = clock_in_window(clocks, date, win, times=times, plus=plus, shift=shift)
+    ok = clock_in_window(clocks, date, win, days=days, times=times,
+                         plus=plus, shift=shift)
     if ok is None:
-        return ["no_date"] if times else []
+        # Nothing could vote. In DATE-ONLY that is a fact about the screen and
+        # not misconduct (see above); in the other two the question this task
+        # asks went unanswered.
+        return [] if (days and not times) else ["no_date"]
     return [] if ok else ["date_mismatch"]
 
 
@@ -2936,6 +3050,30 @@ _DATE_PROSE = {
         "ru": "На фото не видно даты. В этой задаче дата не обязательна, поэтому метка не ставится.",
         "en": "No date is visible on the photo. It is not mandatory for this task, so nothing was flagged for it.",
     },
+    # ── time-only mode: the hour is judged, the day is not ──────────────────
+    # Three sentences for the same reason date-only has three: an admin reading
+    # two cards side by side must be able to see WHICH question each was asked,
+    # not infer it from a missing day. `{lo}`/`{hi}` here are the bare clocks —
+    # `date_prose` overrides them, because the dated form names a day this mode
+    # never compared anything to.
+    "time_ok": {
+        "uz": "Rasmdagi soat ({seen}) ruxsat etilgan {lo} — {hi} oralig'ida. Bu vazifada sana tekshirilmaydi.",
+        "uz_cyrl": "Расмдаги соат ({seen}) рухсат этилган {lo} — {hi} оралиғида. Бу вазифада сана текширилмайди.",
+        "ru": "Время на фото ({seen}) в пределах допустимого интервала {lo} — {hi}. Дата в этой задаче не проверяется.",
+        "en": "The clock on the photo ({seen}) is within the allowed {lo} — {hi}. The date is not checked for this task.",
+    },
+    "time_bad": {
+        "uz": "Rasmdagi soat ({seen}) ruxsat etilgan {lo} — {hi} oralig'idan tashqarida.",
+        "uz_cyrl": "Расмдаги соат ({seen}) рухсат этилган {lo} — {hi} оралиғидан ташқарида.",
+        "ru": "Время на фото ({seen}) вне допустимого интервала {lo} — {hi}.",
+        "en": "The clock on the photo ({seen}) is outside the allowed {lo} — {hi}.",
+    },
+    "time_none": {
+        "uz": "Rasmda olingan vaqtini ko'rsatuvchi soat topilmadi. Bu vazifada ruxsat etilgan vaqt: {lo} — {hi} (sana tekshirilmaydi).",
+        "uz_cyrl": "Расмда олинган вақтини кўрсатувчи соат топилмади. Бу вазифада рухсат этилган вақт: {lo} — {hi} (сана текширилмайди).",
+        "ru": "На фото не найдены часы, показывающие время съёмки. Допустимое время для этой задачи: {lo} — {hi} (дата не проверяется).",
+        "en": "No clock showing when the photo was taken was found. Allowed for this task: {lo} — {hi} (the date is not checked).",
+    },
     # The exemption says so IN WORDS. A card that simply omitted the date line
     # would read as "not checked yet"; one that printed the "ok" sentence would
     # claim a window was verified when nothing compared anything to it. What was
@@ -2951,7 +3089,7 @@ _DATE_PROSE = {
 
 
 def date_prose(clocks: list[dict] | None, date: str,
-               win: tuple[str, str], *, check: bool = True,
+               win: tuple[str, str], *, check: bool = True, days: bool = True,
                times: bool = True, plus: int = 0,
                shift: int | None = None) -> dict[str, str]:
     """The date verdict as a sentence per language. Derived like the flag
@@ -2959,8 +3097,15 @@ def date_prose(clocks: list[dict] | None, date: str,
     too: a sentence naming one day for a task that accepts three contradicts the
     very flag it exists to explain. `{day}` is therefore the day LIST
     (`date_days`), which with no tolerance is the single day it always was."""
-    if not check:
+    if not check or not (days or times):
         key = "not_required"
+    elif not days:
+        # Time-only: three outcomes, exactly as date-only has three — the hour
+        # was in the window, it was not, or nothing readable said what it was.
+        # Unlike date-only the third is a FLAG here (`date_flags`), so its
+        # sentence must not read as forgiveness.
+        got = clock_in_window(clocks, date, win, days=False, times=True)
+        key = "time_none" if got is None else ("time_ok" if got else "time_bad")
     elif not times:
         # Date-only: three outcomes, and "no flag" covers two of them — the day
         # matched, or nothing on the screen was dated. They must not share a
@@ -2969,8 +3114,8 @@ def date_prose(clocks: list[dict] | None, date: str,
         got = clock_in_window(clocks, date, win, times=False, plus=plus,
                               shift=shift)
         key = "day_none" if got is None else ("day_ok" if got else "day_bad")
-    elif not date_flags(clocks, date, win, check=check, times=times, plus=plus,
-                        shift=shift):
+    elif not date_flags(clocks, date, win, check=check, days=days, times=times,
+                        plus=plus, shift=shift):
         key = "ok"
     elif clock_in_window(clocks, date, win, plus=plus, shift=shift) is None:
         key = "no_date"
@@ -2987,25 +3132,57 @@ def date_prose(clocks: list[dict] | None, date: str,
     else:
         key = "date_mismatch"
     lo, hi = date_window(date, shift, win, plus)
+    if not days:
+        # The dated form names a day, and this mode compared none. Printing
+        # «2026-09-07 08:00 — 2026-09-07 10:00» under a verdict that ignored
+        # every date on the photo states a comparison that never happened.
+        lo, hi = win
     seen = clocks_text(clocks) or "—"
     return {l: t.format(seen=seen, lo=lo, hi=hi,
                         day=", ".join(date_days(date, plus, shift, win)))
             for l, t in _DATE_PROSE[key].items()}
 
 
+def expected_text(date: str, shift: int | None, win: tuple[str, str] | None,
+                  *, check: bool = True, days: bool = True, times: bool = True,
+                  plus: int = 0) -> str | None:
+    """What the verdict was MEASURED AGAINST, as one string — or None where
+    nothing was measured.
+
+    ONE definition, because three surfaces print it (the triage card, the day
+    report's verdict, the objection queue) and it has four shapes now, one per
+    mode: the dated window when both halves are judged, the accepted DAYS alone
+    in date-only, the bare CLOCKS alone in time-only, and nothing at all for an
+    exempt task. Three copies of that switch is how a card comes to name a rule
+    its own flag was not decided by — the failure `date_prose` exists to
+    prevent, one field over.
+    """
+    w = win or shift_window(shift)
+    if not check or not (days or times):
+        return None
+    if not days:
+        # No day was compared, so none is named: the dated form would state a
+        # comparison that never happened.
+        return f"{w[0]} — {w[1]}"
+    if not times:
+        return ", ".join(date_days(date, plus, shift, w))
+    lo, hi = date_window(date, shift, w, plus)
+    return f"{lo} — {hi}"
+
+
 def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     """Re-derive every written verdict's DATE flags from its stored clocks and
     the window in force now. Returns how many rows changed; commits once.
 
-    The date verdict has exactly SEVEN inputs — the clocks (frozen at review
+    The date verdict has exactly EIGHT inputs — the clocks (frozen at review
     time), the report's day, its SHIFT (which decides the date the window's own
     hours sit on, `window_offset`), the task's window, whether the task's chain
-    asks the date question at all, whether it asks about the CLOCK or only the
-    day, and the tolerance widening WHICH day counts — and this runs whenever any
-    of them can have moved: at boot, after a window edit, after a date-check,
-    time-check or tolerance edit, after a sheet Refresh or a discover (both
-    re-stamp `date` AND `shift`), and when the AI overview is opened. There is no
-    eighth input, so there is no trigger left to forget.
+    asks the date question at all, whether it asks about the DAY, whether it asks
+    about the CLOCK, and the tolerance widening WHICH day counts — and this runs
+    whenever any of them can have moved: at boot, after a window edit, after a
+    date-check, day-check, time-check or tolerance edit, after a sheet Refresh or
+    a discover (both re-stamp `date` AND `shift`), and when the AI overview is
+    opened. There is no ninth input, so there is no trigger left to forget.
 
     It also REPAIRS the first of those inputs on the way past
     (`fill_clock_dates`): a stored clock whose day/month never made it out of
@@ -3065,6 +3242,7 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
         kept = [f for f in (rev.flags or ()) if f not in _OWNED_FLAGS]
         want = set(kept) | set(date_flags(
             rev.clocks, rev.date, win, check=resolve_date_check(*levels),
+            days=resolve_day_check(*levels),
             times=resolve_time_check(*levels),
             plus=resolve_date_plus(*levels), shift=rev.shift))
         flags = [f for f in _FLAG_ORDER if f in want]

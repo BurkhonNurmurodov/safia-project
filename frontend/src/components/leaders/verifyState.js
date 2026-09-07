@@ -100,3 +100,28 @@ export const GROUP_ORDER = ["rejected", "disputed", "error", "checking", "verifi
 export function groupOf(t) {
   return taskState(t)?.key || "none";
 }
+
+/**
+ * Which RULE a verdict was measured against, as the label printed before
+ * `rev.expected`.
+ *
+ * ONE definition, because three surfaces print that value — the register's task
+ * detail, the day report and the objection queue — and it has three names now,
+ * one per mode the backend can have judged by: the allowed WINDOW (both halves
+ * judged), the required DAY (date-only, `timeCheck` false), and the allowed
+ * TIME (time-only, `dayCheck` false, where the hour is the whole rule and no
+ * day was compared). `expected` itself is already shaped per mode by
+ * `leader_ai.expected_text`; three copies of the switch that NAMES it is how one
+ * card comes to call a bare clock range «Kerakli sana».
+ *
+ * `dayCheck` is read first and defaults true, so a payload from a backend that
+ * predates time-only reads exactly as it always did.
+ *
+ * The strings live in the caller's own `T` bundle (Leaders.jsx), which is where
+ * every other word on those cards comes from.
+ */
+export function expectedLabel(rev, T) {
+  if (rev?.dayCheck === false) return T.aiExpectedTime;
+  if (rev?.timeCheck === false) return T.aiExpectedDay;
+  return T.aiExpected;
+}

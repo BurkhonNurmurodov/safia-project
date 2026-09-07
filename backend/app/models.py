@@ -1419,24 +1419,52 @@ class LeaderTaskDef(Base):
     # permanent flag nobody may act on. NULL at the two override levels below =
     # inherit; True everywhere is what the platform did before this existed.
     date_check   = Column(Boolean, nullable=False, default=True)
-    # And if it IS asked — must the CLOCK be proven too, or is the DAY enough?
-    # The third state of one three-way rule (`date_check` False dominates both):
-    #   date_check T + time_check T  the old, strict answer: a SYSTEM clock must
-    #                                be readable and inside `win_from..win_to`;
-    #   date_check T + time_check F  DATE ONLY — the day must be the report's
-    #                                day, the hour is never judged and the window
-    #                                is not a rule; a date printed ON SCREEN (an
-    #                                in-app date filter, a dated register row)
-    #                                counts, and a proof with no readable date at
-    #                                all is NOT flagged;
-    #   date_check F                 the question is not asked at all.
-    # Why the middle exists (user, 2026-08-17): most proofs here are screenshots
+    # And if it IS asked — which HALF of "when" is judged? Two booleans under
+    # `date_check`, which dominates both, giving one four-way rule:
+    #   date_check F                             the question is not asked;
+    #   day_check T + time_check T  STRICT       a SYSTEM clock must be readable
+    #                                            and inside `win_from..win_to`;
+    #   day_check T + time_check F  DATE ONLY    the day must be the report's
+    #                                            day, the hour is never judged
+    #                                            and the window is not a rule; a
+    #                                            date printed ON SCREEN (an
+    #                                            in-app date filter, a dated
+    #                                            register row) counts, and a
+    #                                            proof with no readable date at
+    #                                            all is NOT flagged;
+    #   day_check F + time_check T  TIME ONLY    the HOUR must be inside the
+    #                                            window and the day is never
+    #                                            compared — the answer for a
+    #                                            proof whose clock is a phone
+    #                                            status bar, which by
+    #                                            construction carries no date.
+    # (day_check F + time_check F judges nothing, i.e. `date_check` False said
+    # with two extra columns; the admin never offers it and `date_flags` reads
+    # it as the exemption it is.)
+    #
+    # Why DATE ONLY exists (user, 2026-08-17): most proofs here are screenshots
     # of THIS dashboard, where the day is plainly on screen but no OS clock is —
     # so strict mode answered `no_date` on honest filings, and the only escape
     # was exempting the day as well, i.e. losing the one fact the screen does
-    # prove. NULL at the two override levels below = inherit; True everywhere is
-    # what the platform did before this existed.
+    # prove. TIME ONLY (user, 2026-09-07) is the same argument from the other
+    # end: a status-bar clock proves the hour and can never prove the day, so
+    # strict mode rejected proofs whose one readable fact was the very thing the
+    # window asks about.
+    #
+    # `day_check` is a THIRD column rather than the free (date_check F,
+    # time_check T) corner of the existing pair, and that is load-bearing: the
+    # two resolve down the chain INDEPENDENTLY, so a unit that exempts the date
+    # while inheriting `time_check` True from the global level already sits in
+    # that corner and reads as exempt. Twelve supervisor rows did on the day
+    # this shipped. Reusing the corner would have re-armed the date question on
+    # every one of them, silently, as a deduction.
+    #
+    # NULL at the two override levels below = inherit; True everywhere is what
+    # the platform did before either column existed.
     time_check   = Column(Boolean, nullable=False, default=True)
+    # Must the DAY match the report's day? See `time_check` above for the whole
+    # four-way rule — these two are read together and never alone.
+    day_check    = Column(Boolean, nullable=False, default=True)
     # How many days AFTER the report day the proof's date may also be. 0 — only
     # the report day itself, which is what every task did before this existed
     # and what every task still resolves to unless an admin says otherwise.
@@ -1546,9 +1574,12 @@ class LeaderTaskSetting(Base):
     # Per-supervisor "is the date checked at all". NULL = inherit the global
     # answer; False exempts this unit's filings from the date question.
     date_check   = Column(Boolean, nullable=True)
-    # Per-supervisor "must the CLOCK be proven, or is the day enough". NULL =
-    # inherit; False = date-only for this unit (see LeaderTaskDef.time_check).
+    # Per-supervisor "must the CLOCK be proven". NULL = inherit; False with
+    # `day_check` True = date-only for this unit (see LeaderTaskDef.time_check).
     time_check   = Column(Boolean, nullable=True)
+    # Per-supervisor "must the DAY match". NULL = inherit; False with
+    # `time_check` True = time-only for this unit.
+    day_check    = Column(Boolean, nullable=True)
     # Per-supervisor tolerance: how many days after the report day the proof's
     # date may also be. NULL = inherit the global answer (see
     # LeaderTaskDef.date_plus).
@@ -1593,9 +1624,11 @@ class LeaderTaskLeaderSetting(Base):
     # Per-leader "is the date checked at all". NULL = inherit the supervisor's
     # effective answer.
     date_check   = Column(Boolean, nullable=True)
-    # Per-leader "must the CLOCK be proven, or is the day enough". NULL =
-    # inherit (see LeaderTaskDef.time_check for the three-way rule).
+    # Per-leader "must the CLOCK be proven". NULL = inherit (see
+    # LeaderTaskDef.time_check for the whole four-way rule).
     time_check   = Column(Boolean, nullable=True)
+    # Per-leader "must the DAY match". NULL = inherit.
+    day_check    = Column(Boolean, nullable=True)
     # Per-leader tolerance in days after the report day. NULL = inherit the
     # supervisor's effective answer (see LeaderTaskDef.date_plus).
     date_plus    = Column(Integer, nullable=True)

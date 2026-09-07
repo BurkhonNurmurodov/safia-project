@@ -42,11 +42,12 @@ from app.services import (
     leader_reports)
 from app.services.leader_tasks import (
     CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
-    catalog_floor, config_ownership, create_task,
+    catalog_floor, clean_day, config_ownership, create_task,
     effective_date, effective_leader_config, effective_settings, ensure_task_defs,
     expired_through, leader_overrides, reorder_tasks, set_archived,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
-    per_task_units, revert_audit, set_criteria, set_date_check, set_deadline,
+    per_task_units, revert_audit, set_criteria, set_date_check, set_day_check,
+    set_deadline,
     set_description, set_proof_kind, set_unit_settings, unit_bot_from_map,
     set_time_check, set_window, window_shift_problems,
     write_change,
@@ -215,13 +216,14 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 # on /leaders «Vazifalar»); blank = none, the tab shows the
                 # day's filing deadline instead.
                 "deadline": td.deadline or "",
-                # Global "is the date checked at all" and "is the CLOCK checked
-                # too". Never null at this level — it is the floor of the chain
-                # (startup.add_leader_task_date_check / _time_check fill them),
-                # so the UI shows a plain three-mode pick here and a fourth
-                # "inherit" state at the levels below.
+                # Global "is the date checked at all", and which HALF is
+                # checked. Never null at this level — it is the floor of the
+                # chain (startup.add_leader_task_date_check / _time_check /
+                # _day_check fill them), so the UI shows a plain four-mode pick
+                # here and a fifth "inherit" state at the levels below.
                 "date_check": td.date_check is not False,
                 "time_check": td.time_check is not False,
+                "day_check": td.day_check is not False,
                 # HOW the proof is collected. Never null at this level either —
                 # it is the floor of the chain — so the matrix shows a plain
                 # two-way pick here and an "inherit" state below.
@@ -296,6 +298,19 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         # resolves to per shift (so the UI can label "applies from …").
         "pending": pending_list(db),
         "next_dates": {"1": next_effective_date(1), "2": next_effective_date(2)},
+        # The day each shift is living RIGHT NOW — what `active_from` and
+        # `archived_from` are compared against (`leader_tasks.is_active`), so
+        # the sheet can say «asked» / «not yet» / «archived» off the SERVER's
+        # answer. Never the browser clock: shift 2's night belongs to the date
+        # its 17:00 boundary opened, so at 10:00 the two shifts are living two
+        # different dates and neither of them is necessarily today. Deriving
+        # this in the page is how the 26-Aug class of bug gets in — the reader
+        # would be shown a floor judged by a calendar the platform does not use.
+        "effective_dates": {"1": effective_date(1), "2": effective_date(2)},
+        # The floor every catalog write lands on (create, archive, and the
+        # activation a restore is raised to), so the UI states one date and the
+        # endpoint enforces the same one.
+        "catalog_floor": catalog_floor(),
     }
 
 
@@ -576,7 +591,15 @@ def post_task(body: NewTaskIn, db: Session = Depends(get_db),
         if known != set(lead_ids):
             raise HTTPException(status_code=400, detail="unknown_leader")
     floor = catalog_floor()
-    day = (body.active_from or "").strip() or None
+    # SHAPE first, then the floor. `day < floor` is a string comparison, and a
+    # string comparison answers something for any two strings — "tomorrow" and
+    # "2026-13-45" both sort after the floor and were both stored as a task's
+    # activation date, which is a floor `is_active` can never order correctly.
+    # Same validator the archive door uses (`leader_tasks.clean_day`).
+    try:
+        day = clean_day(body.active_from)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="bad_date")
     if day is not None and day < floor:
         # Earlier than the next boundary would put the task into a night that
         # is already running — a checklist changing under the leader's hands.
@@ -588,8 +611,12 @@ def post_task(body: NewTaskIn, db: Session = Depends(get_db),
             default_min_media=body.default_min_media, active_from=day,
             manager_ids=mgr_ids, leader_ids=lead_ids,
         )
-    except ValueError:
-        raise HTTPException(status_code=400, detail="no_name")
+    except ValueError as exc:
+        # `create_task` raises for a nameless task and re-checks the date shape
+        # itself; the code it names is what the client is told.
+        raise HTTPException(
+            status_code=400,
+            detail="bad_date" if str(exc) == "bad_date" else "no_name")
     _log_cfg(task_id=td.id, level="global", task_name=td.name_uz,
              count=(len(mgr_ids) + len(lead_ids)) or None,
              extra=[("action", "created"),
@@ -615,6 +642,7 @@ def post_task_archive(body: ArchiveTaskIn, db: Session = Depends(get_db),
     if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
     was = td.archived_from or None
+    was_active = td.active_from or None
     try:
         set_archived(db, body.task_id, body.archived_from)
     except ValueError as exc:
@@ -624,9 +652,19 @@ def post_task_archive(body: ArchiveTaskIn, db: Session = Depends(get_db),
             detail="archived_from_too_early" if code == "too_early" else "bad_date")
     _log_cfg(task_id=body.task_id, level="global", task_name=td.name_uz,
              extra=[("action", "archived" if td.archived_from else "restored"),
-                    ("archived_from", td.archived_from or "")])
-    action_log.enrich(changes=[("archived_from", was, td.archived_from)])
+                    ("archived_from", td.archived_from or ""),
+                    # A restore RAISES `active_from` to the next boundary rather
+                    # than landing in the running night — recorded, because it
+                    # is a second column the press moved.
+                    ("active_from", td.active_from or "")])
+    changes = [("archived_from", was, td.archived_from)]
+    if (td.active_from or None) != was_active:
+        changes.append(("active_from", was_active, td.active_from))
+    action_log.enrich(changes=changes)
     return {"ok": True, "task_id": td.id, "archived_from": td.archived_from,
+            # The day the task is asked again — the UI states it, because a
+            # restore that says nothing reads as «back right now».
+            "active_from": td.active_from,
             "floor": catalog_floor()}
 
 
@@ -1143,16 +1181,62 @@ def put_time_check(body: TimeCheckIn, db: Session = Depends(get_db),
                             value=body.time_check)
 
 
+class DayCheckIn(BaseModel):
+    """And is the DAY judged for this task, or is the HOUR enough? The third
+    flag of the date rule, addressed and staged exactly like `DateCheckIn` —
+    global, one supervisor, one leader, or a scoped fan-out.
+
+    `day_check` is the same TRI-STATE: True compare the day to the report's,
+    False judge the HOUR alone against the window, null inherit the level above.
+    It only means anything where `date_check` is True, and it is read WITH
+    `time_check`: the pair names the mode (both True = strict, day alone =
+    date-only, hour alone = time-only).
+    """
+    task_id: int
+    day_check: bool | None = None
+    manager_id: int | None = None
+    leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.put("/admin/leader-tasks/day-check")
+def put_day_check(body: DayCheckIn, db: Session = Depends(get_db),
+                  _: dict = Depends(verify_admin)):
+    """Judge a task by the HOUR alone, or put its day back under comparison.
+
+    The answer to the proof whose only readable clock is a phone status bar:
+    that clock proves the hour and by construction can never carry a date, so
+    strict mode answered `no_date` — a rejection — on a proof whose one legible
+    fact was exactly what the window asks about. Date-only is not the escape
+    (it throws the hour away and then demands the very date the status bar
+    cannot show), and exempting the task answers nothing at all.
+
+    With it off the hour must still be inside `win_from..win_to` — this is the
+    strict rule with its unanswerable half dropped, never a relaxation of what
+    remains — and a proof carrying no readable clock is still flagged.
+
+    Applies at once and re-derives the verdicts ALREADY written from their
+    stored clocks, exactly like the window and its two sibling flags — no Gemini
+    call, no quota. Switching it off drops the `date_mismatch` flags (and, in
+    the automatic regime, the deductions they caused) from reports whose photos
+    carried a right hour on an unprovable day; switching it back on restores the
+    strict answer.
+    """
+    return _write_date_rule(db, body, setter=set_day_check, kw="day_check",
+                            value=body.day_check)
+
+
 def _write_date_rule(db: Session, body, *, setter, kw: str,
                      value: bool | None) -> dict:
-    """The four-way write both halves of the date rule share — global, one
+    """The four-way write all three flags of the date rule share — global, one
     supervisor, one leader, or a fan-out over a filtered matrix — with ONE
     re-derivation at the end.
 
-    Shared rather than copied because the two halves are read as one rule
+    Shared rather than copied because the three are read as one rule
     (`leader_ai.date_rule_for`): a fan-out that validated ids differently, or
-    skipped the single `sync_date_flags`, would leave the pair enforced on
-    different sets of rows, which is invisible until somebody's score moves.
+    skipped the single `sync_date_flags`, would leave them enforced on different
+    sets of rows, which is invisible until somebody's score moves.
     """
     td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
     if not td:
@@ -1779,11 +1863,14 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
                 LeaderTaskPhoto.day_id, LeaderTaskPhoto.task_id).filter(
                 LeaderTaskPhoto.day_id.in_(open_ids)).all():
             roll[(day_id, task_id)] = roll.get((day_id, task_id), 0) + 1
-    # Config resolution is per LEADER, not per day: a leader who stopped using
+    # Config resolution is cached per (LEADER, DAY): a leader who stopped using
     # the bot leaves one open day per date behind them, and re-resolving the
     # whole global → supervisor → leader chain for each would walk the override
-    # tables once per row.
-    cfg_cache: dict[int, dict] = {}
+    # tables once per row — but they do NOT all share a checklist. Since the
+    # catalog gained floors (2026-09-07) the active set is a function of the
+    # date, so a cache keyed on the leader alone would report a stale open night
+    # as waiting for a task that did not exist when it was filed.
+    cfg_cache: dict[tuple[int, str], dict] = {}
 
     rows = []
     for d in days:
@@ -1829,9 +1916,14 @@ def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_adm
         }
         if d.closed_at is None:
             shift = mgr.shift if mgr else None
-            if prof is not None and prof.id not in cfg_cache:
-                cfg_cache[prof.id] = effective_leader_config(db, prof, shift)
-            cfg = cfg_cache.get(d.leader_id) or {}
+            # The day's OWN date decides which tasks it was asked — "what is
+            # this unfinished checklist still waiting for" is a question about
+            # that night, not about today.
+            ck = (d.leader_id, str(d.date))
+            if prof is not None and ck not in cfg_cache:
+                cfg_cache[ck] = effective_leader_config(
+                    db, prof, shift, day=str(d.date))
+            cfg = cfg_cache.get(ck) or {}
             want = sorted(t for t, s in cfg.items() if s.get("enabled"))
             answered = {e.task_id for e in entries}
             missing = [t for t in want if t not in answered]
@@ -2300,9 +2392,14 @@ def admin_day_detail(day_id: int, db: Session = Depends(get_db),
     # Verdict shaping is the AI router's — imported here rather than re-spelled,
     # so an open day's verdict card and a closed one's come out identical.
     from app.routers.leader_ai import (
-        _as_verdict, _date_check, _task_cfg, _time_check, _window)
+        _as_verdict, _date_check, _day_check, _task_cfg, _time_check, _window)
 
-    cfg = effective_leader_config(db, prof, shift) if prof is not None else {}
+    # On the DAY's own date: an open day can be a night nobody came back to, and
+    # the checklist it was asked is the one that stood then. Resolved on "now"
+    # this view would list a task created since as unanswered — and offer an
+    # admin a reopen for a task that day never had.
+    cfg = (effective_leader_config(db, prof, shift, day=str(day.date))
+           if prof is not None else {})
     defs = {td.id: td for td in db.query(LeaderTaskDef).all()}
     names = leader_reports._name_chain(db, day.manager_id, day.leader_id, defs)
     win_cfg = _task_cfg(db, list(revs.values())) if revs else None
@@ -2323,7 +2420,8 @@ def admin_day_detail(day_id: int, db: Session = Depends(get_db),
             "media": media.get(e.id, []) if e is not None else [],
             "photo": "",
             "review": _as_verdict(rev, _window(win_cfg, rev), _date_check(win_cfg, rev),
-                                  _time_check(win_cfg, rev)) if rev is not None else None,
+                                  _time_check(win_cfg, rev), 0,
+                                  _day_check(win_cfg, rev)) if rev is not None else None,
             "queued": bool(rev is not None and rev.status == "pending"),
             "ai_rejected": False,
             "dispute": None,

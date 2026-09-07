@@ -62,6 +62,7 @@ const T_ALL = {
     shotInApp: "ilovada olingan", shotLate: "kech", shotDeferred: "keyin yuborilgan",
     aiVerdict: "AI xulosasi", window: "Ruxsat etilgan vaqt", onPhoto: "Rasmda",
     needDate: "Kerakli sana",
+    needTime: "Ruxsat etilgan soat",
     errNote: "Bu rasmni yuklab bo'lmadi. Bu texnik nosozlik — baho pasaytirilmadi.",
     adminRuled: "Admin qarori: {v}", ruledDone: "bajarilgan", ruledNot: "bajarilmagan",
     dispute: "Norozilik bildirish", disputeTitle: "AI qaroriga norozilik",
@@ -119,6 +120,7 @@ const T_ALL = {
     shotInApp: "иловада олинган", shotLate: "кеч", shotDeferred: "кейин юборилган",
     aiVerdict: "AI хулосаси", window: "Рухсат этилган вақт", onPhoto: "Расмда",
     needDate: "Керакли сана",
+    needTime: "Рухсат этилган соат",
     errNote: "Бу расмни юклаб бўлмади. Бу техник носозлик — баҳо пасайтирилмади.",
     adminRuled: "Админ қарори: {v}", ruledDone: "бажарилган", ruledNot: "бажарилмаган",
     dispute: "Норозилик билдириш", disputeTitle: "AI қарорига норозилик",
@@ -176,6 +178,7 @@ const T_ALL = {
     shotInApp: "снято в приложении", shotLate: "поздно", shotDeferred: "отправлено позже",
     aiVerdict: "Заключение ИИ", window: "Допустимое время", onPhoto: "На фото",
     needDate: "Нужная дата",
+    needTime: "Допустимый час съёмки",
     errNote: "Это фото не удалось загрузить. Это техническая ошибка — оценка не снижена.",
     adminRuled: "Решение админа: {v}", ruledDone: "выполнено", ruledNot: "не выполнено",
     dispute: "Возразить", disputeTitle: "Возражение на решение ИИ",
@@ -233,6 +236,7 @@ const T_ALL = {
     shotInApp: "taken in the app", shotLate: "late", shotDeferred: "sent later",
     aiVerdict: "AI verdict", window: "Allowed window", onPhoto: "On the photo",
     needDate: "Required date",
+    needTime: "Allowed clock time",
     errNote: "This photo could not be fetched. That is a technical failure — nothing was deducted.",
     adminRuled: "Admin ruling: {v}", ruledDone: "done", ruledNot: "not done",
     dispute: "Object", disputeTitle: "Object to the AI ruling",
@@ -441,11 +445,14 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
                     </p>
                   )}
                   {/* Hours when the hours were the rule, the required DAY when
-                      the task is judged by the day alone — the leader must be
-                      able to read which rule they were measured by. */}
+                      the task is judged by the day alone, and the bare CLOCK
+                      when only the hour was judged — the leader must be able to
+                      read which rule they were measured by. */}
                   <p className="text-[10px] tabular-nums mt-1 flex items-center gap-1 flex-wrap"
                     style={{ color: "var(--text-4)" }}>
-                    {rev.timeCheck === false
+                    {rev.dayCheck === false
+                      ? <><Clock size={10} />{T.needTime}: {rev.expected}</>
+                      : rev.timeCheck === false
                       ? <><CalendarCheck size={10} />{T.needDate}: {rev.expected}</>
                       : <><Clock size={10} />{T.window}: {rev.expected}</>}
                     {rev.imageDate && <> · {T.onPhoto}: {rev.imageDate}</>}

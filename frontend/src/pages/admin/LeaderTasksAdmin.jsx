@@ -1,78 +1,91 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, Calendar, Camera, CheckCircle, ChevronDown, ChevronRight,
-  Clock, GraduationCap, Grid3x3, History, ImagePlus, ListChecks, Radio, RotateCcw,
-  Trash2, Type, UserCog, Users, X,
+  AlertTriangle, Archive, ArchiveRestore, ArrowDown, ArrowUp, Calendar,
+  Grid3x3, History, ImagePlus, Layers, ListChecks, ListOrdered, Plus,
+  RotateCcw, Trash2, Type, UserCog, Users, X,
 } from "lucide-react";
 import Modal from "../../components/ui/Modal";
 import { ProxyPhoto } from "../../components/leaders/ProofPhoto";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
-import Toast, { useToast } from "../../components/ui/Toast";
+import { useToast } from "../../components/ui/Toast";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import TimeField from "../../components/ui/TimeField";
+import LangTextInput from "../../components/ui/LangTextInput";
+import SearchInput from "../../components/ui/SearchInput";
 import DateRangePicker from "../../components/ui/DateRangePicker";
-import { FilterPanel, OptsFilter } from "../../components/ui/ColumnFilter";
+import Pagination from "../../components/ui/Pagination";
+import { FilterPanel, OptsFilter, PickFilter } from "../../components/ui/ColumnFilter";
 import { SectionHead } from "../../components/ui/DataTable";
-import { SkeletonBlock, SkeletonMatrix } from "../../components/ui/Skeleton";
+import { SkeletonBlock, SkeletonTable } from "../../components/ui/Skeleton";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import CriteriaTextsModal from "./CriteriaTextsModal";
 
-const C_ON = "#22c55e", C_OFF = "#94a3b8", C_WARN = "#eab308", C_BAD = "#ef4444";
+const C_WARN = "#eab308", C_BAD = "#ef4444";
 const LANGS = ["uz", "uz_cyrl", "ru", "en"];
-// The date rule as ONE value in the UI and TWO booleans on the wire — the same
-// three modes the backend resolves (leader_ai.resolve_date_check +
-// resolve_time_check). Read `date_check` FIRST: False answers the hour question
-// too, so a row carrying `time_check` under an exempt date is not a fourth mode,
-// just a leftover, and must still read as «off».
+// The date rule as ONE value in the UI and THREE booleans on the wire — the
+// same four modes the backend resolves (leader_ai.resolve_date_check +
+// resolve_day_check + resolve_time_check). Read `date_check` FIRST: False
+// answers both halves too, so a row carrying either of them under an exempt
+// date is not a mode, just a leftover, and must still read as «off».
+//
+// `day_check` is a THIRD column and not the free (date_check F, time_check T)
+// corner of the old pair, because the two resolve down the chain
+// INDEPENDENTLY: a unit that exempts the date while inheriting `time_check`
+// True from the global level already sits in that corner and means «off».
+// Twelve did on the day «faqat vaqt» shipped.
 const dcMode = (v) => (v?.date_check === false ? "off"
+  : v?.day_check === false ? "time"
   : v?.time_check === false ? "day" : "full");
-const dcModeValues = (m) => ({ date_check: m !== "off", time_check: m === "full" });
-const LANG_LABELS = { uz: "UZ", uz_cyrl: "УЗ", ru: "РУ", en: "EN" };
-const OV_RING = "inset 0 0 0 2px rgba(255,255,255,0.75)";
+// «off» leaves both halves at the strict answer: they are moot while the date
+// question is not asked, and turning it back on should land where it always
+// landed rather than on whichever half was last unticked.
+const dcModeValues = (m) => ({
+  date_check: m !== "off", day_check: m !== "time", time_check: m !== "day",
+});
 
-/**
- * A disabled cell used to fade the WHOLE button to 0.45 opacity — white bold
- * text on #94a3b8 is already under AA at full strength, and at 45% over the card
- * it was effectively invisible (and nearly gone in light theme). Keep the grey
- * solid, switch the ink to dark, and add a non-colour cue so the on/off
- * distinction survives colourblindness and both themes.
- */
-function cellStyle(c) {
-  return c.enabled
-    ? { background: C_ON, color: "#fff" }
-    : { background: C_OFF, color: "#1f2937", textDecoration: "line-through" };
-}
-
-/** min_media had zero visual encoding — two equal-weight cells with different
- *  photo requirements looked identical without opening each modal. */
-function MediaDots({ n }) {
-  return (
-    <span className="absolute top-0.5 right-0.5 flex gap-[1px]" aria-hidden>
-      {Array.from({ length: Math.min(n, 3) }).map((_, i) => (
-        <span key={i} className="block w-[3px] h-[3px] rounded-full" style={{ background: "rgba(255,255,255,0.85)" }} />
-      ))}
-    </span>
-  );
-}
 const inputCls = "w-full px-3 py-2 rounded-xl text-sm outline-none";
 const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" };
 
-/** A cell whose proofs are SHOT in the app rather than uploaded. The matrix is
- *  read as a grid of weights, so the one thing that changes where the leader
- *  answers has to be visible without opening anything. */
-function CamMark() {
-  return (
-    <Camera size={9} strokeWidth={2.6}
-      className="absolute left-1 top-1 pointer-events-none"
-      style={{ color: "var(--brand)" }} />
-  );
-}
+// ── the vocabulary of a RULE ────────────────────────────────────────────────
+// Every column of the sheet, and the payload field names it is MADE of. `own`
+// (services/leader_tasks.own_fields) names those fields, so a column that is a
+// PAIR — the window's two ends, the date rule's two booleans — carries both
+// halves and reads as "own" when either of them is. Widths are the sheet's
+// colgroup, in the order the operator reads them.
+const COLS = [
+  { k: "enabled",  keys: ["enabled"],                  w: 96 },
+  { k: "weight",   keys: ["weight"],                   w: 74 },
+  { k: "photos",   keys: ["min_media"],                w: 68 },
+  { k: "proof",    keys: ["proof_kind"],               w: 100 },
+  { k: "window",   keys: ["win_from", "win_to"],       w: 132 },
+  { k: "dateRule", keys: ["date_check", "time_check", "day_check"], w: 116 },
+  { k: "deadline", keys: ["deadline"],                 w: 92 },
+  { k: "desc",     keys: ["description"],              w: 170 },
+  { k: "crit",     keys: ["criteria"],                 w: 170 },
+  { k: "ex",       keys: [],                           w: 78 },
+];
+// The register also lists a renamed task, which is not a sheet column of its
+// own (the name is the row's own heading there).
+const REG_FIELDS = [...COLS.filter((c) => c.keys.length).map((c) => c.k), "name"];
+// Every field the chain resolves, in the payload's own spelling. Used to build
+// the shift TEMPLATE — the value most of a shift's units carry — which is the
+// one level in the strip the data model does not have a table for.
+const FIELD_KEYS = [
+  "enabled", "weight", "min_media", "proof_kind", "win_from", "win_to",
+  "date_check", "time_check", "day_check", "deadline", "description", "criteria",
+  "names",
+];
+const eq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const clip = (s, n = 46) => {
+  const v = String(s || "");
+  return v.length > n ? `${v.slice(0, n)}…` : v;
+};
 
 // Apply now vs stage to the target's next shift day.
 function WhenBar({ when, setWhen, nextDate, t }) {
@@ -147,49 +160,128 @@ function TaskExamples({ ids, own, fromLabel, scopeNote, busy, disabled, onUpload
   );
 }
 
-// «Liderlar monitoringi» admin tab: the supervisors × tasks config matrix
-// driving the bot's /tasks checklist. Direct inline editing (click a cell);
-// each supervisor row expands into its leaders (sparse overrides, ringed).
-// Edits apply now or stage to the next day; a column header renames the task
-// globally or pushes values to all supervisors; History/Revert + a scheduled-
-// changes panel sit above the grid.
+// One rule cell of the sheet: the VALUE in force plus an ORIGIN tag naming the
+// level that decided it. Own = brand tint + its own tag; inherited = muted with
+// the source's tag. Never colour alone — the tag is a word, so a cell reads
+// correctly in greyscale and to a colourblind reader.
+function RuleCell({ value, own, bad, off, tag, dev, mix, title, onClick }) {
+  return (
+    <td style={{ padding: 0, verticalAlign: "top" }}>
+      <button type="button" onClick={onClick} title={title}
+        className="block w-full text-left px-2.5 py-2 transition-colors hover:bg-[var(--brand-bg)]"
+        style={{
+          borderLeft: `2px solid ${own ? "var(--brand)" : "transparent"}`,
+          background: own ? "var(--brand-bg)" : "transparent",
+        }}>
+        <span className="block text-[12px] leading-tight"
+          style={{
+            color: bad ? C_BAD : own ? "var(--text-1)" : "var(--text-2)",
+            fontWeight: bad || own ? 600 : 400,
+            ...(off ? { color: "#94a3b8", textDecoration: "line-through" } : {}),
+          }}>
+          {value}{bad ? " ⚠" : ""}
+        </span>
+        {/* The origin tag is the label this whole page hangs on, so it is
+            legible or it is nothing: 9px on `--text-4` measured 2.41:1 in the
+            dark theme and 2.26:1 in the light one, both far under AA. 10px on
+            `--text-3` is the smallest type this design system uses anywhere
+            else, and the two status tags carry their hue on the FILL and the
+            BORDER with the word itself in `--text-1`. */}
+        <span className="inline-flex items-center gap-1 mt-1">
+          <span className="inline-block px-1 rounded text-[10px] font-bold uppercase tracking-wide"
+            style={bad
+              ? { background: "rgba(239,68,68,0.14)", color: "var(--text-1)", border: "1px solid rgba(239,68,68,0.40)" }
+              : own
+                ? { background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }
+                : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
+            {tag}
+          </span>
+          {dev > 0 && (
+            <span className="inline-block px-1.5 rounded-full text-[10px] font-bold"
+              style={{ background: "var(--bg-accent)", color: "var(--text-3)" }}>{dev}</span>
+          )}
+          {mix && (
+            <span className="inline-block px-1 rounded text-[10px] font-bold"
+              style={{ background: "rgba(234,179,8,0.16)", color: "var(--text-1)", border: "1px dashed rgba(234,179,8,0.55)" }}>
+              {mix}
+            </span>
+          )}
+        </span>
+      </button>
+    </td>
+  );
+}
+
+// One KPI tile. A button, because every one of them narrows the register — a
+// number nobody can open is a number nobody can act on.
+function Tile({ n, label, sub, color, onClick }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="rounded-2xl px-3.5 py-2.5 text-left w-full transition-colors hover:border-[var(--brand-border)]"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="text-xl font-bold leading-none tabular-nums" style={{ color: "var(--text-1)" }}>{n}</div>
+      <div className="flex items-center gap-1.5 mt-1.5">
+        <span className="w-[7px] h-[7px] rounded-full flex-shrink-0" style={{ background: color }} />
+        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{label}</span>
+      </div>
+      <div className="text-[11px] mt-1" style={{ color: "var(--text-4)" }}>{sub}</div>
+    </button>
+  );
+}
+
+// The leader-checklist CONFIGURATION: two tabs over one config.
+//
+// «Vazifalar» is a SHEET — the tasks down, the rules across, read at ONE
+// inheritance level chosen by the level strip (Standart · Smena 1 · Smena 2 ·
+// a picked brigadir · a picked lider). Every cell prints its value AND the
+// level that decided it, so "where is this coming from" never needs a modal.
+// «Istisnolar» is the flat register of everything that differs from its parent.
+//
+// The 22×13 matrix it replaces could show one number per (unit, task) and
+// nothing about the eight other rules on that cell, which is why the two
+// incidents this page has caused — a camera setting written globally, a
+// shift-1 window inherited by a shift-2 unit — were both invisible on it.
 export default function LeaderTasksAdmin() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
-  const [toast, setToast] = useState(false);
-  const toast2 = useToast();
+  const toast = useToast();
+
   const [chan, setChan] = useState("");
   const [chanErr, setChanErr] = useState("");
-  const [cell, setCell] = useState(null);
-  const [lcell, setLcell] = useState(null);
-  const [col, setCol] = useState(null);
-  // Expanded supervisor rows, stored as an array (localStorage can't hold a
-  // Set) and exposed as a Set.
-  const [openArr, setOpenArr] = usePersistentState("ltasks_open_supervisors", []);
-  const open = useMemo(() => new Set(openArr), [openArr]);
-  const setOpen = (next) =>
-    setOpenArr((prev) => Array.from(typeof next === "function" ? next(new Set(prev)) : next));
-  // Matrix scope. Shift is single-valued (there are two of them); brigadir and
-  // leader are checkbox sets. These are not decoration: a column-header push
-  // writes exactly the rows they leave on screen.
-  const [fShift, setFShift] = usePersistentState("ltasks_f_shift", 0);
-  const [fMgrs, setFMgrs] = usePersistentState("ltasks_f_mgrs", []);
-  const [fLeads, setFLeads] = usePersistentState("ltasks_f_leads", []);
   const [confirm, setConfirm] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [showExc, setShowExc] = useState(false);
-  // The bulk text editor: open flag, live save progress, and the failure it
-  // stays open to show. Its drafts live inside the modal — nothing is written
-  // until Save, so an abandoned open costs nothing.
   const [showTexts, setShowTexts] = useState(false);
   const [txtSave, setTxtSave] = useState(null);
   const [txtErr, setTxtErr] = useState("");
-  // The open unit modal — { mid, per_task_close }. Settings that belong to a
-  // brigadir's UNIT rather than to any one task live here, reached by tapping
-  // the brigadir's name, because the matrix's cells are all (unit × task) and
-  // there is nowhere else a unit-wide setting could honestly sit.
+  // The open rule editor — { tid, lvl, …draft }. ONE modal serves every level;
+  // `lvl` is a snapshot of the level it was opened at, so a strip press behind
+  // it can never move where the open form writes.
+  const [edit, setEdit] = useState(null);
+  // The catalog surfaces: create, archive-from-a-date, reorder.
+  const [addTask, setAddTask] = useState(null);
+  const [arch, setArch] = useState(null);
+  const [order, setOrder] = useState(null);
+  // Per-unit settings (per-cell filing) — reached from the level bar while a
+  // brigadir is selected, which is the only place a unit-wide switch can
+  // honestly sit now that the rows are TASKS.
   const [unit, setUnit] = useState(null);
+
+  // ── where the page is pointed ────────────────────────────────────────────
+  // Stored as primitives, never as an object: `ltasks_f_shift` keeps its old
+  // key and its old shape (0 = no shift, 1 / 2 = that one), so a browser that
+  // has used this page before opens on the shift it was left on.
+  const [tab, setTab] = usePersistentState("ltasks_tab", "sheet");
+  const [lvlKind, setLvlKind] = usePersistentState("ltasks_lvl", "std");
+  const [fShift, setFShift] = usePersistentState("ltasks_f_shift", 0);
+  const [pickU, setPickU] = usePersistentState("ltasks_pick_mgr", null);
+  const [pickL, setPickL] = usePersistentState("ltasks_pick_lead", null);
+  // Register filters.
+  const [regQ, setRegQ] = useState("");
+  const [regLvl, setRegLvl] = usePersistentState("ltasks_reg_lvl", "all");
+  const [regFld, setRegFld] = usePersistentState("ltasks_reg_fld", "all");
+  const [regBad, setRegBad] = useState(false);
+  const [regPage, setRegPage] = useState(1);
 
   const { data, isLoading } = useQuery({
     queryKey: ["ltasks-config"],
@@ -202,38 +294,50 @@ export default function LeaderTasksAdmin() {
   });
   useEffect(() => { setChan(data?.channel?.chat_id ?? ""); }, [data]);
 
-  const ping = () => { setToast(true); setTimeout(() => setToast(false), 3000); };
+  const ping = () => toast.success(t("admin.ltasks.saved"));
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["ltasks-config"] });
     qc.invalidateQueries({ queryKey: ["ltasks-audit"] });
   };
   // Telegram's Mini App WebView blocks window.alert on iOS, so on the primary
   // phone platform a failed save produced NOTHING — the modal stayed open, the
-  // spinner stopped, and the admin had no idea whether the edit applied. The
-  // channel card already did this right with an inline error; the matrix
-  // mutations were the inconsistent ones.
+  // spinner stopped, and the admin had no idea whether the edit applied.
   const onErr = (e) => {
     const d = e?.response?.data?.detail;
-    if (d === "camera_needs_a_unit") { toast2.error(t("admin.ltasks.proofNeedsUnit")); return; }
+    if (d === "camera_needs_a_unit") { toast.error(t("admin.ltasks.proofNeedsUnit")); return; }
     // A window a leader on that shift could never work — refused rather than
     // stored. The message NAMES the shift and its hours, because "outside the
     // shift" is unreadable without them: «08:00 — 10:00» looks like an ordinary
     // morning until you know the unit works 17:00 → 09:00.
     if (typeof d === "string" && d.startsWith("window_outside_shift")) {
       const [, sh, win, hours] = d.split("|");
-      toast2.error(t("admin.ltasks.winOutsideShift")
+      toast.error(t("admin.ltasks.winOutsideShift")
         .replace("{win}", win || "").replace("{shift}", sh || "?")
         .replace("{hours}", hours || ""));
       return;
     }
-    toast2.error(Array.isArray(d) ? d.map((x) => x?.msg || String(x)).join("; ")
+    toast.error(Array.isArray(d) ? d.map((x) => x?.msg || String(x)).join("; ")
       : (typeof d === "string" && d) || t("admin.ltasks.fail"));
   };
+  // The catalog endpoints are newer than this page's oldest deployable
+  // backend, so a 404/405 there means "the server has not been restarted yet",
+  // not "your request was wrong" — and saying the wrong one of those sends an
+  // admin looking for a mistake they did not make.
+  const onCatalogErr = (e) => {
+    const s = e?.response?.status;
+    const d = e?.response?.data?.detail;
+    if (s === 404 || s === 405) { toast.error(t("admin.ltasks.catalogUnavailable")); return; }
+    if (d === "active_from_too_early" || d === "archived_from_too_early") {
+      toast.error(t("admin.ltasks.archTooEarly")); return;
+    }
+    if (d === "no_name") { toast.error(t("admin.ltasks.addNameReq")); return; }
+    onErr(e);
+  };
 
-  const cellMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/cell", b), onSuccess: () => { invalidate(); setCell(null); ping(); }, onError: onErr });
-  const leaderMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/leader-cell", b), onSuccess: () => { invalidate(); setLcell(null); setConfirm(null); ping(); }, onError: onErr });
+  const cellMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/cell", b), onSuccess: () => { invalidate(); setEdit(null); ping(); }, onError: onErr });
+  const leaderMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/leader-cell", b), onSuccess: () => { invalidate(); setEdit(null); setConfirm(null); ping(); }, onError: onErr });
   const taskMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/task", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
-  const applyMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/apply-all", b), onSuccess: () => { invalidate(); setCol(null); setConfirm(null); ping(); }, onError: onErr });
+  const applyMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/apply-all", b), onSuccess: () => { invalidate(); setEdit(null); setConfirm(null); ping(); }, onError: onErr });
   const cancelMut = useMutation({ mutationFn: (b) => api.post("/admin/leader-tasks/pending/cancel", b), onSuccess: () => { invalidate(); setConfirm(null); ping(); }, onError: onErr });
   const revertMut = useMutation({ mutationFn: (b) => api.post("/admin/leader-tasks/revert", b), onSuccess: () => { invalidate(); setConfirm(null); ping(); }, onError: onErr });
   const chanMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/channel", b), onSuccess: () => { setChanErr(""); invalidate(); ping(); }, onError: (e) => setChanErr(e?.response?.data?.detail || t("admin.ltasks.channelFail")) });
@@ -248,12 +352,11 @@ export default function LeaderTasksAdmin() {
   const descMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/description", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
   // The proof-photo window rides the same instant path as the criteria — but
   // unlike them it also re-judges verdicts already written, from the clock each
-  // one stored, so an edit fixes the existing queue and not just future
-  // reports. Nothing to stage: the bot reads the live value too.
+  // one stored, so an edit fixes the existing queue and not just future reports.
   const winMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/window", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
-  // The submission deadline is informational (shown to leaders on the /leaders
-  // «Vazifalar» tab, judged by nothing), so it applies at once like the window
-  // and has nothing to re-derive.
+  // The submission deadline: for a per-task unit this is the hour the task
+  // CLOSES itself and goes to the reviewer, so it applies at once like the
+  // window and has nothing to re-derive.
   const dlMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/deadline", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
   // "Is the photo's date judged at all" — instant AND re-judging, exactly like
   // the window: unticking it clears the date flags off reports already checked
@@ -265,43 +368,58 @@ export default function LeaderTasksAdmin() {
   // — both materialise the SAME override row, and two concurrent inserts race
   // its unique key.
   const tcMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/time-check", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
+  // And the mirror mode: judge the HOUR, never the day — for a proof whose only
+  // clock is a phone status bar, which by construction carries no date. Third
+  // endpoint, same row, so it is written after the other two and never beside
+  // them.
+  const dayMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/day-check", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
   // WHERE the leader answers this task — the bot chat, or the mini-app camera.
   // Instant and never staged, unlike enabled/photos/weight: this is the one
   // field that changes what the leader is asked to DO, and a staged version
   // would leave the bot offering an upload for a task whose proofs are supposed
-  // to be shot in the app for a whole shift. Nothing to re-judge: photos
-  // already collected keep the clocks they were judged by.
+  // to be shot in the app for a whole shift.
   const pkMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/proof-kind", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
-  // Both unit settings are properties of the UNIT, so they ride one endpoint
-  // addressed by supervisor alone — no task id, no level that could mean
-  // "everybody". ONE request writes both, because they are one DB row: split in
-  // two, a unit that has never been edited gets two concurrent INSERTs and one
-  // of them dies on the primary key while the modal says «saved».
-  // Opening a rehearsal window takes the day's already-queued proofs back out
-  // of the AI queue, so the press says how many — a silent drop of work the
-  // admin can see queued on the strip reads as the strip being wrong.
-  // Per-cell filing has its OWN mutation and its own endpoint: it takes a
-  // LIST, so this one row and a future bulk press are one call and one
-  // transaction — two parallel single writes would race the unit row's key.
+  // Per-cell filing has its OWN endpoint and takes a LIST, so this one row and
+  // a future bulk press are one call and one transaction — two parallel single
+  // writes would race the unit row's key.
   const cellFromMut = useMutation({
     mutationFn: (b) => api.put("/admin/leader-tasks/cell-from", b).then((r) => r.data),
     onSuccess: () => { invalidate(); setUnit(null); ping(); },
     onError: onErr,
   });
-  const ptMut = useMutation({
-    mutationFn: (b) => api.put("/admin/leader-tasks/unit", b).then((r) => r.data),
+  // ── the catalog ─────────────────────────────────────────────────────────
+  const addMut = useMutation({
+    mutationFn: (b) => api.post("/admin/leader-tasks/task", b).then((r) => r.data),
     onSuccess: (d) => {
-      invalidate(); setUnit(null);
-      if (d?.dropped) toast2.success(t("admin.ltasks.botFromDropped").replace("{n}", d.dropped));
-      else ping();
+      invalidate(); setAddTask(null); setConfirm(null);
+      toast.success(t("admin.ltasks.addDone").replace("{n}", d?.task_id ?? "")
+        .replace("{date}", d?.active_from || ""));
     },
-    onError: onErr,
+    onError: onCatalogErr,
+  });
+  const archMut = useMutation({
+    mutationFn: (b) => api.post("/admin/leader-tasks/task/archive", b),
+    onSuccess: () => { invalidate(); setArch(null); setConfirm(null); ping(); },
+    onError: (e) => {
+      // A refusal has to stay on the dialog that caused it: a toast behind a
+      // standing confirm is the message an admin never reads.
+      const d = e?.response?.data?.detail;
+      if (d === "archived_from_too_early") {
+        setConfirm((c) => (c ? { ...c, error: t("admin.ltasks.archTooEarly") } : c));
+        return;
+      }
+      onCatalogErr(e);
+    },
+  });
+  const orderMut = useMutation({
+    mutationFn: (b) => api.put("/admin/leader-tasks/task/order", b),
+    onSuccess: () => { invalidate(); setOrder(null); ping(); },
+    onError: onCatalogErr,
   });
   // Example proof photos live beside the criteria and are SCOPED like it: the
   // ids ride along so the photo lands on the same rows the text does. Sending
-  // neither list writes the global level, which is what an unfiltered column
-  // modal means. Instant, like the criteria; ids come from the live config so
-  // an upload or delete re-renders the strip through the same invalidate.
+  // neither list writes the global level, which is what the Standart level
+  // means. Instant, like the criteria.
   const exAddMut = useMutation({
     mutationFn: ({ taskId, file, manager_ids, leader_ids, level }) => {
       const fd = new FormData();
@@ -319,12 +437,12 @@ export default function LeaderTasksAdmin() {
     onSuccess: () => { invalidate(); ping(); },
     onError: (e) => {
       const d = e?.response?.data?.detail;
-      toast2.error(d === "examples_full" ? t("admin.ltasks.examplesFull")
+      toast.error(d === "examples_full" ? t("admin.ltasks.examplesFull")
         : d === "examples_too_many_targets" ? t("admin.ltasks.examplesTooMany")
           : d === "no_targets" ? t("admin.ltasks.examplesNoTargets")
-          : d === "photo_too_large" ? t("profile.photoTooLarge")
-            : d === "invalid_image" ? t("profile.photoInvalid")
-              : (typeof d === "string" && d) || t("admin.ltasks.fail"));
+            : d === "photo_too_large" ? t("profile.photoTooLarge")
+              : d === "invalid_image" ? t("profile.photoInvalid")
+                : (typeof d === "string" && d) || t("admin.ltasks.fail"));
     },
   });
   const exDelMut = useMutation({
@@ -338,7 +456,7 @@ export default function LeaderTasksAdmin() {
     },
   });
 
-  const tasks = data?.tasks ?? [];
+  const tasksRaw = data?.tasks ?? [];
   const managers = data?.managers ?? [];
   const settings = data?.settings ?? {};
   const leaders = data?.leaders ?? [];
@@ -350,6 +468,92 @@ export default function LeaderTasksAdmin() {
   const pending = data?.pending ?? [];
   const nextDates = data?.next_dates ?? {};
   const nextForShift = (shift) => nextDates[String(shift === 2 ? 2 : 1)] || "";
+  // The day happening RIGHT NOW on each shift — `leader_tasks.effective_date`,
+  // which is the ONE thing `is_active` compares a catalog floor against. Sent
+  // rather than computed here, and NEVER `new Date()`: a night belongs to the
+  // date its 17:00 boundary opened, and a browser-clock comparison is exactly
+  // how 26 Aug closed shift-2 tasks before they had opened.
+  const effDates = data?.effective_dates ?? null;
+  // Which fields each level DECIDES, computed by the backend against the
+  // parent's RESOLVED value — never re-derived here from row existence, which
+  // is what would paint the whole sheet as overridden (the supervisor table is
+  // dense: a side-field write materialises the whole row).
+  const ownMap = data?.own ?? {};
+  const ownLeadMap = data?.own_leader ?? {};
+  // Windows that cannot be worked on the shift they land on. Judged by
+  // `leader_ai.window_fits_shift` server-side; an older backend serves no key
+  // at all, and then the page says nothing rather than guessing.
+  const problems = Array.isArray(data?.problems) ? data.problems : null;
+  // The earliest day a catalog change may take effect — the LATER of the two
+  // shifts' next effective dates, exactly as `leader_tasks.catalog_floor`
+  // composes it out of the same two published dates.
+  const floor = useMemo(() => {
+    const a = nextDates["1"] || "", b = nextDates["2"] || "";
+    return a > b ? a : b;
+  }, [nextDates]);
+
+  // ── the two catalog floors are DATES, not flags ─────────────────────────
+  // `active_from` and `archived_from` are hard floors compared against the
+  // SHIFT's own effective date (`leader_tasks.is_active`), so an archive
+  // SCHEDULED for next week must move nothing today: the backend still asks
+  // the task, still scores it, and still expects the unit to add up to 100%.
+  // Reading them as booleans took the weight out of the sum, the row out of
+  // the tile count and greyed the row weeks before any of that was true — and
+  // did the mirror thing for a task whose `active_from` has not arrived, which
+  // it counted from the moment it was created.
+  //
+  // A blank date on either side means "no day to judge against", and the
+  // answer is then the catalog as it stands — exactly `is_active`'s own
+  // degradation, which always falls toward the behaviour the page already had.
+  const effDay = (shift) => {
+    const src = effDates || nextDates;
+    const s = Number(shift);
+    if (s === 1 || s === 2) return src[String(s)] || "";
+    // Shift-agnostic — the Standart level and the catalog tiles. The LATER of
+    // the two, the same composition `leader_tasks.catalog_floor` uses and for
+    // the same reason: one string is compared against each shift's OWN day, so
+    // the answer has to be the furthest the platform has actually got.
+    const a = src["1"] || "", b = src["2"] || "";
+    return a > b ? a : b;
+  };
+  const isArchived = (td, shift) => {
+    const hi = (td?.archived_from || "").trim();
+    const d = effDay(shift);
+    return !!hi && !!d && d >= hi;
+  };
+  const isPending = (td, shift) => {
+    const lo = (td?.active_from || "").trim();
+    const d = effDay(shift);
+    return !!lo && !!d && d < lo;
+  };
+
+  // Archived tasks stay in the sheet, MARKED — the catalog never drops them,
+  // and a task archived from a date that has not arrived is still being asked
+  // tonight. They sort last and leave the weight sum.
+  const tasks = useMemo(() => [...tasksRaw].sort((a, b) =>
+    (isArchived(a, null) ? 1 : 0) - (isArchived(b, null) ? 1 : 0)
+    || (a.sort_order ?? a.id) - (b.sort_order ?? b.id) || a.id - b.id),
+    [tasksRaw, effDates, nextDates]); // eslint-disable-line react-hooks/exhaustive-deps
+  // What is ASKED right now, shift-agnostic: the tiles, the standard weight
+  // sum and the reorder list. Neither an archived task nor one whose opening
+  // day has not come is in it.
+  const liveTasks = useMemo(() => tasks.filter(
+    (x) => !isArchived(x, null) && !isPending(x, null)),
+    [tasks, effDates, nextDates]); // eslint-disable-line react-hooks/exhaustive-deps
+  const archivedTasks = useMemo(() => tasks.filter((x) => isArchived(x, null)),
+    [tasks, effDates, nextDates]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The same set per SHIFT, because a weight sum is read per UNIT and a unit
+  // has a shift: at 10:00 shift 1's day is today and shift 2's is yesterday,
+  // so a floor landing between them is in force for one of them and not the
+  // other, and one shared list would report the wrong 100% for half the plant.
+  const liveByShift = useMemo(() => {
+    const out = {};
+    for (const s of [1, 2]) {
+      out[s] = tasks.filter((x) => !isArchived(x, s) && !isPending(x, s));
+    }
+    return out;
+  }, [tasks, effDates, nextDates]); // eslint-disable-line react-hooks/exhaustive-deps
+  const liveForShift = (shift) => liveByShift[Number(shift)] || liveTasks;
 
   const leadersByMgr = useMemo(() => {
     const out = {};
@@ -358,91 +562,589 @@ export default function LeaderTasksAdmin() {
   }, [leaders]);
   const mgrById = useMemo(() => new Map(managers.map((m) => [m.id, m])), [managers]);
   const leaderById = useMemo(() => new Map(leaders.map((p) => [p.id, p])), [leaders]);
+  const unitsOf = (shift) => managers.filter((m) => Number(m.shift) === Number(shift));
+  const shifts = useMemo(() => {
+    const s = new Set(managers.map((m) => Number(m.shift)).filter((x) => x === 1 || x === 2));
+    return [...s].sort();
+  }, [managers]);
 
-  // The filter options cascade — brigadirs follow the shift, leaders follow
-  // both — so a checkbox can never point at a row another filter has already
-  // removed. The STORED selection is reconciled against the live options
-  // rather than rewritten: narrowing the shift parks a leader's tick, clearing
-  // it brings the tick back, and no selection is silently thrown away.
-  const mgrOpts = useMemo(
-    () => managers.filter((m) => !fShift || Number(m.shift) === fShift),
-    [managers, fShift]);
-  const mgrSel = useMemo(() => {
-    const ok = new Set(mgrOpts.map((m) => m.id));
-    return fMgrs.filter((id) => ok.has(id));
-  }, [fMgrs, mgrOpts]);
-  const leaderOpts = useMemo(() => {
-    const pool = new Set(mgrSel.length ? mgrSel : mgrOpts.map((m) => m.id));
-    return leaders.filter((p) => pool.has(p.manager_id));
-  }, [leaders, mgrOpts, mgrSel]);
-  const leadSel = useMemo(() => {
-    const ok = new Set(leaderOpts.map((p) => p.id));
-    return fLeads.filter((id) => ok.has(id));
-  }, [fLeads, leaderOpts]);
+  // ── the level on screen ──────────────────────────────────────────────────
+  // Derived from the stored primitives and RECONCILED against live data: a
+  // brigadir who has left the register degrades to Standart rather than
+  // leaving the sheet pointed at nothing.
+  const level = useMemo(() => {
+    if (lvlKind === "leader" && pickL && leaderById.has(pickL)) {
+      const p = leaderById.get(pickL);
+      return { kind: "leader", id: pickL, mid: p.manager_id, shift: Number(mgrById.get(p.manager_id)?.shift) || 1 };
+    }
+    if (lvlKind === "unit" && pickU && mgrById.has(pickU)) {
+      return { kind: "unit", id: pickU, mid: pickU, shift: Number(mgrById.get(pickU)?.shift) || 1 };
+    }
+    if (lvlKind === "shift" && (fShift === 1 || fShift === 2)) {
+      return { kind: "shift", id: null, mid: null, shift: fShift };
+    }
+    return { kind: "std", id: null, mid: null, shift: null };
+  }, [lvlKind, pickU, pickL, fShift, leaderById, mgrById]);
 
-  // The visible matrix. A leader filter drops the brigadirs it empties and
-  // keeps the survivors expanded, so the table IS the list of rows a column
-  // push will write — which is the entire point of filtering before pushing.
-  const rows = useMemo(() => {
-    const pickM = new Set(mgrSel);
-    const pickL = new Set(leadSel);
-    const out = [];
-    for (const m of mgrOpts) {
-      if (pickM.size && !pickM.has(m.id)) continue;
-      const kids = leadersByMgr[m.id] || [];
-      const shown = pickL.size ? kids.filter((p) => pickL.has(p.id)) : kids;
-      if (pickL.size && !shown.length) continue;
-      out.push({ m, kids: shown });
+  // ── the chain, resolved ─────────────────────────────────────────────────
+  const tname = (task) => task?.name?.[lang] || task?.name?.uz || `T${task?.id}`;
+  const taskById = useMemo(() => new Map(tasks.map((x) => [x.id, x])), [tasks]);
+  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, description: null, win_from: null, win_to: null, deadline: null, date_check: null, time_check: null, day_check: null, proof_kind: null };
+  const getOv = (lid, tid) => leaderSettings[String(lid)]?.[String(tid)] ?? null;
+
+  // The GLOBAL level — the definition's own values, which is what every unit
+  // with no row of its own resolves to.
+  const gv = (tid) => {
+    const td = taskById.get(tid) || {};
+    return {
+      enabled: td.default_enabled !== false,
+      weight: Number(td.default_weight) || 0,
+      min_media: td.default_min_media ?? 1,
+      proof_kind: td.proof_kind || "screenshot",
+      win_from: td.win_from || "", win_to: td.win_to || "",
+      date_check: td.date_check !== false, time_check: td.time_check !== false,
+      day_check: td.day_check !== false,
+      deadline: td.deadline || "",
+      description: td.description || "",
+      criteria: td.criteria || "",
+      names: Object.fromEntries(LANGS.map((l) => [l, td.name?.[l] || ""])),
+    };
+  };
+  // A unit resolves over the global, field by field: its own value where it has
+  // one, the global otherwise. `?? ` and never `||` for the two date flags —
+  // FALSE is a decision there, and `||` would read an inherited exemption as
+  // unset every time.
+  const uv = (mid, tid) => {
+    const g = gv(tid), c = getCell(mid, tid);
+    return {
+      enabled: c.enabled, weight: Number(c.weight) || 0, min_media: Number(c.min_media) || 0,
+      proof_kind: c.proof_kind || g.proof_kind,
+      win_from: c.win_from || g.win_from, win_to: c.win_to || g.win_to,
+      date_check: c.date_check ?? g.date_check, time_check: c.time_check ?? g.time_check,
+      day_check: c.day_check ?? g.day_check,
+      deadline: c.deadline || g.deadline,
+      description: c.description || g.description,
+      criteria: c.criteria || g.criteria,
+      names: Object.fromEntries(LANGS.map((l) => [l, c.names?.[l] || g.names[l]])),
+    };
+  };
+  // And a leader over their unit — the same walk one level down.
+  const lv = (lid, mid, tid) => {
+    const b = uv(mid, tid), o = getOv(lid, tid);
+    if (!o) return b;
+    return {
+      enabled: o.enabled ?? b.enabled,
+      weight: o.weight ?? b.weight,
+      min_media: o.min_media ?? b.min_media,
+      proof_kind: o.proof_kind || b.proof_kind,
+      win_from: o.win_from || b.win_from, win_to: o.win_to || b.win_to,
+      date_check: o.date_check ?? b.date_check, time_check: o.time_check ?? b.time_check,
+      day_check: o.day_check ?? b.day_check,
+      deadline: o.deadline || b.deadline,
+      description: o.description || b.description,
+      criteria: o.criteria || b.criteria,
+      names: Object.fromEntries(LANGS.map((l) => [l, o.names?.[l] || b.names[l]])),
+    };
+  };
+
+  // ── the SHIFT template ──────────────────────────────────────────────────
+  // There is no shift level in the data model: a "shift rule" is the same value
+  // copied onto every unit of that shift (the production copy carries 132 such
+  // rows for the camera alone). So the template is DERIVED — the value most of
+  // a shift's units resolve to, when it differs from the global one — and a
+  // write at that level fans out to exactly those units. `carriers` is how many
+  // of them actually hold it, which is what makes a half-applied template
+  // visible instead of looking like a rule.
+  const shiftTpl = useMemo(() => {
+    const out = {};
+    for (const s of shifts) {
+      const units = unitsOf(s);
+      if (!units.length) continue;
+      const byTask = {};
+      for (const td of tasks) {
+        const g = gv(td.id);
+        // Resolved ONCE per unit, not once per field: this loop is 2 shifts ×
+        // 13 tasks × 12 fields × 22 units, and re-resolving inside it turned a
+        // few thousand reads into a few tens of thousands of allocations.
+        const res = units.map((m) => uv(m.id, td.id));
+        const byKey = {};
+        for (const k of FIELD_KEYS) {
+          const counts = new Map();
+          for (const r of res) {
+            const key = JSON.stringify(r[k] ?? null);
+            counts.set(key, (counts.get(key) || 0) + 1);
+          }
+          let best = null, bestN = 0;
+          for (const [key, n] of counts) if (n > bestN) { best = key; bestN = n; }
+          const v = best == null ? null : JSON.parse(best);
+          if (eq(v, g[k])) continue;         // the shift agrees with the standard
+          byKey[k] = { v, carriers: bestN, total: units.length };
+        }
+        byTask[td.id] = byKey;
+      }
+      out[s] = byTask;
     }
     return out;
-  }, [mgrOpts, mgrSel, leadSel, leadersByMgr]);
-  const leaderRows = useMemo(() => rows.reduce((a, r) => a + r.kids.length, 0), [rows]);
-  const anyFilter = fShift !== 0 || mgrSel.length > 0 || leadSel.length > 0;
-  const clearFilters = () => { setFShift(0); setFMgrs([]); setFLeads([]); };
-  // Leader ticks ⇒ write those leader rows as overrides; otherwise write the
-  // brigadir rows on screen and let their leaders keep inheriting, as always.
-  // Writing the parents while a leader filter is on would move every OTHER
-  // leader under them — exactly the rows the admin just filtered away.
-  const applyScope = useMemo(() => (
-    leadSel.length
-      ? { level: "leader", ids: rows.flatMap((r) => r.kids.map((p) => p.id)) }
-      : { level: "supervisor", ids: rows.map((r) => r.m.id) }
-  ), [rows, leadSel]);
+  }, [shifts, managers, tasks, settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tname = (task) => task.name?.[lang] || task.name?.uz || `T${task.id}`;
-  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, description: null, win_from: null, win_to: null, deadline: null, date_check: null, time_check: null, proof_kind: null };
-  // The definition of done actually in force for a cell, walking the same
-  // chain the backend reviewer walks: leader → supervisor → global.
-  const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
-  const supCrit = (mid, tid) => getCell(mid, tid).criteria || critOf(tid);
-  // The instruction the leader reads. Same chain as the criteria, and when no
-  // level holds one it falls back to the criteria — which is what every leader
-  // was already reading before the two were split, so a task is never
-  // described by nothing. The backend resolves it the same way
-  // (leader_tasks._resolve_description); this is the preview of that answer.
-  const descOf = (tid) => tasks.find((x) => x.id === tid)?.description || "";
-  const supDesc = (mid, tid) =>
-    getCell(mid, tid).description || descOf(tid) || supCrit(mid, tid);
+  const tplFor = (shift, tid, k) => shiftTpl[shift]?.[tid]?.[k] || null;
+
+  // ── who DECIDED a value ─────────────────────────────────────────────────
+  // The payload's `own` answers it for a unit and a leader; the shift's answer
+  // is the template above; Standart decides everything it is asked about,
+  // because it is the floor of the chain.
+  const ownKeys = (lvl, tid) => {
+    if (lvl.kind === "std") return new Set(FIELD_KEYS);
+    if (lvl.kind === "shift") {
+      return new Set(FIELD_KEYS.filter((k) => tplFor(lvl.shift, tid, k)));
+    }
+    if (lvl.kind === "unit") return new Set(ownMap[String(lvl.id)]?.[String(tid)] || []);
+    return new Set(ownLeadMap[String(lvl.id)]?.[String(tid)] || []);
+  };
   // The example photos in force for a row, walking the chain the backend walks
   // (services/leader_ai.example_ids_map): the NARROWEST level holding any wins
-  // WHOLE, never a union. Returns the level too, because every modal has to
-  // say whether what it is showing belongs to the row or is merely inherited.
+  // WHOLE, never a union. Returns the level too, because every modal has to say
+  // whether what it is showing belongs to the row or is merely inherited.
   const exOf = (tid, mid, lid) => {
     const lead = lid ? exLead[`${lid}:${tid}`] : null;
     if (lead?.length) return { ids: lead, level: "leader" };
     const sup = mid ? exSup[`${mid}:${tid}`] : null;
     if (sup?.length) return { ids: sup, level: "supervisor" };
-    return { ids: tasks.find((x) => x.id === tid)?.examples || [], level: "global" };
+    return { ids: taskById.get(tid)?.examples || [], level: "global" };
   };
   // Where an inherited photo came from, in the admin's own words.
-  const exFromLabel = (level) => (level === "supervisor"
+  const exFromLabel = (lv2) => (lv2 === "supervisor"
     ? t("admin.ltasks.examplesFromSup") : t("admin.ltasks.examplesFromGlobal"));
 
-  // Every definition-of-done actually STORED, flattened for the bulk editor:
-  // the global level first (what every uncustomised row inherits), then the
-  // overrides that carry their own copy. The overrides have to be here — one
-  // left in capitals is invisible from the matrix, and fixing only the global
-  // texts would leave those units still shouting at their leaders.
+  // The level a value CAME from, for the origin tag: own here, else the shift
+  // template where the unit's value is that template, else the standard.
+  const originOf = (lvl, tid, col) => {
+    const ks = col.keys;
+    const own = ownKeys(lvl, tid);
+    if (lvl.kind === "std") return "std";
+    if (lvl.kind === "shift") return ks.some((k) => own.has(k)) ? `s${lvl.shift}` : "std";
+    const mine = ks.some((k) => own.has(k));
+    if (!mine) {
+      // Not decided here. At the unit level a value can still be the SHIFT's,
+      // and at the leader level it can be either of the two above.
+      if (lvl.kind === "leader") {
+        const uOwn = new Set(ownMap[String(lvl.mid)]?.[String(tid)] || []);
+        if (ks.some((k) => uOwn.has(k))) {
+          return ks.some((k) => {
+            const tp = tplFor(lvl.shift, tid, k);
+            return tp && eq(tp.v, uv(lvl.mid, tid)[k]);
+          }) ? `s${lvl.shift}` : "unit";
+        }
+        return "std";
+      }
+      return "std";
+    }
+    if (lvl.kind === "unit") {
+      const res = uv(lvl.id, tid);
+      const fromTpl = ks.every((k) => {
+        const tp = tplFor(lvl.shift, tid, k);
+        return !own.has(k) || (tp && eq(tp.v, res[k]));
+      });
+      return fromTpl ? `s${lvl.shift}` : "unit";
+    }
+    return "leader";
+  };
+  const tagLabel = (o) => (o === "std" ? t("admin.ltasks.lvlStd")
+    : o === "unit" ? t("admin.ltasks.supervisor")
+      : o === "leader" ? t("admin.ltasks.leader")
+        : t("admin.ltasks.lvlShift").replace("{n}", o.slice(1)));
+  const levelKey = (lvl) => (lvl.kind === "std" ? "std"
+    : lvl.kind === "shift" ? `s${lvl.shift}` : lvl.kind);
+  // Whether the example photos in force at `lvl` belong to it or are inherited
+  // — the same question `TaskExamples` asks, answered for a sheet cell. The
+  // supervisor layer is what a SHIFT writes too, so a photo stored on this
+  // shift's units reads as the shift's own.
+  const exTag = (lvl, tid) => {
+    const r = exOf(tid, lvl.kind === "shift" ? unitsOf(lvl.shift)[0]?.id : lvl.mid,
+      lvl.kind === "leader" ? lvl.id : null);
+    return r.level === "leader" ? "leader"
+      : r.level === "supervisor" ? (lvl.kind === "shift" ? `s${lvl.shift}` : "unit") : "std";
+  };
+  const exIsOwn = (lvl, tid) => exTag(lvl, tid) === levelKey(lvl);
+
+  // The resolved rule at the level on screen.
+  const resolved = (lvl, tid) => (lvl.kind === "leader" ? lv(lvl.id, lvl.mid, tid)
+    : lvl.kind === "unit" ? uv(lvl.id, tid)
+      : lvl.kind === "shift" ? (() => {
+        const g = gv(tid);
+        const out = { ...g };
+        for (const k of FIELD_KEYS) { const tp = tplFor(lvl.shift, tid, k); if (tp) out[k] = tp.v; }
+        return out;
+      })() : gv(tid));
+
+  // ── the windows nobody can work ─────────────────────────────────────────
+  // Read off the payload; the fit rule itself is never re-derived here (see
+  // `leader_ai.window_fits_shift`, which is the one judge).
+  //
+  // The two lower levels are matched by IDENTITY — a problem is raised against
+  // a row, so the row's id is the whole of the question. Standart and Smena
+  // have no row, so a problem belongs to them when the unit it was raised on
+  // resolves to the window THIS level resolves to, which keeps "a unit with
+  // its own bad hours is not the shift template's problem" true.
+  //
+  // What it must NOT be is a comparison against `p.win`: the backend fills a
+  // blank end with the shift default BEFORE testing the fit, so a half-blank
+  // window («08:00 — », i.e. "from 8 until the shift ends") never matched the
+  // level's own value and the ⚠ vanished from precisely the two levels that
+  // own such a window.
+  const problemsFor = (lvl, tid) => {
+    if (!problems) return [];
+    if (lvl.kind === "unit") return problems.filter((p) => p.level === "unit" && p.manager_id === lvl.id && p.task_id === tid);
+    if (lvl.kind === "leader") return problems.filter((p) => p.level === "leader" && p.leader_id === lvl.id && p.task_id === tid);
+    const r = resolved(lvl, tid);
+    return problems.filter((p) => {
+      if (p.level !== "unit" || p.task_id !== tid) return false;
+      if (lvl.kind === "shift" && Number(p.shift) !== Number(lvl.shift)) return false;
+      const u = uv(p.manager_id, tid);
+      return (u.win_from || "") === (r.win_from || "")
+        && (u.win_to || "") === (r.win_to || "");
+    });
+  };
+
+  // ── how a value READS ───────────────────────────────────────────────────
+  const showVal = (k, r, lvl, tid) => {
+    switch (k) {
+      case "enabled": return r.enabled ? t("admin.ltasks.vAsked") : t("admin.ltasks.vNotAsked");
+      case "weight": return `${r.weight}%`;
+      case "photos": return t("admin.ltasks.vCount").replace("{n}", r.min_media);
+      case "proof": return t(r.proof_kind === "camera" ? "admin.ltasks.proofCamera" : "admin.ltasks.proofScreenshot");
+      case "window": return (r.win_from || r.win_to)
+        ? `${r.win_from || "…"}–${r.win_to || "…"}`
+        : (lvl.kind === "std" ? t("admin.ltasks.empty") : t("admin.ltasks.vWholeShift"));
+      case "dateRule": return t(`admin.ltasks.dateMode.${dcMode(r)}`);
+      case "deadline": return r.deadline || t("admin.ltasks.vWinEnd");
+      case "desc": return clip(r.description || r.criteria) || t("admin.ltasks.empty");
+      case "crit": return clip(r.criteria) || t("admin.ltasks.empty");
+      case "ex": return t("admin.ltasks.vCount")
+        .replace("{n}", exOf(tid, lvl.mid, lvl.kind === "leader" ? lvl.id : null).ids.length);
+      case "name": return r.names?.[lang] || r.names?.uz || t("admin.ltasks.empty");
+      default: return "";
+    }
+  };
+  const fullVal = (k, r, lvl, tid) => (k === "desc" ? (r.description || r.criteria || "")
+    : k === "crit" ? (r.criteria || "") : showVal(k, r, lvl, tid));
+
+  // How many levels BELOW this one carry their own value for (task, column) —
+  // the "(3)" beside a cell. Without it the standard reads as the answer while
+  // three units quietly do something else.
+  const devCount = (lvl, tid, col) => {
+    const ks = col.keys;
+    if (!ks.length) return 0;
+    let n = 0;
+    if (lvl.kind === "std") {
+      for (const s of shifts) if (ks.some((k) => tplFor(s, tid, k))) n++;
+      for (const m of managers) {
+        const own = new Set(ownMap[String(m.id)]?.[String(tid)] || []);
+        if (ks.some((k) => own.has(k))) n++;
+      }
+      for (const p of leaders) {
+        const own = new Set(ownLeadMap[String(p.id)]?.[String(tid)] || []);
+        if (ks.some((k) => own.has(k))) n++;
+      }
+      return n;
+    }
+    if (lvl.kind === "shift") {
+      for (const m of unitsOf(lvl.shift)) {
+        const own = new Set(ownMap[String(m.id)]?.[String(tid)] || []);
+        // Only where the unit does NOT simply carry the template.
+        if (ks.some((k) => own.has(k) && !(tplFor(lvl.shift, tid, k) && eq(tplFor(lvl.shift, tid, k).v, uv(m.id, tid)[k])))) n++;
+        for (const p of leadersByMgr[m.id] || []) {
+          const lo = new Set(ownLeadMap[String(p.id)]?.[String(tid)] || []);
+          if (ks.some((k) => lo.has(k))) n++;
+        }
+      }
+      return n;
+    }
+    if (lvl.kind === "unit") {
+      for (const p of leadersByMgr[lvl.id] || []) {
+        const lo = new Set(ownLeadMap[String(p.id)]?.[String(tid)] || []);
+        if (ks.some((k) => lo.has(k))) n++;
+      }
+      return n;
+    }
+    return 0;
+  };
+  // «12/14» on a shift cell: the template exists but not every unit carries it.
+  const mixMark = (lvl, tid, col) => {
+    if (lvl.kind !== "shift") return "";
+    for (const k of col.keys) {
+      const tp = tplFor(lvl.shift, tid, k);
+      if (tp && tp.carriers < tp.total) return `${tp.carriers}/${tp.total}`;
+    }
+    return "";
+  };
+
+  // ── the exception register ──────────────────────────────────────────────
+  // One row per (scope, task, rule) that differs from its parent, plus the
+  // DRIFT rows: a unit that does not carry its own shift's template. Both are
+  // exceptions; only one of them was decided on purpose, which is why they are
+  // marked differently rather than merged.
+  const regRows = useMemo(() => {
+    const rows = [];
+    // Which backend `problems` a row above has already NAMED. A window is
+    // refused per ROW, so the identity is the row it was raised on.
+    const covered = new Set();
+    const pkey = (pb) => `${pb.level}:${pb.level === "leader" ? pb.leader_id : pb.manager_id}:${pb.task_id}`;
+    const cover = (list) => { for (const pb of list) covered.add(pkey(pb)); };
+    for (const s of shifts) {
+      const units = unitsOf(s);
+      if (!units.length) continue;
+      for (const td of tasks) {
+        const g = gv(td.id);
+        const lvlS = { kind: "shift", shift: s, id: null, mid: units[0]?.id ?? null };
+        const r = resolved(lvlS, td.id);
+        for (const col of [...COLS, { k: "name", keys: ["names"] }]) {
+          if (!col.keys.length) continue;
+          const tp = col.keys.map((k) => tplFor(s, td.id, k)).find(Boolean);
+          if (!tp) continue;
+          const sProbs = col.k === "window" ? problemsFor(lvlS, td.id) : [];
+          // The template itself is the bad window, so it is named ONCE here —
+          // its `carriers` line already says how many units hold it — instead
+          // of once per unit underneath.
+          if (sProbs.length) cover(sProbs);
+          rows.push({
+            key: `s${s}-${td.id}-${col.k}`, lvl: "shift", shift: s, tid: td.id, f: col.k,
+            who: t("admin.ltasks.lvlShift").replace("{n}", s),
+            sub: t("admin.ltasks.reachMgrLead").replace("{m}", units.length)
+              .replace("{l}", units.reduce((a, m) => a + (m.leaders_n || 0), 0)),
+            v: showVal(col.k, r, lvlS, td.id),
+            p: showVal(col.k, g, { kind: "std" }, td.id), pl: t("admin.ltasks.lvlStd"),
+            carriers: tp.carriers, total: tp.total,
+            bad: sProbs.length > 0, hours: sProbs[0]?.hours,
+          });
+        }
+      }
+    }
+    for (const m of managers) {
+      const s = Number(m.shift) || 0;
+      const lvlU = { kind: "unit", id: m.id, mid: m.id, shift: s };
+      for (const td of tasks) {
+        const g = gv(td.id);
+        const own = new Set(ownMap[String(m.id)]?.[String(td.id)] || []);
+        const r = uv(m.id, td.id);
+        // The shift's own answer, resolved once per (unit, task) rather than
+        // once per column: this is the register's hottest loop (22 units × 13
+        // tasks × 11 columns) and every parent lookup lands on the same value.
+        const rShift = resolved({ kind: "shift", shift: s, id: null, mid: m.id }, td.id);
+        const probs = problemsFor(lvlU, td.id);
+        for (const col of [...COLS, { k: "name", keys: ["names"] }]) {
+          if (!col.keys.length) continue;
+          const mine = col.keys.some((k) => own.has(k));
+          const tp = col.keys.map((k) => tplFor(s, td.id, k)).find(Boolean);
+          const carriesTpl = mine && col.keys.every((k) => {
+            const p2 = tplFor(s, td.id, k);
+            return !own.has(k) || (p2 && eq(p2.v, r[k]));
+          });
+          const isWin = col.k === "window";
+          if (mine && !carriesTpl) {
+            if (isWin && probs.length) cover(probs);
+            rows.push({
+              key: `u${m.id}-${td.id}-${col.k}`, lvl: "unit", shift: s, mid: m.id, tid: td.id, f: col.k,
+              who: tl(m.name),
+              sub: t("admin.ltasks.reachLead").replace("{l}", m.leaders_n || 0),
+              v: showVal(col.k, r, lvlU, td.id),
+              p: tp ? showVal(col.k, rShift, lvlU, td.id)
+                : showVal(col.k, g, { kind: "std" }, td.id),
+              pl: tp ? t("admin.ltasks.lvlShift").replace("{n}", s) : t("admin.ltasks.lvlStd"),
+              bad: isWin && probs.length > 0,
+              hours: probs[0]?.hours,
+            });
+          } else if (!mine && tp) {
+            // Drift: the shift has a template and this unit is not on it. Its
+            // window is still a window somebody is judged by, so a refused one
+            // is marked HERE too — a drift row that stayed unmarked was a row
+            // «Faqat smena tashqarisidagilar» filtered straight back out.
+            if (isWin && probs.length) cover(probs);
+            rows.push({
+              key: `d${m.id}-${td.id}-${col.k}`, lvl: "unit", shift: s, mid: m.id, tid: td.id, f: col.k,
+              drift: true, who: tl(m.name),
+              sub: t("admin.ltasks.reachLead").replace("{l}", m.leaders_n || 0),
+              v: showVal(col.k, r, lvlU, td.id),
+              p: showVal(col.k, rShift, lvlU, td.id),
+              pl: t("admin.ltasks.lvlShift").replace("{n}", s),
+              bad: isWin && probs.length > 0,
+              hours: probs[0]?.hours,
+            });
+          }
+        }
+      }
+    }
+    for (const p of leaders) {
+      const byTask = ownLeadMap[String(p.id)] || {};
+      const m = mgrById.get(p.manager_id);
+      const s = Number(m?.shift) || 0;
+      for (const tidStr of Object.keys(byTask)) {
+        const tid = Number(tidStr);
+        if (!taskById.has(tid)) continue;
+        const own = new Set(byTask[tidStr] || []);
+        const lvlL = { kind: "leader", id: p.id, mid: p.manager_id, shift: s };
+        const r = lv(p.id, p.manager_id, tid);
+        const base = uv(p.manager_id, tid);
+        const lProbs = problemsFor(lvlL, tid);
+        for (const col of [...COLS, { k: "name", keys: ["names"] }]) {
+          if (!col.keys.some((k) => own.has(k))) continue;
+          if (col.k === "window" && lProbs.length) cover(lProbs);
+          rows.push({
+            key: `l${p.id}-${tid}-${col.k}`, lvl: "leader", shift: s, lid: p.id, mid: p.manager_id,
+            tid, f: col.k, who: tl(p.name), sub: tl(m?.name || ""),
+            v: showVal(col.k, r, lvlL, tid),
+            p: showVal(col.k, base, { kind: "unit", id: p.manager_id, mid: p.manager_id, shift: s }, tid),
+            pl: t("admin.ltasks.supervisor"),
+            bad: col.k === "window" && lProbs.length > 0,
+            hours: lProbs[0]?.hours,
+          });
+        }
+      }
+    }
+    // ── the refused windows nothing above could name ──────────────────────
+    // The register lists what DIFFERS from its parent, and a bad GLOBAL window
+    // differs from nothing: it is the 26-Aug shape exactly — one wrong pair on
+    // the task definition, inherited unchanged by every unit. So the banner
+    // counted N of them, «Ko'rsatish» filtered the register to bad windows,
+    // and the table came back empty. Each one gets a row of its own, filed
+    // against the level it was RAISED on and naming the level it came DOWN
+    // from, so «Ko'rsatish» always lands on the rows it promised.
+    for (const pb of problems || []) {
+      if (covered.has(pkey(pb))) continue;
+      const tid = pb.task_id;
+      if (!taskById.has(tid)) continue;
+      const s = Number(pb.shift) || 0;
+      if (pb.level === "leader") {
+        const pr = leaderById.get(pb.leader_id);
+        if (!pr) continue;
+        const lvlL = { kind: "leader", id: pb.leader_id, mid: pb.manager_id, shift: s };
+        rows.push({
+          key: `pl${pb.leader_id}-${tid}-window`, lvl: "leader", shift: s,
+          lid: pb.leader_id, mid: pb.manager_id, tid, f: "window", probOnly: true,
+          who: tl(pr.name), sub: tl(mgrById.get(pb.manager_id)?.name || ""),
+          v: showVal("window", lv(pb.leader_id, pb.manager_id, tid), lvlL, tid),
+          p: showVal("window", uv(pb.manager_id, tid),
+            { kind: "unit", id: pb.manager_id, mid: pb.manager_id, shift: s }, tid),
+          pl: t("admin.ltasks.supervisor"),
+          bad: true, hours: pb.hours,
+        });
+        continue;
+      }
+      const m = mgrById.get(pb.manager_id);
+      if (!m) continue;
+      const lvlU = { kind: "unit", id: pb.manager_id, mid: pb.manager_id, shift: s };
+      const tp = ["win_from", "win_to"].map((k) => tplFor(s, tid, k)).find(Boolean);
+      rows.push({
+        key: `pu${pb.manager_id}-${tid}-window`, lvl: "unit", shift: s,
+        mid: pb.manager_id, tid, f: "window", probOnly: true,
+        who: tl(m.name),
+        sub: t("admin.ltasks.reachLead").replace("{l}", m.leaders_n || 0),
+        v: showVal("window", uv(pb.manager_id, tid), lvlU, tid),
+        p: tp ? showVal("window", resolved({ kind: "shift", shift: s, id: null, mid: pb.manager_id }, tid), lvlU, tid)
+          : showVal("window", gv(tid), { kind: "std" }, tid),
+        pl: tp ? t("admin.ltasks.lvlShift").replace("{n}", s) : t("admin.ltasks.lvlStd"),
+        bad: true, hours: pb.hours,
+      });
+    }
+    return rows;
+  }, [tasks, managers, leaders, settings, leaderSettings, ownMap, ownLeadMap, shiftTpl, problems, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const driftN = useMemo(() => regRows.filter((r) => r.drift).length, [regRows]);
+  // An EXCEPTION is a value somebody set. A row that exists only because the
+  // window it INHERITS was refused is neither an exception nor drift, so it
+  // stays out of the count the tile and the tab label carry — it is counted by
+  // «Smena ichida emas», one tile along.
+  const excN = useMemo(() => regRows.filter((r) => !r.drift && !r.probOnly).length, [regRows]);
+
+  // ── weight sums ─────────────────────────────────────────────────────────
+  // Each one adds up the tasks its own reader is actually asked TODAY, per
+  // shift where the reader has one: a task archived from tomorrow still counts
+  // tonight, and one opening next week does not count yet.
+  const sums = useMemo(() => {
+    const out = {};
+    for (const m of managers) out[m.id] = liveForShift(m.shift).reduce((a, td) => {
+      const c = uv(m.id, td.id); return a + (c.enabled ? Number(c.weight) || 0 : 0);
+    }, 0);
+    return out;
+  }, [managers, liveByShift, liveTasks, settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  const leaderSums = useMemo(() => {
+    const out = {};
+    for (const p of leaders) {
+      out[p.id] = liveForShift(mgrById.get(p.manager_id)?.shift).reduce((a, td) => {
+        const c = lv(p.id, p.manager_id, td.id); return a + (c.enabled ? Number(c.weight) || 0 : 0);
+      }, 0);
+    }
+    return out;
+  }, [leaders, liveByShift, liveTasks, settings, leaderSettings]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stdSum = useMemo(() => liveTasks.reduce((a, td) => {
+    const g = gv(td.id); return a + (g.enabled ? g.weight : 0);
+  }, 0), [liveTasks, tasksRaw]); // eslint-disable-line react-hooks/exhaustive-deps
+  const levelSum = useMemo(() => liveForShift(level.shift).reduce((a, td) => {
+    const r = resolved(level, td.id); return a + (r.enabled ? Number(r.weight) || 0 : 0);
+  }, 0), [liveByShift, liveTasks, level, settings, leaderSettings, shiftTpl]); // eslint-disable-line react-hooks/exhaustive-deps
+  const offSums = useMemo(() => managers.filter((m) => sums[m.id] !== 100).length, [managers, sums]);
+  // The status hue rides the CHIP — its fill and its border — and never the
+  // label: #eab308 as 11px text is 1.92:1 on the light card, i.e. a number the
+  // reader has to guess at. The glyph carries the state as well as the colour,
+  // so it still reads in greyscale.
+  const warnBadge = (sum) => (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold tabular-nums"
+      style={{
+        color: "var(--text-1)",
+        background: sum === 0 ? "rgba(239,68,68,0.14)" : "rgba(234,179,8,0.16)",
+        border: `1px solid ${sum === 0 ? "rgba(239,68,68,0.40)" : "rgba(234,179,8,0.45)"}`,
+      }}
+      title={sum === 0 ? t("admin.ltasks.sumZero") : t("admin.ltasks.weightWarn").replace("{sum}", sum)}>
+      <AlertTriangle size={13} color={sum === 0 ? C_BAD : C_WARN} />{sum}%
+    </span>
+  );
+
+  // ── the scope a write reaches ───────────────────────────────────────────
+  // The descendant of the old matrix's applyScope/colScope: the LEVEL is the
+  // scope now, and the count it names is stated in the modal's banner, in its
+  // per-field hints and again in the confirm — because this is the one control
+  // on the page that can rewrite a whole shift.
+  const applyScope = (lvl = level) => {
+    if (lvl.kind === "leader") return { level: "leader", ids: [lvl.id] };
+    if (lvl.kind === "unit") return { level: "supervisor", ids: [lvl.id] };
+    if (lvl.kind === "shift") return { level: "supervisor", ids: unitsOf(lvl.shift).map((m) => m.id) };
+    // The Standart level writes the definition itself, so it names nobody —
+    // but it still REACHES every unit, which is what the scope banner says.
+    return { level: "global", ids: managers.map((m) => m.id) };
+  };
+  // How a WRITE addresses this level. Standart is the global level and carries
+  // no ids at all; a shift is the fan-out over its units; the two lower levels
+  // address exactly one row.
+  const colScope = (lvl = level) => {
+    if (lvl.kind === "std") return {};
+    const { ids } = applyScope(lvl);
+    if (lvl.kind === "shift") return { manager_ids: ids };
+    return lvl.kind === "unit" ? { manager_id: ids[0] } : { leader_id: ids[0] };
+  };
+  const leadersUnder = (lvl) => (
+    lvl.kind === "leader" ? 1
+      : lvl.kind === "unit" ? (mgrById.get(lvl.id)?.leaders_n || 0)
+        : lvl.kind === "shift" ? unitsOf(lvl.shift).reduce((a, m) => a + (m.leaders_n || 0), 0)
+          : leaders.length
+  );
+  const levelName = (lvl) => (lvl.kind === "std" ? t("admin.ltasks.lvlStd")
+    : lvl.kind === "shift" ? t("admin.ltasks.lvlShift").replace("{n}", lvl.shift)
+      : lvl.kind === "unit" ? tl(mgrById.get(lvl.id)?.name || "")
+        : tl(leaderById.get(lvl.id)?.name || ""));
+  const reachText = (lvl) => (lvl.kind === "leader"
+    ? t("admin.ltasks.reachLead").replace("{l}", 1)
+    : lvl.kind === "unit"
+      ? t("admin.ltasks.reachLead").replace("{l}", leadersUnder(lvl))
+      : t("admin.ltasks.reachMgrLead")
+        .replace("{m}", lvl.kind === "shift" ? unitsOf(lvl.shift).length : managers.length)
+        .replace("{l}", leadersUnder(lvl)));
+
+  // ── the bulk criteria editor ────────────────────────────────────────────
+  // Every definition-of-done actually STORED, flattened: the global level first
+  // (what every uncustomised row inherits), then the overrides that carry their
+  // own copy. The overrides have to be here — one left in capitals is invisible
+  // from the sheet, and fixing only the global texts would leave those units
+  // still shouting at their leaders.
   const criteriaItems = useMemo(() => {
     const out = [];
     const push = (key, task, scope, text, extra) =>
@@ -457,13 +1159,13 @@ export default function LeaderTasksAdmin() {
       if (text) push(`l${p.id}-${task.id}`, task, tl(p.name), text, { leaderId: p.id });
     }
     return out;
-  }, [tasks, managers, leaders, settings, leaderSettings, lang]);
+  }, [tasks, managers, leaders, settings, leaderSettings, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Written one at a time, deliberately: these land on the SAME override rows
-  // the cell modals write, and two parallel inserts race the row's unique key
-  // (the lesson the camera pilot paid for on its first day). A failure stops
-  // the run and stays on the modal with the count that did land — the rest are
-  // still in the boxes, so pressing Save again finishes the job.
+  // the editor writes, and two parallel inserts race the row's unique key (the
+  // lesson the camera pilot paid for on its first day). A failure stops the run
+  // and stays on the modal with the count that did land — the rest are still in
+  // the boxes, so pressing Save again finishes the job.
   const saveTexts = async (list) => {
     setTxtErr("");
     setTxtSave({ done: 0, total: list.length });
@@ -489,140 +1191,14 @@ export default function LeaderTasksAdmin() {
     setTxtSave(null);
     setShowTexts(false);
     invalidate();
-    toast2.success(t("admin.ltasks.textsDone").replace("{n}", list.length));
+    toast.success(t("admin.ltasks.textsDone").replace("{n}", list.length));
   };
 
-  // ── the proof-photo window ────────────────────────────────────────────────
-  // Same chain, resolved per END (`k` is "win_from" or "win_to"), because both
-  // inputs are independently optional: a supervisor may set only a closing time
-  // and keep the opening they inherit. What a blank falls back to comes from the
-  // SERVER (`shift_windows`) rather than being restated here — a placeholder
-  // that disagreed with the hours the reviewer judges against would be worse
-  // than no placeholder at all.
-  const shiftWins = data?.shift_windows || {};
-  const shiftOf = (mid) => managers.find((m) => m.id === mid)?.shift ?? 1;
-  const winDefault = (shift, k) => (shiftWins[String(shift)] || [])[k === "win_from" ? 0 : 1] || "";
-  const winOf = (tid, k) => tasks.find((x) => x.id === tid)?.[k] || "";
-  // Placeholders: what this level would inherit if left blank.
-  const supWinPh = (mid, tid, k) => winOf(tid, k) || winDefault(shiftOf(mid), k);
-  const leadWinPh = (mid, tid, k) => getCell(mid, tid)[k] || supWinPh(mid, tid, k);
-  // The global level serves BOTH shifts, so it cannot name one default — it
-  // names both, labelled, instead of quietly showing shift 1's.
-  const globalWinPh = (k) => Object.keys(shiftWins).sort()
-    .map((s) => `${s}: ${winDefault(s, k)}`).join(" · ");
-  // ── the submission deadline ──────────────────────────────────────────────
-  // Same chain, ONE clock, no shift default: blank everywhere means the tab
-  // shows the day's filing deadline instead, so the placeholder says that.
-  const dlOf = (tid) => tasks.find((x) => x.id === tid)?.deadline || "";
-  const supDlPh = (mid, tid) => dlOf(tid);
-  const leadDlPh = (mid, tid) => getCell(mid, tid).deadline || supDlPh(mid, tid);
-  // ── how the photo's DATE is judged ────────────────────────────────────────
-  // Same chain, but BOOLEANS, so "inherit" cannot be a blank field — it is
-  // expressed the way `enabled`/`weight` express it: the control opens on the
-  // value in force, and Save sends null when it still equals what that level
-  // inherits. `?? ` and not `||`: the meaningful value here is FALSE, and `||`
-  // would read an inherited exemption as unset every time.
-  //
-  // TWO booleans, ONE control (see dateRuleField): the reader picks a mode and
-  // the pair is derived from it, because "date off + time on" is not a mode
-  // anybody means. They still resolve INDEPENDENTLY per level — like the two
-  // window ends — so a supervisor may narrow one and keep inheriting the other.
-  const dcOf = (tid) => tasks.find((x) => x.id === tid)?.date_check !== false;
-  const supDc = (mid, tid) => getCell(mid, tid).date_check ?? dcOf(tid);
-  const tcOf = (tid) => tasks.find((x) => x.id === tid)?.time_check !== false;
-  const supTc = (mid, tid) => getCell(mid, tid).time_check ?? tcOf(tid);
-  // ── how the proof is collected ────────────────────────────────────────────
-  // Same chain, a STRING, so "inherit" really is the blank the other text
-  // fields use — but the control is a two-way pick like the date rule, for the
-  // same reason: the values that matter are the switch itself, and a control
-  // whose "screenshot" and "unset" look identical is how a unit gets moved onto
-  // the camera by accident.
-  const pkOf = (tid) => tasks.find((x) => x.id === tid)?.proof_kind || "screenshot";
-  const supPk = (mid, tid) => getCell(mid, tid).proof_kind || pkOf(tid);
-  const supTaskName = (mid, task) => getCell(mid, task.id).names?.[lang] || tname(task);
-  // The name a leader INHERITS in one language: the supervisor's own rename
-  // when they wrote one, else the global name (NOT NULL, so never blank).
-  const supNameOf = (mid, tid, l) => getCell(mid, tid).names?.[l] || tasks.find((x) => x.id === tid)?.name?.[l] || "";
-  const getOv = (lid, tid) => leaderSettings[String(lid)]?.[String(tid)] ?? null;
-  const leadEff = (lid, mid, tid) => {
-    const base = getCell(mid, tid);
-    const ov = getOv(lid, tid);
-    return { enabled: ov?.enabled ?? base.enabled, min_media: ov?.min_media ?? base.min_media, weight: ov?.weight ?? base.weight };
-  };
-  // What a LEADER's proof mode resolves to — their own override, else the
-  // brigadir's, else global. The row's 📷 is read straight off this, so the
-  // matrix answers "will the bot offer this person the camera" without anyone
-  // having to open a modal and reason about inheritance.
-  const leadPk = (lid, mid, tid) => getOv(lid, tid)?.proof_kind || supPk(mid, tid);
-  const leadTaskName = (lid, mid, task) => getOv(lid, task.id)?.names?.[lang] || supTaskName(mid, task);
-  // What the leader modal INHERITS for its text fields, per field: names by
-  // language, the definition of done, each window end, the deadline — the
-  // value the supervisor's row resolves to (their override, else global, and
-  // for the window on to the shift default). The modal opens on exactly these,
-  // and Save treats "still equal to this" as inherit — see saveLeaderCell.
-  const leadInherit = (mid, tid) => ({
-    names: Object.fromEntries(LANGS.map((l) => [l, supNameOf(mid, tid, l)])),
-    criteria: supCrit(mid, tid),
-    description: supDesc(mid, tid),
-    win_from: leadWinPh(mid, tid, "win_from"),
-    win_to: leadWinPh(mid, tid, "win_to"),
-    deadline: leadDlPh(mid, tid),
-    date_check: supDc(mid, tid),
-    time_check: supTc(mid, tid),
-    proof_kind: supPk(mid, tid),
-  });
-
-  const sums = useMemo(() => {
-    const out = {};
-    for (const m of managers) out[m.id] = tasks.reduce((a, task) => { const c = getCell(m.id, task.id); return a + (c.enabled ? Number(c.weight) || 0 : 0); }, 0);
-    return out;
-  }, [managers, tasks, settings]); // eslint-disable-line react-hooks/exhaustive-deps
-  const leaderSums = useMemo(() => {
-    const out = {};
-    for (const p of leaders) out[p.id] = tasks.reduce((a, task) => { const c = leadEff(p.id, p.manager_id, task.id); return a + (c.enabled ? Number(c.weight) || 0 : 0); }, 0);
-    return out;
-  }, [leaders, tasks, settings, leaderSettings]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const excRows = useMemo(() => {
-    const out = [];
-    for (const p of leaders) {
-      const ov = leaderSettings[String(p.id)];
-      if (!ov) continue;
-      for (const tid of Object.keys(ov)) out.push({ p, tid: Number(tid), ov: ov[tid] });
-    }
-    return out;
-  }, [leaders, leaderSettings]);
-
-  const toggleOpen = (mid) => setOpen((s) => { const n = new Set(s); n.has(mid) ? n.delete(mid) : n.add(mid); return n; });
-
-  // The leader modal opens on the value IN FORCE for every field — the
-  // leader's own override where one exists, else what the supervisor's row
-  // resolves to — the same way enabled / photos / weight always did. The text
-  // fields used to open EMPTY with the inherited value as a placeholder, which
-  // read as inherited right up to the first keystroke, when it vanished and
-  // the admin had to retype a whole definition-of-done to change one word.
-  const openLeaderCell = (p, mid, task) => {
-    const ov = getOv(p.id, task.id);
-    const eff = leadEff(p.id, mid, task.id);
-    const inh = leadInherit(mid, task.id);
-    setLcell({
-      lid: p.id, mid, tid: task.id, hasOv: !!ov, when: "now",
-      enabled: eff.enabled, min_media: eff.min_media, weight: eff.weight,
-      names: Object.fromEntries(LANGS.map((l) => [l, ov?.names?.[l] || inh.names[l]])),
-      criteria: ov?.criteria || inh.criteria,
-      description: ov?.description || inh.description,
-      win_from: ov?.win_from || inh.win_from, win_to: ov?.win_to || inh.win_to,
-      deadline: ov?.deadline || inh.deadline,
-      date_check: ov?.date_check ?? inh.date_check,
-      time_check: ov?.time_check ?? inh.time_check,
-      proof_kind: ov?.proof_kind || inh.proof_kind,
-    });
-  };
-  const openLeaderByIds = (p, tid) => { const task = tasks.find((x) => x.id === tid); if (task) { setShowExc(false); openLeaderCell(p, p.manager_id, task); } };
-
-  // Criteria never stage, so they are saved on their own endpoint alongside
-  // whatever the cell's own Save does — one button, two writes, because an
-  // admin editing a cell does not care which field routes where.
+  // ── the writers ─────────────────────────────────────────────────────────
+  // Each one is skipped when nothing changed, and every one of them lands on
+  // the SAME override row — so they run one AFTER another, awaited, never
+  // fired together (2026-08-19: two parallel inserts raced the row's unique key
+  // and the modal reported success for a value that was never stored).
   const saveCriteria = (draft, stored, ids) => {
     if ((draft || "") === (stored || "")) return undefined;
     return critMut.mutateAsync({ ...ids, criteria: draft || "" });
@@ -634,10 +1210,9 @@ export default function LeaderTasksAdmin() {
     if ((draft || "") === (stored || "")) return undefined;
     return descMut.mutateAsync({ ...ids, description: draft || "" });
   };
-
   // Skipped when unchanged like the criteria — and for a sharper reason here:
   // every window write re-derives that task's existing verdicts, so a no-op
-  // save would churn the triage queue for a modal the admin only opened to read.
+  // save would churn the triage queue for a modal opened only to read.
   const saveWindow = (draft, stored, ids) => {
     const from = draft?.win_from || "";
     const to = draft?.win_to || "";
@@ -649,10 +1224,10 @@ export default function LeaderTasksAdmin() {
     if (v === (stored?.deadline || "")) return undefined;
     return dlMut.mutateAsync({ ...ids, deadline: v });
   };
-  // Same shape as the date rule's writer: the draft opens on the value IN
-  // FORCE, so a draft still equal to what this level inherits goes out as null
-  // ("keep inheriting") and only a divergence is stored. `inherited` is
-  // undefined at the GLOBAL level, which inherits from nothing.
+  // The draft opens on the value IN FORCE, so a draft still equal to what this
+  // level inherits goes out as null ("keep inheriting") and only a divergence
+  // is stored. `inherited` is undefined at the STANDART level, which inherits
+  // from nothing.
   const saveProofKind = async (draft, stored, inherited, ids) => {
     const v = draft?.proof_kind || "screenshot";
     const out = inherited === undefined ? v : (v === inherited ? null : v);
@@ -663,26 +1238,18 @@ export default function LeaderTasksAdmin() {
     return true;
   };
   // The boolean twin of saveWindow, and skipped-when-unchanged for the same
-  // reason: a write re-derives every verdict of that task, so a no-op save
-  // would churn the triage queue for a modal opened only to read.
+  // reason. `stored` is the level's RAW value, null when it holds no override,
+  // which is what makes the no-op test correct in both directions: pinning True
+  // where True was inherited is a real change.
   //
-  // `inherited` is what this level would resolve to with no override of its own
-  // (undefined at the GLOBAL level, which inherits from nothing) — a draft
-  // still equal to it goes out as null, i.e. "keep inheriting", exactly as the
-  // leader modal's numbers do. `stored` is the level's RAW value, null when it
-  // holds no override, which is what makes the no-op test correct in both
-  // directions: pinning True where True was inherited is a real change.
-  //
-  // The two flags of the date rule go out one AFTER the other, awaited, never
-  // fired together: both materialise the same override row when the level has
-  // none, and two concurrent inserts race its unique key. Awaiting also means a
-  // failure stops the pair instead of half-applying a mode nobody picked.
-  // Returns whether both writes landed, and NEVER rejects: two of its three
-  // callers fire it without awaiting (the cell and column modals, like every
-  // other writer there), and a rejected promise nobody catches is a console
-  // error on a failure the mutation's own onError has already toasted.
+  // The three flags go out one AFTER the other, awaited, never fired together:
+  // all three materialise the same override row when the level has none, and
+  // concurrent inserts race its unique key. Returns whether every write landed
+  // and NEVER rejects — a rejected promise nobody catches is a console error on
+  // a failure the mutation's own onError has already toasted.
   const saveDateRule = async (draft, stored, inherited, ids) => {
-    for (const [key, mut] of [["date_check", dcMut], ["time_check", tcMut]]) {
+    for (const [key, mut] of [["date_check", dcMut], ["time_check", tcMut],
+                              ["day_check", dayMut]]) {
       const v = draft?.[key] !== false;
       const inh = inherited?.[key];
       const out = inh === undefined ? v : (v === inh ? null : v);
@@ -695,112 +1262,205 @@ export default function LeaderTasksAdmin() {
     }
     return true;
   };
-
-  // Every field of this modal lands on the SAME leader_task_settings row, and a
-  // brigadir who has never been edited has no row at all — so fired together,
-  // two of these INSERT it concurrently and one dies on the unique key. That is
-  // not theoretical: it is how the camera pilot's very first unit saved
-  // "successfully" and came back screenshot (user, 2026-08-19), and it is the
-  // trap the leader modal was already written around. One after another, each
-  // step skipping what is already stored, a failure stopping the chain — its
-  // own onError has raised the toast and the modal stays open, so a retry runs
-  // from live state.
-  const saveCell = async () => {
-    const stored = getCell(cell.mid, cell.tid);
-    const ids = { task_id: cell.tid, manager_id: cell.mid };
-    try {
-      await saveCriteria(cell.criteria, stored.criteria, ids);
-      await saveDescription(cell.description, stored.description, ids);
-      await saveWindow(cell, stored, ids);
-      await saveDeadline(cell, stored, ids);
-      if (!await saveDateRule(cell, stored,
-        { date_check: dcOf(cell.tid), time_check: tcOf(cell.tid) }, ids)) return;
-      if (!await saveProofKind(cell, stored, pkOf(cell.tid), ids)) return;
-    } catch { return; }
-    cellMut.mutate({
-      ...ids,
-      enabled: cell.enabled,
-      min_media: Number(cell.min_media) || 0, weight: Number(cell.weight) || 0,
-      names: Object.fromEntries(LANGS.map((l) => [l, cell.names?.[l] || ""])),
-      when: cell.when,
-    });
-  };
-
-  // A leader-modal text left EQUAL to what it inherits is not an override:
-  // it goes out as "" (clear / inherit), and only a diverging value is stored.
+  // A text left EQUAL to what it inherits is not an override: it goes out as ""
+  // (clear / inherit), and only a diverging value is stored.
   const ownText = (v, inherited) => {
     const s = (v || "").trim();
     return s === (inherited || "").trim() ? "" : s;
   };
-  // Every field of the leader modal opens on the value in force, so "inherit"
-  // is expressed by leaving it equal to the supervisor's — the payload sends
-  // "" / null for those and a value only where the admin diverged (the numbers
-  // always worked this way; the texts now do too). The four writers behind
-  // the one Save button all land on the SAME override row (criteria, window
-  // and deadline are materialised onto it by their own endpoints), so they
-  // run one after another: fired together they raced the row's unique key,
-  // and the cell write — arriving last — decided whether the criteria just
-  // written survived. A failed step stops the chain: its onError has already
-  // raised the toast and the modal stays open, so a retry runs from live
-  // state, each step skipping what is already stored.
-  const saveLeaderCell = async () => {
-    const { lid, mid, tid } = lcell;
-    const base = getCell(mid, tid);
-    const ov = getOv(lid, tid);
-    const inh = leadInherit(mid, tid);
-    const ids = { task_id: tid, leader_id: lid };
-    const mm = Number(lcell.min_media) || 0;
-    const w = Number(lcell.weight) || 0;
-    const criteria = ownText(lcell.criteria, inh.criteria);
-    const description = ownText(lcell.description, inh.description);
-    const win_from = ownText(lcell.win_from, inh.win_from);
-    const win_to = ownText(lcell.win_to, inh.win_to);
-    const deadline = ownText(lcell.deadline, inh.deadline);
+
+  // What is RAW at a level — what "already stored here" means for the no-op
+  // tests, and what the editor seeds its own-value fields from.
+  const rawAt = (lvl, tid) => {
+    if (lvl.kind === "std") {
+      const g = gv(tid);
+      return { criteria: g.criteria, description: g.description, win_from: g.win_from, win_to: g.win_to, deadline: g.deadline, date_check: g.date_check, time_check: g.time_check, day_check: g.day_check, proof_kind: g.proof_kind, names: g.names, enabled: g.enabled, min_media: g.min_media, weight: g.weight };
+    }
+    if (lvl.kind === "leader") return getOv(lvl.id, tid) || {};
+    if (lvl.kind === "shift") {
+      // A shift has no row in the data model, so its RAW value is the TEMPLATE
+      // — the value the sheet cell in front of the reader actually prints.
+      //
+      // It used to be read off a SAMPLE unit (`unitsOf(shift)[0]`), and that is
+      // wrong in both directions on exactly the cell an admin opens this modal
+      // for: a MIXED cell («08:00–10:00 · 6/8»). The editor could seed from a
+      // row the cell never showed, and — worse — every skip-when-unchanged
+      // guard below compared the Save against that one unit, so an admin
+      // making the shift uniform pressed Save, the guard found unit[0] already
+      // holding that value, NOTHING was written and the modal reported success.
+      const out = {};
+      for (const k of FIELD_KEYS) {
+        const tp = tplFor(lvl.shift, tid, k);
+        // Absent from the template = this shift decides nothing about that
+        // field, which is what a null raw value means one level down: inherit.
+        // Never `undefined` — the date flags are tri-state and `?? null` is
+        // what every guard tests them with.
+        out[k] = tp ? tp.v : null;
+      }
+      return out;
+    }
+    return getCell(lvl.id, tid);
+  };
+  // The TRUE parent of a level — what clearing a value here would fall back to.
+  // Deliberately NOT the shift template for a unit: the data model has no shift
+  // level, so an emptied unit field lands on the GLOBAL value, and a form that
+  // promised otherwise would silently move the value.
+  const parentOf = (lvl, tid) => {
+    if (lvl.kind === "std") return undefined;
+    if (lvl.kind === "leader") return uv(lvl.mid, tid);
+    return gv(tid);
+  };
+
+  // The editor's draft, built from the chain — pure, so opening the modal and
+  // reasoning about what it will write are the same computation.
+  const draftFor = (tid, lvl = level) => {
+    const r = resolved(lvl, tid);
+    const raw = rawAt(lvl, tid);
+    const isStd = lvl.kind === "std";
+    return {
+      tid, lvl,
+      when: "now",
+      // The numbers and the status open on the value IN FORCE, as they always
+      // have; the texts open on this level's OWN value, with what they inherit
+      // as the placeholder, so a blank field reads as "inherited" rather than
+      // as "empty".
+      enabled: r.enabled, min_media: r.min_media, weight: r.weight,
+      names: isStd ? { ...r.names } : Object.fromEntries(LANGS.map((l) => [l, raw.names?.[l] || ""])),
+      note: Object.fromEntries(LANGS.map((l) => [l, taskById.get(tid)?.note?.[l] || ""])),
+      criteria: isStd ? r.criteria : (raw.criteria || ""),
+      description: isStd ? r.description : (raw.description || ""),
+      win_from: isStd ? r.win_from : (raw.win_from || ""),
+      win_to: isStd ? r.win_to : (raw.win_to || ""),
+      deadline: isStd ? r.deadline : (raw.deadline || ""),
+      date_check: r.date_check, time_check: r.time_check, day_check: r.day_check,
+      proof_kind: r.proof_kind,
+    };
+  };
+  const openEdit = (tid, lvl = level) => setEdit(draftFor(tid, lvl));
+
+  // ONE save chain for every level. Instant fields first, in a fixed order,
+  // each skipped when unchanged and each awaited; the STAGED half (names,
+  // status, weight, photos — the only fields the "from next day" switch
+  // governs) goes last, because it is the write that closes the modal.
+  const saveRule = async () => {
+    const { tid, lvl } = edit;
+    // Every writer here is addressed by (task, level): the task id is always on
+    // the body, the level supplies the ids that narrow it — or none at all at
+    // the Standart level, which IS the global row.
+    const ids = { task_id: tid, ...colScope(lvl) };
+    const stored = rawAt(lvl, tid);
+    const inh = parentOf(lvl, tid);
+    const criteria = ownText(edit.criteria, inh?.criteria);
+    const description = ownText(edit.description, inh?.description);
+    const win_from = ownText(edit.win_from, inh?.win_from);
+    const win_to = ownText(edit.win_to, inh?.win_to);
+    const deadline = ownText(edit.deadline, inh?.deadline);
     try {
-      if (criteria !== (ov?.criteria || ""))
-        await critMut.mutateAsync({ ...ids, criteria });
-      if (description !== (ov?.description || ""))
-        await descMut.mutateAsync({ ...ids, description });
-      if (win_from !== (ov?.win_from || "") || win_to !== (ov?.win_to || ""))
-        await winMut.mutateAsync({ ...ids, win_from, win_to });
-      if (deadline !== (ov?.deadline || ""))
-        await dlMut.mutateAsync({ ...ids, deadline });
-      // Not a throw — see saveDateRule — so the chain stops on the answer.
-      if (!await saveDateRule(lcell, ov, inh, ids)) return;
-      if (!await saveProofKind(lcell, ov, inh.proof_kind, ids)) return;
+      await saveCriteria(criteria, stored.criteria, ids);
+      await saveDescription(description, stored.description, ids);
+      await saveWindow({ win_from, win_to }, stored, ids);
+      await saveDeadline({ deadline }, stored, ids);
+      if (!await saveDateRule(edit, stored, inh, ids)) return;
+      // Never at the Standart level: the backend refuses a global camera
+      // (CAMERA_IS_PILOT) and the control is not offered there either.
+      if (lvl.kind !== "std"
+        && !await saveProofKind(edit, stored, inh?.proof_kind, ids)) return;
     } catch { return; }
+
+    const mm = Number(edit.min_media) || 0;
+    const w = Number(edit.weight) || 0;
+    const namesChanged = LANGS.some((l) => (edit.names?.[l] || "") !== (stored.names?.[l] || ""));
+    const noteChanged = lvl.kind === "std"
+      && LANGS.some((l) => (edit.note?.[l] || "") !== (taskById.get(tid)?.note?.[l] || ""));
+
+    if (lvl.kind === "std") {
+      const wChanged = w !== Number(gv(tid).weight);
+      if (!namesChanged && !noteChanged && !wChanged) { setEdit(null); ping(); return; }
+      taskMut.mutate({
+        task_id: tid, when: edit.when,
+        ...(namesChanged ? { names: edit.names } : {}),
+        ...(noteChanged ? { note: edit.note } : {}),
+        ...(wChanged ? { default_weight: w } : {}),
+      });
+      setEdit(null);
+      return;
+    }
+    if (lvl.kind === "shift") {
+      // Two writes, sequential: the rename lands as a per-row override on every
+      // unit of the shift, the trio through the bulk push that already exists.
+      const trioChanged = trioDiffers();
+      try {
+        if (namesChanged) await taskMut.mutateAsync({ task_id: tid, names: edit.names, when: edit.when, ...ids });
+      } catch { return; }
+      if (!trioChanged) { setEdit(null); ping(); return; }
+      applyMut.mutate({ task_id: tid, enabled: edit.enabled, min_media: mm, weight: w, when: edit.when, ...ids });
+      return;
+    }
+    if (lvl.kind === "unit") {
+      const base = getCell(lvl.id, tid);
+      if (!namesChanged && edit.enabled === base.enabled
+        && mm === Number(base.min_media) && w === Number(base.weight)) { setEdit(null); ping(); return; }
+      cellMut.mutate({
+        task_id: tid, manager_id: lvl.id,
+        enabled: edit.enabled, min_media: mm, weight: w,
+        names: Object.fromEntries(LANGS.map((l) => [l, edit.names?.[l] || ""])),
+        when: edit.when,
+      });
+      return;
+    }
+    const base = uv(lvl.mid, tid);
+    const ov = getOv(lvl.id, tid);
+    const nextNames = Object.fromEntries(LANGS.map((l) => [l, ownText(edit.names?.[l], base.names[l])]));
+    const changed = LANGS.some((l) => nextNames[l] !== (ov?.names?.[l] || ""))
+      || edit.enabled !== base.enabled || mm !== Number(base.min_media) || w !== Number(base.weight);
+    if (!changed) { setEdit(null); ping(); return; }
     leaderMut.mutate({
-      ...ids,
-      enabled: lcell.enabled === base.enabled ? null : lcell.enabled,
+      task_id: tid, leader_id: lvl.id,
+      enabled: edit.enabled === base.enabled ? null : edit.enabled,
       min_media: mm === Number(base.min_media) ? null : mm,
       weight: w === Number(base.weight) ? null : w,
-      names: Object.fromEntries(LANGS.map((l) => [l, ownText(lcell.names?.[l], inh.names[l])])),
-      when: lcell.when,
+      names: nextNames,
+      when: edit.when,
+    });
+  };
+  // Does the staged trio differ from what this level already resolves to?
+  const trioDiffers = () => {
+    if (!edit) return false;
+    const r = resolved(edit.lvl, edit.tid);
+    return edit.enabled !== r.enabled
+      || (Number(edit.min_media) || 0) !== Number(r.min_media)
+      || (Number(edit.weight) || 0) !== Number(r.weight);
+  };
+
+  // A write that fans out over a whole shift states its count and waits for a
+  // yes — it is the one press on this page that can change what a hundred
+  // people are asked to do, and the camera reached every leader on the platform
+  // once already (2026-08-19) because nothing stood between the control and the
+  // rows it wrote.
+  const askSaveRule = () => {
+    if (!edit) return;
+    const lvl = edit.lvl;
+    if (lvl.kind !== "shift") { saveRule(); return; }
+    const n = applyScope(lvl).ids.length;
+    const pkChanged = (edit.proof_kind || "screenshot") !== resolved(lvl, edit.tid).proof_kind;
+    const trio = trioDiffers();
+    if (!pkChanged && !trio) { saveRule(); return; }
+    const parts = [];
+    if (pkChanged) parts.push(t("admin.ltasks.proofConfirm.units").replace("{n}", n)
+      .replace("{mode}", t(`admin.ltasks.proofMode.${edit.proof_kind || "screenshot"}`)));
+    if (trio) parts.push(t("admin.ltasks.applyFiltHint").replace("{n}", n));
+    setConfirm({
+      title: t("admin.ltasks.lvlShift").replace("{n}", lvl.shift),
+      message: parts.join(" "), tone: "warning",
+      confirmLabel: t("admin.ltasks.applyToMgrs").replace("{n}", n),
+      onConfirm: () => { setConfirm(null); saveRule(); },
     });
   };
 
   const askReset = () => setConfirm({
     title: t("admin.ltasks.reset"), message: t("admin.ltasks.removeOverrideMsg"), tone: "danger",
     confirmLabel: t("admin.ltasks.reset"),
-    onConfirm: () => leaderMut.mutate({ leader_id: lcell.lid, task_id: lcell.tid, reset: true, when: "now" }),
-  });
-  // The scope is stated three times on the way to a write — the warning line,
-  // the button, and the confirm — because this is the one control on the page
-  // that can rewrite ninety rows, and "all" is no longer what it does.
-  const applyN = applyScope.ids.length;
-  const applyMsg = () => (
-    applyScope.level === "leader" ? t("admin.ltasks.applyLeadHint").replace("{n}", applyN)
-      : anyFilter ? t("admin.ltasks.applyFiltHint").replace("{n}", applyN)
-        : t("admin.ltasks.applyAllHint").replace("{n}", applyN)
-  );
-  const applyLabel = () => (
-    applyScope.level === "leader"
-      ? t("admin.ltasks.applyToLeads").replace("{n}", applyN)
-      : t("admin.ltasks.applyToMgrs").replace("{n}", applyN)
-  );
-  const askApplyAll = (payload) => setConfirm({
-    title: t("admin.ltasks.applyAll"), message: applyMsg(),
-    tone: "danger", confirmLabel: applyLabel(), onConfirm: () => applyMut.mutate(payload),
+    onConfirm: () => leaderMut.mutate({ leader_id: edit.lvl.id, task_id: edit.tid, reset: true, when: "now" }),
   });
   const askCancel = (pc) => setConfirm({
     title: t("admin.ltasks.cancelChange"), message: t("admin.ltasks.cancelChangeMsg"), tone: "danger",
@@ -810,386 +1470,297 @@ export default function LeaderTasksAdmin() {
     title: t("admin.ltasks.revert"), message: t("admin.ltasks.revertMsg"), tone: "warning",
     confirmLabel: t("admin.ltasks.revert"), onConfirm: () => revertMut.mutate({ audit_id: a.id }),
   });
-
-  // The leader modal's rule — equal to the brigadir's ⇒ inherited, changed ⇒
-  // this leader only — shown PER FIELD while typing, as a small mark beside
-  // the label of every field that currently differs, instead of only stated in
-  // a sentence at the top that nobody re-reads mid-edit. Null when nothing
-  // differs, so the field helpers can take it as an optional trailing arg and
-  // the other modals (which pass none) render exactly as before.
-  const changedPill = (differs) => (differs ? (
-    <span className="ml-1.5 align-middle rounded px-1.5 py-px text-[10px] font-semibold normal-case tracking-normal"
-      style={{ background: "rgba(200,151,63,0.12)", color: "var(--brand)", border: "1px solid rgba(200,151,63,0.35)" }}>
-      {t("admin.ltasks.changed")}
-    </span>
-  ) : null);
-  const withMark = (label, mark) => (mark ? <>{label}{mark}</> : label);
-
-  const statusToggle = (value, onChange) => (
-    <SegmentedToggle fill value={value} onChange={onChange}
-      options={[[true, t("admin.ltasks.enabled")], [false, t("admin.ltasks.disabled")]]} />
-  );
-  const numField = (label, value, onChange, max) => (
-    <FormField label={label} required>
-      <input type="number" min={0} max={max} value={value} onChange={(e) => onChange(e.target.value)} className={inputCls} style={inputStyle} />
-    </FormField>
-  );
-  // "What makes this task truly done" — prompt material for the AI proof
-  // reviewer, not UI copy, so it stays ONE free-text box in whatever language
-  // the admin thinks in rather than the 4-language stack the names use.
-  // `inherited` previews the level above: blank here means inherit, and an
-  // admin has to be able to see what that inherits TO before leaving it blank.
-  const criteriaField = (value, onChange, inherited, mark) => (
-    <FormField label={withMark(t("admin.ltasks.criteria"), mark)} hint={t("admin.ltasks.criteriaHint")}>
-      <textarea rows={4} value={value || ""} onChange={(e) => onChange(e.target.value)}
-        placeholder={inherited || t("admin.ltasks.criteriaPh")}
-        className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 84 }} />
-    </FormField>
-  );
-  // What the LEADER is told to do, split off from the criteria on 2026-09-06:
-  // one field could not be both a grader's test and an instruction to a person.
-  // It sits directly ABOVE the criteria in every modal, because that is the
-  // order the two are written in — say what to do, then say how it is judged —
-  // and its hint carries the one thing an admin cannot see: this text is never
-  // sent to the AI, so writing it teaches the reviewer nothing.
-  const descriptionField = (value, onChange, inherited, mark) => (
-    <FormField label={withMark(t("admin.ltasks.description"), mark)} hint={t("admin.ltasks.descriptionHint")}>
-      <textarea rows={3} value={value || ""} onChange={(e) => onChange(e.target.value)}
-        placeholder={inherited || t("admin.ltasks.descriptionPh")}
-        className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 68 }} />
-    </FormField>
-  );
-  // When a proof photo for this task may have been taken. TWO inputs, both
-  // optional: an empty end inherits the level above, and the placeholder shows
-  // exactly what that end would then be — the same value the reviewer uses and
-  // the bot prints to the leader. Both go through the shared ui/TimeField, so
-  // the row keeps the modal's baseline and each end carries its own ✕ back to
-  // blank. `inherit` is deliberately NOT passed: the inherited value here is a
-  // PAIR, spelled out once under both ends below — a per-field caption would
-  // say the same thing twice and imply the two ends inherit separately.
-  const windowField = (value, onChange, phFrom, phTo, mark) => (
-    <FormField label={withMark(t("admin.ltasks.window"), mark)} hint={t("admin.ltasks.windowHint")}>
-      <div className="flex items-center gap-2">
-        <TimeField className="flex-1" value={value?.win_from} placeholder={phFrom}
-          inherit={null} onChange={(v) => onChange({ win_from: v })} />
-        <span className="text-xs shrink-0" style={{ color: "var(--text-3)" }}>—</span>
-        <TimeField className="flex-1" value={value?.win_to} placeholder={phTo}
-          inherit={null} onChange={(v) => onChange({ win_to: v })} />
-      </div>
-      {/* A time input renders "--:--" when empty, which reads as broken rather
-          than as inherited, so the inherited pair is spelled out under it. */}
-      <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
-        {t("admin.ltasks.windowInherit")
-          .replace("{from}", phFrom || "—").replace("{to}", phTo || "—")}
-      </div>
-    </FormField>
-  );
-  // By when the task should be submitted — ONE clock, informational: it is
-  // what the /leaders «Vazifalar» tab tells the leader, nothing scores against
-  // it. Blank inherits the level above; blank everywhere and the tab prints
-  // the day's filing deadline instead, which the inherit line says. That line
-  // stays local (TimeField's `inherit` is null) because it has TWO branches and
-  // the template can only express one: with nothing inherited it names the
-  // day's filing deadline, which is not "inherit {v}" at all.
-  const deadlineField = (value, onChange, ph, mark) => (
-    <FormField label={withMark(t("admin.ltasks.deadline"), mark)} hint={t("admin.ltasks.deadlineHint")}>
-      <div className="flex items-center gap-2">
-        <TimeField className="flex-1" value={value?.deadline} placeholder={ph}
-          inherit={null} onChange={(v) => onChange({ deadline: v })} />
-      </div>
-      <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
-        {ph ? t("admin.ltasks.deadlineInherit").replace("{t}", ph) : t("admin.ltasks.deadlineDay")}
-      </div>
-    </FormField>
-  );
-  // HOW the photo's date is judged — three mutually-exclusive modes. Sits
-  // directly under the window it governs, because in two of the three that
-  // window is not a rule at all, and the hint says which rather than leaving
-  // two controls that look equally binding.
-  //
-  // One pick, not two toggles: the pair (date_check, time_check) has four
-  // combinations and only three meanings — "the day is not judged" already
-  // answers the hour question — so offering the fourth would let an admin
-  // choose a state the backend cannot distinguish from another.
-  //
-  // A pick and not a blank-means-inherit field for the same reason as before:
-  // the values that matter are the relaxations, and a control whose "off" and
-  // "unset" look identical is how an exemption gets switched on by accident.
-  const dateRuleField = (value, onChange, mark) => (
-    <FormField label={withMark(t("admin.ltasks.dateCheck"), mark)}
-      hint={t(`admin.ltasks.dateHint.${dcMode(value)}`)}>
-      <SegmentedToggle fill value={dcMode(value)}
-        onChange={(m) => onChange(dcModeValues(m))}
-        options={[["full", t("admin.ltasks.dateFull")],
-                  ["day", t("admin.ltasks.dateDayOnly")],
-                  ["off", t("admin.ltasks.dateOff")]]} />
-    </FormField>
-  );
-  // WHERE the leader answers this task. Two modes, one pick, and the hint spells
-  // out what each one costs the leader — because switching to camera removes
-  // their upload path entirely, and an admin flipping it has to know that
-  // before they save, not after the first leader reports the bot "not
-  // accepting" their photo.
-  const proofKindField = (value, onChange, mark, scope) => {
-    const v = value?.proof_kind || "screenshot";
-    return (
-      <FormField label={withMark(t("admin.ltasks.proofKind"), mark)}
-        hint={`${t(`admin.ltasks.proofHint.${v}`)}${
-          scope ? ` ${t(`admin.ltasks.proofScope.${scope}`).replace("{n}", applyN)}` : ""}`}>
-        <SegmentedToggle fill value={v}
-          onChange={(k) => onChange({ proof_kind: k })}
-          options={[["screenshot", t("admin.ltasks.proofScreenshot")],
-                    ["camera", t("admin.ltasks.proofCamera")]]} />
-      </FormField>
-    );
-  };
-  const nameFields = (names, setName, placeholderFor, markFor) =>
-    LANGS.map((l) => (
-      <FormField key={l} label={withMark(`${t("admin.ltasks.taskName")} (${LANG_LABELS[l]})`, markFor?.(l))}>
-        <input value={names?.[l] || ""} placeholder={placeholderFor(l)} onChange={(e) => setName(l, e.target.value)} className={inputCls} style={inputStyle} />
-      </FormField>
-    ));
-  const warnBadge = (sum) => (
-    <span className="inline-flex items-center gap-1 text-[11px] font-bold tabular-nums" style={{ color: sum === 0 ? C_BAD : C_WARN }}
-      title={sum === 0 ? t("admin.ltasks.sumZero") : t("admin.ltasks.weightWarn").replace("{sum}", sum)}>
-      <AlertTriangle size={15} color={sum === 0 ? C_BAD : C_WARN} />{sum}%
-    </span>
-  );
-  const descPending = (pc) => {
-    if (pc.kind === "global_task") { const k = tasks.find((x) => x.id === pc.task_id); return `${t("admin.ltasks.rename")}: ${k ? tname(k) : "T" + pc.task_id}`; }
-    if (pc.kind === "leader") { const p = leaders.find((x) => x.id === pc.leader_id); const k = tasks.find((x) => x.id === pc.task_id); return `${p ? tl(p.name) : "?"} · ${k ? tname(k) : "T" + pc.task_id}`; }
-    const m = managers.find((x) => x.id === pc.manager_id); return m ? tl(m.name) : `#${pc.manager_id}`;
-  };
-  const excChip = (label) => <span key={label} className="text-[10px] rounded px-1.5 py-0.5" style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}>{label}</span>;
-
-  // Scope sections for the matrix toolbar: shift as a two-value segmented pick,
-  // brigadir and leader as checkbox lists. The leader list is grouped under its
-  // brigadir — ninety-odd names in one flat column are unnavigable, and the
-  // grouping is also what tells the admin which brigadir a leader belongs to.
-  const mgrLabel = (id) => tl(mgrById.get(id)?.name || "") || `#${id}`;
-  const leadLabel = (id) => tl(leaderById.get(id)?.name || "") || `#${id}`;
-  const filterSections = [
-    {
-      key: "shift", icon: Clock, label: t("admin.ltasks.fShift"),
-      active: fShift !== 0, display: fShift ? `S${fShift}` : "",
-      onClear: () => setFShift(0),
-      render: () => (
-        <SegmentedToggle fill size="sm" value={fShift} onChange={setFShift}
-          options={[[0, t("admin.ltasks.fAllShifts")], [1, "S1"], [2, "S2"]]} />
-      ),
-    },
-    {
-      key: "mgr", icon: UserCog, label: t("admin.ltasks.supervisor"),
-      active: mgrSel.length > 0,
-      display: mgrSel.length === 1 ? mgrLabel(mgrSel[0]) : String(mgrSel.length),
-      onClear: () => setFMgrs([]),
-      render: () => (
-        <OptsFilter searchable opts={mgrOpts.map((m) => m.id)} sel={mgrSel}
-          onChange={setFMgrs} render={mgrLabel} />
-      ),
-    },
-    {
-      key: "lead", icon: Users, label: t("admin.ltasks.fLeader"),
-      active: leadSel.length > 0,
-      display: leadSel.length === 1 ? leadLabel(leadSel[0]) : String(leadSel.length),
-      onClear: () => setFLeads([]),
-      render: () => (
-        <OptsFilter searchable opts={leaderOpts.map((p) => p.id)} sel={leadSel}
-          onChange={setFLeads} render={leadLabel}
-          groupBy={(id) => {
-            const mid = leaderById.get(id)?.manager_id;
-            return mid ? mgrLabel(mid) : "—";
-          }} />
-      ),
-    },
-  ];
-
-  const cellTask = cell && (tasks.find((task) => task.id === cell.tid) || {});
-  // Column modal saves the way its cell twins do: ONE footer button, name and
-  // criteria routed to their own endpoints, each skipped when unchanged so a
-  // no-op save writes no history entry. «Apply to all» keeps its own inline
-  // button — it rewrites every leader and goes through a confirm.
-  // A filtered matrix scopes the WHOLE modal, not just the numeric push. The
-  // name and the definition-of-done live at the GLOBAL level, which is exactly
-  // what every row without an override displays — writing them there would
-  // reach straight past the filter into the shifts it excluded. Scoped, they
-  // land as per-row overrides on the filtered rows instead.
-  const colScope = () => (
-    !anyFilter ? {}
-      : applyScope.level === "leader"
-        ? { leader_ids: applyScope.ids } : { manager_ids: applyScope.ids }
-  );
-  // The example photos this modal is SHOWING and whether the scope it writes
-  // owns them. Seeded off the first visible row like the criteria and the
-  // window, which is the whole modal's rule for a filter covering many rows.
-  const colLead0 = anyFilter && applyScope.level === "leader" ? rows[0]?.kids[0] : null;
-  const colMid0 = colLead0 ? colLead0.manager_id : (anyFilter ? rows[0]?.m.id : null);
-  const colExR = col ? exOf(col.tid, colMid0, colLead0?.id) : { ids: [], level: "global" };
-  const colExLevel = !anyFilter ? "global"
-    : applyScope.level === "leader" ? "leader" : "supervisor";
-  const colEx = { ...colExR, own: colExR.level === colExLevel };
-  // What the next upload will do, in the currency the scope banner uses.
-  const colExNote = () => (
-    !anyFilter ? t("admin.ltasks.examplesScopeGlobal")
-      : (applyScope.level === "leader"
-        ? t("admin.ltasks.examplesScopeLeads") : t("admin.ltasks.examplesScopeMgrs")
-      ).replace("{n}", applyN)
-  );
-  // Under a filter the modal WRITES the visible rows, so it must also SHOW
-  // those rows' current values — the numeric trio always seeded from the first
-  // visible row, but name/criteria seeded from the global layer, which a
-  // previous scoped save may have already diverged from. Reopening the modal
-  // then showed the old global text, which reads as "my edit was lost".
-  // names0/criteria0 keep the seed so Save can skip fields the admin left
-  // exactly as shown (unfiltered they are the global values, as before).
-  const openCol = (task) => {
-    const lead0 = applyScope.level === "leader" ? rows[0]?.kids[0] : null;
-    const f = lead0
-      ? leadEff(lead0.id, lead0.manager_id, task.id)
-      : getCell(rows[0]?.m.id, task.id);
-    const names0 = Object.fromEntries(LANGS.map((l) => [l,
-      (anyFilter && (lead0
-        ? getOv(lead0.id, task.id)?.names?.[l] || getCell(lead0.manager_id, task.id).names?.[l]
-        : getCell(rows[0]?.m.id, task.id).names?.[l]))
-      || task.name?.[l] || ""]));
-    const criteria0 = (anyFilter
-      ? (lead0
-        ? getOv(lead0.id, task.id)?.criteria || supCrit(lead0.manager_id, task.id)
-        : supCrit(rows[0]?.m.id, task.id))
-      : task.criteria) || "";
-    // Same scoped-seed rule as the criteria beside it.
-    const description0 = (anyFilter
-      ? (lead0
-        ? getOv(lead0.id, task.id)?.description || supDesc(lead0.manager_id, task.id)
-        : supDesc(rows[0]?.m.id, task.id))
-      : task.description) || "";
-    // Same scoped-seed rule as the criteria: under a filter the modal writes
-    // the visible rows, so it shows THEIR raw window, not the global one.
-    const win0 = anyFilter
-      ? (lead0
-        ? { win_from: getOv(lead0.id, task.id)?.win_from || "", win_to: getOv(lead0.id, task.id)?.win_to || "" }
-        : { win_from: getCell(rows[0]?.m.id, task.id).win_from || "", win_to: getCell(rows[0]?.m.id, task.id).win_to || "" })
-      : { win_from: task.win_from || "", win_to: task.win_to || "" };
-    const deadline0 = (anyFilter
-      ? (lead0
-        ? getOv(lead0.id, task.id)?.deadline
-        : getCell(rows[0]?.m.id, task.id).deadline)
-      : task.deadline) || "";
-    // A boolean has no blank state, so under a filter these seed on the value in
-    // FORCE for the visible rows (not their raw null) — and `dc0raw` keeps the
-    // raw pair beside it, because "already stored here" is what decides whether
-    // Save writes anything. Unfiltered, the level IS global: the two agree.
-    const ov0 = lead0 ? getOv(lead0.id, task.id) : null;
-    const cell0 = lead0 ? null : getCell(rows[0]?.m.id, task.id);
-    const dcInh = anyFilter
-      ? (lead0
-        ? { date_check: supDc(lead0.manager_id, task.id),
-            time_check: supTc(lead0.manager_id, task.id) }
-        : { date_check: dcOf(task.id), time_check: tcOf(task.id) })
-      : {};
-    const dc0raw = anyFilter
-      ? { date_check: (lead0 ? ov0?.date_check : cell0.date_check) ?? null,
-          time_check: (lead0 ? ov0?.time_check : cell0.time_check) ?? null }
-      : { date_check: task.date_check !== false, time_check: task.time_check !== false };
-    // Seeded like the date rule: under a filter, what the visible rows collect
-    // through, plus the RAW value so Save knows whether anything is stored at
-    // this level. Unfiltered there is nothing to seed — the control is not
-    // offered, because this modal would write the global level (see below).
-    const pkInh = anyFilter
-      ? (lead0 ? supPk(lead0.manager_id, task.id) : pkOf(task.id))
-      : undefined;
-    const pk0raw = anyFilter
-      ? ((lead0 ? ov0?.proof_kind : cell0.proof_kind) || null)
-      : null;
-    setCol({
-      proof_kind: pk0raw || pkInh || "screenshot", pk0raw, pkInh,
-      tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
-      names: { ...names0 }, names0, criteria: criteria0, criteria0,
-      description: description0, description0, when: "now",
-      ...win0, win0, deadline: deadline0, deadline0,
-      date_check: dc0raw.date_check ?? dcInh.date_check,
-      time_check: dc0raw.time_check ?? dcInh.time_check,
-      dc0raw, dcInh,
-    });
-  };
-  // The filter that armed this modal may be a whole SHIFT, not one brigadir —
-  // and this is the field that changes what a leader is asked to DO, in a
-  // feature that has already reached people who were never meant to have it.
-  // So a proof-kind change spanning more than one row states the count and
-  // waits for a yes; everything else on the modal saves as it always did.
-  const askSaveCol = () => {
-    const before = col.pk0raw || col.pkInh || "screenshot";
-    const after = col.proof_kind || "screenshot";
-    if (!anyFilter || after === before || applyN <= 1) { saveCol(); return; }
-    setConfirm({
-      title: t("admin.ltasks.proofKind"),
-      message: t(`admin.ltasks.proofConfirm.${applyScope.level === "leader" ? "leaders" : "units"}`)
-        .replace("{n}", applyN)
-        .replace("{mode}", t(`admin.ltasks.proofMode.${after}`)),
-      tone: "warning",
-      confirmLabel: t("admin.ltasks.save"),
-      onConfirm: () => { setConfirm(null); saveCol(); },
-    });
-  };
-
-  const saveCol = async () => {
-    const ids = colScope();
-    const target = { task_id: col.tid, ...ids };
-    try {
-      await saveCriteria(col.criteria, col.criteria0, target);
-      await saveDescription(col.description, col.description0, target);
-      await saveWindow(col, col.win0, target);
-      await saveDeadline(col, { deadline: col.deadline0 }, target);
-      if (!await saveDateRule(col, col.dc0raw, col.dcInh, target)) return;
-      // Only under a filter: unfiltered, `target` carries no ids and the write
-      // would land on the global level, which every unit inherits.
-      if (anyFilter && !await saveProofKind(col, { proof_kind: col.pk0raw },
-        col.pkInh, target)) return;
-    } catch { return; }
-    if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
-      taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
-  };
   const askDeleteExample = (id) => setConfirm({
     title: t("admin.ltasks.exampleDelTitle"), message: t("admin.ltasks.exampleDelMsg"),
     tone: "danger", confirmLabel: t("common.delete"),
     onConfirm: () => exDelMut.mutate(id),
   });
-  // ONE uploader for all three modals. The scope rides in explicitly — never
+  // ONE uploader for every level. The scope rides in explicitly — never
   // inferred from which modal is open — so a photo can no more reach past the
-  // rows on screen than the criteria beside it can.
+  // level on screen than the criteria beside it can.
   const uploadExampleTo = (taskId, scope) => (file) => {
-    if (file.size > 10 * 1024 * 1024) { toast2.error(t("profile.photoTooLarge")); return; }
+    if (file.size > 10 * 1024 * 1024) { toast.error(t("profile.photoTooLarge")); return; }
     exAddMut.mutate({ taskId, file, ...scope });
   };
-  const cellNext = cell && nextForShift(managers.find((m) => m.id === cell.mid)?.shift);
-  const lcellNext = lcell && nextForShift(managers.find((m) => m.id === lcell.mid)?.shift);
-  // What the open leader modal compares against: the brigadir's cell for the
-  // numbers/status, the resolved chain for the texts (see leadInherit).
-  const lBase = lcell && getCell(lcell.mid, lcell.tid);
-  const lInh = lcell && leadInherit(lcell.mid, lcell.tid);
-  // Example photos in force for each cell modal's ONE row, and whether that
-  // row owns them or is showing what it inherits.
-  const cellExR = cell ? exOf(cell.tid, cell.mid, null) : { ids: [], level: "global" };
-  const cellEx = { ...cellExR, own: cellExR.level === "supervisor" };
-  const lcellExR = lcell ? exOf(lcell.tid, lcell.mid, lcell.lid) : { ids: [], level: "global" };
-  const lcellEx = { ...lcellExR, own: lcellExR.level === "leader" };
+
+  // ── the catalog presses ─────────────────────────────────────────────────
+  const askArchive = () => {
+    if (!arch) return;
+    const td = taskById.get(arch.tid);
+    const w = gv(arch.tid).weight;
+    setConfirm({
+      title: t("admin.ltasks.archTitle"), tone: "danger",
+      message: t("admin.ltasks.archConfirm")
+        .replace("{task}", tname(td)).replace("{date}", arch.from || "")
+        .replace("{a}", stdSum).replace("{b}", Math.max(0, stdSum - w))
+        .replace("{l}", leaders.length),
+      confirmLabel: t("admin.ltasks.archDo"),
+      onConfirm: () => archMut.mutate({ task_id: arch.tid, archived_from: arch.from || null }),
+    });
+  };
+  const askRestore = (td) => setConfirm({
+    title: t("admin.ltasks.archRestore"), tone: "warning",
+    message: t("admin.ltasks.archRestoreMsg").replace("{task}", tname(td)).replace("{date}", floor),
+    confirmLabel: t("admin.ltasks.archRestore"),
+    onConfirm: () => archMut.mutate({ task_id: td.id, archived_from: null }),
+  });
+  const askAdd = () => {
+    if (!addTask) return;
+    const w = Number(addTask.weight) || 0;
+    const day = addTask.active_from || floor;
+    // A new task is asked of EVERY leader it reaches the day it opens, and the
+    // score is divided by the new sum — two consequences an admin cannot see
+    // from the form, so the confirm states both before anything is written.
+    const reach = addTask.who === "all" ? leaders.length
+      : addTask.who === "pick"
+        ? addTask.mgrs.reduce((a, id) => a + (mgrById.get(id)?.leaders_n || 0), 0)
+        : unitsOf(addTask.who === "shift1" ? 1 : 2).reduce((a, m) => a + (m.leaders_n || 0), 0);
+    setConfirm({
+      title: t("admin.ltasks.addTitle"), tone: "warning",
+      message: `${t("admin.ltasks.addConfirm").replace("{date}", day).replace("{n}", reach)} `
+        + t("admin.ltasks.addWeightWarn").replace("{a}", stdSum).replace("{b}", stdSum + w),
+      confirmLabel: t("admin.ltasks.addCreate"),
+      onConfirm: () => addMut.mutate({
+        names: addTask.names,
+        note: addTask.note,
+        criteria: addTask.criteria || "",
+        description: addTask.description || "",
+        default_weight: w,
+        default_min_media: Number(addTask.min_media) || 1,
+        // Blank would land on the backend's own floor; the form shows that
+        // date and lets it be pushed further out, so it is sent explicitly.
+        active_from: day,
+        ...(addTask.who === "shift1" ? { manager_ids: unitsOf(1).map((m) => m.id) }
+          : addTask.who === "shift2" ? { manager_ids: unitsOf(2).map((m) => m.id) }
+            : addTask.who === "pick" ? { manager_ids: addTask.mgrs } : {}),
+      }),
+    });
+  };
+
+  // ── filters ─────────────────────────────────────────────────────────────
+  // The brigadir list is the whole register; the LIDER list is narrowed by the
+  // brigadir above it and SAYS so, offers the way back out, and drops a pick
+  // its own list no longer offers.
+  const mgrLabel = (id) => tl(mgrById.get(id)?.name || "") || `#${id}`;
+  const leadLabel = (id) => tl(leaderById.get(id)?.name || "") || `#${id}`;
+  // A stored pick that no longer names anybody (a brigadir who left the
+  // register between two visits) must not survive as a chip, a strip tab or a
+  // filter label — `level` already degrades to Standart, and a control naming
+  // a row the page cannot show is worse than a reset.
+  const pickUv = pickU && mgrById.has(pickU) ? pickU : null;
+  const pickLv = pickL && leaderById.has(pickL) ? pickL : null;
+  const leaderOpts = useMemo(() => (pickUv
+    ? (leadersByMgr[pickUv] || []) : leaders), [pickUv, leaders, leadersByMgr]);
+  useEffect(() => {
+    if (pickL && !leaderOpts.some((p) => p.id === pickL)) {
+      setPickL(null);
+      if (lvlKind === "leader") setLvlKind(pickU ? "unit" : "std");
+    }
+  }, [pickU, leaderOpts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickUnit = (id) => {
+    setPickU(id);
+    setPickL(null);
+    setLvlKind(id ? "unit" : (fShift ? "shift" : "std"));
+    if (id) setFShift(Number(mgrById.get(id)?.shift) || 0);
+  };
+  const pickLeader = (id) => {
+    setPickL(id);
+    if (id) {
+      const p = leaderById.get(id);
+      if (p) { setPickU(p.manager_id); setFShift(Number(mgrById.get(p.manager_id)?.shift) || 0); }
+      setLvlKind("leader");
+    } else setLvlKind(pickU ? "unit" : "std");
+  };
+
+  const sheetSections = [
+    {
+      key: "mgr", icon: UserCog, label: t("admin.ltasks.supervisor"),
+      active: !!pickUv, display: pickUv ? mgrLabel(pickUv) : "",
+      onClear: () => pickUnit(null),
+      render: ({ close }) => (
+        <PickFilter searchable close={close} value={pickUv ?? "-"}
+          onChange={(v) => pickUnit(v === "-" ? null : v)}
+          opts={[{ value: "-", label: t("admin.ltasks.pickNone") },
+          ...managers.map((m) => ({ value: m.id, label: `${tl(m.name)} · S${m.shift ?? "?"}`, title: tl(m.name) }))]} />
+      ),
+    },
+    {
+      key: "lead", icon: Users, label: t("admin.ltasks.fLeader"),
+      active: !!pickLv, display: pickLv ? leadLabel(pickLv) : "",
+      onClear: () => pickLeader(null),
+      render: ({ close }) => (
+        <PickFilter searchable close={close} value={pickLv ?? "-"}
+          onChange={(v) => pickLeader(v === "-" ? null : v)}
+          note={pickUv ? t("admin.ltasks.narrowedBy").replace("{name}", mgrLabel(pickUv)).replace("{n}", leaderOpts.length) : null}
+          empty={pickUv ? (
+            <div className="text-center py-2">
+              <p className="text-xs mb-1.5" style={{ color: "var(--text-4)" }}>{t("admin.ltasks.noLeaders")}</p>
+              <Button size="sm" variant="ghost" onClick={() => pickUnit(null)}>{t("admin.ltasks.clearBrig")}</Button>
+            </div>
+          ) : null}
+          opts={[{ value: "-", label: t("admin.ltasks.pickNone") },
+          ...leaderOpts.map((p) => ({ value: p.id, label: tl(p.name), title: tl(p.name) }))]} />
+      ),
+    },
+  ];
+
+  const regSections = [
+    {
+      key: "rlvl", icon: Layers, label: t("admin.ltasks.regLevel"),
+      active: regLvl !== "all",
+      display: regLvl === "all" ? "" : t(`admin.ltasks.regLvl.${regLvl}`),
+      onClear: () => setRegLvl("all"),
+      render: () => (
+        <SegmentedToggle fill size="sm" value={regLvl} onChange={(v) => { setRegLvl(v); setRegPage(1); }}
+          options={[["all", t("admin.ltasks.fAllShifts")], ["shift", t("admin.ltasks.regLvl.shift")],
+          ["unit", t("admin.ltasks.regLvl.unit")], ["leader", t("admin.ltasks.regLvl.leader")]]} />
+      ),
+    },
+    {
+      key: "rfld", icon: ListChecks, label: t("admin.ltasks.regRule"),
+      active: regFld !== "all",
+      display: regFld === "all" ? "" : t(`admin.ltasks.col.${regFld}`),
+      onClear: () => setRegFld("all"),
+      render: ({ close }) => (
+        <PickFilter close={close} value={regFld} onChange={(v) => { setRegFld(v); setRegPage(1); }}
+          opts={[{ value: "all", label: t("admin.ltasks.fAllShifts") },
+          ...REG_FIELDS.map((k) => ({ value: k, label: t(`admin.ltasks.col.${k}`) }))]} />
+      ),
+    },
+    {
+      key: "rbad", icon: AlertTriangle, label: t("admin.ltasks.regBad"),
+      active: regBad, display: regBad ? t("admin.ltasks.regBadOn") : "",
+      onClear: () => setRegBad(false),
+      render: () => (
+        <SegmentedToggle fill size="sm" value={regBad} onChange={(v) => { setRegBad(v); setRegPage(1); }}
+          options={[[false, t("admin.ltasks.fAllShifts")], [true, t("admin.ltasks.regBadOn")]]} />
+      ),
+    },
+  ];
+
+  const regShown = useMemo(() => {
+    let rows = regRows;
+    if (regBad) rows = rows.filter((r) => r.bad);
+    if (regLvl !== "all") rows = rows.filter((r) => r.lvl === regLvl);
+    if (regFld !== "all") rows = rows.filter((r) => r.f === regFld);
+    const q = regQ.trim().toLowerCase();
+    if (q) rows = rows.filter((r) => `${r.who} ${r.sub} ${tname(taskById.get(r.tid))}`.toLowerCase().includes(q));
+    return [...rows].sort((a, b) => (a.shift - b.shift)
+      || (["shift", "unit", "leader"].indexOf(a.lvl) - ["shift", "unit", "leader"].indexOf(b.lvl))
+      || (a.who || "").localeCompare(b.who || "") || a.tid - b.tid);
+  }, [regRows, regBad, regLvl, regFld, regQ, taskById, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  const REG_PAGE = 60;
+  const regPages = Math.max(1, Math.ceil(regShown.length / REG_PAGE));
+  const regPageRows = regShown.slice((Math.min(regPage, regPages) - 1) * REG_PAGE, Math.min(regPage, regPages) * REG_PAGE);
+
+  const openFromRegister = (r) => {
+    if (r.lvl === "leader") pickLeader(r.lid);
+    else if (r.lvl === "unit") pickUnit(r.mid);
+    else { setPickU(null); setPickL(null); setFShift(r.shift); setLvlKind("shift"); }
+    setTab("sheet");
+    const lvl = r.lvl === "leader"
+      ? { kind: "leader", id: r.lid, mid: r.mid, shift: r.shift }
+      : r.lvl === "unit" ? { kind: "unit", id: r.mid, mid: r.mid, shift: r.shift }
+        : { kind: "shift", id: null, mid: unitsOf(r.shift)[0]?.id ?? null, shift: r.shift };
+    openEdit(r.tid, lvl);
+  };
+
+  const descPending = (pc) => {
+    if (pc.kind === "global_task") { const k = taskById.get(pc.task_id); return `${t("admin.ltasks.rename")}: ${k ? tname(k) : "T" + pc.task_id}`; }
+    if (pc.kind === "leader") { const p = leaderById.get(pc.leader_id); const k = taskById.get(pc.task_id); return `${p ? tl(p.name) : "?"} · ${k ? tname(k) : "T" + pc.task_id}`; }
+    const m = mgrById.get(pc.manager_id); return m ? tl(m.name) : `#${pc.manager_id}`;
+  };
+
+  // ── the editor's field helpers ──────────────────────────────────────────
+  const editLvl = edit?.lvl || level;
+  const editTask = edit ? taskById.get(edit.tid) : null;
+  const editInh = edit ? parentOf(editLvl, edit.tid) : null;
+  const editOwn = edit ? ownKeys(editLvl, edit.tid) : new Set();
+  const isStd = editLvl.kind === "std";
+  const ownPill = (k) => (editOwn.has(k) ? (
+    <span className="ml-1.5 align-middle rounded px-1.5 py-px text-[10px] font-semibold normal-case tracking-normal"
+      style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}>
+      {t("admin.ltasks.ownHere")}
+    </span>
+  ) : null);
+  const withMark = (label, mark) => (mark ? <>{label}{mark}</> : label);
+  const inheritLine = (k, shown) => {
+    if (isStd || !editInh) return null;
+    const text = editOwn.has(k)
+      ? t("admin.ltasks.inheritWouldBe").replace("{v}", shown).replace("{from}", tagLabel("std"))
+      : t("admin.ltasks.inheritIs").replace("{v}", shown).replace("{from}", tagLabel("std"));
+    return <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>{text}</div>;
+  };
+
+  const numField = (label, value, onChange, max, hint) => (
+    <FormField label={label} hint={hint} required>
+      <input type="number" min={0} max={max} value={value} onChange={(e) => onChange(e.target.value)} className={inputCls} style={inputStyle} />
+    </FormField>
+  );
+  const readOnlyField = (label, value, hint) => (
+    <FormField label={label} hint={hint}>
+      <div className={inputCls} style={{ ...inputStyle, opacity: 0.7 }}>{value}</div>
+    </FormField>
+  );
+
+  const cellExScope = () => (editLvl.kind === "std" ? { level: "global" }
+    : editLvl.kind === "shift" ? { manager_ids: unitsOf(editLvl.shift).map((m) => m.id), level: "supervisor" }
+      : editLvl.kind === "unit" ? { manager_ids: [editLvl.id], level: "supervisor" }
+        : { leader_ids: [editLvl.id], level: "leader" });
+  const editExR = edit ? exOf(edit.tid, editLvl.kind === "shift" ? unitsOf(editLvl.shift)[0]?.id : editLvl.mid,
+    editLvl.kind === "leader" ? editLvl.id : null) : { ids: [], level: "global" };
+  const editExOwn = edit ? exIsOwn(editLvl, edit.tid) : false;
+  const editExNote = () => (editLvl.kind === "std" ? t("admin.ltasks.examplesScopeGlobal")
+    : editLvl.kind === "shift" ? t("admin.ltasks.examplesScopeMgrs").replace("{n}", unitsOf(editLvl.shift).length)
+      : editLvl.kind === "unit" ? t("admin.ltasks.examplesScopeUnit")
+        : t("admin.ltasks.examplesScopeLeader"));
+
+  const editNext = edit ? nextForShift(editLvl.shift || 1) : "";
+  const editProblems = edit ? problemsFor(editLvl, edit.tid) : [];
+  const savingRule = cellMut.isPending || leaderMut.isPending || taskMut.isPending
+    || applyMut.isPending || critMut.isPending || descMut.isPending || winMut.isPending
+    || dlMut.isPending || dcMut.isPending || tcMut.isPending || dayMut.isPending
+    || pkMut.isPending;
+
+  // ── render ──────────────────────────────────────────────────────────────
+  const bannerRows = problems ? problems.filter((p) => p.enabled !== false) : [];
+  const sheetOwnN = liveTasks.reduce((a, td) => a + COLS.filter((c) => c.keys.some((k) => ownKeys(level, td.id).has(k))).length, 0);
 
   return (
-    <div className="space-y-6">
-      {/* Archive channel */}
-      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={Radio} title={t("admin.ltasks.channel")} />
-        <div className="p-4 space-y-3">
-          <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.channelHint")}</p>
-          <div className="flex items-center gap-2">
-            <input value={chan} onChange={(e) => setChan(e.target.value)} placeholder="-100…" className={`${inputCls} flex-1`} style={inputStyle} />
-            <Button size="lg" loading={chanMut.isPending} onClick={() => chanMut.mutate({ chat_id: chan })}>{t("admin.ltasks.save")}</Button>
-          </div>
-          {chanErr && <p className="text-xs" style={{ color: C_BAD }}>{chanErr}</p>}
-        </div>
-      </div>
+    <div className="space-y-4">
+      <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
+        {t("admin.ltasks.intro")}
+      </p>
 
-      {/* Scheduled changes */}
+      {/* Windows nobody on that shift can work — the 26-Aug incident class,
+          named before it bites rather than discovered in a leader's score. */}
+      {bannerRows.length > 0 && (
+        <div className="rounded-2xl px-3.5 py-3 flex items-start gap-2.5"
+          style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)" }}>
+          <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: C_BAD }} />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>
+              {t("admin.ltasks.bannerTitle").replace("{n}", bannerRows.length)}
+            </div>
+            <div className="text-[11px] mt-0.5 leading-snug" style={{ color: "var(--text-2)" }}>
+              {t("admin.ltasks.bannerBody")
+                .replace("{who}", bannerRows[0].leader_id
+                  ? leadLabel(bannerRows[0].leader_id) : mgrLabel(bannerRows[0].manager_id))
+                .replace("{win}", (bannerRows[0].win || []).join("–"))
+                .replace("{shift}", bannerRows[0].shift ?? "?")
+                .replace("{hours}", (bannerRows[0].hours || []).join("–"))}
+            </div>
+          </div>
+          <Button size="md" tint variant="danger" className="ml-auto flex-shrink-0"
+            onClick={() => { setRegBad(true); setRegFld("window"); setRegLvl("all"); setRegPage(1); setTab("reg"); }}>
+            {t("admin.ltasks.bannerShow")}
+          </Button>
+        </div>
+      )}
+
+      {/* Scheduled changes — a config edit queued for tomorrow is invisible
+          everywhere else, and it is what an admin will be surprised by. */}
       {pending.length > 0 && (
         <div className="rounded-2xl p-3" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <div className="flex items-center gap-2 mb-2">
@@ -1209,395 +1780,714 @@ export default function LeaderTasksAdmin() {
         </div>
       )}
 
-      {/* Supervisors × tasks matrix */}
-      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={ListChecks} title={t("admin.ltasks.matrix")} right={
-          <div className="flex items-center gap-1.5">
-            <Button variant="ghost" size="sm" icon={<Type size={14} />} onClick={() => { setTxtErr(""); setShowTexts(true); }}>{t("admin.ltasks.texts")}</Button>
-            <Button variant="ghost" size="sm" icon={<RotateCcw size={14} />} onClick={() => setShowExc(true)}>{t("admin.ltasks.tab.exc")}</Button>
-            <Button variant="ghost" size="sm" icon={<History size={14} />} onClick={() => setShowHistory(true)}>{t("admin.ltasks.history")}</Button>
-          </div>
-        } />
-        <div className="px-4 pt-3 space-y-2.5">
-          <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.desc")}</p>
-          {/* FilterPanel must stay a DIRECT child of this row — its fit check
-              measures the row's own children to decide inline vs grouped. */}
-          <div className="flex items-center gap-2">
-            <FilterPanel sections={filterSections} />
-            <span className="ml-auto shrink-0 text-[11px] tabular-nums"
-              style={{ color: anyFilter ? "var(--brand-text)" : "var(--text-4)" }}>
-              {leadSel.length
-                ? t("admin.ltasks.fCountLead").replace("{l}", leaderRows).replace("{n}", rows.length)
-                : t("admin.ltasks.fCount").replace("{n}", rows.length).replace("{total}", managers.length)}
-            </span>
-          </div>
-        </div>
-        {isLoading ? (
-          <SkeletonMatrix rows={8} />
-        ) : (
-          <div className="p-4 overflow-x-auto">
-            <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "separate", borderSpacing: 3, tableLayout: "fixed", minWidth: 640 }}>
-              <thead>
-                <tr>
-                  <th className="text-left pr-2 pb-1.5 font-semibold align-bottom sticky left-0 top-0 z-20" style={{ color: "var(--text-3)", background: "var(--bg-card)", width: 170 }}>{t("admin.ltasks.supervisor")}</th>
-                  {tasks.map((task) => (
-                    <th key={task.id} className="align-bottom sticky top-0 z-10" style={{ background: "var(--bg-card)" }}>
-                      {/* block, not inline-block: an inline button aligns on the baseline of its
-                          LAST line, so one- vs two-line names staggered the whole header row. */}
-                      <button type="button" title={tname(task)}
-                        onClick={() => openCol(task)}
-                        className="block w-full px-1 py-1.5 rounded-lg transition-opacity hover:opacity-75"
-                        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--brand-text)" }}>
-                        <span className="block font-bold leading-none">T{task.id}</span>
-                        {/* The name itself, on screen, in two lines — no hover required.
-                            minHeight reserves both lines so short names keep the chip the same height. */}
-                        <span
-                          className="block text-[9px] font-medium leading-tight mt-0.5 overflow-hidden"
-                          style={{ color: "var(--text-3)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minHeight: "2.5em" }}
-                        >
-                          {tname(task)}
-                        </span>
-                      </button>
-                    </th>
-                  ))}
-                  <th style={{ width: 56 }} />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={tasks.length + 2} className="text-center py-8">
-                      <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.fNone")}</p>
-                      <Button variant="ghost" size="sm" className="mt-1.5" onClick={clearFilters}>
-                        {t("admin.ltasks.fClear")}
-                      </Button>
-                    </td>
-                  </tr>
-                )}
-                {rows.map(({ m, kids }) => {
-                  // A leader filter pins its brigadirs open: collapsing would
-                  // hide the very rows the filter selected, and the apply
-                  // button's promise ("these rows") would stop being visible.
-                  const pinned = leadSel.length > 0;
-                  const isOpen = pinned || open.has(m.id);
-                  const childWarn = kids.some((p) => leaderSums[p.id] !== 100);
-                  return (
-                    <Fragment key={m.id}>
-                      <tr>
-                        <td className="pr-2 whitespace-nowrap sticky left-0 z-10" style={{ background: "var(--bg-card)" }}>
-                          <span className="inline-flex items-center gap-1 max-w-full">
-                            <button type="button" onClick={() => toggleOpen(m.id)} disabled={!kids.length || pinned}
-                              title={pinned ? t("admin.ltasks.fPinned") : undefined}
-                              className="p-0.5 -ml-1 rounded transition-opacity hover:opacity-70 disabled:opacity-30 flex-shrink-0" style={{ color: "var(--text-3)" }}>
-                              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            </button>
-                            <button type="button" onClick={() => setUnit({ mid: m.id, per_task_close: !!m.per_task_close, bot_from: m.bot_from || "", cell_from: m.cell_from || "" })}
-                              title={t("admin.ltasks.unitSettings")}
-                              className="font-medium truncate text-left hover:opacity-70 transition-opacity"
-                              style={{ textDecorationLine: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3, textDecorationColor: "var(--border-md)" }}>
-                              {tl(m.name)}
-                            </button>
-                            {m.per_task_close && (
-                              <span title={t("admin.ltasks.perTask")} className="flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-bold"
-                                style={{ background: "rgba(200,151,63,0.14)", color: "var(--brand)", border: "1px solid rgba(200,151,63,0.35)" }}>
-                                1×1
-                              </span>
-                            )}
-                            {/* Rehearsing: the unit files in the bot to learn it while
-                                its fill-out row is still what the register counts. Marked
-                                on the matrix because it is invisible from the cells. */}
-                            {m.bot_from && (
-                              <span title={t("admin.ltasks.botFromChip").replace("{date}", m.bot_from)}
-                                className="inline-flex items-center gap-0.5 flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-bold"
-                                style={{ background: "rgba(234,179,8,0.14)", color: C_WARN, border: "1px solid rgba(234,179,8,0.35)" }}>
-                                <GraduationCap size={10} />{m.bot_from.slice(5).replace("-", ".")}
-                              </span>
-                            )}
-                            {/* Files ONE CHECKLIST PER CELL from this day. Marked
-                                here because it multiplies what the unit's leaders
-                                are asked for and nothing else on the grid says so. */}
-                            {m.cell_from && (
-                              <span title={t("admin.ltasks.cellFromChip").replace("{date}", m.cell_from).replace("{n}", m.cells_n ?? 0)}
-                                className="inline-flex items-center gap-0.5 flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-bold"
-                                style={{ background: "rgba(59,130,246,0.14)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.35)" }}>
-                                <Grid3x3 size={10} />{m.cell_from.slice(5).replace("-", ".")}
-                              </span>
-                            )}
-                            {m.shift && <span className="px-1 py-0.5 rounded text-[10px] font-bold flex-shrink-0" style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}>S{m.shift}</span>}
-                            {childWarn && !isOpen && <span title={t("admin.ltasks.childWarn")} className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: C_WARN }} />}
-                          </span>
-                        </td>
-                        {tasks.map((task) => {
-                          const c = getCell(m.id, task.id);
-                          return (
-                            <td key={task.id}>
-                              <button type="button"
-                                title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}% · ${t(`admin.ltasks.proofMode.${supPk(m.id, task.id)}`)}`}
-                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", description: c.description || "", win_from: c.win_from || "", win_to: c.win_to || "", date_check: supDc(m.id, task.id), time_check: supTc(m.id, task.id), proof_kind: supPk(m.id, task.id), when: "now" })}
-                                className="relative w-full h-9 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
-                                style={cellStyle(c)}>
-                                {c.weight}%
-                                {c.min_media > 1 && <MediaDots n={c.min_media} />}
-                                {supPk(m.id, task.id) === "camera" && <CamMark />}
-                              </button>
-                            </td>
-                          );
-                        })}
-                        <td className="text-center">{sums[m.id] !== 100 && warnBadge(sums[m.id])}</td>
-                      </tr>
-                      {isOpen && kids.map((p) => (
-                        <tr key={`L${p.id}`}>
-                          <td className="pr-2 whitespace-nowrap sticky left-0 z-10" style={{ background: "var(--bg-card)" }}>
-                            <span className="inline-flex items-center max-w-full pl-5 text-[11px]" style={{ color: "var(--text-2)" }}><span className="truncate">{tl(p.name)}</span></span>
-                          </td>
-                          {tasks.map((task) => {
-                            const ov = getOv(p.id, task.id);
-                            const c = leadEff(p.id, m.id, task.id);
-                            return (
-                              <td key={task.id}>
-                                <button type="button"
-                                  title={`${leadTaskName(p.id, m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}% · ${t(`admin.ltasks.proofMode.${leadPk(p.id, m.id, task.id)}`)}${ov ? ` · ${t("admin.ltasks.overridden")}` : ""}`}
-                                  onClick={() => openLeaderCell(p, m.id, task)}
-                                  className="relative w-full h-8 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
-                                  style={{ ...cellStyle(c), boxShadow: ov ? OV_RING : undefined }}>
-                                  {c.weight}%
-                                  {c.min_media > 1 && <MediaDots n={c.min_media} />}
-                                  {leadPk(p.id, m.id, task.id) === "camera" && <CamMark />}
-                                </button>
-                              </td>
-                            );
-                          })}
-                          <td className="text-center">{leaderSums[p.id] !== 100 && warnBadge(leaderSums[p.id])}</td>
-                        </tr>
-                      ))}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      {/* KPI tiles — each one opens the register on exactly what it counted. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <Tile n={liveTasks.length} label={t("admin.ltasks.tileTasks")} color="#22c55e"
+          sub={t("admin.ltasks.tileTasksSub").replace("{n}", archivedTasks.length).replace("{sum}", stdSum)}
+          onClick={() => { setRegBad(false); setRegLvl("all"); setRegFld("all"); setRegPage(1); setTab("sheet"); }} />
+        <Tile n={excN} label={t("admin.ltasks.tileExc")} color="var(--brand)"
+          sub={t("admin.ltasks.tileExcSub")
+            .replace("{s}", regRows.filter((r) => r.lvl === "shift" && !r.probOnly).length)
+            .replace("{u}", regRows.filter((r) => r.lvl === "unit" && !r.drift && !r.probOnly).length)
+            .replace("{l}", regRows.filter((r) => r.lvl === "leader" && !r.probOnly).length)}
+          onClick={() => { setRegBad(false); setRegLvl("all"); setRegFld("all"); setRegPage(1); setTab("reg"); }} />
+        {problems && (
+          <Tile n={problems.length} label={t("admin.ltasks.tileBad")} color={problems.length ? C_BAD : "#94a3b8"}
+            sub={t("admin.ltasks.tileBadSub")}
+            onClick={() => { setRegBad(true); setRegFld("window"); setRegLvl("all"); setRegPage(1); setTab("reg"); }} />
         )}
+        <Tile n={driftN} label={t("admin.ltasks.tileDrift")} color={C_WARN}
+          sub={t("admin.ltasks.tileDriftSub")}
+          onClick={() => { setRegBad(false); setRegLvl("unit"); setRegFld("all"); setRegPage(1); setTab("reg"); }} />
+      </div>
+      <p className="text-[11px] -mt-2" style={{ color: "var(--text-4)" }}>
+        {t("admin.ltasks.tilesNote").replace("{m}", managers.length)
+          .replace("{l}", leaders.length).replace("{t}", liveTasks.length)}
+      </p>
+
+      {/* View tabs + the two page-level actions. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedToggle asTabs value={tab} onChange={setTab}
+          ariaLabel={t("admin.ltasks.title")}
+          options={[
+            [ "sheet", t("admin.ltasks.tab.tasks") ],
+            [ "reg", `${t("admin.ltasks.tab.exc")} · ${excN}` ],
+          ]} />
+        <span className="ml-auto" />
+        <Button size="lg" variant="ghost" icon={<Type size={14} />} onClick={() => { setTxtErr(""); setShowTexts(true); }}>
+          {t("admin.ltasks.texts")}
+        </Button>
+        <Button size="lg" variant="ghost" icon={<History size={14} />} onClick={() => setShowHistory(true)}>
+          {t("admin.ltasks.history")}
+        </Button>
+        <Button size="lg" variant="ghost" icon={<ListOrdered size={14} />}
+          onClick={() => setOrder({ ids: liveTasks.map((x) => x.id) })}>
+          {t("admin.ltasks.orderBtn")}
+        </Button>
+        <Button size="lg" icon={<Plus size={14} />} onClick={() => setAddTask({
+          names: {}, note: {}, criteria: "", description: "", weight: 5, min_media: 1,
+          who: "all", active_from: floor, mgrs: [],
+        })}>
+          {t("admin.ltasks.addTask")}
+        </Button>
       </div>
 
-      {/* Supervisor cell modal */}
-      {cell && (
-        <Modal title={t("admin.ltasks.cellTitle")} subtitle={tl(managers.find((m) => m.id === cell.mid)?.name || "")} icon={<ListChecks size={14} />} onClose={() => setCell(null)}
-          footer={<>
-            <Button variant="secondary" onClick={() => setCell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={cellMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending || pkMut.isPending} onClick={saveCell}>{t("admin.ltasks.save")}</Button>
-          </>}>
-          <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.supNameHint")}</p>
-          {nameFields(cell.names, (l, v) => setCell((c) => ({ ...c, names: { ...c.names, [l]: v } })), (l) => cellTask?.name?.[l] || "")}
-          <FormField label={t("admin.ltasks.status")} required>{statusToggle(cell.enabled, (v) => setCell((c) => ({ ...c, enabled: v })))}</FormField>
-          {numField(t("admin.ltasks.minMedia"), cell.min_media, (v) => setCell((c) => ({ ...c, min_media: v })), 20)}
-          {proofKindField(cell, (v) => setCell((c) => ({ ...c, ...v })), null, "unit")}
-          {numField(t("admin.ltasks.weight"), cell.weight, (v) => setCell((c) => ({ ...c, weight: v })), 100)}
-          {descriptionField(cell.description, (v) => setCell((c) => ({ ...c, description: v })), descOf(cell.tid) || critOf(cell.tid))}
-          {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
-          {/* The picture of a correct proof belongs beside the words for one,
-              at the same level: this unit's leaders. Unlike every other field
-              here it applies AT ONCE (bytes, not a staged draft), which the
-              note says out loud. */}
-          <TaskExamples ids={cellEx.ids} own={cellEx.own} fromLabel={exFromLabel(cellEx.level)}
-            scopeNote={t("admin.ltasks.examplesScopeUnit")} busy={exAddMut.isPending}
-            onUpload={uploadExampleTo(cell.tid, { manager_ids: [cell.mid], level: "supervisor" })}
-            onAskDelete={askDeleteExample} t={t} />
-          {windowField(cell, (v) => setCell((c) => ({ ...c, ...v })),
-            supWinPh(cell.mid, cell.tid, "win_from"), supWinPh(cell.mid, cell.tid, "win_to"))}
-          {dateRuleField(cell, (v) => setCell((c) => ({ ...c, ...v })))}
-          {deadlineField(cell, (v) => setCell((c) => ({ ...c, ...v })), supDlPh(cell.mid, cell.tid))}
-          <WhenBar when={cell.when} setWhen={(v) => setCell((c) => ({ ...c, when: v }))} nextDate={cellNext} t={t} />
-        </Modal>
+      {tab === "sheet" ? (
+        <>
+          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            {/* The level strip: which level of the chain the sheet is read at.
+                A view switch, so it stays OUTSIDE the filter panel. */}
+            <div className="px-4 py-3 flex flex-wrap items-center gap-2.5" style={{ background: "var(--bg-inner)", borderBottom: "1px solid var(--border)" }}>
+              <SegmentedToggle asTabs ariaLabel={t("admin.ltasks.levelStrip")}
+                value={levelKey(level)}
+                onChange={(k) => {
+                  if (k === "std") { setLvlKind("std"); setFShift(0); }
+                  else if (k === "unit") setLvlKind("unit");
+                  else if (k === "leader") setLvlKind("leader");
+                  else { setLvlKind("shift"); setFShift(Number(k.slice(1))); }
+                }}
+                options={[
+                  { value: "std", label: t("admin.ltasks.lvlStd") },
+                  ...shifts.map((s) => ({ value: `s${s}`, label: t("admin.ltasks.lvlShift").replace("{n}", s) })),
+                  ...(pickUv ? [{ value: "unit", label: mgrLabel(pickUv) }] : []),
+                  ...(pickLv ? [{ value: "leader", label: leadLabel(pickLv) }] : []),
+                ]} />
+              <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                {t("admin.ltasks.chain")}{" "}
+                <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{levelName(level)}</span>
+                {" · "}{reachText(level)}
+              </span>
+              {/* A unit whose leaders do not all add up to 100% — the old
+                  matrix's row dot, kept: it is invisible from a sheet read one
+                  level up, and it is what makes a leader score against a
+                  denominator nobody meant. */}
+              {level.kind === "unit"
+                && (leadersByMgr[level.id] || []).some((p) => leaderSums[p.id] !== 100) && (
+                  <span title={t("admin.ltasks.childWarn")} className="inline-flex items-center gap-1 text-[11px] font-semibold"
+                    style={{ color: C_WARN }}>
+                    <AlertTriangle size={13} />{t("admin.ltasks.childWarn")}
+                  </span>
+                )}
+              {level.kind !== "std" && level.kind !== "shift" && (
+                <Button size="sm" variant="ghost" icon={<Grid3x3 size={13} />} className="ml-auto"
+                  onClick={() => {
+                    const m = mgrById.get(level.mid);
+                    setUnit({ mid: level.mid, cell_from: m?.cell_from || "" });
+                  }}>
+                  {t("admin.ltasks.unitSettings")}
+                </Button>
+              )}
+            </div>
+
+            {/* FilterPanel must stay a DIRECT child of this row — its fit check
+                measures the row's own children to decide inline vs grouped. */}
+            <div className="px-4 py-3 flex flex-wrap items-center gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
+              <FilterPanel sections={sheetSections} />
+              <span className="ml-auto text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
+                {t("admin.ltasks.sheetCount").replace("{t}", liveTasks.length).replace("{n}", sheetOwnN)}
+              </span>
+            </div>
+
+            {isLoading ? (
+              <SkeletonTable rows={10} cols={8} />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "collapse", minWidth: 1380 }}>
+                  <colgroup>
+                    <col style={{ width: 36 }} />
+                    <col style={{ width: 234 }} />
+                    {COLS.map((c) => <col key={c.k} style={{ width: c.w }} />)}
+                    <col style={{ width: 56 }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      {["", t("admin.ltasks.task"), ...COLS.map((c) => t(`admin.ltasks.col.${c.k}`)), ""].map((h, i) => (
+                        <th key={i} className="px-2.5 py-2.5 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap"
+                          style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tasks.map((td) => {
+                      const r = resolved(level, td.id);
+                      const own = ownKeys(level, td.id);
+                      const archived = !!td.archived_from;
+                      const excHere = regRows.filter((x) => x.tid === td.id && !x.drift && !x.probOnly).length;
+                      return (
+                        <tr key={td.id} style={{ borderTop: "1px solid var(--border)", opacity: archived ? 0.55 : 1 }}>
+                          <td className="px-2 py-2 text-right align-top font-bold tabular-nums" style={{ color: "var(--text-4)" }}>{td.id}</td>
+                          <td className="px-2.5 py-2 align-top">
+                            <div className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{r.names[lang] || r.names.uz || `T${td.id}`}</div>
+                            <div className="text-[10px] mt-0.5 leading-snug" style={{ color: "var(--text-4)" }}>
+                              {(td.note?.[lang] || td.note?.uz || "") && <>{td.note?.[lang] || td.note?.uz} · </>}
+                              {own.has("names") && <>{t("admin.ltasks.nameFrom").replace("{from}", tagLabel(originOf(level, td.id, { keys: ["names"] })))} · </>}
+                              {t("admin.ltasks.excCount").replace("{n}", excHere)}
+                            </div>
+                            {archived && (
+                              <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                                style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
+                                <Archive size={10} />{t("admin.ltasks.archChip").replace("{date}", td.archived_from)}
+                              </span>
+                            )}
+                            {!archived && td.active_from && (
+                              <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                                style={{ background: "rgba(234,179,8,0.14)", color: C_WARN, border: "1px solid rgba(234,179,8,0.35)" }}>
+                                <Calendar size={10} />{t("admin.ltasks.activeChip").replace("{date}", td.active_from)}
+                              </span>
+                            )}
+                          </td>
+                          {COLS.map((c) => {
+                            const origin = originOf(level, td.id, c);
+                            const isOwn = c.k === "ex"
+                              ? exIsOwn(level, td.id)
+                              : c.keys.some((k) => own.has(k));
+                            const bad = c.k === "window" && problemsFor(level, td.id).length > 0;
+                            return (
+                              <RuleCell key={c.k}
+                                value={showVal(c.k, r, level, td.id)}
+                                own={isOwn} bad={bad}
+                                off={c.k === "enabled" && !r.enabled}
+                                tag={c.k === "ex" ? tagLabel(exTag(level, td.id)) : tagLabel(origin)}
+                                dev={devCount(level, td.id, c)}
+                                mix={mixMark(level, td.id, c)}
+                                title={`${t(`admin.ltasks.col.${c.k}`)}: ${fullVal(c.k, r, level, td.id)}`}
+                                onClick={() => openEdit(td.id)} />
+                            );
+                          })}
+                          <td className="px-2 py-2 align-top text-right">
+                            {archived ? (
+                              <Button size="sm" tint variant="secondary" aria-label={t("admin.ltasks.archRestore")}
+                                title={t("admin.ltasks.archRestore")} icon={<ArchiveRestore size={13} />}
+                                onClick={() => askRestore(td)} />
+                            ) : (
+                              <Button size="sm" tint variant="danger" aria-label={t("admin.ltasks.archTitle")}
+                                title={t("admin.ltasks.archTitle")} icon={<Archive size={13} />}
+                                onClick={() => setArch({ tid: td.id, from: floor })} />
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{ background: "var(--bg-inner)", borderTop: "1px solid var(--border)" }}>
+                      <td colSpan={3} className="px-2.5 py-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                        {t("admin.ltasks.sumRow")}
+                      </td>
+                      <td className="px-2.5 py-2.5">
+                        {levelSum === 100
+                          ? <b className="tabular-nums" style={{ color: "var(--text-1)" }}>100%</b>
+                          : warnBadge(levelSum)}
+                      </td>
+                      <td colSpan={COLS.length - 1} className="px-2.5 py-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                        {offSums > 0 && t("admin.ltasks.sumsOff").replace("{n}", offSums)}
+                      </td>
+                      <td />
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Two legends: what the marks mean, and which of the three texts
+                is read by whom — the question this page is asked most often. */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-4 py-2.5 text-[11px]"
+              style={{ borderTop: "1px solid var(--border)", color: "var(--text-3)" }}>
+              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--brand)" }} />{t("admin.ltasks.legendOwn")}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }} />{t("admin.ltasks.legendInherit")}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: C_BAD }} />{t("admin.ltasks.legendBad")}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "rgba(234,179,8,0.5)" }} />{t("admin.ltasks.legendMix")}</span>
+              <span>{t("admin.ltasks.legendDev")}</span>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-4 py-2.5 text-[11px]"
+              style={{ borderTop: "1px dashed var(--border)", color: "var(--text-3)" }}>
+              <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{t("admin.ltasks.legendTexts")}</span>
+              <span>{t("admin.ltasks.legendNote")}</span>
+              <span>{t("admin.ltasks.legendDesc")}</span>
+              <span>{t("admin.ltasks.legendCrit")}</span>
+            </div>
+          </div>
+
+          {/* One-time setup and the archive, folded away: neither is read on an
+              ordinary visit, and both used to sit above the work. */}
+          <details className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <summary className="px-4 py-3 text-xs font-semibold cursor-pointer select-none" style={{ color: "var(--text-2)" }}>
+              {t("admin.ltasks.more")}
+            </summary>
+            <div className="px-4 pb-4 pt-3.5 space-y-4" style={{ borderTop: "1px solid var(--border)" }}>
+              <FormField label={t("admin.ltasks.channel")} hint={t("admin.ltasks.channelHint")} error={chanErr || null}>
+                <div className="flex items-center gap-2 max-w-md">
+                  <input value={chan} onChange={(e) => setChan(e.target.value)} placeholder="-100…" className={`${inputCls} flex-1`} style={inputStyle} />
+                  <Button size="lg" variant="secondary" loading={chanMut.isPending} onClick={() => chanMut.mutate({ chat_id: chan })}>{t("admin.ltasks.save")}</Button>
+                </div>
+              </FormField>
+              <FormField label={t("admin.ltasks.archList").replace("{n}", archivedTasks.length)}
+                hint={t("admin.ltasks.archListHint")}>
+                {archivedTasks.length === 0 ? (
+                  <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.ltasks.archNone")}</p>
+                ) : (
+                  <div className="space-y-1">
+                    {archivedTasks.map((td) => (
+                      <div key={td.id} className="flex items-center gap-2 text-xs">
+                        <span className="tabular-nums" style={{ color: "var(--text-4)" }}>{td.id}</span>
+                        <span className="truncate">{tname(td)}</span>
+                        <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{td.archived_from}</span>
+                        <Button size="sm" variant="ghost" className="ml-auto" icon={<ArchiveRestore size={13} />}
+                          onClick={() => askRestore(td)}>{t("admin.ltasks.archRestore")}</Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </FormField>
+            </div>
+          </details>
+        </>
+      ) : (
+        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SectionHead icon={Layers} title={t("admin.ltasks.tab.exc")}
+            right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
+              {t("admin.ltasks.regCount").replace("{n}", regShown.length).replace("{total}", regRows.length)}
+            </span>} />
+          <div className="px-4 py-3 flex flex-wrap items-center gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
+            <SearchInput className="w-52" value={regQ} onChange={(v) => { setRegQ(v); setRegPage(1); }}
+              placeholder={t("admin.ltasks.regSearch")} />
+            <FilterPanel sections={regSections} />
+          </div>
+          {isLoading ? (
+            <SkeletonTable rows={8} cols={5} />
+          ) : regShown.length === 0 ? (
+            <div className="py-10 text-center">
+              <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.ltasks.regNone")}</p>
+              <Button variant="ghost" size="sm" className="mt-2"
+                onClick={() => { setRegQ(""); setRegLvl("all"); setRegFld("all"); setRegBad(false); setRegPage(1); }}>
+                {t("admin.ltasks.fClear")}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "collapse", minWidth: 900 }}>
+                  <thead>
+                    <tr>
+                      {[t("admin.ltasks.regWhere"), t("admin.ltasks.task"), t("admin.ltasks.regRule"), t("admin.ltasks.regValue"), ""].map((h, i) => (
+                        <th key={i} className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap"
+                          style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {regPageRows.map((r, i) => {
+                      const prev = regPageRows[i - 1];
+                      const head = !prev || prev.shift !== r.shift;
+                      const td2 = taskById.get(r.tid);
+                      const units = unitsOf(r.shift);
+                      return (
+                        <Fragment key={r.key}>
+                          {head && (
+                            <tr>
+                              <td colSpan={5} className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide"
+                                style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                                {t("admin.ltasks.regGroup").replace("{s}", r.shift || "—")
+                                  .replace("{u}", units.length)
+                                  .replace("{l}", units.reduce((a, m) => a + (m.leaders_n || 0), 0))}
+                              </td>
+                            </tr>
+                          )}
+                          <tr style={{ borderTop: "1px solid var(--border)" }}>
+                            <td className="px-3 py-2 align-top">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="px-1.5 py-px rounded-full text-[10px] font-bold"
+                                  style={r.lvl === "shift"
+                                    ? { background: "rgba(59,130,246,0.14)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.35)" }
+                                    : r.lvl === "unit"
+                                      ? { background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }
+                                      : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" }}>
+                                  {t(`admin.ltasks.regLvl.${r.lvl}`)}
+                                </span>
+                                <b className="truncate">{r.who}</b>
+                              </span>
+                              <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{r.sub}</div>
+                            </td>
+                            <td className="px-3 py-2 align-top">
+                              <span className="tabular-nums mr-1" style={{ color: "var(--text-4)" }}>{r.tid}</span>
+                              {clip(tname(td2), 30)}
+                            </td>
+                            <td className="px-3 py-2 align-top" style={{ color: "var(--text-2)" }}>{t(`admin.ltasks.col.${r.f}`)}</td>
+                            <td className="px-3 py-2 align-top">
+                              {r.drift ? (
+                                <span className="px-1.5 py-px rounded-full text-[10px] font-bold"
+                                  style={{ background: "rgba(234,179,8,0.14)", color: C_WARN, border: "1px solid rgba(234,179,8,0.35)" }}>
+                                  {t("admin.ltasks.regDrift")}
+                                </span>
+                              ) : (
+                                <span className="font-semibold" style={{ color: r.bad ? C_BAD : "var(--text-1)" }}>
+                                  {r.v}{r.bad ? " ⚠" : ""}
+                                </span>
+                              )}
+                              <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>← {r.pl}: {r.p}</div>
+                              {r.carriers != null && r.carriers < r.total && (
+                                <div className="text-[11px]" style={{ color: C_WARN }}>
+                                  {t("admin.ltasks.regCarriers").replace("{c}", r.carriers).replace("{n}", r.total)}
+                                </div>
+                              )}
+                              {r.bad && r.hours && (
+                                <div className="text-[11px]" style={{ color: C_BAD }}>
+                                  {t("admin.ltasks.regBadHours").replace("{s}", r.shift).replace("{hours}", r.hours.join("–"))}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 align-top text-right">
+                              <Button size="sm" variant="ghost" onClick={() => openFromRegister(r)}>{t("admin.ltasks.regOpen")}</Button>
+                            </td>
+                          </tr>
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-4 pb-3">
+                <Pagination page={Math.min(regPage, regPages)} pageCount={regPages} total={regShown.length}
+                  pageSize={REG_PAGE} onPage={setRegPage} />
+              </div>
+            </>
+          )}
+        </div>
       )}
 
-      {/* Leader cell modal */}
-      {lcell && (
-        <Modal title={t("admin.ltasks.leaderCellTitle")} subtitle={tl(leaders.find((p) => p.id === lcell.lid)?.name || "")} icon={<ListChecks size={14} />} onClose={() => setLcell(null)}
+      {/* ── THE rule editor — one modal, every level ───────────────────── */}
+      {edit && editTask && (
+        <Modal title={`${edit.tid} · ${tname(editTask)}`}
+          subtitle={t("admin.ltasks.editSub").replace("{level}", levelName(editLvl)).replace("{reach}", reachText(editLvl))}
+          icon={<ListChecks size={14} />} maxWidth="max-w-2xl" onClose={() => setEdit(null)}
           footer={<>
-            {lcell.hasOv && <Button variant="danger" className="mr-auto" icon={<RotateCcw size={14} />} onClick={askReset}>{t("admin.ltasks.reset")}</Button>}
-            <Button variant="secondary" onClick={() => setLcell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={leaderMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending || pkMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
-          </>}>
-          <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.leaderHint")}</p>
-          {/* Every field opens on the value in force and carries a «changed»
-              mark the moment it differs from what the brigadir's row resolves
-              to — the placeholders still name the inherited value for a field
-              the admin empties, which is how a leader is sent back to inherit. */}
-          {nameFields(lcell.names, (l, v) => setLcell((c) => ({ ...c, names: { ...c.names, [l]: v } })),
-            (l) => lInh.names[l],
-            (l) => changedPill(ownText(lcell.names?.[l], lInh.names[l]) !== ""))}
-          <FormField label={withMark(t("admin.ltasks.status"), changedPill(lcell.enabled !== lBase.enabled))} required>
-            {statusToggle(lcell.enabled, (v) => setLcell((c) => ({ ...c, enabled: v })))}
-          </FormField>
-          {numField(withMark(t("admin.ltasks.minMedia"), changedPill((Number(lcell.min_media) || 0) !== Number(lBase.min_media))),
-            lcell.min_media, (v) => setLcell((c) => ({ ...c, min_media: v })), 20)}
-          {numField(withMark(t("admin.ltasks.weight"), changedPill((Number(lcell.weight) || 0) !== Number(lBase.weight))),
-            lcell.weight, (v) => setLcell((c) => ({ ...c, weight: v })), 100)}
-          {descriptionField(lcell.description, (v) => setLcell((c) => ({ ...c, description: v })), lInh.description,
-            changedPill(ownText(lcell.description, lInh.description) !== ""))}
-          {criteriaField(lcell.criteria, (v) => setLcell((c) => ({ ...c, criteria: v })), lInh.criteria,
-            changedPill(ownText(lcell.criteria, lInh.criteria) !== ""))}
-          {/* This leader's own example, the picture beside their own words.
-              THE control this whole scoping exists for: before it, the only
-              way to give one leader an example was the column modal, which
-              wrote the photo to everybody. Applies at once, like its twin in
-              the brigadir modal. */}
-          <TaskExamples ids={lcellEx.ids} own={lcellEx.own} fromLabel={exFromLabel(lcellEx.level)}
-            scopeNote={t("admin.ltasks.examplesScopeLeader")} busy={exAddMut.isPending}
-            onUpload={uploadExampleTo(lcell.tid, { leader_ids: [lcell.lid], level: "leader" })}
-            onAskDelete={askDeleteExample} t={t} />
-          {windowField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.win_from, lInh.win_to,
-            changedPill(ownText(lcell.win_from, lInh.win_from) !== "" || ownText(lcell.win_to, lInh.win_to) !== ""))}
-          {dateRuleField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
-            changedPill(dcMode(lcell) !== dcMode(lInh)))}
-          {proofKindField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
-            changedPill((lcell.proof_kind || "screenshot") !== lInh.proof_kind), "leader")}
-          {deadlineField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.deadline,
-            changedPill(ownText(lcell.deadline, lInh.deadline) !== ""))}
-          <WhenBar when={lcell.when} setWhen={(v) => setLcell((c) => ({ ...c, when: v }))} nextDate={lcellNext} t={t} />
-        </Modal>
-      )}
-
-      {/* Column header: global rename (decoupled) + apply-to-all (confirmed) */}
-      {col && (
-        <Modal title={`${t("admin.ltasks.editTask")} — T${col.tid}`} icon={<ListChecks size={14} />} onClose={() => setCol(null)}
-          footer={<>
-            <Button variant="secondary" onClick={() => setCol(null)}>{t("admin.broadcast.cancel")}</Button>
-            {/* Filtered down to nothing: there is no row for a name or a
-                definition-of-done to land on, so Save has no target. */}
-            <Button loading={taskMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending || pkMut.isPending}
-              disabled={anyFilter && !applyN} onClick={askSaveCol}>{t("admin.ltasks.save")}</Button>
+            {editLvl.kind === "leader" && getOv(editLvl.id, edit.tid) && (
+              <Button variant="danger" className="mr-auto" icon={<RotateCcw size={14} />} onClick={askReset}>
+                {t("admin.ltasks.reset")}
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => setEdit(null)}>{t("admin.broadcast.cancel")}</Button>
+            <Button loading={savingRule} onClick={askSaveRule}>{t("admin.ltasks.save")}</Button>
           </>}>
           {/* One scope statement for the whole modal — every field below it
-              writes to the same rows, so it is said once, at the top, before
-              anything is typed. */}
-          {anyFilter && (
-            <div className="rounded-xl px-3 py-2 mb-1 text-[11px] leading-snug"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-              {(applyScope.level === "leader"
-                ? t("admin.ltasks.colScopedLead") : t("admin.ltasks.colScopedMgr")).replace("{n}", applyN)}
-            </div>
+              writes to the same rows, so it is said once, before anything is
+              typed, and again on the confirm for the writes that fan out. */}
+          <div className="rounded-xl px-3 py-2 mb-1 text-[11px] leading-snug"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+            {t("admin.ltasks.editScope").replace("{level}", levelName(editLvl)).replace("{reach}", reachText(editLvl))}
+          </div>
+
+          <p className="text-[11px] font-bold uppercase tracking-wider pt-1" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltasks.groupLeader")}
+          </p>
+          <FormField label={withMark(t("admin.ltasks.taskName"), ownPill("names"))}
+            hint={isStd ? t("admin.ltasks.addNameHint") : t("admin.ltasks.supNameHint")}>
+            <LangTextInput hint={false} value={edit.names}
+              onChange={(l, v) => setEdit((c) => ({ ...c, names: { ...c.names, [l]: v } }))}
+              placeholderFn={(l) => (editInh ? editInh.names?.[l] : "")} />
+          </FormField>
+          <FormField label={withMark(t("admin.ltasks.description"), ownPill("description"))}
+            hint={t("admin.ltasks.descriptionHint")}>
+            <textarea rows={3} value={edit.description || ""}
+              onChange={(e) => setEdit((c) => ({ ...c, description: e.target.value }))}
+              placeholder={editInh?.description || t("admin.ltasks.descriptionPh")}
+              className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 68 }} />
+            {inheritLine("description", clip(editInh?.description, 60) || t("admin.ltasks.empty"))}
+          </FormField>
+
+          <div style={{ borderTop: "1px solid var(--border)" }} className="my-2" />
+          <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltasks.groupDoing")}
+          </p>
+          {isStd ? (
+            readOnlyField(t("admin.ltasks.status"),
+              edit.enabled ? t("admin.ltasks.vAsked") : t("admin.ltasks.vNotAsked"),
+              t("admin.ltasks.stdReadOnly"))
+          ) : (
+            <FormField label={withMark(t("admin.ltasks.status"), ownPill("enabled"))}
+              hint={t("admin.ltasks.enabledHint")} required>
+              <SegmentedToggle fill value={edit.enabled}
+                onChange={(v) => setEdit((c) => ({ ...c, enabled: v }))}
+                options={[[true, t("admin.ltasks.vAsked")], [false, t("admin.ltasks.vNotAsked")]]} />
+            </FormField>
           )}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.rename")}</p>
-            {LANGS.map((l) => (
-              <FormField key={l} label={`${t("admin.ltasks.taskName")} (${LANG_LABELS[l]})`}>
-                <input value={col.names?.[l] || ""} onChange={(e) => setCol((c) => ({ ...c, names: { ...c.names, [l]: e.target.value } }))} className={inputCls} style={inputStyle} />
-              </FormField>
-            ))}
-          </div>
-          <div style={{ borderTop: "1px solid var(--border)" }} className="my-3" />
-          {/* The GROUPED definition-of-done: every supervisor and leader who
-              has not written their own inherits this one, so editing it here
-              is how the whole platform's answer to "what counts as done" is
-              set in one place. */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>
-              {anyFilter ? t("admin.ltasks.criteriaScoped") : t("admin.ltasks.criteriaGlobal")}
-            </p>
-            {descriptionField(col.description, (v) => setCol((c) => ({ ...c, description: v })), "")}
-            {criteriaField(col.criteria, (v) => setCol((c) => ({ ...c, criteria: v })), "")}
-            {/* Unfiltered this writes the GLOBAL level, which both shifts
-                inherit — so the placeholder names both shift defaults rather
-                than picking one. Under a filter it writes the visible rows. */}
-            {windowField(col, (v) => setCol((c) => ({ ...c, ...v })),
-              anyFilter ? "" : globalWinPh("win_from"),
-              anyFilter ? "" : globalWinPh("win_to"))}
-            {dateRuleField(col, (v) => setCol((c) => ({ ...c, ...v })),
-              changedPill(anyFilter && dcMode(col) !== dcMode(col.dcInh)))}
-            {/* Proof kind appears here ONLY under a filter, where this modal
-                writes the rows the matrix is showing. Unfiltered it writes the
-                GLOBAL level — which every unit inherits — and that is exactly
-                how one test unit's camera setting reached every leader on the
-                platform (user, 2026-08-19). Rather than hide the control and
-                leave the admin clicking thirteen cells one at a time, the
-                control is present exactly when its scope is a named set, and
-                the sentence in its place says how to get there. The backend
-                refuses a global camera too (CAMERA_IS_PILOT), so this is not
-                the only thing holding the line. */}
-            {anyFilter ? (
-              proofKindField(col, (v) => setCol((c) => ({ ...c, ...v })),
-                changedPill((col.proof_kind || "screenshot") !== col.pkInh),
-                applyScope.level === "leader" ? "leaders" : "units")
-            ) : (
-              <FormField label={t("admin.ltasks.proofKind")}>
-                <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-                  {t("admin.ltasks.proofNeedsFilter")}
-                </p>
-              </FormField>
-            )}
-            {deadlineField(col, (v) => setCol((c) => ({ ...c, ...v })), "")}
-            <div className="pt-1">
-              {/* Scoped exactly like the criteria above it: unfiltered this
-                  writes the global level, filtered it writes the rows on
-                  screen. What is SHOWN is what the first visible row resolves
-                  to — the same seed rule every other field in this modal uses
-                  — so an inherited photo reads as inherited instead of looking
-                  like something this scope owns. */}
-              <TaskExamples ids={colEx.ids} own={colEx.own} fromLabel={exFromLabel(colEx.level)}
-                scopeNote={colExNote()} busy={exAddMut.isPending}
-                disabled={anyFilter && !applyN}
-                onUpload={uploadExampleTo(col.tid, { ...colScope(), level: colExLevel })}
-                onAskDelete={askDeleteExample} t={t} />
+          <div className="flex flex-wrap gap-3">
+            <div className="w-36">
+              {numField(withMark(t("admin.ltasks.weight"), ownPill("weight")), edit.weight,
+                (v) => setEdit((c) => ({ ...c, weight: v })), 100)}
+            </div>
+            <div className="w-36">
+              {isStd
+                ? readOnlyField(t("admin.ltasks.minMedia"), edit.min_media, t("admin.ltasks.stdReadOnly"))
+                : numField(withMark(t("admin.ltasks.minMedia"), ownPill("min_media")), edit.min_media,
+                  (v) => setEdit((c) => ({ ...c, min_media: v })), 20)}
+            </div>
+            <div className="flex-1 min-w-[210px]">
+              {isStd ? (
+                <FormField label={t("admin.ltasks.proofKind")}>
+                  <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                    {t("admin.ltasks.proofStdOnly")}
+                  </p>
+                </FormField>
+              ) : (
+                <FormField label={withMark(t("admin.ltasks.proofKind"), ownPill("proof_kind"))}
+                  hint={`${t(`admin.ltasks.proofHint.${edit.proof_kind === "camera" ? "camera" : "screenshot"}`)} ${
+                    editLvl.kind === "shift" ? t("admin.ltasks.proofScope.units").replace("{n}", unitsOf(editLvl.shift).length)
+                      : editLvl.kind === "unit" ? t("admin.ltasks.proofScope.unit")
+                        : t("admin.ltasks.proofScope.leader")}`}>
+                  <SegmentedToggle fill value={edit.proof_kind || "screenshot"}
+                    onChange={(k) => setEdit((c) => ({ ...c, proof_kind: k }))}
+                    options={[["screenshot", t("admin.ltasks.proofScreenshot")],
+                    ["camera", t("admin.ltasks.proofCamera")]]} />
+                </FormField>
+              )}
             </div>
           </div>
-          <div style={{ borderTop: "1px solid var(--border)" }} className="my-3" />
-          <div className="space-y-2">
-            <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.applyAll")}</p>
-            <p className="text-[11px]" style={{ color: C_WARN }}>{applyMsg()}</p>
-            <FormField label={t("admin.ltasks.status")} required>{statusToggle(col.enabled, (v) => setCol((c) => ({ ...c, enabled: v })))}</FormField>
-            {numField(t("admin.ltasks.minMedia"), col.min_media, (v) => setCol((c) => ({ ...c, min_media: v })), 20)}
-            {numField(t("admin.ltasks.weight"), col.weight, (v) => setCol((c) => ({ ...c, weight: v })), 100)}
-            {/* The target rides along explicitly, so the write can never reach
-                past the matrix the admin is looking at. */}
-            <Button size="sm" variant="secondary" disabled={!applyN}
-              onClick={() => askApplyAll({
-                task_id: col.tid, enabled: col.enabled,
-                min_media: Number(col.min_media) || 0, weight: Number(col.weight) || 0,
-                when: col.when,
-                ...(applyScope.level === "leader"
-                  ? { leader_ids: applyScope.ids } : { manager_ids: applyScope.ids }),
-              })}>{applyLabel()}</Button>
-          </div>
-          <WhenBar when={col.when} setWhen={(v) => setCol((c) => ({ ...c, when: v }))} nextDate={nextDates["1"]} t={t} />
+          {/* The one thing about a weight an admin cannot see: the AI deduction
+              and the day report read the GLOBAL weight, not this chain. */}
+          <p className="text-[11px] leading-snug rounded-lg px-2 py-1.5"
+            style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
+            {t("admin.ltasks.weightNote").replace("{w}", gv(edit.tid).weight)}
+          </p>
+
+          <FormField label={withMark(t("admin.ltasks.window"), ownPill("win_from") || ownPill("win_to"))}
+            hint={t("admin.ltasks.windowHint")}
+            error={editProblems.length ? t("admin.ltasks.winOutsideShift")
+              .replace("{win}", (editProblems[0].win || []).join("–"))
+              .replace("{shift}", editProblems[0].shift ?? "?")
+              .replace("{hours}", (editProblems[0].hours || []).join("–")) : null}>
+            <div className="flex items-center gap-2">
+              <TimeField className="flex-1" value={edit.win_from} inherit={null}
+                placeholder={editInh?.win_from || ""}
+                onChange={(v) => setEdit((c) => ({ ...c, win_from: v }))} />
+              <span className="text-xs shrink-0" style={{ color: "var(--text-3)" }}>—</span>
+              <TimeField className="flex-1" value={edit.win_to} inherit={null}
+                placeholder={editInh?.win_to || ""}
+                onChange={(v) => setEdit((c) => ({ ...c, win_to: v }))} />
+            </div>
+            {/* A time input renders "--:--" when empty, which reads as broken
+                rather than as inherited, so the pair is spelled out under it. */}
+            {!isStd && (
+              <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+                {t("admin.ltasks.windowInherit")
+                  .replace("{from}", editInh?.win_from || "—").replace("{to}", editInh?.win_to || "—")}
+              </div>
+            )}
+          </FormField>
+          <FormField label={withMark(t("admin.ltasks.dateCheck"),
+            ownPill("date_check") || ownPill("time_check") || ownPill("day_check"))}
+            hint={t(`admin.ltasks.dateHint.${dcMode(edit)}`)}>
+            <SegmentedToggle fill value={dcMode(edit)}
+              onChange={(m) => setEdit((c) => ({ ...c, ...dcModeValues(m) }))}
+              options={[["full", t("admin.ltasks.dateFull")],
+              ["day", t("admin.ltasks.dateDayOnly")],
+              ["time", t("admin.ltasks.dateTimeOnly")],
+              ["off", t("admin.ltasks.dateOff")]]} />
+          </FormField>
+          <FormField label={withMark(t("admin.ltasks.deadline"), ownPill("deadline"))}
+            hint={t("admin.ltasks.deadlineEnforced")}>
+            <TimeField value={edit.deadline} inherit={null} placeholder={editInh?.deadline || ""}
+              onChange={(v) => setEdit((c) => ({ ...c, deadline: v }))} />
+            <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+              {editInh?.deadline ? t("admin.ltasks.deadlineInherit").replace("{t}", editInh.deadline)
+                : t("admin.ltasks.deadlineDay")}
+            </div>
+          </FormField>
+
+          <div style={{ borderTop: "1px solid var(--border)" }} className="my-2" />
+          <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltasks.groupAi")}
+          </p>
+          {/* The short SUBJECT of the photo. Global only: it answers "is this
+              picture about this task at all", which is a property of the task
+              and not of anybody's unit. */}
+          {isStd ? (
+            <FormField label={t("admin.ltasks.noteField")} hint={t("admin.ltasks.noteHint")}>
+              <LangTextInput hint={false} value={edit.note}
+                onChange={(l, v) => setEdit((c) => ({ ...c, note: { ...c.note, [l]: v } }))} />
+            </FormField>
+          ) : (
+            readOnlyField(t("admin.ltasks.noteField"),
+              editTask.note?.[lang] || editTask.note?.uz || t("admin.ltasks.empty"),
+              t("admin.ltasks.noteStdOnly"))
+          )}
+          <FormField label={withMark(t("admin.ltasks.criteria"), ownPill("criteria"))}
+            hint={t("admin.ltasks.criteriaHint")}>
+            <textarea rows={4} value={edit.criteria || ""}
+              onChange={(e) => setEdit((c) => ({ ...c, criteria: e.target.value }))}
+              placeholder={editInh?.criteria || t("admin.ltasks.criteriaPh")}
+              className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 84 }} />
+            {inheritLine("criteria", clip(editInh?.criteria, 60) || t("admin.ltasks.empty"))}
+          </FormField>
+          <TaskExamples ids={editExR.ids} own={editExOwn} fromLabel={exFromLabel(editExR.level)}
+            scopeNote={editExNote()} busy={exAddMut.isPending}
+            onUpload={uploadExampleTo(edit.tid, cellExScope())}
+            onAskDelete={askDeleteExample} t={t} />
+
+          <div style={{ borderTop: "1px solid var(--border)" }} className="my-2" />
+          <WhenBar when={edit.when} setWhen={(v) => setEdit((c) => ({ ...c, when: v }))}
+            nextDate={editNext} t={t} />
+          <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltasks.stagedOnly")}
+          </p>
         </Modal>
       )}
 
-      {/* Unit settings — what belongs to a brigadir's whole team */}
-      {unit && (
-        <Modal title={t("admin.ltasks.unitSettings")}
-          subtitle={tl(managers.find((m) => m.id === unit.mid)?.name || "")}
-          icon={<Users size={14} />} onClose={() => setUnit(null)}
+      {/* ── a NEW task ─────────────────────────────────────────────────── */}
+      {addTask && (
+        <Modal title={t("admin.ltasks.addTitle")}
+          subtitle={t("admin.ltasks.addSub").replace("{n}", (tasks.reduce((a, x) => Math.max(a, x.id), 0) + 1))}
+          icon={<Plus size={14} />} maxWidth="max-w-2xl" onClose={() => setAddTask(null)}
           footer={<>
-            <Button variant="secondary" onClick={() => setUnit(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={ptMut.isPending}
-              onClick={() => ptMut.mutate({ manager_id: unit.mid, per_task_close: !!unit.per_task_close, bot_from: unit.bot_from || "" })}>
+            <Button variant="secondary" onClick={() => setAddTask(null)}>{t("admin.broadcast.cancel")}</Button>
+            <Button loading={addMut.isPending}
+              disabled={!LANGS.some((l) => (addTask.names?.[l] || "").trim())
+                || (addTask.active_from || floor) < floor
+                || (addTask.who === "pick" && !addTask.mgrs.length)}
+              onClick={askAdd}>{t("admin.ltasks.addCreate")}</Button>
+          </>}>
+          <FormField label={t("admin.ltasks.taskName")} hint={t("admin.ltasks.addNameHint")} required>
+            <LangTextInput hint={false} value={addTask.names}
+              onChange={(l, v) => setAddTask((c) => ({ ...c, names: { ...c.names, [l]: v } }))} />
+          </FormField>
+          <FormField label={t("admin.ltasks.description")} hint={t("admin.ltasks.descriptionHint")}>
+            <textarea rows={3} value={addTask.description}
+              onChange={(e) => setAddTask((c) => ({ ...c, description: e.target.value }))}
+              placeholder={t("admin.ltasks.descriptionPh")}
+              className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 68 }} />
+          </FormField>
+          <FormField label={t("admin.ltasks.noteField")} hint={t("admin.ltasks.noteHint")}>
+            <LangTextInput hint={false} value={addTask.note}
+              onChange={(l, v) => setAddTask((c) => ({ ...c, note: { ...c.note, [l]: v } }))} />
+          </FormField>
+          <FormField label={t("admin.ltasks.criteria")} hint={t("admin.ltasks.criteriaHint")}>
+            <textarea rows={3} value={addTask.criteria}
+              onChange={(e) => setAddTask((c) => ({ ...c, criteria: e.target.value }))}
+              placeholder={t("admin.ltasks.criteriaPh")}
+              className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 68 }} />
+          </FormField>
+          <div className="flex flex-wrap gap-3">
+            <div className="w-36">{numField(t("admin.ltasks.weight"), addTask.weight, (v) => setAddTask((c) => ({ ...c, weight: v })), 100)}</div>
+            <div className="w-36">{numField(t("admin.ltasks.minMedia"), addTask.min_media, (v) => setAddTask((c) => ({ ...c, min_media: v })), 20)}</div>
+          </div>
+          <p className="text-[11px] leading-snug rounded-lg px-2 py-1.5"
+            style={{ background: "rgba(234,179,8,0.10)", color: "var(--text-2)", border: "1px solid rgba(234,179,8,0.30)" }}>
+            {t("admin.ltasks.addWeightWarn").replace("{a}", stdSum).replace("{b}", stdSum + (Number(addTask.weight) || 0))}
+          </p>
+          <div style={{ borderTop: "1px solid var(--border)" }} className="my-2" />
+          <FormField label={t("admin.ltasks.addWho")} hint={t("admin.ltasks.addWhoHint")}>
+            <SegmentedToggle fill value={addTask.who}
+              onChange={(v) => setAddTask((c) => ({ ...c, who: v, mgrs: v === "pick" ? c.mgrs : [] }))}
+              options={[["all", t("admin.ltasks.addWhoAll")],
+              ...shifts.map((s) => [`shift${s}`, t("admin.ltasks.lvlShift").replace("{n}", s)]),
+              ["pick", t("admin.ltasks.addWhoPick")]]} />
+          </FormField>
+          {addTask.who === "pick" && (
+            <FormField label={t("admin.ltasks.supervisor")}
+              hint={t("admin.ltasks.addPickHint").replace("{n}", addTask.mgrs.length)}>
+              {/* The platform's multi-select, not a hand-rolled list of
+                  buttons: same rows, same search, same drag-select the filter
+                  panel uses everywhere else. */}
+              <div className="rounded-xl p-1.5" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+                <OptsFilter searchable opts={managers.map((m) => m.id)} sel={addTask.mgrs}
+                  onChange={(ids) => setAddTask((c) => ({ ...c, mgrs: ids }))}
+                  render={(id) => `${mgrLabel(id)} · S${mgrById.get(id)?.shift ?? "?"}`}
+                  groupBy={(id) => t("admin.ltasks.lvlShift").replace("{n}", mgrById.get(id)?.shift ?? "?")} />
+              </div>
+            </FormField>
+          )}
+          {/* A task never appears in the middle of somebody's night: the
+              earliest day it can open is the LATER of the two shifts' next
+              boundaries, which is the same floor the backend enforces. */}
+          <FormField label={t("admin.ltasks.addFrom")}
+            hint={t("admin.ltasks.addFromHint").replace("{d1}", nextDates["1"] || "").replace("{d2}", nextDates["2"] || "")}
+            error={addTask.active_from && addTask.active_from < floor ? t("admin.ltasks.archTooEarly") : null}>
+            <DateRangePicker single dateFrom={addTask.active_from || floor} dateTo={addTask.active_from || floor}
+              setDateFrom={(v) => setAddTask((c) => ({ ...c, active_from: v || floor }))}
+              setDateTo={() => {}} triggerClassName="px-3 py-2 text-sm" />
+          </FormField>
+          <p className="text-[11px] leading-snug rounded-lg px-2 py-1.5"
+            style={{ background: "rgba(234,179,8,0.10)", color: "var(--text-2)", border: "1px solid rgba(234,179,8,0.30)" }}>
+            {t("admin.ltasks.addFromWarn").replace("{date}", addTask.active_from || floor)
+              .replace("{n}", addTask.who === "all" ? leaders.length
+                : addTask.who === "pick"
+                  ? addTask.mgrs.reduce((a, id) => a + (mgrById.get(id)?.leaders_n || 0), 0)
+                  : unitsOf(addTask.who === "shift1" ? 1 : 2).reduce((a, m) => a + (m.leaders_n || 0), 0))}
+          </p>
+        </Modal>
+      )}
+
+      {/* ── archive a task, from a DAY ─────────────────────────────────── */}
+      {arch && (
+        <Modal title={t("admin.ltasks.archTitle")} subtitle={tname(taskById.get(arch.tid))}
+          icon={<Archive size={14} />} onClose={() => setArch(null)}
+          footer={<>
+            <Button variant="secondary" onClick={() => setArch(null)}>{t("admin.broadcast.cancel")}</Button>
+            <Button variant="danger" loading={archMut.isPending}
+              disabled={!arch.from || arch.from < floor} onClick={askArchive}>
+              {t("admin.ltasks.archDo")}
+            </Button>
+          </>}>
+          <FormField label={t("admin.ltasks.archFrom")}
+            hint={t("admin.ltasks.floorHint").replace("{date}", floor)}
+            error={arch.from && arch.from < floor ? t("admin.ltasks.archTooEarly") : null}>
+            <DateRangePicker single dateFrom={arch.from || ""} dateTo={arch.from || ""}
+              setDateFrom={(v) => setArch((a) => ({ ...a, from: v || "" }))}
+              setDateTo={() => {}} triggerClassName="px-3 py-2 text-sm" />
+          </FormField>
+          <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltasks.archHint")}
+          </p>
+        </Modal>
+      )}
+
+      {/* ── the order the checklist reads in ───────────────────────────── */}
+      {order && (
+        <Modal title={t("admin.ltasks.orderTitle")} icon={<ListOrdered size={14} />}
+          onClose={() => setOrder(null)}
+          footer={<>
+            <Button variant="secondary" onClick={() => setOrder(null)}>{t("admin.broadcast.cancel")}</Button>
+            <Button loading={orderMut.isPending} onClick={() => orderMut.mutate({ ids: order.ids })}>
               {t("admin.ltasks.save")}
             </Button>
           </>}>
-          <FormField label={t("admin.ltasks.perTask")}
-            hint={t(`admin.ltasks.perTaskHint.${unit.per_task_close ? "on" : "off"}`)}>
-            <SegmentedToggle fill value={!!unit.per_task_close}
-              onChange={(v) => setUnit((u) => ({ ...u, per_task_close: v }))}
-              options={[[false, t("admin.ltasks.perTaskOff")],
-                        [true, t("admin.ltasks.perTaskOn")]]} />
-          </FormField>
-          {/* Stated where the decision is made, not in a manual: it is the one
-              thing about this mode that cannot be taken back. */}
-          {unit.per_task_close && (
-            <p className="text-[11px] leading-snug rounded-lg px-2 py-1.5"
-              style={{ background: "rgba(234,179,8,0.10)", color: "var(--text-2)", border: "1px solid rgba(234,179,8,0.30)" }}>
-              {t("admin.ltasks.perTaskWarn")}
-            </p>
-          )}
+          <p className="text-[11px] leading-snug mb-2" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.orderHint")}</p>
+          <div className="space-y-1">
+            {order.ids.map((id, i) => (
+              <div key={id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+                <span className="tabular-nums w-6" style={{ color: "var(--text-4)" }}>{i + 1}</span>
+                <span className="truncate flex-1">{tname(taskById.get(id))}</span>
+                <Button size="sm" variant="ghost" disabled={i === 0} aria-label={t("admin.ltasks.orderUp")}
+                  icon={<ArrowUp size={13} />} onClick={() => setOrder((o) => {
+                    const ids = [...o.ids]; [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]]; return { ids };
+                  })} />
+                <Button size="sm" variant="ghost" disabled={i === order.ids.length - 1} aria-label={t("admin.ltasks.orderDown")}
+                  icon={<ArrowDown size={13} />} onClick={() => setOrder((o) => {
+                    const ids = [...o.ids]; [ids[i + 1], ids[i]] = [ids[i], ids[i + 1]]; return { ids };
+                  })} />
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
 
-          {/* Per-cell filing. Its own mutation, not part of the Save above:
-              this is the switch that changes how many checklists the unit's
-              leaders owe, and it is applied — and rolled back — on its own. */}
+      {/* ── one unit's own switch: per-cell filing ─────────────────────── */}
+      {unit && (
+        <Modal title={t("admin.ltasks.unitSettings")}
+          subtitle={tl(mgrById.get(unit.mid)?.name || "")}
+          icon={<Users size={14} />} onClose={() => setUnit(null)}
+          footer={<>
+            <Button variant="secondary" onClick={() => setUnit(null)}>{t("admin.broadcast.cancel")}</Button>
+            <Button loading={cellFromMut.isPending}
+              onClick={() => cellFromMut.mutate({ rows: [{ manager_id: unit.mid, cell_from: unit.cell_from || "" }] })}>
+              {t("admin.ltasks.save")}
+            </Button>
+          </>}>
           <FormField label={t("admin.ltasks.cellFrom")}
             hint={unit.cell_from
               ? t("admin.ltasks.cellFromHint.on").replace("{date}", unit.cell_from)
-                  .replace("{n}", mgrById.get(unit.mid)?.cells_n ?? 0)
+                .replace("{n}", mgrById.get(unit.mid)?.cells_n ?? 0)
               : t("admin.ltasks.cellFromHint.off")}>
             <div className="flex items-center gap-2 flex-wrap">
               <DateRangePicker single dateFrom={unit.cell_from || ""} dateTo={unit.cell_from || ""}
@@ -1618,10 +2508,6 @@ export default function LeaderTasksAdmin() {
                   {t("admin.ltasks.botFromClear")}
                 </Button>
               )}
-              <Button size="md" loading={cellFromMut.isPending}
-                onClick={() => cellFromMut.mutate({ rows: [{ manager_id: unit.mid, cell_from: unit.cell_from || "" }] })}>
-                {t("admin.ltasks.save")}
-              </Button>
             </div>
           </FormField>
           {(mgrById.get(unit.mid)?.cells_n ?? 0) === 0 && (
@@ -1629,87 +2515,6 @@ export default function LeaderTasksAdmin() {
               style={{ background: "rgba(239,68,68,0.10)", color: "var(--text-2)", border: "1px solid rgba(239,68,68,0.30)" }}>
               {t("admin.ltasks.cellFromNoCells")}
             </p>
-          )}
-
-          {/* Rehearsal window. A unit is switched into camera capture on the day
-              somebody has time to teach it, and that day the leaders are
-              learning where the buttons are — so the day the BOT starts
-              counting is a separate decision from the day the camera turns on.
-              Not offered on shift 2: it files only in the bot, and there is no
-              fill-out row underneath it to fall back to. */}
-          {mgrById.get(unit.mid)?.shift === 2 ? (
-            <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-              {t("admin.ltasks.botFromShift2")}
-            </p>
-          ) : (
-            <FormField label={t("admin.ltasks.botFrom")}
-              hint={unit.bot_from ? t("admin.ltasks.botFromHint.on").replace("{date}", unit.bot_from)
-                                  : t("admin.ltasks.botFromHint.off")}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <DateRangePicker single dateFrom={unit.bot_from || ""} dateTo={unit.bot_from || ""}
-                  setDateFrom={(v) => setUnit((u) => ({ ...u, bot_from: v || "" }))}
-                  setDateTo={() => {}} triggerClassName="px-3 py-2 text-sm" />
-                {(() => {
-                  const next = nextForShift(mgrById.get(unit.mid)?.shift);
-                  return next && unit.bot_from !== next ? (
-                    <Button size="md" variant="secondary"
-                      onClick={() => setUnit((u) => ({ ...u, bot_from: next }))}>
-                      {t("admin.ltasks.botFromNext")}
-                    </Button>
-                  ) : null;
-                })()}
-                {unit.bot_from && (
-                  <Button size="md" variant="ghost"
-                    onClick={() => setUnit((u) => ({ ...u, bot_from: "" }))}>
-                    {t("admin.ltasks.botFromClear")}
-                  </Button>
-                )}
-              </div>
-            </FormField>
-          )}
-        </Modal>
-      )}
-
-      {/* Exceptions drawer */}
-      {showExc && (
-        <Modal title={t("admin.ltasks.tab.exc")} subtitle={`${excRows.length}`} icon={<RotateCcw size={14} />} maxWidth="max-w-2xl" onClose={() => setShowExc(false)}
-          footer={<Button variant="secondary" onClick={() => setShowExc(false)}>{t("admin.broadcast.cancel")}</Button>}>
-          {excRows.length === 0 ? (
-            <p className="text-sm text-center py-6" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.noExc")}</p>
-          ) : (
-            <div className="max-h-[60vh] overflow-y-auto -mx-1">
-              {excRows.map((r) => {
-                const mid = r.p.manager_id;
-                const base = getCell(mid, r.tid);
-                const k = tasks.find((x) => x.id === r.tid);
-                const chips = [];
-                if (r.ov.enabled != null) chips.push(excChip(`${t("admin.ltasks.status")}: ${r.ov.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")}`));
-                if (r.ov.weight != null) chips.push(excChip(`${t("admin.ltasks.weight")} ${r.ov.weight} ← ${base.weight}`));
-                if (r.ov.min_media != null) chips.push(excChip(`${t("admin.ltasks.photos")} ${r.ov.min_media} ← ${base.min_media}`));
-                if (LANGS.some((l) => r.ov.names?.[l])) chips.push(excChip(t("admin.ltasks.taskName")));
-                // Chipped even though its neighbours on this row (criteria,
-                // window, deadline) are not: it is the one override a leader can
-                // hold ALONE, and without a chip that row lists nothing at all.
-                // One chip for the pair: they are one rule, and two chips
-                // reading «date: yes» + «time: no» is the four-combination
-                // confusion the single control exists to avoid.
-                if (r.ov.date_check != null || r.ov.time_check != null)
-                  chips.push(excChip(`${t("admin.ltasks.dateCheck")}: ${t(`admin.ltasks.dateMode.${dcMode(r.ov)}`)}`));
-                // Chipped for the same reason as the date rule, and with more
-                // reason: this one changes where the leader ANSWERS, so a
-                // leader singled out onto the camera must be findable here.
-                if (r.ov.proof_kind)
-                  chips.push(excChip(t(`admin.ltasks.proofMode.${r.ov.proof_kind}`)));
-                return (
-                  <button key={`${r.p.id}-${r.tid}`} onClick={() => openLeaderByIds(r.p, r.tid)}
-                    className="w-full text-left flex items-center gap-2 px-1 py-1.5 text-sm hover:bg-[var(--bg-inner)]" style={{ borderTop: "1px solid var(--border)" }}>
-                    <span className="truncate min-w-0" style={{ maxWidth: 130 }}>{tl(r.p.name)}</span>
-                    <span className="text-[11px] shrink-0" style={{ color: "var(--text-3)" }}>{k ? tname(k) : "T" + r.tid}</span>
-                    <span className="flex flex-wrap gap-1 ml-auto justify-end">{chips}</span>
-                  </button>
-                );
-              })}
-            </div>
           )}
         </Modal>
       )}
@@ -1746,7 +2551,7 @@ export default function LeaderTasksAdmin() {
       )}
 
       {/* Every AI-requirement text at once — the answer to "all thirteen are
-          wrong in the same way", which the per-cell modals have no shape for. */}
+          wrong in the same way", which the per-level modal has no shape for. */}
       {showTexts && (
         <CriteriaTextsModal items={criteriaItems} saving={txtSave} error={txtErr}
           onSave={saveTexts} onClose={() => { setShowTexts(false); setTxtErr(""); }} />
@@ -1755,12 +2560,12 @@ export default function LeaderTasksAdmin() {
       {confirm && (
         <ConfirmDialog open tone={confirm.tone} title={confirm.title} message={confirm.message}
           confirmLabel={confirm.confirmLabel} cancelLabel={t("admin.broadcast.cancel")} error={confirm.error}
-          loading={cancelMut.isPending || revertMut.isPending || leaderMut.isPending || applyMut.isPending || exDelMut.isPending}
+          loading={cancelMut.isPending || revertMut.isPending || leaderMut.isPending || applyMut.isPending
+            || exDelMut.isPending || archMut.isPending || addMut.isPending}
           onCancel={() => setConfirm(null)} onConfirm={confirm.onConfirm} />
       )}
 
-      <Toast open={toast} message={t("admin.ltasks.saved")} onClose={() => setToast(false)} />
-      {toast2.node}
+      {toast.node}
     </div>
   );
 }

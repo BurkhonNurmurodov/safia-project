@@ -32,7 +32,7 @@ import AiRecheck from "../components/leaders/AiRecheck";
 import AiProgress from "../components/leaders/AiProgress";
 import AiClearHistory from "../components/leaders/AiClearHistory";
 import { ReportPhoto, BotPhoto } from "../components/leaders/ProofPhoto";
-import { reportState } from "../components/leaders/verifyState";
+import { expectedLabel, reportState } from "../components/leaders/verifyState";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -132,6 +132,7 @@ const TXT = {
     aiError: "Tekshirib bo'lmadi",
     aiImgDate: "Rasmdagi sana",
     aiExpected: "Ruxsat etilgan oyna", aiExpectedDay: "Kerakli sana",
+    aiExpectedTime: "Ruxsat etilgan vaqt",
     aiFdate_mismatch: "Sana mos emas",
     aiFno_date: "Rasmda sana yo'q",
     aiFoff_topic: "Rasm vazifaga mos emas",
@@ -178,6 +179,7 @@ const TXT = {
     aiQ_read: "Sana o'qildi", aiQ_window: "Ruxsat etilgan oynada",
     aiQ_noDate: "Sana bu vazifada tekshirilmaydi",
     aiQ_day: "Hisobot kuniga to'g'ri keladi", aiQ_dayOnly: "faqat sana, vaqtsiz",
+    aiQ_clockRead: "Soat o'qildi", aiQ_timeOnly: "faqat vaqt, sanasiz",
     aiQ_dayMissing: "Rasmda sana yo'q — bu vazifada shart emas",
     aiQ_match: "Rasm vazifaga mos", aiQ_done: "Bajarilgani ko'rinadi",
     aiWhy: "Nima uchun", aiLeaderSaid: "Lider izohi",
@@ -304,6 +306,7 @@ const TXT = {
     aiError: "Текшириб бўлмади",
     aiImgDate: "Расмдаги сана",
     aiExpected: "Рухсат этилган ойна", aiExpectedDay: "Керакли сана",
+    aiExpectedTime: "Рухсат этилган вақт",
     aiFdate_mismatch: "Сана мос эмас",
     aiFno_date: "Расмда сана йўқ",
     aiFoff_topic: "Расм вазифага мос эмас",
@@ -350,6 +353,7 @@ const TXT = {
     aiQ_read: "Сана ўқилди", aiQ_window: "Рухсат этилган ойнада",
     aiQ_noDate: "Сана бу вазифада текширилмайди",
     aiQ_day: "Ҳисобот кунига тўғри келади", aiQ_dayOnly: "фақат сана, вақтсиз",
+    aiQ_clockRead: "Соат ўқилди", aiQ_timeOnly: "фақат вақт, санасиз",
     aiQ_dayMissing: "Расмда сана йўқ — бу вазифада шарт эмас",
     aiQ_match: "Расм вазифага мос", aiQ_done: "Бажарилгани кўринади",
     aiWhy: "Нима учун", aiLeaderSaid: "Лидер изоҳи",
@@ -476,6 +480,7 @@ const TXT = {
     aiError: "Проверить не удалось",
     aiImgDate: "Дата на фото",
     aiExpected: "Допустимое окно", aiExpectedDay: "Нужная дата",
+    aiExpectedTime: "Допустимое время",
     aiFdate_mismatch: "Дата не совпадает",
     aiFno_date: "На фото нет даты",
     aiFoff_topic: "Фото не по задаче",
@@ -522,6 +527,7 @@ const TXT = {
     aiQ_read: "Дата прочитана", aiQ_window: "В допустимом окне",
     aiQ_noDate: "Дата для этой задачи не проверяется",
     aiQ_day: "Совпадает с днём отчёта", aiQ_dayOnly: "только дата, без времени",
+    aiQ_clockRead: "Время прочитано", aiQ_timeOnly: "только время, без даты",
     aiQ_dayMissing: "Даты на фото нет — для этой задачи не обязательна",
     aiQ_match: "Фото по задаче", aiQ_done: "Выполнение видно",
     aiWhy: "Почему", aiLeaderSaid: "Комментарий лидера",
@@ -648,6 +654,7 @@ const TXT = {
     aiError: "Could not review",
     aiImgDate: "Date on photo",
     aiExpected: "Allowed window", aiExpectedDay: "Required date",
+    aiExpectedTime: "Allowed time",
     aiFdate_mismatch: "Date does not match",
     aiFno_date: "No date on the photo",
     aiFoff_topic: "Photo is not about this task",
@@ -694,6 +701,7 @@ const TXT = {
     aiQ_read: "Date read", aiQ_window: "Inside the window",
     aiQ_noDate: "Date is not checked for this task",
     aiQ_day: "Matches the report day", aiQ_dayOnly: "date only, no time",
+    aiQ_clockRead: "Clock read", aiQ_timeOnly: "time only, no date",
     aiQ_dayMissing: "No date on the photo — not required for this task",
     aiQ_match: "Photo matches the task", aiQ_done: "Work is visible",
     aiWhy: "Why", aiLeaderSaid: "Leader's own note",
@@ -1470,7 +1478,7 @@ function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
                   would describe a comparison that never happened. */}
               {rev.expected && (
                 <p className="text-[10px] tabular-nums mt-1" style={{ color: "var(--text-4)" }}>
-                  {rev.timeCheck === false ? T.aiExpectedDay : T.aiExpected}: {rev.expected}
+                  {expectedLabel(rev, T)}: {rev.expected}
                 </p>
               )}
             </>

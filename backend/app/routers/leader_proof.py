@@ -256,6 +256,7 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
                     "window": list(entry.get("window") or ()),
                     "date_check": False,
                     "time_check": False,
+                    "day_check": True,
                     "deadline": leader_close.task_deadline(entry, lshift),
                 },
                 "photos": [_shot_wire(p) for p in shots],
@@ -280,6 +281,10 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
             "window": list(entry.get("window") or ()),
             "date_check": bool(entry.get("date_check", True)),
             "time_check": bool(entry.get("time_check", True)),
+            # False = TIME ONLY, i.e. the hour is the whole rule. The page reads
+            # it only to word its own nudge; the window warning it draws is
+            # already keyed on the two flags above, which are both True there.
+            "day_check": bool(entry.get("day_check", True)),
         },
         "photos": [_photo_wire(p) for p in photos],
         "complete": len(photos) >= need,

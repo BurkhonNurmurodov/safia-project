@@ -59,6 +59,7 @@ const TXT = {
     noCriteriaNoDate: "Talab yozilmagan — AI faqat rasm mavzusini tekshiradi.",
     photoWin: "Rasm: {from} – {to}", noDate: "Sana tekshirilmaydi",
     dayOnly: "Sana kerak, vaqt shart emas",
+    timeOnly: "Vaqt: {from} – {to}, sana shart emas",
     due: "Muddat: {t} gacha", dueDay: "{t} gacha · kun bo'yicha",
     autoClose: "{t} da avtomatik yopiladi",
     autoNote: "Bu brigadada har bir vazifa alohida yopiladi. Ko'rsatilgan vaqt kelganda vazifa avtomatik yuboriladi: nima to'plangan bo'lsa — shu, javob berilmagani esa bajarilmagan deb yoziladi.",
@@ -86,6 +87,7 @@ const TXT = {
     noCriteriaNoDate: "Талаб ёзилмаган — AI фақат расм мавзусини текширади.",
     photoWin: "Расм: {from} – {to}", noDate: "Сана текширилмайди",
     dayOnly: "Сана керак, вақт шарт эмас",
+    timeOnly: "Вақт: {from} – {to}, сана шарт эмас",
     due: "Муддат: {t} гача", dueDay: "{t} гача · кун бўйича",
     autoClose: "{t} да автоматик ёпилади",
     autoNote: "Бу бригадада ҳар бир вазифа алоҳида ёпилади. Кўрсатилган вақт келганда вазифа автоматик юборилади: нима тўпланган бўлса — шу, жавоб берилмагани эса бажарилмаган деб ёзилади.",
@@ -113,6 +115,7 @@ const TXT = {
     noCriteriaNoDate: "Требование не задано — ИИ проверяет только тему фото.",
     photoWin: "Фото: {from} – {to}", noDate: "Дата не проверяется",
     dayOnly: "Нужна дата, время не обязательно",
+    timeOnly: "Время: {from} – {to}, дата не обязательна",
     due: "Срок: до {t}", dueDay: "до {t} · по дню",
     autoClose: "Закроется автоматически в {t}",
     autoNote: "В этой бригаде каждая задача закрывается отдельно. В указанное время задача отправляется автоматически: что собрано — то и уходит, а задача без ответа записывается как невыполненная.",
@@ -140,6 +143,7 @@ const TXT = {
     noCriteriaNoDate: "No requirement written — the AI checks only the photo subject.",
     photoWin: "Photo: {from} – {to}", noDate: "Date not checked",
     dayOnly: "Date required, time not",
+    timeOnly: "Time: {from} – {to}, no date needed",
     due: "Due: by {t}", dueDay: "by {t} · day rule",
     autoClose: "Closes automatically at {t}",
     autoNote: "In this unit each task is submitted on its own. At the hour shown the task closes automatically: whatever has been collected goes in as it stands, and a task with no answer is recorded not done.",
@@ -198,15 +202,19 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
   // backend sends no description at all, which lands here the same safe way.
   const dupe = !!description && description === criteria;
   const [wFrom, wTo] = task.window || [];
-  // The window is only a RULE while the CLOCK is judged. In the other two modes
-  // it is stale config, so the chip states what is actually asked instead — a
-  // leader reading hours nothing measures them by reshoots proofs for no reason,
-  // which is the same failure as being flagged for a rule nobody stated.
+  // The window is only a RULE while the CLOCK is judged. Where it is not, the
+  // chip states what is actually asked instead — a leader reading hours nothing
+  // measures them by reshoots proofs for no reason, which is the same failure as
+  // being flagged for a rule nobody stated.
   //   full  the window, as before
   //   day   "a date must be visible, the time need not be" — the honest ask for
   //         a proof that is a screen: its day is on it, its shooting time is not
+  //   time  the window AND "no date needed" — the hours are the whole rule, so
+  //         they are printed, but a leader told only the hours reasonably tries
+  //         to get the date into frame, which is what this mode stops asking for
   //   off   nothing about when at all
   const dateOn = task.date_check !== false;
+  const dayOn = dateOn && task.day_check !== false;
   const timeOn = dateOn && task.time_check !== false;
   const share = total > 0 ? Math.round((task.weight / total) * 100) : 0;
   // A clock before the shift's start on an overnight day is tomorrow morning —
@@ -277,7 +285,8 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
           {total !== 100 ? fill(T.ptsShare, { n: task.weight, p: share }) : fill(T.pts, { n: task.weight })}
         </Fact>
         <Fact icon={timeOn ? Clock : CalendarCheck}>
-          {timeOn ? fill(T.photoWin, { from: wFrom || "—", to: (wTo || "—") + morning(wTo) })
+          {!dayOn && timeOn ? fill(T.timeOnly, { from: wFrom || "—", to: (wTo || "—") + morning(wTo) })
+            : timeOn ? fill(T.photoWin, { from: wFrom || "—", to: (wTo || "—") + morning(wTo) })
             : dateOn ? T.dayOnly : T.noDate}
         </Fact>
         {/* In per-task mode the hour is not advice — it is when the task

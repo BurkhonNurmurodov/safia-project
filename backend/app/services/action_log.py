@@ -215,9 +215,18 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/admin/leader-tasks/deadline",              "leader_config", "ltask.deadline_set"),
     (("PUT",),    "/admin/leader-tasks/date-check",            "leader_config", "ltask.date_check_set"),
     (("PUT",),    "/admin/leader-tasks/time-check",            "leader_config", "ltask.time_check_set"),
+    (("PUT",),    "/admin/leader-tasks/day-check",             "leader_config", "ltask.day_check_set"),
     (("PUT",),    "/admin/leader-tasks/proof-kind",            "leader_config", "ltask.proof_kind_set"),
     (("PUT",),    "/admin/leader-tasks/unit",                  "leader_config", "ltask.unit_settings_set"),
     (("PUT",),    "/admin/leader-tasks/channel",               "leader_config", "ltask.channel_set"),
+    # The CATALOG: adding a task, retiring one, changing the reading order.
+    # Specific before generic — the compiled patterns are anchored, so
+    # "/task" cannot swallow "/task/archive", but the order is what keeps that
+    # true if either template ever gains a `{}`. The PUT on the bare path is
+    # the RENAME (`put_task`), which is a different act from the POST beside it.
+    (("POST",),   "/admin/leader-tasks/task/archive",          "leader_config", "ltask.task_archived"),
+    (("PUT",),    "/admin/leader-tasks/task/order",            "leader_config", "ltask.task_reordered"),
+    (("POST",),   "/admin/leader-tasks/task",                  "leader_config", "ltask.task_created"),
     (("PUT",),    "/admin/leader-tasks/task",                  "leader_config", "ltask.task_set"),
     (("POST",),   "/admin/leader-tasks/examples",              "leader_config", "ltask.example_added"),
     (("DELETE",), "/admin/leader-tasks/examples/{}",           "leader_config", "ltask.example_removed"),

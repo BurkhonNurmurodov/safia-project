@@ -6,7 +6,7 @@ dashboard's historic 13 questions (Leaders.jsx TASK_DETAILS) and is seeded
 lazily — no startup-mirror migration needed, the tables themselves come from
 Base.metadata.create_all in both boot paths.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
@@ -209,6 +209,35 @@ def catalog_floor() -> str:
     return max(next_effective_date(1), next_effective_date(2))
 
 
+def clean_day(value: str | None) -> str | None:
+    """THE shape check for a catalog floor. `"YYYY-MM-DD"` or None; anything
+    else raises ``ValueError("bad_date")``.
+
+    One function because BOTH doors write the same two columns and both compare
+    them the same way. `is_active` tests the floor with a plain STRING
+    comparison (`d < lo`), which is only an ordering while every value is a
+    zero-padded ISO date — so the test is not "does this parse" but "does it
+    parse AND print back byte-identical". `date.fromisoformat` accepts the basic
+    form and the week form on this Python ("20260908", "2026-W36-1"): both are
+    real dates and neither compares correctly against `effective_date`'s output,
+    so a floor stored in one of them is a floor that silently never fires — or
+    fires on every day at once.
+
+    It replaces a `len == 10 and d[4] == "-" and d[7] == "-"` test that accepted
+    "2026-13-45", and a `day < floor` string compare that was the ONLY check the
+    create endpoint made — under which "tomorrow" was a perfectly good floor.
+    """
+    d = (value or "").strip()
+    if not d:
+        return None
+    try:
+        if date.fromisoformat(d).isoformat() != d:
+            raise ValueError
+    except (ValueError, TypeError):
+        raise ValueError("bad_date")
+    return d
+
+
 def _fill_names(names: dict | None) -> dict[str, str]:
     """The four name columns are NOT NULL, so a blank language is filled from
     the Russian one — the language the register is actually maintained in, and
@@ -267,11 +296,15 @@ def create_task(db: Session, *, names: dict, note: dict | None = None,
         # rows below are what switch it on for them.
         default_enabled=not scoped,
         sort_order=int(top_ord) + 1,
-        active_from=(active_from or catalog_floor()),
+        # Shape-checked here too, not only at the endpoint: this is the column
+        # every reader compares as a STRING, so a floor that is not a
+        # zero-padded ISO date is one nothing can order (`clean_day`).
+        active_from=(clean_day(active_from) or catalog_floor()),
         archived_from=None,
         # Every task ships judged the way the platform has always judged one;
         # the definition's own floors are what an admin edits afterwards.
-        date_check=True, time_check=True, date_plus=0, proof_kind="screenshot",
+        date_check=True, day_check=True, time_check=True, date_plus=0,
+        proof_kind="screenshot",
         **{f"name_{l}": filled[l] for l in _LANGS},
     )
     for l in _LANGS:
@@ -317,16 +350,42 @@ def set_archived(db: Session, task_id: int, archived_from: str | None) -> Leader
     The floor is `catalog_floor()`: a date earlier than that would take a task
     away from a night already in progress, which turns a checklist somebody is
     halfway through into a different checklist.
+
+    **A RESTORE is floored too, and it has to be.** Clearing `archived_from`
+    puts the task back into every day from the archive date on — including the
+    night that is running right now. On a per-task unit that night's deadline
+    for it has already gone by, so `leader_close.autoclose_due` reaches it
+    within five minutes and records it not-done: a deduction for a task nobody
+    was asked, arriving out of an admin pressing «restore» at 22:00. So the
+    restore states WHEN the task is asked again — `active_from` raised to
+    `catalog_floor()` — which is the same boundary a create and an archive
+    already land on, and the reason every catalog write behaves the same way:
+    nobody's checklist ever changes under their hands.
+
+    `active_from` is «WHEN this task is asked» (see the model), so restating it
+    is the column doing its job rather than a second meaning bolted onto it —
+    and it is only ever RAISED, so a task scheduled further out keeps its date.
+    The one piece of collateral, stated plainly: a still-OPEN day from BEFORE
+    the archive date genuinely was asked this task and, after the restore,
+    reads as though it was not. It is the lenient direction (such a day loses a
+    task, never gains one), it can only touch days somebody abandoned, and the
+    alternative — refusing the restore while any affected day is open — is a
+    control that an abandoned day from months ago could block for good, on a
+    platform with no shell to unblock it with.
     """
     td = db.query(LeaderTaskDef).filter_by(id=int(task_id)).first()
     if not td:
         raise KeyError(f"task {task_id}")
-    day = (archived_from or "").strip() or None
+    day = clean_day(archived_from)
     if day is not None:
-        if len(day) != 10 or day[4] != "-" or day[7] != "-":
-            raise ValueError("bad_date")
         if day < catalog_floor():
             raise ValueError("too_early")
+    elif (td.archived_from or "").strip():
+        # Restoring a task that really was archived. Raised, never lowered:
+        # `max` keeps a task whose activation was deliberately scheduled
+        # further out on its own date.
+        floor = catalog_floor()
+        td.active_from = max((td.active_from or "").strip() or floor, floor)
     td.archived_from = day
     db.commit()
     return td
@@ -528,9 +587,12 @@ def effective_settings(db: Session, manager_id: int, day=_NOW) -> dict[int, dict
             # RAW tri-state, and `or None` would destroy it: None = inherit,
             # False = this unit's filings are exempt from the date question.
             "date_check": s.date_check if s else None,
-            # Same tri-state, same trap: None = inherit, False = this unit is
-            # judged by the DAY alone (the hour is not compared to the window).
+            # Same tri-state, same trap: None = inherit, False = this unit's
+            # hours are not compared to the window.
             "time_check": s.time_check if s else None,
+            # Same tri-state again: None = inherit, False = this unit's DAY is
+            # not compared. Read with `time_check` — the pair names the mode.
+            "day_check": s.day_check if s else None,
             # RAW: None = inherit the global collection mode. "camera" here is
             # what enrols a whole unit in in-app capture.
             "proof_kind": (s.proof_kind if s else None) or None,
@@ -588,6 +650,7 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "deadline": r.deadline or None,
             "date_check": r.date_check,
             "time_check": r.time_check,
+            "day_check": r.day_check,
             "proof_kind": r.proof_kind or None,
         }
     return out
@@ -656,7 +719,8 @@ def resolve_proof_kind(*levels) -> str:
 # these strings, so a rename here is a rename on the wire.
 OWN_FIELDS = (
     "enabled", "min_media", "weight", "names", "criteria", "description",
-    "win_from", "win_to", "deadline", "date_check", "time_check", "proof_kind",
+    "win_from", "win_to", "deadline", "date_check", "time_check", "day_check",
+    "proof_kind",
 )
 
 # The three clocks compare NORMALISED — "9:00" and "09:00" are one value, and a
@@ -664,7 +728,7 @@ OWN_FIELDS = (
 _CLOCK_FIELDS = ("win_from", "win_to", "deadline")
 # The two TRI-STATE flags. `bool(None)` here would read "inherit" as "off",
 # which is the one mistake that makes a whole column look overridden.
-_FLAG_FIELDS = ("date_check", "time_check")
+_FLAG_FIELDS = ("date_check", "time_check", "day_check")
 
 
 def _clean(field: str, v):
@@ -715,6 +779,7 @@ def global_level(td: LeaderTaskDef) -> dict:
         # payload already publishes them with exactly this reading.
         "date_check": td.date_check is not False,
         "time_check": td.time_check is not False,
+        "day_check": td.day_check is not False,
         "proof_kind": (td.proof_kind or "screenshot"),
     }
 
@@ -957,6 +1022,7 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
             # `time_check` False asks about the day but never the hour.
             "date_check": leader_ai.resolve_date_check(r, s, td),
             "time_check": leader_ai.resolve_time_check(r, s, td),
+            "day_check": leader_ai.resolve_day_check(r, s, td),
             "criteria": criteria,
             # What the leader is told to DO. Resolved beside the criteria it
             # used to be, and falling back to it when nobody has written one.
@@ -1029,6 +1095,7 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                 "window": leader_ai.resolve_window(shift, s, td),
                 "date_check": leader_ai.resolve_date_check(s, td),
                 "time_check": leader_ai.resolve_time_check(s, td),
+                "day_check": leader_ai.resolve_day_check(s, td),
                 "criteria": crit,
                 "description": desc,
                 "deadline": resolve_deadline(s, td),
@@ -1080,6 +1147,7 @@ def requirements_for(db: Session, *, prof=None, manager=None,
             # not a rule — so the tab states that instead of the window.
             "date_check": bool(c["date_check"]),
             "time_check": bool(c["time_check"]),
+            "day_check": bool(c.get("day_check", True)),
             "deadline": c["deadline"],
             # The hour this task actually stops accepting work in per-task mode,
             # straight from the sweep's own definition so the card and the
@@ -1372,6 +1440,21 @@ def set_time_check(db: Session, *, task_id: int, time_check: bool | None,
     absent row means — which is a silent change to what a task requires.
     """
     _set_chain_flag(db, task_id=task_id, attr="time_check", value=time_check,
+                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
+
+
+def set_day_check(db: Session, *, task_id: int, day_check: bool | None,
+                  manager_id: int | None = None, leader_id: int | None = None,
+                  rejudge: bool = True) -> None:
+    """Write "is the DAY checked" at one level of the chain.
+
+    The third of the rule's three flags, through the same helper for the same
+    reason as its siblings: they travel together on every read
+    (`leader_ai.date_rule_for`), and three hand-written level-materialisers
+    would eventually disagree about what an absent row means — which is a silent
+    change to what a task requires.
+    """
+    _set_chain_flag(db, task_id=task_id, attr="day_check", value=day_check,
                     manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
 
 
@@ -1907,7 +1990,7 @@ def _leader_row_extras(row) -> bool:
     # next cell write would then delete the row and silently re-arm the date
     # check on a task somebody had exempted.
     return any(getattr(row, k, None) is not None
-               for k in ("date_check", "time_check"))
+               for k in ("date_check", "time_check", "day_check"))
 
 
 def _leader_row_bare(row) -> bool:

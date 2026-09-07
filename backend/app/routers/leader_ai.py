@@ -197,7 +197,8 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
     out = {str(refs[rev.ref]): _as_verdict(rev, _window(cfg, rev),
                                            _date_check(cfg, rev),
                                            _time_check(cfg, rev),
-                                           _date_plus(cfg, rev))
+                                           _date_plus(cfg, rev),
+                                           _day_check(cfg, rev))
            for rev in revs}
     return {"enabled": True, "tasks": out}
 
@@ -472,10 +473,18 @@ def _date_check(cfg, rev) -> bool:
     return leader_ai.resolve_date_check(*_levels(cfg, rev))
 
 
+def _day_check(cfg, rev) -> bool:
+    """And is the DAY judged? Off the same chain. Read with `_time_check`, never
+    alone: the two together name the mode (strict / date-only / time-only), and
+    a surface holding one of them cannot tell which window rule was applied
+    (see leader_ai.resolve_day_check)."""
+    return leader_ai.resolve_day_check(*_levels(cfg, rev))
+
+
 def _time_check(cfg, rev) -> bool:
-    """And is the CLOCK judged, or only the day? The third of the three that
-    travel together — with this False the window above is not a rule either, so
-    no surface may print it as one (see leader_ai.resolve_time_check)."""
+    """And is the CLOCK judged? The other half of the mode — with this False and
+    `_day_check` True the window above is not a rule at all, so no surface may
+    print it as one (see leader_ai.resolve_time_check)."""
     return leader_ai.resolve_time_check(*_levels(cfg, rev))
 
 
@@ -695,8 +704,8 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
         names = proj.get(rev.ref) or {}
         win = _window(cfg, rev)
         checked, timed = _date_check(cfg, rev), _time_check(cfg, rev)
+        dayed = _day_check(cfg, rev)
         plus = _date_plus(cfg, rev)
-        lo, hi = leader_ai.date_window(rev.date, rev.shift, win, plus)
         out.append({
             "ref": rev.ref,
             "uid": uid,
@@ -723,15 +732,18 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             "imageDate": rev.image_date,
             "clocks": rev.clocks or [],
             # What the row was actually measured against — the window, the DAY
-            # alone on a task judged by the day, and NULL when the task is exempt
-            # from the date question entirely. A card printing a window beside an
-            # unjudged clock is how a reviewer starts "correcting" verdicts nobody
-            # made; printing one on a date-only task is the same mistake quieter.
-            "expected": (None if not checked
-                         else f"{lo} — {hi}" if timed
-                         else ", ".join(leader_ai.date_days(
-                             rev.date, plus, rev.shift, win))),
+            # alone on a task judged by the day, the bare CLOCKS on one judged
+            # by the hour, and NULL when the task is exempt from the date
+            # question entirely. A card printing a window beside an unjudged
+            # clock is how a reviewer starts "correcting" verdicts nobody made;
+            # printing one on a date-only task is the same mistake quieter.
+            # `expected_text` owns that switch, so the three surfaces printing
+            # it cannot name three different rules.
+            "expected": leader_ai.expected_text(
+                rev.date, rev.shift, win,
+                check=checked, days=dayed, times=timed, plus=plus),
             "dateCheck": checked,
+            "dayCheck": dayed,
             "timeCheck": timed,
             "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
             # The date sentence is OURS, not the model's — it no longer knows
@@ -739,7 +751,8 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             # edit. Rendered beside `reason`, which now covers topic and proof
             # only.
             "dateReason": leader_ai.date_prose(rev.clocks, rev.date, win,
-                                               check=checked, times=timed,
+                                               check=checked, days=dayed,
+                                               times=timed,
                                                plus=plus, shift=rev.shift),
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
@@ -945,7 +958,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
         rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
-    win, checked, timed, plus = leader_ai.date_rule_for(
+    rule = leader_ai.date_rule_for(
         db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
     if rev.status in ("ok", "flagged") and not body.force:
         # No call was made and no quota spent — the register says so, or the row
@@ -957,7 +970,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
                      ("report", body.uid), ("note", "cached")],
         )
         return {"ok": True,
-                "task": _as_verdict(rev, win, checked, timed, plus)}  # already judged; never re-spend
+                "task": _as_verdict(rev, rule.win, rule.checked, rule.timed, rule.plus, rule.dayed)}  # already judged; never re-spend
 
     # An admin asking again IS the retry — give a burned-out row its attempts back.
     rev.attempts = 0
@@ -975,7 +988,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
                   or "clean")]
                 + ([("mode", "force")] if body.force else []),
     )
-    return {"ok": True, "task": _as_verdict(rev, win, checked, timed, plus)}
+    return {"ok": True, "task": _as_verdict(rev, rule.win, rule.checked, rule.timed, rule.plus, rule.dayed)}
 
 
 def _report_target(db: Session, uid: str) -> dict:
@@ -1025,13 +1038,18 @@ def _refs_for_uid(db: Session, uid: str) -> dict[str, int]:
 
 
 def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
-                check: bool = True, times: bool = True, plus: int = 0) -> dict:
+                check: bool = True, times: bool = True, plus: int = 0,
+                days: bool = True) -> dict:
     # `win` is the task's effective photo window, `check` whether the date is
-    # judged at all, `times` whether the CLOCK is judged or only the day, and
-    # `plus` how many days after the report's the proof may be dated; callers
-    # that hold the preloaded config chain pass all four rather than making this
-    # re-walk the chain.
-    lo, hi = leader_ai.date_window(rev.date, rev.shift, win, plus)
+    # judged at all, `days`/`times` which HALF of "when" is judged (both = the
+    # strict answer, day alone = date-only, hour alone = time-only), and `plus`
+    # how many days after the report's the proof may be dated; callers that hold
+    # the preloaded config chain pass all five rather than making this re-walk
+    # the chain.
+    #
+    # `days` is last and defaults True on purpose: it arrived after the other
+    # four, and a caller that has not been taught about it must keep getting the
+    # answer it always got rather than silently relaxing a task.
     return {
         "status": rev.status,
         "flags": rev.flags or [],
@@ -1040,20 +1058,21 @@ def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
         # What the verdict was measured against, from the SAME functions the
         # checker used — a date flag is only actionable if you can see what the
         # photo was supposed to satisfy, and a second copy of the rule in the
-        # client would eventually disagree with the backend. Three shapes, one
-        # field: the window when hours are judged, the DAY alone when only the
-        # day is, and NULL when the task is exempt (nothing was measured).
-        "expected": (None if not check
-                     else f"{lo} — {hi}" if times
-                     else ", ".join(leader_ai.date_days(
-                         rev.date, plus, rev.shift,
-                         win or leader_ai.shift_window(rev.shift)))),
+        # client would eventually disagree with the backend. Four shapes, one
+        # field, and ONE function deciding between them (`expected_text`): the
+        # dated window when both halves are judged, the DAY alone in date-only,
+        # the bare CLOCKS in time-only, and NULL when the task is exempt
+        # (nothing was measured).
+        "expected": leader_ai.expected_text(
+            rev.date, rev.shift, win,
+            check=check, days=days, times=times, plus=plus),
         "dateCheck": check,
+        "dayCheck": days,
         "timeCheck": times,
         "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
         "dateReason": leader_ai.date_prose(
             rev.clocks, rev.date, win or leader_ai.shift_window(rev.shift),
-            check=check, times=times, plus=plus, shift=rev.shift),
+            check=check, days=days, times=times, plus=plus, shift=rev.shift),
         "photos": rev.photos,
         "error": rev.error,
         "attempts": rev.attempts,

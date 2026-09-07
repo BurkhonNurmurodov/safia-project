@@ -557,13 +557,30 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
               db.query(Manager).filter(Manager.id.in_(units)).all()}
     profs = {p.id: p for p in db.query(RoleProfile)
              .filter(RoleProfile.id.in_({d.leader_id for d in days})).all()}
+    # (leader, shift, DAY) → the checklist that day was actually asked. The day
+    # belongs in the key and not merely in the call: this pass walks every OPEN
+    # day of every per-task unit, and those days are not all the same date — a
+    # night nobody came back to sits here for as long as it stays open.
+    cfgs: dict[tuple[int, int | None, str], dict] = {}
     done = 0
     for day in days:
         prof = profs.get(day.leader_id)
         if not prof:
             continue
         shift = shifts.get(day.manager_id)
-        cfg = leader_tasks.effective_leader_config(db, prof, shift)
+        # Resolved on THIS day's own date. Unstated, the config answers for the
+        # day happening RIGHT NOW on that shift — which for a stale open day is
+        # a later date than the one being closed, so a task activated since
+        # would be force-closed as not-done on a night that was never asked it
+        # (`leader_tasks.is_active`, the floors added 2026-09-07). The catalog
+        # had no floors when this pass was written and the two dates were then
+        # the same string; they stop being the same the first time an admin adds
+        # or archives a task.
+        key = (prof.id, shift, str(day.date))
+        cfg = cfgs.get(key)
+        if cfg is None:
+            cfg = cfgs[key] = leader_tasks.effective_leader_config(
+                db, prof, shift, day=str(day.date))
         already = closed_tasks(db, day)
         graced = reopened_tasks(day)
         for tid, s in cfg.items():
@@ -695,11 +712,35 @@ def close_expired_days(db: Session, prof, shift: int,
     if not stale:
         return 0
 
-    cfg = leader_tasks.effective_leader_config(db, prof)
+    # ONE config per DAY, resolved on that day's own date and on this leader's
+    # own shift — never on "now". Two separate things were wrong with resolving
+    # it once, outside the loop, with neither argument:
+    #
+    #  * the DAY. Every day in `stale` is by definition past its deadline, so
+    #    none of them is the day happening now — that is the whole entry
+    #    condition of this sweep. With the catalog's floors (2026-09-07) the
+    #    active set is a function of the date, so a task activated since would
+    #    be written onto a night that was never asked it, and an archived one
+    #    left off a night that was. Byte-identical while every task carries no
+    #    floor, which is exactly why it would have gone unnoticed until the
+    #    first admin created a task.
+    #  * the SHIFT. Without it `effective_leader_config` falls back to shift 1's
+    #    hours, so a shift-2 leader's tasks were resolved against 07:00–20:00
+    #    and carried `shift: None` — this sweep runs on shift 2 and nowhere else
+    #    (`AUTOCLOSE_SHIFTS`), so that was every day it ever closed.
+    #
+    # Cached per date: several stale days for one leader is the ordinary case
+    # (a leader who stopped filing), and they share a checklist whenever they
+    # share a date.
+    cfgs: dict[str, dict] = {}
     now = datetime.now(timezone.utc)
     reason = leader_tasks.missed_reason(shift)
     closed: list[tuple] = []
     for day in stale:
+        cfg = cfgs.get(str(day.date))
+        if cfg is None:
+            cfg = cfgs[str(day.date)] = leader_tasks.effective_leader_config(
+                db, prof, shift, day=str(day.date))
         have = {e.task_id for e in
                 db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
         for tid, s in cfg.items():

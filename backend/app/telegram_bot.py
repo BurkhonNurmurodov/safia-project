@@ -1948,6 +1948,7 @@ _LT_MESSAGES = {
         "photos_counter": "📌 {task}\n\nIsbot uchun kamida {min} ta rasm yuboring.\n\n📸 {k}/{min} rasm qabul qilindi.",
         "photo_window": "\n\n🕒 Rasm {lo} — {hi} oralig'ida olingan bo'lishi kerak.",
         "photo_date_only": "\n\n📅 Rasmda vazifa bajarilgan KUN sanasi ko'rinib turishi kerak (soat shart emas).",
+        "photo_time_only": "\n\n🕒 Rasmda SOAT ko'rinib turishi va u {lo} — {hi} oralig'ida bo'lishi kerak (sana ko'rinishi shart emas).",
         "btn_save": "💾 Saqlash",
         "btn_discard": "🔄 Bekor qilish",
         "reason_prompt": "📌 {task}\n\n✍️ Nega bajarilmadi? Sababini yozib yuboring.",
@@ -2085,6 +2086,7 @@ _LT_MESSAGES = {
         "photos_counter": "📌 {task}\n\nИсбот учун камида {min} та расм юборинг.\n\n📸 {k}/{min} расм қабул қилинди.",
         "photo_window": "\n\n🕒 Расм {lo} — {hi} оралиғида олинган бўлиши керак.",
         "photo_date_only": "\n\n📅 Расмда вазифа бажарилган КУН санаси кўриниб туриши керак (соат шарт эмас).",
+        "photo_time_only": "\n\n🕒 Расмда СОАТ кўриниб туриши ва у {lo} — {hi} оралиғида бўлиши керак (сана кўриниши шарт эмас).",
         "btn_save": "💾 Сақлаш",
         "btn_discard": "🔄 Бекор қилиш",
         "reason_prompt": "📌 {task}\n\n✍️ Нега бажарилмади? Сабабини ёзиб юборинг.",
@@ -2221,6 +2223,7 @@ _LT_MESSAGES = {
         "photos_counter": "📌 {task}\n\nОтправьте минимум {min} фото как подтверждение.\n\n📸 Принято {k}/{min} фото.",
         "photo_window": "\n\n🕒 Фото должно быть снято между {lo} и {hi}.",
         "photo_date_only": "\n\n📅 На фото должна быть видна ДАТА дня выполнения (время не обязательно).",
+        "photo_time_only": "\n\n🕒 На фото должно быть видно ВРЕМЯ, и оно должно попадать в интервал {lo} — {hi} (дата не обязательна).",
         "btn_save": "💾 Сохранить",
         "btn_discard": "🔄 Сбросить",
         "reason_prompt": "📌 {task}\n\n✍️ Почему не выполнено? Напишите причину.",
@@ -2357,6 +2360,7 @@ _LT_MESSAGES = {
         "photos_counter": "📌 {task}\n\nSend at least {min} photo(s) as proof.\n\n📸 {k}/{min} photos received.",
         "photo_window": "\n\n🕒 The photo must be taken between {lo} and {hi}.",
         "photo_date_only": "\n\n📅 The photo must show the DATE of the day it was done (the time is not required).",
+        "photo_time_only": "\n\n🕒 The photo must show a CLOCK reading between {lo} and {hi} (the date does not have to be visible).",
         "btn_save": "💾 Save",
         "btn_discard": "🔄 Reset",
         "reason_prompt": "📌 {task}\n\n✍️ Why wasn't it done? Send the reason.",
@@ -2604,15 +2608,24 @@ def _lt_counter_text(lang: str, entry: dict | None, task: str, need: int, k: int
     anyway would make the bot demand something no verdict measures — leaders
     reshooting proofs to satisfy a rule that is not applied.
 
-    `time_check` False is the middle case and gets its OWN line rather than
+    `time_check` False is the DATE-ONLY case and gets its OWN line rather than
     silence: the hours are not a rule there, but the DAY still is, and the day is
     read off whatever the proof shows — so what the leader needs to be told is
     "make sure the date is visible", not a window nothing measures.
+
+    `day_check` False is TIME ONLY and gets a third line for the mirror reason:
+    the window IS the rule there, so it is printed — but a leader told only
+    «{lo} — {hi}» reasonably reshoots to get the date into frame, which that mode
+    exists to stop asking for. The line states the window and says the date is
+    not needed, in one sentence.
     """
     text = _lt(lang, "photos_counter").format(task=task, min=need, k=k)
     win = (entry or {}).get("window")
     if (entry or {}).get("date_check", True):
-        if (entry or {}).get("time_check", True):
+        if not (entry or {}).get("day_check", True):
+            if win:
+                text += _lt(lang, "photo_time_only").format(lo=win[0], hi=win[1])
+        elif (entry or {}).get("time_check", True):
             if win:
                 text += _lt(lang, "photo_window").format(lo=win[0], hi=win[1])
         else:

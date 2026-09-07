@@ -106,6 +106,7 @@ const TXT = {
     stCancelled: "Qaror bekor qilindi",
     task: "Vazifa", aiTitle: "AI xulosasi",
     window: "Ruxsat etilgan vaqt", needDate: "Kerakli sana", onPhoto: "Rasmda",
+    needTime: "Ruxsat etilgan soat",
     by: "Yubordi", decidedBy: "Qaror qildi",
     noteLead: "Lider izohi", noteLeadSup: "Brigadir izohi (lider nomidan)",
     noteSup: "Brigadir izohi", noteAdm: "Admin izohi",
@@ -146,6 +147,7 @@ const TXT = {
     stCancelled: "Қарор бекор қилинди",
     task: "Вазифа", aiTitle: "AI хулосаси",
     window: "Рухсат этилган вақт", needDate: "Керакли сана", onPhoto: "Расмда",
+    needTime: "Рухсат этилган соат",
     by: "Юборди", decidedBy: "Қарор қилди",
     noteLead: "Лидер изоҳи", noteLeadSup: "Бригадир изоҳи (лидер номидан)",
     noteSup: "Бригадир изоҳи", noteAdm: "Админ изоҳи",
@@ -186,6 +188,7 @@ const TXT = {
     stCancelled: "Решение отменено",
     task: "Задача", aiTitle: "Заключение ИИ",
     window: "Допустимое время", needDate: "Нужная дата", onPhoto: "На фото",
+    needTime: "Допустимый час съёмки",
     by: "Отправил(а)", decidedBy: "Решение",
     noteLead: "Комментарий лидера", noteLeadSup: "Комментарий бригадира (за лидера)",
     noteSup: "Комментарий бригадира", noteAdm: "Комментарий администратора",
@@ -226,6 +229,7 @@ const TXT = {
     stCancelled: "Ruling undone",
     task: "Task", aiTitle: "AI verdict",
     window: "Allowed window", needDate: "Required date", onPhoto: "On the photo",
+    needTime: "Allowed clock time",
     by: "Filed by", decidedBy: "Decided by",
     noteLead: "The leader's note", noteLeadSup: "The brigadir's note (for the leader)",
     noteSup: "The brigadir's case", noteAdm: "The admin's note",
@@ -636,12 +640,15 @@ export default function Disputes({ scope, onClearScope }) {
                               </p>
                             )}
                             {/* The hours when hours were the rule, the required
-                                DAY when only the day was judged — a decider has
-                                to read which rule the leader was measured by. */}
+                                DAY when only the day was judged, the bare CLOCK
+                                when only the hour was — a decider has to read
+                                which rule the leader was measured by. */}
                             {rev.expected && (
                               <p className="text-[10px] tabular-nums mt-1 flex items-center gap-1 flex-wrap"
                                 style={{ color: "var(--text-4)" }}>
-                                {rev.timeCheck === false
+                                {rev.dayCheck === false
+                                  ? <><Clock size={10} />{T.needTime}: {rev.expected}</>
+                                  : rev.timeCheck === false
                                   ? <><CalendarCheck size={10} />{T.needDate}: {rev.expected}</>
                                   : <><Clock size={10} />{T.window}: {rev.expected}</>}
                                 {rev.imageDate && <> · {T.onPhoto}: {rev.imageDate}</>}
