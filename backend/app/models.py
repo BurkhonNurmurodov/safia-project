@@ -1370,13 +1370,30 @@ class LeaderTaskDef(Base):
     note_uz_cyrl = Column(String, nullable=True)
     note_ru      = Column(String, nullable=True)
     note_en      = Column(String, nullable=True)
-    # "What makes this task truly done" — read by the AI proof reviewer, and
-    # since 2026-08-15 ALSO shown to the leader as the task's description on the
-    # /leaders «Vazifalar» tab (the rule a leader is judged by is a rule they
-    # get to read). Single free text in any language: it started as prompt
-    # material, so it is not translated. Blank ⇒ the task is not reviewable, and
-    # its photos are left unjudged rather than measured against nothing.
+    # "What makes this task truly done" — read by the AI proof reviewer.
+    # Single free text in any language: it started as prompt material, so it is
+    # not translated. Blank ⇒ the task is not reviewable, and its photos are
+    # left unjudged rather than measured against nothing.
+    #
+    # From 2026-09-06 this is the AI's text ALONE. Between 2026-08-15 and that
+    # date it was also what the leader read as the task's description on the
+    # /leaders «Vazifalar» tab, and one field could not serve both: a grader's
+    # test ("the journal must be filled and its last entry must belong to this
+    # shift") is not an instruction to a person. `description` below is the
+    # leader's half of that split.
     criteria     = Column(Text, nullable=True)
+    # What the LEADER is told to do, in their own terms — shown in the bot and
+    # on the «Vazifalar» tab, and NEVER sent to the reviewer (leader_ai._prompt
+    # does not know this column exists). Same chain and same single-text
+    # convention as `criteria`.
+    #
+    # Blank at every level falls back to `criteria`, which is what every leader
+    # was already reading, so nothing goes missing on the day this ships and a
+    # task keeps a description until somebody writes it one. The fallback lives
+    # in the RESOLVERS (effective_leader_config / requirements_for), never in
+    # the raw admin layer — the matrix must go on showing an unwritten
+    # description as unwritten.
+    description  = Column(Text, nullable=True)
     # When a proof photo for THIS task may have been taken, "HH:MM" wall clock.
     # Either end NULL = fall back to the shift default (services/leader_ai.py
     # SHIFT_WINDOW: shift 1 07:00–20:00, shift 2 17:00–09:00), resolved per
@@ -1476,6 +1493,9 @@ class LeaderTaskSetting(Base):
     # Per-supervisor "definition of done" for the AI reviewer. NULL = inherit
     # the global LeaderTaskDef.criteria.
     criteria     = Column(Text, nullable=True)
+    # Per-supervisor instruction to the leader. NULL = inherit the global one.
+    # Never reaches the reviewer — see LeaderTaskDef.description.
+    description  = Column(Text, nullable=True)
     # Per-supervisor proof-photo window. NULL = inherit the global one (and
     # through it the shift default). Each end inherits on its own.
     win_from     = Column(String(5), nullable=True)
@@ -1520,6 +1540,9 @@ class LeaderTaskLeaderSetting(Base):
     # Per-leader "definition of done" for the AI reviewer. NULL = inherit the
     # supervisor's effective criteria.
     criteria     = Column(Text, nullable=True)
+    # Per-leader instruction to the leader. NULL = inherit the supervisor's
+    # effective description. Never reaches the reviewer.
+    description  = Column(Text, nullable=True)
     # Per-leader proof-photo window. NULL = inherit the supervisor's effective
     # one, per field.
     win_from     = Column(String(5), nullable=True)

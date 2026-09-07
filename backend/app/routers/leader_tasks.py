@@ -46,7 +46,7 @@ from app.services.leader_tasks import (
     expired_through, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
     per_task_units, revert_audit, set_criteria, set_date_check, set_deadline,
-    set_proof_kind, set_unit_settings, unit_bot_from_map,
+    set_description, set_proof_kind, set_unit_settings, unit_bot_from_map,
     set_time_check, set_window, window_shift_problems,
     write_change,
 )
@@ -188,6 +188,11 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 # Global "definition of done" for the AI proof reviewer;
                 # supervisors and leaders may override it in their own cells.
                 "criteria": td.criteria or "",
+                # Global instruction to the leader — the OTHER half of what
+                # `criteria` used to be. RAW like the criteria beside it: blank
+                # here means nobody has written one, and the resolvers (never
+                # this payload) fall back to the criteria for the reader.
+                "description": td.description or "",
                 # Global proof-photo window; blank at either end = that end
                 # falls through to the shift default, which the UI shows as the
                 # placeholder rather than pretending the field is empty.
@@ -637,6 +642,68 @@ def put_criteria(body: CriteriaIn, db: Session = Depends(get_db),
     lead = _need_leader(db, body.leader_id)
     set_criteria(db, task_id=body.task_id, criteria=body.criteria,
                  manager_id=body.manager_id, leader_id=body.leader_id)
+    _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
+             level=("leader" if lead is not None
+                    else "unit" if mgr is not None else "global"),
+             extra=shown)
+    return {"ok": True}
+
+
+class DescriptionIn(BaseModel):
+    """The leader-facing instruction, at one level of the chain. Same four-way
+    addressing as CriteriaIn — global (both ids absent), one supervisor, one
+    leader, or a scoped fan-out over a filtered matrix."""
+    task_id: int
+    description: str = ""
+    manager_id: int | None = None
+    leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.put("/admin/leader-tasks/description")
+def put_description(body: DescriptionIn, db: Session = Depends(get_db),
+                    _: dict = Depends(verify_admin)):
+    """Set what the LEADER is told to do — the half of the old `criteria` that
+    a person reads, split off on 2026-09-06 so a grader's test and an
+    instruction stop being one string.
+
+    Reaches no scoring path: `leader_ai._prompt` does not read this column, so
+    unlike the criteria beside it this text can never move a verdict. Blank
+    clears the override; blank at every level falls back to the criteria, which
+    is what every leader was already reading.
+    """
+    td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
+    if not td:
+        raise HTTPException(status_code=404, detail="Unknown task")
+    shown = [("description", (body.description or "")[:200] or "—")]
+    if body.leader_ids is not None or body.manager_ids is not None:
+        if body.leader_ids is not None:
+            ids = [i for (i,) in db.query(RoleProfile.id).filter(
+                RoleProfile.id.in_(body.leader_ids),
+                RoleProfile.role == "leader").all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for lid in ids:
+                set_description(db, task_id=body.task_id,
+                                description=body.description, leader_id=lid)
+        else:
+            ids = [i for (i,) in db.query(Manager.id).filter(
+                Manager.id.in_(body.manager_ids),
+                Manager.archived.is_(False)).all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for mid in ids:
+                set_description(db, task_id=body.task_id,
+                                description=body.description, manager_id=mid)
+        _log_cfg(task_id=body.task_id, task_name=td.name_uz, count=len(ids),
+                 level="leader" if body.leader_ids is not None else "unit",
+                 extra=shown)
+        return {"ok": True, "count": len(ids)}
+    mgr = _need_manager(db, body.manager_id)
+    lead = _need_leader(db, body.leader_id)
+    set_description(db, task_id=body.task_id, description=body.description,
+                    manager_id=body.manager_id, leader_id=body.leader_id)
     _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
              level=("leader" if lead is not None
                     else "unit" if mgr is not None else "global"),

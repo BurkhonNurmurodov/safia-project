@@ -241,6 +241,11 @@ export default function LeaderTasksAdmin() {
   // leader sees in the bot, so it applies at once and never joins the
   // "from next day" staging the other fields go through.
   const critMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/criteria", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
+  // The leader-facing instruction — the OTHER half of what `criteria` used to
+  // be (split 2026-09-06). Its own endpoint, and it lands on the SAME override
+  // row as the criteria, so it is written in the same awaited chain and never
+  // in parallel with it.
+  const descMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/description", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
   // The proof-photo window rides the same instant path as the criteria — but
   // unlike them it also re-judges verdicts already written, from the clock each
   // one stored, so an edit fixes the existing queue and not just future
@@ -405,11 +410,19 @@ export default function LeaderTasksAdmin() {
   ), [rows, leadSel]);
 
   const tname = (task) => task.name?.[lang] || task.name?.uz || `T${task.id}`;
-  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, win_from: null, win_to: null, deadline: null, date_check: null, time_check: null, proof_kind: null };
+  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, description: null, win_from: null, win_to: null, deadline: null, date_check: null, time_check: null, proof_kind: null };
   // The definition of done actually in force for a cell, walking the same
   // chain the backend reviewer walks: leader → supervisor → global.
   const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
   const supCrit = (mid, tid) => getCell(mid, tid).criteria || critOf(tid);
+  // The instruction the leader reads. Same chain as the criteria, and when no
+  // level holds one it falls back to the criteria — which is what every leader
+  // was already reading before the two were split, so a task is never
+  // described by nothing. The backend resolves it the same way
+  // (leader_tasks._resolve_description); this is the preview of that answer.
+  const descOf = (tid) => tasks.find((x) => x.id === tid)?.description || "";
+  const supDesc = (mid, tid) =>
+    getCell(mid, tid).description || descOf(tid) || supCrit(mid, tid);
   // The example photos in force for a row, walking the chain the backend walks
   // (services/leader_ai.example_ids_map): the NARROWEST level holding any wins
   // WHOLE, never a union. Returns the level too, because every modal has to
@@ -550,6 +563,7 @@ export default function LeaderTasksAdmin() {
   const leadInherit = (mid, tid) => ({
     names: Object.fromEntries(LANGS.map((l) => [l, supNameOf(mid, tid, l)])),
     criteria: supCrit(mid, tid),
+    description: supDesc(mid, tid),
     win_from: leadWinPh(mid, tid, "win_from"),
     win_to: leadWinPh(mid, tid, "win_to"),
     deadline: leadDlPh(mid, tid),
@@ -596,6 +610,7 @@ export default function LeaderTasksAdmin() {
       enabled: eff.enabled, min_media: eff.min_media, weight: eff.weight,
       names: Object.fromEntries(LANGS.map((l) => [l, ov?.names?.[l] || inh.names[l]])),
       criteria: ov?.criteria || inh.criteria,
+      description: ov?.description || inh.description,
       win_from: ov?.win_from || inh.win_from, win_to: ov?.win_to || inh.win_to,
       deadline: ov?.deadline || inh.deadline,
       date_check: ov?.date_check ?? inh.date_check,
@@ -611,6 +626,13 @@ export default function LeaderTasksAdmin() {
   const saveCriteria = (draft, stored, ids) => {
     if ((draft || "") === (stored || "")) return undefined;
     return critMut.mutateAsync({ ...ids, criteria: draft || "" });
+  };
+  // Same shape, and skipped when unchanged for the same reason — but note what
+  // is NOT true of it: this text reaches no scoring path, so unlike the window
+  // or the criteria a write here can never re-judge a stored verdict.
+  const saveDescription = (draft, stored, ids) => {
+    if ((draft || "") === (stored || "")) return undefined;
+    return descMut.mutateAsync({ ...ids, description: draft || "" });
   };
 
   // Skipped when unchanged like the criteria — and for a sharper reason here:
@@ -688,6 +710,7 @@ export default function LeaderTasksAdmin() {
     const ids = { task_id: cell.tid, manager_id: cell.mid };
     try {
       await saveCriteria(cell.criteria, stored.criteria, ids);
+      await saveDescription(cell.description, stored.description, ids);
       await saveWindow(cell, stored, ids);
       await saveDeadline(cell, stored, ids);
       if (!await saveDateRule(cell, stored,
@@ -729,12 +752,15 @@ export default function LeaderTasksAdmin() {
     const mm = Number(lcell.min_media) || 0;
     const w = Number(lcell.weight) || 0;
     const criteria = ownText(lcell.criteria, inh.criteria);
+    const description = ownText(lcell.description, inh.description);
     const win_from = ownText(lcell.win_from, inh.win_from);
     const win_to = ownText(lcell.win_to, inh.win_to);
     const deadline = ownText(lcell.deadline, inh.deadline);
     try {
       if (criteria !== (ov?.criteria || ""))
         await critMut.mutateAsync({ ...ids, criteria });
+      if (description !== (ov?.description || ""))
+        await descMut.mutateAsync({ ...ids, description });
       if (win_from !== (ov?.win_from || "") || win_to !== (ov?.win_to || ""))
         await winMut.mutateAsync({ ...ids, win_from, win_to });
       if (deadline !== (ov?.deadline || ""))
@@ -818,6 +844,19 @@ export default function LeaderTasksAdmin() {
       <textarea rows={4} value={value || ""} onChange={(e) => onChange(e.target.value)}
         placeholder={inherited || t("admin.ltasks.criteriaPh")}
         className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 84 }} />
+    </FormField>
+  );
+  // What the LEADER is told to do, split off from the criteria on 2026-09-06:
+  // one field could not be both a grader's test and an instruction to a person.
+  // It sits directly ABOVE the criteria in every modal, because that is the
+  // order the two are written in — say what to do, then say how it is judged —
+  // and its hint carries the one thing an admin cannot see: this text is never
+  // sent to the AI, so writing it teaches the reviewer nothing.
+  const descriptionField = (value, onChange, inherited, mark) => (
+    <FormField label={withMark(t("admin.ltasks.description"), mark)} hint={t("admin.ltasks.descriptionHint")}>
+      <textarea rows={3} value={value || ""} onChange={(e) => onChange(e.target.value)}
+        placeholder={inherited || t("admin.ltasks.descriptionPh")}
+        className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 68 }} />
     </FormField>
   );
   // When a proof photo for this task may have been taken. TWO inputs, both
@@ -1018,6 +1057,12 @@ export default function LeaderTasksAdmin() {
         ? getOv(lead0.id, task.id)?.criteria || supCrit(lead0.manager_id, task.id)
         : supCrit(rows[0]?.m.id, task.id))
       : task.criteria) || "";
+    // Same scoped-seed rule as the criteria beside it.
+    const description0 = (anyFilter
+      ? (lead0
+        ? getOv(lead0.id, task.id)?.description || supDesc(lead0.manager_id, task.id)
+        : supDesc(rows[0]?.m.id, task.id))
+      : task.description) || "";
     // Same scoped-seed rule as the criteria: under a filter the modal writes
     // the visible rows, so it shows THEIR raw window, not the global one.
     const win0 = anyFilter
@@ -1059,7 +1104,8 @@ export default function LeaderTasksAdmin() {
     setCol({
       proof_kind: pk0raw || pkInh || "screenshot", pk0raw, pkInh,
       tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
-      names: { ...names0 }, names0, criteria: criteria0, criteria0, when: "now",
+      names: { ...names0 }, names0, criteria: criteria0, criteria0,
+      description: description0, description0, when: "now",
       ...win0, win0, deadline: deadline0, deadline0,
       date_check: dc0raw.date_check ?? dcInh.date_check,
       time_check: dc0raw.time_check ?? dcInh.time_check,
@@ -1091,6 +1137,7 @@ export default function LeaderTasksAdmin() {
     const target = { task_id: col.tid, ...ids };
     try {
       await saveCriteria(col.criteria, col.criteria0, target);
+      await saveDescription(col.description, col.description0, target);
       await saveWindow(col, col.win0, target);
       await saveDeadline(col, { deadline: col.deadline0 }, target);
       if (!await saveDateRule(col, col.dc0raw, col.dcInh, target)) return;
@@ -1286,7 +1333,7 @@ export default function LeaderTasksAdmin() {
                             <td key={task.id}>
                               <button type="button"
                                 title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}% · ${t(`admin.ltasks.proofMode.${supPk(m.id, task.id)}`)}`}
-                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", win_from: c.win_from || "", win_to: c.win_to || "", date_check: supDc(m.id, task.id), time_check: supTc(m.id, task.id), proof_kind: supPk(m.id, task.id), when: "now" })}
+                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", description: c.description || "", win_from: c.win_from || "", win_to: c.win_to || "", date_check: supDc(m.id, task.id), time_check: supTc(m.id, task.id), proof_kind: supPk(m.id, task.id), when: "now" })}
                                 className="relative w-full h-9 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
                                 style={cellStyle(c)}>
                                 {c.weight}%
@@ -1345,6 +1392,7 @@ export default function LeaderTasksAdmin() {
           {numField(t("admin.ltasks.minMedia"), cell.min_media, (v) => setCell((c) => ({ ...c, min_media: v })), 20)}
           {proofKindField(cell, (v) => setCell((c) => ({ ...c, ...v })), null, "unit")}
           {numField(t("admin.ltasks.weight"), cell.weight, (v) => setCell((c) => ({ ...c, weight: v })), 100)}
+          {descriptionField(cell.description, (v) => setCell((c) => ({ ...c, description: v })), descOf(cell.tid) || critOf(cell.tid))}
           {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
           {/* The picture of a correct proof belongs beside the words for one,
               at the same level: this unit's leaders. Unlike every other field
@@ -1385,6 +1433,8 @@ export default function LeaderTasksAdmin() {
             lcell.min_media, (v) => setLcell((c) => ({ ...c, min_media: v })), 20)}
           {numField(withMark(t("admin.ltasks.weight"), changedPill((Number(lcell.weight) || 0) !== Number(lBase.weight))),
             lcell.weight, (v) => setLcell((c) => ({ ...c, weight: v })), 100)}
+          {descriptionField(lcell.description, (v) => setLcell((c) => ({ ...c, description: v })), lInh.description,
+            changedPill(ownText(lcell.description, lInh.description) !== ""))}
           {criteriaField(lcell.criteria, (v) => setLcell((c) => ({ ...c, criteria: v })), lInh.criteria,
             changedPill(ownText(lcell.criteria, lInh.criteria) !== ""))}
           {/* This leader's own example, the picture beside their own words.
@@ -1445,6 +1495,7 @@ export default function LeaderTasksAdmin() {
             <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>
               {anyFilter ? t("admin.ltasks.criteriaScoped") : t("admin.ltasks.criteriaGlobal")}
             </p>
+            {descriptionField(col.description, (v) => setCol((c) => ({ ...c, description: v })), "")}
             {criteriaField(col.criteria, (v) => setCol((c) => ({ ...c, criteria: v })), "")}
             {/* Unfiltered this writes the GLOBAL level, which both shifts
                 inherit — so the placeholder names both shift defaults rather

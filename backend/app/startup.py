@@ -1427,6 +1427,40 @@ def add_leader_task_date_check() -> None:
         db.close()
 
 
+def add_leader_task_description() -> None:
+    """2026-09-06: the text the LEADER reads and the text the AI grades against
+    become two fields, entered separately (the operator's directive).
+
+    `criteria` was doing both jobs since 2026-08-15 and could not do them well:
+    it is authored as a grader's test — "the journal must be filled and its last
+    entry must belong to this shift" — and it was also the task's description on
+    the «Vazifalar» tab, where a person needs an instruction instead.
+
+    `criteria` keeps its column, its text and every reader it already had, so
+    NOT ONE BYTE of what the reviewer sees changes and no stored verdict can
+    move. The new `description` starts NULL everywhere and is resolved with a
+    fallback to `criteria`, so on the day this ships every leader goes on
+    reading exactly what they read yesterday, and a task keeps a description
+    until an admin writes it one.
+
+    Idempotent, and nullable at every level including the global one — unlike
+    `date_check` there is no floor to fill in: NULL at the global level means
+    "nobody has written one yet", which the fallback answers.
+    """
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            db.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS description TEXT"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task description migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_task_time_check() -> None:
     """2026-08-17: the DATE question splits in two — is the day asked at all
     (`date_check`), and if so must the CLOCK be proven too (`time_check`).

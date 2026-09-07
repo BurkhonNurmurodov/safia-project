@@ -135,6 +135,11 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             # RAW like `names`: None = inherit the global definition-of-done.
             # The AI reviewer reads this chain (services/leader_ai.criteria_for).
             "criteria": (s.criteria if s else None) or None,
+            # RAW too: None = inherit the global instruction. Deliberately NOT
+            # folded onto `criteria` here the way the RESOLVERS fold it — the
+            # matrix must show an unwritten description as unwritten, or every
+            # cell would read "own" the moment a criteria existed.
+            "description": (s.description if s else None) or None,
             # RAW too, and each end on its own: None = inherit, and at the
             # global level that lands on the shift default.
             "win_from": (s.win_from if s else None) or None,
@@ -152,6 +157,31 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             "proof_kind": (s.proof_kind if s else None) or None,
         }
     return out
+
+
+def _resolve_description(levels, criteria: str) -> str:
+    """THE definition of "what is this leader told to do", narrowest level
+    first, falling back to the AI's `criteria` when nobody has written one.
+
+    Both halves matter and both are why this is one function rather than an
+    expression at each call site:
+
+    * the WALK is `criteria`'s own — first non-blank of leader → supervisor →
+      global — so a supervisor who rewords a task for their unit rewords its
+      instruction the same way they already reword its definition of done;
+    * the FALLBACK is what makes the split invisible on the day it ships. Until
+      2026-09-06 the criteria WAS the description every leader read, so a task
+      with no description of its own must keep showing it rather than going
+      blank. Writing one replaces it; clearing it goes back.
+
+    Never apply this to the raw admin layers (`effective_settings`,
+    `leader_overrides`): there an unwritten description must read as unwritten,
+    or the matrix would mark every cell as overridden.
+    """
+    for level in levels:
+        if level is not None and (getattr(level, "description", None) or "").strip():
+            return level.description.strip()
+    return criteria
 
 
 def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, dict]]:
@@ -173,6 +203,7 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "weight": r.weight,
             "names": _row_names(r),
             "criteria": r.criteria or None,
+            "description": r.description or None,
             "win_from": r.win_from or None,
             "win_to": r.win_to or None,
             "deadline": r.deadline or None,
@@ -281,6 +312,7 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
             if level is not None and (level.criteria or "").strip():
                 criteria = level.criteria.strip()
                 break
+        description = _resolve_description((r, s, td), criteria)
         out[td.id] = {
             "enabled": enabled, "min_media": min_media,
             "weight": weight, "names": names,
@@ -297,6 +329,9 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
             "date_check": leader_ai.resolve_date_check(r, s, td),
             "time_check": leader_ai.resolve_time_check(r, s, td),
             "criteria": criteria,
+            # What the leader is told to DO. Resolved beside the criteria it
+            # used to be, and falling back to it when nobody has written one.
+            "description": description,
             "deadline": resolve_deadline(r, s, td),
             # WHERE the leader answers this task: the bot chat, or the mini-app
             # camera. The bot branches on it, so it is resolved here with
@@ -349,6 +384,7 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                 if level_row is not None and (level_row.criteria or "").strip():
                     crit = level_row.criteria.strip()
                     break
+            desc = _resolve_description((s, td), crit)
             cfg[td.id] = {
                 "enabled": s.enabled if s else True,
                 "min_media": s.min_media if s else 1,
@@ -358,6 +394,7 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                 "date_check": leader_ai.resolve_date_check(s, td),
                 "time_check": leader_ai.resolve_time_check(s, td),
                 "criteria": crit,
+                "description": desc,
                 "deadline": resolve_deadline(s, td),
                 "proof_kind": resolve_proof_kind(s, td),
             }
@@ -390,6 +427,12 @@ def requirements_for(db: Session, *, prof=None, manager=None,
             "id": td.id,
             "names": c["names"],
             "note": {l: getattr(td, f"note_{l}") or "" for l in _LANGS},
+            # Two texts, two readers: `description` is what this leader is told
+            # to do, `criteria` is what the AI grades the photo against. The tab
+            # leads with the description and prints the criteria under it — a
+            # leader still gets to read the rule they are judged by, which is
+            # why the criteria became visible in the first place.
+            "description": c.get("description") or c["criteria"] or "",
             "criteria": c["criteria"] or "",
             "weight": int(c["weight"] or 0),
             "min_media": int(c["min_media"] or 0),
@@ -488,6 +531,58 @@ def set_criteria(db: Session, *, task_id: int, criteria: str,
         if not td:
             return
         td.criteria = text
+    db.commit()
+
+
+def set_description(db: Session, *, task_id: int, description: str,
+                    manager_id: int | None = None,
+                    leader_id: int | None = None) -> None:
+    """Write the leader-facing instruction at one level of the chain. Blank
+    clears the override and falls back to the level above — and, when no level
+    holds one, to the AI's `criteria` (see `_resolve_description`).
+
+    A deliberate twin of `set_criteria`, down to materialising the row with the
+    values that level already resolves to, so writing an instruction can never
+    silently change what the task requires. It stages for the same reason
+    `set_criteria` does not stage: the bot reads the description on the next
+    open, so a deferred edit would be a delay with nothing behind it.
+
+    Unlike the criteria this text reaches NO scoring path — `leader_ai._prompt`
+    never sees it — so an edit here cannot move a verdict, past or future.
+    """
+    text_ = (description or "").strip() or None
+
+    if leader_id is not None:
+        row = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+        if not row:
+            if text_ is None:
+                return  # nothing stored, nothing to clear
+            row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
+            db.add(row)
+        row.description = text_
+        # Same rule as set_criteria: a leader row left overriding nothing goes,
+        # or the matrix would ring "overridden" over an empty row.
+        if text_ is None and _leader_row_bare(row):
+            db.delete(row)
+    elif manager_id is not None:
+        row = db.query(LeaderTaskSetting).filter_by(
+            manager_id=manager_id, task_id=task_id).first()
+        if not row:
+            if text_ is None:
+                return
+            td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+            row = LeaderTaskSetting(
+                manager_id=manager_id, task_id=task_id, enabled=True,
+                min_media=1, weight=td.default_weight if td else 0,
+            )
+            db.add(row)
+        row.description = text_
+    else:
+        td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+        if not td:
+            return
+        td.description = text_
     db.commit()
 
 
@@ -1140,7 +1235,8 @@ def _leader_row_extras(row) -> bool:
     if row is None:
         return False
     if any((getattr(row, k, None) or "").strip()
-           for k in ("criteria", "win_from", "win_to", "deadline", "proof_kind")):
+           for k in ("criteria", "description", "win_from", "win_to",
+                     "deadline", "proof_kind")):
         return True
     # NOT a blank-string test: these are tri-state booleans whose whole point is
     # being False, and `or ""` would read an active exemption as "unset" — the

@@ -54,7 +54,8 @@ const TXT = {
     deadlineNote: "Muddat ma'lumot uchun ko'rsatiladi: baho faqat kunlik topshirish oynasi bo'yicha hisoblanadi.",
     proof: "Isbot", minPhotos: "kamida {n} ta rasm", noPhotos: "rasm talab qilinmaydi",
     inApp: "Bu vazifaning rasmi botdagi «📷 Kamerani ochish» tugmasi orqali ILOVADA olinadi. Chatga rasm yuborib bo'lmaydi; sana va vaqt rasmga server soati bo'yicha avtomatik yoziladi.",
-    criteria: "Talab", noCriteria: "Talab yozilmagan — AI faqat rasm vaqtini tekshiradi.",
+    what: "Nima qilish kerak",
+    criteria: "AI nimani tekshiradi", noCriteria: "Talab yozilmagan — AI faqat rasm vaqtini tekshiradi.",
     noCriteriaNoDate: "Talab yozilmagan — AI faqat rasm mavzusini tekshiradi.",
     photoWin: "Rasm: {from} – {to}", noDate: "Sana tekshirilmaydi",
     dayOnly: "Sana kerak, vaqt shart emas",
@@ -80,7 +81,8 @@ const TXT = {
     deadlineNote: "Муддат маълумот учун кўрсатилади: баҳо фақат кунлик топшириш ойнаси бўйича ҳисобланади.",
     proof: "Исбот", minPhotos: "камида {n} та расм", noPhotos: "расм талаб қилинмайди",
     inApp: "Бу вазифанинг расми ботдаги «📷 Камерани очиш» тугмаси орқали ИЛОВАДА олинади. Чатга расм юбориб бўлмайди; сана ва вақт расмга сервер соати бўйича автоматик ёзилади.",
-    criteria: "Талаб", noCriteria: "Талаб ёзилмаган — AI фақат расм вақтини текширади.",
+    what: "Нима қилиш керак",
+    criteria: "AI нимани текширади", noCriteria: "Талаб ёзилмаган — AI фақат расм вақтини текширади.",
     noCriteriaNoDate: "Талаб ёзилмаган — AI фақат расм мавзусини текширади.",
     photoWin: "Расм: {from} – {to}", noDate: "Сана текширилмайди",
     dayOnly: "Сана керак, вақт шарт эмас",
@@ -106,7 +108,8 @@ const TXT = {
     deadlineNote: "Срок носит справочный характер: оценка считается только по дневному окну сдачи отчёта.",
     proof: "Доказательство", minPhotos: "минимум {n} фото", noPhotos: "фото не требуется",
     inApp: "Фото для этой задачи снимается В ПРИЛОЖЕНИИ — кнопкой «📷 Открыть камеру» в боте. Отправить фото в чат нельзя; дата и время наносятся на снимок автоматически по часам сервера.",
-    criteria: "Требование", noCriteria: "Требование не задано — ИИ проверяет только время фото.",
+    what: "Что нужно сделать",
+    criteria: "Что проверяет ИИ", noCriteria: "Требование не задано — ИИ проверяет только время фото.",
     noCriteriaNoDate: "Требование не задано — ИИ проверяет только тему фото.",
     photoWin: "Фото: {from} – {to}", noDate: "Дата не проверяется",
     dayOnly: "Нужна дата, время не обязательно",
@@ -132,7 +135,8 @@ const TXT = {
     deadlineNote: "The deadline is informational: the score is computed only against the day's filing window.",
     proof: "Proof", minPhotos: "at least {n} photo(s)", noPhotos: "no photo required",
     inApp: "This task's photo is taken IN THE APP — with the «📷 Open the camera» button in the bot. No photo can be sent to the chat; the date and time are burnt in automatically from the server's clock.",
-    criteria: "Requirement", noCriteria: "No requirement written — the AI checks only the photo time.",
+    what: "What to do",
+    criteria: "What the AI checks", noCriteria: "No requirement written — the AI checks only the photo time.",
     noCriteriaNoDate: "No requirement written — the AI checks only the photo subject.",
     photoWin: "Photo: {from} – {to}", noDate: "Date not checked",
     dayOnly: "Date required, time not",
@@ -182,6 +186,17 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
   const name = task.names?.[lang] || task.names?.uz || `T${task.id}`;
   const note = task.note?.[lang] || task.note?.uz || "";
   const criteria = (task.criteria || "").trim();
+  // Split from the criteria on 2026-09-06: this is the instruction, that is
+  // the grader's test. The backend already falls back to the criteria when no
+  // level has written one, so this is never blank while a criteria exists —
+  // and when the two are the same string the second block would just repeat
+  // it, so it is dropped rather than printed twice.
+  const description = (task.description || "").trim();
+  // Only a NON-EMPTY duplicate is dropped. With both texts empty the two would
+  // also be "equal", and hiding the criteria block there would take the «no
+  // requirement written» line away from exactly the task that needs it. An old
+  // backend sends no description at all, which lands here the same safe way.
+  const dupe = !!description && description === criteria;
   const [wFrom, wTo] = task.window || [];
   // The window is only a RULE while the CLOCK is judged. In the other two modes
   // it is stale config, so the chip states what is actually asked instead — a
@@ -236,14 +251,26 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
         </div>
       </header>
 
-      <div>
-        <div className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: "var(--text-3)" }}>{T.criteria}</div>
-        {criteria
-          ? <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{tl(criteria)}</p>
-          : <p className="text-xs italic" style={{ color: "var(--text-4)" }}>
-              {dateOn ? T.noCriteria : T.noCriteriaNoDate}
-            </p>}
-      </div>
+      {description && (
+        <div>
+          <div className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: "var(--text-3)" }}>{T.what}</div>
+          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-1)" }}>{tl(description)}</p>
+        </div>
+      )}
+
+      {/* The rule this leader is JUDGED by stays visible — that is why the
+          criteria became leader-facing in the first place — but it is now named
+          as the AI's test rather than passed off as the task's description. */}
+      {!dupe && (
+        <div>
+          <div className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: "var(--text-3)" }}>{T.criteria}</div>
+          {criteria
+            ? <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{tl(criteria)}</p>
+            : <p className="text-xs italic" style={{ color: "var(--text-4)" }}>
+                {dateOn ? T.noCriteria : T.noCriteriaNoDate}
+              </p>}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-1.5">
         <Fact icon={Scale}>

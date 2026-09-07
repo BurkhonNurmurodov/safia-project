@@ -1247,10 +1247,9 @@ number.
   state carries an icon as well as a colour. A day voided by the filing window
   shows only its void chip; no second red mark beside it.
 - **`/leaders` «Vazifalar» tab (`components/leaders/TaskRequirements.jsx`) is
-  where a leader READS the rules** — for every enabled task: name, proof type,
-  the AI definition of done (`criteria`, shown as the task's description —
-  the rule someone is judged by is a rule they get to read, so `criteria` and
-  the example photos are no longer "never shown to the leader"), weight (+ share
+  where a leader READS the rules** — for every enabled task: name, the
+  instruction (`description`) and under it the AI definition of done
+  (`criteria`), weight (+ share
   when the enabled sum ≠ 100), min photos, photo window, submission deadline and
   the example photos (72px → the shared `ui/Lightbox.jsx`). Fed by
   `GET /api/leader-tasks/requirements` (`services/leader_tasks.requirements_for`),
@@ -1305,7 +1304,29 @@ number.
     would reach every other row inheriting the same one, which is the accident
     this scoping ends. Unlike every other field in those modals an example
     applies AT ONCE — bytes, not a staged draft — and each note says so.
-- **Because leaders READ the criteria, they are ordinary prose — and there is a
+- **The leader's text and the AI's text are TWO fields (2026-09-06, the
+  operator's directive).** `criteria` is the grader's test and nothing else;
+  `description` (new, same three tables, same global → supervisor → leader
+  chain, same single-untranslated-text convention) is the instruction the
+  leader reads. One field could not be both: "the journal must be filled and
+  its last entry must belong to this shift" is a test, not something you tell a
+  person to do. `PUT /admin/leader-tasks/description` is the twin of
+  `/criteria`, four-way addressed the same way, and it lands on the SAME
+  override row — so the modals go on writing it inside the awaited chain.
+  **`leader_ai._prompt` does not know this column exists**, which is the whole
+  safety argument: a description edit can never move a verdict, past or future.
+  **`leader_tasks._resolve_description` is THE resolver and it falls back to
+  `criteria`** when no level holds a description — between 2026-08-15 and the
+  split the criteria WAS what every leader read, so a task with no description
+  of its own keeps showing it and nothing went blank on the day this shipped.
+  Apply that fallback only in the RESOLVERS (`effective_leader_config`,
+  `requirements_for`), NEVER in the raw admin layers (`effective_settings`,
+  `leader_overrides`) — there an unwritten description must read as unwritten,
+  or the matrix marks every cell overridden. The «Vazifalar» tab leads with the
+  description and prints the criteria under it as «AI nimani tekshiradi»,
+  because the rule a leader is judged by is still a rule they get to read; it
+  drops the second block when the two resolve to the same string.
+- **Leaders READ these texts, so they are ordinary prose — and there is a
   bulk editor for that.** «Matnlarni tuzatish» on the ltasks matrix header
   (`pages/admin/CriteriaTextsModal.jsx` + `utils/textCase.js`) lists every
   definition-of-done actually STORED — the global level plus each supervisor /
@@ -1317,7 +1338,11 @@ number.
   an ordinary word — a prefix test alone wrecks every word starting ID/IT/AI).
   It only DRAFTS; nothing is written until Save, and the writes then go through
   the ordinary criteria endpoint ONE AT A TIME, the same rule (and the same
-  unique key) as the three ltasks modals.
+  unique key) as the three ltasks modals. It covers `criteria` ONLY — the
+  descriptions beside them were empty on the day they shipped, so there was
+  nothing yet to fix; widening it to both texts is a small, deliberate follow-up
+  (one more source in `criteriaItems` and the description endpoint in the save
+  loop), not something to assume it already does.
 - **A window OUTSIDE its shift's hours is refused on write** (the operator's
   ruling, 2026-08-27). `leader_ai.window_fits_shift` is the rule and
   `leader_tasks.window_shift_problems` applies it at the endpoint, so a fan-out
