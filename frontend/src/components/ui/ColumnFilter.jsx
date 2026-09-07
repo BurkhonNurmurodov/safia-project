@@ -633,6 +633,10 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
   const popRef = useRef(null);     // portaled grouped panel
   const wrapRef = useRef(null);    // md+ container — a direct toolbar-row child
   const measureRef = useRef(null); // invisible natural-width copy of the inline row
+  // The fit check's own answer can change the width it is measured against, so
+  // it carries the state it last decided plus the flips it has already made —
+  // see the loop breaker in the effect below.
+  const fitRef = useRef({ collapsed: true, seen: new Set() });
 
   // Interactive vs inert scope sections; count/clear-all fall back to the
   // section metadata so pages don't have to duplicate the bookkeeping.
@@ -699,9 +703,10 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
   // Fit check: the filters unfold only while the WHOLE toolbar row still fits on
   // one line — natural inline-row width (hidden measurer) + every sibling
   // control (flex-grow spacers contribute 0) vs the row's content width.
-  // No deps: re-measures on every render so label/sibling changes are picked up;
-  // the setState bail-out keeps it loop-free.
+  // No deps: re-measures on every render so label/sibling changes are picked up.
   useLayoutEffect(() => {
+    const fit = fitRef.current;
+    fit.collapsed = collapsed;
     // Callers can pin the grouped button (e.g. filters parked on the right of a
     // toolbar whose left side already carries its own controls) — skip the unfold.
     if (forceGroup) { if (!collapsed) setCollapsed(true); return; }
@@ -722,7 +727,31 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
         total += el.offsetWidth;
         n += 1;
       }
-      setCollapsed(total + gap * (n - 1) > avail);
+      const next = total + gap * (n - 1) > avail;
+      // Settled — the measurement agrees with what is on screen, so whatever
+      // flip history was being carried is over.
+      if (next === fit.collapsed) { fit.seen.clear(); return; }
+      // A toolbar row that SHRINK-WRAPS its children makes `avail` a function of
+      // this very decision: unfolding widens the row, the wider row then says
+      // everything fits, folding back narrows it again, forever. React sees an
+      // endless nested update from a layout effect and throws #185 («maximum
+      // update depth»), which is how /live crashed — its header parks the panel
+      // in a `flex-wrap justify-end` group that has no width of its own. A state
+      // already flipped INTO at this exact width is therefore a cycle, and the
+      // panel stops on the GROUPED side: the button fits by construction, so it
+      // is the safe end of the two. Never assume a caller's row has a width
+      // independent of what is in it — most do, and the ones that do not must
+      // still degrade to a working control rather than take the page down.
+      const sig = `${next}@${Math.round(avail)}`;
+      if (fit.seen.has(sig)) {
+        fit.seen.clear();
+        if (!fit.collapsed) { fit.collapsed = true; setCollapsed(true); }
+        return;
+      }
+      if (fit.seen.size > 32) fit.seen.clear();
+      fit.seen.add(sig);
+      fit.collapsed = next;
+      setCollapsed(next);
     }
     update();
     const ro = new ResizeObserver(update);
