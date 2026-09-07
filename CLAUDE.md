@@ -514,8 +514,20 @@ for byte**; only where three numbers come from changes.
   the flat 480 base (the production page's `pp_shift_min` is deliberately NOT
   adopted), the closed-day lock, the day-close gate on `build_metrics_list`,
   and both sheet imports, which keep syncing and are simply not read from the
-  floor on. `/zagruzka-cell` becomes an exact twin of the fleet page, which is
-  what it was built to be.
+  floor on.
+- **«Yacheyka zagruzkasi» (`/zagruzka-cell`) runs the same rule per CELL.**
+  Its trudoyomkost already came from `pp_calc.line_minutes`; what changed is
+  its headcount — `o_soni()` returns the TYPED «Bugungi fakt» and nothing else
+  from the floor, so the derived `ROUND(W × Q ÷ S)` no longer answers for a
+  work centre nobody typed. A cell-day with no typed number reads BLANK and is
+  counted in `diagnostics.no_typed_headcount`, named because a blank the page
+  does not count reads as a quiet day. Its unit roll-up's ojidaniya weight
+  moves with it: `n_idle` is the cell's typed O. SONI from the floor — the same
+  weight `idle_source._n_by_cell` applies to the fleet — instead of the cell's
+  attendance headcount. Before the floor every one of these keeps the derived
+  answer, so history is untouched; from the floor on the page's own
+  reconciliation delta against the fleet figure should read ~0, which is what
+  the twin was built to prove.
 
 ## Which ojidaniya categories the загрузка counts
 

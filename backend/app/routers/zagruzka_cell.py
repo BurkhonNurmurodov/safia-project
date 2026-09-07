@@ -11,10 +11,12 @@ tables instead of the per-supervisor sheet imports:
     prod_plan      production_data.prod_plan       Σ pp_products.labor_time
     prod_actual    production_data.prod_actual       × pp_daily.plan_qty|actual_qty ÷ 60
                                                      over the cell's work centre
-    official_hc    headcount_data.official_hc      effective O. SONI (N): the
-                                                     pp_work_center_daily.people pin,
-                                                     else ROUND(W × Q ÷ S) exactly as
-                                                     services/pp_calc derives it
+    official_hc    headcount_data.official_hc      O. SONI (N): from 2026-09-02
+                                                     the TYPED «Bugungi fakt» pin
+                                                     (pp_work_center_daily.people)
+                                                     and nothing else; before that
+                                                     the pin, else ROUND(W × Q ÷ S)
+                                                     exactly as pp_calc derives it
     attendance     attendance (verifix, per unit)  the SAME `attendance` rows,
                                                      split per cell by
                                                      Attendance.verifix_code
@@ -36,17 +38,24 @@ Decisions taken with the user (2026-07-31), all deliberate:
   * ALL of the locked unit's cells are computed — ``Cell.in_load`` is ignored so
     that ticking cells for the real загрузка can never change this test page.
   * The formula's headcount is O. SONI, NOT штатка — the user corrected the
-    first version, which fed штатка in. O. SONI is the Production page's
-    effective value: the per-day pin when the brigadir set one, else the derived
-    ROUND(W × Q ÷ S), so the number here always matches the «Jamoa tarkibi» card.
+    first version, which fed штатка in. **From `zagruzka_source.ZAGRUZKA_FROM`
+    (2026-09-02) it is the TYPED «Bugungi fakt» alone** (the operator's
+    directive), which is also what the fleet загрузка now divides by — so the
+    two pages cannot answer one cell-day with two different headcounts, and
+    this page's reconciliation delta against the fleet should read ~0 from that
+    date. A cell nobody typed reads BLANK, never 0: the blank is the warning.
+    Counted in `diagnostics.no_typed_headcount`. Before the floor the derived
+    ROUND(W × Q ÷ S) still answers, so history is untouched.
   * Ojidaniya = the UNION of the day's To'xtaganda (stopped) ranges, the
     Ojidaniya-only categories dropped BEFORE the union (2026-08-20; see the
     block that computes it). That list is `OJIDANIYA_ONLY_CATS` and today holds
     Cat H alone — Cat I joined the загрузка on 2026-08-22.
     A not-stopped range never counts, here or anywhere else.
   * The unit's own figure is the HEADCOUNT-WEIGHTED mean of its cells',
-    (N1*T1 + ... + Nn*Tn) / (N1 + ... + Nn), where N is the people who actually
-    worked that cell that day — the user's formula, 2026-08-20.
+    (N1*T1 + ... + Nn*Tn) / (N1 + ... + Nn) — the user's formula, 2026-08-20.
+    N was the people who actually worked that cell that day; from
+    `zagruzka_source.ZAGRUZKA_FROM` it is the cell's typed O. SONI, the same
+    weight `idle_source` applies to the fleet figure.
   * A missing input is a plain zero, not a marker: no ojidaniya row for a day
     means downtime 0, exactly like a genuinely clean day.
   * Attendance rows are filtered by the same ``is_direct_role`` rule as the fleet
@@ -80,6 +89,7 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
+from app.services import zagruzka_source
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
 from app.services.kpi_calculator import compute_metrics, is_direct_role
@@ -294,10 +304,23 @@ def cell_zagruzka(
     unit_pm = _unit_per_head(wcs, _global_pm)
 
     def o_soni(wc: str, d: date) -> tuple[float, bool]:
-        """Effective O. SONI for one (work centre, day): (value, was_pinned)."""
+        """Effective O. SONI for one (work centre, day): (value, was_pinned).
+
+        From `zagruzka_source.ZAGRUZKA_FROM` the TYPED «Bugungi fakt» is the
+        only answer — the same rule the fleet загрузка now runs on, so the two
+        pages cannot divide by two different headcounts for one cell-day. With
+        nothing typed the cell has no загрузка at all (0 here, and
+        `hc_required` below turns that into an explicit blank rather than a
+        figure built out of the attendance correction).
+
+        Before the floor the derived suggestion `ROUND(W × Q ÷ S)` still
+        answers, exactly as it always did, so history is untouched.
+        """
         pin = people_pin.get((wc, d))
         if pin is not None:
             return pin, True
+        if zagruzka_source.uses_production(d):
+            return 0.0, False
         w_eff = shtatka_pin.get((wc, d), shtatka.get(wc, 0.0))
         pm_pin = day_pm_pin.get(d)
         cap = capacity.get(wc)
@@ -490,7 +513,9 @@ def cell_zagruzka(
         d: {"prod_plan": 0.0, "prod_actual": 0.0, "official_hc": 0.0,
             "downtime_w": 0.0, "downtime_n": 0.0, "att": []} for d in dates
     }
-    collapsed_hc = 0   # cells blanked for a non-positive effective headcount
+    collapsed_hc = 0
+    # Cell-days blanked because nobody typed «Bugungi fakt» for them.
+    no_typed_hc = 0   # cells blanked for a non-positive effective headcount
 
     # Days attendance actually covers for this unit's cells, from either source.
     # SAP production covers every working day, so without this the page can't
@@ -520,6 +545,15 @@ def cell_zagruzka(
                 data[label][key] = {"baseline_util": None, "net_util": None}
                 continue
 
+            on_prod = zagruzka_source.uses_production(d)
+            if on_prod and hc <= 0:
+                # Nobody typed this cell's people on «Odamlar soni». The blank
+                # IS the warning — never a zero, which would read as a cell that
+                # stood idle all day.
+                data[label][key] = {"baseline_util": None, "net_util": None}
+                no_typed_hc += 1
+                continue
+
             m = compute_metrics(
                 manager_id=c.id,
                 manager_name=label,
@@ -531,6 +565,8 @@ def cell_zagruzka(
                 official_hc=hc,
                 equip_downtime=downtime,
                 downtime_by_cat=idle_cats.get((c.id, d.isoformat()), {}),
+                hc_required=on_prod,
+                basis="production" if on_prod else "sheet",
             )
             # PARTIAL attendance collapses the maths the same way a missing file
             # does, in two shapes:
@@ -604,14 +640,15 @@ def cell_zagruzka(
             # two-person cell's long stop outweigh a twenty-person cell's short
             # one, which is the opposite of how the loss was actually paid.
             #
-            # N is the people who ACTUALLY worked the cell that day (the user's
-            # ruling): the direct-role attendance count that already drives this
-            # cell's own load, never the planned O. SONI. Nobody waits in a cell
-            # they did not come to, and a plan overstating a cell would pull the
-            # unit's deduction toward a stoppage those people never stood
-            # through. A cell with no attendance never reaches this line at all
-            # (the guards above), so it contributes to neither side of the mean.
-            n_idle = float(m.verifix_hc)
+            # N was the people who ACTUALLY worked the cell — the direct-role
+            # attendance count — until 2026-09-02. **From
+            # `zagruzka_source.ZAGRUZKA_FROM` it is the cell's typed O. SONI**,
+            # the operator's directive and the same number `idle_source`
+            # weighs the fleet figure with, so this page and /downtime can
+            # never answer «how long did this unit wait» two different ways.
+            # A cell with no typed number never reaches this line (the guard
+            # above), so it contributes to neither side of the mean.
+            n_idle = float(hc) if on_prod else float(m.verifix_hc)
             r["downtime_w"] += downtime * n_idle
             r["downtime_n"] += n_idle
             r["att"] += att_rows
@@ -626,6 +663,10 @@ def cell_zagruzka(
             totals[key] = {"baseline_util": None, "net_util": None}
             continue
         hc = r["official_hc"]
+        on_prod = zagruzka_source.uses_production(d)
+        if on_prod and hc <= 0:
+            totals[key] = {"baseline_util": None, "net_util": None}
+            continue
         m = compute_metrics(
             manager_id=mgr.id,
             manager_name=mgr.name or "",
@@ -638,6 +679,8 @@ def cell_zagruzka(
             equip_downtime=((r["downtime_w"] / r["downtime_n"])
                             if r["downtime_n"] else 0.0),
             downtime_by_cat={},
+            hc_required=on_prod,
+            basis="production" if on_prod else "sheet",
         )
         totals[key] = {
             "baseline_util": m.baseline_util,
@@ -747,6 +790,10 @@ def cell_zagruzka(
             "ojidaniya_excluded_min": round(idle_excluded_min, 1),
             # Cells dropped because partial attendance drove effective_hc ≤ 0.
             "collapsed_effective_hc": collapsed_hc,
+            # Cell-days blanked from `zagruzka_source.ZAGRUZKA_FROM` on because
+            # nobody typed «Bugungi fakt» for that work centre. Named, because
+            # a blank the page does not count reads as a quiet day.
+            "no_typed_headcount": no_typed_hc,
             # A cell with no SAP code, or one whose code matches no configured
             # work centre, can never carry production numbers — say so loudly
             # instead of letting the row sit empty and look like a quiet day.
