@@ -10,7 +10,7 @@ from app.models import Manager, Attendance, ProductionData, HeadcountData, Downt
 from app.services.day_state import confirmed_pairs
 from app.services.kpi_calculator import compute_metrics
 from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services import idle_source
+from app.services import idle_source, zagruzka_source
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -131,6 +131,24 @@ def build_metrics_list(
                     if row else {}
                 )
 
+    # ── The two загрузка inputs from the «Zagruzka fayli» page ─────────────
+    # From `zagruzka_source.ZAGRUZKA_FROM` (2026-09-02) «Одам сони» and
+    # «Трудоёмкость» come from the production page instead of the two Google
+    # Sheet tabs — the operator's directive. The formula below is untouched;
+    # only where these three numbers come from changes, and only for days on
+    # or after the floor. A unit-day with no TYPED people, or with no
+    # trudoyomkost the catalog can answer, is left at 0 and computes nothing:
+    # that blank is the warning, and `hc_required` is what stops a headcount
+    # of 0 producing a utilisation out of the attendance correction alone.
+    z_lo = zagruzka_source.range_start(date_from, date_to)
+    z_people: dict = {}
+    z_labor: dict = {}
+    if z_lo is not None and managers:
+        z_ids = [m.id for m in managers]
+        z_people = zagruzka_source.unit_people(
+            zagruzka_source.typed_people(db, z_ids, z_lo, date_to))
+        z_labor = zagruzka_source.unit_labor(db, z_ids, z_lo, date_to)
+
     # Gate: only include days the supervisor has closed. When use_confirmed_only=True
     # (used for individual profile pages) we additionally require all requests to
     # be processed; for aggregate averages we only require the day to be closed.
@@ -158,17 +176,29 @@ def build_metrics_list(
             if not att_rows:
                 continue
 
+            on_prod = zagruzka_source.uses_production(d_obj)
+            if on_prod:
+                iso = d_obj.isoformat()
+                plan, actual = z_labor.get((mgr.id, iso), (0.0, 0.0))
+                hc = z_people.get((mgr.id, iso), 0.0)
+            else:
+                plan = plan_data.get(mgr.name, {}).get(d_str, 0.0)
+                actual = actual_data.get(mgr.name, {}).get(d_str, 0.0)
+                hc = hc_data.get(mgr.name, {}).get(d_str, 0.0)
+
             m = compute_metrics(
                 manager_id=mgr.id,
                 manager_name=mgr.name,
                 shift=mgr.shift,
                 date=d_str,
                 attendance_rows=att_rows,
-                prod_plan=plan_data.get(mgr.name, {}).get(d_str, 0.0),
-                prod_actual=actual_data.get(mgr.name, {}).get(d_str, 0.0),
-                official_hc=hc_data.get(mgr.name, {}).get(d_str, 0.0),
+                prod_plan=plan,
+                prod_actual=actual,
+                official_hc=hc,
                 equip_downtime=dt_total.get(mgr.name, {}).get(d_str, 0.0),
                 downtime_by_cat=dt_by_cat.get(mgr.name, {}).get(d_str, {}),
+                hc_required=on_prod,
+                basis="production" if on_prod else "sheet",
             )
             results.append(m)
 
@@ -244,6 +274,16 @@ def list_brigadirs(
                 "early_arrivals": [],
             }
         a = agg[m.manager_id]
+        # A day on the production basis that produced no загрузка — nobody typed
+        # the people, or the catalog cannot answer the trudoyomkost — contributes
+        # NOTHING to the averages those two inputs feed. It still exists (the
+        # unit keeps its row and reads «No Data»), and it still contributes the
+        # facts that do not depend on them: its ojidaniya, its attendance
+        # headcount and the labor those hours represent. Averaging a headcount
+        # of 0 into a unit's fortnight would make a missing number look like a
+        # small one. Deliberately gated on `basis`, so the sheet path is
+        # untouched.
+        blank = m.basis == "production" and m.net_util is None
         if m.net_util is not None:
             a["net_utils"].append(m.net_util)
         if m.baseline_util is not None:
@@ -254,15 +294,17 @@ def list_brigadirs(
             a["after_idle_utils"].append(m.after_idle_util)
         if m.after_early_util is not None:
             a["after_early_utils"].append(m.after_early_util)
+        a["verifix_hcs"].append(m.verifix_hc)
+        a["idle_totals"].append(m.equip_downtime)
+        a["verifix_labors"].append(m.verifix_labor)
+        if blank:
+            continue
         if m.difference_hrs is not None:
             a["diff_hrs"].append(m.difference_hrs)
         a["official_hcs"].append(m.official_hc)
-        a["verifix_hcs"].append(m.verifix_hc)
         a["early_totals"].append(m.avg_early_arrival * max(m.official_hc, 1))
-        a["idle_totals"].append(m.equip_downtime)
         a["prod_actuals"].append(m.prod_actual)
         a["prod_plans"].append(m.prod_plan)
-        a["verifix_labors"].append(m.verifix_labor)
         if m.effective_hc is not None:
             a["effective_hcs"].append(m.effective_hc)
         if m.avail_min is not None:

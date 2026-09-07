@@ -8,21 +8,28 @@ import { useTranslit } from "../../utils/transliterate";
 // import them instead of hardcoding ⏳.
 //   not_closed   – attendance uploaded, supervisor hasn't closed the day
 //   requests     – day closed, edit requests still await the admin
-//   no_headcount – day confirmed, «Odam soni» sheet data not loaded yet
+//   no_headcount – day confirmed, «Odam soni» missing. Until 2026-09-02 that
+//                  meant the sheet tab had not been loaded; from that day it
+//                  means nobody typed «Bugungi fakt» on the Zagruzka fayli page
+//   no_labor     – people are there, the trudoyomkost is not: the unit has no
+//                  catalog, no labor times, or no ПЛАН/ФАКТ for the day
 export const PENDING_ICONS = {
   not_closed:   "⏳",
   requests:     "⏳",
   no_headcount: "👥",
+  no_labor:     "📄",
 };
 export const PENDING_MSG_KEYS = {
   not_closed:   "zagruzka.pendingNotClosed",
   requests:     "zagruzka.pendingRequests",
   no_headcount: "zagruzka.pendingNoHeadcount",
+  no_labor:     "zagruzka.pendingNoLabor",
 };
 const PENDING_TITLE_KEYS = {
   not_closed:   "zagruzka.pendingTitle",
   requests:     "zagruzka.pendingTitle",
   no_headcount: "zagruzka.pendingNoHcTitle",
+  no_labor:     "zagruzka.pendingNoLaborTitle",
 };
 
 /**

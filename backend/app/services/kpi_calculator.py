@@ -60,6 +60,11 @@ class DailyMetrics:
     avg_early_arrival: float = 0.0
     equip_downtime: float = 0.0
     downtime_by_cat: dict = field(default_factory=dict)
+    # Which source answered this day's headcount and trudoyomkost — "sheet"
+    # (the «Одам сони» / «Минут» tabs) or "production" (the Zagruzka fayli
+    # page, from services/zagruzka_source.ZAGRUZKA_FROM). Carried so a reader
+    # can say WHICH half of a blank day is missing instead of guessing.
+    basis: str = "sheet"
     avail_min: Optional[float] = None   # plan-adjusted available minutes per person (= 480 × ratio)
 
     baseline_util: Optional[float] = None
@@ -118,7 +123,19 @@ def compute_metrics(
     official_hc: float,
     equip_downtime: float,
     downtime_by_cat: dict,
+    hc_required: bool = False,
+    basis: str = "sheet",
 ) -> DailyMetrics:
+    """`hc_required` refuses to compute a utilisation without a headcount.
+
+    Default False, so every caller that predates the production basis behaves
+    exactly as it always has. It is set only for a day on that basis
+    (`zagruzka_source.uses_production`), where a missing headcount means
+    *nobody typed the people* — and `effective_hc` = 0 + labor_surplus is then
+    a number built entirely out of the attendance correction, which reads as an
+    ordinary загрузка and is averaged into Overview and /summary as one. The
+    heatmap already nulls that cell; nothing else did.
+    """
     m = DailyMetrics(
         date=date,
         manager_id=manager_id,
@@ -129,6 +146,7 @@ def compute_metrics(
         official_hc=official_hc,
         equip_downtime=equip_downtime,
         downtime_by_cat=downtime_by_cat,
+        basis=basis,
     )
 
     # Only include rows matching the direct-role filter for calculations
@@ -167,7 +185,7 @@ def compute_metrics(
     m.avg_early_arrival = round(total_early / official_hc, 2) if official_hc else 0.0
 
     ratio = safe_div(prod_actual, prod_plan)
-    if ratio:
+    if ratio and not (hc_required and official_hc <= 0):
         m.labor_surplus = safe_div(
             (m.verifix_labor - prod_actual),
             60 * 8 * ratio

@@ -426,6 +426,97 @@ columns, edited on the admin «Smena vaqtlari» destination
 - Read surfaces: this tab and `/cells/:id` (the Ownership card's «Ish vaqti»
   row, fed by `hours` on `GET /api/profiles/cells/{id}/details`).
 
+## The загрузка reads the «Zagruzka fayli» page (`zagruzka_source`)
+
+From **2026-09-02** (`ZAGRUZKA_FROM`, the operator's directive) the загрузка's
+two inputs — **«Odam soni»** and **«Трудоёмкость»** — come from the
+`/production` page instead of Google Sheets. **The formula is untouched, byte
+for byte**; only where three numbers come from changes.
+
+- **Both were always sheet downloads, and that is the point.**
+  `sheets_reader.read_headcount_data` reads the tab literally named
+  «Одам сони» into `headcount_data.official_hc`; `read_production_data` reads
+  «Минут» into `production_data.prod_plan` / `.prod_actual`. One number per
+  brigadir per day, typed into a spreadsheet nobody on the platform can see.
+  This is not a new concept — it is the SAME two fields, re-sourced.
+- **The floor is a CONSTANT with no override**, the shape `idle_source.CELLS_FROM`
+  and the review floor already use: a rule a per-unit toggle can quietly undo is
+  a rule nobody can read off the platform. Days BEFORE it still read the two
+  sheet tabs and are untouched, so history is never rewritten and one day is
+  never answered by two sources. **Nothing is stored** — every figure is derived
+  per request — so "recalculate from 2 September" needs no migration, no day
+  reopen and no notification: every consumer re-reads at the next restart.
+- **`services/zagruzka_source.py` is THE definition** — `ZAGRUZKA_FROM`,
+  `uses_production`, `range_start`, `sheet_end`, `typed_people`, `unit_people`,
+  `cell_people`, `unit_labor`. Never re-spell the date comparison at a call
+  site, and never split a range by hand: `sheet_end` is the exact inverse of
+  `range_start`, which is what stops a day being counted twice or not at all.
+- **Odam soni is the TYPED number and nothing else.**
+  `pp_work_center_daily.people` — the «Bugungi fakt» box on the «Odamlar soni»
+  tab — summed over the unit's work centres. `people IS NULL` is what makes the
+  rule expressible: it distinguishes "nobody typed anything" from a deliberate
+  0 (a cell that ran empty), which is a real answer. The derived suggestion
+  `ROUND(W × Q ÷ S)` is deliberately NOT a fallback and neither is штатка — a
+  suggestion presented as a fact is the thing this switch replaces, and 19 of
+  22 units have no `pp_work_centers.shtatka` at all, so the formula would
+  answer 0 for almost the whole fleet.
+- **Only the typed pins are summed, and the WHOLE unit's trudoyomkost is
+  counted against them** (the operator's call). A unit that types 4 of its 6
+  work centres therefore reads a load that is too HIGH, with nothing on screen
+  distinguishing that from a genuinely overloaded unit. The pressure to type
+  them all is the point.
+- **Trudoyomkost is the production page's own resolution**, never a second
+  spelling: Σ over the unit's active catalog LINES of `labor_time × qty ÷ 60`,
+  per-line override → the group's shared value → the SAP snapshot. That is
+  `pp_calc.line_minutes`, the same function `/zagruzka-cell` and `/live`
+  already read, so the загрузка and the Positions table can never report
+  different minutes for one day. `line_keys` is computed PER UNIT, as the
+  Positions table computes it.
+- **A unit-day missing either half has NO загрузка — a marker, never a zero.**
+  `compute_metrics(hc_required=True)` is what enforces it: with `official_hc`
+  at 0 the old code still built `effective_hc = 0 + labor_surplus` out of the
+  attendance correction alone and averaged that into Overview and /summary as
+  an ordinary figure. The flag defaults to False, so every pre-floor caller
+  behaves exactly as before. On the heatmap and the comparison the day carries
+  `no_headcount` (👥, nobody typed the people) or the new `no_labor` (📄,
+  people typed and the catalog cannot answer the trudoyomkost); in
+  `/api/brigadirs` it contributes NOTHING to the averages those two inputs
+  feed, while still contributing its ojidaniya, its attendance headcount and
+  its verifix labor, which do not depend on them. **That blank IS the
+  warning** — the operator's decision: a unit finds out its numbers are
+  missing by losing its figure.
+- **`DailyMetrics.basis`** ("sheet" | "production") rides on every row so a
+  reader can say WHICH half of a blank day is missing instead of guessing.
+- **Ojidaniya is weighed by the same number.** `idle_source._n_by_cell` is THE
+  weight definition and both `unit_downtime` and `cell_counts` read it — they
+  must divide by the same thing or the «Toifalar bo'yicha» matrix and the KPI
+  stop describing one day. Before the floor: the people who actually worked
+  the cell (`hc_weight` summed, not rows counted). From the floor: the typed
+  pin on the work centre the cell's `sap_code` names. A cell whose work centre
+  nobody typed — or that names none — has no weight and leaves BOTH sides,
+  exactly as a cell nobody worked in already did. **Where several cells of one
+  unit name one work centre (10 groups today) the typed number is SPLIT evenly
+  between them**, so ΣN equals what the brigadir typed rather than counting one
+  work centre four times over. It moves every surface at once, by design:
+  /downtime and its bar modal, the matrix and its divisor, the weekly deck,
+  both Excel exports, the bot card, the weekly svodka, /live and the Daily
+  donut.
+- **Consequence to know: a unit that types nothing reads 0 waiting minutes**,
+  not just a blank загрузка — ΣN = 0 is no figure at all. Accepted by the
+  operator. It is self-healing: nothing is stored, so typing the numbers later,
+  for a past day too, starts the weighting immediately.
+- **Consequence to know: trudoyomkost is derived from the CURRENT catalog.**
+  Editing a `labor_time` or a quantity moves the загрузка of every past day
+  from the floor on — the property `idle_source` already has.
+- **Deliberately unchanged**: `labor_surplus` and `effective_hc` (the
+  attendance correction still applies on top of the typed headcount — the
+  operator's call), the early-arrival subtraction, the headcount-mismatch flag,
+  the flat 480 base (the production page's `pp_shift_min` is deliberately NOT
+  adopted), the closed-day lock, the day-close gate on `build_metrics_list`,
+  and both sheet imports, which keep syncing and are simply not read from the
+  floor on. `/zagruzka-cell` becomes an exact twin of the fleet page, which is
+  what it was built to be.
+
 ## Which ojidaniya categories the загрузка counts
 
 `sheets_reader.OJIDANIYA_ONLY_CATS` is **THE list** of categories that show on

@@ -57,15 +57,21 @@ def get_heatmap(
             "verifix_labor": m.verifix_labor,
             "equip_downtime": m.equip_downtime,
             "avg_early_arrival": m.avg_early_arrival,
+            # "sheet" or "production" — which source answered the headcount and
+            # trudoyomkost (services/zagruzka_source). The pending loop needs it
+            # to name WHICH half of a blank day is missing.
+            "basis": m.basis,
         }
 
     # ── Pending (⏳ / 👥) cells ───────────────────────────────────────────
     # Verifix attendance exists but the day can't be shown yet: either the
     # supervisor hasn't closed it ("not_closed"), or it's closed with edit
     # requests still awaiting the admin ("requests"), or it's fully confirmed
-    # but the source sheet's «Odam soni» headcount hasn't been loaded yet
-    # ("no_headcount"). Draft HR documents also block confirmation but don't
-    # get a marker — those cells stay empty.
+    # but «Odam soni» is missing ("no_headcount") — from 2026-09-02 that means
+    # nobody typed «Bugungi fakt» on the Zagruzka fayli page — or the people
+    # are there and the trudoyomkost is not ("no_labor"). Draft HR documents
+    # also block confirmation but don't get a marker — those cells stay empty.
+    # Precedence: not_closed → requests → no_headcount → no_labor.
     # Same scope as the metrics above — `scoped`, not the raw manager_id filter,
     # or a factory tab would grow pending markers for units it doesn't contain.
     mgr_q = db.query(Manager.id, Manager.name).filter(Manager.archived.is_(False))
@@ -106,13 +112,23 @@ def get_heatmap(
             # deliberately NOT required: a day whose downtime sheet isn't
             # loaded just computes with 0 downtime minutes.
             no_hc = cell is None or not (cell.get("official_hc") or 0)
-            if confirmed and not no_hc:
+            # From `zagruzka_source.ZAGRUZKA_FROM` the trudoyomkost comes from
+            # the Zagruzka fayli page too, and it can be missing on its own —
+            # people typed, no catalog or no ПЛАН/ФАКТ quantities. That used to
+            # render as a silently empty cell (headcount present, so no marker,
+            # but no ratio, so no numbers); it gets a marker of its own, because
+            # the two halves are fixed in two different places.
+            on_prod = bool(cell) and cell.get("basis") == "production"
+            no_labor = on_prod and not no_hc and not (cell.get("prod_plan") or 0)
+            if confirmed and not no_hc and not no_labor:
                 continue  # confirmed (or held only by draft docs) → no marker
             if not confirmed:
                 reason = "requests" if (mid, d) in closed else "not_closed"
-            else:
+            elif no_hc:
                 reason = "no_headcount"
-            if include_pending and cell is not None and not no_hc:
+            else:
+                reason = "no_labor"
+            if include_pending and cell is not None and not no_hc and not no_labor:
                 cell["pending"] = reason   # keep the unconfirmed numbers
             else:
                 data.setdefault(mgr_name[mid], {})[key] = {

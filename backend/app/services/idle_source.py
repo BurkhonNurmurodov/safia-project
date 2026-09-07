@@ -27,22 +27,28 @@ stops being explainable.
 ``T_unit = Σ(Nᵢ·Tᵢ) ÷ ΣNᵢ`` over every cell the unit owns (`Cell.manager_id`;
 `in_load` is deliberately NOT consulted — that flag decides whether a cell's
 PEOPLE count toward the load, and waiting is paid by whoever stood there).
-``Nᵢ`` is the people who ACTUALLY worked cell i that day — the direct-role
-attendance rows matched by «Код подразделения», the same predicate
-`compute_metrics` uses for `verifix_hc` — never the planned headcount: nobody
-waits in a cell they did not come to, and a plan overstating a cell would pull
-the unit's figure toward a stoppage those people never stood through. A plain
-average of the cells' minutes would let a two-person cell's long stop outweigh
-a twenty-person cell's short one, which is the opposite of how the loss was
-actually paid. A cell with ``Nᵢ == 0`` enters neither side; ``ΣN == 0`` is no
-figure at all and the (unit, day) is simply ABSENT from the answer.
+``Nᵢ`` came from ATTENDANCE until 2026-09-02 — the direct-role rows matched by
+«Код подразделения», the same predicate `compute_metrics` uses for
+`verifix_hc`. **From `zagruzka_source.ZAGRUZKA_FROM` it is the typed «Bugungi
+fakt» on the work centre the cell's `sap_code` names** (the operator's
+directive), i.e. the very number the загрузка itself now divides by, so one
+answer to «how many people were in this cell» feeds both. `_n_by_cell` is THE
+definition and splits the range at that floor; days before it are untouched.
+A plain average of the cells' minutes would let a two-person cell's long stop
+outweigh a twenty-person cell's short one, which is the opposite of how the
+loss was actually paid. A cell with ``Nᵢ == 0`` — nobody typed its work centre,
+or it names none — enters neither side; ``ΣN == 0`` is no figure at all and the
+(unit, day) is simply ABSENT from the answer, which downstream reads as 0
+minutes. Nothing is stored, so typing the numbers later, for a past day too,
+starts the weighting at once.
 
-``Nᵢ`` is FRACTIONAL since 2026-08-30: a worker-day split across two of the
-unit's cells is `hc_weight` of a person in each (NULL = one whole person), pro
--rata by the hours placed there. The two halves are always inside the same
-unit, so ``ΣN`` — and therefore the unit's minutes — is unmoved by a split;
-what moves is which cell's ``Tᵢ`` those minutes are weighed against, which is
-the whole point of letting a supervisor say where the person actually stood.
+``Nᵢ`` is FRACTIONAL. Before the загрузка floor because of the split model
+(2026-08-30): a worker-day split across two of the unit's cells is `hc_weight`
+of a person in each (NULL = one whole person), pro-rata by the hours placed
+there, and both halves sit in the same unit so ``ΣN`` — and the unit's minutes
+— is unmoved by a split. From the floor because a typed work-centre number is
+SHARED evenly by the cells that name it, so ``ΣN`` equals what the brigadir
+actually typed rather than counting one work centre several times over.
 
 ``Tᵢ`` is the UNION of the cell's stopped ranges, and every piece of that
 arithmetic lives in ``services/idle_intervals`` — this module only decides
@@ -68,7 +74,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (Attendance, Cell, CellOjidaniyaInterval,
                         IdleSourceSetting, Manager)
-from app.services import idle_intervals
+from app.services import idle_intervals, zagruzka_source
 from app.services.kpi_calculator import is_direct_role
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
@@ -150,6 +156,65 @@ def _counted_hc(r) -> bool:
     return bool(name) and name not in ("nan", "NaN", "")
 
 
+def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple[int, str], float]:
+    """N per (cell, "YYYY-MM-DD") — the weight each cell carries in its unit's
+    mean. THE definition, shared by `unit_downtime` and `cell_counts`: the two
+    must divide by the same thing or the matrix and the KPI stop describing one
+    day.
+
+    The range is split at `zagruzka_source.ZAGRUZKA_FROM`, and the two halves
+    are complementary by construction (`sheet_end` is the exact inverse of
+    `range_start`), so no day is weighed twice and none is left unweighed.
+
+    **Before the floor**: the people who ACTUALLY worked the cell — direct-role
+    attendance matched by CELL CODE, `hc_weight` summed rather than rows
+    counted (a split worker is a fraction of a person in each cell).
+
+    **From the floor**: the TYPED «Bugungi fakt» on the work centre the cell's
+    `sap_code` names — the operator's directive, the same number the загрузка
+    itself now divides by. A cell whose work centre nobody typed has no weight
+    and leaves BOTH sides of the mean, exactly as a cell nobody worked in
+    already did; a unit where nothing was typed has ΣN = 0, no figure, and
+    therefore 0 minutes on every surface. Nothing is stored, so the moment the
+    numbers are typed — for a past day too — the weighting starts working.
+
+    COLUMNS, not entities, in the attendance query: this runs under
+    `build_metrics_list` on every KPI request, and a column left out of an
+    explicit select is an AttributeError thrown from inside Overview, the
+    Zagruzka heatmap and the brigadir profile at once.
+    """
+    out: dict[tuple[int, str], float] = defaultdict(float)
+
+    code_to_cell = {c.verifix_code: c.id for c in cells if c.verifix_code}
+    att_hi = zagruzka_source.sheet_end(date_to)
+    if code_to_cell and date_from <= att_hi:
+        for r in db.query(
+            Attendance.verifix_code, Attendance.date, Attendance.job_title,
+            Attendance.hours_worked, Attendance.is_supervisor,
+            Attendance.worker_name, Attendance.hc_weight,
+        ).filter(
+            Attendance.verifix_code.in_(list(code_to_cell)),
+            Attendance.date >= date_from,
+            Attendance.date <= att_hi,
+            Attendance.is_supervisor.is_(False),
+        ).all():
+            cid = code_to_cell.get(r.verifix_code)
+            if cid is None or not _counted_hc(r):
+                continue
+            out[(cid, r.date.isoformat())] += (
+                1.0 if r.hc_weight is None else float(r.hc_weight)
+            )
+
+    lo = zagruzka_source.range_start(date_from, date_to)
+    if lo is not None:
+        ids = sorted({int(c.manager_id) for c in cells})
+        pins = zagruzka_source.typed_people(db, ids, lo, date_to)
+        for key, n in zagruzka_source.cell_people(cells, pins).items():
+            out[key] += n
+
+    return out
+
+
 def unit_downtime(db: Session, manager_ids: Iterable[int],
                   date_from: date, date_to: date) -> dict[tuple[int, str], dict]:
     """The per-cell-derived ojidaniya of the given units over a date range.
@@ -177,41 +242,9 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
     for c in cells:
         cells_per_unit[cell_unit[c.id]] += 1
 
-    # ── N per (cell, day): who actually worked the cell ──────────────────────
-    # Matched by CELL CODE, not by the row's manager_id: the daily batch may
-    # hand a cell to another supervisor for one day, and the people standing
-    # in the cell are the ones who waited in it. `is_supervisor` rows are out
-    # — the unit's cell-less brigadir is kept off the load at every other
-    # enforcement point too.
-    #
-    # COLUMNS, not entities: this ran for one pilot unit until the floor and
-    # now runs for the whole fleet on every KPI request, and the predicate
-    # below reads five fields of an attendance row. `hc_weight` therefore has
-    # to be named in the list — a column left out of an explicit select is an
-    # AttributeError on the row object, thrown from inside unit_downtime, i.e.
-    # from under build_metrics_list: Overview, the Zagruzka heatmap and
-    # comparison, and the brigadir profile, all at once.
-    #
-    # N is a HEADCOUNT and a split worker is half of one in each cell, so it is
-    # a float sum of weights, not a row count. NULL weight = one whole person.
-    n_by_cell: dict[tuple[int, str], float] = defaultdict(float)
-    if code_to_cell:
-        for r in db.query(
-            Attendance.verifix_code, Attendance.date, Attendance.job_title,
-            Attendance.hours_worked, Attendance.is_supervisor,
-            Attendance.worker_name, Attendance.hc_weight,
-        ).filter(
-            Attendance.verifix_code.in_(list(code_to_cell)),
-            Attendance.date >= date_from,
-            Attendance.date <= date_to,
-            Attendance.is_supervisor.is_(False),
-        ).all():
-            cid = code_to_cell.get(r.verifix_code)
-            if cid is None or not _counted_hc(r):
-                continue
-            n_by_cell[(cid, r.date.isoformat())] += (
-                1.0 if r.hc_weight is None else float(r.hc_weight)
-            )
+    # ── N per (cell, day) — see `_n_by_cell`, THE weight definition ─────────
+    # Attendance before the загрузка floor, the typed «Bugungi fakt» from it.
+    n_by_cell = _n_by_cell(db, cells, date_from, date_to)
     if not n_by_cell:
         return {}
 
@@ -313,47 +346,28 @@ def cell_counts(db: Session, manager_ids: Iterable[int],
     """THE denominator of the per-cell average: how many of a unit's cells had
     people standing in them on a given day.
 
-    Returns ``{(manager_id, "YYYY-MM-DD"): count}``; a (unit, day) with no
-    counted attendance in any cell is ABSENT, which is the honest answer — a
-    day with no cells to divide by has no average, not an average of zero.
+    Returns ``{(manager_id, "YYYY-MM-DD"): count}``; a (unit, day) no cell
+    carries a weight on is ABSENT, which is the honest answer — a day with no
+    cells to divide by has no average, not an average of zero.
 
     Deliberately its own function rather than `unit_downtime`'s own
     `cells_with_att`: the matrix divides BOTH sources by this, and a
-    «Смена отчёт» day never reaches `unit_downtime` at all. Same cell→unit map
-    and the same `_counted_hc` predicate, and a cell is counted only once its
-    weight is positive, so for a cells day the two answers are identical by
-    construction.
+    «Смена отчёт» day never reaches `unit_downtime` at all. It reads the SAME
+    `_n_by_cell` the mean is weighed with — who worked the cell before the
+    загрузка floor, the typed «Bugungi fakt» from it — so for a cells day the
+    two answers are identical by construction, which is the whole reason that
+    weight has one definition.
     """
     ids = sorted({int(m) for m in manager_ids})
     if not ids or date_from > date_to:
         return {}
 
     cells = db.query(Cell).filter(Cell.manager_id.in_(ids)).all()
-    code_to_cell = {c.verifix_code: c.id for c in cells if c.verifix_code}
-    if not code_to_cell:
+    if not cells:
         return {}
     cell_unit = {c.id: int(c.manager_id) for c in cells}
 
-    # Weight per (cell, day), exactly as unit_downtime accumulates N — a split
-    # worker is a fraction of a person, and a cell is "worked" once the weight
-    # standing in it is above zero.
-    w: dict[tuple[int, str], float] = defaultdict(float)
-    for r in db.query(
-        Attendance.verifix_code, Attendance.date, Attendance.job_title,
-        Attendance.hours_worked, Attendance.is_supervisor,
-        Attendance.worker_name, Attendance.hc_weight,
-    ).filter(
-        Attendance.verifix_code.in_(list(code_to_cell)),
-        Attendance.date >= date_from,
-        Attendance.date <= date_to,
-        Attendance.is_supervisor.is_(False),
-    ).all():
-        cid = code_to_cell.get(r.verifix_code)
-        if cid is None or not _counted_hc(r):
-            continue
-        w[(cid, r.date.isoformat())] += (
-            1.0 if r.hc_weight is None else float(r.hc_weight)
-        )
+    w = _n_by_cell(db, cells, date_from, date_to)
 
     out: dict[tuple[int, str], int] = defaultdict(int)
     for (cid, day), weight in w.items():
