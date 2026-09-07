@@ -211,6 +211,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/admin/leader-tasks/apply-all",             "leader_config", "ltask.applied_to_all"),
     (("PUT",),    "/admin/leader-tasks/column",                "leader_config", "ltask.column_set"),
     (("PUT",),    "/admin/leader-tasks/criteria",              "leader_config", "ltask.criteria_set"),
+    (("PUT",),    "/admin/leader-tasks/description",           "leader_config", "ltask.description_set"),
     (("PUT",),    "/admin/leader-tasks/window",                "leader_config", "ltask.window_set"),
     (("PUT",),    "/admin/leader-tasks/deadline",              "leader_config", "ltask.deadline_set"),
     (("PUT",),    "/admin/leader-tasks/date-check",            "leader_config", "ltask.date_check_set"),
@@ -218,6 +219,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/admin/leader-tasks/day-check",             "leader_config", "ltask.day_check_set"),
     (("PUT",),    "/admin/leader-tasks/proof-kind",            "leader_config", "ltask.proof_kind_set"),
     (("PUT",),    "/admin/leader-tasks/unit",                  "leader_config", "ltask.unit_settings_set"),
+    (("PUT",),    "/admin/leader-tasks/cell-from",             "leader_config", "ltask.cell_from_set"),
     (("PUT",),    "/admin/leader-tasks/channel",               "leader_config", "ltask.channel_set"),
     # The CATALOG: adding a task, retiring one, changing the reading order.
     # Specific before generic — the compiled patterns are anchored, so

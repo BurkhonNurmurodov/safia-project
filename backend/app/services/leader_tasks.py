@@ -380,12 +380,20 @@ def set_archived(db: Session, task_id: int, archived_from: str | None) -> Leader
     if day is not None:
         if day < catalog_floor():
             raise ValueError("too_early")
-    elif (td.archived_from or "").strip():
-        # Restoring a task that really was archived. Raised, never lowered:
-        # `max` keeps a task whose activation was deliberately scheduled
-        # further out on its own date.
+    else:
         floor = catalog_floor()
-        td.active_from = max((td.active_from or "").strip() or floor, floor)
+        was = (td.archived_from or "").strip()
+        # Only an archive that is actually IN FORCE is restored at the
+        # boundary. An archive still in the FUTURE has taken nothing away yet —
+        # `set_archived` refuses to store one below the floor, so `was >= floor`
+        # means no running or stale day is covered by it — and cancelling one
+        # must be a pure no-op: raising `active_from` there would drop the task
+        # off the checklist that is being filled in right now, which is the very
+        # harm this branch exists to prevent, in reverse.
+        if was and was < floor:
+            # Raised, never lowered: `max` keeps a task whose activation was
+            # deliberately scheduled further out on its own date.
+            td.active_from = max((td.active_from or "").strip() or floor, floor)
     td.archived_from = day
     db.commit()
     return td

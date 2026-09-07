@@ -177,7 +177,12 @@ function RuleCell({ value, own, bad, off, tag, dev, mix, title, onClick }) {
           style={{
             color: bad ? C_BAD : own ? "var(--text-1)" : "var(--text-2)",
             fontWeight: bad || own ? 600 : 400,
-            ...(off ? { color: "#94a3b8", textDecoration: "line-through" } : {}),
+            // The switched-off grey used to be the status palette's #94a3b8,
+            // which is 2.6:1 on the light card — the one cell whose whole
+            // point is that it says «So'ralmaydi» was the least legible on
+            // the sheet. The strike-through and the word carry the state; the
+            // token carries the contrast.
+            ...(off ? { color: "var(--text-3)", textDecoration: "line-through" } : {}),
           }}>
           {value}{bad ? " ⚠" : ""}
         </span>
@@ -384,7 +389,15 @@ export default function LeaderTasksAdmin() {
   // writes would race the unit row's key.
   const cellFromMut = useMutation({
     mutationFn: (b) => api.put("/admin/leader-tasks/cell-from", b).then((r) => r.data),
-    onSuccess: () => { invalidate(); setUnit(null); ping(); },
+    onError: onErr,
+  });
+  // Day-vs-task submission and the rehearsal window: ONE endpoint, because
+  // they are ONE `LeaderUnitSetting` row and two requests to a unit that has
+  // never been edited race its key. It carries no onSuccess — `saveUnit` runs
+  // it and the per-cell write one AFTER the other and closes the modal at the
+  // end of the chain, so a half-written unit never reports success.
+  const unitMut = useMutation({
+    mutationFn: (b) => api.put("/admin/leader-tasks/unit", b).then((r) => r.data),
     onError: onErr,
   });
   // ── the catalog ─────────────────────────────────────────────────────────
@@ -1398,12 +1411,18 @@ export default function LeaderTasksAdmin() {
     }
     if (lvl.kind === "unit") {
       const base = getCell(lvl.id, tid);
-      if (!namesChanged && edit.enabled === base.enabled
+      // A name left EQUAL to what this unit inherits is not an override — it
+      // goes out as "" (inherit), exactly as the leader branch below already
+      // did. Written raw it stored a phantom copy of the global name, which
+      // then showed up in the register as an exception nobody had made.
+      const nextNames = Object.fromEntries(LANGS.map((l) => [l, ownText(edit.names?.[l], inh?.names?.[l])]));
+      const namesDiffer = LANGS.some((l) => nextNames[l] !== (base.names?.[l] || ""));
+      if (!namesDiffer && edit.enabled === base.enabled
         && mm === Number(base.min_media) && w === Number(base.weight)) { setEdit(null); ping(); return; }
       cellMut.mutate({
         task_id: tid, manager_id: lvl.id,
         enabled: edit.enabled, min_media: mm, weight: w,
-        names: Object.fromEntries(LANGS.map((l) => [l, edit.names?.[l] || ""])),
+        names: nextNames,
         when: edit.when,
       });
       return;
@@ -1481,6 +1500,45 @@ export default function LeaderTasksAdmin() {
   const uploadExampleTo = (taskId, scope) => (file) => {
     if (file.size > 10 * 1024 * 1024) { toast.error(t("profile.photoTooLarge")); return; }
     exAddMut.mutate({ taskId, file, ...scope });
+  };
+
+  // ── one unit's own settings ─────────────────────────────────────────────
+  // Three switches, TWO endpoints, and they go one AFTER the other, awaited.
+  // `per_task_close` and `bot_from` ride together because they are literally
+  // one `LeaderUnitSetting` row; `cell_from` is a second write onto that SAME
+  // row, so it can never be fired beside them — two parallel inserts against a
+  // unit that has never been edited race its unique key and one of them dies
+  // while the panel reports success (2026-08-19).
+  //
+  // The unit write goes FIRST because it is the one that can be REFUSED — a
+  // rehearsal window on shift 2 is a hard 400 — and a refusal must not leave
+  // the per-cell floor already written behind it.
+  const savingUnit = unitMut.isPending || cellFromMut.isPending;
+  const saveUnit = async () => {
+    if (!unit) return;
+    const m = mgrById.get(unit.mid);
+    const perTask = !!unit.per_task_close;
+    const botFrom = (unit.bot_from || "").trim();
+    const cellFrom = (unit.cell_from || "").trim();
+    const unitChanged = perTask !== !!m?.per_task_close || botFrom !== (m?.bot_from || "");
+    const cellChanged = cellFrom !== (m?.cell_from || "");
+    if (!unitChanged && !cellChanged) { setUnit(null); ping(); return; }
+    try {
+      if (unitChanged) {
+        const d = await unitMut.mutateAsync({
+          manager_id: unit.mid, per_task_close: perTask, bot_from: botFrom,
+        });
+        // Queued AI work the rehearsal window just took back — the one visible
+        // consequence of this save that neither field states.
+        if (d?.dropped) toast.success(t("admin.ltasks.botFromDropped").replace("{n}", d.dropped));
+      }
+      if (cellChanged) {
+        await cellFromMut.mutateAsync({ rows: [{ manager_id: unit.mid, cell_from: cellFrom }] });
+      }
+    } catch { return; }   // each mutation's own onError has already said why
+    invalidate();
+    setUnit(null);
+    ping();
   };
 
   // ── the catalog presses ─────────────────────────────────────────────────
@@ -1718,6 +1776,23 @@ export default function LeaderTasksAdmin() {
 
   const editNext = edit ? nextForShift(editLvl.shift || 1) : "";
   const editProblems = edit ? problemsFor(editLvl, edit.tid) : [];
+  // ── what a BLANK window end actually falls back to ──────────────────────
+  // The SHIFT default, served as `shift_windows` rather than restated here: a
+  // placeholder that disagreed with the hours the reviewer measures against
+  // would be worse than no placeholder at all. With no fallback shown, a
+  // window left blank all the way up the chain rendered an empty box while the
+  // AI went on judging every photo against 08:00–20:00.
+  const shiftWins = data?.shift_windows ?? {};
+  const winDefault = (shift, end) => (shiftWins[String(shift)] || [])[end] || "";
+  // The Standart level serves BOTH shifts, so it cannot name one default — it
+  // names both, labelled, instead of quietly showing shift 1's.
+  const bothWinDefaults = (end) => Object.keys(shiftWins).sort()
+    .map((s) => `${s}: ${winDefault(s, end)}`).join(" · ");
+  const winPh = (end) => {
+    const inh = end ? editInh?.win_to : editInh?.win_from;
+    if (inh) return inh;
+    return isStd ? bothWinDefaults(end) : winDefault(editLvl.shift, end);
+  };
   const savingRule = cellMut.isPending || leaderMut.isPending || taskMut.isPending
     || applyMut.isPending || critMut.isPending || descMut.isPending || winMut.isPending
     || dlMut.isPending || dcMut.isPending || tcMut.isPending || dayMut.isPending
@@ -1725,7 +1800,11 @@ export default function LeaderTasksAdmin() {
 
   // ── render ──────────────────────────────────────────────────────────────
   const bannerRows = problems ? problems.filter((p) => p.enabled !== false) : [];
-  const sheetOwnN = liveTasks.reduce((a, td) => a + COLS.filter((c) => c.keys.some((k) => ownKeys(level, td.id).has(k))).length, 0);
+  // Both figures describe the sheet AT THE LEVEL ON SCREEN, so the task set
+  // is that level's own — a task archived from tomorrow is still counted on a
+  // shift whose day has not reached tomorrow.
+  const sheetLive = liveForShift(level.shift);
+  const sheetOwnN = sheetLive.reduce((a, td) => a + COLS.filter((c) => c.keys.some((k) => ownKeys(level, td.id).has(k))).length, 0);
 
   return (
     <div className="space-y-4">
@@ -1820,8 +1899,13 @@ export default function LeaderTasksAdmin() {
         <Button size="lg" variant="ghost" icon={<History size={14} />} onClick={() => setShowHistory(true)}>
           {t("admin.ltasks.history")}
         </Button>
+        {/* Every task that is not archived, a not-yet-open one INCLUDED:
+            `reorder_tasks` pushes whatever the caller leaves out to the tail,
+            so omitting a pending task would silently move it to the end of a
+            checklist nobody had reordered. Order is presentation and carries
+            no floor of its own. */}
         <Button size="lg" variant="ghost" icon={<ListOrdered size={14} />}
-          onClick={() => setOrder({ ids: liveTasks.map((x) => x.id) })}>
+          onClick={() => setOrder({ ids: tasks.filter((x) => !isArchived(x, null)).map((x) => x.id) })}>
           {t("admin.ltasks.orderBtn")}
         </Button>
         <Button size="lg" icon={<Plus size={14} />} onClick={() => setAddTask({
@@ -1863,16 +1947,23 @@ export default function LeaderTasksAdmin() {
                   denominator nobody meant. */}
               {level.kind === "unit"
                 && (leadersByMgr[level.id] || []).some((p) => leaderSums[p.id] !== 100) && (
-                  <span title={t("admin.ltasks.childWarn")} className="inline-flex items-center gap-1 text-[11px] font-semibold"
-                    style={{ color: C_WARN }}>
-                    <AlertTriangle size={13} />{t("admin.ltasks.childWarn")}
+                  <span title={t("admin.ltasks.childWarn")}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold"
+                    style={{
+                      color: "var(--text-1)", background: "rgba(234,179,8,0.16)",
+                      border: "1px solid rgba(234,179,8,0.45)",
+                    }}>
+                    <AlertTriangle size={13} color={C_WARN} />{t("admin.ltasks.childWarn")}
                   </span>
                 )}
               {level.kind !== "std" && level.kind !== "shift" && (
                 <Button size="sm" variant="ghost" icon={<Grid3x3 size={13} />} className="ml-auto"
                   onClick={() => {
                     const m = mgrById.get(level.mid);
-                    setUnit({ mid: level.mid, cell_from: m?.cell_from || "" });
+                    setUnit({
+                      mid: level.mid, cell_from: m?.cell_from || "",
+                      per_task_close: !!m?.per_task_close, bot_from: m?.bot_from || "",
+                    });
                   }}>
                   {t("admin.ltasks.unitSettings")}
                 </Button>
@@ -1884,7 +1975,7 @@ export default function LeaderTasksAdmin() {
             <div className="px-4 py-3 flex flex-wrap items-center gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
               <FilterPanel sections={sheetSections} />
               <span className="ml-auto text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-                {t("admin.ltasks.sheetCount").replace("{t}", liveTasks.length).replace("{n}", sheetOwnN)}
+                {t("admin.ltasks.sheetCount").replace("{t}", sheetLive.length).replace("{n}", sheetOwnN)}
               </span>
             </div>
 
@@ -1913,28 +2004,44 @@ export default function LeaderTasksAdmin() {
                     {tasks.map((td) => {
                       const r = resolved(level, td.id);
                       const own = ownKeys(level, td.id);
-                      const archived = !!td.archived_from;
+                      // IN FORCE, judged against the day the level on screen is
+                      // actually living in — not "a date is set". A scheduled
+                      // archive greys nothing and takes no weight out until its
+                      // day arrives; a task whose opening day has not come is
+                      // marked as such and is not counted asked.
+                      const archived = isArchived(td, level.shift);
+                      const archSet = !!td.archived_from;
+                      const pendingTask = isPending(td, level.shift);
                       const excHere = regRows.filter((x) => x.tid === td.id && !x.drift && !x.probOnly).length;
                       return (
                         <tr key={td.id} style={{ borderTop: "1px solid var(--border)", opacity: archived ? 0.55 : 1 }}>
                           <td className="px-2 py-2 text-right align-top font-bold tabular-nums" style={{ color: "var(--text-4)" }}>{td.id}</td>
                           <td className="px-2.5 py-2 align-top">
                             <div className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{r.names[lang] || r.names.uz || `T${td.id}`}</div>
-                            <div className="text-[10px] mt-0.5 leading-snug" style={{ color: "var(--text-4)" }}>
+                            {/* `--text-3`, not `--text-4`: this line carries the
+                                photo SUBJECT the AI judges by and the count of
+                                exceptions under the row, and 10px on the
+                                weakest token is the same 2.3:1 the origin tag
+                                was pulled off. */}
+                            <div className="text-[10px] mt-0.5 leading-snug" style={{ color: "var(--text-3)" }}>
                               {(td.note?.[lang] || td.note?.uz || "") && <>{td.note?.[lang] || td.note?.uz} · </>}
                               {own.has("names") && <>{t("admin.ltasks.nameFrom").replace("{from}", tagLabel(originOf(level, td.id, { keys: ["names"] })))} · </>}
                               {t("admin.ltasks.excCount").replace("{n}", excHere)}
                             </div>
-                            {archived && (
+                            {/* An archive SET but not yet in force still gets
+                                its chip — the date is the whole of what it
+                                says — while the row above it stays at full
+                                strength, because tonight the task is asked. */}
+                            {archSet && (
                               <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
                                 style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
                                 <Archive size={10} />{t("admin.ltasks.archChip").replace("{date}", td.archived_from)}
                               </span>
                             )}
-                            {!archived && td.active_from && (
+                            {pendingTask && (
                               <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
-                                style={{ background: "rgba(234,179,8,0.14)", color: C_WARN, border: "1px solid rgba(234,179,8,0.35)" }}>
-                                <Calendar size={10} />{t("admin.ltasks.activeChip").replace("{date}", td.active_from)}
+                                style={{ background: "rgba(234,179,8,0.16)", color: "var(--text-1)", border: "1px solid rgba(234,179,8,0.45)" }}>
+                                <Calendar size={10} color={C_WARN} />{t("admin.ltasks.activeChip").replace("{date}", td.active_from)}
                               </span>
                             )}
                           </td>
@@ -1957,7 +2064,11 @@ export default function LeaderTasksAdmin() {
                             );
                           })}
                           <td className="px-2 py-2 align-top text-right">
-                            {archived ? (
+                            {/* Keyed on whether a date is SET, not on whether
+                                it has arrived: clearing it is how a scheduled
+                                archive is called off, so that must stay the
+                                action on offer the whole time it is pending. */}
+                            {archSet ? (
                               <Button size="sm" tint variant="secondary" aria-label={t("admin.ltasks.archRestore")}
                                 title={t("admin.ltasks.archRestore")} icon={<ArchiveRestore size={13} />}
                                 onClick={() => askRestore(td)} />
@@ -2098,7 +2209,7 @@ export default function LeaderTasksAdmin() {
                               <span className="inline-flex items-center gap-1.5">
                                 <span className="px-1.5 py-px rounded-full text-[10px] font-bold"
                                   style={r.lvl === "shift"
-                                    ? { background: "rgba(59,130,246,0.14)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.35)" }
+                                    ? { background: "rgba(59,130,246,0.16)", color: "var(--text-1)", border: "1px solid rgba(59,130,246,0.45)" }
                                     : r.lvl === "unit"
                                       ? { background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }
                                       : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" }}>
@@ -2114,24 +2225,37 @@ export default function LeaderTasksAdmin() {
                             </td>
                             <td className="px-3 py-2 align-top" style={{ color: "var(--text-2)" }}>{t(`admin.ltasks.col.${r.f}`)}</td>
                             <td className="px-3 py-2 align-top">
-                              {r.drift ? (
-                                <span className="px-1.5 py-px rounded-full text-[10px] font-bold"
-                                  style={{ background: "rgba(234,179,8,0.14)", color: C_WARN, border: "1px solid rgba(234,179,8,0.35)" }}>
-                                  {t("admin.ltasks.regDrift")}
-                                </span>
-                              ) : (
-                                <span className="font-semibold" style={{ color: r.bad ? C_BAD : "var(--text-1)" }}>
-                                  {r.v}{r.bad ? " ⚠" : ""}
-                                </span>
-                              )}
+                              {/* Every status here wears its hue on a chip and
+                                  its words in `--text-1`: #eab308 as 11px text
+                                  is 1.92:1 on the light card, i.e. the reader
+                                  guesses. The ⚠ and the words carry the state
+                                  on their own, so it survives greyscale too. */}
+                              <span className="inline-flex items-center gap-1.5 flex-wrap">
+                                {r.drift && (
+                                  <span className="px-1.5 py-px rounded-full text-[10px] font-bold"
+                                    style={{ background: "rgba(234,179,8,0.16)", color: "var(--text-1)", border: "1px solid rgba(234,179,8,0.45)" }}>
+                                    {t("admin.ltasks.regDrift")}
+                                  </span>
+                                )}
+                                {(!r.drift || r.bad) && (
+                                  <span className="font-semibold px-1 rounded"
+                                    style={r.bad
+                                      ? { color: "var(--text-1)", background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.40)" }
+                                      : { color: "var(--text-1)" }}>
+                                    {r.v}{r.bad ? " ⚠" : ""}
+                                  </span>
+                                )}
+                              </span>
                               <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>← {r.pl}: {r.p}</div>
                               {r.carriers != null && r.carriers < r.total && (
-                                <div className="text-[11px]" style={{ color: C_WARN }}>
+                                <div className="text-[11px] mt-0.5 inline-block px-1 rounded"
+                                  style={{ color: "var(--text-1)", background: "rgba(234,179,8,0.16)", border: "1px solid rgba(234,179,8,0.45)" }}>
                                   {t("admin.ltasks.regCarriers").replace("{c}", r.carriers).replace("{n}", r.total)}
                                 </div>
                               )}
                               {r.bad && r.hours && (
-                                <div className="text-[11px]" style={{ color: C_BAD }}>
+                                <div className="text-[11px] mt-0.5 inline-block px-1 rounded"
+                                  style={{ color: "var(--text-1)", background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.40)" }}>
                                   {t("admin.ltasks.regBadHours").replace("{s}", r.shift).replace("{hours}", r.hours.join("–"))}
                                 </div>
                               )}
@@ -2258,19 +2382,35 @@ export default function LeaderTasksAdmin() {
               .replace("{hours}", (editProblems[0].hours || []).join("–")) : null}>
             <div className="flex items-center gap-2">
               <TimeField className="flex-1" value={edit.win_from} inherit={null}
-                placeholder={editInh?.win_from || ""}
+                placeholder={winPh(0)}
                 onChange={(v) => setEdit((c) => ({ ...c, win_from: v }))} />
               <span className="text-xs shrink-0" style={{ color: "var(--text-3)" }}>—</span>
               <TimeField className="flex-1" value={edit.win_to} inherit={null}
-                placeholder={editInh?.win_to || ""}
+                placeholder={winPh(1)}
                 onChange={(v) => setEdit((c) => ({ ...c, win_to: v }))} />
             </div>
             {/* A time input renders "--:--" when empty, which reads as broken
-                rather than as inherited, so the pair is spelled out under it. */}
-            {!isStd && (
+                rather than as inherited, so the pair is spelled out under it —
+                and where the chain is blank all the way up, the SHIFT default
+                the reviewer actually judges against is what gets spelled out,
+                never a dash. The Standart level serves both shifts, so it names
+                both rather than showing shift 1's silently. */}
+            {isStd ? (
+              <div className="mt-1 text-[11px] space-y-0.5" style={{ color: "var(--text-3)" }}>
+                {Object.keys(shiftWins).sort().map((s) => (
+                  <div key={s}>
+                    {t("admin.ltasks.lvlShift").replace("{n}", s)}{" · "}
+                    {t("admin.ltasks.windowInherit")
+                      .replace("{from}", winDefault(s, 0) || "—")
+                      .replace("{to}", winDefault(s, 1) || "—")}
+                  </div>
+                ))}
+              </div>
+            ) : (
               <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
                 {t("admin.ltasks.windowInherit")
-                  .replace("{from}", editInh?.win_from || "—").replace("{to}", editInh?.win_to || "—")}
+                  .replace("{from}", editInh?.win_from || winDefault(editLvl.shift, 0) || "—")
+                  .replace("{to}", editInh?.win_to || winDefault(editLvl.shift, 1) || "—")}
               </div>
             )}
           </FormField>
@@ -2472,17 +2612,14 @@ export default function LeaderTasksAdmin() {
         </Modal>
       )}
 
-      {/* ── one unit's own switch: per-cell filing ─────────────────────── */}
+      {/* ── one unit's own switches ────────────────────────────────────── */}
       {unit && (
         <Modal title={t("admin.ltasks.unitSettings")}
           subtitle={tl(mgrById.get(unit.mid)?.name || "")}
           icon={<Users size={14} />} onClose={() => setUnit(null)}
           footer={<>
             <Button variant="secondary" onClick={() => setUnit(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={cellFromMut.isPending}
-              onClick={() => cellFromMut.mutate({ rows: [{ manager_id: unit.mid, cell_from: unit.cell_from || "" }] })}>
-              {t("admin.ltasks.save")}
-            </Button>
+            <Button loading={savingUnit} onClick={saveUnit}>{t("admin.ltasks.save")}</Button>
           </>}>
           <FormField label={t("admin.ltasks.cellFrom")}
             hint={unit.cell_from
@@ -2516,6 +2653,71 @@ export default function LeaderTasksAdmin() {
               {t("admin.ltasks.cellFromNoCells")}
             </p>
           )}
+
+          {/* The two switches that are the same DB row as the one above.
+              Folded away because they are constant today — every unit files
+              task by task and no unit is rehearsing — and reachable because
+              this platform has no shell: `bot_from` is what stops a unit's
+              first, fumbling camera night from being its record, and the day
+              nobody could set it (2026-08-21) a leader was scored at 10% for
+              a practice run. Both are WRITTEN before the per-cell floor, in
+              one awaited chain — see saveUnit. */}
+          <details className="rounded-xl mt-1" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+            <summary className="px-3 py-2 text-[11px] font-semibold cursor-pointer select-none" style={{ color: "var(--text-2)" }}>
+              {t("admin.ltasks.perTask")} · {t("admin.ltasks.botFrom")}
+            </summary>
+            <div className="px-3 pb-3 pt-2 space-y-3" style={{ borderTop: "1px solid var(--border)" }}>
+              <FormField label={t("admin.ltasks.perTask")}
+                hint={t(`admin.ltasks.perTaskHint.${unit.per_task_close ? "on" : "off"}`)}>
+                <SegmentedToggle fill value={!!unit.per_task_close}
+                  onChange={(v) => setUnit((u) => ({ ...u, per_task_close: v }))}
+                  options={[[false, t("admin.ltasks.perTaskOff")],
+                  [true, t("admin.ltasks.perTaskOn")]]} />
+              </FormField>
+              {/* Stated where the decision is made, not in a manual: it is the
+                  one thing about this mode that cannot be taken back. */}
+              {unit.per_task_close && (
+                <p className="text-[11px] leading-snug rounded-lg px-2 py-1.5"
+                  style={{ background: "rgba(234,179,8,0.10)", color: "var(--text-2)", border: "1px solid rgba(234,179,8,0.30)" }}>
+                  {t("admin.ltasks.perTaskWarn")}
+                </p>
+              )}
+              {/* Not offered on shift 2: it files ONLY in the bot, so there is
+                  no fill-out row underneath to fall back to and a rehearsal
+                  window there would empty the register. Refused server-side
+                  too — this only keeps the admin from asking. */}
+              {Number(mgrById.get(unit.mid)?.shift) === 2 ? (
+                <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                  {t("admin.ltasks.botFromShift2")}
+                </p>
+              ) : (
+                <FormField label={t("admin.ltasks.botFrom")}
+                  hint={unit.bot_from ? t("admin.ltasks.botFromHint.on").replace("{date}", unit.bot_from)
+                    : t("admin.ltasks.botFromHint.off")}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <DateRangePicker single dateFrom={unit.bot_from || ""} dateTo={unit.bot_from || ""}
+                      setDateFrom={(v) => setUnit((u) => ({ ...u, bot_from: v || "" }))}
+                      setDateTo={() => {}} triggerClassName="px-3 py-2 text-sm" />
+                    {(() => {
+                      const next = nextForShift(mgrById.get(unit.mid)?.shift);
+                      return next && unit.bot_from !== next ? (
+                        <Button size="md" variant="secondary"
+                          onClick={() => setUnit((u) => ({ ...u, bot_from: next }))}>
+                          {t("admin.ltasks.botFromNext")}
+                        </Button>
+                      ) : null;
+                    })()}
+                    {unit.bot_from && (
+                      <Button size="md" variant="ghost"
+                        onClick={() => setUnit((u) => ({ ...u, bot_from: "" }))}>
+                        {t("admin.ltasks.botFromClear")}
+                      </Button>
+                    )}
+                  </div>
+                </FormField>
+              )}
+            </div>
+          </details>
         </Modal>
       )}
 
