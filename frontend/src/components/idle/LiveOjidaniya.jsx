@@ -3,7 +3,7 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Play, Square, Radio, WifiOff, CloudUpload, AlertTriangle, Timer,
+  Play, Square, Radio, WifiOff, CloudUpload, AlertTriangle, Timer, TimerOff,
   Trash2, RotateCw, Check, Clock, Info,
 } from "lucide-react";
 import Modal from "../ui/Modal";
@@ -18,7 +18,7 @@ import { fmtDur } from "../../utils/idleTime";
 import { CATS, iconFor, catByName, catColor } from "./categories";
 import {
   CAP_MIN, subscribe, snapshot, startRun, finishRun, queueRun, retryRun,
-  discardRun, capOverdue, elapsedMin, flush, tashkentAt,
+  resumeRun, discardRun, capOverdue, elapsedMin, flush, tashkentAt,
 } from "../../utils/liveOjidaniya";
 
 // The live start/finish recorder — /idle-cell «Jonli», the page's fourth tab.
@@ -187,7 +187,7 @@ function StartSheet({ atMs, cell, date, t, onCancel, onStart }) {
 
 // The reason, and the last chance to correct the two clocks — which is what a
 // capped run needs, and the only thing that can rescue one.
-function FinishSheet({ rec, cell, t, onClose, onSave, onDiscard }) {
+function FinishSheet({ rec, cell, t, onClose, onSave, onResume, onDiscard }) {
   // Seeded ONCE. The parent keys this component on the record's id, so a new
   // record remounts it — and a background write to the store (another cell's
   // timer ticking past the cap) leaves the half-typed reason exactly where it
@@ -206,7 +206,10 @@ function FinishSheet({ rec, cell, t, onClose, onSave, onDiscard }) {
       <Modal
         open
         onClose={onClose}
-        icon={<Square size={16} />}
+        // NOT `Square`: the ■ that makes sense on the button beside its own
+        // label renders in the header chip as an empty box, i.e. an unticked
+        // checkbox the reader looks for a way to tick.
+        icon={<TimerOff size={16} />}
         title={t("idleCell.liveFinishTitle")}
         subtitle={`${cell?.verifix_code || rec.cellCode} · ${rec.date}`}
         footer={
@@ -215,6 +218,20 @@ function FinishSheet({ rec, cell, t, onClose, onSave, onDiscard }) {
                 without a reason leaves the record standing on the row. The
                 button that throws it away says so and confirms. */}
             <Button variant="secondary" onClick={onClose}>{t("idleCell.liveLater")}</Button>
+            {/* «The stop is not over» — the answer to a ■ pressed a minute too
+                early, which on a phone carried round a floor is the likeliest
+                mistake there is. Withheld on a CAPPED record: that run is
+                already past the point where the platform goes on counting it,
+                so resuming would re-cap it on the next tick and the button
+                would appear to do nothing. There the fix is the end field. */}
+            {!rec.capped && (
+              <Button
+                variant="secondary" tint icon={<Play size={15} />}
+                onClick={() => onResume({ note })}
+              >
+                {t("idleCell.liveResume")}
+              </Button>
+            )}
             <Button
               variant="primary" icon={<Check size={15} />}
               disabled={!valid} onClick={() => onSave({ note, start, end })}
@@ -647,6 +664,14 @@ export default function LiveOjidaniya({ cells, date, day, t, tl, toast, onToday 
           setFinishing(null);
           toast?.success?.(t("idleCell.liveQueuedToast"));
           send();
+        }}
+        onResume={({ note }) => {
+          // The typed reason travels with the resume, so a leader who had
+          // started explaining and then realised the cell was still down does
+          // not have to write it twice.
+          resumeRun(finishRec.id, { note });
+          setFinishing(null);
+          toast?.info?.(t("idleCell.liveResumedToast"));
         }}
         onDiscard={() => { discardRun(finishRec.id); setFinishing(null); }}
       />}

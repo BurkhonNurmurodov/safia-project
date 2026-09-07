@@ -189,6 +189,25 @@ export function queueRun(id, { note, start, end, stopped }) {
   }));
 }
 
+/**
+ * The stop is NOT over — go back to counting, and throw the captured end away.
+ *
+ * ■ is one tap on a phone carried around a shopfloor, and the moment after
+ * pressing it is exactly when a leader discovers the cell has not actually
+ * restarted. Without this the only ways out were to file a stop that ended too
+ * early or to delete the record and lose the START as well — and the start is
+ * the half that cannot be recovered, because it happened.
+ *
+ * `startedAtMs` is untouched, so the run resumes from the instant it really
+ * began rather than from the resume; and whatever reason had been typed is kept
+ * for when it is finished for good.
+ */
+export function resumeRun(id, { note } = {}) {
+  return update(id, (r) => (r.state === "pending"
+    ? { ...r, state: "running", end: null, capped: false, note: note ?? r.note }
+    : r));
+}
+
 export function retryRun(id) {
   return update(id, (r) => (r.state === "failed" ? { ...r, state: "queued", error: "" } : r));
 }
