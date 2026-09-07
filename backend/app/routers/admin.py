@@ -591,8 +591,12 @@ def add_user_role(
 
     if payload.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
-    # Guests create their own profile during bot registration — there is no
-    # pre-created pool for an admin to grant from.
+    # A guest profile CAN be pre-created on the Profiles tab now, but claiming
+    # one still goes through registration: "one guest profile — one user" and
+    # "one guest role per account" are enforced in the bot's own guest branch
+    # and in decide_registration's first-approval-wins race. Granting from here
+    # would be a fourth spelling of those rules, so the account picks its name
+    # in the registration guest list instead.
     if payload.role == "guest":
         raise HTTPException(status_code=400, detail="Guests register themselves via the bot")
 

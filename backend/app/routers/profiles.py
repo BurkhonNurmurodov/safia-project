@@ -8,9 +8,11 @@ Profile storage:
   supervisor              → the `managers` row itself (id = Verifix file id)
   top-manager / shift-manager / leader / admin / guest → `role_profiles`
 
-Guest is the one exception to "admins create every identity": a guest profile
-is auto-created (or re-claimed) during bot registration and only managed here
-(rename / delete / unassign) — there is no admin "create guest" path.
+Guests are created BOTH ways: an admin pre-creates one here like any other
+profile, and bot registration still mints one on the spot from a typed name
+(or claims an unheld profile from the picker). Guest names are deliberately
+NOT unique — two real people may share one — so nothing resolves a guest by
+name and the duplicate check every other role carries does not apply here.
 
 Binding resolution (who holds a profile):
   supervisor      telegram_user_roles: role='supervisor',   role_id = manager.id
@@ -625,9 +627,6 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
     name = (payload.name or "").strip()
     if role not in PROFILE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid profile type")
-    # Guest profiles are the registration flow's own creation — no admin path.
-    if role == "guest":
-        raise HTTPException(status_code=400, detail="Guest profiles are created at registration")
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
 
@@ -669,6 +668,15 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
         if dup:
             raise HTTPException(status_code=409, detail="This leader already exists")
         p = RoleProfile(role=role, name=name, manager_id=payload.manager_id)
+    elif role == "guest":
+        # No duplicate check, and there must never be one: the 409 the other
+        # roles raise exists because registration resolves THEM by name, while
+        # a guest is resolved by id at every step (the picker sends the profile
+        # id, the role row stores it). Two real people may share a name, and
+        # refusing the second one would leave an admin unable to pre-create a
+        # profile for somebody who exists. Same exemption `_rename_profile`
+        # already makes.
+        p = RoleProfile(role=role, name=name)
     else:  # top-manager | admin
         if db.query(RoleProfile).filter_by(role=role, name=name).first():
             raise HTTPException(status_code=409, detail="Profile with this name already exists")
