@@ -42,6 +42,7 @@ export const PAGES = [
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
   { key: "quality", route: "/quality", labelKey: "nav.quality" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
+  { key: "cell-concerns", route: "/cell-concerns", labelKey: "nav.cellConcerns" },
   { key: "worker-concerns", route: "/worker-concerns", labelKey: "nav.workerConcerns" },
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
@@ -75,6 +76,11 @@ export const DEFAULT_PAGE_ACCESS = {
   // Leader concerns ("Xavotirlar") — role-scoped: leaders their own rows,
   // supervisors their unit, shift-managers their shift, top-managers read-only all.
   concerns: ["top-manager", "shift-manager", "supervisor", "leader"],
+  // Cell concerns («Yacheyka havotirlari») — the page a WORKER types into on the
+  // shop-floor PC, standing open on their cell leader's profile. Rows land in
+  // leader_concerns at level="leader"; uplifting one is the ordinary escalate,
+  // after which it belongs to the brigadir on /concerns and leaves this page.
+  "cell-concerns": ["supervisor", "leader"],
   // Worker-concerns KPI («Ishchi havotirlari») — synced from the per-cell sheets;
   // supervisors see their unit, leaders their own numbers (server-scoped).
   "worker-concerns": ["supervisor", "leader"],
