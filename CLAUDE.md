@@ -528,6 +528,25 @@ for byte**; only where three numbers come from changes.
   answer, so history is untouched; from the floor on the page's own
   reconciliation delta against the fleet figure should read ~0, which is what
   the twin was built to prove.
+- **That page serves EVERY unit from 2026-09-07** (the operator's directive),
+  one at a time. The hard lock to «Suvonov Elshod Of» (#5) — its name regex,
+  its id fallback and the `lock_warning` it published — is GONE; `?manager_id=`
+  picks the unit and `_pick_manager` decides what a viewer may pick through
+  `scoped_manager_ids`, so the scope is server-side and the query parameter is
+  not a way round it. That scope is the PLANT lock, exactly as on `/zagruzka`:
+  a per-cell twin stricter than the page it reconciles against could not be
+  reconciled against it. An unknown or out-of-scope pick falls back to the
+  first unit the viewer may see rather than 403-ing — the page remembers its
+  pick, and a stale one must not lock somebody out. One unit at a time is
+  deliberate: the roll-up row, the fleet reconciliation and every diagnostic
+  are statements about ONE unit. The picker is a `FilterPanel` section after
+  `useFactorySection()`, always ACTIVE (there is no «All» to fall back to) and
+  with no `onClear`. **`_cell_label` is now the verifix CODE alone** — it used
+  to append the workshop name, which is exactly the regression «A cell is its
+  CODE» exists to prevent. Page access is UNCHANGED: `zagruzka-cell` still
+  defaults to no roles (admin-only) and is opened per profile on Access /
+  Permissions — widening the units it covers is not the same decision as
+  widening who may open it.
 
 ## Which ojidaniya categories the загрузка counts
 
@@ -612,9 +631,9 @@ from that date on**, and nothing turns it back on.
   Daily donut, the bot `/ojidaniya` card and the weekly svodka read. Any new
   consumer of ojidaniya minutes must go through one of them, never
   `DowntimeData` directly. No source label on payloads (the user's call); the
-  50-min flag and the flat 480 base are unchanged; `/zagruzka-cell` stays the
-  untouched test twin (its reconciliation delta should read ~0 from the floor
-  on, for every unit). The sheet keeps IMPORTING for everybody — it feeds
+  50-min flag and the flat 480 base are unchanged; `/zagruzka-cell` is the test
+  twin (its reconciliation delta should read ~0 from the floor on, for every
+  unit — and it now serves every unit, not one). The sheet keeps IMPORTING for everybody — it feeds
   nothing here any more, and it is what makes the two answers comparable.
 - **The approval step on `/idle-cell` is GONE (same day).** A leader's entry
   counts the moment it is saved (status written `approved`); leaders cannot

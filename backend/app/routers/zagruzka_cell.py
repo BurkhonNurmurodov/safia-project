@@ -123,13 +123,19 @@ def _pick_manager(db: Session, payload: dict, manager_id: Optional[int],
     unit was the whole point. It serves every unit now (the operator's
     directive), so the lock, its name regex and its id fallback are gone.
 
-    The list is `scoped_manager_ids`, the same door every other factory-aware
-    page uses, so the viewer lock is decided SERVER-SIDE and not by hiding a
-    control: a supervisor or leader sees their own unit whatever `?manager=`
-    says, and only admin and top-manager pick freely. An out-of-scope pick
-    falls back to the first unit the viewer may see rather than 403-ing —
-    a stale saved pick (the page remembers it) must not lock somebody out of
-    a page they can otherwise read.
+    The list is `scoped_manager_ids`, the same door the fleet загрузка page
+    uses, so the scope is decided SERVER-SIDE and not by hiding a control —
+    `?manager_id=` is typeable. That scope is the PLANT lock, exactly as on
+    /zagruzka: a supervisor, leader or shift-manager is pinned to their own
+    factory whatever `?factory=` says, and inside it they may read any unit,
+    while admin and top-manager switch plants freely. Deliberately not
+    narrowed to a viewer's OWN unit: the sibling fleet page does not do that
+    either, and a per-cell twin that is stricter than the page it reconciles
+    against cannot be reconciled against it.
+
+    An out-of-scope or unknown pick falls back to the first unit the viewer may
+    see rather than 403-ing — the page remembers its pick, and a stale one must
+    not lock somebody out of a page they can otherwise read.
 
     Returns (chosen, pickable). Raises 404 only when the viewer may see NO
     unit at all, so the page renders a message instead of an empty grid that
