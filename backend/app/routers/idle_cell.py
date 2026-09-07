@@ -56,6 +56,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -253,6 +254,14 @@ def _interval_json(e: CellOjidaniyaInterval, names: Optional[dict] = None,
         "note": e.note or "",
         "minutes": idle_intervals.duration(e.start, e.end),
         "next_day": idle_intervals.to_min(e.end) <= idle_intervals.to_min(e.start),
+        # HOW the clock got here. A live row's start/end were stamped on the
+        # LEADER'S DEVICE at the moment of the press, so `created_at` is the
+        # only independent instant on the row: the gap between the end and it
+        # is how long the record waited for signal — or, where the device clock
+        # was wrong, the evidence of it. Served together for that reason;
+        # neither answers anything on its own.
+        "live": bool(getattr(e, "client_key", None)),
+        "created_at": e.created_at.isoformat() if e.created_at else None,
         "entered_by": e.entered_by_profile,
         "entered_by_name": (names or {}).get(e.entered_by_profile),
         "updated_at": e.updated_at.isoformat() if e.updated_at else None,
@@ -464,6 +473,10 @@ class IntervalIn(BaseModel):
     end: str
     stopped: bool = True
     note: str
+    # The live recorder's idempotency handle (see CellOjidaniyaInterval). Absent
+    # for every hand-typed entry, which is what makes it the marker for "this
+    # clock was stamped by a press, not picked on a wheel".
+    client_key: Optional[str] = None
 
 
 def _validate(body: IntervalIn, db: Session, payload: dict) -> tuple[str, bool, int]:
@@ -743,6 +756,31 @@ def create_interval(
     their own work. The answer is the server's, because the endpoint is
     reachable without the UI."""
     note, stopped, _ = _validate(body, db, payload)
+
+    # A REPLAY of a record this server already wrote. The live recorder re-sends
+    # until it gets an answer, and a reply lost on the way back is
+    # indistinguishable from a request that never arrived — so without this the
+    # second attempt files a second ojidaniya, and nothing about the row could
+    # ever prove it was not a real one (a cell may genuinely wait on two causes
+    # over the same minutes). Answered with the row already on record, and
+    # deliberately BEFORE the day lock: the day may have been closed in the
+    # meantime, and refusing a record that is already stored would send the
+    # recorder round the loop for ever over work that is done.
+    key = (body.client_key or "").strip() or None
+    prior = (db.query(CellOjidaniyaInterval)
+               .filter(CellOjidaniyaInterval.client_key == key).first()) if key else None
+    if prior is not None:
+        # `_validate` has already refused a cell outside the caller's scope, so
+        # a guessed key can only ever name a row they may read anyway. A key
+        # pointing at a DIFFERENT cell is not a replay of this request.
+        if prior.cell_id != body.cell_id:
+            raise HTTPException(status_code=409,
+                                detail="This record id belongs to another cell")
+        return _interval_json(
+            prior, _names_for(db, [prior.entered_by_profile]),
+            _row_perm(prior, _may_decide(_decider(db, payload),
+                                         _cell_of(db, prior.cell_id)), True))
+
     cell = _cell_of(db, body.cell_id)
     idle_lock.require_open(db, getattr(cell, "manager_id", None), body.date)
 
@@ -762,9 +800,26 @@ def create_interval(
         start=body.start, end=body.end, stopped=stopped, note=note,
         entered_by_profile=viewer,
         status="approved",
+        client_key=key,
     )
     db.add(e)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two sends of ONE record crossed in flight — the lookup above missed
+        # because neither had committed yet. The loser re-reads the winner's row
+        # rather than failing: the record IS filed, and a 500 here would leave
+        # the recorder retrying something that already succeeded. Same answer
+        # `leader_tasks._sup_row` gives to the same race.
+        db.rollback()
+        won = (db.query(CellOjidaniyaInterval)
+                 .filter(CellOjidaniyaInterval.client_key == key).first()) if key else None
+        if won is None:
+            raise
+        return _interval_json(
+            won, _names_for(db, [won.entered_by_profile]),
+            _row_perm(won, _may_decide(_decider(db, payload),
+                                       _cell_of(db, won.cell_id)), True))
     db.refresh(e)
     _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_added",
            [("category", None, e.category), ("time", None, f"{e.start}–{e.end}"),

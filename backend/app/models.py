@@ -605,6 +605,17 @@ class CellOjidaniyaInterval(Base):
     end                = Column(String(5), nullable=False)               # "HH:MM" (<= start ⇒ next day)
     stopped            = Column(Boolean, nullable=False, default=True)   # did the cell stop for this one
     note               = Column(Text, nullable=False)                    # REQUIRED reason
+    # Set ONLY by the live start/finish recorder (/idle-cell «Jonli»): the id
+    # the device minted when the stop was FINISHED, sent with every retry. A
+    # record filed with no signal is re-sent until the server answers, and a
+    # connection that dies after the row was written but before the answer got
+    # home is indistinguishable from one that never carried it — so without a
+    # key the retry is an ordinary second ojidaniya: same cell, same clock, same
+    # cause, filed twice. Overlap is legal here (a cell may wait on two causes
+    # at once), so no content test could ever tell that duplicate from a real
+    # pair. Globally unique because it is a random uuid; NULL for every row a
+    # human typed on the form, which is what makes `live` derivable from it.
+    client_key         = Column(String(40), nullable=True, unique=True, index=True)
     entered_by_profile = Column(String, nullable=True)                   # "role:id" of the REQUESTER
     # pending | approved | rejected — only "approved" is an ojidaniya.
     status             = Column(String, nullable=False, server_default="approved", default="approved")

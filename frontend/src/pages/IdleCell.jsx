@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Info, ChevronDown, Flag, Repeat2, Plus, Trash2, Layers, UserRound, Boxes,
   Layers2, Archive, Play, Square, Pencil, Sunrise,
   GanttChartSquare, ListTree, Clock, Timer, MessageSquareText,
-  Lock, Unlock,
+  Lock, Unlock, Radio,
 } from "lucide-react";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 import CategoryLegendModal from "../components/ui/CategoryLegendModal";
@@ -24,11 +24,14 @@ import PerenaladkaFactTable, {
   usePerenaladkaFact, asIdleCell, useSortState, sortCmp,
 } from "../components/setup/PerenaladkaFactTable";
 import IntervalFormModal from "../components/idle/IntervalFormModal";
+import LiveOjidaniya from "../components/idle/LiveOjidaniya";
 import DayTimeline from "../components/idle/DayTimeline";
 import { CATS, iconFor, catColor } from "../components/idle/categories";
 import api from "../utils/api";
 import { cellLabel } from "../utils/cellName";
 import { fmtDur, toMin } from "../utils/idleTime";
+import { errText } from "../utils/idleErrors";
+import { subscribe as liveSubscribe, snapshot as liveSnapshot } from "../utils/liveOjidaniya";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
@@ -156,6 +159,7 @@ function StatusCell({ r, t }) {
     );
   }
   return (
+    <>
     <span
       className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded"
       style={r.stopped
@@ -166,6 +170,32 @@ function StatusCell({ r, t }) {
       {r.stopped ? <Square size={9} /> : <Play size={9} />}
       {r.stopped ? t("idleCell.stopped") : t("idleCell.notStopped")}
       {!r.stopped && <span>· {t("idleCell.notCounted")}</span>}
+    </span>
+    {r.live && <LiveChip r={r} t={t} />}
+    </>
+  );
+}
+
+// A row whose clock was stamped by a PRESS on somebody's phone, not picked on
+// the wheels. It appears only on rows the live recorder wrote, and it carries
+// the one instant the server itself witnessed — `created_at` — because that is
+// the only thing anybody can check a device clock against. The two are shown
+// together and neither is presented as a verdict: a long gap usually means the
+// record waited for signal, which is the feature working.
+function LiveChip({ r, t }) {
+  const got = r.created_at ? new Date(r.created_at) : null;
+  const hhmm = got
+    ? new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(got)
+    : null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ml-1"
+      style={{ background: "rgba(200,151,63,0.16)", color: "var(--brand)", border: "1px solid rgba(200,151,63,0.35)" }}
+      title={hhmm ? t("idleCell.liveChipHint").replace("{v}", hhmm) : t("idleCell.liveChip")}
+    >
+      <Radio size={9} />{t("idleCell.liveChip")}
     </span>
   );
 }
@@ -198,21 +228,6 @@ function RequestCell({ r, t }) {
 // or scan by, and cost a heading row per category on a card that usually holds
 // two or three entries. As a column it is comparable with the rest, and the
 // whole day reads in start order by default.
-// One place that turns a refusal into a sentence. The API's `detail` is either a
-// string or an object carrying a `code`, and the one state worth naming is the
-// one the reader can act on: re-open the day.
-function errText(e, t) {
-  // The STRUCTURE lives on `detail_raw`: api.js's interceptor flattens every
-  // non-string `detail` to text and keeps the original there. Reading `detail`
-  // alone would find a JSON blob where the code should be — and print it.
-  const raw = e?.response?.data?.detail_raw;
-  const d = e?.response?.data?.detail;
-  const code = raw && typeof raw === "object" ? raw.code : null;
-  if (code === "day_closed") return t("idleCell.dayClosedErr");
-  if (typeof d === "string" && d) return d;
-  return t("idleCell.saveError");
-}
-
 function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLeader = false }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(autoOpen);
@@ -664,6 +679,20 @@ export default function IdleCell() {
   const [reopen, setReopen] = useState(false);      // «re-open the day» dialog
   const [reopenErr, setReopenErr] = useState("");
   const isPeren = tab === "peren";
+  // «Jonli» — the live start/finish recorder. ADMIN ONLY while it is a trial
+  // (the operator's call, 2026-09-07): it writes real ojidaniya into the
+  // register through the ordinary endpoint, so it is not something to hand a
+  // whole shift before somebody has used it on a floor. A persisted tab is
+  // dropped for anybody else, or a viewer who is later un-admined would open
+  // the page onto a tab that no longer exists.
+  const isAdmin = auth?.role === "admin";
+  const isLive = tab === "live" && isAdmin;
+  useEffect(() => { if (tab === "live" && !isAdmin) setTab("ojidaniya"); }, [tab, isAdmin, setTab]);
+  // The unsent count rides on the tab label: a record still on this device is
+  // the one thing about this feature a reader must not have to open a tab to
+  // discover.
+  const liveRecords = useSyncExternalStore(liveSubscribe, liveSnapshot, liveSnapshot);
+  const liveOpen = liveRecords.length;
 
   const { data: supData, isError: supFailed } = useQuery({
     queryKey: ["idle-supervisors"],
@@ -856,6 +885,23 @@ export default function IdleCell() {
           { value: "ojidaniya", label: (<span className="inline-flex items-center gap-1.5"><ListTree size={13} />{t("idleCell.tabOjidaniya")}</span>), title: t("idleCell.tabOjidaniya") },
           { value: "timeline", label: (<span className="inline-flex items-center gap-1.5"><GanttChartSquare size={13} />{t("idleCell.tabTimeline")}</span>), title: t("idleCell.tabTimelineHint") },
           { value: "peren", label: t("idleCell.tabPerenaladka"), title: t("idleCell.tabPerenaladka") },
+          ...(isAdmin ? [{
+            value: "live",
+            title: t("idleCell.tabLiveHint"),
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                <Radio size={13} />{t("idleCell.tabLive")}
+                {liveOpen > 0 && (
+                  <span
+                    className="text-[10px] font-bold px-1.5 rounded-full tabular-nums"
+                    style={{ background: "rgba(239,68,68,0.9)", color: "#fff" }}
+                  >
+                    {liveOpen}
+                  </span>
+                )}
+              </span>
+            ),
+          }] : []),
         ]}
         className="mb-3"
       />
@@ -1048,7 +1094,16 @@ export default function IdleCell() {
             </div>
           )}
 
-          {shownCells.map((c) => (
+          {isLive ? (
+            <LiveOjidaniya
+              cells={shownCells}
+              date={date}
+              day={day}
+              t={t} tl={tl}
+              toast={toast}
+              onToday={() => setDate(localTodayIso())}
+            />
+          ) : shownCells.map((c) => (
             <CellCard
               key={`${c.cell_id}-${date}`}
               cell={c}

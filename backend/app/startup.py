@@ -1238,6 +1238,38 @@ def add_cell_shift_times() -> None:
         db.close()
 
 
+def add_idle_interval_client_key() -> None:
+    """2026-09-07: ``cell_ojidaniya_intervals`` gains ``client_key`` — the
+    idempotency handle for the live start/finish recorder on /idle-cell.
+
+    The recorder stamps the clock on the DEVICE and sends the finished record
+    when there is signal, retrying until the server answers. A reply lost on
+    the way back looks exactly like a request that never arrived, so the retry
+    would otherwise file a second, identical ojidaniya — and no content test
+    could tell it from a real one, because a cell waiting on two causes at once
+    is legal here and overlapping ranges are expected.
+
+    Nullable, so every row typed on the form is untouched and reads as NULL.
+    The unique index is created separately: ``ADD COLUMN`` cannot carry one
+    with ``IF NOT EXISTS`` semantics, and Postgres counts NULLs as distinct, so
+    the constraint binds only the rows the recorder wrote. Naturally
+    idempotent, so it needs no one-shot flag."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE cell_ojidaniya_intervals "
+            "ADD COLUMN IF NOT EXISTS client_key VARCHAR(40)"))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_cellojint_client_key "
+            "ON cell_ojidaniya_intervals (client_key)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] idle interval client_key migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 DEFAULT_FACTORY_SETTING = "default_factory_id"
 FACTORY_ALL_TAB_SETTING = "factory_all_tab_enabled"
 
