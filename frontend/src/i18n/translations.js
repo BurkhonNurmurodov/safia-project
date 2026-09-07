@@ -3736,6 +3736,8 @@ const t = {
     "admin.profiles.switchConfirm":  "O'zgartirish",
     "admin.users.fieldLeaderProfile":"Lider profili",
     "admin.users.fieldTopProfile":   "Top-menejer profili",
+    "admin.users.fieldGuestProfile": "Mehmon profili",
+    "admin.users.noFreeGuests":      "Bo'sh mehmon profili yo'q — «Profillar» bo'limida yangisini yarating.",
 
     // ── Settings: my name ────────────────────────────────────────────────────
     "settings.myName":         "Mening ismim",
@@ -8307,6 +8309,8 @@ const t = {
     "admin.profiles.switchConfirm":  "Ўзгартириш",
     "admin.users.fieldLeaderProfile":"Лидер профили",
     "admin.users.fieldTopProfile":   "Топ-менежер профили",
+    "admin.users.fieldGuestProfile": "Меҳмон профили",
+    "admin.users.noFreeGuests":      "Бўш меҳмон профили йўқ — «Профиллар» бўлимида янгисини яратинг.",
 
     // ── Settings: my name ────────────────────────────────────────────────────
     "settings.myName":         "Менинг исмим",
@@ -12878,6 +12882,8 @@ const t = {
     "admin.profiles.switchConfirm":  "Сменить",
     "admin.users.fieldLeaderProfile":"Профиль лидера",
     "admin.users.fieldTopProfile":   "Профиль топ-менеджера",
+    "admin.users.fieldGuestProfile": "Профиль гостя",
+    "admin.users.noFreeGuests":      "Свободных гостевых профилей нет — создайте новый во вкладке «Профили».",
 
     // ── Settings: my name ────────────────────────────────────────────────────
     "settings.myName":         "Моё имя",
@@ -17449,6 +17455,8 @@ const t = {
     "admin.profiles.switchConfirm":  "Switch",
     "admin.users.fieldLeaderProfile":"Leader profile",
     "admin.users.fieldTopProfile":   "Top-manager profile",
+    "admin.users.fieldGuestProfile": "Guest profile",
+    "admin.users.noFreeGuests":      "No free guest profiles — create one on the Profiles tab.",
 
     // ── Settings: my name ────────────────────────────────────────────────────
     "settings.myName":         "My name",

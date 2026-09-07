@@ -567,8 +567,8 @@ def update_user_role(
 
 
 class AddRolePayload(BaseModel):
-    role:    str            # top-manager | shift-manager | supervisor | leader
-    # supervisor→managers.id | shift-manager/top-manager→role_profiles.id |
+    role:    str            # top-manager | shift-manager | supervisor | leader | guest
+    # supervisor→managers.id | shift-manager/top-manager/guest→role_profiles.id |
     # leader→role_profiles.id of the leader profile (stored role_id becomes
     # that profile's unit, per the leader role_id contract)
     role_id: Optional[int] = None
@@ -584,21 +584,17 @@ def add_user_role(
     """Admin-create an extra role for an existing Telegram user, approved
     immediately. Mirrors the role_id/full_name derivation the bot uses on
     self-registration; respects one-registration-per-PROFILE uniqueness by
-    re-activating a previously rejected/pending instance."""
+    re-activating a previously rejected/pending instance.
+
+    GUEST is the one role whose approval is not written here: the claim is
+    filed pending and handed to ``decide_registration``, because a guest
+    profile is contended — see the guest branch and the hand-off below."""
     user = db.query(TelegramUser).filter(TelegramUser.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     if payload.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
-    # A guest profile CAN be pre-created on the Profiles tab now, but claiming
-    # one still goes through registration: "one guest profile — one user" and
-    # "one guest role per account" are enforced in the bot's own guest branch
-    # and in decide_registration's first-approval-wins race. Granting from here
-    # would be a fourth spelling of those rules, so the account picks its name
-    # in the registration guest list instead.
-    if payload.role == "guest":
-        raise HTTPException(status_code=400, detail="Guests register themselves via the bot")
 
     # Derive role_id + role-scoped display name from the pre-created profile,
     # exactly like the bot does on self-registration.
@@ -618,6 +614,41 @@ def add_user_role(
         if not p:
             raise HTTPException(status_code=400, detail="Shift-manager profile not found")
         role_id, full_name = p.id, p.name
+    elif payload.role == "guest":
+        # A guest profile is pre-created on the Profiles tab like any other, so
+        # this grant assigns an existing one — it never mints a name (that is
+        # registration's own door, and only registration validates the script
+        # and writes the per-language overrides).
+        p = db.query(RoleProfile).filter_by(id=payload.role_id, role="guest").first()
+        if not p:
+            raise HTTPException(status_code=400, detail="Guest profile not found")
+        role_id, full_name = p.id, p.name
+        # ONE GUEST PROFILE — ONE USER. The registration picker only offers
+        # unheld profiles and the bot re-checks on claim (`_held_by_other`);
+        # neither of those runs on this path, so the check has to live here too.
+        if (
+            db.query(TelegramUserRole)
+            .filter(TelegramUserRole.role == "guest",
+                    TelegramUserRole.role_id == p.id,
+                    TelegramUserRole.status == "approved",
+                    TelegramUserRole.telegram_id != user.telegram_id)
+            .first()
+        ):
+            raise HTTPException(status_code=409,
+                                detail="Another account already holds this guest profile")
+        # ONE GUEST ROLE PER ACCOUNT — the bot's guest branch refuses a second
+        # one, so a grant that allowed it would put an account in a state
+        # registration cannot produce and nothing downstream expects.
+        if (
+            db.query(TelegramUserRole)
+            .filter(TelegramUserRole.telegram_id == user.telegram_id,
+                    TelegramUserRole.role == "guest",
+                    TelegramUserRole.role_id != p.id,
+                    TelegramUserRole.status.in_(("pending", "approved")))
+            .first()
+        ):
+            raise HTTPException(status_code=409,
+                                detail="This account already has a guest profile")
     else:  # top-manager
         p = db.query(RoleProfile).filter_by(id=payload.role_id, role="top-manager").first()
         if not p:
@@ -629,6 +660,12 @@ def add_user_role(
     # every role (managers.id for supervisors), so the grant records the exact
     # identity instead of leaving it to be re-derived from (unit, name) later.
     pkey = f"{payload.role}:{payload.role_id}"
+
+    # A guest claim is FILED here and SETTLED by decide_registration after the
+    # commit — see the hand-off below. Every other role is written approved
+    # outright, exactly as before.
+    guest = payload.role == "guest"
+    filed = "pending" if guest else "approved"
 
     # Leaders share role_id (the unit) across every leader profile in it, so a
     # (telegram_id, role, role_id) lookup would collide with a DIFFERENT leader
@@ -642,25 +679,28 @@ def add_user_role(
     if existing:
         if existing.status == "approved":
             raise HTTPException(status_code=409, detail="User already has this role")
-        existing.status = "approved"
-        existing.approved_at = now
+        existing.status = filed
+        existing.approved_at = None if guest else now
         existing.full_name = full_name
         existing.profile_key = pkey
+        row = existing
     else:
-        db.add(TelegramUserRole(
+        row = TelegramUserRole(
             telegram_id=user.telegram_id,
             role=payload.role,
             role_id=role_id,
             full_name=full_name,
             profile_key=pkey,
-            status="approved",
-            approved_at=now,
-        ))
+            status=filed,
+            approved_at=None if guest else now,
+        )
+        db.add(row)
 
     telegram_id = user.telegram_id
     lang = user.language or "uz"
     user_label = user.full_name or user.tg_name or f"#{telegram_id}"
     db.commit()
+    role_ref = row.id
 
     # Deliver any bell rows queued to this supervisor profile while it was
     # unclaimed (e.g. call-to-shift notices) — same as decide_registration.
@@ -671,12 +711,32 @@ def add_user_role(
         except Exception:
             pass
 
-    # Tell the user over Telegram, same as a normal approval.
-    try:
-        from app.telegram_bot import notify_status_change
-        notify_status_change(telegram_id, "approved", lang, role=payload.role)
-    except Exception:
-        pass
+    if guest:
+        # decide_registration is THE place a guest claim is settled: it flips
+        # this row to approved AND auto-rejects every OTHER pending claim on the
+        # same profile, telling each of them. Spelling that loop out here would
+        # leave those claims live, and approving one later would give a single
+        # guest profile two holders — the one thing this role's rules forbid.
+        # It sends the registrant's own DM too, so this path must not send a
+        # second one.
+        try:
+            from app.telegram_bot import decide_registration
+            decide_registration(role_ref, "approved",
+                                decided_by=caller.get("full_name"))
+        except Exception:
+            # The status is committed inside that call before any notification
+            # goes out, so what failed here is the fan-out, not the decision. A
+            # claim left pending is visible in this very table and can be
+            # approved from it.
+            log.warning("guest grant: decision fan-out failed for role_ref %s",
+                        role_ref, exc_info=True)
+    else:
+        # Tell the user over Telegram, same as a normal approval.
+        try:
+            from app.telegram_bot import notify_status_change
+            notify_status_change(telegram_id, "approved", lang, role=payload.role)
+        except Exception:
+            pass
 
     alert_grant_use(
         db, caller, CAP_USERS_MANAGE, "user.role_added",

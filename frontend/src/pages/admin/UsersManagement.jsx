@@ -20,7 +20,15 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 
+// Roles an existing registration may be CONVERTED to (the per-row select).
+// Guest is deliberately absent: converting only re-points role/role_id, and a
+// guest profile is contended — taking one has to settle the claims already
+// filed against it, which only the add-role path below does.
 const ROLES = ["top-manager", "shift-manager", "supervisor", "leader"];
+// Roles the add-role modal may GRANT. Guest joined once guest profiles became
+// pre-creatable on the Profiles tab: the modal assigns an existing profile,
+// exactly as it does for every other role.
+const ADD_ROLES = [...ROLES, "guest"];
 
 // The app language, not the phone's OS locale — an admin running the app in
 // Uzbek on an English-locale phone was getting "Jul" inside a Uzbek table.
@@ -144,6 +152,12 @@ export default function UsersManagement() {
   const unitLeaders  = form.supervisorId
     ? leaderProfiles.filter((p) => p.manager_id === Number(form.supervisorId))
     : [];
+  // Guest profiles nobody holds yet — the same set the registration picker
+  // offers. A profile with an APPROVED holder is refused by the backend, so
+  // offering it would only produce a 409 the admin cannot act on. A PENDING
+  // claim does not disqualify it: granting settles that claim.
+  const freeGuests = (profiles?.guests ?? [])
+    .filter((p) => !(p.bindings ?? []).some((b) => b.status === "approved"));
 
   // Approve/reject/delete used to fail in complete silence: no onError anywhere,
   // so on a dropped request the admin tapped Approve, saw nothing change, and
@@ -404,9 +418,11 @@ export default function UsersManagement() {
                       {user.username ? `@${user.username}` : "—"}
                     </td>
 
-                    {/* Role selector — guest is not convertible (its role_id
-                        points at a self-created guest profile), so it renders
-                        as a static label instead of the select. */}
+                    {/* Role selector — a guest registration is not convertible,
+                        so it renders as a static label instead of the select.
+                        Converting only re-points role/role_id, which would take
+                        a CONTENDED guest profile without settling the claims
+                        already filed against it — the add-role path's job. */}
                     <td className="py-2.5 px-3">
                       {role.role === "guest" ? (
                         <span className="inline-block rounded-lg px-2.5 py-1 text-[11px]" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
@@ -491,7 +507,7 @@ export default function UsersManagement() {
             <StyledSelect
               value={form.role}
               onChange={(v) => setForm((f) => ({ ...f, role: v, roleId: "", shift: "", supervisorId: "" }))}
-              options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEYS[r]) }))}
+              options={ADD_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEYS[r]) }))}
             />
           </FormField>
 
@@ -564,6 +580,25 @@ export default function UsersManagement() {
                 value={form.roleId}
                 onChange={(v) => setForm((f) => ({ ...f, roleId: v }))}
                 options={topManagers.map((p) => ({ value: String(p.id), label: tl(p.name) }))}
+                placeholder={t("admin.users.selectPlaceholder")}
+              />
+            </FormField>
+          )}
+
+          {/* Guest — only UNHELD profiles: one guest profile, one user, so the
+              backend 409s on a held one. Guest names are not unique, so the
+              list can legitimately show the same name twice. */}
+          {form.role === "guest" && (
+            <FormField
+              label={t("admin.users.fieldGuestProfile")}
+              hint={freeGuests.length === 0 ? t("admin.users.noFreeGuests") : null}
+            >
+              <StyledSelect
+                searchable
+                searchPlaceholder={t("common.search")}
+                value={form.roleId}
+                onChange={(v) => setForm((f) => ({ ...f, roleId: v }))}
+                options={freeGuests.map((p) => ({ value: String(p.id), label: tl(p.name) }))}
                 placeholder={t("admin.users.selectPlaceholder")}
               />
             </FormField>
