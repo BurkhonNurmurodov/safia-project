@@ -920,6 +920,74 @@ brigadirs), the days of a MONTH across.
   (`_downtime` calls `scoped_manager_ids`), so a supervisor sees their own row
   under each category. The period is capped at `_MATRIX_MAX_DAYS` (62).
 
+## The checklist config page (`/admin/upload?tab=ltasks`)
+
+From **2026-09-07** the destination is «Chek-list sozlamalari» and it is TWO
+tabs over one config, not the 22×13 brigadir×task matrix it was for a year.
+`pages/admin/LeaderTasksAdmin.jsx`.
+
+- **Why the matrix went.** It painted 273 cells to state 13 facts: every row
+  carried the same weights, so the one thing the grid could show was the thing
+  that never varied, while the settings that DO vary per unit were a 9px
+  camera glyph, three 3px dots, or nothing at all. A window, a deadline, a
+  criteria text had no cell to be wrong in — which is why a shift-1 window
+  inherited by a shift-2 unit (the 26-Aug incident) was invisible until a
+  leader lost points for it. The operator's own words were «this is chaos».
+- **«Vazifalar» is a SHEET** — 13 task rows × the rule columns, read at ONE
+  level chosen by a strip: Standart · Smena 1 · Smena 2 · a picked brigadir ·
+  a picked lider. Every cell prints its value AND an origin tag naming the
+  level that decided it, so «where did this come from» is answered on the cell
+  rather than reconstructed. **`own` is a SERVER fact, never row existence** —
+  the supervisor table is DENSE (265 rows carrying enabled/min_media/weight,
+  212 criteria byte-copies of the global) because every side-field write
+  materialises a full row, so "has a row" marks nearly everything as
+  overridden. `leader_tasks.config_ownership` computes it as *value ≠ the
+  parent's RESOLVED value*, unit against global and leader against the unit,
+  and ships `own` / `own_leader` / `problems` on `GET /config`.
+- **«Istisnolar» is the REGISTER** — one row per (scope, task, field) that
+  differs, «qiymat ← meros» naming the parent LEVEL, grouped by shift. The red
+  «Diqqat» banner counts windows that do not fit their shift and navigates
+  here; the two counts apply the SAME `enabled` test, or the banner promises N
+  and the table shows something else.
+- **The Smena level is DERIVED, not stored.** There is no shift row in the
+  data model — a shift template is identical values copied onto that shift's
+  units, and the sheet computes it. A real `leader_task_shift_settings` level
+  would be truthful and short, and it is deliberately NOT built: it means
+  hand-editing ~13 resolver chains that the bot, the reviewer and the scoring
+  all run through, in a repo with no tests. The page reads the same either
+  way, so the level can be slid underneath later. **Seed and compare a shift
+  edit against the TEMPLATE, never a sample unit** — against `unitsOf(shift)[0]`
+  the skip-when-unchanged guard silently writes nothing on exactly the mixed
+  cell the admin opened to make uniform.
+- **The catalog is add / archive / reorder, never delete.** `leader_task_defs`
+  carries `default_enabled`, `default_min_media`, `sort_order`, `active_from`,
+  `archived_from`. Both dates are FLOORS compared against the SHIFT's effective
+  date (`leader_tasks.effective_date(shift)`) — **never `date.today()`**, the
+  26-Aug rule — and `catalog_floor()` is the LATER of both shifts' next
+  effective dates, so a new task can never appear inside a night already being
+  filed. `is_active`/`active_defs` feed the ACTIVE set (bot menu, sweeps,
+  compute_completion, requirements_for); `ensure_task_defs()` keeps returning
+  EVERY row for history readers, or a past report loses its task names and
+  `task_weights` silently rewrites historical completions. Ids are explicit
+  (`max(id)+1`, and the sequence is `setval`'d — it was seeded with explicit
+  ids and still answered 1). A hard DELETE is refused by three FKs and would
+  orphan nine plain-integer `task_id` tables.
+- **Anything resolving a checklist must pass the DAY it means.** Once floors
+  exist, `effective_leader_config(db, prof)` with no shift and no day answers
+  for shift 1 today — and `close_expired_days` runs only on shift 2, only on
+  days in the PAST. It and `autoclose_due` now resolve per day inside their
+  loops, cached on the day; the same trap caught the submissions list and
+  `admin_day_detail`. A stale night otherwise gets scored against another
+  date's task set.
+- The page keeps `cell_from` AND `per_task_close` / `bot_from`: they are
+  constant today, but `PUT /admin/leader-tasks/unit` is their ONLY writer and
+  this platform has no shell — CLAUDE.md records what an unset `bot_from` cost
+  the camera pilot. All three materialise ONE `LeaderUnitSetting` row, so the
+  writes are an awaited chain, never parallel.
+- Retired with the matrix: the «1×1» chip, the four stacked name inputs (now
+  `LangTextInput`), the column modal's second inline save, the archive channel
+  at the top of the page (now a bottom disclosure), the second toast system.
+
 ## Automatic proof verification (BOTH shifts, from 13 Aug 2026)
 
 Leader-checklist proof photos are reviewed by Gemini. Since **2026-08-13** that
