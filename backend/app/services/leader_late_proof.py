@@ -538,7 +538,7 @@ def task_name(db: Session, row: LeaderLateProof, lang: str) -> str:
     prof = db.query(RoleProfile).filter_by(id=int(row.leader_id)).first()
     if prof is None:
         return f"#{row.task_id}"
-    cfg = leader_tasks.effective_leader_config(db, prof, row.shift)
+    cfg = leader_tasks.effective_leader_config(db, prof, row.shift, day=row.date)
     entry = cfg.get(int(row.task_id))
     return leader_tasks.config_name(entry, lang) if entry else f"#{row.task_id}"
 

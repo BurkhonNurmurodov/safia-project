@@ -4017,7 +4017,11 @@ def _lt_reason(message: types.Message):
         cid = cap.cell_id
         old_chat, old_mid = cap.chat_id, cap.message_id
         prof = db.query(RoleProfile).filter_by(id=pid).first()
-        cfg = effective_leader_config(db, prof) if prof else {}
+        # The shift is what every other call in this file passes, and since the
+        # catalog gained activation floors it decides which day's task set is
+        # resolved — without it a shift-2 leader is answered against shift 1's
+        # date and a task on one side of a floor renders as a bare «T7».
+        cfg = effective_leader_config(db, prof, _lt_shift(db, prof)) if prof else {}
         entry = cfg.get(task_id)
         tname = config_name(entry, lang) if entry else f"T{task_id}"
         # Per spec: the prompt is DELETED and a fresh save/reset message is sent

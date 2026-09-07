@@ -1023,6 +1023,10 @@ export default function LeaderTasksAdmin() {
     // against the level it was RAISED on and naming the level it came DOWN
     // from, so «Ko'rsatish» always lands on the rows it promised.
     for (const pb of problems || []) {
+      // Same test bannerRows makes: a window is only wrong for somebody who is
+      // actually judged by it, so a task switched off here is not counted there
+      // and must not be listed here either.
+      if (pb.enabled === false) continue;
       if (covered.has(pkey(pb))) continue;
       const tid = pb.task_id;
       if (!taskById.has(tid)) continue;
@@ -1905,7 +1909,7 @@ export default function LeaderTasksAdmin() {
             checklist nobody had reordered. Order is presentation and carries
             no floor of its own. */}
         <Button size="lg" variant="ghost" icon={<ListOrdered size={14} />}
-          onClick={() => setOrder({ ids: tasks.filter((x) => !isArchived(x, null)).map((x) => x.id) })}>
+          onClick={() => setOrder({ ids: tasks.filter((x) => !isArchived(x, 1) || !isArchived(x, 2)).map((x) => x.id) })}>
           {t("admin.ltasks.orderBtn")}
         </Button>
         <Button size="lg" icon={<Plus size={14} />} onClick={() => setAddTask({
