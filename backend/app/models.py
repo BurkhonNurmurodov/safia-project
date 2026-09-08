@@ -3488,3 +3488,82 @@ class LeaderCutoff(Base):
     reason = Column(Text, nullable=False)
     set_by = Column(String(160), nullable=True)
     set_at = Column(DateTime, nullable=True)
+
+
+# ── «Ta'lim» — video lessons (/education) ────────────────────────────────────
+# An admin publishes a lesson (a video link, a title, an optional formatted
+# description) and names WHO it is for. The audience is a set of PROFILES, not
+# of Telegram accounts — the same rule `Notification.recipient_profile` already
+# follows and for the same reason: a lesson is addressed to a POSITION, so one
+# person holding two profiles sees it once, a colleague sharing the profile sees
+# it too, and a profile re-claimed by somebody new inherits the lessons that
+# were assigned to it. Targeting accounts would tie a training programme to
+# whoever happened to be registered on the day it was published.
+
+class EducationLesson(Base):
+    """One published video lesson."""
+    __tablename__ = "education_lessons"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(300), nullable=False)
+    # The link exactly as the admin pasted it — kept verbatim so the record says
+    # what was entered, while `provider`/`video_id` (parsed by
+    # services/education_video) are what every player and thumbnail is built
+    # from. The embed URL is deliberately NOT stored: rebuilding it on read is
+    # what lets a player-parameter change reach lessons published last month.
+    url = Column(Text, nullable=False)
+    provider = Column(String(20), nullable=False)          # youtube | loom | vimeo
+    video_id = Column(String(120), nullable=False)
+    # The description in BOTH shapes the RichTextEditor emits: the HTML the page
+    # renders, and the plain text used for search and for the notification
+    # preview. Optional — a clear title is often the whole lesson.
+    description_html = Column(Text, nullable=True)
+    description_text = Column(Text, nullable=True)
+
+    created_by_profile = Column(String(80), nullable=True)  # "role:id" of the author
+    created_by_name = Column(String(160), nullable=True)    # snapshotted; a rename must not rewrite history
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+    # Soft-retire. A lesson people have already watched is a record of what they
+    # were taught, so it is hidden rather than deleted.
+    archived = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    targets = relationship("EducationLessonTarget", back_populates="lesson",
+                           cascade="all, delete-orphan")
+
+
+class EducationLessonTarget(Base):
+    """One PROFILE this lesson is published to. The audience is exactly the set
+    of these rows — there is no "everyone" flag, because an audience nobody
+    listed is an audience nobody can review."""
+    __tablename__ = "education_lesson_targets"
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "profile_key", name="uq_edu_target"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lesson_id = Column(Integer, ForeignKey("education_lessons.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    # `identity.profile_key` — "leader:12", "supervisor:5", …
+    profile_key = Column(String(80), nullable=False, index=True)
+
+    lesson = relationship("EducationLesson", back_populates="targets")
+
+
+class EducationLessonView(Base):
+    """A profile opened a lesson. Powers the «Yangi» mark and the per-lesson
+    watched count, so an admin can see whether a lesson actually landed.
+
+    Keyed by PROFILE like the target beside it: watching is an act of the
+    position, so a person who watched under one login has watched, and the mark
+    does not come back when they open the app on another device."""
+    __tablename__ = "education_lesson_views"
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "profile_key", name="uq_edu_view"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lesson_id = Column(Integer, ForeignKey("education_lessons.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    profile_key = Column(String(80), nullable=False, index=True)
+    first_seen_at = Column(DateTime(timezone=True), server_default=func.now())
