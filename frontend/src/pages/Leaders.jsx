@@ -107,7 +107,7 @@ const TXT = {
     trendNewHint: "Avvalgi davrda umuman ma'lumot yo'q — reytingda yangi",
     tierEdit: "Daraja chegaralari", tierEditSub: "Barcha foydalanuvchilar uchun amal qiladi",
     tierEditRow: "% va undan yuqori",
-    tierEditHint: "Chegaralar ro'yxat saralanayotgan ustunga (Reyting yoki Barqarorlik) qo'llanadi. Eng past chegaradan pastda qolganlar — «Past».",
+    tierEditHint: "Chegaralar ro'yxat saralanayotgan ustunga (Reyting yoki Barqarorlik) qo'llanadi. Eng past chegaradan pastda qolganlar — «Past». «Chempion» chegaradan tashqari 1-o'rinni ham talab qiladi: chegaradan yuqoridagi qolganlar — «A'lo».",
     tierEditOrder: "Chegaralar kamayib borishi kerak: Chempion > A'lo > O'rta.",
     save: "Saqlash", cancel: "Bekor qilish",
     winLabel: "Hisob oynasi", daysSent: "Yuborilgan", daysMissed: "O'tkazib yuborilgan",
@@ -281,7 +281,7 @@ const TXT = {
     trendNewHint: "Аввалги даврда умуман маълумот йўқ — рейтингда янги",
     tierEdit: "Даража чегаралари", tierEditSub: "Барча фойдаланувчилар учун амал қилади",
     tierEditRow: "% ва ундан юқори",
-    tierEditHint: "Чегаралар рўйхат сараланаётган устунга (Рейтинг ёки Барқарорлик) қўлланади. Энг паст чегарадан пастда қолганлар — «Паст».",
+    tierEditHint: "Чегаралар рўйхат сараланаётган устунга (Рейтинг ёки Барқарорлик) қўлланади. Энг паст чегарадан пастда қолганлар — «Паст». «Чемпион» чегарадан ташқари 1-ўринни ҳам талаб қилади: чегарадан юқоридаги қолганлар — «Аъло».",
     tierEditOrder: "Чегаралар камайиб бориши керак: Чемпион > Аъло > Ўрта.",
     save: "Сақлаш", cancel: "Бекор қилиш",
     winLabel: "Ҳисоб ойнаси", daysSent: "Юборилган", daysMissed: "Ўтказиб юборилган",
@@ -455,7 +455,7 @@ const TXT = {
     trendNewHint: "За предыдущий период данных нет вообще — новый в рейтинге",
     tierEdit: "Границы уровней", tierEditSub: "Действуют для всех пользователей",
     tierEditRow: "% и выше",
-    tierEditHint: "Границы применяются к тому столбцу, по которому отсортирован список (Рейтинг или Стабильность). Всё, что ниже последней границы, — «Низко».",
+    tierEditHint: "Границы применяются к тому столбцу, по которому отсортирован список (Рейтинг или Стабильность). Всё, что ниже последней границы, — «Низко». «Чемпион» требует не только границы, но и 1-го места: остальные выше неё — «Отлично».",
     tierEditOrder: "Границы должны убывать: Чемпион > Отлично > Средне.",
     save: "Сохранить", cancel: "Отмена",
     winLabel: "Окно расчёта", daysSent: "Сдано", daysMissed: "Пропущено",
@@ -629,7 +629,7 @@ const TXT = {
     trendNewHint: "No data at all for the previous period — new to the ranking",
     tierEdit: "Grade cutoffs", tierEditSub: "Applies to every viewer",
     tierEditRow: "% and above",
-    tierEditHint: "Cutoffs apply to whichever column the list is ranked by (Rating or Consistency). Anything below the lowest cutoff is «Low».",
+    tierEditHint: "Cutoffs apply to whichever column the list is ranked by (Rating or Consistency). Anything below the lowest cutoff is «Low». «Champion» needs 1st place as well as its cutoff: everyone else above it is «Excellent».",
     tierEditOrder: "Cutoffs must descend: Champion > Excellent > Average.",
     save: "Save", cancel: "Cancel",
     winLabel: "Scoring window", daysSent: "Filed", daysMissed: "Missed",
@@ -1572,7 +1572,17 @@ const TIER_BANDS = [
   { cut: "mid",  key: "tierMid",  color: C_MID,  Icon: Shield },
 ];
 const TIER_BAD = { key: "tierBad", color: C_BAD, Icon: ShieldAlert };
-const tierOf = (v, cuts = TIER_CUTS) => TIER_BANDS.find((b) => v >= cuts[b.cut]) || TIER_BAD;
+// «Chempion» is the FIRST-PLACE badge, not the top score band: it needs the top
+// cutoff AND place 1 — shared where the dense ranking ties several people on 1,
+// which is the only way the crown lands on more than one row. Everyone else over
+// that cutoff drops to the band below, so the chip names the leader of the board
+// instead of everybody above 85%. A caller that cannot say the place never gets
+// the top band: the badge is the thing being restricted, so withholding it is the
+// safe default. The place is the REAL one either way — flipping the list worst-
+// first reverses the order and keeps every place number — so a bottom-three card
+// can never carry a crown.
+const tierOf = (v, cuts = TIER_CUTS, place = null) =>
+  TIER_BANDS.find((b) => v >= cuts[b.cut] && (b.cut !== "top" || place === 1)) || TIER_BAD;
 // Cutoffs must stay strictly descending: a band whose floor sits at or above the
 // one above it can never be reached. Guards the editor before the PUT does.
 const tierOrderOk = (c) =>
@@ -1617,8 +1627,8 @@ function DaysValue({ e }) {
   );
 }
 
-function TierChip({ value, T, cuts }) {
-  const t = tierOf(value, cuts);
+function TierChip({ value, T, cuts, place }) {
+  const t = tierOf(value, cuts, place);
   return (
     <span className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap"
       style={{ background: hexA(t.color, 0.14), color: t.color }}>
@@ -1773,7 +1783,7 @@ function StandCard({ e, worst, metric, T, name, sup, cuts, trend, shift }) {
 
       {/* The register drops the podium rows, so the card carries their trend chip. */}
       <div className="relative mt-2 flex items-center gap-1.5">
-        <TierChip value={ranked} T={T} cuts={cuts} />
+        <TierChip value={ranked} T={T} cuts={cuts} place={e.place} />
         {trend && <DeltaChip trend={trend} e={e} T={T} />}
         <ShiftChip shift={shift} T={T} />
       </div>
@@ -3806,7 +3816,7 @@ export default function Leaders() {
                         <Meter pct={e.consist} color={scoreColor(e.consist)} />
                       </td>
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
-                        <TierChip value={ranked} T={T} cuts={tierCuts} />
+                        <TierChip value={ranked} T={T} cuts={tierCuts} place={e.place} />
                       </td>
                     </tr>
                   );

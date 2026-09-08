@@ -308,6 +308,12 @@ def _may_request_for(payload: dict, manager_id: int | None) -> bool:
 # Defaults are tuned to the metric's real ceiling — every calendar day in the
 # picked range counts, so a leader filing perfectly six days a week tops out
 # near 87% and a 95 cutoff would make Chempion unreachable.
+#
+# The "top" cut is a FLOOR, not the whole rule: the client hands the Chempion
+# chip only to place 1 (shared where the dense ranking ties), so passing this
+# cutoff without leading the board reads as A'lo. Kept here as a cutoff because
+# the place is a property of the list on screen — which metric it is ranked by,
+# which shift and unit it is filtered to — and only the client knows that.
 TIER_KEY = "leader_tier_cuts"
 TIER_DEFAULTS = {"top": 85, "good": 65, "mid": 40}
 
