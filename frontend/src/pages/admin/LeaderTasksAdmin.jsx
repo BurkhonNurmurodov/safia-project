@@ -532,11 +532,15 @@ export default function LeaderTasksAdmin() {
     if (pickU && mgrById.has(pickU)) {
       return { kind: "unit", id: pickU, mid: pickU, shift: Number(mgrById.get(pickU)?.shift) || 1 };
     }
+    // `mid` stays NULL for a shift, exactly as it always has: every consumer
+    // that needs a sample unit at this level resolves it itself
+    // (`unitsOf(shift)[0]`), and putting one here would make «Brigada
+    // sozlamalari» offer a brigadir nobody picked.
     if (fShift === 1 || fShift === 2) {
-      return { kind: "shift", id: null, mid: unitsOf(fShift)[0]?.id ?? null, shift: fShift };
+      return { kind: "shift", id: null, mid: null, shift: fShift };
     }
     return { kind: "std", id: null, mid: null, shift: null };
-  }, [pickU, pickL, fShift, leaderById, mgrById, managers]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pickU, pickL, fShift, leaderById, mgrById]);
 
   // ── the chain, resolved ─────────────────────────────────────────────────
   const tname = (task) => task?.name?.[lang] || task?.name?.uz || `T${task?.id}`;
@@ -1695,6 +1699,14 @@ export default function LeaderTasksAdmin() {
       {t("admin.ltasks.ownHere")}
     </span>
   ) : null);
+  // The one field that has no level below Standart — said on the label, not
+  // only in a hint, because the hint is what a reader skips.
+  const stdPill = (
+    <span className="ml-1.5 align-middle rounded px-1.5 py-px text-[10px] font-semibold normal-case tracking-normal"
+      style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}>
+      {t("admin.ltasks.onlyStd")}
+    </span>
+  );
   const withMark = (label, mark) => (mark ? <>{label}{mark}</> : label);
   const inheritLine = (k, shown) => {
     if (isStd || !editInh) return null;
@@ -1753,40 +1765,77 @@ export default function LeaderTasksAdmin() {
 
   // ── render ──────────────────────────────────────────────────────────────
   const bannerRows = problems ? problems.filter((p) => p.enabled !== false) : [];
-  // Both figures describe the sheet AT THE LEVEL ON SCREEN, so the task set
-  // is that level's own — a task archived from tomorrow is still counted on a
-  // shift whose day has not reached tomorrow.
-  const sheetLive = liveForShift(level.shift);
-  const sheetOwnN = sheetLive.reduce((a, td) => a + COLS.filter((c) => c.keys.some((k) => ownKeys(level, td.id).has(k))).length, 0);
+  const bad0 = bannerRows[0] || null;
+
+  // The chain, spelled out: every level in force, narrowest LAST and bold.
+  const chain = [t("admin.ltasks.lvlStd")];
+  if (level.shift) chain.push(t("admin.ltasks.lvlShift").replace("{n}", level.shift));
+  if (pickUv) chain.push(mgrLabel(pickUv));
+  if (pickLv) chain.push(leadLabel(pickLv));
+
+  const sep = (
+    <span aria-hidden="true" className="mx-1.5" style={{ color: "var(--text-4)" }}>·</span>
+  );
+  // One window fragment. A refused window carries the warning ICON as well as
+  // the red, so it survives greyscale and a colourblind reader.
+  const winSpan = (f, key) => (
+    <span key={key} className={f.strong || f.bad ? "font-semibold" : ""}
+      style={{ color: f.bad ? C_BAD : f.strong ? "var(--text-1)" : "inherit" }}>
+      {f.text}
+      {f.bad && <AlertTriangle size={11} className="inline-block ml-1 -mt-px" aria-hidden="true" />}
+    </span>
+  );
 
   return (
     <div className="space-y-4">
-      <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
-        {t("admin.ltasks.intro")}
-      </p>
+      {/* ── page head: what this list is, and the ONE primary action ─────── */}
+      <div className="flex flex-wrap items-start gap-3">
+        <p className="text-xs leading-relaxed flex-1 min-w-[240px]" style={{ color: "var(--text-3)" }}>
+          {t("admin.ltasks.pageSub").replace("{n}", liveTasks.length)}
+        </p>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button size="lg" variant="ghost" icon={<History size={14} />} onClick={() => setShowHistory(true)}>
+            {t("admin.ltasks.history")}
+          </Button>
+          <Button size="lg" icon={<Plus size={14} />} onClick={() => setAddTask({
+            names: {}, note: {}, criteria: "", description: "", weight: 5, min_media: 1,
+            who: "all", active_from: floor, mgrs: [],
+          })}>
+            {t("admin.ltasks.addTask")}
+          </Button>
+        </div>
+      </div>
 
-      {/* Windows nobody on that shift can work — the 26-Aug incident class,
-          named before it bites rather than discovered in a leader's score. */}
-      {bannerRows.length > 0 && (
-        <div className="rounded-2xl px-3.5 py-3 flex items-start gap-2.5"
+      {/* ── the one alert: windows nobody on that shift can work ──────────── */}
+      {/* The 26-Aug incident class, named BEFORE it bites rather than
+          discovered in a leader's score — and it names the PERSON, because
+          «6 ta oyna» is a number nobody can act on while «Tursunboyev
+          Abduqodir» is somebody you can go and fix. */}
+      {bad0 && (
+        <div className="rounded-2xl px-3.5 py-3 flex flex-wrap items-center gap-2.5"
           style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)" }}>
-          <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: C_BAD }} />
-          <div className="min-w-0">
+          <AlertTriangle size={16} className="flex-shrink-0" style={{ color: C_BAD }} />
+          <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>
               {t("admin.ltasks.bannerTitle").replace("{n}", bannerRows.length)}
             </div>
             <div className="text-[11px] mt-0.5 leading-snug" style={{ color: "var(--text-2)" }}>
               {t("admin.ltasks.bannerBody")
-                .replace("{who}", bannerRows[0].leader_id
-                  ? leadLabel(bannerRows[0].leader_id) : mgrLabel(bannerRows[0].manager_id))
-                .replace("{win}", (bannerRows[0].win || []).join("–"))
-                .replace("{shift}", bannerRows[0].shift ?? "?")
-                .replace("{hours}", (bannerRows[0].hours || []).join("–"))}
+                .replace("{who}", bad0.leader_id ? leadLabel(bad0.leader_id) : mgrLabel(bad0.manager_id))
+                .replace("{win}", (bad0.win || []).join("–"))
+                .replace("{shift}", bad0.shift ?? "?")
+                .replace("{hours}", (bad0.hours || []).join("–"))}
             </div>
           </div>
-          <Button size="md" tint variant="danger" className="ml-auto flex-shrink-0"
-            onClick={() => { setRegBad(true); setRegFld("window"); setRegLvl("all"); setRegPage(1); setTab("reg"); }}>
-            {t("admin.ltasks.bannerShow")}
+          <Button size="lg" tint variant="danger" className="flex-shrink-0"
+            onClick={() => {
+              scopeTo({
+                lvl: bad0.leader_id ? "leader" : "unit",
+                lid: bad0.leader_id, mid: bad0.manager_id, shift: bad0.shift,
+              });
+              focusTask(bad0.task_id);
+            }}>
+            {t("admin.ltasks.bannerFix")}
           </Button>
         </div>
       )}
@@ -1812,426 +1861,361 @@ export default function LeaderTasksAdmin() {
         </div>
       )}
 
-      {/* KPI tiles — each one opens the register on exactly what it counted. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        <Tile n={liveTasks.length} label={t("admin.ltasks.tileTasks")} color="#22c55e"
-          sub={t("admin.ltasks.tileTasksSub").replace("{n}", archivedTasks.length).replace("{sum}", stdSum)}
-          onClick={() => { setRegBad(false); setRegLvl("all"); setRegFld("all"); setRegPage(1); setTab("sheet"); }} />
-        <Tile n={excN} label={t("admin.ltasks.tileExc")} color="var(--brand)"
-          sub={t("admin.ltasks.tileExcSub")
-            .replace("{s}", regRows.filter((r) => r.lvl === "shift" && !r.probOnly).length)
-            .replace("{u}", regRows.filter((r) => r.lvl === "unit" && !r.drift && !r.probOnly).length)
-            .replace("{l}", regRows.filter((r) => r.lvl === "leader" && !r.probOnly).length)}
-          onClick={() => { setRegBad(false); setRegLvl("all"); setRegFld("all"); setRegPage(1); setTab("reg"); }} />
-        {problems && (
-          <Tile n={problems.length} label={t("admin.ltasks.tileBad")} color={problems.length ? C_BAD : "#94a3b8"}
-            sub={t("admin.ltasks.tileBadSub")}
-            onClick={() => { setRegBad(true); setRegFld("window"); setRegLvl("all"); setRegPage(1); setTab("reg"); }} />
-        )}
-        <Tile n={driftN} label={t("admin.ltasks.tileDrift")} color={C_WARN}
-          sub={t("admin.ltasks.tileDriftSub")}
-          onClick={() => { setRegBad(false); setRegLvl("unit"); setRegFld("all"); setRegPage(1); setTab("reg"); }} />
-      </div>
-      <p className="text-[11px] -mt-2" style={{ color: "var(--text-4)" }}>
-        {t("admin.ltasks.tilesNote").replace("{m}", managers.length)
-          .replace("{l}", leaders.length).replace("{t}", liveTasks.length)}
-      </p>
-
-      {/* View tabs + the two page-level actions. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <SegmentedToggle asTabs value={tab} onChange={setTab}
-          ariaLabel={t("admin.ltasks.title")}
-          options={[
-            [ "sheet", t("admin.ltasks.tab.tasks") ],
-            [ "reg", `${t("admin.ltasks.tab.exc")} · ${excN}` ],
-          ]} />
-        <span className="ml-auto" />
-        <Button size="lg" variant="ghost" icon={<Type size={14} />} onClick={() => { setTxtErr(""); setShowTexts(true); }}>
-          {t("admin.ltasks.texts")}
-        </Button>
-        <Button size="lg" variant="ghost" icon={<History size={14} />} onClick={() => setShowHistory(true)}>
-          {t("admin.ltasks.history")}
-        </Button>
-        {/* Every task that is not archived, a not-yet-open one INCLUDED:
-            `reorder_tasks` pushes whatever the caller leaves out to the tail,
-            so omitting a pending task would silently move it to the end of a
-            checklist nobody had reordered. Order is presentation and carries
-            no floor of its own. */}
-        <Button size="lg" variant="ghost" icon={<ListOrdered size={14} />}
-          onClick={() => setOrder({ ids: tasks.filter((x) => !isArchived(x, 1) || !isArchived(x, 2)).map((x) => x.id) })}>
-          {t("admin.ltasks.orderBtn")}
-        </Button>
-        <Button size="lg" icon={<Plus size={14} />} onClick={() => setAddTask({
-          names: {}, note: {}, criteria: "", description: "", weight: 5, min_media: 1,
-          who: "all", active_from: floor, mgrs: [],
-        })}>
-          {t("admin.ltasks.addTask")}
-        </Button>
-      </div>
-
-      {tab === "sheet" ? (
-        <>
-          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-            {/* The level strip: which level of the chain the sheet is read at.
-                A view switch, so it stays OUTSIDE the filter panel. */}
-            <div className="px-4 py-3 flex flex-wrap items-center gap-2.5" style={{ background: "var(--bg-inner)", borderBottom: "1px solid var(--border)" }}>
-              <SegmentedToggle asTabs ariaLabel={t("admin.ltasks.levelStrip")}
-                value={levelKey(level)}
-                onChange={(k) => {
-                  if (k === "std") { setLvlKind("std"); setFShift(0); }
-                  else if (k === "unit") setLvlKind("unit");
-                  else if (k === "leader") setLvlKind("leader");
-                  else { setLvlKind("shift"); setFShift(Number(k.slice(1))); }
-                }}
-                options={[
-                  { value: "std", label: t("admin.ltasks.lvlStd") },
-                  ...shifts.map((s) => ({ value: `s${s}`, label: t("admin.ltasks.lvlShift").replace("{n}", s) })),
-                  ...(pickUv ? [{ value: "unit", label: mgrLabel(pickUv) }] : []),
-                  ...(pickLv ? [{ value: "leader", label: leadLabel(pickLv) }] : []),
-                ]} />
-              <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
-                {t("admin.ltasks.chain")}{" "}
-                <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{levelName(level)}</span>
-                {" · "}{reachText(level)}
+      {/* ── the scope zone. FilterPanel must stay a DIRECT child of this flex
+          row — its fit check measures the row's own children to decide inline
+          vs grouped. ─────────────────────────────────────────────────────── */}
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterPanel sections={scopeSections} />
+        </div>
+        {/* Which level the sentences below are resolved at, and how far it
+            reaches — said once, above the list, instead of tagged onto every
+            value the way the sheet used to. */}
+        <div className="mt-2 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+          {t("admin.ltasks.chain")}{" "}
+          {chain.map((c, i) => (
+            <span key={i}>
+              {i === chain.length - 1
+                ? <b style={{ color: "var(--text-1)" }}>{c}</b>
+                : <>{c}<span aria-hidden="true" className="mx-1.5" style={{ color: "var(--text-4)" }}>›</span></>}
+            </span>
+          ))}
+          {sep}{reachText(level)}
+          {/* A unit whose leaders do not all add up to 100%: invisible from a
+              level above, and it is what makes a leader score against a
+              denominator nobody meant. */}
+          {level.kind === "unit"
+            && (leadersByMgr[level.id] || []).some((p) => leaderSums[p.id] !== 100) && (
+              <span className="inline-flex items-center gap-1 ml-2 px-1.5 py-0.5 rounded align-middle text-[11px] font-semibold"
+                style={{
+                  color: "var(--text-1)", background: "rgba(234,179,8,0.16)",
+                  border: "1px solid rgba(234,179,8,0.45)",
+                }}>
+                <AlertTriangle size={12} color={C_WARN} />{t("admin.ltasks.childWarn")}
               </span>
-              {/* A unit whose leaders do not all add up to 100% — the old
-                  matrix's row dot, kept: it is invisible from a sheet read one
-                  level up, and it is what makes a leader score against a
-                  denominator nobody meant. */}
-              {level.kind === "unit"
-                && (leadersByMgr[level.id] || []).some((p) => leaderSums[p.id] !== 100) && (
-                  <span title={t("admin.ltasks.childWarn")}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold"
-                    style={{
-                      color: "var(--text-1)", background: "rgba(234,179,8,0.16)",
-                      border: "1px solid rgba(234,179,8,0.45)",
-                    }}>
-                    <AlertTriangle size={13} color={C_WARN} />{t("admin.ltasks.childWarn")}
-                  </span>
-                )}
-              {level.kind !== "std" && level.kind !== "shift" && (
-                <Button size="sm" variant="ghost" icon={<Grid3x3 size={13} />} className="ml-auto"
-                  onClick={() => {
-                    const m = mgrById.get(level.mid);
-                    setUnit({
-                      mid: level.mid, cell_from: m?.cell_from || "",
-                      per_task_close: !!m?.per_task_close, bot_from: m?.bot_from || "",
-                    });
-                  }}>
-                  {t("admin.ltasks.unitSettings")}
-                </Button>
-              )}
-            </div>
-
-            {/* FilterPanel must stay a DIRECT child of this row — its fit check
-                measures the row's own children to decide inline vs grouped. */}
-            <div className="px-4 py-3 flex flex-wrap items-center gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
-              <FilterPanel sections={sheetSections} />
-              <span className="ml-auto text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-                {t("admin.ltasks.sheetCount").replace("{t}", sheetLive.length).replace("{n}", sheetOwnN)}
-              </span>
-            </div>
-
-            {isLoading ? (
-              <SkeletonTable rows={10} cols={8} />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "collapse", minWidth: 1380 }}>
-                  <colgroup>
-                    <col style={{ width: 36 }} />
-                    <col style={{ width: 234 }} />
-                    {COLS.map((c) => <col key={c.k} style={{ width: c.w }} />)}
-                    <col style={{ width: 56 }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      {["", t("admin.ltasks.task"), ...COLS.map((c) => t(`admin.ltasks.col.${c.k}`)), ""].map((h, i) => (
-                        <th key={i} className="px-2.5 py-2.5 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap"
-                          style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tasks.map((td) => {
-                      const r = resolved(level, td.id);
-                      const own = ownKeys(level, td.id);
-                      // IN FORCE, judged against the day the level on screen is
-                      // actually living in — not "a date is set". A scheduled
-                      // archive greys nothing and takes no weight out until its
-                      // day arrives; a task whose opening day has not come is
-                      // marked as such and is not counted asked.
-                      const archived = isArchived(td, level.shift);
-                      const archSet = !!td.archived_from;
-                      const pendingTask = isPending(td, level.shift);
-                      const excHere = regRows.filter((x) => x.tid === td.id && !x.drift && !x.probOnly).length;
-                      return (
-                        <tr key={td.id} style={{ borderTop: "1px solid var(--border)", opacity: archived ? 0.55 : 1 }}>
-                          <td className="px-2 py-2 text-right align-top font-bold tabular-nums" style={{ color: "var(--text-4)" }}>{td.id}</td>
-                          <td className="px-2.5 py-2 align-top">
-                            <div className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{r.names[lang] || r.names.uz || `T${td.id}`}</div>
-                            {/* `--text-3`, not `--text-4`: this line carries the
-                                photo SUBJECT the AI judges by and the count of
-                                exceptions under the row, and 10px on the
-                                weakest token is the same 2.3:1 the origin tag
-                                was pulled off. */}
-                            <div className="text-[10px] mt-0.5 leading-snug" style={{ color: "var(--text-3)" }}>
-                              {(td.note?.[lang] || td.note?.uz || "") && <>{td.note?.[lang] || td.note?.uz} · </>}
-                              {own.has("names") && <>{t("admin.ltasks.nameFrom").replace("{from}", tagLabel(originOf(level, td.id, { keys: ["names"] })))} · </>}
-                              {t("admin.ltasks.excCount").replace("{n}", excHere)}
-                            </div>
-                            {/* An archive SET but not yet in force still gets
-                                its chip — the date is the whole of what it
-                                says — while the row above it stays at full
-                                strength, because tonight the task is asked. */}
-                            {archSet && (
-                              <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
-                                style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
-                                <Archive size={10} />{t("admin.ltasks.archChip").replace("{date}", td.archived_from)}
-                              </span>
-                            )}
-                            {pendingTask && (
-                              <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
-                                style={{ background: "rgba(234,179,8,0.16)", color: "var(--text-1)", border: "1px solid rgba(234,179,8,0.45)" }}>
-                                <Calendar size={10} color={C_WARN} />{t("admin.ltasks.activeChip").replace("{date}", td.active_from)}
-                              </span>
-                            )}
-                          </td>
-                          {COLS.map((c) => {
-                            const origin = originOf(level, td.id, c);
-                            const isOwn = c.k === "ex"
-                              ? exIsOwn(level, td.id)
-                              : c.keys.some((k) => own.has(k));
-                            const bad = c.k === "window" && problemsFor(level, td.id).length > 0;
-                            return (
-                              <RuleCell key={c.k}
-                                value={showVal(c.k, r, level, td.id)}
-                                own={isOwn} bad={bad}
-                                off={c.k === "enabled" && !r.enabled}
-                                tag={c.k === "ex" ? tagLabel(exTag(level, td.id)) : tagLabel(origin)}
-                                dev={devCount(level, td.id, c)}
-                                mix={mixMark(level, td.id, c)}
-                                title={`${t(`admin.ltasks.col.${c.k}`)}: ${fullVal(c.k, r, level, td.id)}`}
-                                onClick={() => openEdit(td.id)} />
-                            );
-                          })}
-                          <td className="px-2 py-2 align-top text-right">
-                            {/* Keyed on whether a date is SET, not on whether
-                                it has arrived: clearing it is how a scheduled
-                                archive is called off, so that must stay the
-                                action on offer the whole time it is pending. */}
-                            {archSet ? (
-                              <Button size="sm" tint variant="secondary" aria-label={t("admin.ltasks.archRestore")}
-                                title={t("admin.ltasks.archRestore")} icon={<ArchiveRestore size={13} />}
-                                onClick={() => askRestore(td)} />
-                            ) : (
-                              <Button size="sm" tint variant="danger" aria-label={t("admin.ltasks.archTitle")}
-                                title={t("admin.ltasks.archTitle")} icon={<Archive size={13} />}
-                                onClick={() => setArch({ tid: td.id, from: floor })} />
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    <tr style={{ background: "var(--bg-inner)", borderTop: "1px solid var(--border)" }}>
-                      <td colSpan={3} className="px-2.5 py-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-                        {t("admin.ltasks.sumRow")}
-                      </td>
-                      <td className="px-2.5 py-2.5">
-                        {levelSum === 100
-                          ? <b className="tabular-nums" style={{ color: "var(--text-1)" }}>100%</b>
-                          : warnBadge(levelSum)}
-                      </td>
-                      <td colSpan={COLS.length - 1} className="px-2.5 py-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-                        {offSums > 0 && t("admin.ltasks.sumsOff").replace("{n}", offSums)}
-                      </td>
-                      <td />
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             )}
+        </div>
+      </div>
 
-            {/* Two legends: what the marks mean, and which of the three texts
-                is read by whom — the question this page is asked most often. */}
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-4 py-2.5 text-[11px]"
-              style={{ borderTop: "1px solid var(--border)", color: "var(--text-3)" }}>
-              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--brand)" }} />{t("admin.ltasks.legendOwn")}</span>
-              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }} />{t("admin.ltasks.legendInherit")}</span>
-              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: C_BAD }} />{t("admin.ltasks.legendBad")}</span>
-              <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "rgba(234,179,8,0.5)" }} />{t("admin.ltasks.legendMix")}</span>
-              <span>{t("admin.ltasks.legendDev")}</span>
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-4 py-2.5 text-[11px]"
-              style={{ borderTop: "1px dashed var(--border)", color: "var(--text-3)" }}>
-              <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{t("admin.ltasks.legendTexts")}</span>
-              <span>{t("admin.ltasks.legendNote")}</span>
-              <span>{t("admin.ltasks.legendDesc")}</span>
-              <span>{t("admin.ltasks.legendCrit")}</span>
-            </div>
-          </div>
-
-          {/* One-time setup and the archive, folded away: neither is read on an
-              ordinary visit, and both used to sit above the work. */}
-          <details className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-            <summary className="px-4 py-3 text-xs font-semibold cursor-pointer select-none" style={{ color: "var(--text-2)" }}>
-              {t("admin.ltasks.more")}
-            </summary>
-            <div className="px-4 pb-4 pt-3.5 space-y-4" style={{ borderTop: "1px solid var(--border)" }}>
-              <FormField label={t("admin.ltasks.channel")} hint={t("admin.ltasks.channelHint")} error={chanErr || null}>
-                <div className="flex items-center gap-2 max-w-md">
-                  <input value={chan} onChange={(e) => setChan(e.target.value)} placeholder="-100…" className={`${inputCls} flex-1`} style={inputStyle} />
-                  <Button size="lg" variant="secondary" loading={chanMut.isPending} onClick={() => chanMut.mutate({ chat_id: chan })}>{t("admin.ltasks.save")}</Button>
+      {/* ── THE LIST: one row per task, its rule written as a sentence ────── */}
+      <div>
+        <div className="rounded-t-2xl overflow-hidden"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderBottom: 0 }}>
+          {isLoading ? (
+            <div aria-hidden="true">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="px-4 py-3.5" style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
+                  <div className="flex items-center gap-3">
+                    <SkeletonBlock className="h-3.5 w-5" />
+                    <SkeletonBlock className="h-4 flex-1 max-w-[280px]" />
+                    <SkeletonBlock className="h-3.5 w-10 ml-auto" />
+                  </div>
+                  <SkeletonBlock className="h-3 w-64 mt-2 ml-8" />
                 </div>
-              </FormField>
-              <FormField label={t("admin.ltasks.archList").replace("{n}", archivedTasks.length)}
-                hint={t("admin.ltasks.archListHint")}>
-                {archivedTasks.length === 0 ? (
-                  <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.ltasks.archNone")}</p>
-                ) : (
-                  <div className="space-y-1">
-                    {archivedTasks.map((td) => (
-                      <div key={td.id} className="flex items-center gap-2 text-xs">
-                        <span className="tabular-nums" style={{ color: "var(--text-4)" }}>{td.id}</span>
-                        <span className="truncate">{tname(td)}</span>
-                        <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{td.archived_from}</span>
-                        <Button size="sm" variant="ghost" className="ml-auto" icon={<ArchiveRestore size={13} />}
-                          onClick={() => askRestore(td)}>{t("admin.ltasks.archRestore")}</Button>
-                      </div>
+              ))}
+            </div>
+          ) : tasks.length === 0 ? (
+            <EmptyState icon={ListChecks} showUploadLink={false} height="h-56"
+              title={t("admin.ltasks.listEmpty")} message={t("admin.ltasks.listEmptyHint")}
+              action={(
+                <Button size="lg" icon={<Plus size={14} />} onClick={() => setAddTask({
+                  names: {}, note: {}, criteria: "", description: "", weight: 5, min_media: 1,
+                  who: "all", active_from: floor, mgrs: [],
+                })}>
+                  {t("admin.ltasks.addTask")}
+                </Button>
+              )} />
+          ) : tasks.map((td, i) => {
+            const r = resolved(level, td.id);
+            const isOpen = openRow === td.id;
+            // IN FORCE, judged against the day the level on screen is actually
+            // living in — never `new Date()`. A scheduled archive greys nothing
+            // and takes no weight out until its day arrives.
+            const archived = isArchived(td, level.shift);
+            const archSet = !!td.archived_from;
+            const pendingTask = isPending(td, level.shift);
+            const rows = rowsByTask[td.id] || [];
+            const nBad = rows.filter((x) => x.bad).length;
+            const nExc = rows.length - nBad;
+            const parts = ruleParts(td.id);
+            return (
+              <div key={td.id} ref={(el) => { rowRefs.current[td.id] = el; }}
+                style={{ borderTop: i ? "1px solid var(--border)" : "none", opacity: archived ? 0.6 : 1 }}>
+                <button type="button" aria-expanded={isOpen} aria-controls={`ltask-body-${td.id}`}
+                  onClick={() => setOpenRow(isOpen ? null : td.id)}
+                  className="block w-full text-left px-4 py-3.5 transition-colors hover:bg-[var(--hover-bg)]"
+                  style={isOpen ? { background: "var(--hover-bg)" } : undefined}>
+                  <div className="flex items-baseline gap-3">
+                    <span className="w-6 flex-shrink-0 text-right text-xs font-semibold tabular-nums"
+                      style={{ color: "var(--text-4)" }}>{td.id}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
+                        {r.names?.[lang] || r.names?.uz || `T${td.id}`}
+                      </span>
+                      {/* An archive SET but not yet in force still gets its
+                          chip — the date is the whole of what it says. */}
+                      {archSet && (
+                        <span className="inline-flex items-center gap-1 ml-2 px-1.5 py-0.5 rounded align-middle text-[10px] font-bold"
+                          style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
+                          <Archive size={10} />{t("admin.ltasks.archChip").replace("{date}", td.archived_from)}
+                        </span>
+                      )}
+                      {pendingTask && (
+                        <span className="inline-flex items-center gap-1 ml-2 px-1.5 py-0.5 rounded align-middle text-[10px] font-bold"
+                          style={{ background: "rgba(234,179,8,0.16)", color: "var(--text-1)", border: "1px solid rgba(234,179,8,0.45)" }}>
+                          <Calendar size={10} color={C_WARN} />{t("admin.ltasks.activeChip").replace("{date}", td.active_from)}
+                        </span>
+                      )}
+                    </span>
+                    {/* A task this level does not ask carries no weight, so it
+                        says THAT instead of printing a percentage nobody
+                        earns. */}
+                    {r.enabled ? (
+                      <span className="flex-shrink-0 text-sm font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>
+                        {r.weight}%
+                      </span>
+                    ) : (
+                      <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
+                        style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
+                        {t("admin.ltasks.vNotAsked")}
+                      </span>
+                    )}
+                    <ChevronRight size={15} aria-hidden="true" className="flex-shrink-0 transition-transform"
+                      style={{ color: "var(--text-4)", transform: isOpen ? "rotate(90deg)" : "none" }} />
+                  </div>
+
+                  {/* THE rule sentence. */}
+                  <div className="mt-1 ml-9 text-[12.5px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+                    {parts.map((f, j) => (
+                      <span key={f.k}>
+                        {j > 0 && sep}
+                        {f.halves
+                          ? f.halves.map((h, k) => (
+                            <span key={h.sh}>
+                              {k > 0 && sep}
+                              <span className="mr-1 px-1 rounded text-[10px] font-bold tracking-wide align-middle"
+                                title={t("admin.ltasks.lvlShift").replace("{n}", h.sh)}
+                                style={{ color: "var(--text-4)", border: "1px solid var(--border-md)" }}>
+                                S{h.sh}
+                              </span>
+                              {winSpan(h, h.sh)}
+                            </span>
+                          ))
+                          : f.k === "window" ? winSpan(f, f.k)
+                            : (
+                              <span className={f.strong ? "font-semibold" : ""}
+                                style={f.strong ? { color: "var(--text-1)" } : undefined}>
+                                {f.text}
+                              </span>
+                            )}
+                      </span>
                     ))}
                   </div>
-                )}
-              </FormField>
-            </div>
-          </details>
-        </>
-      ) : (
-        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <SectionHead icon={Layers} title={t("admin.ltasks.tab.exc")}
-            right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-              {t("admin.ltasks.regCount").replace("{n}", regShown.length).replace("{total}", regRows.length)}
-            </span>} />
-          <div className="px-4 py-3 flex flex-wrap items-center gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
-            <SearchInput className="w-52" value={regQ} onChange={(v) => { setRegQ(v); setRegPage(1); }}
-              placeholder={t("admin.ltasks.regSearch")} />
-            <FilterPanel sections={regSections} />
-          </div>
-          {isLoading ? (
-            <SkeletonTable rows={8} cols={5} />
-          ) : regShown.length === 0 ? (
-            <div className="py-10 text-center">
-              <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.ltasks.regNone")}</p>
-              <Button variant="ghost" size="sm" className="mt-2"
-                onClick={() => { setRegQ(""); setRegLvl("all"); setRegFld("all"); setRegBad(false); setRegPage(1); }}>
-                {t("admin.ltasks.fClear")}
-              </Button>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "collapse", minWidth: 900 }}>
-                  <thead>
-                    <tr>
-                      {[t("admin.ltasks.regWhere"), t("admin.ltasks.task"), t("admin.ltasks.regRule"), t("admin.ltasks.regValue"), ""].map((h, i) => (
-                        <th key={i} className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap"
-                          style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {regPageRows.map((r, i) => {
-                      const prev = regPageRows[i - 1];
-                      const head = !prev || prev.shift !== r.shift;
-                      const td2 = taskById.get(r.tid);
-                      const units = unitsOf(r.shift);
-                      return (
-                        <Fragment key={r.key}>
-                          {head && (
-                            <tr>
-                              <td colSpan={5} className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide"
-                                style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-                                {t("admin.ltasks.regGroup").replace("{s}", r.shift || "—")
-                                  .replace("{u}", units.length)
-                                  .replace("{l}", units.reduce((a, m) => a + (m.leaders_n || 0), 0))}
-                              </td>
-                            </tr>
-                          )}
-                          <tr style={{ borderTop: "1px solid var(--border)" }}>
-                            <td className="px-3 py-2 align-top">
-                              <span className="inline-flex items-center gap-1.5">
-                                <span className="px-1.5 py-px rounded-full text-[10px] font-bold"
-                                  style={r.lvl === "shift"
-                                    ? { background: "rgba(59,130,246,0.16)", color: "var(--text-1)", border: "1px solid rgba(59,130,246,0.45)" }
-                                    : r.lvl === "unit"
-                                      ? { background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }
-                                      : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" }}>
-                                  {t(`admin.ltasks.regLvl.${r.lvl}`)}
-                                </span>
-                                <b className="truncate">{r.who}</b>
-                              </span>
-                              <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{r.sub}</div>
-                            </td>
-                            <td className="px-3 py-2 align-top">
-                              <span className="tabular-nums mr-1" style={{ color: "var(--text-4)" }}>{r.tid}</span>
-                              {clip(tname(td2), 30)}
-                            </td>
-                            <td className="px-3 py-2 align-top" style={{ color: "var(--text-2)" }}>{t(`admin.ltasks.col.${r.f}`)}</td>
-                            <td className="px-3 py-2 align-top">
-                              {/* Every status here wears its hue on a chip and
-                                  its words in `--text-1`: #eab308 as 11px text
-                                  is 1.92:1 on the light card, i.e. the reader
-                                  guesses. The ⚠ and the words carry the state
-                                  on their own, so it survives greyscale too. */}
-                              <span className="inline-flex items-center gap-1.5 flex-wrap">
-                                {r.drift && (
-                                  <span className="px-1.5 py-px rounded-full text-[10px] font-bold"
-                                    style={{ background: "rgba(234,179,8,0.16)", color: "var(--text-1)", border: "1px solid rgba(234,179,8,0.45)" }}>
-                                    {t("admin.ltasks.regDrift")}
-                                  </span>
-                                )}
-                                {(!r.drift || r.bad) && (
-                                  <span className="font-semibold px-1 rounded"
-                                    style={r.bad
-                                      ? { color: "var(--text-1)", background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.40)" }
-                                      : { color: "var(--text-1)" }}>
-                                    {r.v}{r.bad ? " ⚠" : ""}
-                                  </span>
-                                )}
-                              </span>
-                              <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>← {r.pl}: {r.p}</div>
-                              {r.carriers != null && r.carriers < r.total && (
-                                <div className="text-[11px] mt-0.5 inline-block px-1 rounded"
-                                  style={{ color: "var(--text-1)", background: "rgba(234,179,8,0.16)", border: "1px solid rgba(234,179,8,0.45)" }}>
-                                  {t("admin.ltasks.regCarriers").replace("{c}", r.carriers).replace("{n}", r.total)}
-                                </div>
-                              )}
-                              {r.bad && r.hours && (
-                                <div className="text-[11px] mt-0.5 inline-block px-1 rounded"
-                                  style={{ color: "var(--text-1)", background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.40)" }}>
-                                  {t("admin.ltasks.regBadHours").replace("{s}", r.shift).replace("{hours}", r.hours.join("–"))}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 align-top text-right">
-                              <Button size="sm" variant="ghost" onClick={() => openFromRegister(r)}>{t("admin.ltasks.regOpen")}</Button>
-                            </td>
-                          </tr>
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="px-4 pb-3">
-                <Pagination page={Math.min(regPage, regPages)} pageCount={regPages} total={regShown.length}
-                  pageSize={REG_PAGE} onPage={setRegPage} />
-              </div>
-            </>
-          )}
-        </div>
-      )}
 
+                  {/* Marks. Red counts the windows nobody can work, brand
+                      counts what somebody chose, and the quiet one is only
+                      honest at Standart — one level down «hamma bir xil» would
+                      be a claim about a scope the reader is not looking at. */}
+                  {(nBad > 0 || nExc > 0 || level.kind === "std") && (
+                    <div className="mt-1.5 ml-9 flex flex-wrap gap-1.5">
+                      {nBad > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 h-[22px] rounded-full text-[11px] font-semibold"
+                          style={{ background: "rgba(239,68,68,0.12)", color: "var(--text-1)", border: "1px solid rgba(239,68,68,0.35)" }}>
+                          <AlertTriangle size={11} color={C_BAD} />
+                          {t("admin.ltasks.badWins").replace("{n}", nBad)}
+                        </span>
+                      )}
+                      {nExc > 0 && (
+                        <span className="inline-flex items-center px-2 h-[22px] rounded-full text-[11px] font-semibold"
+                          style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}>
+                          {t("admin.ltasks.excCount").replace("{n}", nExc)}
+                        </span>
+                      )}
+                      {nBad === 0 && nExc === 0 && level.kind === "std" && (
+                        <span className="inline-flex items-center px-2 h-[22px] rounded-full text-[11px] font-medium"
+                          style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
+                          {t("admin.ltasks.allSame")}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+
+                {/* ── expanded: what the leader reads, then the exceptions ── */}
+                {/* A sibling of the row button, never a child of it: an
+                    exception carries its own «Ochish» and nested interactive
+                    elements inside a <button> are unreachable by keyboard. */}
+                {isOpen && (
+                  <div id={`ltask-body-${td.id}`} className="px-4 pb-4 -mt-1">
+                    <div className="ml-9 pl-3.5" style={{ borderLeft: "2px solid var(--border-md)" }}>
+                      <p className="text-[12.5px] leading-relaxed mb-2" style={{ color: "var(--text-3)" }}>
+                        <b style={{ color: "var(--text-2)" }}>{t("admin.ltasks.groupLeader")}:</b>{" "}
+                        {r.description || r.criteria || t("admin.ltasks.empty")}
+                      </p>
+
+                      {rows.length === 0 ? (
+                        <p className="text-[12px] py-1" style={{ color: "var(--text-4)" }}>
+                          {t("admin.ltasks.noExcHere")}
+                        </p>
+                      ) : rows.map((x, k) => (
+                        <div key={x.key}
+                          className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 py-1.5 text-[12.5px]"
+                          style={{ borderTop: k ? "1px solid var(--border)" : "none" }}>
+                          <span className="w-full sm:w-[200px] sm:flex-shrink-0 min-w-0">
+                            <span className="font-medium" style={{ color: "var(--text-1)" }}>{x.who}</span>
+                            <span className="block text-[11px]" style={{ color: "var(--text-4)" }}>{x.sub}</span>
+                          </span>
+                          <span className="w-[104px] flex-shrink-0" style={{ color: "var(--text-3)" }}>
+                            {t(`admin.ltasks.col.${x.f}`)}
+                          </span>
+                          <span className="min-w-0">
+                            {x.drift && (
+                              <span className="mr-1.5 px-1.5 py-px rounded-full text-[10px] font-bold align-middle"
+                                style={{ background: "rgba(234,179,8,0.16)", color: "var(--text-1)", border: "1px solid rgba(234,179,8,0.45)" }}>
+                                {t("admin.ltasks.regDrift")}
+                              </span>
+                            )}
+                            <span className="font-semibold px-1 rounded"
+                              style={x.bad
+                                ? { color: "var(--text-1)", background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.40)" }
+                                : { color: "var(--text-1)" }}>
+                              {x.v}
+                              {x.bad && <AlertTriangle size={11} color={C_BAD} className="inline-block ml-1 -mt-px" aria-hidden="true" />}
+                            </span>
+                            <span className="ml-1.5 text-[11.5px]" style={{ color: "var(--text-4)" }}>
+                              ← {x.pl}: {x.p}
+                            </span>
+                            {x.carriers != null && x.carriers < x.total && (
+                              <span className="ml-1.5 px-1 rounded text-[11px] align-middle"
+                                style={{ color: "var(--text-1)", background: "rgba(234,179,8,0.16)", border: "1px solid rgba(234,179,8,0.45)" }}>
+                                {t("admin.ltasks.regCarriers").replace("{c}", x.carriers).replace("{n}", x.total)}
+                              </span>
+                            )}
+                            {x.bad && x.hours && (
+                              <span className="ml-1.5 px-1 rounded text-[11px] align-middle"
+                                style={{ color: "var(--text-1)", background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.40)" }}>
+                                {t("admin.ltasks.regBadHours").replace("{s}", x.shift).replace("{hours}", (x.hours || []).join("–"))}
+                              </span>
+                            )}
+                          </span>
+                          <Button size="sm" variant="ghost" className="ml-auto flex-shrink-0"
+                            onClick={() => openException(x)}>{t("admin.ltasks.regOpen")}</Button>
+                        </div>
+                      ))}
+
+                      <div className="flex flex-wrap items-center gap-2 mt-3">
+                        <Button size="md" tint onClick={() => openEdit(td.id)}>
+                          {t("admin.ltasks.editRule")}
+                        </Button>
+                        {/* Keyed on whether a date is SET, not on whether it has
+                            arrived: clearing it is how a scheduled archive is
+                            called off. */}
+                        {archSet ? (
+                          <Button size="md" tint variant="secondary" icon={<ArchiveRestore size={13} />}
+                            onClick={() => askRestore(td)}>{t("admin.ltasks.archRestore")}</Button>
+                        ) : (
+                          <Button size="md" tint variant="danger" icon={<Archive size={13} />}
+                            onClick={() => setArch({ tid: td.id, from: floor })}>{t("admin.ltasks.archTitle")}</Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── footer strip: the two totals, and the two rare list actions ── */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 rounded-b-2xl text-xs"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+          <span className="inline-flex items-center gap-1.5">
+            {t("admin.ltasks.sumRow")}{" "}
+            {levelSum === 100
+              ? <b className="tabular-nums" style={{ color: "var(--text-1)" }}>100%</b>
+              : warnBadge(levelSum)}
+          </span>
+          <span>{excN ? t("admin.ltasks.excTotal").replace("{n}", excN) : t("admin.ltasks.excNone")}</span>
+          {offSums > 0 && level.kind === "std" && (
+            <span>{t("admin.ltasks.sumsOff").replace("{n}", offSums)}</span>
+          )}
+          <span className="ml-auto flex flex-wrap gap-2">
+            {/* Every task that is not archived, a not-yet-open one INCLUDED:
+                `reorder_tasks` pushes whatever the caller leaves out to the
+                tail, so omitting a pending task would silently move it to the
+                end of a checklist nobody had reordered. */}
+            <Button size="md" variant="ghost" icon={<ListOrdered size={13} />}
+              onClick={() => setOrder({ ids: tasks.filter((x) => !isArchived(x, 1) || !isArchived(x, 2)).map((x) => x.id) })}>
+              {t("admin.ltasks.orderBtn")}
+            </Button>
+            <Button size="md" variant="ghost" icon={<Type size={13} />}
+              onClick={() => { setTxtErr(""); setShowTexts(true); }}>
+              {t("admin.ltasks.texts")}
+            </Button>
+          </span>
+        </div>
+      </div>
+
+      {/* ── the rarely-needed half, folded away ───────────────────────────── */}
+      {/* One-time setup, the archive and the per-unit switches: none of them is
+          read on an ordinary visit, and all three used to sit above the work. */}
+      <details className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <summary className="px-4 py-3 text-xs font-semibold cursor-pointer select-none" style={{ color: "var(--text-2)" }}>
+          {t("admin.ltasks.rare")}
+        </summary>
+        <div className="px-4 pb-4 pt-3.5 space-y-4" style={{ borderTop: "1px solid var(--border)" }}>
+          <FormField label={t("admin.ltasks.channel")} hint={t("admin.ltasks.channelHint")} error={chanErr || null}>
+            <div className="flex items-center gap-2 max-w-md">
+              <input value={chan} onChange={(e) => setChan(e.target.value)} placeholder="-100…" className={`${inputCls} flex-1`} style={inputStyle} />
+              <Button size="lg" variant="secondary" loading={chanMut.isPending} onClick={() => chanMut.mutate({ chat_id: chan })}>{t("admin.ltasks.save")}</Button>
+            </div>
+          </FormField>
+
+          <FormField label={t("admin.ltasks.archList").replace("{n}", archivedTasks.length)}
+            hint={t("admin.ltasks.archListHint")}>
+            {archivedTasks.length === 0 ? (
+              <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.ltasks.archNone")}</p>
+            ) : (
+              <div className="space-y-1">
+                {archivedTasks.map((td) => (
+                  <div key={td.id} className="flex items-center gap-2 text-xs">
+                    <span className="tabular-nums" style={{ color: "var(--text-4)" }}>{td.id}</span>
+                    <span className="truncate">{tname(td)}</span>
+                    <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{td.archived_from}</span>
+                    <Button size="sm" variant="ghost" className="ml-auto" icon={<ArchiveRestore size={13} />}
+                      onClick={() => askRestore(td)}>{t("admin.ltasks.archRestore")}</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </FormField>
+
+          {/* Per-unit filing. It belongs to a UNIT, so it opens for whichever
+              brigadir the scope names — never a second brigadir dropdown of its
+              own outside the filter panel. */}
+          {/* Gated on the PICK, never on `level.mid`: a shift level carries the
+              id of its first unit so the example-photo chain has somewhere to
+              resolve against, and opening THAT unit's switches because somebody
+              selected a shift would edit a brigadir nobody named. */}
+          <FormField label={t("admin.ltasks.unitSettings")}
+            hint={pickUv ? t("admin.ltasks.cellFromHint.off") : t("admin.ltasks.unitPickFirst")}>
+            {pickUv ? (
+              <Button size="lg" variant="secondary" icon={<Grid3x3 size={14} />}
+                onClick={() => {
+                  const m = mgrById.get(pickUv);
+                  setUnit({
+                    mid: pickUv, cell_from: m?.cell_from || "",
+                    per_task_close: !!m?.per_task_close, bot_from: m?.bot_from || "",
+                  });
+                }}>
+                {mgrLabel(pickUv)}
+              </Button>
+            ) : (
+              <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.ltasks.pickNone")}</p>
+            )}
+          </FormField>
+        </div>
+      </details>
       {/* ── THE rule editor — one modal, every level ───────────────────── */}
       {edit && editTask && (
         <Modal title={`${edit.tid} · ${tname(editTask)}`}
@@ -2256,6 +2240,9 @@ export default function LeaderTasksAdmin() {
 
           <p className="text-[11px] font-bold uppercase tracking-wider pt-1" style={{ color: "var(--text-3)" }}>
             {t("admin.ltasks.groupLeader")}
+          </p>
+          <p className="text-[11.5px] -mt-1.5" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltasks.groupLeaderHint")}
           </p>
           <FormField label={withMark(t("admin.ltasks.taskName"), ownPill("names"))}
             hint={isStd ? t("admin.ltasks.addNameHint") : t("admin.ltasks.supNameHint")}>
@@ -2288,36 +2275,37 @@ export default function LeaderTasksAdmin() {
                 options={[[true, t("admin.ltasks.vAsked")], [false, t("admin.ltasks.vNotAsked")]]} />
             </FormField>
           )}
+          {/* Isbot turi is the field that changes what the leader is asked to
+              DO, so it leads this group full-width instead of sharing a row
+              with two number boxes. */}
+          {isStd ? (
+            <FormField label={t("admin.ltasks.proofKind")}>
+              <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                {t("admin.ltasks.proofStdOnly")}
+              </p>
+            </FormField>
+          ) : (
+            <FormField label={withMark(t("admin.ltasks.proofKind"), ownPill("proof_kind"))}
+              hint={`${t(`admin.ltasks.proofHint.${edit.proof_kind === "camera" ? "camera" : "screenshot"}`)} ${
+                editLvl.kind === "shift" ? t("admin.ltasks.proofScope.units").replace("{n}", unitsOf(editLvl.shift).length)
+                  : editLvl.kind === "unit" ? t("admin.ltasks.proofScope.unit")
+                    : t("admin.ltasks.proofScope.leader")}`}>
+              <SegmentedToggle fill value={edit.proof_kind || "screenshot"}
+                onChange={(k) => setEdit((c) => ({ ...c, proof_kind: k }))}
+                options={[["screenshot", t("admin.ltasks.proofScreenshot")],
+                ["camera", t("admin.ltasks.proofCamera")]]} />
+            </FormField>
+          )}
           <div className="flex flex-wrap gap-3">
-            <div className="w-36">
-              {numField(withMark(t("admin.ltasks.weight"), ownPill("weight")), edit.weight,
-                (v) => setEdit((c) => ({ ...c, weight: v })), 100)}
-            </div>
             <div className="w-36">
               {isStd
                 ? readOnlyField(t("admin.ltasks.minMedia"), edit.min_media, t("admin.ltasks.stdReadOnly"))
                 : numField(withMark(t("admin.ltasks.minMedia"), ownPill("min_media")), edit.min_media,
                   (v) => setEdit((c) => ({ ...c, min_media: v })), 20)}
             </div>
-            <div className="flex-1 min-w-[210px]">
-              {isStd ? (
-                <FormField label={t("admin.ltasks.proofKind")}>
-                  <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-                    {t("admin.ltasks.proofStdOnly")}
-                  </p>
-                </FormField>
-              ) : (
-                <FormField label={withMark(t("admin.ltasks.proofKind"), ownPill("proof_kind"))}
-                  hint={`${t(`admin.ltasks.proofHint.${edit.proof_kind === "camera" ? "camera" : "screenshot"}`)} ${
-                    editLvl.kind === "shift" ? t("admin.ltasks.proofScope.units").replace("{n}", unitsOf(editLvl.shift).length)
-                      : editLvl.kind === "unit" ? t("admin.ltasks.proofScope.unit")
-                        : t("admin.ltasks.proofScope.leader")}`}>
-                  <SegmentedToggle fill value={edit.proof_kind || "screenshot"}
-                    onChange={(k) => setEdit((c) => ({ ...c, proof_kind: k }))}
-                    options={[["screenshot", t("admin.ltasks.proofScreenshot")],
-                    ["camera", t("admin.ltasks.proofCamera")]]} />
-                </FormField>
-              )}
+            <div className="w-36">
+              {numField(withMark(t("admin.ltasks.weight"), ownPill("weight")), edit.weight,
+                (v) => setEdit((c) => ({ ...c, weight: v })), 100)}
             </div>
           </div>
           {/* The one thing about a weight an admin cannot see: the AI deduction
@@ -2367,6 +2355,32 @@ export default function LeaderTasksAdmin() {
               </div>
             )}
           </FormField>
+
+          <div style={{ borderTop: "1px solid var(--border)" }} className="my-2" />
+          <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+            {t("admin.ltasks.groupAi")}
+          </p>
+          {/* The short SUBJECT of the photo. Global only: it answers "is this
+              picture about this task at all", which is a property of the task
+              and not of anybody's unit. */}
+          {isStd ? (
+            <FormField label={withMark(t("admin.ltasks.noteField"), stdPill)} hint={t("admin.ltasks.noteHint")}>
+              <LangTextInput hint={false} value={edit.note}
+                onChange={(l, v) => setEdit((c) => ({ ...c, note: { ...c.note, [l]: v } }))} />
+            </FormField>
+          ) : (
+            readOnlyField(t("admin.ltasks.noteField"),
+              editTask.note?.[lang] || editTask.note?.uz || t("admin.ltasks.empty"),
+              t("admin.ltasks.noteStdOnly"))
+          )}
+          <FormField label={withMark(t("admin.ltasks.criteria"), ownPill("criteria"))}
+            hint={t("admin.ltasks.criteriaHint")}>
+            <textarea rows={4} value={edit.criteria || ""}
+              onChange={(e) => setEdit((c) => ({ ...c, criteria: e.target.value }))}
+              placeholder={editInh?.criteria || t("admin.ltasks.criteriaPh")}
+              className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 84 }} />
+            {inheritLine("criteria", clip(editInh?.criteria, 60) || t("admin.ltasks.empty"))}
+          </FormField>
           <FormField label={withMark(t("admin.ltasks.dateCheck"),
             ownPill("date_check") || ownPill("time_check") || ownPill("day_check"))}
             hint={t(`admin.ltasks.dateHint.${dcMode(edit)}`)}>
@@ -2385,32 +2399,6 @@ export default function LeaderTasksAdmin() {
               {editInh?.deadline ? t("admin.ltasks.deadlineInherit").replace("{t}", editInh.deadline)
                 : t("admin.ltasks.deadlineDay")}
             </div>
-          </FormField>
-
-          <div style={{ borderTop: "1px solid var(--border)" }} className="my-2" />
-          <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-            {t("admin.ltasks.groupAi")}
-          </p>
-          {/* The short SUBJECT of the photo. Global only: it answers "is this
-              picture about this task at all", which is a property of the task
-              and not of anybody's unit. */}
-          {isStd ? (
-            <FormField label={t("admin.ltasks.noteField")} hint={t("admin.ltasks.noteHint")}>
-              <LangTextInput hint={false} value={edit.note}
-                onChange={(l, v) => setEdit((c) => ({ ...c, note: { ...c.note, [l]: v } }))} />
-            </FormField>
-          ) : (
-            readOnlyField(t("admin.ltasks.noteField"),
-              editTask.note?.[lang] || editTask.note?.uz || t("admin.ltasks.empty"),
-              t("admin.ltasks.noteStdOnly"))
-          )}
-          <FormField label={withMark(t("admin.ltasks.criteria"), ownPill("criteria"))}
-            hint={t("admin.ltasks.criteriaHint")}>
-            <textarea rows={4} value={edit.criteria || ""}
-              onChange={(e) => setEdit((c) => ({ ...c, criteria: e.target.value }))}
-              placeholder={editInh?.criteria || t("admin.ltasks.criteriaPh")}
-              className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 84 }} />
-            {inheritLine("criteria", clip(editInh?.criteria, 60) || t("admin.ltasks.empty"))}
           </FormField>
           <TaskExamples ids={editExR.ids} own={editExOwn} fromLabel={exFromLabel(editExR.level)}
             scopeNote={editExNote()} busy={exAddMut.isPending}
