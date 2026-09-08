@@ -90,6 +90,7 @@ const catName = (name, t) => {
 function StartSheet({ atMs, cell, date, t, onCancel, onStart }) {
   const [category, setCategory] = useState("");
   const [wants, setWants] = useState(true);
+  const [note, setNote] = useState("");
   const now = useNow(true);
 
   // Cat H has no not-stopped half anywhere in the system, so the answer is
@@ -114,17 +115,18 @@ function StartSheet({ atMs, cell, date, t, onCancel, onStart }) {
           <Button
             variant="primary"
             icon={<Play size={15} />}
-            disabled={!category}
-            onClick={() => onStart({ category, stopped })}
+            disabled={!category || !note.trim()}
+            onClick={() => onStart({ category, stopped, note })}
           >
             {t("idleCell.liveStart")}
           </Button>
         </>
       }
     >
-      {/* The stamped instant, and the count-up from it — so the operator can see
-          that the record already began and that thinking about the category is
-          not costing the cell its minutes. */}
+      {/* The stamped instant, and the count-up from it. This is what makes it
+          safe to ask for the whole answer HERE: the clock was taken by the
+          press, so the time spent picking a category and typing the reason is
+          inside the stop being recorded, not lost from it. */}
       <div
         className="rounded-xl px-3 py-2.5 flex items-baseline gap-2 flex-wrap"
         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
@@ -179,14 +181,34 @@ function StartSheet({ atMs, cell, date, t, onCancel, onStart }) {
           ]}
         />
       </FormField>
+
+      {/* Asked at the START (the operator's call). The cause is known when the
+          cell stops — that is the moment somebody is standing in front of it —
+          whereas at ■ the leader is restarting a line and typing is the last
+          thing they have hands for. It gates Boshlash because the register
+          refuses a record with no reason, so a stop begun without one could
+          never be filed at all. */}
+      <FormField label={t("idleCell.colNote")} required hint={t("idleCell.liveNoteHint")}>
+        <textarea
+          rows={3}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder={t("idleCell.notePlaceholder")}
+          className="w-full rounded-xl px-3 py-2 text-sm resize-y"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+        />
+      </FormField>
     </Modal>
   );
 }
 
 /* ------------------------------------------------------------ finish sheet */
 
-// The reason, and the last chance to correct the two clocks — which is what a
-// capped run needs, and the only thing that can rescue one.
+// The last chance to correct the two clocks — which is what a capped run needs
+// and the only thing that can rescue one — plus the reason, already written at
+// the start and shown here so it can be corrected rather than supplied. It
+// still gates Save: the register refuses an empty reason, so clearing the field
+// has to block, even though nothing arriving here is empty.
 function FinishSheet({ rec, cell, t, onClose, onSave, onResume, onDiscard }) {
   // Seeded ONCE. The parent keys this component on the record's id, so a new
   // record remounts it — and a background write to the store (another cell's
@@ -283,7 +305,7 @@ function FinishSheet({ rec, cell, t, onClose, onSave, onResume, onDiscard }) {
         <FormField
           label={t("idleCell.colNote")}
           required
-          hint={t("idleCell.liveNoteHint")}
+          hint={t("idleCell.liveNoteFixHint")}
         >
           <textarea
             rows={3}
@@ -640,7 +662,7 @@ export default function LiveOjidaniya({ cells, date, day, t, tl, toast, onToday 
         date={date}
         t={t}
         onCancel={() => setStarting(null)}
-        onStart={({ category, stopped }) => {
+        onStart={({ category, stopped, note }) => {
           startRun({
             atMs: starting.atMs,
             cellId: starting.cell.cell_id,
@@ -648,6 +670,7 @@ export default function LiveOjidaniya({ cells, date, day, t, tl, toast, onToday 
             date,
             category,
             stopped,
+            note,
           });
           setStarting(null);
         }}

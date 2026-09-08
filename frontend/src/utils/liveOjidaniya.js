@@ -128,15 +128,17 @@ const uid = () =>
 
 /**
  * Begin a stop. `atMs` is the instant of the PRESS, passed in by the caller so
- * the seconds the leader spends choosing a category belong to the stop rather
- * than being lost — the clock is stamped when they reach for the phone, not
- * when they finish answering.
+ * the seconds the leader spends answering belong to the stop rather than being
+ * lost — the clock is stamped when they reach for the phone, not when they
+ * finish typing. That is what makes it safe to ask for the category, the
+ * stopped/not-stopped answer AND the reason up front: none of it costs the
+ * record any of the time it is describing.
  *
  * `date` is the day the record is filed under, taken at the START. A stop that
  * runs from 23:50 to 00:20 therefore stays on the day it began, which is
  * exactly what the register's midnight rule (end <= start ⇒ next day) expects.
  */
-export function startRun({ atMs, cellId, cellCode, date, category, stopped }) {
+export function startRun({ atMs, cellId, cellCode, date, category, stopped, note }) {
   const at = tashkentAt(atMs);
   const rec = {
     id: uid(),
@@ -148,7 +150,10 @@ export function startRun({ atMs, cellId, cellCode, date, category, stopped }) {
     start: at.hhmm,
     startedAtMs: atMs,
     end: null,
-    note: "",
+    // Written at the START (the operator's call, 2026-09-08). The register
+    // refuses a record with no reason, so a run begun without one could never
+    // be filed — which is why the start sheet will not let one begin.
+    note: (note || "").trim(),
     capped: false,
     error: "",
   };
