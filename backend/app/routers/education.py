@@ -29,6 +29,7 @@ itself rather than relying on a hidden button.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from html import escape
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,6 +53,62 @@ PAGE = "education"
 # a few hundred; a cap that cannot be hit in normal use still stops a malformed
 # client turning one press into an unbounded fan-out of DMs.
 MAX_TARGETS = 600
+
+# How long a description excerpt may run inside the card. Long enough to say
+# what the lesson is about, short enough that the DM stays a nudge rather than
+# becoming the lesson — the page is where it gets read.
+EXCERPT_MAX = 180
+
+# The rich DM card, per language. Backend strings live in the module (there is
+# no server-side t()), the same shape as the ojidaniya card's own table.
+_CARD_L = {
+    "uz": {
+        "title": "Yangi video dars",
+        "intro_who": "<b>{who}</b> sizga yangi video dars qo'shdi:",
+        "intro": "Sizga yangi video dars biriktirildi:",
+        "src": "Manba",
+        "hint": "Ko'rish uchun quyidagi tugmani bosing.",
+    },
+    "uz_cyrl": {
+        "title": "Янги видео дарс",
+        "intro_who": "<b>{who}</b> сизга янги видео дарс қўшди:",
+        "intro": "Сизга янги видео дарс бириктирилди:",
+        "src": "Манба",
+        "hint": "Кўриш учун қуйидаги тугмани босинг.",
+    },
+    "ru": {
+        "title": "Новый видеоурок",
+        "intro_who": "<b>{who}</b> добавил(а) для вас новый видеоурок:",
+        "intro": "Вам назначен новый видеоурок:",
+        "src": "Источник",
+        "hint": "Нажмите кнопку ниже, чтобы посмотреть.",
+    },
+    "en": {
+        "title": "New video lesson",
+        "intro_who": "<b>{who}</b> added a new video lesson for you:",
+        "intro": "A new video lesson has been assigned to you:",
+        "src": "Source",
+        "hint": "Press the button below to watch it.",
+    },
+}
+
+
+def excerpt(text: Optional[str], limit: int = EXCERPT_MAX) -> str:
+    """A one-paragraph taste of the description for the card and the bell row.
+
+    Cuts on a WORD boundary — a card that stops mid-word reads as broken rather
+    than as abbreviated — and collapses the newlines the classic Telegram
+    serializer emits, because a card is not the place to reproduce the lesson's
+    own line breaks. Returns "" for nothing, which is what makes the row it
+    fills drop out whole instead of leaving a dangling label.
+    """
+    flat = " ".join((text or "").split())
+    if len(flat) <= limit:
+        return flat
+    cut = flat[:limit]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > limit * 0.6 else cut).rstrip(" ,.;:—-") + "…"
+
 
 # The DM's one button, per language. A backend string lives in the module (there
 # is no server-side t()) — same shape as the ojidaniya card's own label table.
@@ -300,13 +357,48 @@ def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str],
             web_app=types.WebAppInfo(url=url)))
         return kb
 
-    params = {"title": lesson.title, "author": lesson.created_by_name or ""}
+    who = lesson.created_by_name or ""
+    snippet = excerpt(lesson.description_text)
+    params = {
+        "title": lesson.title,
+        "author": who,
+        "provider": education_video.label(lesson.provider),
+        "excerpt": snippet,
+    }
+
+    def rich_fn(lang: str) -> str:
+        """The card. Tried FIRST by notify_profile and degrading to the classic
+        HTML DM (the `_NOTIF_TG_ICON` promotion of the bell row) when the client
+        or the API refuses it — so a recipient on an old Telegram is never worse
+        off than before this existed.
+
+        Everything interpolated is admin-typed free text, so every value is
+        escaped: a lesson titled with an ampersand must not break the card, and
+        a title field is not a place to inject markup."""
+        c = _CARD_L.get(lang) or _CARD_L["uz"]
+        intro = (c["intro_who"].format(who=escape(who)) if who else c["intro"])
+        parts = [
+            f"<h4>\U0001F393 {escape(c['title'])}</h4>",
+            f"<p>{intro}</p>",
+            # The lesson's NAME is the one thing the reader must come away with,
+            # so it is the only thing in a quote block.
+            f"<blockquote><b>{escape(lesson.title)}</b></blockquote>",
+        ]
+        if snippet:
+            parts.append(f"<p>\U0001F4DD {escape(snippet)}</p>")
+        parts.append(
+            f"<p>\u25B6\uFE0F <b>{escape(c['src'])}:</b> "
+            f"{escape(education_video.label(lesson.provider))}</p>")
+        parts.append(f"<p><i>{escape(c['hint'])}</i></p>")
+        return "".join(parts)
+
     dmed: set[int] = set()
     for key in keys:
         try:
             dmed |= notify_profile(db, key, "education_lesson_new", params,
                                    type="info", exclude_account=actor,
-                                   skip_accounts=dmed, markup_fn=markup_fn)
+                                   skip_accounts=dmed, markup_fn=markup_fn,
+                                   rich_fn=rich_fn)
         except Exception:
             # One unreachable profile must never cost the rest of the class its
             # notification — the lesson is already published either way.

@@ -30,6 +30,15 @@ from urllib.parse import parse_qs, urlparse
 # CSP's frame-src in main.py, and there is no way round that.
 PROVIDERS = ("youtube", "loom", "vimeo")
 
+# How a provider is NAMED to a person — on a notification card, in a log line.
+# Here rather than at a call site because the frontend already carries its own
+# copy for the card badge, and a third spelling is one too many.
+LABELS = {"youtube": "YouTube", "loom": "Loom", "vimeo": "Vimeo"}
+
+
+def label(provider: str) -> str:
+    return LABELS.get(provider, provider or "")
+
 _YT_ID = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
 _NUM_ID = re.compile(r"^\d{6,12}$")
 _LOOM_ID = re.compile(r"^[A-Za-z0-9]{16,64}$")

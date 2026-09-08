@@ -155,10 +155,26 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # Addressed to the PROFILE, so a lesson assigned to a post reaches whoever
     # holds it and waits in the bell for a post nobody has claimed yet.
     "education_lesson_new": {
-        "uz": ("Yangi video dars", "«{title}» | Sizga yangi dars biriktirildi"),
-        "uz_cyrl": ("Янги видео дарс", "«{title}» | Сизга янги дарс бириктирилди"),
-        "ru": ("Новый видеоурок", "«{title}» | Вам назначен новый урок"),
-        "en": ("New video lesson", "«{title}» | A new lesson has been assigned to you"),
+        "uz": ("Yangi video dars",
+               "🎓 Dars: {title}\n"
+               "👤 Qo'shdi: {author}\n"
+               "▶️ Manba: {provider}\n"
+               "«{excerpt}»"),
+        "uz_cyrl": ("Янги видео дарс",
+                    "🎓 Дарс: {title}\n"
+                    "👤 Қўшди: {author}\n"
+                    "▶️ Манба: {provider}\n"
+                    "«{excerpt}»"),
+        "ru": ("Новый видеоурок",
+               "🎓 Урок: {title}\n"
+               "👤 Добавил(а): {author}\n"
+               "▶️ Источник: {provider}\n"
+               "«{excerpt}»"),
+        "en": ("New video lesson",
+               "🎓 Lesson: {title}\n"
+               "👤 Added by: {author}\n"
+               "▶️ Source: {provider}\n"
+               "«{excerpt}»"),
     },
     "day_closed": {
         "uz": ("Kun yopildi", "Sana: {date} | Yopdi: {closer_name}"),
@@ -796,6 +812,7 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
 # other. Reach for _NOTIF_TG_HTML instead only when the DM must say something
 # the bell does not (a greeting, an advisory paragraph, a premium emoji).
 _NOTIF_TG_ICON = {
+    "education_lesson_new": "🎓",
     "concern_created": "🔔",
     "concern_assigned": "📌",
     "concern_moved": "🔀",
