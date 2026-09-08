@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronDown,
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
-  Download, CheckCircle, Lock, Unlock, Undo2, Redo2,
+  Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -921,6 +921,15 @@ export default function Production() {
   const [wcEdit, setWcEdit] = useState(null);      // staffing card being edited, or null
   const [wcDraft, setWcDraft] = useState({ people: "", shtatka: "" }); // "" = follow the formula
   const stripRef = useRef(null);                   // revealed action strip → scroll into view
+  // Bulk edit: the SELECTION is the scope (the ShiftTimes / Factories model),
+  // never the filter. Filters narrow to a Команда, but the rows an operator
+  // needs to leave alone are exactly the ones a filter cannot express — so a
+  // tick SURVIVES a filter change, and the bar states how many picks the
+  // current filter is hiding rather than letting «12 selected» stand silently
+  // over 3 rows on screen. In memory only: a selection restored from storage
+  // would aim a bulk at rows nobody can see.
+  const [catPick, setCatPick] = useState([]);      // picked PPProduct ids
+  const [bulkDraft, setBulkDraft] = useState(null); // { work_center, labor_time } or null
 
   // Supervisors are pinned to their own unit (the backend derives it from the
   // JWT). Everyone above them picks a configured brigadir: shift-managers within
@@ -1109,6 +1118,9 @@ export default function Production() {
     const hiddenSet = new Set(colCfg.hidden);
     return colCfg.order.map((k) => COLS.find((c) => c.key === k)).filter((c) => c && !hiddenSet.has(c.key));
   }, [colCfg]);
+  // Every colSpan on this table counts the pick column too, or the skeleton, the
+  // empty row and the action strip each stop one cell short of the header.
+  const colCount = visibleCols.length + (canEditCatalog ? 1 : 0);
 
   const override = useMutation({
     mutationFn: (body) => api.post("/api/production/override", body, { params: managerParam }),
@@ -1175,6 +1187,22 @@ export default function Production() {
       setConfirmDel(null);
       setCatSel(null);
     },
+  });
+
+  // Change the same field on every picked line at once. ONE call, ONE
+  // transaction, ONE action-log row — see admin_bulk_update_catalog for why the
+  // identity carry has to run over the whole batch rather than row by row.
+  const bulkCatalog = useMutation({
+    mutationFn: (body) => api.put("/admin/production/catalog/bulk", body),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      qc.invalidateQueries({ queryKey: ["production-dates"] });
+      const n = res?.data?.updated ?? 0;
+      setBulkDraft(null);
+      setCatPick([]);
+      toast.success(t("production.bulk.done").replace("{n}", String(n)));
+    },
+    onError: (e) => toast.error(writeErr(e)),
   });
 
   // ── undo / redo over the day's writes ─────────────────────────────────────
@@ -1330,6 +1358,49 @@ export default function Production() {
     }
     return out;
   }, [rows, search, wcSel, sort]);
+
+  // ── bulk selection over the catalog ───────────────────────────────────────
+  const pickSet = useMemo(() => new Set(catPick), [catPick]);
+  // Only a row with an id is a CATALOG line — an unknown SKU the SAP file
+  // carries has no PPProduct behind it, so there is nothing to edit and it
+  // never offers a checkbox.
+  const pickableIds = useMemo(
+    () => viewRows.filter((r) => r.id != null).map((r) => r.id), [viewRows]);
+  const pickHidden = useMemo(() => {
+    const vis = new Set(pickableIds);
+    return catPick.filter((id) => !vis.has(id)).length;
+  }, [catPick, pickableIds]);
+  const allPicked = pickableIds.length > 0 && pickableIds.every((id) => pickSet.has(id));
+  const togglePick = (id) =>
+    setCatPick((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  // «Select all» adds the visible rows and unticking removes only those, rather
+  // than replacing the whole selection: picks the filter is hiding belong to the
+  // operator who made them, and a header checkbox must not throw them away.
+  const toggleAllVisible = (on) =>
+    setCatPick((sel) => (on
+      ? Array.from(new Set([...sel, ...pickableIds]))
+      : sel.filter((id) => !pickableIds.includes(id))));
+  // The catalog belongs to ONE brigadir, so a pick cannot outlive a unit switch:
+  // the backend refuses a mixed-unit batch, and a selection carried across would
+  // otherwise aim at rows that are no longer on screen.
+  useEffect(() => { setCatPick([]); setBulkDraft(null); }, [managerParam.manager_id]);
+  const openBulk = () => setBulkDraft({ work_center: "", labor_time: "" });
+  const bulkWc = (bulkDraft?.work_center ?? "").trim();
+  const bulkLaborRaw = String(bulkDraft?.labor_time ?? "").trim();
+  const bulkLabor = bulkLaborRaw === "" ? null : Number(bulkLaborRaw.replace(",", "."));
+  const bulkLaborBad = bulkLaborRaw !== "" && !(Number.isFinite(bulkLabor) && bulkLabor >= 0);
+  // A blank field means "leave every row alone", so a form with both blank has
+  // nothing to say — the primary action stays disabled rather than sending a
+  // call the backend answers 400 to.
+  const canSaveBulk = !!bulkDraft && catPick.length > 0 && !bulkLaborBad
+    && (bulkWc !== "" || bulkLabor != null);
+  const saveBulk = () => {
+    if (!canSaveBulk) return;
+    const body = { ids: catPick };
+    if (bulkWc) body.work_center = bulkWc;
+    if (bulkLabor != null) body.labor_time = bulkLabor;
+    bulkCatalog.mutate(body);
+  };
 
   // Consolidated filter button (the shared <FilterPanel> used on other tables):
   // a single Команда multi-select section. The free-text search lives in its own
@@ -2048,6 +2119,24 @@ export default function Production() {
       >
             <thead>
               <tr>
+                {/* The pick column is NOT in the ColumnsPicker: it is a control,
+                    not one of the day's facts, so it can never be hidden away
+                    from the bar that acts on it. */}
+                {canEditCatalog && (
+                  <Th
+                    cls="w-9"
+                    label={
+                      <input
+                        type="checkbox"
+                        checked={allPicked}
+                        disabled={pickableIds.length === 0}
+                        onChange={(e) => toggleAllVisible(e.target.checked)}
+                        aria-label={t("common.selectAll")}
+                        style={{ accentColor: "var(--brand)" }}
+                      />
+                    }
+                  />
+                )}
                 {visibleCols.map((c) => (
                   <Th key={c.key} label={t(c.labelKey)} k={c.key} sort={sort} onSort={toggleSort}
                     align={c.align} hint={c.hintKey ? t(c.hintKey) : undefined} />
@@ -2057,13 +2146,13 @@ export default function Production() {
             <tbody>
               {loading && Array.from({ length: 8 }).map((_, i) => (
                 <tr key={`sk-${i}`}>
-                  {visibleCols.map((c, j) => (
+                  {Array.from({ length: colCount }).map((_c, j) => (
                     <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))}
               {!loading && viewRows.length === 0 && (
-                <tr><td colSpan={visibleCols.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                <tr><td colSpan={colCount} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
                   {rows.length === 0 ? t("production.noDataForDate") : t("production.noMatch")}
                 </td></tr>
               )}
@@ -2072,6 +2161,7 @@ export default function Production() {
                 const wc = wcColor(r.work_center);
                 const selectable = canEditCatalog && r.id != null;
                 const selected = selectable && catSel === r.id;
+                const picked = selectable && pickSet.has(r.id);
                 return (
                   <Fragment key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`}>
                   <tr
@@ -2079,14 +2169,28 @@ export default function Production() {
                     className="transition-colors"
                     style={{
                       borderLeft: `2px solid ${r.has_labor ? "transparent" : AMBER}`,
-                      background: selected ? "var(--bg-inner)" : undefined,
+                      background: selected ? "var(--bg-inner)" : picked ? "var(--brand-bg)" : undefined,
                       cursor: selectable ? "pointer" : undefined,
                     }}>
+                    {canEditCatalog && (
+                      <td className="px-3 py-2">
+                        {r.id != null && (
+                          <input
+                            type="checkbox"
+                            checked={picked}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => togglePick(r.id)}
+                            aria-label={r.sap_code || r.name || String(r.id)}
+                            style={{ accentColor: "var(--brand)" }}
+                          />
+                        )}
+                      </td>
+                    )}
                     {visibleCols.map((c) => posCell(c.key, r, vyp, wc, i))}
                   </tr>
                   {selected && (
                     <tr ref={stripRef} style={{ background: "var(--bg-inner)" }}>
-                      <td colSpan={visibleCols.length} className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <td colSpan={colCount} className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-wrap items-center gap-2">
                           <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
                           <ActionBtn icon={Trash2} label={t("production.deleteRow")} color="#ef4444" onClick={() => setConfirmDel(r)} />
@@ -2099,6 +2203,91 @@ export default function Production() {
               })}
             </tbody>
       </TableCard>
+
+      {/* Bulk bar — a LAYER over the page, never a row inside the table: it has
+          to stay reachable while the operator scrolls the catalog picking rows. */}
+      {canEditCatalog && catPick.length > 0 && (
+        <div
+          className="flex items-center gap-2 flex-wrap px-3 py-2.5 rounded-t-2xl"
+          style={{
+            position: "sticky",
+            bottom: 0,
+            zIndex: 20,
+            background: "var(--bg-card)",
+            borderTop: "1px solid var(--border-md)",
+            boxShadow: "0 -8px 24px rgba(0,0,0,0.18)",
+            paddingBottom: "calc(0.625rem + var(--tg-safe-bottom, 0px))",
+          }}
+        >
+          <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
+            {t("production.bulk.selected").replace("{n}", String(catPick.length))}
+          </span>
+          {pickHidden > 0 && (
+            <span className="text-[11px] leading-snug" style={{ color: "#eab308" }}>
+              {t("production.bulk.hidden").replace("{n}", String(pickHidden))}
+            </span>
+          )}
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            <Button size="lg" icon={<Pencil size={14} />} onClick={openBulk}>
+              {t("production.bulk.edit").replace("{n}", String(catPick.length))}
+            </Button>
+            <Button size="lg" variant="ghost" onClick={() => setCatPick([])}
+                    title={t("filter.clear")} aria-label={t("filter.clear")}
+                    icon={<X size={14} />} />
+          </div>
+        </div>
+      )}
+
+      {/* bulk catalog edit (admin) — one value onto every picked line */}
+      {bulkDraft && (
+        <Modal
+          onClose={() => setBulkDraft(null)}
+          title={t("production.bulk.title")}
+          subtitle={t("production.bulk.scope").replace("{n}", String(catPick.length))}
+          icon={<Layers size={16} style={{ color: "var(--brand-text)" }} />}
+          dismissable={!bulkCatalog.isPending}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setBulkDraft(null)}>
+                {t("production.cancelEdit")}
+              </Button>
+              <Button icon={<Save size={14} />} loading={bulkCatalog.isPending}
+                      disabled={!canSaveBulk} onClick={saveBulk}>
+                {t("production.bulk.apply").replace("{n}", String(catPick.length))}
+              </Button>
+            </>
+          }
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t("production.col.wc")} hint={t("production.bulk.blankKeeps")}>
+              <ModalInput
+                value={bulkDraft.work_center}
+                onChange={(v) => setBulkDraft((d) => ({ ...d, work_center: v }))}
+                placeholder={t("production.bulk.unchanged")}
+                className="font-mono"
+              />
+            </Field>
+            <Field
+              label={t("production.col.labor")}
+              hint={t("production.bulk.blankKeeps")}
+              error={bulkLaborBad ? t("production.bulk.laborBad") : undefined}
+            >
+              <ModalInput
+                type="text"
+                value={bulkDraft.labor_time}
+                onChange={(v) => setBulkDraft((d) => ({ ...d, labor_time: v }))}
+                placeholder={t("production.bulk.unchanged")}
+                className="tabular-nums"
+              />
+            </Field>
+          </div>
+          {/* SAP код and Наименование are missing on purpose, and the reader is
+              told why rather than left to wonder where they went. */}
+          <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+            {t("production.bulk.hint")}
+          </p>
+        </Modal>
+      )}
 
       {/* staffing pin (admin) — O.soni / штатка for ONE work center on ONE date */}
       {wcEdit && (

@@ -2990,6 +2990,39 @@ so this was ~15% of the catalog, not an edge case.
     line's own number wins; a value it does not carry blanks nothing.
   - The count rides the action log as `carried_values`, so «why did this number
     move» is answerable from «Jurnal» rather than from memory.
+- **Several positions are edited at once from the «Позиции» table itself** —
+  checkbox column → sticky bulk bar → one modal, `PUT
+  /admin/production/catalog/bulk` (admin only, `_CATALOG_BULK_MAX` 500).
+  - **Exactly two fields: Команда and Трудоемкость.** They are the only ones
+    that can mean the same thing on many rows. **SAP code and name are
+    deliberately absent** — each identifies ONE line, so setting them on twenty
+    rows only produces twenty lines the register cannot tell apart — and `op` is
+    out for a subtler reason: on the single-row form a blank box CLEARS the фаза
+    pin, while here blank has to mean «leave every row alone», so one control
+    would carry two opposite meanings on two screens. A blank field changes
+    nothing on any row, and the modal says so under each control.
+  - **The SELECTION is the scope, never the filter** (the `ShiftTimes` /
+    `Factories` model). A tick survives a filter change — the rows an operator
+    must leave alone are exactly the ones a filter cannot express — so the bar
+    states how many picks the current filter HIDES rather than letting «12
+    selected» stand over 3 rows on screen. «Select all» unions the visible rows
+    and unticking removes only those: a header checkbox must not throw away
+    picks made under another filter. Kept in memory, and cleared when the
+    brigadir changes — the catalog belongs to one unit, the endpoint refuses a
+    mixed-unit batch, and a pick carried across would aim at rows nobody can
+    see.
+  - **The identity carry runs ONCE over the whole batch**, not per row.
+    `line_keys` ranks its `#n` suffix over the whole catalog, so row two's
+    identity depends on what row one just became and only a single
+    before/after pass sees the finished shape — it is also what makes two lines
+    SWAPPING Команда safe.
+  - A row with no `id` (an unknown SKU the SAP file carries, with no PPProduct
+    behind it) offers no checkbox: there is nothing to edit. The pick column is
+    NOT in the `ColumnsPicker` — it is a control, not one of the day's facts, so
+    it can never be hidden away from the bar that acts on it, and every
+    `colSpan` on that table counts it (`colCount`).
+  - Bulk DELETE was deliberately not built: the operator asked to change rows,
+    and deleting catalog lines has no undo.
 - **`pp_calc.line_minutes` is the second reader and exists so the rule has ONE
   spelling.** `/zagruzka-cell` sums **Σ over lines of labor·qty**, never
   (Σ labor)×one quantity — two operations may now carry two quantities, so the

@@ -273,6 +273,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/admin/production/upload",                  "shopfloor", "production.phase_uploaded"),
     (("POST",),   "/admin/production/catalog/import",          "shopfloor", "production.catalog_imported"),
     (("POST",),   "/admin/production/catalog",                 "shopfloor", "production.catalog_created"),
+    (("PUT",),    "/admin/production/catalog/bulk",            "shopfloor", "production.catalog_bulk_edited"),
     (("PUT",),    "/admin/production/catalog/{}",              "shopfloor", "production.catalog_edited"),
     (("DELETE",), "/admin/production/catalog/{}",              "shopfloor", "production.catalog_deleted"),
     (("PUT",),    "/admin/production/work-centers/{}",         "shopfloor", "production.work_center_edited"),

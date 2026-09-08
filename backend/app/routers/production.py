@@ -18,6 +18,7 @@ Admin-only:
     GET    /admin/production/catalog?manager_id=
     POST   /admin/production/catalog            {manager_id, sap_code, name, work_center, labor_time}
     PUT    /admin/production/catalog/{id}       {labor_time, name, sap_code, work_center, active}
+    PUT    /admin/production/catalog/bulk        {ids, work_center, labor_time}
     DELETE /admin/production/catalog/{id}
 """
 from __future__ import annotations
@@ -1797,6 +1798,20 @@ def admin_create_catalog(body: CatalogCreateBody,
     return {"ok": True, "id": p.id}
 
 
+def _catalog_snapshot(db, mid: int) -> list[dict]:
+    """Every catalog line of one unit as plain dicts, for the identity pass.
+
+    Plain dicts and not ORM rows on purpose: the caller reads this BEFORE it
+    mutates, and the edited row is the very same session object, so anything
+    lazy would come back already carrying the new values. Active or not — see
+    _catalog_ids.
+    """
+    return [{"id": q.id, "sap_code": q.sap_code, "name": q.name,
+             "work_center": q.work_center, "labor_time": q.labor_time,
+             "sort_order": q.sort_order}
+            for q in db.query(PPProduct).filter(PPProduct.manager_id == mid).all()]
+
+
 def _catalog_ids(prods: list[dict]) -> dict:
     """{product id: (qty_key, work centre, line_key)} — the full stored identity
     of every catalog line of one unit, exactly as pp_daily and pp_line_daily key
@@ -1967,11 +1982,7 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     # unreadable the moment they move — snapshot it here, carry the values onto
     # the new identity below (_carry_manual_quantities). `op` and `active` are
     # not part of any key, so an edit touching only those costs nothing.
-    before = ([{"id": q.id, "sap_code": q.sap_code, "name": q.name,
-                "work_center": q.work_center, "labor_time": q.labor_time,
-                "sort_order": q.sort_order}
-               for q in db.query(PPProduct).filter(
-                   PPProduct.manager_id == p.manager_id).all()]
+    before = (_catalog_snapshot(db, p.manager_id)
               if any(v is not None for v in (body.labor_time, body.name,
                                              body.sap_code, body.work_center))
               else None)
@@ -2021,6 +2032,101 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         changes=[(k, was[k], now[k]) for k in now if was[k] != now[k]],
     )
     return {"ok": True, "carried": carried}
+
+
+# One press must not be able to re-file a whole unit by accident, and a batch is
+# applied in ONE transaction, so it is bounded. A unit's catalog runs to a few
+# hundred lines, so this is a guard against a mis-built request, not a limit an
+# operator can reach by selecting rows on screen.
+_CATALOG_BULK_MAX = 500
+
+
+class CatalogBulkBody(BaseModel):
+    ids: list[int]
+    work_center: Optional[str] = None
+    labor_time: Optional[float] = None
+
+
+@router.put("/admin/production/catalog/bulk")
+def admin_bulk_update_catalog(body: CatalogBulkBody,
+                              _: dict = Depends(_verify_admin),
+                              db: Session = Depends(get_db)):
+    """Set the same field on SEVERAL catalog lines at once.
+
+    The fields are exactly the two that can mean the same thing on many rows:
+    Команда and Трудоемкость. **SAP code and name are deliberately not among
+    them** — they identify one line each, so "set them on twenty rows" is not
+    an operation with a meaning, and offering it would only ever produce twenty
+    lines the register cannot tell apart. `op` is left out for a subtler
+    reason: on the single-row form a BLANK box clears the фаза pin, while here
+    a blank field has to mean "leave every row alone", so the same control
+    would carry two opposite meanings on two screens.
+
+    A field left null is left ALONE on every row, which is what lets one modal
+    change one thing without restating the other.
+
+    The batch is ONE unit's lines, ONE transaction and ONE action-log row. It
+    refuses a mixed-unit selection rather than splitting it: units are what the
+    page, the scope and the carry below are all keyed by, and a half-applied
+    bulk is the state nobody can read off the register afterwards.
+
+    The identity carry runs ONCE for the whole batch, not per row — `before` is
+    taken before anything moves and `after` after everything has. Per row it
+    would be both slower and wrong: `line_keys` ranks its `#n` suffix over the
+    whole catalog, so row two's identity depends on what row one just became,
+    and only a single pass sees the finished shape. It is also what makes two
+    lines SWAPPING Команда safe (see _carry_manual_quantities).
+    """
+    ids = list(dict.fromkeys(body.ids or []))
+    if not ids:
+        raise HTTPException(status_code=400, detail="no rows selected")
+    if len(ids) > _CATALOG_BULK_MAX:
+        raise HTTPException(status_code=400,
+                            detail=f"too many rows at once (max {_CATALOG_BULK_MAX})")
+
+    wc = body.work_center.strip() if body.work_center is not None else None
+    if body.work_center is not None and not wc:
+        raise HTTPException(status_code=400, detail="work_center cannot be empty")
+    if wc is None and body.labor_time is None:
+        raise HTTPException(status_code=400, detail="nothing to change")
+
+    prods = db.query(PPProduct).filter(PPProduct.id.in_(ids)).all()
+    found = {p.id for p in prods}
+    missing = [i for i in ids if i not in found]
+    if missing:
+        raise HTTPException(status_code=404,
+                            detail=f"catalog line(s) not found: {missing[:5]}")
+    units = {p.manager_id for p in prods}
+    if len(units) > 1:
+        raise HTTPException(status_code=400,
+                            detail="every selected line must belong to one brigadir")
+    mid = units.pop()
+
+    # Both editable fields are part of what a line's quantities are keyed by, so
+    # every batch that changes anything needs the snapshot and the carry.
+    before = _catalog_snapshot(db, mid)
+    edited = {}
+    for p in prods:
+        if body.labor_time is not None:
+            p.labor_time = body.labor_time
+        if wc is not None:
+            p.work_center = wc
+        edited[p.id] = p
+
+    after = [({**d, "work_center": edited[d["id"]].work_center,
+               "labor_time": edited[d["id"]].labor_time}
+              if d["id"] in edited else d) for d in before]
+    carried = _carry_manual_quantities(db, mid, before, after)
+    db.commit()
+
+    action_log.enrich(
+        target_kind="catalog", target_id=f"{mid}:bulk:{len(prods)}",
+        target_name=f"{len(prods)} × {wc or ''}".strip(), unit_id=mid,
+        details=[("rows", len(prods)), ("work_center", wc),
+                 ("minutes", body.labor_time),
+                 ("carried_values", carried or None)],
+    )
+    return {"ok": True, "updated": len(prods), "carried": carried}
 
 
 @router.delete("/admin/production/catalog/{prod_id}")
