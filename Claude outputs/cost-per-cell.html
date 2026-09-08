@@ -1,0 +1,627 @@
+<title>Cost per Cell, per Request</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --ground:#F1F4F2;
+  --surface:#FBFCFB;
+  --sunk:#E7ECEA;
+  --ink:#14201E;
+  --body:#2C3A37;
+  --muted:#5F6E6A;
+  --rule:#D2DAD7;
+  --rule-strong:#A9B6B2;
+  --accent:#0E6B5F;
+  --accent-soft:#DFEDEA;
+  --signal:#A93A1E;
+  --signal-soft:#F7E5DF;
+  --ochre:#7F6212;
+  --ochre-soft:#F1ECD8;
+
+  --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+  --cond:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+
+  --measure:66ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0D1413;
+    --surface:#151F1D;
+    --sunk:#101917;
+    --ink:#E8EEEB;
+    --body:#C6D1CD;
+    --muted:#8B9A96;
+    --rule:#26332F;
+    --rule-strong:#3B4C47;
+    --accent:#52B7A6;
+    --accent-soft:#15302C;
+    --signal:#E1795A;
+    --signal-soft:#331D16;
+    --ochre:#D9AE4A;
+    --ochre-soft:#2B2411;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0D1413;
+  --surface:#151F1D;
+  --sunk:#101917;
+  --ink:#E8EEEB;
+  --body:#C6D1CD;
+  --muted:#8B9A96;
+  --rule:#26332F;
+  --rule-strong:#3B4C47;
+  --accent:#52B7A6;
+  --accent-soft:#15302C;
+  --signal:#E1795A;
+  --signal-soft:#331D16;
+  --ochre:#D9AE4A;
+  --ochre-soft:#2B2411;
+}
+
+*{box-sizing:border-box;}
+body{
+  background:var(--ground);
+  color:var(--body);
+  font-family:var(--serif);
+  font-size:17px;
+  line-height:1.62;
+  margin:0;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:56px 28px 96px;}
+
+/* ---------- masthead ---------- */
+.masthead{border-bottom:2px solid var(--ink);padding-bottom:26px;}
+.org{
+  font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 14px;
+}
+h1{
+  font-family:var(--cond);font-weight:700;
+  font-size:clamp(38px,6.2vw,62px);line-height:1.02;letter-spacing:-.015em;
+  color:var(--ink);margin:0;text-wrap:balance;
+}
+.standfirst{
+  font-size:19px;color:var(--muted);max-width:56ch;margin:16px 0 0;
+  font-style:italic;
+}
+.meta{
+  display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:22px;
+  font-family:var(--mono);font-size:12.5px;color:var(--muted);
+}
+.meta b{color:var(--body);font-weight:500;}
+
+/* ---------- section rail ---------- */
+section{
+  display:grid;
+  grid-template-columns:104px minmax(0,1fr);
+  gap:0 34px;
+  padding-top:52px;
+  margin-top:44px;
+  border-top:1px solid var(--rule);
+}
+section:first-of-type{border-top:none;}
+.rail{position:sticky;top:24px;align-self:start;}
+.rail .num{
+  font-family:var(--mono);font-size:12px;color:var(--accent);
+  display:block;letter-spacing:.06em;
+}
+.rail .tag{
+  font-family:var(--cond);font-weight:600;font-size:12px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);display:block;margin-top:6px;
+  line-height:1.35;
+}
+h2{
+  font-family:var(--cond);font-weight:700;font-size:31px;line-height:1.14;
+  color:var(--ink);margin:0 0 18px;letter-spacing:-.01em;text-wrap:balance;
+}
+h3{
+  font-family:var(--cond);font-weight:600;font-size:19px;color:var(--ink);
+  margin:34px 0 10px;letter-spacing:.005em;
+}
+.col > p,.col > ol,.col > ul{max-width:var(--measure);}
+p{margin:0 0 15px;}
+strong{color:var(--ink);font-weight:600;}
+em{font-style:italic;}
+code{font-family:var(--mono);font-size:.88em;color:var(--accent);}
+
+/* ---------- lists ---------- */
+ol.reasons{list-style:none;counter-reset:r;padding:0;margin:22px 0 0;
+  display:flex;flex-direction:column;gap:20px;}
+ol.reasons li{counter-increment:r;padding-left:40px;position:relative;}
+ol.reasons li::before{
+  content:counter(r);position:absolute;left:0;top:2px;
+  font-family:var(--mono);font-size:12px;color:var(--signal);
+  border:1px solid var(--signal);border-radius:50%;
+  width:23px;height:23px;display:grid;place-items:center;
+}
+ul.plain{padding-left:20px;margin:12px 0 16px;}
+ul.plain li{margin-bottom:7px;}
+
+/* ---------- verdict ---------- */
+.verdict{
+  background:var(--signal-soft);
+  border-left:4px solid var(--signal);
+  padding:22px 26px;margin:0 0 26px;max-width:var(--measure);
+}
+.verdict p{margin:0;font-size:18.5px;color:var(--ink);}
+.verdict p + p{margin-top:12px;font-size:16.5px;color:var(--body);}
+
+.note{
+  background:var(--sunk);border:1px solid var(--rule);
+  padding:18px 22px;max-width:var(--measure);margin:22px 0;
+}
+.note p{margin:0;font-size:15.5px;color:var(--muted);}
+.note p+p{margin-top:9px;}
+.note .h{
+  font-family:var(--cond);font-weight:600;font-size:12px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink);display:block;margin-bottom:8px;
+}
+
+/* ---------- two-column ledger ---------- */
+.ledger{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);margin:26px 0 8px;}
+.ledger > div{background:var(--surface);padding:22px 22px 24px;}
+.ledger h4{
+  font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.13em;
+  text-transform:uppercase;margin:0 0 4px;color:var(--ink);
+}
+.ledger .sub{font-size:14px;color:var(--muted);margin:0 0 16px;font-style:italic;}
+.ledger dl{margin:0;display:flex;flex-direction:column;gap:13px;}
+.ledger dt{
+  font-family:var(--mono);font-size:11.5px;color:var(--accent);letter-spacing:.04em;
+}
+.ledger dd{margin:2px 0 0;font-size:15.5px;line-height:1.45;}
+.ledger dd small{display:block;color:var(--muted);font-size:13.5px;margin-top:2px;}
+.ledger .pooled dt{color:var(--ochre);}
+.ledger .conseq{grid-column:1/-1;background:var(--accent-soft);}
+.ledger .conseq dt{color:var(--accent);}
+
+/* ---------- tables ---------- */
+.scroll{overflow-x:auto;margin:24px 0;border:1px solid var(--rule);background:var(--surface);}
+table{border-collapse:collapse;width:100%;font-size:15px;min-width:560px;}
+th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--rule);vertical-align:top;}
+thead th{
+  font-family:var(--cond);font-weight:600;font-size:11.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);background:var(--sunk);
+  border-bottom:1px solid var(--rule-strong);white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:none;}
+td.num,th.num{text-align:right;font-family:var(--mono);font-size:14px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;}
+tr.total td{border-top:1px solid var(--rule-strong);font-weight:600;color:var(--ink);background:var(--sunk);}
+tr.total td.num{color:var(--ink);}
+td .lbl{font-family:var(--mono);font-size:11.5px;color:var(--muted);display:block;}
+.bad{color:var(--signal);}
+.ok{color:var(--accent);}
+
+/* ---------- formula ---------- */
+.formula{
+  background:var(--sunk);border:1px solid var(--rule);border-top:3px solid var(--accent);
+  padding:22px 24px;margin:24px 0;font-family:var(--mono);font-size:14.5px;
+  line-height:1.75;color:var(--ink);overflow-x:auto;
+}
+.formula .over{border-bottom:1px solid var(--rule-strong);padding-bottom:8px;display:block;}
+.formula .under{padding-top:8px;display:block;color:var(--accent);}
+.formula .out{display:block;margin-top:14px;padding-top:12px;border-top:1px dashed var(--rule-strong);}
+
+/* ---------- phases ---------- */
+.phases{margin:26px 0 0;display:flex;flex-direction:column;}
+.phase{
+  display:grid;grid-template-columns:120px minmax(0,1fr);gap:0 24px;
+  padding:22px 0;border-top:1px solid var(--rule);
+}
+.phase:first-child{border-top:1px solid var(--rule-strong);}
+.phase .when{font-family:var(--mono);font-size:12.5px;color:var(--accent);line-height:1.5;}
+.phase .when b{display:block;color:var(--ink);font-weight:500;font-size:13px;}
+.phase h4{font-family:var(--cond);font-weight:700;font-size:18px;color:var(--ink);margin:0 0 8px;}
+.phase p{margin:0 0 10px;font-size:15.5px;}
+.gate{
+  font-family:var(--mono);font-size:12.5px;color:var(--body);
+  background:var(--accent-soft);padding:9px 13px;display:inline-block;margin-top:4px;
+}
+.gate b{color:var(--accent);font-weight:500;}
+
+/* ---------- traps ---------- */
+.traps{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin:24px 0 0;}
+.trap{border-top:2px solid var(--signal);padding-top:13px;}
+.trap b{font-family:var(--cond);font-weight:600;font-size:15.5px;color:var(--ink);display:block;margin-bottom:5px;}
+.trap span{font-size:14.5px;color:var(--muted);line-height:1.5;}
+
+footer{
+  margin-top:64px;padding-top:22px;border-top:2px solid var(--ink);
+  font-family:var(--mono);font-size:12.5px;color:var(--muted);
+  display:flex;flex-wrap:wrap;gap:8px 28px;
+}
+
+@media (max-width:760px){
+  body{font-size:16.5px;}
+  .wrap{padding:38px 20px 72px;}
+  section{grid-template-columns:1fr;gap:0;padding-top:34px;margin-top:30px;}
+  .rail{position:static;display:flex;gap:12px;align-items:baseline;margin-bottom:14px;}
+  .rail .tag{margin-top:0;}
+  h2{font-size:26px;}
+  .phase{grid-template-columns:1fr;gap:8px;}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="org">SAFIA · Repair &amp; maintenance costing standard</p>
+  <h1>Cost per Cell, per Request</h1>
+  <p class="standfirst">Your three buckets describe how the money leaves the company. They cannot describe what a cell costs.</p>
+  <div class="meta">
+    <span><b>Cost objects</b> production cell · repair request</span>
+    <span><b>Currency</b> UZS</span>
+    <span><b>Status</b> proposed method</span>
+  </div>
+</header>
+
+<section>
+  <div class="rail"><span class="num">01</span><span class="tag">Verdict</span></div>
+  <div class="col">
+    <h2>The split is on the wrong axis</h2>
+
+    <div class="verdict">
+      <p>Your three types are a <strong>procurement classification</strong> — they sort spending by how it was purchased. A costing model has to sort spending by <strong>what it can be traced to</strong>.</p>
+      <p>Those are different questions, and procurement categories will not roll up into a cost per cell no matter how carefully you maintain them.</p>
+    </div>
+
+    <p>Two of the four largest cost lines in a maintenance budget are missing from your model entirely: <strong>repairer labour</strong> and <strong>external services</strong>. In food manufacturing, wages and payroll charges are commonly the single biggest line in the maintenance budget — often around half of total spend. Your current model assigns it a weight of zero.</p>
+
+    <p>Keep the three buckets. They are useful for purchasing, budgeting and inventory control, and Finance already understands them. Just stop asking them to answer a question they are not shaped to answer, and build the cost model as a second layer on top.</p>
+
+    <div class="note">
+      <span class="h">Your starting position</span>
+      <p>A store exists but withdrawals are not recorded against a job. Repairer time is not recorded — only the request's opened / started / closed timestamps. Parts bought per-job go to Finance as a purchase request.</p>
+      <p>That means <em>none</em> of the four direct cost lines is currently captured in a usable form. The rollout in §06 is ordered to close that gap by value, cheapest fix first.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">02</span><span class="tag">Diagnosis</span></div>
+  <div class="col">
+    <h2>Why the three buckets can't roll up</h2>
+
+    <ol class="reasons">
+      <li><strong>Purchase date is not consumption date.</strong> Type 2 materials hit the books when bought, not when used. A month with a large bulk purchase looks expensive even if nothing broke; a month of heavy breakdowns looks cheap because the store was already full. The monthly figure tracks your purchasing calendar, not your reliability.</li>
+      <li><strong>None of the buckets carries a cost object.</strong> A cost line is only useful if it names a cell or a request. Type 1 is the only one that could — the purchase request presumably names a machine — and even that link is not currently recorded as a field you can group by.</li>
+      <li><strong>Type 3 is not a type of repair.</strong> "They just tighten something" describes what the job <em>consumed</em> (nothing), not a category of cost. Meanwhile the wrench used on that job is the same wrench used on a type 1 job. By naming type 3 after tools, you have accidentally charged all tool cost to the cheapest jobs in the plant.</li>
+      <li><strong>Labour and contractors are absent.</strong> Man-hours, overtime, standby time, and outside welding, calibration or vendor service visits appear in none of the three. Publish a per-cell cost without them and the number is not merely low — it is <em>unevenly</em> low. A cell with many slow, cheap repairs looks better than a cell with one expensive part swap, which inverts the true picture and points improvement effort at the wrong cell.</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">03</span><span class="tag">The model</span></div>
+  <div class="col">
+    <h2>Sort by traceability, not by purchase pattern</h2>
+
+    <p>Fix two cost objects and one rule. The cost objects are the <strong>repair request</strong> and the <strong>production cell</strong>. The rule is that every cost is either <em>direct</em> — you can name the request it belongs to — or <em>pooled</em> — you cannot, so it is spread to cells by a driver.</p>
+
+    <div class="ledger">
+      <div>
+        <h4>Direct to a request</h4>
+        <p class="sub">Costs that can name their ticket</p>
+        <dl>
+          <dt>D1 · LABOUR</dt>
+          <dd>Man-hours × loaded hourly rate<small>Usually the largest line. Headcount × hours, not elapsed time.</small></dd>
+          <dt>D2 · SPARE PARTS</dt>
+          <dd>Parts bought for that job, or issued from store against it<small>Your type 1, plus the tracked part of type 2.</small></dd>
+          <dt>D3 · MATERIALS</dt>
+          <dd>Store issues above the materiality threshold<small>Valued at moving average cost on issue, not on purchase.</small></dd>
+          <dt>D4 · EXTERNAL SERVICES</dt>
+          <dd>Contractor, welding shop, calibration, vendor visit<small>Currently missing from your model.</small></dd>
+        </dl>
+      </div>
+      <div class="pooled">
+        <h4>Pooled, then allocated</h4>
+        <p class="sub">Real costs that no ticket can claim</p>
+        <dl>
+          <dt>P1 · CONSUMABLES</dt>
+          <dd>Bolts, tape, grease, rags, lubricant sprays<small>Below the threshold. Never worth chasing to a job.</small></dd>
+          <dt>P2 · TOOLS &amp; EQUIPMENT</dt>
+          <dd>Amortisation over expected life<small>Your type 3, spread across every job — not only the ones with no parts.</small></dd>
+          <dt>P3 · DEPARTMENT OVERHEAD</dt>
+          <dd>Supervision, planning, workshop, transport, PPE, training, standby time</dd>
+          <dt>P4 · STORE HANDLING</dt>
+          <dd>Storekeeper time, obsolescence, inventory write-offs</dd>
+        </dl>
+      </div>
+      <div class="conseq">
+        <h4>Consequential — report beside, never inside</h4>
+        <p class="sub">The cost of the stoppage, not the cost of the repair</p>
+        <dl>
+          <dt>C1 · DOWNTIME</dt>
+          <dd>Stopped minutes × contribution margin per production minute<small>Usually as large as the repair itself, often larger. Mixing it into repair cost makes both numbers unusable — keep them in adjacent columns.</small></dd>
+        </dl>
+      </div>
+    </div>
+
+    <h3>The mechanism that makes this cheap</h3>
+    <p>Do not run a separate allocation exercise for P1–P4. Bury the whole pool inside the <strong>loaded hourly rate</strong>. Then one rate carries labour, overhead, tools and consumables together, and the pool self-allocates to cells in proportion to where repairers actually spend their hours — which is the best driver available to you and requires no extra data collection.</p>
+
+    <div class="formula">
+      <span>Cost of a request  =  hours × loaded rate  +  parts  +  materials  +  services</span>
+      <span class="out">Cost of a cell  =  Σ its requests  +  its share of any residual pool</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">04</span><span class="tag">Crosswalk</span></div>
+  <div class="col">
+    <h2>Where your three types actually land</h2>
+
+    <p>Nothing is discarded. Each existing bucket maps onto the new model — but two of them split, and the map exposes what is missing.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Your current type</th><th>Lands as</th><th>What has to change</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Type 1</b><span class="lbl">New parts, request to Finance</span></td>
+            <td class="ok">D2 — direct</td>
+            <td>Add one mandatory field to the purchase request form: the repair request number. The invoice then reaches a cell by itself.</td>
+          </tr>
+          <tr>
+            <td><b>Type 2</b><span class="lbl">Materials bought monthly</span></td>
+            <td class="ok">D3 — direct <span style="color:var(--muted)">(above threshold)</span><br><span style="color:var(--ochre)">P1 — pooled (below)</span></td>
+            <td>Capitalise to inventory on purchase, expense on issue. Every issue above the threshold names a request number. This is the single highest-value change in the whole programme.</td>
+          </tr>
+          <tr>
+            <td><b>Type 3</b><span class="lbl">Tools &amp; equipment, no materials</span></td>
+            <td style="color:var(--ochre)">P2 — pooled</td>
+            <td>Stop treating it as a repair category. It is an asset policy: above a threshold, capitalise and depreciate over expected life; below, expense but spread over the replacement cycle. The jobs it currently labels are simply labour-only jobs.</td>
+          </tr>
+          <tr>
+            <td class="bad"><b>Missing</b><span class="lbl">Repairer labour</span></td>
+            <td class="ok">D1 — direct</td>
+            <td>Two fields at request close: number of repairers, and hours. Largest cost line in the model.</td>
+          </tr>
+          <tr>
+            <td class="bad"><b>Missing</b><span class="lbl">External services</span></td>
+            <td class="ok">D4 — direct</td>
+            <td>Request number written on the contractor's act or invoice before Finance pays it.</td>
+          </tr>
+          <tr>
+            <td class="bad"><b>Missing</b><span class="lbl">Downtime</span></td>
+            <td class="ok">C1 — reported beside</td>
+            <td>Stopped minutes per cell × contribution margin per minute. Reported in its own column, never added into repair cost.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="h">On materiality</span>
+      <p>Set a value threshold so that roughly the top 20% of store items by value — which will cover about 80% of store value — require a request number on issue. Everything below is issued freely into the consumables pool. Chasing a bolt to a work order costs more in clerk time than the bolt.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">05</span><span class="tag">The rate</span></div>
+  <div class="col">
+    <h2>Building the loaded hourly rate</h2>
+
+    <p>One number does most of the work, and one mistake in it invalidates everything downstream: the divisor. Divide by <strong>productive hours</strong> — wrench time — not by paid hours. Wrench time in most plants runs between half and two thirds of paid hours, the rest going to travel, waiting for parts, briefings and breaks. Measure yours; until you have, start at 55% and refine.</p>
+
+    <div class="formula">
+      <span class="over">wages + payroll taxes + supervision + workshop &amp; utilities + tool amortisation + untracked consumables + transport + PPE + training</span>
+      <span class="under">productive (wrench) hours</span>
+      <span class="out">=  loaded hourly rate,  recalculated quarterly and applied forward</span>
+    </div>
+
+    <p>Fix the rate for a quarter and apply it prospectively. Do not restate closed months when the new rate lands — a cost report that keeps rewriting its own history loses the trust of the people using it.</p>
+
+    <h3>Worked build-up</h3>
+    <p style="color:var(--muted);font-size:15px;font-style:italic;">Illustrative figures for shape only — not SAFIA's actuals. Replace every line from the general ledger.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Annual pool</th><th class="num">UZS</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Repairer wages and payroll taxes</td><td class="num">1 850 000 000</td></tr>
+          <tr><td>Supervision and planning salaries</td><td class="num">320 000 000</td></tr>
+          <tr><td>Workshop space, utilities, transport</td><td class="num">145 000 000</td></tr>
+          <tr><td>Tool and equipment amortisation <span class="lbl">your type 3</span></td><td class="num">96 000 000</td></tr>
+          <tr><td>Untracked consumables <span class="lbl">below-threshold type 2</span></td><td class="num">78 000 000</td></tr>
+          <tr><td>PPE, training, certification</td><td class="num">41 000 000</td></tr>
+          <tr class="total"><td>Total pool</td><td class="num">2 530 000 000</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Divisor</th><th class="num">Hours</th><th class="num">Resulting rate</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>18 repairers × 1 900 paid hours <span class="lbl bad">wrong — overstates capacity</span></td>
+            <td class="num">34 200</td>
+            <td class="num bad">73 977</td>
+          </tr>
+          <tr class="total">
+            <td>Wrench time at 55% <span class="lbl ok">correct basis</span></td>
+            <td class="num">18 810</td>
+            <td class="num">134 503</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>The naive divisor understates the rate by <strong>45%</strong>. That missing cost does not go anywhere useful — it simply never lands on any cell, and your cell costs quietly sum to roughly half of what the repair department actually spends.</p>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">06</span><span class="tag">Worked example</span></div>
+  <div class="col">
+    <h2>One request, costed both ways</h2>
+
+    <p>A conveyor drive bearing fails on cell 8281. Two repairers, three and a half hours each. The bearing and a seal kit come from the store; no outside contractor. The cell is stopped 190 minutes.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Line</th><th>Basis</th><th class="num">UZS</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>D1 Labour</td><td>2 repairers × 3.5 h = 7.0 man-hours × 134 503</td><td class="num">941 521</td></tr>
+          <tr><td>D2 Spare part</td><td>Drive bearing, issued from store against the request</td><td class="num">620 000</td></tr>
+          <tr><td>D3 Materials</td><td>Seal and gasket kit</td><td class="num">85 000</td></tr>
+          <tr><td>D4 Services</td><td>None</td><td class="num">0</td></tr>
+          <tr class="total"><td>Cost of the repair</td><td>charged to cell 8281</td><td class="num">1 646 521</td></tr>
+          <tr><td>C1 Downtime</td><td>190 min ÷ 60 × 480 000 UZS per production hour</td><td class="num">1 520 000</td></tr>
+          <tr class="total"><td>Total cost of the failure</td><td>reported as two columns, never one</td><td class="num">3 166 521</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Two things to notice. <strong>Labour is 57% of the repair cost</strong> — the line you currently do not measure at all. And <strong>the stoppage costs nearly as much as the repair</strong>, which is the argument that wins capital for a spare-parts kit or a preventive route.</p>
+
+    <div class="verdict">
+      <p>Under the three-bucket model, this request attributes <strong>zero UZS</strong> to cell 8281.</p>
+      <p>The bearing came out of the monthly materials purchase — already expensed, with no issue record naming the job. The labour exists in no bucket. The failure is invisible in the cost report, and cell 8281 looks cheap to run.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">07</span><span class="tag">Rollout</span></div>
+  <div class="col">
+    <h2>Six phases, about six months</h2>
+
+    <p>Sequenced by value per unit of effort, given what you can and cannot capture today. Every phase has a gate — do not begin the next one until it is met, because a cost report published on thin data destroys its own credibility permanently.</p>
+
+    <div class="phases">
+
+      <div class="phase">
+        <div class="when"><b>Phase 0</b>Weeks 1–2</div>
+        <div>
+          <h4>Write the policy on one page</h4>
+          <p>Agree the two cost objects, the four direct lines, the contents of the pool, the materiality threshold for store issues, and the capitalisation threshold for tools. Finance, the repair department head and production sign it.</p>
+          <p style="color:var(--muted);font-size:15px;">This is where costing programmes die when skipped. Without a signed definition, every month becomes an argument about what counts.</p>
+          <span class="gate"><b>Gate</b> — one signed page, three signatures</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>Phase 1</b>Weeks 3–6</div>
+        <div>
+          <h4>Capture man-hours at request close</h4>
+          <p>Two fields, filled by the repairer when closing the request: how many people, and how many hours. A rounded half-hour self-report captures most of the available value at almost no cost.</p>
+          <p><strong>Do not derive hours from the timestamps.</strong> Closed minus opened is elapsed time — it includes waiting for a part, the night shift, and lunch. Using it as labour systematically overstates the slow-but-cheap jobs, which are exactly the ones you would then wrongly prioritise.</p>
+          <p>If the department resists the fields, run a one-month time study instead: sample actual man-hours on roughly 100 requests across categories, derive average hours per request per category, apply to the full population. Accuracy around ±20%, and it buys you time to win the argument.</p>
+          <span class="gate"><b>Gate</b> — over 80% of closed requests carry hours and headcount</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>Phase 2</b>Weeks 3–8<br><span style="color:var(--muted)">parallel</span></div>
+        <div>
+          <h4>Put a request number on every issue and invoice</h4>
+          <p>The store already exists — the missing piece is a four-field withdrawal record: date, item, quantity, <strong>request number</strong>. Paper slips are fine to start. One rule enforces it: no issue without a request number.</p>
+          <p>Same field on the Finance purchase request form, and on every contractor act before it is paid. Accounting changes at the same time: materials capitalise to inventory on purchase and expense on issue.</p>
+          <span class="gate"><b>Gate</b> — over 80% of above-threshold issues name a request</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>Phase 3</b>Weeks 5–8<br><span style="color:var(--muted)">parallel</span></div>
+        <div>
+          <h4>Finance builds rate v1</h4>
+          <p>Assemble the pool from the last twelve months of the general ledger. Estimate wrench hours. Publish the rate, its components and its effective quarter, so anyone reading a cost can see what is inside it.</p>
+          <span class="gate"><b>Gate</b> — rate published with its build-up visible</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>Phase 4</b>Weeks 9–12</div>
+        <div>
+          <h4>First close, with the gap shown</h4>
+          <p>Produce month one of the per-cell report and reconcile it to the ledger. Expect 60–75% coverage in the first month — that is normal. Publish the coverage figure on the same page as the costs. A number with a visible gap is useful; a number with a hidden gap is dangerous.</p>
+          <span class="gate"><b>Gate</b> — reconciliation runs, coverage stated on the report</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>Phase 5</b>Months 4–6</div>
+        <div>
+          <h4>Normalise and segment, then add downtime</h4>
+          <p>Absolute cost per cell is misleading — a large cell should cost more. Add cost per 1 000 units produced, or per production hour, and repair cost as a percentage of the cell's replacement asset value.</p>
+          <p>Then split by work type: <strong>breakdown, corrective, preventive, improvement</strong>. This is the split that makes the report actionable — high preventive cost on a cell is healthy, high breakdown cost is bleeding, and only this column tells them apart. Finally overlay downtime cost, and you have the total cost of unreliability per cell, which is what justifies capital.</p>
+          <span class="gate"><b>Gate</b> — every cell cost carries a denominator and a work-type split</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">08</span><span class="tag">Controls</span></div>
+  <div class="col">
+    <h2>Two controls keep the numbers honest</h2>
+
+    <h3>Reconciliation to the ledger</h3>
+    <p>Every period, the costs posted to requests plus the pool must equal the repair department's total ledger spend, within about 2%.</p>
+    <div class="formula">
+      <span>Σ costs on requests  +  Σ pool  =  repair department ledger spend  ± 2%</span>
+    </div>
+    <p>Without this, the per-cell report becomes a parallel set of books that drifts away from the P&amp;L, and Finance will correctly stop trusting it. Target traceable coverage of 90% by month six and 95% by month twelve.</p>
+
+    <h3>A published unattributed rate</h3>
+    <p>Report, on the same page as the costs, the share of requests missing a cell code, missing hours, or missing a parts link. The credibility of the whole report rests on the gap being visible rather than discovered later by someone else.</p>
+
+    <h3>What to report per cell, monthly</h3>
+    <ul class="plain">
+      <li>Repair cost, split into labour / parts &amp; materials / services</li>
+      <li>The same cost per 1 000 units produced, and as a percentage of replacement asset value</li>
+      <li>Split by breakdown, corrective, preventive, improvement</li>
+      <li>Number of requests, mean time to repair, mean time between failures</li>
+      <li>Downtime cost, in its own column</li>
+      <li>Coverage: percentage of ledger spend traced to a request</li>
+    </ul>
+    <p style="color:var(--muted);font-size:15px;">Repair cost as a share of replacement asset value is the usual cross-plant yardstick — figures around 3–6% are commonly cited for food and beverage plants, with the best performers nearer 2–3%. Treat any published benchmark as a direction of travel, not a target, until you have two or three of your own years to compare against.</p>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">09</span><span class="tag">Traps</span></div>
+  <div class="col">
+    <h2>What goes wrong</h2>
+
+    <div class="traps">
+      <div class="trap"><b>Elapsed time as labour</b><span>Closed minus opened includes waiting, shifts and breaks. It inflates exactly the jobs that were cheapest in man-hours.</span></div>
+      <div class="trap"><b>Paid hours as the divisor</b><span>Understates the rate by roughly 40–45%. The missing cost lands on no cell at all.</span></div>
+      <div class="trap"><b>Chasing cheap consumables</b><span>Tracking a bolt to a request costs more clerk time than the bolt. Set the threshold and defend it.</span></div>
+      <div class="trap"><b>No reconciliation</b><span>The report silently diverges from the ledger and becomes a second, untrusted set of books.</span></div>
+      <div class="trap"><b>Tools charged to today's cell</b><span>A drill bought during a repair on one cell is not that cell's cost. It belongs in the pool, spread over its life.</span></div>
+      <div class="trap"><b>Comparing cells by absolute cost</b><span>Without a denominator, the biggest cell always looks worst and the improvement effort goes to the wrong place.</span></div>
+      <div class="trap"><b>Publishing too early</b><span>One visibly wrong number in month one, and the department will argue about the method instead of the machines for a year.</span></div>
+      <div class="trap"><b>Downtime folded into repair cost</b><span>Merging them hides both. Repair cost drives maintenance decisions; downtime cost drives capital decisions.</span></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>SAFIA · repair costing method v1</span>
+  <span>Cost objects: cell, request</span>
+  <span>Figures marked illustrative are shape-only</span>
+</footer>
+
+</div>

@@ -1,0 +1,617 @@
+<title>Yacheyka va So'rov Xarajati</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --ground:#F1F4F2;
+  --surface:#FBFCFB;
+  --sunk:#E7ECEA;
+  --ink:#14201E;
+  --body:#2C3A37;
+  --muted:#5F6E6A;
+  --rule:#D2DAD7;
+  --rule-strong:#A9B6B2;
+  --accent:#0E6B5F;
+  --accent-soft:#DFEDEA;
+  --signal:#A93A1E;
+  --signal-soft:#F7E5DF;
+  --ochre:#7F6212;
+  --ochre-soft:#F1ECD8;
+
+  --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+  --cond:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+
+  --measure:66ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0D1413;
+    --surface:#151F1D;
+    --sunk:#101917;
+    --ink:#E8EEEB;
+    --body:#C6D1CD;
+    --muted:#8B9A96;
+    --rule:#26332F;
+    --rule-strong:#3B4C47;
+    --accent:#52B7A6;
+    --accent-soft:#15302C;
+    --signal:#E1795A;
+    --signal-soft:#331D16;
+    --ochre:#D9AE4A;
+    --ochre-soft:#2B2411;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0D1413;
+  --surface:#151F1D;
+  --sunk:#101917;
+  --ink:#E8EEEB;
+  --body:#C6D1CD;
+  --muted:#8B9A96;
+  --rule:#26332F;
+  --rule-strong:#3B4C47;
+  --accent:#52B7A6;
+  --accent-soft:#15302C;
+  --signal:#E1795A;
+  --signal-soft:#331D16;
+  --ochre:#D9AE4A;
+  --ochre-soft:#2B2411;
+}
+
+*{box-sizing:border-box;}
+body{
+  background:var(--ground);
+  color:var(--body);
+  font-family:var(--serif);
+  font-size:17px;
+  line-height:1.62;
+  margin:0;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:56px 28px 96px;}
+
+.masthead{border-bottom:2px solid var(--ink);padding-bottom:26px;}
+.org{
+  font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 14px;
+}
+h1{
+  font-family:var(--cond);font-weight:700;
+  font-size:clamp(36px,6vw,60px);line-height:1.03;letter-spacing:-.015em;
+  color:var(--ink);margin:0;text-wrap:balance;
+}
+.standfirst{
+  font-size:19px;color:var(--muted);max-width:56ch;margin:16px 0 0;
+  font-style:italic;
+}
+.meta{
+  display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:22px;
+  font-family:var(--mono);font-size:12.5px;color:var(--muted);
+}
+.meta b{color:var(--body);font-weight:500;}
+
+section{
+  display:grid;
+  grid-template-columns:112px minmax(0,1fr);
+  gap:0 34px;
+  padding-top:52px;
+  margin-top:44px;
+  border-top:1px solid var(--rule);
+}
+section:first-of-type{border-top:none;}
+.rail{position:sticky;top:24px;align-self:start;}
+.rail .num{
+  font-family:var(--mono);font-size:12px;color:var(--accent);
+  display:block;letter-spacing:.06em;
+}
+.rail .tag{
+  font-family:var(--cond);font-weight:600;font-size:12px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);display:block;margin-top:6px;
+  line-height:1.35;
+}
+h2{
+  font-family:var(--cond);font-weight:700;font-size:30px;line-height:1.16;
+  color:var(--ink);margin:0 0 18px;letter-spacing:-.01em;text-wrap:balance;
+}
+h3{
+  font-family:var(--cond);font-weight:600;font-size:19px;color:var(--ink);
+  margin:34px 0 10px;letter-spacing:.005em;
+}
+.col > p,.col > ol,.col > ul{max-width:var(--measure);}
+p{margin:0 0 15px;}
+strong{color:var(--ink);font-weight:600;}
+em{font-style:italic;}
+
+ol.reasons{list-style:none;counter-reset:r;padding:0;margin:22px 0 0;
+  display:flex;flex-direction:column;gap:20px;}
+ol.reasons li{counter-increment:r;padding-left:40px;position:relative;}
+ol.reasons li::before{
+  content:counter(r);position:absolute;left:0;top:2px;
+  font-family:var(--mono);font-size:12px;color:var(--signal);
+  border:1px solid var(--signal);border-radius:50%;
+  width:23px;height:23px;display:grid;place-items:center;
+}
+ul.plain{padding-left:20px;margin:12px 0 16px;}
+ul.plain li{margin-bottom:7px;}
+
+.verdict{
+  background:var(--signal-soft);
+  border-left:4px solid var(--signal);
+  padding:22px 26px;margin:0 0 26px;max-width:var(--measure);
+}
+.verdict p{margin:0;font-size:18.5px;color:var(--ink);}
+.verdict p + p{margin-top:12px;font-size:16.5px;color:var(--body);}
+
+.note{
+  background:var(--sunk);border:1px solid var(--rule);
+  padding:18px 22px;max-width:var(--measure);margin:22px 0;
+}
+.note p{margin:0;font-size:15.5px;color:var(--muted);}
+.note p+p{margin-top:9px;}
+.note .h{
+  font-family:var(--cond);font-weight:600;font-size:12px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink);display:block;margin-bottom:8px;
+}
+
+.ledger{display:grid;grid-template-columns:repeat(auto-fit,minmax(262px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);margin:26px 0 8px;}
+.ledger > div{background:var(--surface);padding:22px 22px 24px;}
+.ledger h4{
+  font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.12em;
+  text-transform:uppercase;margin:0 0 4px;color:var(--ink);
+}
+.ledger .sub{font-size:14px;color:var(--muted);margin:0 0 16px;font-style:italic;}
+.ledger dl{margin:0;display:flex;flex-direction:column;gap:13px;}
+.ledger dt{
+  font-family:var(--mono);font-size:11.5px;color:var(--accent);letter-spacing:.04em;
+}
+.ledger dd{margin:2px 0 0;font-size:15.5px;line-height:1.45;}
+.ledger dd small{display:block;color:var(--muted);font-size:13.5px;margin-top:2px;}
+.ledger .pooled dt{color:var(--ochre);}
+.ledger .conseq{grid-column:1/-1;background:var(--accent-soft);}
+.ledger .conseq dt{color:var(--accent);}
+
+.scroll{overflow-x:auto;margin:24px 0;border:1px solid var(--rule);background:var(--surface);}
+table{border-collapse:collapse;width:100%;font-size:15px;min-width:580px;}
+th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--rule);vertical-align:top;}
+thead th{
+  font-family:var(--cond);font-weight:600;font-size:11.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);background:var(--sunk);
+  border-bottom:1px solid var(--rule-strong);white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:none;}
+td.num,th.num{text-align:right;font-family:var(--mono);font-size:14px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;}
+tr.total td{border-top:1px solid var(--rule-strong);font-weight:600;color:var(--ink);background:var(--sunk);}
+tr.total td.num{color:var(--ink);}
+td .lbl{font-family:var(--mono);font-size:11.5px;color:var(--muted);display:block;}
+.bad{color:var(--signal);}
+.ok{color:var(--accent);}
+
+.formula{
+  background:var(--sunk);border:1px solid var(--rule);border-top:3px solid var(--accent);
+  padding:22px 24px;margin:24px 0;font-family:var(--mono);font-size:14px;
+  line-height:1.75;color:var(--ink);overflow-x:auto;
+}
+.formula .over{border-bottom:1px solid var(--rule-strong);padding-bottom:8px;display:block;}
+.formula .under{padding-top:8px;display:block;color:var(--accent);}
+.formula .out{display:block;margin-top:14px;padding-top:12px;border-top:1px dashed var(--rule-strong);}
+
+.phases{margin:26px 0 0;display:flex;flex-direction:column;}
+.phase{
+  display:grid;grid-template-columns:126px minmax(0,1fr);gap:0 24px;
+  padding:22px 0;border-top:1px solid var(--rule);
+}
+.phase:first-child{border-top:1px solid var(--rule-strong);}
+.phase .when{font-family:var(--mono);font-size:12.5px;color:var(--accent);line-height:1.5;}
+.phase .when b{display:block;color:var(--ink);font-weight:500;font-size:13px;}
+.phase h4{font-family:var(--cond);font-weight:700;font-size:18px;color:var(--ink);margin:0 0 8px;}
+.phase p{margin:0 0 10px;font-size:15.5px;}
+.gate{
+  font-family:var(--mono);font-size:12.5px;color:var(--body);
+  background:var(--accent-soft);padding:9px 13px;display:inline-block;margin-top:4px;
+}
+.gate b{color:var(--accent);font-weight:500;}
+
+.traps{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin:24px 0 0;}
+.trap{border-top:2px solid var(--signal);padding-top:13px;}
+.trap b{font-family:var(--cond);font-weight:600;font-size:15.5px;color:var(--ink);display:block;margin-bottom:5px;}
+.trap span{font-size:14.5px;color:var(--muted);line-height:1.5;}
+
+footer{
+  margin-top:64px;padding-top:22px;border-top:2px solid var(--ink);
+  font-family:var(--mono);font-size:12.5px;color:var(--muted);
+  display:flex;flex-wrap:wrap;gap:8px 28px;
+}
+
+@media (max-width:760px){
+  body{font-size:16.5px;}
+  .wrap{padding:38px 20px 72px;}
+  section{grid-template-columns:1fr;gap:0;padding-top:34px;margin-top:30px;}
+  .rail{position:static;display:flex;gap:12px;align-items:baseline;margin-bottom:14px;}
+  .rail .tag{margin-top:0;}
+  h2{font-size:25px;}
+  .phase{grid-template-columns:1fr;gap:8px;}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="org">SAFIA · Ta'mirlash xarajatlarini hisoblash uslubi</p>
+  <h1>Yacheyka va So'rov Xarajati</h1>
+  <p class="standfirst">Uchta guruhingiz pulning korxonadan qanday chiqqanini ko'rsatadi. Ular yacheyka qancha turishini ko'rsata olmaydi.</p>
+  <div class="meta">
+    <span><b>Xarajat obyektlari</b> ishlab chiqarish yacheykasi · ta'mirlash so'rovi</span>
+    <span><b>Valyuta</b> UZS</span>
+    <span><b>Holati</b> taklif etilayotgan uslub</span>
+  </div>
+</header>
+
+<section>
+  <div class="rail"><span class="num">01</span><span class="tag">Xulosa</span></div>
+  <div class="col">
+    <h2>Bo'linish noto'g'ri o'qda</h2>
+
+    <div class="verdict">
+      <p>Uchta turingiz — bu <strong>xarid tasnifi</strong>: u xarajatlarni qanday sotib olinganiga qarab ajratadi. Xarajat modeli esa ularni <strong>nimaga bog'lash mumkinligiga</strong> qarab ajratishi kerak.</p>
+      <p>Bu ikki xil savol, va xarid guruhlarini qanchalik puxta yuritmang, ulardan yacheyka bo'yicha xarajat chiqmaydi.</p>
+    </div>
+
+    <p>Ta'mirlash byudjetidagi eng yirik to'rtta xarajat moddasidan ikkitasi modelingizda umuman yo'q: <strong>ta'mirlovchilarning mehnati</strong> va <strong>tashqi xizmatlar</strong>. Oziq-ovqat sanoatida ish haqi va undan olinadigan soliqlar odatda ta'mirlash byudjetining eng katta moddasi bo'ladi — ko'pincha umumiy sarfning taxminan yarmi. Hozirgi modelingiz unga nol og'irlik beradi.</p>
+
+    <p>Uchta guruhni saqlab qoling. Ular xarid, byudjet va ombor nazorati uchun foydali, Moliya bo'limi ularni allaqachon tushunadi. Faqat ulardan javob bera olmaydigan savolni so'rashni to'xtating va xarajat modelini ustiga ikkinchi qatlam qilib quring.</p>
+
+    <div class="note">
+      <span class="h">Boshlang'ich holatingiz</span>
+      <p>Ombor bor, lekin chiqimlar aniq ishga bog'lab yozilmaydi. Ta'mirlovchilarning vaqti hisobga olinmaydi — faqat so'rovning ochilgan / boshlangan / yopilgan vaqtlari bor. Ish uchun alohida olinadigan qismlar Moliyaga xarid so'rovi bo'lib boradi.</p>
+      <p>Demak to'rtta to'g'ridan-to'g'ri xarajat moddasining <em>birortasi ham</em> hozircha ishlatishga yaroqli shaklda yig'ilmayapti. §07 dagi bosqichlar bu bo'shliqni qiymati bo'yicha, eng arzon yechimdan boshlab yopish uchun tartiblangan.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">02</span><span class="tag">Tashxis</span></div>
+  <div class="col">
+    <h2>Nega uchta guruh yig'ilmaydi</h2>
+
+    <ol class="reasons">
+      <li><strong>Xarid sanasi — sarflash sanasi emas.</strong> 2-tur materiallar sotib olingan paytda hisobga tushadi, ishlatilgan paytda emas. Katta ulgurji xarid bo'lgan oy hech narsa buzilmagan bo'lsa ham qimmat ko'rinadi; ko'p avariya bo'lgan oy esa ombor to'la bo'lgani uchun arzon ko'rinadi. Oylik raqam jihozlaringiz ishonchliligini emas, xarid kalendaringizni ko'rsatadi.</li>
+      <li><strong>Hech bir guruh xarajat obyektini ko'tarmaydi.</strong> Xarajat satri faqat yacheyka yoki so'rovni nomlab tursa foydali bo'ladi. Buni faqat 1-tur qila oladi — xarid so'rovida mashina ko'rsatilgan bo'lsa kerak — lekin bu bog'lanish ham hozir guruhlash mumkin bo'lgan maydon sifatida yozilmaydi.</li>
+      <li><strong>3-tur — bu ta'mir turi emas.</strong> «Shunchaki bo'shab qolgan joyni tortib qo'yishdi» — bu ishning nima <em>sarflaganini</em> tasvirlaydi (hech narsa), xarajat turini emas. Ayni paytda o'sha ishda ishlatilgan kalit 1-turdagi ishda ham ishlatiladi. 3-turni asbob nomi bilan atash orqali siz butun asbob xarajatini zavoddagi eng arzon ishlarga yozib qo'ygansiz.</li>
+      <li><strong>Mehnat va pudratchilar yo'q.</strong> Odam-soat, qo'shimcha ish, navbatchilik vaqti, tashqi payvandlash, kalibrlash yoki yetkazib beruvchi tashrifi — bularning hech biri uchta turda yo'q. Ularsiz yacheyka xarajatini e'lon qilsangiz, raqam shunchaki past emas — u <em>notekis</em> past bo'ladi. Ko'p, sekin va arzon ta'mir qilinadigan yacheyka bitta qimmat qism almashtirilgan yacheykadan yaxshiroq ko'rinadi — bu haqiqiy manzarani teskari qiladi va yaxshilash kuchini noto'g'ri yacheykaga yo'naltiradi.</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">03</span><span class="tag">Model</span></div>
+  <div class="col">
+    <h2>Xarid usuli bo'yicha emas, bog'lanish bo'yicha ajrating</h2>
+
+    <p>Ikkita xarajat obyekti va bitta qoidani belgilang. Xarajat obyektlari — <strong>ta'mirlash so'rovi</strong> va <strong>ishlab chiqarish yacheykasi</strong>. Qoida: har bir xarajat yo <em>to'g'ridan-to'g'ri</em> (qaysi so'rovga tegishli ekanini ayta olasiz), yo <em>umumiy fondga</em> tushadi (ayta olmaysiz, shuning uchun u drayver orqali yacheykalarga taqsimlanadi).</p>
+
+    <div class="ledger">
+      <div>
+        <h4>So'rovga to'g'ridan-to'g'ri</h4>
+        <p class="sub">O'z so'rovini nomlay oladigan xarajatlar</p>
+        <dl>
+          <dt>D1 · MEHNAT</dt>
+          <dd>Odam-soat × to'liq soatlik stavka<small>Odatda eng katta modda. Kalendar vaqt emas — odamlar soni × soat.</small></dd>
+          <dt>D2 · EHTIYOT QISMLAR</dt>
+          <dd>O'sha ish uchun sotib olingan yoki o'sha so'rovga ombordan chiqim qilingan qismlar<small>Sizning 1-turingiz va 2-turning hisobga olinadigan qismi.</small></dd>
+          <dt>D3 · MATERIALLAR</dt>
+          <dd>Ahamiyatlilik chegarasidan yuqori ombor chiqimlari<small>Xaridda emas, chiqimda o'rtacha tannarxda baholanadi.</small></dd>
+          <dt>D4 · TASHQI XIZMATLAR</dt>
+          <dd>Pudratchi, payvandlash ustaxonasi, kalibrlash, yetkazib beruvchi tashrifi<small>Hozir modelingizda umuman yo'q.</small></dd>
+        </dl>
+      </div>
+      <div class="pooled">
+        <h4>Fondga yig'iladi, keyin taqsimlanadi</h4>
+        <p class="sub">Hech bir so'rov o'ziniki deya olmaydigan haqiqiy xarajatlar</p>
+        <dl>
+          <dt>P1 · SARF MATERIALLARI</dt>
+          <dd>Bolt, lenta, moy, latta, moylash spreylari<small>Chegaradan past. Ishga bog'lash hech qachon arzimaydi.</small></dd>
+          <dt>P2 · ASBOB-USKUNALAR</dt>
+          <dd>Foydalanish muddati bo'yicha amortizatsiya<small>Sizning 3-turingiz — faqat qismsiz ishlarga emas, hamma ishga taqsimlanadi.</small></dd>
+          <dt>P3 · BO'LIM USTAMA XARAJATLARI</dt>
+          <dd>Nazorat, rejalashtirish, ustaxona, transport, SHHV, o'quv, navbatchilik vaqti</dd>
+          <dt>P4 · OMBOR XIZMATI</dt>
+          <dd>Omborchi vaqti, eskirish, hisobdan chiqarish</dd>
+        </dl>
+      </div>
+      <div class="conseq">
+        <h4>Oqibat xarajati — yonida ko'rsating, ichiga qo'shmang</h4>
+        <p class="sub">To'xtash xarajati, ta'mir xarajati emas</p>
+        <dl>
+          <dt>C1 · TO'XTASH</dt>
+          <dd>To'xtagan daqiqalar × ishlab chiqarish daqiqasining marjinal daromadi<small>Odatda ta'mirning o'zi bilan barobar, ko'pincha undan katta. Uni ta'mir xarajatiga qo'shish ikkala raqamni ham yaroqsiz qiladi — yonma-yon ustunlarda saqlang.</small></dd>
+        </dl>
+      </div>
+    </div>
+
+    <h3>Buni arzon qiladigan mexanizm</h3>
+    <p>P1–P4 uchun alohida taqsimlash ishini yuritmang. Butun fondni <strong>to'liq soatlik stavka</strong> ichiga joylashtiring. Shunda bitta stavka mehnat, ustama xarajat, asbob va sarf materiallarini birga ko'taradi, fond esa ta'mirlovchilar haqiqatda vaqtni qayerga sarflasa, o'sha nisbatda yacheykalarga o'zi taqsimlanadi — bu sizdagi eng yaxshi drayver va qo'shimcha ma'lumot yig'ishni talab qilmaydi.</p>
+
+    <div class="formula">
+      <span>So'rov xarajati  =  soat × to'liq stavka  +  qismlar  +  materiallar  +  xizmatlar</span>
+      <span class="out">Yacheyka xarajati  =  Σ uning so'rovlari  +  qolgan fonddan ulushi</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">04</span><span class="tag">Moslik</span></div>
+  <div class="col">
+    <h2>Uchta turingiz aslida qayerga tushadi</h2>
+
+    <p>Hech narsa tashlanmaydi. Har bir mavjud guruh yangi modelga joylashadi — lekin ikkitasi bo'linadi, va jadval nima yetishmayotganini ochib beradi.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Hozirgi turingiz</th><th>Qayerga tushadi</th><th>Nima o'zgarishi kerak</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>1-tur</b><span class="lbl">Yangi qismlar, Moliyaga so'rov</span></td>
+            <td class="ok">D2 — to'g'ridan-to'g'ri</td>
+            <td>Xarid so'rovi shakliga bitta majburiy maydon qo'shing: ta'mirlash so'rovi raqami. Shunda hisob-faktura yacheykaga o'zi yetib boradi.</td>
+          </tr>
+          <tr>
+            <td><b>2-tur</b><span class="lbl">Oylik olinadigan materiallar</span></td>
+            <td class="ok">D3 — to'g'ridan-to'g'ri <span style="color:var(--muted)">(chegaradan yuqori)</span><br><span style="color:var(--ochre)">P1 — fondga (past)</span></td>
+            <td>Xaridda zaxiraga oling, chiqimda xarajatga yozing. Chegaradan yuqori har bir chiqim so'rov raqamini ko'rsatsin. Bu — butun dasturdagi eng qimmatli o'zgarish.</td>
+          </tr>
+          <tr>
+            <td><b>3-tur</b><span class="lbl">Asbob-uskunalar, materialsiz</span></td>
+            <td style="color:var(--ochre)">P2 — fondga</td>
+            <td>Uni ta'mir kategoriyasi deb ko'rishni bas qiling. Bu — aktiv siyosati: chegaradan yuqori bo'lsa kapitallashtiring va muddati bo'yicha amortizatsiya qiling; past bo'lsa xarajatga yozing, lekin almashtirish sikliga taqsimlang. U belgilab turgan ishlar shunchaki faqat mehnatdan iborat ishlar.</td>
+          </tr>
+          <tr>
+            <td class="bad"><b>Yo'q</b><span class="lbl">Ta'mirlovchi mehnati</span></td>
+            <td class="ok">D1 — to'g'ridan-to'g'ri</td>
+            <td>So'rov yopilishida ikkita maydon: ta'mirlovchilar soni va soat. Modeldagi eng katta xarajat moddasi.</td>
+          </tr>
+          <tr>
+            <td class="bad"><b>Yo'q</b><span class="lbl">Tashqi xizmatlar</span></td>
+            <td class="ok">D4 — to'g'ridan-to'g'ri</td>
+            <td>Moliya to'lovni amalga oshirishdan oldin pudratchi dalolatnomasi yoki hisob-fakturasida so'rov raqami yozilgan bo'lsin.</td>
+          </tr>
+          <tr>
+            <td class="bad"><b>Yo'q</b><span class="lbl">To'xtash</span></td>
+            <td class="ok">C1 — yonida ko'rsatiladi</td>
+            <td>Yacheyka bo'yicha to'xtagan daqiqalar × daqiqadagi marjinal daromad. Alohida ustunda, hech qachon ta'mir xarajatiga qo'shilmaydi.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="h">Ahamiyatlilik chegarasi haqida</span>
+      <p>Qiymat chegarasini shunday belgilangki, ombor pozitsiyalarining qiymat bo'yicha eng yuqori taxminan 20 foizi — bu ombor qiymatining taxminan 80 foizini qamrab oladi — chiqimda so'rov raqamini talab qilsin. Undan pasti erkin chiqim qilinib, sarf materiallari fondiga tushadi. Boltni ish buyurtmasiga bog'lash hisobchi vaqtida boltdan qimmatga tushadi.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">05</span><span class="tag">Stavka</span></div>
+  <div class="col">
+    <h2>To'liq soatlik stavkani hisoblash</h2>
+
+    <p>Bitta raqam ishning katta qismini bajaradi, va undagi bitta xato butun quyi oqimni buzadi: <strong>bo'luvchi</strong>. Ish haqi to'lanadigan soatlarga emas, <strong>unumli soatlarga</strong> bo'ling. Ko'pchilik zavodlarda unumli vaqt to'lanadigan soatlarning yarmi bilan uchdan ikkisi orasida bo'ladi — qolgani yo'l, qism kutish, yig'ilish va tanaffuslarga ketadi. O'zingiznikini o'lchang; o'lchamaguningizcha 55 foizdan boshlang va keyin aniqlashtiring.</p>
+
+    <div class="formula">
+      <span class="over">ish haqi + soliqlar + nazorat + ustaxona va kommunal + asbob amortizatsiyasi + hisobga olinmagan sarf materiallari + transport + SHHV + o'quv</span>
+      <span class="under">unumli ish soatlari</span>
+      <span class="out">=  to'liq soatlik stavka,  chorakda bir marta qayta hisoblanadi va oldinga qarab qo'llanadi</span>
+    </div>
+
+    <p>Stavkani chorakka qotiring va oldinga qarab qo'llang. Yangi stavka chiqqanda yopilgan oylarni qayta hisoblamang — o'z tarixini doim qayta yozadigan hisobot undan foydalanadigan odamlarning ishonchini yo'qotadi.</p>
+
+    <h3>Namunaviy hisob</h3>
+    <p style="color:var(--muted);font-size:15px;font-style:italic;">Raqamlar faqat shakl uchun — SAFIA'ning haqiqiy ko'rsatkichlari emas. Har bir satrni bosh kitobdan almashtiring.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Yillik fond</th><th class="num">UZS</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Ta'mirlovchilar ish haqi va undan soliqlar</td><td class="num">1 850 000 000</td></tr>
+          <tr><td>Nazorat va rejalashtirish ish haqi</td><td class="num">320 000 000</td></tr>
+          <tr><td>Ustaxona, kommunal, transport</td><td class="num">145 000 000</td></tr>
+          <tr><td>Asbob-uskunalar amortizatsiyasi <span class="lbl">sizning 3-turingiz</span></td><td class="num">96 000 000</td></tr>
+          <tr><td>Hisobga olinmagan sarf materiallari <span class="lbl">chegaradan past 2-tur</span></td><td class="num">78 000 000</td></tr>
+          <tr><td>SHHV, o'quv, sertifikatlash</td><td class="num">41 000 000</td></tr>
+          <tr class="total"><td>Jami fond</td><td class="num">2 530 000 000</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Bo'luvchi</th><th class="num">Soat</th><th class="num">Kelib chiqadigan stavka</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>18 ta'mirlovchi × 1 900 to'lanadigan soat <span class="lbl bad">noto'g'ri — quvvatni oshirib ko'rsatadi</span></td>
+            <td class="num">34 200</td>
+            <td class="num bad">73 977</td>
+          </tr>
+          <tr class="total">
+            <td>Unumli vaqt 55% <span class="lbl ok">to'g'ri asos</span></td>
+            <td class="num">18 810</td>
+            <td class="num">134 503</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Sodda bo'luvchi stavkani <strong>45 foizga</strong> kam ko'rsatadi. Bu yo'qolgan xarajat hech qayerga foydali tushmaydi — u shunchaki hech bir yacheykaga yozilmaydi, va yacheyka xarajatlaringiz ta'mirlash bo'limi haqiqatda sarflaydigan pulning taxminan yarmiga jamlanadi.</p>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">06</span><span class="tag">Namuna</span></div>
+  <div class="col">
+    <h2>Bitta so'rov, ikki xil hisoblangan</h2>
+
+    <p>8281-yacheykada konveyer yuritmasining podshipnigi ishdan chiqdi. Ikki ta'mirlovchi, har biri uch yarim soat. Podshipnik va zichlagich to'plami ombordan olindi; tashqi pudratchi yo'q. Yacheyka 190 daqiqa to'xtab turdi.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Satr</th><th>Asos</th><th class="num">UZS</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>D1 Mehnat</td><td>2 ta'mirlovchi × 3,5 soat = 7,0 odam-soat × 134 503</td><td class="num">941 521</td></tr>
+          <tr><td>D2 Ehtiyot qism</td><td>Yuritma podshipnigi, so'rov raqami bilan ombordan chiqim</td><td class="num">620 000</td></tr>
+          <tr><td>D3 Materiallar</td><td>Zichlagich va prokladka to'plami</td><td class="num">85 000</td></tr>
+          <tr><td>D4 Xizmatlar</td><td>Yo'q</td><td class="num">0</td></tr>
+          <tr class="total"><td>Ta'mir xarajati</td><td>8281-yacheykaga yoziladi</td><td class="num">1 646 521</td></tr>
+          <tr><td>C1 To'xtash</td><td>190 daq ÷ 60 × ishlab chiqarish soatiga 480 000 UZS</td><td class="num">1 520 000</td></tr>
+          <tr class="total"><td>Nosozlikning to'liq xarajati</td><td>bitta emas, ikkita ustun bo'lib ko'rsatiladi</td><td class="num">3 166 521</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Ikki narsaga e'tibor bering. <strong>Mehnat ta'mir xarajatining 57 foizini</strong> tashkil qiladi — siz umuman o'lchamaydigan modda. Va <strong>to'xtash ta'mirdan deyarli kam emas</strong> — bu ehtiyot qismlar to'plami yoki profilaktika marshruti uchun kapital ajratishni asoslaydigan dalil.</p>
+
+    <div class="verdict">
+      <p>Uchta guruh modelida bu so'rov 8281-yacheykaga <strong>nol UZS</strong> yozadi.</p>
+      <p>Podshipnik oylik material xarididan chiqqan — u allaqachon xarajatga yozilgan, ishni nomlaydigan chiqim yozuvi esa yo'q. Mehnat hech bir guruhda mavjud emas. Nosozlik xarajat hisobotida ko'rinmaydi, 8281-yacheyka esa arzon ishlaydigandek ko'rinadi.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">07</span><span class="tag">Joriy etish</span></div>
+  <div class="col">
+    <h2>Olti bosqich, taxminan olti oy</h2>
+
+    <p>Bugun nimani yig'a olasiz va nimani yo'q — shunga qarab, sarflangan kuch birligiga to'g'ri keladigan qiymat bo'yicha tartiblangan. Har bir bosqichning nazorat nuqtasi bor — u bajarilmaguncha keyingisini boshlamang, chunki yupqa ma'lumot ustiga chiqarilgan xarajat hisoboti o'z ishonchini butunlay yo'qotadi.</p>
+
+    <div class="phases">
+
+      <div class="phase">
+        <div class="when"><b>0-bosqich</b>1–2-hafta</div>
+        <div>
+          <h4>Siyosatni bir betga yozing</h4>
+          <p>Ikki xarajat obyektini, to'rtta to'g'ridan-to'g'ri moddani, fond tarkibini, ombor chiqimlari uchun ahamiyatlilik chegarasini va asboblar uchun kapitallashtirish chegarasini kelishib oling. Moliya, ta'mirlash bo'limi boshlig'i va ishlab chiqarish imzolaydi.</p>
+          <p style="color:var(--muted);font-size:15px;">Xarajat hisoblash dasturlari aynan shu bosqich o'tkazib yuborilganda o'ladi. Imzolangan ta'rifsiz har oy nima hisobga olinishi haqidagi bahsga aylanadi.</p>
+          <span class="gate"><b>Nazorat nuqtasi</b> — bitta imzolangan bet, uchta imzo</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>1-bosqich</b>3–6-hafta</div>
+        <div>
+          <h4>So'rov yopilishida odam-soatni yig'ing</h4>
+          <p>Ikkita maydon, so'rovni yopayotgan ta'mirlovchi to'ldiradi: necha kishi va necha soat. Yarim soatgacha yaxlitlangan o'z-o'zini hisoboti mavjud qiymatning katta qismini deyarli tekinga beradi.</p>
+          <p><strong>Soatni vaqt belgilaridan chiqarmang.</strong> «Yopilgan minus ochilgan» — bu kalendar vaqt, unda qism kutish, tungi smena va tushlik ham bor. Uni mehnat sifatida ishlatish sekin, lekin arzon ishlarni tizimli ravishda oshirib ko'rsatadi — aynan siz keyin xato ravishda birinchi o'ringa qo'yadigan ishlarni.</p>
+          <p>Agar bo'lim maydonlarga qarshilik qilsa, buning o'rniga bir oylik vaqt tadqiqotini o'tkazing: turli kategoriyalar bo'yicha taxminan 100 ta so'rovda haqiqiy odam-soatni o'lchang, kategoriya bo'yicha o'rtacha soatni chiqaring, butun to'plamga qo'llang. Aniqlik taxminan ±20 foiz, lekin bu sizga bahsni yutish uchun vaqt beradi.</p>
+          <span class="gate"><b>Nazorat nuqtasi</b> — yopilgan so'rovlarning 80%+ da soat va odam soni bor</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>2-bosqich</b>3–8-hafta<br><span style="color:var(--muted)">parallel</span></div>
+        <div>
+          <h4>Har bir chiqim va hisob-fakturaga so'rov raqamini qo'ying</h4>
+          <p>Ombor allaqachon bor — yetishmayotgani to'rt maydonli chiqim yozuvi: sana, pozitsiya, miqdor, <strong>so'rov raqami</strong>. Boshlash uchun qog'oz talabnoma ham yetarli. Buni bitta qoida ta'minlaydi: so'rov raqamisiz chiqim yo'q.</p>
+          <p>Xuddi shu maydon Moliyaning xarid so'rovi shaklida va to'lovdan oldin har bir pudratchi dalolatnomasida bo'lsin. Ayni paytda buxgalteriya ham o'zgaradi: materiallar xaridda zaxiraga olinadi, chiqimda xarajatga yoziladi.</p>
+          <span class="gate"><b>Nazorat nuqtasi</b> — chegaradan yuqori chiqimlarning 80%+ so'rovni nomlaydi</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>3-bosqich</b>5–8-hafta<br><span style="color:var(--muted)">parallel</span></div>
+        <div>
+          <h4>Moliya 1-versiya stavkani hisoblaydi</h4>
+          <p>Fondni oxirgi o'n ikki oylik bosh kitobdan yig'ing. Unumli soatlarni baholang. Stavkani, uning tarkibiy qismlarini va amal qiladigan chorakni e'lon qiling — xarajatni o'qigan har kim uning ichida nima borligini ko'ra olsin.</p>
+          <span class="gate"><b>Nazorat nuqtasi</b> — stavka o'z hisob-kitobi bilan e'lon qilingan</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>4-bosqich</b>9–12-hafta</div>
+        <div>
+          <h4>Birinchi yopilish, bo'shliq ochiq ko'rsatilgan holda</h4>
+          <p>Yacheyka bo'yicha hisobotning birinchi oyini chiqaring va uni bosh kitob bilan solishtiring. Birinchi oyda 60–75 foiz qamrov kuting — bu normal holat. Qamrov ko'rsatkichini xarajatlar bilan bir betda e'lon qiling. Bo'shlig'i ko'rinib turgan raqam foydali; bo'shlig'i yashirin raqam xavfli.</p>
+          <span class="gate"><b>Nazorat nuqtasi</b> — solishtirish bajarilgan, qamrov hisobotda ko'rsatilgan</span>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="when"><b>5-bosqich</b>4–6-oy</div>
+        <div>
+          <h4>Normallashtiring, ajrating, keyin to'xtashni qo'shing</h4>
+          <p>Yacheyka bo'yicha mutlaq xarajat chalg'itadi — katta yacheyka ko'proq turishi kerak. 1 000 dona mahsulotga yoki ishlab chiqarish soatiga to'g'ri keladigan xarajatni, hamda yacheyka aktivining almashtirish qiymatiga nisbatan foizni qo'shing.</p>
+          <p>Keyin ish turi bo'yicha ajrating: <strong>avariya, joriy, profilaktik, yaxshilash</strong>. Aynan shu ajratish hisobotni harakatga yaroqli qiladi — yacheykada profilaktika xarajati yuqori bo'lsa bu sog'lom, avariya xarajati yuqori bo'lsa bu qon ketishi, va faqat shu ustun ularni farqlaydi. Nihoyat to'xtash xarajatini ustiga qo'ying — shunda yacheyka bo'yicha ishonchsizlikning to'liq xarajati chiqadi, kapitalni asoslaydigan raqam ham shu.</p>
+          <span class="gate"><b>Nazorat nuqtasi</b> — har bir yacheyka xarajati maxrajga va ish turi ajratmasiga ega</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">08</span><span class="tag">Nazorat</span></div>
+  <div class="col">
+    <h2>Ikkita nazorat raqamlarni halol saqlaydi</h2>
+
+    <h3>Bosh kitob bilan solishtirish</h3>
+    <p>Har davrda so'rovlarga yozilgan xarajatlar va fond yig'indisi ta'mirlash bo'limining bosh kitobdagi umumiy sarfiga teng bo'lishi kerak, taxminan 2 foiz farq bilan.</p>
+    <div class="formula">
+      <span>Σ so'rovlardagi xarajatlar  +  Σ fond  =  ta'mirlash bo'limining bosh kitobdagi sarfi  ± 2%</span>
+    </div>
+    <p>Busiz yacheyka hisoboti moliyaviy natijadan uzoqlashib boradigan parallel hisob kitobiga aylanadi, va Moliya unga — haqli ravishda — ishonishni to'xtatadi. Oltinchi oyga 90 foiz, o'n ikkinchi oyga 95 foiz bog'lanish qamrovini maqsad qiling.</p>
+
+    <h3>E'lon qilinadigan bog'lanmagan ulush</h3>
+    <p>Xarajatlar bilan bir betda: yacheyka kodi yo'q, soati yo'q yoki qism bog'lanishi yo'q so'rovlar ulushini ko'rsating. Butun hisobotning ishonchi bo'shliqning keyinroq boshqa birov tomonidan topilishiga emas, hozir ko'rinib turishiga bog'liq.</p>
+
+    <h3>Yacheyka bo'yicha oyiga nima ko'rsatiladi</h3>
+    <ul class="plain">
+      <li>Ta'mir xarajati — mehnat / qismlar va materiallar / xizmatlar bo'yicha ajratilgan</li>
+      <li>Xuddi shu xarajat 1 000 dona mahsulotga, va aktivning almashtirish qiymatiga foizda</li>
+      <li>Avariya, joriy, profilaktik, yaxshilash bo'yicha ajratma</li>
+      <li>So'rovlar soni, o'rtacha ta'mirlash vaqti, nosozliklar orasidagi o'rtacha vaqt</li>
+      <li>To'xtash xarajati, alohida ustunda</li>
+      <li>Qamrov: bosh kitob sarfining so'rovga bog'langan foizi</li>
+    </ul>
+    <p style="color:var(--muted);font-size:15px;">Aktivning almashtirish qiymatiga nisbatan ta'mir xarajati — zavodlararo odatiy o'lchov; oziq-ovqat va ichimlik korxonalari uchun 3–6 foiz atrofidagi ko'rsatkichlar ko'p keltiriladi, eng yaxshilari 2–3 foizga yaqin. Har qanday e'lon qilingan benchmarkni, o'zingizning ikki-uch yillik ma'lumotingiz to'planmaguncha, maqsad emas, yo'nalish sifatida qabul qiling.</p>
+  </div>
+</section>
+
+<section>
+  <div class="rail"><span class="num">09</span><span class="tag">Xatolar</span></div>
+  <div class="col">
+    <h2>Nima noto'g'ri ketadi</h2>
+
+    <div class="traps">
+      <div class="trap"><b>Kalendar vaqtni mehnat deb olish</b><span>«Yopilgan minus ochilgan» kutish, smena va tanaffuslarni o'z ichiga oladi. U aynan odam-soatda eng arzon bo'lgan ishlarni shishiradi.</span></div>
+      <div class="trap"><b>To'lanadigan soatni bo'luvchi qilish</b><span>Stavkani taxminan 40–45 foizga kam ko'rsatadi. Yo'qolgan xarajat umuman hech bir yacheykaga tushmaydi.</span></div>
+      <div class="trap"><b>Arzon sarf materiallarini quvish</b><span>Boltni so'rovga bog'lash hisobchi vaqtida boltdan qimmat. Chegarani belgilang va uni himoya qiling.</span></div>
+      <div class="trap"><b>Solishtirishning yo'qligi</b><span>Hisobot bosh kitobdan sezdirmay uzoqlashadi va ikkinchi, ishonchsiz hisob kitobiga aylanadi.</span></div>
+      <div class="trap"><b>Asbobni bugungi yacheykaga yozish</b><span>Bir yacheykadagi ta'mir paytida olingan drel o'sha yacheykaning xarajati emas. U fondga tushadi va muddati bo'yicha taqsimlanadi.</span></div>
+      <div class="trap"><b>Yacheykalarni mutlaq xarajat bo'yicha solishtirish</b><span>Maxrajsiz eng katta yacheyka doim eng yomon ko'rinadi va yaxshilash kuchi noto'g'ri joyga ketadi.</span></div>
+      <div class="trap"><b>Erta e'lon qilish</b><span>Birinchi oyda bitta ko'rinib turgan noto'g'ri raqam — va bo'lim bir yil davomida mashinalar haqida emas, uslub haqida bahslashadi.</span></div>
+      <div class="trap"><b>To'xtashni ta'mir xarajatiga qo'shish</b><span>Ularni birlashtirish ikkalasini ham yashiradi. Ta'mir xarajati texnik xizmat qarorlarini, to'xtash xarajati kapital qarorlarini boshqaradi.</span></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>SAFIA · ta'mirlash xarajatlarini hisoblash uslubi v1</span>
+  <span>Xarajat obyektlari: yacheyka, so'rov</span>
+  <span>Namunaviy deb belgilangan raqamlar faqat shakl uchun</span>
+</footer>
+
+</div>
