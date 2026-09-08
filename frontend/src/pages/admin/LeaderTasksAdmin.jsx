@@ -977,17 +977,33 @@ export default function LeaderTasksAdmin() {
     const mine = (k) => level.kind !== "std" && own.has(k);
     const out = [];
 
-    const cam = r.proof_kind === "camera";
-    out.push({
-      k: "proof", strong: cam || mine("proof_kind"),
-      text: t(cam ? "admin.ltasks.proofCamera" : "admin.ltasks.proofScreenshot"),
-    });
+    // Proof kind and photo count get the SAME per-shift treatment as the
+    // window below, and for the same reason. The global level is not what the
+    // plant runs on: `CAMERA_IS_PILOT` forbids camera at Standart, so the six
+    // camera tasks are stored as identical rows on every unit, and `min_media`
+    // 3 likewise. Reading the global row here printed «Skrinshot · 1 ta rasm»
+    // on all 13 rows — uniform, which is the failure this page was rebuilt to
+    // end, and false, because every unit files those six in the app camera.
+    // Resolve per shift instead: one fragment when the shifts agree, labelled
+    // halves when they do not, so the sentence states what is actually asked.
+    const perShift = (key, render) => {
+      if (level.kind !== "std" || shifts.length < 2) {
+        const v = r[key];
+        return { text: render(v), strong: render.strongOf(v) || mine(key) };
+      }
+      const vals = shifts.map((s) => ({ sh: s, v: resolved(shiftLvl(s), tid)[key] }));
+      const same = vals.every((x) => x.v === vals[0].v);
+      if (same) return { text: render(vals[0].v), strong: render.strongOf(vals[0].v) };
+      return { halves: vals.map((x) => ({ sh: x.sh, text: render(x.v), strong: render.strongOf(x.v) })) };
+    };
 
-    const n = Number(r.min_media) || 0;
-    out.push({
-      k: "photos", strong: n > 1 || mine("min_media"),
-      text: t("admin.ltasks.ruleShots").replace("{n}", n),
-    });
+    const proofText = (v) => t(v === "camera" ? "admin.ltasks.proofCamera" : "admin.ltasks.proofScreenshot");
+    proofText.strongOf = (v) => v === "camera";
+    out.push({ k: "proof", ...perShift("proof_kind", proofText) });
+
+    const shotsText = (v) => t("admin.ltasks.ruleShots").replace("{n}", Number(v) || 0);
+    shotsText.strongOf = (v) => (Number(v) || 0) > 1;
+    out.push({ k: "photos", ...perShift("min_media", shotsText) });
 
     // A scope that names a shift has ONE window; Standart serves both, so it
     // prints both, labelled — showing shift 1's alone is exactly how a shift-2
