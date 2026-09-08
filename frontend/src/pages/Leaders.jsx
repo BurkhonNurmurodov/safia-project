@@ -788,87 +788,6 @@ const TXT = {
    passes through untouched. */
 const showReason = (raw, T) => expandReason(raw, T.missedDeadline);
 
-// The 13 checklist questions, in the sheet's question order (index + 1 = the
-// "N)" in its column headers). The first 12 carry over from
-// apps-script/JavaScript.html; T13 was added to the form later, which is why the
-// old T12 weight of 10% is now split 5% / 5% across the two. Localized into all
-// four UI languages; weights are language-independent and total 100%.
-const TASK_DETAILS = [
-  { w: "10%",
-    ru:      { n: "Фиксация ежедневной загрузки ячейки (план)", note: "фотоотчет" },
-    uz:      { n: "Yacheykaning kunlik planini qayd qilish", note: "Foto hisobot" },
-    uz_cyrl: { n: "Ячейканинг кунлик планини қайд қилиш", note: "Фото ҳисобот" },
-    en:      { n: "Daily cell load fixation (plan)", note: "photo report" } },
-  { w: "5%",
-    ru:      { n: "Каскадная встреча (открытие - планерка)", note: "Фотоотчет Распределение зон" },
-    uz:      { n: "Kaskad uchrashuv (ochilish – rejalashtirish)", note: "Foto hisobot. Zonalarni taqsimlash" },
-    uz_cyrl: { n: "Каскад учрашув (очилиш – режалаштириш)", note: "Фото ҳисобот. Зоналарни тақсимлаш" },
-    en:      { n: "Cascade meeting (briefing)", note: "Photo report Zone distribution" } },
-  { w: "10%",
-    ru:      { n: "СОП стандарт", note: "Фотоотчет Фиксация смежных ячеек" },
-    uz:      { n: "SOP standarti", note: "Foto hisobot. Qo'shni yacheykalarni qayd qilish" },
-    uz_cyrl: { n: "СОП стандарти", note: "Фото ҳисобот. Қўшни ячейкаларни қайд қилиш" },
-    en:      { n: "SOP Standard", note: "Photo report adjacent cell fixation" } },
-  { w: "15%",
-    ru:      { n: "КРУ обход цеха (3 раза в день) (9:00 - 11:00 - 15:00)", note: "Чек лист обхода" },
-    uz:      { n: "Obxod sexa (kuniga 3 marta)", note: "Aylanib chiqish chek-listi" },
-    uz_cyrl: { n: "Обход цеха (кунига 3 марта)", note: "Айланиб чиқиш чек-листи" },
-    en:      { n: "Workshop inspection (3x/day 9:00-11:00-15:00)", note: "Inspection checklist" } },
-  { w: "5%",
-    ru:      { n: "Прием сырья (холодильник, склад)", note: "Контрольный лист" },
-    uz:      { n: "Syryo qabul qilish (sovutgich, ombor)", note: "Nazorat varaqasi" },
-    uz_cyrl: { n: "Сырьё қабул қилиш (совутгич, омбор)", note: "Назорат варақаси" },
-    en:      { n: "Receiving raw materials", note: "Control sheet" } },
-  { w: "5%",
-    ru:      { n: "Контроль своевременных поставок (внутреняя логистика)", note: "Фиксация Тайминга захода" },
-    uz:      { n: "O'z vaqtida yetkazib berishni nazorat qilish (ichki logistika)", note: "Kirish taymingini qayd qilish" },
-    uz_cyrl: { n: "Ўз вақтида етказиб беришни назорат қилиш (ички логистика)", note: "Кириш таймингини қайд қилиш" },
-    en:      { n: "Internal logistics timing control", note: "Arrival timing fixation" } },
-  { w: "5%",
-    ru:      { n: "Заполнение контрольного стенда (САП)", note: "фотоотчет" },
-    uz:      { n: "Nazorat stendini to'ldirish (SAP)", note: "Foto hisobot" },
-    uz_cyrl: { n: "Назорат стендини тўлдириш (SAP)", note: "Фото ҳисобот" },
-    en:      { n: "Control board filling (SAP)", note: "photo report" } },
-  { w: "5%",
-    ru:      { n: "Заполнение обеспокоенности", note: "фотоотчет" },
-    uz:      { n: "Obespokoennosti kiritish", note: "Foto hisobot" },
-    uz_cyrl: { n: "Обеспокоенности киритиш", note: "Фото ҳисобот" },
-    en:      { n: "Concern reporting", note: "photo report" } },
-  { w: "10%",
-    ru:      { n: "Фиксация 50% плана в течении смены", note: "Отчет бригадиру" },
-    uz:      { n: "Smena davomida rejaning 50% ni qayd qilish", note: "Brigadirga hisobot" },
-    uz_cyrl: { n: "Смена давомида режанинг 50% ни қайд қилиш", note: "Бригадирга ҳисобот" },
-    en:      { n: "50% plan fixation during shift", note: "Report to supervisor" } },
-  { w: "10%",
-    ru:      { n: "Закрытие плана САП", note: "Подтверждение бригадира" },
-    uz:      { n: "SAP rejasini yopish", note: "Brigadir tasdig'i" },
-    uz_cyrl: { n: "SAP режасини ёпиш", note: "Бригадир тасдиғи" },
-    en:      { n: "SAP plan closure", note: "Supervisor confirmation" } },
-  { w: "10%",
-    ru:      { n: "Составление графика", note: "Фотоотчет" },
-    uz:      { n: "Ish jadvalini grafika tuzish", note: "Foto hisobot" },
-    uz_cyrl: { n: "Иш жадвалини графика тузиш", note: "Фото ҳисобот" },
-    en:      { n: "Scheduling", note: "Photo report" } },
-  { w: "5%",
-    ru:      { n: "Контроль работы зам лидера", note: "Фотоотчет чек листа" },
-    uz:      { n: "Zam lider ishini nazorat qilish", note: "Chek-list foto hisoboti" },
-    uz_cyrl: { n: "Зам лидер ишини назорат қилиш", note: "Чек-лист фото ҳисоботи" },
-    en:      { n: "Assistant leader work control", note: "Checklist photo report" } },
-  { w: "5%",
-    ru:      { n: "Сменный отчёт лидера", note: "фотоотчет" },
-    uz:      { n: "Liderning smena hisoboti", note: "Foto hisobot" },
-    uz_cyrl: { n: "Лидернинг смена отчёти", note: "Фото ҳисобот" },
-    en:      { n: "Leader's shift report", note: "photo report" } },
-];
-// `id` is the sheet's question number (1-based). A question that is on the form
-// but not yet described here still renders — as "Task N", with no weight.
-const taskDetail = (id, lang) => {
-  const td = TASK_DETAILS[id - 1];
-  if (!td) return { weight: "—", n: "", note: "" };
-  const loc = td[lang] || td.uz || td.ru;
-  return { weight: td.w, ...loc };
-};
-
 const DAY = 86400000;
 const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
 // "2026-04-08T07:22:58" → "07:22"
@@ -2525,16 +2444,59 @@ export default function Leaders() {
       },
     }).then((r) => r.data),
   });
+
+  // The task CATALOG — every definition the platform has, ARCHIVED ones
+  // included, which is the whole reason this page reads it rather than
+  // `/requirements` alone: that one is enabled-only and scoped, so a report
+  // from before a task was archived, or one whose task this chain has switched
+  // off, has nothing there to name it. Auth-only by design (see the endpoint's
+  // docstring), so every viewer of the page resolves a name.
+  //
+  // It replaced a 13-entry hard-coded array indexed POSITIONALLY as
+  // `TASK_DETAILS[id - 1]`. That was only ever safe while the ids were a dense
+  // 1..13 run, and the admin page now CREATES tasks (explicit id = max + 1) and
+  // ARCHIVES them — so the first time anybody does either, position stops
+  // meaning id and the page names the WRONG task on a screen that scores
+  // leaders. Never re-introduce a positional lookup here, not even as a
+  // fallback: a wrong name is worse than no name.
+  const { data: taskCat } = useQuery({
+    queryKey: ["leader-task-catalog"],
+    queryFn: () => api.get("/api/leader-tasks/catalog").then((r) => r.data),
+    // A small list that changes only when an admin adds or archives a task.
+    staleTime: 5 * 60_000,
+  });
+  // id → the four language columns. Keyed by `id`, so an id the catalog does
+  // not carry simply misses — it can never resolve to a neighbour's name.
+  const taskCatNames = useMemo(() => {
+    const m = {};
+    for (const t of taskCat?.tasks || []) m[Number(t.id)] = t.name || {};
+    return m;
+  }, [taskCat]);
+  // The catalog name, in the reader's own language, falling back to Russian —
+  // what the platform falls back to everywhere. An id the catalog has no row
+  // for, and a catalog still loading or failed, both answer with an EMPTY
+  // name: every caller already carries its own answer to that (the bare «T4»,
+  // the server's `taskLabel`, or simply no second line), and a blank is a
+  // reader noticing the name is missing, where a wrong one is not.
+  //
+  // The `(id, lang)` signature is the prop contract `AiTriage` is handed —
+  // keep it, and keep this a `useCallback` so that prop is stable.
+  const taskDetail = useCallback((id) => {
+    const nm4 = taskCatNames[Number(id)];
+    const n = nm4 ? (nm4[lang] || nm4.ru || nm4.uz || "") : "";
+    return { n: String(n).trim() };
+  }, [taskCatNames, lang]);
+
   // The name in force, in the reader's own language, falling back to Russian —
   // what the platform falls back to everywhere. A question the chain does not
   // carry (one disabled at this level still keeps its axis slot) falls back to
-  // the seeded catalogue, and only then to nothing, so the caller can print the
+  // the catalog, and only then to nothing, so the caller can print the
   // bare «T4» rather than an empty tooltip.
   const taskName = useCallback((id) => {
     const live = (taskReq?.tasks || []).find((t) => Number(t.id) === Number(id));
     const n = live ? (live.names?.[lang] || live.names?.ru || live.names?.uz || "") : "";
     return String(n || taskDetail(id, lang).n || "").trim();
-  }, [taskReq, lang]);
+  }, [taskReq, lang, taskDetail]);
 
   // supervisor → leaders cascade
   const supLeaderMap = useMemo(() => {
@@ -3633,9 +3595,16 @@ export default function Leaders() {
           valueColor={hasData ? scoreColor(avg) : "var(--text-4)"}
           accent={hasData ? scoreColor(avg) : undefined} />
 
-        {/* Lowest-success task */}
+        {/* Lowest-success task. The number always resolves; the NAME may not
+            (a catalog still loading, or an id it has no row for), and «T7: »
+            with nothing after the colon reads as a truncated string rather
+            than as a missing name — so the colon comes with the name or not
+            at all. */}
         <StatCard label={T.lowTask} icon={AlertTriangle} loading={showLoading}
-          tip={hasData && insights.lowTask ? `T${insights.lowTask.id}: ${taskDetail(insights.lowTask.id, lang).n}` : T.tipLowTask}
+          tip={hasData && insights.lowTask
+            ? [`T${insights.lowTask.id}`, taskDetail(insights.lowTask.id, lang).n]
+                .filter(Boolean).join(": ")
+            : T.tipLowTask}
           value={hasData && insights.lowTask ? `T${insights.lowTask.id}` : "—"}
           badge={hasData && insights.lowTask ? `${insights.lowTask.val}%` : null}
           badgeColor={hasData && insights.lowTask ? scoreColor(insights.lowTask.val) : "var(--text-4)"} />
