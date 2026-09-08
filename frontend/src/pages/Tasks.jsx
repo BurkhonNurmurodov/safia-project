@@ -556,7 +556,7 @@ export default function Tasks() {
   }));
   const brigadirPickOptions = brigadirs.map((b) => ({
     value: String(b.supervisor_manager_id),
-    label: b.shift ? `${tl(b.name)} · S${b.shift}` : tl(b.name),
+    label: tl(b.name),
   }));
 
   // ── one consolidated filter zone ───────────────────────────────────────────
