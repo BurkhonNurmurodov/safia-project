@@ -601,6 +601,10 @@ _DT_COLS = [
     ("date",     "Sana",        12, "text"),
     ("cell",     "Yacheyka",    11, "text"),
     ("leader",   "Lider",       26, "text"),
+    # How many people stood in the cell that day — the weight the unit's mean
+    # divides by. Blank on a shift-report row: that day names no cell at all,
+    # and a 0 there would read as a cell that ran empty.
+    ("hc",       "Odam soni",   12, "num"),
     ("category", "Kategoriya",  14, "text"),
     ("start",    "Boshlandi",   11, "text"),
     ("end",      "Tugadi",      11, "text"),
@@ -676,6 +680,7 @@ def export_downtime_cell_detail(
             for iv in c["intervals"]:
                 rows.append({
                     "date": d, "cell": c["code"], "leader": c["leader"] or "",
+                    "hc": c["hc"],
                     "category": iv["category"], "start": iv["start"], "end": iv["end"],
                     "minutes": iv["minutes"], "stopped": yes if iv["stopped"] else no,
                     "note": iv["note"], "source": src_cells,
@@ -703,7 +708,8 @@ def export_downtime_cell_detail(
                 if body.cats and cat not in body.cats:
                     continue
                 rows.append({
-                    "date": stamps[r.date], "cell": "", "leader": "", "category": cat,
+                    "date": stamps[r.date], "cell": "", "leader": "", "hc": None,
+                    "category": cat,
                     "start": "", "end": "", "minutes": round(float(val), 1),
                     "stopped": yes if body.stopped else no, "note": "", "source": src_sheet,
                 })
@@ -908,7 +914,8 @@ def export_downtime(
                 for iv in c["intervals"]:
                     events.append({
                         "date": d, "name": s["name"], "cell": c["code"] or "",
-                        "leader": c["leader"] or "", "category": iv["category"],
+                        "leader": c["leader"] or "", "hc": c["hc"],
+                        "category": iv["category"],
                         "start": iv["start"], "end": iv["end"], "minutes": iv["minutes"],
                         "stopped": bool(iv["stopped"]), "note": iv["note"], "source": "cells",
                     })
@@ -919,6 +926,9 @@ def export_downtime(
             if v:
                 events.append({
                     "date": r["date"], "name": r["name"], "cell": "", "leader": "",
+                    # No cell, so no headcount — the shift-report row is the
+                    # unit's own total and names nobody to divide it among.
+                    "hc": None,
                     "category": c, "start": "", "end": "", "minutes": v,
                     "stopped": body.stopped, "note": "", "source": "sheet",
                 })

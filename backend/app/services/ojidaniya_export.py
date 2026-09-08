@@ -22,7 +22,8 @@ number. Layout follows the page's reading order across five tabs:
                  red past the 50-min flag) with
                  the fleet-per-day trend beneath it
     Reyestr      one row per brigadir-day, every category a column, filterable
-    Yacheykalar  one row per EVENT the cells filed (cell, leader, clock, note);
+    Yacheykalar  one row per EVENT the cells filed (cell, leader, how many people
+                 stood in it, clock, note);
                  a day still read off the shift report is one row per category,
                  marked as such, so the file is never shorter than the screen
     Izoh         what every category means and whether the загрузка counts it
@@ -53,6 +54,7 @@ from app.services.quality_export import (
 
 INDIGO = "6366F1"            # the page's under-threshold bar
 MIN = "#,##0.#"              # minutes: a decimal only when there is one
+HC = "0.#"                   # people: fractional when a cell shares a work centre
 HRS = "0.0"
 DATE_FMT = "DD.MM.YYYY"
 THRESHOLD = 50
@@ -508,12 +510,13 @@ def _events(wb: Workbook, p: dict) -> None:
     tabs = p.get("sheets") or {}
     rows = p.get("events") or []
     cols = [L.get("date", ""), L.get("supervisor", ""), L.get("cell", ""), L.get("leader", ""),
-            L.get("cat", ""), L.get("catName", ""), L.get("start", ""), L.get("end", ""),
-            L.get("minutes", ""), L.get("status", ""), L.get("note", ""), L.get("source", "")]
-    widths = {2: 12.0, 3: 24.0, 4: 10.0, 5: 24.0, 6: 8.5, 7: 36.0, 8: 10.5, 9: 10.5,
-              10: 10.0, 11: 15.0, 12: 46.0, 13: 17.0}
+            L.get("hc", ""), L.get("cat", ""), L.get("catName", ""), L.get("start", ""),
+            L.get("end", ""), L.get("minutes", ""), L.get("status", ""), L.get("note", ""),
+            L.get("source", "")]
+    widths = {2: 12.0, 3: 24.0, 4: 10.0, 5: 24.0, 6: 11.5, 7: 8.5, 8: 36.0, 9: 10.5,
+              10: 10.5, 11: 10.0, 12: 15.0, 13: 46.0, 14: 17.0}
     ws = _sheet(wb, tabs.get("events", "Events"), widths, landscape=True)
-    C1, C2 = 2, 13
+    C1, C2 = 2, 14
 
     row = _banner(ws, 2, C1, C2, p.get("title") or "", p.get("subtitle") or "")
     row = _section(ws, row, C1, C2, L.get("events", ""),
@@ -539,15 +542,27 @@ def _events(wb: Workbook, p: dict) -> None:
                                        color=INK if e.get("cell") else INK_FAINT))
         _block(ws, row, C1 + 3, row, C1 + 3, _xl(e.get("leader") or "") or "—", fill=bg, border=BOX,
                font=Font(name=FONT, size=9.5, color=INK if e.get("leader") else INK_FAINT))
-        _block(ws, row, C1 + 4, row, C1 + 4, cat, fill=bg, border=BOX, align=CENTER,
+        # How many people stood in this cell that day — the weight the unit's
+        # mean divides by, so a reader can see why a long stop in a small cell
+        # moved the bar less than a short one in a big cell. A dash, never 0,
+        # where there is no answer: a shift-report row names no cell, and a cell
+        # whose work centre nobody typed enters neither side of that mean.
+        hc = e.get("hc")
+        if hc is None:
+            _block(ws, row, C1 + 4, row, C1 + 4, "—", fill=bg, border=BOX, align=CENTER,
+                   font=Font(name=FONT, size=9.5, color=INK_FAINT))
+        else:
+            _block(ws, row, C1 + 4, row, C1 + 4, hc, fill=bg, border=BOX, align=RIGHT,
+                   fmt=HC, font=Font(name=FONT, size=9.5, color=INK))
+        _block(ws, row, C1 + 5, row, C1 + 5, cat, fill=bg, border=BOX, align=CENTER,
                font=Font(name=FONT, size=9.5, bold=True, color=_cat_color(p, cat)))
-        _block(ws, row, C1 + 5, row, C1 + 5, _xl(_cat_label(p, cat)) or "—", fill=bg, border=BOX,
+        _block(ws, row, C1 + 6, row, C1 + 6, _xl(_cat_label(p, cat)) or "—", fill=bg, border=BOX,
                font=Font(name=FONT, size=9, color=INK_SOFT))
-        _block(ws, row, C1 + 6, row, C1 + 6, e.get("start") or "—", fill=bg, border=BOX,
+        _block(ws, row, C1 + 7, row, C1 + 7, e.get("start") or "—", fill=bg, border=BOX,
                align=CENTER, font=Font(name=FONT, size=9.5, color=INK if e.get("start") else INK_FAINT))
-        _block(ws, row, C1 + 7, row, C1 + 7, e.get("end") or "—", fill=bg, border=BOX,
+        _block(ws, row, C1 + 8, row, C1 + 8, e.get("end") or "—", fill=bg, border=BOX,
                align=CENTER, font=Font(name=FONT, size=9.5, color=INK if e.get("end") else INK_FAINT))
-        _block(ws, row, C1 + 8, row, C1 + 8, e.get("minutes") or 0, fill=bg, border=BOX,
+        _block(ws, row, C1 + 9, row, C1 + 9, e.get("minutes") or 0, fill=bg, border=BOX,
                align=RIGHT, fmt=MIN, font=Font(name=FONT, size=10, bold=True, color=INK))
         if stopped is None:
             st, sc = "—", INK_FAINT
@@ -555,13 +570,13 @@ def _events(wb: Workbook, p: dict) -> None:
             st, sc = L.get("stoppedYes", ""), RED
         else:
             st, sc = L.get("stoppedNo", ""), INK_SOFT
-        _block(ws, row, C1 + 9, row, C1 + 9, st, fill=bg, border=BOX, align=CENTER,
+        _block(ws, row, C1 + 10, row, C1 + 10, st, fill=bg, border=BOX, align=CENTER,
                font=Font(name=FONT, size=9, bold=stopped is True, color=sc))
         note = _xl(e.get("note") or "")
-        _block(ws, row, C1 + 10, row, C1 + 10, note or "", fill=bg, border=BOX, align=WRAP,
+        _block(ws, row, C1 + 11, row, C1 + 11, note or "", fill=bg, border=BOX, align=WRAP,
                font=Font(name=FONT, size=9, color=INK if note else INK_FAINT))
         src = e.get("source")
-        _block(ws, row, C1 + 11, row, C1 + 11,
+        _block(ws, row, C1 + 12, row, C1 + 12,
                L.get("srcCells", "") if src == "cells" else L.get("srcSheet", ""),
                fill=bg, border=BOX, font=Font(name=FONT, size=9, color=INK_SOFT))
         row += 1
