@@ -193,11 +193,18 @@ def line_keys(products) -> dict:
     them, ordered by (sort_order, id). That is the smallest set position can be
     responsible for, instead of all of them.
 
-    The caveat this leaves is the one the platform already documents for a
-    code-less line (see daily_key): EDITING a line's name or its Трудоемкость
-    re-points which quantities it tracks. The value does not move to a
-    neighbour — it is simply no longer found, and the line falls back to the
-    group's shared figure, which is a visible revert rather than a silent lie.
+    Because the key is content, EDITING a line's name or its Трудоемкость
+    re-points which quantities it tracks — the caveat daily_key already carries
+    for renaming a code-less line. The value is never moved to a NEIGHBOUR;
+    where it goes depends on who did the moving:
+
+      • a catalog EDIT carries it, in the same write. The endpoint knows the one
+        row that changed and both its identities, so nothing is guessed —
+        production._carry_manual_quantities.
+      • a catalog IMPORT does not, and must not. It cannot know which line
+        became which, so the only way to follow one would be by position, which
+        is exactly what the paragraph above rules out. The line falls back to
+        the group's shared figure — a visible revert rather than a silent lie.
     """
     def field(p, k):
         return p.get(k) if isinstance(p, dict) else getattr(p, k, None)

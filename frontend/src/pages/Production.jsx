@@ -1143,7 +1143,12 @@ export default function Production() {
     onError: (e) => toast.error(writeErr(e)),
   });
   // Catalog line edit (PPProduct: sap_code / name / labor_time / work_center).
-  // Admin-only endpoint; renaming sap_code/work_center re-points the SKU/unit.
+  // Admin-only. All four are part of what the line's stored ПЛАН/ФАКТ are keyed
+  // by, so the backend carries every TYPED value onto the new identity as part
+  // of the same write — the numbers follow the line. What it does not move is
+  // the SAP snapshot: a figure the фаза file reported for one (code, Команда)
+  // pair belongs to that pair, so a line sent to another Команда reads the new
+  // one's figures until the next upload.
   const catalog = useMutation({
     mutationFn: ({ id, body }) => api.put(`/admin/production/catalog/${id}`, body),
     onSuccess: () => {

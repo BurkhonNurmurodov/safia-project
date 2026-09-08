@@ -2954,8 +2954,42 @@ so this was ~15% of the catalog, not an edge case.
   BOTH — 3 of the 118 groups — which is the smallest set position can be left
   responsible for. Editing a line's name or its Трудоемкость re-points what it
   tracks, the caveat `daily_key` already carries for renaming a code-less line;
-  the value is not moved to a neighbour, it is simply no longer found, and the
-  line falls back to the group's figure — a visible revert, never a silent lie.
+  the value is never moved to a NEIGHBOUR, and who did the moving decides where
+  it goes — see the next entry.
+- **A catalog EDIT carries the typed values with the line; a catalog IMPORT
+  cannot.** `production._carry_manual_quantities`, run inside `PUT
+  /admin/production/catalog/{id}`. All four of SAP code · name · Команда ·
+  Трудоемкость are part of what a line's quantities are keyed by, so editing
+  one used to re-point the reader onto a key with nothing under it: **a number
+  somebody typed read 0 on every date at once**, closed and signed-off days
+  included, with nothing on screen saying so. An EDIT is the one caller that
+  can move a value honestly — one row, one id, its fields before and after —
+  which is precisely what an IMPORT cannot do, since matching re-created rows up
+  by position is the mis-attribution `line_keys` exists to prevent. So the carry
+  lives on the endpoint and `import_catalog` keeps the documented revert.
+  - **Only what a PERSON typed travels.** `pp_line_daily` always (those are the
+    line's own numbers and nobody else's); `pp_daily.*_override` only where the
+    line was ALONE in its old group, and onto the line's own per-line row rather
+    than onto the destination group. So no row anybody left alone changes value:
+    a shared number with siblings still under it is never moved, and a carried
+    one lands a level BELOW what the destination's siblings read.
+  - **The SAP snapshot (`plan_qty` / `actual_qty`) stays where the file put
+    it.** It is not the line's property but a record of what the фаза export
+    said about one (code, work centre) pair on one date, and
+    `_ingest_for_manager` rebuilds it from the file on the next upload of that
+    date — so a moved snapshot is a number that quietly vanishes again later.
+    **Consequence to know:** a line sent to another Команда keeps every figure
+    anybody typed and reads the new Команда's SAP figures for the rest, which is
+    what the file actually says.
+  - Sources are deleted and flushed BEFORE any destination is written, because
+    an edit can SHUFFLE keys as well as move one: renaming a line onto another
+    line's name and Трудоемкость re-ranks the `#n` suffix separating them, so
+    one line's destination is the other's source, and writing first would hit
+    `uq_pp_line_daily_key`. A row already at a destination can only be an orphan
+    of an earlier edit (no two live lines share a `line_key`), so the moving
+    line's own number wins; a value it does not carry blanks nothing.
+  - The count rides the action log as `carried_values`, so «why did this number
+    move» is answerable from «Jurnal» rather than from memory.
 - **`pp_calc.line_minutes` is the second reader and exists so the rule has ONE
   spelling.** `/zagruzka-cell` sums **Σ over lines of labor·qty**, never
   (Σ labor)×one quantity — two operations may now carry two quantities, so the

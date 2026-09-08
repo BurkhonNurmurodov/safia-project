@@ -1797,6 +1797,153 @@ def admin_create_catalog(body: CatalogCreateBody,
     return {"ok": True, "id": p.id}
 
 
+def _catalog_ids(prods: list[dict]) -> dict:
+    """{product id: (qty_key, work centre, line_key)} — the full stored identity
+    of every catalog line of one unit, exactly as pp_daily and pp_line_daily key
+    it. See pp_calc.daily_key and pp_calc.line_keys for why each half is what it
+    is. Pass EVERY line of the unit, active or not: the `#n` suffix is ranked
+    over the whole catalog, so a subset would compute a key no reader uses.
+    """
+    keys = line_keys(prods)
+    return {p["id"]: (daily_key(p.get("sap_code"), p.get("name")),
+                      p.get("work_center") or "", keys[p["id"]])
+            for p in prods if p.get("id") in keys}
+
+
+def _carry_manual_quantities(db, mid: int, before: list[dict],
+                             after: list[dict]) -> int:
+    """Carry every TYPED ПЛАН/ФАКТ onto the identity its catalog line now has.
+
+    A line's quantities are keyed by its CONTENT — the group key (`daily_key`:
+    the SAP code, or the name where there is none) and, for the per-line
+    overlay, the line's own name and Трудоемкость (`line_keys`). That is the
+    only identity that survives `import_catalog`, which deletes and re-creates
+    every PPProduct row; both docstrings explain why an id or a rank cannot be
+    used. The cost is that editing one of those four fields re-points which
+    quantities the line reads — the lookup misses, and a number somebody typed
+    reads 0 on every date at once, which is what this repairs.
+
+    Letting it miss is the right answer for an IMPORT, which cannot know which
+    line became which: matching them up by position is the one thing that would
+    attribute a number to the wrong operation. An EDIT knows exactly — one row,
+    one id, its fields before and after — so the values travel with the line and
+    nothing is guessed.
+
+    What travels is what a PERSON typed, and only that:
+
+      • `pp_line_daily` — the per-line overrides. They are that line's own
+        numbers and nobody else's, so they always follow it.
+      • `pp_daily.*_override` — the group's shared manual value, carried only
+        when the line was ALONE in its old group, and carried onto the line's
+        own per-line row rather than onto the destination group. Siblings on
+        either side keep reading exactly what they were reading: at the source
+        because a shared value with lines still under it is never moved, at the
+        destination because the moved number lands one level below the row they
+        read. Nothing changes on a row nobody edited.
+
+    The SAP snapshot (`pp_daily.plan_qty` / `actual_qty`) is deliberately left
+    where the file put it. It is not a property of the catalog line but a record
+    of what the фаза export said about one (code, work centre) pair on one date,
+    and `_ingest_for_manager` rebuilds it from the file on the next upload of
+    that date — so a moved snapshot would be a number that quietly vanished
+    again later. A line moved to another Команда reads that Команда's figures,
+    which is what the file actually says.
+
+    Returns how many stored values were carried, for the action log.
+    """
+    old_ids, new_ids = _catalog_ids(before), _catalog_ids(after)
+    moves = {old: new_ids[pid] for pid, old in old_ids.items()
+             if pid in new_ids and new_ids[pid] != old}
+    if not moves:
+        return 0
+
+    # {(new identity, date): {"plan": v, "actual": v}} — what each moved line was
+    # showing MANUALLY, gathered from both levels before anything is written.
+    hold: dict = {}
+
+    # Narrowed to the identities in play — a superset of the sources and their
+    # destinations, never the unit's whole overlay. `moves` normally holds one
+    # entry, so this reads a handful of rows however many dates the unit has.
+    ends = list(moves) + list(moves.values())
+    rows = db.query(PPLineDaily).filter(
+        PPLineDaily.manager_id == mid,
+        PPLineDaily.qty_key.in_({e[0] for e in ends}),
+        PPLineDaily.work_center.in_({e[1] for e in ends}),
+        PPLineDaily.line_key.in_({e[2] for e in ends}),
+    ).all()
+    have = {(r.qty_key, r.work_center or "", r.line_key, r.date): r for r in rows}
+    moved_rows = [r for r in rows
+                  if (r.qty_key, r.work_center or "", r.line_key) in moves]
+    for r in moved_rows:
+        slot = hold.setdefault(
+            (moves[(r.qty_key, r.work_center or "", r.line_key)], r.date), {})
+        if r.plan_override is not None:
+            slot["plan"] = r.plan_override
+        if r.actual_override is not None:
+            slot["actual"] = r.actual_override
+        have.pop((r.qty_key, r.work_center or "", r.line_key, r.date), None)
+        db.delete(r)
+
+    # The group's shared value, for a group the edit leaves with no lines at all.
+    sizes = group_sizes(before)
+    emptied = {}
+    for pid, old in old_ids.items():
+        new = new_ids.get(pid)
+        if new and (new[0], new[1]) != (old[0], old[1]) and sizes.get(old[:2]) == 1:
+            emptied[old[:2]] = new
+    if emptied:
+        rows_d = db.query(PPDaily).filter(
+            PPDaily.manager_id == mid,
+            PPDaily.sap_code.in_({k for k, _w in emptied}),
+            PPDaily.work_center.in_({w for _k, w in emptied}),
+        ).all()
+        for d in rows_d:
+            new = emptied.get((d.sap_code, d.work_center or ""))
+            if new is None:
+                continue
+            slot = hold.setdefault((new, d.date), {})
+            # The line's own per-line value outranks the shared one at read time,
+            # so it outranks it here too — setdefault, never overwrite.
+            if d.plan_override is not None:
+                slot.setdefault("plan", d.plan_override)
+            if d.actual_override is not None:
+                slot.setdefault("actual", d.actual_override)
+            # Cleared whether or not it was carried: no catalog line is left in
+            # this group, so the value is unreadable, and a line added here later
+            # would silently inherit a number typed for a different one.
+            d.plan_override = d.actual_override = None
+
+    # Every source is gone before any destination lands. An edit can SHUFFLE keys
+    # as well as move one — renaming a line onto another line's name and
+    # Трудоемкость re-ranks the `#n` suffix that separates the two, so one line's
+    # destination is the other's source — and writing before deleting would hit
+    # uq_pp_line_daily_key instead.
+    if moved_rows:
+        db.flush()
+
+    carried = 0
+    for ((key, wc, line), day), vals in hold.items():
+        if not vals:
+            continue
+        dest = have.get((key, wc, line, day))
+        if dest is None:
+            dest = PPLineDaily(manager_id=mid, date=day, qty_key=key,
+                               work_center=wc, line_key=line)
+            db.add(dest)
+            have[(key, wc, line, day)] = dest
+        # A row already sitting at the destination can only be an orphan of an
+        # earlier edit — `line_keys` gives no two live lines one key — so the
+        # moving line's own number wins. A value it does not carry writes
+        # nothing, rather than blanking what is there.
+        if "plan" in vals:
+            dest.plan_override = vals["plan"]
+            carried += 1
+        if "actual" in vals:
+            dest.actual_override = vals["actual"]
+            carried += 1
+    return carried
+
+
 class CatalogBody(BaseModel):
     labor_time: Optional[float] = None
     name: Optional[str] = None
@@ -1815,6 +1962,19 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     was = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
            "phase": p.op, "enabled": p.active,
            "minutes": float(p.labor_time) if p.labor_time is not None else None}
+    # The unit's catalog as it stands BEFORE the edit. Four of these fields are
+    # what the line's stored plan/fact are keyed by, so the old identity is
+    # unreadable the moment they move — snapshot it here, carry the values onto
+    # the new identity below (_carry_manual_quantities). `op` and `active` are
+    # not part of any key, so an edit touching only those costs nothing.
+    before = ([{"id": q.id, "sap_code": q.sap_code, "name": q.name,
+                "work_center": q.work_center, "labor_time": q.labor_time,
+                "sort_order": q.sort_order}
+               for q in db.query(PPProduct).filter(
+                   PPProduct.manager_id == p.manager_id).all()]
+              if any(v is not None for v in (body.labor_time, body.name,
+                                             body.sap_code, body.work_center))
+              else None)
     if body.labor_time is not None:
         p.labor_time = body.labor_time
     if body.name is not None:
@@ -1822,9 +1982,9 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     # work_center is the (NOT NULL) other half of the daily key, so it can never
     # be blanked. The SAP code CAN — a code-less line is legitimate, and the key
     # then falls back to the name (daily_key), so the line still has an identity.
-    # Re-pointing either one re-points which quantities this line tracks; the
-    # daily plan/fact rows join on the new key at read time (they are keyed by
-    # the SAP upload, not by this row), so no migration.
+    # Re-pointing either one re-points which quantities this line reads, so the
+    # values a person typed are carried onto the new key below; the SAP snapshot
+    # stays where the file put it (_carry_manual_quantities says why).
     if body.sap_code is not None:
         sap = body.sap_code.strip()
         if not sap and not (p.name or "").strip():
@@ -1841,6 +2001,14 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         p.op = body.op.strip() or None
     if body.active is not None:
         p.active = body.active
+    # Everything a person typed for this line follows it onto its new identity;
+    # without this the reader misses and the cell reads 0 on every date at once.
+    carried = 0
+    if before is not None:
+        after = [({**d, "sap_code": p.sap_code, "name": p.name,
+                   "work_center": p.work_center, "labor_time": p.labor_time}
+                  if d["id"] == p.id else d) for d in before]
+        carried = _carry_manual_quantities(db, p.manager_id, before, after)
     db.commit()
     now = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
            "phase": p.op, "enabled": p.active,
@@ -1848,10 +2016,11 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     action_log.enrich(
         target_kind="catalog", target_id=p.id, target_name=p.sap_code or p.name,
         unit_id=p.manager_id,
-        details=[("sap_code", p.sap_code or None), ("work_center", p.work_center)],
+        details=[("sap_code", p.sap_code or None), ("work_center", p.work_center),
+                 ("carried_values", carried or None)],
         changes=[(k, was[k], now[k]) for k in now if was[k] != now[k]],
     )
-    return {"ok": True}
+    return {"ok": True, "carried": carried}
 
 
 @router.delete("/admin/production/catalog/{prod_id}")
