@@ -677,50 +677,21 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   background: color-mix(in srgb, #ef4444 12%, transparent);
 }
 
-/* The lesson description is admin-authored rich HTML (the broadcast editor's
-   own output), so it arrives with no classes and needs its own reading rhythm.
-   Capped near 70ch on wide screens — a description running the full width of a
-   1440px page is unreadable. */
-.edu-prose {
-  color: var(--text-2);
+/* The lesson description. `.tg-msg` (above) already renders this dialect —
+   pre-wrap for its raw newlines, plus blockquote / code / spoiler / link — so
+   this adds ONLY what a page-length read needs and restates none of it. The
+   classic Telegram serializer emits no tables, images or lists, so there is
+   nothing here for them: rules for tags the writer cannot produce are dead
+   weight that reads as support for a feature the editor does not offer.
+   Capped near 72ch because a description running the full width of a 1440px
+   page is unreadable. */
+.edu-desc {
   font-size: 14px;
   line-height: 1.6;
+  color: var(--text-2);
   max-width: 72ch;
-  overflow-wrap: anywhere;
 }
-.edu-prose > * + * { margin-top: 0.6rem; }
-.edu-prose b, .edu-prose strong { color: var(--text-1); font-weight: 600; }
-.edu-prose a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
-.edu-prose ul, .edu-prose ol { padding-left: 1.25rem; }
-.edu-prose ul { list-style: disc; }
-.edu-prose ol { list-style: decimal; }
-.edu-prose li + li { margin-top: 0.2rem; }
-.edu-prose blockquote {
-  border-left: 3px solid var(--border);
-  padding-left: 0.75rem;
-  color: var(--text-3);
-}
-.edu-prose code {
-  background: var(--bg-inner);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.05rem 0.3rem;
-  font-size: 0.9em;
-}
-.edu-prose pre {
-  background: var(--bg-inner);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.7rem 0.85rem;
-  overflow-x: auto;
-}
-.edu-prose img { border-radius: 10px; }
-.edu-prose table { width: 100%; border-collapse: collapse; }
-.edu-prose th, .edu-prose td {
-  border: 1px solid var(--border);
-  padding: 0.35rem 0.5rem;
-  text-align: left;
-}
+.edu-desc b, .edu-desc strong { color: var(--text-1); font-weight: 600; }
 
 @media (prefers-reduced-motion: reduce) {
   .edu-play { transition: none; }

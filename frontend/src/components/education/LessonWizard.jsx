@@ -271,9 +271,14 @@ export default function LessonWizard({ open, lesson, onClose, onSubmit, saving, 
           </FormField>
 
           <FormField label={t("education.wizard.description")} hint={t("education.wizard.descriptionHint")}>
+            {/* The CLASSIC Telegram formatter, deliberately not `rich`. A lesson
+                description is prose with emphasis and the odd link — the rich
+                dialect's tables, headings, collapsibles and media embeds are a
+                broadcast's tools, and offering them here invites a description
+                nothing on this page is built to render. Classic also emits raw
+                \n newlines, which is why the read side uses `.tg-msg`. */}
             <RichTextEditor
               key={editorKey}
-              rich
               initialHtml={lesson?.description_html || ""}
               minHeight={140}
               placeholder={t("education.wizard.descriptionPlaceholder")}

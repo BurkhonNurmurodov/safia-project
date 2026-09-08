@@ -144,9 +144,14 @@ export default function EducationLesson() {
                 style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
               >
                 <div
-                  className={openDesc ? "edu-prose" : "edu-prose edu-clamp-3"}
-                  /* Admin-authored, admin-only to write, and the same HTML the
-                     broadcast editor already produces for Telegram. */
+                  /* `.tg-msg` is THE renderer for serialized Telegram HTML — the
+                     pre-wrap that makes its raw newlines break, plus the
+                     blockquote / code / spoiler / link treatment. Reused, never
+                     restated: a second stylesheet for one dialect is how the
+                     broadcast preview and this page start disagreeing about
+                     what the same stored string looks like. `.edu-desc` adds
+                     only the reading measure. */
+                  className={`tg-msg edu-desc${openDesc ? "" : " edu-clamp-3"}`}
                   dangerouslySetInnerHTML={{ __html: lesson.description_html }}
                 />
                 <button
