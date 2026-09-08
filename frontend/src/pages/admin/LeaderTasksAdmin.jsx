@@ -1597,6 +1597,19 @@ export default function LeaderTasksAdmin() {
     if (pickL && !leaderOpts.some((p) => p.id === pickL)) setPickL(null);
   }, [pickU, leaderOpts]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The three picks persist INDEPENDENTLY, so a reload can restore a pair no
+  // click can produce: `pickUnit` always fills the shift in, but localStorage
+  // hands back a shift-2 brigadir beside a shift filter of 0. The chain then
+  // derives «Smena 2» from that unit while the Smena control right above it
+  // says no shift is picked — two statements about one thing, disagreeing on
+  // the row they share, and the reader has no way to tell which is in force.
+  // Reconcile the restored pair exactly as the click would have.
+  useEffect(() => {
+    if (!pickUv) return;
+    const s = Number(mgrById.get(pickUv)?.shift) || 0;
+    if (s && Number(fShift) !== s) setFShift(s);
+  }, [pickUv, mgrById]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // A parent pick FILLS ITS PARENTS IN (picking a leader names their brigadir
   // and their shift), and a parent change DROPS a child its list no longer
   // offers — a control naming a row the page cannot show is worse than a reset.
