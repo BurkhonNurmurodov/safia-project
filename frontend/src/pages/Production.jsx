@@ -628,23 +628,36 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
 
   const totalShtat = wcs.reduce((s, w) => s + (Number(w.shtatka_cfg) || 0), 0);
   const totalSuggest = wcs.reduce((s, w) => s + suggest(w, appliedPm), 0);
-  // what a cell currently COUNTS as: typed value, else the formula fallback
+  // What a cell currently COUNTS as. The two columns answer differently and
+  // that is the point: ШТАТКА is configuration, so an empty box legitimately
+  // falls back to the unit's configured roster — while «Кол-во» is a fact
+  // about one day, so an empty box counts as NOTHING. The formula's
+  // ROUND(W × Q ÷ S) beside it is a suggestion and is never substituted for it
+  // (see `people_typed_only` in services/pp_calc.py); `w.people` itself is
+  // already null when nothing was typed, so the read-only branch needs no
+  // second rule.
   const effOf = (w, key) => {
-    if (!canEdit) return Number(key === "people" ? w.people : w.shtatka) || 0;
-    const typed = num((draft[w.work_center] || {})[key]);
-    return typed != null ? typed : Number(key === "people" ? w.people_calc : w.shtatka_cfg) || 0;
+    if (key === "people") {
+      if (!canEdit) return Number(w.people) || 0;
+      return num((draft[w.work_center] || {}).people) ?? 0;
+    }
+    if (!canEdit) return Number(w.shtatka) || 0;
+    const typed = num((draft[w.work_center] || {}).shtatka);
+    return typed != null ? typed : Number(w.shtatka_cfg) || 0;
   };
   const totalActPeople = wcs.reduce((s, w) => s + effOf(w, "people"), 0);
   const totalActShtat = wcs.reduce((s, w) => s + effOf(w, "shtatka"), 0);
 
-  // Was this number TYPED, or is it the formula's own answer wearing the
-  // actuals column? `w.people` / `w.shtatka` RESOLVE — the pin where there is
-  // one, the derived value where there is not — so the `*_overridden` flag
-  // beside them is the only thing that tells the two apart, and the загрузка
-  // reads the typed half alone (`zagruzka_source.typed_people`, whose whole
-  // predicate is `people IS NOT NULL`). While editing, what counts as typed is
-  // what is in the INPUT rather than what was last saved, so the JAMI mark
-  // follows the operator's typing instead of lagging a save behind it.
+  // Did somebody TYPE this number? The `*_overridden` flag is the only thing
+  // that can answer it, for both columns and for opposite reasons: `w.shtatka`
+  // still RESOLVES (the pin, else the configured roster), so the value alone
+  // cannot say which it is — while `w.people` is null when nothing was typed,
+  // but a typed 0 is a real answer (a cell that ran empty) and testing the
+  // value would read that as missing. The загрузка reads the typed half alone
+  // (`zagruzka_source.typed_people`, whose whole predicate is `people IS NOT
+  // NULL`). While editing, what counts as typed is what is in the INPUT rather
+  // than what was last saved, so the JAMI mark follows the operator's typing
+  // instead of lagging a save behind it.
   const isTyped = (w, key) =>
     canEdit
       ? num((draft[w.work_center] || {})[key]) != null
@@ -771,7 +784,13 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
               return (
                 <tr key={w.work_center} className={PT_ROW}>
                   <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
-                  {[["people", w.people_calc], ["shtatka", w.shtatka_cfg]].map(([key, fallback]) => (
+                  {/* The placeholder is what an EMPTY box will count as. Штатка
+                      falls back to the configured roster, so it previews it;
+                      «Кол-во» falls back to nothing at all, so it shows «—» —
+                      previewing the formula there would promise that leaving
+                      the box empty adopts that number, which is exactly what
+                      this page stopped doing. */}
+                  {[["people", null], ["shtatka", w.shtatka_cfg]].map(([key, fallback]) => (
                     <td key={key} className="px-3 py-1 text-center">
                       {canEdit ? (
                         <input
@@ -788,20 +807,25 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
                         />
                       ) : (
                         // READ-ONLY — a closed day, or a viewer who may not type
-                        // here. This printed `w.people` bare, and `w.people` is
-                        // the RESOLVED value, so a cell nobody had typed showed
-                        // the suggestion from the table on the LEFT as the
+                        // here. This printed `w.people` bare while that field
+                        // still RESOLVED, so a cell nobody had typed showed the
+                        // suggestion from the table on the LEFT as the
                         // brigadir's own fact: both cards read identically, cell
                         // for cell, while the загрузка heatmap marked the same
-                        // unit-day 👥 «nobody typed the people». A closed day is
-                        // exactly the one read after the event, so this is where
-                        // the distinction matters most. Same vocabulary as the
-                        // editable branch above — typed is gold and bold, the
-                        // formula's answer is muted — plus a «*» the legend
-                        // under the card explains.
+                        // unit-day 👥 «nobody typed the people». «Кол-во» no
+                        // longer resolves at all (pp_calc's `people_typed_only`)
+                        // and prints «—» here; ШТАТКА still does, because it is
+                        // configuration rather than a fact about one day. A
+                        // closed day is exactly the one read after the event, so
+                        // this is where the distinction matters most. Same
+                        // vocabulary as the editable branch above — typed is
+                        // gold and bold, anything else is muted — plus a «*»
+                        // the legend under the card explains.
                         <span
                           className="tabular-nums"
-                          title={isTyped(w, key) ? undefined : t("production.peopleNotTypedCell")}
+                          title={isTyped(w, key) ? undefined
+                            : t(key === "people" ? "production.peopleNotEnteredCell"
+                                                 : "production.peopleNotTypedCell")}
                           style={{
                             color: isTyped(w, key) ? "var(--brand-text)" : "var(--text-3)",
                             fontWeight: isTyped(w, key) ? 700 : 400,
@@ -1308,6 +1332,11 @@ export default function Production() {
   );
   const wcName = (code) => pickCellName(wcCell[code], lang);
   const totals = data?.totals ?? {};
+  // Teams whose «Кол-во» nobody typed for this date. `people_overridden` is the
+  // ONE thing that tells a typed figure from an absent one — `w.people` is null
+  // for the second, but a typed 0 is a real answer and must not read as
+  // missing, so the flag is what is counted and never the value.
+  const peopleUntyped = wcs.filter((w) => !w.people_overridden).length;
   const unknown = data?.unknown_skus ?? [];
   const missingLabor = data?.missing_labor_count ?? 0;
   // A leader owns CELLS, not a unit: the backend narrows this whole page —
@@ -1959,13 +1988,32 @@ export default function Production() {
         )) : (<>
           <Kpi label={t("production.kpiVyp")} value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
             bar={totals.completion} barColor={vypColor(totals.completion)} primary />
-          <Kpi label={t("production.kpiPeople")} value={fmt(totals.total_people, 0)} icon={Users} />
+          <Kpi label={t("production.kpiPeople")} icon={Users}
+            value={<>{fmt(totals.total_people, 0)}{peopleUntyped > 0 && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>} />
           <Kpi label={t("production.kpiTotalLabor")} value={fmt(totals.total_plan_labor, 0)} icon={Clock} />
           <Kpi label={t("production.kpiActualLabor")} value={fmt(totals.total_actual_labor, 0)} icon={ClipboardList} />
-          <Kpi label={t("production.kpiAvgLoad")} value={pct(totals.avg_load)} icon={Gauge} accent={loadColor(totals.avg_load)}
-            bar={totals.avg_load} barColor={loadColor(totals.avg_load)} />
+          <Kpi label={t("production.kpiAvgLoad")} icon={Gauge} accent={loadColor(totals.avg_load)}
+            value={<>{pct(totals.avg_load)}{peopleUntyped > 0 && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>}
+            bar={totals.avg_load ?? undefined} barColor={loadColor(totals.avg_load)} />
         </>)}
       </div>
+
+      {/* Both figures above are DIVIDED BY, or ARE, ΣN — and ΣN counts only the
+          «Кол-во» somebody typed. So whenever any team is missing one the pair
+          carries a «*» and this line says what it means, in the same place and
+          the same words as the «Количество людей» tab's own legend. Without it
+          the card printed the formula's suggestion as the unit's headcount
+          while /zagruzka marked the same unit-day «Нет данных» — two answers to
+          one question, and the blank that was meant to be the warning never
+          landed. --text-3 at 11px, never --text-4: this is the line that says
+          the number above it is not a fact. */}
+      {!loading && peopleUntyped > 0 && (
+        <p className="text-[11px] leading-relaxed mb-4 -mt-2" style={{ color: "var(--text-3)" }}>
+          {t("production.peopleTypedOnly")
+            .replace("{typed}", String(wcs.length - peopleUntyped))
+            .replace("{total}", String(wcs.length))}
+        </p>
+      )}
 
       {/* warnings */}
       {(missingLabor > 0 || unknown.length > 0) && (
@@ -2060,7 +2108,9 @@ export default function Production() {
                       day’s quantity, while a pinned headcount overrides a figure the
                       attendance still holds beside it. */}
                   <span className="truncate">
-                    {t("production.oSoni")} <b style={{ color: w.people_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.people, 0)}</b>
+                    {t("production.oSoni")} <b
+                      title={w.people_overridden ? undefined : t("production.peopleNotEnteredCell")}
+                      style={{ color: w.people_overridden ? "var(--brand-text)" : "var(--text-3)" }}>{fmt(w.people, 0)}</b>
                     {" · "}
                     {t("production.shtatka")} <b style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
                   </span>
@@ -2325,7 +2375,9 @@ export default function Production() {
                 type="number"
                 value={wcDraft.people}
                 onChange={(v) => setWcDraft((d) => ({ ...d, people: v }))}
-                placeholder={fmt(wcEdit.people_calc, 0)}
+                /* «—», not the formula: an empty box counts as nothing here —
+                   see the «Кол-во» placeholder on the «Количество людей» tab */
+                placeholder={fmt(null, 0)}
                 className="tabular-nums"
               />
             </Field>

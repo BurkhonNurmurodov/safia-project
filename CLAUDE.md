@@ -478,6 +478,34 @@ for byte**; only where three numbers come from changes.
   carry the meaning and is exactly the day read back as the record. JAMI
   carries the `*` too: a total is the number a reader quotes, so it must not be
   the last place the distinction is dropped.
+- **From 2026-09-08 (the operator's directive) the suggestion is not
+  SUBSTITUTED at all** — `pp_calc.compute_dashboard(people_typed_only=True)`,
+  passed by `production._build_dashboard` off `uses_production(day)`, i.e. the
+  same `ZAGRUZKA_FROM` floor `zagruzka_cell.o_soni` already applies. The
+  marker above was only half the fix: the resolved value still ANSWERED, so
+  «Загрузка» printed «ЛЮДЕЙ (Σ) 34 · СР. ЗАГРУЖЕННОСТЬ 83%» — both computed
+  from `people_calc` — for a closed unit-day whose brigadir card read «Нет
+  данных». The marker never reached that tab at all. Now a work centre with no
+  typed pin has `people = None`, its `load` is None, and it is absent from ΣN;
+  ΣN with NOTHING typed is None, so every reader prints «—». `people_calc` is
+  still published — the «Расчёт (формула)» table exists to show it, LABELLED —
+  and a typed **0** is still a real answer (a cell that ran empty), which is
+  why `people_overridden` and never the value is what tells typed from absent.
+  Days before the floor, and any other caller of the engine, compute exactly
+  what they always did.
+  **Consequences, all deliberate.** «Кол-во» on the команда cards, ЛЮДИ and
+  Минут on the positions table, ΣN and СР. ЗАГРУЖЕННОСТЬ all read «—» on a
+  unit-day nobody typed; a partial day marks the pair with `*` and a line
+  naming «{typed} of {total}», since ΣN sums the typed pins alone while the
+  whole unit's trudoyomkost is counted against them (the bullet below). The
+  «Кол-во» INPUT no longer previews the suggestion as its placeholder — an
+  empty box counts as nothing, and a placeholder promising otherwise is the
+  same substitution one layer up — while ШТАТКА still falls back to the
+  configured roster, because that is configuration, not a fact about one day.
+  And the **ABC export writes N BLANK** where nothing was typed, rather than
+  the suggestion: it is the form's one hand-edited cell, so ЛЮДИ, Минут,
+  Парето, Загруженность, «Nechta odam keldi» and bandlik read 0 until the
+  brigadir fills it in.
 - **Only the typed pins are summed, and the WHOLE unit's trudoyomkost is
   counted against them** (the operator's call). A unit that types 4 of its 6
   work centres therefore reads a load that is too HIGH, with nothing on screen

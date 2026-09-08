@@ -22,6 +22,8 @@ Per work center w:
     N_w   = ROUND( W_w × Q_w / S_w )             people needed   (U = W*R, R = Q/S)
             W_w and N_w may each be pinned for a single date (pp_work_center_daily);
             a pinned W still feeds the formula, a pinned N replaces its result.
+            Under `people_typed_only` the formula is a SUGGESTION only: N is the
+            pin or nothing at all (None) — see that parameter.
     load  (Загруженность, col O)             = Q_w / (SHIFT_MIN * N_w)   [IFERROR→0]
 
 Totals (header row):
@@ -329,6 +331,7 @@ def compute_dashboard(
     wc_overrides: Optional[dict[str, dict]] = None,
     ignore_capacity: bool = False,
     line_overrides: Optional[dict[tuple[str, str, int], dict]] = None,
+    people_typed_only: bool = False,
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
@@ -345,6 +348,30 @@ def compute_dashboard(
     wc_overrides:{code: {people, shtatka}} — per-DAY manual pins for the staffing
                  panel (pp_work_center_daily). A non-None штатка replaces W before
                  N is derived; a non-None people replaces the derived N outright.
+    people_typed_only: the TYPED «Bugungi fakt» pin is the only answer for N, and
+                 a work centre with none has no headcount at all (``people`` is
+                 None, its load is None, and it is absent from ΣN).
+
+                 **Why.** `people_calc` = ROUND(W × Q ÷ S) is a SUGGESTION, and
+                 substituting it for a fact is what let this page state «34
+                 людей · загруженность 83%» for a unit-day the fleet загрузка
+                 marked «Нет данных» — two answers to one question, on a closed
+                 day, with nothing on the KPI row saying which was which. From
+                 `zagruzka_source.ZAGRUZKA_FROM` the загрузка reads the typed
+                 pins alone (`typed_people`, whose whole predicate is
+                 ``people IS NOT NULL``); this makes the page that COLLECTS
+                 them read the same way, so the blank stays the warning it was
+                 designed to be instead of being filled in by a formula.
+
+                 The caller decides, and the caller is
+                 `production._build_dashboard` off `uses_production(day)` — the
+                 same floor `zagruzka_cell.o_soni` already applies, so the two
+                 per-cell pages cannot divide by two different headcounts for
+                 one day. Default False, so every day before the floor, and any
+                 other caller, computes exactly what it always did.
+
+                 `people_calc` is published either way: the «Расчёт (формула)»
+                 table exists to show the suggestion, LABELLED as one.
     ignore_capacity: the day carries a pinned efficiency, so S is W × productive_min
                  for EVERY work center and the configured capacity is bypassed.
                  `capacity` is only ever W × a per-head rate anyway (the rate
@@ -462,12 +489,20 @@ def compute_dashboard(
         # unless the day pins an efficiency — then W × that, for every cell.
         use_cap = bool(cap and cap > 0) and not ignore_capacity
         s_eff = cap if use_cap else (shtatka * productive_min)
-        # O. SONI: derived from the formula unless the day carries a manual pin.
+        # O. SONI. `people_calc` is the FORMULA's answer and is always
+        # published — the «Расчёт (формула)» table is what it is for — but
+        # whether it ANSWERS for the day is `people_typed_only`: from
+        # `zagruzka_source.ZAGRUZKA_FROM` the typed pin is the only answer and
+        # an untyped work centre has NO headcount (None), never the suggestion
+        # wearing the actuals column. See the parameter's docstring.
         people_calc = _round_half_up(shtatka * q / s_eff) if (s_eff > 0 and shtatka > 0) else 0
         people_ov = _opt_int(ov.get("people"))
-        people = people_ov if people_ov is not None else people_calc
+        people = people_ov if (people_typed_only or people_ov is not None) else people_calc
         people_by_wc[code] = people
-        load = (q / (shift_min * people)) if people > 0 else 0.0
+        # None ⇒ the load is UNKNOWN, not 0: nothing was divided. A typed 0 is a
+        # real answer (a cell that ran empty) and keeps the 0.0 it always had.
+        load = (None if people is None
+                else (q / (shift_min * people)) if people > 0 else 0.0)
         wc_panel.append({
             "work_center": code,
             "shtatka": shtatka,           # штатка (W) — effective
@@ -489,15 +524,28 @@ def compute_dashboard(
 
     # --- pass 2: per-row people / minutes / pareto -------------------------
     for r in rows:
-        people = people_by_wc.get(r["work_center"], 0)
+        people = people_by_wc.get(r["work_center"])
         r["people"] = people
         tl = r["total_labor"]
-        r["minutes"] = (tl / people) if (tl is not None and people > 0) else None
+        r["minutes"] = (tl / people) if (tl is not None and people) else None
         r["pareto"] = (tl / total_plan_labor) if (tl and total_plan_labor > 0) else 0.0
 
-    total_people = sum(w["people"] for w in wc_panel)
+    # ΣN counts what was ANSWERED. Only the typed pins are summed and the
+    # whole unit's trudoyomkost is counted against them — the same rule the
+    # fleet загрузка runs on (`zagruzka_source.unit_people`), so a unit that
+    # types 4 of its 6 work centres reads a load that is too HIGH and the two
+    # surfaces still tell one story. With NOTHING typed there is no ΣN at all:
+    # None, so every reader prints «—» rather than a 0 that looks like an idle
+    # unit. Off the typed-only rule nothing is ever None, so both figures are
+    # byte-identical to what they always were.
+    answered = [w["people"] for w in wc_panel if w["people"] is not None]
+    untyped = len(wc_panel) - len(answered)
+    total_people = sum(answered) if (answered or not untyped) else None
     completion = (total_actual_labor / total_plan_labor) if total_plan_labor > 0 else 0.0
-    avg_load = (total_plan_labor / (total_people * shift_min)) if total_people > 0 else 0.0
+    if total_people is None:
+        avg_load = None
+    else:
+        avg_load = (total_plan_labor / (total_people * shift_min)) if total_people > 0 else 0.0
 
     return {
         "rows": rows,
@@ -506,7 +554,11 @@ def compute_dashboard(
             "total_plan_labor": total_plan_labor,        # I1
             "total_actual_labor": total_actual_labor,    # F1
             "completion": completion,                    # E1 = F1/I1
-            "total_people": total_people,                # ΣN
+            "total_people": total_people,                # ΣN — None = nobody typed
+            # how much of ΣN is an answer: the reader marks a partial sum
+            # rather than presenting it as the unit's headcount
+            "people_typed": len(answered),
+            "people_untyped": untyped,
             "total_shtatka": sum(w["shtatka"] for w in wc_panel),
             "avg_load": avg_load,                        # I1 / (ΣN * 480)
         },

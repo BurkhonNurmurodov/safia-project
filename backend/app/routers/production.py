@@ -56,6 +56,7 @@ from app.services import action_log
 from app.services import forecast_autocall
 from app.services import idle_lock
 from app.services import shift_scope
+from app.services import zagruzka_source
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
                                    line_keys, group_sizes, faza_quantities,
@@ -364,6 +365,15 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         wc_overrides=wc_overrides,
         ignore_capacity=pinned_pm is not None,
         line_overrides=line_overrides,
+        # From `zagruzka_source.ZAGRUZKA_FROM` the TYPED «Bugungi fakt» is the
+        # only headcount this page reports: the формула's ROUND(W × Q ÷ S) is a
+        # suggestion and is no longer substituted for it. Same floor
+        # `zagruzka_cell.o_soni` applies, so the fleet загрузка, the per-cell
+        # page and the page the numbers are typed on all divide by one figure —
+        # and a unit-day nobody typed reads «—» here exactly as it reads «Нет
+        # данных» there, instead of the two contradicting each other. Days
+        # before the floor are untouched.
+        people_typed_only=zagruzka_source.uses_production(day),
     )
 
     # SKUs present in the SAP snapshot but absent from the catalog. A code-less
@@ -609,9 +619,16 @@ def export_positions(
         w = wcs[idx] if idx < len(wcs) else {}
         code = w.get("work_center") or ""
         ws.cell(row=rn, column=13, value=code)                                        # M Команда
-        # 0 people is a real answer for a cell that ran; only the padding row of a
-        # unit with no teams at all stays blank.
-        ws.cell(row=rn, column=14, value=(float(w.get("people") or 0) if code else None))
+        # 0 people is a real answer for a cell that ran, and stays a written 0.
+        # NOTHING typed is not: the cell is left BLANK for the brigadir to fill
+        # in, because writing the formula's suggestion into the one hand-edited
+        # cell of the form is exactly the substitution this page stopped making
+        # (see `pp_calc`'s `people_typed_only`). Everything keyed off N —
+        # ЛЮДИ, Минут, Парето, Загруженность, «Nechta odam keldi», bandlik —
+        # then reads 0 until it is filled in, which is what a form is for.
+        # The padding row of a unit with no teams at all stays blank too.
+        _n = w.get("people")
+        ws.cell(row=rn, column=14, value=(float(_n) if (code and _n is not None) else None))
         ws.cell(row=rn, column=15, value=(                                            # O Загруженность
             f"=+IFERROR(SUMIFS($I:$I,$D:$D,$M{rn})/({sm}*VLOOKUP($M{rn},$D:$E,2,0)),0)"))
         for cn in (13, 14, 15):
