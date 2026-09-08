@@ -3091,6 +3091,60 @@ destination; an upload may still name its own targets for one file.
   brigadir given a catalog later starts manual too — a unit CREATED afterwards is
   on, since an absent row still reads as ON.
 
+## The call forecast, sent by the clock (`forecast_autocall`)
+
+From **2026-09-08** the «Smenaga chaqirish» modal's send happens by itself:
+**shift 1 at 19:00** and **shift 2 at 06:00**, plant wall clock, every day.
+`services/forecast_autocall.py` is THE definition — the times, the audience,
+both date rules, the switch.
+
+- **It computes NOTHING of its own.** The job calls `_call_rows` and
+  `_send_call_notice` in `routers/production.py` — the very functions the
+  modal's two endpoints read, refactored out of them for this — so a count
+  DMed by the clock can never differ from the one the modal would have shown
+  for that date. Same DM, same `call_forecast` bell row, same
+  `ForecastCallNotice`.
+- **Each shift is sent its NEXT shift-day, and the two are not the same
+  calendar arithmetic** (`target_date`, never re-derived at a call site). At
+  19:00 a shift-1 brigadir is on today's day shift, so the next one they staff
+  is **tomorrow**. At 06:00 a shift-2 brigadir is finishing the night the
+  platform labels YESTERDAY (a night belongs to the date its 20:00 boundary
+  opened), so the next one they staff opens at 20:00 **today** — today's date,
+  ~14 hours of notice. Sending them tomorrow's would mean a brigadir never gets
+  a forecast for the shift they are about to begin.
+- **A unit already notified for that date is SKIPPED.** `last_notice` is the
+  modal's own resend guard, read here as a hard skip rather than a confirm: a
+  person who sent that unit's call by hand has already answered the question,
+  and a job that fires twice must not DM the plant twice. **A send made by hand
+  always wins.**
+- **The audience mirrors the modal's pre-selection** — a forecast AND a claimed
+  supervisor profile — so the clock can never reach somebody the button would
+  have left unticked.
+- **Two AppSetting rows, read AT FIRE TIME**: `forecast_autocall_enabled` and
+  `forecast_autocall_capacity_pct` (the «Smena unumi» the counts are computed
+  at). Pausing the send has to be an admin edit and not a deploy — this
+  platform has no shell. An **absent row reads as ON at 100%**, the state the
+  feature shipped in. The control is the «Avto» chip beside «Ertangi chaqiruv»
+  on the forecast card (`GET`/`PUT /api/production/trudoyomkost/autocall`):
+  readable by everyone who can open the page, writable by an ADMIN only, since
+  it governs a plant-wide send.
+- **`sent_by = AUTO_SENDER` (0)** is the sentinel actor — `ForecastCallNotice.sent_by`
+  is a NOT NULL telegram id — and the modal prints «Avtomatik» for it instead
+  of resolving a name that will never be found (`auto` on the row payload).
+- **A boot inside `CATCHUP_MIN` (90 min) after a send time runs that send
+  late.** A push to main restarts the unit and a cron fire time that passes
+  while the process is down is simply dropped (memory jobstore, 5-minute
+  misfire grace), so a deploy at 19:00 would otherwise cost the day's call
+  entirely. Bounded, because "late" stops being a kindness before the middle of
+  the night; it cannot double-send, because the per-unit skip above holds.
+- Filed in the action register under the manual send's own action
+  (`comms` / `notification.workers_called`, `source="system"`) — one act, one
+  place, told apart by its source. A failed pass writes an `error` row rather
+  than disappearing.
+- Registered from BOTH entrypoints (`main.py` lifespan + `passenger_wsgi.py`)
+  like every other boot job.
+
+
 ## A closed day shuts the «Zagruzka fayli» page too
 
 From **2026-09-01** the day-close a supervisor presses on «Verifix to'g'irlash»

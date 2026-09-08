@@ -319,6 +319,10 @@ try:
     # catch-up (mirrored in app/main.py; skips without credentials).
     from app.services.arc_sync import register_boot_jobs as register_arc_jobs
     register_arc_jobs()
+    # The call forecast, sent by the clock: shift 1 at 19:00, shift 2 at 06:00,
+    # each for its own next shift-day (mirrored in passenger_wsgi.py).
+    from app.services.forecast_autocall import register_jobs as register_autocall_jobs
+    register_autocall_jobs()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.

@@ -300,6 +300,10 @@ async def lifespan(app: FastAPI):
     # catch-up (mirrored in passenger_wsgi.py; skips without credentials).
     from app.services.arc_sync import register_boot_jobs as register_arc_jobs
     register_arc_jobs()
+    # The call forecast, sent by the clock: shift 1 at 19:00, shift 2 at 06:00,
+    # each for its own next shift-day (mirrored in passenger_wsgi.py).
+    from app.services.forecast_autocall import register_jobs as register_autocall_jobs
+    register_autocall_jobs()
 
     # Say out loud which mutating routes the action register cannot classify.
     # They are still recorded (under «other»), so nothing is lost silently —

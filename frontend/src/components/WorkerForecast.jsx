@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   CalendarRange, ChevronLeft, ChevronRight, X, Sparkles,
   TrendingUp, TrendingDown, Check, AlertTriangle, History,
-  Target, Award, Send, CheckCircle,
+  Target, Award, Send, CheckCircle, Clock,
 } from "lucide-react";
 import api from "../utils/api";
 import { SkeletonBlock } from "./ui/Skeleton";
@@ -12,6 +12,8 @@ import DateRangePicker from "./ui/DateRangePicker";
 import Modal from "./ui/Modal";
 import Button from "./ui/Button";
 import ConfirmDialog from "./ui/ConfirmDialog";
+import SegmentedToggle from "./ui/SegmentedToggle";
+import FormField from "./ui/FormField";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -44,6 +46,16 @@ const T = {
     sentLabel: "Yuborilgan", sendBtn: (n) => `Yuborish (${n})`, cancel: "Bekor qilish",
     resendTitle: "Qayta yuborish?", resendMsg: (n) => `${n} brigadirga tanlangan sana uchun chaqiruv allaqachon yuborilgan. Yana yuborilsinmi?`,
     toastSent: (n) => `${n} brigadirga chaqiruv yuborildi`,
+    autoChip: "Avto", autoTitle: "Avtomatik chaqiruv", autoBy: "Avtomatik",
+    autoOn: "Yoqilgan", autoOff: "O'chirilgan",
+    autoLead: "Chaqiruv har kuni belgilangan vaqtda o'zi yuboriladi — xuddi shu oynadagi kabi, lekin hech kim tugma bosmaydi.",
+    autoRow: (n, at, d) => `${n}-smena · soat ${at} → ${d}`,
+    autoWho: "Faqat bashorati bor va Telegramda ro'yxatdan o'tgan brigadirlarga. Shu sana uchun allaqachon chaqiruv yuborilgan brigadir o'tkazib yuboriladi — qo'lda yuborilgani ustun.",
+    autoEff: "Smena unumi (%)",
+    autoEffHint: "Avtomatik yuboriladigan sonlar shu foizda hisoblanadi (sahifadagi «Smena unumi» kabi).",
+    autoNext: "Keyingi", autoSave: "Saqlash",
+    autoSaved: "Avtomatik chaqiruv sozlamalari saqlandi",
+    autoReadOnly: "O'zgartirish uchun admin huquqi kerak.",
   },
   uz_cyrl: {
     title: "Башорат — сменага чақириш", thisWeek: "Шу ҳафта", supervisor: "Бригадир",
@@ -64,6 +76,16 @@ const T = {
     sentLabel: "Юборилган", sendBtn: (n) => `Юбориш (${n})`, cancel: "Бекор қилиш",
     resendTitle: "Қайта юбориш?", resendMsg: (n) => `${n} бригадирга танланган сана учун чақирув аллақачон юборилган. Яна юборилсинми?`,
     toastSent: (n) => `${n} бригадирга чақирув юборилди`,
+    autoChip: "Авто", autoTitle: "Автоматик чақирув", autoBy: "Автоматик",
+    autoOn: "Ёқилган", autoOff: "Ўчирилган",
+    autoLead: "Чақирув ҳар куни белгиланган вақтда ўзи юборилади — худди шу ойнадаги каби, лекин ҳеч ким тугма босмайди.",
+    autoRow: (n, at, d) => `${n}-смена · соат ${at} → ${d}`,
+    autoWho: "Фақат башорати бор ва Телеграмда рўйхатдан ўтган бригадирларга. Шу сана учун аллақачон чақирув юборилган бригадир ўтказиб юборилади — қўлда юборилгани устун.",
+    autoEff: "Смена уними (%)",
+    autoEffHint: "Автоматик юбориладиган сонлар шу фоизда ҳисобланади (саҳифадаги «Смена уними» каби).",
+    autoNext: "Кейинги", autoSave: "Сақлаш",
+    autoSaved: "Автоматик чақирув созламалари сақланди",
+    autoReadOnly: "Ўзгартириш учун админ ҳуқуқи керак.",
   },
   ru: {
     title: "Прогноз — вызов на смену", thisWeek: "Эта неделя", supervisor: "Бригадир",
@@ -84,6 +106,16 @@ const T = {
     sentLabel: "Отправлено", sendBtn: (n) => `Отправить (${n})`, cancel: "Отмена",
     resendTitle: "Отправить повторно?", resendMsg: (n) => `${n} бригадир(ам) уже отправлен вызов на выбранную дату. Отправить ещё раз?`,
     toastSent: (n) => `Вызов отправлен: ${n} бригадир(ов)`,
+    autoChip: "Авто", autoTitle: "Автоматический вызов", autoBy: "Автоматически",
+    autoOn: "Включён", autoOff: "Выключен",
+    autoLead: "Вызов отправляется сам каждый день в заданное время — то же, что в этом окне, только кнопку никто не нажимает.",
+    autoRow: (n, at, d) => `${n}-я смена · в ${at} → ${d}`,
+    autoWho: "Только бригадирам с прогнозом и зарегистрированным профилем в Telegram. Бригадир, которому вызов на эту дату уже отправлен, пропускается — ручная отправка главнее.",
+    autoEff: "Выработка смены (%)",
+    autoEffHint: "Числа автоматической отправки считаются при этом проценте (как «Выработка смены» на странице).",
+    autoNext: "Следующая", autoSave: "Сохранить",
+    autoSaved: "Настройки автоматического вызова сохранены",
+    autoReadOnly: "Изменение доступно только администратору.",
   },
   en: {
     title: "Forecast — workers to call", thisWeek: "This week", supervisor: "Brigadir",
@@ -104,6 +136,16 @@ const T = {
     sentLabel: "Sent", sendBtn: (n) => `Send (${n})`, cancel: "Cancel",
     resendTitle: "Send again?", resendMsg: (n) => `${n} brigadir(s) were already notified for the selected date. Send again?`,
     toastSent: (n) => `Notified ${n} brigadir(s)`,
+    autoChip: "Auto", autoTitle: "Automatic call", autoBy: "Automatic",
+    autoOn: "On", autoOff: "Off",
+    autoLead: "The call is sent by itself every day at a fixed time — the same message as in this window, with nobody pressing the button.",
+    autoRow: (n, at, d) => `Shift ${n} · at ${at} → ${d}`,
+    autoWho: "Only brigadirs who have a forecast and a registered Telegram profile. A brigadir already notified for that date is skipped — a send made by hand wins.",
+    autoEff: "Shift efficiency (%)",
+    autoEffHint: "The automatic counts are computed at this percentage (the page's «Smena unumi»).",
+    autoNext: "Next", autoSave: "Save",
+    autoSaved: "Automatic call settings saved",
+    autoReadOnly: "Changing this needs admin rights.",
   },
 };
 
@@ -450,7 +492,9 @@ function CallTomorrowModal({ t, tl, effPct, onClose, onSent }) {
                           <span className="inline-flex items-center gap-1 font-medium tabular-nums" style={{ color: "#22c55e" }}>
                             <CheckCircle size={11} />
                             {t.sentLabel} {hhmm(r.last_notice.sent_at)} · {r.last_notice.workers}
-                            {r.last_notice.by ? ` · ${tl(r.last_notice.by)}` : ""}
+                            {r.last_notice.auto
+                              ? ` · ${t.autoBy}`
+                              : r.last_notice.by ? ` · ${tl(r.last_notice.by)}` : ""}
                           </span>
                         )}
                       </div>
@@ -525,6 +569,103 @@ function CallTomorrowModal({ t, tl, effPct, onClose, onSent }) {
   );
 }
 
+// ── automatic call ───────────────────────────────────────────────────────────
+// The same send, on a timer: shift 1 at 19:00, shift 2 at 06:00, each for its
+// own NEXT shift-day. services/forecast_autocall owns the schedule, the
+// audience and both date rules — this panel only shows what the clock will do
+// and flips the switch, so nothing about WHEN or TO WHOM is spelled twice on
+// the client. The dates come from the server for the same reason: a JavaScript
+// copy of "which shift-day does 06:00 mean" would drift from the one that sends.
+function AutoCallModal({ t, cfg, onClose, onSaved }) {
+  const [enabled, setEnabled] = useState(!!cfg.enabled);
+  const [pct, setPct] = useState(String(cfg.capacity_pct ?? 100));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const num = Number(String(pct).replace(",", "."));
+  const valid = Number.isFinite(num) && num >= 1 && num <= 100;
+  const dirty = enabled !== !!cfg.enabled || (valid && num !== cfg.capacity_pct);
+
+  const save = () => {
+    setSaving(true);
+    setError(null);
+    api.put("/api/production/trudoyomkost/autocall", { enabled, capacity_pct: num })
+      .then((r) => { onSaved(r.data); onClose(); })
+      .catch((e) => setError(e?.response?.data?.detail || "Failed"))
+      .finally(() => setSaving(false));
+  };
+
+  const nextAt = (iso) => {
+    if (!iso) return null;
+    try {
+      return new Date(iso).toLocaleString([], {
+        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+      });
+    } catch { return null; }
+  };
+
+  return (
+    <Modal
+      title={t.autoTitle}
+      icon={<Clock size={16} />}
+      onClose={onClose}
+      maxWidth="max-w-md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>{t.cancel}</Button>
+          {cfg.can_edit && (
+            <Button onClick={save} loading={saving} disabled={!valid || !dirty}>
+              {t.autoSave}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>{t.autoLead}</p>
+
+      {/* what the clock does, with the real dates — never a description of the rule */}
+      <div className="rounded-xl px-3 py-2 space-y-1"
+        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+        {(cfg.shifts || []).map((s) => (
+          <div key={s.shift} className="flex items-center justify-between gap-2 text-[12px]">
+            <span style={{ color: "var(--text-1)" }}>{t.autoRow(s.shift, s.at, ddmm(s.date))}</span>
+            {s.next_run && (
+              <span className="tabular-nums text-[11px]" style={{ color: "var(--text-3)" }}>
+                {t.autoNext}: {nextAt(s.next_run)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <FormField label={t.autoTitle} hint={t.autoWho}>
+        <SegmentedToggle
+          value={enabled ? "on" : "off"}
+          onChange={(v) => cfg.can_edit && setEnabled(v === "on")}
+          options={[["on", t.autoOn], ["off", t.autoOff]]}
+          size="sm"
+          fill
+        />
+      </FormField>
+
+      <FormField label={t.autoEff} hint={t.autoEffHint}>
+        <input
+          type="number" min={1} max={100} value={pct} disabled={!cfg.can_edit}
+          onChange={(e) => setPct(e.target.value)}
+          className="w-24 px-3 py-2 rounded-xl text-sm tabular-nums"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+        />
+      </FormField>
+
+      {!cfg.can_edit && (
+        <p className="text-[11px]" style={{ color: "var(--text-3)" }}>{t.autoReadOnly}</p>
+      )}
+      {error && <p className="text-[12px]" style={{ color: "#ef4444" }}>{String(error)}</p>}
+    </Modal>
+  );
+}
+
+
 export default function WorkerForecast({ effPct = 100 }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
@@ -537,7 +678,8 @@ export default function WorkerForecast({ effPct = 100 }) {
   const [selWd, setSelWd] = useState(null);   // clicked date column (weekday idx); null → use default
   const [pickedDate, setPickedDate] = useState(null);   // ISO date → single-column view; null → full week
   const [callOpen, setCallOpen] = useState(false);      // call-tomorrow modal
-  const [sentToast, setSentToast] = useState(null);     // how many brigadirs were just notified
+  const [autoOpen, setAutoOpen] = useState(false);      // automatic-call settings
+  const [toastMsg, setToastMsg] = useState(null);       // what just happened
   const curWeek = mondayOfISO(todayISO());
   const today = todayISO();
 
@@ -556,6 +698,17 @@ export default function WorkerForecast({ effPct = 100 }) {
       params: { week_start: weekStart, manager_id: brigadirIds, shift, capacity_pct: effPct },
     }).then((r) => r.data),
   });
+
+  // the automatic send's own state: what the clock will do next, and whether
+  // this viewer may change it (the server decides that — the switch is a
+  // plant-wide send, so it stays admin-only)
+  const autoQ = useQuery({
+    queryKey: ["trud-autocall"],
+    enabled: ready,
+    queryFn: () => api.get("/api/production/trudoyomkost/autocall").then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const auto = autoQ.data;
 
   const supervisors = data?.supervisors ?? [];
   const weeks = data?.weeks ?? 3;
@@ -625,6 +778,18 @@ export default function WorkerForecast({ effPct = 100 }) {
           style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
           <Send size={12} /> {t.callBtn}
         </button>
+        {auto && (
+          <button onClick={() => setAutoOpen(true)} title={t.autoTitle}
+            className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors"
+            style={auto.enabled
+              ? { background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }
+              : { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+            <Clock size={12} />
+            {t.autoChip} · {auto.enabled
+              ? (auto.shifts || []).map((s) => s.at).join(" / ")
+              : t.autoOff}
+          </button>
+        )}
         {pickedDate ? (
           <button onClick={() => setPickedDate(null)}
             className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors"
@@ -829,14 +994,26 @@ export default function WorkerForecast({ effPct = 100 }) {
           t={t} tl={tl} lang={lang} effPct={effPct}
           onClose={() => setCallOpen(false)}
           onSent={(n) => {
-            setSentToast(n);
-            setTimeout(() => setSentToast(null), 4000);
+            setToastMsg(t.toastSent(n));
+            setTimeout(() => setToastMsg(null), 4000);
+          }}
+        />
+      )}
+
+      {autoOpen && auto && (
+        <AutoCallModal
+          t={t} cfg={auto}
+          onClose={() => setAutoOpen(false)}
+          onSaved={() => {
+            autoQ.refetch();
+            setToastMsg(t.autoSaved);
+            setTimeout(() => setToastMsg(null), 4000);
           }}
         />
       )}
 
       {/* notify success toast — fixed top-right, same look as the export toast */}
-      {sentToast != null && (
+      {toastMsg != null && (
         <div className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
           style={{
             position: "fixed", top: 16, right: 16, zIndex: 9999,
@@ -844,7 +1021,7 @@ export default function WorkerForecast({ effPct = 100 }) {
             boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
           }}>
           <CheckCircle size={15} style={{ flexShrink: 0 }} />
-          <span>{t.toastSent(sentToast)}</span>
+          <span>{toastMsg}</span>
         </div>
       )}
     </div>

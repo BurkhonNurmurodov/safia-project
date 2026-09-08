@@ -52,6 +52,7 @@ from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
 from app.services import action_log
+from app.services import forecast_autocall
 from app.services import idle_lock
 from app.services import shift_scope
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
@@ -2471,21 +2472,16 @@ def _tomorrow() -> date:
     return date.today() + timedelta(days=1)
 
 
-@router.get("/api/production/trudoyomkost/call-tomorrow")
-def trudoyomkost_call_tomorrow(
-    capacity_pct: float = Query(100.0, ge=1, le=100, description="Productive % of the 480-min shift one worker covers"),
-    for_date: Optional[str] = Query(None, description="ISO target date; defaults to tomorrow"),
-    shift: Optional[int] = Query(None, ge=1, le=2, description="Limit rows to one shift (the modal fetches per-shift sections)"),
-    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
-    db: Session = Depends(get_db),
-):
-    if for_date:
-        try:
-            target = date.fromisoformat(for_date)
-        except ValueError:
-            raise HTTPException(400, "Bad for_date")
-    else:
-        target = _tomorrow()
+def _call_rows(db: Session, target: date, capacity_pct: float,
+               shift: Optional[int] = None) -> list[dict]:
+    """One row per brigadir for `target`: the forecast count and its band, the
+    confidence, whether the supervisor profile is claimed, and the latest notice
+    already sent for that date.
+
+    THE computation behind the call modal. The endpoint below and the automatic
+    19:00 / 06:00 send (services/forecast_autocall) both read this one function,
+    so a count DMed by the clock can never differ from the one the modal shows.
+    """
     cap_min = _capacity_min(capacity_pct)
     hist_start = target - timedelta(days=7 * FORECAST_WEEKS)
     loaded = _load_plan_by_manager(db, [], shift, hist_start, target)
@@ -2538,9 +2534,31 @@ def trudoyomkost_call_tomorrow(
                 "workers": ln.workers,
                 "sent_at": ln.sent_at.isoformat() if ln.sent_at else None,
                 "by": sender_names.get(ln.sent_by),
+                # the platform's own send carries a sentinel actor, so the modal
+                # says «Avtomatik» instead of printing an unresolvable name
+                "auto": ln.sent_by == forecast_autocall.AUTO_SENDER,
             } if ln else None,
         })
-    return {"date": target.isoformat(), "weeks": FORECAST_WEEKS, "rows": rows}
+    return rows
+
+
+@router.get("/api/production/trudoyomkost/call-tomorrow")
+def trudoyomkost_call_tomorrow(
+    capacity_pct: float = Query(100.0, ge=1, le=100, description="Productive % of the 480-min shift one worker covers"),
+    for_date: Optional[str] = Query(None, description="ISO target date; defaults to tomorrow"),
+    shift: Optional[int] = Query(None, ge=1, le=2, description="Limit rows to one shift (the modal fetches per-shift sections)"),
+    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
+    db: Session = Depends(get_db),
+):
+    if for_date:
+        try:
+            target = date.fromisoformat(for_date)
+        except ValueError:
+            raise HTTPException(400, "Bad for_date")
+    else:
+        target = _tomorrow()
+    return {"date": target.isoformat(), "weeks": FORECAST_WEEKS,
+            "rows": _call_rows(db, target, capacity_pct, shift)}
 
 
 class CallNotifyItem(BaseModel):
@@ -2556,15 +2574,37 @@ class CallNotifyRequest(BaseModel):
     items: list[CallNotifyItem]
 
 
+def _send_call_notice(db: Session, mgr: Manager, target: date, eff: int,
+                      workers: int, max_workers: int, actor: int) -> None:
+    """Send ONE brigadir their call forecast for `target`, and record it.
+
+    A bell row keyed to the supervisor PROFILE (seen by every account holding
+    it) + a Telegram DM to EVERY holder of that profile, each in their own
+    language; an unclaimed profile queues the bell row for whoever claims it
+    later. The ForecastCallNotice row is the modal's resend guard — and what
+    stops the automatic send from repeating a notice a person already sent by
+    hand. `actor` is the sender's telegram id, or forecast_autocall.AUTO_SENDER
+    when the clock sent it.
+    """
+    # function-level import: staff.py is heavy and imports would be circular-prone
+    from app.routers.staff import _notify_supervisor_all
+
+    _notify_supervisor_all(
+        db, mgr.id,
+        nkey="call_forecast",
+        params={"name": mgr.name, "date": target, "eff": eff,
+                "count": workers, "max": max_workers},
+    )
+    db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
+                              workers=workers, sent_by=actor))
+
+
 @router.post("/api/production/trudoyomkost/call-notify")
 def trudoyomkost_call_notify(
     req: CallNotifyRequest,
     payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
     db: Session = Depends(get_db),
 ):
-    # function-level import: staff.py is heavy and imports would be circular-prone
-    from app.routers.staff import _notify_supervisor_all
-
     if not req.items:
         raise HTTPException(400, "No supervisors selected")
     # each item's date comes from its shift section's picker (explicit, so no
@@ -2592,19 +2632,10 @@ def trudoyomkost_call_notify(
         if mgr is None or item.workers < 0:
             continue
         target = targets[i]
-        # bell row keyed to the supervisor PROFILE (seen by every account holding
-        # it) + a Telegram DM to EVERY holder of that profile, each in their own
-        # language; an unclaimed profile queues the bell row for whoever claims it
-        # later. Maksimum = the upper band; fall back to the recommended count when
-        # the client didn't send one (older client / insufficient-data row).
+        # Maksimum = the upper band; fall back to the recommended count when the
+        # client didn't send one (older client / insufficient-data row).
         max_workers = item.max_workers if item.max_workers is not None else item.workers
-        _notify_supervisor_all(
-            db, mgr.id,
-            nkey="call_forecast",
-            params={"name": mgr.name, "date": target, "eff": eff, "count": item.workers, "max": max_workers},
-        )
-        db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
-                                  workers=item.workers, sent_by=actor))
+        _send_call_notice(db, mgr, target, eff, item.workers, max_workers, actor)
         sent.append(mgr.id)
         called.append(f"{mgr.name}: {item.workers} ({target})")
     db.commit()
@@ -2619,3 +2650,63 @@ def trudoyomkost_call_notify(
                  ("value", f"{eff}%")],
     )
     return {"sent": len(sent), "manager_ids": sent}
+
+
+# --------------------------------------------------------------------------- #
+# The same call, sent by the clock — shift 1 at 19:00, shift 2 at 06:00, each
+# for its own NEXT shift-day. services/forecast_autocall owns the schedule, the
+# audience and both date rules; these two endpoints only read and write the
+# switch, so nothing about WHEN or TO WHOM is spelled twice.
+# --------------------------------------------------------------------------- #
+@router.get("/api/production/trudoyomkost/autocall")
+def trudoyomkost_autocall(
+    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
+    db: Session = Depends(get_db),
+):
+    """What the clock will do next, and whether this viewer may change it.
+
+    Readable by everyone who can open the page — a brigadir knowing the call
+    goes out by itself at 19:00 is half the point — while the switch itself is
+    admin-only (``can_edit``), because it governs a plant-wide send.
+    """
+    from app.scheduler import next_run
+
+    cfg = forecast_autocall.settings(db)
+    shifts = []
+    for s in sorted(forecast_autocall.SEND_AT):
+        nr = next_run(forecast_autocall.JOB_ID.format(s))
+        shifts.append({
+            "shift": s,
+            "at": forecast_autocall.send_at(s),
+            # the shift-day a send made right now would be about, so the page
+            # states the rule with a real date instead of describing it
+            "date": forecast_autocall.target_date(s).isoformat(),
+            "next_run": nr.isoformat() if nr else None,
+        })
+    return {**cfg, "can_edit": payload.get("role") == "admin", "shifts": shifts}
+
+
+class AutoCallBody(BaseModel):
+    enabled: bool
+    capacity_pct: float = 100.0
+
+
+@router.put("/api/production/trudoyomkost/autocall")
+def trudoyomkost_autocall_save(
+    body: AutoCallBody,
+    _: dict = Depends(_verify_admin),
+    db: Session = Depends(get_db),
+):
+    if not 1 <= body.capacity_pct <= 100:
+        raise HTTPException(400, "capacity_pct must be between 1 and 100")
+    before = forecast_autocall.settings(db)
+    forecast_autocall.save(db, enabled=body.enabled, capacity_pct=body.capacity_pct)
+    db.commit()
+    action_log.enrich(
+        target_kind="setting", target_id="forecast_autocall",
+        target_name="forecast_autocall",
+        changes=[(k, before[k], v) for k, v in (("enabled", body.enabled),
+                                                ("capacity_pct", body.capacity_pct))
+                 if before[k] != v],
+    )
+    return forecast_autocall.settings(db)

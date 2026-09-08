@@ -101,7 +101,7 @@ SOURCES = ("telegram", "web", "bot", "system")
 # ── the route table ───────────────────────────────────────────────────────────
 # (methods, path template, category, action). `{}` matches one path segment.
 # FIRST match wins, so a more specific template must come before its prefix.
-# Every one of the platform's 193 mutating routes is here on purpose: a table
+# Every one of the platform's 194 mutating routes is here on purpose: a table
 # with holes is a register that quietly loses whole features.
 
 _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
@@ -358,6 +358,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
 
     # ── platform configuration ────────────────────────────────────────────────
     (("PUT",),    "/admin/settings",                           "config", "config.settings_saved"),
+    (("PUT",),    "/api/production/trudoyomkost/autocall",      "config", "config.autocall_set"),
     (("PUT",),    "/api/admin/translations",                   "config", "config.translation_saved"),
     (("POST",),   "/api/admin/translations/keys",              "config", "config.translation_key_added"),
     (("POST",),   "/api/admin/translations/languages",         "config", "config.language_added"),
