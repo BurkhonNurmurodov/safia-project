@@ -1335,12 +1335,27 @@ export default function Production() {
     () => [...new Set(rows.map((r) => r.work_center).filter(Boolean))].sort(),
     [rows]
   );
-  // Filtered + sorted view of rows. Search matches Сап код OR Наименование;
-  // sort is applied only when a column is active (otherwise original SAP order).
+  // Filtered + sorted view of rows. Search matches Сап код OR Наименование OR
+  // an EXACT Трудоемкость; sort is applied only when a column is active
+  // (otherwise original SAP order).
+  //
+  // The labor time is matched as a NUMBER and never as a substring, which is
+  // the whole reason it can be searched at all: «13» read as text also answers
+  // 130, 1.3 and every SAP code carrying "13", i.e. it buries the one line the
+  // operator asked for under the rows they did not. A comma is read as the
+  // decimal point (the catalog form's own convention), and a line carrying no
+  // labor time (has_labor false) can never be a numeric match — nothing is
+  // "0 minutes" here, it is simply unset.
   const viewRows = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const qNum = q === "" ? NaN : Number(q.replace(",", "."));
+    const laborQ = Number.isFinite(qNum) ? qNum : null;
     let out = rows.filter((r) =>
-      (!q || String(r.sap_code).toLowerCase().includes(q) || String(r.name ?? "").toLowerCase().includes(q)) &&
+      (!q
+        || String(r.sap_code).toLowerCase().includes(q)
+        || String(r.name ?? "").toLowerCase().includes(q)
+        || (laborQ != null && r.has_labor
+            && Math.abs(Number(r.labor_time) - laborQ) < 1e-9)) &&
       (!wcSel.length || wcSel.includes(r.work_center))
     );
     if (sort.key) {
