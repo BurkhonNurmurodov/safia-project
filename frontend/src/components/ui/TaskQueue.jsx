@@ -1,12 +1,16 @@
 /**
- * Task-queue controls — the status pill and the two-step priority editor.
+ * Task-board row controls — the status pill and the urgency flame.
  *
  * Shared by BOTH tiers of the task board on /tasks (brigadir → lider and
- * smena menejeri → brigadir). They are one interaction asked one tier apart —
- * the same traffic-light pill, the same "pick a position, then say how the rest
- * of the queue reacts" flow — so they live here rather than being copied. Two
- * copies of a two-step editor drift into two different ways to reorder a queue,
- * and the queue engine behind them (services/task_board.py) is deliberately one.
+ * smena menejeri → brigadir). They are one interaction asked one tier apart, so
+ * they live here rather than being copied — the rule behind them
+ * (services/task_board.py) is deliberately one too.
+ *
+ * THE FLAME replaced a two-step queue editor on 2026-09-08 (the operator's
+ * directive): pick a position 1..N, then say whether the rest of the queue
+ * swaps or shifts. It asked the reader to rank their fourteenth task against
+ * their fifteenth, which nobody was doing, and it could not be pressed at all
+ * on a queue of one. A task is urgent or it is not.
  *
  * These are presentational only: they take a value, whether they are `editable`,
  * and a callback. Neither knows WHO may press it — that is decided server-side
@@ -15,7 +19,7 @@
  */
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, ChevronDown, Check, ArrowLeft } from "lucide-react";
+import { Loader2, ChevronDown, Check, Flame } from "lucide-react";
 
 export const STATUSES = ["todo", "doing", "done"];
 
@@ -31,10 +35,9 @@ export const CHART_BRAND = "#C8973F";
 export const CHART_TODO = STATUS_COLOR.todo;
 export const CHART_OVERDUE = "#ef4444";
 
-// Priority chips mirror the old Google-Sheet urgency chips: 1 red, 2 orange,
-// 3 amber, everything further back a neutral grey.
-export const priorityColor = (p) =>
-  p === 1 ? "#ef4444" : p === 2 ? "#f97316" : p === 3 ? "#eab308" : "#94a3b8";
+// The flame. Orange, not red: red is the traffic light's "overdue", a fact
+// about the DUE DATE, and a row can easily be one without being the other.
+export const URGENT_COLOR = "#f97316";
 
 export const dropCard = {
   background: "var(--bg-card)",
@@ -146,96 +149,37 @@ export function StatusSelect({ status, statusLabel, saving, editable, onChange }
   );
 }
 
-// Two-step priority editor: pick the new position, then choose how the rest of
-// the queue reacts — swap the two positions, or shift everything in between.
-export function PrioritySelect({ priority, count, saving, editable, onApply, t }) {
-  const { open, setOpen, dropStyle, triggerRef, listRef, toggle } = useDropdown(220);
-  const [picked, setPicked] = useState(null);
-  const color = priorityColor(priority);
+// The flame: one tap, one fact. Non-urgent renders as a ghost outline while the
+// viewer may press it and as a plain dash while they may not — an inert control
+// that looks pressable is how a reader learns the board ignores them.
+export function UrgentToggle({ urgent, saving, editable, onToggle, t }) {
+  if (!editable && !urgent) return <span style={{ color: "var(--text-4)" }}>—</span>;
 
-  function openMenu() {
-    setPicked(null);
-    toggle(saving);
-  }
-
-  const options = [];
-  for (let p = 1; p <= count; p++) if (p !== priority) options.push(p);
-
-  const dropdown = open
-    ? createPortal(
-        <div ref={listRef} style={{ ...dropStyle, ...dropCard, width: 230, padding: 10 }}>
-          {picked == null ? (
-            <>
-              <div className="text-[10px] uppercase tracking-wider font-semibold mb-2" style={{ color: "var(--text-4)" }}>
-                {t("tasks.priorityPick")}
-              </div>
-              <div className="grid grid-cols-5 gap-1.5">
-                {options.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPicked(p)}
-                    className="h-8 rounded-lg text-xs font-bold tabular-nums transition-colors"
-                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-md)")}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => setPicked(null)}
-                className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold mb-2 transition-colors"
-                style={{ color: "var(--text-4)" }}
-              >
-                <ArrowLeft size={11} />
-                <span className="tabular-nums" style={{ color: "var(--text-2)" }}>{priority} → {picked}</span>
-              </button>
-              {[
-                { mode: "swap", label: t("tasks.prioritySwap"), desc: t("tasks.prioritySwapDesc") },
-                { mode: "shift", label: t("tasks.priorityShift"), desc: t("tasks.priorityShiftDesc") },
-              ].map((o) => (
-                <button
-                  key={o.mode}
-                  type="button"
-                  onClick={() => { setOpen(false); onApply(picked, o.mode); }}
-                  className="w-full text-left px-2.5 py-2 rounded-lg mb-1 transition-colors"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-md)")}
-                >
-                  <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>{o.label}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }}>{o.desc}</div>
-                </button>
-              ))}
-            </>
-          )}
-        </div>,
-        document.body,
-      )
-    : null;
-
+  const on = !!urgent;
+  const label = t(on ? "tasks.urgentOn" : "tasks.urgentOff");
   return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => editable && openMenu()}
-        className="inline-flex items-center gap-1 text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-full"
-        style={{ background: `${color}24`, color, cursor: editable && !saving ? "pointer" : "default" }}
-      >
-        {priority}
-        {saving
-          ? <Loader2 size={10} className="animate-spin" />
-          : editable && <ChevronDown size={10} style={{ opacity: 0.7 }} />}
-      </button>
-      {dropdown}
-    </>
+    <button
+      type="button"
+      title={editable ? t("tasks.urgentToggle") : label}
+      aria-label={label}
+      aria-pressed={on}
+      disabled={!editable || saving}
+      onClick={() => editable && !saving && onToggle(!on)}
+      className="inline-flex items-center justify-center rounded-full transition-opacity"
+      style={{
+        width: 28,
+        height: 28,
+        background: on ? `${URGENT_COLOR}24` : "transparent",
+        border: `1px solid ${on ? `${URGENT_COLOR}59` : "var(--border-md)"}`,
+        color: on ? URGENT_COLOR : "var(--text-4)",
+        cursor: editable && !saving ? "pointer" : "default",
+        opacity: saving ? 0.6 : 1,
+      }}
+    >
+      {saving
+        ? <Loader2 size={13} className="animate-spin" />
+        : <Flame size={14} fill={on ? URGENT_COLOR : "none"} strokeWidth={on ? 2 : 1.75} />}
+    </button>
   );
 }
 

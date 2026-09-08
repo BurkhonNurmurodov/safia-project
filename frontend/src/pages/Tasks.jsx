@@ -27,7 +27,7 @@ import { useState, useMemo, useEffect, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Pencil, Trash2, AlertTriangle, ClipboardList, MessageSquare,
-  CalendarClock, UserCheck, ShieldCheck, FileText, CircleDot, Hash,
+  CalendarClock, UserCheck, ShieldCheck, FileText, CircleDot, Flame,
   TrendingUp, PieChart, Layers, UserRound, UserPen, ArrowLeftRight,
   Hourglass, Inbox, CheckCheck, Building2, ChevronDown,
 } from "lucide-react";
@@ -43,7 +43,7 @@ import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th } from "../components/ui/DataTable";
 import {
   STATUSES, STATUS_COLOR, CHART_BRAND, CHART_TODO, CHART_OVERDUE,
-  StatusSelect, PrioritySelect, ActionBtn,
+  StatusSelect, UrgentToggle, ActionBtn,
 } from "../components/ui/TaskQueue";
 import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
@@ -69,9 +69,8 @@ const NO_ONE = "__none__";
 // The router that OWNS a row's tier — the one place the split survives.
 const endpointFor = (kind) => (kind === KIND_SUP ? "/api/brigadir-tasks" : "/api/tasks");
 
-// The queue a row belongs to. A brigadir queue and a leader queue can both hold
-// a "priority 1" inside ONE unit — they are two different people's lists — so
-// the active-count that drives the priority editor is keyed by ASSIGNEE.
+// The board a row belongs to, as a key: one person's tasks. A brigadir and a
+// leader of ONE unit are two different people, so the key carries the tier.
 const queueKey = (r) =>
   r.assignee_kind === KIND_SUP ? `s${r.supervisor_manager_id}` : `l${r.leader_profile_id}`;
 
@@ -106,6 +105,10 @@ const isoMinusDays = (iso, n) => {
 // Whole days from b to a (positive when a is later).
 const isoDiffDays = (a, b) =>
   Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
+// Urgent is priority === 1 and nothing else — the backend's own rule
+// (services/task_board.is_urgent). A leftover queue position from before the
+// flame is an ordinary task, not a quietly urgent one.
+const isUrgent = (r) => r.priority === 1;
 const createdDay = (r) => (r.created_at || "").slice(0, 10);
 const completedDay = (r) => (r.completed_at || "").slice(0, 10);
 
@@ -117,6 +120,7 @@ const emptyForm = () => ({
   task_text: "",
   due_date: "",
   comment: "",
+  urgent: false,
 });
 
 // Shows the top slice of a ranked board; the rest opens in a modal.
@@ -201,19 +205,6 @@ export default function Tasks() {
       if (r.supervisor_manager_id != null) units.add(r.supervisor_manager_id);
     }
     return { bothKinds: sup > 0 && lead > 0, unitCount: units.size };
-  }, [allRows]);
-
-  // Active-queue size per ASSIGNEE over ALL rows: the queue is 1..N whatever
-  // the page is showing, and a shorter list would let somebody move a task to
-  // a position the backend then rejects.
-  const activeCounts = useMemo(() => {
-    const m = new Map();
-    for (const r of allRows) {
-      if (r.status === "done") continue;
-      const k = queueKey(r);
-      m.set(k, (m.get(k) || 0) + 1);
-    }
-    return m;
   }, [allRows]);
 
   // ── filter option lists (cascade: shift → brigadir → leader) ───────────────
@@ -446,7 +437,7 @@ export default function Tasks() {
 
     if (!sort.key) {
       active.sort((a, b) =>
-        tl(a.assignee_name || "").localeCompare(tl(b.assignee_name || "")) || (a.priority || 0) - (b.priority || 0));
+        tl(a.assignee_name || "").localeCompare(tl(b.assignee_name || "")) || (isUrgent(b) - isUrgent(a)));
       done.sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || ""));
       return [...active, ...done];
     }
@@ -454,7 +445,9 @@ export default function Tasks() {
     const val = (r) => {
       switch (sort.key) {
         case "task":     return tl(r.task_text || "");
-        case "priority": return r.priority ?? Infinity;
+        // The column key stays "priority" so a saved sort keeps working; what
+        // it sorts by is the flame.
+        case "priority": return isUrgent(r) ? 0 : 1;
         case "tier":     return r.assignee_kind === KIND_SUP ? 0 : 1;
         case "unit":     return tl(r.supervisor_name || "");
         case "assignee": return tl(r.assignee_name || "");
@@ -489,6 +482,7 @@ export default function Tasks() {
         task_text: form.task_text.trim(),
         due_date: form.due_date,
         comment: form.comment.trim() || null,
+        urgent: !!form.urgent,
       };
       if (form.kind === KIND_SUP) body.supervisor_manager_id = form.assignee_id;
       else body.leader_profile_id = form.assignee_id;
@@ -509,11 +503,11 @@ export default function Tasks() {
   });
   const savingStatusId = statusMutation.isPending ? statusMutation.variables?.row?.id : null;
 
-  const priorityMutation = useMutation({
-    mutationFn: ({ row, priority, mode }) => api.patch(`${endpointFor(row.assignee_kind)}/${row.id}/priority`, { priority, mode }).then((r) => r.data),
+  const urgentMutation = useMutation({
+    mutationFn: ({ row, urgent }) => api.patch(`${endpointFor(row.assignee_kind)}/${row.id}/priority`, { urgent }).then((r) => r.data),
     onSuccess: invalidate,
   });
-  const savingPriorityId = priorityMutation.isPending ? priorityMutation.variables?.row?.id : null;
+  const savingUrgentId = urgentMutation.isPending ? urgentMutation.variables?.row?.id : null;
 
   // ── modal helpers ──────────────────────────────────────────────────────────
   function openCreate() {
@@ -656,7 +650,7 @@ export default function Tasks() {
   // ── table columns — follow what the payload holds ──────────────────────────
   const COLS = [
     { key: "task",     icon: FileText,      label: t("tasks.colTask"),     align: "left" },
-    { key: "priority", icon: Hash,          label: t("tasks.colPriority"), align: "center" },
+    { key: "priority", icon: Flame,         label: t("tasks.colUrgent"),   align: "center" },
     ...(shape.bothKinds ? [{ key: "tier", icon: Layers, label: t("tasks.colTier"), align: "left" }] : []),
     ...(shape.unitCount > 1 ? [{ key: "unit", icon: ShieldCheck, label: t("tasks.colSupervisor"), align: "left" }] : []),
     ...(!isLeader ? [{ key: "assignee", icon: UserCheck, label: t("tasks.colAssignee"), align: "left" }] : []),
@@ -676,25 +670,18 @@ export default function Tasks() {
             <div className="line-clamp-2" title={r.task_text}>{tl(r.task_text)}</div>
           </td>
         );
-      case "priority": {
-        const nActive = activeCounts.get(queueKey(r)) || 0;
+      case "priority":
         return (
           <td key={key} className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-            {r.status === "done" || r.priority == null ? (
-              <span style={{ color: "var(--text-4)" }}>—</span>
-            ) : (
-              <PrioritySelect
-                priority={r.priority}
-                count={nActive}
-                saving={savingPriorityId === r.id}
-                editable={!!r.can_reorder && nActive > 1}
-                onApply={(p, mode) => priorityMutation.mutate({ row: r, priority: p, mode })}
-                t={t}
-              />
-            )}
+            <UrgentToggle
+              urgent={isUrgent(r)}
+              saving={savingUrgentId === r.id}
+              editable={!!r.can_reorder}
+              onToggle={(urgent) => urgentMutation.mutate({ row: r, urgent })}
+              t={t}
+            />
           </td>
         );
-      }
       case "tier":
         return (
           <td key={key} className="px-3 py-2.5 whitespace-nowrap">
@@ -1302,6 +1289,27 @@ export default function Tasks() {
               setDateTo={() => {}}
             />
           </Field>
+
+          {/* The flame, asked once when the task is set. Afterwards it is the
+              row's own one-tap control — and its own right, so the edit form
+              (open to the task's author) deliberately does not carry it. */}
+          {!form.id && (
+            <Field label={t("tasks.fieldUrgent")} hint={t("tasks.urgentHint")}>
+              <SegmentedToggle
+                fill
+                value={!!form.urgent}
+                onChange={(v) => setForm((f) => ({ ...f, urgent: v }))}
+                options={[
+                  { value: false, label: t("tasks.urgentOff") },
+                  { value: true, label: (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Flame size={12} /> {t("tasks.urgentOn")}
+                    </span>
+                  ) },
+                ]}
+              />
+            </Field>
+          )}
 
           {/* Optional first comment — becomes the opening message of the thread */}
           {!form.id && (

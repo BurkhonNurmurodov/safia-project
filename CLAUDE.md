@@ -3162,6 +3162,44 @@ each row, an analysis tab beside it.
 - **`GET /api/tasks` (the leader tier alone) stays** for a tab open on an
   older bundle, which is why this shipped as a MINOR: nothing an old tab sends
   is refused.
+- **A task is URGENT or it is not — the flame, and nothing else** (the
+  operator's directive, 2026-09-08). `LeaderTask.priority` carries the flag:
+  **1 = urgent, NULL = ordinary**, and `services/task_board.py` — `URGENT`,
+  `is_urgent`, `urgent_value`, `urgent_first` — is its ONE spelling, so neither
+  router can put a third value in the column. It replaced a dense 1..N queue
+  per assignee (positions, a two-step swap/shift editor, close-ranks whenever a
+  task left the queue, a profile-row lock per mutation, and a renumber on every
+  boot). That machinery answered a question nobody was asking: nobody ranks
+  their fourteenth task against their fifteenth, the editor could not even be
+  opened on a queue of one, and the positions were noise carrying an invariant.
+  - **Nothing was erased to ship it.** `is_urgent` is `priority == 1` and
+    deliberately NOT "not NULL": rows written under the queue still carry their
+    old position, and a task that sat fourth in somebody's list was never a
+    statement that it was urgent. Only what WAS the top of a queue reads as a
+    flame; every write from here on stores 1 or NULL, so the leftovers go as
+    rows are touched. **Consequence to know: on the day this shipped every
+    assignee's position-1 task came up flamed** — one per person, the closest
+    thing the old data had to «this one matters».
+  - **`startup.backfill_task_profiles` lost its renumber block, and that was
+    the load-bearing edit.** It runs on EVERY boot and wrote a dense 1..N into
+    each profile's active tasks — i.e. a 1 into whichever task sorted first for
+    every single assignee. Left in, it would have re-flamed the platform at
+    every restart.
+  - **A status change no longer touches the flag.** It used to leave the queue
+    on «done» and rejoin at the back when reopened; now the flame stays, so a
+    task that was urgent still says so once it is finished.
+  - **`PATCH /{id}/priority` keeps its path and takes `{urgent}`** — it also
+    still reads the old `{priority, mode}` body, where position 1 means "make
+    this urgent" and anything behind it "don't", so a tab left open on the queue
+    bundle keeps working instead of 422-ing on a save. Rights are unchanged: the
+    unit's supervisor / the covering shift manager and admins, never the
+    assignee — what is urgent is the statement of whoever set the work.
+  - The column key on the table stays `"priority"` (a saved `tasks_sort` goes on
+    working); what it sorts by is the flame. `UrgentToggle` in
+    `components/ui/TaskQueue.jsx` is the control — one tap, orange (`#f97316`),
+    **never red**: red is the traffic light's «overdue», a fact about the due
+    DATE, and a row is easily one without being the other. A viewer who may not
+    press it sees a plain dash, never an inert flame.
 - **Status is the PARTITION; overdue is a FLAG.** The donut, the KPI cards and
   every ranked stack count what the status column says — todo / doing / done —
   and «muddati o'tgan» is the open rows past their date, printed BESIDE them

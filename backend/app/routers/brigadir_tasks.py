@@ -2,11 +2,11 @@
 Brigadir tasks API — the smena menejeri → brigadir tier.
 
 The same board as the leader tier one level up the org chart: a shift manager sets
-tasks for the brigadirs of their shift, each brigadir works a dense 1..N queue,
-every task carries a chat thread, and the bell tells the people concerned. The
-queue engine, the assignee rule and the comment-ownership rule are NOT restated
-here — they live in ``services/task_board.py`` and both boards call them, so
-"priority 1" cannot come to mean two different things.
+tasks for the brigadirs of their shift, each task is urgent (the flame) or it is
+not, every task carries a chat thread, and the bell tells the people concerned.
+The urgency flag, the assignee rule and the comment-ownership rule are NOT
+restated here — they live in ``services/task_board.py`` and both boards call
+them, so the flame cannot come to mean two different things one tier apart.
 
 WHAT THIS BOARD OWNS. Only ``assignee_kind == "supervisor"`` rows. Leader tasks
 inside the viewer's units are SERVED here (a shift manager is answerable for
@@ -87,8 +87,8 @@ def _scope_units(db: Session, payload: dict) -> Optional[list[int]]:
 
 
 def _can_manage(db: Session, payload: dict, manager_id: Optional[int]) -> bool:
-    """May the caller RUN this unit's brigadir board — set tasks, move the
-    queue, close a task on the brigadir's behalf?
+    """May the caller RUN this unit's brigadir board — set tasks, raise or drop
+    the flame, close a task on the brigadir's behalf?
 
     Admin, or the shift manager whose shift ∩ plant contains the unit. Asked per
     UNIT, never per role: "you are a shift manager" is not "you are answerable
@@ -209,8 +209,7 @@ def list_tasks(
         LeaderTask.assignee_kind,
         LeaderTask.supervisor_manager_id,
         LeaderTask.leader_profile_id,
-        LeaderTask.priority.is_(None),     # active first
-        LeaderTask.priority,
+        tb.urgent_first(),                      # the flame on top
         LeaderTask.completed_at.desc().nullslast(),
     ).all()
 
@@ -289,6 +288,7 @@ class TaskIn(BaseModel):
     supervisor_manager_id: int          # the assignee: the brigadir's unit
     due_date: date
     comment: Optional[str] = None       # optional first message of the thread
+    urgent: bool = False                # the flame; absent (an older tab) = ordinary
 
 
 @router.post("")
@@ -310,8 +310,6 @@ def create_task(
     _assert(_can_manage(db, payload, mgr.id), "This brigadir is not in your shift")
 
     sub = int(payload["sub"])
-    owner = tb.unit_owner_filter(mgr.id)
-    tb.lock_queue(db, kind=tb.KIND_SUPERVISOR, manager_id=mgr.id)
 
     t = LeaderTask(
         assignee_kind=tb.KIND_SUPERVISOR,
@@ -320,7 +318,7 @@ def create_task(
         supervisor_manager_id=mgr.id,
         supervisor_name=mgr.name,
         task_text=body.task_text.strip(),
-        priority=tb.active_tasks(db, owner).count() + 1,   # joins at the back
+        priority=tb.urgent_value(body.urgent),
         status="todo",
         due_date=body.due_date,
         created_by=sub,
@@ -380,7 +378,8 @@ def update_task(
     payload: dict = Depends(require_page(PAGE)),
 ):
     """Core-field edit (text + due date). The brigadir is never reassigned —
-    that would mean re-queueing across two units; delete and recreate."""
+    the task belongs to the unit it was set for; delete and recreate. The flame
+    is not edited here: it is its own control, with its own right."""
     t = _mine(task_id, payload, db)
     _assert(_owns_row(db, payload, t), "Only the task's creator or an admin can do this")
     if not (body.task_text or "").strip():
@@ -411,23 +410,19 @@ def delete_task(
 ):
     t = _mine(task_id, payload, db)
     _assert(_owns_row(db, payload, t), "Only the task's creator or an admin can do this")
-    owner = tb.owner_filter(t)
-    gone = t.priority if t.status != "done" else None
     # Snapshot before the delete — the row is unreadable after commit.
     was = {"id": t.id, "text": _snippet(t.task_text), "unit": t.supervisor_manager_id,
            "unit_name": t.supervisor_name, "day": t.due_date,
-           "status": t.status, "priority": t.priority}
-    tb.lock_for(db, t)
+           "status": t.status, "urgent": tb.is_urgent(t)}
     dropped = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).delete()
     db.delete(t)
-    db.flush()
-    tb.close_ranks_behind(db, owner, gone)
     db.commit()
     action_log.enrich(
         target_kind="task", target_id=was["id"], target_name=was["text"],
         unit_id=was["unit"], unit_name=was["unit_name"], day=was["day"],
         details=[("brigadir", was["unit_name"]), ("text", was["text"]),
-                 ("status", was["status"]), ("priority", was["priority"]),
+                 ("status", was["status"]),
+                 ("urgent", "yes" if was["urgent"] else "no"),
                  ("deadline", str(was["day"])), ("comment", dropped or 0)],
     )
 
@@ -453,17 +448,10 @@ def set_status(
 
     old = t.status
     if body.status != old:
-        owner = tb.owner_filter(t)
-        tb.lock_for(db, t)
+        # The flame is deliberately untouched — see routers/tasks.py.
         if body.status == "done":
-            # Leaves the queue; everything behind closes ranks.
-            gone = t.priority
-            t.priority = None
             t.completed_at = datetime.now(timezone.utc)
-            tb.close_ranks_behind(db, owner, gone)
         elif old == "done":
-            # Reopened → rejoins at the back of the queue.
-            t.priority = tb.active_tasks(db, owner).count() + 1
             t.completed_at = None
         t.status = body.status
 
@@ -494,11 +482,19 @@ def set_status(
     return _serialize(t, count, payload, db)
 
 
-# ── priority ──────────────────────────────────────────────────────────────────
+# ── the flame ─────────────────────────────────────────────────────────────────
 
 class PriorityIn(BaseModel):
-    priority: int
-    mode: str = "shift"   # swap | shift
+    """The flag, plus the position-and-mode shape an older tab still sends —
+    see ``routers/tasks.py`` for why that is read rather than refused."""
+    urgent: Optional[bool] = None
+    priority: Optional[int] = None
+    mode: Optional[str] = None
+
+    def flag(self) -> bool:
+        if self.urgent is not None:
+            return self.urgent
+        return self.priority == tb.URGENT
 
 
 @router.patch("/{task_id}/priority")
@@ -508,25 +504,16 @@ def set_priority(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    if body.mode not in ("swap", "shift"):
-        raise HTTPException(status_code=400, detail="Invalid mode")
     t = _mine(task_id, payload, db)
-    # Never the brigadir: the order of their queue is the shift manager's
-    # statement of what matters, exactly as a leader cannot reorder theirs.
+    # Never the brigadir: what is urgent is the shift manager's statement of
+    # what matters, exactly as a leader does not flame their own tasks.
     _assert(_can_manage(db, payload, t.supervisor_manager_id),
-            "Only a shift manager or admin can change priorities")
-    if t.status == "done" or t.priority is None:
-        raise HTTPException(status_code=400, detail="Done tasks have no priority")
+            "Only a shift manager or admin can change urgency")
 
-    owner = tb.owner_filter(t)
-    tb.lock_for(db, t)
-    n = tb.active_tasks(db, owner).count()
-    new_p, old_p = body.priority, t.priority
-    if not (1 <= new_p <= n):
-        raise HTTPException(status_code=400, detail=f"Priority must be between 1 and {n}")
-
-    if new_p != old_p:
-        tb.reinsert(db, owner, t, new_p, body.mode)
+    was = tb.is_urgent(t)
+    now = body.flag()
+    if now != was:
+        t.priority = tb.urgent_value(now)
         db.commit()
         db.refresh(t)
 
@@ -534,8 +521,9 @@ def set_priority(
         target_kind="task", target_id=t.id, target_name=_snippet(t.task_text),
         unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
         day=t.due_date,
-        details=[("brigadir", t.supervisor_name), ("mode", body.mode), ("count", n)],
-        changes=[("priority", old_p, t.priority)] if t.priority != old_p else None,
+        details=[("brigadir", t.supervisor_name)],
+        changes=[("urgent", "yes" if was else "no", "yes" if now else "no")]
+                if now != was else None,
     )
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
     return _serialize(t, count, payload, db)

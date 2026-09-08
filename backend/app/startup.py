@@ -3540,14 +3540,16 @@ def backfill_role_profile_keys() -> None:
 
 
 def backfill_task_profiles() -> None:
-    """Move leader tasks and comment authorship onto profiles, then merge the
-    per-registration priority queues that keying-by-login had split.
+    """Move leader tasks and comment authorship onto profiles.
 
-    A leader held by two accounts previously had TWO independent dense 1..N
-    queues — two different tasks both numbered 1, each visible from only one
-    login. Once the tasks share a profile the union has duplicate positions, so
-    the active queue is renumbered per profile, preserving the existing order
-    (priority, then creation time) and keeping it dense.
+    It used to also renumber each profile's active queue to a dense 1..N —
+    merging the two independent queues a leader held by two accounts once had.
+    That block is GONE with the queue itself (2026-09-08): ``priority`` is now
+    the urgency flag (1 = the flame, NULL = ordinary, see
+    ``services/task_board``), and this function runs on EVERY boot, so leaving
+    it in would have re-flamed every active task on the platform at each
+    restart — the renumber wrote a 1 into whichever task sorted first for every
+    single assignee.
     """
     db = SessionLocal()
     try:
@@ -3610,32 +3612,10 @@ def backfill_task_profiles() -> None:
                 c.author_profile = r.profile_key
                 authors += 1
 
-        db.flush()
-
-        # Renumber each profile's active queue: dense 1..N, order preserved.
-        renumbered = 0
-        active = db.query(LeaderTask).filter(
-            LeaderTask.status != "done",
-            LeaderTask.leader_profile_id.isnot(None),
-        ).all()
-        per_profile: dict[int, list] = {}
-        for t in active:
-            per_profile.setdefault(t.leader_profile_id, []).append(t)
-        for pid, rows in per_profile.items():
-            rows.sort(key=lambda x: (
-                x.priority if x.priority is not None else 10**6,
-                x.created_at or datetime.min.replace(tzinfo=timezone.utc),
-                x.id,
-            ))
-            for i, t in enumerate(rows, start=1):
-                if t.priority != i:
-                    t.priority = i
-                    renumbered += 1
-
-        if moved or creators or authors or renumbered:
+        if moved or creators or authors:
             db.commit()
             print(f"[startup] tasks → profiles: {moved} assigned, {creators} creators, "
-                  f"{authors} comment authors, {renumbered} queue position(s) merged")
+                  f"{authors} comment authors")
     except Exception as exc:
         db.rollback()
         print(f"[startup] task profile backfill skipped: {exc}")

@@ -2655,10 +2655,11 @@ class LeaderConcernComment(Base):
 
 class LeaderTask(Base):
     """A supervisor→leader assignment (the "DAILY протокол" board that used to
-    live in Google Sheets). ``priority`` is the per-leader queue position over
-    the ACTIVE (todo/doing) tasks only — always a dense 1..N; a done task leaves
-    the queue (priority NULL) and the rest close ranks. The queue invariant is
-    maintained by routers/tasks.py."""
+    live in Google Sheets). ``priority`` is the URGENCY FLAG and nothing else:
+    1 = urgent (the flame on /tasks), NULL = ordinary. It is not an ordering —
+    it was a dense per-assignee 1..N queue until 2026-09-08, and the column is
+    reused rather than replaced so no row had to move. ``services/task_board``
+    owns both values; never write anything else into it."""
     __tablename__ = "leader_tasks"
 
     id                    = Column(Integer, primary_key=True, autoincrement=True)
@@ -2683,7 +2684,7 @@ class LeaderTask(Base):
     supervisor_manager_id = Column(Integer, nullable=True)         # managers.id (leader's unit)
     supervisor_name       = Column(String, nullable=True)          # snapshot of the unit/brigadir name
     task_text             = Column(Text, nullable=False)           # Задача
-    priority              = Column(Integer, nullable=True)         # Приоритет: 1..N among active tasks; NULL once done
+    priority              = Column(Integer, nullable=True)         # urgency: 1 = urgent (flame), NULL = ordinary
     status                = Column(String, nullable=False, server_default="todo")  # todo | doing | done
     due_date              = Column(Date, nullable=False)           # Срок выполнения
     completed_at          = Column(DateTime(timezone=True), nullable=True)  # set when flipped to done
