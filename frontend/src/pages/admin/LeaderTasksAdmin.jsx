@@ -2014,11 +2014,16 @@ export default function LeaderTasksAdmin() {
             const parts = ruleParts(td.id);
             return (
               <div key={td.id} ref={(el) => { rowRefs.current[td.id] = el; }}
-                style={{ borderTop: i ? "1px solid var(--border)" : "none", opacity: archived ? 0.6 : 1 }}>
+                style={{ borderTop: i ? "1px solid var(--border)" : "none",
+                  opacity: archived ? 0.6 : 1,
+                  // One ground for the header AND the detail: the open state is
+                  // a property of the ROW, and painting it on the button alone
+                  // ended it at the button's edge, cutting an open row in half
+                  // with a visible seam.
+                  background: isOpen ? "var(--hover-bg)" : undefined }}>
                 <button type="button" aria-expanded={isOpen} aria-controls={`ltask-body-${td.id}`}
                   onClick={() => setOpenRow(isOpen ? null : td.id)}
-                  className="block w-full text-left px-4 py-3.5 transition-colors hover:bg-[var(--hover-bg)]"
-                  style={isOpen ? { background: "var(--hover-bg)" } : undefined}>
+                  className={`block w-full text-left px-4 py-3.5 transition-colors${isOpen ? "" : " hover:bg-[var(--hover-bg)]"}`}>
                   <div className="flex items-baseline gap-3">
                     <span className="w-6 flex-shrink-0 text-right text-xs font-semibold tabular-nums"
                       style={{ color: "var(--text-4)" }}>{td.id}</span>
@@ -2119,7 +2124,12 @@ export default function LeaderTasksAdmin() {
                 {/* A sibling of the row button, never a child of it: an
                     exception carries its own «Ochish» and nested interactive
                     elements inside a <button> are unreachable by keyboard. */}
-                {isOpen && (
+                {isOpen && (() => {
+                  // What the leader-facing block resolves to: the description
+                  // where one is written, else the AI's criteria — the same
+                  // fallback `_resolve_description` applies on the server.
+                  const shownDesc = r.description || r.criteria || "";
+                  return (
                   <div id={`ltask-body-${td.id}`} className="px-4 pb-4 -mt-1">
                     <div className="ml-9 pl-3.5" style={{ borderLeft: "2px solid var(--border-md)" }}>
                       {/* Opening a row must SHOW the task, not restate the
@@ -2157,9 +2167,23 @@ export default function LeaderTasksAdmin() {
                           one place on the page they are not clipped. */}
                       <p className="text-[12.5px] leading-relaxed mb-1.5" style={{ color: "var(--text-3)" }}>
                         <b style={{ color: "var(--text-2)" }}>{t("admin.ltasks.groupLeader")}:</b>{" "}
-                        {r.description || r.criteria || t("admin.ltasks.empty")}
+                        {shownDesc || t("admin.ltasks.empty")}
+                        {/* Folding the two paragraphs into one when nothing is
+                            written would otherwise present the AI's text as a
+                            description somebody authored — the one fact an
+                            admin opens this row to check before editing it. */}
+                        {!r.description && r.criteria && (
+                          <span className="ml-1.5 text-[11px]" style={{ color: "var(--text-4)" }}>
+                            ({t("admin.ltasks.descFallback")})
+                          </span>
+                        )}
                       </p>
-                      {r.criteria && r.criteria !== r.description && (
+                      {/* Compared against what the block above actually SHOWED,
+                          not against the raw description: with no description
+                          written that block already prints the criteria, and
+                          testing the empty field printed the same paragraph
+                          twice under two different headings. */}
+                      {r.criteria && r.criteria !== shownDesc && (
                         <p className="text-[12.5px] leading-relaxed mb-2" style={{ color: "var(--text-3)" }}>
                           <b style={{ color: "var(--text-2)" }}>{t("admin.ltasks.criteria")}:</b>{" "}
                           {r.criteria}
@@ -2233,7 +2257,8 @@ export default function LeaderTasksAdmin() {
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })}
