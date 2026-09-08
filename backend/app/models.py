@@ -3519,6 +3519,12 @@ class EducationLesson(Base):
     # preview. Optional — a clear title is often the whole lesson.
     description_html = Column(Text, nullable=True)
     description_text = Column(Text, nullable=True)
+    # The poster, RESOLVED once at publish time (services/education_video
+    # .fetch_thumb) and stored, because Loom's and Vimeo's real thumbnail URLs
+    # carry an opaque hash no amount of reading the share link yields. NULL is
+    # an ordinary state — a private video, a provider that did not answer — and
+    # the card draws its own poster for it. Never fetched on a read path.
+    thumb_url = Column(Text, nullable=True)
 
     created_by_profile = Column(String(80), nullable=True)  # "role:id" of the author
     created_by_name = Column(String(160), nullable=True)    # snapshotted; a rename must not rewrite history

@@ -1208,6 +1208,27 @@ def purge_cell_exchange_sandbox() -> None:
         db.close()
 
 
+def add_education_thumb_url() -> None:
+    """2026-09-08: «Ta'lim» lessons store their resolved poster URL.
+
+    Loom and Vimeo publish a thumbnail whose URL carries an opaque hash, so it
+    has to be looked up per video and kept; only YouTube's is derivable. Adding
+    the column is enough — an existing lesson simply reads NULL and draws the
+    generic poster until it is next edited, which is the state it was already
+    in. Idempotent, so it needs no one-shot flag.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE education_lessons ADD COLUMN IF NOT EXISTS thumb_url TEXT"))
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("add_education_thumb_url failed")
+    finally:
+        db.close()
+
+
 def add_cell_shift_times() -> None:
     """2026-08-21: cells gain their working START and END clock («Smena
     vaqtlari» admin tab). Two nullable "HH:MM" columns — NULL on both means the

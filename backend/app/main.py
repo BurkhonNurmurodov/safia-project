@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
         add_cell_shift_times,
+        add_education_thumb_url,
         add_idle_interval_client_key,
         add_leader_task_cell,
         add_late_proof_provenance,
@@ -144,6 +145,7 @@ async def lifespan(app: FastAPI):
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     add_cell_shift_times()
+    add_education_thumb_url()
     add_idle_interval_client_key()
     add_leader_task_cell()
     add_late_proof_provenance()
@@ -456,7 +458,11 @@ _CSP = (
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com data:; "
-    "img-src 'self' data: blob: https://i.ytimg.com https://cdn.loom.com; "
+    # Lesson posters are hot-linked from the providers' own CDNs. The set is
+    # closed by services/education_video, which accepts three providers and
+    # verifies the URL before it is ever stored.
+    "img-src 'self' data: blob: https://i.ytimg.com https://cdn.loom.com "
+    "https://i.vimeocdn.com; "
     "media-src 'self' data: blob:; "
     # «Ta'lim» (/education) embeds video lessons. A lesson's link is parsed by
     # services/education_video, which accepts these THREE providers and refuses

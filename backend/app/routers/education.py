@@ -28,6 +28,8 @@ itself rather than relying on a hidden button.
 """
 from __future__ import annotations
 
+import logging
+
 from datetime import datetime, timezone
 from html import escape
 from typing import Optional
@@ -45,6 +47,8 @@ from app.models import (
 from app.permissions import require_page
 from app.services import education_video
 from app.services.action_log import enrich
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/education", tags=["education"])
 
@@ -168,6 +172,10 @@ def _lesson_json(db: Session, lesson: EducationLesson, *, viewer: Optional[str],
                  counts: dict[int, int],
                  target_map: dict[int, list[str]]) -> dict:
     media = education_video.rebuild(lesson.provider, lesson.video_id)
+    # The stored poster is the resolved one (Loom/Vimeo carry an unguessable
+    # hash); rebuild() can only derive YouTube's. Either may legitimately be
+    # None, and the card draws its own poster then.
+    thumb = lesson.thumb_url or media["thumb"]
     targets = target_map.get(lesson.id, [])
     out = {
         "id": lesson.id,
@@ -176,7 +184,7 @@ def _lesson_json(db: Session, lesson: EducationLesson, *, viewer: Optional[str],
         "provider": lesson.provider,
         "video_id": lesson.video_id,
         "embed": media["embed"],
-        "thumb": media["thumb"],
+        "thumb": thumb,
         "watch": media["watch"],
         "description_html": lesson.description_html or "",
         "description_text": lesson.description_text or "",
@@ -333,12 +341,18 @@ def resolve(body: ResolveIn, payload: dict = Depends(require_page(PAGE))):
 
 # ── writes (admin only) ──────────────────────────────────────────────────────
 
-def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str],
-                    *, actor: Optional[int]) -> int:
+def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str]) -> int:
     """Tell each newly-addressed profile about the lesson. One bell row per
     profile plus a DM to every holder — `notify_profile` is the only correct
     way to reach a person here, and it queues for an unclaimed profile instead
-    of dropping the news."""
+    of dropping the news.
+
+    The publisher is NOT excluded. `notify_profile`'s `exclude_account` exists
+    to spare somebody the "you did this" buzz for an event they caused
+    incidentally — closing a day, approving a request. Naming yourself in a
+    lesson's audience is not that: it is an explicit statement that this lesson
+    is for you, and an admin who ticks their own profile and then receives
+    nothing has been shown the feature failing."""
     if not keys:
         return 0
     from app.config import settings
@@ -396,12 +410,16 @@ def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str],
     for key in keys:
         try:
             dmed |= notify_profile(db, key, "education_lesson_new", params,
-                                   type="info", exclude_account=actor,
+                                   type="info",
                                    skip_accounts=dmed, markup_fn=markup_fn,
                                    rich_fn=rich_fn)
         except Exception:
             # One unreachable profile must never cost the rest of the class its
-            # notification — the lesson is already published either way.
+            # notification — the lesson is already published either way. LOGGED,
+            # though: a silently swallowed failure here is indistinguishable
+            # from "nobody was in the audience".
+            logger.exception("education: notifying %s about lesson %s failed",
+                             key, lesson.id)
             continue
     return len(keys)
 
@@ -426,6 +444,7 @@ def create_lesson(body: LessonIn, db: Session = Depends(get_db),
         description_text=(body.description_text or "").strip() or None,
         created_by_profile=author_key,
         created_by_name=profile_display_name(db, author_key),
+        thumb_url=education_video.fetch_thumb(media["provider"], media["video_id"]),
     )
     db.add(lesson)
     db.flush()
@@ -433,7 +452,7 @@ def create_lesson(body: LessonIn, db: Session = Depends(get_db),
         db.add(EducationLessonTarget(lesson_id=lesson.id, profile_key=key))
     db.commit()
 
-    _notify_targets(db, lesson, keys, actor=int(payload.get("sub") or 0) or None)
+    _notify_targets(db, lesson, keys)
     db.commit()
     enrich(target_kind="lesson", target_id=str(lesson.id),
            target_name=lesson.title,
@@ -461,6 +480,14 @@ def update_lesson(lesson_id: int, body: LessonIn, db: Session = Depends(get_db),
     keys = _clean_targets(body.targets)
     after = set(keys)
 
+    if (lesson.provider, lesson.video_id) != (media["provider"], media["video_id"]):
+        lesson.thumb_url = education_video.fetch_thumb(
+            media["provider"], media["video_id"])
+    elif not lesson.thumb_url:
+        # A lesson published before the poster was resolved (or one whose
+        # look-up failed that day) gets another chance on any edit.
+        lesson.thumb_url = education_video.fetch_thumb(
+            lesson.provider, lesson.video_id)
     lesson.title = body.title.strip()
     lesson.url = body.url.strip()
     lesson.provider = media["provider"]
@@ -478,7 +505,7 @@ def update_lesson(lesson_id: int, body: LessonIn, db: Session = Depends(get_db),
     db.commit()
 
     fresh = [k for k in keys if k not in before]
-    _notify_targets(db, lesson, fresh, actor=int(payload.get("sub") or 0) or None)
+    _notify_targets(db, lesson, fresh)
     db.commit()
     enrich(target_kind="lesson", target_id=str(lesson_id),
            target_name=lesson.title,

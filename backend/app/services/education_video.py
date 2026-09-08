@@ -21,9 +21,12 @@ that 404s is worse than knowing there isn't one.
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
+
+logger = logging.getLogger(__name__)
 
 # Provider → the label shown on a card's corner badge. Keys are what lands in
 # `education_lessons.provider`; adding one here means adding its host to the
@@ -152,3 +155,86 @@ def rebuild(provider: str, video_id: str) -> dict:
                 "thumb": None,
                 "watch": f"https://vimeo.com/{video_id}"}
     return {"embed": None, "thumb": None, "watch": None}
+
+
+# ── the poster image ─────────────────────────────────────────────────────────
+# YouTube publishes a thumbnail at a URL derivable from the video id, so it
+# needs no lookup. Loom and Vimeo do NOT: Loom's real thumbnail carries an
+# opaque hash after the id
+# (…/{id}-b5213f287fcef7f0.jpg), and no amount of reading the share URL yields
+# it. The first cut of this feature GUESSED "…/{id}-00001.jpg" and every Loom
+# card fell back to the grey poster; the guess returns 403 (S3 AccessDenied for
+# a key that does not exist), which is also why the failure looked like a
+# permissions problem rather than a wrong URL.
+#
+# So the hash is ASKED FOR, once, at publish time, through each provider's
+# oEmbed endpoint, and the answer is STORED on the lesson. Nothing is fetched
+# on a read path.
+
+_OEMBED = {
+    "loom": "https://www.loom.com/v1/oembed?url={url}",
+    "vimeo": "https://vimeo.com/api/oembed.json?url={url}",
+}
+_HTTP_TIMEOUT = 6.0
+
+
+def fetch_thumb(provider: str, video_id: str) -> Optional[str]:
+    """A verified poster URL for a freshly published lesson, or None.
+
+    Best effort by design: it runs inside the admin's publish request, so it is
+    tightly timed out and every failure — a dead network, a private video, a
+    provider that changed its answer — returns None and leaves the card drawing
+    its own poster. A lesson must never fail to publish because a thumbnail
+    could not be found.
+
+    Never returns a URL it has not just fetched successfully, so a stored
+    thumbnail cannot render as a broken image.
+    """
+    if provider == "youtube":
+        return _verify(f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg")
+
+    tmpl = _OEMBED.get(provider)
+    if not tmpl:
+        return None
+    watch = rebuild(provider, video_id).get("watch")
+    if not watch:
+        return None
+    try:
+        import httpx
+
+        r = httpx.get(tmpl.format(url=quote(watch, safe="")),
+                      timeout=_HTTP_TIMEOUT, follow_redirects=True)
+        if r.status_code != 200:
+            return None
+        url = (r.json() or {}).get("thumbnail_url")
+    except Exception:
+        logger.info("education: oembed lookup failed for %s/%s", provider, video_id,
+                    exc_info=True)
+        return None
+    if not isinstance(url, str) or not url.startswith("https://"):
+        return None
+
+    # Loom answers with an ANIMATED GIF preview — 5.4 MB for a one-minute
+    # video, which is not a thing to put twenty of in a grid. The same key with
+    # a .jpg extension is the static frame (~110 KB) and is what we want; if it
+    # is ever absent the GIF is NOT used as a fallback, because the weight is
+    # the whole objection.
+    if url.endswith(".gif"):
+        still = _verify(url[: -len(".gif")] + ".jpg")
+        return still
+    return _verify(url)
+
+
+def _verify(url: str) -> Optional[str]:
+    """The URL back if it really serves an image right now, else None."""
+    try:
+        import httpx
+
+        r = httpx.get(url, timeout=_HTTP_TIMEOUT, follow_redirects=True,
+                      headers={"Range": "bytes=0-0"})
+        ok = r.status_code in (200, 206) and \
+            r.headers.get("content-type", "").startswith("image/")
+        return url if ok else None
+    except Exception:
+        logger.info("education: thumbnail verify failed for %s", url, exc_info=True)
+        return None
