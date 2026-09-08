@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ClipboardX, AlertTriangle, Save, Ban } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ClipboardX, AlertTriangle, Save, Ban, Trash2, Wrench } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import Button from "../../components/ui/Button";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import { useToast } from "../../components/ui/Toast";
 import SearchInput from "../../components/ui/SearchInput";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import DateRangePicker from "../../components/ui/DateRangePicker";
@@ -21,11 +24,23 @@ import { SkeletonBlock } from "../../components/ui/Skeleton";
  * question without caring which of them happened, which is the point: chasing
  * each cause with its own detector is how the next one goes unnoticed.
  *
- * Two reasons, deliberately separated — they need different actions and mixing
- * them makes the number unreadable:
- *   lost      — the row was accepted and then dropped. The real alarm.
+ * Three reasons, deliberately separated — they need three different actions and
+ * mixing them makes the number unreadable:
+ *   lost      — the row was accepted and then dropped. The real alarm, and the
+ *               only one «Qaytarish» puts back.
  *   not_saved — the cell is staged and never projected (often a closed day).
  *               Pressing Save, or re-opening the day, writes it.
+ *   deleted   — somebody removed the worker-day on purpose. Not a fault and not
+ *               repairable: a button that quietly reversed a decision would be
+ *               worse than the alarm it cleared.
+ *
+ * «Qaytarish» restores the rows exactly where a projection would put them — the
+ * unit the day's batch routes their cell to, with that cell and the file's own
+ * hours. It writes into CLOSED days by design and notifies nobody; the backend
+ * re-derives the missing set, so what is on screen names WHICH workers and never
+ * what to write. Historical numbers move on every repaired day (загрузка, «came»
+ * counts, KPIs, the leaderboard all rise), which is why the count has to be
+ * typed back before it runs.
  */
 
 const COLS = 8;
@@ -33,7 +48,12 @@ const COLS = 8;
 const REASON = {
   lost:      { color: "#ef4444", Icon: Ban },
   not_saved: { color: "#eab308", Icon: Save },
+  // Grey, never red: a deliberate removal is not a fault, and the status palette
+  // keeps grey for "nothing to do here".
+  deleted:   { color: "#94a3b8", Icon: Trash2 },
 };
+
+const REASONS = ["lost", "not_saved", "deleted"];
 
 function ReasonChip({ reason, t }) {
   const m = REASON[reason] || REASON.lost;
@@ -69,6 +89,11 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
   const { tl } = useTranslit();
   const [reason, setReason] = useState("all");
   const [search, setSearch] = useState("");
+  const [confirm, setConfirm] = useState(false);
+  const [fixing,  setFixing]  = useState(false);
+  const [fixErr,  setFixErr]  = useState(null);
+  const toast = useToast();
+  const qc = useQueryClient();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["admin-reconcile", dateFrom, dateTo],
@@ -93,11 +118,38 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
 
   const opts = useMemo(() => [
     { value: "all", label: `${t("reconcile.filterAll")} (${all.length})` },
-    ...["lost", "not_saved"].map((k) => ({
+    ...REASONS.map((k) => ({
       value: k,
       label: `${t(`reconcile.reason.${k}`)} (${all.filter((r) => r.reason === k).length})`,
     })),
   ], [all, t]);
+
+  // What «Qaytarish» would put back: the LOST rows currently on screen. It
+  // mirrors the filters for the same reason the workbook does — an operator
+  // repairs the rows they looked at.
+  const fixable = useMemo(() => rows.filter((r) => r.reason === "lost"), [rows]);
+
+  async function runRepair() {
+    setFixing(true);
+    setFixErr(null);
+    try {
+      const { data: res } = await api.post("/api/admin/exchange-audit/reconcile/repair", {
+        keys: fixable.map((r) => ({ date: r.date, worker_name: r.worker_name })),
+        date_from: dateFrom,
+        date_to: dateTo,
+      });
+      setConfirm(false);
+      await qc.invalidateQueries({ queryKey: ["admin-reconcile"] });
+      toast.success(
+        t("reconcile.fixDone").replace("{n}", res.restored).replace("{s}", res.skipped),
+        res.skipped ? 8000 : undefined,
+      );
+    } catch (e) {
+      setFixErr(e?.message || t("reconcile.fixFailed"));
+    } finally {
+      setFixing(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -116,7 +168,7 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
       {isLoading ? (
         <SkeletonBlock className="h-24" />
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
           <Stat label={t("reconcile.statLost")} value={sum.lost ?? 0}
                 tone={sum.lost ? "#ef4444" : "#22c55e"}
                 hint={t("reconcile.statLostHint")
@@ -125,6 +177,8 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
           <Stat label={t("reconcile.statHours")} value={(sum.hours ?? 0).toFixed(1)} />
           <Stat label={t("reconcile.reason.not_saved")} value={sum.not_saved ?? 0}
                 tone={sum.not_saved ? "#eab308" : undefined} />
+          <Stat label={t("reconcile.reason.deleted")} value={sum.deleted ?? 0}
+                tone={sum.deleted ? "#94a3b8" : undefined} />
           <Stat label={t("reconcile.statTotal")} value={sum.total ?? 0} />
         </div>
       )}
@@ -144,6 +198,11 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
                          placeholder={t("reconcile.searchPh")} className="w-full sm:w-56" />
             <SegmentedToggle value={reason} onChange={setReason} options={opts}
                              size="md" className="ml-auto" />
+            <Button size="lg" variant="primary" icon={Wrench}
+                    disabled={isLoading || fixable.length === 0}
+                    onClick={() => { setFixErr(null); setConfirm(true); }}>
+              {t("reconcile.fix").replace("{n}", fixable.length)}
+            </Button>
           </div>
         }
         minWidth="900px"
@@ -229,6 +288,24 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
       <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-4)" }}>
         {t("reconcile.footnote")}
       </p>
+
+      {confirm && (
+        <ConfirmDialog
+          open
+          tone="warning"
+          icon={Wrench}
+          title={t("reconcile.fixTitle")}
+          message={t("reconcile.fixMsg").replace("{n}", fixable.length)}
+          confirmLabel={t("reconcile.fixConfirm")}
+          challenge={String(fixable.length)}
+          challengeLabel={t("reconcile.fixChallenge")}
+          loading={fixing}
+          error={fixErr}
+          onCancel={() => setConfirm(false)}
+          onConfirm={runRepair}
+        />
+      )}
+      {toast.node}
     </div>
   );
 }

@@ -783,3 +783,162 @@ def repair(
     )
     return {"restored": len(done), "healed": healed, "skipped": len(skipped),
             "rows": done, "skippedRows": skipped}
+
+
+# ─── Reconciliation repair ───────────────────────────────────────────────────
+# Putting back the workers the GENERAL check found missing. The report next to
+# it (above) is about one cause — an exchange document — and repairs from the
+# document. This one is about the day: `attendance_reconcile` already knows
+# exactly what a re-projection would write for these people, so the repair is
+# to write that and nothing else.
+#
+# Why not simply re-project the day. `_project` wipes the whole (manager, date)
+# and rebuilds it from the batch, which would take the supervisor's cell
+# placements, their splits, every approved exchange and every hand edit with it
+# — the known limit recorded in CLAUDE.md. Restoring the named rows one at a
+# time touches nothing that is already correct.
+#
+# It writes into CLOSED days, deliberately, exactly as the repair above does: a
+# closed day is the normal state of a day old enough for this to have happened
+# to it, and re-opening one to fix it would swing the supervisor's confirmed
+# totals twice instead of once. The closure is left standing, only the missing
+# rows are added, and NOTHING is notified — no supervisor DM, no bell, no
+# day-state change. Every insert is logged under `RECONCILE-REPAIR` with its row
+# id, so the write is auditable and individually reversible.
+
+class ReconcileRepairBody(BaseModel):
+    """The exact workers to restore, as (date, worker_name) pairs read off the
+    report — deliberately explicit rather than "repair everything in the
+    filter", so a list computed minutes ago cannot silently grow between the
+    read and the write. The period bounds what may be reached at all."""
+    keys: list[dict] = []
+    date_from: Optional[str] = None
+    date_to:   Optional[str] = None
+
+
+@router.post("/reconcile/repair")
+def reconcile_repair(
+    body: ReconcileRepairBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(verify_admin),
+):
+    """Re-insert the named lost workers exactly where a projection would put
+    them — the unit the day's batch routes their cell to, with that cell.
+
+    The missing set is re-derived here from `attendance_reconcile`; the client's
+    rows say WHICH workers, never what to write. So the endpoint is idempotent
+    (a worker who now carries a row for that date is reported `already_present`
+    and nothing is written) and it cannot be talked into writing a row the
+    report does not currently call lost.
+
+    Only `lost` is repaired. `not_saved` belongs to Save — writing it here would
+    go behind the two-phase flow and the next Save would rewrite it — and
+    `deleted` is somebody's decision, which a repair must never quietly reverse.
+    """
+    d_to   = _parse_date(body.date_to) or date_t.today()
+    d_from = _parse_date(body.date_from) or (d_to - timedelta(days=DEFAULT_DAYS))
+    if d_from > d_to:
+        raise HTTPException(status_code=400, detail="from is after to")
+
+    actor = payload.get("full_name") or payload.get("sub")
+
+    # (date → names), so each date is reconciled once however many workers of it
+    # were ticked.
+    wanted: dict[date_t, set] = defaultdict(set)
+    skipped: list[dict] = []
+    for k in body.keys:
+        d_iso, name = k.get("date"), k.get("worker_name")
+        if not d_iso or not name:
+            continue
+        try:
+            d = datetime.strptime(d_iso, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid date: {d_iso}")
+        if not (d_from <= d <= d_to):
+            # The period is the scope: a key outside the window the operator
+            # read is a key they never looked at.
+            skipped.append({"date": d_iso, "worker_name": name, "reason": "out_of_range"})
+            continue
+        wanted[d].add(name)
+
+    done: list[dict] = []
+    for d in sorted(wanted):
+        d_iso = d.isoformat()
+        missing = {r["worker_name"]: r for r in attendance_reconcile.missing_for_day(db, d)}
+
+        # Everything this date can still put back, keyed by name. Fetched once
+        # for the whole date rather than once per worker.
+        writable = [n for n in wanted[d]
+                    if (missing.get(n) or {}).get("reason") == "lost"]
+        plan: dict[str, list] = defaultdict(list)
+        for br, mid in attendance_reconcile.restore_plan(db, d, writable):
+            plan[br.worker_name].append((br, mid))
+
+        for name in sorted(wanted[d]):
+            r = missing.get(name)
+            if r is None:
+                # Not missing any more: restored by an earlier press, or never
+                # lost. Either way there is nothing to write.
+                skipped.append({"date": d_iso, "worker_name": name,
+                                "reason": "already_present"})
+                continue
+            if r["reason"] != "lost":
+                skipped.append({"date": d_iso, "worker_name": name,
+                                "reason": r["reason"]})
+                continue
+            rows = plan.get(name) or []
+            if not rows:
+                # The report saw a batch row and the plan does not — the cell
+                # went pending or lost its routing between the two reads.
+                skipped.append({"date": d_iso, "worker_name": name,
+                                "reason": "no_batch"})
+                continue
+
+            for br, mid in rows:
+                row = Attendance(
+                    manager_id        = mid,
+                    date              = d,
+                    worker_name       = br.worker_name,
+                    job_title         = br.job_title,
+                    schedule          = br.schedule,
+                    clock_in_out      = br.clock_in_out,
+                    hours_worked      = br.hours_worked,
+                    early_arrival_min = br.early_arrival_min,
+                    # Copied, never re-derived — `_sync_manager` carries these
+                    # straight across and a restored row must be
+                    # indistinguishable from a projected one.
+                    effective_hours   = br.effective_hours,
+                    verifix_code      = br.verifix_code,
+                )
+                db.add(row)
+                db.flush()
+                state, _closure, _counts = day_state(db, mid, d)
+                log.warning(
+                    "RECONCILE-REPAIR restored attendance id=%s worker=%r date=%s "
+                    "-> manager=%s cell=%s hours=%s day=%s by=%s",
+                    row.id, name, d_iso, mid, row.verifix_code,
+                    br.hours_worked, state, actor,
+                )
+                done.append({
+                    "date": d_iso, "worker_name": name, "attendance_id": row.id,
+                    "manager_id": mid, "manager_name": r["manager_name"],
+                    "verifix_code": row.verifix_code,
+                    "hours_worked": _f(br.hours_worked), "day": state,
+                })
+
+    db.commit()
+    log.warning("RECONCILE-REPAIR done by=%s restored=%d skipped=%d",
+                actor, len(done), len(skipped))
+    days  = sorted({r["date"] for r in done})
+    units = sorted({r["manager_name"] for r in done})
+    action_log.enrich(
+        target_kind="day",
+        target_id=days[-1] if len(days) == 1 else None,
+        day=days[-1] if days else None,
+        details=[("count", len(done)), ("skipped", len(skipped)),
+                 ("workers", len({r["worker_name"] for r in done})),
+                 ("unit", ", ".join(units) or "—"),
+                 ("from_date", d_from.isoformat()), ("to_date", d_to.isoformat())],
+    )
+    return {"restored": len(done), "skipped": len(skipped),
+            "rows": done, "skippedRows": skipped}
