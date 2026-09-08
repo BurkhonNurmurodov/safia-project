@@ -5,7 +5,6 @@ import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
 import { SkeletonChart } from "../ui/Skeleton";
-import DayTimeline from "./DayTimeline";
 import { CATS, catColor } from "./categories";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -19,9 +18,14 @@ import api from "../../utils/api";
  *
  * The bar is a number with no way in: it says the unit waited 464 minutes over
  * a fortnight and nothing about which cell stopped, when, or why. Pressing it
- * opens this — date by date, and inside a date cell by cell, each cell's day
- * drawn to scale (the `/idle-cell` timeline, verbatim) over the table of its
- * own events.
+ * opens this — date by date, and inside a date cell by cell, the table of that
+ * cell's own events.
+ *
+ * It carried the `/idle-cell` timeline over each table until 2026-09-08 (the
+ * operator's call). The bars were drawn to scale across the cell's whole day,
+ * so the stops this register exists to show — a few tens of minutes — were
+ * slivers, and every block of every cell paid a fixed strip of height for
+ * them. The clock is already on every row, in figures, twice.
  *
  * Three rules it is built on:
  *
@@ -154,13 +158,19 @@ export default function UnitOjidaniyaModal({
   const cellsDays = useMemo(() => new Set(data?.cells_days || []), [data]);
   const days = data?.days || {};
 
+  // Whole minutes throughout (the operator's call). The page's own `fmt`
+  // carries one decimal, which is right on a KPI card averaging a fortnight
+  // and wrong here: a filed event is picked to the minute, and the unit's
+  // figure beside it is a weighted MEAN, so «27.4» reads as a measured
+  // precision neither number has. In «hrs» the page's formatter ignores the
+  // argument, so that half is untouched.
+  const fmtN = (v) => fmt(v, 0);
+
   const toggle = (iso) => setOpenDates((prev) => {
     const next = new Set(prev);
     if (next.has(iso)) next.delete(iso); else next.add(iso);
     return next;
   });
-
-  const unionLabel = stopped ? undefined : t("downtime.dt.unionNs");
 
   const body = () => {
     if (isLoading) return <SkeletonChart className="h-48" />;
@@ -211,13 +221,13 @@ export default function UnitOjidaniyaModal({
               {isCellsDay && cells.length > 0 && (
                 <Figure
                   label={t("downtime.dt.cellsSum")}
-                  value={fmt(sum)}
+                  value={fmtN(sum)}
                   hint={t("downtime.dt.cellsSumHint")}
                 />
               )}
               <Figure
                 label={t("downtime.dt.counted")}
-                value={fmt(d.counted || 0)}
+                value={fmtN(d.counted || 0)}
                 hint={t("downtime.dt.countedHint")}
                 strong
               />
@@ -227,14 +237,14 @@ export default function UnitOjidaniyaModal({
           {expanded && (
             <div className="p-3 space-y-3">
               {!isCellsDay ? (
-                <SheetDay row={d} t={t} fmt={fmt} />
+                <SheetDay row={d} t={t} fmt={fmtN} />
               ) : cells.length === 0 ? (
                 <p className="text-[11px] px-1 py-3 text-center" style={{ color: "var(--text-4)" }}>
                   {t("downtime.dt.noFiled")}
                 </p>
               ) : (
                 cells.map((c) => (
-                  <CellBlock key={c.cell_id} cell={c} t={t} tl={tl} fmt={fmt} unionLabel={unionLabel} />
+                  <CellBlock key={c.cell_id} cell={c} t={t} tl={tl} fmt={fmtN} />
                 ))
               )}
             </div>
@@ -301,8 +311,9 @@ function SheetDay({ row, t, fmt }) {
   );
 }
 
-// One cell's day: the timeline over the events that made it.
-function CellBlock({ cell, t, tl, fmt, unionLabel }) {
+// One cell's day: its header — code, leader, people, total — over the table of
+// the events that made it.
+function CellBlock({ cell, t, tl, fmt }) {
   const overlap = Math.max(0, (cell.sum_min || 0) - (cell.total || 0));
   const leader = cell.leader ? tl(cell.leader) : "";
   const full = cellLabel(cell.code, leader);
@@ -354,13 +365,6 @@ function CellBlock({ cell, t, tl, fmt, unionLabel }) {
           />
         </span>
       </div>
-
-      <DayTimeline
-        intervals={cell.intervals}
-        summary={cell.summary}
-        t={t}
-        unionLabel={unionLabel}
-      />
 
       <div className="overflow-x-auto">
         <table className="w-full text-[12px]" style={{ borderCollapse: "collapse", minWidth: TABLE_MIN_W }}>

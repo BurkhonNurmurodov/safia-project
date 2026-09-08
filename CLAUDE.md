@@ -713,10 +713,9 @@ record of other people's paperwork.
 
 From **2026-08-30** pressing a supervisor's bar on `/downtime` opens
 `components/idle/UnitOjidaniyaModal.jsx` — the unit's waiting date by date, and
-inside a date cell by cell: the `/idle-cell` timeline (`DayTimeline`, reused
-verbatim) over a table of that cell's own events. The bar was a number with no
-way in — 464 minutes over a fortnight and nothing about which cell stopped, when
-or why.
+inside a date cell by cell, the table of that cell's own events. The bar was a
+number with no way in — 464 minutes over a fortnight and nothing about which
+cell stopped, when or why.
 
 - **It serves the EVENTS; it never computes a second "how much".**
   `GET /api/downtime/cell-detail` answers only "what did the cells file". The
@@ -745,15 +744,33 @@ or why.
   underneath it. Pressing a category SEGMENT carries that category in as well
   (only when the segment has minutes — in the Total view every category series
   is a row of zeros).
-- **The union bar follows the half on screen.** `idle_intervals.merged_spans`
-  is the one definition and `summarize` now calls it; `stopped_only=False`
-  unions whatever it is handed, which is what the To'xtamaganda half needs —
-  there the recorded fact IS the subject, and a bar built from the stopped rows
-  would be empty under lanes that are full. `DayTimeline` gained `unionLabel`
-  so the caller that changed what is drawn is the caller that renames it.
+- **The `/idle-cell` TIMELINE is gone from it** (the operator's call,
+  2026-09-08). It drew each cell's events to scale across the cell's whole day,
+  so the stops this register exists to show — a few tens of minutes — were
+  slivers, and every cell block on every date paid a fixed strip of height for
+  them. The clock is already on every row in figures, twice. `DayTimeline` is
+  untouched and still THE timeline on `/idle-cell`; only this caller stopped
+  drawing one, and `summary` stays on the payload because a bundle still open
+  on 4.65.0 renders it. `idle_intervals.merged_spans` is unchanged and still
+  the one definition of the union — the header total on a cell is that union,
+  and `stopped_only=False` is still what the To'xtamaganda half needs, where
+  the recorded fact IS the subject.
+- **Minutes are WHOLE here** (same call). The page's own `fmt` carries one
+  decimal, which is right on a KPI card averaging a fortnight and wrong in this
+  register: a filed event is picked to the minute and the unit figure beside it
+  is a weighted mean, so «27.4» claims a precision neither number has. The
+  modal passes `fmt(v, 0)`; in «hrs» the page's formatter ignores the argument,
+  so that half is untouched, and the page itself keeps its decimal.
 - Only cells that have waiting appear; dates are newest-first, collapsible, the
   newest open. A cell's header total is the UNION of the rows shown, with the
   plain sum in its tooltip where an overlap makes the two differ.
+- **A cell's header names how many PEOPLE stood in it** (2026-09-08) —
+  `idle_source.cell_headcount`, THE weight the unit's mean divides by and not a
+  second count, beside the total. «—» and never 0 where there is no answer: a
+  cell whose work centre nobody typed enters neither side of that mean. The
+  leader's name beside the code is shortened by `utils/personName.shortPerson`,
+  the platform's one rule, with the full spelling on hover. Both facts are on
+  the «Yacheykalar» sheet of the page's own workbook too.
 - **The modal carries NO export** (the operator's call, 2026-09-03): its footer
   is the close button alone. The page's own «Excel» button one level up is the
   export for this register, and it already carries these events on its
