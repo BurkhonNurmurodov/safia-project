@@ -11,6 +11,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { fmtDur } from "../../utils/idleTime";
 import { cellLabel } from "../../utils/cellName";
+import { shortPerson } from "../../utils/personName";
 import api from "../../utils/api";
 
 /**
@@ -48,6 +49,12 @@ import api from "../../utils/api";
 // not by guessing at three words.
 const NOTE_MIN_W = 260;
 const TABLE_MIN_W = 528 + NOTE_MIN_W;
+
+// N is FRACTIONAL — a worker split across two cells is a fraction of a person
+// in each, and a work centre several cells name has its typed number split
+// evenly between them — so it is formatted, never printed raw: an unformatted
+// share prints IEEE noise («6.500000000000001») in a 9px column.
+const fmtHc = (n) => (Number.isInteger(n) ? String(n) : Number(n).toFixed(1));
 
 const codeOf = (name) => {
   const c = CATS.find((x) => x.name === name);
@@ -297,6 +304,9 @@ function SheetDay({ row, t, fmt }) {
 // One cell's day: the timeline over the events that made it.
 function CellBlock({ cell, t, tl, fmt, unionLabel }) {
   const overlap = Math.max(0, (cell.sum_min || 0) - (cell.total || 0));
+  const leader = cell.leader ? tl(cell.leader) : "";
+  const full = cellLabel(cell.code, leader);
+  const hasHc = cell.hc !== null && cell.hc !== undefined;
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
       <div
@@ -304,11 +314,33 @@ function CellBlock({ cell, t, tl, fmt, unionLabel }) {
         style={{ background: "var(--bg-inner)", borderBottom: "1px solid var(--border)" }}
       >
         {/* A cell is its CODE; where a second fact helps it is the LEADER, never
-            the workshop name (utils/cellName.js). */}
-        <span className="text-[12px] font-semibold truncate" style={{ color: "var(--text-1)" }}>
-          {cellLabel(cell.code, cell.leader ? tl(cell.leader) : "")}
+            the workshop name (utils/cellName.js). The leader's name is SHORTENED
+            (`shortPerson`, the platform's one rule for that) — a four-part Uzbek
+            name eats most of the header on a phone and pushes the figures off
+            it, while the code standing beside it has already said which cell
+            this is. The full spelling stays one hover away. */}
+        <span
+          className="text-[12px] font-semibold truncate"
+          style={{ color: "var(--text-1)" }}
+          title={full}
+        >
+          {cellLabel(cell.code, leader ? shortPerson(leader) : "")}
         </span>
-        <span className="ml-auto">
+        <span className="ml-auto flex items-center gap-4">
+          {/* How many people stood in this cell that day — THE weight the unit's
+              mean divides by (`idle_source.cell_headcount`), not a second count
+              of its own, so the reader can see why a long stop in a small cell
+              moved the bar less than a short one in a big cell. No answer is
+              «—», never 0: «nobody typed the work centre» and «nobody was in the
+              cell» are different facts, and such a cell leaves BOTH sides of the
+              mean rather than pulling it down. */}
+          <Figure
+            label={t("downtime.dt.cellHc")}
+            value={hasHc ? fmtHc(cell.hc) : "—"}
+            hint={hasHc
+              ? t(cell.hc_typed ? "downtime.dt.cellHcTypedHint" : "downtime.dt.cellHcAttHint")
+              : t("downtime.dt.cellHcNoneHint")}
+          />
           <Figure
             label={t("downtime.dt.cellTotal")}
             value={fmt(cell.total || 0)}

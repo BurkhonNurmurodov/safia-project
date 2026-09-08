@@ -215,6 +215,25 @@ def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple
     return out
 
 
+def cell_headcount(db: Session, cells, date_from: date, date_to: date) -> dict[tuple[int, str], float]:
+    """``{(cell_id, "YYYY-MM-DD"): N}`` — the public name of `_n_by_cell`, for
+    a surface that SHOWS the number rather than divides by it.
+
+    It is the very weight the unit's mean is built from: the people who
+    actually worked the cell before `zagruzka_source.ZAGRUZKA_FROM`, the typed
+    «Bugungi fakt» of the work centre the cell's `sap_code` names from that
+    floor on. Exposed instead of counted again at the call site, because a
+    second answer to «how many people were in this cell» is how the figure on
+    screen and the figure the mean used stop being one number.
+
+    A cell with no weight is ABSENT, never 0 — «nobody typed it» and «nobody
+    came» are different facts, and a reader shown a 0 for the first cannot act
+    on it. `N` is FRACTIONAL (a split worker, a work centre shared by several
+    cells), so every render of it must be formatted.
+    """
+    return dict(_n_by_cell(db, cells, date_from, date_to))
+
+
 def unit_downtime(db: Session, manager_ids: Iterable[int],
                   date_from: date, date_to: date) -> dict[tuple[int, str], dict]:
     """The per-cell-derived ojidaniya of the given units over a date range.

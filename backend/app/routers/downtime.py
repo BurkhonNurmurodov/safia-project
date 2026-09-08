@@ -17,7 +17,8 @@ from app.models import (Cell, CellOjidaniyaInterval, DowntimeData, Factory, Mana
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services import (action_log, deck_narrative, idle_intervals, idle_source,
-                          ojidaniya_deck, ojidaniya_matrix, report_week)
+                          ojidaniya_deck, ojidaniya_matrix, report_week,
+                          zagruzka_source)
 from app.xlsx_delivery import PPTX_MIME, deliver_file, deliver_xlsx
 from app.services.ojidaniya_export import (build_matrix_workbook,
                                            build_ojidaniya_workbook)
@@ -515,6 +516,13 @@ def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
         CellOjidaniyaInterval.status == "approved",
     ).all()
 
+    # How many people stood in each cell that day — `idle_source.cell_headcount`
+    # is the very weight the unit's mean divides by, never a second count of
+    # its own, so the number under a cell and the number the bar was built from
+    # are one figure. Absent for a cell nobody typed / nobody worked, which the
+    # client shows as «no answer» rather than as a zero.
+    hc = idle_source.cell_headcount(db, cells, date_from, date_to)
+
     lids = {c.leader_id for c in cells if c.leader_id}
     leaders = {p.id: p.name for p in db.query(RoleProfile).filter(
         RoleProfile.id.in_(lids)).all()} if lids else {}
@@ -543,6 +551,9 @@ def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
 
     days: dict[str, list] = {}
     for d, per_cell in grouped.items():
+        # Which source answers «how many people» on this date — one test per
+        # date, not one per cell.
+        typed = zagruzka_source.uses_production(date.fromisoformat(d))
         out = []
         for cid, ivs in per_cell.items():
             c = by_cell.get(cid)
@@ -555,10 +566,17 @@ def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
             # through. `sum_min` rides along so the header can say what the
             # overlap cost when the two differ.
             merged = idle_intervals.merged_spans(ivs, stopped_only=False)
+            n = hc.get((cid, d))
             out.append({
                 "cell_id": c.id,
                 "code": c.verifix_code,
                 "leader": leaders.get(c.leader_id),
+                # N and WHERE it came from: the typed «Bugungi fakt» of the
+                # cell's work centre from `zagruzka_source.ZAGRUZKA_FROM`, the
+                # counted attendance before it. The two are different facts and
+                # the tooltip names whichever one the day actually read.
+                "hc": None if n is None else round(n, 2),
+                "hc_typed": typed,
                 "total": sum(s["minutes"] for s in merged),
                 "sum_min": sum(r["minutes"] for r in ivs),
                 "intervals": ivs,
