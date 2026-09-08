@@ -2453,12 +2453,14 @@ export default function Leaders() {
   // docstring), so every viewer of the page resolves a name.
   //
   // It replaced a 13-entry hard-coded array indexed POSITIONALLY as
-  // `TASK_DETAILS[id - 1]`. That was only ever safe while the ids were a dense
-  // 1..13 run, and the admin page now CREATES tasks (explicit id = max + 1) and
-  // ARCHIVES them — so the first time anybody does either, position stops
-  // meaning id and the page names the WRONG task on a screen that scores
-  // leaders. Never re-introduce a positional lookup here, not even as a
-  // fallback: a wrong name is worse than no name.
+  // `TASK_DETAILS[id - 1]`, which failed two ways and is worth stating exactly,
+  // because the obvious guess about it is wrong. Ids are never renumbered and
+  // never reused (`create_task` takes max+1; archiving only stamps a date), so
+  // the array did NOT start naming a neighbour: a task created after it was
+  // written simply fell off the end and rendered with NO name. The way it named
+  // a task WRONGLY was staler and quieter — a rename is per level, and twelve
+  // units had already renamed T5, so the array served wording nobody used.
+  // Never re-introduce a positional lookup here, not even as a fallback.
   const { data: taskCat } = useQuery({
     queryKey: ["leader-task-catalog"],
     queryFn: () => api.get("/api/leader-tasks/catalog").then((r) => r.data),
@@ -2479,11 +2481,21 @@ export default function Leaders() {
   // the server's `taskLabel`, or simply no second line), and a blank is a
   // reader noticing the name is missing, where a wrong one is not.
   //
-  // The `(id, lang)` signature is the prop contract `AiTriage` is handed —
-  // keep it, and keep this a `useCallback` so that prop is stable.
-  const taskDetail = useCallback((id) => {
+  // The `(id, lang)` signature is the prop contract `AiTriage` is handed, so
+  // it is kept AND honoured: the argument wins, the page's own language is the
+  // default. An accepted-but-ignored parameter is its own quiet trap. Keep it
+  // a `useCallback` so the prop stays stable.
+  //
+  // It returns `{ n }` and nothing else. The old helper also returned `weight`
+  // and `note`; grep proves neither was ever read at any of the five call
+  // sites, so carrying them forward would mean inventing a contract nobody
+  // consumes — and `weight` would change type on the way (the "10%" string
+  // became the catalog's numeric `default_weight`). The catalog still serves
+  // both fields if a reader is ever wanted for them.
+  const taskDetail = useCallback((id, lg) => {
     const nm4 = taskCatNames[Number(id)];
-    const n = nm4 ? (nm4[lang] || nm4.ru || nm4.uz || "") : "";
+    const L = lg || lang;
+    const n = nm4 ? (nm4[L] || nm4.ru || nm4.uz || "") : "";
     return { n: String(n).trim() };
   }, [taskCatNames, lang]);
 

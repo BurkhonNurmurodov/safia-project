@@ -710,7 +710,11 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
 
           {/* ── the photo: the decision gets the pixels ───────────────────── */}
           <Card className="order-1 lg:order-2">
-            <SectionHead icon={Sparkles} title={taskDetail(cur.taskId, lang).n || cur.taskLabel}
+            {/* The SERVER's label first: it is resolved down the global → brigadir →
+                lider chain, so a unit that renamed this task sees its own wording.
+                The catalog helper serves LeaderTaskDef.name_* only — the global
+                name — and is the stand-in while the catalog is still loading. */}
+            <SectionHead icon={Sparkles} title={cur.taskLabel || taskDetail(cur.taskId, lang).n}
               subtitle={`${nm(cur.leader)} · ${cur.supervisor} · ${ddmm(cur.date)}${cur.shift ? ` · ${cur.shift}-${T.shiftAbbr}` : ""}`}
               right={
                 /* The cursor, ON the card it moves. On a phone this is the only
