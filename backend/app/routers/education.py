@@ -107,7 +107,8 @@ def _clean_targets(raw: list[str]) -> list[str]:
 
 
 def _lesson_json(db: Session, lesson: EducationLesson, *, viewer: Optional[str],
-                 admin: bool, seen: set[int], counts: dict[int, int],
+                 admin: bool, seen: set[int], mine: set[int],
+                 counts: dict[int, int],
                  target_map: dict[int, list[str]]) -> dict:
     media = education_video.rebuild(lesson.provider, lesson.video_id)
     targets = target_map.get(lesson.id, [])
@@ -125,8 +126,12 @@ def _lesson_json(db: Session, lesson: EducationLesson, *, viewer: Optional[str],
         "author": lesson.created_by_name,
         "created_at": lesson.created_at.isoformat() if lesson.created_at else None,
         "updated_at": lesson.updated_at.isoformat() if lesson.updated_at else None,
-        # "New" is a fact about the VIEWER, so an admin browsing the register
-        # never sees a badge that belongs to somebody else's inbox.
+        # Two separate facts, because an ADMIN sees every lesson including the
+        # ones addressed to other people. "Assigned to me" is what makes a
+        # lesson mine; "seen" is whether I have opened it. The «Yangi» badge is
+        # the AND of them, so an admin never carries an unread mark for a class
+        # they were never in — and never loses one for a class they were.
+        "assigned": (lesson.id in mine) if viewer else False,
         "seen": (lesson.id in seen) if viewer else True,
         "audience": len(targets),
     }
@@ -165,12 +170,12 @@ def list_lessons(db: Session = Depends(get_db),
     admin = _is_admin(payload)
     viewer = viewer_profile_key(db, payload)
 
+    mine = _visible_ids(db, viewer)
     q = db.query(EducationLesson)
     if not admin:
-        ids = _visible_ids(db, viewer)
-        if not ids:
+        if not mine:
             return {"lessons": [], "can_manage": False, "profile": viewer}
-        q = q.filter(EducationLesson.id.in_(ids),
+        q = q.filter(EducationLesson.id.in_(mine),
                      EducationLesson.archived.is_(False))
     lessons = q.order_by(EducationLesson.created_at.desc().nullslast(),
                          EducationLesson.id.desc()).all()
@@ -197,7 +202,7 @@ def list_lessons(db: Session = Depends(get_db),
 
     return {
         "lessons": [_lesson_json(db, x, viewer=viewer, admin=admin, seen=seen,
-                                 counts=counts, target_map=target_map)
+                                 mine=mine, counts=counts, target_map=target_map)
                     for x in lessons],
         "can_manage": admin,
         "profile": viewer,
@@ -282,7 +287,10 @@ def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str],
     from app.config import settings
     from app.routers.staff import notify_profile
 
-    url = f"{settings.webapp_url.rstrip('/')}/education"
+    # Straight at the LESSON, not at the page. A notification whose whole point
+    # is "go and watch this" should not land somebody on a grid they then have
+    # to search — and the watch page is a real route precisely so it can.
+    url = f"{settings.webapp_url.rstrip('/')}/education/{lesson.id}"
 
     def markup_fn(lang: str):
         from telebot import types
@@ -335,8 +343,9 @@ def create_lesson(body: LessonIn, db: Session = Depends(get_db),
 
     _notify_targets(db, lesson, keys, actor=int(payload.get("sub") or 0) or None)
     db.commit()
-    enrich(title=lesson.title, target_id=str(lesson.id),
-           details={"provider": lesson.provider, "targets": len(keys)})
+    enrich(target_kind="lesson", target_id=str(lesson.id),
+           target_name=lesson.title,
+           details=[("provider", lesson.provider), ("targets", len(keys))])
     return {"ok": True, "id": lesson.id, "notified": len(keys)}
 
 
@@ -379,9 +388,10 @@ def update_lesson(lesson_id: int, body: LessonIn, db: Session = Depends(get_db),
     fresh = [k for k in keys if k not in before]
     _notify_targets(db, lesson, fresh, actor=int(payload.get("sub") or 0) or None)
     db.commit()
-    enrich(title=lesson.title, target_id=str(lesson_id),
-           details={"added": len(fresh), "removed": len(before - after),
-                    "targets": len(after)})
+    enrich(target_kind="lesson", target_id=str(lesson_id),
+           target_name=lesson.title,
+           details=[("added", len(fresh)), ("removed", len(before - after)),
+                    ("targets", len(after))])
     return {"ok": True, "id": lesson_id, "notified": len(fresh)}
 
 
@@ -395,7 +405,7 @@ def archive_lesson(lesson_id: int, db: Session = Depends(get_db),
     lesson.archived = True
     lesson.updated_at = datetime.now(timezone.utc)
     db.commit()
-    enrich(title=lesson.title, target_id=str(lesson_id))
+    enrich(target_kind="lesson", target_id=str(lesson_id), target_name=lesson.title)
     return {"ok": True}
 
 
@@ -407,5 +417,5 @@ def restore_lesson(lesson_id: int, db: Session = Depends(get_db),
     lesson.archived = False
     lesson.updated_at = datetime.now(timezone.utc)
     db.commit()
-    enrich(title=lesson.title, target_id=str(lesson_id))
+    enrich(target_kind="lesson", target_id=str(lesson_id), target_name=lesson.title)
     return {"ok": True}

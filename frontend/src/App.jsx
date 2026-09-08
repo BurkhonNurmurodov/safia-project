@@ -102,6 +102,8 @@ const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
 const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const LiveOverview = lazyWithReload(() => import("./pages/LiveOverview"));
 const Arc = lazyWithReload(() => import("./pages/Arc"));
+const Education = lazyWithReload(() => import("./pages/Education"));
+const EducationLesson = lazyWithReload(() => import("./pages/EducationLesson"));
 const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceivers"));
 const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
@@ -488,6 +490,11 @@ function AppWithLang() {
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             <Route path="/live" element={<AuthGate><RequirePage page="live"><LiveOverview /></RequirePage></AuthGate>} />
             <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />
+            {/* «Ta'lim». The watch page is its own route rather than a modal so the
+                lesson DM can link straight at it, the back button works, and a leader
+                can send a colleague the lesson they were both assigned. */}
+            <Route path="/education" element={<AuthGate><RequirePage page="education"><Education /></RequirePage></AuthGate>} />
+            <Route path="/education/:id" element={<AuthGate><RequirePage page="education"><EducationLesson /></RequirePage></AuthGate>} />
             {/* Safia Honors — gamification design preview, admin-only demo (no page-access key). */}
             <Route path="/gamification" element={<AuthGate><RequireAdmin><Gamification /></RequireAdmin></AuthGate>} />
             {/* Own profile — every approved role has one, so no page-access

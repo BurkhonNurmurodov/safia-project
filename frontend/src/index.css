@@ -593,3 +593,137 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   .live-pulse, .live-glow, .live-in, .live-flash, .live-sweep, .live-dot { animation: none !important; }
   .live-bar, .live-marker { transition: none !important; }
 }
+
+/* ── «Ta'lim» (/education) ──────────────────────────────────────────────────
+   A YouTube-shaped grid in this platform's own skin. Everything here is a
+   card affordance: the still, the play mark, the two-line title clamp and the
+   stretched link that makes the whole card one target on a phone. */
+
+/* The card's single target. Sits UNDER the admin action row (z-[2]) so those
+   buttons stay clickable, and carries the focus ring for the whole card —
+   keyboard users get one stop per lesson, not four. */
+.edu-stretch {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 1rem;
+}
+.edu-stretch:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.edu-card {
+  overflow: hidden;
+}
+.edu-card:hover,
+.edu-card:focus-within {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.10);
+}
+
+/* The play mark rests at 0 and appears on hover — but it is ALWAYS visible on
+   touch, where there is no hover state and an invisible affordance is no
+   affordance. `hover: hover` is the only honest test for that. */
+.edu-play {
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+@media (hover: hover) {
+  .edu-play { opacity: 0; }
+  .edu-card:hover .edu-play,
+  .edu-card:focus-within .edu-play { opacity: 1; }
+}
+
+.edu-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.edu-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Card-footer icon action. 28px box inside a 44px-tall row: the row's padding
+   carries the touch target, so the mark stays small without the tap being. */
+.edu-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  color: var(--text-3);
+  background: transparent;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.edu-icon-btn:hover {
+  background: var(--bg-inner);
+  color: var(--text-1);
+  border-color: var(--border);
+}
+.edu-icon-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.edu-icon-btn-danger:hover {
+  color: #ef4444;
+  border-color: color-mix(in srgb, #ef4444 40%, transparent);
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+}
+
+/* The lesson description is admin-authored rich HTML (the broadcast editor's
+   own output), so it arrives with no classes and needs its own reading rhythm.
+   Capped near 70ch on wide screens — a description running the full width of a
+   1440px page is unreadable. */
+.edu-prose {
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 72ch;
+  overflow-wrap: anywhere;
+}
+.edu-prose > * + * { margin-top: 0.6rem; }
+.edu-prose b, .edu-prose strong { color: var(--text-1); font-weight: 600; }
+.edu-prose a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+.edu-prose ul, .edu-prose ol { padding-left: 1.25rem; }
+.edu-prose ul { list-style: disc; }
+.edu-prose ol { list-style: decimal; }
+.edu-prose li + li { margin-top: 0.2rem; }
+.edu-prose blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.75rem;
+  color: var(--text-3);
+}
+.edu-prose code {
+  background: var(--bg-inner);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.05rem 0.3rem;
+  font-size: 0.9em;
+}
+.edu-prose pre {
+  background: var(--bg-inner);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  overflow-x: auto;
+}
+.edu-prose img { border-radius: 10px; }
+.edu-prose table { width: 100%; border-collapse: collapse; }
+.edu-prose th, .edu-prose td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edu-play { transition: none; }
+  .edu-card { transition: none; }
+  .edu-icon-btn { transition: none; }
+}

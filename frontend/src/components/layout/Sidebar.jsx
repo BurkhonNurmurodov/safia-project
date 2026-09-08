@@ -13,6 +13,7 @@ import {
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
+  GraduationCap, PlaySquare,
 } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
@@ -60,6 +61,10 @@ const ALL_LINKS = [
   // Live shift monitor — the wall screen (idle time + plan pace, right now).
   // Laboratory, admin-only until the operator opens it to shift managers.
   { to: "/live", page: "live", key: "nav.live", icon: MonitorDot, group: "lab" },
+  // «Ta'lim» — video lessons published to profiles. First entry in its own
+  // group: training is neither production data nor a register, and the group is
+  // where the rest of it (courses, tests) will land.
+  { to: "/education", page: "education", key: "nav.education", icon: PlaySquare, group: "education" },
 ];
 
 // Grouped sidebar. ALL_LINKS above stays THE register and order — `group`
@@ -83,6 +88,10 @@ const NAV_GROUPS = [
   { id: "leaders", labelKey: "navgrp.leaders",    icon: Crown },
   { id: "quality", labelKey: "navgrp.quality",    icon: BadgeCheck },
   { id: "cells",   labelKey: "navgrp.cells",      icon: Grid3x3 },
+  // «Ta'lim» — training. Its own section rather than a row in the Laboratory:
+  // the lab is where pilots live, and lessons are not a pilot. First member of
+  // a group built to take the rest of the training surfaces.
+  { id: "education", labelKey: "navgrp.education", icon: GraduationCap },
   { id: "lab",     labelKey: "navgrp.lab",        icon: TestTubes },
   { id: "system" },                                // Активность + catch-all — headerless
 ];

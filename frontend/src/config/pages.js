@@ -51,6 +51,7 @@ export const PAGES = [
   { tier: "test", key: "zagruzka-cell", route: "/zagruzka-cell", labelKey: "nav.zagruzkaCell" },
   { tier: "test", key: "live", route: "/live", labelKey: "nav.live" },
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
+  { key: "education", route: "/education", labelKey: "nav.education" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -99,6 +100,11 @@ export const DEFAULT_PAGE_ACCESS = {
   // ARC service-ticket register (synced from the ARC API) — admin-only until
   // a role is enabled from the Access tab.
   arc: [],
+  // «Ta'lim» video lessons. Open to every role: the page shows a viewer only the
+  // lessons addressed to their profile, so access to it is not access to any
+  // content — while gating it would let a lesson somebody was DMed a link for
+  // open onto "no access". Publishing stays admin-only, checked server-side.
+  education: ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants
