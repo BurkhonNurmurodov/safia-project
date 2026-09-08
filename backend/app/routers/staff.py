@@ -151,6 +151,15 @@ _MONTHS = {
 }
 
 _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
+    # «Ta'lim» — a video lesson was published to this profile (routers/education.py).
+    # Addressed to the PROFILE, so a lesson assigned to a post reaches whoever
+    # holds it and waits in the bell for a post nobody has claimed yet.
+    "education_lesson_new": {
+        "uz": ("Yangi video dars", "«{title}» | Sizga yangi dars biriktirildi"),
+        "uz_cyrl": ("Янги видео дарс", "«{title}» | Сизга янги дарс бириктирилди"),
+        "ru": ("Новый видеоурок", "«{title}» | Вам назначен новый урок"),
+        "en": ("New video lesson", "«{title}» | A new lesson has been assigned to you"),
+    },
     "day_closed": {
         "uz": ("Kun yopildi", "Sana: {date} | Yopdi: {closer_name}"),
         "uz_cyrl": ("Кун ёпилди", "Сана: {date} | Ёпди: {closer_name}"),

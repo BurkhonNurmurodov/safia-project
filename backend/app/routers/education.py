@@ -53,6 +53,15 @@ PAGE = "education"
 # client turning one press into an unbounded fan-out of DMs.
 MAX_TARGETS = 600
 
+# The DM's one button, per language. A backend string lives in the module (there
+# is no server-side t()) — same shape as the ojidaniya card's own label table.
+_DM_BTN = {
+    "uz": "Darsni ochish",
+    "uz_cyrl": "Дарсни очиш",
+    "ru": "Открыть урок",
+    "en": "Open the lesson",
+}
+
 
 # ── request bodies ───────────────────────────────────────────────────────────
 
@@ -195,7 +204,10 @@ def list_lessons(db: Session = Depends(get_db),
     }
 
 
-@router.post("/lessons/{lesson_id}/seen")
+# Path shape matters: the action-log's telemetry exclusion list matches by
+# PREFIX, and "/lessons/{id}/seen" has its variable in the middle. Every viewer
+# opening a lesson would otherwise write a register row.
+@router.post("/seen/{lesson_id}")
 def mark_seen(lesson_id: int, db: Session = Depends(get_db),
               payload: dict = Depends(require_page(PAGE))):
     """The viewer opened this lesson. Idempotent — the row records the FIRST
@@ -274,10 +286,10 @@ def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str],
 
     def markup_fn(lang: str):
         from telebot import types
-        from app.i18n import t as _t
         kb = types.InlineKeyboardMarkup()
         kb.add(types.InlineKeyboardButton(
-            _t("education.dm.open", lang), web_app=types.WebAppInfo(url=url)))
+            _DM_BTN.get(lang) or _DM_BTN["uz"],
+            web_app=types.WebAppInfo(url=url)))
         return kb
 
     params = {"title": lesson.title, "author": lesson.created_by_name or ""}

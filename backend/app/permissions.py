@@ -40,7 +40,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "education"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -124,6 +124,15 @@ DEFAULT_PAGE_ACCESS = {
     # (the intended roles are shift-manager first); a shift-manager is locked
     # to their own shift ∩ plant server-side whatever the query string says.
     "live": [],
+    # «Ta'lim» video lessons (routers/education.py). Open to every role by
+    # default, and that is deliberate rather than permissive: the page shows a
+    # viewer exactly the lessons an admin ADDRESSED to their profile and nothing
+    # else, so access to the page is not access to any content. Gating the page
+    # as well would mean a lesson somebody was assigned, notified about and sent
+    # a DM link for, opening onto "no access" — the one outcome a training
+    # notification must never produce. Publishing stays admin-only, checked in
+    # every writer.
+    "education": ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
 }
 
 

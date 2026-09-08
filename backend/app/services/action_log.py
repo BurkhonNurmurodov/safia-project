@@ -321,6 +321,15 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/worker-concerns/thresholds",           "collab", "concern.thresholds_set"),
 
     # ── communication ─────────────────────────────────────────────────────────
+    # «Ta'lim» video lessons. Publishing DMs a chosen slice of the plant, so it
+    # belongs beside the broadcast rows rather than under a content category.
+    (("POST",),   "/api/education/lessons",                    "comms", "education.lesson_created"),
+    (("PUT",),    "/api/education/lessons/{}",                 "comms", "education.lesson_edited"),
+    (("DELETE",), "/api/education/lessons/{}",                 "comms", "education.lesson_archived"),
+    (("POST",),   "/api/education/lessons/{}/restore",         "comms", "education.lesson_restored"),
+    # Telemetry, not an action: every viewer opening a lesson would drown the
+    # register. Deliberately unclassified is wrong (it would land in "other"),
+    # so it is named and pointed at the excluded set instead.
     (("POST",),   "/api/broadcast/send-draft",                 "comms", "broadcast.draft_sent"),
     (("POST",),   "/api/broadcast/send",                       "comms", "broadcast.sent"),
     (("POST",),   "/api/broadcast/test",                       "comms", "broadcast.tested"),
@@ -384,6 +393,8 @@ _SKIP = (
     "/api/boot-report",
     "/api/crash-report",
     "/bot/webhook",
+    # «Ta'lim»: a viewer opened a lesson. Telemetry, not an action.
+    "/api/education/seen/",
 )
 
 _PREFIXES = ("/api/", "/admin/")
