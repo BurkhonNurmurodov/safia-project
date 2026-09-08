@@ -223,7 +223,7 @@ export default function LeaderTasksAdmin() {
   const [openRow, setOpenRow] = useState(null);
   const rowRefs = useRef({});
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["ltasks-config"],
     queryFn: () => api.get("/admin/leader-tasks/config").then((r) => r.data),
   });
@@ -1650,7 +1650,10 @@ export default function LeaderTasksAdmin() {
               <Button size="sm" variant="ghost" onClick={() => setFShift(0)}>{t("admin.ltasks.fClear")}</Button>
             </div>
           ) : null}
-          opts={[{ value: "-", label: t("admin.ltasks.pickNone") },
+          // The «Barchasi» row is dropped when the narrowed list is empty:
+          // PickFilter shows `empty` only for an EMPTY list, so a placeholder
+          // here would keep the way back out permanently unreachable.
+          opts={[...(mgrOpts.length ? [{ value: "-", label: t("admin.ltasks.pickNone") }] : []),
           ...mgrOpts.map((m) => ({ value: m.id, label: `${tl(m.name)} · S${m.shift ?? "?"}`, title: tl(m.name) }))]} />
       ),
     },
@@ -1668,7 +1671,10 @@ export default function LeaderTasksAdmin() {
               <Button size="sm" variant="ghost" onClick={() => pickUnit(null)}>{t("admin.ltasks.clearBrig")}</Button>
             </div>
           ) : null}
-          opts={[{ value: "-", label: t("admin.ltasks.pickNone") },
+          // Same rule as the brigadir list above: no placeholder row when the
+          // list is empty, or «this brigadir has no leaders» never renders and
+          // the cascade has no way back out.
+          opts={[...(leaderOpts.length ? [{ value: "-", label: t("admin.ltasks.pickNone") }] : []),
           ...leaderOpts.map((p) => ({ value: p.id, label: tl(p.name), title: tl(p.name) }))]} />
       ),
     },
@@ -1930,6 +1936,17 @@ export default function LeaderTasksAdmin() {
                 </div>
               ))}
             </div>
+          ) : isError ? (
+            /* A failed load must never fall through to the empty state: that
+               invites an admin to create the platform's first task on a page
+               that simply could not read the ones that exist. */
+            <EmptyState icon={AlertTriangle} showUploadLink={false} height="h-56"
+              title={t("admin.ltasks.loadFail")} message={t("admin.ltasks.loadFailHint")}
+              action={(
+                <Button size="lg" variant="secondary" onClick={() => refetch()}>
+                  {t("common.retry")}
+                </Button>
+              )} />
           ) : tasks.length === 0 ? (
             <EmptyState icon={ListChecks} showUploadLink={false} height="h-56"
               title={t("admin.ltasks.listEmpty")} message={t("admin.ltasks.listEmptyHint")}
