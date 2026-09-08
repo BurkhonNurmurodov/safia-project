@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, Archive, ArchiveRestore, ArrowDown, ArrowUp, Calendar,
-  Grid3x3, History, ImagePlus, Layers, ListChecks, ListOrdered, Plus,
-  RotateCcw, Trash2, Type, UserCog, Users, X,
+  ChevronRight, Clock, Grid3x3, History, ImagePlus, ListChecks, ListOrdered,
+  Plus, RotateCcw, Trash2, Type, UserCog, Users, X,
 } from "lucide-react";
 import Modal from "../../components/ui/Modal";
 import { ProxyPhoto } from "../../components/leaders/ProofPhoto";
@@ -15,12 +15,10 @@ import FormField from "../../components/ui/FormField";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import TimeField from "../../components/ui/TimeField";
 import LangTextInput from "../../components/ui/LangTextInput";
-import SearchInput from "../../components/ui/SearchInput";
 import DateRangePicker from "../../components/ui/DateRangePicker";
-import Pagination from "../../components/ui/Pagination";
+import EmptyState from "../../components/ui/EmptyState";
 import { FilterPanel, OptsFilter, PickFilter } from "../../components/ui/ColumnFilter";
-import { SectionHead } from "../../components/ui/DataTable";
-import { SkeletonBlock, SkeletonTable } from "../../components/ui/Skeleton";
+import { SkeletonBlock } from "../../components/ui/Skeleton";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -53,26 +51,27 @@ const inputCls = "w-full px-3 py-2 rounded-xl text-sm outline-none";
 const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" };
 
 // ── the vocabulary of a RULE ────────────────────────────────────────────────
-// Every column of the sheet, and the payload field names it is MADE of. `own`
-// (services/leader_tasks.own_fields) names those fields, so a column that is a
-// PAIR — the window's two ends, the date rule's two booleans — carries both
-// halves and reads as "own" when either of them is. Widths are the sheet's
-// colgroup, in the order the operator reads them.
+// Every rule a task carries, and the payload field names it is MADE of. `own`
+// (services/leader_tasks.own_fields) names those fields, so a rule that is a
+// PAIR — the window's two ends, the date rule's three booleans — carries every
+// half and reads as "own" when any of them is.
+//
+// This list is no longer a set of table COLUMNS: the page stopped painting a
+// grid on 2026-09-08. It is what the exception register enumerates — one row
+// per (scope, task, rule) that differs from its parent — and the order is the
+// order those rules are read in.
 const COLS = [
-  { k: "enabled",  keys: ["enabled"],                  w: 96 },
-  { k: "weight",   keys: ["weight"],                   w: 74 },
-  { k: "photos",   keys: ["min_media"],                w: 68 },
-  { k: "proof",    keys: ["proof_kind"],               w: 100 },
-  { k: "window",   keys: ["win_from", "win_to"],       w: 132 },
-  { k: "dateRule", keys: ["date_check", "time_check", "day_check"], w: 116 },
-  { k: "deadline", keys: ["deadline"],                 w: 92 },
-  { k: "desc",     keys: ["description"],              w: 170 },
-  { k: "crit",     keys: ["criteria"],                 w: 170 },
-  { k: "ex",       keys: [],                           w: 78 },
+  { k: "enabled",  keys: ["enabled"] },
+  { k: "weight",   keys: ["weight"] },
+  { k: "photos",   keys: ["min_media"] },
+  { k: "proof",    keys: ["proof_kind"] },
+  { k: "window",   keys: ["win_from", "win_to"] },
+  { k: "dateRule", keys: ["date_check", "time_check", "day_check"] },
+  { k: "deadline", keys: ["deadline"] },
+  { k: "desc",     keys: ["description"] },
+  { k: "crit",     keys: ["criteria"] },
+  { k: "ex",       keys: [] },
 ];
-// The register also lists a renamed task, which is not a sheet column of its
-// own (the name is the row's own heading there).
-const REG_FIELDS = [...COLS.filter((c) => c.keys.length).map((c) => c.k), "name"];
 // Every field the chain resolves, in the payload's own spelling. Used to build
 // the shift TEMPLATE — the value most of a shift's units carry — which is the
 // one level in the strip the data model does not have a table for.
@@ -160,92 +159,25 @@ function TaskExamples({ ids, own, fromLabel, scopeNote, busy, disabled, onUpload
   );
 }
 
-// One rule cell of the sheet: the VALUE in force plus an ORIGIN tag naming the
-// level that decided it. Own = brand tint + its own tag; inherited = muted with
-// the source's tag. Never colour alone — the tag is a word, so a cell reads
-// correctly in greyscale and to a colourblind reader.
-function RuleCell({ value, own, bad, off, tag, dev, mix, title, onClick }) {
-  return (
-    <td style={{ padding: 0, verticalAlign: "top" }}>
-      <button type="button" onClick={onClick} title={title}
-        className="block w-full text-left px-2.5 py-2 transition-colors hover:bg-[var(--brand-bg)]"
-        style={{
-          borderLeft: `2px solid ${own ? "var(--brand)" : "transparent"}`,
-          background: own ? "var(--brand-bg)" : "transparent",
-        }}>
-        <span className="block text-[12px] leading-tight"
-          style={{
-            color: bad ? C_BAD : own ? "var(--text-1)" : "var(--text-2)",
-            fontWeight: bad || own ? 600 : 400,
-            // The switched-off grey used to be the status palette's #94a3b8,
-            // which is 2.6:1 on the light card — the one cell whose whole
-            // point is that it says «So'ralmaydi» was the least legible on
-            // the sheet. The strike-through and the word carry the state; the
-            // token carries the contrast.
-            ...(off ? { color: "var(--text-3)", textDecoration: "line-through" } : {}),
-          }}>
-          {value}{bad ? " ⚠" : ""}
-        </span>
-        {/* The origin tag is the label this whole page hangs on, so it is
-            legible or it is nothing: 9px on `--text-4` measured 2.41:1 in the
-            dark theme and 2.26:1 in the light one, both far under AA. 10px on
-            `--text-3` is the smallest type this design system uses anywhere
-            else, and the two status tags carry their hue on the FILL and the
-            BORDER with the word itself in `--text-1`. */}
-        <span className="inline-flex items-center gap-1 mt-1">
-          <span className="inline-block px-1 rounded text-[10px] font-bold uppercase tracking-wide"
-            style={bad
-              ? { background: "rgba(239,68,68,0.14)", color: "var(--text-1)", border: "1px solid rgba(239,68,68,0.40)" }
-              : own
-                ? { background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }
-                : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
-            {tag}
-          </span>
-          {dev > 0 && (
-            <span className="inline-block px-1.5 rounded-full text-[10px] font-bold"
-              style={{ background: "var(--bg-accent)", color: "var(--text-3)" }}>{dev}</span>
-          )}
-          {mix && (
-            <span className="inline-block px-1 rounded text-[10px] font-bold"
-              style={{ background: "rgba(234,179,8,0.16)", color: "var(--text-1)", border: "1px dashed rgba(234,179,8,0.55)" }}>
-              {mix}
-            </span>
-          )}
-        </span>
-      </button>
-    </td>
-  );
-}
-
-// One KPI tile. A button, because every one of them narrows the register — a
-// number nobody can open is a number nobody can act on.
-function Tile({ n, label, sub, color, onClick }) {
-  return (
-    <button type="button" onClick={onClick}
-      className="rounded-2xl px-3.5 py-2.5 text-left w-full transition-colors hover:border-[var(--brand-border)]"
-      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="text-xl font-bold leading-none tabular-nums" style={{ color: "var(--text-1)" }}>{n}</div>
-      <div className="flex items-center gap-1.5 mt-1.5">
-        <span className="w-[7px] h-[7px] rounded-full flex-shrink-0" style={{ background: color }} />
-        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{label}</span>
-      </div>
-      <div className="text-[11px] mt-1" style={{ color: "var(--text-4)" }}>{sub}</div>
-    </button>
-  );
-}
-
-// The leader-checklist CONFIGURATION: two tabs over one config.
+// The leader-checklist CONFIGURATION as a READABLE LIST.
 //
-// «Vazifalar» is a SHEET — the tasks down, the rules across, read at ONE
-// inheritance level chosen by the level strip (Standart · Smena 1 · Smena 2 ·
-// a picked brigadir · a picked lider). Every cell prints its value AND the
-// level that decided it, so "where is this coming from" never needs a modal.
-// «Istisnolar» is the flat register of everything that differs from its parent.
+// Two grids died to get here. The 22×13 brigadir×task matrix painted 273 cells
+// that all carried the same weight; the sheet that replaced it painted 130
+// cells that nearly all read «STANDART». Both drew the SAMENESS — the one thing
+// about this config that never varies — while the settings that actually differ
+// (a window, a date rule, a photo count on one unit) were a 9px glyph, a dot,
+// or nothing at all.
 //
-// The 22×13 matrix it replaces could show one number per (unit, task) and
-// nothing about the eight other rules on that cell, which is why the two
-// incidents this page has caused — a camera setting written globally, a
-// shift-1 window inherited by a shift-2 unit — were both invisible on it.
+// So there is no grid. There are thirteen rows, one per task, and each one
+// states its rule as a SENTENCE in which the defaults stay SILENT: a task that
+// wants a camera, three photos and a 07:00–09:00 window says so, and a task
+// that wants none of that says almost nothing. That is what makes the thirteen
+// rows look different from one another.
+//
+// The scope (smena → brigadir → lider) is a FilterPanel, and the inheritance
+// LEVEL is derived from those picks — there is no second control for it. What
+// differs from the level above is not a separate register any more: it hangs
+// under the task it belongs to, opened by pressing the row.
 export default function LeaderTasksAdmin() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -275,18 +207,21 @@ export default function LeaderTasksAdmin() {
   // ── where the page is pointed ────────────────────────────────────────────
   // Stored as primitives, never as an object: `ltasks_f_shift` keeps its old
   // key and its old shape (0 = no shift, 1 / 2 = that one), so a browser that
-  // has used this page before opens on the shift it was left on.
-  const [tab, setTab] = usePersistentState("ltasks_tab", "sheet");
-  const [lvlKind, setLvlKind] = usePersistentState("ltasks_lvl", "std");
+  // has used this page before opens on the shift it was left on. The same is
+  // true of the two picks.
+  //
+  // `ltasks_tab`, `ltasks_lvl` and the three `ltasks_reg_*` keys are gone with
+  // the controls that wrote them — the two-tab split, the level strip and the
+  // exception register's own filters. A stored value nothing reads is a value
+  // that silently rots; the three keys that survive are the three the page
+  // still steers by.
   const [fShift, setFShift] = usePersistentState("ltasks_f_shift", 0);
   const [pickU, setPickU] = usePersistentState("ltasks_pick_mgr", null);
   const [pickL, setPickL] = usePersistentState("ltasks_pick_lead", null);
-  // Register filters.
-  const [regQ, setRegQ] = useState("");
-  const [regLvl, setRegLvl] = usePersistentState("ltasks_reg_lvl", "all");
-  const [regFld, setRegFld] = usePersistentState("ltasks_reg_fld", "all");
-  const [regBad, setRegBad] = useState(false);
-  const [regPage, setRegPage] = useState(1);
+  // Which task row is expanded. Deliberately NOT persisted: an expansion is a
+  // reading position inside one visit, not a setting.
+  const [openRow, setOpenRow] = useState(null);
+  const rowRefs = useRef({});
 
   const { data, isLoading } = useQuery({
     queryKey: ["ltasks-config"],
@@ -582,22 +517,26 @@ export default function LeaderTasksAdmin() {
   }, [managers]);
 
   // ── the level on screen ──────────────────────────────────────────────────
-  // Derived from the stored primitives and RECONCILED against live data: a
-  // brigadir who has left the register degrades to Standart rather than
-  // leaving the sheet pointed at nothing.
+  // DERIVED from the three scope picks, narrowest first — there is no separate
+  // control for it any more, because a level strip beside a scope filter is two
+  // controls answering one question and they drifted apart constantly (a
+  // brigadir picked while the strip still said «Smena 1»).
+  //
+  // RECONCILED against live data: a brigadir who has left the register degrades
+  // to Standart rather than leaving the page pointed at nothing.
   const level = useMemo(() => {
-    if (lvlKind === "leader" && pickL && leaderById.has(pickL)) {
+    if (pickL && leaderById.has(pickL)) {
       const p = leaderById.get(pickL);
       return { kind: "leader", id: pickL, mid: p.manager_id, shift: Number(mgrById.get(p.manager_id)?.shift) || 1 };
     }
-    if (lvlKind === "unit" && pickU && mgrById.has(pickU)) {
+    if (pickU && mgrById.has(pickU)) {
       return { kind: "unit", id: pickU, mid: pickU, shift: Number(mgrById.get(pickU)?.shift) || 1 };
     }
-    if (lvlKind === "shift" && (fShift === 1 || fShift === 2)) {
-      return { kind: "shift", id: null, mid: null, shift: fShift };
+    if (fShift === 1 || fShift === 2) {
+      return { kind: "shift", id: null, mid: unitsOf(fShift)[0]?.id ?? null, shift: fShift };
     }
     return { kind: "std", id: null, mid: null, shift: null };
-  }, [lvlKind, pickU, pickL, fShift, leaderById, mgrById]);
+  }, [pickU, pickL, fShift, leaderById, mgrById, managers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── the chain, resolved ─────────────────────────────────────────────────
   const tname = (task) => task?.name?.[lang] || task?.name?.uz || `T${task?.id}`;
@@ -729,39 +668,8 @@ export default function LeaderTasksAdmin() {
   const exFromLabel = (lv2) => (lv2 === "supervisor"
     ? t("admin.ltasks.examplesFromSup") : t("admin.ltasks.examplesFromGlobal"));
 
-  // The level a value CAME from, for the origin tag: own here, else the shift
-  // template where the unit's value is that template, else the standard.
-  const originOf = (lvl, tid, col) => {
-    const ks = col.keys;
-    const own = ownKeys(lvl, tid);
-    if (lvl.kind === "std") return "std";
-    if (lvl.kind === "shift") return ks.some((k) => own.has(k)) ? `s${lvl.shift}` : "std";
-    const mine = ks.some((k) => own.has(k));
-    if (!mine) {
-      // Not decided here. At the unit level a value can still be the SHIFT's,
-      // and at the leader level it can be either of the two above.
-      if (lvl.kind === "leader") {
-        const uOwn = new Set(ownMap[String(lvl.mid)]?.[String(tid)] || []);
-        if (ks.some((k) => uOwn.has(k))) {
-          return ks.some((k) => {
-            const tp = tplFor(lvl.shift, tid, k);
-            return tp && eq(tp.v, uv(lvl.mid, tid)[k]);
-          }) ? `s${lvl.shift}` : "unit";
-        }
-        return "std";
-      }
-      return "std";
-    }
-    if (lvl.kind === "unit") {
-      const res = uv(lvl.id, tid);
-      const fromTpl = ks.every((k) => {
-        const tp = tplFor(lvl.shift, tid, k);
-        return !own.has(k) || (tp && eq(tp.v, res[k]));
-      });
-      return fromTpl ? `s${lvl.shift}` : "unit";
-    }
-    return "leader";
-  };
+  // The name of a LEVEL, for «qiymat ← meros» on an exception row and for the
+  // "what would this fall back to" line in the editor.
   const tagLabel = (o) => (o === "std" ? t("admin.ltasks.lvlStd")
     : o === "unit" ? t("admin.ltasks.supervisor")
       : o === "leader" ? t("admin.ltasks.leader")
@@ -839,59 +747,6 @@ export default function LeaderTasksAdmin() {
       default: return "";
     }
   };
-  const fullVal = (k, r, lvl, tid) => (k === "desc" ? (r.description || r.criteria || "")
-    : k === "crit" ? (r.criteria || "") : showVal(k, r, lvl, tid));
-
-  // How many levels BELOW this one carry their own value for (task, column) —
-  // the "(3)" beside a cell. Without it the standard reads as the answer while
-  // three units quietly do something else.
-  const devCount = (lvl, tid, col) => {
-    const ks = col.keys;
-    if (!ks.length) return 0;
-    let n = 0;
-    if (lvl.kind === "std") {
-      for (const s of shifts) if (ks.some((k) => tplFor(s, tid, k))) n++;
-      for (const m of managers) {
-        const own = new Set(ownMap[String(m.id)]?.[String(tid)] || []);
-        if (ks.some((k) => own.has(k))) n++;
-      }
-      for (const p of leaders) {
-        const own = new Set(ownLeadMap[String(p.id)]?.[String(tid)] || []);
-        if (ks.some((k) => own.has(k))) n++;
-      }
-      return n;
-    }
-    if (lvl.kind === "shift") {
-      for (const m of unitsOf(lvl.shift)) {
-        const own = new Set(ownMap[String(m.id)]?.[String(tid)] || []);
-        // Only where the unit does NOT simply carry the template.
-        if (ks.some((k) => own.has(k) && !(tplFor(lvl.shift, tid, k) && eq(tplFor(lvl.shift, tid, k).v, uv(m.id, tid)[k])))) n++;
-        for (const p of leadersByMgr[m.id] || []) {
-          const lo = new Set(ownLeadMap[String(p.id)]?.[String(tid)] || []);
-          if (ks.some((k) => lo.has(k))) n++;
-        }
-      }
-      return n;
-    }
-    if (lvl.kind === "unit") {
-      for (const p of leadersByMgr[lvl.id] || []) {
-        const lo = new Set(ownLeadMap[String(p.id)]?.[String(tid)] || []);
-        if (ks.some((k) => lo.has(k))) n++;
-      }
-      return n;
-    }
-    return 0;
-  };
-  // «12/14» on a shift cell: the template exists but not every unit carries it.
-  const mixMark = (lvl, tid, col) => {
-    if (lvl.kind !== "shift") return "";
-    for (const k of col.keys) {
-      const tp = tplFor(lvl.shift, tid, k);
-      if (tp && tp.carriers < tp.total) return `${tp.carriers}/${tp.total}`;
-    }
-    return "";
-  };
-
   // ── the exception register ──────────────────────────────────────────────
   // One row per (scope, task, rule) that differs from its parent, plus the
   // DRIFT rows: a unit that does not carry its own shift's template. Both are
@@ -1066,12 +921,113 @@ export default function LeaderTasksAdmin() {
     return rows;
   }, [tasks, managers, leaders, settings, leaderSettings, ownMap, ownLeadMap, shiftTpl, problems, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const driftN = useMemo(() => regRows.filter((r) => r.drift).length, [regRows]);
-  // An EXCEPTION is a value somebody set. A row that exists only because the
-  // window it INHERITS was refused is neither an exception nor drift, so it
-  // stays out of the count the tile and the tab label carry — it is counted by
-  // «Smena ichida emas», one tile along.
-  const excN = useMemo(() => regRows.filter((r) => !r.drift && !r.probOnly).length, [regRows]);
+  // ── the exceptions IN SCOPE ─────────────────────────────────────────────
+  // The register above is the whole platform; what hangs under a task row is
+  // the part of it the three scope picks are pointed at. A leader shows only
+  // their own rows, a brigadir shows the unit's own rows AND its leaders' (they
+  // are all rules in force inside that unit), a shift shows everything on it,
+  // and Standart shows the lot — which is the honest answer to «is anybody
+  // doing this differently anywhere».
+  //
+  // A shift TEMPLATE row is deliberately not listed under a brigadir: it is a
+  // statement about the shift, not about this unit, and it would repeat under
+  // every unit of that shift.
+  const scopedRows = useMemo(() => {
+    if (level.kind === "leader") return regRows.filter((r) => r.lvl === "leader" && r.lid === level.id);
+    if (level.kind === "unit") return regRows.filter((r) => r.mid === level.id);
+    if (level.kind === "shift") return regRows.filter((r) => Number(r.shift) === Number(level.shift));
+    return regRows;
+  }, [regRows, level]);
+  const rowsByTask = useMemo(() => {
+    const out = {};
+    for (const r of scopedRows) (out[r.tid] ||= []).push(r);
+    return out;
+  }, [scopedRows]);
+  // An EXCEPTION is a value somebody set. A refused window is counted by the
+  // red mark instead — including the `probOnly` rows, which exist only because
+  // an INHERITED window was refused and are therefore nobody's exception at
+  // all. Both marks partition the same list, so the two numbers on a row always
+  // add up to the rows underneath it.
+  const excN = useMemo(() => scopedRows.filter((r) => !r.bad).length, [scopedRows]);
+
+  // ── THE rule sentence ───────────────────────────────────────────────────
+  // The heart of this page. Each task states, in one line, what is actually
+  // asked of it — and a DEFAULT is not worth a word, so it is simply not said.
+  // That is the whole reason the thirteen rows now look different from one
+  // another: two grids failed here by drawing what every row has in common.
+  //
+  // A fragment reads STRONG (`--text-1`, semibold) when somebody chose it —
+  // either because the value is not the platform's default (a camera, three
+  // photos, a window at all) or because THIS level decided it. Everything else
+  // is ordinary `--text-3` prose. Colour is never the only signal: a refused
+  // window carries the ⚠ glyph as well as the red.
+  const shiftLvl = (s) => ({ kind: "shift", shift: s, id: null, mid: unitsOf(s)[0]?.id ?? null });
+  const winText = (v) => ((v.win_from || v.win_to)
+    ? `${v.win_from || "…"}–${v.win_to || "…"}`
+    : t("admin.ltasks.vWholeShift"));
+  const ruleParts = (tid) => {
+    const r = resolved(level, tid);
+    const own = ownKeys(level, tid);
+    // At Standart every field is "own" by definition (it is the floor of the
+    // chain), so ownership says nothing there and only noteworthiness counts.
+    const mine = (k) => level.kind !== "std" && own.has(k);
+    const out = [];
+
+    const cam = r.proof_kind === "camera";
+    out.push({
+      k: "proof", strong: cam || mine("proof_kind"),
+      text: t(cam ? "admin.ltasks.proofCamera" : "admin.ltasks.proofScreenshot"),
+    });
+
+    const n = Number(r.min_media) || 0;
+    out.push({
+      k: "photos", strong: n > 1 || mine("min_media"),
+      text: t("admin.ltasks.ruleShots").replace("{n}", n),
+    });
+
+    // A scope that names a shift has ONE window; Standart serves both, so it
+    // prints both, labelled — showing shift 1's alone is exactly how a shift-2
+    // unit came to inherit a morning window (26 Aug).
+    if (level.kind === "std" && shifts.length > 1) {
+      out.push({
+        k: "window",
+        halves: shifts.map((s) => {
+          const rs = resolved(shiftLvl(s), tid);
+          return {
+            sh: s, text: winText(rs),
+            strong: !!(rs.win_from || rs.win_to),
+            bad: problemsFor(shiftLvl(s), tid).length > 0,
+          };
+        }),
+      });
+    } else {
+      out.push({
+        k: "window", text: winText(r),
+        strong: !!(r.win_from || r.win_to) || mine("win_from") || mine("win_to"),
+        bad: problemsFor(level, tid).length > 0,
+      });
+    }
+
+    // Only a NON-default date rule is spoken. «Sana + vaqt» is what every task
+    // does unless somebody said otherwise, and saying it thirteen times is the
+    // wall of repeated words this design exists to remove.
+    const dm = dcMode(r);
+    if (dm !== "full") {
+      out.push({
+        k: "dateRule", strong: true,
+        text: dm === "off" ? t("admin.ltasks.ruleNoDate") : t(`admin.ltasks.dateMode.${dm}`),
+      });
+    }
+    // Same rule for the deadline: blank is the default (the window's end, then
+    // the day's own filing deadline), so only an hour somebody typed is said.
+    if (r.deadline) {
+      out.push({
+        k: "deadline", strong: true,
+        text: t("admin.ltasks.ruleDeadline").replace("{t}", r.deadline),
+      });
+    }
+    return out;
+  };
 
   // ── weight sums ─────────────────────────────────────────────────────────
   // Each one adds up the tasks its own reader is actually asked TODAY, per
@@ -1611,19 +1567,26 @@ export default function LeaderTasksAdmin() {
   // a row the page cannot show is worse than a reset.
   const pickUv = pickU && mgrById.has(pickU) ? pickU : null;
   const pickLv = pickL && leaderById.has(pickL) ? pickL : null;
+  // Each list is built UNDER the level above it.
+  const mgrOpts = useMemo(() => (fShift === 1 || fShift === 2
+    ? managers.filter((m) => Number(m.shift) === Number(fShift)) : managers),
+    [managers, fShift]);
   const leaderOpts = useMemo(() => (pickUv
     ? (leadersByMgr[pickUv] || []) : leaders), [pickUv, leaders, leadersByMgr]);
   useEffect(() => {
-    if (pickL && !leaderOpts.some((p) => p.id === pickL)) {
-      setPickL(null);
-      if (lvlKind === "leader") setLvlKind(pickU ? "unit" : "std");
-    }
+    if (pickL && !leaderOpts.some((p) => p.id === pickL)) setPickL(null);
   }, [pickU, leaderOpts]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A parent pick FILLS ITS PARENTS IN (picking a leader names their brigadir
+  // and their shift), and a parent change DROPS a child its list no longer
+  // offers — a control naming a row the page cannot show is worse than a reset.
+  const pickShift = (s) => {
+    setFShift(s);
+    if (s && pickU && Number(mgrById.get(pickU)?.shift) !== Number(s)) { setPickU(null); setPickL(null); }
+  };
   const pickUnit = (id) => {
     setPickU(id);
     setPickL(null);
-    setLvlKind(id ? "unit" : (fShift ? "shift" : "std"));
     if (id) setFShift(Number(mgrById.get(id)?.shift) || 0);
   };
   const pickLeader = (id) => {
@@ -1631,11 +1594,26 @@ export default function LeaderTasksAdmin() {
     if (id) {
       const p = leaderById.get(id);
       if (p) { setPickU(p.manager_id); setFShift(Number(mgrById.get(p.manager_id)?.shift) || 0); }
-      setLvlKind("leader");
-    } else setLvlKind(pickU ? "unit" : "std");
+    }
   };
 
-  const sheetSections = [
+  // THE scope zone: one FilterPanel, three sections, cascading. Never three
+  // standalone selects stacked over the list — same zone, same chips and same
+  // bottom sheet on a phone as every other page on the platform.
+  const scopeSections = [
+    {
+      key: "shift", icon: Clock, label: t("admin.ltasks.fShift"),
+      active: fShift === 1 || fShift === 2,
+      display: fShift ? t("admin.ltasks.lvlShift").replace("{n}", fShift) : "",
+      // Clearing the shift keeps whatever brigadir is picked — the pick is the
+      // narrower answer and it still names its own shift.
+      onClear: () => setFShift(0),
+      render: () => (
+        <SegmentedToggle fill size="sm" value={fShift} onChange={pickShift}
+          options={[[0, t("admin.ltasks.fAllShifts")],
+          ...shifts.map((s) => [s, t("admin.ltasks.lvlShift").replace("{n}", s)])]} />
+      ),
+    },
     {
       key: "mgr", icon: UserCog, label: t("admin.ltasks.supervisor"),
       active: !!pickUv, display: pickUv ? mgrLabel(pickUv) : "",
@@ -1643,8 +1621,17 @@ export default function LeaderTasksAdmin() {
       render: ({ close }) => (
         <PickFilter searchable close={close} value={pickUv ?? "-"}
           onChange={(v) => pickUnit(v === "-" ? null : v)}
+          note={fShift ? t("admin.ltasks.narrowedBy")
+            .replace("{name}", t("admin.ltasks.lvlShift").replace("{n}", fShift))
+            .replace("{n}", mgrOpts.length) : null}
+          empty={fShift ? (
+            <div className="text-center py-2">
+              <p className="text-xs mb-1.5" style={{ color: "var(--text-4)" }}>{t("admin.ltasks.fNone")}</p>
+              <Button size="sm" variant="ghost" onClick={() => setFShift(0)}>{t("admin.ltasks.fClear")}</Button>
+            </div>
+          ) : null}
           opts={[{ value: "-", label: t("admin.ltasks.pickNone") },
-          ...managers.map((m) => ({ value: m.id, label: `${tl(m.name)} · S${m.shift ?? "?"}`, title: tl(m.name) }))]} />
+          ...mgrOpts.map((m) => ({ value: m.id, label: `${tl(m.name)} · S${m.shift ?? "?"}`, title: tl(m.name) }))]} />
       ),
     },
     {
@@ -1667,66 +1654,28 @@ export default function LeaderTasksAdmin() {
     },
   ];
 
-  const regSections = [
-    {
-      key: "rlvl", icon: Layers, label: t("admin.ltasks.regLevel"),
-      active: regLvl !== "all",
-      display: regLvl === "all" ? "" : t(`admin.ltasks.regLvl.${regLvl}`),
-      onClear: () => setRegLvl("all"),
-      render: () => (
-        <SegmentedToggle fill size="sm" value={regLvl} onChange={(v) => { setRegLvl(v); setRegPage(1); }}
-          options={[["all", t("admin.ltasks.fAllShifts")], ["shift", t("admin.ltasks.regLvl.shift")],
-          ["unit", t("admin.ltasks.regLvl.unit")], ["leader", t("admin.ltasks.regLvl.leader")]]} />
-      ),
-    },
-    {
-      key: "rfld", icon: ListChecks, label: t("admin.ltasks.regRule"),
-      active: regFld !== "all",
-      display: regFld === "all" ? "" : t(`admin.ltasks.col.${regFld}`),
-      onClear: () => setRegFld("all"),
-      render: ({ close }) => (
-        <PickFilter close={close} value={regFld} onChange={(v) => { setRegFld(v); setRegPage(1); }}
-          opts={[{ value: "all", label: t("admin.ltasks.fAllShifts") },
-          ...REG_FIELDS.map((k) => ({ value: k, label: t(`admin.ltasks.col.${k}`) }))]} />
-      ),
-    },
-    {
-      key: "rbad", icon: AlertTriangle, label: t("admin.ltasks.regBad"),
-      active: regBad, display: regBad ? t("admin.ltasks.regBadOn") : "",
-      onClear: () => setRegBad(false),
-      render: () => (
-        <SegmentedToggle fill size="sm" value={regBad} onChange={(v) => { setRegBad(v); setRegPage(1); }}
-          options={[[false, t("admin.ltasks.fAllShifts")], [true, t("admin.ltasks.regBadOn")]]} />
-      ),
-    },
-  ];
-
-  const regShown = useMemo(() => {
-    let rows = regRows;
-    if (regBad) rows = rows.filter((r) => r.bad);
-    if (regLvl !== "all") rows = rows.filter((r) => r.lvl === regLvl);
-    if (regFld !== "all") rows = rows.filter((r) => r.f === regFld);
-    const q = regQ.trim().toLowerCase();
-    if (q) rows = rows.filter((r) => `${r.who} ${r.sub} ${tname(taskById.get(r.tid))}`.toLowerCase().includes(q));
-    return [...rows].sort((a, b) => (a.shift - b.shift)
-      || (["shift", "unit", "leader"].indexOf(a.lvl) - ["shift", "unit", "leader"].indexOf(b.lvl))
-      || (a.who || "").localeCompare(b.who || "") || a.tid - b.tid);
-  }, [regRows, regBad, regLvl, regFld, regQ, taskById, lang]); // eslint-disable-line react-hooks/exhaustive-deps
-  const REG_PAGE = 60;
-  const regPages = Math.max(1, Math.ceil(regShown.length / REG_PAGE));
-  const regPageRows = regShown.slice((Math.min(regPage, regPages) - 1) * REG_PAGE, Math.min(regPage, regPages) * REG_PAGE);
-
-  const openFromRegister = (r) => {
+  // Pressing an exception (or the red alert) POINTS THE PAGE AT IT and opens
+  // the editor at that exact level — so what the reader was looking at and what
+  // the form writes can never be two different scopes.
+  const focusTask = (tid) => {
+    setOpenRow(tid);
+    // The row may be a screen away; let it render at its new height first.
+    requestAnimationFrame(() => rowRefs.current[tid]?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  };
+  const scopeTo = (r) => {
     if (r.lvl === "leader") pickLeader(r.lid);
     else if (r.lvl === "unit") pickUnit(r.mid);
-    else { setPickU(null); setPickL(null); setFShift(r.shift); setLvlKind("shift"); }
-    setTab("sheet");
+    else { setPickU(null); setPickL(null); setFShift(r.shift); }
+  };
+  const openException = (r) => {
+    scopeTo(r);
     const lvl = r.lvl === "leader"
       ? { kind: "leader", id: r.lid, mid: r.mid, shift: r.shift }
       : r.lvl === "unit" ? { kind: "unit", id: r.mid, mid: r.mid, shift: r.shift }
         : { kind: "shift", id: null, mid: unitsOf(r.shift)[0]?.id ?? null, shift: r.shift };
     openEdit(r.tid, lvl);
   };
+
 
   const descPending = (pc) => {
     if (pc.kind === "global_task") { const k = taskById.get(pc.task_id); return `${t("admin.ltasks.rename")}: ${k ? tname(k) : "T" + pc.task_id}`; }
