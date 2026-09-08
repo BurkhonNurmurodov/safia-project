@@ -134,7 +134,14 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
   // zero, «·» for no divisor, the figure otherwise. A future cell carries no
   // tooltip either — there is nothing about it to explain, and the two the grid
   // has both describe a measurement that was taken.
-  const cell = (v, max, i, key, tipFn) => {
+  // The figure carries its own size, and it has to: with none declared it
+  // inherited the root 16px while every label on the grid sits at 9.5–12.5px,
+  // so the one thing a reader tracks across 31 columns was also the largest
+  // thing on the table, and the dense month it is drawn for read as a wall of
+  // numbers. `strong` keeps a summary row's cells at the weight its own name
+  // and total already carry, so a category line still reads as the line the
+  // brigadir rows under it add up to.
+  const cell = (v, max, i, key, tipFn, strong = false) => {
     const fut = !!future[i];
     const none = v == null;
     return (
@@ -143,6 +150,8 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
         className="text-center border-b border-r tabular-nums"
         style={{
           width: COL_W, minWidth: COL_W,
+          fontSize: 11.5, fontWeight: strong ? 600 : 500, lineHeight: 1.1,
+          letterSpacing: "-0.2px",
           borderColor: "var(--border)",
           backgroundColor: isSunday(dates[i]) ? "rgba(239,68,68,0.05)" : undefined,
           ...(none ? null : shade(v, max)),
@@ -270,7 +279,7 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
                       title: t(`downtime.cat.${code}.label`),
                       body: t("downtime.mx.tipCat"),
                       eq: null,
-                    })),
+                    }), true),
                   )}
                   <td
                     className="sticky right-0 z-[2] text-right pr-3 text-[11.5px] font-semibold border-b border-l tabular-nums"
