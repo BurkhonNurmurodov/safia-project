@@ -1800,9 +1800,17 @@ export default function LeaderTasksAdmin() {
   );
   // One window fragment. A refused window carries the warning ICON as well as
   // the red, so it survives greyscale and a colourblind reader.
+  // A refused window puts the red on a CHIP and keeps the label in --text-1:
+  // #ef4444 as 12.5px text measures 3.76:1 on the light card and 4.47:1 on the
+  // dark one, both under the AA floor for text this size. The hue on a tinted
+  // ground carries the status, the ink stays legible, and the warning icon
+  // means it survives greyscale and a colourblind reader either way.
   const winSpan = (f, key) => (
     <span key={key} className={f.strong || f.bad ? "font-semibold" : ""}
-      style={{ color: f.bad ? C_BAD : f.strong ? "var(--text-1)" : "inherit" }}>
+      style={f.bad ? {
+        color: "var(--text-1)", background: "rgba(239,68,68,0.14)",
+        border: "1px solid rgba(239,68,68,0.40)", borderRadius: 4, padding: "0 5px",
+      } : { color: f.strong ? "var(--text-1)" : "inherit" }}>
       {f.text}
       {f.bad && <AlertTriangle size={11} className="inline-block ml-1 -mt-px" aria-hidden="true" />}
     </span>
