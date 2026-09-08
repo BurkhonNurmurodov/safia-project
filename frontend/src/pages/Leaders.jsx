@@ -96,7 +96,7 @@ const TXT = {
     thPlace: "O'rin", thDays: "Yuborilgan kun", thTier: "Daraja",
     tierTop: "Chempion", tierGood: "A'lo", tierMid: "O'rta", tierBad: "Past",
     supSearchPh: "Brigadir qidirish…",
-    standInfo: "Reyting — davrning HAR BIR kuni uchun ball: hisobot yuborilmagan kun 0% hisoblanadi. Barqarorlik — o'sha kunlarning qanchasida umuman hisobot yuborilgani, foizda. Hisob oynasi — tanlangan davr to'liq, birinchi hisobotdan emas. Shu sababli reyting hech qachon barqarorlikdan yuqori bo'lmaydi.\n\nTanlangan ustun — asosiy reyting, ikkinchisi esa qo'shimcha reyting: teng natijalar aynan shu bo'yicha ajratiladi. O'rin faqat ikkala ko'rsatkich ham teng bo'lgandagina bo'lishiladi.\n\nTrend — O'RINNING o'zgarishi, foizning emas: avvalgi davrda 57-o'rin, hozir 47-o'rin bo'lsa — +10 (ko'tarilish yashil, tushish qizil, joyida qolish 0). Solishtirish xuddi shu uzunlikdagi avvalgi davr bilan va ro'yxat ayni paytda saralanayotgan ustun bo'yicha bo'ladi. Chiziq — o'sha o'rinning kunlar kesimidagi harakati (kamida 7 kun): har bir nuqta — davr o'sha kuni tugaganida chiqadigan o'rin, shuning uchun chiziqning oxiri qatordagi o'rinning o'zi. Avvalgi davrda umuman ma'lumot bo'lmasa — «Yangi».",
+    standInfo: "Reyting — davrning HAR BIR kuni uchun ball: hisobot yuborilmagan kun 0% hisoblanadi. Barqarorlik — o'sha kunlarning qanchasida umuman hisobot yuborilgani, foizda. Hisob oynasi — tanlangan davr to'liq, birinchi hisobotdan emas.\n\nBrigadir o'zi hisobot topshirmaydi, shuning uchun uning kuni — o'sha kuni chek-list topshirishi kerak bo'lgan HAR BIR lider bo'yicha o'rtacha ball: hisobot yubormagan lider 0 hisoblanadi. Kun barqarorlikka faqat ularning HAMMASI yuborgandagina qo'shiladi. Ya'ni bitta lider bitta kunni o'tkazib yuborsa — o'sha kun butun brigadaga hisoblanmaydi va kalendarda qizil bo'ladi. Shu sababli brigadirning reytingi barqarorligidan yuqori chiqishi mumkin; lider uchun bu ikki ustun hech qachon kesishmaydi.\n\nTanlangan ustun — asosiy reyting, ikkinchisi esa qo'shimcha reyting: teng natijalar aynan shu bo'yicha ajratiladi. O'rin faqat ikkala ko'rsatkich ham teng bo'lgandagina bo'lishiladi.\n\nTrend — O'RINNING o'zgarishi, foizning emas: avvalgi davrda 57-o'rin, hozir 47-o'rin bo'lsa — +10 (ko'tarilish yashil, tushish qizil, joyida qolish 0). Solishtirish xuddi shu uzunlikdagi avvalgi davr bilan va ro'yxat ayni paytda saralanayotgan ustun bo'yicha bo'ladi. Chiziq — o'sha o'rinning kunlar kesimidagi harakati (kamida 7 kun): har bir nuqta — davr o'sha kuni tugaganida chiqadigan o'rin, shuning uchun chiziqning oxiri qatordagi o'rinning o'zi. Avvalgi davrda umuman ma'lumot bo'lmasa — «Yangi».",
     standPrimaryHint: "Asosiy reyting — ro'yxat shu ustun bo'yicha saralanadi",
     standSubHint: "Qo'shimcha reyting — asosiy ustun teng chiqqanda o'rinni shu ajratadi",
     thTrend: "Trend",
@@ -270,7 +270,7 @@ const TXT = {
     thPlace: "Ўрин", thDays: "Юборилган кун", thTier: "Даража",
     tierTop: "Чемпион", tierGood: "Аъло", tierMid: "Ўрта", tierBad: "Паст",
     supSearchPh: "Бригадир қидириш…",
-    standInfo: "Рейтинг — даврнинг ҲАР БИР куни учун балл: ҳисобот юборилмаган кун 0% ҳисобланади. Барқарорлик — ўша кунларнинг қанчасида умуман ҳисобот юборилгани, фоизда. Ҳисоб ойнаси — танланган давр тўлиқ, биринчи ҳисоботдан эмас. Шу сабабли рейтинг ҳеч қачон барқарорликдан юқори бўлмайди.\n\nТанланган устун — асосий рейтинг, иккинчиси эса қўшимча рейтинг: тенг натижалар айнан шу бўйича ажратилади. Ўрин фақат иккала кўрсаткич ҳам тенг бўлгандагина бўлишилади.\n\nТренд — ЎРИННИНГ ўзгариши, фоизнинг эмас: аввалги даврда 57-ўрин, ҳозир 47-ўрин бўлса — +10 (кўтарилиш яшил, тушиш қизил, жойида қолиш 0). Солиштириш худди шу узунликдаги аввалги давр билан ва рўйхат айни пайтда саралаётган устун бўйича бўлади. Чизиқ — ўша ўриннинг кунлар кесимидаги ҳаракати (камида 7 кун): ҳар бир нуқта — давр ўша куни тугаганида чиқадиган ўрин, шунинг учун чизиқнинг охири қатордаги ўриннинг ўзи. Аввалги даврда умуман маълумот бўлмаса — «Янги».",
+    standInfo: "Рейтинг — даврнинг ҲАР БИР куни учун балл: ҳисобот юборилмаган кун 0% ҳисобланади. Барқарорлик — ўша кунларнинг қанчасида умуман ҳисобот юборилгани, фоизда. Ҳисоб ойнаси — танланган давр тўлиқ, биринчи ҳисоботдан эмас.\n\nБригадир ўзи ҳисобот топширмайди, шунинг учун унинг куни — ўша куни чек-лист топшириши керак бўлган ҲАР БИР лидер бўйича ўртача балл: ҳисобот юбормаган лидер 0 ҳисобланади. Кун барқарорликка фақат уларнинг ҲАММАСИ юборгандагина қўшилади. Яъни битта лидер битта кунни ўтказиб юборса — ўша кун бутун бригадага ҳисобланмайди ва календарда қизил бўлади. Шу сабабли бригадирнинг рейтинги барқарорлигидан юқори чиқиши мумкин; лидер учун бу икки устун ҳеч қачон кесишмайди.\n\nТанланган устун — асосий рейтинг, иккинчиси эса қўшимча рейтинг: тенг натижалар айнан шу бўйича ажратилади. Ўрин фақат иккала кўрсаткич ҳам тенг бўлгандагина бўлишилади.\n\nТренд — ЎРИННИНГ ўзгариши, фоизнинг эмас: аввалги даврда 57-ўрин, ҳозир 47-ўрин бўлса — +10 (кўтарилиш яшил, тушиш қизил, жойида қолиш 0). Солиштириш худди шу узунликдаги аввалги давр билан ва рўйхат айни пайтда саралаётган устун бўйича бўлади. Чизиқ — ўша ўриннинг кунлар кесимидаги ҳаракати (камида 7 кун): ҳар бир нуқта — давр ўша куни тугаганида чиқадиган ўрин, шунинг учун чизиқнинг охири қатордаги ўриннинг ўзи. Аввалги даврда умуман маълумот бўлмаса — «Янги».",
     standPrimaryHint: "Асосий рейтинг — рўйхат шу устун бўйича сараланади",
     standSubHint: "Қўшимча рейтинг — асосий устун тенг чиққанда ўринни шу ажратади",
     thTrend: "Тренд",
@@ -444,7 +444,7 @@ const TXT = {
     thPlace: "Место", thDays: "Сдано дней", thTier: "Уровень",
     tierTop: "Чемпион", tierGood: "Отлично", tierMid: "Средне", tierBad: "Низко",
     supSearchPh: "Поиск бригадира…",
-    standInfo: "Рейтинг — балл за КАЖДЫЙ день периода: день без отчёта считается за 0%. Стабильность — доля этих дней, за которые отчёт вообще сдан. Окно расчёта — весь выбранный период, а не с первого отчёта. Поэтому рейтинг никогда не бывает выше стабильности.\n\nВыбранная вкладка — основной рейтинг, вторая колонка — подрейтинг: именно она разводит равные результаты. Место делится только тогда, когда совпали оба показателя.\n\nТренд — изменение МЕСТА, а не процента: было 57-е место, стало 47-е — это +10 (подъём зелёный, падение красное, без движения — 0). Сравнение идёт с предыдущим периодом той же длины и по той колонке, по которой список отсортирован сейчас. Линия — движение этого места по дням (не меньше 7 дней): каждая точка — место, которое вышло бы, если бы период закончился в этот день, поэтому конец линии равен месту в строке. Если за предыдущий период данных нет вообще — «Новый».",
+    standInfo: "Рейтинг — балл за КАЖДЫЙ день периода: день без отчёта считается за 0%. Стабильность — доля этих дней, за которые отчёт вообще сдан. Окно расчёта — весь выбранный период, а не с первого отчёта.\n\nБригадир сам отчёт не сдаёт, поэтому его день — это среднее по КАЖДОМУ лидеру, который в этот день должен был сдать чек-лист: лидер без отчёта считается за 0. В стабильность день попадает только тогда, когда сдали ВСЕ. То есть один пропустивший лидер стоит всей бригаде целого дня, и в календаре он красный. Поэтому рейтинг бригадира может оказаться выше его стабильности; у лидера эти две колонки не пересекаются никогда.\n\nВыбранная вкладка — основной рейтинг, вторая колонка — подрейтинг: именно она разводит равные результаты. Место делится только тогда, когда совпали оба показателя.\n\nТренд — изменение МЕСТА, а не процента: было 57-е место, стало 47-е — это +10 (подъём зелёный, падение красное, без движения — 0). Сравнение идёт с предыдущим периодом той же длины и по той колонке, по которой список отсортирован сейчас. Линия — движение этого места по дням (не меньше 7 дней): каждая точка — место, которое вышло бы, если бы период закончился в этот день, поэтому конец линии равен месту в строке. Если за предыдущий период данных нет вообще — «Новый».",
     standPrimaryHint: "Основной рейтинг — список сортируется по этой колонке",
     standSubHint: "Подрейтинг — разводит места при равенстве в основной колонке",
     thTrend: "Тренд",
@@ -618,7 +618,7 @@ const TXT = {
     thPlace: "Place", thDays: "Days filed", thTier: "Tier",
     tierTop: "Champion", tierGood: "Excellent", tierMid: "Average", tierBad: "Low",
     supSearchPh: "Search supervisor…",
-    standInfo: "Rating — a score for EVERY day of the period: a day with no report counts as 0%. Consistency — the share of those days that carry a report at all. The scoring window is the whole picked period, not from the first report. Rating can therefore never exceed consistency.\n\nThe active tab is the primary ranking and the other column is its sub-rating: equal results are separated by it. A place is shared only when BOTH figures match.\n\nTrend — the change of PLACE, not of a percentage: 57th last period, 47th now, that is +10 (climbing green, dropping red, level 0). It compares against the previous period of the same length, ranked by whichever column the list is sorted by right now. The line is that place day by day (at least 7 days): each point is the place the board would print if the period ended on that day, so the end of the line is exactly the place in the row. Nothing at all in the previous period reads «New».",
+    standInfo: "Rating — a score for EVERY day of the period: a day with no report counts as 0%. Consistency — the share of those days that carry a report at all. The scoring window is the whole picked period, not from the first report.\n\nA brigadir files nothing themselves, so their day is the mean over EVERY leader who owed a checklist that day — a leader who filed nothing counts as a 0 — and the day counts toward consistency only when every one of them filed. One leader missing one day therefore costs the whole unit that day, and turns its calendar cell red. A brigadir's rating can consequently sit above their consistency; for a leader the two columns can never cross.\n\nThe active tab is the primary ranking and the other column is its sub-rating: equal results are separated by it. A place is shared only when BOTH figures match.\n\nTrend — the change of PLACE, not of a percentage: 57th last period, 47th now, that is +10 (climbing green, dropping red, level 0). It compares against the previous period of the same length, ranked by whichever column the list is sorted by right now. The line is that place day by day (at least 7 days): each point is the place the board would print if the period ended on that day, so the end of the line is exactly the place in the row. Nothing at all in the previous period reads «New».",
     standPrimaryHint: "Primary ranking — the list is sorted by this column",
     standSubHint: "Sub-rating — breaks the tie when the primary column is equal",
     thTrend: "Trend",
@@ -1012,7 +1012,7 @@ const winFor = (winDays, off) => Math.max(0, winDays - (off ? off.size : 0));
 // …scored over that window: Reyting = Σ day means ÷ every day of it,
 // Barqarorlik = how many of those days carry a report at all.
 const scoreSlots = (map, winDays) =>
-  [...map.entries()].flatMap(([name, { days, off }]) => {
+  [...map.entries()].flatMap(([name, { days, off, filed }]) => {
     let sum = 0;
     for (const day of days.values()) sum += day.sum / day.n;
     const win = winFor(winDays, off);
@@ -1024,19 +1024,141 @@ const scoreSlots = (map, winDays) =>
     // degenerate empty window (no period at all) still behaves as it always did.
     if (winDays > 0 && win <= 0) return [];
     const score = win ? sum / win : 0;
+    // Scored and FILED are the same set of days for a leader — they file or they
+    // do not — and two different sets for a unit, which can be half answered: a
+    // day two of its three leaders filed carries a real score and is not a day
+    // the unit filed. Barqarorlik, the «Kunlar» fraction and the calendar all
+    // read the filed set, so the row's «6/7» is literally its green cell count.
+    const done = filed || new Set(days.keys());
     return [{
       name, score,
       rating: Math.round(score),
-      consist: win ? Math.round((days.size / win) * 100) : 0,
-      sent: days.size,
-      missed: Math.max(0, win - days.size),
+      consist: win ? Math.round((done.size / win) * 100) : 0,
+      sent: done.size,
+      missed: Math.max(0, win - done.size),
       // Days taken out of the results — shown as such on the calendar grid, so
       // a blank cell is never read as a miss.
       excluded: off,
       // Which days those were, for the calendar grid under the register.
-      days: new Set(days.keys()),
+      days: done,
     }];
   });
+
+// Did this key actually FILE on that day, as opposed to merely scoring on it.
+// ONE definition, because the sparkline re-ranks day by day without ever going
+// through `scoreSlots` — a second reading there would draw a line of places the
+// board never printed.
+const filedOn = (e, d) => (e.filed ? e.filed.has(d) : e.days.has(d));
+
+// ── a UNIT's day is what its LEADERS did ─────────────────────────────────────
+// A brigadir files nothing, so their day has to be composed from the people who
+// owed a checklist on it: the mean over ALL of them, a leader who filed nothing
+// counting as the 0 they scored, and the day counted as FILED only when every
+// one of them filed.
+//
+// Grouping the rows by supervisor — what `slotsBy` does for the leader ranking
+// — cannot say either of those things, because a leader who files nothing
+// leaves no row at all. A unit of three where one filed at 100% therefore read
+// 100% Reyting, 100% Barqarorlik and a green calendar cell for that day: three
+// readings of a day two thirds of which never happened.
+//
+// `members` is the union of the REGISTRY (`roster`, the unit's leader profiles)
+// and everybody actually seen filing for the unit. The union, not the registry:
+// the two registers are allowed to disagree in public, and about 18% of the
+// sheet's leader names resolve to no profile at all, so a roster-only
+// denominator would drop precisely those people's scores out of their own
+// unit's average. Off it come the two decisions an admin makes on the panel,
+// each only on the days it covers — a CUTOFF (this person stopped counting from
+// a date on) and a DAY EXCLUSION (this leader-day counts for nobody).
+const unitSlots = (rows, roster, cutLeaders, cutUnits, dates) => {
+  const map = new Map();
+  const unitOf = (u) => {
+    let e = map.get(u);
+    if (!e) map.set(u, (e = {
+      days: new Map(), off: new Set(), filed: new Set(),
+      members: new Set(),        // who owed this unit a checklist at all
+      skip: new Map(),           // date → leaders excluded on it
+      got: new Map(),            // date → leader → what arrived
+    }));
+    return e;
+  };
+  for (const r of rows) {
+    const unit = r.supervisor, who = r.leader;
+    if (!unit || unit === "N/A" || !who || who === "N/A") continue;
+    const e = unitOf(unit);
+    e.members.add(who);
+    const d = rowDate(r);
+    // The same precedence `slotsBy` gives these two, for the same reason: an
+    // exclusion answers about THIS day, a cutoff is a rule about every day
+    // after a date and is expanded below.
+    if (r.excluded) {
+      if (!r.excluded.cutoff) {
+        let sk = e.skip.get(d);
+        if (!sk) e.skip.set(d, (sk = new Set()));
+        sk.add(who);
+      }
+      continue;
+    }
+    // Voided by the shift-1 filing window: not a report. It neither scores nor
+    // counts as filed, so the day is this leader's real 0 inside the unit.
+    if (r.rejected) continue;
+    let day = e.got.get(d);
+    if (!day) e.got.set(d, (day = new Map()));
+    const a = day.get(who) || { sum: 0, n: 0 };
+    a.sum += r.completion; a.n++;
+    day.set(who, a);
+  }
+  // The registry, folded onto the units the period actually shows — and only
+  // onto those. A unit that filed nothing whatever in the window is absent from
+  // this ranking today, and putting it on the board at 0% is a separate
+  // decision from making the units already on it count honestly.
+  for (const [unit, e] of map)
+    for (const n of roster?.get(unit) || []) e.members.add(n);
+
+  const cutAt = (name, d) => {
+    const from = cutLeaders?.get(name);
+    return !!from && d >= from;
+  };
+  for (const [unit, e] of map) {
+    // Every day the unit could be asked about. The window when there is one;
+    // otherwise whatever the rows themselves span, which is the same fallback
+    // `slotsBy` makes when it is handed no dates.
+    const span = dates?.length
+      ? dates : [...new Set([...e.got.keys(), ...e.skip.keys()])];
+    for (const d of span) {
+      const skip = e.skip.get(d), arrived = e.got.get(d);
+      let owed = 0, sum = 0, missing = 0;
+      for (const who of e.members) {
+        // Nobody owed this: an admin took the day out, or took the person out
+        // of the counting from a date on or before it.
+        if (skip?.has(who) || cutAt(who, d)) continue;
+        owed++;
+        const a = arrived?.get(who);
+        if (a) sum += a.sum / a.n; else missing++;
+      }
+      // Nobody was left to file it, so it belongs in neither half of the unit's
+      // average — the answer an excluded day already gets for a leader.
+      if (owed === 0) { e.off.add(d); continue; }
+      // A day NOTHING arrived on gets no slot, exactly as it does for a leader:
+      // it scores its real 0 through the window divisor, and the calendar
+      // leaves it blank rather than painting a 0% somebody filed.
+      if (missing < owed) e.days.set(d, { sum, n: owed });
+      if (missing === 0) e.filed.add(d);
+    }
+    // The unit's own cutoff — every leader it has, cut, from the last of their
+    // floors. Expanded like the leader ranking's and for the same reason: the
+    // days nobody filed leave no row anywhere, so only the DECISION can put
+    // them in `off`. It is kept beside the per-day arithmetic above rather than
+    // folded into it because the backend computes it over EVERY row and every
+    // leader, including the ones no roster can see.
+    const from = cutUnits?.get(unit);
+    if (from && dates?.length) for (const d of dates) if (d >= from) e.off.add(d);
+    // A date that ended up with a real slot is not off, whatever else the
+    // decisions say about it — `slotsBy`'s own last pass, kept identical.
+    for (const d of e.days.keys()) e.off.delete(d);
+  }
+  return map;
+};
 
 // Dense ranking on the (primary, sub-rating) PAIR — a place is shared only when
 // BOTH figures match, and the next distinct result is always place+1 (1, 2, 2,
@@ -2503,9 +2625,27 @@ export default function Leaders() {
   const leaderScores = useMemo(
     () => scoreSlots(slotsBy(filtered, (r) => r.leader, cutLeaders, winDates), scoreWin.days),
     [filtered, scoreWin.days, cutLeaders, winDates]);
+  // Who a unit's leaders ARE, narrowed by exactly the filters that narrow its
+  // rows. A roster wider than the rows on screen reports a miss for somebody
+  // the page is deliberately not showing: filter to one leader and every unit
+  // would suddenly owe reports from people who are not in the table. The
+  // backend scopes it the same way per viewer, for the same reason.
+  const rosterUnits = useMemo(() => {
+    const m = new Map();
+    for (const p of data?.roster ?? []) {
+      if (!p.supervisor || !p.name) continue;
+      if (effShift != null && p.shift !== effShift) continue;
+      if (effSup !== "All" && p.supervisor !== effSup) continue;
+      if (effLeader !== "All" && p.name !== effLeader) continue;
+      let set = m.get(p.supervisor);
+      if (!set) m.set(p.supervisor, (set = new Set()));
+      set.add(p.name);
+    }
+    return m;
+  }, [data, effShift, effSup, effLeader]);
   const supScores = useMemo(
-    () => scoreSlots(slotsBy(filtered, (r) => r.supervisor, cutUnits, winDates), scoreWin.days),
-    [filtered, scoreWin.days, cutUnits, winDates]);
+    () => scoreSlots(unitSlots(filtered, rosterUnits, cutLeaders, cutUnits, winDates), scoreWin.days),
+    [filtered, rosterUnits, scoreWin.days, cutLeaders, cutUnits, winDates]);
 
   // The newest day the sheet holds ANYTHING for. Read off the raw feed, never
   // the filtered slice: narrowing to one leader must not turn that leader's own
@@ -2805,7 +2945,13 @@ export default function Leaders() {
     const EMPTY = { prev: null, prevSeen: null, sparks: new Map() };
     const { from: winFrom, to: winTo, days: winDays } = scoreWin;
     if (!winFrom || !winTo || !winDays || !standings.list.length) return EMPTY;
-    const keyFn = effStandMode === "leader" ? (r) => r.leader : (r) => r.supervisor;
+    // The board, the chip's baseline and every spark day must be ranked by
+    // EXACTLY one rule, or a place delta describes the difference between two
+    // measurements instead of movement. So the unit composition travels here
+    // too, over the same roster the standings were built from.
+    const slotsFor = (rs, ds) => (effStandMode === "leader"
+      ? slotsBy(rs, (r) => r.leader, cutLeaders, ds)
+      : unitSlots(rs, rosterUnits, cutLeaders, cutUnits, ds));
     const prevFrom = isoShift(winFrom, -winDays), prevTo = isoShift(winFrom, -1);
     const weekAgo = isoShift(winTo, -6);
     const sparkFrom = winFrom < weekAgo ? winFrom : weekAgo;
@@ -2851,7 +2997,7 @@ export default function Leaders() {
     let prev = null, prevSeen = null;
     if (prevRows.length) {
       const prevDays = Array.from({ length: winDays }, (_, i) => isoShift(prevFrom, i));
-      const scored = scoreSlots(slotsBy(prevRows, keyFn, keyCuts, prevDays), winDays);
+      const scored = scoreSlots(slotsFor(prevRows, prevDays), winDays);
       prevSeen = onRoster(scored, prevFrom);
       prev = new Map(rankPlaces(scored, standMetric).map((e) => [e.name, e.place]));
     }
@@ -2865,7 +3011,7 @@ export default function Leaders() {
       // `off` by then or a cut person's rolling denominator never shrinks.
       const rollDays = Array.from(
         { length: spanDays(rollFrom, sparkTo) }, (_, i) => isoShift(rollFrom, i));
-      const byPerson = slotsBy(rollRows, keyFn, keyCuts, rollDays);
+      const byPerson = slotsFor(rollRows, rollDays);
       const names = new Set(roster);
       for (const n of byPerson.keys()) names.add(n);
       const allNames = [...names];
@@ -2890,10 +3036,15 @@ export default function Leaders() {
           if (!p) continue;
           const a = acc.get(name);
           const came = p.days.get(d);
-          if (came) { a.sum += came.sum / came.n; a.n++; }
+          if (came) a.sum += came.sum / came.n;
+          // `a.n` is Barqarorlik's numerator and only a day the key actually
+          // FILED belongs in it — for a unit that is a smaller set than the
+          // days it scored on (see `unitSlots`).
+          if (filedOn(p, d)) a.n++;
           if (p.off.has(d)) a.x++;
           const left = gone && p.days.get(gone);
-          if (left) { a.sum -= left.sum / left.n; a.n--; }
+          if (left) a.sum -= left.sum / left.n;
+          if (gone && filedOn(p, gone)) a.n--;
           if (gone && p.off.has(gone)) a.x--;
         }
         if (i < head) return;
@@ -2911,7 +3062,7 @@ export default function Leaders() {
     }
     return { prev, prevSeen, sparks };
   }, [rows, scoreWin, dataMax, effStandMode, standMetric, standings, effShift,
-      effSup, effLeader, cutLeaders, cutUnits]);
+      effSup, effLeader, cutLeaders, cutUnits, rosterUnits]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
   // which drops the three who need help into the card row (see StandCard).

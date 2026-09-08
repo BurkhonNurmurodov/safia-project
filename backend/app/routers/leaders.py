@@ -677,52 +677,74 @@ def get_leaders(
 
     # Who was SUPPOSED to file. The feed above answers "what was submitted", and
     # nothing on the platform answered "by whom, on a day where the answer was
-    # nothing" — which is the only question the exclusions tab can build a
-    # missing day from. Served to ADMINS alone: it is the roster of every leader
-    # on the platform, the tab that needs it is admin-only, and the endpoint
-    # that acts on it refuses anybody else. The supervisor spelling is
-    # `sup_display`, the same one the rows carry, so a day named here lands in
-    # the unit bucket its leader's filed days land in.
+    # nothing". Two readers need that now: the exclusions tab, which builds a
+    # missing day from it, and the dashboard's SUPERVISOR ranking, whose unit
+    # day is the mean over everyone who owed a checklist — a leader who filed
+    # nothing leaves no row, so without this a unit where one of three leaders
+    # filed read 100% on both columns. The supervisor spelling is `sup_display`,
+    # the same one the rows carry, so a leader named here lands in the unit
+    # bucket their filed days land in.
+    #
+    # **Scoped EXACTLY like the rows above**, and that is load-bearing rather
+    # than merely tidy: the client counts a roster member with no row as a miss,
+    # so a roster wider than the feed it is read against invents missing days
+    # for people whose submissions this viewer was never handed. A supervisor
+    # gets their own unit, a leader gets themselves, and everyone the row pass
+    # leaves alone (admin, shift-manager, top-manager, a «see all» grantee) gets
+    # the platform, exactly as before.
     by_unit = {m.id: m for m in managers}
     leader_profiles = (db.query(RoleProfile)
                        .filter(RoleProfile.role == "leader",
                                RoleProfile.manager_id.isnot(None))
                        .order_by(RoleProfile.name).all())
 
+    scoped_profiles = leader_profiles
+    if role == "supervisor" and not sees_all:
+        scoped_profiles = [p for p in leader_profiles
+                           if p.manager_id == payload.get("role_id")]
+    elif role == "leader" and not sees_all:
+        scoped_profiles = [p for p in leader_profiles if p.id in my_pids]
+
+    is_admin = role == "admin"
+
     roster = []
-    if role == "admin":
-        for p in leader_profiles:
-            unit = by_unit.get(p.manager_id)
-            # An archived unit keeps its history and leaves every picker — a
-            # leader nobody can file for is not a leader with missing days.
-            if unit is None or unit.archived:
-                continue
-            # The decision that stopped this leader counting, if there is one.
-            # Flattened onto the entry rather than nested, because the tab that
-            # reads it renders three plain table columns and every other roster
-            # field is flat. Only an admin is handed the roster, and only the
-            # admin tab writes one.
-            cut = (cuts.get(leader_cutoffs.person_key(p.id, None))
-                   or cuts.get(leader_cutoffs.person_key(None, p.name)))
-            roster.append({
-                "id": p.id,
-                "name": p.name,
-                "manager_id": p.manager_id,
-                "supervisor": sup_display.get(p.manager_id) or unit.name,
-                "shift": unit.shift,
-                # What this leader OWES on a day their unit files per cell:
-                # one checklist per cell, so «Topshirilmagan» counts the cells
-                # they did not file rather than a single missing day. The floor
-                # travels with it because the answer changes on that date and
-                # the client scores whole periods — a leader owed one checklist
-                # on Monday and three from Tuesday.
-                "cell_from": cell_floors.get(p.manager_id) or None,
-                "cells": [{"id": c.id, "code": c.verifix_code}
-                          for c in roster_cells.get(p.id, [])],
-                "cutoff": str(cut.from_date)[:10] if cut else None,
-                "cutoff_reason": (cut.reason or "") if cut else None,
-                "cutoff_by": (cut.set_by or None) if cut else None,
-            })
+    for p in scoped_profiles:
+        unit = by_unit.get(p.manager_id)
+        # An archived unit keeps its history and leaves every picker — a
+        # leader nobody can file for is not a leader with missing days.
+        if unit is None or unit.archived:
+            continue
+        # The decision that stopped this leader counting, if there is one.
+        # Flattened onto the entry rather than nested, because the tab that
+        # reads it renders three plain table columns and every other roster
+        # field is flat. Only the admin tab WRITES one; the supervisor
+        # ranking reads it to know which days a cut leader no longer owed.
+        cut = (cuts.get(leader_cutoffs.person_key(p.id, None))
+               or cuts.get(leader_cutoffs.person_key(None, p.name)))
+        roster.append({
+            "id": p.id,
+            "name": p.name,
+            "manager_id": p.manager_id,
+            "supervisor": sup_display.get(p.manager_id) or unit.name,
+            "shift": unit.shift,
+            # What this leader OWES on a day their unit files per cell:
+            # one checklist per cell, so «Topshirilmagan» counts the cells
+            # they did not file rather than a single missing day. The floor
+            # travels with it because the answer changes on that date and
+            # the client scores whole periods — a leader owed one checklist
+            # on Monday and three from Tuesday.
+            "cell_from": cell_floors.get(p.manager_id) or None,
+            "cells": [{"id": c.id, "code": c.verifix_code}
+                      for c in roster_cells.get(p.id, [])],
+            "cutoff": str(cut.from_date)[:10] if cut else None,
+            # The WHY and the WHO of the decision are the admin tab's own
+            # columns. Every other reader needs only to know that this
+            # leader stopped owing reports and from when: a free-text note
+            # an admin wrote about a person is not something a ranking
+            # needs in order to count days.
+            "cutoff_reason": (cut.reason or "") if cut and is_admin else None,
+            "cutoff_by": (cut.set_by or None) if cut and is_admin else None,
+        })
 
     # ── who stopped counting, and from when ──────────────────────────────────
     # THE load-bearing half of the cutoff, and the one thing rows cannot carry.
@@ -829,10 +851,12 @@ def get_leaders(
     # the unit: its day still stands on the two who file, which is what the
     # client's "a date with a real slot is not off" pass already says.
     #
-    # Computed here and not on the client because it cannot be: the client is
-    # handed the cut leaders, never the unit's full roster (`roster` is admin
-    # only), so it cannot tell "all of them" from "the only one I was told
-    # about".
+    # Computed here and not on the client because it cannot be: the roster
+    # served above is SCOPED to the viewer, and this census has to be taken
+    # over every leader and every row — a leader viewer holding one row of
+    # their unit must not read their whole unit as gone. It also folds in
+    # `unit_filers` below, i.e. people who file but resolve to no profile at
+    # all, whom no roster can see.
     unit_members: dict[int, list] = {}
     for p in leader_profiles:
         unit = by_unit.get(p.manager_id)
