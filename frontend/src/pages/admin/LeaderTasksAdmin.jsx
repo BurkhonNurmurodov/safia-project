@@ -75,6 +75,10 @@ const COLS = [
 // Every field the chain resolves, in the payload's own spelling. Used to build
 // the shift TEMPLATE — the value most of a shift's units carry — which is the
 // one level in the strip the data model does not have a table for.
+// What an OPEN row spells out. The two long texts (description, criteria) are
+// printed in full underneath instead of squeezed into a grid cell.
+const DETAIL_ROWS = COLS.filter((c) => !["desc", "crit"].includes(c.k));
+// Every field the chain resolves, in the payload's own spelling. Used to build
 const FIELD_KEYS = [
   "enabled", "weight", "min_media", "proof_kind", "win_from", "win_to",
   "date_check", "time_check", "day_check", "deadline", "description", "criteria",
@@ -691,6 +695,22 @@ export default function LeaderTasksAdmin() {
       : r.level === "supervisor" ? (lvl.kind === "shift" ? `s${lvl.shift}` : "unit") : "std";
   };
   const exIsOwn = (lvl, tid) => exTag(lvl, tid) === levelKey(lvl);
+
+  // WHICH level decided a field, walking the chain outwards from `lvl`. The
+  // expanded row prints this beside every inherited value, so «where did this
+  // come from» is answered on the value itself rather than reconstructed.
+  const fieldOrigin = (lvl, tid, keys) => {
+    const has = (l) => keys.some((k) => ownKeys(l, tid).has(k));
+    if (lvl.kind === "leader") {
+      if (has(lvl)) return "leader";
+      const u = { kind: "unit", id: lvl.mid, mid: lvl.mid, shift: lvl.shift };
+      if (has(u)) return "unit";
+    }
+    if (lvl.kind === "unit" && has(lvl)) return "unit";
+    const sh = lvl.shift;
+    if (sh && keys.some((k) => tplFor(sh, tid, k))) return `s${sh}`;
+    return "std";
+  };
 
   // The resolved rule at the level on screen.
   const resolved = (lvl, tid) => (lvl.kind === "leader" ? lv(lvl.id, lvl.mid, tid)
@@ -2102,10 +2122,49 @@ export default function LeaderTasksAdmin() {
                 {isOpen && (
                   <div id={`ltask-body-${td.id}`} className="px-4 pb-4 -mt-1">
                     <div className="ml-9 pl-3.5" style={{ borderLeft: "2px solid var(--border-md)" }}>
-                      <p className="text-[12.5px] leading-relaxed mb-2" style={{ color: "var(--text-3)" }}>
+                      {/* Opening a row must SHOW the task, not restate the
+                          summary it already carries. The collapsed line names
+                          the few rules worth glancing at; expanded, every rule
+                          is spelled out with the level that decided it, so the
+                          whole answer can be read without opening the editor —
+                          «details» that need a modal to be seen are not open. */}
+                      <dl className="grid gap-x-6 gap-y-2 mb-3"
+                        style={{ gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))" }}>
+                        {DETAIL_ROWS.map((c) => {
+                          const own = ownKeys(level, td.id);
+                          const mine = level.kind !== "std" && c.keys.some((k) => own.has(k));
+                          const orig = c.keys.length ? fieldOrigin(level, td.id, c.keys) : null;
+                          return (
+                            <div key={c.k} className="min-w-0">
+                              <dt className="text-[10.5px] uppercase tracking-wider mb-0.5"
+                                style={{ color: "var(--text-4)" }}>{t(`admin.ltasks.col.${c.k}`)}</dt>
+                              <dd className="text-[12.5px] leading-snug m-0 break-words"
+                                style={{ color: mine ? "var(--text-1)" : "var(--text-2)",
+                                  fontWeight: mine ? 600 : 400 }}>
+                                {showVal(c.k, r, level, td.id)}
+                                {!mine && orig && orig !== levelKey(level) && (
+                                  <span className="ml-1.5 text-[10.5px]" style={{ color: "var(--text-4)" }}>
+                                    · {tagLabel(orig)}
+                                  </span>
+                                )}
+                              </dd>
+                            </div>
+                          );
+                        })}
+                      </dl>
+
+                      {/* The two texts a leader and the AI read, in full — the
+                          one place on the page they are not clipped. */}
+                      <p className="text-[12.5px] leading-relaxed mb-1.5" style={{ color: "var(--text-3)" }}>
                         <b style={{ color: "var(--text-2)" }}>{t("admin.ltasks.groupLeader")}:</b>{" "}
                         {r.description || r.criteria || t("admin.ltasks.empty")}
                       </p>
+                      {r.criteria && r.criteria !== r.description && (
+                        <p className="text-[12.5px] leading-relaxed mb-2" style={{ color: "var(--text-3)" }}>
+                          <b style={{ color: "var(--text-2)" }}>{t("admin.ltasks.criteria")}:</b>{" "}
+                          {r.criteria}
+                        </p>
+                      )}
 
                       {rows.length === 0 ? (
                         <p className="text-[12px] py-1" style={{ color: "var(--text-4)" }}>
