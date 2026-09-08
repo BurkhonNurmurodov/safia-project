@@ -1221,6 +1221,8 @@ def add_education_thumb_url() -> None:
     try:
         db.execute(text(
             "ALTER TABLE education_lessons ADD COLUMN IF NOT EXISTS thumb_url TEXT"))
+        db.execute(text(
+            "ALTER TABLE education_lessons ADD COLUMN IF NOT EXISTS access VARCHAR(16)"))
         db.commit()
     except Exception:
         db.rollback()

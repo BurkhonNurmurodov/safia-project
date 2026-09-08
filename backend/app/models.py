@@ -3525,6 +3525,14 @@ class EducationLesson(Base):
     # an ordinary state — a private video, a provider that did not answer — and
     # the card draws its own poster for it. Never fetched on a read path.
     thumb_url = Column(Text, nullable=True)
+    # Whether the video resolves for an ANONYMOUS viewer, probed once at publish
+    # time — "public" | "restricted" | "unknown" (see services/education_video).
+    # A Loom video is workspace-private by default and a private embed renders
+    # as a black rectangle for everyone except the admin who published it, whose
+    # browser holds a Loom session. Storing the answer is what lets the register
+    # say which lessons are broken for their audience, instead of each leader
+    # discovering it alone.
+    access = Column(String(16), nullable=True)
 
     created_by_profile = Column(String(80), nullable=True)  # "role:id" of the author
     created_by_name = Column(String(160), nullable=True)    # snapshotted; a rename must not rewrite history

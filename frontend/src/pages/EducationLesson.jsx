@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Users, Eye, ExternalLink, ChevronDown, GraduationCap } from "lucide-react";
+import { ArrowLeft, Users, Eye, ExternalLink, ChevronDown, GraduationCap, AlertTriangle } from "lucide-react";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 import Layout from "../components/layout/Layout";
@@ -104,6 +104,49 @@ export default function EducationLesson() {
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-4">
             <VideoEmbed embed={lesson.embed} provider={lesson.provider} title={lesson.title} />
+
+            {/* A black player is never a dead end. The embed can fail for
+                reasons this page cannot see — the video is private, the plant's
+                network blocks the CDN, an in-app browser refuses the frame —
+                and none of them announce themselves: the iframe is cross-origin,
+                so there is no load error to catch. So the way out is ALWAYS
+                offered rather than shown on a failure that cannot be detected. */}
+            <p className="text-[11px]" style={{ color: "var(--text-4)" }}>
+              {t("education.player.trouble")}{" "}
+              <a
+                href={lesson.watch}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 underline underline-offset-2"
+                style={{ color: "var(--brand)" }}
+              >
+                {t("education.player.openIn").replace("{provider}", meta.label || "")}
+                <ExternalLink size={10} aria-hidden />
+              </a>
+            </p>
+
+            {/* Admin-only: the probe said this video does not resolve for an
+                anonymous viewer, so the class is looking at a black rectangle.
+                Named here as well as on the card, because this is the page an
+                admin opens when somebody reports it. */}
+            {lesson.access === "restricted" && (
+              <p
+                className="flex items-start gap-2 rounded-xl px-3 py-2 text-xs"
+                style={{
+                  background: "color-mix(in srgb, #eab308 14%, transparent)",
+                  border: "1px solid color-mix(in srgb, #eab308 45%, transparent)",
+                  color: "var(--text-1)",
+                }}
+                role="status"
+              >
+                <AlertTriangle size={14} aria-hidden className="mt-px shrink-0"
+                               style={{ color: "#eab308" }} />
+                <span>
+                  <b>{t("education.access.warnTitle")}</b>{" "}
+                  {t("education.access.warnBody")}
+                </span>
+              </p>
+            )}
 
             <div className="space-y-2">
               <h1 className="text-xl font-semibold leading-snug" style={{ color: "var(--text-1)" }}>

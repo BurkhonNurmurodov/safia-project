@@ -80,6 +80,14 @@ export default function LessonWizard({ open, lesson, onClose, onSubmit, saving, 
   });
 
   const urlOk = !!resolved?.ok;
+  // The provider answered "no such video" to an anonymous caller. A Loom video
+  // is workspace-private by DEFAULT and its embed renders as a black rectangle
+  // for everyone who lacks access — while playing perfectly for the admin who
+  // published it, whose browser holds a Loom session. This is the one moment
+  // that can be said before a class is assigned something they cannot watch.
+  // It WARNS and never blocks: "unknown" is not "restricted", and an admin may
+  // know something the probe cannot (a video shared to the company domain).
+  const urlPrivate = urlOk && resolved?.access === "restricted";
   const urlBad = debounced.length > 3 && !resolving && resolved && !resolved.ok;
 
   // ── the audience tree ────────────────────────────────────────────────────
@@ -232,6 +240,25 @@ export default function LessonWizard({ open, lesson, onClose, onSubmit, saving, 
               )}
             </div>
           </FormField>
+
+          {urlPrivate && (
+            <p
+              className="flex items-start gap-2 rounded-xl px-3 py-2 text-xs"
+              style={{
+                background: "color-mix(in srgb, #eab308 14%, transparent)",
+                border: "1px solid color-mix(in srgb, #eab308 45%, transparent)",
+                color: "var(--text-1)",
+              }}
+              role="status"
+            >
+              <AlertTriangle size={14} aria-hidden className="mt-px shrink-0"
+                             style={{ color: "#eab308" }} />
+              <span>
+                <b>{t("education.access.warnTitle")}</b>{" "}
+                {t("education.access.warnBody")}
+              </span>
+            </p>
+          )}
 
           {/* The preview is the proof the link resolved. Without it the admin
               finds out at publish time — after the audience has been picked. */}

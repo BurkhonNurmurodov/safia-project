@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Pencil, Archive, ArchiveRestore, Users, Eye } from "lucide-react";
+import { Pencil, Archive, ArchiveRestore, Users, Eye, EyeOff } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { LessonPoster, PlayBadge, PROVIDER_META } from "./VideoEmbed";
 
@@ -57,6 +57,18 @@ export default function LessonCard({ lesson, canManage, onEdit, onArchive, onRes
             style={{ background: "rgba(0,0,0,0.62)", color: "#fff" }}
           >
             {t("education.archived")}
+          </span>
+        )}
+        {/* Admin-only: this video does not resolve for an anonymous viewer, so
+            everyone it was assigned to sees a black player. Worth saying on the
+            card, because that is where an admin scans for what is wrong. */}
+        {canManage && lesson.access === "restricted" && (
+          <span
+            className="absolute left-2 bottom-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+            style={{ background: "#eab308", color: "#1a1a1a" }}
+            title={t("education.access.chipHint")}
+          >
+            <EyeOff size={11} aria-hidden /> {t("education.access.chip")}
           </span>
         )}
         {meta.label && (

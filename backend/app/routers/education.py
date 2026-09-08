@@ -201,6 +201,10 @@ def _lesson_json(db: Session, lesson: EducationLesson, *, viewer: Optional[str],
         "audience": len(targets),
     }
     if admin:
+        # Only an admin is told the video is unviewable: it is a fact about the
+        # publishing, not about the lesson, and the person who can fix it is the
+        # one who shared the video.
+        out["access"] = lesson.access
         # Only an admin is handed the audience itself: it names who has been
         # given which training, which is nobody else's business.
         out["targets"] = targets
@@ -333,7 +337,12 @@ def resolve(body: ResolveIn, payload: dict = Depends(require_page(PAGE))):
     never be two different readings of one URL."""
     _require_admin(payload)
     try:
-        return {"ok": True, **education_video.parse(body.url)}
+        info = education_video.parse(body.url)
+        # The probe is what makes the preview worth having: it is the only
+        # moment the platform can tell the admin that the video they are about
+        # to assign is private, while they can still fix the sharing setting.
+        return {"ok": True, **info,
+                **education_video.probe(info["provider"], info["video_id"])}
     except education_video.BadVideoUrl as e:
         return {"ok": False, "reason": str(e),
                 "providers": list(education_video.PROVIDERS)}
@@ -435,6 +444,10 @@ def create_lesson(body: LessonIn, db: Session = Depends(get_db),
 
     keys = _clean_targets(body.targets)
     author_key = viewer_profile_key(db, payload)
+    # ONE probe: the poster and whether the video is viewable by anyone but the
+    # publisher. Both are facts about this video at this moment, so they are
+    # asked and stored together.
+    probe = education_video.probe(media["provider"], media["video_id"])
     lesson = EducationLesson(
         title=body.title.strip(),
         url=body.url.strip(),
@@ -444,7 +457,8 @@ def create_lesson(body: LessonIn, db: Session = Depends(get_db),
         description_text=(body.description_text or "").strip() or None,
         created_by_profile=author_key,
         created_by_name=profile_display_name(db, author_key),
-        thumb_url=education_video.fetch_thumb(media["provider"], media["video_id"]),
+        thumb_url=probe["thumb"],
+        access=probe["access"],
     )
     db.add(lesson)
     db.flush()
@@ -480,14 +494,14 @@ def update_lesson(lesson_id: int, body: LessonIn, db: Session = Depends(get_db),
     keys = _clean_targets(body.targets)
     after = set(keys)
 
-    if (lesson.provider, lesson.video_id) != (media["provider"], media["video_id"]):
-        lesson.thumb_url = education_video.fetch_thumb(
-            media["provider"], media["video_id"])
-    elif not lesson.thumb_url:
-        # A lesson published before the poster was resolved (or one whose
-        # look-up failed that day) gets another chance on any edit.
-        lesson.thumb_url = education_video.fetch_thumb(
-            lesson.provider, lesson.video_id)
+    changed = (lesson.provider, lesson.video_id) != (media["provider"], media["video_id"])
+    if changed or not lesson.thumb_url or not lesson.access:
+        # Re-probe when the video changed, and also when a previous look-up came
+        # back empty — a lesson published before this existed, or one whose
+        # sharing setting has since been FIXED, gets its answer on any edit.
+        p = education_video.probe(media["provider"], media["video_id"])
+        lesson.thumb_url = p["thumb"] or (None if changed else lesson.thumb_url)
+        lesson.access = p["access"]
     lesson.title = body.title.strip()
     lesson.url = body.url.strip()
     lesson.provider = media["provider"]

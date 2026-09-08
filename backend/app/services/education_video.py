@@ -171,11 +171,84 @@ def rebuild(provider: str, video_id: str) -> dict:
 # oEmbed endpoint, and the answer is STORED on the lesson. Nothing is fetched
 # on a read path.
 
+# Every provider publishes an oEmbed endpoint, and its answer is the ONE probe
+# this module makes. It does two jobs at once:
+#
+#   * the POSTER — Loom's and Vimeo's thumbnail URLs carry an opaque hash that
+#     only this call yields;
+#   * the ACCESS — a 2xx means the video resolves for an anonymous caller, i.e.
+#     for everybody. A 4xx means it does not.
+#
+# That second job is why the call is worth making even for YouTube, whose
+# poster needs no lookup. A Loom video is workspace-private by DEFAULT, and a
+# private embed renders as a BLACK RECTANGLE for anyone without access — while
+# playing perfectly for the admin who published it, because their browser holds
+# a Loom session. Without this probe the platform cannot tell the difference,
+# and the people who find out are the leaders it was assigned to.
 _OEMBED = {
+    "youtube": "https://www.youtube.com/oembed?format=json&url={url}",
     "loom": "https://www.loom.com/v1/oembed?url={url}",
     "vimeo": "https://vimeo.com/api/oembed.json?url={url}",
 }
+
+# access values, in the payloads and on the lesson row
+PUBLIC = "public"          # oEmbed resolved it for an anonymous caller
+RESTRICTED = "restricted"  # it answered "no such video, to you"
+UNKNOWN = "unknown"        # we could not ask (network, timeout, no endpoint)
 _HTTP_TIMEOUT = 6.0
+
+
+def probe(provider: str, video_id: str) -> dict:
+    """``{"access": …, "thumb": url|None}`` — one oEmbed call, both answers.
+
+    Best effort by design: it runs inside the admin's publish request, so it is
+    tightly timed out, and anything unexpected degrades to UNKNOWN rather than
+    failing the publish. UNKNOWN is deliberately NOT treated as restricted — a
+    flaky network must not put a scary warning on a perfectly public video.
+    """
+    out = {"access": UNKNOWN, "thumb": None}
+    tmpl = _OEMBED.get(provider)
+    watch = rebuild(provider, video_id).get("watch")
+    if not tmpl or not watch:
+        return out
+
+    data = None
+    try:
+        import httpx
+
+        r = httpx.get(tmpl.format(url=quote(watch, safe="")),
+                      timeout=_HTTP_TIMEOUT, follow_redirects=True)
+        if r.status_code == 200:
+            out["access"] = PUBLIC
+            try:
+                data = r.json()
+            except Exception:
+                data = None
+        elif 400 <= r.status_code < 500:
+            # The provider answered, and the answer is "not for you".
+            out["access"] = RESTRICTED
+            return out
+    except Exception:
+        logger.info("education: oembed probe failed for %s/%s", provider, video_id,
+                    exc_info=True)
+        return out
+
+    # YouTube's poster is derivable and more predictable than oEmbed's, so it is
+    # built rather than read back.
+    if provider == "youtube":
+        out["thumb"] = _verify(f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg")
+        return out
+
+    url = (data or {}).get("thumbnail_url")
+    if not isinstance(url, str) or not url.startswith("https://"):
+        return out
+    # Loom answers with an ANIMATED GIF preview — 5.4 MB for a one-minute
+    # video, which is not a thing to put twenty of in a grid. The same key with
+    # a .jpg extension is the static frame (~110 KB). The GIF is never used as
+    # a fallback, because the weight is the whole objection.
+    out["thumb"] = _verify(url[: -len(".gif")] + ".jpg") if url.endswith(".gif") \
+        else _verify(url)
+    return out
 
 
 def fetch_thumb(provider: str, video_id: str) -> Optional[str]:
@@ -190,39 +263,7 @@ def fetch_thumb(provider: str, video_id: str) -> Optional[str]:
     Never returns a URL it has not just fetched successfully, so a stored
     thumbnail cannot render as a broken image.
     """
-    if provider == "youtube":
-        return _verify(f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg")
-
-    tmpl = _OEMBED.get(provider)
-    if not tmpl:
-        return None
-    watch = rebuild(provider, video_id).get("watch")
-    if not watch:
-        return None
-    try:
-        import httpx
-
-        r = httpx.get(tmpl.format(url=quote(watch, safe="")),
-                      timeout=_HTTP_TIMEOUT, follow_redirects=True)
-        if r.status_code != 200:
-            return None
-        url = (r.json() or {}).get("thumbnail_url")
-    except Exception:
-        logger.info("education: oembed lookup failed for %s/%s", provider, video_id,
-                    exc_info=True)
-        return None
-    if not isinstance(url, str) or not url.startswith("https://"):
-        return None
-
-    # Loom answers with an ANIMATED GIF preview — 5.4 MB for a one-minute
-    # video, which is not a thing to put twenty of in a grid. The same key with
-    # a .jpg extension is the static frame (~110 KB) and is what we want; if it
-    # is ever absent the GIF is NOT used as a fallback, because the weight is
-    # the whole objection.
-    if url.endswith(".gif"):
-        still = _verify(url[: -len(".gif")] + ".jpg")
-        return still
-    return _verify(url)
+    return probe(provider, video_id)["thumb"]
 
 
 def _verify(url: str) -> Optional[str]:
