@@ -1968,72 +1968,10 @@ class CatalogBody(BaseModel):
     active: Optional[bool] = None
 
 
-@router.put("/admin/production/catalog/{prod_id}")
-def admin_update_catalog(prod_id: int, body: CatalogBody,
-                         _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
-    p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
-    if not p:
-        raise HTTPException(status_code=404, detail="product not found")
-    was = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
-           "phase": p.op, "enabled": p.active,
-           "minutes": float(p.labor_time) if p.labor_time is not None else None}
-    # The unit's catalog as it stands BEFORE the edit. Four of these fields are
-    # what the line's stored plan/fact are keyed by, so the old identity is
-    # unreadable the moment they move — snapshot it here, carry the values onto
-    # the new identity below (_carry_manual_quantities). `op` and `active` are
-    # not part of any key, so an edit touching only those costs nothing.
-    before = (_catalog_snapshot(db, p.manager_id)
-              if any(v is not None for v in (body.labor_time, body.name,
-                                             body.sap_code, body.work_center))
-              else None)
-    if body.labor_time is not None:
-        p.labor_time = body.labor_time
-    if body.name is not None:
-        p.name = body.name
-    # work_center is the (NOT NULL) other half of the daily key, so it can never
-    # be blanked. The SAP code CAN — a code-less line is legitimate, and the key
-    # then falls back to the name (daily_key), so the line still has an identity.
-    # Re-pointing either one re-points which quantities this line reads, so the
-    # values a person typed are carried onto the new key below; the SAP snapshot
-    # stays where the file put it (_carry_manual_quantities says why).
-    if body.sap_code is not None:
-        sap = body.sap_code.strip()
-        if not sap and not (p.name or "").strip():
-            raise HTTPException(status_code=400, detail="a line without a SAP code needs a name")
-        p.sap_code = sap
-    if body.work_center is not None:
-        wc = body.work_center.strip()
-        if not wc:
-            raise HTTPException(status_code=400, detail="work_center cannot be empty")
-        p.work_center = wc
-    # op is optional metadata — an empty string clears the pin and hands the cell
-    # back to whatever the day's фаза upload says.
-    if body.op is not None:
-        p.op = body.op.strip() or None
-    if body.active is not None:
-        p.active = body.active
-    # Everything a person typed for this line follows it onto its new identity;
-    # without this the reader misses and the cell reads 0 on every date at once.
-    carried = 0
-    if before is not None:
-        after = [({**d, "sap_code": p.sap_code, "name": p.name,
-                   "work_center": p.work_center, "labor_time": p.labor_time}
-                  if d["id"] == p.id else d) for d in before]
-        carried = _carry_manual_quantities(db, p.manager_id, before, after)
-    db.commit()
-    now = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
-           "phase": p.op, "enabled": p.active,
-           "minutes": float(p.labor_time) if p.labor_time is not None else None}
-    action_log.enrich(
-        target_kind="catalog", target_id=p.id, target_name=p.sap_code or p.name,
-        unit_id=p.manager_id,
-        details=[("sap_code", p.sap_code or None), ("work_center", p.work_center),
-                 ("carried_values", carried or None)],
-        changes=[(k, was[k], now[k]) for k in now if was[k] != now[k]],
-    )
-    return {"ok": True, "carried": carried}
-
-
+# REGISTERED BEFORE `/catalog/{prod_id}`, and it has to be: FastAPI matches
+# routes in registration order, so a PUT to «/catalog/bulk» would otherwise
+# bind prod_id="bulk" and die in int validation — a 422 on an endpoint that
+# looks present. Same «specific before generic» rule action_log.ROUTES states.
 # One press must not be able to re-file a whole unit by accident, and a batch is
 # applied in ONE transaction, so it is bounded. A unit's catalog runs to a few
 # hundred lines, so this is a guard against a mis-built request, not a limit an
@@ -2127,6 +2065,72 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                  ("carried_values", carried or None)],
     )
     return {"ok": True, "updated": len(prods), "carried": carried}
+
+
+@router.put("/admin/production/catalog/{prod_id}")
+def admin_update_catalog(prod_id: int, body: CatalogBody,
+                         _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
+    p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="product not found")
+    was = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
+           "phase": p.op, "enabled": p.active,
+           "minutes": float(p.labor_time) if p.labor_time is not None else None}
+    # The unit's catalog as it stands BEFORE the edit. Four of these fields are
+    # what the line's stored plan/fact are keyed by, so the old identity is
+    # unreadable the moment they move — snapshot it here, carry the values onto
+    # the new identity below (_carry_manual_quantities). `op` and `active` are
+    # not part of any key, so an edit touching only those costs nothing.
+    before = (_catalog_snapshot(db, p.manager_id)
+              if any(v is not None for v in (body.labor_time, body.name,
+                                             body.sap_code, body.work_center))
+              else None)
+    if body.labor_time is not None:
+        p.labor_time = body.labor_time
+    if body.name is not None:
+        p.name = body.name
+    # work_center is the (NOT NULL) other half of the daily key, so it can never
+    # be blanked. The SAP code CAN — a code-less line is legitimate, and the key
+    # then falls back to the name (daily_key), so the line still has an identity.
+    # Re-pointing either one re-points which quantities this line reads, so the
+    # values a person typed are carried onto the new key below; the SAP snapshot
+    # stays where the file put it (_carry_manual_quantities says why).
+    if body.sap_code is not None:
+        sap = body.sap_code.strip()
+        if not sap and not (p.name or "").strip():
+            raise HTTPException(status_code=400, detail="a line without a SAP code needs a name")
+        p.sap_code = sap
+    if body.work_center is not None:
+        wc = body.work_center.strip()
+        if not wc:
+            raise HTTPException(status_code=400, detail="work_center cannot be empty")
+        p.work_center = wc
+    # op is optional metadata — an empty string clears the pin and hands the cell
+    # back to whatever the day's фаза upload says.
+    if body.op is not None:
+        p.op = body.op.strip() or None
+    if body.active is not None:
+        p.active = body.active
+    # Everything a person typed for this line follows it onto its new identity;
+    # without this the reader misses and the cell reads 0 on every date at once.
+    carried = 0
+    if before is not None:
+        after = [({**d, "sap_code": p.sap_code, "name": p.name,
+                   "work_center": p.work_center, "labor_time": p.labor_time}
+                  if d["id"] == p.id else d) for d in before]
+        carried = _carry_manual_quantities(db, p.manager_id, before, after)
+    db.commit()
+    now = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
+           "phase": p.op, "enabled": p.active,
+           "minutes": float(p.labor_time) if p.labor_time is not None else None}
+    action_log.enrich(
+        target_kind="catalog", target_id=p.id, target_name=p.sap_code or p.name,
+        unit_id=p.manager_id,
+        details=[("sap_code", p.sap_code or None), ("work_center", p.work_center),
+                 ("carried_values", carried or None)],
+        changes=[(k, was[k], now[k]) for k in now if was[k] != now[k]],
+    )
+    return {"ok": True, "carried": carried}
 
 
 @router.delete("/admin/production/catalog/{prod_id}")
