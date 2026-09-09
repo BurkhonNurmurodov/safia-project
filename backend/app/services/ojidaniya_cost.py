@@ -2,10 +2,13 @@
 
     xarajat(yacheyka, kun) = union_minutes ÷ 60 × odam soni × w(kun)
 
-summed up a three-level tree: brigadir → yacheyka → toifa, with the filed
-events themselves one tap below that. Nothing here is a new measurement — every
-term is a figure the platform already publishes, reached through the module
-that owns it:
+summed up a three-level tree: **toifa → brigadir → yacheyka**, with the filed
+events one tap below the cell row. The register is read CAUSE-first (the
+operator's directive, 2026-09-09) — «what did waiting for this cost, and on
+whose shopfloor» — so a category is a top row and a leaf is one (cell,
+category) pair, which is exactly what the entries modal has always opened on.
+Nothing here is a new measurement — every term is a figure the platform already
+publishes, reached through the module that owns it:
 
 * the MINUTES are ``idle_intervals.merged_spans`` / ``union_minutes``, the same
   union the загрузка reads and the bar-detail modal prints;
@@ -35,6 +38,20 @@ because a minute genuinely has two causes and both deserve to be named. So the
 categories under a cell can total MORE than the cell, and every surface that
 shows them says so. Never "fix" that by summing the categories into the cell:
 the cell figure is the money, and money is not owed twice for one minute.
+
+**Which is why the category tree publishes TWO sums.** With the cause at the
+top level the rows on screen add up to `cat_minutes` / `cat_cost` — a minute
+with two causes is named under both — while the bill stays the union in
+`minutes` / `cost`. They are equal wherever nothing overlapped. Printing only
+the first would overstate what the plant owes; printing only the second would
+leave a column that visibly does not add up. Both are published and the table
+names each.
+
+**Both trees are served.** `rows` is the brigadir-first tree the payload has
+always carried and is folded from the SAME accumulators as `cat_rows`, so the
+two cannot disagree; it is kept because a browser tab still open on an older
+bundle reads it, and a payload answering only in the new shape would hand that
+reader an EMPTY table rather than a stale one.
 
 **Before `zagruzka_source.ZAGRUZKA_FROM` a unit is priced WHOLE, never per
 cell** (the operator's directive, 2026-09-09). The typed «Odam soni fakt» is
@@ -240,10 +257,65 @@ class _Acc:
         }
 
 
+def _fold(rows: Iterable[dict]) -> dict:
+    """Sum finished rows into their parent's figures.
+
+    THE fold, used at every level of both trees and again after the cell pick
+    narrows them — a second spelling is how a brigadir row and the cells under
+    it start reporting different money. `hc` is re-derived from person-minutes
+    (Σ hc·priced ÷ Σ priced), which is the one headcount that reproduces the
+    cost from the minutes beside it, and the hc range is carried up so a folded
+    row can still say the days under it were not all staffed alike.
+    """
+    acc = _Acc()
+    for r in rows:
+        acc.minutes += r["minutes"]
+        acc.priced += r["priced_minutes"]
+        acc.cost += r["cost"] or 0
+        if r["hc"] is not None:
+            acc.person_min += r["hc"] * r["priced_minutes"]
+        for v in (r.get("hc_lo"), r.get("hc_hi")):
+            if v is None:
+                continue
+            acc.hc_lo = v if acc.hc_lo is None else min(acc.hc_lo, v)
+            acc.hc_hi = v if acc.hc_hi is None else max(acc.hc_hi, v)
+    return acc.out()
+
+
+def _rank(r: dict) -> tuple:
+    """Costliest first, then longest. One order for every level of both trees."""
+    return (-(r["cost"] or 0), -r["minutes"])
+
+
+def _totals(rows: list[dict], cat_rows: list[dict], days: int) -> dict:
+    """The KPI figures, and the two sums the table prints under one column.
+
+    `minutes` / `cost` are the MONEY — the union, each minute paid once.
+    `cat_minutes` / `cat_cost` are what the CATEGORY rows add up to, which is
+    larger wherever a minute carried two causes. `days` is the period the reader
+    selected, not the days that happen to hold events: «kunlik o'rtacha» divides
+    by the period.
+    """
+    t = _fold(rows)
+    return {
+        **t,
+        "days": days,
+        "managers": len(rows),
+        "cells": sum(sum(1 for c in r["cells"] if not c.get("pre"))
+                     for r in rows),
+        "categories": len(cat_rows),
+        "cat_minutes": sum(k["minutes"] for k in cat_rows),
+        # No priced minute anywhere ⇒ no cost anywhere: «—», never a 0 that
+        # reads as «this waiting was free».
+        "cat_cost": (sum(k["cost"] or 0 for k in cat_rows)
+                     if t["cost"] is not None else None),
+    }
+
+
 def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
           cats: list[str], rate_for: Callable[[date], Optional[float]],
           pre_rows: Optional[list[dict]] = None) -> dict:
-    """The whole tree for one scope, plus the option lists the filters need.
+    """Both trees for one scope, plus the option lists the filters need.
 
     ``cats`` narrows which events are counted — and therefore the cell and
     brigadir unions too, since a filtered-out stoppage is not part of the answer
@@ -255,6 +327,10 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
     function is the page's one answer to «how many minutes did this unit wait»,
     and it already merges the cells era with the «Смена отчёт» era. They become
     ONE marked row per brigadir; see the module docstring.
+
+    Returns `cat_rows` (toifa → brigadir → yacheyka, the register the tab
+    reads) and `rows` (brigadir → yacheyka → toifa, what the payload has always
+    carried). Both are folded from the same accumulators.
     """
     managers = {m.id: m for m in db.query(Manager).filter(
         Manager.id.in_(manager_ids)).all()} if manager_ids else {}
@@ -348,6 +424,12 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
     # day-close gate and the unit's own source rule, so a day it omitted is a
     # day the page does not report either.
     pre_by_mgr: dict[int, _Acc] = defaultdict(_Acc)
+    # The same days split by CAUSE — a «Смена отчёт» row carries category
+    # minutes, so a pre-floor unit-day can be named under each category it
+    # waited for, which is what the category tree needs to place it. The union
+    # beside it (`pre_by_mgr`) is still the MONEY; these are its slices and, as
+    # everywhere on this tab, they may add up to more.
+    pre_cat: dict[tuple[int, str], _Acc] = defaultdict(_Acc)
     pre_cats: set[str] = set()
     if pre_rows:
         unit_hc = unit_headcount(db, managers, date_from, date_to)
@@ -364,10 +446,16 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
             # Unpicked, it is the day's own total, which is the union.
             minutes = (sum(float(by_cat.get(c) or 0) for c in wanted) if wanted
                        else float(r.get("total") or 0))
-            if minutes <= 0:
-                continue
-            pre_by_mgr[mid].add(round(minutes), unit_hc.get((mid, iso)),
-                                rate_for(date.fromisoformat(iso)))
+            n = unit_hc.get((mid, iso))
+            rate = rate_for(date.fromisoformat(iso))
+            if minutes > 0:
+                pre_by_mgr[mid].add(round(minutes), n, rate)
+            for cat, v in by_cat.items():
+                if wanted and cat not in wanted:
+                    continue
+                cm = round(float(v or 0))
+                if cm > 0:
+                    pre_cat[(mid, cat)].add(cm, n, rate)
 
     rows: list[dict] = []
     for mid in set(cells_by_mgr) | set(pre_by_mgr):
@@ -377,7 +465,7 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
             continue
         # Cells rank by cost among themselves; the lump is a different KIND of
         # row, so it is appended after the sort and always sits last.
-        cell_rows.sort(key=lambda r: (-(r["cost"] or 0), -r["minutes"]))
+        cell_rows.sort(key=_rank)
         pre = pre_by_mgr.get(mid)
         if pre is not None and pre.minutes > 0:
             # Marked, never disguised as a cell: `pre: True` and a NULL
@@ -388,46 +476,69 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
                 "cell_id": None, "code": None, "leader": None, "pre": True,
                 "hc_typed": False, "cat_sum": 0, "cats": [], **pre.out(),
             }]
-        acc = _Acc()
-        for c in cell_rows:
-            acc.minutes += c["minutes"]
-            acc.priced += c["priced_minutes"]
-            acc.cost += c["cost"] or 0
-            if c["hc"] is not None:
-                acc.person_min += c["hc"] * c["priced_minutes"]
-            for v in (c.get("hc_lo"), c.get("hc_hi")):
-                if v is None:
-                    continue
-                acc.hc_lo = v if acc.hc_lo is None else min(acc.hc_lo, v)
-                acc.hc_hi = v if acc.hc_hi is None else max(acc.hc_hi, v)
         rows.append({
             "manager_id": mid,
             "manager": m.name,
             "shift": m.shift,
-            **acc.out(),
+            **_fold(cell_rows),
             "cells": cell_rows,
         })
-    rows.sort(key=lambda r: (-(r["cost"] or 0), -r["minutes"]))
+    rows.sort(key=_rank)
 
-    total = _Acc()
-    for r in rows:
-        total.minutes += r["minutes"]
-        total.priced += r["priced_minutes"]
-        total.cost += r["cost"] or 0
-        if r["hc"] is not None:
-            total.person_min += r["hc"] * r["priced_minutes"]
-        for v in (r.get("hc_lo"), r.get("hc_hi")):
-            if v is None:
+    # ── the category tree: toifa → brigadir → yacheyka ───────────────────────
+    # The leaf is the (cell, category) pair `cat_acc` already holds — the very
+    # figure the old tree showed at its third level and the one the entries
+    # modal opens on — so the restructure re-folds what was computed, it does
+    # not re-measure anything. A cell row here is therefore that cell's minutes
+    # for ONE cause, never its whole union; the union stays the brigadir's bill
+    # and the table's own total.
+    by_cat_mgr: dict[str, dict[int, list[dict]]] = defaultdict(
+        lambda: defaultdict(list))
+    for (cid, cat), acc in cat_acc.items():
+        c = by_cell.get(cid)
+        if not c or acc.minutes <= 0:
+            continue
+        by_cat_mgr[cat][c.manager_id].append({
+            "cell_id": cid, "code": c.verifix_code,
+            "leader": leaders.get(c.leader_id), "hc_typed": hc_typed,
+            **acc.out(),
+        })
+    for (mid, cat), acc in pre_cat.items():
+        if acc.minutes <= 0 or mid not in managers:
+            continue
+        # The pre-floor lump, under the cause it was waiting for. Marked and
+        # cell-less exactly as in the other tree: there is no per-cell answer
+        # behind it and therefore nothing for a tap to open.
+        by_cat_mgr[cat][mid].append({
+            "cell_id": None, "code": None, "leader": None, "pre": True,
+            "hc_typed": False, **acc.out(),
+        })
+
+    cat_rows: list[dict] = []
+    for cat, per_mgr in by_cat_mgr.items():
+        mgr_rows: list[dict] = []
+        for mid, cell_rows in per_mgr.items():
+            m = managers.get(mid)
+            if not m:
                 continue
-            total.hc_lo = v if total.hc_lo is None else min(total.hc_lo, v)
-            total.hc_hi = v if total.hc_hi is None else max(total.hc_hi, v)
+            # Cells rank among themselves; the lump is a different KIND of row
+            # and always sits last, so it is appended after the sort.
+            cell_rows = (sorted((c for c in cell_rows if not c.get("pre")),
+                                key=_rank)
+                         + [c for c in cell_rows if c.get("pre")])
+            mgr_rows.append({
+                "manager_id": mid, "manager": m.name, "shift": m.shift,
+                **_fold(cell_rows), "cells": cell_rows,
+            })
+        mgr_rows.sort(key=_rank)
+        cat_rows.append({"category": cat, **_fold(mgr_rows),
+                         "managers": mgr_rows})
+    cat_rows.sort(key=_rank)
 
     return {
         "rows": rows,
-        "totals": {**total.out(), "days": len(all_days),
-                   "managers": len(rows),
-                   "cells": sum(sum(1 for c in r["cells"] if not c.get("pre"))
-                                for r in rows)},
+        "cat_rows": cat_rows,
+        "totals": _totals(rows, cat_rows, len(all_days)),
         "options": {
             "managers": sorted(
                 ({"id": m.id, "name": m.name, "shift": m.shift}
@@ -502,27 +613,44 @@ def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
     }
 
 
-def retotal(rows: list[dict], base: dict) -> dict:
-    """Re-sum the totals after the caller has narrowed `rows` to a cell pick.
+def narrow(out: dict, cell_ids: Iterable[int]) -> dict:
+    """Apply the cell pick to the FINISHED trees, then re-total.
 
-    The cell filter is applied to the finished tree rather than to the query, so
-    the option lists it is chosen from are not shortened by the choice — which
-    means the totals have to be rebuilt from what survived. Keeping `base`'s
-    `days` is deliberate: the period is what the reader selected, not what
-    happens to have events in it, and «kunlik o'rtacha» divides by the period.
+    The filter lands here rather than on the query so the cell option list it is
+    chosen from is not shortened by its own pick — which means every fold above
+    the leaf has to be rebuilt from what survived. **Both trees are narrowed
+    together**, or one payload would carry two answers describing two scopes;
+    and every parent row is re-folded, not merely re-listed: a brigadir row left
+    at its original figures over a table showing one of its cells states a total
+    the rows under it visibly do not add up to.
+
+    The pre-floor lump carries no cell id and is therefore dropped by any cell
+    pick — a reader who named cells asked about cells, and that row is a whole
+    unit.
     """
-    acc = _Acc()
-    for r in rows:
-        acc.minutes += r["minutes"]
-        acc.priced += r["priced_minutes"]
-        acc.cost += r["cost"] or 0
-        if r["hc"] is not None:
-            acc.person_min += r["hc"] * r["priced_minutes"]
-        for v in (r.get("hc_lo"), r.get("hc_hi")):
-            if v is None:
-                continue
-            acc.hc_lo = v if acc.hc_lo is None else min(acc.hc_lo, v)
-            acc.hc_hi = v if acc.hc_hi is None else max(acc.hc_hi, v)
-    return {**acc.out(), "days": base.get("days", 0), "managers": len(rows),
-            "cells": sum(sum(1 for c in (r.get("cells") or []) if not c.get("pre"))
-                         for r in rows)}
+    keep = set(cell_ids)
+    if not keep:
+        return out
+
+    rows = []
+    for r in out.get("rows") or []:
+        cells = [c for c in r["cells"] if c["cell_id"] in keep]
+        if cells:
+            rows.append({**r, **_fold(cells), "cells": cells})
+
+    cat_rows = []
+    for k in out.get("cat_rows") or []:
+        mgrs = []
+        for m in k["managers"]:
+            cells = [c for c in m["cells"] if c["cell_id"] in keep]
+            if cells:
+                mgrs.append({**m, **_fold(cells), "cells": cells})
+        if mgrs:
+            cat_rows.append({**k, **_fold(mgrs), "managers": mgrs})
+
+    out["rows"], out["cat_rows"] = rows, cat_rows
+    # The period is what the reader selected, not what happens to have events in
+    # it: «kunlik o'rtacha» divides by the period.
+    out["totals"] = _totals(rows, cat_rows,
+                            (out.get("totals") or {}).get("days", 0))
+    return out

@@ -868,17 +868,27 @@ def _cost_cell(ws: Worksheet, row: int, col: int, r: dict, *, indent: int = 0,
 def build_cost_workbook(p: dict) -> BytesIO:
     """The cost of stopped waiting, as the tab lays it out.
 
-    Two sheets and no third: «Umumiy» is the brigadir table under the KPI strip,
-    «Tafsilot» is the same tree flattened so brigadir, yacheyka and toifa are all
-    on one sortable sheet. The events behind a toifa stay one tap away on screen
-    — pulling them in here would mean a query per cell and a file nobody asked
-    for. Every figure arrives already computed (`services/ojidaniya_cost`); this
-    is a formatter and re-derives nothing.
+    Three sheets, and each carries ONE measure: «Umumiy» is the KPI strip over
+    the CATEGORY table the screen leads with (Σ by cause — a minute with two
+    causes is named under both); «Tafsilot» is that tree flattened, toifa ·
+    brigadir · yacheyka, on one sortable sheet; «Brigadirlar» is the UNION bill
+    per unit, i.e. the money, each minute paid once. The two sums differ
+    wherever causes overlapped, so they never share a table — a reader
+    comparing two columns that cannot be compared is what one sheet would
+    invite. The events behind a cell stay one tap away on screen: pulling them
+    in here would mean a query per cell and a file nobody asked for. Every
+    figure arrives already computed (`services/ojidaniya_cost`); this is a
+    formatter and re-derives nothing.
     """
     L = p.get("labels") or {}
     cats = p.get("cats") or {}
     rows = p.get("rows") or []
+    cat_rows = p.get("cat_rows") or []
     tot = p.get("totals") or {}
+
+    def cat_label(name: str) -> str:
+        meaning = cats.get(name)
+        return f"{name} — {meaning}" if meaning else (name or "")
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -904,32 +914,55 @@ def build_cost_workbook(p: dict) -> BytesIO:
     ])
     r += 1
 
-    r = _section(ws, r, 2, 9, L.get("sBySup", "Brigadirlar bo'yicha"),
-                 L.get("sBySupSub", ""))
-    head = _head_row(ws, r, 2, [
-        L.get("cName", "Brigadir"), L.get("cHc", "Odam soni"),
+    r = _section(ws, r, 2, 9, L.get("sByCat", "Toifalar bo'yicha"),
+                 L.get("sByCatSub", ""))
+    _head_row(ws, r, 2, [
+        L.get("cCat", "Toifa"), L.get("cHc", "Odam soni"),
         L.get("cMin", "To'xtash, daq"), L.get("cHrs", "Soat"),
         L.get("cCost", "Xarajat, so'm"), L.get("cShare", "Ulush"),
     ], first_span=3)
     r += 1
     first = r
-    grand = tot.get("cost") or 0
-    for i, row in enumerate(rows):
-        _cost_cell(ws, r, 2, row, label=row.get("manager") or "", band=bool(i % 2))
+    # Shares are taken over Σ CATEGORIES, the column they sit in, so they add to
+    # 100%. Against the union bill they could not: the rows overlap it.
+    cat_grand = tot.get("cat_cost") or 0
+    for i, row in enumerate(cat_rows):
+        # The headcount column stays blank above a cell: a people count folded
+        # over several units is a number nobody typed.
+        _cost_cell(ws, r, 2, {**row, "hc": None},
+                   label=cat_label(row.get("category")), band=bool(i % 2))
         c = ws.cell(r, 9)
-        c.value = (row.get("cost") or 0) / grand if grand else None
+        c.value = (row.get("cost") or 0) / cat_grand if cat_grand else None
         c.number_format = PCT1
         c.font = Font(name=FONT, size=10, color=INK_SOFT)
         c.fill = _fill(BAND if i % 2 else PANEL)
         c.border = BOX
         c.alignment = RIGHT
         r += 1
-    if rows:
+    if cat_rows:
         ws.conditional_formatting.add(
             f"H{first}:H{r - 1}",
             DataBarRule(start_type="num", start_value=0, end_type="max", color=BRAND))
         ws.auto_filter.ref = f"B{first - 1}:I{r - 1}"
+    # What the rows above add up to, named as such…
+    _cost_cell(ws, r, 2,
+               {"hc": None, "minutes": tot.get("cat_minutes"),
+                "hours": round((tot.get("cat_minutes") or 0) / 60.0, 2),
+                "cost": tot.get("cat_cost")},
+               label=L.get("catTotal", "Toifalar yig'indisi"), bold=True)
+    r += 1
+    # …and the bill underneath it, which is smaller wherever a minute carried
+    # two causes. Both are printed, always: one alone is either a column that
+    # does not add up or a total that overstates what is owed.
     _cost_cell(ws, r, 2, {**tot, "hc": None}, label=L.get("total", "Jami"), bold=True)
+    r += 1
+    note = L.get("overlapNote") if (tot.get("cat_minutes") or 0) > (tot.get("minutes") or 0) else ""
+    if note:
+        r += 1
+        ws.row_dimensions[r].height = 15
+        _block(ws, r, 2, r, 9, note,
+               font=Font(name=FONT, size=8.5, italic=True, color=INK_FAINT))
+        r += 1
     ws.freeze_panes = ws.cell(first, 2)
 
     # ── Tafsilot ─────────────────────────────────────────────────────────────
@@ -938,22 +971,26 @@ def build_cost_workbook(p: dict) -> BytesIO:
     r = _banner(ws2, 2, 2, 9, p.get("title", "Ojidaniya xarajati"), p.get("subtitle", ""))
     r = _meta_strip(ws2, r, 2, 9, p.get("scope") or [])
     r += 1
-    r = _section(ws2, r, 2, 9, L.get("sTree", "Brigadir · yacheyka · toifa"),
+    r = _section(ws2, r, 2, 9, L.get("sTree", "Toifa · brigadir · yacheyka"),
                  L.get("sTreeSub", ""))
     _head_row(ws2, r, 2, [
-        L.get("cSup", "Brigadir"), L.get("cCell", "Yacheyka"), L.get("cLeader", "Lider"),
-        L.get("cCat", "Toifa"), L.get("cHc", "Odam soni"),
+        L.get("cCat", "Toifa"), L.get("cSup", "Brigadir"), L.get("cCell", "Yacheyka"),
+        L.get("cLeader", "Lider"), L.get("cHc", "Odam soni"),
         L.get("cMin", "To'xtash, daq"), L.get("cHrs", "Soat"), L.get("cCost", "Xarajat, so'm"),
     ])
     r += 1
     first = r
-    for row in rows:
-        for cell in row.get("cells") or []:
-            for k in cell.get("cats") or []:
+    for row in cat_rows:
+        for mgr in row.get("managers") or []:
+            for cell in mgr.get("cells") or []:
+                # The pre-floor lump is a whole UNIT, not a cell, and says so in
+                # the cell column rather than being dropped: it is money, and a
+                # detail sheet that omits it is short by exactly that much.
                 vals = [
-                    row.get("manager") or "", cell.get("code") or "",
-                    cell.get("leader") or "—",
-                    cats.get(k.get("category")) or k.get("category") or "",
+                    cat_label(row.get("category")), mgr.get("manager") or "",
+                    (L.get("preLabel", "2-sentabrgacha") if cell.get("pre")
+                     else cell.get("code") or ""),
+                    "—" if cell.get("pre") else (cell.get("leader") or "—"),
                 ]
                 for i, v in enumerate(vals):
                     c = ws2.cell(r, 2 + i)
@@ -961,8 +998,8 @@ def build_cost_workbook(p: dict) -> BytesIO:
                     c.font = Font(name=FONT, size=10, color=INK)
                     c.border = BOX
                     c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-                for i, (v, fmt) in enumerate([(k.get("hc"), HC), (k.get("minutes"), MIN),
-                                              (k.get("hours"), HRS), (k.get("cost"), UZS)]):
+                for i, (v, fmt) in enumerate([(cell.get("hc"), HC), (cell.get("minutes"), MIN),
+                                              (cell.get("hours"), HRS), (cell.get("cost"), UZS)]):
                     c = ws2.cell(r, 6 + i)
                     c.value = v if v is not None else "—"
                     c.number_format = fmt
@@ -973,6 +1010,43 @@ def build_cost_workbook(p: dict) -> BytesIO:
     if r > first:
         ws2.auto_filter.ref = f"B{first - 1}:I{r - 1}"
     ws2.freeze_panes = ws2.cell(first, 2)
+
+    # ── Brigadirlar: the UNION bill ──────────────────────────────────────────
+    # A different measure from the two sheets above — each minute paid once —
+    # so it gets a sheet of its own rather than a column beside them.
+    ws3 = _sheet(wb, L.get("shBySup", "Brigadirlar"),
+                 {2: 34, 3: 10, 4: 10, 5: 12, 6: 11, 7: 11, 8: 16, 9: 10})
+    r = _banner(ws3, 2, 2, 9, p.get("title", "Ojidaniya xarajati"), p.get("subtitle", ""))
+    r = _meta_strip(ws3, r, 2, 9, p.get("scope") or [])
+    r += 1
+    r = _section(ws3, r, 2, 9, L.get("sBySup", "Brigadirlar bo'yicha"),
+                 L.get("sBySupSub", ""))
+    _head_row(ws3, r, 2, [
+        L.get("cName", "Brigadir"), L.get("cHc", "Odam soni"),
+        L.get("cMin", "To'xtash, daq"), L.get("cHrs", "Soat"),
+        L.get("cCost", "Xarajat, so'm"), L.get("cShare", "Ulush"),
+    ], first_span=3)
+    r += 1
+    first = r
+    grand = tot.get("cost") or 0
+    for i, row in enumerate(rows):
+        _cost_cell(ws3, r, 2, {**row, "hc": None},
+                   label=row.get("manager") or "", band=bool(i % 2))
+        c = ws3.cell(r, 9)
+        c.value = (row.get("cost") or 0) / grand if grand else None
+        c.number_format = PCT1
+        c.font = Font(name=FONT, size=10, color=INK_SOFT)
+        c.fill = _fill(BAND if i % 2 else PANEL)
+        c.border = BOX
+        c.alignment = RIGHT
+        r += 1
+    if rows:
+        ws3.conditional_formatting.add(
+            f"H{first}:H{r - 1}",
+            DataBarRule(start_type="num", start_value=0, end_type="max", color=BRAND))
+        ws3.auto_filter.ref = f"B{first - 1}:I{r - 1}"
+    _cost_cell(ws3, r, 2, {**tot, "hc": None}, label=L.get("total", "Jami"), bold=True)
+    ws3.freeze_panes = ws3.cell(first, 2)
 
     buf = BytesIO()
     wb.save(buf)

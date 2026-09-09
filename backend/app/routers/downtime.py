@@ -1337,7 +1337,12 @@ def get_downtime_cost(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime", "daily")),
 ):
-    """Brigadir → yacheyka → toifa, with minutes, hours and cost at every level.
+    """Toifa → brigadir → yacheyka, with minutes, hours and cost at every level.
+
+    `cat_rows` is that tree — the register the tab reads, cause first. `rows` is
+    the brigadir-first tree the payload has always carried, folded from the same
+    accumulators and kept so a browser tab still open on an older bundle renders
+    a table rather than an empty one.
 
     `kpi_only` is deliberately absent: EVERY category is priced here, Cat H
     included, because a cell stopped for cleaning pays the same wages as a cell
@@ -1352,17 +1357,9 @@ def get_downtime_cost(
         db, ids, date_from, date_to, cats, wage_rate.resolver(periods),
         pre_rows=_pre_floor_rows(db, payload, date_from, date_to, shift,
                                  manager_id, factory))
-    if cell_id:
-        # Narrowed AFTER the tree is built so the cell option list — and the
-        # cascade the client drives off it — is not shortened by its own pick.
-        keep = set(cell_id)
-        rows = []
-        for r in out["rows"]:
-            cells = [c for c in r["cells"] if c["cell_id"] in keep]
-            if cells:
-                rows.append({**r, "cells": cells})
-        out["rows"] = rows
-        out["totals"] = ojidaniya_cost.retotal(rows, out["totals"])
+    # Narrowed AFTER the trees are built, so the cell option list — and the
+    # cascade the client drives off it — is not shortened by its own pick.
+    out = ojidaniya_cost.narrow(out, cell_id)
     out["rates"] = periods
     out["can_edit_rates"] = payload.get("role") == "admin"
     return out
@@ -1495,13 +1492,8 @@ def export_downtime_cost(
         db, ids, d1, d2, body.cats, wage_rate.resolver(wage_rate.load(db)),
         pre_rows=_pre_floor_rows(db, payload, d1, d2, body.shift,
                                  body.manager_id, body.factory))
+    out = ojidaniya_cost.narrow(out, body.cell_id)
     rows = out["rows"]
-    if body.cell_id:
-        keep = set(body.cell_id)
-        rows = [{**r, "cells": [c for c in r["cells"] if c["cell_id"] in keep]}
-                for r in rows]
-        rows = [r for r in rows if r["cells"]]
-        out["totals"] = ojidaniya_cost.retotal(rows, out["totals"])
 
     tot = dict(out["totals"])
     tot["perDay"] = (round(tot["cost"] / tot["days"])
@@ -1510,7 +1502,7 @@ def export_downtime_cost(
         "title": body.title or "Ojidaniya xarajati",
         "subtitle": body.subtitle or "",
         "scope": body.scope, "labels": body.labels, "cats": body.cats_meta,
-        "rows": rows, "totals": tot,
+        "rows": rows, "cat_rows": out["cat_rows"], "totals": tot,
     }).getvalue()
 
     fname = f"ojidaniya-xarajat-{body.date_from}_{body.date_to}.xlsx"

@@ -29,6 +29,14 @@ import WageRatesModal from "./WageRatesModal";
 /**
  * «Xarajat» — what stopped waiting cost in wages.
  *
+ * The register is read CAUSE-first (the operator's directive, 2026-09-09):
+ * toifa → brigadir → yacheyka, and a tap on the CELL row opens the events
+ * behind it. Every level is therefore a per-category figure, so the rows on
+ * screen add up to MORE than the bill wherever a minute carried two causes —
+ * both sums are printed under the table, each named, because one alone is
+ * either a column that does not add up or a total that overstates what is
+ * owed.
+ *
  * A third view over the /downtime register, and the one that is a SUM where
  * every other ojidaniya figure on the platform is a headcount-weighted mean.
  * That is stated on the card rather than discovered: this tab's minutes read
@@ -67,7 +75,7 @@ export default function CostTab() {
   const [cellIds, setCellIds] = usePersistentState("dtcost_cells", []);
   const [cats, setCats] = usePersistentState("dtcost_cats", []);
 
-  const [open, setOpen] = useState({});          // "sup:3" / "cell:3:12" → expanded
+  const [open, setOpen] = useState({});   // "cat:Cat A" / "cat:Cat A:sup:3" → open
   const [entryCtx, setEntryCtx] = useState(null);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -87,7 +95,9 @@ export default function CostTab() {
     queryFn: () => api.get("/api/downtime/cost", { params: fparams }).then((r) => r.data),
   });
 
-  const rows = data?.rows || [];
+  // The register itself. `rows` (brigadir-first) still rides on the payload for
+  // a tab open on an older bundle and is deliberately not read here.
+  const catRows = data?.cat_rows || [];
   const totals = data?.totals || {};
   const rates = data?.rates || [];
 
@@ -139,8 +149,12 @@ export default function CostTab() {
     if (cellIds.some((id) => !ok.has(id))) setCellIds(cellIds.filter((id) => ok.has(id)));
   }, [opts.cells, cellOpts, cellIds, setCellIds]);
 
-  const grand = totals.cost || 0;
-  const share = (v) => (grand && v != null ? (v / grand) * 100 : null);
+  // The top level is the CAUSE, so a share is taken over Σ CATEGORIES — the
+  // column it sits in — and the levels below it over their own parent row.
+  // Against the union bill the top rows could not share out to 100%: they
+  // overlap it, which is the whole reason both sums are printed.
+  const catGrand = totals.cat_cost || 0;
+  const overlap = (totals.cat_minutes || 0) - (totals.minutes || 0);
   const perDay = totals.cost && totals.days ? Math.round(totals.cost / totals.days) : null;
   const unpriced = totals.unpriced_minutes || 0;
 
@@ -179,6 +193,11 @@ export default function CostTab() {
             kUnpricedHint: t("downtime.cost.kUnpricedHint"),
             hrs: t("general.hrs"), days: t("downtime.cost.days"),
             sBySup: t("downtime.cost.sBySup"), sTree: t("downtime.cost.sTree"),
+            shBySup: t("downtime.cost.shBySup"), sByCat: t("downtime.cost.sByCat"),
+            catTotal: t("downtime.cost.catTotal"), preLabel: t("downtime.cost.preLabel"),
+            overlapNote: overlap > 0 ? tp("downtime.cost.overlapTop", {
+              sum: num(totals.cat_minutes), total: num(totals.minutes), diff: num(overlap),
+            }) : "",
             cName: t("tasks.colSupervisor"), cSup: t("tasks.colSupervisor"),
             cCell: t("downtime.cost.colCell"), cLeader: t("downtime.cost.colLeader"),
             cCat: t("downtime.filterCat"), cHc: t("downtime.cost.colHc"),
@@ -201,7 +220,12 @@ export default function CostTab() {
   const td = "px-3 py-2 text-[13.5px] align-middle";
   const bd = { borderColor: "var(--border)" };
 
-  const Figures = ({ r, showShare = true, muted = false }) => (
+  const Figures = ({ r, denom = 0, showShare = true, muted = false }) => {
+    // Share of the level ABOVE, never of the grand total: inside one category
+    // the question a reader is asking is «how much of THIS cause is this
+    // brigadir», and a percentage of the whole bill cannot answer it.
+    const pct = showShare && denom && r.cost != null ? (r.cost / denom) * 100 : null;
+    return (
     <>
       {/* «Odam soni» is a FACT — the number somebody typed on /production —
           so it is never printed with a ~. A row folding days that carried
@@ -223,19 +247,20 @@ export default function CostTab() {
         {r.cost == null ? <span style={{ color: "var(--text-4)", fontWeight: 400 }}>—</span> : money(r.cost)}
       </td>
       <td className={`${td} text-right tabular-nums border-l hidden md:table-cell`} style={{ ...bd, color: "var(--text-3)" }}>
-        {showShare && share(r.cost) != null ? (
+        {pct != null ? (
           <span className="inline-flex items-center gap-2 justify-end">
             <span className="inline-block w-[46px] h-[5px] rounded-full overflow-hidden shrink-0"
                   style={{ background: "var(--bg-accent)" }}>
               <span className="block h-full rounded-full"
-                    style={{ width: `${Math.min(100, share(r.cost)).toFixed(1)}%`, background: "var(--brand)" }} />
+                    style={{ width: `${Math.min(100, pct).toFixed(1)}%`, background: "var(--brand)" }} />
             </span>
-            {share(r.cost).toFixed(1)}%
+            {pct.toFixed(1)}%
           </span>
         ) : <span style={{ color: "var(--text-4)" }}>{muted ? "" : "—"}</span>}
       </td>
     </>
-  );
+    );
+  };
 
   const Unpriced = ({ min }) => min > 0 ? (
     <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap"
@@ -246,6 +271,17 @@ export default function CostTab() {
 
   const toggle = (k) => setOpen((p) => ({ ...p, [k]: !p[k] }));
   const rowKeys = (e) => (e.key === "Enter" || e.key === " ");
+
+  // The leaf is one (cell, category) pair — exactly what the entries endpoint
+  // answers for, and what the old tree opened from its own third level. The
+  // category comes from the ancestor row, so the modal is handed the same
+  // context it always was.
+  const openEntries = (k, m, c) => setEntryCtx({
+    managerId: m.manager_id, cellId: c.cell_id, category: k.category,
+    catLabel: catLabel(k.category), code: c.code,
+    leader: c.leader ? shortPerson(tl(c.leader)) : "", hc: c.hc,
+    hcVaries: c.hc_varies,
+  });
 
   return (
     <>
@@ -346,7 +382,7 @@ export default function CostTab() {
         />
         <Button
           size="lg" variant="secondary" className="ml-auto"
-          loading={busy} disabled={isLoading || !rows.length}
+          loading={busy} disabled={isLoading || !catRows.length}
           icon={!busy ? <FileSpreadsheet size={14} /> : null}
           onClick={onExport}
           title={t("downtime.dt.export")} aria-label={t("downtime.dt.export")}
@@ -422,9 +458,9 @@ export default function CostTab() {
         <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: "var(--border)" }}>
           <SectionHead
             icon={Coins}
-            title={t("downtime.cost.sBySup")}
+            title={t("downtime.cost.sByCat")}
             right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>
-              {tp("downtime.cost.nRows", { n: rows.length })}
+              {tp("downtime.cost.nRows", { n: catRows.length })}
             </span>}
           />
         </div>
@@ -435,7 +471,7 @@ export default function CostTab() {
           <p className="px-4 py-10 text-center text-[13px]" style={{ color: "var(--text-3)" }}>
             {t("common.loadFailed")}
           </p>
-        ) : !rows.length ? (
+        ) : !catRows.length ? (
           <div className="px-4 py-6">
             <EmptyState
               icon={Coins}
@@ -462,150 +498,152 @@ export default function CostTab() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
-                  const sk = `sup:${r.manager_id}`;
-                  const sOpen = !!open[sk];
+                {catRows.map((k) => {
+                  const kk = `cat:${k.category}`;
+                  const kOpen = !!open[kk];
                   return [
                     <tr
-                      key={sk}
-                      role="button" tabIndex={0} aria-expanded={sOpen}
-                      onClick={() => toggle(sk)}
-                      onKeyDown={(e) => { if (rowKeys(e)) { e.preventDefault(); toggle(sk); } }}
+                      key={kk}
+                      role="button" tabIndex={0} aria-expanded={kOpen}
+                      onClick={() => toggle(kk)}
+                      onKeyDown={(e) => { if (rowKeys(e)) { e.preventDefault(); toggle(kk); } }}
                       className="cursor-pointer border-t hover:bg-[var(--hover-bg)] focus-visible:outline-none"
                       style={bd}
                     >
                       <td className={`${td} font-semibold`}>
                         <span className="flex items-center gap-2 min-w-0">
                           <ChevronRight size={15} className="shrink-0 transition-transform"
-                            style={{ color: sOpen ? "var(--brand-text)" : "var(--text-3)",
-                                     transform: sOpen ? "rotate(90deg)" : "none" }} />
-                          <span className="truncate">{tl(r.manager)}</span>
-                          <span className="text-[12.5px] font-normal shrink-0" style={{ color: "var(--text-3)" }}>
-                            {r.shift ? `· S${r.shift}` : ""} · {tp("downtime.cost.nCells", { n: r.cells.filter((c) => !c.pre).length })}
+                            style={{ color: kOpen ? "var(--brand-text)" : "var(--text-3)",
+                                     transform: kOpen ? "rotate(90deg)" : "none" }} />
+                          <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold shrink-0"
+                                style={{ background: "var(--bg-accent)", color: "var(--text-2)" }}>
+                            {k.category}
                           </span>
-                          <Unpriced min={r.unpriced_minutes} />
+                          <span className="truncate">{catLabel(k.category)}</span>
+                          <span className="text-[12.5px] font-normal shrink-0" style={{ color: "var(--text-3)" }}>
+                            · {tp("downtime.cost.nSups", { n: k.managers.length })}
+                          </span>
+                          <Unpriced min={k.unpriced_minutes} />
                         </span>
                       </td>
-                      <Figures r={{ ...r, hc: null }} />
+                      {/* A headcount folded over several units is a number
+                          nobody typed, so «odam soni» stays blank above a cell
+                          — the rule the brigadir row has always kept. */}
+                      <Figures r={{ ...k, hc: null }} denom={catGrand} />
                     </tr>,
 
-                    ...(sOpen ? r.cells.flatMap((c) => {
-                      // The pre-floor lump: one marked row per brigadir for
-                      // everything before the typed headcount existed. No
-                      // chevron and no categories under it — there is no
-                      // per-cell answer to open, and a control that opens onto
-                      // nothing is worse than no control.
-                      if (c.pre) return [(
-                        <tr key={`pre:${r.manager_id}`} className="border-t"
-                            style={{ ...bd, background: "var(--bg-inner)" }}>
-                          <td className={td}>
-                            <span className="flex items-center gap-2 min-w-0 pl-5">
-                              <CalendarClock size={14} className="shrink-0" style={{ color: "var(--text-4)" }} />
-                              <span className="font-semibold">{t("downtime.cost.preLabel")}</span>
-                              <span className="text-[12.5px] truncate" style={{ color: "var(--text-3)" }}>
-                                · {t("downtime.cost.preNote")}
-                              </span>
-                            </span>
-                          </td>
-                          <Figures r={c} showShare={false} muted />
-                        </tr>
-                      )];
-                      const ck = `cell:${r.manager_id}:${c.cell_id}`;
-                      const cOpen = !!open[ck];
+                    ...(kOpen ? k.managers.flatMap((m) => {
+                      const mk = `${kk}:sup:${m.manager_id}`;
+                      const mOpen = !!open[mk];
+                      const nCells = m.cells.filter((c) => !c.pre).length;
                       return [
                         <tr
-                          key={ck}
-                          role="button" tabIndex={0} aria-expanded={cOpen}
-                          onClick={() => toggle(ck)}
-                          onKeyDown={(e) => { if (rowKeys(e)) { e.preventDefault(); toggle(ck); } }}
+                          key={mk}
+                          role="button" tabIndex={0} aria-expanded={mOpen}
+                          onClick={() => toggle(mk)}
+                          onKeyDown={(e) => { if (rowKeys(e)) { e.preventDefault(); toggle(mk); } }}
                           className="cursor-pointer border-t hover:bg-[var(--hover-bg)] focus-visible:outline-none"
                           style={{ ...bd, background: "var(--bg-inner)" }}
                         >
                           <td className={td}>
                             <span className="flex items-center gap-2 min-w-0 pl-5">
                               <ChevronRight size={14} className="shrink-0 transition-transform"
-                                style={{ color: cOpen ? "var(--brand-text)" : "var(--text-3)",
-                                         transform: cOpen ? "rotate(90deg)" : "none" }} />
-                              {/* The cell is its CODE. Not a CellLink: this row
-                                  is a disclosure, and a link inside it would
-                                  navigate away mid-drill-down. */}
-                              <span className="font-semibold">{c.code}</span>
-                              {c.leader && (
-                                <span className="text-[12.5px] truncate" style={{ color: "var(--text-3)" }}>
-                                  · {shortPerson(tl(c.leader))}
-                                </span>
-                              )}
-                              {c.hc == null && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap"
-                                      style={{ background: "rgba(217,119,6,.14)", color: "var(--kpi-amber)" }}>
-                                  {t("downtime.cost.noHc")}
-                                </span>
-                              )}
+                                style={{ color: mOpen ? "var(--brand-text)" : "var(--text-3)",
+                                         transform: mOpen ? "rotate(90deg)" : "none" }} />
+                              <span className="font-semibold truncate">{tl(m.manager)}</span>
+                              <span className="text-[12.5px] shrink-0" style={{ color: "var(--text-3)" }}>
+                                {m.shift ? `· S${m.shift}` : ""} · {tp("downtime.cost.nCells", { n: nCells })}
+                              </span>
+                              <Unpriced min={m.unpriced_minutes} />
                             </span>
                           </td>
-                          <Figures r={c} />
+                          {/* Share of THIS category, not of the whole bill: the
+                              question inside a cause is whose shopfloor carries
+                              it. */}
+                          <Figures r={{ ...m, hc: null }} denom={k.cost} />
                         </tr>,
 
-                        ...(cOpen ? c.cats.map((k) => (
+                        ...(mOpen ? m.cells.map((c) => (c.pre ? (
+                          // The pre-floor lump: one marked row per brigadir for
+                          // everything before the typed headcount existed. No
+                          // events behind it, so nothing for a tap to open.
+                          <tr key={`${mk}:pre`} className="border-t"
+                              style={{ ...bd, background: "var(--bg-inner)" }}>
+                            <td className={td}>
+                              <span className="flex items-center gap-2 min-w-0 pl-11">
+                                <CalendarClock size={14} className="shrink-0" style={{ color: "var(--text-4)" }} />
+                                <span className="font-semibold">{t("downtime.cost.preLabel")}</span>
+                                <span className="text-[12.5px] truncate" style={{ color: "var(--text-3)" }}>
+                                  · {t("downtime.cost.preNote")}
+                                </span>
+                              </span>
+                            </td>
+                            <Figures r={c} showShare={false} muted />
+                          </tr>
+                        ) : (
                           <tr
-                            key={`${ck}:${k.category}`}
+                            key={`${mk}:${c.cell_id}`}
                             role="button" tabIndex={0}
-                            onClick={() => setEntryCtx({
-                              managerId: r.manager_id, cellId: c.cell_id, category: k.category,
-                              catLabel: catLabel(k.category), code: c.code,
-                              leader: c.leader ? shortPerson(tl(c.leader)) : "", hc: c.hc,
-                              hcVaries: c.hc_varies,
-                            })}
+                            onClick={() => openEntries(k, m, c)}
                             onKeyDown={(e) => {
                               if (!rowKeys(e)) return;
                               e.preventDefault();
-                              setEntryCtx({
-                                managerId: r.manager_id, cellId: c.cell_id, category: k.category,
-                                catLabel: catLabel(k.category), code: c.code,
-                                leader: c.leader ? shortPerson(tl(c.leader)) : "", hc: c.hc,
-                                hcVaries: c.hc_varies,
-                              });
+                              openEntries(k, m, c);
                             }}
                             className="cursor-pointer border-t hover:bg-[var(--hover-bg)] focus-visible:outline-none group"
                             style={{ ...bd, background: "var(--bg-inner)" }}
                           >
                             <td className={`${td} text-[13px]`}>
                               <span className="flex items-center gap-2 min-w-0 pl-11">
-                                <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold shrink-0"
-                                      style={{ background: "var(--bg-accent)", color: "var(--text-2)" }}>
-                                  {k.category}
-                                </span>
-                                <span className="truncate" style={{ color: "var(--text-2)" }}>{catLabel(k.category)}</span>
+                                {/* The cell is its CODE. Not a CellLink: this
+                                    row opens the events, and a link inside it
+                                    would navigate away mid-drill-down. */}
+                                <span className="font-semibold">{c.code}</span>
+                                {c.leader && (
+                                  <span className="text-[12.5px] truncate" style={{ color: "var(--text-3)" }}>
+                                    · {shortPerson(tl(c.leader))}
+                                  </span>
+                                )}
+                                {c.hc == null && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap"
+                                        style={{ background: "rgba(217,119,6,.14)", color: "var(--kpi-amber)" }}>
+                                    {t("downtime.cost.noHc")}
+                                  </span>
+                                )}
                                 <span className="ml-auto text-[11.5px] whitespace-nowrap group-hover:text-[var(--brand-text)]"
                                       style={{ color: "var(--text-4)" }}>
                                   {t("downtime.cost.openEntries")} →
                                 </span>
                               </span>
                             </td>
-                            {/* No share on a category row: the minutes overlap
-                                across causes, and a percentage of an
-                                overlapping quantity is not a percentage. */}
-                            <Figures r={k} showShare={false} muted />
+                            <Figures r={c} denom={m.cost} />
                           </tr>
-                        )) : []),
-
-                        ...(cOpen && c.cat_sum > c.minutes ? [(
-                          <tr key={`${ck}:ovl`} style={{ background: "var(--bg-inner)" }}>
-                            <td colSpan={6} className="px-3 pl-14 py-2 text-[12px] border-t"
-                                style={{ ...bd, color: "var(--text-3)" }}>
-                              {tp("downtime.cost.overlapNote", {
-                                sum: num(c.cat_sum), total: num(c.minutes),
-                                diff: num(c.cat_sum - c.minutes),
-                              })}
-                            </td>
-                          </tr>
-                        )] : []),
+                        ))) : []),
                       ];
                     }) : []),
                   ];
                 })}
               </tbody>
               <tfoot>
+                {/* What the rows above ADD UP TO — a minute stopped for two
+                    causes is named under both — printed only when it differs
+                    from the bill, since an identical second total reads as a
+                    mistake. */}
+                {overlap > 0 && (
+                  <tr style={{ background: "var(--bg-inner)" }}>
+                    <td className={`${td} font-semibold border-t-2`} style={{ borderColor: "var(--border-md)", color: "var(--text-2)" }}>
+                      {t("downtime.cost.catTotal")}
+                    </td>
+                    <td className={`${td} text-right border-l border-t-2`} style={{ borderColor: "var(--border-md)", color: "var(--text-4)" }}>—</td>
+                    <td className={`${td} text-right tabular-nums border-l border-t-2`} style={{ borderColor: "var(--border-md)" }}>{num(totals.cat_minutes)}</td>
+                    <td className={`${td} text-right tabular-nums border-l border-t-2`} style={{ borderColor: "var(--border-md)" }}>{num((totals.cat_minutes || 0) / 60, 1)}</td>
+                    <td className={`${td} text-right tabular-nums border-l border-t-2`} style={{ borderColor: "var(--border-md)" }}>{money(totals.cat_cost)}</td>
+                    <td className={`${td} text-right tabular-nums border-l border-t-2 hidden md:table-cell`} style={{ borderColor: "var(--border-md)", color: "var(--text-3)" }}>
+                      {catGrand ? "100.0%" : "—"}
+                    </td>
+                  </tr>
+                )}
+                {/* …and the BILL: the union, each minute paid once. */}
                 <tr style={{ background: "var(--bg-inner)" }}>
                   <td className={`${td} font-bold border-t-2`} style={{ borderColor: "var(--border-md)" }}>
                     {t("downtime.cost.total")}
@@ -615,7 +653,8 @@ export default function CostTab() {
                   <td className={`${td} text-right tabular-nums font-bold border-l border-t-2`} style={{ borderColor: "var(--border-md)" }}>{num(totals.hours, 1)}</td>
                   <td className={`${td} text-right tabular-nums font-bold border-l border-t-2`} style={{ borderColor: "var(--border-md)" }}>{money(totals.cost)}</td>
                   <td className={`${td} text-right tabular-nums font-bold border-l border-t-2 hidden md:table-cell`} style={{ borderColor: "var(--border-md)" }}>
-                    {grand ? "100.0%" : "—"}
+                    {overlap > 0 ? <span style={{ color: "var(--text-4)", fontWeight: 400 }}>—</span>
+                      : catGrand ? "100.0%" : "—"}
                   </td>
                 </tr>
               </tfoot>
@@ -623,9 +662,19 @@ export default function CostTab() {
           </div>
         )}
 
+        {/* Why the two totals differ, in words, right where they differ. */}
+        {overlap > 0 && (
+          <div className="px-4 py-2.5 border-t text-[12px] leading-snug"
+               style={{ ...bd, color: "var(--text-3)" }}>
+            {tp("downtime.cost.overlapTop", {
+              sum: num(totals.cat_minutes), total: num(totals.minutes), diff: num(overlap),
+            })}
+          </div>
+        )}
         <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 py-2.5 border-t text-[11.5px]"
              style={{ ...bd, color: "var(--text-3)" }}>
           <span>{t("downtime.cost.legendExpand")}</span>
+          <span>{t("downtime.cost.legendOpen")}</span>
           <span>{t("downtime.cost.legendDash")}</span>
           <span>{t("downtime.cost.legendShare")}</span>
         </div>

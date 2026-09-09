@@ -1148,6 +1148,36 @@ the last term. Nothing here is a new measurement — the minutes are
 weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
 `_downtime` applies.
 
+- **The register is read CAUSE-first: toifa → brigadir → yacheyka**, and a tap
+  on the CELL row opens the events (the operator's restructure, 2026-09-09; it
+  was brigadir → yacheyka → toifa, with the toifa row opening the modal).
+  Nothing was re-measured: the leaf is the (cell, category) pair `cat_acc`
+  already held and the entries endpoint already answered for — the tree is the
+  same figures folded the other way up, by `_fold`, which is now THE fold at
+  every level of both trees and again after a cell pick.
+- **`cat_rows` is that tree; `rows` (brigadir-first) is still served.** It costs
+  one extra roll-up off the same accumulators, so the two cannot disagree, and
+  it is what keeps this a MINOR: a browser tab open on an older bundle renders a
+  table rather than an empty one. The workbook reads both.
+- **So the tab prints TWO sums, each named.** With the cause at the top level
+  the rows on screen add up to `cat_minutes` / `cat_cost` — a minute stopped for
+  two causes is named under both — while the bill stays the union in `minutes` /
+  `cost`. «Toifalar yig'indisi» is printed above «Jami» only when they differ,
+  with the overlap stated in words under the table. Printing one alone is either
+  a column that visibly does not add up or a total that overstates what is owed.
+  The KPI cards are the BILL and did not move.
+- **A share is taken over the level ABOVE** — a category over Σ categories (so
+  they sum to 100%), a brigadir over its category, a cell over its brigadir.
+  Against the union bill the top rows could not share out to 100%: they overlap
+  it. `hc` stays blank above a cell row, unchanged: a headcount folded over
+  several units is a number nobody typed.
+- **`narrow()` re-folds every parent it keeps.** The old cell filter re-listed a
+  brigadir's cells while leaving that brigadir's own figures — and the grand
+  total built from them — covering every cell of the unit, so picking one cell
+  printed a total the rows under it did not add up to. Fixed with the
+  restructure; both trees are narrowed together, or one payload would carry two
+  answers describing two scopes.
+
 - **It is a SUM, and every other ojidaniya figure on this platform is a
   headcount-weighted MEAN.** So its minutes do NOT match the «Tahlil» tab's, the
   same relationship «Toifalar bo'yicha» already has — the card says so before
@@ -1161,9 +1191,9 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
 - **Each minute is paid ONCE.** A cell's figure is the UNION of its stopped
   ranges; a CATEGORY row unions within its own category but categories are
   summed ACROSS each other, because a minute genuinely has two causes and both
-  deserve naming. So the categories under a cell can total MORE than the cell,
-  and the tab prints the difference in words wherever they differ. Never "fix"
-  that by summing the categories into the cell: the cell figure is the money.
+  deserve naming. So a cell row on this tab is that cell's minutes for ONE
+  cause, and the causes over a cell can total MORE than the cell's own union.
+  Never "fix" that by summing the categories: the union is the money.
 - **The rate is a contiguous TIMELINE of periods, never one setting.**
   `wage_rate_periods`, edited admin-only through the ⚙ on the toolbar: the
   admin puts a BORDER on a date, which SPLITS the period containing it, so a gap
@@ -1197,7 +1227,10 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   `GET /api/downtime/cost/entries` (the modal — a separate call, it can be
   thousands of rows), `GET`/`PUT /api/downtime/wage-rates`, and
   `POST /api/downtime/cost.xlsx` — a SEPARATE workbook from the page's own
-  «Excel», because it carries a different measure. Logged as
+  «Excel», because it carries a different measure. THREE sheets, one measure
+  each: «Umumiy» (KPI + the category table the screen leads with, Σ by cause),
+  «Tafsilot» (that tree flattened, the pre-floor lumps included and marked), and
+  «Brigadirlar» (the union bill per unit). The two sums never share a table. Logged as
   `export.ojidaniya_cost` / `config.wage_rate_saved`.
 - **Before `zagruzka_source.ZAGRUZKA_FROM` (2 Sep) a unit is priced WHOLE, never
   per cell** (the operator's directive, 2026-09-09). The typed «Odam soni fakt»
