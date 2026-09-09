@@ -129,7 +129,7 @@ from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
 from app.services.kpi_calculator import compute_metrics, is_direct_role
-from app.services.pp_calc import _round_half_up, daily_key, line_keys, line_minutes
+from app.services.pp_calc import _round_half_up, daily_key, line_keys, line_minutes, takes_sap
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
 router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
@@ -320,14 +320,21 @@ def cell_zagruzka(
     keys = line_keys(all_products)
     lines_by_key: dict[tuple[str, str], list[tuple[int, float]]] = defaultdict(list)
     products_missing_labor: set[str] = set()
+    # The lines the SAP upload does not answer for — `pp_calc.takes_sap`, the
+    # same gate the Positions table applies, so this page's reconciliation goes
+    # on comparing two computations of one number rather than two rules.
+    sap_off: set[tuple[str, str, str]] = set()
     for p in all_products:
         if not p.active or p.work_center not in wanted_wcs:
             continue
         if p.labor_time is None:
             products_missing_labor.add(f"{p.work_center}/{p.sap_code or p.name}")
             continue
-        lines_by_key[(p.work_center, daily_key(p.sap_code, p.name))].append(
+        qkey = daily_key(p.sap_code, p.name)
+        lines_by_key[(p.work_center, qkey)].append(
             (keys.get(p.id, ""), float(p.labor_time)))
+        if not takes_sap(p.sap_code, p.auto_fill):
+            sap_off.add((p.work_center, qkey, keys.get(p.id, "")))
 
     # The two quantity levels, read exactly as the Positions table reads them:
     # the line's own value wins, else the group's, else the SAP snapshot.
@@ -342,6 +349,10 @@ def cell_zagruzka(
         shared[(d.work_center, d.sap_code, d.date)] = (
             float((d.plan_override if d.plan_override is not None else d.plan_qty) or 0),
             float((d.actual_override if d.actual_override is not None else d.actual_qty) or 0),
+            # …and whether it was TYPED, which is what lets `line_minutes`
+            # silence the snapshot on a line the upload does not fill while
+            # leaving a person's own figure standing.
+            d.plan_override is not None, d.actual_override is not None,
         )
     per_line: dict[tuple[str, str, date, int], tuple] = {}
     for lo in db.query(PPLineDaily).filter(
@@ -356,7 +367,7 @@ def cell_zagruzka(
             (float(lo.actual_override) if lo.actual_override is not None else None),
         )
 
-    _pm, _am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN)
+    _pm, _am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN, sap_off)
     plan_min: dict[tuple[str, date], float] = defaultdict(float, _pm)
     actual_min: dict[tuple[str, date], float] = defaultdict(float, _am)
 

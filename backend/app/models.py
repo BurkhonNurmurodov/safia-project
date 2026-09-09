@@ -1071,6 +1071,24 @@ class PPProduct(Base):
     labor_time  = Column(Numeric(12, 4), nullable=True)   # seconds/unit; NULL → warn
     sort_order  = Column(Integer, default=0)
     active      = Column(Boolean, nullable=False, server_default="true")
+    # Does an unattended SAP upload fill THIS line's ПЛАН/ФАКТ? A unit-wide
+    # switch already exists (PPManagerSetting.auto_fill); this is the same
+    # question one level down, for the lines whose фаза figures are nonsense
+    # (a mix measured in grams against a code the file counts in pieces) while
+    # the rest of the unit's catalog is filled from the file as usual.
+    #
+    # It cannot be expressed by skipping a write: pp_daily is keyed by (SKU,
+    # work centre) and several catalog lines share one row, so an upload has to
+    # go on writing the group's record for the siblings that still read it.
+    # What the flag governs is whether this LINE reads that record —
+    # `pp_calc.takes_sap` is the one predicate, and it answers False for a
+    # code-less line too, since the фаза join can never reach one.
+    #
+    # False ⇒ the line's number is what somebody typed for it (PPLineDaily) and
+    # nothing else, and an upload leaves that value alone. Absent/True = the
+    # behaviour every line has always had, so nothing moves until a row is
+    # switched off.
+    auto_fill   = Column(Boolean, nullable=False, server_default="true")
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
 

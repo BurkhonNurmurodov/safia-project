@@ -4651,6 +4651,32 @@ def purge_production_history() -> None:
 PP_LINE_KEY_FLAG = "pp_line_daily_line_key_2026_09_03_v1"
 
 
+def add_pp_product_auto_fill() -> None:
+    """2026-09-09: a catalog LINE may be taken off SAP auto-fill.
+
+    `pp_products.auto_fill` — does an unattended SAP upload fill this row's
+    ПЛАН/ФАКТ? The unit-wide switch (PPManagerSetting.auto_fill) has existed
+    since 2026-08-31; this is the same question one line down, for a position
+    whose фаза figures are nonsense while the rest of the unit's catalog is
+    filled from the file as usual. See models.PPProduct and pp_calc.takes_sap.
+
+    Pure DDL and idempotent, with no flag: create_all does not ALTER an existing
+    table, and every existing row must read TRUE — which is the behaviour every
+    line already had, so nothing moves until a row is switched off.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE pp_products "
+            "ADD COLUMN IF NOT EXISTS auto_fill BOOLEAN NOT NULL DEFAULT TRUE"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] pp_products.auto_fill migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def migrate_pp_line_daily_key() -> None:
     """Move pp_line_daily from a positional `line_no` to the durable `line_key`.
 

@@ -3358,6 +3358,82 @@ destination; an upload may still name its own targets for one file.
   brigadir given a catalog later starts manual too — a unit CREATED afterwards is
   on, since an absent row still reads as ON.
 
+### …and which of its ROWS (`pp_products.auto_fill`)
+
+From **2026-09-09** the same question is asked one level down: a single catalog
+LINE can be taken off SAP auto-fill, so its ПЛАН/ФАКТ are entered by hand while
+the rest of the unit's catalog goes on being filled from the file. Set on the
+«Позиции» table — the row's edit modal, or the bulk bar for a selection.
+
+- **It cannot be expressed by skipping a write, and that is the whole shape of
+  the feature.** `pp_daily` is keyed by (SKU, work centre) and 313 of the
+  platform's lines sit in 118 groups sharing one row, so an upload has to go on
+  writing the group's record for the siblings that still read it. What the flag
+  governs is whether this LINE READS that record — which is also the reading
+  `_carry_manual_quantities` already states: the snapshot is what the фаза
+  export said about one (code, work centre) pair on one date, not any one
+  line's property.
+- **`pp_calc.takes_sap` is THE predicate**, and it answers TWO facts at once:
+  the flag, and **whether the line has a SAP code at all**. The фаза join
+  reaches a position through its code, so a code-less line (a dough mix,
+  «Донат») could never be filled by the file and never was — `daily_key` mints
+  it a synthetic key the join cannot produce. Its number has always been the
+  one somebody typed, so the switch is offered ONLY on a coded line: there is
+  nothing for a code-less one to decide, and both the create and the update
+  endpoints answer **400** rather than storing a setting nothing honours (they
+  are reachable without the UI). The bulk press SKIPS such rows and reports
+  `skipped_no_code` — the selection is the scope there, and one code-less row
+  must not bounce a screenful of ticks — and the toast says so, because a
+  silent skip reads as a clean success.
+- **The gate silences the FILE, never a PERSON.** A line that answers False
+  reads its own per-line value (`PPLineDaily`), and failing that the group's
+  hand-typed override on the same `pp_daily` row; only the snapshot goes quiet.
+  Reading it as «this row has no quantities» blanks a figure somebody entered,
+  on every past date at once — the accident `_carry_manual_quantities` exists
+  to prevent, arriving through a different door — and the code-less lines,
+  which have answered False here since before the flag existed, are exactly the
+  rows carrying such values today. With neither level the row reads 0, which is
+  what the page has always shown for a position the day's upload did not
+  mention.
+- **Every reader goes through the one predicate**, or the Positions table and
+  the загрузка start reporting different minutes for one day — the rule
+  `pp_calc.line_minutes` was made a function for. `compute_dashboard` applies
+  it directly; `line_minutes` takes `sap_off` (the line identities that do not
+  take the file) and its `shared` values grew two flags saying whether that
+  value was TYPED, which is what lets it silence a snapshot without blanking an
+  override. Both are optional and default to the old behaviour, so a caller
+  that has not been taught them computes exactly what it always did. The three
+  callers — `/zagruzka-cell`, `/live` and `zagruzka_source` (the fleet
+  загрузка) — all ship both.
+- **An upload leaves a manual row alone, and that is what makes the switch
+  real.** In `_ingest_for_manager` a manual line's overlay rows are neither
+  deleted with the date (mode `both`) nor cleared field by field — without it,
+  «this row is kept by hand» would last exactly until somebody uploaded the
+  day. A hand-typed value on the GROUP row is exploded down onto the manual
+  lines just before that row is replaced, the same explode `_set_line_override`
+  performs, because the delete is the one moment it would be destroyed.
+  **Consequence to know: a code-less line's typed value now survives an upload
+  too.** It is the honest consequence of one predicate — the file says nothing
+  about such a line, so it should not empty it — and it only ever preserves.
+- **Nothing moved when this shipped.** The column is `NOT NULL DEFAULT TRUE`
+  and the migration is pure DDL with no flag (`startup.add_pp_product_auto_fill`),
+  so every existing line reads exactly as it always did until a row is switched
+  off, and switching one off changes no number already on screen except the
+  ones the file was supplying.
+- **A catalog IMPORT carries the flag across the wipe**, keyed like the pinned
+  фаза (`daily_key` + work centre) — `import_catalog` deletes and re-creates
+  every `PPProduct`, so losing it would put a row an operator took OFF
+  auto-fill back on it and the next upload would overwrite what they typed.
+- Read surfaces: the «Манба» column on «Позиции» (a two-state chip — the file,
+  or a person; WHY it is typed lives in the tooltip, because a third chip is
+  one nobody can decode), and the ПЛАН/ФАКТ cells, which say it where the
+  consequence actually lands. That statement outranks «shared by N lines»: a
+  row reading no group figure is not sharing one.
+- Deliberately unchanged: the unit-wide `PPManagerSetting.auto_fill` above,
+  which still decides whether an unattended upload reaches the unit at all; the
+  closed-day lock; and the SAP snapshot itself, which is still written for every
+  group the file names.
+
 ## The call forecast, sent by the clock (`forecast_autocall`)
 
 From **2026-09-08** the «Smenaga chaqirish» modal's send happens by itself:

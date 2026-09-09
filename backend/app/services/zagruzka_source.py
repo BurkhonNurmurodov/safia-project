@@ -54,7 +54,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.models import PPDaily, PPLineDaily, PPProduct, PPWorkCenterDaily
-from app.services.pp_calc import daily_key, line_keys, line_minutes
+from app.services.pp_calc import daily_key, line_keys, line_minutes, takes_sap
 
 # THE floor: from this day the загрузка's headcount and trudoyomkost come from
 # the «Zagruzka fayli» page and the «Одам сони» / «Минут» sheet tabs are not a
@@ -188,6 +188,10 @@ def unit_labor(db: Session, manager_ids: Iterable[int],
         shared[int(d.manager_id)][(d.work_center, d.sap_code, d.date)] = (
             float((d.plan_override if d.plan_override is not None else d.plan_qty) or 0),
             float((d.actual_override if d.actual_override is not None else d.actual_qty) or 0),
+            # …and whether that is a person's number rather than the file's, so
+            # `line_minutes` can silence the snapshot on a line the upload does
+            # not fill without blanking what somebody typed.
+            d.plan_override is not None, d.actual_override is not None,
         )
     per_line: dict[int, dict] = defaultdict(dict)
     for lo in db.query(PPLineDaily).filter(
@@ -204,15 +208,22 @@ def unit_labor(db: Session, manager_ids: Iterable[int],
     for mid, products in prods.items():
         keys = line_keys(products)
         lines_by_key: dict[tuple[str, str], list] = defaultdict(list)
+        # The lines the SAP upload does not answer for — `pp_calc.takes_sap`,
+        # the same gate the Positions table applies, so the trudoyomkost the
+        # загрузка divides and the minutes the page prints stay one number.
+        sap_off: set[tuple[str, str, str]] = set()
         for p in products:
             if not p.active or p.labor_time is None:
                 continue
-            lines_by_key[(p.work_center, daily_key(p.sap_code, p.name))].append(
+            qkey = daily_key(p.sap_code, p.name)
+            lines_by_key[(p.work_center, qkey)].append(
                 (keys.get(p.id, ""), float(p.labor_time)))
+            if not takes_sap(p.sap_code, p.auto_fill):
+                sap_off.add((p.work_center, qkey, keys.get(p.id, "")))
         if not lines_by_key:
             continue
         pm, am = line_minutes(lines_by_key, shared.get(mid, {}),
-                              per_line.get(mid, {}), _SEC_PER_MIN)
+                              per_line.get(mid, {}), _SEC_PER_MIN, sap_off)
         for src, slot in ((pm, 0), (am, 1)):
             for (_wc, d), v in src.items():
                 key = (mid, d.isoformat() if hasattr(d, "isoformat") else str(d))

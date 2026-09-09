@@ -74,6 +74,7 @@ async def lifespan(app: FastAPI):
         seed_idle_source_pilot,
         seed_pp_autofill_default,
         set_forecast_autocall_capacity,
+        add_pp_product_auto_fill,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
         purge_production_history,
@@ -163,6 +164,7 @@ async def lifespan(app: FastAPI):
     seed_idle_source_pilot()
     seed_pp_autofill_default()
     set_forecast_autocall_capacity()
+    add_pp_product_auto_fill()
     migrate_pp_line_daily_key()
     correct_pp_double_counted_days()
     purge_production_history()

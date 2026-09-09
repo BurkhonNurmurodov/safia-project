@@ -75,6 +75,46 @@ def daily_key(sap_code, name) -> str:
     return LOCAL_PREFIX + " ".join((name or "").split()).lower()
 
 
+def takes_sap(sap_code, auto_fill=True) -> bool:
+    """Does this catalog line take its ПЛАН/ФАКТ from the SAP upload?
+
+    THE predicate, and the only spelling of it: five readers ask the question —
+    `compute_dashboard` (the Positions table and its export), `line_minutes`
+    (`/zagruzka-cell`, `/live`, the fleet загрузка) and the upload itself
+    (`production._ingest_for_manager`) — and two spellings is how the page and
+    the загрузка start reporting different minutes for one day.
+
+    Two facts, one answer:
+
+      • **No SAP code, no SAP data.** The фаза join reaches a line through its
+        code, so a code-less one (a dough mix, «Донат») could never be filled by
+        the file and never was — `daily_key` mints it a synthetic key the join
+        cannot produce. Its number has always been the one somebody typed.
+      • **`pp_products.auto_fill` off** — an operator has said this row's
+        quantities are kept by hand (models.PPProduct).
+
+    A line that answers False goes quiet on the SAP SNAPSHOT and on nothing
+    else. What a PERSON typed still answers — the line's own value
+    (`PPLineDaily`), and failing that the group's hand-typed override on the
+    same `pp_daily` row — because the switch is about the FILE, not about who is
+    allowed to state a number. Reading it as "this row has no quantities" would
+    blank a figure somebody entered, on every past date at once, which is the
+    accident `production._carry_manual_quantities` exists to prevent arriving
+    through a different door; and a code-less line, which has answered False
+    here since before the flag existed, is exactly the row that carries such
+    values today.
+
+    So the row's number is whatever was typed for it, and an upload leaves that
+    alone (`production._ingest_for_manager`).
+
+    `auto_fill=True` by default so a caller that has not been taught the column
+    behaves exactly as it did before it existed.
+    """
+    if not str(sap_code or "").strip():
+        return False
+    return auto_fill is not False
+
+
 def line_numbers(products) -> dict:
     """{product id: rank of that line inside its (daily_key, work centre) group}.
 
@@ -253,7 +293,8 @@ def group_sizes(products) -> dict:
     return out
 
 
-def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0):
+def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0,
+                 sap_off=None):
     """Planned / actual MINUTES per (work centre, date), summed per catalog LINE.
 
     THE second reader of the per-line quantity rule (models.PPLineDaily), after
@@ -264,7 +305,20 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0):
 
       lines_by_key {(wc, qty_key): [(line_key, labor_seconds), …]}  active lines
       shared       {(wc, qty_key, date): (plan, actual)}            pp_daily
+                   or (plan, actual, plan_typed, actual_typed), where the two
+                   flags say whether that value is a person's override rather
+                   than the SAP snapshot — which is what `sap_off` below has to
+                   be able to tell apart. A 2-tuple reads as "not typed", so a
+                   caller that has not been taught the pair behaves as before.
       per_line     {(wc, qty_key, date, line_key): (plan|None, actual|None)}
+      sap_off      {(wc, qty_key, line_key)} — the lines the SAP upload does not
+                   fill (`takes_sap`: auto-fill switched off, or no SAP code).
+                   For those the fallback to `shared` applies only where it was
+                   TYPED; the snapshot itself reads 0. Exactly the gate
+                   `compute_dashboard` applies, because the Positions table and
+                   this function must answer one day with one number. Omitted ⇒
+                   nothing is gated, i.e. what every caller computed before the
+                   flag existed.
 
     Minutes are Σ over LINES of labor_i × qty_i, never (Σ labor) × one quantity:
     two lines of one SKU are two operations with their own labor times, and since
@@ -276,6 +330,7 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0):
     """
     plan_min: dict = {}
     actual_min: dict = {}
+    off = sap_off or ()
 
     days: dict = {}
     for (wc, key, d) in shared:
@@ -285,13 +340,19 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0):
 
     for (wc, key), lines in lines_by_key.items():
         for d in days.get((wc, key), ()):
-            sp, sa = shared.get((wc, key, d), (0.0, 0.0))
+            sv = shared.get((wc, key, d)) or (0.0, 0.0)
+            sp, sa = sv[0], sv[1]
+            typed_p = bool(sv[2]) if len(sv) > 2 else False
+            typed_a = bool(sv[3]) if len(sv) > 3 else False
             for line_key, labor in lines:
                 lp, la = per_line.get((wc, key, d, line_key), (None, None))
+                gated = bool(off) and (wc, key, line_key) in off
+                bp = sp if (typed_p or not gated) else 0.0
+                ba = sa if (typed_a or not gated) else 0.0
                 plan_min[(wc, d)] = plan_min.get((wc, d), 0.0) + \
-                    labor * (lp if lp is not None else sp) / sec_per_min
+                    labor * (lp if lp is not None else bp) / sec_per_min
                 actual_min[(wc, d)] = actual_min.get((wc, d), 0.0) + \
-                    labor * (la if la is not None else sa) / sec_per_min
+                    labor * (la if la is not None else ba) / sec_per_min
     return plan_min, actual_min
 
 
@@ -401,8 +462,20 @@ def compute_dashboard(
         lo = line_overrides.get((key, wc, line_key), {})
         plan_own = lo.get("plan")
         actual_own = lo.get("actual")
-        plan_qty = _f(plan_own) if plan_own is not None else _f(q.get("plan_qty"))
-        actual_qty = _f(actual_own) if actual_own is not None else _f(q.get("actual_qty"))
+        # …and step 3, the SAP snapshot, answers only while the line TAKES it: a
+        # row switched off auto-fill, or carrying no SAP code, is not filled by
+        # the file (see takes_sap). Step 2 is untouched — the group's value is
+        # still read where a PERSON typed it, since the switch is about the file
+        # and not about who may state a number. With neither the row resolves to
+        # 0, which is what the page has always shown for a position the day's
+        # upload did not mention.
+        sap_ok = takes_sap(p.get("sap_code"), p.get("auto_fill", True))
+        plan_grp = sap_ok or bool(q.get("plan_overridden"))
+        actual_grp = sap_ok or bool(q.get("actual_overridden"))
+        plan_qty = (_f(plan_own) if plan_own is not None
+                    else (_f(q.get("plan_qty")) if plan_grp else 0.0))
+        actual_qty = (_f(actual_own) if actual_own is not None
+                      else (_f(q.get("actual_qty")) if actual_grp else 0.0))
 
         labor = p.get("labor_time")
         has_labor = labor is not None
@@ -438,14 +511,23 @@ def compute_dashboard(
             # true = a person typed this number, at either level
             "plan_overridden": plan_own is not None or bool(q.get("plan_overridden")),
             "actual_overridden": actual_own is not None or bool(q.get("actual_overridden")),
+            # does the SAP upload fill this row (takes_sap), and the stored flag
+            # behind it. Two questions: the first is what the cell reads, the
+            # second is what the switch shows — a code-less line answers "no"
+            # while its flag is untouched, so the client must not re-derive one
+            # from the other.
+            "sap_filled": sap_ok,
+            "auto_fill": p.get("auto_fill", True) is not False,
             # what the client echoes back when it overrides this line's quantity
             "line_key": line_key,
             # how many catalog lines currently share this quantity record, and
             # whether THIS row is still reading the shared one. The page says so
             # rather than leaving the reader to discover it by typing.
             "group_size": p.get("group_size", 1),
-            "plan_shared": plan_own is None and (p.get("group_size", 1) or 1) > 1,
-            "actual_shared": actual_own is None and (p.get("group_size", 1) or 1) > 1,
+            # …and a row reading no group value at all is not sharing one,
+            # however many lines the group holds.
+            "plan_shared": plan_grp and plan_own is None and (p.get("group_size", 1) or 1) > 1,
+            "actual_shared": actual_grp and actual_own is None and (p.get("group_size", 1) or 1) > 1,
             "sort_order": p.get("sort_order", 0),
         })
 

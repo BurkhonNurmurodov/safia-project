@@ -17,8 +17,8 @@ Admin-only:
     PUT  /admin/production/work-centers/{id}    {shtatka, capacity}
     GET    /admin/production/catalog?manager_id=
     POST   /admin/production/catalog            {manager_id, sap_code, name, work_center, labor_time}
-    PUT    /admin/production/catalog/{id}       {labor_time, name, sap_code, work_center, active}
-    PUT    /admin/production/catalog/bulk        {ids, work_center, labor_time}
+    PUT    /admin/production/catalog/{id}       {labor_time, name, sap_code, work_center, active, auto_fill}
+    PUT    /admin/production/catalog/bulk        {ids, work_center, labor_time, auto_fill}
     DELETE /admin/production/catalog/{id}
 """
 from __future__ import annotations
@@ -59,7 +59,7 @@ from app.services import shift_scope
 from app.services import zagruzka_source
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
-                                   line_keys, group_sizes, faza_quantities,
+                                   line_keys, group_sizes, faza_quantities, takes_sap,
                                    DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
 from app.services.name_map import sheet_alias_map
@@ -356,6 +356,10 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             "sap_code": p.sap_code, "name": p.name, "work_center": p.work_center,
             "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
             "sort_order": p.sort_order,
+            # Whether the SAP upload fills this line — resolved by the engine
+            # through pp_calc.takes_sap, never here, so the page and the
+            # загрузка cannot disagree about which rows the file answers for.
+            "auto_fill": p.auto_fill,
             "line_key": keys.get(p.id, ""),
             "group_size": sizes.get((daily_key(p.sap_code, p.name), p.work_center or ""), 1),
         } for p in products],
@@ -1230,7 +1234,13 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     an upload: filter фаза ops to their work centers, join → SKU
     (catalog-filtered), aggregate ПЛАН/ФАКТ. Returns rows written. The SAP
     export is one plant-wide file — upload_phase parses it once, stores the raw
-    slices globally, and calls this per configured brigadir."""
+    slices globally, and calls this per configured brigadir.
+
+    A line the file does not answer for — auto-fill switched off, or no SAP code
+    (`pp_calc.takes_sap`) — keeps whatever was typed for it: its per-line values
+    are neither dropped nor cleared here, and a hand-typed value on the group row
+    is written down onto it before that row is replaced. Its group's snapshot is
+    still written, because the siblings that DO read it share that record."""
     # Scope to this brigadir: own work centers (config ∪ catalog) and catalog SKUs.
     products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
     own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
@@ -1238,6 +1248,20 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     # Only CODED lines can match a SAP order; the escape hatch below is "this
     # brigadir has no catalog at all", not "no line of it carries a code".
     catalog_skus = {p.sap_code for p in products if p.sap_code}
+
+    # The lines this upload must not reach — auto-fill switched off, or no SAP
+    # code at all (pp_calc.takes_sap). The pp_daily record is still written for
+    # their group: it is keyed by (SKU, work centre) and their siblings may well
+    # read it, and it is a record of what the file said rather than any one
+    # line's property. What changes is that their OWN typed values survive the
+    # upload — without that, "this row is kept by hand" would last exactly until
+    # somebody uploaded the day, which is the whole thing the switch is for.
+    # `line_keys` is read over EVERY line of the unit, active or not, as
+    # everywhere else: the identity must not move when a line is unticked.
+    all_keys = line_keys(products)
+    manual_lines = {(daily_key(p.sap_code, p.name), p.work_center or "",
+                     all_keys.get(p.id, ""))
+                    for p in products if not takes_sap(p.sap_code, p.auto_fill)}
 
     # Join фаза operations → SKU, then fold to (SKU, work center) through the ONE
     # rule — pp_calc.faza_quantities, which counts «Поставлено» once per order and
@@ -1258,13 +1282,54 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     if faza_agg:
         # mode 'both' = fresh daily snapshot → replace the date (also clears overrides).
         if mode == "both":
+            # A hand-typed value on the GROUP row is read by the manual lines
+            # under it (pp_calc.takes_sap: the switch silences the file, never a
+            # person), and this delete is the one moment it would be destroyed —
+            # so it is written down onto them first, exactly as
+            # `_set_line_override` explodes it before the first per-line write.
+            # Only where the line has nothing of its own, which already outranks
+            # it. Legacy residue by construction: no current bundle writes that
+            # level, so this fires on ever fewer dates and never on a group
+            # whose lines are all auto-filled.
+            if manual_lines:
+                by_group: dict[tuple[str, str], list[str]] = {}
+                for (qk, wc0, ln) in manual_lines:
+                    by_group.setdefault((qk, wc0), []).append(ln)
+                keep = {(lo.qty_key, lo.work_center, lo.line_key): lo
+                        for lo in db.query(PPLineDaily).filter(
+                            PPLineDaily.manager_id == manager_id,
+                            PPLineDaily.date == day).all()}
+                for d0 in db.query(PPDaily).filter(
+                        PPDaily.manager_id == manager_id, PPDaily.date == day).all():
+                    if d0.plan_override is None and d0.actual_override is None:
+                        continue
+                    qk, wc0 = d0.sap_code, d0.work_center
+                    for ln in by_group.get((qk, wc0), ()):
+                        row = keep.get((qk, wc0, ln))
+                        if row is None:
+                            row = PPLineDaily(manager_id=manager_id, date=day,
+                                              qty_key=qk, work_center=wc0, line_key=ln)
+                            db.add(row)
+                            keep[(qk, wc0, ln)] = row
+                        if row.plan_override is None and d0.plan_override is not None:
+                            row.plan_override = d0.plan_override
+                        if row.actual_override is None and d0.actual_override is not None:
+                            row.actual_override = d0.actual_override
+                db.flush()
             db.query(PPDaily).filter(PPDaily.manager_id == manager_id, PPDaily.date == day).delete()
             # The per-line overlay is a manual value like any other, so the same
             # sentence in the docstring governs it: a SAP upload resets what was
             # typed. Leaving it behind would let a hand-typed line outlive the
             # figure it was correcting, on a date the file has just restated.
-            db.query(PPLineDaily).filter(PPLineDaily.manager_id == manager_id,
-                                         PPLineDaily.date == day).delete()
+            # EXCEPT on a line the file does not answer for (`manual_lines`),
+            # where there is no restatement to outlive — dropping it would empty
+            # the row to 0 and leave nothing to put back.
+            for lo in db.query(PPLineDaily).filter(
+                    PPLineDaily.manager_id == manager_id,
+                    PPLineDaily.date == day).all():
+                if (lo.qty_key, lo.work_center, lo.line_key) in manual_lines:
+                    continue
+                db.delete(lo)
             db.flush()
         for (sap, wc), agg in faza_agg.items():
             row = db.query(PPDaily).filter(
@@ -1293,6 +1358,8 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
                     PPLineDaily.manager_id == manager_id, PPLineDaily.date == day).all():
                 if (lo.qty_key, lo.work_center) not in touched:
                     continue
+                if (lo.qty_key, lo.work_center, lo.line_key) in manual_lines:
+                    continue   # the file does not answer for this line
                 if col:
                     setattr(lo, col, None)
     return updated
@@ -1602,16 +1669,23 @@ async def import_catalog(
     # Hand-pinned фаза values live only here (the sheet has no such column), so
     # carry them across the wipe by the line's own key (daily_key + work centre),
     # which is the SAP code unless the line has none.
+    old_lines = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
     kept_ops = {(daily_key(p.sap_code, p.name), p.work_center): p.op
-                for p in db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
-                if p.op}
+                for p in old_lines if p.op}
+    # «This row is kept by hand» lives only here too, and the sheet has no such
+    # column — so it rides across the wipe on the same key as the фаза pin.
+    # Losing it would put a row an operator took OFF auto-fill back on it, and
+    # the next upload would overwrite the number they typed.
+    kept_manual = {(daily_key(p.sap_code, p.name), p.work_center)
+                   for p in old_lines if not p.auto_fill}
     replaced = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
     for i, p in enumerate(parsed["products"]):
+        ident = (daily_key(p["sap_code"], p.get("name")), p.get("work_center") or "")
         db.add(PPProduct(
             manager_id=manager_id, sap_code=p["sap_code"], name=p.get("name") or "",
             work_center=p.get("work_center") or "", labor_time=p.get("labor_time"),
-            op=kept_ops.get((daily_key(p["sap_code"], p.get("name")),
-                             p.get("work_center") or "")),
+            op=kept_ops.get(ident),
+            auto_fill=ident not in kept_manual,
             sort_order=i,
         ))
 
@@ -1775,7 +1849,8 @@ def admin_catalog(manager_id: int = Query(...), _: dict = Depends(_verify_admin)
     return [{"id": p.id, "sap_code": p.sap_code, "name": p.name,
              "work_center": p.work_center, "op": p.op,
              "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
-             "active": p.active} for p in rows]
+             "active": p.active, "auto_fill": p.auto_fill,
+             "sap_filled": takes_sap(p.sap_code, p.auto_fill)} for p in rows]
 
 
 class CatalogCreateBody(BaseModel):
@@ -1785,6 +1860,9 @@ class CatalogCreateBody(BaseModel):
     work_center: str
     op: Optional[str] = None
     labor_time: Optional[float] = None
+    # Does the SAP upload fill this line's ПЛАН/ФАКТ? Only a CODED line can be
+    # asked — see the 400 below. Omitted = the platform's default, on.
+    auto_fill: Optional[bool] = None
 
 
 @router.post("/admin/production/catalog")
@@ -1804,12 +1882,20 @@ def admin_create_catalog(body: CatalogCreateBody,
         raise HTTPException(status_code=400, detail="work_center cannot be empty")
     if not sap and not name:
         raise HTTPException(status_code=400, detail="a line without a SAP code needs a name")
+    # The switch is offered only on a coded line, and the endpoint says so
+    # itself rather than trusting the form: a code-less line is answered by
+    # `takes_sap` already and storing a choice for it would be a control that
+    # reports success and decides nothing.
+    if body.auto_fill is not None and not sap:
+        raise HTTPException(status_code=400,
+                            detail="auto-fill applies only to a line with a SAP code")
     max_sort = db.query(func.max(PPProduct.sort_order)).filter(
         PPProduct.manager_id == body.manager_id).scalar() or 0
     p = PPProduct(
         manager_id=body.manager_id, sap_code=sap, name=name,
         work_center=wc, op=((body.op or "").strip() or None),
         labor_time=body.labor_time, sort_order=max_sort + 1,
+        auto_fill=(True if body.auto_fill is None else bool(body.auto_fill)),
     )
     db.add(p)
     db.commit()
@@ -1819,6 +1905,7 @@ def admin_create_catalog(body: CatalogCreateBody,
         unit_id=p.manager_id,
         details=[("sap_code", p.sap_code or None), ("product", p.name or None),
                  ("work_center", p.work_center), ("phase", p.op),
+                 ("auto_fill", p.auto_fill),
                  ("minutes", float(p.labor_time) if p.labor_time is not None else None)],
     )
     return {"ok": True, "id": p.id}
@@ -1992,6 +2079,7 @@ class CatalogBody(BaseModel):
     work_center: Optional[str] = None
     op: Optional[str] = None
     active: Optional[bool] = None
+    auto_fill: Optional[bool] = None   # coded lines only — see the handler
 
 
 # REGISTERED BEFORE `/catalog/{prod_id}`, and it has to be: FastAPI matches
@@ -2009,6 +2097,7 @@ class CatalogBulkBody(BaseModel):
     ids: list[int]
     work_center: Optional[str] = None
     labor_time: Optional[float] = None
+    auto_fill: Optional[bool] = None
 
 
 @router.put("/admin/production/catalog/bulk")
@@ -2017,8 +2106,10 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                               db: Session = Depends(get_db)):
     """Set the same field on SEVERAL catalog lines at once.
 
-    The fields are exactly the two that can mean the same thing on many rows:
-    Команда and Трудоемкость. **SAP code and name are deliberately not among
+    The fields are exactly the ones that can mean the same thing on many rows:
+    Команда, Трудоемкость and whether the SAP upload fills the row
+    (`auto_fill` — "these twenty positions are kept by hand" is one decision,
+    not twenty). **SAP code and name are deliberately not among
     them** — they identify one line each, so "set them on twenty rows" is not
     an operation with a meaning, and offering it would only ever produce twenty
     lines the register cannot tell apart. `op` is left out for a subtler
@@ -2028,6 +2119,13 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
 
     A field left null is left ALONE on every row, which is what lets one modal
     change one thing without restating the other.
+
+    `auto_fill` reaches only the CODED lines of the selection: a code-less one
+    is answered by `pp_calc.takes_sap` already and has no choice to store. It is
+    SKIPPED and COUNTED, never a refusal of the whole batch — the selection is
+    the scope here, and an operator ticking a screenful of rows should not have
+    the press bounce because one of them carries no code — and `skipped_no_code`
+    is what lets the page say so instead of reporting a clean success.
 
     The batch is ONE unit's lines, ONE transaction and ONE action-log row. It
     refuses a mixed-unit selection rather than splitting it: units are what the
@@ -2051,7 +2149,7 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
     wc = body.work_center.strip() if body.work_center is not None else None
     if body.work_center is not None and not wc:
         raise HTTPException(status_code=400, detail="work_center cannot be empty")
-    if wc is None and body.labor_time is None:
+    if wc is None and body.labor_time is None and body.auto_fill is None:
         raise HTTPException(status_code=400, detail="nothing to change")
 
     prods = db.query(PPProduct).filter(PPProduct.id.in_(ids)).all()
@@ -2070,11 +2168,17 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
     # every batch that changes anything needs the snapshot and the carry.
     before = _catalog_snapshot(db, mid)
     edited = {}
+    skipped_no_code = 0
     for p in prods:
         if body.labor_time is not None:
             p.labor_time = body.labor_time
         if wc is not None:
             p.work_center = wc
+        if body.auto_fill is not None:
+            if not (p.sap_code or "").strip():
+                skipped_no_code += 1
+            else:
+                p.auto_fill = bool(body.auto_fill)
         edited[p.id] = p
 
     after = [({**d, "work_center": edited[d["id"]].work_center,
@@ -2088,9 +2192,12 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
         target_name=f"{len(prods)} × {wc or ''}".strip(), unit_id=mid,
         details=[("rows", len(prods)), ("work_center", wc),
                  ("minutes", body.labor_time),
+                 ("auto_fill", body.auto_fill),
+                 ("skipped_no_code", skipped_no_code or None),
                  ("carried_values", carried or None)],
     )
-    return {"ok": True, "updated": len(prods), "carried": carried}
+    return {"ok": True, "updated": len(prods), "carried": carried,
+            "skipped_no_code": skipped_no_code}
 
 
 @router.put("/admin/production/catalog/{prod_id}")
@@ -2100,7 +2207,7 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     if not p:
         raise HTTPException(status_code=404, detail="product not found")
     was = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
-           "phase": p.op, "enabled": p.active,
+           "phase": p.op, "enabled": p.active, "auto_fill": p.auto_fill,
            "minutes": float(p.labor_time) if p.labor_time is not None else None}
     # The unit's catalog as it stands BEFORE the edit. Four of these fields are
     # what the line's stored plan/fact are keyed by, so the old identity is
@@ -2137,6 +2244,15 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         p.op = body.op.strip() or None
     if body.active is not None:
         p.active = body.active
+    # Whether the SAP upload fills this line. Judged against the code the line
+    # ends the request WITH, so clearing the code and asking for auto-fill in
+    # one call is the contradiction it looks like rather than a stored setting
+    # nothing honours.
+    if body.auto_fill is not None:
+        if not (p.sap_code or "").strip():
+            raise HTTPException(status_code=400,
+                                detail="auto-fill applies only to a line with a SAP code")
+        p.auto_fill = bool(body.auto_fill)
     # Everything a person typed for this line follows it onto its new identity;
     # without this the reader misses and the cell reads 0 on every date at once.
     carried = 0
@@ -2147,7 +2263,7 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         carried = _carry_manual_quantities(db, p.manager_id, before, after)
     db.commit()
     now = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
-           "phase": p.op, "enabled": p.active,
+           "phase": p.op, "enabled": p.active, "auto_fill": p.auto_fill,
            "minutes": float(p.labor_time) if p.labor_time is not None else None}
     action_log.enrich(
         target_kind="catalog", target_id=p.id, target_name=p.sap_code or p.name,

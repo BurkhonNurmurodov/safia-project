@@ -45,7 +45,7 @@ from app.services.factory_scope import (
 # re-spelled: a second reading of "who counts as a person in this cell" is how
 # this screen and /downtime would start disagreeing about the same morning.
 from app.services.idle_source import _counted_hc
-from app.services.pp_calc import daily_key, line_keys, line_minutes
+from app.services.pp_calc import daily_key, line_keys, line_minutes, takes_sap
 
 router = APIRouter(prefix="/api/live-overview", tags=["live-overview"])
 
@@ -102,17 +102,26 @@ def _plan_inputs(db: Session, unit_ids: list, day: date):
         # moment a line above it is unticked.
         keys = line_keys(ups)
         lines_by_key: dict = defaultdict(list)
+        # The lines the SAP upload does not answer for — `pp_calc.takes_sap`,
+        # the same gate the Positions table applies, so the monitor and the page
+        # a brigadir opens next cannot state two plans for one shift.
+        sap_off: set = set()
         for p in ups:
             if not p.active or p.labor_time is None:
                 continue
-            lines_by_key[(p.work_center, daily_key(p.sap_code, p.name))].append(
+            qkey = daily_key(p.sap_code, p.name)
+            lines_by_key[(p.work_center, qkey)].append(
                 (keys.get(p.id, ""), float(p.labor_time)))
+            if not takes_sap(p.sap_code, p.auto_fill):
+                sap_off.add((p.work_center, qkey, keys.get(p.id, "")))
         shared: dict = {}
         updated = None
         for d in by_daily.get(uid, []):
             shared[(d.work_center, d.sap_code, d.date)] = (
                 float((d.plan_override if d.plan_override is not None else d.plan_qty) or 0),
                 float((d.actual_override if d.actual_override is not None else d.actual_qty) or 0),
+                # …and whether it was TYPED — see line_minutes' `sap_off`.
+                d.plan_override is not None, d.actual_override is not None,
             )
             if d.updated_at is not None and (updated is None or d.updated_at > updated):
                 updated = d.updated_at
@@ -124,7 +133,7 @@ def _plan_inputs(db: Session, unit_ids: list, day: date):
             )
             if lo.updated_at is not None and (updated is None or lo.updated_at > updated):
                 updated = lo.updated_at
-        pm, am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN)
+        pm, am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN, sap_off)
         for (wc, d), v in pm.items():
             wc_plan[(uid, wc)] = (float(v), float(am.get((wc, d), 0.0)))
         plan_by_unit[uid] = {

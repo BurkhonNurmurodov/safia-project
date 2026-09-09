@@ -112,6 +112,9 @@ const COLS = [
   { key: "vyp", labelKey: "production.col.vyp", align: "center", hintKey: "production.col.vypHint" },
   { key: "plan", labelKey: "production.col.plan", align: "center", edit: true, hintKey: "production.col.planHint" },
   { key: "fact", labelKey: "production.col.fact", align: "center", edit: true, hintKey: "production.col.factHint" },
+  // Where the two columns above come from — the file, or a person. It sits
+  // directly after them because that is the question it answers.
+  { key: "autofill", labelKey: "production.col.source", align: "center", hintKey: "production.col.sourceHint" },
   { key: "actual_labor", labelKey: "production.col.actualLabor", align: "center", hintKey: "production.col.actualLaborHint" },
   { key: "labor_total", labelKey: "production.col.totalLabor", align: "center", hintKey: "production.col.totalLaborHint" },
   { key: "minutes", labelKey: "production.col.minutes", align: "center" },
@@ -142,6 +145,8 @@ const sortVal = (r, key) => {
     case "people":       return r.people;
     case "vyp":          return r.total_labor ? r.actual_labor / r.total_labor : null;
     case "fact":         return r.actual_qty;
+    // Groups the manual rows together; the chip below says which is which.
+    case "autofill":     return r.sap_filled === false ? 0 : 1;
     case "plan":         return r.plan_qty;
     case "actual_labor": return r.actual_labor;
     case "labor_total":  return r.total_labor;
@@ -383,12 +388,18 @@ function ModalInput({ value, onChange, type = "text", className = "", placeholde
 }
 
 // Catalog form body — the editable catalog fields (Сап код / Команда /
-// Наименование / Труд. / Опер.), shared by the create and edit modals so both
-// stay identical. `draft` = { sap_code, name, labor_time, work_center, op };
-// `setDraft` is the curried (key) => (value) => … updater. A blank фаза keeps
-// the cell following the day's фаза upload.
+// Наименование / Труд. / Опер. / SAP auto-fill), shared by the create and edit
+// modals so both stay identical. `draft` = { sap_code, name, labor_time,
+// work_center, op, auto_fill }; `setDraft` is the curried (key) => (value) => …
+// updater. A blank фаза keeps the cell following the day's фаза upload.
 function CatalogFields({ draft, setDraft }) {
   const { t } = useLang();
+  // The auto-fill switch appears only on a CODED line, because only a coded one
+  // has a choice to make: the фаза file reaches a position through its SAP code,
+  // so a code-less line is entered by hand whatever the flag says (the backend
+  // answers the same way — a 400 rather than a setting nothing honours). It
+  // follows the code box live, so typing a code reveals it.
+  const hasCode = (draft.sap_code ?? "").trim() !== "";
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
@@ -413,6 +424,18 @@ function CatalogFields({ draft, setDraft }) {
           <ModalInput value={draft.op ?? ""} onChange={setDraft("op")} className="font-mono" />
         </Field>
       </div>
+      {hasCode && (
+        <Field label={t("production.autofill.label")} hint={t("production.autofill.hint")}>
+          <SegmentedToggle
+            fill
+            value={draft.auto_fill === false ? "manual" : "sap"}
+            onChange={(v) => setDraft("auto_fill")(v === "sap")}
+            options={[["sap", t("production.autofill.sap")],
+                      ["manual", t("production.autofill.manual")]]}
+            ariaLabel={t("production.autofill.label")}
+          />
+        </Field>
+      )}
     </>
   );
 }
@@ -1222,9 +1245,18 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
       const n = res?.data?.updated ?? 0;
+      // Code-less lines cannot carry the auto-fill choice, so the backend skips
+      // them. Saying nothing would report a clean success over rows that did not
+      // move — the reader has to know which ones the press could not reach.
+      const skipped = res?.data?.skipped_no_code ?? 0;
       setBulkDraft(null);
       setCatPick([]);
-      toast.success(t("production.bulk.done").replace("{n}", String(n)));
+      if (skipped > 0) {
+        toast.warning(`${t("production.bulk.done").replace("{n}", String(n))} · `
+          + t("production.bulk.skippedNoCode").replace("{n}", String(skipped)));
+      } else {
+        toast.success(t("production.bulk.done").replace("{n}", String(n)));
+      }
     },
     onError: (e) => toast.error(writeErr(e)),
   });
@@ -1428,7 +1460,9 @@ export default function Production() {
   // the backend refuses a mixed-unit batch, and a selection carried across would
   // otherwise aim at rows that are no longer on screen.
   useEffect(() => { setCatPick([]); setBulkDraft(null); }, [managerParam.manager_id]);
-  const openBulk = () => setBulkDraft({ work_center: "", labor_time: "" });
+  // `auto_fill: "keep"` is the third state a boolean cannot carry — "leave every
+  // row as it is" — which is what a blank text field means beside it.
+  const openBulk = () => setBulkDraft({ work_center: "", labor_time: "", auto_fill: "keep" });
   const bulkWc = (bulkDraft?.work_center ?? "").trim();
   const bulkLaborRaw = String(bulkDraft?.labor_time ?? "").trim();
   const bulkLabor = bulkLaborRaw === "" ? null : Number(bulkLaborRaw.replace(",", "."));
@@ -1436,13 +1470,15 @@ export default function Production() {
   // A blank field means "leave every row alone", so a form with both blank has
   // nothing to say — the primary action stays disabled rather than sending a
   // call the backend answers 400 to.
+  const bulkAuto = bulkDraft?.auto_fill ?? "keep";
   const canSaveBulk = !!bulkDraft && catPick.length > 0 && !bulkLaborBad
-    && (bulkWc !== "" || bulkLabor != null);
+    && (bulkWc !== "" || bulkLabor != null || bulkAuto !== "keep");
   const saveBulk = () => {
     if (!canSaveBulk) return;
     const body = { ids: catPick };
     if (bulkWc) body.work_center = bulkWc;
     if (bulkLabor != null) body.labor_time = bulkLabor;
+    if (bulkAuto !== "keep") body.auto_fill = bulkAuto === "sap";
     bulkCatalog.mutate(body);
   };
 
@@ -1568,18 +1604,45 @@ export default function Production() {
         return <td key={key} className="px-3 py-2 text-center"><VypCell value={vyp} /></td>;
       // QtyCell IS the <td> — the spreadsheet editor fills the cell, so the cell
       // has to be what owns it (padding box, borders and all).
+      // A row the upload does not fill says so ON the cell: the number stands
+      // until somebody changes it, which is not what the column next door
+      // promises. That statement outranks «shared by N lines» — a row reading no
+      // group figure is not sharing one.
       case "fact":
         return (
           <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
-            title={r.actual_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
+            title={r.sap_filled === false ? t("production.autofill.cellHint")
+              : r.actual_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
             value={r.actual_qty} onSave={saveOverride(r, "actual")} />
         );
       case "plan":
         return (
           <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
-            title={r.plan_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
+            title={r.sap_filled === false ? t("production.autofill.cellHint")
+              : r.plan_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
             value={r.plan_qty} onSave={saveOverride(r, "plan")} />
         );
+      case "autofill": {
+        // Two states, never three: a row is filled by the file or it is typed.
+        // WHY it is typed — the operator switched it off, or the line carries no
+        // SAP code and never could be filled — is the same fact for a reader, so
+        // it lives in the tooltip instead of a third chip nobody can decode.
+        const auto = r.sap_filled !== false;
+        const why = r.sap_code ? "production.autofill.whyOff" : "production.autofill.whyNoCode";
+        return (
+          <td key={key} className="px-3 py-2 text-center">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
+                  title={t(auto ? "production.autofill.whyOn" : why)}
+                  style={auto
+                    ? { color: "var(--text-3)", border: "1px solid var(--border)" }
+                    : { color: "var(--brand-text)", background: "rgba(var(--brand-rgb), 0.12)",
+                        border: "1px solid rgba(var(--brand-rgb), 0.28)" }}>
+              {auto ? <Download size={10} /> : <Pencil size={10} />}
+              {t(auto ? "production.autofill.sap" : "production.autofill.manual")}
+            </span>
+          </td>
+        );
+      }
       case "actual_labor":
         return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.actual_labor, 1)}</td>;
       case "labor_total":
@@ -1645,13 +1708,17 @@ export default function Production() {
       labor_time: r.labor_time == null ? "" : String(r.labor_time),
       work_center: r.work_center ?? "",
       op: r.op ?? "",
+      // the STORED flag, not `sap_filled` — a code-less row answers "not filled"
+      // while its switch is untouched, and the switch is what this seeds.
+      auto_fill: r.auto_fill !== false,
     });
     setEditRow(r);
   };
   const setDraft = (k) => (v) => setCatDraft((d) => ({ ...d, [k]: v }));
   // «Qo'shish» opens the create modal with a blank draft (same four fields).
   const openCreate = () => {
-    setCatDraft({ sap_code: "", name: "", labor_time: "", work_center: "", op: "" });
+    setCatDraft({ sap_code: "", name: "", labor_time: "", work_center: "", op: "",
+                  auto_fill: true });
     setCreateOpen(true);
   };
   // Команда is always required; the SAP code is not — a line without one is
@@ -1673,6 +1740,9 @@ export default function Production() {
         work_center: wc,
         op: (catDraft.op ?? "").trim() || null,
         labor_time: labor != null && !Number.isNaN(labor) ? labor : null,
+        // Only a coded line carries the choice; sending it for a code-less one
+        // is a 400, and rightly so — there would be nothing for it to decide.
+        ...(sap ? { auto_fill: catDraft.auto_fill !== false } : {}),
       },
       { onSuccess: () => setCreateOpen(false) },
     );
@@ -1696,6 +1766,11 @@ export default function Production() {
     if (wc && wc !== (r.work_center ?? "")) body.work_center = wc;
     if (op !== (r.op ?? "")) body.op = op;
     if (labor != null && !Number.isNaN(labor) && labor !== (r.labor_time ?? null)) body.labor_time = labor;
+    // Judged against the code the line ENDS UP with, exactly as the endpoint
+    // judges it: clearing the code and setting auto-fill in one save is a
+    // contradiction, and the field is simply not sent.
+    const autoFill = catDraft.auto_fill !== false;
+    if (sap && autoFill !== (r.auto_fill !== false)) body.auto_fill = autoFill;
     const done = () => { setEditRow(null); setCatSel(null); };
     if (Object.keys(body).length) catalog.mutate({ id: r.id, body }, { onSuccess: done });
     else done();
@@ -2346,6 +2421,17 @@ export default function Production() {
               />
             </Field>
           </div>
+          <Field label={t("production.autofill.label")} hint={t("production.bulk.autofillHint")}>
+            <SegmentedToggle
+              fill
+              value={bulkAuto}
+              onChange={(v) => setBulkDraft((d) => ({ ...d, auto_fill: v }))}
+              options={[["keep", t("production.bulk.unchanged")],
+                        ["sap", t("production.autofill.sap")],
+                        ["manual", t("production.autofill.manual")]]}
+              ariaLabel={t("production.autofill.label")}
+            />
+          </Field>
           {/* SAP код and Наименование are missing on purpose, and the reader is
               told why rather than left to wonder where they went. */}
           <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
