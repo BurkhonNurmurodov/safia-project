@@ -61,12 +61,15 @@ PAD = 32
 HIST = (59, 130, 246)      # the history line — chartPalette's blue, as on the page
 BAND = (148, 163, 184)     # the mean ± σ band
 
+# ONE vocabulary for the whole feature: the PNG below and the Rich-HTML body
+# in services/forecast_rich both read this, so the picture and the words beside
+# it can never name the same figure two different ways.
 L = {
     "uz": {
         "title": "Xodim chaqirish prognozi", "rec": "Tavsiya etiladi",
         "max": "Maksimum", "load": "Zagruzka foizi", "people": "nafar",
         "chart": "Oxirgi 3 ta {wd} · odam soni", "forecast": "Prognoz",
-        "fact": "Amaldagi",
+        "fact": "Amaldagi", "sup": "Brigadir", "day": "Sana",
         "band": "Ehtimoliy oraliq", "min": "daq", "nodata": "Ma'lumot yo'q",
         "none": "Bu kun uchun yetarli tarix yo'q — prognoz hisoblanmadi.",
         "basis": "{have} ta hafta {want} tadan · o'rtacha {mean} nafar",
@@ -79,7 +82,7 @@ L = {
         "title": "Ходим чақириш прогнози", "rec": "Тавсия этилади",
         "max": "Максимум", "load": "Загрузка фоизи", "people": "нафар",
         "chart": "Охирги 3 та {wd} · одам сони", "forecast": "Прогноз",
-        "fact": "Амалдаги",
+        "fact": "Амалдаги", "sup": "Бригадир", "day": "Сана",
         "band": "Эҳтимолий оралиқ", "min": "дақ", "nodata": "Маълумот йўқ",
         "none": "Бу кун учун етарли тарих йўқ — прогноз ҳисобланмади.",
         "basis": "{have} та ҳафта {want} тадан · ўртача {mean} нафар",
@@ -92,7 +95,7 @@ L = {
         "title": "Прогноз по вызову сотрудников", "rec": "Рекомендуется",
         "max": "Максимум", "load": "Процент загрузки", "people": "чел.",
         "chart": "Последние 3 {wd} · количество людей", "forecast": "Прогноз",
-        "fact": "Факт",
+        "fact": "Факт", "sup": "Бригадир", "day": "Дата",
         "band": "Вероятный диапазон", "min": "мин", "nodata": "Нет данных",
         "none": "За этот день недостаточно истории — прогноз не рассчитан.",
         "basis": "{have} из {want} недель · среднее {mean} чел.",
@@ -105,7 +108,7 @@ L = {
         "title": "Staff call forecast", "rec": "Recommended",
         "max": "Maximum", "load": "Load percentage", "people": "workers",
         "chart": "Last 3 {wd}s · worker count", "forecast": "Forecast",
-        "fact": "Actual",
+        "fact": "Actual", "sup": "Supervisor", "day": "Date",
         "band": "Likely range", "min": "min", "nodata": "No data",
         "none": "Not enough history for this day — no forecast was computed.",
         "basis": "{have} of {want} weeks · mean {mean} workers",

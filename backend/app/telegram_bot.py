@@ -5177,7 +5177,7 @@ def _ojidaniya_cmd(message: types.Message):
 # supervisor testing this sees their own shift's brigadirs, an admin sees all.
 
 _FC_PER_ROW = 2          # inline buttons per row — a name needs half a phone
-_TG_CAPTION_MAX = 1024   # Telegram's cap on a document caption
+_TG_CAPTION_MAX = 1024   # Telegram's cap on a photo/document caption
 
 
 def _fc_managers(db, payload: dict) -> list:
@@ -5259,7 +5259,7 @@ def _fc_callback(call: types.CallbackQuery):
     request, never an authorisation."""
     from app.routers.production import FORECAST_WEEKS, _call_rows
     from app.routers.staff import _mk_notif_tg
-    from app.services import forecast_autocall
+    from app.services import forecast_autocall, forecast_rich
     from app.services.downtime_card import CardError
     from app.services.forecast_card import render_forecast_card
 
@@ -5313,6 +5313,14 @@ def _fc_callback(call: types.CallbackQuery):
                 "max": row["band_hi"] if row["band_hi"] is not None else (
                     fc if fc is not None else "—"),
             }, lang)
+            # …and the Rich variant of the same facts, with the card as its
+            # figure. Built here so a failure costs the RICH body only: the
+            # classic caption above is already in hand as the fallback.
+            try:
+                rich = forecast_rich.body(row, target, lang, eff, FORECAST_WEEKS)
+            except Exception:
+                logger.exception("Forecast rich body failed for %s", tid)
+                rich = None
     except CardError as exc:
         logger.error("Forecast card failed for %s: %s", tid, exc)
         bot.send_message(call.message.chat.id, _msg(lang, "shot_failed"))
@@ -5323,19 +5331,37 @@ def _fc_callback(call: types.CallbackQuery):
         return
 
     fname = f"forecast-{mgr.id}-{target:%Y%m%d}.png"
-    # send_document, not send_photo: Telegram re-compresses photos and caps them
-    # at 1280px, which turns the chart's own numbers to mush (the /ojidaniya
-    # card's reasoning). A caption over Telegram's 1024-char cap is refused
-    # outright, so a long body is sent as its own message instead of lost.
+    chat = call.message.chat.id
+
+    # Rich message first — the card as the figure of a laid-out body, the same
+    # try-rich-then-degrade shape /ojidaniya uses. The PNG rides as ordinary
+    # photo media, so BOTH paths put an image in the chat rather than a file.
+    if rich:
+        try:
+            from app.routers.broadcast import _tg_api
+            payload_rich = {"html": rich, "is_rtl": False,
+                            "media": [{"id": forecast_rich.PHOTO_ID,
+                                       "media": {"type": "photo",
+                                                 "media": "attach://f0"}}]}
+            _tg_api("sendRichMessage",
+                    {"chat_id": chat, "rich_message": json.dumps(payload_rich)},
+                    {"f0": (fname, png)})
+            return
+        except Exception as exc:
+            logger.warning("sendRichMessage failed for %s, falling back to the "
+                           "photo: %s", tid, exc)
+
+    # Degrade to a photo with the classic DM body as its caption. A caption over
+    # Telegram's 1024-char cap is refused outright, so a long body is sent as
+    # its own message rather than costing the reader the picture.
     if body and len(body) <= _TG_CAPTION_MAX:
-        bot.send_document(call.message.chat.id, document=(fname, png),
-                          caption=body, parse_mode="HTML")
+        bot.send_photo(chat, photo=(fname, png), caption=body, parse_mode="HTML")
         return
-    bot.send_document(call.message.chat.id, document=(fname, png),
-                      caption=f"{mgr.name} · {target:%d.%m.%Y}")
+    bot.send_photo(chat, photo=(fname, png),
+                   caption=f"{mgr.name} · {target:%d.%m.%Y}")
     if body:
         try:
-            _send_html_message(call.message.chat.id, body)
+            _send_html_message(chat, body)
         except Exception:
             logger.warning("Forecast body send failed for %s", tid, exc_info=True)
 

@@ -1,0 +1,145 @@
+"""The call forecast as a Rich-HTML body (sendRichMessage), with the card as
+its figure.
+
+The twin of services/ojidaniya_svodka next door, for the «Smenaga chaqirish»
+message: same dialect, same figure mechanism (``tg://photo?id=…`` resolved
+against the media attached to the send), same degrade-to-the-classic-DM
+contract. Where the plain DM is five labelled lines, this lays the same facts
+out as a table, embeds the PNG, and adds the ONE thing the plain DM cannot
+carry — the week-by-week history the recommendation was averaged over, in
+figures beside the picture of it.
+
+Three rules, and the first two are what stop this becoming a second answer:
+
+* **The title and the disclaimer are the NOTIFICATION's own.** Both are read
+  out of ``_NOTIF_STRINGS["call_forecast"]`` — the template the bell row and
+  the classic DM already render — and the disclaimer is simply everything
+  after the field block, which carries no placeholders in any of the four
+  languages. A brigadir must not be told one thing by the rich message and
+  another by the plain one that replaces it when their client cannot render
+  rich; copying that wording into this module is how the two would drift, and
+  the wording is the part that matters most.
+
+* **Every other word is the CARD's vocabulary** (``forecast_card.L``), so the
+  table and the picture beside it name the same figures identically.
+
+* **It computes nothing.** Like the card, it is handed one ``_call_rows`` row.
+
+``with_image`` is False when there is no PNG to attach — the body is then
+complete on its own rather than referencing a figure that will not resolve.
+"""
+from __future__ import annotations
+
+from datetime import date
+from html import escape
+
+from app.services.forecast_card import _RU_WD_NOM, _fmt_min, _t
+
+# The media id the figure resolves against; the sender attaches the PNG under
+# it. Must match the ``id`` in the sendRichMessage media array.
+PHOTO_ID = "fc1"
+
+
+def _esc(v) -> str:
+    """Escape for element CONTENT — `&`, `<`, `>` and nothing else.
+
+    ``quote=False`` is load-bearing, not a shortcut: Uzbek Latin is full of
+    apostrophes (yo'q, ko'rish, o'rtacha) and the default would turn every one
+    of them into `&#x27;`. The shipped classic DM escapes only the interpolated
+    values and leaves its own text raw, so escaping quotes here would make the
+    rich message and the plain one it degrades to look different in exactly the
+    language most of the plant reads. Nothing on this body is built into an
+    ATTRIBUTE — every attribute is a literal — so quotes need no escaping.
+    """
+    return escape(str(v), quote=False)
+
+
+def _notif(lang: str) -> tuple[str, str]:
+    """(title, disclaimer) straight from the notification template, so the rich
+    message and the classic DM it degrades to say the same thing."""
+    # function-level import: staff.py is heavy and importing it at module level
+    # would close a circle through the routers.
+    from app.routers.staff import _NOTIF_STRINGS
+
+    strings = _NOTIF_STRINGS["call_forecast"]
+    title, body = strings.get(lang) or strings["en"]
+    parts = body.split("\n\n", 1)
+    return title, (parts[1] if len(parts) > 1 else "")
+
+
+def _rows_table(slots: list[dict], t: dict, target: date, forecast) -> str:
+    """The history, in figures — one row per preceding same weekday, plus the
+    forecast as the last row. A week the source sheet has no plan for keeps its
+    row and reads «—»: dropping it would make a one-sample average look like a
+    three-sample one, exactly as the chart's gap does."""
+    out = ['<table bordered striped>',
+           f'<tr><th align="left">{_esc(t["day"])}</th>'
+           f'<th align="right">{_esc(t["people"])}</th>'
+           f'<th align="right">{_esc(t["min"])}</th></tr>']
+    for s in slots:
+        d = s["date"].strftime("%d.%m")
+        if s["workers"] is None:
+            out.append(f'<tr><td>{d}</td><td align="right">—</td>'
+                       f'<td align="right">{_esc(t["nodata"])}</td></tr>')
+        else:
+            out.append(f'<tr><td>{d}</td>'
+                       f'<td align="right">{s["workers"]}</td>'
+                       f'<td align="right">{_fmt_min(s["plan_min"] or 0)}</td></tr>')
+    if forecast is not None:
+        out.append(f'<tr><td><b>{target:%d.%m}</b> · {_esc(t["forecast"])}</td>'
+                   f'<td align="right"><b>{forecast}</b></td>'
+                   f'<td align="right">—</td></tr>')
+    out.append('</table>')
+    return "\n".join(out)
+
+
+def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
+         weeks: int = 3, with_image: bool = True) -> str:
+    """The Rich-HTML body for ONE brigadir's call forecast."""
+    from app.services.forecast_card import collect
+
+    t = _t(lang)
+    data = collect(row, target, weeks)
+    title, disclaimer = _notif(lang)
+    wd = target.weekday()
+    wd_name = _RU_WD_NOM[wd] if lang == "ru" else t["wd"][wd]
+    name = _esc(data["name"])
+    fc, hi = data["forecast"], data["band_hi"]
+    people = _esc(t["people"])
+
+    parts = [f"<h3>{_esc(title)}</h3>"]
+    if with_image:
+        parts.append(
+            f'<figure><img src="tg://photo?id={PHOTO_ID}"/>'
+            f'<figcaption>{name} · {_esc(wd_name)}, {target:%d.%m.%Y}'
+            f'<cite>Safia Dashboard</cite></figcaption></figure>')
+
+    parts.append(
+        '<table bordered striped>\n'
+        f'<tr><td>👤 {_esc(t["sup"])}</td><td align="right"><b>{name}</b></td></tr>\n'
+        f'<tr><td>📅 {_esc(t["day"])}</td><td align="right">{target:%d.%m.%Y}</td></tr>\n'
+        f'<tr><td>📊 {_esc(t["load"])}</td><td align="right">{eff}%</td></tr>\n'
+        f'<tr><td>🧑‍🍳 {_esc(t["rec"])}</td><td align="right">'
+        f'<b>{fc if fc is not None else "—"} {people}</b></td></tr>\n'
+        f'<tr><td>⚠️ {_esc(t["max"])}</td><td align="right">'
+        f'{hi if hi is not None else "—"} {people}</td></tr>\n'
+        '</table>')
+
+    if fc is None:
+        # No history, so there is no table to show and no average to explain —
+        # say why the figures above are blank instead of leaving them bare.
+        parts.append(f"<p>{_esc(t['none'])}</p>")
+    else:
+        parts.append(f"<h4>{_esc(t['chart'].format(wd=t['wd'][wd]))}</h4>")
+        parts.append(_rows_table(data["slots"], t, target, fc))
+        basis = t["basis"].format(
+            have=data["n"], want=data["weeks"],
+            mean=(round(data["mean"], 1) if data["mean"] is not None else "—"))
+        conf = t["conf"].get(data["confidence"], data["confidence"])
+        parts.append(f"<p>{_esc(basis)} · <b>{_esc(conf)}</b></p>")
+
+    if disclaimer:
+        parts.append("<blockquote>"
+                     + _esc(disclaimer).replace("\n", "<br/>")
+                     + "</blockquote>")
+    return "\n".join(parts)
