@@ -156,14 +156,20 @@ def cell_people(cells, pins: dict[tuple[int, str, str], float]) -> dict[tuple[in
     return dict(out)
 
 
-def unit_labor(db: Session, manager_ids: Iterable[int],
-               date_from: date, date_to: date) -> dict[tuple[int, str], tuple[float, float]]:
-    """``{(manager_id, "YYYY-MM-DD"): (plan_minutes, actual_minutes)}``.
+def wc_labor(db: Session, manager_ids: Iterable[int],
+             date_from: date, date_to: date) -> dict[tuple[int, str, str], tuple[float, float]]:
+    """``{(manager_id, "YYYY-MM-DD", work_center): (plan_minutes, actual_minutes)}``.
+
+    THE trudoyomkost, one work centre at a time — and `unit_labor` below is a
+    fold of this and nothing else, so the загрузка's numerator and any
+    per-work-centre reading of it can never be two different numbers. Values are
+    UNROUNDED here for exactly that reason: the unit figure rounds ONCE, after
+    the sum, as it always has.
 
     The production page's own numbers: `pp_calc.line_minutes` over the unit's
-    active catalog, summed across every work centre. A (unit, day) the catalog
-    or the quantities cannot answer is ABSENT, never (0, 0) — the загрузка has
-    no numerator then, and a zero would render as a genuinely idle unit.
+    active catalog. A (unit, day, work centre) the catalog or the quantities
+    cannot answer is ABSENT, never (0, 0) — the загрузка has no numerator then,
+    and a zero would render as a genuinely idle work centre.
 
     `line_keys` is computed PER UNIT, exactly as the Positions table computes
     it: a catalog belongs to one brigadir, and pooling two would let one unit's
@@ -204,7 +210,7 @@ def unit_labor(db: Session, manager_ids: Iterable[int],
             (float(lo.actual_override) if lo.actual_override is not None else None),
         )
 
-    acc: dict[tuple[int, str], list] = {}
+    acc: dict[tuple[int, str, str], list] = {}
     for mid, products in prods.items():
         keys = line_keys(products)
         lines_by_key: dict[tuple[str, str], list] = defaultdict(list)
@@ -225,11 +231,31 @@ def unit_labor(db: Session, manager_ids: Iterable[int],
         pm, am = line_minutes(lines_by_key, shared.get(mid, {}),
                               per_line.get(mid, {}), _SEC_PER_MIN, sap_off)
         for src, slot in ((pm, 0), (am, 1)):
-            for (_wc, d), v in src.items():
-                key = (mid, d.isoformat() if hasattr(d, "isoformat") else str(d))
+            for (wc, d), v in src.items():
+                key = (mid, d.isoformat() if hasattr(d, "isoformat") else str(d), wc)
                 row = acc.get(key)
                 if row is None:
                     row = acc[key] = [0.0, 0.0]
                 row[slot] += float(v or 0)
 
+    return {k: (v[0], v[1]) for k, v in acc.items()}
+
+
+def unit_labor(db: Session, manager_ids: Iterable[int],
+               date_from: date, date_to: date) -> dict[tuple[int, str], tuple[float, float]]:
+    """``{(manager_id, "YYYY-MM-DD"): (plan_minutes, actual_minutes)}``.
+
+    Σ over the unit's work centres of `wc_labor`, rounded once at the end — one
+    spelling of the resolution, folded two ways. A (unit, day) the catalog or
+    the quantities cannot answer is ABSENT, never (0, 0): the загрузка has no
+    numerator then, and a zero would render as a genuinely idle unit.
+    """
+    acc: dict[tuple[int, str], list] = {}
+    for (mid, day, _wc), (plan, actual) in wc_labor(
+            db, manager_ids, date_from, date_to).items():
+        row = acc.get((mid, day))
+        if row is None:
+            row = acc[(mid, day)] = [0.0, 0.0]
+        row[0] += plan
+        row[1] += actual
     return {k: (round(v[0], 2), round(v[1], 2)) for k, v in acc.items()}

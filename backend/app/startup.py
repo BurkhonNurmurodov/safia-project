@@ -5344,14 +5344,17 @@ UNPRICED_DM_TO = date(2026, 9, 8)
 _UNPRICED_DM_TRIES = 3
 
 
-def _unpriced_send_once(flag: str, what: str, sender) -> None:
-    """Deliver one unpriced-minutes report, once, and record that it went.
+def _send_report_once(flag: str, what: str, sender, chat: int,
+                      date_from: date, date_to: date) -> None:
+    """Deliver one boot-job report, once, and record that it went.
 
     ONE report per flag: the row is written on the first successful delivery and
     from then on this is a no-op, so the errand cannot repeat itself on the next
     deploy. Changing what a flag reports — a different window, a different chat,
     a different shape — needs a NEW flag key, or the old "already ran" mark makes
-    the new version a no-op on every box that has booted since.
+    the new version a no-op on every box that has booted since. The sender takes
+    ``(db, chat_id, date_from, date_to)`` and returns how many messages it sent;
+    everything else about the report is the sender's own business.
 
     The flag row doubles as the attempt counter, so a failure is retried on the
     next boot and then abandoned rather than re-fired forever. Nothing is stored
@@ -5377,7 +5380,7 @@ def _unpriced_send_once(flag: str, what: str, sender) -> None:
             return
 
         try:
-            n = sender(db, UNPRICED_DM_CHAT, UNPRICED_DM_FROM, UNPRICED_DM_TO)
+            n = sender(db, chat, date_from, date_to)
         except Exception as exc:
             tries += 1
             value = f"failed:{tries}"
@@ -5386,7 +5389,7 @@ def _unpriced_send_once(flag: str, what: str, sender) -> None:
             else:
                 db.add(AppSetting(key=flag, value=value))
             db.commit()
-            print(f"[startup] unpriced ojidaniya {what} failed "
+            print(f"[startup] {what} failed "
                   f"(attempt {tries}/{_UNPRICED_DM_TRIES}): {exc}")
             return
 
@@ -5395,11 +5398,11 @@ def _unpriced_send_once(flag: str, what: str, sender) -> None:
         else:
             db.add(AppSetting(key=flag, value=f"sent:{n}"))
         db.commit()
-        print(f"[startup] unpriced ojidaniya {what} sent to {UNPRICED_DM_CHAT} "
-              f"({n} message(s), {UNPRICED_DM_FROM}..{UNPRICED_DM_TO})")
+        print(f"[startup] {what} sent to {chat} "
+              f"({n} message(s), {date_from}..{date_to})")
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
-        print(f"[startup] unpriced ojidaniya {what} skipped: {exc}")
+        print(f"[startup] {what} skipped: {exc}")
     finally:
         db.close()
 
@@ -5408,7 +5411,9 @@ def report_unpriced_ojidaniya() -> None:
     """The register as a rich-message TABLE (v4.85.0). Inert once it has landed;
     kept so a delivery that failed on the first boot still gets its retries."""
     from app.services import unpriced_report
-    _unpriced_send_once(UNPRICED_DM_FLAG, "DM", unpriced_report.send)
+    _send_report_once(UNPRICED_DM_FLAG, "unpriced ojidaniya DM",
+                      unpriced_report.send, UNPRICED_DM_CHAT,
+                      UNPRICED_DM_FROM, UNPRICED_DM_TO)
 
 
 def report_unpriced_ojidaniya_xlsx() -> None:
@@ -5417,4 +5422,33 @@ def report_unpriced_ojidaniya_xlsx() -> None:
     above: the operator asked for the file after the message, so «already sent
     the DM» must not be read as «already sent this»."""
     from app.services import unpriced_report
-    _unpriced_send_once(UNPRICED_XLSX_FLAG, "XLSX", unpriced_report.send_xlsx)
+    _send_report_once(UNPRICED_XLSX_FLAG, "unpriced ojidaniya XLSX",
+                      unpriced_report.send_xlsx, UNPRICED_DM_CHAT,
+                      UNPRICED_DM_FROM, UNPRICED_DM_TO)
+
+
+# ── one-shot: what is still UNFILLED before the загрузка can be right ────────
+# The operator asked, on 2026-09-09, for two questions to be answered once —
+# who did not type «Odam soni» for a work centre that has a plan, and who filed
+# ojidaniya on a cell with no plan — plus anything else that has to be filled
+# before the number is right. Same window as the unpriced report above, so the
+# two files describe one week, and the same floor: before
+# `zagruzka_source.ZAGRUZKA_FROM` the production page was not the source of
+# either input, so nothing on it could have been left unfilled.
+ZGAPS_XLSX_FLAG = "zagruzka_gaps_xlsx_2026_09_09_v1"
+
+
+def report_zagruzka_gaps_xlsx() -> None:
+    """The unfilled-inputs register as a four-sheet workbook, DMed once.
+
+    Flag-guarded like every other errand here: it delivers on the first boot
+    after its own deploy and never again, and a failed delivery is retried on
+    the next boot and then abandoned rather than re-fired forever. Nothing is
+    stored — `zagruzka_gaps.collect` derives everything from the functions the
+    pages themselves divide by — so a number typed after this lands makes the
+    file stale, never wrong about the day it was taken.
+    """
+    from app.services import zagruzka_gaps
+    _send_report_once(ZGAPS_XLSX_FLAG, "zagruzka gaps XLSX",
+                      zagruzka_gaps.send_xlsx, UNPRICED_DM_CHAT,
+                      UNPRICED_DM_FROM, UNPRICED_DM_TO)

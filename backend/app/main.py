@@ -76,6 +76,7 @@ async def lifespan(app: FastAPI):
         set_forecast_autocall_capacity,
         report_unpriced_ojidaniya,
         report_unpriced_ojidaniya_xlsx,
+        report_zagruzka_gaps_xlsx,
         add_pp_product_auto_fill,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
@@ -339,6 +340,13 @@ async def lifespan(app: FastAPI):
     # has landed.
     report_unpriced_ojidaniya()
     report_unpriced_ojidaniya_xlsx()
+    # ⚠ TEMPORARY one-shot (2026-09-09) — the operator asked, once, for what is
+    # still UNFILLED before the загрузка can be trusted: «Odam soni» missing on a
+    # work centre that has a plan, ojidaniya filed on a cell with no plan, and
+    # everything else that blanks or skews the number. Flag-guarded, so it
+    # delivers on the first boot after this deploy and never again. Remove this
+    # line and `services/zagruzka_gaps.py` once the file has landed.
+    report_zagruzka_gaps_xlsx()
     yield
     shutdown_scheduler()
 
