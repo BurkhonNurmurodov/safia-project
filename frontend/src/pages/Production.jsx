@@ -125,11 +125,19 @@ const COLS = [
 // the columns that can never be hidden (the row's identity).
 const COL_PREF_KEY = "production.positions.cols";
 const LOCKED_COLS = new Set(["name"]);
-// Hidden until the reader unhides it (the operator's call, 2026-09-02): «Опер.»
-// is blank on almost every row, so it spent a column on nothing. Applied only
-// while a profile has never saved a visibility choice — a saved `hidden` list,
-// an empty one included («Show all»), is that person's answer and stands.
-const DEFAULT_HIDDEN = ["op"];
+// Hidden until the reader unhides it. «Опер.» (the operator's call,
+// 2026-09-02) is blank on almost every row, so it spent a column on nothing.
+// «Манба» (2026-09-09) is off for everyone BUT AN ADMIN: it answers whether the
+// row's ПЛАН/ФАКТ came from the SAP file or from a person, which is the same
+// question the per-row auto-fill switch is set from — and only an admin can set
+// one, or upload the file the other half of the answer names. Everybody else
+// was spending a column on a fact they cannot act on.
+// It is a DEFAULT and not a lock: the picker still offers it to everyone, one
+// tap away, because a supervisor asking "why is this number not the file's"
+// must be able to see the answer. Applied only while a profile has never saved
+// a visibility choice — a saved `hidden` list, an empty one included («Show
+// all»), is that person's answer and stands.
+const defaultHidden = (isAdmin) => (isAdmin ? ["op"] : ["op", "autofill"]);
 
 // Sort accessor per column — mirrors how each cell derives its value, so a header
 // click sorts on exactly what the row shows. Returns null for "missing" cells
@@ -1120,6 +1128,10 @@ export default function Production() {
 
   // Positions-table column visibility/order — Notion-style picker, persisted
   // per ACTIVE profile via /api/ui-prefs (follows the user across devices).
+  // Which columns start hidden depends on the role — see `defaultHidden`. Same
+  // spelling as `canSeeRaw` / `canEditCatalog` above, so one word means one
+  // thing on this page.
+  const isAdmin = auth?.role === "admin";
   const { data: savedCols } = useQuery({
     queryKey: ["ui-pref", COL_PREF_KEY],
     queryFn: () => api.get(`/api/ui-prefs/${COL_PREF_KEY}`).then((r) => r.data?.value),
@@ -1150,9 +1162,9 @@ export default function Production() {
     });
     const hidden = Array.isArray(saved?.hidden)
       ? saved.hidden.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k))
-      : DEFAULT_HIDDEN.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k));
+      : defaultHidden(isAdmin).filter((k) => keys.includes(k) && !LOCKED_COLS.has(k));
     return { order, hidden };
-  }, [colsLocal, savedCols]);
+  }, [colsLocal, savedCols, isAdmin]);
   const saveCols = useMutation({
     mutationFn: (value) => api.put(`/api/ui-prefs/${COL_PREF_KEY}`, { value }),
   });

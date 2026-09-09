@@ -3427,7 +3427,13 @@ the rest of the unit's catalog goes on being filled from the file. Set on the
 - Read surfaces: the «Манба» column on «Позиции» (a two-state chip — the file,
   or a person; WHY it is typed lives in the tooltip, because a third chip is
   one nobody can decode), and the ПЛАН/ФАКТ cells, which say it where the
-  consequence actually lands. That statement outranks «shared by N lines»: a
+  consequence actually lands. **The column is in `defaultHidden` for everyone
+  but an ADMIN** (2026-09-09, the operator's call): it answers the same question
+  the switch is set from, and only an admin can set one or upload the file the
+  other half of the answer names. A DEFAULT, never a lock — the `ColumnsPicker`
+  still offers it to every reader, since a supervisor asking «why is this number
+  not the file's» must be able to see the answer — so a profile that has already
+  saved a visibility choice keeps it, the `DEFAULT_HIDDEN` rule unchanged. That statement outranks «shared by N lines»: a
   row reading no group figure is not sharing one.
 - Deliberately unchanged: the unit-wide `PPManagerSetting.auto_fill` above,
   which still decides whether an unattended upload reaches the unit at all; the
