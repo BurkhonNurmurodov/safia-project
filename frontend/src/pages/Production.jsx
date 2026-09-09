@@ -507,12 +507,19 @@ function RawView({ fileType, date, managerParam, ready = true }) {
       </div>
     );
   }
-  const filtering = filteredRows.length !== data.row_count;
+  // The denominator is what the FILE holds for this date, not what this viewer
+  // was served. A viewer pinned to part of the plant (supervisor / leader /
+  // shift-manager) is served a slice, and printing «85 rows» over a slice reads
+  // as the whole upload — the misreading this view was just fixed for. Falls
+  // back to the served count, so a bundle talking to a backend that does not
+  // send `total_rows` renders exactly what it always did.
+  const fileRows = data.scoped ? (data.total_rows ?? data.row_count) : data.row_count;
+  const filtering = filteredRows.length !== fileRows;
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs" style={{ borderBottom: "1px solid var(--border)", color: "var(--text-3)" }}>
         <span className="font-semibold truncate" style={{ color: "var(--text-2)" }}>{data.filename || "—"}</span>
-        <span className="flex-shrink-0 tabular-nums">{filtering ? `${filteredRows.length} / ${data.row_count}` : data.row_count} {t("production.rows")}{data.uploaded_at ? " · " + new Date(data.uploaded_at).toLocaleString("ru-RU") : ""}</span>
+        <span className="flex-shrink-0 tabular-nums">{filtering ? `${filteredRows.length} / ${fileRows}` : fileRows} {t("production.rows")}{data.uploaded_at ? " · " + new Date(data.uploaded_at).toLocaleString("ru-RU") : ""}</span>
       </div>
       <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
         <SearchInput

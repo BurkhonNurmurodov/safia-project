@@ -1603,11 +1603,28 @@ def get_raw(
     if not up:
         return {"present": False, "columns": [], "rows": [], "file_type": file_type, "date": day.isoformat()}
     rows = up.rows or []
+    total_rows = len(rows)
+    # These tabs are a view of the FILE, so the toolbar's brigadir pick — a
+    # filter choice, not a property of the upload — must not narrow them. The
+    # DATE is the one narrowing the file itself carries, and it was applied at
+    # parse time: `_extract_faza` keeps only the operations dated to the day the
+    # upload was filed under, so what is stored here already IS that day.
+    #
+    # What remains below is therefore a permission PIN and never a filter. The
+    # export carries every unit's orders, quantities and «Поставлено», so a
+    # viewer who may already read the whole plant reads the whole file, and a
+    # viewer confined to part of it keeps that confinement: a supervisor and a
+    # leader are pinned to their own unit by `_resolve_manager_id`, and a
+    # shift-manager to their shift ∩ plant, none of which they chose. A
+    # `page.view.production` grant at "all" is the documented way out of every
+    # pin on this page, so it is the way out of this one too.
+    unpinned = (payload.get("role") in ("admin", "top-manager")
+                or page_scope_is_all(db, payload, PAGE))
     # A leader's cells narrow the raw file the same way they narrow the computed
     # dashboard — and unlike the brigadir scoping below, this one applies to the
     # legacy per-manager slices too, since those are baked to the WHOLE unit.
     scope = _leader_wc_scope(db, payload)
-    if is_global or scope is not None:
+    if not unpinned and (is_global or scope is not None):
         # Scope the plant-wide file to this brigadir at read time — the same
         # filters legacy slices had baked in at upload time.
         products = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
@@ -1632,6 +1649,11 @@ def get_raw(
     return {
         "present": True, "file_type": file_type, "date": day.isoformat(),
         "columns": up.columns, "rows": rows, "row_count": len(rows),
+        # What the stored file holds for this date, beside what this viewer is
+        # served: a pinned viewer must be able to see that their view is a
+        # slice, or a narrowed table reads as the whole upload — which is the
+        # misreading this endpoint has just been fixed for.
+        "total_rows": total_rows, "scoped": len(rows) != total_rows,
         "filename": up.filename,
         "uploaded_at": up.uploaded_at.isoformat() if up.uploaded_at else None,
     }
