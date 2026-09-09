@@ -1211,6 +1211,22 @@ export default function Production() {
   });
   // «Odamlar soni» tab — the day's efficiency + every cell's actual O.soni /
   // штатка in ONE commit, after which the whole page recomputes off them.
+  // A catalog write that moves a line onto another SAP key fills that key's
+  // snapshot on every stored date (`_rejoin_lines`). It touches days already
+  // closed and reported, so the operator is TOLD — a silent write into the past
+  // is the one outcome this must not have. Nothing filled ⇒ nothing said, so an
+  // ordinary edit stays as quiet as it was.
+  const fillText = (res) => {
+    const f = res?.data?.filled;
+    return f?.rows
+      ? " · " + t("production.catalog.filled")
+          .replace("{r}", String(f.rows)).replace("{d}", String(f.days))
+      : "";
+  };
+  const sapFilled = (res) => {
+    const s = fillText(res);
+    if (s) toast.success(s.slice(3));
+  };
   const staffing = useMutation({
     mutationFn: (body) => api.post("/api/production/staffing", { date, ...body }, { params: managerParam }),
     onSuccess: () => {
@@ -1223,24 +1239,28 @@ export default function Production() {
   // Catalog line edit (PPProduct: sap_code / name / labor_time / work_center).
   // Admin-only. All four are part of what the line's stored ПЛАН/ФАКТ are keyed
   // by, so the backend carries every TYPED value onto the new identity as part
-  // of the same write — the numbers follow the line. What it does not move is
-  // the SAP snapshot: a figure the фаза file reported for one (code, Команда)
-  // pair belongs to that pair, so a line sent to another Команда reads the new
-  // one's figures until the next upload.
+  // of the same write — the numbers follow the line.
+  //
+  // Moving either half of the SAP key also re-runs the join for the new one
+  // (`_rejoin_lines`), so the line no longer reads 0 on every already-uploaded
+  // date until somebody re-uploads each file. `filled` says how much that
+  // reached: it writes into PAST days, so it is reported rather than silent.
   const catalog = useMutation({
     mutationFn: ({ id, body }) => api.put(`/admin/production/catalog/${id}`, body),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
+      sapFilled(res);
     },
   });
   // Add a new catalog line (PPProduct). Admin-only; scoped to the manager the
   // admin is previewing (managerParam.manager_id).
   const createCatalog = useMutation({
     mutationFn: (body) => api.post("/admin/production/catalog", body),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
+      sapFilled(res);
     },
   });
   // Remove a catalog line (PPProduct). Admin-only; hard delete — the daily
@@ -1270,11 +1290,12 @@ export default function Production() {
       const skipped = res?.data?.skipped_no_code ?? 0;
       setBulkDraft(null);
       setCatPick([]);
+      const fill = fillText(res);
       if (skipped > 0) {
         toast.warning(`${t("production.bulk.done").replace("{n}", String(n))} · `
-          + t("production.bulk.skippedNoCode").replace("{n}", String(skipped)));
+          + t("production.bulk.skippedNoCode").replace("{n}", String(skipped)) + fill);
       } else {
-        toast.success(t("production.bulk.done").replace("{n}", String(n)));
+        toast.success(t("production.bulk.done").replace("{n}", String(n)) + fill);
       }
     },
     onError: (e) => toast.error(writeErr(e)),

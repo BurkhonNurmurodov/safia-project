@@ -3156,6 +3156,31 @@ so this was ~15% of the catalog, not an edge case.
     than onto the destination group. So no row anybody left alone changes value:
     a shared number with siblings still under it is never moved, and a carried
     one lands a level BELOW what the destination's siblings read.
+  - **The line's NEW key is re-joined from the stored file, so it never reads 0
+    waiting for a re-upload** — `production._rejoin_lines`, run by all three
+    catalog writers (create, single edit, bulk) whenever a line gains or moves a
+    SAP key. The join that produces ПЛАН/ФАКТ used to run at UPLOAD time and
+    nowhere else, against the catalog as it stood then, so a line added or
+    re-pointed afterwards matched nothing when the file landed and read **0 on
+    every stored date** — while the raw Фаза tab plainly showed the row it should
+    have matched, and `pp_calc` renders a missing snapshot row as 0, which is
+    indistinguishable from a day that produced nothing. Re-uploading each date's
+    file was the only way back and nothing said so. It is bounded three ways and
+    is deliberately NOT `_backfill_manager` (the catalog IMPORT's tool, which
+    rebuilds every date from scratch): it writes ONLY the moved keys, never
+    DELETES a date, and **never clears an override** — an upload does, because a
+    file restating a day outranks a number typed against the old figure, but
+    nothing is restated here and `_carry_manual_quantities` may have just carried
+    a typed value onto this very line, so the snapshot is filled UNDERNEATH it
+    and no number on screen moves until that override is removed. A unit with
+    auto-fill switched off is skipped, the rule `_backfill_manager` already
+    applies. It writes into days already closed and reported — the same reach the
+    upload and the import backfill already have — so `filled` rides on all three
+    responses and the page SAYS how much was filled; a silent write into the past
+    is the one outcome this must not have. `_unit_sap_scope` + `_scoped_faza` are
+    the one spelling of the unit's half of the join, shared with the upload
+    fan-out, because two would let a line be filled through one door and not the
+    other.
   - **The SAP snapshot (`plan_qty` / `actual_qty`) stays where the file put
     it.** It is not the line's property but a record of what the фаза export
     said about one (code, work centre) pair on one date, and

@@ -1228,6 +1228,39 @@ def _upsert_upload(db, manager_id, day, file_type, columns, rows, filename):
     up.filename = filename
 
 
+def _unit_sap_scope(db, manager_id: int):
+    """(products, own work centres, catalog SKUs) — the unit's half of the SAP
+    join. ONE spelling, read by the upload fan-out and by the targeted re-join
+    below: two would let a line be filled through one door and not the other,
+    which is the whole class of bug `_rejoin_lines` exists to close."""
+    products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
+    own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
+        PPWorkCenter.manager_id == manager_id).all()} | {p.work_center for p in products}
+    # Only CODED lines can match a SAP order; the escape hatch below is "this
+    # brigadir has no catalog at all", not "no line of it carries a code".
+    return products, own_wcs, {p.sap_code for p in products if p.sap_code}
+
+
+def _scoped_faza(faza_ops: list[dict], order_sku: dict, order_deliv: dict,
+                 products, own_wcs: set, catalog_skus: set) -> list[tuple]:
+    """Фаза operations cut to one unit and joined to their SKU, ready for
+    `pp_calc.faza_quantities`.
+
+    BOTH filters fall through on an empty set, so an unconfigured unit would be
+    handed the entire plant file — which is why `_autofill_manager_ids` keeps
+    its "configured" half and why every caller of this resolves the unit first.
+    """
+    out = []
+    for op in faza_ops:
+        if own_wcs and op["wc"] not in own_wcs:   # not this brigadir's work center
+            continue
+        sku = order_sku.get(op["order"])
+        if sku and (not products or sku in catalog_skus):
+            out.append((sku, op["wc"], op["order"], op["plan"],
+                        order_deliv.get(op["order"], 0.0)))
+    return out
+
+
 def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
                         faza_ops: list[dict], order_sku: dict, order_deliv: dict) -> int:
     """Write ONE brigadir's PPDaily snapshot from the globally-parsed slices of
@@ -1242,12 +1275,7 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     is written down onto it before that row is replaced. Its group's snapshot is
     still written, because the siblings that DO read it share that record."""
     # Scope to this brigadir: own work centers (config ∪ catalog) and catalog SKUs.
-    products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
-    own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
-        PPWorkCenter.manager_id == manager_id).all()} | {p.work_center for p in products}
-    # Only CODED lines can match a SAP order; the escape hatch below is "this
-    # brigadir has no catalog at all", not "no line of it carries a code".
-    catalog_skus = {p.sap_code for p in products if p.sap_code}
+    products, own_wcs, catalog_skus = _unit_sap_scope(db, manager_id)
 
     # The lines this upload must not reach — auto-fill switched off, or no SAP
     # code at all (pp_calc.takes_sap). The pp_daily record is still written for
@@ -1268,15 +1296,8 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     # collapses operations that repeat one quantity. Folding here instead would be
     # a second spelling of it, and the startup migration that corrects already
     # stored days reads the same function.
-    scoped = []
-    for op in faza_ops:
-        if own_wcs and op["wc"] not in own_wcs:   # not this brigadir's work center
-            continue
-        sku = order_sku.get(op["order"])
-        if sku and (not products or sku in catalog_skus):
-            scoped.append((sku, op["wc"], op["order"], op["plan"],
-                           order_deliv.get(op["order"], 0.0)))
-    faza_agg = faza_quantities(scoped)
+    faza_agg = faza_quantities(_scoped_faza(faza_ops, order_sku, order_deliv,
+                                           products, own_wcs, catalog_skus))
 
     updated = 0
     if faza_agg:
@@ -1426,6 +1447,80 @@ def _backfill_manager(db, manager_id: int) -> dict:
             filled_days += 1
             filled_rows += n
     return {"days": filled_days, "rows": filled_rows, "skipped": False}
+
+
+def _rejoin_lines(db, manager_id: int, pairs: set) -> dict:
+    """Fill the SAP snapshot for exactly these (SAP code, work centre) pairs on
+    every stored date, for a unit whose catalog has just gained or moved a line.
+
+    The join that produces ПЛАН/ФАКТ runs at UPLOAD time and nowhere else,
+    against the catalog as it stood then — so a line added or re-pointed
+    afterwards matched nothing when the file landed and reads **0 on every
+    stored date**, while the raw Фаза tab plainly shows the row it should have
+    matched. Re-uploading the file for each affected date was the only way back,
+    and nothing on screen said so: `pp_calc` renders a missing snapshot row as
+    0, which is indistinguishable from a day that genuinely produced nothing.
+
+    Deliberately NOT `_backfill_manager` with a narrower argument. That one is
+    the catalog IMPORT's tool and rebuilds the unit's every date from scratch;
+    this runs on an ordinary one-line edit, so it is bounded three ways:
+
+      * it writes ONLY these pairs, so adding one line today cannot restate the
+        rest of the unit's day;
+      * it never DELETES the date (mode 'both' does, to rebuild it);
+      * it never clears an override. An upload does, because a file restating a
+        day outranks a number typed against the old figure — but nothing is
+        restated here, and `_carry_manual_quantities` may have just carried a
+        typed value onto this very line. So the snapshot is filled UNDERNEATH
+        whatever a person typed, which changes nothing on screen until that
+        override is removed. Filling in a file's answer must not overrule a
+        person's.
+
+    A unit with auto-fill switched off is skipped, the rule `_backfill_manager`
+    already applies: the file does not reach it, so neither does this.
+    """
+    if not pairs:
+        return {"days": 0, "rows": 0, "skipped": False}
+    if manager_id in _autofill_off_ids(db):
+        return {"days": 0, "rows": 0, "skipped": True}
+    products, own_wcs, catalog_skus = _unit_sap_scope(db, manager_id)
+    days = [d for (d,) in db.query(PPUpload.date).filter(
+        PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()]
+    filled_days = filled_rows = 0
+    for day in days:
+        faza_ops, order_sku, order_deliv = _stored_slices(db, day)
+        if not faza_ops:
+            continue
+        agg = faza_quantities(_scoped_faza(faza_ops, order_sku, order_deliv,
+                                           products, own_wcs, catalog_skus))
+        n = 0
+        for (sap, wc), a in agg.items():
+            if (sap, wc) not in pairs:
+                continue
+            row = db.query(PPDaily).filter(
+                PPDaily.manager_id == manager_id, PPDaily.date == day,
+                PPDaily.sap_code == sap, PPDaily.work_center == wc).first()
+            if not row:
+                row = PPDaily(manager_id=manager_id, date=day, sap_code=sap,
+                              work_center=wc, plan_qty=0, actual_qty=0)
+                db.add(row)
+            row.plan_qty = a["plan_qty"]
+            row.actual_qty = a["actual_qty"]
+            n += 1
+        if n:
+            filled_days += 1
+            filled_rows += n
+    if filled_rows:
+        db.commit()
+    return {"days": filled_days, "rows": filled_rows, "skipped": False}
+
+
+def _sap_pairs(prods) -> set:
+    """The (SAP code, work centre) keys `_rejoin_lines` should fill for these
+    catalog lines. A code-less line is skipped: its `daily_key` is synthetic and
+    can never come out of the SAP join, so asking for it would fill nothing."""
+    return {((q.sap_code or "").strip(), q.work_center)
+            for q in prods if (q.sap_code or "").strip() and q.work_center}
 
 
 @router.post("/admin/production/upload")
@@ -1922,15 +2017,27 @@ def admin_create_catalog(body: CatalogCreateBody,
     db.add(p)
     db.commit()
     db.refresh(p)
+    # Read out everything the log needs BEFORE the re-join commits: `enrich`'s
+    # argument expressions are not protected, and a commit expires the instance.
+    rec = {"id": p.id, "sap_code": p.sap_code or None, "product": p.name or None,
+           "work_center": p.work_center, "phase": p.op, "auto_fill": p.auto_fill,
+           "minutes": float(p.labor_time) if p.labor_time is not None else None,
+           "unit": p.manager_id}
+    # The SAP join runs at UPLOAD time against the catalog as it stood then, so a
+    # line added now would read 0 on every date already uploaded until somebody
+    # re-uploaded the file for each of them. Fill its snapshot from the фаза rows
+    # already stored instead — see _rejoin_lines for what it deliberately is not.
+    filled = _rejoin_lines(db, rec["unit"], _sap_pairs([p]))
     action_log.enrich(
-        target_kind="catalog", target_id=p.id, target_name=p.sap_code or p.name,
-        unit_id=p.manager_id,
-        details=[("sap_code", p.sap_code or None), ("product", p.name or None),
-                 ("work_center", p.work_center), ("phase", p.op),
-                 ("auto_fill", p.auto_fill),
-                 ("minutes", float(p.labor_time) if p.labor_time is not None else None)],
+        target_kind="catalog", target_id=rec["id"],
+        target_name=rec["sap_code"] or rec["product"], unit_id=rec["unit"],
+        details=[("sap_code", rec["sap_code"]), ("product", rec["product"]),
+                 ("work_center", rec["work_center"]), ("phase", rec["phase"]),
+                 ("auto_fill", rec["auto_fill"]), ("minutes", rec["minutes"]),
+                 ("filled_days", filled["days"] or None),
+                 ("filled_rows", filled["rows"] or None)],
     )
-    return {"ok": True, "id": p.id}
+    return {"ok": True, "id": rec["id"], "filled": filled}
 
 
 def _catalog_snapshot(db, mid: int) -> list[dict]:
@@ -2207,8 +2314,13 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                "labor_time": edited[d["id"]].labor_time}
               if d["id"] in edited else d) for d in before]
     carried = _carry_manual_quantities(db, mid, before, after)
+    # Which keys the batch has just pointed at, read while the rows are still
+    # loaded. Only Команда moves a line onto a new SAP key — Трудоемкость and
+    # auto_fill are not part of it, so neither can leave a line unfilled.
+    moved = _sap_pairs(prods) if wc is not None else set()
     db.commit()
 
+    filled = _rejoin_lines(db, mid, moved)
     action_log.enrich(
         target_kind="catalog", target_id=f"{mid}:bulk:{len(prods)}",
         target_name=f"{len(prods)} × {wc or ''}".strip(), unit_id=mid,
@@ -2216,10 +2328,12 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                  ("minutes", body.labor_time),
                  ("auto_fill", body.auto_fill),
                  ("skipped_no_code", skipped_no_code or None),
-                 ("carried_values", carried or None)],
+                 ("carried_values", carried or None),
+                 ("filled_days", filled["days"] or None),
+                 ("filled_rows", filled["rows"] or None)],
     )
     return {"ok": True, "updated": len(prods), "carried": carried,
-            "skipped_no_code": skipped_no_code}
+            "skipped_no_code": skipped_no_code, "filled": filled}
 
 
 @router.put("/admin/production/catalog/{prod_id}")
@@ -2248,8 +2362,10 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     # be blanked. The SAP code CAN — a code-less line is legitimate, and the key
     # then falls back to the name (daily_key), so the line still has an identity.
     # Re-pointing either one re-points which quantities this line reads, so the
-    # values a person typed are carried onto the new key below; the SAP snapshot
-    # stays where the file put it (_carry_manual_quantities says why).
+    # values a person typed are carried onto the new key below; the OLD key's SAP
+    # snapshot stays where the file put it (_carry_manual_quantities says why),
+    # and the NEW key's is filled from the same stored фаза rows further down
+    # (_rejoin_lines) instead of reading 0 until somebody re-uploads every date.
     if body.sap_code is not None:
         sap = body.sap_code.strip()
         if not sap and not (p.name or "").strip():
@@ -2283,18 +2399,31 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
                    "work_center": p.work_center, "labor_time": p.labor_time}
                   if d["id"] == p.id else d) for d in before]
         carried = _carry_manual_quantities(db, p.manager_id, before, after)
+    mid, pid = p.manager_id, p.id
     db.commit()
     now = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
            "phase": p.op, "enabled": p.active, "auto_fill": p.auto_fill,
            "minutes": float(p.labor_time) if p.labor_time is not None else None}
+    # Re-pointing either half of the SAP key aims this line at quantities the
+    # upload never wrote for it — the join ran against the OLD catalog — so the
+    # snapshot is filled for the new key. `op`, `active`, Трудоемкость and
+    # auto_fill are not part of that key and cost nothing.
+    filled = _rejoin_lines(
+        db, mid,
+        {(now["sap_code"].strip(), now["work_center"])}
+        if (body.sap_code is not None or body.work_center is not None)
+        and (now["sap_code"] or "").strip() and now["work_center"] else set())
     action_log.enrich(
-        target_kind="catalog", target_id=p.id, target_name=p.sap_code or p.name,
-        unit_id=p.manager_id,
-        details=[("sap_code", p.sap_code or None), ("work_center", p.work_center),
-                 ("carried_values", carried or None)],
+        target_kind="catalog", target_id=pid,
+        target_name=now["sap_code"] or now["product"], unit_id=mid,
+        details=[("sap_code", now["sap_code"] or None),
+                 ("work_center", now["work_center"]),
+                 ("carried_values", carried or None),
+                 ("filled_days", filled["days"] or None),
+                 ("filled_rows", filled["rows"] or None)],
         changes=[(k, was[k], now[k]) for k in now if was[k] != now[k]],
     )
-    return {"ok": True, "carried": carried}
+    return {"ok": True, "carried": carried, "filled": filled}
 
 
 @router.delete("/admin/production/catalog/{prod_id}")
