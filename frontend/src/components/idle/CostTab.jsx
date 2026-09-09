@@ -187,8 +187,17 @@ export default function CostTab() {
 
   const Figures = ({ r, showShare = true, muted = false }) => (
     <>
-      <td className={`${td} text-right tabular-nums border-l`} style={bd}>
-        {r.hc == null ? <span style={{ color: "var(--text-4)" }}>—</span> : `~${num(r.hc, 1)}`}
+      {/* «Odam soni» is a FACT — the number somebody typed on /production —
+          so it is never printed with a ~. A row folding days that carried
+          DIFFERENT headcounts shows the minute-weighted mean and says so on
+          hover, rather than hedging a figure that is not an estimate. */}
+      <td className={`${td} text-right tabular-nums border-l`} style={bd}
+          title={r.hc_varies ? tp("downtime.cost.hcVaries",
+            { lo: num(r.hc_lo, 1), hi: num(r.hc_hi, 1) }) : undefined}>
+        {r.hc == null ? <span style={{ color: "var(--text-4)" }}>—</span> : (
+          <>{num(r.hc, 1)}{r.hc_varies && (
+            <span style={{ color: "var(--text-4)" }}>*</span>)}</>
+        )}
       </td>
       <td className={`${td} text-right tabular-nums border-l`} style={bd}>{num(r.minutes)}</td>
       <td className={`${td} text-right tabular-nums border-l`} style={{ ...bd, color: "var(--text-2)" }}>
@@ -502,6 +511,7 @@ export default function CostTab() {
                               managerId: r.manager_id, cellId: c.cell_id, category: k.category,
                               catLabel: catLabel(k.category), code: c.code,
                               leader: c.leader ? shortPerson(tl(c.leader)) : "", hc: c.hc,
+                              hcVaries: c.hc_varies,
                             })}
                             onKeyDown={(e) => {
                               if (!rowKeys(e)) return;
@@ -510,6 +520,7 @@ export default function CostTab() {
                                 managerId: r.manager_id, cellId: c.cell_id, category: k.category,
                                 catLabel: catLabel(k.category), code: c.code,
                                 leader: c.leader ? shortPerson(tl(c.leader)) : "", hc: c.hc,
+                                hcVaries: c.hc_varies,
                               });
                             }}
                             className="cursor-pointer border-t hover:bg-[var(--hover-bg)] focus-visible:outline-none group"

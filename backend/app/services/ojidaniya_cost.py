@@ -109,8 +109,24 @@ def _row(rows) -> list[dict]:
 
 
 def _union(rows) -> int:
+    """The union of rows that all fall on ONE date."""
     return idle_intervals.union_minutes(
         idle_intervals._spans_of(_row(rows), stopped_only=False))
+
+
+def _union_by_day(rows) -> int:
+    """Σ over DATES of that date's own union.
+
+    A union taken ACROSS dates is meaningless and silently wrong: clocks are
+    stored as wall-clock "HH:MM" and `idle_intervals` reads them as
+    minutes-of-day, so 17:10–17:25 filed on the 3rd and again on the 7th merge
+    into a single 15-minute span. The entries modal spans a whole period, so it
+    must fold per day first — six events over six days once reported a union of
+    25 minutes against a sum of 75."""
+    per: dict[str, list] = defaultdict(list)
+    for r in rows:
+        per[r.date].append(r)
+    return sum(_union(v) for v in per.values())
 
 
 class _Acc:
@@ -122,13 +138,20 @@ class _Acc:
     average over days would print a number the row's own arithmetic contradicts.
     """
 
-    __slots__ = ("minutes", "priced", "person_min", "cost")
+    __slots__ = ("minutes", "priced", "person_min", "cost", "hc_lo", "hc_hi")
 
     def __init__(self):
         self.minutes = 0
         self.priced = 0
         self.person_min = 0.0
         self.cost = 0.0
+        # The range of headcounts this row folds. «Odam soni» is a FACT — the
+        # number a person typed — so it is never printed with a ~. Where a row
+        # spans days that carried DIFFERENT headcounts the figure shown is the
+        # minute-weighted mean of facts, and `hc_varies` is what lets the client
+        # say so on hover instead of hedging the number itself.
+        self.hc_lo = None
+        self.hc_hi = None
 
     def add(self, minutes: int, n: Optional[float], rate: Optional[float]) -> None:
         self.minutes += minutes
@@ -137,6 +160,8 @@ class _Acc:
         self.priced += minutes
         self.person_min += minutes * n
         self.cost += minutes / 60.0 * n * rate
+        self.hc_lo = n if self.hc_lo is None else min(self.hc_lo, n)
+        self.hc_hi = n if self.hc_hi is None else max(self.hc_hi, n)
 
     def out(self) -> dict:
         priced = self.priced > 0
@@ -147,6 +172,9 @@ class _Acc:
             "unpriced_minutes": self.minutes - self.priced,
             "cost": round(self.cost) if priced else None,
             "hc": round(self.person_min / self.priced, 2) if priced else None,
+            "hc_lo": self.hc_lo,
+            "hc_hi": self.hc_hi,
+            "hc_varies": bool(priced and self.hc_lo != self.hc_hi),
         }
 
 
@@ -258,6 +286,11 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
             acc.cost += c["cost"] or 0
             if c["hc"] is not None:
                 acc.person_min += c["hc"] * c["priced_minutes"]
+            for v in (c.get("hc_lo"), c.get("hc_hi")):
+                if v is None:
+                    continue
+                acc.hc_lo = v if acc.hc_lo is None else min(acc.hc_lo, v)
+                acc.hc_hi = v if acc.hc_hi is None else max(acc.hc_hi, v)
         cell_rows.sort(key=lambda r: (-(r["cost"] or 0), -r["minutes"]))
         rows.append({
             "manager_id": mid,
@@ -275,6 +308,11 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
         total.cost += r["cost"] or 0
         if r["hc"] is not None:
             total.person_min += r["hc"] * r["priced_minutes"]
+        for v in (r.get("hc_lo"), r.get("hc_hi")):
+            if v is None:
+                continue
+            total.hc_lo = v if total.hc_lo is None else min(total.hc_lo, v)
+            total.hc_hi = v if total.hc_hi is None else max(total.hc_hi, v)
 
     return {
         "rows": rows,
@@ -350,7 +388,7 @@ def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
         "category": category,
         "entries": out,
         "sum_minutes": sum(e["minutes"] for e in out),
-        "union_minutes": _union(rows),
+        "union_minutes": _union_by_day(rows),
         "truncated": len(out) >= MAX_ENTRIES,
     }
 
@@ -371,5 +409,10 @@ def retotal(rows: list[dict], base: dict) -> dict:
         acc.cost += r["cost"] or 0
         if r["hc"] is not None:
             acc.person_min += r["hc"] * r["priced_minutes"]
+        for v in (r.get("hc_lo"), r.get("hc_hi")):
+            if v is None:
+                continue
+            acc.hc_lo = v if acc.hc_lo is None else min(acc.hc_lo, v)
+            acc.hc_hi = v if acc.hc_hi is None else max(acc.hc_hi, v)
     return {**acc.out(), "days": base.get("days", 0), "managers": len(rows),
             "cells": sum(len(r.get("cells") or []) for r in rows)}

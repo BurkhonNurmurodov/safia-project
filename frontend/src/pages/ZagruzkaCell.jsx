@@ -277,12 +277,13 @@ export default function ZagruzkaCell() {
   const unit = payload?.totals?.[inputDate];
   const hasUnit = !!unit && unit.official_hc != null;
 
-  // The same roll-up as a ROW on the two grids — the supervisor's own load
-  // across the whole period, beside the cells it was computed from. It is not
-  // the AVG row under it: that averages the percentages on screen, this runs
-  // the formula over the unit's summed трудоёмкость and headcount with the
-  // headcount-weighted ojidaniya (the new method). Dropped entirely when no
-  // day produced a number, so the grids never gain a row of dashes.
+  // The unit's own load as a ROW on the two grids, beside the cells it is
+  // made of. Since v4.82.0 it runs /zagruzka's logic — the WHOLE unit's
+  // трудоёмкость against the TYPED people, over the unit's own attendance —
+  // so it is neither the sum of the rows above it (that is `cells_sum`, in the
+  // reconciliation card) nor the AVG row under it, which averages the
+  // percentages on screen. Dropped entirely when no day produced a number, so
+  // the grids never gain a row of dashes.
   const unitRow = useMemo(() => {
     const totals = payload?.totals;
     if (!totals || !dates.some((d) => totals[d]?.net_util != null)) return null;
@@ -519,8 +520,16 @@ export default function ZagruzkaCell() {
                 </tr>
               </thead>
               <tbody>
+                {/* The cells' own aggregate against the unit's figure. Since
+                    v4.82.0 the unit row IS the fleet's figure (payload.totals
+                    runs /zagruzka's logic), so charting `totals` here would be
+                    the fleet against itself — a delta of 0 that proves nothing.
+                    What is worth reading is whether the rows on screen add up
+                    to the unit: a gap means a work centre with no cell, a cell
+                    with no SAP code, people nobody typed, or attendance with no
+                    «Код подразделения». */}
                 {[
-                  { key: "cells", label: t("zcell.totalsRow"), get: (d) => payload.totals?.[d]?.net_util },
+                  { key: "cells", label: t("zcell.totalsRow"), get: (d) => payload.cells_sum?.[d]?.net_util },
                   { key: "fleet", label: t("zcell.fleetRow"), get: (d) => payload.fleet?.[d]?.net_util },
                 ].map((row) => (
                   <tr key={row.key}>
@@ -535,7 +544,7 @@ export default function ZagruzkaCell() {
                 <tr>
                   <td className="px-3 py-2 font-medium" style={{ color: "var(--text-3)" }}>{t("zcell.deltaRow")}</td>
                   {dates.map((d) => {
-                    const a = payload.totals?.[d]?.net_util;
+                    const a = payload.cells_sum?.[d]?.net_util;
                     const b = payload.fleet?.[d]?.net_util;
                     if (a == null || b == null) {
                       return <td key={d} className="px-3 py-2 text-center" style={{ color: "var(--text-4)" }}>—</td>;
@@ -599,8 +608,21 @@ export default function ZagruzkaCell() {
                           ? <CellLink id={meta.cell_id}>{meta.verifix_code}</CellLink>
                           : c}
                       </td>
+                      {/* The work centre, and — where several cells name it —
+                          how much of it this row carries. Трудоёмкость and
+                          «Bugungi fakt» are recorded per WORK CENTRE, so those
+                          cells hold 1/N of it and their figures are shares, not
+                          measurements. Saying so on the code itself is the only
+                          place the reader meets the work centre. */}
                       <td className="px-3 py-2 text-center" style={{ color: meta?.joined ? "var(--text-2)" : "#ef4444" }}>
                         {meta?.sap_code || "—"}
+                        {inp?.wc_cells > 1 && (
+                          <span className="ml-1 text-[9px] px-1 rounded"
+                                title={t("zcell.wcShareHint").replaceAll("{n}", inp.wc_cells)}
+                                style={{ color: "#eab308", background: "rgba(234,179,8,0.12)" }}>
+                            1/{inp.wc_cells}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(inp?.trud_plan)}</td>
                       <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(inp?.trud_actual)}</td>
@@ -768,6 +790,11 @@ export default function ZagruzkaCell() {
               [t("zcell.diagNoSap"), diag.cells_without_sap],
               [t("zcell.diagNoWc"), diag.cells_without_work_center],
               [t("zcell.diagOrphanWc"), diag.work_centers_without_cell],
+              // Work centres split between several cells — those rows carry a
+              // share of a work-centre-level number, so the reader is told
+              // which ones rather than left to spot the 1/N chip.
+              [t("zcell.diagSharedWc"),
+               (diag.shared_work_centers ?? []).map((g) => `${g.work_center} → ${g.cells.join(" · ")}`)],
               [t("zcell.diagNoLabor"), diag.products_missing_labor_time],
               [t("zcell.diagExcluded"),
                (diag.excluded_job_titles ?? []).map((e) => `${e.title} (${e.rows} ${t("zcell.rowsWord")})`)],

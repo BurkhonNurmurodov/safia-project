@@ -56,7 +56,8 @@ export default function CostEntriesModal({ open, onClose, ctx, from, to, money }
       icon={<ListTree size={16} />}
       title={ctx ? `${ctx.category} · ${ctx.catLabel || ""}`.trim() : ""}
       subtitle={ctx ? [ctx.code, ctx.leader, `${dmy(from)} — ${dmy(to)}`,
-                       ctx.hc == null ? t("downtime.cost.noHc") : `~${num(ctx.hc, 1)} ${t("downtime.cost.people")}`]
+                       ctx.hc == null ? t("downtime.cost.noHc")
+                         : `${num(ctx.hc, 1)}${ctx.hcVaries ? "*" : ""} ${t("downtime.cost.people")}`]
                       .filter(Boolean).join(" · ") : ""}
       maxWidth="max-w-3xl"
       zIndex={60}
@@ -102,7 +103,7 @@ export default function CostEntriesModal({ open, onClose, ctx, from, to, money }
                   <td className={`${td} text-right tabular-nums`} style={{ borderColor: "var(--border)" }}>{num(r.minutes)}</td>
                   <td className={`${td} text-right tabular-nums`} style={{ borderColor: "var(--border)", color: "var(--text-2)" }}>{num(r.hours, 1)}</td>
                   <td className={`${td} text-right tabular-nums`} style={{ borderColor: "var(--border)", color: "var(--text-2)" }}>
-                    {r.hc == null ? <span style={{ color: "var(--text-4)" }}>—</span> : `~${num(r.hc, 1)}`}
+                    {r.hc == null ? <span style={{ color: "var(--text-4)" }}>—</span> : num(r.hc, 1)}
                   </td>
                   <td className={`${td} text-right tabular-nums font-semibold`} style={{ borderColor: "var(--border)" }}>
                     {r.cost == null ? <span style={{ color: "var(--text-4)", fontWeight: 400 }}>—</span> : money(r.cost)}

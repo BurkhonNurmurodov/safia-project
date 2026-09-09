@@ -20,7 +20,9 @@ tables instead of the per-supervisor sheet imports:
     ─────────────  ──────────────────────────────  ──────────────────────────────
     prod_plan      production_data.prod_plan       Σ pp_products.labor_time
     prod_actual    production_data.prod_actual       × pp_daily.plan_qty|actual_qty ÷ 60
-                                                     over the cell's work centre
+                                                     over the cell's work centre,
+                                                     ÷ the number of cells naming
+                                                     that work centre
     official_hc    headcount_data.official_hc      O. SONI (N): from 2026-09-02
                                                      the TYPED «Bugungi fakt» pin
                                                      (pp_work_center_daily.people)
@@ -61,11 +63,35 @@ Decisions taken with the user (2026-07-31), all deliberate:
     block that computes it). That list is `OJIDANIYA_ONLY_CATS` and today holds
     Cat H alone — Cat I joined the загрузка on 2026-08-22.
     A not-stopped range never counts, here or anywhere else.
-  * The unit's own figure is the HEADCOUNT-WEIGHTED mean of its cells',
+  * The unit's own row runs **/zagruzka's logic, not a sum of the cells**
+    (the operator's directive, 2026-09-09). Its трудоёмкость is
+    `zagruzka_source.unit_labor` and its headcount `unit_people` — the fleet's
+    own functions, so the whole unit's minutes are counted against the TYPED
+    pins alone, exactly as /zagruzka counts them — and its attendance is the
+    unit's own rows. Three fleet rules could not be reproduced by adding the
+    rows on screen up, and each of them moved the number: an untyped work
+    centre's minutes count while its people do not, a work centre with no cell
+    has no row to be summed, and a worker whose «Код подразделения» is blank is
+    still on the unit's payroll. Ergashev Muxriddin on 07.09.2026 read 78%
+    here against 572% there. The cells' own aggregate is still computed and
+    published as `cells_sum`; the reconciliation card charts the two against
+    each other, which is the question this page exists to ask.
+    The ojidaniya deduction stays the HEADCOUNT-WEIGHTED mean of the cells,
     (N1*T1 + ... + Nn*Tn) / (N1 + ... + Nn) — the user's formula, 2026-08-20.
     N was the people who actually worked that cell that day; from
     `zagruzka_source.ZAGRUZKA_FROM` it is the cell's typed O. SONI, the same
     weight `idle_source` applies to the fleet figure.
+  * **A work centre named by several cells is SPLIT EVENLY between them**
+    (2026-09-09) — ten groups today, the largest six cells wide. `pp_daily`
+    and `pp_work_center_daily` are keyed by the work centre, so there is no
+    per-cell трудоёмкость and no per-cell «Bugungi fakt»; giving each cell the
+    whole work centre measured one line's entire production against a fraction
+    of its people (the ±1000% cells) and counted its minutes once per cell in
+    the roll-up. Evenly, never by attendance: `zagruzka_source.cell_people`
+    already splits the same typed number evenly for the ojidaniya weight, and
+    one split must not have two spellings. Such a cell's figures are SHARES and
+    say so — `wc_share` / `wc_cells` on every input row,
+    `diagnostics.shared_work_centers` for the groups.
   * A missing input is a plain zero, not a marker: no ojidaniya row for a day
     means downtime 0, exactly like a genuinely clean day.
   * Attendance rows are filtered by the same ``is_direct_role`` rule as the fleet
@@ -241,6 +267,43 @@ def cell_zagruzka(
     wc_of_cell: dict[int, str] = {c.id: c.sap_code for c in cells if c.sap_code}
     cells_without_sap = [c.verifix_code for c in cells if not c.sap_code]
     wanted_wcs = set(wc_of_cell.values())
+
+    # ── A work centre named by SEVERAL cells is split evenly between them ─────
+    # Ten groups on the platform today, the largest six cells wide (Ibragimova
+    # Sayyora's A2894). Such a group is ONE production line the registry spells
+    # several ways: `pp_daily` and `pp_work_center_daily` are keyed by the WORK
+    # CENTRE, so there is no per-cell trudoyomkost and no per-cell «Bugungi
+    # fakt» to read, and nothing in the data says which of the cells produced
+    # what.
+    #
+    # Handing each cell the WHOLE work centre — what this did until v4.82.0 —
+    # broke both halves of the page. The cell measured the line's entire
+    # production against a fraction of its people, so `labor_surplus` drove
+    # `effective_hc` toward zero and the row read ±1000% (7222 and 7223 on
+    # A14310: 938%, 2498%, 1644%). And the roll-up then added those minutes and
+    # that headcount once PER CELL, so A2894 was counted six times over and the
+    # unit's own row could not be reconciled against /zagruzka at all.
+    #
+    # So each cell carries 1/N of its work centre. EVENLY, and deliberately not
+    # by attendance: `zagruzka_source.cell_people` already splits the same typed
+    # number evenly across the same cells for the ojidaniya weight, and two
+    # spellings of one split is how this page and /downtime would start
+    # answering one cell-day two different ways. The per-cell figure is
+    # therefore a SHARE, not a measurement, and is published as one
+    # (`wc_share` / `wc_cells` on every input row) so it can never be read as
+    # a number somebody typed for that cell.
+    cells_per_wc: dict[str, int] = defaultdict(int)
+    for _code in wc_of_cell.values():
+        cells_per_wc[_code] += 1
+
+    def _share(wc: Optional[str]) -> float:
+        return 1.0 / cells_per_wc[wc] if wc and cells_per_wc.get(wc) else 1.0
+
+    shared_wcs = {
+        wc: sorted(c.verifix_code or f"#{c.id}" for c in cells
+                   if wc_of_cell.get(c.id) == wc)
+        for wc, n in cells_per_wc.items() if n > 1
+    }
 
     # ── Trudoyomkost: Σ labor_time × qty ÷ 60, per (work centre, date) ─────────
     # labor_time lives on the catalog line (per SAP code + WC + operation); the
@@ -536,11 +599,59 @@ def cell_zagruzka(
         meta["events"] += 1
         meta["sum_min"] += mins
 
-    # ── Compute every (cell, date) through the fleet formula ──────────────────
+    # ── The unit's own inputs — the SAME three the fleet page reads ───────────
+    # `totals` below is the brigadir's own row, and from v4.82.0 it is computed
+    # on /zagruzka's logic rather than by adding the cells up (the operator's
+    # directive). Three of the fleet's rules could not be reproduced by a sum
+    # over the rows on screen, and every one of them moved the number:
+    #
+    #   * трудоёмкость is the WHOLE unit's — every active catalog line, over
+    #     every work centre, whether or not a cell names it and whether or not
+    #     anybody typed its people. Divided by the TYPED pins alone. That
+    #     asymmetry is deliberate on the fleet page (a unit that types 4 of its
+    #     6 work centres reads a load that is too high — the pressure to type
+    #     them all is the point), and a roll-up that dropped an untyped work
+    #     centre's minutes as well as its people answered a different question:
+    #     Ergashev Muxriddin on 07.09.2026 read 78% here against 572% there.
+    #   * attendance is the unit's own rows, not the union of the rows carrying
+    #     one of its cell codes — a worker whose «Код подразделения» is blank,
+    #     or points at a cell the daily batch lent to another supervisor, is
+    #     still on this unit's payroll and still in its verifix_labor.
+    #   * a work centre with no cell at all has no row here to be summed.
+    #
+    # `zagruzka_source.unit_labor` / `unit_people` ARE those numbers — the same
+    # functions `build_metrics_list` calls — so the two pages cannot answer one
+    # unit-day two ways. Never re-spell them here.
+    #
+    # The cells' own aggregate is still computed, published as `cells_sum` and
+    # charted against this row in the reconciliation card: "do the cells add up
+    # to the unit" is the question this page exists to ask, and it is worth
+    # asking out loud instead of being smuggled into the headline row.
     data: dict[str, dict[str, dict]] = {}
     inputs: dict[str, dict[str, dict]] = {}
-    # Rolled-up unit totals per date, summed BEFORE the formula so the total is a
-    # real unit-level загрузка, not an average of per-cell percentages.
+    z_lo = zagruzka_source.range_start(date_from, date_to)
+    z_labor: dict = {}
+    z_people: dict = {}
+    if z_lo is not None:
+        z_labor = zagruzka_source.unit_labor(db, [mgr.id], z_lo, date_to)
+        z_people = zagruzka_source.unit_people(
+            zagruzka_source.typed_people(db, [mgr.id], z_lo, date_to))
+
+    # The unit's own attendance, keyed by day — the fleet's set exactly
+    # (`manager_id`, no `is_supervisor` filter: `is_direct_role` drops the
+    # brigadir's own row inside `compute_metrics`, and doing it twice in two
+    # places is how the two pages would start disagreeing about who counts).
+    unit_att: dict[date, list] = defaultdict(list)
+    for r in db.query(Attendance).filter(
+        Attendance.manager_id == mgr.id,
+        Attendance.date >= date_from,
+        Attendance.date <= date_to,
+    ).all():
+        unit_att[r.date].append(r)
+
+    # The cells' own aggregate, summed BEFORE the formula so it is a real
+    # unit-level загрузка and not an average of per-cell percentages. Shares
+    # make each work centre land here exactly once.
     roll: dict[date, dict] = {
         d: {"prod_plan": 0.0, "prod_actual": 0.0, "official_hc": 0.0,
             "downtime_w": 0.0, "downtime_n": 0.0, "att": []} for d in dates
@@ -562,9 +673,14 @@ def cell_zagruzka(
         for d, key in zip(dates, date_keys):
             att_rows = att_by_cell.get((c.id, d), [])
             downtime = idle_by_cell.get((c.id, d.isoformat()), 0.0)
-            p_plan = plan_min.get((wc, d), 0.0) if wc else 0.0
-            p_actual = actual_min.get((wc, d), 0.0) if wc else 0.0
-            hc, hc_pinned = o_soni(wc, d) if wc else (0.0, False)
+            # 1/N of the work centre where several cells name it — see the
+            # `cells_per_wc` block above. N == 1 for every other cell, so this
+            # is the identity for all but the ten shared groups.
+            share = _share(wc)
+            p_plan = plan_min.get((wc, d), 0.0) * share if wc else 0.0
+            p_actual = actual_min.get((wc, d), 0.0) * share if wc else 0.0
+            hc_wc, hc_pinned = o_soni(wc, d) if wc else (0.0, False)
+            hc = hc_wc * share
 
             # Attendance is a REQUIRED input, not an optional one. With no rows
             # verifix_labor is 0, so the surplus term (0 − prod_actual) ÷ base is
@@ -637,6 +753,15 @@ def cell_zagruzka(
             }
             inputs[label][key] = {
                 "work_center": wc,
+                # How much of that work centre this cell carries, and how many
+                # cells it is shared with. 1.0 / 1 for all but the ten shared
+                # groups. Published because trud_plan, trud_actual and o_soni
+                # are then SHARES of a work-centre-level number and not facts
+                # measured for this cell — a distinction the reader cannot make
+                # from the figure alone, and the same one «Bugungi fakt» draws
+                # between a typed pin and a derived suggestion.
+                "wc_share": round(share, 4),
+                "wc_cells": cells_per_wc.get(wc, 1) if wc else 1,
                 "trud_plan": round(p_plan, 2),
                 "trud_actual": round(p_actual, 2),
                 "o_soni": hc,
@@ -685,36 +810,32 @@ def cell_zagruzka(
             r["downtime_n"] += n_idle
             r["att"] += att_rows
 
-    # ── Totals row: the same formula over the summed inputs ───────────────────
-    totals: dict[str, dict] = {}
-    for d, key in zip(dates, date_keys):
-        r = roll[d]
-        # Same rule as the individual cells: no attendance ⇒ no number, or the
-        # roll-up would publish a figure derived from a zero headcount.
-        if not r["att"]:
-            totals[key] = {"baseline_util": None, "net_util": None}
-            continue
-        hc = r["official_hc"]
-        on_prod = zagruzka_source.uses_production(d)
-        if on_prod and hc <= 0:
-            totals[key] = {"baseline_util": None, "net_util": None}
-            continue
-        m = compute_metrics(
-            manager_id=mgr.id,
-            manager_name=mgr.name or "",
-            shift=mgr.shift,
-            date=key,
-            attendance_rows=r["att"],
-            prod_plan=r["prod_plan"],
-            prod_actual=r["prod_actual"],
-            official_hc=hc,
-            equip_downtime=((r["downtime_w"] / r["downtime_n"])
-                            if r["downtime_n"] else 0.0),
-            downtime_by_cat={},
-            hc_required=on_prod,
-            basis="production" if on_prod else "sheet",
-        )
-        totals[key] = {
+    def _row(m, extra: Optional[dict] = None, guard: bool = True) -> dict:
+        """One computed figure as the grid consumes it.
+
+        Both the unit row and the cells' aggregate publish the same keys, so
+        the reconciliation card, the funnel and the inputs table read one shape
+        whichever side they are pointed at.
+
+        `guard` blanks a collapsed headcount, and it is what the per-cell rows
+        and `cells_sum` are built on: their attendance is PARTIAL by
+        construction (only the rows carrying a cell code, only the cells that
+        have any), so recorded labour far below produced labour drives the
+        surplus term past the headcount and the figure explodes or flips sign —
+        the ±1000% cells. The tolerance test is written against `<= 0` and never
+        `== 0`, because since 2026-08-30 `verifix_hc` is a sum of fractional
+        weights and an exact-equality guard would be one rounding away from
+        passing a headcount of nobody.
+
+        The UNIT row passes `guard=False`. Its attendance is the unit's whole
+        payroll, so that failure mode cannot arise from a partial file — and
+        where the arithmetic really does collapse, /zagruzka prints the number.
+        A page whose whole purpose is to be reconciled against it must not go
+        blank on exactly the day the fleet figure is worth questioning.
+        """
+        if guard and (m.verifix_hc <= 0 or m.effective_hc is None or m.effective_hc <= 0):
+            return {"baseline_util": None, "net_util": None}
+        out = {
             "baseline_util": m.baseline_util,
             "net_util": m.net_util,
             "prod_actual": m.prod_actual,
@@ -727,18 +848,102 @@ def cell_zagruzka(
             "avg_early_arrival": m.avg_early_arrival,
             "verifix_labor": m.verifix_labor,
             "verifix_hc": m.verifix_hc,
+        }
+        out.update(extra or {})
+        return out
+
+    # ── The brigadir's own row: /zagruzka's logic, not a sum of the cells ─────
+    # See the `unit_labor` / `unit_people` block above for why. From
+    # `ZAGRUZKA_FROM` the three inputs are the fleet's own; before it the page
+    # keeps deriving them from the cells, because the fleet reads the two sheet
+    # tabs there and this page has never had access to them.
+    totals: dict[str, dict] = {}
+    for d, key in zip(dates, date_keys):
+        r = roll[d]
+        on_prod = zagruzka_source.uses_production(d)
+        iso = d.isoformat()
+
+        if on_prod:
+            u_att = unit_att.get(d, [])
+            u_plan, u_actual = z_labor.get((mgr.id, iso), (0.0, 0.0))
+            u_hc = z_people.get((mgr.id, iso), 0.0)
+        else:
+            u_att = r["att"]
+            u_plan, u_actual, u_hc = r["prod_plan"], r["prod_actual"], r["official_hc"]
+
+        # Same rule as the individual cells: no attendance ⇒ no number, or the
+        # row would publish a figure derived from a zero headcount. And no
+        # typed people ⇒ no загрузка at all, which is the blank the fleet page
+        # shows for the same unit-day and for the same reason.
+        if not u_att or (on_prod and u_hc <= 0):
+            totals[key] = {"baseline_util": None, "net_util": None}
+            continue
+
+        # The ojidaniya deduction is the headcount-weighted mean of the cells,
+        # Σ(Nᵢ·Tᵢ) ÷ ΣNᵢ — and with the work-centre share applied above, N is
+        # now the same weight `idle_source._n_by_cell` gives the fleet figure
+        # (a work centre's typed people split evenly between the cells naming
+        # it), so the two pages deduct the same minutes from the same day.
+        m = compute_metrics(
+            manager_id=mgr.id,
+            manager_name=mgr.name or "",
+            shift=mgr.shift,
+            date=key,
+            attendance_rows=u_att,
+            prod_plan=u_plan,
+            prod_actual=u_actual,
+            official_hc=u_hc,
+            equip_downtime=((r["downtime_w"] / r["downtime_n"])
+                            if r["downtime_n"] else 0.0),
+            downtime_by_cat={},
+            hc_required=on_prod,
+            basis="production" if on_prod else "sheet",
+        )
+        totals[key] = _row(m, guard=False, extra={
             # Σ N — the divisor of the weighted mean above. Published so the
             # unit's deduction can be re-derived from the rows on screen
             # instead of being taken on trust.
             "idle_weight_n": r["downtime_n"],
             "idle_weight_sum": round(r["downtime_w"], 2),
-        }
-        # Same tolerance rule as the per-cell guard above — verifix_hc is
-        # fractional. At unit level the halves of a split sum back to 1.0, so
-        # this total is unmoved by the split model; the test is written this way
-        # because the two guards must stay one rule.
-        if m.verifix_hc <= 0 or m.effective_hc is None or m.effective_hc <= 0:
-            totals[key] = {"baseline_util": None, "net_util": None}
+            # Which side each input came from, so «why does this row not equal
+            # the rows above it» is answerable on the page.
+            "basis": m.basis,
+            "att_rows": len(u_att),
+        })
+
+    # ── The cells' own aggregate, for the reconciliation card ────────────────
+    # What the rows on screen add up to: their shared трудоёмкость, their
+    # typed people, their attendance. It is EXPECTED to sit below the unit row
+    # whenever a work centre has no cell, a cell has no SAP code, a cell's
+    # people were never typed, or a worker's «Код подразделения» is blank —
+    # and naming that gap is the whole reason this page exists.
+    cells_sum: dict[str, dict] = {}
+    for d, key in zip(dates, date_keys):
+        r = roll[d]
+        on_prod = zagruzka_source.uses_production(d)
+        if not r["att"] or (on_prod and r["official_hc"] <= 0):
+            cells_sum[key] = {"baseline_util": None, "net_util": None}
+            continue
+        cm = compute_metrics(
+            manager_id=mgr.id,
+            manager_name=mgr.name or "",
+            shift=mgr.shift,
+            date=key,
+            attendance_rows=r["att"],
+            prod_plan=r["prod_plan"],
+            prod_actual=r["prod_actual"],
+            official_hc=r["official_hc"],
+            equip_downtime=((r["downtime_w"] / r["downtime_n"])
+                            if r["downtime_n"] else 0.0),
+            downtime_by_cat={},
+            hc_required=on_prod,
+            basis="production" if on_prod else "sheet",
+        )
+        cells_sum[key] = _row(cm, {
+            "idle_weight_n": r["downtime_n"],
+            "idle_weight_sum": round(r["downtime_w"], 2),
+            "att_rows": len(r["att"]),
+        })
 
     # ── The fleet page's own figure for this unit, to reconcile against ───────
     # Different sources entirely (sheet imports vs pp_*), so these are EXPECTED
@@ -794,6 +999,10 @@ def cell_zagruzka(
         ],
         "inputs": inputs,
         "totals": totals,
+        # What the cells on screen add up to. `totals` above is the unit's own
+        # figure on the fleet's logic; this is the sum of the rows under it, and
+        # the reconciliation card charts one against the other.
+        "cells_sum": cells_sum,
         "fleet": fleet,
         # The units this viewer may switch between — the page's own picker list,
         # decided here so a control can never offer a unit the query refuses.
@@ -824,6 +1033,15 @@ def cell_zagruzka(
             "ojidaniya_excluded_min": round(idle_excluded_min, 1),
             # Cells dropped because partial attendance drove effective_hc ≤ 0.
             "collapsed_effective_hc": collapsed_hc,
+            # Work centres named by more than one cell. Each such cell carries
+            # 1/N of the work centre's трудоёмкость and typed people, because
+            # neither is recorded per cell — so those rows are SHARES and the
+            # page says so rather than letting a split figure read as a
+            # measurement.
+            "shared_work_centers": [
+                {"work_center": wc, "cells": codes}
+                for wc, codes in sorted(shared_wcs.items())
+            ],
             # Cell-days blanked from `zagruzka_source.ZAGRUZKA_FROM` on because
             # nobody typed «Bugungi fakt» for that work centre. Named, because
             # a blank the page does not count reads as a quiet day.
