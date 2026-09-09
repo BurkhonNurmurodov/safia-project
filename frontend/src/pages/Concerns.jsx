@@ -38,6 +38,7 @@ import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
 import { CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON } from "../utils/concernCategories";
+import { shortPerson } from "../utils/personName";
 
 const STATUSES = ["todo", "doing", "done"];
 
@@ -57,17 +58,14 @@ const LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"];
 // can still fall back to a comma-joined pair, hence the split.
 const splitResponsible = (s) => (s || "").split(",").map((x) => x.trim()).filter(Boolean);
 
-// Compact person label. Names are stored "Lastname Firstname Patronymic
-// [O'g'li/Qizi]", so the initial comes from the SECOND word (the first name) —
-// never the last, which is a patronymic or the o'g'li/qizi suffix:
-// "Abduganiyev Izzatillo Gaybullo O'g'li" → "I. Abduganiyev". Single-word names
-// are left as-is. Only ever a DISPLAY form — search, sort and every filter list
-// still run on the full name.
-const shortPerson = (full) => {
-  const parts = full.split(/\s+/);
-  if (parts.length < 2) return full;
-  return `${parts[1][0].toUpperCase()}. ${parts[0]}`;
-};
+// Compact person label: `utils/personName.js#shortPerson`, the platform's ONE
+// rule — the SURNAME down to an initial and the given name in full
+// ("Xidirova Zebo Ravshan qizi" → "X. Zebo"). This page used to spell the rule
+// itself, the other way round ("Z. Xidirova"), which is how the concerns
+// register came to name one person differently from every other table on the
+// platform — the plant knows its leaders by their given name, so the half this
+// page spelled out was the half nobody uses. Only ever a DISPLAY form: search,
+// sort and every filter list still run on the full name.
 
 // Bucket key for a row that names nobody (only legacy rows can). It is a real
 // key, not a blank, because a blank is what the aggregator skips — and a row
