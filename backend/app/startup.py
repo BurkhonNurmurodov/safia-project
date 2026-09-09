@@ -5243,3 +5243,58 @@ def map_arc_brigadas_db() -> None:
         print(f"[startup] Failed to map ARC Brigadas: {exc}")
     finally:
         db.close()
+
+
+FORECAST_CAPACITY_FLAG = "forecast_autocall_capacity_90_2026_09_09_v1"
+
+
+def set_forecast_autocall_capacity() -> None:
+    """2026-09-09 (the operator's call): the «Smenaga chaqirish» forecast is
+    computed at a «Smena unumi» of 90%, not 100%.
+
+    ``forecast_autocall.DEFAULT_CAPACITY`` already answers 90 — but a default
+    only decides a box with NO row, and the «Avto» chip writes one the moment
+    anybody opens it. So on the box where the setting was ever touched the
+    constant alone would change nothing, silently, and the plant would go on
+    being called at 100%. This platform has no shell, so the value has to be
+    written from here.
+
+    It states an END STATE rather than declining when a row exists: the 90%
+    was decided AFTER the setting shipped, so a row left at the old default is
+    not an opinion to yield to — it is the thing being answered. The FLAG is
+    what protects every LATER edit; from the next boot on the value is entirely
+    the admin's, and changing the figure again needs a NEW flag key, or the old
+    "already ran" mark makes it a no-op on every box that has booted once.
+
+    Config only — nothing is recomputed and no notice is sent. The counts are
+    derived per request, so the next send (and the next /forecast card) simply
+    reads the new divisor. **Consequence to know: every forecast count RISES**,
+    by about 11%, because the same trudoyomkost is being divided by 432
+    productive minutes per worker instead of 480.
+
+    ``enabled`` is deliberately left alone: pausing the send is a separate
+    decision, and materialising it here would turn an absent row into an
+    explicit one for no reason.
+    """
+    from app.services import forecast_autocall
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=FORECAST_CAPACITY_FLAG).first():
+            return
+        want = f"{forecast_autocall.DEFAULT_CAPACITY:g}"
+        row = db.query(AppSetting).filter_by(
+            key=forecast_autocall.SETTING_CAPACITY).first()
+        was = row.value if row else "(absent)"
+        if row:
+            row.value = want
+        else:
+            db.add(AppSetting(key=forecast_autocall.SETTING_CAPACITY, value=want))
+        db.add(AppSetting(key=FORECAST_CAPACITY_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] forecast call capacity set to {want}% (was {was})")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] forecast call capacity not set: {exc}")
+    finally:
+        db.close()

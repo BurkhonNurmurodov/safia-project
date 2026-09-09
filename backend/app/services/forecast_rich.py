@@ -5,9 +5,9 @@ The twin of services/ojidaniya_svodka next door, for the «Smenaga chaqirish»
 message: same dialect, same figure mechanism (``tg://photo?id=…`` resolved
 against the media attached to the send), same degrade-to-the-classic-DM
 contract. Where the plain DM is five labelled lines, this lays the same facts
-out as a table, embeds the PNG, and adds the ONE thing the plain DM cannot
-carry — the week-by-week history the recommendation was averaged over, in
-figures beside the picture of it.
+out as a table and embeds the PNG — so the chart, and with it the history the
+recommendation was averaged over, arrives as part of the message instead of as
+an attachment beside it.
 
 Three rules, and the first two are what stop this becoming a second answer:
 
@@ -33,7 +33,7 @@ from __future__ import annotations
 from datetime import date
 from html import escape
 
-from app.services.forecast_card import _RU_WD_NOM, _fmt_min, _t, basis_line
+from app.services.forecast_card import _RU_WD_NOM, _t, basis_line
 
 # The media id the figure resolves against; the sender attaches the PNG under
 # it. Must match the ``id`` in the sendRichMessage media array.
@@ -65,32 +65,6 @@ def _notif(lang: str) -> tuple[str, str]:
     title, body = strings.get(lang) or strings["en"]
     parts = body.split("\n\n", 1)
     return title, (parts[1] if len(parts) > 1 else "")
-
-
-def _rows_table(slots: list[dict], t: dict, target: date, forecast) -> str:
-    """The history, in figures — one row per preceding same weekday, plus the
-    forecast as the last row. A week the source sheet has no plan for keeps its
-    row and reads «—»: dropping it would make a one-sample average look like a
-    three-sample one, exactly as the chart's gap does."""
-    out = ['<table bordered striped>',
-           f'<tr><th align="left">{_esc(t["day"])}</th>'
-           f'<th align="right">{_esc(t["people"])}</th>'
-           f'<th align="right">{_esc(t["min"])}</th></tr>']
-    for s in slots:
-        d = s["date"].strftime("%d.%m")
-        if s["workers"] is None:
-            out.append(f'<tr><td>{d}</td><td align="right">—</td>'
-                       f'<td align="right">{_esc(t["nodata"])}</td></tr>')
-        else:
-            out.append(f'<tr><td>{d}</td>'
-                       f'<td align="right">{s["workers"]}</td>'
-                       f'<td align="right">{_fmt_min(s["plan_min"] or 0)}</td></tr>')
-    if forecast is not None:
-        out.append(f'<tr><td><b>{target:%d.%m}</b> · {_esc(t["forecast"])}</td>'
-                   f'<td align="right"><b>{forecast}</b></td>'
-                   f'<td align="right">—</td></tr>')
-    out.append('</table>')
-    return "\n".join(out)
 
 
 def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
@@ -130,8 +104,13 @@ def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
         # say why the figures above are blank instead of leaving them bare.
         parts.append(f"<p>{_esc(t['none'])}</p>")
     else:
-        parts.append(f"<h4>{_esc(t['chart'].format(wd=t['wd'][wd]))}</h4>")
-        parts.append(_rows_table(data["slots"], t, target, fc))
+        # The week-by-week history is NOT repeated as a table here (the
+        # operator's call, 2026-09-09): the figure above already draws those
+        # points, labelled with both the worker count and the minutes, so a
+        # table of the same three rows made the message long enough to bury
+        # the one line that matters — the count to call. The basis sentence
+        # below still says how many weeks it was averaged over, which is what
+        # a reader needs in order to weigh it.
         conf = t["conf"].get(data["confidence"], data["confidence"])
         parts.append(f"<p>{_esc(basis_line(data, t))} · "
                      f"<b>{_esc(conf)}</b></p>")

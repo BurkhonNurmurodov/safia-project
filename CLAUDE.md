@@ -3235,8 +3235,18 @@ both date rules, the switch.
 - **Two AppSetting rows, read AT FIRE TIME**: `forecast_autocall_enabled` and
   `forecast_autocall_capacity_pct` (the «Smena unumi» the counts are computed
   at). Pausing the send has to be an admin edit and not a deploy — this
-  platform has no shell. An **absent row reads as ON at 100%**, the state the
-  feature shipped in. The control is the «Avto» chip beside «Ertangi chaqiruv»
+  platform has no shell. An **absent row reads as ON at
+  `forecast_autocall.DEFAULT_CAPACITY`**, which is **90%** from 2026-09-09 (the
+  operator's call — a worker who is present is not productive for all 480
+  minutes, and 100% assumed they were). **Consequence to know: every forecast
+  count ROSE by about 11%** when this landed, because the same trudoyomkost is
+  divided by 432 productive minutes instead of 480. A default only reaches a box
+  with NO row, and the «Avto» chip writes one the moment anybody opens it, so the
+  move off 100% carries a flag-guarded one-shot as well —
+  `startup.set_forecast_autocall_capacity` (flag
+  `forecast_autocall_capacity_90_2026_09_09_v1`), which states an END state,
+  leaves `enabled` alone, and is what protects every LATER admin edit; changing
+  the figure again needs a **NEW flag key**. The control is the «Avto» chip beside «Ertangi chaqiruv»
   on the forecast card (`GET`/`PUT /api/production/trudoyomkost/autocall`):
   readable by everyone who can open the page, writable by an ADMIN only, since
   it governs a plant-wide send.

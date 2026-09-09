@@ -39,8 +39,10 @@ Four rules hold this together:
 The switch and the «Smena unumi» the counts are computed at are two AppSetting
 rows read AT FIRE TIME, never captured at boot: pausing the send has to be an
 admin edit and not a deploy, because this platform has no shell. An ABSENT row
-reads as ON at 100% — the state the feature shipped in, and the same "absent
-row = on" convention the SAP auto-fill register already uses.
+reads as ON at ``DEFAULT_CAPACITY`` (90%), the same "absent row = on" convention
+the SAP auto-fill register already uses. That constant only decides a box with
+NO row, so the move off the original 100% carries a flag-guarded one-shot in
+startup.py too — a default nothing reads is a setting that never changed.
 """
 from __future__ import annotations
 
@@ -74,7 +76,13 @@ AUTO_SENDER = 0
 
 SETTING_ENABLED = "forecast_autocall_enabled"
 SETTING_CAPACITY = "forecast_autocall_capacity_pct"
-DEFAULT_CAPACITY = 100.0
+# The «Smena unumi» the call counts are computed at — 90% of the 480-min shift
+# (432 productive minutes per worker), the operator's figure of 2026-09-09.
+# A brigadir is being told how many people to CALL, and somebody who is present
+# is not productive for every minute of the shift; costing the forecast at 100%
+# quietly assumed they were. Making the divisor more realistic RAISES the count:
+# the same trudoyomkost now asks for ~11% more people.
+DEFAULT_CAPACITY = 90.0
 
 _OFF = ("0", "false", "off", "no", "")
 
