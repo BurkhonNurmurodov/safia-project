@@ -42,7 +42,7 @@ import WageRatesModal from "./WageRatesModal";
  */
 export default function CostTab() {
   const { t } = useLang();
-  const tl = useTranslit();
+  const { tl } = useTranslit();
   const { factory } = useFactory();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
