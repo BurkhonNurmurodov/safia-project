@@ -132,6 +132,10 @@ _MESSAGES = {
         "shot_failed":       "❌ Rasmni tayyorlab bo'lmadi. Birozdan so'ng qayta urinib ko'ring.",
         "shot_bad_date":     "📅 Sanani YYYY-MM-DD ko'rinishida yuboring, masalan: /ojidaniya 2026-07-25",
         "shot_no_access":    "🚫 Sizda bu sahifaga ruxsat yo'q.",
+        "fc_choose":         "👤 Prognozni ko'rish uchun brigadirni tanlang:",
+        "fc_none":           "Sizga ko'rinadigan brigadir yo'q.",
+        "fc_gone":           "Bu brigadir endi ro'yxatda yo'q. /forecast ni qayta yuboring.",
+        "fc_bad_date":       "📅 Sanani YYYY-MM-DD ko'rinishida yuboring, masalan: /forecast 2026-09-10",
         "adminreg_choose":   "👤 Admin profilini tanlang:",
         "adminreg_none":     "Bo'sh admin profillari yo'q.",
         "adminreg_already":  "Siz allaqachon adminsiz.",
@@ -217,6 +221,10 @@ _MESSAGES = {
         "shot_failed":       "❌ Расмни тайёрлаб бўлмади. Бироздан сўнг қайта уриниб кўринг.",
         "shot_bad_date":     "📅 Санани YYYY-MM-DD кўринишида юборинг, масалан: /ojidaniya 2026-07-25",
         "shot_no_access":    "🚫 Сизда бу саҳифага рухсат йўқ.",
+        "fc_choose":         "👤 Прогнозни кўриш учун бригадирни танланг:",
+        "fc_none":           "Сизга кўринадиган бригадир йўқ.",
+        "fc_gone":           "Бу бригадир энди рўйхатда йўқ. /forecast ни қайта юборинг.",
+        "fc_bad_date":       "📅 Санани YYYY-MM-DD кўринишида юборинг, масалан: /forecast 2026-09-10",
         "adminreg_choose":   "👤 Админ профилини танланг:",
         "adminreg_none":     "Бўш админ профиллари йўқ.",
         "adminreg_already":  "Сиз аллақачон админсиз.",
@@ -302,6 +310,10 @@ _MESSAGES = {
         "shot_failed":       "❌ Не удалось построить изображение. Попробуйте чуть позже.",
         "shot_bad_date":     "📅 Укажите дату как YYYY-MM-DD, например: /ojidaniya 2026-07-25",
         "shot_no_access":    "🚫 У вас нет доступа к этой странице.",
+        "fc_choose":         "👤 Выберите бригадира, чтобы посмотреть прогноз:",
+        "fc_none":           "Доступных бригадиров нет.",
+        "fc_gone":           "Этого бригадира больше нет в списке. Отправьте /forecast заново.",
+        "fc_bad_date":       "📅 Укажите дату как YYYY-MM-DD, например: /forecast 2026-09-10",
         "adminreg_choose":   "👤 Выберите админ-профиль:",
         "adminreg_none":     "Нет свободных админ-профилей.",
         "adminreg_already":  "Вы уже администратор.",
@@ -387,6 +399,10 @@ _MESSAGES = {
         "shot_failed":       "❌ Couldn't build the image. Please try again in a moment.",
         "shot_bad_date":     "📅 Use a date like YYYY-MM-DD, e.g. /ojidaniya 2026-07-25",
         "shot_no_access":    "🚫 You don't have access to this page.",
+        "fc_choose":         "👤 Pick a supervisor to see their forecast:",
+        "fc_none":           "No supervisors are visible to you.",
+        "fc_gone":           "That supervisor is no longer on the list. Send /forecast again.",
+        "fc_bad_date":       "📅 Use a date like YYYY-MM-DD, e.g. /forecast 2026-09-10",
         "adminreg_choose":   "👤 Select an admin profile:",
         "adminreg_none":     "No available admin profiles.",
         "adminreg_already":  "You are already an admin.",
@@ -5144,6 +5160,186 @@ def _ojidaniya_cmd(message: types.Message):
                       caption=f"Ojidaniya · {day:%d.%m.%Y}")
 
 
+# ── Call forecast card ────────────────────────────────────────────────────────
+# `/forecast` is the TEST door onto the «Smenaga chaqirish» send: pick a
+# brigadir from a list and get back exactly what the 19:00 / 06:00 job would DM
+# them for their next shift-day — the same message text, the same count, and the
+# chart of the same-weekday history the count was averaged over.
+#
+# It computes NOTHING of its own, and that is the whole point of it as a test:
+# `_call_rows` is the one computation (the modal, the automatic send and this
+# all read it), `forecast_autocall.target_date` is the one date rule, and
+# `_mk_notif_tg` renders the very body the DM carries. A command that rebuilt
+# any of the three would be testing itself rather than the send.
+#
+# Scoped like /ojidaniya: the caller's own profile decides whether they may open
+# the forecast page at all, and their own shift narrows the list — so a
+# supervisor testing this sees their own shift's brigadirs, an admin sees all.
+
+_FC_PER_ROW = 2          # inline buttons per row — a name needs half a phone
+_TG_CAPTION_MAX = 1024   # Telegram's cap on a document caption
+
+
+def _fc_managers(db, payload: dict) -> list:
+    """The brigadirs this caller may ask about, in the list's own order."""
+    q = db.query(Manager).filter(Manager.archived.is_(False))
+    shift = _caller_shift(db, payload)
+    if shift is not None:
+        q = q.filter(Manager.shift == shift)
+    return sorted(q.all(), key=lambda m: m.name.lower())
+
+
+def _fc_kb(managers, day: str) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup()
+    row: list = []
+    for m in managers:
+        row.append(types.InlineKeyboardButton(
+            f"{m.name} · {m.shift}" if m.shift else m.name,
+            callback_data=f"fc:{m.id}:{day}"))
+        if len(row) == _FC_PER_ROW:
+            kb.row(*row)
+            row = []
+    if row:
+        kb.row(*row)
+    return kb
+
+
+def _fc_allowed(db, payload: dict) -> bool:
+    from app.capabilities import capability_pages, caller_denied_pages
+    from app.permissions import get_page_access, role_can_access
+
+    return role_can_access(payload["role"], ["trudoyomkost"], get_page_access(db),
+                           capability_pages(db, payload), caller_denied_pages(db, payload))
+
+
+@bot.message_handler(commands=["forecast"])
+def _forecast_cmd(message: types.Message):
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+
+    # Optional date argument — /forecast 2026-09-10 (also 10.09.2026) — pins the
+    # target day. Without one each brigadir's card is built for THEIR shift's
+    # next shift-day, which is what the automatic send would have used.
+    day = "-"
+    parts = (message.text or "").split()
+    if len(parts) > 1:
+        for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+            try:
+                day = datetime.strptime(parts[1], fmt).date().isoformat()
+                break
+            except ValueError:
+                continue
+        else:
+            bot.send_message(message.chat.id, _msg(lang, "fc_bad_date"))
+            return
+
+    try:
+        with SessionLocal() as db:
+            payload = _card_active_role(db, tid)
+            if not payload or not _fc_allowed(db, payload):
+                bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
+                return
+            managers = _fc_managers(db, payload)
+    except Exception:
+        logger.exception("Forecast list failed for %s", tid)
+        bot.send_message(message.chat.id, _msg(lang, "shot_failed"))
+        return
+
+    if not managers:
+        bot.send_message(message.chat.id, _msg(lang, "fc_none"))
+        return
+    bot.send_message(message.chat.id, _msg(lang, "fc_choose"),
+                     reply_markup=_fc_kb(managers, day))
+
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("fc:"))
+def _fc_callback(call: types.CallbackQuery):
+    """One brigadir's card. Access is re-checked HERE and not merely by who was
+    shown the keyboard: callback data is typeable, and a manager_id in it is a
+    request, never an authorisation."""
+    from app.routers.production import FORECAST_WEEKS, _call_rows
+    from app.routers.staff import _mk_notif_tg
+    from app.services import forecast_autocall
+    from app.services.downtime_card import CardError
+    from app.services.forecast_card import render_forecast_card
+
+    tid = call.from_user.id
+    lang = _get_lang(tid)
+    parts = call.data.split(":")
+    try:
+        mid = int(parts[1])
+    except (IndexError, ValueError):
+        bot.answer_callback_query(call.id)
+        return
+    raw_day = parts[2] if len(parts) > 2 else "-"
+
+    bot.answer_callback_query(call.id)
+    try:
+        with SessionLocal() as db:
+            payload = _card_active_role(db, tid)
+            if not payload or not _fc_allowed(db, payload):
+                bot.send_message(call.message.chat.id, _msg(lang, "shot_no_access"))
+                return
+            mgr = next((m for m in _fc_managers(db, payload) if m.id == mid), None)
+            if mgr is None:
+                bot.send_message(call.message.chat.id, _msg(lang, "fc_gone"))
+                return
+
+            # The send's own two rules, never re-spelled: which day this
+            # brigadir's next shift is, and what «Smena unumi» the counts are
+            # computed at (the same AppSetting row the 19:00/06:00 job reads).
+            if raw_day != "-":
+                target = datetime.strptime(raw_day, "%Y-%m-%d").date()
+            else:
+                target = forecast_autocall.target_date(mgr.shift or 1)
+            eff_pct = forecast_autocall.settings(db)["capacity_pct"]
+            eff = int(round(eff_pct))
+
+            rows = _call_rows(db, target, eff_pct, mgr.shift)
+            row = next((r for r in rows if r["manager_id"] == mgr.id), None)
+            if row is None:
+                bot.send_message(call.message.chat.id, _msg(lang, "fc_gone"))
+                return
+
+            png = render_forecast_card(row, target, lang, eff, FORECAST_WEEKS)
+            # The body the brigadir would actually receive — same key, same
+            # params as _send_call_notice builds, so the test shows the message
+            # and not a description of it. band_hi is the DM's «Maksimum», with
+            # the recommended count standing in when there is no band.
+            fc = row["forecast"]
+            body = _mk_notif_tg("call_forecast", {
+                "name": mgr.name, "date": target, "eff": eff,
+                "count": fc if fc is not None else "—",
+                "max": row["band_hi"] if row["band_hi"] is not None else (
+                    fc if fc is not None else "—"),
+            }, lang)
+    except CardError as exc:
+        logger.error("Forecast card failed for %s: %s", tid, exc)
+        bot.send_message(call.message.chat.id, _msg(lang, "shot_failed"))
+        return
+    except Exception:
+        logger.exception("Forecast card failed for %s (manager %s)", tid, mid)
+        bot.send_message(call.message.chat.id, _msg(lang, "shot_failed"))
+        return
+
+    fname = f"forecast-{mgr.id}-{target:%Y%m%d}.png"
+    # send_document, not send_photo: Telegram re-compresses photos and caps them
+    # at 1280px, which turns the chart's own numbers to mush (the /ojidaniya
+    # card's reasoning). A caption over Telegram's 1024-char cap is refused
+    # outright, so a long body is sent as its own message instead of lost.
+    if body and len(body) <= _TG_CAPTION_MAX:
+        bot.send_document(call.message.chat.id, document=(fname, png),
+                          caption=body, parse_mode="HTML")
+        return
+    bot.send_document(call.message.chat.id, document=(fname, png),
+                      caption=f"{mgr.name} · {target:%d.%m.%Y}")
+    if body:
+        try:
+            _send_html_message(call.message.chat.id, body)
+        except Exception:
+            logger.warning("Forecast body send failed for %s", tid, exc_info=True)
+
+
 @bot.message_handler(func=lambda m: _awaiting_contact(m.from_user.id),
                      content_types=["text"])
 def _typed_instead_of_contact(message: types.Message):
@@ -5230,11 +5426,15 @@ def setup_webhook():
             types.BotCommand("ojidaniya", "Snapshot of the Ojidaniya page"),
         ],
     }
+    # /forecast is deliberately NOT in the public menus: it is gated on the
+    # trudoyomkost page, so advertising it to everyone would offer most users a
+    # command that can only answer "no access".
     admin_menu = [
         types.BotCommand("start", "Boshlash / dashboard"),
         types.BotCommand("pending", "Kutilayotgan ro'yxatdan o'tishlar"),
         types.BotCommand("tasks", "Kunlik vazifalar (liderlar)"),
         types.BotCommand("ojidaniya", "Ojidaniya sahifasi rasmi"),
+        types.BotCommand("forecast", "Xodim chaqirish prognozi (sinov)"),
     ]
     admin_ids = sorted(_admin_ids())
 

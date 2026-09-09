@@ -2771,8 +2771,8 @@ def _tomorrow() -> date:
 def _call_rows(db: Session, target: date, capacity_pct: float,
                shift: Optional[int] = None) -> list[dict]:
     """One row per brigadir for `target`: the forecast count and its band, the
-    confidence, whether the supervisor profile is claimed, and the latest notice
-    already sent for that date.
+    confidence, the dated samples it was averaged over, whether the supervisor
+    profile is claimed, and the latest notice already sent for that date.
 
     THE computation behind the call modal. The endpoint below and the automatic
     19:00 / 06:00 send (services/forecast_autocall) both read this one function,
@@ -2813,18 +2813,28 @@ def _call_rows(db: Session, target: date, capacity_pct: float,
     rows = []
     for m in sorted(managers, key=lambda m: m.name.lower()):
         days = loaded.get(m.id, {}).get("days", {})
-        samples = [
-            _workers_from_plan(days[sd]["plan"], cap_min)
-            for k in range(FORECAST_WEEKS, 0, -1)
-            if (sd := target - timedelta(days=7 * k)) in days
-        ]
-        st = _cell_stats(samples)
+        # Dated samples, oldest→newest — the same shape _forecast_payload emits,
+        # plus the trudoyomkost each worker count was derived from. They ride on
+        # the row so a reader can be SHOWN what the mean was taken over (the bot
+        # card draws exactly these points); nothing may re-derive them, or the
+        # picture and the number stop being about the same three weeks.
+        samples = []
+        for k in range(FORECAST_WEEKS, 0, -1):
+            sd = target - timedelta(days=7 * k)
+            v = days.get(sd)
+            if v is None:
+                continue
+            samples.append({"date": sd.isoformat(),
+                            "workers": _workers_from_plan(v["plan"], cap_min),
+                            "plan_min": round(float(v["plan"] or 0.0), 1)})
+        st = _cell_stats([s["workers"] for s in samples])
         ln = last_notice.get(m.id)
         rows.append({
             "manager_id": m.id, "name": m.name, "shift": m.shift,
             "forecast": int(round(st["mean"])) if st["mean"] is not None else None,
             "band_lo": st["band_lo"], "band_hi": st["band_hi"],
             "confidence": st["confidence"], "n": st["n"],
+            "mean": st["mean"], "samples": samples,
             "registered": m.id in claimed,
             "last_notice": {
                 "workers": ln.workers,
