@@ -1,6 +1,6 @@
 // Shared per-column table-filter primitives.
 // Used by the Staff "Requests"/Workers tables and the Overview supervisor table.
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, isValidElement } from "react";
 import { createPortal } from "react-dom";
 import { SlidersHorizontal, X, ChevronDown, Check } from "lucide-react";
 import { useLang } from "../../context/LangContext";
@@ -121,6 +121,19 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
     const r = render ? render(o) : o;
     return typeof r === "string" || typeof r === "number" ? String(r) : String(o ?? "");
   };
+  // A row must never be able to take the page down. `render` may legitimately
+  // return a node (chips, icons), so the child cannot simply be stringified —
+  // but a PLAIN OBJECT reaching it throws React's "Objects are not valid as a
+  // React child", which replaces the whole page with a crash screen over one
+  // filter option. A caller that hands the list objects instead of values (the
+  // «Xarajat» category fallback did, 2026-09-09) reads its own `label` here
+  // instead of crashing.
+  const node = (o) => {
+    const r = render ? render(o) : (o || "—");
+    if (r !== null && typeof r === "object" && !Array.isArray(r) && !isValidElement(r))
+      return label(o);
+    return r;
+  };
   const shown = searchable && q.trim()
     ? opts.filter(o => label(o).toLowerCase().includes(q.trim().toLowerCase()))
     : opts;
@@ -163,7 +176,7 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
       <input type="checkbox" checked={sel.includes(o)}
         onChange={() => onChange(sel.includes(o) ? sel.filter(v => v !== o) : [...sel, o])}
         style={{ accentColor: "var(--brand)" }} />
-      <span className="truncate">{render ? render(o) : (o || "—")}</span>
+      <span className="truncate">{node(o)}</span>
     </label>
   );
   return (

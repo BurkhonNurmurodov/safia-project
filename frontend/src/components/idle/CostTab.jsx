@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   CalendarClock, ChevronRight, Coins, FileSpreadsheet, Layers, Settings2, Tag,
@@ -89,8 +89,19 @@ export default function CostTab() {
 
   const rows = data?.rows || [];
   const totals = data?.totals || {};
-  const opts = data?.options || {};
   const rates = data?.rates || [];
+
+  // The option lists are this tab's own CONTROLS, and they must not vanish
+  // between fetches. Every tick changes the query key, so `data` is undefined
+  // for a beat — and a list that empties itself in that beat takes the pick
+  // with it: the cascade guard below reads an empty cell list as «the page can
+  // no longer show this pick» and drops it, which on mount wiped a persisted
+  // cell pick before it was ever used. An empty list is a real answer only
+  // when it IS the answer, never while one is on its way, so the last one
+  // stands until a new one lands.
+  const lastOpts = useRef(null);
+  useEffect(() => { if (data?.options) lastOpts.current = data.options; }, [data]);
+  const opts = data?.options || lastOpts.current || {};
 
   // ── formatting ─────────────────────────────────────────────────────────────
   // Whole so'm with grouped digits. Money is the number a reader quotes, so the
@@ -119,10 +130,14 @@ export default function CostTab() {
   // A cell pick the narrowed list no longer offers is DROPPED: a control naming
   // a value the page cannot show is worse than a reset.
   useEffect(() => {
+    // No answer yet (the first load, before anything has been served) prunes
+    // NOTHING: `[]` from the server is a real «this scope has no cells», an
+    // absent payload is not.
+    if (!opts.cells) return;
     if (!cellOpts.length && !cellIds.length) return;
     const ok = new Set(cellOpts.map((c) => c.id));
     if (cellIds.some((id) => !ok.has(id))) setCellIds(cellIds.filter((id) => ok.has(id)));
-  }, [cellOpts, cellIds, setCellIds]);
+  }, [opts.cells, cellOpts, cellIds, setCellIds]);
 
   const grand = totals.cost || 0;
   const share = (v) => (grand && v != null ? (v / grand) * 100 : null);
@@ -313,7 +328,14 @@ export default function CostTab() {
               onClear: () => setCats([]),
               render: () => (
                 <OptsFilter
-                  opts={(opts.categories || []).length ? opts.categories : CATS}
+                  // The canonical A→Z set as NAMES, never the CATS objects
+                  // themselves: this list is the same currency the server's
+                  // own `options.categories` speaks («Cat A»), and an option
+                  // that is an object renders as a React child and crashes the
+                  // page — which is exactly what it did on a scope whose
+                  // priced events carried no category at all.
+                  opts={(opts.categories || []).length
+                    ? opts.categories : CATS.map((c) => c.name)}
                   sel={cats} onChange={setCats}
                   labelOf={(c) => (catLabel(c) ? `${c} — ${catLabel(c)}` : c)}
                   render={(c) => (catLabel(c) ? `${c} — ${catLabel(c)}` : c)}
