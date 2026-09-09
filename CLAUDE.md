@@ -4178,17 +4178,71 @@ stays `0.0.0` on purpose.
 
 **Every change bumps `VERSION`, sized to its impact** (`MAJOR.MINOR.PATCH`), and
 a bump RESETS every number to its right to 0 — `1.4.7` → patch `1.4.8` → minor
-`1.5.0` → major `2.0.0`. What each level means here:
+`1.5.0` → major `2.0.0`.
 
-| Level | Bump for | Examples |
+| Level | Bump for | Usually looks like |
 |---|---|---|
 | **PATCH** `1.0.x` | Nothing new; something works better | bug fix, copy/translation fix, styling or spacing tweak, refactor with no visible change, docs |
-| **MINOR** `1.x.0` | Something the user can now do, or a visible behaviour change — and **a tab already open on this MAJOR line keeps working** | new page/tab/admin destination, new endpoint or capability, a new column/filter/export, a template gaining a prop |
-| **MAJOR** `x.0.0` | A bundle already open in somebody's hand STOPS working | a request or response shape an old bundle still sends or reads, a removed/renamed endpoint or field, a required param that used to be optional, auth/permission model change, a page removed or replaced. Rare — reserved. |
+| **MINOR** `1.x.0` | Something the user can now do, or a visible behaviour change — and **a tab already open on this MAJOR line keeps working** | new page/tab/admin destination, new endpoint or capability, a new column/filter/export, a template gaining a prop, **a page retired behind a redirect**, **a permission rule that changes who may do what without changing any request or response** |
+| **MAJOR** `x.0.0` | **The platform stops serving the bundles people are holding — and that is the intended outcome** | judged by the test below, never by a list. Rare, and rarer than the examples used to suggest |
 
-**The MAJOR row is written about open tabs, not about how large the change
-felt, because that is the one level the platform ENFORCES** — see the floor
-below. Every other judgement here is a label; this one has a consequence.
+### MAJOR is the one level with a consequence, so it has a TEST, not a list
+
+Every other level is a label. MAJOR is ENFORCED: `MIN_CLIENT` is derived as
+`<MAJOR>.0.0` (the floor below), so the moment a major deploys **every tab on
+the previous line is told it is no longer served, with an un-dismissible
+warning** — every leader, brigadir and shift manager mid-shift, whatever page
+they are on. A major is therefore an act against the whole plant, and it must
+pass BOTH halves:
+
+1. **Does a bundle already open in somebody's hand STOP working?** Not "is
+   something gone" — *does an open tab break*. A removed endpoint an old bundle
+   still calls, a response field it still reads, a required param that used to
+   be optional: yes. An internal refactor, a renamed helper, a rule resolved
+   server-side: no, whatever the change is called.
+2. **Whose hand, and how many?** The warning reaches everybody. So the breakage
+   has to be WIDER than the warning it triggers. Breakage confined to the people
+   it was aimed at is not a platform break.
+
+**A removal is not automatically a break, and that is where every mistake has
+been made.** Two removals that are NOT majors:
+
+- **The removal leaves a landing place.** `/brigadir-tasks` was retired into
+  `/tasks` on 2026-09-04 as **v4.46.0**, a minor: the route redirects, so nothing
+  anybody was holding stopped working.
+- **The only bundle that breaks is the one displaying the thing removed.**
+  Delete a page together with its own endpoint and the sole tab that can still
+  call it is the tab showing the page just deleted. That reaches exactly the
+  people it was aimed at; everybody else pays the banner for nothing.
+
+**The asymmetry between adding and removing is real and it is not the whole
+answer.** Adding cannot break what already exists; removing can. That is why a
+removal gets looked at — but "can" is not "did", and the second half of the test
+is what settles it.
+
+**When in doubt, bump MINOR.** A major that should have been a minor puts a
+warning in front of the whole plant for nothing and cannot be taken back, because
+the tabs have already seen it. A minor that should have been a major shows a
+stale tab a stale page until its next reload — the state every tab is in for the
+minutes after any deploy anyway.
+
+### The three majors this repo has, and what they should have been
+
+Reviewed with the operator on **2026-09-09**. All three fired on the MAJOR row's
+old EXAMPLE LIST, which could be pattern-matched without asking the test standing
+beside it. **None of them broke the API contract for anybody who was not already
+looking at the page being removed.**
+
+| | what it did | should have been |
+|---|---|---|
+| **v2.0.0** 17 Aug | deleted `/cell-attendance` and its `GET /registry` | **minor** — the only tab that could still call it was a tab on the deleted page |
+| **v3.0.0** 21 Aug | profile permissions resolve LIVE per request instead of being copied onto the account at login (`materialize_pending` deleted) | **minor** — no endpoint removed, no response field renamed, no request shape changed; an open 2.x tab kept working. It fired on the phrase «auth/permission model change» |
+| **v4.0.0** 30 Aug | deleted `/staff-cells`, an admin-only test page added TWO DAYS earlier as **v3.67.3**, a patch | **patch or minor** — one digit to build it, a whole version line to withdraw it |
+
+Three majors in thirteen days, none of which broke a contract. So the examples
+column above is headed «usually looks like» and is **NOT binding**: where an
+entry there and the two-part test disagree, **the test wins and the example is
+wrong**.
 
 ### The compatibility floor
 
