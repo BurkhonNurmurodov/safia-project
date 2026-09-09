@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
         seed_pp_autofill_default,
         set_forecast_autocall_capacity,
         report_unpriced_ojidaniya,
+        report_unpriced_ojidaniya_xlsx,
         add_pp_product_auto_fill,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
@@ -330,11 +331,14 @@ async def lifespan(app: FastAPI):
     # version. Inert until a unit is named in `PURGE_TEST_UNITS`. Runs last, so
     # every table it deletes from is guaranteed to exist by now.
     purge_test_units()
-    # ⚠ TEMPORARY one-shot (2026-09-09) — the operator asked, once, for the
-    # register behind «Xarajat»'s «Narxlanmagan, daq» card. Flag-guarded, so it
-    # DMs on the first boot after this deploy and never again; remove this line
-    # and `services/unpriced_report.py` once it has landed.
+    # ⚠ TEMPORARY one-shots (2026-09-09) — the operator asked, once, for the
+    # register behind «Xarajat»'s «Narxlanmagan, daq» card: first as a table in
+    # the message, then as a workbook. Each is flag-guarded, so each delivers on
+    # the first boot after its own deploy and never again. Remove both lines,
+    # `services/unpriced_report.py` and `build_unpriced_workbook` once the file
+    # has landed.
     report_unpriced_ojidaniya()
+    report_unpriced_ojidaniya_xlsx()
     yield
     shutdown_scheduler()
 

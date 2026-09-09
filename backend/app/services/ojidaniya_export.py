@@ -47,7 +47,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from app.services.quality_export import (
     AMBER, BAND, BOX, BRAND, BRAND_SOFT, FONT, INK, INK_FAINT, INK_SOFT,
-    NUM, PANEL, PCT1, RED, RIGHT, SLATE, TINT,
+    LEFT, NUM, PANEL, PCT1, RED, RIGHT, SLATE, TINT,
     _banner, _block, _fill, _head_row, _kpi_cards, _meta_strip, _section,
     _sheet, _side,
 )
@@ -1047,6 +1047,180 @@ def build_cost_workbook(p: dict) -> BytesIO:
         ws3.auto_filter.ref = f"B{first - 1}:I{r - 1}"
     _cost_cell(ws3, r, 2, {**tot, "hc": None}, label=L.get("total", "Jami"), bold=True)
     ws3.freeze_panes = ws3.cell(first, 2)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+# ── the «Narxlanmagan, daq» register ─────────────────────────────────────────
+def _unp_head(ws: Worksheet, row: int, c1: int, cols: list[tuple[str, float]]) -> int:
+    for i, (_label, w) in enumerate(cols):
+        ws.column_dimensions[get_column_letter(c1 + i)].width = w
+    _head_row(ws, row, c1, [c[0] for c in cols], height=30)
+    return row + 1
+
+
+def _unp_cell(ws: Worksheet, row: int, col: int, value, bg, *, fmt=None,
+              align=None, bold=False, color=INK, size=9.5):
+    faint = value in (None, "", "—")
+    return _block(ws, row, col, row, col, "—" if faint else value, fill=bg,
+                  border=BOX, align=align or LEFT, fmt=None if faint else fmt,
+                  font=Font(name=FONT, size=size, bold=bold and not faint,
+                            color=INK_FAINT if faint else color))
+
+
+def build_unpriced_workbook(p: dict) -> BytesIO:
+    """Why «Xarajat» could not price N minutes — the same register the operator
+    was DMed, as a file they can sort and filter.
+
+    THREE sheets, one measure each, for the reason `build_cost_workbook` gives
+    for its own three: «Yacheyka-kunlar» is the MONEY — one row per (cell, day)
+    pair, and these are what add up to the KPI card, because the tab prices a
+    cell's whole day at once — while «Yozuvlar» is one row per filed event, and
+    two overlapping events sum to more than the union they merge into. Putting
+    both in one table would produce a column that visibly does not add up.
+    «Xulosa» carries neither: it is the KPI strip, the causes and the category
+    split.
+
+    Every figure arrives already computed (`services/unpriced_report.collect`);
+    this is a formatter and re-derives nothing. The WORDS live here rather than
+    arriving from a client, the rule `ojidaniya_deck` already follows: this file
+    is built by a boot job, and there is no browser in the loop to supply them.
+    """
+    L = p["labels"]
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # ── Xulosa ───────────────────────────────────────────────────────────────
+    ws = _sheet(wb, L["shSummary"], {2: 46, 3: 13, 4: 15, 5: 12, 6: 12, 7: 12,
+                                     8: 12, 9: 12, 10: 12, 11: 12, 12: 12, 13: 12})
+    r = _banner(ws, 2, 2, 13, p["title"], p["subtitle"])
+    r = _meta_strip(ws, r, 2, 13, p.get("scope") or [])
+    r = _kpi_cards(ws, r, 2, p.get("kpis") or [])
+
+    r = _section(ws, r, 2, 13, L["reasons"], L["reasonsHint"])
+    r = _unp_head(ws, r, 2, [(L["reason"], 46), (L["minutes"], 13),
+                             (L["pairsCol"], 15), (L["share"], 12)])
+    first = r
+    total = p["totals"]["union_minutes"] or 0
+    for i, x in enumerate(p.get("reasons") or []):
+        bg = _fill(PANEL if i % 2 == 0 else BAND)
+        _unp_cell(ws, r, 2, _xl(x["label"]), bg)
+        _unp_cell(ws, r, 3, x["minutes"], bg, fmt=MIN, align=RIGHT, bold=True, size=10)
+        _unp_cell(ws, r, 4, x["pairs"], bg, fmt=NUM, align=RIGHT)
+        c = _unp_cell(ws, r, 5, (x["minutes"] / total) if total else None, bg,
+                      fmt=PCT1, align=RIGHT, color=INK_SOFT)
+        r += 1
+    if r > first:
+        ws.conditional_formatting.add(
+            f"C{first}:C{r - 1}",
+            DataBarRule(start_type="num", start_value=0, end_type="max", color=RED))
+    _unp_cell(ws, r, 2, L["total"], _fill(BRAND_SOFT), bold=True, size=10)
+    _unp_cell(ws, r, 3, total, _fill(BRAND_SOFT), fmt=MIN, align=RIGHT, bold=True, size=10)
+    _unp_cell(ws, r, 4, p["totals"]["pairs"], _fill(BRAND_SOFT), fmt=NUM, align=RIGHT, bold=True)
+    _unp_cell(ws, r, 5, 1 if total else None, _fill(BRAND_SOFT), fmt=PCT1, align=RIGHT, bold=True)
+    r += 3
+
+    r = _section(ws, r, 2, 13, L["byCat"], L["byCatHint"])
+    r = _unp_head(ws, r, 2, [(L["catName"], 46), (L["minutes"], 13),
+                             (L["eventsCol"], 15)])
+    for i, x in enumerate(p.get("cats") or []):
+        bg = _fill(PANEL if i % 2 == 0 else BAND)
+        _unp_cell(ws, r, 2, _xl(x["label"]), bg)
+        _unp_cell(ws, r, 3, x["minutes"], bg, fmt=MIN, align=RIGHT, bold=True, size=10)
+        _unp_cell(ws, r, 4, x["events"], bg, fmt=NUM, align=RIGHT)
+        r += 1
+    ws.freeze_panes = ws.cell(3, 2)
+
+    # ── Yacheyka-kunlar: the money, each minute paid once ────────────────────
+    cols2 = [(L["date"], 12), (L["shift"], 8), (L["factory"], 12),
+             (L["manager"], 26), (L["leader"], 26), (L["cell"], 11),
+             (L["wc"], 13), (L["cats"], 22), (L["eventsCol"], 10),
+             (L["dayMinutes"], 13), (L["sumMinutes"], 15), (L["hours"], 9),
+             (L["reason"], 46)]
+    ws2 = _sheet(wb, L["shPairs"], {}, landscape=True)
+    r = _banner(ws2, 2, 2, 1 + len(cols2), p["title"], L["pairsSub"])
+    r = _section(ws2, r, 2, 1 + len(cols2), L["shPairs"],
+                 f"{p['totals']['pairs']} {L['rows']}")
+    head = r
+    r = _unp_head(ws2, r, 2, cols2)
+    first = r
+    for i, x in enumerate(p.get("pairs") or []):
+        bg = _fill(PANEL if i % 2 == 0 else BAND)
+        _unp_cell(ws2, r, 2, _iso(x["date"]), bg, fmt=DATE_FMT, align=CENTER)
+        _unp_cell(ws2, r, 3, x["shift"], bg, align=CENTER)
+        _unp_cell(ws2, r, 4, _xl(x["factory"]), bg, align=CENTER)
+        _unp_cell(ws2, r, 5, _xl(x["manager"]), bg)
+        _unp_cell(ws2, r, 6, _xl(x["leader"]), bg)
+        _unp_cell(ws2, r, 7, _xl(x["code"]), bg, align=CENTER, bold=True)
+        _unp_cell(ws2, r, 8, _xl(x["wc"]), bg, align=CENTER)
+        _unp_cell(ws2, r, 9, _xl(x["cats"]), bg, color=INK_SOFT, size=9)
+        _unp_cell(ws2, r, 10, x["events"], bg, fmt=NUM, align=RIGHT)
+        _unp_cell(ws2, r, 11, x["minutes"], bg, fmt=MIN, align=RIGHT, bold=True,
+                  size=10, color=RED)
+        _unp_cell(ws2, r, 12, x["sum_minutes"], bg, fmt=MIN, align=RIGHT, color=INK_SOFT)
+        _unp_cell(ws2, r, 13, round(x["minutes"] / 60.0, 2), bg, fmt=HRS, align=RIGHT)
+        _unp_cell(ws2, r, 14, _xl(x["reasonLabel"]), bg, color=INK_SOFT, size=9)
+        r += 1
+    if r > first:
+        ws2.auto_filter.ref = f"B{head}:{get_column_letter(1 + len(cols2))}{r - 1}"
+        ws2.conditional_formatting.add(
+            f"K{first}:K{r - 1}",
+            DataBarRule(start_type="num", start_value=0, end_type="max", color=RED))
+    _unp_cell(ws2, r, 2, L["total"], _fill(BRAND_SOFT), bold=True, size=10)
+    for c in range(3, 11):
+        _unp_cell(ws2, r, c, None, _fill(BRAND_SOFT))
+    _unp_cell(ws2, r, 11, p["totals"]["union_minutes"], _fill(BRAND_SOFT), fmt=MIN,
+              align=RIGHT, bold=True, size=10, color=RED)
+    _unp_cell(ws2, r, 12, p["totals"]["sum_minutes"], _fill(BRAND_SOFT), fmt=MIN,
+              align=RIGHT, bold=True)
+    _unp_cell(ws2, r, 13, round((p["totals"]["union_minutes"] or 0) / 60.0, 2),
+              _fill(BRAND_SOFT), fmt=HRS, align=RIGHT, bold=True)
+    _unp_cell(ws2, r, 14, None, _fill(BRAND_SOFT))
+    ws2.freeze_panes = ws2.cell(first, 4)
+    ws2.print_title_rows = f"{head}:{head}"
+
+    # ── Yozuvlar: one row per filed event ────────────────────────────────────
+    cols3 = [("№", 6), (L["date"], 12), (L["shift"], 8), (L["factory"], 12),
+             (L["manager"], 26), (L["leader"], 26), (L["cell"], 11),
+             (L["wc"], 13), (L["cat"], 9), (L["catName"], 34),
+             (L["start"], 11), (L["end"], 11), (L["minutes"], 11),
+             (L["hours"], 9), (L["dayMinutes"], 13), (L["note"], 46),
+             (L["reason"], 46)]
+    ws3 = _sheet(wb, L["shEvents"], {}, landscape=True)
+    r = _banner(ws3, 2, 2, 1 + len(cols3), p["title"], L["eventsSub"])
+    r = _section(ws3, r, 2, 1 + len(cols3), L["shEvents"],
+                 f"{len(p.get('events') or [])} {L['rows']}")
+    head = r
+    r = _unp_head(ws3, r, 2, cols3)
+    first = r
+    for i, x in enumerate(p.get("events") or []):
+        bg = _fill(PANEL if i % 2 == 0 else BAND)
+        _unp_cell(ws3, r, 2, i + 1, bg, fmt=NUM, align=CENTER, color=INK_FAINT, size=9)
+        _unp_cell(ws3, r, 3, _iso(x["date"]), bg, fmt=DATE_FMT, align=CENTER)
+        _unp_cell(ws3, r, 4, x["shift"], bg, align=CENTER)
+        _unp_cell(ws3, r, 5, _xl(x["factory"]), bg, align=CENTER)
+        _unp_cell(ws3, r, 6, _xl(x["manager"]), bg)
+        _unp_cell(ws3, r, 7, _xl(x["leader"]), bg)
+        _unp_cell(ws3, r, 8, _xl(x["code"]), bg, align=CENTER, bold=True)
+        _unp_cell(ws3, r, 9, _xl(x["wc"]), bg, align=CENTER)
+        _unp_cell(ws3, r, 10, _xl(x["cat"]), bg, align=CENTER, bold=True)
+        _unp_cell(ws3, r, 11, _xl(x["cat_name"]), bg, color=INK_SOFT, size=9)
+        _unp_cell(ws3, r, 12, x["start"], bg, align=CENTER)
+        _unp_cell(ws3, r, 13, x["end"], bg, align=CENTER)
+        _unp_cell(ws3, r, 14, x["minutes"], bg, fmt=MIN, align=RIGHT, bold=True, size=10)
+        _unp_cell(ws3, r, 15, round(x["minutes"] / 60.0, 2), bg, fmt=HRS, align=RIGHT)
+        _unp_cell(ws3, r, 16, x["day_minutes"], bg, fmt=MIN, align=RIGHT, color=INK_SOFT)
+        _block(ws3, r, 17, r, 17, _xl(x["note"]) or "", fill=bg, border=BOX, align=WRAP,
+               font=Font(name=FONT, size=9, color=INK if x["note"] else INK_FAINT))
+        _unp_cell(ws3, r, 18, _xl(x["reasonLabel"]), bg, color=INK_SOFT, size=9)
+        r += 1
+    if r > first:
+        ws3.auto_filter.ref = f"B{head}:{get_column_letter(1 + len(cols3))}{r - 1}"
+    ws3.freeze_panes = ws3.cell(first, 4)
+    ws3.print_title_rows = f"{head}:{head}"
 
     buf = BytesIO()
     wb.save(buf)

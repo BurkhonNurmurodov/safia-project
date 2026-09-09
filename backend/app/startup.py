@@ -5326,11 +5326,15 @@ def set_forecast_autocall_capacity() -> None:
         db.close()
 
 
-# ── one-shot: DM the «Narxlanmagan, daq» breakdown ───────────────────────────
+# ── one-shots: the «Narxlanmagan, daq» breakdown, DMed ───────────────────────
 # The operator asked, on 2026-09-09, for the 598 unpriced minutes of 2–8
-# September to be explained in their own chat, once. This platform has no
-# shell, so the errand is a boot job like every other one-off here.
+# September to be explained in their own chat — first as a table in the message
+# (v4.85.0), then as a workbook they can sort and filter. This platform has no
+# shell, so each errand is a boot job like every other one-off here. Two flags,
+# because they are two deliveries: the second must go out even though the first
+# already has, and neither may repeat itself on the next deploy.
 UNPRICED_DM_FLAG = "unpriced_ojidaniya_dm_2026_09_09_v1"
+UNPRICED_XLSX_FLAG = "unpriced_ojidaniya_xlsx_2026_09_09_v1"
 UNPRICED_DM_CHAT = 6302307151          # the operator's own Telegram id
 UNPRICED_DM_FROM = date(2026, 9, 2)    # = zagruzka_source.ZAGRUZKA_FROM
 UNPRICED_DM_TO = date(2026, 9, 8)
@@ -5340,28 +5344,27 @@ UNPRICED_DM_TO = date(2026, 9, 8)
 _UNPRICED_DM_TRIES = 3
 
 
-def report_unpriced_ojidaniya() -> None:
-    """Send the operator the register behind «Xarajat»'s unpriced-minutes card.
+def _unpriced_send_once(flag: str, what: str, sender) -> None:
+    """Deliver one unpriced-minutes report, once, and record that it went.
 
-    ONE report, once: the flag is written on the first successful delivery and
+    ONE report per flag: the row is written on the first successful delivery and
     from then on this is a no-op, so the errand cannot repeat itself on the next
-    deploy. Changing what it reports — a different window, a different chat —
-    needs a NEW flag key, or the old "already ran" mark makes the new version a
-    no-op on every box that has booted since.
+    deploy. Changing what a flag reports — a different window, a different chat,
+    a different shape — needs a NEW flag key, or the old "already ran" mark makes
+    the new version a no-op on every box that has booted since.
 
     The flag row doubles as the attempt counter, so a failure is retried on the
-    next boot and then abandoned rather than re-fired forever. Nothing is
-    written, computed or cached anywhere else: `unpriced_report.collect` derives
-    everything from the same functions the tab reads, so a number typed after
-    this lands simply makes the report stale — never wrong about the day it was
-    taken.
+    next boot and then abandoned rather than re-fired forever. Nothing is stored
+    anywhere else: `unpriced_report.collect` derives everything from the same
+    functions the tab reads, so a number typed after this lands makes the report
+    stale — never wrong about the day it was taken.
 
     Never raises. A report that cannot be sent must not be able to stop the app
     from booting.
     """
     db = SessionLocal()
     try:
-        row = db.query(AppSetting).filter_by(key=UNPRICED_DM_FLAG).first()
+        row = db.query(AppSetting).filter_by(key=flag).first()
         if row and (row.value or "").startswith("sent"):
             return
         tries = 0
@@ -5373,30 +5376,45 @@ def report_unpriced_ojidaniya() -> None:
         if tries >= _UNPRICED_DM_TRIES:
             return
 
-        from app.services import unpriced_report
         try:
-            n = unpriced_report.send(db, UNPRICED_DM_CHAT,
-                                     UNPRICED_DM_FROM, UNPRICED_DM_TO)
+            n = sender(db, UNPRICED_DM_CHAT, UNPRICED_DM_FROM, UNPRICED_DM_TO)
         except Exception as exc:
             tries += 1
+            value = f"failed:{tries}"
             if row:
-                row.value = f"failed:{tries}"
+                row.value = value
             else:
-                db.add(AppSetting(key=UNPRICED_DM_FLAG, value=f"failed:{tries}"))
+                db.add(AppSetting(key=flag, value=value))
             db.commit()
-            print(f"[startup] unpriced ojidaniya DM failed "
+            print(f"[startup] unpriced ojidaniya {what} failed "
                   f"(attempt {tries}/{_UNPRICED_DM_TRIES}): {exc}")
             return
 
         if row:
             row.value = f"sent:{n}"
         else:
-            db.add(AppSetting(key=UNPRICED_DM_FLAG, value=f"sent:{n}"))
+            db.add(AppSetting(key=flag, value=f"sent:{n}"))
         db.commit()
-        print(f"[startup] unpriced ojidaniya DM sent to {UNPRICED_DM_CHAT} "
+        print(f"[startup] unpriced ojidaniya {what} sent to {UNPRICED_DM_CHAT} "
               f"({n} message(s), {UNPRICED_DM_FROM}..{UNPRICED_DM_TO})")
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
-        print(f"[startup] unpriced ojidaniya DM skipped: {exc}")
+        print(f"[startup] unpriced ojidaniya {what} skipped: {exc}")
     finally:
         db.close()
+
+
+def report_unpriced_ojidaniya() -> None:
+    """The register as a rich-message TABLE (v4.85.0). Inert once it has landed;
+    kept so a delivery that failed on the first boot still gets its retries."""
+    from app.services import unpriced_report
+    _unpriced_send_once(UNPRICED_DM_FLAG, "DM", unpriced_report.send)
+
+
+def report_unpriced_ojidaniya_xlsx() -> None:
+    """The same register as a WORKBOOK — three sheets, one measure each, sent as
+    a document with the headline in its caption. A separate flag from the table
+    above: the operator asked for the file after the message, so «already sent
+    the DM» must not be read as «already sent this»."""
+    from app.services import unpriced_report
+    _unpriced_send_once(UNPRICED_XLSX_FLAG, "XLSX", unpriced_report.send_xlsx)

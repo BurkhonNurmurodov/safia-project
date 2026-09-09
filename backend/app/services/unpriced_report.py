@@ -160,10 +160,12 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
         per_pair[(e.cell_id, e.date)].append(e)
 
     rows: list[dict] = []
+    pair_rows: list[dict] = []
     pairs = 0
     union_total = 0
     by_reason: dict[str, dict] = defaultdict(lambda: {"minutes": 0, "pairs": 0})
     by_cat: dict[str, int] = defaultdict(int)
+    cat_events: dict[str, int] = defaultdict(int)
     labels = _cat_labels()
 
     for (cid, day), evs in sorted(per_pair.items(), key=lambda kv: (kv[0][1], kv[0][0])):
@@ -198,9 +200,29 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
         by_reason[reason]["pairs"] += 1
 
         m = managers.get(mid) if mid is not None else None
+        # The pair is the MONEY side — these are what add up to the card, and
+        # they are kept apart from the event rows for the reason the cost
+        # workbook keeps its own two sums on separate sheets: a reader
+        # comparing two columns that cannot be compared is what one table
+        # would invite.
+        pair_rows.append({
+            "date": day,
+            "shift": (m.shift if m else None),
+            "factory": factories.get(m.factory_id, "") if m else "",
+            "manager": (m.name if m else ""),
+            "leader": leaders.get(cell.leader_id) or "",
+            "code": cell.verifix_code or "",
+            "wc": wc,
+            "minutes": minutes,
+            "events": len(evs),
+            "sum_minutes": sum(idle_intervals.duration(e.start, e.end) for e in evs),
+            "cats": ", ".join(sorted({e.category or "" for e in evs})),
+            "reason": reason,
+        })
         for e in sorted(evs, key=lambda r: idle_intervals.to_min(r.start) or 0):
             em = idle_intervals.duration(e.start, e.end)
             by_cat[e.category or ""] += em
+            cat_events[e.category or ""] += 1
             code, full = labels.get(e.category or "", ("", e.category or ""))
             rows.append({
                 "date": day,
@@ -229,9 +251,12 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
     if truncated:
         rows = rows[:MAX_ROWS]
 
+    pair_rows.sort(key=lambda r: (r["date"], r["manager"], r["code"]))
+
     return {
         "from": date_from, "to": date_to,
         "rows": rows,
+        "pair_rows": pair_rows,
         "truncated": truncated,
         "union_minutes": union_total,
         "sum_minutes": sum(r["minutes"] for r in rows),
@@ -241,6 +266,7 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
         "days": len({r["date"] for r in rows}),
         "by_reason": dict(by_reason),
         "by_cat": dict(by_cat),
+        "cat_events": dict(cat_events),
     }
 
 
@@ -431,3 +457,132 @@ def send(db: Session, chat_id: int, date_from: date, date_to: date) -> int:
                              "parse_mode": "HTML"})
         sent += 1
     return sent
+
+
+# ── the same register as a workbook ──────────────────────────────────────────
+# The words live here, not on a client, for the reason `ojidaniya_deck` states
+# for its own: this file is built by a boot job and there is no browser in the
+# loop to send them. Uzbek Latin, whoever it reaches.
+XLS_LABELS = {
+    "shSummary": "Xulosa", "shPairs": "Yacheyka-kunlar", "shEvents": "Yozuvlar",
+    "reasons": "Nega narxlanmadi", "reason": "Sabab",
+    "reasonsHint": "yacheyka-kun bo'yicha, birlashgan daqiqalar",
+    "byCat": "Toifalar bo'yicha", "byCatHint": "yozuvlar yig'indisi (ustma-ust tushishi mumkin)",
+    "total": "JAMI", "rows": "qator", "share": "Ulush",
+    "minutes": "Daqiqa", "hours": "Soat", "pairsCol": "Yacheyka-kun",
+    "eventsCol": "Yozuv", "dayMinutes": "Kun jami, daq",
+    "sumMinutes": "Yozuvlar yig'indisi, daq",
+    "date": "Sana", "shift": "Smena", "factory": "Zavod", "manager": "Brigadir",
+    "leader": "Lider", "cell": "Yacheyka", "wc": "Ish markazi",
+    "cat": "Toifa", "cats": "Toifalar", "catName": "Toifa nomi",
+    "start": "Boshlandi", "end": "Tugadi", "note": "Izoh",
+    "pairsSub": "Har bir yacheyka-kun bir qator — KPI kartasidagi raqam shu ustunning yig'indisi",
+    "eventsSub": "Har bir yozuv bir qator — ustma-ust tushgani uchun yig'indisi kattaroq",
+}
+
+
+def payload(rep: dict) -> dict:
+    """`collect`'s output in the shape `ojidaniya_export.build_unpriced_workbook`
+    reads. Pure re-labelling — no figure is computed or rounded here, so the
+    file and the DM can only ever state one set of numbers."""
+    d1, d2 = rep["from"], rep["to"]
+    period = f"{d1.strftime('%d.%m.%Y')} – {d2.strftime('%d.%m.%Y')}"
+    u, s = rep["union_minutes"], rep["sum_minutes"]
+    labels = _cat_labels()
+
+    return {
+        "labels": XLS_LABELS,
+        "title": "Narxlanmagan ojidaniya",
+        "subtitle": f"{period} · «Xarajat» varag'idagi «Narxlanmagan, daq» kartasi",
+        "scope": [
+            {"label": "Davr", "value": period},
+            {"label": "Qamrov", "value": "Barcha zavodlar · ikkala smena"},
+            {"label": "Toifalar", "value": "Barchasi (Cat H ham)"},
+            {"label": "Holat", "value": "Faqat to'xtagan · tasdiqlangan"},
+        ],
+        "kpis": [
+            {"value": u, "label": "Narxlanmagan, daq", "color": "EF4444",
+             "hint": f"{_fmt(u / 60.0, 1)} soat"},
+            {"value": rep["pairs"], "label": "Yacheyka-kun", "color": "C8973F",
+             "hint": "kartaga qo'shilgan birliklar"},
+            {"value": len(rep["rows"]), "label": "Yozuv", "color": "6366F1",
+             "hint": f"yig'indisi {_fmt(s)} daq"},
+            {"value": rep["cells"], "label": "Yacheyka", "color": "3B82F6",
+             "hint": f"{rep['managers']} brigadir"},
+            {"value": rep["days"], "label": "Kun", "color": "22C55E",
+             "hint": "yozuv bo'lgan kunlar"},
+            {"value": max(s - u, 0), "label": "Ustma-ust, daq", "color": "94A3B8",
+             "hint": "bir daqiqa ikki sabab bilan"},
+        ],
+        "reasons": [{"label": REASONS.get(k, k), **v} for k, v in
+                    sorted(rep["by_reason"].items(), key=lambda kv: -kv[1]["minutes"])],
+        "cats": [{"label": f"{c} — {labels[c][1]}" if c in labels else (c or "—"),
+                  "minutes": m,
+                  "events": rep["cat_events"].get(c, 0)}
+                 for c, m in sorted(rep["by_cat"].items(), key=lambda kv: -kv[1])],
+        "pairs": [{**r, "reasonLabel": REASONS.get(r["reason"], r["reason"])}
+                  for r in rep["pair_rows"]],
+        "events": [{**r, "reasonLabel": REASONS.get(r["reason"], r["reason"])}
+                   for r in rep["rows"]],
+        "totals": {"union_minutes": u, "sum_minutes": s, "pairs": rep["pairs"]},
+    }
+
+
+def _caption(rep: dict) -> str:
+    """Telegram caps a document caption at 1024 chars, so this is the headline
+    and the reconciliation sentence only — the file carries the rest."""
+    d1, d2 = rep["from"], rep["to"]
+    u, s = rep["union_minutes"], rep["sum_minutes"]
+    if not rep["rows"]:
+        return (f"<b>Narxlanmagan ojidaniya</b> · {d1.strftime('%d.%m.%Y')} – "
+                f"{d2.strftime('%d.%m.%Y')}\nBu davrda narxlanmagan ojidaniya yo'q.")
+    top = sorted(rep["by_reason"].items(), key=lambda kv: -kv[1]["minutes"])
+    lines = [
+        f"📊 <b>Narxlanmagan ojidaniya</b> · {d1.strftime('%d.%m.%Y')} – "
+        f"{d2.strftime('%d.%m.%Y')}",
+        f"🔴 <b>{_fmt(u)} daq</b> ({_fmt(u / 60.0, 1)} soat) · "
+        f"{rep['pairs']} yacheyka-kun · {rep['cells']} yacheyka · "
+        f"{rep['managers']} brigadir · {len(rep['rows'])} yozuv",
+        "",
+    ]
+    for k, v in top[:4]:
+        lines.append(f"• {_fmt(v['minutes'])} daq — {REASONS.get(k, k)}")
+    # The two sums are explained only where they actually differ: a sentence
+    # about overlap printed over two identical figures reads as an error in the
+    # file, which is the opposite of what it is there to prevent.
+    lines.append("")
+    if s != u:
+        lines.append(
+            f"<i>«Yacheyka-kunlar» varag'i {_fmt(u)} daq beradi — bu kartadagi "
+            f"raqam. «Yozuvlar» {_fmt(s)} daq: ustma-ust tushgan yozuvlar "
+            f"alohida qatorlar, farq {_fmt(s - u)} daq.</i>")
+    else:
+        lines.append(
+            f"<i>Ikkala varaq ham {_fmt(u)} daq beradi — bu davrda hech qaysi "
+            "yozuv ustma-ust tushmagan.</i>")
+    return "\n".join(lines)[:1024]
+
+
+def send_xlsx(db: Session, chat_id: int, date_from: date, date_to: date) -> int:
+    """Build the workbook and DM it. Returns 1 on delivery.
+
+    Deliberately NOT `xlsx_delivery.deliver_file`: that decides between a
+    browser download and a Telegram DM from the REQUEST it was called on, and
+    there is no request here — a boot job has one surface and it is the chat.
+    """
+    rep = collect(db, date_from, date_to)
+    from app.services.ojidaniya_export import build_unpriced_workbook
+    buf = build_unpriced_workbook(payload(rep))
+    name = (f"narxlanmagan-ojidaniya-{date_from.strftime('%d.%m.%Y')}-"
+            f"{date_to.strftime('%d.%m.%Y')}.xlsx")
+    r = requests.post(
+        f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendDocument",
+        data={"chat_id": chat_id, "caption": _caption(rep), "parse_mode": "HTML"},
+        files={"document": (name, buf.getvalue(),
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet")},
+        timeout=180)
+    j = r.json()
+    if not j.get("ok"):
+        raise RuntimeError(j.get("description") or f"HTTP {r.status_code}")
+    return 1
