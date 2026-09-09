@@ -130,6 +130,24 @@ def _t(lang: str) -> dict:
     return L.get(lang, L["ru"])
 
 
+def basis_line(data: dict, t: dict) -> str:
+    """«N of M weeks · mean X workers» — the sentence under the chart, and under
+    the rich table beside it.
+
+    The mean is rounded to WHOLE PEOPLE using exactly the expression
+    ``_call_rows`` uses to turn that same mean into the recommendation —
+    ``int(round(...))`` — so this line can never name a different number from
+    the «Tavsiya etiladi» figure above it. Matching the ROUNDING RULE and not
+    merely the precision is the load-bearing part: on a .5 mean, Python rounds
+    half to even, so any other spelling (floor(x+0.5), a format string) would
+    print 59 under a KPI reading 58. A supervisor calls whole people; the raw
+    58.7 was arithmetic they cannot act on and could not reconcile.
+    """
+    mean = data["mean"]
+    return t["basis"].format(have=data["n"], want=data["weeks"],
+                             mean=(int(round(mean)) if mean is not None else "—"))
+
+
 def _mix(a: tuple, b: tuple, t: float) -> tuple:
     """Blend two RGB colours. The card is drawn on an RGB canvas (as the
     ojidaniya card is), so a translucent fill is mixed by hand rather than
@@ -372,10 +390,7 @@ def render(data: dict, lang: str, eff: int, scope: str = "") -> bytes:
     y += panel_h + 20
 
     # ── footer: what the number was averaged over, and how much to trust it
-    basis = t["basis"].format(have=data["n"], want=data["weeks"],
-                              mean=(round(data["mean"], 1)
-                                    if data["mean"] is not None else "—"))
-    draw.text((PAD, y), basis, font=_font(14), fill=TEXT_2)
+    draw.text((PAD, y), basis_line(data, t), font=_font(14), fill=TEXT_2)
     conf = t["conf"].get(data["confidence"], data["confidence"])
     c_col = {"high": GREEN, "medium": AMBER}.get(data["confidence"], RED)
     f_c = _font(14, bold=True)

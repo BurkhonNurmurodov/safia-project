@@ -33,7 +33,7 @@ from __future__ import annotations
 from datetime import date
 from html import escape
 
-from app.services.forecast_card import _RU_WD_NOM, _fmt_min, _t
+from app.services.forecast_card import _RU_WD_NOM, _fmt_min, _t, basis_line
 
 # The media id the figure resolves against; the sender attaches the PNG under
 # it. Must match the ``id`` in the sendRichMessage media array.
@@ -132,11 +132,9 @@ def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
     else:
         parts.append(f"<h4>{_esc(t['chart'].format(wd=t['wd'][wd]))}</h4>")
         parts.append(_rows_table(data["slots"], t, target, fc))
-        basis = t["basis"].format(
-            have=data["n"], want=data["weeks"],
-            mean=(round(data["mean"], 1) if data["mean"] is not None else "—"))
         conf = t["conf"].get(data["confidence"], data["confidence"])
-        parts.append(f"<p>{_esc(basis)} · <b>{_esc(conf)}</b></p>")
+        parts.append(f"<p>{_esc(basis_line(data, t))} · "
+                     f"<b>{_esc(conf)}</b></p>")
 
     if disclaimer:
         parts.append("<blockquote>"
