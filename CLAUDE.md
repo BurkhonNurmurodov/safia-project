@@ -1105,6 +1105,74 @@ brigadirs), the days of a MONTH across.
   (`_downtime` calls `scoped_manager_ids`), so a supervisor sees their own row
   under each category. The period is capped at `_MATRIX_MAX_DAYS` (62).
 
+## What waiting COST (`/downtime`, page view tab 3)
+
+From **2026-09-09** `/downtime` carries a third view, «Xarajat», which prices
+stopped waiting in wages:
+
+    xarajat(yacheyka, kun) = union_minutes ÷ 60 × odam soni × w(kun)
+
+`services/ojidaniya_cost.py` is THE computation and `services/wage_rate.py` owns
+the last term. Nothing here is a new measurement — the minutes are
+`idle_intervals`' union, the people are `idle_source.cell_headcount` (the very
+weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
+`_downtime` applies.
+
+- **It is a SUM, and every other ojidaniya figure on this platform is a
+  headcount-weighted MEAN.** So its minutes do NOT match the «Tahlil» tab's, the
+  same relationship «Toifalar bo'yicha» already has — the card says so before
+  anybody reads a figure. Pricing Cat H widens the gap again.
+- **Only a STOPPED cell costs** (the operator's premise), so `stopped` is fixed
+  and the page's To'xtaganda/To'xtamaganda toggle is not offered here. **Every
+  category is priced, Cat H included** — a cell stopped for cleaning pays the
+  same wages — so `OJIDANIYA_ONLY_CATS` is deliberately NOT applied and the
+  «Zagruzkada hisoblanadi» switch does not reach this tab. The category
+  checkboxes are how a reader takes one out.
+- **Each minute is paid ONCE.** A cell's figure is the UNION of its stopped
+  ranges; a CATEGORY row unions within its own category but categories are
+  summed ACROSS each other, because a minute genuinely has two causes and both
+  deserve naming. So the categories under a cell can total MORE than the cell,
+  and the tab prints the difference in words wherever they differ. Never "fix"
+  that by summing the categories into the cell: the cell figure is the money.
+- **The rate is a contiguous TIMELINE of periods, never one setting.**
+  `wage_rate_periods`, edited admin-only through the ⚙ on the toolbar: the
+  admin puts a BORDER on a date, which SPLITS the period containing it, so a gap
+  is unrepresentable. Each DAY is priced at the rate in force on that day, so a
+  raise entered today does not rewrite last month. Editing a PAST period still
+  does — deliberately possible, never silent: the Save confirm names how many
+  days move (`wage_rate.affected_days`). `effective_from IS NULL` is the open
+  first period and `uq_wage_rate_from` folds it with COALESCE, the `uq_ltask_day`
+  rule, because NULLs are DISTINCT in a Postgres unique key.
+- **An unset rate and an unknown headcount are «—» and a NAMED count, never
+  0.** `rate_uzs IS NULL` means nobody has said what that period costs, which is
+  not the same as costing nothing; a cell whose headcount nobody typed already
+  leaves both sides of the загрузка's own mean. Both keep their MINUTES and lose
+  their COST, and the gap rides every level as `unpriced_minutes` and shows on
+  the «Narxlanmagan» KPI card. A 0 there would understate the plant's bill by
+  exactly the days nobody has configured.
+- **The tab keeps its OWN filter state** (`dtcost_*`) — the operator asked for a
+  multi-select brigadir and a cascading cell picker, which the other two views
+  do not carry, and switching tabs must not rewrite what they were showing.
+  Sections: `useFactorySection()` → smena → brigadir → yacheyka (cascading, with
+  `note`/`empty`, and a pick the narrowed list drops) → toifa.
+- **Visible to everyone who can open /downtime**, scoped as the page is: a
+  supervisor reads their own unit's bill. Only the RATE is admin-only, checked in
+  the endpoint and not merely by hiding the ⚙.
+- **The cell code is NOT a `CellLink` here**: the row is a disclosure, and a link
+  inside it would navigate away mid-drill-down — the `IdleCell` accordion's own
+  reasoning. And cost carries **no traffic-light colour**: no threshold for
+  "expensive" exists, so red would be a verdict the platform has not defined.
+  Brand gold only (a single-metric accent), amber only for unpriced.
+- Endpoints: `GET /api/downtime/cost` (the tree + the filter option lists),
+  `GET /api/downtime/cost/entries` (the modal — a separate call, it can be
+  thousands of rows), `GET`/`PUT /api/downtime/wage-rates`, and
+  `POST /api/downtime/cost.xlsx` — a SEPARATE workbook from the page's own
+  «Excel», because it carries a different measure. Logged as
+  `export.ojidaniya_cost` / `config.wage_rate_saved`.
+- Days before `idle_source.CELLS_FROM` price NOTHING (there are no per-cell
+  events to read); the date picker is deliberately not clamped, and the empty
+  state names the floor instead.
+
 ## The checklist config page (`/admin/upload?tab=ltasks`)
 
 From **2026-09-07** the destination is «Chek-list sozlamalari» and it is TWO
