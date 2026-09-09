@@ -121,6 +121,7 @@ from app.database import get_db
 from app.models import (
     Attendance, Cell, CellAttendance, CellOjidaniya, CellOjidaniyaInterval,
     Manager, PPDaily, PPLineDaily, PPDaySetting, PPProduct, PPWorkCenter, PPWorkCenterDaily,
+    RoleProfile,
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
@@ -262,6 +263,23 @@ def cell_zagruzka(
                 "excluded_job_titles": [],
                 "note": "This unit has no registered cells.",
             },
+        }
+
+    # ── Who ANSWERS for each cell. The code is the cell's name (the «A cell is
+    # its CODE» directive) and the second fact beside it is the LEADER, never
+    # the workshop — so the grids can read «7213 · Maksumov Sanjar» where a
+    # four-digit code on its own says nothing to somebody who does not already
+    # know the shopfloor. One query for the whole unit, never one per cell; the
+    # RAW name travels, because the client transliterates it with `tl` before
+    # joining it to the code with `cellLabel`.
+    leader_names: dict[int, str] = {}
+    _leader_ids = {c.leader_id for c in cells if c.leader_id}
+    if _leader_ids:
+        leader_names = {
+            r.id: r.name
+            for r in db.query(RoleProfile.id, RoleProfile.name)
+                       .filter(RoleProfile.id.in_(_leader_ids))
+                       .all()
         }
 
     # ── Cell → work centre. Cells with no SAP code can never join production. ──
@@ -968,6 +986,9 @@ def cell_zagruzka(
                 "cell_id": c.id,
                 "label": _cell_label(c),
                 "verifix_code": c.verifix_code,
+                # The person answerable for this cell. Untransliterated on
+                # purpose — DB text is spelled by the viewer's own `tl`.
+                "leader": leader_names.get(c.leader_id),
                 "sap_code": c.sap_code,
                 "name_uz": c.name_workshop_uz,
                 "name_uz_cyrl": c.name_workshop_uz_cyrl,

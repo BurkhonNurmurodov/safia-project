@@ -164,6 +164,12 @@ export default function ComparisonTable({
   // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
   rowLabel = "Brigadir",
   labelWidth = LABEL_W,
+  // How a row KEY is spelled on screen. Keys stay the keys — `data`, `inputs`,
+  // sorting and the selection all go on using them — so this only ever changes
+  // what the reader sees. The per-cell загрузка passes `cellLabel(code, leader)`
+  // so a four-digit code carries the person answerable for it; the fleet page
+  // passes nothing and rows read exactly as they always did.
+  labelFor = null,
   // One AVG/MIN/MAX footer row summarising every COLUMN, cycling with the same
   // header press as the pinned summary column. Off by default: the fleet table
   // is read supervisor-by-supervisor. Pages whose rows are peers of one unit
@@ -222,6 +228,10 @@ export default function ComparisonTable({
         ? (a || "").localeCompare(b || "")
         : (b || "").localeCompare(a || ""))
     : managers;
+
+  // Display spelling of a row key. Rows sort by the KEY (the cell code), so a
+  // leader's name appended here never reorders the grid.
+  const shown = (name) => (labelFor ? labelFor(name) : tl(name));
 
   const psegs = pSegments.length    ? pSegments    : DEFAULT_P_SEGMENTS;
   const dsegs = diffSegments.length ? diffSegments : DEFAULT_DIFF_SEGMENTS;
@@ -806,9 +816,9 @@ export default function ComparisonTable({
                       transition: "background .08s, opacity .1s, color .1s",
                       cursor: "pointer", userSelect: "none",
                     }}
-                    title={tl(name)}
+                    title={shown(name)}
                   >
-                    {tl(name)}
+                    {shown(name)}
                   </td>
 
                   {/* Per-date cell — colSpan=2, animated P and A/D inside */}
