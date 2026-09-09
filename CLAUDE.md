@@ -1199,9 +1199,33 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   `POST /api/downtime/cost.xlsx` — a SEPARATE workbook from the page's own
   «Excel», because it carries a different measure. Logged as
   `export.ojidaniya_cost` / `config.wage_rate_saved`.
-- Days before `idle_source.CELLS_FROM` price NOTHING (there are no per-cell
-  events to read); the date picker is deliberately not clamped, and the empty
-  state names the floor instead.
+- **Before `zagruzka_source.ZAGRUZKA_FROM` (2 Sep) a unit is priced WHOLE, never
+  per cell** (the operator's directive, 2026-09-09). The typed «Odam soni fakt»
+  is what makes a per-cell headcount knowable and it does not exist earlier, so
+  those days carry ONE figure per brigadir: the unit's own ojidaniya minutes ×
+  its «Одам сони» sheet headcount (`HeadcountData.official_hc`, resolved through
+  `sheet_alias_map` — exactly what the загрузка divided by then). The MINUTES are
+  handed in from `_downtime` (`_pre_floor_rows`), never re-derived: that function
+  is the page's one answer to «how much did this unit wait» and already merges
+  the cells era with the «Смена отчёт» era. `mean × ΣN = Σ(Nᵢ·Tᵢ)`, so the two
+  regimes are the same arithmetic at two levels of detail.
+  A period straddling the cut puts both halves under ONE brigadir: its cells from
+  the cut on, then a marked **«2-sentabrgacha»** row — pinned LAST (it is a
+  different kind of row, so it is appended after the cost sort), not expandable,
+  no share, and excluded from every «N yacheyka» count. A unit-day the sheet has
+  no headcount row for stays unpriced and is counted, never 0.
+- **«Odam soni» is a FACT and is never printed with a `~`** — it is the number
+  somebody typed. A row folding days that carried DIFFERENT headcounts shows the
+  minute-weighted mean with a `*` and names the range on hover (`hc_varies` /
+  `hc_lo` / `hc_hi`); every other row prints the figure plain.
+- **A union is only ever taken within ONE date.** Clocks are wall-clock "HH:MM"
+  read as minutes-of-day, so 17:10–17:25 filed on the 3rd and again on the 7th
+  merge into a single 15-minute span. `_union_by_day` folds per date first — the
+  entries modal spans a period, and unioning it flat once reported 25 minutes
+  against a sum of 75 and fired the overlap note on a cell with no overlap.
+- Days before `idle_source.CELLS_FROM` reach the tab through the same pre-floor
+  path (their minutes are the «Смена отчёт» row); the date picker is deliberately
+  not clamped, and the empty state names the floor instead.
 
 ## The checklist config page (`/admin/upload?tab=ltasks`)
 

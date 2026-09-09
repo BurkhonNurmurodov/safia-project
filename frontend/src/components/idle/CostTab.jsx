@@ -459,7 +459,7 @@ export default function CostTab() {
                                      transform: sOpen ? "rotate(90deg)" : "none" }} />
                           <span className="truncate">{tl(r.manager)}</span>
                           <span className="text-[12.5px] font-normal shrink-0" style={{ color: "var(--text-3)" }}>
-                            {r.shift ? `· S${r.shift}` : ""} · {tp("downtime.cost.nCells", { n: r.cells.length })}
+                            {r.shift ? `· S${r.shift}` : ""} · {tp("downtime.cost.nCells", { n: r.cells.filter((c) => !c.pre).length })}
                           </span>
                           <Unpriced min={r.unpriced_minutes} />
                         </span>

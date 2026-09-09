@@ -426,7 +426,8 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
         "rows": rows,
         "totals": {**total.out(), "days": len(all_days),
                    "managers": len(rows),
-                   "cells": sum(len(r["cells"]) for r in rows)},
+                   "cells": sum(sum(1 for c in r["cells"] if not c.get("pre"))
+                                for r in rows)},
         "options": {
             "managers": sorted(
                 ({"id": m.id, "name": m.name, "shift": m.shift}
@@ -523,4 +524,5 @@ def retotal(rows: list[dict], base: dict) -> dict:
             acc.hc_lo = v if acc.hc_lo is None else min(acc.hc_lo, v)
             acc.hc_hi = v if acc.hc_hi is None else max(acc.hc_hi, v)
     return {**acc.out(), "days": base.get("days", 0), "managers": len(rows),
-            "cells": sum(len(r.get("cells") or []) for r in rows)}
+            "cells": sum(sum(1 for c in (r.get("cells") or []) if not c.get("pre"))
+                         for r in rows)}
