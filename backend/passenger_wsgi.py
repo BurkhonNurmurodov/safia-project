@@ -77,6 +77,7 @@ try:
         seed_idle_source_pilot,
         seed_pp_autofill_default,
         set_forecast_autocall_capacity,
+        report_unpriced_ojidaniya,
         add_pp_product_auto_fill,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
@@ -292,6 +293,11 @@ try:
     # every table it deletes from is guaranteed to exist by now.
     from app.onetime_purge_test_units import purge_test_units
     purge_test_units()
+    # ⚠ TEMPORARY one-shot (2026-09-09) — the operator asked, once, for the
+    # register behind «Xarajat»'s «Narxlanmagan, daq» card. Flag-guarded, so it
+    # DMs on the first boot after this deploy and never again; remove this line
+    # and `services/unpriced_report.py` once it has landed.
+    report_unpriced_ojidaniya()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

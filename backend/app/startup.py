@@ -5324,3 +5324,79 @@ def set_forecast_autocall_capacity() -> None:
         print(f"[startup] forecast call capacity not set: {exc}")
     finally:
         db.close()
+
+
+# ── one-shot: DM the «Narxlanmagan, daq» breakdown ───────────────────────────
+# The operator asked, on 2026-09-09, for the 598 unpriced minutes of 2–8
+# September to be explained in their own chat, once. This platform has no
+# shell, so the errand is a boot job like every other one-off here.
+UNPRICED_DM_FLAG = "unpriced_ojidaniya_dm_2026_09_09_v1"
+UNPRICED_DM_CHAT = 6302307151          # the operator's own Telegram id
+UNPRICED_DM_FROM = date(2026, 9, 2)    # = zagruzka_source.ZAGRUZKA_FROM
+UNPRICED_DM_TO = date(2026, 9, 8)
+# A permanently broken send must not DM (or try to) on every restart. Three
+# attempts is enough to ride out a token blip or a Telegram outage; after that
+# the deploy log carries the reason and a human decides.
+_UNPRICED_DM_TRIES = 3
+
+
+def report_unpriced_ojidaniya() -> None:
+    """Send the operator the register behind «Xarajat»'s unpriced-minutes card.
+
+    ONE report, once: the flag is written on the first successful delivery and
+    from then on this is a no-op, so the errand cannot repeat itself on the next
+    deploy. Changing what it reports — a different window, a different chat —
+    needs a NEW flag key, or the old "already ran" mark makes the new version a
+    no-op on every box that has booted since.
+
+    The flag row doubles as the attempt counter, so a failure is retried on the
+    next boot and then abandoned rather than re-fired forever. Nothing is
+    written, computed or cached anywhere else: `unpriced_report.collect` derives
+    everything from the same functions the tab reads, so a number typed after
+    this lands simply makes the report stale — never wrong about the day it was
+    taken.
+
+    Never raises. A report that cannot be sent must not be able to stop the app
+    from booting.
+    """
+    db = SessionLocal()
+    try:
+        row = db.query(AppSetting).filter_by(key=UNPRICED_DM_FLAG).first()
+        if row and (row.value or "").startswith("sent"):
+            return
+        tries = 0
+        if row:
+            try:
+                tries = int((row.value or "0").split(":")[-1])
+            except ValueError:
+                tries = _UNPRICED_DM_TRIES
+        if tries >= _UNPRICED_DM_TRIES:
+            return
+
+        from app.services import unpriced_report
+        try:
+            n = unpriced_report.send(db, UNPRICED_DM_CHAT,
+                                     UNPRICED_DM_FROM, UNPRICED_DM_TO)
+        except Exception as exc:
+            tries += 1
+            if row:
+                row.value = f"failed:{tries}"
+            else:
+                db.add(AppSetting(key=UNPRICED_DM_FLAG, value=f"failed:{tries}"))
+            db.commit()
+            print(f"[startup] unpriced ojidaniya DM failed "
+                  f"(attempt {tries}/{_UNPRICED_DM_TRIES}): {exc}")
+            return
+
+        if row:
+            row.value = f"sent:{n}"
+        else:
+            db.add(AppSetting(key=UNPRICED_DM_FLAG, value=f"sent:{n}"))
+        db.commit()
+        print(f"[startup] unpriced ojidaniya DM sent to {UNPRICED_DM_CHAT} "
+              f"({n} message(s), {UNPRICED_DM_FROM}..{UNPRICED_DM_TO})")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] unpriced ojidaniya DM skipped: {exc}")
+    finally:
+        db.close()
