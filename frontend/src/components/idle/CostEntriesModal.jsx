@@ -1,5 +1,7 @@
+import { createElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ListTree } from "lucide-react";
+import { catColor, iconFor } from "./categories";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import { SkeletonCard } from "../ui/Skeleton";
@@ -46,6 +48,16 @@ export default function CostEntriesModal({ open, onClose, ctx, from, to, money }
     { minimumFractionDigits: d, maximumFractionDigits: d }));
   const dmy = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 
+  // The cause keeps the identity it had on the row that opened this — same hue,
+  // same glyph, same chip as the table and the legend (`categories.js`).
+  // `createElement`, not a capitalised binding: at a component's top level the
+  // second reads to the compiler as a component being defined during render.
+  // `Modal` builds its own icon the same way.
+  const hue = ctx ? (catColor(ctx.category) || "#94a3b8") : "";
+  const catIcon = () => createElement(
+    iconFor(String(ctx?.category || "").replace(/^Cat\s*/i, "")),
+    { size: 15, strokeWidth: 2 });
+
   const th = "px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wider text-left whitespace-nowrap";
   const td = "px-3 py-2 text-[13px] border-t";
 
@@ -53,7 +65,12 @@ export default function CostEntriesModal({ open, onClose, ctx, from, to, money }
     <Modal
       open={open}
       onClose={onClose}
-      icon={<ListTree size={16} />}
+      icon={ctx ? (
+        <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: `${hue}22`, color: hue, border: `1px solid ${hue}55` }}>
+          {catIcon()}
+        </span>
+      ) : <ListTree size={16} />}
       title={ctx ? `${ctx.category} · ${ctx.catLabel || ""}`.trim() : ""}
       subtitle={ctx ? [ctx.code, ctx.leader, `${dmy(from)} — ${dmy(to)}`,
                        ctx.hc == null ? t("downtime.cost.noHc")
