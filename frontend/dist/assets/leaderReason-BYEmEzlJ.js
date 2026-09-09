@@ -1,1 +1,0 @@
-import{t as a}from"./createLucideIcon-DMh2K2kv.js";var i=[["circle",{cx:"12",cy:"12",r:"10",key:"1mglay"}],["line",{x1:"9",x2:"15",y1:"15",y2:"9",key:"1dfufj"}]],o=a("circle-slash",i),s=/^__missed__\|(\d{2}:\d{2})$/;function t(e,r){const c=s.exec(e||"");return c?String(r||"").replace("{time}",c[1]):e}export{o as n,t};

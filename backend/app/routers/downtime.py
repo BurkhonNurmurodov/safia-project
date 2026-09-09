@@ -1301,6 +1301,27 @@ def _cost_window(date_from: Optional[date], date_to: Optional[date]) -> tuple:
     return date_from, date_to
 
 
+def _pre_floor_rows(db: Session, payload: dict, date_from: date, date_to: date,
+                    shift: Optional[int], manager_id: List[int],
+                    factory: Optional[int]) -> Optional[list[dict]]:
+    """`_downtime`'s own rows for the part of the period BEFORE
+    `zagruzka_source.ZAGRUZKA_FROM`, or None when the period starts at/after it.
+
+    Those days are priced per BRIGADIR, not per cell: the typed «Odam soni
+    fakt» is what makes a per-cell headcount knowable and it does not exist
+    before that day. The MINUTES come from `_downtime` rather than being
+    re-derived here, because that function is the page's one answer to «how
+    much did this unit wait» — it already merges the cells era with the «Смена
+    отчёт» era and applies the day-close gate. `kpi_only` is False: this tab
+    prices every category, Cat H included.
+    """
+    pre_to = min(date_to, zagruzka_source.ZAGRUZKA_FROM - timedelta(days=1))
+    if date_from > pre_to:
+        return None
+    return _downtime(db, payload, date_from, pre_to, shift, manager_id,
+                     False, factory)["rows"]
+
+
 @router.get("/downtime/cost")
 def get_downtime_cost(
     date_from: date = Query(default=None),
@@ -1327,8 +1348,10 @@ def get_downtime_cost(
     date_from, date_to = _cost_window(date_from, date_to)
     ids = _cost_scope(db, payload, factory, shift, manager_id)
     periods = wage_rate.load(db)
-    out = ojidaniya_cost.build(db, ids, date_from, date_to, cats,
-                               wage_rate.resolver(periods))
+    out = ojidaniya_cost.build(
+        db, ids, date_from, date_to, cats, wage_rate.resolver(periods),
+        pre_rows=_pre_floor_rows(db, payload, date_from, date_to, shift,
+                                 manager_id, factory))
     if cell_id:
         # Narrowed AFTER the tree is built so the cell option list — and the
         # cascade the client drives off it — is not shortened by its own pick.
@@ -1468,8 +1491,10 @@ def export_downtime_cost(
     d1, d2 = _cost_window(d1, d2)
 
     ids = _cost_scope(db, payload, body.factory, body.shift, body.manager_id)
-    out = ojidaniya_cost.build(db, ids, d1, d2, body.cats,
-                               wage_rate.resolver(wage_rate.load(db)))
+    out = ojidaniya_cost.build(
+        db, ids, d1, d2, body.cats, wage_rate.resolver(wage_rate.load(db)),
+        pre_rows=_pre_floor_rows(db, payload, d1, d2, body.shift,
+                                 body.manager_id, body.factory))
     rows = out["rows"]
     if body.cell_id:
         keep = set(body.cell_id)

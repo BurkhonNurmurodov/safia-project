@@ -675,15 +675,14 @@ export default function ZagruzkaCell() {
                     <td className="px-3 py-2 text-right font-semibold"
                         style={{ color: unit.equip_downtime ? "#eab308" : "var(--text-3)" }}>
                       {num(unit.equip_downtime, 1)}
-                      {/* ΣN carries a decimal since a split worker counts as a
-                          fraction in each of their cells; rounded to a whole
-                          person it would no longer divide into the figure
-                          above, which is the one thing this line is for. */}
-                      {unit.idle_weight_n > 0 && (
-                        <div className="text-[9px] leading-tight font-normal" style={{ color: "var(--text-3)" }}>
-                          {num(unit.idle_weight_sum)} ÷ {num(unit.idle_weight_n, 1)}
-                        </div>
-                      )}
+                      {/* The «Σ ÷ N» derivation that used to sit here is gone
+                          with v4.82.0. This figure is `idle_source.unit_downtime`
+                          — the platform's own unit ojidaniya, weighed over every
+                          cell that had people — while the cells listed above are
+                          only the ones that produced a figure. Printing the
+                          cells' Σ and N under a number they do not divide into
+                          is a derivation that does not hold, which is worse than
+                          no derivation at all. */}
                     </td>
                     <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(unit.avg_early_arrival, 1)}</td>
                     <td className="px-3 py-2 text-right font-semibold" style={{ color: "var(--text-1)" }}>{pct(unit.net_util)}</td>

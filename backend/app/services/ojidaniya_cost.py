@@ -36,6 +36,22 @@ categories under a cell can total MORE than the cell, and every surface that
 shows them says so. Never "fix" that by summing the categories into the cell:
 the cell figure is the money, and money is not owed twice for one minute.
 
+**Before `zagruzka_source.ZAGRUZKA_FROM` a unit is priced WHOLE, never per
+cell** (the operator's directive, 2026-09-09). The typed «Odam soni fakt» is
+what makes a per-cell headcount knowable, and it does not exist before that
+day — so those days carry one figure per BRIGADIR: the unit's own ojidaniya
+minutes (handed in from `_downtime`, the page's one computation, which already
+merges the cells era and the «Смена отчёт» era) times the unit's «Одам сони»
+sheet headcount, which is exactly what the загрузка itself divided by then.
+The two halves of a period that straddles the floor sit under the same
+brigadir: its cells from the floor on, plus ONE marked row for everything
+before, so the brigadir's total is still their whole bill.
+
+`mean × ΣN = Σ(Nᵢ·Tᵢ)` — `unit_downtime` returns the headcount-weighted mean,
+so multiplying it by the unit's headcount gives back exactly the person-minutes
+the per-cell method would have summed. The two regimes are the same arithmetic
+at two levels of detail, not two different measures.
+
 **A day the unit does not read from its cells is not priced.** ``uses_cells``
 is the same gate ``_downtime`` applies — before ``idle_source.CELLS_FROM``
 (earlier where the register moved a unit) the unit's ojidaniya came off the
@@ -55,8 +71,10 @@ from typing import Callable, Iterable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Cell, CellOjidaniyaInterval, Manager, RoleProfile
+from app.models import (Cell, CellOjidaniyaInterval, HeadcountData, Manager,
+                        RoleProfile)
 from app.services import idle_intervals, idle_source, zagruzka_source
+from app.services.name_map import sheet_alias_map
 
 # One row per event on the entries modal; a category on one cell over a couple
 # of months is tens of rows, not thousands, but the endpoint takes a period.
@@ -66,6 +84,50 @@ MAX_ENTRIES = 2000
 def _days(date_from: date, date_to: date) -> list[date]:
     n = (date_to - date_from).days + 1
     return [date_from + timedelta(days=i) for i in range(max(n, 0))]
+
+
+def _iso(ddmmyyyy: str) -> Optional[str]:
+    """«DD.MM.YYYY» (how the sheet tables key a day) → «YYYY-MM-DD»."""
+    try:
+        d, m, y = ddmmyyyy.split(".")
+        return f"{y}-{m}-{d}"
+    except (ValueError, AttributeError):
+        return None
+
+
+def unit_headcount(db: Session, managers: dict,
+                   date_from: date, date_to: date) -> dict[tuple[int, str], float]:
+    """``{(manager_id, "YYYY-MM-DD"): official_hc}`` — the «Одам сони» sheet.
+
+    THE unit-level headcount for a day before `zagruzka_source.ZAGRUZKA_FROM`,
+    and deliberately the same one the загрузка divided by then: a cost and a
+    load that disagree about how many people a unit had are two accounts of one
+    shift. A unit-day the sheet has no row for is ABSENT, never 0 — those
+    minutes stay on the minutes side and are counted as unpriced.
+
+    Keyed by NAME in the sheet and spelled in either alphabet, so it resolves
+    through `sheet_alias_map` exactly as `_downtime` does; a name is not an
+    address.
+    """
+    if not managers:
+        return {}
+    by_name = {m.name: mid for mid, m in managers.items() if m.name}
+    alias = sheet_alias_map(db, by_name.keys())
+    lo, hi = date_from.isoformat(), date_to.isoformat()
+
+    out: dict[tuple[int, str], float] = {}
+    for r in db.query(HeadcountData.manager_name, HeadcountData.date,
+                      HeadcountData.official_hc).filter(
+            HeadcountData.manager_name.in_(list(alias.keys()) or [""])).all():
+        iso = _iso(r.date)
+        if not iso or iso < lo or iso > hi:
+            continue
+        mid = by_name.get(alias.get(r.manager_name, r.manager_name))
+        n = None if r.official_hc is None else float(r.official_hc)
+        # A typed 0 is a real answer; only a missing row is "no headcount".
+        if mid is not None and n is not None:
+            out[(mid, iso)] = n
+    return out
 
 
 def _cells_of(db: Session, manager_ids: Iterable[int]) -> list:
@@ -179,13 +241,20 @@ class _Acc:
 
 
 def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
-          cats: list[str], rate_for: Callable[[date], Optional[float]]) -> dict:
+          cats: list[str], rate_for: Callable[[date], Optional[float]],
+          pre_rows: Optional[list[dict]] = None) -> dict:
     """The whole tree for one scope, plus the option lists the filters need.
 
     ``cats`` narrows which events are counted — and therefore the cell and
     brigadir unions too, since a filtered-out stoppage is not part of the answer
     the reader asked for. The option lists are built BEFORE that narrowing, so
     picking a category never shortens the list it was picked from.
+
+    ``pre_rows`` are `_downtime`'s own rows for the part of the period BEFORE
+    `zagruzka_source.ZAGRUZKA_FROM`. Handed in rather than computed here — that
+    function is the page's one answer to «how many minutes did this unit wait»,
+    and it already merges the cells era with the «Смена отчёт» era. They become
+    ONE marked row per brigadir; see the module docstring.
     """
     managers = {m.id: m for m in db.query(Manager).filter(
         Manager.id.in_(manager_ids)).all()} if manager_ids else {}
@@ -193,7 +262,9 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
     leaders = _leader_names(db, cells)
 
     units = idle_source.cell_units(db)
-    all_days = _days(date_from, date_to)
+    # Per-cell pricing only reaches days the typed headcount reaches.
+    cell_from = max(date_from, zagruzka_source.ZAGRUZKA_FROM)
+    all_days = _days(cell_from, date_to)
     # Which (unit, day) pairs read their cells at all. One test per unit-day.
     ok_days: dict[int, set[str]] = {
         mid: {d.isoformat() for d in all_days if idle_source.uses_cells(units, mid, d)}
@@ -211,13 +282,13 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
 
     # Option list — the org scope, unnarrowed by the record picks, so choosing
     # a category never shortens the list it was chosen from.
-    categories = sorted({e.category for e in events if e.category})
+    categories = {e.category for e in events if e.category}
 
     if cats:
         keep = set(cats)
         events = [e for e in events if e.category in keep]
 
-    hc = idle_source.cell_headcount(db, cells, date_from, date_to)
+    hc = idle_source.cell_headcount(db, cells, cell_from, date_to)
 
     # (cell, day) → rows, and (cell, day, category) → rows.
     per_day: dict[tuple[int, str], list] = defaultdict(list)
@@ -245,13 +316,11 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
         cat_acc[(cid, cat)].add(m, n, rate)
         cat_sum[cid] += m
 
-    # Which source answered «how many people» across this range — the typed
-    # «Bugungi fakt» from `zagruzka_source.ZAGRUZKA_FROM`, the counted
-    # attendance before it. A range straddling the floor read BOTH, so it
-    # answers None: naming one of them would pass the other off as it.
-    _lo_typed = zagruzka_source.uses_production(date_from)
-    _hi_typed = zagruzka_source.uses_production(date_to)
-    hc_typed = _lo_typed if _lo_typed == _hi_typed else None
+    # Every per-cell day is at or after the floor now, so the headcount behind
+    # a CELL row is always the typed «Bugungi fakt». Earlier days never reach a
+    # cell at all — they arrive as `pre_rows` and are priced on the unit's own
+    # «Одам сони» sheet figure instead.
+    hc_typed = True
 
     # ── roll up ──────────────────────────────────────────────────────────────
     cells_by_mgr: dict[int, list[dict]] = defaultdict(list)
@@ -274,11 +343,51 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
         })
         cells_by_mgr[c.manager_id].append(row)
 
+    # ── the pre-floor half: ONE row per brigadir, no cell breakdown ─────────
+    # `_downtime` keys its days «DD.MM.YYYY» and has already applied the
+    # day-close gate and the unit's own source rule, so a day it omitted is a
+    # day the page does not report either.
+    pre_by_mgr: dict[int, _Acc] = defaultdict(_Acc)
+    pre_cats: set[str] = set()
+    if pre_rows:
+        unit_hc = unit_headcount(db, managers, date_from, date_to)
+        wanted = set(cats) if cats else None
+        for r in pre_rows:
+            mid = r.get("manager_id")
+            iso = _iso(r.get("date") or "")
+            if mid is None or iso is None or mid not in managers:
+                continue
+            by_cat = r.get("by_category") or {}
+            pre_cats.update(k for k, v in by_cat.items() if v)
+            # With a category pick the figure is the SUM of the picked ones —
+            # the same convention the page's own doughnut picks already use.
+            # Unpicked, it is the day's own total, which is the union.
+            minutes = (sum(float(by_cat.get(c) or 0) for c in wanted) if wanted
+                       else float(r.get("total") or 0))
+            if minutes <= 0:
+                continue
+            pre_by_mgr[mid].add(round(minutes), unit_hc.get((mid, iso)),
+                                rate_for(date.fromisoformat(iso)))
+
     rows: list[dict] = []
-    for mid, cell_rows in cells_by_mgr.items():
+    for mid in set(cells_by_mgr) | set(pre_by_mgr):
+        cell_rows = cells_by_mgr.get(mid, [])
         m = managers.get(mid)
         if not m:
             continue
+        # Cells rank by cost among themselves; the lump is a different KIND of
+        # row, so it is appended after the sort and always sits last.
+        cell_rows.sort(key=lambda r: (-(r["cost"] or 0), -r["minutes"]))
+        pre = pre_by_mgr.get(mid)
+        if pre is not None and pre.minutes > 0:
+            # Marked, never disguised as a cell: `pre: True` and a NULL
+            # cell_id are what tell the client to render it as the one lump
+            # the operator asked for, with no chevron and no categories under
+            # it — there is no per-cell answer to open.
+            cell_rows = cell_rows + [{
+                "cell_id": None, "code": None, "leader": None, "pre": True,
+                "hc_typed": False, "cat_sum": 0, "cats": [], **pre.out(),
+            }]
         acc = _Acc()
         for c in cell_rows:
             acc.minutes += c["minutes"]
@@ -291,7 +400,6 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
                     continue
                 acc.hc_lo = v if acc.hc_lo is None else min(acc.hc_lo, v)
                 acc.hc_hi = v if acc.hc_hi is None else max(acc.hc_hi, v)
-        cell_rows.sort(key=lambda r: (-(r["cost"] or 0), -r["minutes"]))
         rows.append({
             "manager_id": mid,
             "manager": m.name,
@@ -329,7 +437,7 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
                   "leader": leaders.get(c.leader_id), "manager_id": c.manager_id}
                  for c in cells),
                 key=lambda r: (r["code"] or "").lower()),
-            "categories": categories,
+            "categories": sorted(categories | pre_cats),
         },
     }
 

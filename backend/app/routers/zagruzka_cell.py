@@ -241,6 +241,7 @@ def cell_zagruzka(
         dates.append(cur)
         cur += timedelta(days=1)
     date_keys = [d.strftime("%d.%m.%Y") for d in dates]
+    _by_key = dict(zip(date_keys, dates))
 
     # ── The unit's cells. in_load is deliberately ignored (see module docstring).
     cells = (
@@ -619,9 +620,14 @@ def cell_zagruzka(
     #     still on this unit's payroll and still in its verifix_labor.
     #   * a work centre with no cell at all has no row here to be summed.
     #
-    # `zagruzka_source.unit_labor` / `unit_people` ARE those numbers — the same
-    # functions `build_metrics_list` calls — so the two pages cannot answer one
-    # unit-day two ways. Never re-spell them here.
+    #   * the ojidaniya deduction is weighed by EVERY cell that had people, not
+    #     only by the cells that produced a figure here.
+    #
+    # So the row is not re-derived at all — it is taken from
+    # `build_metrics_list`, which is the fleet page's own computation and was
+    # already being called on this endpoint for the reconciliation block. That
+    # is the same rule the rest of the platform is written on: one spelling per
+    # question, at one call site.
     #
     # The cells' own aggregate is still computed, published as `cells_sum` and
     # charted against this row in the reconciliation card: "do the cells add up
@@ -629,25 +635,6 @@ def cell_zagruzka(
     # asking out loud instead of being smuggled into the headline row.
     data: dict[str, dict[str, dict]] = {}
     inputs: dict[str, dict[str, dict]] = {}
-    z_lo = zagruzka_source.range_start(date_from, date_to)
-    z_labor: dict = {}
-    z_people: dict = {}
-    if z_lo is not None:
-        z_labor = zagruzka_source.unit_labor(db, [mgr.id], z_lo, date_to)
-        z_people = zagruzka_source.unit_people(
-            zagruzka_source.typed_people(db, [mgr.id], z_lo, date_to))
-
-    # The unit's own attendance, keyed by day — the fleet's set exactly
-    # (`manager_id`, no `is_supervisor` filter: `is_direct_role` drops the
-    # brigadir's own row inside `compute_metrics`, and doing it twice in two
-    # places is how the two pages would start disagreeing about who counts).
-    unit_att: dict[date, list] = defaultdict(list)
-    for r in db.query(Attendance).filter(
-        Attendance.manager_id == mgr.id,
-        Attendance.date >= date_from,
-        Attendance.date <= date_to,
-    ).all():
-        unit_att[r.date].append(r)
 
     # The cells' own aggregate, summed BEFORE the formula so it is a real
     # unit-level загрузка and not an average of per-cell percentages. Shares
@@ -852,63 +839,45 @@ def cell_zagruzka(
         out.update(extra or {})
         return out
 
-    # ── The brigadir's own row: /zagruzka's logic, not a sum of the cells ─────
-    # See the `unit_labor` / `unit_people` block above for why. From
-    # `ZAGRUZKA_FROM` the three inputs are the fleet's own; before it the page
-    # keeps deriving them from the cells, because the fleet reads the two sheet
-    # tabs there and this page has never had access to them.
+    # ── The brigadir's own row IS /zagruzka's row ────────────────────────────
+    # Not a re-implementation of it: `build_metrics_list` is the fleet page's
+    # own computation and this page already calls it for the reconciliation
+    # block below, so the row is taken from there and the two pages cannot
+    # answer one unit-day two ways. A second spelling is what this change
+    # exists to delete — it had already drifted three times, in трудоёмкость
+    # (the whole unit's, against the TYPED pins alone), in attendance (the
+    # unit's own payroll, not the rows carrying a cell code) and in the
+    # ojidaniya weight (every cell with people, not only the cells that
+    # produced a figure), and each drift moved the number: Ergashev Muxriddin
+    # on 07.09.2026 read 78% here against 572% there.
+    #
+    # Everything the grid, the funnel and the inputs table read off this row is
+    # projected here, so `fleet` below stays the narrow reconciliation payload
+    # it has always been.
+    fleet_metrics = {
+        fm.date: fm for fm in build_metrics_list(
+            db, date_from, date_to, None, [mgr.id], require_closed=False)
+    }
     totals: dict[str, dict] = {}
-    for d, key in zip(dates, date_keys):
-        r = roll[d]
-        on_prod = zagruzka_source.uses_production(d)
-        iso = d.isoformat()
-
-        if on_prod:
-            u_att = unit_att.get(d, [])
-            u_plan, u_actual = z_labor.get((mgr.id, iso), (0.0, 0.0))
-            u_hc = z_people.get((mgr.id, iso), 0.0)
-        else:
-            u_att = r["att"]
-            u_plan, u_actual, u_hc = r["prod_plan"], r["prod_actual"], r["official_hc"]
-
-        # Same rule as the individual cells: no attendance ⇒ no number, or the
-        # row would publish a figure derived from a zero headcount. And no
-        # typed people ⇒ no загрузка at all, which is the blank the fleet page
-        # shows for the same unit-day and for the same reason.
-        if not u_att or (on_prod and u_hc <= 0):
+    for key in date_keys:
+        fm = fleet_metrics.get(key)
+        # `build_metrics_list` skips a day with no attendance at all, and
+        # publishes nulls for a day with no typed people. Both read as "no
+        # загрузка" and are written out explicitly, because the grid tells a
+        # missing key from a null one only by accident.
+        if fm is None:
             totals[key] = {"baseline_util": None, "net_util": None}
             continue
-
-        # The ojidaniya deduction is the headcount-weighted mean of the cells,
-        # Σ(Nᵢ·Tᵢ) ÷ ΣNᵢ — and with the work-centre share applied above, N is
-        # now the same weight `idle_source._n_by_cell` gives the fleet figure
-        # (a work centre's typed people split evenly between the cells naming
-        # it), so the two pages deduct the same minutes from the same day.
-        m = compute_metrics(
-            manager_id=mgr.id,
-            manager_name=mgr.name or "",
-            shift=mgr.shift,
-            date=key,
-            attendance_rows=u_att,
-            prod_plan=u_plan,
-            prod_actual=u_actual,
-            official_hc=u_hc,
-            equip_downtime=((r["downtime_w"] / r["downtime_n"])
-                            if r["downtime_n"] else 0.0),
-            downtime_by_cat={},
-            hc_required=on_prod,
-            basis="production" if on_prod else "sheet",
-        )
-        totals[key] = _row(m, guard=False, extra={
-            # Σ N — the divisor of the weighted mean above. Published so the
-            # unit's deduction can be re-derived from the rows on screen
-            # instead of being taken on trust.
-            "idle_weight_n": r["downtime_n"],
-            "idle_weight_sum": round(r["downtime_w"], 2),
-            # Which side each input came from, so «why does this row not equal
-            # the rows above it» is answerable on the page.
-            "basis": m.basis,
-            "att_rows": len(u_att),
+        r = roll[_by_key[key]]
+        totals[key] = _row(fm, guard=False, extra={
+            # The cells' own ojidaniya weight — NOT the divisor of the figure
+            # above, which is `idle_source.unit_downtime`'s. Published so the
+            # deduction the cells account for can be read beside the one the
+            # unit was charged, which is the same "two totals, both named" rule
+            # `UnitOjidaniyaModal` follows.
+            "cells_idle_weight_n": r["downtime_n"],
+            "cells_idle_weight_sum": round(r["downtime_w"], 2),
+            "basis": fm.basis,
         })
 
     # ── The cells' own aggregate, for the reconciliation card ────────────────
@@ -946,11 +915,12 @@ def cell_zagruzka(
         })
 
     # ── The fleet page's own figure for this unit, to reconcile against ───────
-    # Different sources entirely (sheet imports vs pp_*), so these are EXPECTED
-    # to differ; the page shows the delta, never asserts they should match.
+    # The SAME rows `totals` above is built from — the unit's row is the fleet's
+    # row now, so this is that row's inputs published beside it, and the
+    # reconciliation card charts `cells_sum` against it. Kept as its own key
+    # because it is what a tab open on an earlier bundle reads.
     fleet: dict[str, dict] = {}
-    for fm in build_metrics_list(db, date_from, date_to, None, [mgr.id],
-                                 require_closed=False):
+    for fm in fleet_metrics.values():
         fleet[fm.date] = {
             "baseline_util": fm.baseline_util,
             "net_util": fm.net_util,

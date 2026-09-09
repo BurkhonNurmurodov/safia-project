@@ -571,9 +571,39 @@ for byte**; only where three numbers come from changes.
   moves with it: `n_idle` is the cell's typed O. SONI from the floor — the same
   weight `idle_source._n_by_cell` applies to the fleet — instead of the cell's
   attendance headcount. Before the floor every one of these keeps the derived
-  answer, so history is untouched; from the floor on the page's own
-  reconciliation delta against the fleet figure should read ~0, which is what
-  the twin was built to prove.
+  answer, so history is untouched.
+- **The brigadir's own row on that page IS /zagruzka's row** (2026-09-09, the
+  operator's directive) — taken from `build_metrics_list`, which the endpoint
+  was already calling for the reconciliation block, never re-derived. It had
+  been a sum over the cells, and that sum could not express three of the fleet's
+  rules, each of which moved the number: the WHOLE unit's trudoyomkost counts
+  against the TYPED pins alone (a roll-up that dropped an untyped work centre's
+  minutes as well as its people read **78%** for Ergashev Muxriddin on 07.09.2026
+  against **572%** on /zagruzka); attendance is the unit's own payroll, not the
+  rows carrying one of its cell codes; and the ojidaniya deduction is weighed
+  over every cell that had people, not only the cells that produced a figure
+  here. **The two pages can no longer answer one unit-day two ways.** What the
+  cells add up to is still computed and is published as **`cells_sum`** — the
+  reconciliation card charts that against the unit row, so «do the cells add up
+  to the brigadir» stays the question the twin was built to ask, and a gap now
+  names something real: a work centre with no cell, a cell with no SAP code,
+  people nobody typed, or attendance with no «Код подразделения». Consequence to
+  know: the unit row no longer equals the rows above it, and the page says so.
+- **A work centre named by SEVERAL cells is SPLIT EVENLY between them**
+  (2026-09-09) — ten groups today, the largest six cells wide (Ibragimova
+  Sayyora's A2894; Ergashev's 7222 · 7223 both name A14310). `pp_daily` and
+  `pp_work_center_daily` are keyed by the WORK CENTRE, so there is no per-cell
+  trudoyomkost and no per-cell «Bugungi fakt», and nothing in the data says
+  which of the cells produced what. Handing each cell the WHOLE work centre —
+  what the page did until then — measured one line's entire production against a
+  fraction of its people, so `labor_surplus` drove `effective_hc` toward zero and
+  the row read ±1000% (938%, 2498%, 1644% on those two cells), and the roll-up
+  then counted those minutes and that headcount once PER CELL. **Evenly, never
+  by attendance**: `zagruzka_source.cell_people` already splits the same typed
+  number evenly across the same cells for the ojidaniya weight, and one split
+  must not have two spellings. Such a cell's figures are SHARES and say so —
+  a `1/N` chip on its work centre, `wc_share` / `wc_cells` on every input row,
+  and `diagnostics.shared_work_centers` for the groups.
 - **That page serves EVERY unit from 2026-09-07** (the operator's directive),
   one at a time. The hard lock to «Suvonov Elshod Of» (#5) — its name regex,
   its id fallback and the `lock_warning` it published — is GONE; `?manager_id=`

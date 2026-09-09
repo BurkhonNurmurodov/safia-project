@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ChevronRight, Coins, FileSpreadsheet, Layers, Settings2, Tag, UserRound, Grid3x3,
+  CalendarClock, ChevronRight, Coins, FileSpreadsheet, Layers, Settings2, Tag,
+  UserRound, Grid3x3,
 } from "lucide-react";
 import Button from "../ui/Button";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -467,6 +468,26 @@ export default function CostTab() {
                     </tr>,
 
                     ...(sOpen ? r.cells.flatMap((c) => {
+                      // The pre-floor lump: one marked row per brigadir for
+                      // everything before the typed headcount existed. No
+                      // chevron and no categories under it — there is no
+                      // per-cell answer to open, and a control that opens onto
+                      // nothing is worse than no control.
+                      if (c.pre) return [(
+                        <tr key={`pre:${r.manager_id}`} className="border-t"
+                            style={{ ...bd, background: "var(--bg-inner)" }}>
+                          <td className={td}>
+                            <span className="flex items-center gap-2 min-w-0 pl-5">
+                              <CalendarClock size={14} className="shrink-0" style={{ color: "var(--text-4)" }} />
+                              <span className="font-semibold">{t("downtime.cost.preLabel")}</span>
+                              <span className="text-[12.5px] truncate" style={{ color: "var(--text-3)" }}>
+                                · {t("downtime.cost.preNote")}
+                              </span>
+                            </span>
+                          </td>
+                          <Figures r={c} showShare={false} muted />
+                        </tr>
+                      )];
                       const ck = `cell:${r.manager_id}:${c.cell_id}`;
                       const cOpen = !!open[ck];
                       return [
