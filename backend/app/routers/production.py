@@ -84,7 +84,12 @@ POSITIONS_TITLE = {"uz": "Pozitsiyalar", "uz_cyrl": "Позициялар", "ru"
 # original mixed ru/uz wording regardless of UI language.
 ABC_HEADERS = ["Сап код", "SKU", "Трудоемкость", "Команда", "ЛЮДИ", "вып %",
                "Факт", "ПЛАН", "Общ.трудаёмкост", "Минут", "Парето"]
-ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 8, "G": 9.5,
+# F is I's TWIN and must stay sized like it. Both hold minutes — F the actual
+# (C*G/60), I the plan (C*H/60) — so their per-row values and their row-1 sums
+# are the same magnitude. F was 8, wide enough for one position's «466,0» and
+# not for the sum of 170 of them: F1 printed ######## on every exported file,
+# which reads as a broken formula and was reported as one.
+ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 12.5, "G": 9.5,
               "H": 9, "I": 12.5, "J": 8.5, "K": 8.5, "L": 4.5, "M": 10, "N": 8.5,
               "O": 15, "P": 50, "Q": 11}
 # Bordered formula rows under the data, for SKUs the brigadir adds by hand. 0 by
@@ -555,7 +560,11 @@ def export_positions(
     ws["F1"] = f"=+SUM(F{ds}:F{data_end})"
     ws["H1"] = day                                        # the form's date cell
     ws["I1"] = f"=SUM(I{ds}:I{data_end})"
-    for coord, nf in (("E1", "0%"), ("F1", "0.00"), ("H1", "DD.MMM"), ("I1", "#\\ ##0.00")):
+    # F1 and I1 are two sums of minutes standing side by side, so they wear ONE
+    # format — the form's own space-grouped «78 000.00». F1's bare "0.00" spelled
+    # a five-figure total with no separator at all.
+    for coord, nf in (("E1", "0%"), ("F1", "#\\ ##0.00"), ("H1", "DD.MMM"),
+                      ("I1", "#\\ ##0.00")):
         c = ws[coord]
         c.border, c.alignment, c.font, c.number_format = border, center, bold, nf
     ws["E1"].fill, ws["H1"].fill = green_cell, yellow
