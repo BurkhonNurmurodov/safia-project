@@ -121,6 +121,7 @@ function SingleGrid({
   managerIds, commentedCells, isoOf, approvedCells,
   avgMode, onCycleAvg, cellTitle,
   rowLabel = "Brigadir", labelWidth = LABEL_W,
+  labelFor = null,
   pinnedRow = null,
 }) {
   const { t } = useLang();
@@ -136,6 +137,9 @@ function SingleGrid({
         ? (a || "").localeCompare(b || "")
         : (b || "").localeCompare(a || ""))
     : managers;
+  // Display spelling of a row key. Rows sort by the KEY (the cell code on the
+  // per-cell загрузка), so a leader's name appended here never reorders them.
+  const shown = (name, full = false) => (labelFor ? labelFor(name, full) : tl(name));
   const noSel = !selection;
 
   // A (manager, date) cell is gated until its day is approved. When
@@ -339,9 +343,9 @@ function SingleGrid({
                     userSelect:    "none",
                     height:        34,
                   }}
-                  title={tl(name)}
+                  title={shown(name, true)}
                 >
-                  {tl(name)}
+                  {shown(name)}
                 </td>
 
                 {/* Data cells */}
@@ -571,6 +575,15 @@ export default function HeatmapChart({
   // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
   rowLabel = "Brigadir",
   labelWidth = LABEL_W,
+  // How a row KEY is spelled on screen: `(key, full) => string`. Keys stay the
+  // keys — `data`, sorting and the selection all go on using them — so this
+  // only ever changes what the reader sees. It is called twice per row: once
+  // for the CELL, which is clipped to `labelWidth`, and once with `full = true`
+  // for the tooltip, so a caller that shortens a name (the per-cell загрузка
+  // spells its rows «7213 · M. Sanjar») still has somewhere to put the full
+  // spelling. Every other caller passes nothing and its rows read exactly as
+  // they always did.
+  labelFor = null,
   // The UNIT the rows roll up into, as a footer row: `{ label, note, data }`,
   // `data` keyed by date exactly like one row of `data`. It is measured from
   // the unit's own inputs, never averaged out of the rows above — which is why
@@ -610,7 +623,7 @@ export default function HeatmapChart({
     segs, selection, toggleSel, clearSel,
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
     avgMode, onCycleAvg: cycleAvg, cellTitle,
-    rowLabel, labelWidth, pinnedRow,
+    rowLabel, labelWidth, labelFor, pinnedRow,
   };
 
   return (

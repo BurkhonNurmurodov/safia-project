@@ -164,11 +164,14 @@ export default function ComparisonTable({
   // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
   rowLabel = "Brigadir",
   labelWidth = LABEL_W,
-  // How a row KEY is spelled on screen. Keys stay the keys — `data`, `inputs`,
-  // sorting and the selection all go on using them — so this only ever changes
-  // what the reader sees. The per-cell загрузка passes `cellLabel(code, leader)`
-  // so a four-digit code carries the person answerable for it; the fleet page
-  // passes nothing and rows read exactly as they always did.
+  // How a row KEY is spelled on screen: `(key, full) => string`. Keys stay the
+  // keys — `data`, `inputs`, sorting and the selection all go on using them —
+  // so this only ever changes what the reader sees. It is called twice per row:
+  // once for the CELL, which is clipped to `labelWidth`, and once with
+  // `full = true` for the tooltip, so a caller that shortens a name (the
+  // per-cell загрузка spells its rows «7213 · M. Sanjar») still has somewhere
+  // to put the full spelling. The fleet page passes nothing and its rows read
+  // exactly as they always did.
   labelFor = null,
   // One AVG/MIN/MAX footer row summarising every COLUMN, cycling with the same
   // header press as the pinned summary column. Off by default: the fleet table
@@ -231,7 +234,7 @@ export default function ComparisonTable({
 
   // Display spelling of a row key. Rows sort by the KEY (the cell code), so a
   // leader's name appended here never reorders the grid.
-  const shown = (name) => (labelFor ? labelFor(name) : tl(name));
+  const shown = (name, full = false) => (labelFor ? labelFor(name, full) : tl(name));
 
   const psegs = pSegments.length    ? pSegments    : DEFAULT_P_SEGMENTS;
   const dsegs = diffSegments.length ? diffSegments : DEFAULT_DIFF_SEGMENTS;
@@ -816,7 +819,7 @@ export default function ComparisonTable({
                       transition: "background .08s, opacity .1s, color .1s",
                       cursor: "pointer", userSelect: "none",
                     }}
-                    title={shown(name)}
+                    title={shown(name, true)}
                   >
                     {shown(name)}
                   </td>

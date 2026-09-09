@@ -13,7 +13,7 @@
  * writes nothing and feeds no other page.
  */
 import { createPortal } from "react-dom";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Maximize2, Minimize2, Info, FlaskConical, Table2, Scale, ShieldAlert, UserRound,
@@ -39,14 +39,16 @@ import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
+import { cellLabel } from "../utils/cellName";
+import { shortPerson } from "../utils/personName";
 import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
 
-// Row-label column width. Wider than the grids' 172px default because a cell
-// reads «4311 · Участок оформ. глазур. тортов №1.1», not «Aripova Manzura» —
-// still truncated with a tooltip past this, but the code + most of the workshop
-// name fit without eating the date columns.
+// Row-label column width. Wider than the grids' 172px default because a row
+// here reads «7213 · Maksumov Sanjar» — the code plus the LEADER answerable for
+// it — not a supervisor's name alone. Still truncated with a tooltip past this,
+// but code + name fit without eating the date columns.
 const LABEL_W = 260;
 
 const num = (v, d = 0) =>
@@ -268,6 +270,27 @@ export default function ZagruzkaCell() {
     () => Object.fromEntries((payload?.cells ?? []).map((c) => [c.label, c])),
     [payload]);
 
+  // How a cell is SPELLED on the grids. A row key is the verifix code and stays
+  // the verifix code — `data`, `inputs`, the sort and the selection all run on
+  // it — but four digits say nothing to a reader who does not already know the
+  // shopfloor, so the second fact beside it is the LEADER, never the workshop
+  // («A cell is its CODE»). `cellLabel` owns the join and the "code alone when
+  // there is no leader" rule; `tl` spells the name in the viewer's alphabet
+  // BEFORE the join, so an admin name override still matches the raw value.
+  //
+  // The name is SHORTENED by `shortPerson`, the platform's one rule for that
+  // and the same shape `UnitOjidaniyaModal` already uses for this exact pair:
+  // a four-part Uzbek name («Turdimurodov Nodirjon Latibjon O'g'li» — 93 of the
+  // 108 cells carry one) runs past the label column, and an ellipsis mid-name
+  // names nobody while «T. Nodirjon» tells two leaders apart. `full` asks for
+  // the untruncated spelling, which the grids put in the row's tooltip.
+  const labelFor = useCallback(
+    (key, full = false) => {
+      const leader = tl(cellMeta[key]?.leader);
+      return cellLabel(key, (full || !leader) ? leader : shortPerson(leader));
+    },
+    [cellMeta, tl]);
+
   const dateOptions = useMemo(
     () => dates.map((d) => ({ value: d, label: d })), [dates]);
 
@@ -297,7 +320,9 @@ export default function ZagruzkaCell() {
 
   function handleCellClick(name, d, _v, cell) {
     // No managerId: a cell has no comment thread, so this opens formula-only.
-    setComment({ managerName: name, date: d, rawCell: cell, mode: heatmapMode });
+    // The header names the row the way the row is named on the grid it was
+    // opened from — code plus leader, already spelled by `tl`.
+    setComment({ managerName: labelFor(name, true), date: d, rawCell: cell, mode: heatmapMode });
   }
 
   const managerName = payload?.manager?.name ? tl(payload.manager.name) : "—";
@@ -380,6 +405,7 @@ export default function ZagruzkaCell() {
               pinnedRow={unitRow}
               rowLabel={t("zcell.colCell")}
               labelWidth={LABEL_W}
+              labelFor={labelFor}
               onToggleFullscreen={() => setCompFullscreen(true)}
             />
             {/* Says, in VISIBLE text, how the brigadir's row differs from the
@@ -418,6 +444,7 @@ export default function ZagruzkaCell() {
                   pinnedRow={unitRow}
                   rowLabel={t("zcell.colCell")}
                   labelWidth={LABEL_W}
+                  labelFor={labelFor}
                   fullscreen
                   onToggleFullscreen={() => setCompFullscreen(false)}
                 />
@@ -449,6 +476,7 @@ export default function ZagruzkaCell() {
               pinnedRow={unitRow}
               rowLabel={t("zcell.colCell")}
               labelWidth={LABEL_W}
+              labelFor={labelFor}
               onCellClick={handleCellClick}
             />
           </div>
@@ -485,6 +513,7 @@ export default function ZagruzkaCell() {
                   pinnedRow={unitRow}
                   rowLabel={t("zcell.colCell")}
                   labelWidth={LABEL_W}
+                  labelFor={labelFor}
                   onCellClick={handleCellClick}
                   fullscreen
                 />
@@ -603,10 +632,19 @@ export default function ZagruzkaCell() {
                   const idle = idleNote(inp, t);
                   return (
                     <tr key={c}>
-                      <td className="px-3 py-2 truncate" style={{ color: "var(--text-1)" }} title={c}>
+                      {/* The code is the cell's name and the LEADER is the
+                          second fact beside it — the same spelling the grids
+                          above use. Only the CODE is the link: the leader is a
+                          person, not a route. */}
+                      <td className="px-3 py-2 truncate" style={{ color: "var(--text-1)" }} title={labelFor(c, true)}>
                         {meta
                           ? <CellLink id={meta.cell_id}>{meta.verifix_code}</CellLink>
                           : c}
+                        {meta?.leader && (
+                          <span className="ml-1" style={{ color: "var(--text-3)" }}>
+                            · {shortPerson(tl(meta.leader))}
+                          </span>
+                        )}
                       </td>
                       {/* The work centre, and — where several cells name it —
                           how much of it this row carries. Трудоёмкость and
