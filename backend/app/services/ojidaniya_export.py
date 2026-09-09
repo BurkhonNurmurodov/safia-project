@@ -46,7 +46,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.services.quality_export import (
-    BAND, BOX, BRAND, BRAND_SOFT, FONT, INK, INK_FAINT, INK_SOFT,
+    AMBER, BAND, BOX, BRAND, BRAND_SOFT, FONT, INK, INK_FAINT, INK_SOFT,
     NUM, PANEL, PCT1, RED, RIGHT, SLATE, TINT,
     _banner, _block, _fill, _head_row, _kpi_cards, _meta_strip, _section,
     _sheet, _side,
@@ -825,3 +825,156 @@ def build_matrix_workbook(p: dict) -> BytesIO:
     wb.save(bio)
     bio.seek(0)
     return bio
+
+
+# ── the «Xarajat» tab as a workbook ──────────────────────────────────────────
+# A SEPARATE file from the five-tab report above, for the reason the matrix is
+# one: it carries a different measure. This tab SUMS what a stopped cell cost,
+# where every other ojidaniya figure on the platform is a headcount-weighted
+# MEAN — two measures in one workbook is how a reader ends up comparing two
+# columns that cannot be compared.
+UZS = "#,##0"
+
+
+def _cost_cell(ws: Worksheet, row: int, col: int, r: dict, *, indent: int = 0,
+               label: str = "", bold: bool = False, band: bool = False) -> None:
+    """One line of the flattened tree: name, people, minutes, hours, cost.
+
+    An unpriced figure is written as the em dash, never as 0 — the whole point
+    of the column is that «nobody typed a headcount» and «this cost nothing»
+    are different answers, and a spreadsheet that blurs them will be summed by
+    somebody.
+    """
+    fill = _fill(BAND if band else PANEL)
+    font = Font(name=FONT, size=10, bold=bold, color=INK)
+    _block(ws, row, col, row, col + 2, label, fill=fill, border=BOX, font=font,
+           align=Alignment(horizontal="left", vertical="center", indent=1 + indent))
+    vals = [
+        (r.get("hc"), HC),
+        (r.get("minutes"), MIN),
+        (r.get("hours"), HRS),
+        (r.get("cost"), UZS),
+    ]
+    for i, (v, fmt) in enumerate(vals):
+        c = ws.cell(row, col + 3 + i)
+        c.value = v if v is not None else "—"
+        c.number_format = fmt
+        c.font = font
+        c.fill = fill
+        c.border = BOX
+        c.alignment = RIGHT
+
+
+def build_cost_workbook(p: dict) -> BytesIO:
+    """The cost of stopped waiting, as the tab lays it out.
+
+    Two sheets and no third: «Umumiy» is the brigadir table under the KPI strip,
+    «Tafsilot» is the same tree flattened so brigadir, yacheyka and toifa are all
+    on one sortable sheet. The events behind a toifa stay one tap away on screen
+    — pulling them in here would mean a query per cell and a file nobody asked
+    for. Every figure arrives already computed (`services/ojidaniya_cost`); this
+    is a formatter and re-derives nothing.
+    """
+    L = p.get("labels") or {}
+    cats = p.get("cats") or {}
+    rows = p.get("rows") or []
+    tot = p.get("totals") or {}
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # ── Umumiy ───────────────────────────────────────────────────────────────
+    ws = _sheet(wb, L.get("shOverview", "Umumiy"),
+                {2: 34, 3: 10, 4: 10, 5: 12, 6: 11, 7: 11, 8: 16, 9: 10})
+    r = _banner(ws, 2, 2, 9, p.get("title", "Ojidaniya xarajati"), p.get("subtitle", ""))
+    r = _meta_strip(ws, r, 2, 9, p.get("scope") or [])
+    r += 1
+
+    unpriced = tot.get("unpriced_minutes") or 0
+    r = _kpi_cards(ws, r, 2, [
+        {"value": tot.get("minutes") or 0, "label": L.get("kMinutes", "Jami to'xtash, daq"),
+         "hint": f"{tot.get('hours') or 0} {L.get('hrs', 'soat')}", "fmt": MIN, "color": BRAND},
+        {"value": tot.get("cost"), "label": L.get("kCost", "Xarajat, so'm"),
+         "hint": L.get("kCostHint", ""), "fmt": UZS, "color": BRAND},
+        {"value": tot.get("perDay"), "label": L.get("kPerDay", "Kunlik o'rtacha, so'm"),
+         "hint": f"{tot.get('days') or 0} {L.get('days', 'kun')}", "fmt": UZS, "color": SLATE},
+        {"value": unpriced, "label": L.get("kUnpriced", "Narxlanmagan, daq"),
+         "hint": L.get("kUnpricedHint", ""), "fmt": MIN,
+         "color": AMBER if unpriced else SLATE},
+    ])
+    r += 1
+
+    r = _section(ws, r, 2, 9, L.get("sBySup", "Brigadirlar bo'yicha"),
+                 L.get("sBySupSub", ""))
+    head = _head_row(ws, r, 2, [
+        L.get("cName", "Brigadir"), L.get("cHc", "Odam soni"),
+        L.get("cMin", "To'xtash, daq"), L.get("cHrs", "Soat"),
+        L.get("cCost", "Xarajat, so'm"), L.get("cShare", "Ulush"),
+    ], first_span=3)
+    r += 1
+    first = r
+    grand = tot.get("cost") or 0
+    for i, row in enumerate(rows):
+        _cost_cell(ws, r, 2, row, label=row.get("manager") or "", band=bool(i % 2))
+        c = ws.cell(r, 9)
+        c.value = (row.get("cost") or 0) / grand if grand else None
+        c.number_format = PCT1
+        c.font = Font(name=FONT, size=10, color=INK_SOFT)
+        c.fill = _fill(BAND if i % 2 else PANEL)
+        c.border = BOX
+        c.alignment = RIGHT
+        r += 1
+    if rows:
+        ws.conditional_formatting.add(
+            f"H{first}:H{r - 1}",
+            DataBarRule(start_type="num", start_value=0, end_type="max", color=BRAND))
+        ws.auto_filter.ref = f"B{first - 1}:I{r - 1}"
+    _cost_cell(ws, r, 2, {**tot, "hc": None}, label=L.get("total", "Jami"), bold=True)
+    ws.freeze_panes = ws.cell(first, 2)
+
+    # ── Tafsilot ─────────────────────────────────────────────────────────────
+    ws2 = _sheet(wb, L.get("shDetail", "Tafsilot"),
+                 {2: 26, 3: 13, 4: 24, 5: 20, 6: 11, 7: 12, 8: 10, 9: 16})
+    r = _banner(ws2, 2, 2, 9, p.get("title", "Ojidaniya xarajati"), p.get("subtitle", ""))
+    r = _meta_strip(ws2, r, 2, 9, p.get("scope") or [])
+    r += 1
+    r = _section(ws2, r, 2, 9, L.get("sTree", "Brigadir · yacheyka · toifa"),
+                 L.get("sTreeSub", ""))
+    _head_row(ws2, r, 2, [
+        L.get("cSup", "Brigadir"), L.get("cCell", "Yacheyka"), L.get("cLeader", "Lider"),
+        L.get("cCat", "Toifa"), L.get("cHc", "Odam soni"),
+        L.get("cMin", "To'xtash, daq"), L.get("cHrs", "Soat"), L.get("cCost", "Xarajat, so'm"),
+    ])
+    r += 1
+    first = r
+    for row in rows:
+        for cell in row.get("cells") or []:
+            for k in cell.get("cats") or []:
+                vals = [
+                    row.get("manager") or "", cell.get("code") or "",
+                    cell.get("leader") or "—",
+                    cats.get(k.get("category")) or k.get("category") or "",
+                ]
+                for i, v in enumerate(vals):
+                    c = ws2.cell(r, 2 + i)
+                    c.value = _xl(v)
+                    c.font = Font(name=FONT, size=10, color=INK)
+                    c.border = BOX
+                    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+                for i, (v, fmt) in enumerate([(k.get("hc"), HC), (k.get("minutes"), MIN),
+                                              (k.get("hours"), HRS), (k.get("cost"), UZS)]):
+                    c = ws2.cell(r, 6 + i)
+                    c.value = v if v is not None else "—"
+                    c.number_format = fmt
+                    c.font = Font(name=FONT, size=10, color=INK)
+                    c.border = BOX
+                    c.alignment = RIGHT
+                r += 1
+    if r > first:
+        ws2.auto_filter.ref = f"B{first - 1}:I{r - 1}"
+    ws2.freeze_panes = ws2.cell(first, 2)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf

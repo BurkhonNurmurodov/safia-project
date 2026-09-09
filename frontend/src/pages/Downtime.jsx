@@ -11,6 +11,7 @@ import KPICard from "../components/ui/KPICard";
 import CategoryLegendModal from "../components/ui/CategoryLegendModal";
 import UnitOjidaniyaModal from "../components/idle/UnitOjidaniyaModal";
 import OjidaniyaMatrix from "../components/idle/OjidaniyaMatrix";
+import CostTab from "../components/idle/CostTab";
 import EmptyState from "../components/ui/EmptyState";
 import Button from "../components/ui/Button";
 import { useToast } from "../components/ui/Toast";
@@ -82,8 +83,12 @@ export default function Downtime() {
   // mean charted here (see components/idle/CategoryMatrix). Every filter and
   // both toggles below narrow BOTH views; only the period control differs,
   // because a matrix is selected a month at a time.
-  const [view, setView] = usePersistentState("downtime_view", "analysis"); // "analysis" | "percat"
+  const [view, setView] = usePersistentState("downtime_view", "analysis"); // "analysis" | "percat" | "cost"
   const percat = view === "percat";
+  // «Xarajat» is a self-contained tab: its own filters, its own fetch, its own
+  // modals. The page's shared toolbar and the stopped/scope toggles below it
+  // have no meaning on that measure, so it renders INSTEAD of them.
+  const isCost = view === "cost";
   // The matrix keeps its OWN period, so switching views never silently
   // rewrites the range the other one was read at.
   const [monthKey, setMonthKey] = usePersistentState(
@@ -154,7 +159,7 @@ export default function Downtime() {
   const { data, isLoading } = useQuery({
     queryKey: ["downtime", scopedParams],
     queryFn: () => api.get("/api/downtime", { params: scopedParams }).then((r) => r.data),
-    enabled: ready,
+    enabled: ready && !isCost,
   });
 
   // Trend chart never spans fewer than 7 days: a short selection fetches a
@@ -163,7 +168,7 @@ export default function Downtime() {
   const { data: chartData, isLoading: chartLoading } = useQuery({
     queryKey: ["downtime", chartParams],
     queryFn: () => api.get("/api/downtime", { params: chartParams }).then((r) => r.data),
-    enabled: ready,
+    enabled: ready && !isCost,
   });
 
   // ── «Toifalar bo'yicha»: its own month, its own fetch ──────────────────
@@ -517,7 +522,7 @@ export default function Downtime() {
   const { data: seasonData, isLoading: seasonLoading } = useQuery({
     queryKey: ["downtime-season", seasonParams],
     queryFn: () => api.get("/api/downtime/seasonality", { params: seasonParams }).then((r) => r.data),
-    enabled: ready && seasonMode === "month",
+    enabled: ready && !isCost && seasonMode === "month",
     staleTime: 300_000,
   });
   // Until the user picks, the year is the backend's own choice (this year when it
@@ -913,13 +918,20 @@ export default function Downtime() {
           options={[
             ["analysis", t("downtime.viewAnalysis")],
             ["percat", t("downtime.viewPerCat")],
+            ["cost", t("downtime.viewCost")],
           ]}
         />
       </div>
 
+      {/* «Xarajat» owns everything below the tab strip — its own toolbar, its
+          own filters and its own modals. The shared filter row and the
+          stopped / загрузка toggles do not apply to it: only a STOPPED cell
+          costs anything, and every category is priced. */}
+      {isCost && <CostTab />}
+
       {/* ONE-ROW filter bar: period inline; plant / shift / supervisor / category
           live inside the shared FilterPanel and surface as chips when active. */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <div className={`items-center gap-2 mb-4 flex-wrap ${isCost ? "hidden" : "flex"}`}>
         {/* A matrix is read a month at a time, so this view selects a whole
             month — the SAME template in `month` mode, never a second control.
             It writes the tab's own month key, so the Analysis period is not
@@ -1032,6 +1044,7 @@ export default function Downtime() {
         )}
       </div>
 
+      {!isCost && (<>
       {/* Page view tabs — «тўхтаганда» / «тўхтамаганда» halves of the same report.
           Sits under the filters (which apply to both) and above everything it drives. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-4">
@@ -1389,6 +1402,7 @@ export default function Downtime() {
           onConfirm={onDeck}
         />
       )}
+      </>)}
       {toast.node}
     </Layout>
   );

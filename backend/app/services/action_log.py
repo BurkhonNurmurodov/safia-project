@@ -357,6 +357,8 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/downtime/export.xlsx",                 "sync_export", "export.ojidaniya"),
     (("POST",),   "/api/downtime/export.pptx",                 "sync_export", "export.ojidaniya_deck"),
     (("POST",),   "/api/downtime/matrix.xlsx",                 "sync_export", "export.ojidaniya_matrix"),
+    (("POST",),   "/api/downtime/cost.xlsx",                   "sync_export", "export.ojidaniya_cost"),
+    (("PUT",),    "/api/downtime/wage-rates",                  "config", "config.wage_rate_saved"),
     (("POST",),   "/api/profiles/admin/cells/export.xlsx",     "sync_export", "export.cells"),
     (("POST",),   "/api/admin/exchange-audit/export.xlsx",     "sync_export", "export.exchange_audit"),
     (("POST",),   "/api/staff/attendance/export",              "sync_export", "export.attendance"),

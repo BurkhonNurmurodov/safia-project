@@ -1,0 +1,375 @@
+"""What a stopped cell COST in wages — /downtime → «Xarajat».
+
+    xarajat(yacheyka, kun) = union_minutes ÷ 60 × odam soni × w(kun)
+
+summed up a three-level tree: brigadir → yacheyka → toifa, with the filed
+events themselves one tap below that. Nothing here is a new measurement — every
+term is a figure the platform already publishes, reached through the module
+that owns it:
+
+* the MINUTES are ``idle_intervals.merged_spans`` / ``union_minutes``, the same
+  union the загрузка reads and the bar-detail modal prints;
+* the PEOPLE are ``idle_source.cell_headcount``, the very weight
+  ``idle_source.unit_downtime`` divides by — never a second count of its own,
+  or the cost and the load would disagree about how many people stood in a cell;
+* the RATE is ``wage_rate.resolve``, per DAY, so a raise entered today cannot
+  rewrite what last month cost.
+
+Three rulings this module exists to hold, all of them the operator's:
+
+**Only a STOPPED cell costs.** A wait the cell worked through cost nothing, so
+``stopped`` is fixed here and is not a toggle the tab exposes. The page's
+To'xtamaganda half has no meaning on this measure.
+
+**Every category is priced, Cat H included.** A cell stopped for cleaning is
+paying the same wages as a cell stopped for a broken mixer, so
+``OJIDANIYA_ONLY_CATS`` is NOT applied. Consequence to know: this tab's minutes
+read higher than /downtime's headline, which drops Cat H under «Zagruzkada
+hisoblanadi». The category filter is how a reader takes one out.
+
+**Each minute is paid ONCE.** A cell stopped at 10:00–10:40 for two causes filed
+two events; the cell's figure is the UNION, so the 40 minutes are billed once.
+A CATEGORY row unions within its own category — two overlapping events of one
+cause are not double-paid either — but categories are summed ACROSS each other,
+because a minute genuinely has two causes and both deserve to be named. So the
+categories under a cell can total MORE than the cell, and every surface that
+shows them says so. Never "fix" that by summing the categories into the cell:
+the cell figure is the money, and money is not owed twice for one minute.
+
+**A day the unit does not read from its cells is not priced.** ``uses_cells``
+is the same gate ``_downtime`` applies — before ``idle_source.CELLS_FROM``
+(earlier where the register moved a unit) the unit's ojidaniya came off the
+«Смена отчёт» row, which carries category minutes, no cells, no clocks and no
+headcount. Pricing its events anyway would bill minutes /downtime does not
+count.
+
+**An unknowable cost is «—» and a NAMED count, never 0.** A cell whose
+headcount nobody typed, and a day inside a wage period nobody has filled in,
+both leave the cost side while keeping their minutes on the minutes side. The
+gap is published as ``unpriced_minutes`` at every level so a reader is told the
+total is short rather than shown a total that quietly is.
+"""
+from collections import defaultdict
+from datetime import date, timedelta
+from typing import Callable, Iterable, Optional
+
+from sqlalchemy.orm import Session
+
+from app.models import Cell, CellOjidaniyaInterval, Manager, RoleProfile
+from app.services import idle_intervals, idle_source, zagruzka_source
+
+# One row per event on the entries modal; a category on one cell over a couple
+# of months is tens of rows, not thousands, but the endpoint takes a period.
+MAX_ENTRIES = 2000
+
+
+def _days(date_from: date, date_to: date) -> list[date]:
+    n = (date_to - date_from).days + 1
+    return [date_from + timedelta(days=i) for i in range(max(n, 0))]
+
+
+def _cells_of(db: Session, manager_ids: Iterable[int]) -> list:
+    ids = list(manager_ids)
+    if not ids:
+        return []
+    return db.query(Cell).filter(Cell.manager_id.in_(ids)).all()
+
+
+def _leader_names(db: Session, cells) -> dict:
+    """Leader id → name. COLUMNS, not the entity: this needs two fields, and
+    selecting the whole row makes the query depend on every column the model
+    has ever grown — the trap `idle_source._n_by_cell` documents for its own
+    attendance query."""
+    lids = {c.leader_id for c in cells if c.leader_id}
+    if not lids:
+        return {}
+    return {r.id: r.name for r in db.query(RoleProfile.id, RoleProfile.name)
+            .filter(RoleProfile.id.in_(lids)).all()}
+
+
+def _events(db: Session, cells, days: list[str]) -> list:
+    """Approved STOPPED events on these cells over these days.
+
+    ``status == "approved"`` and ``stopped`` are both fixed: a rejected entry is
+    not an ojidaniya, and a wait the cell worked through is not a cost.
+    """
+    if not cells or not days:
+        return []
+    return db.query(CellOjidaniyaInterval).filter(
+        CellOjidaniyaInterval.cell_id.in_([c.id for c in cells]),
+        CellOjidaniyaInterval.date.in_(days),
+        CellOjidaniyaInterval.status == "approved",
+        CellOjidaniyaInterval.stopped.is_(True),
+    ).all()
+
+
+def _row(rows) -> list[dict]:
+    """Interval ORM rows → the dict shape ``idle_intervals`` consumes."""
+    return [{"start": r.start, "end": r.end, "stopped": True} for r in rows]
+
+
+def _union(rows) -> int:
+    return idle_intervals.union_minutes(
+        idle_intervals._spans_of(_row(rows), stopped_only=False))
+
+
+class _Acc:
+    """A running (minutes, priced minutes, person-minutes, cost) accumulator.
+
+    ``person_min`` is what makes the displayed headcount honest: the figure
+    shown beside a cell is Σ(T·N) ÷ ΣT over the days that were actually priced,
+    i.e. the one N that reproduces the cost from the minutes beside it. A plain
+    average over days would print a number the row's own arithmetic contradicts.
+    """
+
+    __slots__ = ("minutes", "priced", "person_min", "cost")
+
+    def __init__(self):
+        self.minutes = 0
+        self.priced = 0
+        self.person_min = 0.0
+        self.cost = 0.0
+
+    def add(self, minutes: int, n: Optional[float], rate: Optional[float]) -> None:
+        self.minutes += minutes
+        if n is None or rate is None or minutes <= 0:
+            return
+        self.priced += minutes
+        self.person_min += minutes * n
+        self.cost += minutes / 60.0 * n * rate
+
+    def out(self) -> dict:
+        priced = self.priced > 0
+        return {
+            "minutes": self.minutes,
+            "hours": round(self.minutes / 60.0, 2),
+            "priced_minutes": self.priced,
+            "unpriced_minutes": self.minutes - self.priced,
+            "cost": round(self.cost) if priced else None,
+            "hc": round(self.person_min / self.priced, 2) if priced else None,
+        }
+
+
+def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
+          cats: list[str], rate_for: Callable[[date], Optional[float]]) -> dict:
+    """The whole tree for one scope, plus the option lists the filters need.
+
+    ``cats`` narrows which events are counted — and therefore the cell and
+    brigadir unions too, since a filtered-out stoppage is not part of the answer
+    the reader asked for. The option lists are built BEFORE that narrowing, so
+    picking a category never shortens the list it was picked from.
+    """
+    managers = {m.id: m for m in db.query(Manager).filter(
+        Manager.id.in_(manager_ids)).all()} if manager_ids else {}
+    cells = _cells_of(db, managers)
+    leaders = _leader_names(db, cells)
+
+    units = idle_source.cell_units(db)
+    all_days = _days(date_from, date_to)
+    # Which (unit, day) pairs read their cells at all. One test per unit-day.
+    ok_days: dict[int, set[str]] = {
+        mid: {d.isoformat() for d in all_days if idle_source.uses_cells(units, mid, d)}
+        for mid in managers
+    }
+    wanted_days = sorted({d for s in ok_days.values() for d in s})
+
+    by_cell = {c.id: c for c in cells}
+    # Only events on a day this unit actually reads from its cells. Applied
+    # FIRST, so the option list below can never offer a category whose only
+    # events sit on days this tab does not price.
+    events = [e for e in _events(db, cells, wanted_days)
+              if by_cell.get(e.cell_id) is not None
+              and e.date in ok_days.get(by_cell[e.cell_id].manager_id, ())]
+
+    # Option list — the org scope, unnarrowed by the record picks, so choosing
+    # a category never shortens the list it was chosen from.
+    categories = sorted({e.category for e in events if e.category})
+
+    if cats:
+        keep = set(cats)
+        events = [e for e in events if e.category in keep]
+
+    hc = idle_source.cell_headcount(db, cells, date_from, date_to)
+
+    # (cell, day) → rows, and (cell, day, category) → rows.
+    per_day: dict[tuple[int, str], list] = defaultdict(list)
+    per_cat: dict[tuple[int, str, str], list] = defaultdict(list)
+    for e in events:
+        per_day[(e.cell_id, e.date)].append(e)
+        per_cat[(e.cell_id, e.date, e.category)].append(e)
+
+    cell_acc: dict[int, _Acc] = defaultdict(_Acc)
+    cat_acc: dict[tuple[int, str], _Acc] = defaultdict(_Acc)
+    # Σ of the per-category unions, i.e. what the categories under a cell add up
+    # to. Compared against the cell's own union to say how many minutes carried
+    # two causes at once — the one number that explains why they differ.
+    cat_sum: dict[int, int] = defaultdict(int)
+
+    for (cid, d), rows in per_day.items():
+        n = hc.get((cid, d))
+        rate = rate_for(date.fromisoformat(d))
+        cell_acc[cid].add(_union(rows), n, rate)
+
+    for (cid, d, cat), rows in per_cat.items():
+        n = hc.get((cid, d))
+        rate = rate_for(date.fromisoformat(d))
+        m = _union(rows)
+        cat_acc[(cid, cat)].add(m, n, rate)
+        cat_sum[cid] += m
+
+    # Which source answered «how many people» across this range — the typed
+    # «Bugungi fakt» from `zagruzka_source.ZAGRUZKA_FROM`, the counted
+    # attendance before it. A range straddling the floor read BOTH, so it
+    # answers None: naming one of them would pass the other off as it.
+    _lo_typed = zagruzka_source.uses_production(date_from)
+    _hi_typed = zagruzka_source.uses_production(date_to)
+    hc_typed = _lo_typed if _lo_typed == _hi_typed else None
+
+    # ── roll up ──────────────────────────────────────────────────────────────
+    cells_by_mgr: dict[int, list[dict]] = defaultdict(list)
+    for cid, acc in cell_acc.items():
+        c = by_cell.get(cid)
+        if not c or acc.minutes <= 0:
+            continue
+        row = acc.out()
+        row.update({
+            "cell_id": cid,
+            "code": c.verifix_code,
+            "leader": leaders.get(c.leader_id),
+            "hc_typed": hc_typed,
+            "cat_sum": cat_sum.get(cid, 0),
+            "cats": sorted(
+                ({"category": cat, **a.out()}
+                 for (ccid, cat), a in cat_acc.items() if ccid == cid),
+                key=lambda r: (-r["minutes"], r["category"]),
+            ),
+        })
+        cells_by_mgr[c.manager_id].append(row)
+
+    rows: list[dict] = []
+    for mid, cell_rows in cells_by_mgr.items():
+        m = managers.get(mid)
+        if not m:
+            continue
+        acc = _Acc()
+        for c in cell_rows:
+            acc.minutes += c["minutes"]
+            acc.priced += c["priced_minutes"]
+            acc.cost += c["cost"] or 0
+            if c["hc"] is not None:
+                acc.person_min += c["hc"] * c["priced_minutes"]
+        cell_rows.sort(key=lambda r: (-(r["cost"] or 0), -r["minutes"]))
+        rows.append({
+            "manager_id": mid,
+            "manager": m.name,
+            "shift": m.shift,
+            **acc.out(),
+            "cells": cell_rows,
+        })
+    rows.sort(key=lambda r: (-(r["cost"] or 0), -r["minutes"]))
+
+    total = _Acc()
+    for r in rows:
+        total.minutes += r["minutes"]
+        total.priced += r["priced_minutes"]
+        total.cost += r["cost"] or 0
+        if r["hc"] is not None:
+            total.person_min += r["hc"] * r["priced_minutes"]
+
+    return {
+        "rows": rows,
+        "totals": {**total.out(), "days": len(all_days),
+                   "managers": len(rows),
+                   "cells": sum(len(r["cells"]) for r in rows)},
+        "options": {
+            "managers": sorted(
+                ({"id": m.id, "name": m.name, "shift": m.shift}
+                 for m in managers.values()),
+                key=lambda r: (r["name"] or "").lower()),
+            "cells": sorted(
+                ({"id": c.id, "code": c.verifix_code,
+                  "leader": leaders.get(c.leader_id), "manager_id": c.manager_id}
+                 for c in cells),
+                key=lambda r: (r["code"] or "").lower()),
+            "categories": categories,
+        },
+    }
+
+
+def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
+            date_from: date, date_to: date,
+            rate_for: Callable[[date], Optional[float]]) -> dict:
+    """Every filed event behind one (cell, category) cell of the tree.
+
+    Each row is priced on its OWN minutes, which is what a person checking a
+    figure expects to be able to add up. Where two events of this category
+    overlap, that sum exceeds the union the table row shows — so both totals
+    ride on the payload and the modal names them separately rather than
+    printing one and letting the other be discovered. Same rule
+    `UnitOjidaniyaModal` follows.
+    """
+    cell = db.query(Cell).filter(Cell.id == cell_id,
+                                 Cell.manager_id == manager_id).first()
+    if not cell:
+        return {"entries": [], "sum_minutes": 0, "union_minutes": 0}
+
+    units = idle_source.cell_units(db)
+    days = [d.isoformat() for d in _days(date_from, date_to)
+            if idle_source.uses_cells(units, manager_id, d)]
+    rows = _events(db, [cell], days)
+    if category:
+        rows = [r for r in rows if r.category == category]
+    rows.sort(key=lambda r: (r.date, idle_intervals.to_min(r.start) or 0), reverse=True)
+    rows = rows[:MAX_ENTRIES]
+
+    hc = idle_source.cell_headcount(db, [cell], date_from, date_to)
+
+    out = []
+    for r in rows:
+        d = date.fromisoformat(r.date)
+        n = hc.get((cell.id, r.date))
+        rate = rate_for(d)
+        m = idle_intervals.duration(r.start, r.end)
+        out.append({
+            "id": r.id,
+            "date": r.date,
+            "start": r.start,
+            "end": r.end,
+            "minutes": m,
+            "hours": round(m / 60.0, 2),
+            "hc": None if n is None else round(n, 2),
+            "rate": rate,
+            "cost": None if (n is None or rate is None) else round(m / 60.0 * n * rate),
+            "category": r.category,
+            "note": r.note or "",
+        })
+
+    return {
+        "cell_id": cell.id,
+        "code": cell.verifix_code,
+        "category": category,
+        "entries": out,
+        "sum_minutes": sum(e["minutes"] for e in out),
+        "union_minutes": _union(rows),
+        "truncated": len(out) >= MAX_ENTRIES,
+    }
+
+
+def retotal(rows: list[dict], base: dict) -> dict:
+    """Re-sum the totals after the caller has narrowed `rows` to a cell pick.
+
+    The cell filter is applied to the finished tree rather than to the query, so
+    the option lists it is chosen from are not shortened by the choice — which
+    means the totals have to be rebuilt from what survived. Keeping `base`'s
+    `days` is deliberate: the period is what the reader selected, not what
+    happens to have events in it, and «kunlik o'rtacha» divides by the period.
+    """
+    acc = _Acc()
+    for r in rows:
+        acc.minutes += r["minutes"]
+        acc.priced += r["priced_minutes"]
+        acc.cost += r["cost"] or 0
+        if r["hc"] is not None:
+            acc.person_min += r["hc"] * r["priced_minutes"]
+    return {**acc.out(), "days": base.get("days", 0), "managers": len(rows),
+            "cells": sum(len(r.get("cells") or []) for r in rows)}

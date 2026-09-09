@@ -17,10 +17,11 @@ from app.models import (Cell, CellOjidaniyaInterval, DowntimeData, Factory, Mana
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services import (action_log, deck_narrative, idle_intervals, idle_source,
-                          ojidaniya_deck, ojidaniya_matrix, report_week,
-                          zagruzka_source)
+                          ojidaniya_cost, ojidaniya_deck, ojidaniya_matrix,
+                          report_week, wage_rate, zagruzka_source)
 from app.xlsx_delivery import PPTX_MIME, deliver_file, deliver_xlsx
-from app.services.ojidaniya_export import (build_matrix_workbook,
+from app.services.ojidaniya_export import (build_cost_workbook,
+                                           build_matrix_workbook,
                                            build_ojidaniya_workbook)
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
@@ -1253,3 +1254,247 @@ def export_downtime_deck(
         caption=(f"📊 Yacheykalardagi kutish vaqtlari · {data['period']}\n"
                  f"{data['factory']} · {ojidaniya_deck.num(data['total'])} daqiqa · "
                  f"{data['events']} hodisa"))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# «Xarajat» — what stopped waiting COST in wages
+#
+# A third view over the same register. It is the one measure on this page that
+# is a SUM rather than the headcount-weighted mean every KPI reads, so its
+# minutes deliberately do not match the «Tahlil» tab's — the same relationship
+# «Toifalar bo'yicha» already has, and the card says so before anybody reads a
+# figure. Scoped exactly as the page is (`scoped_manager_ids`), so a supervisor
+# reads their own unit's bill and nobody else's.
+# ═════════════════════════════════════════════════════════════════════════════
+
+# The tree is bounded by cells × categories, not by days, but the EVENT query
+# is not — so the period is capped, the same 400 days the page's own export is.
+_COST_MAX_DAYS = 400
+
+
+def _cost_scope(db: Session, payload: dict, factory: Optional[int],
+                shift: Optional[int], manager_id: List[int]) -> list[int]:
+    """The unit ids this viewer may price, after the plant lock and their own
+    supervisor filter. An EMPTY list is a real answer — «no unit matches» — and
+    is never read as «no narrowing»."""
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    if empty_scope(scoped):
+        return []
+    q = db.query(Manager.id).filter(Manager.archived.is_(False))
+    if shift:
+        q = q.filter(Manager.shift == shift)
+    if scoped is not None:
+        q = q.filter(Manager.id.in_(scoped))
+    return [r[0] for r in q.all()]
+
+
+def _cost_window(date_from: Optional[date], date_to: Optional[date]) -> tuple:
+    if not date_to:
+        date_to = date.today()
+    if not date_from:
+        date_from = date_to - timedelta(days=13)
+    if date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from is after date_to")
+    if (date_to - date_from).days + 1 > _COST_MAX_DAYS:
+        raise HTTPException(status_code=400,
+                            detail=f"Period longer than {_COST_MAX_DAYS} days")
+    return date_from, date_to
+
+
+@router.get("/downtime/cost")
+def get_downtime_cost(
+    date_from: date = Query(default=None),
+    date_to: date = Query(default=None),
+    shift: Optional[int] = Query(default=None),
+    # MULTI-select here, unlike the page's other two views: this tab keeps its
+    # own filter state, so a reader can price several units against each other
+    # without disturbing what the Analysis tab is showing.
+    manager_id: List[int] = Query(default=[]),
+    cell_id: List[int] = Query(default=[]),
+    cats: List[str] = Query(default=[]),
+    factory: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """Brigadir → yacheyka → toifa, with minutes, hours and cost at every level.
+
+    `kpi_only` is deliberately absent: EVERY category is priced here, Cat H
+    included, because a cell stopped for cleaning pays the same wages as a cell
+    stopped for a broken mixer. `stopped` is absent for the same kind of reason
+    — a wait the cell worked through cost nothing, so there is no second half of
+    this measure to switch to.
+    """
+    date_from, date_to = _cost_window(date_from, date_to)
+    ids = _cost_scope(db, payload, factory, shift, manager_id)
+    periods = wage_rate.load(db)
+    out = ojidaniya_cost.build(db, ids, date_from, date_to, cats,
+                               wage_rate.resolver(periods))
+    if cell_id:
+        # Narrowed AFTER the tree is built so the cell option list — and the
+        # cascade the client drives off it — is not shortened by its own pick.
+        keep = set(cell_id)
+        rows = []
+        for r in out["rows"]:
+            cells = [c for c in r["cells"] if c["cell_id"] in keep]
+            if cells:
+                rows.append({**r, "cells": cells})
+        out["rows"] = rows
+        out["totals"] = ojidaniya_cost.retotal(rows, out["totals"])
+    out["rates"] = periods
+    out["can_edit_rates"] = payload.get("role") == "admin"
+    return out
+
+
+@router.get("/downtime/cost/entries")
+def get_downtime_cost_entries(
+    manager_id: int = Query(...),
+    cell_id: int = Query(...),
+    category: Optional[str] = Query(default=None),
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    factory: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """Every event behind one (cell, category) — the modal.
+
+    `manager_id` is a query parameter, so the scope is re-decided here: a viewer
+    who cannot see the unit in the table cannot read its events either.
+    """
+    date_from, date_to = _cost_window(date_from, date_to)
+    ids = _cost_scope(db, payload, factory, None, [manager_id])
+    if manager_id not in ids:
+        raise HTTPException(status_code=403, detail="Out of scope")
+    return ojidaniya_cost.entries(db, manager_id, cell_id, category,
+                                  date_from, date_to,
+                                  wage_rate.resolver(wage_rate.load(db)))
+
+
+# ── the wage timeline ────────────────────────────────────────────────────────
+class WageRatesBody(BaseModel):
+    periods: List[dict]
+    # The window the confirm counted its «N days re-priced» over, echoed back so
+    # the log records the reach the admin was actually shown.
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+@router.get("/downtime/wage-rates")
+def get_wage_rates(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """Readable by everyone who can open the tab — the rate is derivable from
+    any priced row anyway, so hiding it would only make the figures
+    unexplainable. Writing is a different decision; see below."""
+    return {"periods": wage_rate.load(db),
+            "can_edit": payload.get("role") == "admin"}
+
+
+@router.put("/downtime/wage-rates")
+def put_wage_rates(
+    request: Request,
+    body: WageRatesBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """Replace the whole timeline. **Admin only**, checked here and not merely
+    by hiding the ⚙: this sets what every unit's waiting is said to have cost,
+    and the endpoint is reachable without the UI.
+
+    The whole list in one PUT because a border SPLITS two adjacent periods at
+    once — a row-at-a-time API would leave the table holding a gap that
+    `wage_rate.resolve` would answer through.
+    """
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
+    before = wage_rate.load(db)
+    try:
+        after = wage_rate.save(db, body.periods)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+
+    moved = None
+    try:
+        if body.date_from and body.date_to:
+            moved = wage_rate.affected_days(before, after,
+                                            date.fromisoformat(body.date_from),
+                                            date.fromisoformat(body.date_to))
+    except ValueError:
+        moved = None
+    action_log.enrich(
+        target_kind="setting", target_id="wage_rate_periods",
+        details=[("periods", len(after)), ("was", len(before)),
+                 ("days_repriced", moved)],
+    )
+    return {"periods": after, "days_repriced": moved}
+
+
+class CostExportBody(BaseModel):
+    date_from: str
+    date_to: str
+    shift: Optional[int] = None
+    manager_id: List[int] = []
+    cell_id: List[int] = []
+    cats: List[str] = []
+    factory: Optional[int] = None
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    scope: List[dict] = []
+    labels: dict = {}
+    cats_meta: dict = {}
+
+
+@router.post("/downtime/cost.xlsx")
+def export_downtime_cost(
+    request: Request,
+    body: CostExportBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime", "daily")),
+):
+    """The tab as a workbook — a SEPARATE file from the page's own «Excel»,
+    because it carries a different measure.
+
+    The client sends the SCOPE and the WORDS; every figure is computed here,
+    through the same `ojidaniya_cost.build` the screen reads, so the file can
+    never state a number the tab it was pressed on does not.
+    """
+    try:
+        d1, d2 = date.fromisoformat(body.date_from), date.fromisoformat(body.date_to)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date")
+    d1, d2 = _cost_window(d1, d2)
+
+    ids = _cost_scope(db, payload, body.factory, body.shift, body.manager_id)
+    out = ojidaniya_cost.build(db, ids, d1, d2, body.cats,
+                               wage_rate.resolver(wage_rate.load(db)))
+    rows = out["rows"]
+    if body.cell_id:
+        keep = set(body.cell_id)
+        rows = [{**r, "cells": [c for c in r["cells"] if c["cell_id"] in keep]}
+                for r in rows]
+        rows = [r for r in rows if r["cells"]]
+        out["totals"] = ojidaniya_cost.retotal(rows, out["totals"])
+
+    tot = dict(out["totals"])
+    tot["perDay"] = (round(tot["cost"] / tot["days"])
+                     if tot.get("cost") and tot.get("days") else None)
+    blob = build_cost_workbook({
+        "title": body.title or "Ojidaniya xarajati",
+        "subtitle": body.subtitle or "",
+        "scope": body.scope, "labels": body.labels, "cats": body.cats_meta,
+        "rows": rows, "totals": tot,
+    }).getvalue()
+
+    fname = f"ojidaniya-xarajat-{body.date_from}_{body.date_to}.xlsx"
+    resp = deliver_xlsx(request, payload, blob, fname)
+    action_log.enrich(
+        target_kind="report", target_id=fname,
+        details=[("file", fname), ("rows", len(rows)), ("size", len(blob)),
+                 ("from_date", body.date_from), ("to_date", body.date_to),
+                 ("cost", tot.get("cost")),
+                 ("unpriced_min", tot.get("unpriced_minutes"))],
+    )
+    return resp

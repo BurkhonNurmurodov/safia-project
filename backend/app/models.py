@@ -3581,3 +3581,57 @@ class EducationLessonView(Base):
                        nullable=False, index=True)
     profile_key = Column(String(80), nullable=False, index=True)
     first_seen_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class WageRatePeriod(Base):
+    """One period of the HOURLY WAGE that prices ojidaniya on /downtime →
+    «Xarajat» — the ``w`` in ``daqiqa ÷ 60 × odam soni × w``.
+
+    The rows form a CONTIGUOUS timeline with no gaps: each opens on its
+    ``effective_from`` and runs until the next one opens, the last open-ended.
+    ``effective_from IS NULL`` is the first period, "from the beginning", and
+    there is at most one of those. An admin never creates a period directly —
+    they put a BORDER on a date, which splits whichever period contains it in
+    two, so a gap is unrepresentable by construction.
+
+    **Why the rate is dated at all.** A cost figure that is read, quoted and
+    forwarded must not change afterwards. A single settings row would re-price
+    every day ever recorded the moment somebody typed a raise, so last month's
+    report would silently stop matching the number people acted on. Each DAY is
+    priced at the rate in force ON that day (``services/wage_rate.resolve``),
+    which is the one shape that lets a raise be entered without rewriting
+    history. Editing a PAST period's rate is still a rewrite — deliberately
+    possible, because a rate typed wrong has to be fixable — so that Save
+    confirms and names how many days it moves.
+
+    **``rate_uzs`` NULL means UNSET, never zero.** "Nobody has said what this
+    period costs" and "this period cost nothing" are different facts, and only
+    the first is true of a period an admin has not filled in. Days inside such
+    a period carry NO cost: they print «—» and their minutes are counted and
+    named as unpriced, the same rule ``idle_source.cell_headcount`` already
+    applies to a cell nobody typed a headcount for. A 0 there would quietly
+    understate the plant's whole bill.
+
+    Nothing is stored per day and nothing is denormalised onto an ojidaniya
+    row, so correcting the timeline re-prices every affected surface at once
+    with no migration and no re-sync — the property ``idle_source`` already
+    has.
+    """
+    __tablename__ = "wage_rate_periods"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    # NULL = the open first period ("Boshidan"). At most one such row.
+    effective_from = Column(Date, nullable=True)
+    # UZS per person per hour. NULL = not set yet ⇒ those days are unpriced.
+    rate_uzs       = Column(Numeric(14, 2), nullable=True)
+
+    # Expression index for the reason `uq_ltask_day` is one: NULLs are DISTINCT
+    # inside a Postgres unique key, so a plain UniqueConstraint on a nullable
+    # column would happily accept two "from the beginning" rows and leave the
+    # resolver picking one of them arbitrarily. COALESCE folds the open row onto
+    # a single value, so "one first period" is a guarantee of the schema rather
+    # than of whoever last edited the writer.
+    __table_args__ = (
+        Index("uq_wage_rate_from",
+              text("coalesce(effective_from, '0001-01-01'::date)"), unique=True),
+    )
