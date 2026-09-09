@@ -357,6 +357,14 @@ def _release_leader_cells(db: Session, leader_id: int) -> None:
 # The remaining tables carry the id with no constraint and would be left
 # pointing at a profile that no longer exists.
 #
+# The id is only the FIRST hop, and the second is where this list keeps going
+# stale: `leader_task_days` is itself the parent of five FK'd children, so a
+# feature that hangs a new table off a filed day silently makes profile deletion
+# impossible for every leader who ever used it. That is what the late-proof
+# chain did — one proof filed on one day, and the delete 500'd. When adding a
+# table that references a day, an entry or a review, add it HERE too; the count
+# below is what the admin is promised, and the delete is what has to survive it.
+#
 # Every table gets ONE of three treatments, and which one is a judgement about
 # the ROW, not about whether a constraint happens to exist:
 #
@@ -375,6 +383,8 @@ _LEADER_CONFIG_REFS = [
     ("leader_task_leader_settings", "leader_id"),   # FK — per-leader task overrides
     ("leader_task_pending_changes", "leader_id"),   # edits scheduled for a profile that ends here
     ("leader_task_captures",        "leader_id"),   # a bot capture left mid-flow
+    ("leader_task_examples",        "leader_id"),   # the example photo shown to THIS leader
+    ("leader_day_sources",          "leader_profile_id"),  # which layer counted, per day
 ]
 
 _LEADER_DETACH_REFS = [
@@ -406,6 +416,7 @@ def _leader_footprint(db: Session, leader_id: int) -> dict:
         "days":     n("leader_task_days", "leader_id"),
         "photos":   n("leader_task_photos", "leader_id"),
         "reviews":  n("leader_ai_reviews", "leader_id"),
+        "late":     n("leader_late_proofs", "leader_id"),
         "cells":    n("cells", "leader_id"),
         "tasks":    n("leader_tasks", "leader_profile_id"),
         "concerns": n("leader_concerns", "leader_profile_id"),
@@ -413,8 +424,13 @@ def _leader_footprint(db: Session, leader_id: int) -> dict:
     return {k: v for k, v in counts.items() if v}
 
 
-# The half of the footprint that no undo can reach.
-_LEADER_DESTROYS = ("days", "photos", "reviews")
+# The half of the footprint that no undo can reach. A late proof hangs off a
+# filed day by a NOT NULL FK, so it cannot outlive one either — and two people
+# ruled on it, which is exactly the kind of work an admin should be told they
+# are about to destroy rather than left to discover. It can never be the ONLY
+# thing here (a proof needs a day), so naming it changes what the dialog says,
+# never whether it appears.
+_LEADER_DESTROYS = ("days", "photos", "reviews", "late")
 
 
 def _purge_leader_profile(db: Session, leader_id: int) -> None:
@@ -427,14 +443,26 @@ def _purge_leader_profile(db: Session, leader_id: int) -> None:
     def ex(sql: str) -> None:
         db.execute(text(sql), {"lid": leader_id})
 
-    # The filed days, children first: media hangs off an entry, entries and
-    # photos off the day, and each of those three links is a FK of its own.
+    # The filed days, children first. FIVE tables hang off leader_task_days by a
+    # FK of its own — entries (and media under those), photos, and both halves of
+    # the late-proof chain — so every one of them has to go before the day can.
+    # Miss one and the day survives, the profile DELETE is refused, and the whole
+    # endpoint becomes the bare «Internal Server Error» this list exists to
+    # prevent: a single late proof filed on a single day was enough.
     ex("DELETE FROM leader_task_media WHERE entry_id IN "
        "(SELECT e.id FROM leader_task_entries e "
        " JOIN leader_task_days d ON d.id = e.day_id WHERE d.leader_id = :lid)")
     ex("DELETE FROM leader_task_entries WHERE day_id IN "
        "(SELECT id FROM leader_task_days WHERE leader_id = :lid)")
     ex("DELETE FROM leader_task_photos WHERE leader_id = :lid")
+    # The proof filed after the deadline, its photos, and the draft roll shot
+    # before the reason was written. Keyed by leader_id like the photos above —
+    # both columns are NOT NULL and a late proof is always filed on its own
+    # leader's day, so the two keys select the same rows.
+    ex("DELETE FROM leader_late_proof_media WHERE late_id IN "
+       "(SELECT id FROM leader_late_proofs WHERE leader_id = :lid)")
+    ex("DELETE FROM leader_late_proofs      WHERE leader_id = :lid")
+    ex("DELETE FROM leader_late_proof_shots WHERE leader_id = :lid")
     ex("DELETE FROM leader_task_days WHERE leader_id = :lid")
     # And what the reviewer wrote about those days.
     ex("DELETE FROM leader_ai_disputes WHERE leader_id = :lid")

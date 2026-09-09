@@ -33,7 +33,7 @@ from __future__ import annotations
 from datetime import date
 from html import escape
 
-from app.services.forecast_card import _RU_WD_NOM, _t, basis_line
+from app.services.forecast_card import _RU_WD_NOM, _fmt_min, _t, basis_line
 
 # The media id the figure resolves against; the sender attaches the PNG under
 # it. Must match the ``id`` in the sendRichMessage media array.
@@ -78,7 +78,7 @@ def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
     wd = target.weekday()
     wd_name = _RU_WD_NOM[wd] if lang == "ru" else t["wd"][wd]
     name = _esc(data["name"])
-    fc, hi = data["forecast"], data["band_hi"]
+    fc, hi, plan = data["forecast"], data["band_hi"], data["plan_mean"]
     people = _esc(t["people"])
 
     parts = [f"<h3>{_esc(title)}</h3>"]
@@ -97,6 +97,11 @@ def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
         f'<b>{fc if fc is not None else "—"} {people}</b></td></tr>\n'
         f'<tr><td>⚠️ {_esc(t["max"])}</td><td align="right">'
         f'{hi if hi is not None else "—"} {people}</td></tr>\n'
+        # The plan the count is for, in the plant's own unit. Brigadirs read
+        # trudoyomkost all day on «Zagruzka fayli»; the count alone made them
+        # take the minutes on trust.
+        f'<tr><td>📄 {_esc(t["plan"])}</td><td align="right">'
+        f'{_fmt_min(plan) if plan is not None else "—"} {_esc(t["min"])}</td></tr>\n'
         '</table>')
 
     if fc is None:

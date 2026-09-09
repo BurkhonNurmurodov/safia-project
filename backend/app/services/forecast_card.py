@@ -70,6 +70,7 @@ L = {
         "max": "Maksimum", "load": "Zagruzka foizi", "people": "nafar",
         "chart": "Oxirgi 3 ta {wd} · odam soni", "forecast": "Prognoz",
         "fact": "Amaldagi", "sup": "Brigadir", "day": "Sana",
+        "plan": "Trudoyomkost (reja)",
         "band": "Ehtimoliy oraliq", "min": "daq", "nodata": "Ma'lumot yo'q",
         "none": "Bu kun uchun yetarli tarix yo'q — prognoz hisoblanmadi.",
         "basis": "{have} ta hafta {want} tadan · o'rtacha {mean} nafar",
@@ -83,6 +84,7 @@ L = {
         "max": "Максимум", "load": "Загрузка фоизи", "people": "нафар",
         "chart": "Охирги 3 та {wd} · одам сони", "forecast": "Прогноз",
         "fact": "Амалдаги", "sup": "Бригадир", "day": "Сана",
+        "plan": "Трудоёмкост (режа)",
         "band": "Эҳтимолий оралиқ", "min": "дақ", "nodata": "Маълумот йўқ",
         "none": "Бу кун учун етарли тарих йўқ — прогноз ҳисобланмади.",
         "basis": "{have} та ҳафта {want} тадан · ўртача {mean} нафар",
@@ -96,6 +98,7 @@ L = {
         "max": "Максимум", "load": "Процент загрузки", "people": "чел.",
         "chart": "Последние 3 {wd} · количество людей", "forecast": "Прогноз",
         "fact": "Факт", "sup": "Бригадир", "day": "Дата",
+        "plan": "Трудоёмкость (план)",
         "band": "Вероятный диапазон", "min": "мин", "nodata": "Нет данных",
         "none": "За этот день недостаточно истории — прогноз не рассчитан.",
         "basis": "{have} из {want} недель · среднее {mean} чел.",
@@ -109,6 +112,7 @@ L = {
         "max": "Maximum", "load": "Load percentage", "people": "workers",
         "chart": "Last 3 {wd}s · worker count", "forecast": "Forecast",
         "fact": "Actual", "sup": "Supervisor", "day": "Date",
+        "plan": "Labour (plan)",
         "band": "Likely range", "min": "min", "nodata": "No data",
         "none": "Not enough history for this day — no forecast was computed.",
         "basis": "{have} of {want} weeks · mean {mean} workers",
@@ -192,8 +196,23 @@ def collect(row: dict, target: date, weeks: int) -> dict:
             "workers": (s or {}).get("workers"),
             "plan_min": (s or {}).get("plan_min"),
         })
+    # The forecast of the PLAN, in minutes: the mean of the same three weeks the
+    # worker count is averaged over, taken over the weeks that HAVE a plan —
+    # exactly the sample set behind the count.
+    #
+    # It is deliberately NOT ``forecast × capacity_min``. That back-derivation
+    # would always divide back to the count on screen, but it is a number nobody
+    # recorded — the count restated in minutes rather than the trudoyomkost the
+    # sheet actually carried. **Consequence to know, and NOT a bug to fix:** the
+    # count averages each week's ROUNDED worker figure, so on about a quarter of
+    # the units this mean ÷ capacity lands one person away from the recommended
+    # count (28 276 ÷ 432 = 65 beside a recommendation of 66). Making the two
+    # agree means changing how the RECOMMENDATION is computed — which is the
+    # number the automatic send DMs the plant — not how this one is displayed.
+    plans = [s["plan_min"] for s in slots if s["plan_min"] is not None]
     return {
         "slots": slots,
+        "plan_mean": (sum(plans) / len(plans)) if plans else None,
         "target": target,
         "forecast": row.get("forecast"),
         "band_lo": row.get("band_lo"),

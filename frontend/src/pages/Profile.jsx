@@ -64,6 +64,7 @@ const IMPACT_KEYS = [
   ["days",     "admin.profiles.impactDays"],
   ["photos",   "admin.profiles.impactPhotos"],
   ["reviews",  "admin.profiles.impactReviews"],
+  ["late",     "admin.profiles.impactLate"],
   ["cells",    "admin.profiles.impactCells"],
   ["tasks",    "admin.profiles.switchImpactTasks"],
   ["concerns", "admin.profiles.switchImpactConcerns"],
