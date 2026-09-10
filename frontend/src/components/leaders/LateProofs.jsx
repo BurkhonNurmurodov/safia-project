@@ -102,6 +102,8 @@ const TXT = {
     noteReq: "Izoh yozing.",
     notePh: "Sababni yozing…",
     cRejectHint: "Nega rad etyapsiz? Sabab liderga yuboriladi — bu oxirgi qaror.",
+    cApproveHint: "Ixtiyoriy — yozsangiz, liderga qaror bilan birga yuboriladi.",
+    noteOpt: "shart emas",
     okReject: "Rad etildi", okUplift: "Adminlarga yuborildi", okApprove: "Tasdiqlandi",
     fail: "Bajarilmadi",
     emptyT: "Kechikkan isbot yo'q",
@@ -137,6 +139,8 @@ const TXT = {
     noteReq: "Изоҳ ёзинг.",
     notePh: "Сабабни ёзинг…",
     cRejectHint: "Нега рад этяпсиз? Сабаб лидерга юборилади — бу охирги қарор.",
+    cApproveHint: "Ихтиёрий — ёзсангиз, лидерга қарор билан бирга юборилади.",
+    noteOpt: "шарт эмас",
     okReject: "Рад этилди", okUplift: "Админларга юборилди", okApprove: "Тасдиқланди",
     fail: "Бажарилмади",
     emptyT: "Кечиккан исбот йўқ",
@@ -172,6 +176,8 @@ const TXT = {
     noteReq: "Напишите комментарий.",
     notePh: "Напишите причину…",
     cRejectHint: "Почему вы отклоняете? Причину отправят лидеру — это последнее решение.",
+    cApproveHint: "Необязательно — если напишете, лидер получит это вместе с решением.",
+    noteOpt: "необязательно",
     okReject: "Отклонено", okUplift: "Передано администраторам", okApprove: "Принято",
     fail: "Не выполнено",
     emptyT: "Поздних подтверждений нет",
@@ -207,6 +213,8 @@ const TXT = {
     noteReq: "Write a comment.",
     notePh: "Write the reason…",
     cRejectHint: "Why are you refusing? The leader is told the reason — this is the last word.",
+    cApproveHint: "Optional — if you write one, the leader gets it with the decision.",
+    noteOpt: "optional",
     okReject: "Rejected", okUplift: "Passed to the admins", okApprove: "Approved",
     fail: "Failed",
     emptyT: "No late proofs",
@@ -367,19 +375,28 @@ export default function LateProofs({ scope, onClearScope }) {
 
   // WHICH rulings collect text, and it is a property of the ROW as well as of
   // the verb — the twin rule in «Norozliklar» next door, and the one the server
-  // applies. Passing it up always does. REFUSING does at the admin stage only:
-  // that is the end of the chain — the leader did the work, filed it late,
-  // explained themselves to two people and has no route left — and the reason
-  // travels to them in the notice, so it cannot be blank. A brigadir's refusal
-  // stays a plain confirm; they are not the last word.
-  const needsNote = (c) => !!c && (c.kind === "uplift"
-    || (c.kind === "reject" && c.item?.status === "admin"));
+  // applies. Two questions, deliberately separate: does this ruling OFFER a
+  // comment, and does it DEMAND one.
+  //
+  // Every admin-stage ruling offers one — a refusal and an approval alike land
+  // in the leader's notice. Passing it up offers one too.
+  //
+  // Only two DEMAND it. Uplifting, because an admin ruling on a reason they
+  // have no context for is a coin toss. And REFUSING at the admin stage,
+  // because that is the end of the chain — the leader did the work, filed it
+  // late, explained themselves to two people and has no route left. APPROVING
+  // demands nothing: the outcome is its own answer. Nor does a brigadir's
+  // refusal; they are not the last word.
+  const collectsNote = (c) => !!c && (c.kind === "uplift"
+    || c.item?.status === "admin");
+  const noteRequired = (c) => !!c && (c.kind === "uplift" || c.kind === "reject");
   const rejecting = !!confirm && confirm.kind === "reject";
+  const approving = !!confirm && confirm.kind === "approve";
 
   const run = () => {
     if (!confirm) return;
     const { kind, item } = confirm;
-    if (needsNote(confirm) && !note.trim()) {
+    if (noteRequired(confirm) && !note.trim()) {
       setNoteErr(T.noteReq);
       return;
     }
@@ -622,50 +639,62 @@ export default function LateProofs({ scope, onClearScope }) {
 
       <Lightbox src={shot} onClose={() => setShot(null)} />
 
-      {/* Approve is a plain confirm. A ruling that COLLECTS a required comment
-          is a FORM — the Modal template, not a ConfirmDialog carrying a field
-          it was never built to hold. Which is which is `needsNote`, so the
-          admin's refusal reaches the same form the uplift does rather than
-          growing a second one beside it. */}
+      {/* A brigadir's one-tap refusal is a plain confirm. A ruling that
+          COLLECTS a comment is a FORM — the Modal template, not a
+          ConfirmDialog carrying a field it was never built to hold. Which is
+          which is `collectsNote`, so both admin-stage rulings reach ONE form
+          rather than growing two beside each other; `noteRequired` is the
+          separate question of whether the field may be left empty. */}
       <ConfirmDialog
-        open={!!confirm && !needsNote(confirm)}
+        open={!!confirm && !collectsNote(confirm)}
         tone={rejecting ? "danger" : undefined}
         title={cText.t}
         message={cText.m}
         error={noteErr || undefined}
-        confirmLabel={confirm?.kind === "approve" ? T.btnApprove : T.btnReject}
+        confirmLabel={approving ? T.btnApprove : T.btnReject}
         loading={decide.isPending}
         onConfirm={run}
         onCancel={close}
       />
 
       <Modal
-        open={needsNote(confirm)}
+        open={collectsNote(confirm)}
         onClose={close}
         title={cText.t}
-        icon={rejecting ? <Ban size={16} /> : <ArrowUpCircle size={16} />}
+        icon={rejecting ? <Ban size={16} />
+          : approving ? <ShieldCheck size={16} /> : <ArrowUpCircle size={16} />}
         subtitle={confirm?.item ? `${tl(confirm.item.leader)} · ${day(confirm.item.date)}` : ""}
         footer={
           <>
             <Button variant="secondary" onClick={close}>{T.cancel}</Button>
-            <Button variant={rejecting ? "danger" : "primary"}
+            <Button variant={rejecting ? "danger" : approving ? "success" : "primary"}
               loading={decide.isPending} onClick={run}>
               {rejecting ? <><Ban size={14} />{T.btnReject}</>
-                : <><ArrowUpCircle size={14} />{T.btnUplift}</>}
+                : approving ? <><ShieldCheck size={14} />{T.btnApprove}</>
+                  : <><ArrowUpCircle size={14} />{T.btnUplift}</>}
             </Button>
           </>
         }
       >
-        {/* The consequence stays on screen while the reason for it is typed —
-            the same sentence the plain confirm would have shown. */}
-        {rejecting && (
+        {/* The consequence stays on screen while the comment is typed — the
+            same sentence the plain confirm would have shown. An approval needs
+            it MOST: it gives the point back and re-scores the day, and that
+            used to be the whole content of its confirm. */}
+        {!!confirm && confirm.kind !== "uplift" && (
           <p className="text-[12px] leading-snug mb-3" style={{ color: "var(--text-3)" }}>
             {cText.m}
           </p>
         )}
+        {/* An optional field says so ON THE LABEL, where the eye lands before
+            the box; a required one says it with `FormField`'s red star. An
+            approval must never grow one, or the fast path for the commonest
+            ruling on this queue becomes a typing exercise. */}
         <FormField
-          label={rejecting ? T.noteAdm : T.noteSup} required
-          hint={rejecting ? T.cRejectHint : T.cUpliftM}
+          label={approving ? `${T.noteAdm} · ${T.noteOpt}`
+            : rejecting ? T.noteAdm : T.noteSup}
+          required={noteRequired(confirm)}
+          hint={rejecting ? T.cRejectHint
+            : approving ? T.cApproveHint : T.cUpliftM}
           error={noteErr || undefined}>
           <textarea
             value={note}

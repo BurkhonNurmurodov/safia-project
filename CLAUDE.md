@@ -1864,6 +1864,29 @@ number.
   admin's undo reaches it, and the leader may file again), so forcing words
   there would be a rule with no consequence behind it. Same rule, same shape,
   in `leader_late_proof.decide_admin`.
+- **…but an approval may CARRY one, and it is optional** (2026-09-10, the
+  operator's directive). «Does this ruling OFFER a comment» and «does it DEMAND
+  one» are two questions and the client keeps them apart — `collectsNote` /
+  `noteRequired` in both queues, `noteRequired` on the day report. **Every
+  admin-stage ruling offers the box**, because an approval lands in the
+  leader's notice exactly as a refusal does and an admin who wants to explain
+  either should be able to; only uplifting and an admin's refusal demand it.
+  So all three rulings open ONE form rather than three, an optional field says
+  so on its LABEL (`FormField`'s red star is what a required one says), and
+  nothing blocks the Save — the commonest ruling on the queue must not become
+  a typing exercise. The backend needed no change: `decide_admin` already
+  stored `note` on an approval.
+  **The note is on its OWN LINE in every ruling notice now, and the services
+  pass `""` rather than «—» for an absent one** — `staff._render_body` drops a
+  line whose single placeholder is blank, so an approval nobody commented on
+  has no comment line, where an inline «Izoh: {note}» could only ever print
+  «Izoh: —». That fixed the same wart on `leader_dispute_approved`, which had
+  carried an optional `{note}` inline since it was written. Stored bell rows
+  keep whatever they were written with, so nothing already sent re-renders.
+  **Telegram approves on the TAP and offers no box** — an optional field in a
+  chat means either holding a ruling for text that may never arrive, or ruling
+  first and appending after the DM has gone. An admin who wants to comment
+  rules from the dashboard.
 - **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
   the «Qarorni bekor qilish» button under the objection box on the report page).
   Deciding is one tap and an ADMIN's own filing IS the approval, so the wrong
@@ -2613,8 +2636,9 @@ say about it.
   `rejected`, `late_proof_rejected` gained a `{note}` it never carried, the
   endpoint pre-checks with a 400, «Kechikkan isbotlar» opens the uplift's own
   form, and the Telegram card pauses on `lp:ar` for an `lp_arej` capture rather
-  than ruling on the tap. Approving needs none; the brigadir's stage-1 refusal
-  still needs none.
+  than ruling on the tap. Approving needs none — but it OFFERS the same box
+  (`late_proof_approved` gained a `{note}` line of its own for it); the
+  brigadir's stage-1 refusal still needs none.
 - **Nothing expires it.** An undecided row waits in both queues with a badge
   until a person acts. The default is already 0 points, so a silent auto-reject
   would only take the decision away from the two people the flow exists to put

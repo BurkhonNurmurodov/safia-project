@@ -418,9 +418,13 @@ def notify_decided(db: Session, d: LeaderAiDispute, *, stage: str) -> None:
         return
     by = d.sup_by_name if stage == "supervisor" else d.decided_by_name
     note = d.sup_note if stage == "supervisor" else d.decision_note
+    # BLANK and never «—»: the note is on its own line in every ruling
+    # template, and `_render_body` drops a line whose single placeholder is
+    # empty — so an approval nobody commented on has no comment line at all,
+    # instead of one reading «Izoh: —».
     params = {
         "date": d.date, "task": task_label(db, d),
-        "by": by or "—", "note": (note or "—").strip() or "—",
+        "by": by or "—", "note": (note or "").strip(),
     }
     tone = "success" if d.status == APPROVED else "info"
     try:

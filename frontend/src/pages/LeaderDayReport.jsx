@@ -84,6 +84,9 @@ const T_ALL = {
     refuseTitle: "Norozilikni rad etish",
     refuseIntro: "Nega rad etyapsiz? Sabab liderga yuboriladi — bu oxirgi qaror, vazifa og'irligisiz qoladi.",
     refusePh: "Sababni yozing…",
+    approveTitle: "Norozilikni qabul qilish",
+    approveIntro: "Ixtiyoriy — yozsangiz, liderga qaror bilan birga yuboriladi.",
+    approvePh: "Izoh (shart emas)…", noteOpt: "shart emas",
     okUplift: "Adminlarga yuborildi",
     approve: "Qabul qilish", refuse: "Rad etish",
     undo: "Qarorni bekor qilish", undoTitle: "Qaror bekor qilinsinmi?",
@@ -145,6 +148,9 @@ const T_ALL = {
     refuseTitle: "Норозиликни рад этиш",
     refuseIntro: "Нега рад этяпсиз? Сабаб лидерга юборилади — бу охирги қарор, вазифа оғирлигисиз қолади.",
     refusePh: "Сабабни ёзинг…",
+    approveTitle: "Норозиликни қабул қилиш",
+    approveIntro: "Ихтиёрий — ёзсангиз, лидерга қарор билан бирга юборилади.",
+    approvePh: "Изоҳ (шарт эмас)…", noteOpt: "шарт эмас",
     okUplift: "Админларга юборилди",
     approve: "Қабул қилиш", refuse: "Рад этиш",
     undo: "Қарорни бекор қилиш", undoTitle: "Қарор бекор қилинсинми?",
@@ -206,6 +212,9 @@ const T_ALL = {
     refuseTitle: "Отклонить возражение",
     refuseIntro: "Почему вы отклоняете? Причину отправят лидеру — это последнее решение, задача останется незачтённой.",
     refusePh: "Напишите причину…",
+    approveTitle: "Принять возражение",
+    approveIntro: "Необязательно — если напишете, лидер получит это вместе с решением.",
+    approvePh: "Комментарий (необязательно)…", noteOpt: "необязательно",
     okUplift: "Передано администраторам",
     approve: "Принять", refuse: "Отклонить",
     undo: "Отменить решение", undoTitle: "Отменить решение?",
@@ -267,6 +276,9 @@ const T_ALL = {
     refuseTitle: "Refuse the objection",
     refuseIntro: "Why are you refusing? The leader is told the reason — this is the last word, and the task stays unpointed.",
     refusePh: "Write the reason…",
+    approveTitle: "Uphold the objection",
+    approveIntro: "Optional — if you write one, the leader gets it with the decision.",
+    approvePh: "Comment (optional)…", noteOpt: "optional",
     okUplift: "Passed to the admins",
     approve: "Uphold", refuse: "Refuse",
     undo: "Undo the ruling", undoTitle: "Undo this ruling?",
@@ -583,19 +595,26 @@ export default function LeaderDayReport() {
   const [zoom, setZoom] = useState("");
   const [disputeTask, setDisputeTask] = useState(null);
   const [reason, setReason] = useState("");
-  // The task whose objection is being passed UP or REFUSED, and the note that
-  // goes with it. Both rulings collect text, so both are the same form —
-  // `noteFor.kind` is which. Uplifting needs the brigadir's case for the point;
-  // an ADMIN's refusal needs their reason, because that is the end of the
-  // chain (the leader loses the point for good and has no route left) and the
-  // reason is stated to them in their notice. Upholding, and a BRIGADIR's
-  // refusal, are one tap each: an approval's outcome is its own answer, and a
-  // brigadir is not the last word.
-  const [noteFor, setNoteFor] = useState(null);   // { t, kind: uplift|refuse }
+  // The task whose objection is being ruled on, and the note that goes with
+  // it. Every ruling that carries text is the SAME form — `noteFor.kind` is
+  // which — and two questions are kept apart inside it: whether a comment is
+  // OFFERED, and whether it is DEMANDED.
+  //
+  // All three admin-stage rulings offer one, because a refusal and an approval
+  // alike land in the leader's notice. Uplifting offers one too. Only
+  // uplifting and an ADMIN's refusal DEMAND it: the first because an admin
+  // ruling on a shift they were not on is a coin toss without the brigadir's
+  // case, the second because it is the end of the chain — the leader loses the
+  // point for good and has no route left. UPHOLDING demands nothing (the
+  // outcome is its own answer), and a BRIGADIR's refusal stays one tap: they
+  // are not the last word.
+  const [noteFor, setNoteFor] = useState(null);  // { t, kind: uplift|refuse|approve }
   const [supNote, setSupNote] = useState("");
   const [supErr, setSupErr] = useState(null);
   const noteTask = noteFor?.t || null;
   const refusing = noteFor?.kind === "refuse";
+  const approving = noteFor?.kind === "approve";
+  const noteRequired = !approving;
   const askNote = (t, kind) => { setSupNote(""); setSupErr(null); setNoteFor({ t, kind }); };
   const closeNote = () => { setNoteFor(null); setSupErr(null); };
   // The task whose SETTLED dispute is being taken back, and the failure that
@@ -637,13 +656,15 @@ export default function LeaderDayReport() {
       setNoteFor(null); setSupNote(""); setSupErr(null);
       show(v.action === "uplifted" ? T.okUplift : T.decided, "success");
     },
-    // A failure on a ruling that carries TEXT has to stay ON the form: the
-    // words are in it, and a toast that closes the modal throws them away.
-    // Keyed on `v.note` rather than on the verb, so the refusal form — which
-    // sends the same "rejected" a one-tap brigadir refusal does — keeps its.
-    onError: (e, v) => {
+    // A failure on a ruling made FROM THE FORM has to stay on the form: the
+    // words are in it, and a toast beside a standing modal is a message the
+    // reader has to hunt for. Keyed on the form being open rather than on the
+    // verb or on `v.note` — the refusal form sends the same "rejected" a
+    // one-tap brigadir refusal does, and an approval may legitimately send an
+    // empty note, so neither of those can tell the two doors apart.
+    onError: (e) => {
       const msg = e?.response?.data?.detail || T.failed;
-      if (v.note) setSupErr(msg); else show(msg, "error");
+      if (noteFor) setSupErr(msg); else show(msg, "error");
     },
   });
 
@@ -863,8 +884,7 @@ export default function LeaderDayReport() {
                 {t.dispute?.canAct && t.dispute.status === "admin" && (
                   <div className="flex gap-2 mt-1.5 px-1">
                     <Button size="md" variant="success" tint className="flex-1"
-                      loading={decide.isPending}
-                      onClick={() => decide.mutate({ id: t.dispute.id, action: "approved" })}>
+                      onClick={() => askNote(t, "approve")}>
                       <CheckCircle2 size={13} /> {T.approve}
                     </Button>
                     {/* …but an ADMIN's does not. It ends the chain, so it
@@ -907,26 +927,31 @@ export default function LeaderDayReport() {
         </FormField>
       </Modal>
 
-      {/* Both rulings that COLLECT a required comment share this one form —
-          the Modal template, not a confirm carrying a field it was never built
-          to hold. Passing it up needs the brigadir's case for the point; an
-          admin's refusal needs the reason the leader will be told, because
-          nothing comes after it. */}
+      {/* Every ruling that CARRIES a comment shares this one form — the Modal
+          template, not a confirm carrying a field it was never built to hold.
+          Passing it up needs the brigadir's case for the point; an admin's
+          refusal needs the reason the leader will be told, because nothing
+          comes after it; an approval merely offers the box. */}
       <Modal open={!!noteTask} onClose={closeNote}
-        title={refusing ? T.refuseTitle : T.upliftTitle}
+        title={refusing ? T.refuseTitle : approving ? T.approveTitle : T.upliftTitle}
         subtitle={noteTask ? pick(noteTask.name, lang) : ""}
         footer={
           <>
             <Button variant="secondary" onClick={closeNote}>{T.cancel}</Button>
-            <Button variant={refusing ? "danger" : "primary"} loading={decide.isPending}
-              disabled={supNote.trim().length < 3}
+            <Button variant={refusing ? "danger" : approving ? "success" : "primary"}
+              loading={decide.isPending}
+              // An approval is never blocked on the box — that is what
+              // "optional" means, and the ruling it makes is the commonest one
+              // on this screen.
+              disabled={noteRequired && supNote.trim().length < 3}
               onClick={() => decide.mutate({
                 id: noteTask.dispute.id,
-                action: refusing ? "rejected" : "uplifted",
+                action: approving ? "approved" : refusing ? "rejected" : "uplifted",
                 note: supNote.trim(),
               })}>
               {refusing ? <><XCircle size={14} /> {T.refuse}</>
-                : <><ArrowUpCircle size={14} /> {T.uplift}</>}
+                : approving ? <><CheckCircle2 size={14} /> {T.approve}</>
+                  : <><ArrowUpCircle size={14} /> {T.uplift}</>}
             </Button>
           </>
         }>
@@ -941,11 +966,11 @@ export default function LeaderDayReport() {
             <br />“{noteTask.dispute.reason}”
           </div>
         )}
-        {/* …and so does the brigadir's case, on the admin's own refusal: the
-            middle note is the one an admin came here to weigh. `sup.note` is
+        {/* …and so does the brigadir's case, on either of the ADMIN's rulings:
+            the middle note is the one an admin came here to weigh. `sup.note` is
             the server's `sup_case`, already None when it merely echoes the text
             above it, so one sentence is never printed twice here. */}
-        {refusing && noteTask?.dispute?.sup?.note && (
+        {(refusing || approving) && noteTask?.dispute?.sup?.note && (
           <div className="rounded-lg px-3 py-2 mb-3 text-[12px] leading-snug"
             style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
             <span className="text-[11px] uppercase tracking-wide"
@@ -953,12 +978,18 @@ export default function LeaderDayReport() {
             <br />“{noteTask.dispute.sup.note}”
           </div>
         )}
-        <FormField label={refusing ? T.noteAdm : T.noteSup} required
-          hint={refusing ? T.refuseIntro : T.upliftIntro} error={supErr || undefined}>
+        {/* An optional field says so ON THE LABEL, where the eye lands before
+            the box; a required one says it with `FormField`'s red star. */}
+        <FormField
+          label={approving ? `${T.noteAdm} · ${T.noteOpt}`
+            : refusing ? T.noteAdm : T.noteSup}
+          required={noteRequired}
+          hint={refusing ? T.refuseIntro : approving ? T.approveIntro : T.upliftIntro}
+          error={supErr || undefined}>
           <textarea value={supNote}
             onChange={(e) => { setSupNote(e.target.value); setSupErr(null); }}
             rows={4} maxLength={1000}
-            placeholder={refusing ? T.refusePh : T.upliftPh} autoFocus
+            placeholder={refusing ? T.refusePh : approving ? T.approvePh : T.upliftPh} autoFocus
             className="w-full rounded-lg px-3 py-2 text-sm resize-y"
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
                      color: "var(--text-1)" }} />

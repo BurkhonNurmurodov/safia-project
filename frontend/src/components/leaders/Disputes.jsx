@@ -124,6 +124,8 @@ const TXT = {
     cUndoM: "{leader} — {date}, «{task}». Qaror bekor qilinadi: AI qarori yana kuchga kiradi va kun qayta hisoblanadi.",
     noteReq: "Izoh yozing.", notePh: "Sababni yozing…",
     cRejectHint: "Nega rad etyapsiz? Sabab liderga yuboriladi — bu oxirgi qaror.",
+    cApproveHint: "Ixtiyoriy — yozsangiz, liderga qaror bilan birga yuboriladi.",
+    noteOpt: "shart emas",
     okApprove: "Norozilik qabul qilindi", okReject: "Norozilik rad etildi",
     okUplift: "Adminlarga yuborildi",
     okUndo: "Qaror bekor qilindi", fail: "Amal bajarilmadi",
@@ -166,6 +168,8 @@ const TXT = {
     cUndoM: "{leader} — {date}, «{task}». Қарор бекор қилинади: AI қарори яна кучга киради ва кун қайта ҳисобланади.",
     noteReq: "Изоҳ ёзинг.", notePh: "Сабабни ёзинг…",
     cRejectHint: "Нега рад этяпсиз? Сабаб лидерга юборилади — бу охирги қарор.",
+    cApproveHint: "Ихтиёрий — ёзсангиз, лидерга қарор билан бирга юборилади.",
+    noteOpt: "шарт эмас",
     okApprove: "Норозилик қабул қилинди", okReject: "Норозилик рад этилди",
     okUplift: "Админларга юборилди",
     okUndo: "Қарор бекор қилинди", fail: "Амал бажарилмади",
@@ -208,6 +212,8 @@ const TXT = {
     cUndoM: "{leader} — {date}, «{task}». Решение будет отменено: заключение ИИ снова вступает в силу, день пересчитается.",
     noteReq: "Напишите комментарий.", notePh: "Напишите причину…",
     cRejectHint: "Почему вы отклоняете? Причину отправят лидеру — это последнее решение.",
+    cApproveHint: "Необязательно — если напишете, лидер получит это вместе с решением.",
+    noteOpt: "необязательно",
     okApprove: "Возражение принято", okReject: "Возражение отклонено",
     okUplift: "Передано администраторам",
     okUndo: "Решение отменено", fail: "Не удалось выполнить действие",
@@ -250,6 +256,8 @@ const TXT = {
     cUndoM: "{leader} — {date}, “{task}”. The ruling is taken back: the AI verdict applies again and the day re-scores.",
     noteReq: "Write a comment.", notePh: "Write the reason…",
     cRejectHint: "Why are you refusing? The leader is told the reason — this is the last word.",
+    cApproveHint: "Optional — if you write one, the leader gets it with the decision.",
+    noteOpt: "optional",
     okApprove: "Objection upheld", okReject: "Objection refused",
     okUplift: "Passed to the admins",
     okUndo: "Ruling undone", fail: "The action did not go through",
@@ -477,20 +485,30 @@ export default function Disputes({ scope, onClearScope }) {
   };
 
   // WHICH rulings collect text, and it is a property of the ROW as well as of
-  // the verb. Passing it up always does. REFUSING does at the admin stage
-  // only: that is the end of the chain — the leader has explained their shift
-  // to two people, loses the point for good and has no route left — and the
-  // reason travels to them in the notice, so it cannot be blank. A brigadir's
-  // refusal is not the last word (an admin's undo reaches it, and the leader
-  // may file again), so it stays a plain confirm, exactly as the server does.
-  const needsNote = (c) => !!c && (c.kind === "uplift"
-    || (c.kind === "reject" && c.item?.status === "admin"));
+  // the verb. Two questions, deliberately separate: does this ruling OFFER a
+  // comment, and does it DEMAND one.
+  //
+  // Every admin-stage ruling offers one — a refusal and an approval alike land
+  // in the leader's notice, so an admin who wants to explain either should be
+  // able to. Passing it up offers one too.
+  //
+  // Only two DEMAND it. Uplifting, because an admin ruling on a shift they
+  // were not on is a coin toss without the brigadir's case. And REFUSING at
+  // the admin stage, because that is the end of the chain — the leader has
+  // explained their shift to two people, loses the point for good and has no
+  // route left. APPROVING demands nothing: the outcome is its own answer. Nor
+  // does a brigadir's refusal, which is not the last word (an admin's undo
+  // reaches it, and the leader may file again). Both mirror the server, which
+  // is the authority on each.
+  const collectsNote = (c) => !!c && (c.kind === "uplift"
+    || (c.kind !== "undo" && c.item?.status === "admin"));
+  const noteRequired = (c) => !!c && (c.kind === "uplift" || c.kind === "reject");
 
   const run = () => {
     if (!confirm) return;
     const { kind, item } = confirm;
     if (kind === "undo") { undo.mutate({ id: item.id }); return; }
-    if (needsNote(confirm) && !note.trim()) { setNoteErr(T.noteReq); return; }
+    if (noteRequired(confirm) && !note.trim()) { setNoteErr(T.noteReq); return; }
     const action = kind === "uplift" ? "uplifted"
       : kind === "approve" ? "approved" : "rejected";
     decide.mutate({ id: item.id, action, note: note.trim() });
@@ -501,8 +519,9 @@ export default function Disputes({ scope, onClearScope }) {
     .replaceAll("{date}", day(it.date))
     .replaceAll("{task}", pick(it.taskName, lang) || `№${it.taskId}`);
 
-  // The form serves two rulings; this is which one is on screen.
+  // The form serves three rulings; these are which one is on screen.
   const rejecting = !!confirm && confirm.kind === "reject";
+  const approving = !!confirm && confirm.kind === "approve";
 
   const cText = (() => {
     if (!confirm) return { t: "", m: "", label: "", tone: undefined };
@@ -744,13 +763,14 @@ export default function Disputes({ scope, onClearScope }) {
         </div>
       )}
 
-      {/* Uphold and undo are plain confirms. A ruling that COLLECTS a required
-          comment is a FORM — the Modal template, not a ConfirmDialog carrying a
-          field it was never built to hold. Which is which is `needsNote`, so
-          the admin's refusal below reaches the same form the uplift does rather
-          than growing a second one beside it. */}
+      {/* Undo, and a brigadir's one-tap refusal, are plain confirms. A ruling
+          that COLLECTS a comment is a FORM — the Modal template, not a
+          ConfirmDialog carrying a field it was never built to hold. Which is
+          which is `collectsNote`, so all three admin-stage rulings reach ONE
+          form rather than growing three beside each other; `noteRequired` is
+          the separate question of whether the field may be left empty. */}
       <ConfirmDialog
-        open={!!confirm && !needsNote(confirm)}
+        open={!!confirm && !collectsNote(confirm)}
         title={cText.t}
         message={cText.m}
         confirmLabel={cText.label}
@@ -762,33 +782,44 @@ export default function Disputes({ scope, onClearScope }) {
       />
 
       <Modal
-        open={needsNote(confirm)}
+        open={collectsNote(confirm)}
         onClose={close}
         title={cText.t}
-        icon={rejecting ? <Ban size={16} /> : <ArrowUpCircle size={16} />}
+        icon={rejecting ? <Ban size={16} />
+          : approving ? <ShieldCheck size={16} /> : <ArrowUpCircle size={16} />}
         subtitle={confirm?.item ? `${tl(confirm.item.leader)} · ${day(confirm.item.date)}` : ""}
         footer={
           <>
             <Button variant="secondary" onClick={close}>{T.cancel}</Button>
-            <Button variant={rejecting ? "danger" : "primary"}
+            <Button variant={rejecting ? "danger" : approving ? "success" : "primary"}
               loading={decide.isPending} onClick={run}>
               {rejecting ? <><Ban size={14} />{T.reject}</>
-                : <><ArrowUpCircle size={14} />{T.uplift}</>}
+                : approving ? <><ShieldCheck size={14} />{T.approve}</>
+                  : <><ArrowUpCircle size={14} />{T.uplift}</>}
             </Button>
           </>
         }
       >
-        {/* The consequence of the ruling stays on screen while the reason for
-            it is typed — the same sentence the plain confirm would have shown,
-            so nothing is lost by the control becoming a form. */}
-        {rejecting && (
+        {/* The consequence of the ruling stays on screen while the comment is
+            typed — the same sentence the plain confirm would have shown, so
+            nothing is lost by the control becoming a form. An approval needs
+            it MOST: it re-scores the day and DMs two people, and that used to
+            be the whole content of its confirm. */}
+        {!!confirm && confirm.kind !== "uplift" && (
           <p className="text-[12px] leading-snug mb-3" style={{ color: "var(--text-3)" }}>
             {cText.m}
           </p>
         )}
+        {/* An optional field says so ON THE LABEL, where the eye lands before
+            the box. A required one says it with the red star `FormField` puts
+            there — and an approval must never grow one, or the fast path for
+            the commonest ruling on this queue becomes a typing exercise. */}
         <FormField
-          label={rejecting ? T.noteAdm : T.noteSup} required
-          hint={rejecting ? T.cRejectHint : T.cUpliftM}
+          label={approving ? `${T.noteAdm} · ${T.noteOpt}`
+            : rejecting ? T.noteAdm : T.noteSup}
+          required={noteRequired(confirm)}
+          hint={rejecting ? T.cRejectHint
+            : approving ? T.cApproveHint : T.cUpliftM}
           error={noteErr || undefined}>
           <textarea
             value={note}

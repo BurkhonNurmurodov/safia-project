@@ -575,11 +575,15 @@ def notify_decided(db: Session, row: LeaderLateProof, *, stage: str) -> None:
         return
     by = row.adm_by_name if stage == "admin" else row.sup_by_name
     note = row.adm_note if stage == "admin" else row.sup_note
+    # BLANK and never «—»: the note is on its own line in every ruling
+    # template, and `_render_body` drops a line whose single placeholder is
+    # empty — so an approval nobody commented on has no comment line at all,
+    # instead of one reading «Izoh: —».
     params = {
         "date": row.date,
         "task": task_name(db, row, "uz"),
         "by": by or "—",
-        "note": (note or "—").strip() or "—",
+        "note": (note or "").strip(),
     }
     try:
         notify_profile(db, profile_key("leader", int(row.leader_id)),

@@ -359,16 +359,16 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # heard nothing back learns that explaining is pointless, which is the one
     # outcome that makes the whole flow worthless.
     "late_proof_uplifted": {
-        "uz": ("Kechikkan isbot adminlarga yuborildi", "Sana: {date} | Vazifa: {task} | Brigadir: {by} | Izoh: {note}"),
-        "uz_cyrl": ("Кечиккан исбот админларга юборилди", "Сана: {date} | Вазифа: {task} | Бригадир: {by} | Изоҳ: {note}"),
-        "ru": ("Позднее подтверждение передано администраторам", "Дата: {date} | Задача: {task} | Бригадир: {by} | Комментарий: {note}"),
-        "en": ("Late proof passed to the admins", "Date: {date} | Task: {task} | Brigadir: {by} | Comment: {note}"),
+        "uz": ("Kechikkan isbot adminlarga yuborildi", "Sana: {date} | Vazifa: {task} | Brigadir: {by}\nIzoh: {note}"),
+        "uz_cyrl": ("Кечиккан исбот админларга юборилди", "Сана: {date} | Вазифа: {task} | Бригадир: {by}\nИзоҳ: {note}"),
+        "ru": ("Позднее подтверждение передано администраторам", "Дата: {date} | Задача: {task} | Бригадир: {by}\nКомментарий: {note}"),
+        "en": ("Late proof passed to the admins", "Date: {date} | Task: {task} | Brigadir: {by}\nComment: {note}"),
     },
     "late_proof_approved": {
-        "uz": ("Kechikkan isbot tasdiqlandi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa to'liq ballini oldi."),
-        "uz_cyrl": ("Кечиккан исбот тасдиқланди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа тўлиқ баллини олди."),
-        "ru": ("Позднее подтверждение принято", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача получила полный балл."),
-        "en": ("Late proof approved", "Date: {date} | Task: {task} | Decided by: {by} | The task got its full weight."),
+        "uz": ("Kechikkan isbot tasdiqlandi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa to'liq ballini oldi.\nIzoh: {note}"),
+        "uz_cyrl": ("Кечиккан исбот тасдиқланди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа тўлиқ баллини олди.\nИзоҳ: {note}"),
+        "ru": ("Позднее подтверждение принято", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача получила полный балл.\nКомментарий: {note}"),
+        "en": ("Late proof approved", "Date: {date} | Task: {task} | Decided by: {by} | The task got its full weight.\nComment: {note}"),
     },
     # The REASON is on it, because a refusal is the end of this chain — the
     # leader has explained themselves to two people, lost the point for good and
@@ -377,10 +377,10 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # admin's refusal cannot be made without one; a brigadir's stage-1 refusal
     # still may (they are not the last word), and prints «—» when it was.
     "late_proof_rejected": {
-        "uz": ("Kechikkan isbot rad etildi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Sabab: {note} | Bu vazifa uchun ball berilmaydi."),
-        "uz_cyrl": ("Кечиккан исбот рад этилди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Сабаб: {note} | Бу вазифа учун балл берилмайди."),
-        "ru": ("Позднее подтверждение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Причина: {note} | Балл за эту задачу не начислен."),
-        "en": ("Late proof rejected", "Date: {date} | Task: {task} | Decided by: {by} | Reason: {note} | No point is given for this task."),
+        "uz": ("Kechikkan isbot rad etildi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Bu vazifa uchun ball berilmaydi.\nSabab: {note}"),
+        "uz_cyrl": ("Кечиккан исбот рад этилди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Бу вазифа учун балл берилмайди.\nСабаб: {note}"),
+        "ru": ("Позднее подтверждение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Балл за эту задачу не начислен.\nПричина: {note}"),
+        "en": ("Late proof rejected", "Date: {date} | Task: {task} | Decided by: {by} | No point is given for this task.\nReason: {note}"),
     },
     # ── objections to an AI rejection: the three-stage chain ────────────────
     # A leader files their account of the shift, their brigadir refuses it or
@@ -395,33 +395,33 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("{leader} objects to an AI ruling", "Date: {date} | Task: {task} | Note: {reason} | It is yours to read: refuse it, or pass it to the admins."),
     },
     "leader_dispute_uplifted": {
-        "uz": ("Norozilik adminlarga yuborildi", "Sana: {date} | Vazifa: {task} | Brigadir: {by} | Izoh: {note}"),
-        "uz_cyrl": ("Норозилик админларга юборилди", "Сана: {date} | Вазифа: {task} | Бригадир: {by} | Изоҳ: {note}"),
-        "ru": ("Возражение передано администраторам", "Дата: {date} | Задача: {task} | Бригадир: {by} | Комментарий: {note}"),
-        "en": ("Objection passed to the admins", "Date: {date} | Task: {task} | Brigadir: {by} | Comment: {note}"),
+        "uz": ("Norozilik adminlarga yuborildi", "Sana: {date} | Vazifa: {task} | Brigadir: {by}\nIzoh: {note}"),
+        "uz_cyrl": ("Норозилик админларга юборилди", "Сана: {date} | Вазифа: {task} | Бригадир: {by}\nИзоҳ: {note}"),
+        "ru": ("Возражение передано администраторам", "Дата: {date} | Задача: {task} | Бригадир: {by}\nКомментарий: {note}"),
+        "en": ("Objection passed to the admins", "Date: {date} | Task: {task} | Brigadir: {by}\nComment: {note}"),
     },
     # Refused by the BRIGADIR — it never reached an admin, and saying so is the
     # difference between "nobody agreed with you" and "nobody read it".
     "leader_dispute_sup_rejected": {
-        "uz": ("Norozilikni brigadir rad etdi", "Sana: {date} | Vazifa: {task} | Rad etdi: {by} | Izoh: {note} | AI qarori kuchida qoladi."),
-        "uz_cyrl": ("Норозиликни бригадир рад этди", "Сана: {date} | Вазифа: {task} | Рад этди: {by} | Изоҳ: {note} | AI қарори кучида қолади."),
-        "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Комментарий: {note} | Решение ИИ остаётся в силе."),
-        "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | Comment: {note} | The AI ruling stands."),
+        "uz": ("Norozilikni brigadir rad etdi", "Sana: {date} | Vazifa: {task} | Rad etdi: {by} | AI qarori kuchida qoladi.\nIzoh: {note}"),
+        "uz_cyrl": ("Норозиликни бригадир рад этди", "Сана: {date} | Вазифа: {task} | Рад этди: {by} | AI қарори кучида қолади.\nИзоҳ: {note}"),
+        "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Решение ИИ остаётся в силе.\nКомментарий: {note}"),
+        "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | The AI ruling stands.\nComment: {note}"),
     },
     "leader_dispute_approved": {
-        "uz": ("Norozilik qabul qilindi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Izoh: {note} | Vazifa yana bajarilgan deb hisoblanadi."),
-        "uz_cyrl": ("Норозилик қабул қилинди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Изоҳ: {note} | Вазифа яна бажарилган деб ҳисобланади."),
-        "ru": ("Возражение принято", "Дата: {date} | Задача: {task} | Решил(а): {by} | Комментарий: {note} | Задача снова засчитана как выполненная."),
-        "en": ("Objection upheld", "Date: {date} | Task: {task} | Decided by: {by} | Comment: {note} | The task counts as done again."),
+        "uz": ("Norozilik qabul qilindi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa yana bajarilgan deb hisoblanadi.\nIzoh: {note}"),
+        "uz_cyrl": ("Норозилик қабул қилинди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа яна бажарилган деб ҳисобланади.\nИзоҳ: {note}"),
+        "ru": ("Возражение принято", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача снова засчитана как выполненная.\nКомментарий: {note}"),
+        "en": ("Objection upheld", "Date: {date} | Task: {task} | Decided by: {by} | The task counts as done again.\nComment: {note}"),
     },
     # «Sabab» and not «Izoh»: an admin's refusal cannot be made without one, so
     # the word says it is the reason and not an optional remark. The stage-1
     # twin above keeps «Izoh», because there it really is optional.
     "leader_dispute_rejected": {
-        "uz": ("Norozilik rad etildi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Sabab: {note} | Vazifa bajarilmagan bo'lib qoladi."),
-        "uz_cyrl": ("Норозилик рад этилди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Сабаб: {note} | Вазифа бажарилмаган бўлиб қолади."),
-        "ru": ("Возражение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Причина: {note} | Задача остаётся незачтённой."),
-        "en": ("Objection refused", "Date: {date} | Task: {task} | Decided by: {by} | Reason: {note} | The task stays not done."),
+        "uz": ("Norozilik rad etildi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa bajarilmagan bo'lib qoladi.\nSabab: {note}"),
+        "uz_cyrl": ("Норозилик рад этилди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа бажарилмаган бўлиб қолади.\nСабаб: {note}"),
+        "ru": ("Возражение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача остаётся незачтённой.\nПричина: {note}"),
+        "en": ("Objection refused", "Date: {date} | Task: {task} | Decided by: {by} | The task stays not done.\nReason: {note}"),
     },
     # The ruling above taken back — the task returns to the AI's verdict.
     "leader_dispute_undone": {
