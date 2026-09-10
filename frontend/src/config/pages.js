@@ -55,7 +55,6 @@ export const PAGES = [
   { tier: "test", key: "live", route: "/live", labelKey: "nav.live" },
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
   { key: "education", route: "/education", labelKey: "nav.education" },
-  { key: "idle-owner", route: "/idle-owner", labelKey: "nav.idleOwner" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -67,7 +66,9 @@ export const DEFAULT_PAGE_ACCESS = {
 
   workers:  ["shift-manager"],
   plan:     ["shift-manager"],
-  downtime: ["shift-manager"],
+  // «Kutish mas'uli» reads it narrowed to their own categories (the lock is
+  // applied server-side on every endpoint the page calls).
+  downtime: ["shift-manager", "idle-owner"],
   staff:    ["shift-manager", "supervisor"],
   daily:    ["shift-manager", "supervisor"],
   production: [], // pilot: admin-only until enabled from the Access tab
@@ -94,7 +95,10 @@ export const DEFAULT_PAGE_ACCESS = {
   tasks: ["shift-manager", "supervisor", "leader"],
   activity: [], // Users activity & usage stats — admin-only until enabled
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
-  "idle-cell": [], // Manual per-cell idle-time (ojidaniya) TEST entry — admin-only until enabled
+  // Manual per-cell idle-time (ojidaniya) entry. Admin-only, plus the
+  // «Kutish mas'uli», who reads the EVENTS behind their own categories
+  // here — read-only by construction, never a filer.
+  "idle-cell": ["idle-owner"],
   // Per-cell загрузка TEST twin of /zagruzka, locked to one supervisor's cells.
   // Admin-only while the per-cell method is validated; feeds nothing downstream.
   "zagruzka-cell": [],
@@ -109,13 +113,6 @@ export const DEFAULT_PAGE_ACCESS = {
   // content — while gating it would let a lesson somebody was DMed a link for
   // open onto "no access". Publishing stays admin-only, checked server-side.
   education: ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
-  // «Mening toifam» — the ojidaniya register read cause-first. Open to the
-  // `idle-owner` role, the only role that exists for it: a fresh «Kutish
-  // mas'uli» must land on a working page, and the page shows them only the
-  // categories they own (resolved server-side, so the query string is not a way
-  // round it). Anybody else is toggled on from the Access tab and reads it
-  // unlocked — the lock is a property of the ROLE, not of the page.
-  "idle-owner": ["idle-owner"],
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants

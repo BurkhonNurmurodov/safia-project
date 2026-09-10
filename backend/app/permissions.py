@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "education", "idle-owner"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "education"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -51,7 +51,12 @@ DEFAULT_PAGE_ACCESS = {
     "leaderboard": [],
     "workers":  ["shift-manager"],
     "plan":     ["shift-manager"],
-    "downtime": ["shift-manager"],
+    # «Kutish mas'uli» reads the ojidaniya register here, narrowed to the
+    # categories they own — the lock is applied server-side on every endpoint
+    # this page calls (services/idle_scope), so it is not a page they can be
+    # given "half" of. It is their primary page, so the role holds it by
+    # default: a fresh owner must land on something that works.
+    "downtime": ["shift-manager", "idle-owner"],
     "staff":    ["shift-manager", "supervisor"],
     "daily":    ["shift-manager", "supervisor"],
     # Pilot: admin-only by default. Above supervisors pick a configured brigadir
@@ -109,7 +114,11 @@ DEFAULT_PAGE_ACCESS = {
     # Manual per-cell idle-time (ojidaniya) TEST entry — admin-only by default;
     # open to leaders/supervisors from the Access tab (or per-person via
     # page.view.idle-cell on the Permissions tab). Does NOT replace the sheet import.
-    "idle-cell": [],
+    # …and the EVENTS behind those minutes, one level down. Read-only for an
+    # owner by construction: `_may_decide` answers False for anyone who is not
+    # the cell's brigadir (or a grantee), and the writers refuse a category-
+    # locked caller outright.
+    "idle-cell": ["idle-owner"],
     # Per-cell загрузка TEST twin of /zagruzka, hard-locked to one supervisor's
     # cells. Admin-only by default and meant to stay that way while the per-cell
     # method is being validated — it reads pp_* / cell_* tables only and feeds
@@ -134,16 +143,6 @@ DEFAULT_PAGE_ACCESS = {
     # notification must never produce. Publishing stays admin-only, checked in
     # every writer.
     "education": ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
-    # «Mening toifam» (routers/idle_owner.py) — the ojidaniya register read
-    # CAUSE-first, for the person answerable for a waiting category. Open to the
-    # `idle-owner` role by default, which is the only role that exists for it:
-    # a fresh «Kutish mas'uli» must land on a working page rather than on the
-    # no-access screen, and the page shows them ONLY the categories they own
-    # (services/idle_scope resolves that server-side, so the query string is not
-    # a way round it). Admins always have it; anybody else — a top-manager
-    # chasing a cause, a brigadir — is toggled on from the Access tab and reads
-    # it unlocked, because the lock is a property of the ROLE, not of the page.
-    "idle-owner": ["idle-owner"],
 }
 
 
