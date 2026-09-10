@@ -5508,3 +5508,39 @@ def report_shared_work_centers_xlsx() -> None:
     _send_report_once(SHARED_WC_XLSX_FLAG, "shared work centres XLSX",
                       shared_wc_report.send_xlsx, UNPRICED_DM_CHAT,
                       SHARED_WC_FROM, SHARED_WC_TO)
+
+
+# ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
+# The operator asked, on 2026-09-10, for the cells where the verifix attendance
+# upload put people in but nobody wrote a PLAN or an «Odam soni» on the
+# «Zagruzka fayli» page for that cell on that date. Deliberately NOT a widening
+# of `report_zagruzka_gaps_xlsx`: that one asks its cell questions of the cells
+# that FILED OJIDANIYA, so a cell where twelve people stood all shift and
+# nothing was filed is invisible to it — and that is the commonest shape of this
+# fault. Same window as the reports beside it, so all three files describe one
+# week, and the same floor: before `zagruzka_source.ZAGRUZKA_FROM` the
+# production page was not the source of either input.
+CELL_GAPS_XLSX_FLAG = "cell_input_gaps_xlsx_2026_09_10_v1"
+CELL_GAPS_FROM = date(2026, 9, 2)     # = zagruzka_source.ZAGRUZKA_FROM
+CELL_GAPS_TO = date(2026, 9, 9)
+
+
+def report_cell_input_gaps_xlsx() -> None:
+    """The unanswered-cell register as a four-sheet workbook, DMed once.
+
+    Flag-guarded like every other errand here: it delivers on the first boot
+    after its own deploy and never again, and a failed delivery is retried on
+    the next boot and then abandoned rather than re-fired forever. Changing what
+    it reports — a different window, a different chat, a different shape — needs
+    a NEW flag key, or the old "already ran" mark makes the new version a no-op
+    on every box that has booted since.
+
+    Nothing is stored: `cell_input_gaps.collect` counts the people straight off
+    the attendance rows and reads both загрузка inputs from the functions the
+    page itself divides by, so a number typed after this lands makes the file
+    stale, never wrong about the day it was taken.
+    """
+    from app.services import cell_input_gaps
+    _send_report_once(CELL_GAPS_XLSX_FLAG, "cell input gaps XLSX",
+                      cell_input_gaps.send_xlsx, UNPRICED_DM_CHAT,
+                      CELL_GAPS_FROM, CELL_GAPS_TO)

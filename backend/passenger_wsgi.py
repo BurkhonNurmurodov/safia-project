@@ -82,6 +82,7 @@ try:
         report_zagruzka_gaps_xlsx,
         report_shared_work_centers,
         report_shared_work_centers_xlsx,
+        report_cell_input_gaps_xlsx,
         add_pp_product_auto_fill,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
@@ -319,6 +320,14 @@ try:
     # …and the same register as a four-sheet workbook. Its own flag: the
     # operator asked for the file after the message.
     report_shared_work_centers_xlsx()
+    # ⚠ TEMPORARY one-shot (2026-09-10) — the cells the verifix upload put
+    # PEOPLE in, where nobody wrote a plan or an «Odam soni» on «Zagruzka
+    # fayli» for that cell on that date. Not a widening of the report above:
+    # that one asks its cell questions of the cells that FILED OJIDANIYA, so
+    # a cell where people stood all shift and nothing was filed is invisible
+    # to it. Flag-guarded — first boot after this deploy, never again. Remove
+    # this line and `services/cell_input_gaps.py` once the file has landed.
+    report_cell_input_gaps_xlsx()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()
