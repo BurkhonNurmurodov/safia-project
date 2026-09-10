@@ -67,7 +67,7 @@ from app.capabilities import (
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.security import require_auth
-from app.services import action_log, idle_intervals, idle_lock
+from app.services import action_log, idle_intervals, idle_lock, idle_scope
 from app import identity
 
 router = APIRouter(prefix="/api/idle-cell", tags=["idle-cell"])
@@ -83,6 +83,36 @@ IDLE_CATEGORIES = ["Cat A", "Cat A2", "Cat B", "Cat C", "Cat D", "Cat D2",
                    "Cat D3", "Cat E", "Cat F", "Cat G", "Cat H", "Cat I"]
 _VALID = set(IDLE_CATEGORIES)
 _ALWAYS_STOPPED = {"Cat H"}
+
+
+def _cat_lock(db: Session, payload: dict):
+    """The categories this caller may see here, or ``None`` for every one.
+
+    A «Kutish mas'uli» reads this page as the EVENT log behind their own cause
+    and nothing else — `services/idle_scope` is THE definition, and it is
+    applied on the server because a page that merely hides rows is a page whose
+    query string hands them back.
+
+    ``None`` = no narrowing (everybody else, unchanged). An EMPTY list is a real
+    answer — an owner whose categories were all re-assigned matches nothing —
+    so callers test it with `idle_scope.empty_scope`, never with `if not`.
+    """
+    return idle_scope.viewer_categories(db, payload)
+
+
+def _require_unlocked(db: Session, payload: dict) -> None:
+    """Refuse a WRITE from a category-locked caller.
+
+    An owner answers for a cause across the whole plant; they do not stand in
+    any cell and they file nothing. `_may_decide` already answers False for
+    them (they hold no unit), so edit and delete were closed by construction —
+    but CREATE is gated on the day being open, not on a unit, so without this
+    an owner could file an entry on somebody else's shopfloor. Stated as its
+    own guard rather than left to that accident.
+    """
+    if idle_scope.is_owner(payload):
+        raise HTTPException(status_code=403,
+                            detail="Read-only: you answer for a category, not a cell")
 
 
 def _scoped_cells(db: Session, payload: dict, *pages: str) -> list[Cell]:
@@ -361,14 +391,27 @@ def list_cells(
         return {"cells": []}
     ids = [c.id for c in cells]
 
-    ivs = db.query(CellOjidaniyaInterval).filter(
+    # The category lock, applied to BOTH row models: the legacy minutes-only
+    # rows carry a category too, and leaving them whole would show an owner
+    # somebody else's cause on the same card.
+    lock = _cat_lock(db, payload)
+    if idle_scope.empty_scope(lock):
+        return {"day": idle_lock.day_info(db, supervisor_id, date, payload),
+                "cells": [], "cat_locked": list(lock)}
+
+    ivq = db.query(CellOjidaniyaInterval).filter(
         CellOjidaniyaInterval.cell_id.in_(ids),
         CellOjidaniyaInterval.date == date,
-    ).all()
-    legs = db.query(CellOjidaniya).filter(
+    )
+    legq = db.query(CellOjidaniya).filter(
         CellOjidaniya.cell_id.in_(ids),
         CellOjidaniya.date == date,
-    ).all()
+    )
+    if lock is not None:
+        ivq = ivq.filter(CellOjidaniyaInterval.category.in_(lock))
+        legq = legq.filter(CellOjidaniya.category.in_(lock))
+    ivs = ivq.all()
+    legs = legq.all()
     # Every author AND every decider (rejected rows still name one) resolved
     # together, so one day costs one pair of queries no matter how many people
     # touched the unit's cells.
@@ -409,14 +452,23 @@ def list_cells(
     ).all()} if lids else {}
     cells.sort(key=lambda c: (c.verifix_code or "").lower())
     out = [
+        # `can_add` loses the day's own answer for a category-locked caller:
+        # they answer for a CAUSE across the plant and stand in no cell, so the
+        # writers refuse them (`_require_unlocked`). A button that is drawn and
+        # then 403s is worse than no button.
         _cell_json(c, approved_by_cell.get(c.id, []), requests_by_cell.get(c.id, []),
                    legacy_by_cell.get(c.id, []), leaders.get(c.leader_id),
-                   can_manage=_may_decide(ctx, c), can_add=day_open)
+                   can_manage=_may_decide(ctx, c),
+                   can_add=day_open and lock is None)
         for c in cells
     ]
     return {
         "day": day,
         "cells": out,
+        # Which categories this answer was narrowed to, or null. The page prints
+        # it, because a register showing a fraction of a day without saying so
+        # reads as a quiet shift.
+        "cat_locked": None if lock is None else list(lock),
     }
 
 
@@ -755,6 +807,7 @@ def create_interval(
     is notified of it; a brigadir or admin entering their own is not told about
     their own work. The answer is the server's, because the endpoint is
     reachable without the UI."""
+    _require_unlocked(db, payload)
     note, stopped, _ = _validate(body, db, payload)
 
     # A REPLAY of a record this server already wrote. The live recorder re-sends
@@ -869,6 +922,7 @@ def update_interval(
         raise HTTPException(status_code=404, detail="Entry not found")
     if e.cell_id not in {c.id for c in _scoped_cells(db, payload)}:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    _require_unlocked(db, payload)
     note, stopped, _ = _validate(body, db, payload)
 
     cell = _cell_of(db, e.cell_id)
@@ -912,6 +966,7 @@ def delete_interval(
     payload: dict = Depends(require_page(PAGE)),
 ):
     """Remove one ojidaniya (scope-checked; unit editors only)."""
+    _require_unlocked(db, payload)
     e = db.query(CellOjidaniyaInterval).filter(CellOjidaniyaInterval.id == interval_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Entry not found")
@@ -950,6 +1005,7 @@ def delete_legacy(
     writer for that table any more: a row with no start and no end cannot be
     de-duplicated against anything, so the only honest operations left on it are
     reading it and replacing it with real ranges."""
+    _require_unlocked(db, payload)
     e = db.query(CellOjidaniya).filter(CellOjidaniya.id == entry_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Entry not found")

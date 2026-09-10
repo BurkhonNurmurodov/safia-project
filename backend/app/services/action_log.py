@@ -358,7 +358,6 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/downtime/export.pptx",                 "sync_export", "export.ojidaniya_deck"),
     (("POST",),   "/api/downtime/matrix.xlsx",                 "sync_export", "export.ojidaniya_matrix"),
     (("POST",),   "/api/downtime/cost.xlsx",                   "sync_export", "export.ojidaniya_cost"),
-    (("POST",),   "/api/idle-owner/export.xlsx",               "sync_export", "export.ojidaniya_owner"),
     # WHO answers for a waiting category. `config`, not `org`: it changes what a
     # role may read, which is a setting about the platform, not a fact about a
     # person's post.

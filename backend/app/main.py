@@ -658,8 +658,8 @@ app.include_router(leader_ai.router)
 # require_page("idle-cell"), so no admin guard here (grantable to
 # leaders/supervisors later).
 app.include_router(idle_cell.router)
-# «Mening toifam» — the ojidaniya register read cause-first, for the person
-# answerable for a waiting category (services/idle_scope owns the lock).
+# The «Kutish mas'uli» admin register: who owns which ojidaniya category.
+# The READING surfaces are /downtime and /idle-cell, narrowed there.
 app.include_router(idle_owner.router)
 # Per-cell attendance rows, read by the Staff (verifix) page's Yacheyka column
 # and cell view — its own page is gone, so this self-gates via

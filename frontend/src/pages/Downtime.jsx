@@ -37,6 +37,7 @@ import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilt
 // Downtime-category identity colors — the shared generic-first order, one hue
 // per category index, shared by the merged bar chart, the doughnut and the chips.
 import { catColor, CATS } from "../components/idle/categories";
+import CatLockNotice from "../components/idle/CatLockNotice";
 
 // ── date helpers for the seasonality card's weekly axis ──────────────────────
 // Local-calendar ISO stamps (never toISOString — that shifts UTC+5 back a day).
@@ -244,6 +245,17 @@ export default function Downtime() {
     [data, totalKey, flaggedKey],
   );
   const flaggedCount  = summary.filter((s) => s.flagged_days > 0).length;
+
+  // The categories this viewer is PINNED to («Kutish mas'uli»), or null. Read
+  // off the payload — `services/idle_scope` decided it on the server, and a
+  // second derivation from the role here is how the page and the numbers on it
+  // would start describing two different scopes.
+  const catLocked = data?.cat_locked || null;
+  const locked = Array.isArray(catLocked) && catLocked.length > 0;
+  // How many units the cause actually reached — the same question the flag
+  // card asks («where should I look»), one dimension over, and answerable from
+  // exactly these rows rather than from a figure this payload does not carry.
+  const unitsTouched = summary.filter((s) => (s.total || 0) > 0).length;
   const totalDowntime = summary.reduce((s, m) => s + m.total, 0);
   const mostAffectedCat = (() => {
     if (!data?.rows?.length || !catNames.length) return "—";
@@ -907,6 +919,12 @@ export default function Downtime() {
 
   return (
     <Layout title={t("downtime.title")}>
+      {/* The category lock, if this viewer has one. First thing on the page:
+          it describes BOTH views and everything under them, so it cannot sit
+          inside one of them — and a reader who has not been told the register
+          is narrowed reads a fraction of a day as a quiet shift. */}
+      <CatLockNotice cats={catLocked} />
+
       {/* ROW 1 — page VIEW tabs. Above the filters because every filter below
           narrows BOTH views: this switches which question is being asked of
           one register, not which rows are in it. */}
@@ -1120,12 +1138,26 @@ export default function Downtime() {
               value={fmt(totalDowntime)}
               tooltip={t("downtime.tip.total")}
             />
-            <KPICard
-              label={t("downtime.flaggedDays")}
-              value={flaggedCount}
-              danger={flaggedCount > 0}
-              tooltip={t("downtime.tip.flagged")}
-            />
+            {locked ? (
+              // The 50-minute flag measures a unit's WHOLE-day union, so it
+              // says nothing about one category's share of it — shown here it
+              // would read «0 flagged», i.e. «nobody exceeded the threshold»,
+              // about a threshold that was never applied. The card states how
+              // many CELLS the cause reached instead, which is the same
+              // question one level down and is answerable from these rows.
+              <KPICard
+                label={t("downtime.lockedUnits")}
+                value={unitsTouched}
+                tooltip={t("downtime.tip.lockedUnits")}
+              />
+            ) : (
+              <KPICard
+                label={t("downtime.flaggedDays")}
+                value={flaggedCount}
+                danger={flaggedCount > 0}
+                tooltip={t("downtime.tip.flagged")}
+              />
+            )}
             <KPICard
               label={t("downtime.worstCategory")}
               value={mostAffectedCat}

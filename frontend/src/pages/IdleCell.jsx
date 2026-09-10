@@ -27,6 +27,7 @@ import IntervalFormModal from "../components/idle/IntervalFormModal";
 import LiveOjidaniya from "../components/idle/LiveOjidaniya";
 import DayTimeline from "../components/idle/DayTimeline";
 import { CATS, iconFor, catColor } from "../components/idle/categories";
+import CatLockNotice from "../components/idle/CatLockNotice";
 import api from "../utils/api";
 import { cellLabel } from "../utils/cellName";
 import { fmtDur, toMin } from "../utils/idleTime";
@@ -729,6 +730,11 @@ export default function IdleCell() {
 
   // All tabs feed the same leader → cell chain below.
   const cells = isPeren ? factCells : (cellsData?.cells ?? []);
+  // The categories this viewer is PINNED to («Kutish mas'uli»), or null. Off
+  // the payload — `services/idle_scope` decided it on the server, and the rows
+  // above were already filtered by it, so re-deriving it here from the role is
+  // how the words and the rows would come to describe two different scopes.
+  const catLocked = cellsData?.cat_locked || null;
   // The day's lock arrives with the ROWS — never from a second call to
   // /api/staff/approvals/day, which is gated on a page a leader does not hold,
   // so for the person this page exists for it would 403.
@@ -875,6 +881,10 @@ export default function IdleCell() {
 
   return (
     <Layout title={t("idleCell.title")}>
+      {/* First thing on the page: an event log showing a fraction of a day
+          without saying so reads as a quiet shift. */}
+      <CatLockNotice cats={catLocked} />
+
       {/* View switch — stays OUTSIDE the filter zone (platform rule). */}
       <SegmentedToggle
         asTabs
