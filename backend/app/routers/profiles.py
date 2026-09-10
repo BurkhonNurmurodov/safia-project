@@ -2421,6 +2421,15 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
         .order_by(RoleProfile.shift, RoleProfile.name).all()
     )
 
+    # «Kutish mas'uli» — the person answerable for an ojidaniya category. A
+    # pre-created profile claimed by NAME like the two manager tiers; WHICH
+    # categories they own is an admin's decision on «Kutish mas'ullari» and is
+    # deliberately not asked here (services/idle_scope).
+    idle_owner_profiles = (
+        db.query(RoleProfile).filter(RoleProfile.role == "idle-owner")
+        .order_by(RoleProfile.name).all()
+    )
+
     # Guest profiles without an approved holder are offered for re-claiming in
     # the registration picker. Guest names are NOT unique — a typed name always
     # gets its own fresh profile, so there is no taken-name list to check.
@@ -2458,7 +2467,8 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
     # role_profiles carry name_* columns; managers have none, so a supervisor's
     # other spellings live only in the legacy name.<canonical> overrides.
     canonicals = ({m.name for m in managers} |
-                  {p.name for p in leader_profiles + top_profiles + shift_profiles})
+                  {p.name for p in leader_profiles + top_profiles + shift_profiles
+                   + idle_owner_profiles})
     tr_names: dict[str, dict[str, str]] = {}
     if canonicals:
         tr_keys = {f"name.{n}": n for n in canonicals}
@@ -2515,6 +2525,13 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
             "taken": ("top-manager", p.id) in held_direct,
         }
         for p in top_profiles
+    ] + [
+        {
+            "key": f"idle-owner:{p.id}", "role": "idle-owner", "name": p.name,
+            "names": _names(p.name, p), "shift": None, "supervisor": None,
+            "taken": ("idle-owner", p.id) in held_direct,
+        }
+        for p in idle_owner_profiles
     ]
 
     return {

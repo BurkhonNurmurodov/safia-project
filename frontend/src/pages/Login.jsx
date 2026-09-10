@@ -29,6 +29,7 @@ const ROLE_TKEY = {
   supervisor:      "login.chooseRole.sup",
   leader:          "login.chooseRole.leader",
   guest:           "login.chooseRole.guest",
+  "idle-owner":    "login.chooseRole.idleOwner",
 };
 
 // Guests type their own name — script must match the UI language (Latin for

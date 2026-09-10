@@ -1,5 +1,6 @@
 const t = {
   uz: {
+    "login.chooseRole.idleOwner": "Kutish mas'uli",
     "idleOwner.kCostHint": "{m} brigadir · {c} yacheyka",
     "idleOwner.noEventsSub": "Davrni yoki filtrlarni o'zgartirib ko'ring.",
     "admin.profiles.idleOwners": "Kutish mas'ullari",
@@ -5014,6 +5015,7 @@ const t = {
   },
 
   uz_cyrl: {
+    "login.chooseRole.idleOwner": "Кутиш масъули",
     "idleOwner.kCostHint": "{m} бригадир · {c} ячейка",
     "idleOwner.noEventsSub": "Даврни ёки фильтрларни ўзгартириб кўринг.",
     "admin.profiles.idleOwners": "Кутиш масъуллари",
@@ -10027,6 +10029,7 @@ const t = {
   },
 
   ru: {
+    "login.chooseRole.idleOwner": "Ответственный за ожидание",
     "idleOwner.kCostHint": "{m} бригадиров · {c} ячеек",
     "idleOwner.noEventsSub": "Попробуйте изменить период или фильтры.",
     "admin.profiles.idleOwners": "Ответственные за ожидания",
@@ -15040,6 +15043,7 @@ const t = {
   },
 
   en: {
+    "login.chooseRole.idleOwner": "Idle-time owner",
     "idleOwner.kCostHint": "{m} supervisors · {c} cells",
     "idleOwner.noEventsSub": "Try another period or fewer filters.",
     "admin.profiles.idleOwners": "Idle-time owners",
