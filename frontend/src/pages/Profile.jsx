@@ -5,7 +5,7 @@ import {
   Archive, ArchiveRestore, ArrowLeft, Ban, BellOff, Camera, Check, Clock, Copy, Eye, EyeOff,
   Factory as FactoryIcon, Flag, Globe, Hash, IdCard, KeyRound, Languages,
   LayoutGrid, Link2, LogIn, LogOut, Pencil, Plus, RotateCcw, Shield, Star, Trash2,
-  UserCog, UserRound, Users, X,
+  UserCog, UserRound, Users, X, ShieldQuestion,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import api from "../utils/api";
@@ -51,6 +51,7 @@ const TYPE_META = {
   leader:          { listKey: "leaders",        icon: Flag },
   admin:           { listKey: "admins",         icon: Shield },
   guest:           { listKey: "guests",         icon: UserRound },
+  "idle-owner":    { listKey: "idle_owners",    icon: ShieldQuestion },
 };
 const NAME_LANGS = ["uz_cyrl", "ru", "en"];
 const MIN_PW_LEN = 8;

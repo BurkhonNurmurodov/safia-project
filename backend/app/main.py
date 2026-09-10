@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -658,6 +658,9 @@ app.include_router(leader_ai.router)
 # require_page("idle-cell"), so no admin guard here (grantable to
 # leaders/supervisors later).
 app.include_router(idle_cell.router)
+# «Mening toifam» — the ojidaniya register read cause-first, for the person
+# answerable for a waiting category (services/idle_scope owns the lock).
+app.include_router(idle_owner.router)
 # Per-cell attendance rows, read by the Staff (verifix) page's Yacheyka column
 # and cell view — its own page is gone, so this self-gates via
 # require_page("staff") (and require_page("cells") for the in-load writer).

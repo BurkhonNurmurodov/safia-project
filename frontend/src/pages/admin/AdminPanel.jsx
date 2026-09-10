@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
-  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock,
+  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock, ShieldQuestion,
   ClipboardList, CircleSlash,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
@@ -34,6 +34,7 @@ import DataSources from "./DataSources";
 import DisplaySettings from "./DisplaySettings";
 import ShiftTimes from "./ShiftTimes";
 import IdleSource from "./IdleSource";
+import IdleOwners from "./IdleOwners";
 import LostWorkers from "./LostWorkers";
 import DocAudit from "./DocAudit";
 import Logs from "./Logs";
@@ -116,6 +117,12 @@ export const ADMIN_NAV = [
   // «Смена отчёт» sheet row (everybody's default) or the headcount-weighted
   // per-cell interval model from a given date. The only place the rule shows.
   { id: "idlesource",   group: "tools",  Icon: GitBranch,      labelKey: "admin.tabIdleSource",   descKey: "admin.desc.idlesource" },
+  // WHO answers for each ojidaniya category — the name printed beside a cause
+  // on every by-category surface, and the SCOPE of the «Kutish mas'uli» role.
+  // No capKey: the assignment decides what a whole role may read, so handing
+  // it out is handing out the ability to widen somebody's scope (the
+  // `permissions` / `logs` model — admin-only and never grantable).
+  { id: "idleowners",   group: "tools",  Icon: ShieldQuestion, labelKey: "admin.tabIdleOwners",   descKey: "admin.desc.idleowners" },
   // READ-ONLY audit of workers an approved → supervisor exchange left on no
   // roster (an upload wiped the receiving unit's day and nothing put them back).
   // A report, not a repair: restoring a row moves that day's historical numbers.
@@ -153,6 +160,7 @@ const VIEWS = {
   ltcutoff:     LeaderCutoffs,
   shifttimes:   ShiftTimes,
   idlesource:   IdleSource,
+  idleowners:   IdleOwners,
   lostworkers:  LostWorkers,
   docaudit:     DocAudit,
   translations: TranslationsEditor,

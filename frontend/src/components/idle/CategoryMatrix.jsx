@@ -5,6 +5,7 @@ import { useTranslit } from "../../utils/transliterate";
 import { catColor } from "./categories";
 import { SkeletonMatrix } from "../ui/Skeleton";
 import EmptyState from "../ui/EmptyState";
+import OwnerChip from "./OwnerChip";
 
 /**
  * «Toifalar bo'yicha» — categories down, the days of the month across.
@@ -87,6 +88,9 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
 
   const dates = data?.dates || [];
   const cats = data?.cats || [];
+  // WHO answers for each cause. A map keyed by category, so the same fact does
+  // not travel once per row (services/idle_scope.owner_labels).
+  const owners = data?.owners || {};
   const future = data?.future || [];
   const hasFuture = future.some(Boolean);
 
@@ -271,6 +275,10 @@ export default function CategoryMatrix({ data, loading, monthLabel }) {
                       <span className="truncate text-[11.5px] font-normal" style={{ color: "var(--text-3)" }}>
                         {t(`downtime.cat.${code}.label`)}
                       </span>
+                      {/* The person answerable for this cause — the row is
+                          about a category, so the name belongs on it, not
+                          buried in a legend somewhere else. */}
+                      <OwnerChip owners={owners} category={c.name} tint={hue} size="sm" />
                     </button>
                   </th>
                   {dates.map((d, i) =>

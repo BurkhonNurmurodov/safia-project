@@ -16,9 +16,10 @@ from app.models import (Cell, CellOjidaniyaInterval, DowntimeData, Factory, Mana
                         RoleProfile)
 from app.services.day_state import confirmed_pairs
 from app.services.factory_scope import empty_scope, scoped_manager_ids
-from app.services import (action_log, deck_narrative, idle_intervals, idle_source,
-                          ojidaniya_cost, ojidaniya_deck, ojidaniya_matrix,
-                          report_week, wage_rate, zagruzka_source)
+from app.services import (action_log, deck_narrative, idle_intervals, idle_scope,
+                          idle_source, ojidaniya_cost, ojidaniya_deck,
+                          ojidaniya_matrix, report_week, wage_rate,
+                          zagruzka_source)
 from app.xlsx_delivery import PPTX_MIME, deliver_file, deliver_xlsx
 from app.services.ojidaniya_export import (build_cost_workbook,
                                            build_matrix_workbook,
@@ -49,6 +50,11 @@ def get_downtime(
     # `_downtime`. Additive and off by default, so every existing caller gets
     # a byte-identical payload.
     avg: bool = Query(default=False),
+    # The doughnut's category picks, and the ONE door a «Kutish mas'uli» is
+    # locked through. Sent by the client as a narrowing; resolved on the server,
+    # because `?cats=` is a query parameter anyone can type
+    # (services/idle_scope).
+    cats: List[str] = Query(default=[]),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime", "daily")),
 ):
@@ -56,8 +62,10 @@ def get_downtime(
         date_to = date.today()
     if not date_from:
         date_from = date_to - timedelta(days=13)
-    return _downtime(db, payload, date_from, date_to, shift, manager_id, kpi_only,
-                     factory, with_avg=avg)
+    out = _downtime(db, payload, date_from, date_to, shift, manager_id, kpi_only,
+                    factory, with_avg=avg)
+    return idle_scope.narrow_downtime(
+        out, idle_scope.resolve_cats(db, payload, cats))
 
 
 # A month is what the tab selects, so the cap only ever catches a hand-typed
@@ -303,6 +311,7 @@ def get_downtime_matrix(
     # The matrix mirrors the page: a narrowing the bars applied applies here.
     stopped: bool = Query(default=True),
     factory: Optional[int] = Query(default=None),
+    cats: List[str] = Query(default=[]),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime", "daily")),
 ):
@@ -321,7 +330,14 @@ def get_downtime_matrix(
             detail=f"Period longer than {_MATRIX_MAX_DAYS} days")
     data = _downtime(db, payload, date_from, date_to, shift, manager_id,
                      kpi_only, factory, with_avg=True)
-    return ojidaniya_matrix.build(data, stopped=stopped)
+    data = idle_scope.narrow_downtime(
+        data, idle_scope.resolve_cats(db, payload, cats))
+    out = ojidaniya_matrix.build(data, stopped=stopped)
+    # WHO answers for each category. A map keyed by category rather than a name
+    # copied onto every row: the table names a category once per group and again
+    # per brigadir under it, and that is one fact travelling many times.
+    out["owners"] = idle_scope.owner_labels(db)
+    return out
 
 
 @router.get("/downtime/seasonality")
@@ -333,6 +349,7 @@ def get_downtime_seasonality(
     # grid shows only the waiting that the загрузка KPIs count.
     kpi_only: bool = Query(default=False),
     factory: Optional[int] = Query(default=None),
+    cats: List[str] = Query(default=[]),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime", "daily")),
 ):
@@ -346,6 +363,10 @@ def get_downtime_seasonality(
     a column always adds up to 100%.
     """
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    # The category lock, resolved server-side like every other narrowing here.
+    # An EMPTY answer is a real one — a «Kutish mas'uli» who owns nothing
+    # matches nothing — so it is tested with `empty_scope`, never with `if not`.
+    cat_scope = idle_scope.resolve_cats(db, payload, cats)
     managers = db.query(Manager).filter(Manager.archived.is_(False))
     if shift:
         managers = managers.filter(Manager.shift == shift)
@@ -355,7 +376,7 @@ def get_downtime_seasonality(
     alias = sheet_alias_map(db, (m.name for m in managers))
     manager_names = set(alias.keys())
 
-    if not manager_names:
+    if not manager_names or idle_scope.empty_scope(cat_scope):
         return {"years": [], "year": year, "cat_names": [],
                 "col_totals": [0.0] * 12, "col_totals_ns": [0.0] * 12,
                 "by_category": {}, "by_category_ns": {}}
@@ -398,6 +419,8 @@ def get_downtime_seasonality(
         ):
             for cat, val in cats.items():
                 if kpi_only and cat in OJIDANIYA_ONLY_CATS:
+                    continue
+                if cat_scope is not None and cat not in cat_scope:
                     continue
                 v = float(val or 0)
                 dest.setdefault(cat, [0.0] * 12)[m] += v
@@ -484,7 +507,12 @@ def get_downtime_cell_detail(
     if not mgr:
         raise HTTPException(status_code=404, detail="Supervisor not found")
 
-    detail = _cell_detail(db, manager_id, date_from, date_to, stopped, kpi_only, cats)
+    cat_scope = idle_scope.resolve_cats(db, payload, cats)
+    if idle_scope.empty_scope(cat_scope):
+        return {"manager_id": manager_id, "manager_name": mgr.name,
+                "shift": mgr.shift, "cells_days": [], "days": {}}
+    detail = _cell_detail(db, manager_id, date_from, date_to, stopped, kpi_only,
+                          cat_scope or [])
     return {
         "manager_id": manager_id,
         "manager_name": mgr.name,
@@ -811,8 +839,15 @@ def export_downtime(
     if (d_to - d_from).days > _EXPORT_MAX_DAYS:
         raise HTTPException(status_code=400, detail=f"Period longer than {_EXPORT_MAX_DAYS} days")
 
-    data = _downtime(db, payload, d_from, d_to, body.shift, body.manager_id,
-                     body.kpi_only, body.factory)
+    # The client sends the SCOPE; the server re-decides it. A locked
+    # «Kutish mas'uli» gets a file describing exactly the categories their
+    # screen showed — the workbook is not a second door round the lock.
+    cat_scope = idle_scope.resolve_cats(db, payload, body.cats)
+    data = idle_scope.narrow_downtime(
+        _downtime(db, payload, d_from, d_to, body.shift, body.manager_id,
+                  body.kpi_only, body.factory),
+        idle_scope.viewer_categories(db, payload))
+    body.cats = list(cat_scope or [])
     L = body.labels or {}
     tkey = "total" if body.stopped else "total_ns"
     ckey = "by_category" if body.stopped else "by_category_ns"
@@ -937,11 +972,18 @@ def export_downtime(
     events.sort(key=lambda e: e["date"], reverse=True)
 
     dates_iso = [datetime.strptime(d, "%d.%m.%Y").date().isoformat() for d in data["dates"]]
+    # The category's owner, merged onto the meta the client sent: the words
+    # come from the viewer's own language bundle, the NAME comes from the
+    # server — a person's name is not something a browser gets to assert.
+    owners = idle_scope.owner_labels(db)
+    cat_meta = {c: {**(m or {}), "owner": (owners.get(c) or {}).get("name") or ""}
+                for c, m in (body.cat_meta or {}).items()}
+
     p = {
         "title": body.title or "Ojidaniya", "subtitle": body.subtitle or "",
         "sheets": body.sheets, "labels": L, "meta": body.meta, "kpis": kpis,
-        "cats": wanted, "cat_meta": body.cat_meta,
-        "cat_order": body.cat_order or list(body.cat_meta.keys()),
+        "cats": wanted, "cat_meta": cat_meta,
+        "cat_order": body.cat_order or list(cat_meta.keys()),
         "summary": summary, "totals": totals, "cat_share": cat_share,
         "dates": dates_iso, "matrix": {k: v for k, v in matrix.items()},
         "fleet_by_day": {k: round(v, 1) for k, v in fleet.items()},
@@ -1119,9 +1161,17 @@ def export_downtime_matrix(
             status_code=400,
             detail=f"Period longer than {_MATRIX_MAX_DAYS} days")
 
-    data = _downtime(db, payload, d_from, d_to, body.shift, body.manager_id,
-                     body.kpi_only, body.factory, with_avg=True)
+    data = idle_scope.narrow_downtime(
+        _downtime(db, payload, d_from, d_to, body.shift, body.manager_id,
+                  body.kpi_only, body.factory, with_avg=True),
+        # The LOCK, not a pick: this body carries no category filter (the tab
+        # has none), so reading one would be an AttributeError on every press.
+        idle_scope.viewer_categories(db, payload))
     mx = ojidaniya_matrix.build(data, stopped=body.stopped)
+    # WHO answers for each category — resolved here, never sent by the client:
+    # a name in a file is a statement about a person and does not travel from a
+    # browser. Absent for a category nobody owns, which prints as «—».
+    owners = idle_scope.owner_labels(db)
 
     def disp(mid, name):
         return body.names.get(str(mid)) or name or ""
@@ -1130,8 +1180,10 @@ def export_downtime_matrix(
     for c in mx["cats"]:
         meta = body.cat_meta.get(c["name"]) or {}
         lbl = meta.get("label")
+        own = owners.get(c["name"]) or {}
         cats.append({
             **c,
+            "owner": own.get("name") or "",
             # «Cat I — Oldingi smena ishi tugashini kutish»: the code is the
             # identity, the words are why anybody would recognise it.
             "label": f"{c['name']} — {lbl}" if lbl else c["name"],
@@ -1352,16 +1404,34 @@ def get_downtime_cost(
     """
     date_from, date_to = _cost_window(date_from, date_to)
     ids = _cost_scope(db, payload, factory, shift, manager_id)
+    # The reader's category picks INTERSECTED with whatever they are locked to.
+    # An empty answer is a real one — a «Kutish mas'uli» asking for a category
+    # they do not own gets no rows, never every row (services/idle_scope).
+    cat_scope = idle_scope.resolve_cats(db, payload, cats)
     periods = wage_rate.load(db)
+    if idle_scope.empty_scope(cat_scope):
+        # `build` reads an empty `cats` as «no pick» — right for a reader who
+        # has picked nothing, and the opposite of right for an owner whose
+        # categories have all been re-assigned. Answer with nothing.
+        ids = []
     out = ojidaniya_cost.build(
-        db, ids, date_from, date_to, cats, wage_rate.resolver(periods),
+        db, ids, date_from, date_to, list(cat_scope or []),
+        wage_rate.resolver(periods),
         pre_rows=_pre_floor_rows(db, payload, date_from, date_to, shift,
-                                 manager_id, factory))
+                                 manager_id, factory),
+        # A locked viewer must not be offered a category they can never see;
+        # everyone else keeps the full option list, unshortened by their own
+        # pick, exactly as before.
+        cat_lock=idle_scope.viewer_categories(db, payload))
     # Narrowed AFTER the trees are built, so the cell option list — and the
     # cascade the client drives off it — is not shortened by its own pick.
     out = ojidaniya_cost.narrow(out, cell_id)
     out["rates"] = periods
     out["can_edit_rates"] = payload.get("role") == "admin"
+    # WHO answers for each category. A map keyed by category, resolved here and
+    # never sent from a browser: a name is a statement about a person.
+    out["owners"] = idle_scope.owner_labels(db)
+    out["cat_locked"] = idle_scope.viewer_categories(db, payload)
     return out
 
 
@@ -1385,9 +1455,17 @@ def get_downtime_cost_entries(
     ids = _cost_scope(db, payload, factory, None, [manager_id])
     if manager_id not in ids:
         raise HTTPException(status_code=403, detail="Out of scope")
+    # `category` is a query parameter too, so the category lock is re-decided
+    # here for the same reason the unit scope is: a viewer who cannot see a
+    # cause in the tree cannot read its events either. A modal opened on ALL
+    # categories (`category=None`) is narrowed to the ones they own.
+    lock = idle_scope.viewer_categories(db, payload)
+    if lock is not None and category is not None and category not in lock:
+        raise HTTPException(status_code=403, detail="Out of scope")
     return ojidaniya_cost.entries(db, manager_id, cell_id, category,
                                   date_from, date_to,
-                                  wage_rate.resolver(wage_rate.load(db)))
+                                  wage_rate.resolver(wage_rate.load(db)),
+                                  cats=None if category else lock)
 
 
 # ── the wage timeline ────────────────────────────────────────────────────────
@@ -1488,25 +1566,38 @@ def export_downtime_cost(
     d1, d2 = _cost_window(d1, d2)
 
     ids = _cost_scope(db, payload, body.factory, body.shift, body.manager_id)
+    cat_scope = idle_scope.resolve_cats(db, payload, body.cats)
+    if idle_scope.empty_scope(cat_scope):
+        ids = []                      # see get_downtime_cost
     out = ojidaniya_cost.build(
-        db, ids, d1, d2, body.cats, wage_rate.resolver(wage_rate.load(db)),
+        db, ids, d1, d2, list(cat_scope or []),
+        wage_rate.resolver(wage_rate.load(db)),
         pre_rows=_pre_floor_rows(db, payload, d1, d2, body.shift,
-                                 body.manager_id, body.factory))
+                                 body.manager_id, body.factory),
+        cat_lock=idle_scope.viewer_categories(db, payload))
     out = ojidaniya_cost.narrow(out, body.cell_id)
     rows = out["rows"]
 
     tot = dict(out["totals"])
     tot["perDay"] = (round(tot["cost"] / tot["days"])
                      if tot.get("cost") and tot.get("days") else None)
+    owners = idle_scope.owner_labels(db)
     blob = build_cost_workbook({
         "title": body.title or "Ojidaniya xarajati",
         "subtitle": body.subtitle or "",
         "scope": body.scope, "labels": body.labels, "cats": body.cats_meta,
+        # WHO answers for each category — a SEPARATE key, because `cats` is a
+        # {name: label} map of the viewer's own words and turning its values
+        # into objects would break every reader of it.
+        "owners": {c: (o or {}).get("name") or "" for c, o in owners.items()},
         "rows": rows, "cat_rows": out["cat_rows"], "totals": tot,
     }).getvalue()
 
     fname = f"ojidaniya-xarajat-{body.date_from}_{body.date_to}.xlsx"
-    resp = deliver_xlsx(request, payload, blob, fname)
+    # (filename, data) — the two were the wrong way round here, so a browser
+    # download was served the FILENAME as its body under a name built out of the
+    # url-encoded workbook.
+    resp = deliver_xlsx(request, payload, fname, blob)
     action_log.enrich(
         target_kind="report", target_id=fname,
         details=[("file", fname), ("rows", len(rows)), ("size", len(blob)),

@@ -31,6 +31,7 @@ or copy-paste its markup into a page.
 | Table pager | `Pagination.jsx` | For registers too long to dump into the DOM (thousands of rows). Sits directly under the `TableCard`: "x–y of N" left, windowed page buttons right, built from `Button`. Renders nothing for a single page. |
 | Column show/hide + reorder | `ColumnsPicker.jsx` | 38px `Columns3` icon trigger on the toolbar's RIGHT edge (`className="ml-auto"`, hidden-count badge) + portaled panel listing every column IN TABLE ORDER — hidden ones stay dimmed in place (eye-off), never regrouped to the bottom. Hide all/Show all links; drag-to-reorder only arms via the panel's reorder button. Controlled: `columns [{key,label,locked}]`, `order`, `hidden`, `onChange({order,hidden})`. Persist via `/api/ui-prefs/{key}` (per-profile JSON blobs, `UiPref` model); reconcile saved keys against the current column catalog and keep identity columns `locked`. `t("cols.*")` keys exist in all 4 langs. Excel exports of a picker-equipped table must mirror it exactly — send the visible keys in on-screen order (`columns`) with the row-id `order`, backend formats keyed per column. (Exception: the Позиции export deliberately emits the fixed brigadir «ABC форма» formula workbook instead of a picker mirror — don't revert it. It reproduces the manual form cell-for-cell: totals row 1, headers row 2, positions row 3+, team block M:O, indicators P:Q; only Трудоемкость/Команда/Факт/ПЛАН and O. SONI are values, everything else is a live formula so the brigadir's edits recalculate. Trimmed hard on the operator's call (2026-08-31): the indicator block is THREE rows — «Nechta odam keldi» = `=SUM(N…)`, the people assigned to the cells that day; «Hozirgi odam bilan o`rtacha bandlik(smena boshida)» = `=I1/(keldi×shift_min)`, the same arithmetic as `pp_calc`'s `avg_load` so the file and the page answer with one number; and «Общ.трудаёмкост» = `=I1` — and the other six indicators, the whole «Сколько должна на штатке» block (Z:AA) and the team block's P:W half (Команда · минут · real load · capacity · kerak · Штатка) are gone. Everything removed was derived from hand-entered counts nobody fills in, so it printed 0 / 100% on every file. Consequence: O. SONI (N) loses the `=ROUND(U,0)` chain that fed it and is written as a VALUE — the block's one input, and what ЛЮДИ/Минут/Парето/Загруженность still recalculate off via the M:N VLOOKUP. The page itself (its reconciliation card, its Штатка/capacity columns) is untouched — only the export dropped them. Superseded the older «загрузка» two-shift layout.) See the Production «Позиции» table for the reference wiring (cells rendered by a per-key switch so hide/reorder is free). |
 | Factory (plant) switcher | `useFactorySection()` from `FactorySelect.jsx` | THE plant switcher — a `FilterPanel` SECTION, first in every factory-aware page's section list (plant → shift → supervisor → …), never a standalone control on the bar. (The standalone `FactorySelect` dropdown and the `FactoryTabs` strip before it are both retired from page toolbars: each cost a permanent toolbar cell on a phone-first platform for a value most users never change.) «All factories» is the FIRST option. Returns `null` when fewer than two factories exist; a locked viewer (supervisor/leader) gets a `static` section — an inert chip naming their plant, never a one-option control. The `FactorySelect` component itself survives only for non-toolbar surfaces (admin forms). |
+| Ojidaniya category owner ("who answers for this cause") | `components/idle/OwnerChip.jsx` | THE way a «Kutish mas'uli» is named beside a category — the «Xarajat» tree, the «Toifalar bo'yicha» matrix, `/idle-owner`. Fed the payload's `owners` map (category → person, from `services/idle_scope.owner_labels`), never a name copied onto every row. A NAME, not a status: no traffic light — it borrows the category's own hue where it sits on a coloured row. A category with NOBODY assigned renders **nothing at all**, never «—» and never an empty chip: twelve categories with two owners between them would grow ten placeholders saying only that the register is unfinished. (Workbooks DO print «—» — a blank spreadsheet cell reads as «this column did not apply here».) |
 | Cell label (how a cell is NAMED) | `utils/cellName.js` → `cellLabel(code, leader)` | A cell is its **verifix CODE**. The workshop name is NEVER printed — see the section below. |
 | Pressable cell reference | `CellLink.jsx` | THE way a production cell rendered as CONTENT (table cell, card, chip) opens its page `/cells/:id` — dotted-underline affordance via the `.cell-link` rule in `index.css`. `id` = cells.id; without one it renders inert text (never a dead link). Clicks stop propagation, so it nests in clickable rows. FILTER controls listing cells never navigate. Don't put it inside another `<button>` (IdleCell accordion / AttendanceUpload expander stay unlinked on purpose — nested-interactive + they hold unsaved drafts). `/cells/:id` (`CellDetails.jsx`) is auth-only like `/profile`; its edit modal is the shared `CellFormModal.jsx` (ONE form with the `/cells` register). |
 | Empty-data placeholder | `EmptyState.jsx` | For page/section level. Table "no match" rows stay plain muted text. |
@@ -1330,6 +1331,133 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   path (their minutes are the «Смена отчёт» row); the date picker is deliberately
   not clamped, and the empty state names the floor instead.
 
+## WHO answers for a waiting category (`idle-owner`, `/idle-owner`)
+
+From **2026-09-10** (the operator's directive) each ojidaniya category has ONE
+named person answerable for driving it down — the **«Kutish mas'uli»**, a role
+of its own. Two separate things follow, and `services/idle_scope.py` is THE
+definition of both, for the reason `factory_scope` is the one definition of the
+plant: if each page decided for itself what «Cat D3's owner» means they would
+disagree the first time a category changed hands, and nobody could tell which
+page was lying.
+
+1. **The NAME.** Every by-category surface prints its owner beside the category:
+   the «Xarajat» tree, the «Toifalar bo'yicha» matrix, the owner's own page and
+   all three workbooks. A cost figure with nobody's name against the cause is a
+   number nobody owns.
+2. **The SCOPE.** A viewer holding the role reads the register through their own
+   categories and no others. Applied server-side and never by hiding a control —
+   `?cats=` is a query parameter anyone can type.
+
+- **`idle_category_owners.category` is UNIQUE, and that unique key IS the rule.**
+  «One for each category» is the operator's own wording, so it is a guarantee of
+  the schema rather than of whoever last edited the writer — the shape
+  `uq_wage_rate_from` is an expression index for. Re-assigning REPLACES; there is
+  never a second owner to disambiguate between. A person may own SEVERAL
+  categories (twelve causes, fewer people) and their page answers for all at
+  once; the inverse is what the key forbids.
+- **The owner is a PROFILE, keyed by `identity.profile_key`** — a person, not an
+  account, so every holder of that profile sees the page and is named on it. The
+  `"role:id"` STRING and not `role_profiles.id`, because a supervisor lives in
+  the `managers` namespace and may perfectly well own a cause; `WebCredential`
+  already has to handle both.
+- **Nothing is denormalised and NO figure moves, ever.** The owner is resolved on
+  read, so re-assigning a category re-labels every past surface at once with no
+  migration and no re-sync — the property `wage_rate` and `idle_source` already
+  have. What the assignment decides is who is NAMED and what one role may look
+  at, never what anything costs. The admin Save says so.
+- **`None` is «no narrowing»; an EMPTY LIST is a real answer.** The convention
+  `factory_scope.scoped_manager_ids` already uses, and the trap it marks: an
+  owner whose categories were all re-assigned matches NOTHING, and reading that
+  empty list as «no filter» hands them the whole plant. Every caller tests it
+  with `idle_scope.empty_scope`, and both cost endpoints answer with an empty
+  unit set rather than letting `ojidaniya_cost.build` read `cats=[]` as «no pick».
+- **A PICK and a LOCK are two arguments and never one.** `resolve_cats` returns
+  the intersection for the query; `viewer_categories` is what narrows the OPTION
+  LIST (`cat_lock`). A pick must not shorten the list it was picked from — the
+  rule `ojidaniya_cost.build` already keeps — while a lock must, because a
+  control naming a category the page can never show a row for is worse than no
+  control. Conflating them emptied every unlocked reader's category filter.
+- **The 50-minute flag does not survive a narrowing.** `flagged` is a fact about
+  a unit's WHOLE-day UNION, so it says nothing about one category's share of that
+  day — the reasoning that keeps a traffic-light ramp off «Toifalar bo'yicha». A
+  payload `idle_scope.narrow_downtime` touched carries `flagged: False` and says
+  so through `cat_locked`, rather than leaving a red mark the narrowed numbers
+  cannot justify. Its totals are re-summed from the kept categories (the SUM, not
+  a union — the convention the page's own doughnut picks already use), and
+  `cat_all` keeps the whole option list beside the narrowed `cat_names`.
+- Locked endpoints: `/downtime`, `/downtime/matrix`, `/downtime/seasonality`,
+  `/downtime/cell-detail`, `/downtime/cost`, `/downtime/cost/entries` and all
+  four workbooks. The PPTX deck is admin-only and an admin is never locked.
+
+### The page: «Mening toifam» (`/idle-owner`)
+
+Purpose-built, because narrowing the three `/downtime` views to one cause stops
+them answering anything — a doughnut of a single slice, a comparison matrix with
+nothing to compare, a whole-day flag over one category's share. It asks the
+owner's questions instead: is my cause getting better or worse · where is it
+concentrated · what did it cost · and what actually happened, in the leaders'
+own words.
+
+- **Nothing here is a new measurement.** `services/idle_owner.py` reaches every
+  figure through `services/ojidaniya_cost` — its `build` supplies the totals and
+  the toifa → brigadir → yacheyka tree, and the daily series is folded from the
+  same `_union` / `cell_headcount` / `wage_rate` primitives in the same two eras.
+  A second spelling is how this page and the «Xarajat» tab would come to state
+  two different numbers for one week.
+- **The headline is the CATEGORY sum, not the union**, and the page says so
+  before anybody reads a figure: a minute a cell stood still for two causes is
+  owed once (the union — the money) and is genuinely named under both. An owner
+  asking «how much did MY cause produce» wants their category's own union;
+  folding it into a shared one hands them a figure that shrinks when somebody
+  else's category overlaps theirs. Where the two differ both are printed and each
+  is named — the rule `ojidaniya_cost` already states for `cat_minutes`.
+  **Consequence to know: its totals do not match the «Tahlil» tab's.**
+- **The comparison window is the SAME LENGTH, immediately before** — `[from - n,
+  from - 1]`. A percentage against a window of another length is a statement
+  about the calendar. A previous period of ZERO has NO percentage: «up from
+  nothing» is not a number, so no chip is drawn rather than an infinity somebody
+  forwards. UP is the bad direction, so the chip is red for it.
+- **The REGISTER is why the page exists.** One row per filed event with the
+  leader's note reproduced VERBATIM: an owner deciding what to fix is reading
+  evidence, not a summary of it. Paginated server-side (a plant-wide cause over a
+  quarter is thousands of rows), searchable over note · cell · leader · brigadir,
+  and each row priced on its OWN minutes so the column adds up by eye — which
+  totals MORE than the headline wherever two events of one cause overlapped, and
+  the page says that too.
+- **A period reaching back before the floors is answered, not refused.** Before
+  `zagruzka_source.ZAGRUZKA_FROM` there is no per-cell headcount, so those days
+  are priced per BRIGADIR off the «Одам сони» sheet and carry no cell and no
+  clock; before `idle_source.CELLS_FROM` the minutes come from the «Смена отчёт»
+  row and there are no EVENTS at all. Both arrive as the `pre_rows` the «Xarajat»
+  tab already hands in, so the two cover the same days — and the register NAMES
+  how many of the period's days can have no event behind them, because a thin
+  event list under a fat total otherwise reads as a quiet month.
+- **Access**: the `idle-owner` role by default (the only role that exists for
+  it — a fresh owner must land on a working page, not the no-access screen).
+  Anybody else is toggled on from the Access tab and reads it UNLOCKED: the lock
+  is a property of the ROLE, not of the page. Its own Excel is four sheets
+  (Umumiy · Kunlar · Yacheykalar · Hodisalar) and carries the WHOLE register, not
+  the page on screen — a workbook holding fifty of nine hundred rows lies about
+  the period on its own cover.
+- Admin: «Kutish mas'ullari» (`/admin/upload?tab=idleowners`), one row per
+  category, everything a DRAFT until Save. **Admin-only and NOT grantable** — no
+  `capKey`, so `capTabs.includes(capKey ?? id)` can never admit a grantee (the
+  `permissions` / `logs` / `ltdaily` model): the assignment decides what a whole
+  role may read, so handing it out is handing out the ability to widen somebody's
+  scope. `POST` re-checks `role == "admin"` itself, the endpoint being reachable
+  without the UI.
+- **`OwnerChip` renders NOTHING where nobody is assigned** — never «—» and never
+  an empty chip. Twelve categories with two owners between them would otherwise
+  grow ten placeholders saying only that the register is unfinished, which is a
+  fact for the destination that manages it. The WORKBOOKS do print «—», because a
+  blank cell in a spreadsheet reads as «this column did not apply here».
+- Deliberately unchanged: `/idle-cell` (the leaders' ENTRY form — an owner files
+  nothing), every figure on every existing surface, and the categories themselves
+  (`sheets_reader.SHIFT_CATEGORY_ORDER` is still the one list).
+
+Related memory: `idle-category-owner-role`.
+
 ## The checklist config page (`/admin/upload?tab=ltasks`)
 
 From **2026-09-07** the destination is «Chek-list sozlamalari» and it is TWO
@@ -1714,6 +1842,28 @@ number.
   by nothing. Consequence to know: the badge answers «how much is with the
   admins» for EVERY viewer, so a brigadir does now carry a number only an admin
   can clear.
+- **An ADMIN's REFUSAL cannot be made wordlessly, and the reason goes to the
+  leader** (2026-09-10, the operator's directive). It is the END of the chain —
+  the leader has explained their shift to two people, loses the point for good
+  and has no route left — so «rejected» with nothing beside it is the platform
+  declining to say why on the one decision that cannot be argued with.
+  `leader_dispute.decide_admin` refuses an empty note on `rejected`
+  (`Refused("note required")`, the word the uplift guard already uses),
+  `leader_dispute_rejected` prints it as «Sabab» (a REQUIRED reason, not the
+  optional «Izoh» its stage-1 twin keeps), and every door collects it: the
+  `/decide` endpoint pre-checks with a **400** naming what to do, the two
+  queues and the day report open the SAME note form the uplift uses
+  (`needsNote` — a property of the ROW as well as the verb), and the Telegram
+  card PAUSES on the tap (`telegram_bot._ad_ask_admin_reason` → an `ad_arej`
+  capture → `_decide_leader_dispute(note=…)`, which is also why that function
+  and `_log_leader_dispute` now take a note). The `ap:` keyboard is shared with
+  four other approval kinds, so the pause lives in `handle_approval_callback`'s
+  `ld` branch, never in the keyboard.
+  **APPROVING still needs none** — the outcome IS the answer — and **stage 1 is
+  deliberately untouched**: a brigadir's refusal is not the last word (an
+  admin's undo reaches it, and the leader may file again), so forcing words
+  there would be a rule with no consequence behind it. Same rule, same shape,
+  in `leader_late_proof.decide_admin`.
 - **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
   the «Qarorni bekor qilish» button under the objection box on the report page).
   Deciding is one tap and an ADMIN's own filing IS the approval, so the wrong
@@ -2457,6 +2607,14 @@ say about it.
   uses, so it moves the register, the leaderboard, the day report and the
   corrected report DM with no new scoring path. The lateness is not laundered:
   the row, its chip and the day report all go on saying it arrived late.
+- **An ADMIN's REFUSAL requires their reason and it is told to the leader**
+  (2026-09-10) — the twin of the rule in the objection chain above, for the
+  same reason and in the same shape: `decide_admin` refuses an empty note on
+  `rejected`, `late_proof_rejected` gained a `{note}` it never carried, the
+  endpoint pre-checks with a 400, «Kechikkan isbotlar» opens the uplift's own
+  form, and the Telegram card pauses on `lp:ar` for an `lp_arej` capture rather
+  than ruling on the tap. Approving needs none; the brigadir's stage-1 refusal
+  still needs none.
 - **Nothing expires it.** An undecided row waits in both queues with a badge
   until a person acts. The default is already 0 points, so a silent auto-reject
   would only take the decision away from the two people the flow exists to put

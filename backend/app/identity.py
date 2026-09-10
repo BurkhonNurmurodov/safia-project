@@ -36,7 +36,8 @@ from app.models import (
 
 # Roles whose role_id IS already the profile id — the key needs no lookup.
 # (supervisor → managers.id; the rest → role_profiles.id.)
-_DIRECT_ROLES = ("top-manager", "shift-manager", "guest", "supervisor")
+_DIRECT_ROLES = ("top-manager", "shift-manager", "guest", "supervisor",
+                 "idle-owner")
 
 
 # ── the key ───────────────────────────────────────────────────────────────────

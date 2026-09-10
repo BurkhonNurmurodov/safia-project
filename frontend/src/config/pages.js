@@ -2,7 +2,8 @@
 
 // Roles an admin can toggle per page. "admin" is always granted full access
 // and never appears here.
-export const TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "guest"];
+export const TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "guest",
+                                "idle-owner"];
 
 export const ROLE_LABELS = {
   "top-manager":  "Top Manager",
@@ -11,6 +12,7 @@ export const ROLE_LABELS = {
   "leader":       "Leader",
   "admin":        "Admin",
   "guest":        "Guest",
+  "idle-owner":   "Idle-time owner",
 };
 
 // Translation keys for the same roles — resolve with t() in components so the
@@ -23,6 +25,7 @@ export const ROLE_LABEL_KEYS = {
   "leader":        "role.leader",
   "admin":         "role.admin",
   "guest":         "role.guest",
+  "idle-owner":    "role.idleOwner",
 };
 
 // Order matters — it drives the "first accessible page" fallback.
@@ -52,6 +55,7 @@ export const PAGES = [
   { tier: "test", key: "live", route: "/live", labelKey: "nav.live" },
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
   { key: "education", route: "/education", labelKey: "nav.education" },
+  { key: "idle-owner", route: "/idle-owner", labelKey: "nav.idleOwner" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -105,6 +109,13 @@ export const DEFAULT_PAGE_ACCESS = {
   // content — while gating it would let a lesson somebody was DMed a link for
   // open onto "no access". Publishing stays admin-only, checked server-side.
   education: ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
+  // «Mening toifam» — the ojidaniya register read cause-first. Open to the
+  // `idle-owner` role, the only role that exists for it: a fresh «Kutish
+  // mas'uli» must land on a working page, and the page shows them only the
+  // categories they own (resolved server-side, so the query string is not a way
+  // round it). Anybody else is toggled on from the Access tab and reads it
+  // unlocked — the lock is a property of the ROLE, not of the page.
+  "idle-owner": ["idle-owner"],
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants

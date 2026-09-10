@@ -593,11 +593,16 @@ def _legend(wb: Workbook, p: dict) -> None:
     order = p.get("cat_order") or list(meta.keys())
     if not order:
         return
-    ws = _sheet(wb, tabs.get("legend", "Legend"), {2: 9.0, 3: 40.0, 4: 84.0, 5: 15.0}, landscape=True)
-    C1, C2 = 2, 5
+    # «Mas'ul» sits between the words and the загрузка verdict: it answers
+    # WHO, which is the question a reader of a glossary asks straight after
+    # WHAT. Resolved on the server (routers/downtime) — a name is a statement
+    # about a person and does not travel from a browser.
+    ws = _sheet(wb, tabs.get("legend", "Legend"),
+                {2: 9.0, 3: 40.0, 4: 72.0, 5: 26.0, 6: 15.0}, landscape=True)
+    C1, C2 = 2, 6
     row = _banner(ws, 2, C1, C2, L.get("legendTitle", ""), L.get("legendSub", ""))
     _head_row(ws, row, C1, [L.get("cat", ""), L.get("catName", ""), L.get("catNote", ""),
-                            L.get("counted", "")], height=24)
+                            L.get("catOwner", ""), L.get("counted", "")], height=24)
     row += 1
     for i, name in enumerate(order):
         m = meta.get(name) or {}
@@ -609,8 +614,15 @@ def _legend(wb: Workbook, p: dict) -> None:
                font=Font(name=FONT, size=10, bold=True, color=INK))
         _block(ws, row, C1 + 2, row, C1 + 2, _xl(m.get("note") or ""), fill=bg, border=BOX,
                align=WRAP, font=Font(name=FONT, size=9.5, color=INK_SOFT))
+        # «—», never blank: an empty cell reads as "the column did not apply
+        # here", while a category genuinely has nobody answering for it.
+        _block(ws, row, C1 + 3, row, C1 + 3, _xl(m.get("owner") or "") or "—",
+               fill=bg, border=BOX,
+               align=Alignment(horizontal="left", vertical="top", wrap_text=True, indent=1),
+               font=Font(name=FONT, size=9.5,
+                         color=INK if m.get("owner") else INK_FAINT))
         counted = bool(m.get("counted"))
-        _block(ws, row, C1 + 3, row, C1 + 3, L.get("yes", "Yes") if counted else L.get("no", "No"),
+        _block(ws, row, C1 + 4, row, C1 + 4, L.get("yes", "Yes") if counted else L.get("no", "No"),
                fill=bg, border=BOX, align=Alignment(horizontal="center", vertical="top"),
                font=Font(name=FONT, size=9.5, bold=counted, color=INK if counted else INK_FAINT))
         # two lines of note per row is the usual; Excel will not autofit a row
@@ -710,7 +722,10 @@ def build_matrix_workbook(p: dict) -> BytesIO:
     C1 = 2
     ncol = 2 + n                                   # name + dates + total
     C2 = C1 + ncol - 1
-    widths = {C1: 34.0, C2: 10.5}
+    # Wider than the tab's own first column because the category row now names
+    # its OWNER as well: a grid this dense has no room for a column of its own
+    # for a fact that is constant down each group, so it rides in the label.
+    widths = {C1: 46.0, C2: 10.5}
     widths.update({c: 6.6 for c in range(C1 + 1, C2)})
     ws = _sheet(wb, (p.get("sheets") or {}).get("matrix", "Matritsa"), widths,
                 landscape=True)
@@ -762,6 +777,11 @@ def build_matrix_workbook(p: dict) -> BytesIO:
         bg = _fill(BRAND_SOFT)
         bd = Border(left=_side(), right=_side(), top=_side(tint, "medium"), bottom=_side())
         label = c.get("label") or c.get("name") or ""
+        # «Cat D3 — Otdellararo mahsulot · Karimov A.» — WHO answers for the
+        # cause, beside what it is. Absent where nobody is assigned rather than
+        # printed as an empty separator.
+        if c.get("owner"):
+            label = f"{label} · {c['owner']}"
         _block(ws, row, C1, row, C1, _xl(label), fill=bg, border=bd,
                font=Font(name=FONT, size=10, bold=True, color=INK))
         _cells(row, c.get("days") or [], bg=bg, border=bd, bold=True, ink=INK)
@@ -882,6 +902,10 @@ def build_cost_workbook(p: dict) -> BytesIO:
     """
     L = p.get("labels") or {}
     cats = p.get("cats") or {}
+    # {category: person}. Resolved on the server (services/idle_scope) and
+    # deliberately its own key rather than a field on `cats`, whose values are
+    # the viewer's own label STRINGS.
+    owners = p.get("owners") or {}
     rows = p.get("rows") or []
     cat_rows = p.get("cat_rows") or []
     tot = p.get("totals") or {}
@@ -895,9 +919,9 @@ def build_cost_workbook(p: dict) -> BytesIO:
 
     # ── Umumiy ───────────────────────────────────────────────────────────────
     ws = _sheet(wb, L.get("shOverview", "Umumiy"),
-                {2: 34, 3: 10, 4: 10, 5: 12, 6: 11, 7: 11, 8: 16, 9: 10})
-    r = _banner(ws, 2, 2, 9, p.get("title", "Ojidaniya xarajati"), p.get("subtitle", ""))
-    r = _meta_strip(ws, r, 2, 9, p.get("scope") or [])
+                {2: 34, 3: 10, 4: 10, 5: 12, 6: 11, 7: 11, 8: 16, 9: 10, 10: 26})
+    r = _banner(ws, 2, 2, 10, p.get("title", "Ojidaniya xarajati"), p.get("subtitle", ""))
+    r = _meta_strip(ws, r, 2, 10, p.get("scope") or [])
     r += 1
 
     unpriced = tot.get("unpriced_minutes") or 0
@@ -914,12 +938,13 @@ def build_cost_workbook(p: dict) -> BytesIO:
     ])
     r += 1
 
-    r = _section(ws, r, 2, 9, L.get("sByCat", "Toifalar bo'yicha"),
+    r = _section(ws, r, 2, 10, L.get("sByCat", "Toifalar bo'yicha"),
                  L.get("sByCatSub", ""))
     _head_row(ws, r, 2, [
         L.get("cCat", "Toifa"), L.get("cHc", "Odam soni"),
         L.get("cMin", "To'xtash, daq"), L.get("cHrs", "Soat"),
         L.get("cCost", "Xarajat, so'm"), L.get("cShare", "Ulush"),
+        L.get("cOwner", "Mas'ul"),
     ], first_span=3)
     r += 1
     first = r
@@ -938,12 +963,22 @@ def build_cost_workbook(p: dict) -> BytesIO:
         c.fill = _fill(BAND if i % 2 else PANEL)
         c.border = BOX
         c.alignment = RIGHT
+        # WHO answers for this cause. «—», never blank: an empty cell reads as
+        # «the column did not apply here», and a category with nobody on it is
+        # exactly the row a reader of this sheet needs to notice.
+        who = owners.get(row.get("category")) or ""
+        o = ws.cell(r, 10)
+        o.value = _xl(who) or "—"
+        o.font = Font(name=FONT, size=10, color=INK if who else INK_FAINT)
+        o.fill = _fill(BAND if i % 2 else PANEL)
+        o.border = BOX
+        o.alignment = LEFT
         r += 1
     if cat_rows:
         ws.conditional_formatting.add(
             f"H{first}:H{r - 1}",
             DataBarRule(start_type="num", start_value=0, end_type="max", color=BRAND))
-        ws.auto_filter.ref = f"B{first - 1}:I{r - 1}"
+        ws.auto_filter.ref = f"B{first - 1}:J{r - 1}"
     # What the rows above add up to, named as such…
     _cost_cell(ws, r, 2,
                {"hc": None, "minutes": tot.get("cat_minutes"),
@@ -960,7 +995,7 @@ def build_cost_workbook(p: dict) -> BytesIO:
     if note:
         r += 1
         ws.row_dimensions[r].height = 15
-        _block(ws, r, 2, r, 9, note,
+        _block(ws, r, 2, r, 10, note,
                font=Font(name=FONT, size=8.5, italic=True, color=INK_FAINT))
         r += 1
     ws.freeze_panes = ws.cell(first, 2)

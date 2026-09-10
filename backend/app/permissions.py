@@ -36,11 +36,12 @@ _ROLES_KEY = "_roles"
 # always granted full access and can never be locked out. "guest" ships with
 # zero default pages: a fresh guest sees the no-access screen until an admin
 # grants pages here.
-TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "guest"]
+TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "guest",
+                    "idle-owner"]
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "education"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "education", "idle-owner"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -133,6 +134,16 @@ DEFAULT_PAGE_ACCESS = {
     # notification must never produce. Publishing stays admin-only, checked in
     # every writer.
     "education": ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
+    # «Mening toifam» (routers/idle_owner.py) — the ojidaniya register read
+    # CAUSE-first, for the person answerable for a waiting category. Open to the
+    # `idle-owner` role by default, which is the only role that exists for it:
+    # a fresh «Kutish mas'uli» must land on a working page rather than on the
+    # no-access screen, and the page shows them ONLY the categories they own
+    # (services/idle_scope resolves that server-side, so the query string is not
+    # a way round it). Admins always have it; anybody else — a top-manager
+    # chasing a cause, a brigadir — is toggled on from the Access tab and reads
+    # it unlocked, because the lock is a property of the ROLE, not of the page.
+    "idle-owner": ["idle-owner"],
 }
 
 

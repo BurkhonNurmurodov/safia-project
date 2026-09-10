@@ -99,6 +99,9 @@ const Tasks = lazyWithReload(() => import("./pages/Tasks"));
 const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
 const SetupTimes = lazyWithReload(() => import("./pages/SetupTimes"));
 const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
+// «Mening toifam» — the ojidaniya register read cause-first, for the person
+// answerable for a waiting category.
+const IdleOwner = lazyWithReload(() => import("./pages/IdleOwner"));
 const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const LiveOverview = lazyWithReload(() => import("./pages/LiveOverview"));
 const Arc = lazyWithReload(() => import("./pages/Arc"));
@@ -487,6 +490,7 @@ function AppWithLang() {
             <Route path="/activity" element={<AuthGate><RequirePage page="activity"><UsersActivity /></RequirePage></AuthGate>} />
             <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />
             <Route path="/idle-cell" element={<AuthGate><RequirePage page="idle-cell"><IdleCell /></RequirePage></AuthGate>} />
+            <Route path="/idle-owner" element={<AuthGate><RequirePage page="idle-owner"><IdleOwner /></RequirePage></AuthGate>} />
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             <Route path="/live" element={<AuthGate><RequirePage page="live"><LiveOverview /></RequirePage></AuthGate>} />
             <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />

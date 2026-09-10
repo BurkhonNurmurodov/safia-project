@@ -1,4 +1,4 @@
-import { Star, UserCog, Users, Flag, Shield, UserRound, Clock } from "lucide-react";
+import { Star, UserCog, Users, Flag, Shield, UserRound, Clock, ShieldQuestion } from "lucide-react";
 
 // Role → label key + icon, matching the admin Profiles tab so the recipient
 // tree reads identically across the platform. Shared by the Broadcast tab and
@@ -10,6 +10,7 @@ export const ROLE_SECTIONS = {
   "leader":        { tKey: "admin.profiles.leaders",       icon: Flag },
   "admin":         { tKey: "admin.profiles.admins",        icon: Shield },
   "guest":         { tKey: "admin.profiles.guests",        icon: UserRound },
+  "idle-owner":    { tKey: "admin.profiles.idleOwners",    icon: ShieldQuestion },
 };
 
 // Roles whose profiles are bucketed by shift inside their section.

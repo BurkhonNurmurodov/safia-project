@@ -68,7 +68,8 @@ from app.xlsx_delivery import deliver_xlsx
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
-PROFILE_TYPES = {"top-manager", "shift-manager", "supervisor", "leader", "admin", "guest"}
+PROFILE_TYPES = {"top-manager", "shift-manager", "supervisor", "leader", "admin",
+                 "guest", "idle-owner"}
 
 # The columns that key on managers.id and make a unit HISTORY — a record of
 # something it DID. `_manager_has_data` reads this list to decide whether a
@@ -215,7 +216,7 @@ def _bound_role_rows(db: Session, ptype: str, pid: int) -> list[TelegramUserRole
     meant a holder whose name drifted from the profile silently vanished from
     this list while keeping full access, so an admin could neither see nor
     unassign them. Unstamped legacy rows still fall back to the name."""
-    if ptype in ("supervisor", "shift-manager", "top-manager", "guest"):
+    if ptype in ("supervisor", "shift-manager", "top-manager", "guest", "idle-owner"):
         return db.query(TelegramUserRole).filter_by(role=ptype, role_id=pid).all()
     if ptype == "leader":
         p = db.query(RoleProfile).filter_by(id=pid, role="leader").first()
@@ -573,7 +574,7 @@ def admin_list_profiles(db: Session = Depends(get_db),
             cells_by_leader.setdefault(c.leader_id, []).append(c.verifix_code)
 
     out = {"supervisors": supervisors, "top_managers": [], "shift_managers": [],
-           "leaders": [], "admins": [], "guests": []}
+           "leaders": [], "admins": [], "guests": [], "idle_owners": []}
     for p in profiles:
         item = {"id": p.id, "name": p.name, "name_uz_cyrl": p.name_uz_cyrl,
                 "name_ru": p.name_ru, "name_en": p.name_en}
@@ -583,6 +584,9 @@ def admin_list_profiles(db: Session = Depends(get_db),
         elif p.role == "guest":
             item["bindings"] = [binding(r) for r in by_key.get(("guest", p.id), [])]
             out["guests"].append(item)
+        elif p.role == "idle-owner":
+            item["bindings"] = [binding(r) for r in by_key.get(("idle-owner", p.id), [])]
+            out["idle_owners"].append(item)
         elif p.role == "shift-manager":
             item["shift"] = p.shift
             item["bindings"] = [binding(r) for r in by_key.get(("shift-manager", p.id), [])]
@@ -705,7 +709,7 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
         # profile for somebody who exists. Same exemption `_rename_profile`
         # already makes.
         p = RoleProfile(role=role, name=name)
-    else:  # top-manager | admin
+    else:  # top-manager | admin | idle-owner
         if db.query(RoleProfile).filter_by(role=role, name=name).first():
             raise HTTPException(status_code=409, detail="Profile with this name already exists")
         p = RoleProfile(role=role, name=name)
@@ -2610,7 +2614,7 @@ def update_my_name(payload: MyNamePayload, caller: dict = Depends(_caller),
     if payload.name is not None and (payload.name or "").strip() != canonical:
         if row.role == "supervisor":
             _rename_profile(db, "supervisor", row.role_id, payload.name)
-        elif row.role in ("shift-manager", "top-manager", "guest"):
+        elif row.role in ("shift-manager", "top-manager", "guest", "idle-owner"):
             if row.role_id:
                 _rename_profile(db, row.role, row.role_id, payload.name)
             else:  # legacy row without a profile — rename the row itself

@@ -25,6 +25,7 @@ import api from "../../utils/api";
 import { CATS, catColor, iconFor } from "./categories";
 import CostEntriesModal from "./CostEntriesModal";
 import WageRatesModal from "./WageRatesModal";
+import OwnerChip from "./OwnerChip";
 
 /**
  * «Xarajat» — what stopped waiting cost in wages.
@@ -100,6 +101,10 @@ export default function CostTab() {
   const catRows = data?.cat_rows || [];
   const totals = data?.totals || {};
   const rates = data?.rates || [];
+  // WHO answers for each cause (services/idle_scope.owner_labels). A map keyed
+  // by category rather than a name copied onto every row: this tree names a
+  // category once per brigadir and again per cell under it.
+  const owners = data?.owners || {};
 
   // The option lists are this tab's own CONTROLS, and they must not vanish
   // between fetches. Every tick changes the query key, so `data` is undefined
@@ -545,6 +550,11 @@ export default function CostTab() {
                             {k.category}
                           </span>
                           <span className="truncate">{catLabel(k.category)}</span>
+                          {/* The person answerable for this cause. On the cost
+                              tree above all — this is the table somebody
+                              forwards, and a bill with nobody's name against
+                              the cause is a figure nobody owns. */}
+                          <OwnerChip owners={owners} category={k.category} tint={c} />
                           <span className="text-[12.5px] font-normal shrink-0" style={{ color: "var(--text-3)" }}>
                             · {tp("downtime.cost.nSups", { n: k.managers.length })}
                           </span>

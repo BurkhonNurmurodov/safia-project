@@ -3537,7 +3537,8 @@ def backfill_role_profile_keys() -> None:
         stamped = 0
         for r in rows:
             key = None
-            if r.role in ("top-manager", "shift-manager", "guest", "supervisor") and r.role_id:
+            if r.role in ("top-manager", "shift-manager", "guest", "supervisor",
+                          "idle-owner") and r.role_id:
                 key = f"{r.role}:{r.role_id}"
             elif r.role == "leader":
                 pid = leader_profiles.get((r.role_id, r.full_name))

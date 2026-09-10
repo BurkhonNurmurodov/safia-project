@@ -314,13 +314,21 @@ def _totals(rows: list[dict], cat_rows: list[dict], days: int) -> dict:
 
 def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
           cats: list[str], rate_for: Callable[[date], Optional[float]],
-          pre_rows: Optional[list[dict]] = None) -> dict:
+          pre_rows: Optional[list[dict]] = None,
+          cat_lock: Optional[list[str]] = None) -> dict:
     """Both trees for one scope, plus the option lists the filters need.
 
     ``cats`` narrows which events are counted — and therefore the cell and
     brigadir unions too, since a filtered-out stoppage is not part of the answer
     the reader asked for. The option lists are built BEFORE that narrowing, so
     picking a category never shortens the list it was picked from.
+
+    ``cat_lock`` is the one narrowing the option list DOES follow: the
+    categories a «Kutish mas'uli» owns (``services/idle_scope``). Their own
+    picks must not shorten the list, but a category they can never be shown a
+    row for has no business being offered in the first place — a control naming
+    a value the page cannot show is worse than no control. ``None`` = no lock,
+    which is every other viewer, so their option list is byte-identical.
 
     ``pre_rows`` are `_downtime`'s own rows for the part of the period BEFORE
     `zagruzka_source.ZAGRUZKA_FROM`. Handed in rather than computed here — that
@@ -357,8 +365,11 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
               and e.date in ok_days.get(by_cell[e.cell_id].manager_id, ())]
 
     # Option list — the org scope, unnarrowed by the record picks, so choosing
-    # a category never shortens the list it was chosen from.
+    # a category never shortens the list it was chosen from. The viewer's LOCK
+    # is a different thing and does apply: see `cat_lock` above.
     categories = {e.category for e in events if e.category}
+    if cat_lock is not None:
+        categories &= set(cat_lock)
 
     if cats:
         keep = set(cats)
@@ -434,13 +445,22 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
     if pre_rows:
         unit_hc = unit_headcount(db, managers, date_from, date_to)
         wanted = set(cats) if cats else None
+        lock = None if cat_lock is None else set(cat_lock)
+
+        def allowed(cat: str) -> bool:
+            """Does this «Смена отчёт» category belong in the option list?
+
+            The LOCK narrows it (a category the viewer can never see a row for
+            must not be offered); the reader's own picks do not, so choosing one
+            never shortens the list it was chosen from."""
+            return lock is None or cat in lock
         for r in pre_rows:
             mid = r.get("manager_id")
             iso = _iso(r.get("date") or "")
             if mid is None or iso is None or mid not in managers:
                 continue
             by_cat = r.get("by_category") or {}
-            pre_cats.update(k for k, v in by_cat.items() if v)
+            pre_cats.update(k for k, v in by_cat.items() if v and allowed(k))
             # With a category pick the figure is the SUM of the picked ones —
             # the same convention the page's own doughnut picks already use.
             # Unpicked, it is the day's own total, which is the union.
@@ -556,8 +576,16 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
 
 def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
             date_from: date, date_to: date,
-            rate_for: Callable[[date], Optional[float]]) -> dict:
+            rate_for: Callable[[date], Optional[float]],
+            cats: Optional[Iterable[str]] = None) -> dict:
     """Every filed event behind one (cell, category) cell of the tree.
+
+    ``cats`` is the viewer's category LOCK, applied only where the modal was
+    opened on a whole CELL (``category=None``) — a «Kutish mas'uli» reading a
+    cell's events must be shown the causes they own and no others, or the modal
+    would total minutes the tree above it does not. With a category named the
+    caller has already been checked against the lock, so this is not applied
+    twice.
 
     Each row is priced on its OWN minutes, which is what a person checking a
     figure expects to be able to add up. Where two events of this category
@@ -577,6 +605,9 @@ def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
     rows = _events(db, [cell], days)
     if category:
         rows = [r for r in rows if r.category == category]
+    elif cats is not None:
+        keep = set(cats)
+        rows = [r for r in rows if r.category in keep]
     rows.sort(key=lambda r: (r.date, idle_intervals.to_min(r.start) or 0), reverse=True)
     rows = rows[:MAX_ENTRIES]
 

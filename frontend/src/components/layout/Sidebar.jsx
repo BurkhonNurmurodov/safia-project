@@ -13,7 +13,7 @@ import {
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
-  GraduationCap, PlaySquare,
+  GraduationCap, PlaySquare, ShieldQuestion,
 } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
@@ -36,6 +36,10 @@ const ALL_LINKS = [
   // «Ojidaniya kiritish» — the leaders' entry form for the same minutes the
   // /downtime page reads, so it sits beside it in Production, not in the lab.
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell",   icon: Timer, group: "prod" },
+  // «Mening toifam» — the same minutes read CAUSE-first, for the person
+  // answerable for one waiting category. Beside the other two ojidaniya
+  // pages, not in the lab: it is somebody's daily work, not a pilot.
+  { to: "/idle-owner", page: "idle-owner", key: "nav.idleOwner", icon: ShieldQuestion, group: "prod" },
   { to: "/staff",    page: "staff",    key: "nav.staff",           icon: Fingerprint, group: "people" },
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },

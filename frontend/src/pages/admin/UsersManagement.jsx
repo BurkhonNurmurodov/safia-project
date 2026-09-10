@@ -24,7 +24,7 @@ import { ROLE_LABEL_KEYS } from "../../config/pages";
 // Guest is deliberately absent: converting only re-points role/role_id, and a
 // guest profile is contended — taking one has to settle the claims already
 // filed against it, which only the add-role path below does.
-const ROLES = ["top-manager", "shift-manager", "supervisor", "leader"];
+const ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "idle-owner"];
 // Roles the add-role modal may GRANT. Guest joined once guest profiles became
 // pre-creatable on the Profiles tab: the modal assigns an existing profile,
 // exactly as it does for every other role.
