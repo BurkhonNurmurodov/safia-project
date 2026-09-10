@@ -1331,7 +1331,7 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   path (their minutes are the «Смена отчёт» row); the date picker is deliberately
   not clamped, and the empty state names the floor instead.
 
-## WHO answers for a waiting category (`idle-owner`, `/idle-owner`)
+## WHO answers for a waiting category (`idle-owner`)
 
 From **2026-09-10** (the operator's directive) each ojidaniya category has ONE
 named person answerable for driving it down — the **«Kutish mas'uli»**, a role
@@ -1342,25 +1342,31 @@ disagree the first time a category changed hands, and nobody could tell which
 page was lying.
 
 1. **The NAME.** Every by-category surface prints its owner beside the category:
-   the «Xarajat» tree, the «Toifalar bo'yicha» matrix, the owner's own page and
-   all three workbooks. A cost figure with nobody's name against the cause is a
-   number nobody owns.
-2. **The SCOPE.** A viewer holding the role reads the register through their own
-   categories and no others. Applied server-side and never by hiding a control —
-   `?cats=` is a query parameter anyone can type.
+   the «Xarajat» tree, the «Toifalar bo'yicha» matrix and all three workbooks. A
+   cost figure with nobody's name against the cause is a number nobody owns.
+2. **The SCOPE.** A viewer holding the role reads `/downtime` and `/idle-cell`
+   through their own categories and no others. Applied server-side and never by
+   hiding a control — `?cats=` is a query parameter anyone can type.
+
+**They read the pages everyone else reads, narrowed.** A page of the role's own
+(«Mening toifam», `/idle-owner`) was built and WITHDRAWN the same day, on the
+operator's call: narrowing the two pages people already know beat teaching them
+a third. `routers/idle_owner.py` survives with the ADMIN register alone, and
+the `idle-owner` PAGE KEY is gone from `PAGE_KEYS` — a stored Access matrix
+still naming it is dropped harmlessly by `get_page_access`, which walks
+`PAGE_KEYS`, so no migration was needed. Do not resurrect the page without a
+new decision; the two locks below are the feature.
 
 - **`idle_category_owners.category` is UNIQUE, and that unique key IS the rule.**
   «One for each category» is the operator's own wording, so it is a guarantee of
   the schema rather than of whoever last edited the writer — the shape
   `uq_wage_rate_from` is an expression index for. Re-assigning REPLACES; there is
   never a second owner to disambiguate between. A person may own SEVERAL
-  categories (twelve causes, fewer people) and their page answers for all at
-  once; the inverse is what the key forbids.
+  categories (twelve causes, fewer people); the inverse is what the key forbids.
 - **The owner is a PROFILE, keyed by `identity.profile_key`** — a person, not an
-  account, so every holder of that profile sees the page and is named on it. The
-  `"role:id"` STRING and not `role_profiles.id`, because a supervisor lives in
-  the `managers` namespace and may perfectly well own a cause; `WebCredential`
-  already has to handle both.
+  account, so every holder of that profile is named. The `"role:id"` STRING and
+  not `role_profiles.id`, because a supervisor lives in the `managers` namespace
+  and may perfectly well own a cause; `WebCredential` already handles both.
 - **Nothing is denormalised and NO figure moves, ever.** The owner is resolved on
   read, so re-assigning a category re-labels every past surface at once with no
   migration and no re-sync — the property `wage_rate` and `idle_source` already
@@ -1372,86 +1378,45 @@ page was lying.
   empty list as «no filter» hands them the whole plant. Every caller tests it
   with `idle_scope.empty_scope`, and both cost endpoints answer with an empty
   unit set rather than letting `ojidaniya_cost.build` read `cats=[]` as «no pick».
-- **A PICK and a LOCK are two arguments and never one.** `resolve_cats` returns
-  the intersection for the query; `viewer_categories` is what narrows the OPTION
-  LIST (`cat_lock`). A pick must not shorten the list it was picked from — the
-  rule `ojidaniya_cost.build` already keeps — while a lock must, because a
-  control naming a category the page can never show a row for is worse than no
-  control. Conflating them emptied every unlocked reader's category filter.
+- **A PICK and a LOCK are two arguments and never one**, and this is the mistake
+  the feature made twice. `resolve_cats` returns the intersection for the QUERY;
+  `viewer_categories` is what narrows the OPTION LIST (`cat_lock`) and what the
+  payload publishes as `cat_locked`. A pick must not shorten the list it was
+  picked from — the rule `ojidaniya_cost.build` already keeps — while a lock
+  must. Conflating them once emptied every unlocked reader's category filter,
+  and once told an ADMIN who clicked one slice of the doughnut that they may
+  only see the categories they answer for.
 - **The 50-minute flag does not survive a narrowing.** `flagged` is a fact about
   a unit's WHOLE-day UNION, so it says nothing about one category's share of that
   day — the reasoning that keeps a traffic-light ramp off «Toifalar bo'yicha». A
-  payload `idle_scope.narrow_downtime` touched carries `flagged: False` and says
-  so through `cat_locked`, rather than leaving a red mark the narrowed numbers
-  cannot justify. Its totals are re-summed from the kept categories (the SUM, not
-  a union — the convention the page's own doughnut picks already use), and
-  `cat_all` keeps the whole option list beside the narrowed `cat_names`.
+  payload `narrow_downtime` touched carries `flagged: False`, and the page swaps
+  the flag KPI for «how many brigadirs did this cause reach» rather than showing
+  a 0 that reads as «nobody exceeded a threshold» about a threshold never
+  applied. Its totals are re-summed from the kept categories (the SUM, not a
+  union — the convention the doughnut picks already use), and `cat_all` keeps the
+  whole option list beside the narrowed `cat_names`.
+- **A narrowed register must SAY it is narrowed** — `components/idle/CatLockNotice.jsx`,
+  first thing on both pages. Every other narrowing on them is a control the
+  reader set and can see; this one is not, so without the notice a fraction of a
+  day reads as a quiet shift, and «this cause was calm» and «the other causes
+  are hidden from me» are opposite conclusions about one screen. It renders from
+  the payload's `cat_locked`, never from the viewer's role.
+- **On `/idle-cell` an owner is READ-ONLY, and that is stated rather than
+  inherited.** `_may_decide` already answered False for them (they hold no
+  unit), so edit and delete were shut by accident; CREATE is gated on the day
+  being open, not on a unit, so `_require_unlocked` is its own guard on all four
+  writers. `can_add` is served False for them too — a button drawn and then
+  403-ing is worse than no button. The lock filters BOTH row models: the legacy
+  minutes-only rows carry a category as well.
 - Locked endpoints: `/downtime`, `/downtime/matrix`, `/downtime/seasonality`,
-  `/downtime/cell-detail`, `/downtime/cost`, `/downtime/cost/entries` and all
-  four workbooks. The PPTX deck is admin-only and an admin is never locked.
-
-### The page: «Mening toifam» (`/idle-owner`)
-
-Purpose-built, because narrowing the three `/downtime` views to one cause stops
-them answering anything — a doughnut of a single slice, a comparison matrix with
-nothing to compare, a whole-day flag over one category's share. It asks the
-owner's questions instead: is my cause getting better or worse · where is it
-concentrated · what did it cost · and what actually happened, in the leaders'
-own words.
-
-- **Nothing here is a new measurement.** `services/idle_owner.py` reaches every
-  figure through `services/ojidaniya_cost` — its `build` supplies the totals and
-  the toifa → brigadir → yacheyka tree, and the daily series is folded from the
-  same `_union` / `cell_headcount` / `wage_rate` primitives in the same two eras.
-  A second spelling is how this page and the «Xarajat» tab would come to state
-  two different numbers for one week.
-- **The headline is the CATEGORY sum, not the union**, and the page says so
-  before anybody reads a figure: a minute a cell stood still for two causes is
-  owed once (the union — the money) and is genuinely named under both. An owner
-  asking «how much did MY cause produce» wants their category's own union;
-  folding it into a shared one hands them a figure that shrinks when somebody
-  else's category overlaps theirs. Where the two differ both are printed and each
-  is named — the rule `ojidaniya_cost` already states for `cat_minutes`.
-  **Consequence to know: its totals do not match the «Tahlil» tab's.**
-- **The comparison window is the SAME LENGTH, immediately before** — `[from - n,
-  from - 1]`. A percentage against a window of another length is a statement
-  about the calendar. A previous period of ZERO has NO percentage: «up from
-  nothing» is not a number, so no chip is drawn rather than an infinity somebody
-  forwards. UP is the bad direction, so the chip is red for it.
-- **The REGISTER is why the page exists.** One row per filed event with the
-  leader's note reproduced VERBATIM: an owner deciding what to fix is reading
-  evidence, not a summary of it. Paginated server-side (a plant-wide cause over a
-  quarter is thousands of rows), searchable over note · cell · leader · brigadir,
-  and each row priced on its OWN minutes so the column adds up by eye — which
-  totals MORE than the headline wherever two events of one cause overlapped, and
-  the page says that too.
-- **A period reaching back before the floors is answered, not refused.** Before
-  `zagruzka_source.ZAGRUZKA_FROM` there is no per-cell headcount, so those days
-  are priced per BRIGADIR off the «Одам сони» sheet and carry no cell and no
-  clock; before `idle_source.CELLS_FROM` the minutes come from the «Смена отчёт»
-  row and there are no EVENTS at all. Both arrive as the `pre_rows` the «Xarajat»
-  tab already hands in, so the two cover the same days — and the register NAMES
-  how many of the period's days can have no event behind them, because a thin
-  event list under a fat total otherwise reads as a quiet month.
-- **Access**: the `idle-owner` role by default (the only role that exists for
-  it — a fresh owner must land on a working page, not the no-access screen).
-  Anybody else is toggled on from the Access tab and reads it UNLOCKED: the lock
-  is a property of the ROLE, not of the page. Its own Excel is four sheets
-  (Umumiy · Kunlar · Yacheykalar · Hodisalar) and carries the WHOLE register, not
-  the page on screen — a workbook holding fifty of nine hundred rows lies about
-  the period on its own cover.
-- **The role is a PERSON on the platform, so it is in every profile picker.**
-  `broadcast._profile_holders` is the ONE org walk behind three surfaces —
-  the Broadcast recipient tree, the Permissions «Lavozimlar» targets and the
-  Education audience — and its role tuple is what decides who exists on all
-  three at once. `idle-owner` shipped with its own profiles, its own
-  registration branch and its own page and was missing from that tuple, so a
-  «Kutish mas'uli» could be sent nothing, granted nothing and taught nothing,
-  with nothing on any of the three screens saying the role was absent rather
-  than unfilled (a role with no profiles is dropped, the same as an empty one).
-  A new role belongs in that tuple on the day it exists, in
-  `permissions.TOGGLEABLE_ROLES` order; the client already renders whatever
-  blocks arrive (`utils/broadcastTree.ROLE_SECTIONS`).
+  `/downtime/cell-detail`, `/downtime/cost`, `/downtime/cost/entries`,
+  `/idle-cell/cells` and all four workbooks. The PPTX deck is admin-only and an
+  admin is never locked.
+- **Registration is the roster, not the bot branch.** `registration-options`
+  builds the name-first login list from supervisors, leaders and the two manager
+  tiers; a role missing from it has profiles nobody can claim, however well the
+  bot's own branch accepts it. That was shipped broken and fixed in v4.97.2 —
+  any future role needs BOTH.
 - Admin: «Kutish mas'ullari» (`/admin/upload?tab=idleowners`), one row per
   category, everything a DRAFT until Save. **Admin-only and NOT grantable** — no
   `capKey`, so `capTabs.includes(capKey ?? id)` can never admit a grantee (the
@@ -1464,9 +1429,9 @@ own words.
   grow ten placeholders saying only that the register is unfinished, which is a
   fact for the destination that manages it. The WORKBOOKS do print «—», because a
   blank cell in a spreadsheet reads as «this column did not apply here».
-- Deliberately unchanged: `/idle-cell` (the leaders' ENTRY form — an owner files
-  nothing), every figure on every existing surface, and the categories themselves
-  (`sheets_reader.SHIFT_CATEGORY_ORDER` is still the one list).
+- Deliberately unchanged: every figure on every existing surface, the categories
+  themselves (`sheets_reader.SHIFT_CATEGORY_ORDER` is still the one list), and
+  who may FILE an ojidaniya.
 
 Related memory: `idle-category-owner-role`.
 

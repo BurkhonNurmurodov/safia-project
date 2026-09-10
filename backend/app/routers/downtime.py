@@ -65,7 +65,10 @@ def get_downtime(
     out = _downtime(db, payload, date_from, date_to, shift, manager_id, kpi_only,
                     factory, with_avg=avg)
     return idle_scope.narrow_downtime(
-        out, idle_scope.resolve_cats(db, payload, cats))
+        out, idle_scope.resolve_cats(db, payload, cats),
+        # What the page PRINTS as «you are seeing only …» — the lock, never the
+        # pick, or an admin who clicked one slice would be told they are pinned.
+        lock=idle_scope.viewer_categories(db, payload))
 
 
 # A month is what the tab selects, so the cap only ever catches a hand-typed
@@ -331,7 +334,8 @@ def get_downtime_matrix(
     data = _downtime(db, payload, date_from, date_to, shift, manager_id,
                      kpi_only, factory, with_avg=True)
     data = idle_scope.narrow_downtime(
-        data, idle_scope.resolve_cats(db, payload, cats))
+        data, idle_scope.resolve_cats(db, payload, cats),
+        lock=idle_scope.viewer_categories(db, payload))
     out = ojidaniya_matrix.build(data, stopped=stopped)
     # WHO answers for each category. A map keyed by category rather than a name
     # copied onto every row: the table names a category once per group and again
@@ -1431,6 +1435,7 @@ def get_downtime_cost(
     # WHO answers for each category. A map keyed by category, resolved here and
     # never sent from a browser: a name is a statement about a person.
     out["owners"] = idle_scope.owner_labels(db)
+    # The LOCK, never the pick — see `idle_scope.narrow_downtime`.
     out["cat_locked"] = idle_scope.viewer_categories(db, payload)
     return out
 

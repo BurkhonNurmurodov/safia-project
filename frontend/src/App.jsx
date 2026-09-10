@@ -487,6 +487,12 @@ function AppWithLang() {
             <Route path="/activity" element={<AuthGate><RequirePage page="activity"><UsersActivity /></RequirePage></AuthGate>} />
             <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />
             <Route path="/idle-cell" element={<AuthGate><RequirePage page="idle-cell"><IdleCell /></RequirePage></AuthGate>} />
+            {/* «Mening toifam» lived here for a few hours on 2026-09-10 and was
+                withdrawn: a «Kutish mas'uli» reads /downtime and /idle-cell
+                narrowed to their own categories instead. Redirected rather than
+                404-ed — a bookmark, a DM link or a tab left open on the old
+                bundle must land on the register, not on a dead end. */}
+            <Route path="/idle-owner" element={<Navigate to="/downtime" replace />} />
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             <Route path="/live" element={<AuthGate><RequirePage page="live"><LiveOverview /></RequirePage></AuthGate>} />
             <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />

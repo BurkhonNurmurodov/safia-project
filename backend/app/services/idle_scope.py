@@ -216,7 +216,8 @@ def empty_scope(cats: Optional[Iterable[str]]) -> bool:
 
 # ── narrowing a finished payload ─────────────────────────────────────────────
 
-def narrow_downtime(out: dict, cats: Optional[Iterable[str]]) -> dict:
+def narrow_downtime(out: dict, cats: Optional[Iterable[str]],
+                    lock: Optional[Iterable[str]] = None) -> dict:
     """Apply a category narrowing to `routers/downtime._downtime`'s payload.
 
     Applied to the FINISHED answer rather than pushed into the query, because
@@ -239,6 +240,14 @@ def narrow_downtime(out: dict, cats: Optional[Iterable[str]]) -> dict:
       table's columns) but a caller who needs to know what EXISTS reads
       `cat_all`, so picking a category never shortens the list it was picked
       from — the rule `ojidaniya_cost.build` already keeps for its own options.
+
+    ``lock`` is what the payload PUBLISHES as `cat_locked`, and it is a separate
+    argument from ``cats`` for the reason `resolve_cats` and `viewer_categories`
+    are two functions: ``cats`` is the pick ∩ the lock, so passing it here would
+    make an ADMIN who clicked one slice of the doughnut look pinned to it — and
+    the page would tell them, in so many words, that they may only see the
+    categories they answer for. `cat_locked` means «this viewer cannot widen
+    past these», nothing else, and is null for everybody who can.
     """
     if cats is None:
         return out
@@ -284,7 +293,7 @@ def narrow_downtime(out: dict, cats: Optional[Iterable[str]]) -> dict:
         **out,
         "cat_all": out.get("cat_names") or [],
         "cat_names": keep,
-        "cat_locked": list(cats),
+        "cat_locked": None if lock is None else list(lock),
         "rows": rows,
         "summary": sorted(summary.values(), key=lambda x: x["total"], reverse=True),
     }
