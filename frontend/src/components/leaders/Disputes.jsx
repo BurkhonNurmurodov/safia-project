@@ -123,6 +123,7 @@ const TXT = {
     cUndoT: "Qarorni bekor qilish",
     cUndoM: "{leader} — {date}, «{task}». Qaror bekor qilinadi: AI qarori yana kuchga kiradi va kun qayta hisoblanadi.",
     noteReq: "Izoh yozing.", notePh: "Sababni yozing…",
+    cRejectHint: "Nega rad etyapsiz? Sabab liderga yuboriladi — bu oxirgi qaror.",
     okApprove: "Norozilik qabul qilindi", okReject: "Norozilik rad etildi",
     okUplift: "Adminlarga yuborildi",
     okUndo: "Qaror bekor qilindi", fail: "Amal bajarilmadi",
@@ -164,6 +165,7 @@ const TXT = {
     cUndoT: "Қарорни бекор қилиш",
     cUndoM: "{leader} — {date}, «{task}». Қарор бекор қилинади: AI қарори яна кучга киради ва кун қайта ҳисобланади.",
     noteReq: "Изоҳ ёзинг.", notePh: "Сабабни ёзинг…",
+    cRejectHint: "Нега рад этяпсиз? Сабаб лидерга юборилади — бу охирги қарор.",
     okApprove: "Норозилик қабул қилинди", okReject: "Норозилик рад этилди",
     okUplift: "Админларга юборилди",
     okUndo: "Қарор бекор қилинди", fail: "Амал бажарилмади",
@@ -205,6 +207,7 @@ const TXT = {
     cUndoT: "Отменить решение",
     cUndoM: "{leader} — {date}, «{task}». Решение будет отменено: заключение ИИ снова вступает в силу, день пересчитается.",
     noteReq: "Напишите комментарий.", notePh: "Напишите причину…",
+    cRejectHint: "Почему вы отклоняете? Причину отправят лидеру — это последнее решение.",
     okApprove: "Возражение принято", okReject: "Возражение отклонено",
     okUplift: "Передано администраторам",
     okUndo: "Решение отменено", fail: "Не удалось выполнить действие",
@@ -246,6 +249,7 @@ const TXT = {
     cUndoT: "Undo the ruling",
     cUndoM: "{leader} — {date}, “{task}”. The ruling is taken back: the AI verdict applies again and the day re-scores.",
     noteReq: "Write a comment.", notePh: "Write the reason…",
+    cRejectHint: "Why are you refusing? The leader is told the reason — this is the last word.",
     okApprove: "Objection upheld", okReject: "Objection refused",
     okUplift: "Passed to the admins",
     okUndo: "Ruling undone", fail: "The action did not go through",
@@ -472,11 +476,21 @@ export default function Disputes({ scope, onClearScope }) {
     setConfirm({ kind, item });
   };
 
+  // WHICH rulings collect text, and it is a property of the ROW as well as of
+  // the verb. Passing it up always does. REFUSING does at the admin stage
+  // only: that is the end of the chain — the leader has explained their shift
+  // to two people, loses the point for good and has no route left — and the
+  // reason travels to them in the notice, so it cannot be blank. A brigadir's
+  // refusal is not the last word (an admin's undo reaches it, and the leader
+  // may file again), so it stays a plain confirm, exactly as the server does.
+  const needsNote = (c) => !!c && (c.kind === "uplift"
+    || (c.kind === "reject" && c.item?.status === "admin"));
+
   const run = () => {
     if (!confirm) return;
     const { kind, item } = confirm;
     if (kind === "undo") { undo.mutate({ id: item.id }); return; }
-    if (kind === "uplift" && !note.trim()) { setNoteErr(T.noteReq); return; }
+    if (needsNote(confirm) && !note.trim()) { setNoteErr(T.noteReq); return; }
     const action = kind === "uplift" ? "uplifted"
       : kind === "approve" ? "approved" : "rejected";
     decide.mutate({ id: item.id, action, note: note.trim() });
@@ -486,6 +500,9 @@ export default function Disputes({ scope, onClearScope }) {
     .replaceAll("{leader}", tl(it.leader) || "—")
     .replaceAll("{date}", day(it.date))
     .replaceAll("{task}", pick(it.taskName, lang) || `№${it.taskId}`);
+
+  // The form serves two rulings; this is which one is on screen.
+  const rejecting = !!confirm && confirm.kind === "reject";
 
   const cText = (() => {
     if (!confirm) return { t: "", m: "", label: "", tone: undefined };
@@ -727,11 +744,13 @@ export default function Disputes({ scope, onClearScope }) {
         </div>
       )}
 
-      {/* Refuse, uphold and undo are plain confirms. Passing it up is a FORM —
-          it collects a required comment — so it is the Modal template, not a
-          ConfirmDialog carrying a field it was never built to hold. */}
+      {/* Uphold and undo are plain confirms. A ruling that COLLECTS a required
+          comment is a FORM — the Modal template, not a ConfirmDialog carrying a
+          field it was never built to hold. Which is which is `needsNote`, so
+          the admin's refusal below reaches the same form the uplift does rather
+          than growing a second one beside it. */}
       <ConfirmDialog
-        open={!!confirm && confirm.kind !== "uplift"}
+        open={!!confirm && !needsNote(confirm)}
         title={cText.t}
         message={cText.m}
         confirmLabel={cText.label}
@@ -743,21 +762,34 @@ export default function Disputes({ scope, onClearScope }) {
       />
 
       <Modal
-        open={!!confirm && confirm.kind === "uplift"}
+        open={needsNote(confirm)}
         onClose={close}
-        title={T.cUpliftT}
-        icon={<ArrowUpCircle size={16} />}
+        title={cText.t}
+        icon={rejecting ? <Ban size={16} /> : <ArrowUpCircle size={16} />}
         subtitle={confirm?.item ? `${tl(confirm.item.leader)} · ${day(confirm.item.date)}` : ""}
         footer={
           <>
             <Button variant="secondary" onClick={close}>{T.cancel}</Button>
-            <Button variant="primary" loading={decide.isPending} onClick={run}>
-              <ArrowUpCircle size={14} />{T.uplift}
+            <Button variant={rejecting ? "danger" : "primary"}
+              loading={decide.isPending} onClick={run}>
+              {rejecting ? <><Ban size={14} />{T.reject}</>
+                : <><ArrowUpCircle size={14} />{T.uplift}</>}
             </Button>
           </>
         }
       >
-        <FormField label={T.noteSup} required hint={T.cUpliftM} error={noteErr || undefined}>
+        {/* The consequence of the ruling stays on screen while the reason for
+            it is typed — the same sentence the plain confirm would have shown,
+            so nothing is lost by the control becoming a form. */}
+        {rejecting && (
+          <p className="text-[12px] leading-snug mb-3" style={{ color: "var(--text-3)" }}>
+            {cText.m}
+          </p>
+        )}
+        <FormField
+          label={rejecting ? T.noteAdm : T.noteSup} required
+          hint={rejecting ? T.cRejectHint : T.cUpliftM}
+          error={noteErr || undefined}>
           <textarea
             value={note}
             onChange={(e) => { setNote(e.target.value); setNoteErr(""); }}

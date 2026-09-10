@@ -81,6 +81,9 @@ const T_ALL = {
     uplift: "Adminlarga yuborish", upliftTitle: "Norozilikni adminlarga yuborish",
     upliftIntro: "Nega bu vazifaga ball berilishi kerak? Adminlar lider izohi bilan birga shuni o'qib qaror qiladi.",
     upliftPh: "Izohingizni yozing…", noteReq: "Izoh yozing.",
+    refuseTitle: "Norozilikni rad etish",
+    refuseIntro: "Nega rad etyapsiz? Sabab liderga yuboriladi — bu oxirgi qaror, vazifa og'irligisiz qoladi.",
+    refusePh: "Sababni yozing…",
     okUplift: "Adminlarga yuborildi",
     approve: "Qabul qilish", refuse: "Rad etish",
     undo: "Qarorni bekor qilish", undoTitle: "Qaror bekor qilinsinmi?",
@@ -139,6 +142,9 @@ const T_ALL = {
     uplift: "Админларга юбориш", upliftTitle: "Норозиликни админларга юбориш",
     upliftIntro: "Нега бу вазифага балл берилиши керак? Админлар лидер изоҳи билан бирга шуни ўқиб қарор қилади.",
     upliftPh: "Изоҳингизни ёзинг…", noteReq: "Изоҳ ёзинг.",
+    refuseTitle: "Норозиликни рад этиш",
+    refuseIntro: "Нега рад этяпсиз? Сабаб лидерга юборилади — бу охирги қарор, вазифа оғирлигисиз қолади.",
+    refusePh: "Сабабни ёзинг…",
     okUplift: "Админларга юборилди",
     approve: "Қабул қилиш", refuse: "Рад этиш",
     undo: "Қарорни бекор қилиш", undoTitle: "Қарор бекор қилинсинми?",
@@ -197,6 +203,9 @@ const T_ALL = {
     uplift: "Передать администраторам", upliftTitle: "Передать возражение администраторам",
     upliftIntro: "Почему за эту задачу нужно начислить балл? Администраторы прочитают ваш комментарий вместе с комментарием лидера.",
     upliftPh: "Напишите комментарий…", noteReq: "Напишите комментарий.",
+    refuseTitle: "Отклонить возражение",
+    refuseIntro: "Почему вы отклоняете? Причину отправят лидеру — это последнее решение, задача останется незачтённой.",
+    refusePh: "Напишите причину…",
     okUplift: "Передано администраторам",
     approve: "Принять", refuse: "Отклонить",
     undo: "Отменить решение", undoTitle: "Отменить решение?",
@@ -255,6 +264,9 @@ const T_ALL = {
     uplift: "Pass to the admins", upliftTitle: "Pass the objection to the admins",
     upliftIntro: "Why should this task be pointed? The admins read your comment beside the leader's and decide.",
     upliftPh: "Write your comment…", noteReq: "Write a comment.",
+    refuseTitle: "Refuse the objection",
+    refuseIntro: "Why are you refusing? The leader is told the reason — this is the last word, and the task stays unpointed.",
+    refusePh: "Write the reason…",
     okUplift: "Passed to the admins",
     approve: "Uphold", refuse: "Refuse",
     undo: "Undo the ruling", undoTitle: "Undo this ruling?",
@@ -571,12 +583,21 @@ export default function LeaderDayReport() {
   const [zoom, setZoom] = useState("");
   const [disputeTask, setDisputeTask] = useState(null);
   const [reason, setReason] = useState("");
-  // The task whose objection is being passed UP, and the brigadir's case for
-  // it. Uplift is the one ruling that collects text, so it is a form; refuse
-  // and uphold are one tap each.
-  const [upliftTask, setUpliftTask] = useState(null);
+  // The task whose objection is being passed UP or REFUSED, and the note that
+  // goes with it. Both rulings collect text, so both are the same form —
+  // `noteFor.kind` is which. Uplifting needs the brigadir's case for the point;
+  // an ADMIN's refusal needs their reason, because that is the end of the
+  // chain (the leader loses the point for good and has no route left) and the
+  // reason is stated to them in their notice. Upholding, and a BRIGADIR's
+  // refusal, are one tap each: an approval's outcome is its own answer, and a
+  // brigadir is not the last word.
+  const [noteFor, setNoteFor] = useState(null);   // { t, kind: uplift|refuse }
   const [supNote, setSupNote] = useState("");
   const [supErr, setSupErr] = useState(null);
+  const noteTask = noteFor?.t || null;
+  const refusing = noteFor?.kind === "refuse";
+  const askNote = (t, kind) => { setSupNote(""); setSupErr(null); setNoteFor({ t, kind }); };
+  const closeNote = () => { setNoteFor(null); setSupErr(null); };
   // The task whose SETTLED dispute is being taken back, and the failure that
   // has to stay on the dialog rather than vanish with it.
   const [undoTask, setUndoTask] = useState(null);
@@ -613,14 +634,16 @@ export default function LeaderDayReport() {
       qc.invalidateQueries({ queryKey: ["leaderDayReport", uid] });
       qc.invalidateQueries({ queryKey: ["leaders"] });
       qc.invalidateQueries({ queryKey: ["leader-disputes"] });
-      setUpliftTask(null); setSupNote(""); setSupErr(null);
+      setNoteFor(null); setSupNote(""); setSupErr(null);
       show(v.action === "uplifted" ? T.okUplift : T.decided, "success");
     },
-    // An uplift failure has to stay ON the form: the case the brigadir typed is
-    // in it, and a toast that closes the modal throws their words away.
+    // A failure on a ruling that carries TEXT has to stay ON the form: the
+    // words are in it, and a toast that closes the modal throws them away.
+    // Keyed on `v.note` rather than on the verb, so the refusal form — which
+    // sends the same "rejected" a one-tap brigadir refusal does — keeps its.
     onError: (e, v) => {
       const msg = e?.response?.data?.detail || T.failed;
-      if (v.action === "uplifted") setSupErr(msg); else show(msg, "error");
+      if (v.note) setSupErr(msg); else show(msg, "error");
     },
   });
 
@@ -824,9 +847,12 @@ export default function LeaderDayReport() {
                 {t.dispute?.canAct && t.dispute.status === "supervisor" && (
                   <div className="flex gap-2 mt-1.5 px-1">
                     <Button size="md" variant="primary" tint className="flex-1"
-                      onClick={() => { setSupNote(""); setSupErr(null); setUpliftTask(t); }}>
+                      onClick={() => askNote(t, "uplift")}>
                       <ArrowUpCircle size={13} /> {T.uplift}
                     </Button>
+                    {/* A brigadir's refusal stays one tap: it is not the last
+                        word — an admin's undo reaches it and the leader may
+                        file again — so nothing here is unanswerable. */}
                     <Button size="md" variant="danger" tint className="flex-1"
                       loading={decide.isPending}
                       onClick={() => decide.mutate({ id: t.dispute.id, action: "rejected" })}>
@@ -841,9 +867,10 @@ export default function LeaderDayReport() {
                       onClick={() => decide.mutate({ id: t.dispute.id, action: "approved" })}>
                       <CheckCircle2 size={13} /> {T.approve}
                     </Button>
+                    {/* …but an ADMIN's does not. It ends the chain, so it
+                        collects the reason and the leader is told it. */}
                     <Button size="md" variant="danger" tint className="flex-1"
-                      loading={decide.isPending}
-                      onClick={() => decide.mutate({ id: t.dispute.id, action: "rejected" })}>
+                      onClick={() => askNote(t, "refuse")}>
                       <XCircle size={13} /> {T.refuse}
                     </Button>
                   </div>
@@ -880,40 +907,58 @@ export default function LeaderDayReport() {
         </FormField>
       </Modal>
 
-      {/* Passing it up COLLECTS a required comment, so it is the Modal
-          template — a form, not a confirm carrying a field it was never built
-          to hold. The comment is the whole reason the admin stage can rule on
-          more than a stranger's wording. */}
-      <Modal open={!!upliftTask} onClose={() => { setUpliftTask(null); setSupErr(null); }}
-        title={T.upliftTitle} subtitle={upliftTask ? pick(upliftTask.name, lang) : ""}
+      {/* Both rulings that COLLECT a required comment share this one form —
+          the Modal template, not a confirm carrying a field it was never built
+          to hold. Passing it up needs the brigadir's case for the point; an
+          admin's refusal needs the reason the leader will be told, because
+          nothing comes after it. */}
+      <Modal open={!!noteTask} onClose={closeNote}
+        title={refusing ? T.refuseTitle : T.upliftTitle}
+        subtitle={noteTask ? pick(noteTask.name, lang) : ""}
         footer={
           <>
-            <Button variant="secondary"
-              onClick={() => { setUpliftTask(null); setSupErr(null); }}>{T.cancel}</Button>
-            <Button variant="primary" loading={decide.isPending}
+            <Button variant="secondary" onClick={closeNote}>{T.cancel}</Button>
+            <Button variant={refusing ? "danger" : "primary"} loading={decide.isPending}
               disabled={supNote.trim().length < 3}
               onClick={() => decide.mutate({
-                id: upliftTask.dispute.id, action: "uplifted", note: supNote.trim(),
+                id: noteTask.dispute.id,
+                action: refusing ? "rejected" : "uplifted",
+                note: supNote.trim(),
               })}>
-              <ArrowUpCircle size={14} /> {T.uplift}
+              {refusing ? <><XCircle size={14} /> {T.refuse}</>
+                : <><ArrowUpCircle size={14} /> {T.uplift}</>}
             </Button>
           </>
         }>
-        {/* The leader's own words stay in front of the brigadir while they
-            write their case: a reply typed without the claim on screen answers
-            whatever the writer remembers of it. */}
-        {upliftTask?.dispute?.reason && (
+        {/* The leader's own words stay in front of whoever is ruling while they
+            write: a reply typed without the claim on screen answers whatever
+            the writer remembers of it. */}
+        {noteTask?.dispute?.reason && (
           <div className="rounded-lg px-3 py-2 mb-3 text-[12px] leading-snug"
             style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
             <span className="text-[11px] uppercase tracking-wide"
               style={{ color: "var(--text-4)" }}>{T.noteLead}</span>
-            <br />“{upliftTask.dispute.reason}”
+            <br />“{noteTask.dispute.reason}”
           </div>
         )}
-        <FormField label={T.noteSup} required hint={T.upliftIntro} error={supErr || undefined}>
+        {/* …and so does the brigadir's case, on the admin's own refusal: the
+            middle note is the one an admin came here to weigh. `sup.note` is
+            the server's `sup_case`, already None when it merely echoes the text
+            above it, so one sentence is never printed twice here. */}
+        {refusing && noteTask?.dispute?.sup?.note && (
+          <div className="rounded-lg px-3 py-2 mb-3 text-[12px] leading-snug"
+            style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
+            <span className="text-[11px] uppercase tracking-wide"
+              style={{ color: "var(--text-4)" }}>{T.noteSup}</span>
+            <br />“{noteTask.dispute.sup.note}”
+          </div>
+        )}
+        <FormField label={refusing ? T.noteAdm : T.noteSup} required
+          hint={refusing ? T.refuseIntro : T.upliftIntro} error={supErr || undefined}>
           <textarea value={supNote}
             onChange={(e) => { setSupNote(e.target.value); setSupErr(null); }}
-            rows={4} maxLength={1000} placeholder={T.upliftPh} autoFocus
+            rows={4} maxLength={1000}
+            placeholder={refusing ? T.refusePh : T.upliftPh} autoFocus
             className="w-full rounded-lg px-3 py-2 text-sm resize-y"
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
                      color: "var(--text-1)" }} />

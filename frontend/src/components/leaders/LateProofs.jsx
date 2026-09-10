@@ -101,6 +101,7 @@ const TXT = {
     cApproveM: "Vazifa to'liq ballini qaytarib oladi va kun qayta hisoblanadi.",
     noteReq: "Izoh yozing.",
     notePh: "Sababni yozing…",
+    cRejectHint: "Nega rad etyapsiz? Sabab liderga yuboriladi — bu oxirgi qaror.",
     okReject: "Rad etildi", okUplift: "Adminlarga yuborildi", okApprove: "Tasdiqlandi",
     fail: "Bajarilmadi",
     emptyT: "Kechikkan isbot yo'q",
@@ -135,6 +136,7 @@ const TXT = {
     cApproveM: "Вазифа тўлиқ баллини қайтариб олади ва кун қайта ҳисобланади.",
     noteReq: "Изоҳ ёзинг.",
     notePh: "Сабабни ёзинг…",
+    cRejectHint: "Нега рад этяпсиз? Сабаб лидерга юборилади — бу охирги қарор.",
     okReject: "Рад этилди", okUplift: "Админларга юборилди", okApprove: "Тасдиқланди",
     fail: "Бажарилмади",
     emptyT: "Кечиккан исбот йўқ",
@@ -169,6 +171,7 @@ const TXT = {
     cApproveM: "Задача получит полный балл, день будет пересчитан.",
     noteReq: "Напишите комментарий.",
     notePh: "Напишите причину…",
+    cRejectHint: "Почему вы отклоняете? Причину отправят лидеру — это последнее решение.",
     okReject: "Отклонено", okUplift: "Передано администраторам", okApprove: "Принято",
     fail: "Не выполнено",
     emptyT: "Поздних подтверждений нет",
@@ -203,6 +206,7 @@ const TXT = {
     cApproveM: "The task gets its full weight back and the day is re-scored.",
     noteReq: "Write a comment.",
     notePh: "Write the reason…",
+    cRejectHint: "Why are you refusing? The leader is told the reason — this is the last word.",
     okReject: "Rejected", okUplift: "Passed to the admins", okApprove: "Approved",
     fail: "Failed",
     emptyT: "No late proofs",
@@ -361,10 +365,21 @@ export default function LateProofs({ scope, onClearScope }) {
     setConfirm({ kind, item });
   };
 
+  // WHICH rulings collect text, and it is a property of the ROW as well as of
+  // the verb — the twin rule in «Norozliklar» next door, and the one the server
+  // applies. Passing it up always does. REFUSING does at the admin stage only:
+  // that is the end of the chain — the leader did the work, filed it late,
+  // explained themselves to two people and has no route left — and the reason
+  // travels to them in the notice, so it cannot be blank. A brigadir's refusal
+  // stays a plain confirm; they are not the last word.
+  const needsNote = (c) => !!c && (c.kind === "uplift"
+    || (c.kind === "reject" && c.item?.status === "admin"));
+  const rejecting = !!confirm && confirm.kind === "reject";
+
   const run = () => {
     if (!confirm) return;
     const { kind, item } = confirm;
-    if (kind === "uplift" && !note.trim()) {
+    if (needsNote(confirm) && !note.trim()) {
       setNoteErr(T.noteReq);
       return;
     }
@@ -607,12 +622,14 @@ export default function LateProofs({ scope, onClearScope }) {
 
       <Lightbox src={shot} onClose={() => setShot(null)} />
 
-      {/* Reject and approve are plain confirms. Passing it up is a FORM — it
-          collects a required comment — so it is the Modal template, not a
-          ConfirmDialog carrying a field it was never built to hold. */}
+      {/* Approve is a plain confirm. A ruling that COLLECTS a required comment
+          is a FORM — the Modal template, not a ConfirmDialog carrying a field
+          it was never built to hold. Which is which is `needsNote`, so the
+          admin's refusal reaches the same form the uplift does rather than
+          growing a second one beside it. */}
       <ConfirmDialog
-        open={!!confirm && confirm.kind !== "uplift"}
-        tone={confirm?.kind === "reject" ? "danger" : undefined}
+        open={!!confirm && !needsNote(confirm)}
+        tone={rejecting ? "danger" : undefined}
         title={cText.t}
         message={cText.m}
         error={noteErr || undefined}
@@ -623,21 +640,33 @@ export default function LateProofs({ scope, onClearScope }) {
       />
 
       <Modal
-        open={!!confirm && confirm.kind === "uplift"}
+        open={needsNote(confirm)}
         onClose={close}
-        title={T.cUplift}
-        icon={<ArrowUpCircle size={16} />}
+        title={cText.t}
+        icon={rejecting ? <Ban size={16} /> : <ArrowUpCircle size={16} />}
         subtitle={confirm?.item ? `${tl(confirm.item.leader)} · ${day(confirm.item.date)}` : ""}
         footer={
           <>
             <Button variant="secondary" onClick={close}>{T.cancel}</Button>
-            <Button variant="primary" loading={decide.isPending} onClick={run}>
-              <ArrowUpCircle size={14} />{T.btnUplift}
+            <Button variant={rejecting ? "danger" : "primary"}
+              loading={decide.isPending} onClick={run}>
+              {rejecting ? <><Ban size={14} />{T.btnReject}</>
+                : <><ArrowUpCircle size={14} />{T.btnUplift}</>}
             </Button>
           </>
         }
       >
-        <FormField label={T.noteSup} required hint={T.cUpliftM} error={noteErr || undefined}>
+        {/* The consequence stays on screen while the reason for it is typed —
+            the same sentence the plain confirm would have shown. */}
+        {rejecting && (
+          <p className="text-[12px] leading-snug mb-3" style={{ color: "var(--text-3)" }}>
+            {cText.m}
+          </p>
+        )}
+        <FormField
+          label={rejecting ? T.noteAdm : T.noteSup} required
+          hint={rejecting ? T.cRejectHint : T.cUpliftM}
+          error={noteErr || undefined}>
           <textarea
             value={note}
             onChange={(e) => { setNote(e.target.value); setNoteErr(""); }}

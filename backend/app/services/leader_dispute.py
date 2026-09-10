@@ -276,12 +276,23 @@ def decide_admin(db: Session, d: LeaderAiDispute, *, action: str,
     actually restores the weight — everywhere at once, at read time, for the
     register, the leaderboard, the day report and the corrected report DM
     alike. This row stays the paper trail.
+
+    A REFUSAL REQUIRES the admin's own reason, and it travels to the leader in
+    the notice (`leader_dispute_rejected` prints `{note}`). This is the end of
+    the chain: a leader refused here has explained their shift to two people,
+    lost the point for good, and had no route left — so «rejected» with nothing
+    beside it is the platform declining to say why, on the one decision it
+    cannot be argued with. Approving needs none: the outcome IS the answer.
+    Stage 1 is deliberately untouched — a brigadir's refusal is not final for
+    the platform (an admin's undo reaches it) and the objection can be re-filed.
     """
     if d.status != ADMIN:
         raise Refused(d.status)
     if action not in ADM_ACTIONS:
         raise Refused("bad action")
     note = (note or "").strip()
+    if action == REJECTED and not note:
+        raise Refused("note required")
     d.status = action
     d.decision_note = note[:REASON_MAX] or None
     d.decided_by_name = (actor_name or "")[:160] or None
