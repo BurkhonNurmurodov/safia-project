@@ -60,7 +60,7 @@ _LABELS = {
         "hdr_dispute":   "⚖️ AI qaroriga norozilik",
         "task":          "Vazifa",
         "ai_verdict":    "AI xulosasi",
-        "dispute_note":  "Tasdiqlansa, vazifa yana bajarilgan deb hisoblanadi va kun bahosi qayta hisoblanadi. Rad etilsa, AI qarori kuchida qoladi.",
+        "dispute_note":  "Tasdiqlansa, vazifa yana bajarilgan deb hisoblanadi va kun bahosi qayta hisoblanadi. Rad etsangiz, nega rad etayotganingizni yozishingiz so'raladi \u2014 sabab liderga yuboriladi.",
         "leader":        "Lider",
         "filed_at":      "Yuborilgan",
         "score":         "Natija",
@@ -105,7 +105,7 @@ _LABELS = {
         "hdr_dispute":   "⚖️ Возражение на решение ИИ",
         "task":          "Задача",
         "ai_verdict":    "Заключение ИИ",
-        "dispute_note":  "При одобрении задача снова засчитывается и оценка дня пересчитывается. При отклонении решение ИИ остаётся в силе.",
+        "dispute_note":  "При одобрении задача снова засчитывается и оценка дня пересчитывается. При отклонении нужно будет написать причину \u2014 её отправят лидеру.",
         "leader":        "Лидер",
         "filed_at":      "Отправлено",
         "score":         "Результат",
@@ -150,7 +150,7 @@ _LABELS = {
         "hdr_dispute":   "⚖️ Objection to an AI ruling",
         "task":          "Task",
         "ai_verdict":    "AI verdict",
-        "dispute_note":  "Approving counts the task as done again and re-scores the day. Refusing leaves the AI ruling in force.",
+        "dispute_note":  "Approving counts the task as done again and re-scores the day. Refusing asks you for a reason first \u2014 the leader is told it.",
         "leader":        "Leader",
         "filed_at":      "Filed",
         "score":         "Score",
@@ -740,7 +740,8 @@ def _log_leader_late(db, call, req, status: str, decided_by: str) -> None:
         logger.debug("action log: late-day decision not recorded", exc_info=True)
 
 
-def _log_leader_dispute(db, call, d, status: str, decided_by: str) -> None:
+def _log_leader_dispute(db, call, d, status: str, decided_by: str,
+                        note: str | None = None) -> None:
     try:
         action_log.record_bot(
             db, call.from_user.id, "leader_review", "dispute.decided",
@@ -750,7 +751,10 @@ def _log_leader_dispute(db, call, d, status: str, decided_by: str) -> None:
             day=d.date,
             details=[("leader", d.leader_name), ("task_id", d.task_id)],
             changes=[("status", "pending", status)],
-            reason=d.reason,
+            # The admin's own reason where there is one — the web door records
+            # exactly that (`note or d.reason`), so one ruling reads one way in
+            # «Jurnal» whichever door it came through.
+            reason=(note or "").strip() or d.reason,
         )
     except Exception:
         logger.debug("action log: dispute ruling not recorded", exc_info=True)
@@ -875,6 +879,15 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
         elif code == "ll":
             _decide_leader_late(int(ref), status, call)
         elif code == "ld":
+            # A refusal is the end of the objection chain and its reason is
+            # stated to the leader, so it cannot be made on a bare tap. The
+            # generic ap: keyboard is shared with every other approval kind, so
+            # the pause lives HERE — one branch, for one code — rather than in
+            # a keyboard four other flows depend on.
+            if status == "rejected":
+                from app.telegram_bot import _ad_ask_admin_reason
+                if _ad_ask_admin_reason(call, int(ref)):
+                    return
             _decide_leader_dispute(int(ref), status, call)
         else:
             bot.answer_callback_query(call.id)
@@ -944,14 +957,22 @@ def _decide_leader_late(req_id: int, status: str, call) -> None:
     edit_admin_notices("leader_late", req_id, status, decided_by)
 
 
-def _decide_leader_dispute(dispute_id: int, status: str, call) -> None:
+def _decide_leader_dispute(dispute_id: int, status: str, call,
+                           note: str | None = None) -> None:
     """Rule on an objection from the inline card. Admin-only and re-checked
     here — notices for this kind only ever go to admins, but a forwarded
     message must not be able to restore a leader's points.
 
     Runs the SAME core as the web endpoint, so a dispute settled from a DM
     re-scores the day and re-sends its report exactly like one settled in the
-    panel."""
+    panel.
+
+    `note` is the admin's own reason, which a REFUSAL cannot be made without —
+    `leader_dispute.decide_admin` refuses a wordless one and the leader is told
+    it. The button cannot carry text, so the reject path collects it first (see
+    `telegram_bot._ad_ask_admin_reason`) and calls back in here with it; an
+    approval still settles on the tap.
+    """
     from app.models import LeaderAiDispute
     from app.routers.leaders import _report_after_ruling, _settle_dispute
     from app.services import leader_dispute
@@ -966,8 +987,13 @@ def _decide_leader_dispute(dispute_id: int, status: str, call) -> None:
         if d is None or d.status != leader_dispute.ADMIN:
             raise AlreadyHandled()   # withdrawn, or another admin got there first
         decided_by = _display_name(call.from_user)
-        _settle_dispute(db, d, status, decided_by, call.from_user.id)
-        _log_leader_dispute(db, call, d, status, decided_by)
+        # `_settle_dispute` absorbs `Refused` and answers False — which is also
+        # what a wordless refusal now produces. Treating that as "somebody got
+        # there first" is the honest reading for a caller with no text to add.
+        if not _settle_dispute(db, d, status, decided_by, call.from_user.id,
+                               note=note):
+            raise AlreadyHandled()
+        _log_leader_dispute(db, call, d, status, decided_by, note=note)
         leader_dispute.notify_decided(db, d, stage="admin")
         db.commit()
         _report_after_ruling(db, d)

@@ -2061,6 +2061,9 @@ _LT_MESSAGES = {
         "btn_lp_approve": "\u2705 Tasdiqlash",
         "lp_ask_note": ("\U0001F4DD Nega bu ish tasdiqlanishi kerak?\n\n"
                         "Izohingizni yozing \u2014 adminlar shuni o'qib qaror qiladi."),
+        "lp_ask_reject": ("\U0001F4DD Nega rad etyapsiz?\n\n"
+                          "Sababni yozing \u2014 u liderga yuboriladi. Bu oxirgi qaror, "
+                          "shuning uchun sababsiz rad etib bo'lmaydi."),
         "lp_done_rejected": "\u274C Rad etildi \u00B7 ball berilmadi",
         "lp_done_uplifted": "\u2B06\uFE0F Adminlarga yuborildi",
         "lp_done_approved": "\u2705 Tasdiqlandi \u00B7 ball berildi",
@@ -2075,6 +2078,10 @@ _LT_MESSAGES = {
         "ad_ask_note": ("📝 Nega bu vazifaga ball berilishi kerak?\n\n"
                         "Izohingizni yozing — adminlar lider izohi bilan birga shuni "
                         "o'qib qaror qiladi."),
+        "ad_ask_reject": ("📝 Nega rad etyapsiz?\n\n"
+                          "Sababni yozing — u liderga yuboriladi. Bu oxirgi qaror, "
+                          "shuning uchun sababsiz rad etib bo'lmaydi."),
+        "ad_fail": "Qaror saqlanmadi. Qaytadan urinib ko'ring.",
         "ad_done_rejected": "❌ Norozilik rad etildi",
         "ad_done_uplifted": "⬆️ Adminlarga yuborildi",
         "ad_gone": "Bu norozilik allaqachon hal qilingan.",
@@ -2198,6 +2205,9 @@ _LT_MESSAGES = {
         "btn_lp_approve": "\u2705 Тасдиқлаш",
         "lp_ask_note": ("\U0001F4DD Нега бу иш тасдиқланиши керак?\n\n"
                         "Изоҳингизни ёзинг \u2014 админлар шуни ўқиб қарор қилади."),
+        "lp_ask_reject": ("\U0001F4DD Нега рад этяпсиз?\n\n"
+                          "Сабабни ёзинг \u2014 у лидерга юборилади. Бу охирги қарор, "
+                          "шунинг учун сабабсиз рад этиб бўлмайди."),
         "lp_done_rejected": "\u274C Рад этилди \u00B7 балл берилмади",
         "lp_done_uplifted": "\u2B06\uFE0F Админларга юборилди",
         "lp_done_approved": "\u2705 Тасдиқланди \u00B7 балл берилди",
@@ -2212,6 +2222,10 @@ _LT_MESSAGES = {
         "ad_ask_note": ("📝 Нега бу вазифага балл берилиши керак?\n\n"
                         "Изоҳингизни ёзинг — админлар лидер изоҳи билан бирга шуни "
                         "ўқиб қарор қилади."),
+        "ad_ask_reject": ("📝 Нега рад этяпсиз?\n\n"
+                          "Сабабни ёзинг — у лидерга юборилади. Бу охирги қарор, "
+                          "шунинг учун сабабсиз рад этиб бўлмайди."),
+        "ad_fail": "Қарор сақланмади. Қайтадан уриниб кўринг.",
         "ad_done_rejected": "❌ Норозилик рад этилди",
         "ad_done_uplifted": "⬆️ Админларга юборилди",
         "ad_gone": "Бу норозилик аллақачон ҳал қилинган.",
@@ -2335,6 +2349,9 @@ _LT_MESSAGES = {
         "btn_lp_approve": "\u2705 Принять",
         "lp_ask_note": ("\U0001F4DD Почему эту работу стоит принять?\n\n"
                         "Напишите комментарий \u2014 администраторы решают по нему."),
+        "lp_ask_reject": ("\U0001F4DD Почему вы отклоняете?\n\n"
+                          "Напишите причину \u2014 её отправят лидеру. Это последнее "
+                          "решение, поэтому отклонить без причины нельзя."),
         "lp_done_rejected": "\u274C Отклонено \u00B7 балл не начислен",
         "lp_done_uplifted": "\u2B06\uFE0F Передано администраторам",
         "lp_done_approved": "\u2705 Принято \u00B7 балл начислен",
@@ -2349,6 +2366,10 @@ _LT_MESSAGES = {
         "ad_ask_note": ("📝 Почему за эту задачу нужно начислить балл?\n\n"
                         "Напишите свой комментарий — администраторы прочитают его "
                         "вместе с комментарием лидера и примут решение."),
+        "ad_ask_reject": ("📝 Почему вы отклоняете?\n\n"
+                          "Напишите причину — её отправят лидеру. Это последнее "
+                          "решение, поэтому отклонить без причины нельзя."),
+        "ad_fail": "Решение не сохранено. Попробуйте ещё раз.",
         "ad_done_rejected": "❌ Возражение отклонено",
         "ad_done_uplifted": "⬆️ Передано администраторам",
         "ad_gone": "Это возражение уже рассмотрено.",
@@ -2472,6 +2493,9 @@ _LT_MESSAGES = {
         "btn_lp_approve": "\u2705 Approve",
         "lp_ask_note": ("\U0001F4DD Why should this work be accepted?\n\n"
                         "Write your comment \u2014 the admins decide on it."),
+        "lp_ask_reject": ("\U0001F4DD Why are you refusing it?\n\n"
+                          "Write the reason \u2014 the leader is told it. This is the "
+                          "last word, so a refusal cannot be left blank."),
         "lp_done_rejected": "\u274C Rejected \u00B7 no point given",
         "lp_done_uplifted": "\u2B06\uFE0F Passed to the admins",
         "lp_done_approved": "\u2705 Approved \u00B7 point given",
@@ -2486,6 +2510,10 @@ _LT_MESSAGES = {
         "ad_ask_note": ("📝 Why should this task be pointed?\n\n"
                         "Write your comment — the admins read it beside the leader's "
                         "and decide."),
+        "ad_ask_reject": ("📝 Why are you refusing it?\n\n"
+                          "Write the reason — the leader is told it. This is the last "
+                          "word, so a refusal cannot be left blank."),
+        "ad_fail": "The ruling was not saved. Please try again.",
         "ad_done_rejected": "❌ Objection refused",
         "ad_done_uplifted": "⬆️ Passed to the admins",
         "ad_gone": "This objection has already been settled.",
@@ -4067,7 +4095,8 @@ def _lt_reason(message: types.Message):
 # point. The AI is never in the loop; it judges photographs, and this is a
 # question about a person.
 
-_LP_STAGES = ("late_photos", "late_reason", "late_confirm", "lp_note")
+_LP_STAGES = ("late_photos", "late_reason", "late_confirm", "lp_note",
+              "lp_arej")
 
 
 def _lp_media(db, row) -> list:
@@ -4543,6 +4572,51 @@ def _lp_note(message: types.Message):
         bot.send_message(message.chat.id, _lt(lang, "lp_done_uplifted"))
 
 
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "lp_arej",
+                     content_types=["text"])
+def _lp_admin_reject(message: types.Message):
+    """The ADMIN's reason for refusing a late proof — required, and told to the
+    leader.
+
+    The twin of `_lp_note` one stage up, and the same capture row: `task_id`
+    carries the LATE PROOF's id, not a task's, and the stage name is what says
+    which it is. The ruling is made HERE and not on the button, so a refusal
+    can never be recorded without the words that go out with it.
+    """
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    text = (message.text or "").strip()
+    with SessionLocal() as db:
+        cap = _lt_capture(db, tid, lock=True)
+        if not cap or cap.stage != "lp_arej":
+            return
+        if not text or text.startswith("/"):
+            db.delete(cap)
+            db.commit()
+            bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
+            return
+        row = db.query(LeaderLateProof).filter_by(id=cap.task_id).first()
+        db.delete(cap)
+        # Re-checked here and not merely on the button: the text may have taken
+        # a while to type and another admin may have ruled in the meantime.
+        if row is None or row.status != leader_late_proof.ADMIN:
+            db.commit()
+            bot.send_message(message.chat.id, _lt(lang, "lp_gone"))
+            return
+        if tid not in _admin_ids():
+            db.commit()
+            bot.send_message(message.chat.id, _lt(lang, "lp_not_yours"))
+            return
+        leader_late_proof.decide_admin(
+            db, row, action=leader_late_proof.REJECTED, note=text,
+            actor_name=_display_name_for(db, tid), actor_telegram=tid)
+        db.commit()
+        _lp_retire(db, row, "adm", "lp_done_rejected")
+        leader_late_proof.notify_decided(db, row, stage="admin")
+        db.commit()
+        bot.send_message(message.chat.id, _lt(lang, "lp_done_rejected"))
+
+
 def _display_name_for(db, tid: int) -> str:
     """The actor's display name for the audit trail — never a bare id."""
     try:
@@ -4621,21 +4695,34 @@ def _lp_callback(call: types.CallbackQuery):
             if row.status != leader_late_proof.ADMIN:
                 bot.answer_callback_query(call.id, _lt(lang, "lp_gone"), show_alert=True)
                 return
-            action = (leader_late_proof.APPROVED if act == "aa"
-                      else leader_late_proof.REJECTED)
+            if act == "ar":
+                # A refusal is the END of this chain — the leader did the work,
+                # filed it late, explained themselves to two people and has no
+                # route left — and the reason is stated to them in the notice.
+                # So the ruling is not made until the text arrives: the capture
+                # is the pause, not a draft. Approving needs no words, because
+                # the outcome IS the answer.
+                _lt_clear(tid)
+                sent = bot.send_message(call.message.chat.id,
+                                        _lt(lang, "lp_ask_reject"))
+                db.add(LeaderTaskCapture(
+                    telegram_id=tid, stage="lp_arej", leader_id=int(row.leader_id),
+                    task_id=row.id, chat_id=call.message.chat.id,
+                    message_id=sent.message_id, min_media=0, media=[]))
+                db.commit()
+                bot.answer_callback_query(call.id)
+                return
             leader_late_proof.decide_admin(
-                db, row, action=action, note=None,
+                db, row, action=leader_late_proof.APPROVED, note=None,
                 actor_name=_display_name_for(db, tid), actor_telegram=tid)
             db.commit()
-            key = "lp_done_approved" if act == "aa" else "lp_done_rejected"
-            done = _lt(lang, key)
-            _lp_retire(db, row, "adm", key)
+            done = _lt(lang, "lp_done_approved")
+            _lp_retire(db, row, "adm", "lp_done_approved")
             leader_late_proof.notify_decided(db, row, stage="admin")
             db.commit()
-            if act == "aa":
-                # The score moved, so the day's report says so — the same door
-                # a re-review or an upheld dispute uses.
-                leader_late_proof.rescore(db, row)
+            # The score moved, so the day's report says so — the same door a
+            # re-review or an upheld dispute uses.
+            leader_late_proof.rescore(db, row)
             bot.answer_callback_query(call.id, done)
             return
 
@@ -4870,6 +4957,94 @@ def _ad_note(message: types.Message):
                 was=leader_dispute.SUPERVISOR)
         _ad_settled(db, d, stage="supervisor", uplifted=True)
         bot.send_message(message.chat.id, _lt(lang, "ad_done_uplifted"))
+
+
+def _ad_ask_admin_reason(call: types.CallbackQuery, dispute_id: int) -> bool:
+    """Pause an ADMIN's refusal of an objection to collect the reason for it.
+
+    Called from `approvals.handle_approval_callback` on the `ap:ld:r:` tap.
+    Returns True when the pause was opened — the caller then rules nothing and
+    `_ad_admin_reject` finishes the job once the text arrives. False means this
+    tap is not one to pause (not an admin, or the row is no longer at stage 2)
+    and the ordinary path should answer it, so nothing about a stale card's
+    "somebody got there first" toast changes.
+
+    Why a pause and not a wider keyboard: the `ap:` buttons are shared with
+    every other approval kind, and a refusal is the END of this chain — the
+    leader has explained their shift to two people, lost the point for good and
+    has no route left — so the reason is stated to them in the notice and
+    cannot be left blank. Approving still settles on the tap: the outcome IS
+    the answer there.
+    """
+    from app.models import LeaderAiDispute
+    from app.services import leader_dispute
+
+    tid = call.from_user.id
+    if tid not in _admin_ids():
+        return False
+    lang = _get_lang(tid)
+    with SessionLocal() as db:
+        d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
+        if d is None or d.status != leader_dispute.ADMIN:
+            return False
+        _lt_clear(tid)
+        sent = bot.send_message(call.message.chat.id, _lt(lang, "ad_ask_reject"))
+        db.add(LeaderTaskCapture(
+            telegram_id=tid, stage="ad_arej",
+            leader_id=int(d.leader_id or 0), task_id=d.id,
+            chat_id=call.message.chat.id, message_id=sent.message_id,
+            min_media=0, media=[]))
+        db.commit()
+    bot.answer_callback_query(call.id)
+    return True
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "ad_arej",
+                     content_types=["text"])
+def _ad_admin_reject(message: types.Message):
+    """The ADMIN's reason for refusing an objection — required, and told to the
+    leader.
+
+    Finishes what `_ad_ask_admin_reason` paused, through the SAME core the
+    inline tap and the web endpoint run, so a ruling made here re-scores the
+    day, re-renders every card and files the same «Jurnal» row as one made in
+    the panel.
+    """
+    from app.approvals import AlreadyHandled, _decide_leader_dispute
+    from app.models import LeaderAiDispute
+    from app.services import leader_dispute
+
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    text = (message.text or "").strip()
+    with SessionLocal() as db:
+        cap = _lt_capture(db, tid, lock=True)
+        if not cap or cap.stage != "ad_arej":
+            return
+        d_id = cap.task_id
+        if not text or text.startswith("/"):
+            db.delete(cap)
+            db.commit()
+            bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
+            return
+        db.delete(cap)
+        db.commit()
+        # Re-checked here and not merely on the button: the text takes a moment
+        # to type and another admin may have ruled in the meantime.
+        d = db.query(LeaderAiDispute).filter_by(id=d_id).first()
+        if d is None or d.status != leader_dispute.ADMIN:
+            bot.send_message(message.chat.id, _lt(lang, "ad_gone"))
+            return
+    try:
+        _decide_leader_dispute(d_id, "rejected", message, note=text)
+    except AlreadyHandled:
+        bot.send_message(message.chat.id, _lt(lang, "ad_gone"))
+        return
+    except Exception:
+        logger.exception("dispute admin refusal failed for %s", d_id)
+        bot.send_message(message.chat.id, _lt(lang, "ad_fail"))
+        return
+    bot.send_message(message.chat.id, _lt(lang, "ad_done_rejected"))
 
 
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("ad:"))

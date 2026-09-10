@@ -3653,3 +3653,54 @@ class WageRatePeriod(Base):
         Index("uq_wage_rate_from",
               text("coalesce(effective_from, '0001-01-01'::date)"), unique=True),
     )
+
+
+class IdleCategoryOwner(Base):
+    """WHO is answerable for an ojidaniya category — «Kutish mas'uli».
+
+    The plant runs twelve waiting categories (``sheets_reader.SHIFT_CATEGORY_ORDER``)
+    and, from 2026-09-10, each one has a named person responsible for driving it
+    down. That person reads the register through their own page
+    (``routers/idle_owner.py``) and their name is printed beside the category on
+    every by-category surface, so «Cat D3 · 1 240 daq · 3.1 mln so'm» stops being
+    a number nobody owns.
+
+    **``category`` is UNIQUE, and that unique key IS the rule.** «One for each
+    category» is the operator's own wording, so it is a guarantee of the schema
+    rather than of whoever last edited the writer — the same reasoning
+    ``uq_wage_rate_from`` is an expression index for. Re-assigning a category
+    REPLACES its row; there is never a second owner to disambiguate between, and
+    no reader has to decide which of two names to print.
+
+    **The owner is a PROFILE, keyed by ``identity.profile_key``** (``"role:id"``)
+    — a person, not a Telegram account, so every holder of that profile sees the
+    category's page and is named on it (``app/identity.py``, THE identity rule).
+    Keying by the string rather than by ``role_profiles.id`` is what lets a
+    supervisor own a category too: supervisors are ``managers`` rows and live in
+    a different namespace, exactly as ``WebCredential`` already has to handle.
+
+    A person may own SEVERAL categories (twelve categories, fewer people) — that
+    is simply several rows pointing at one key, and their page answers for all
+    of them at once. The inverse is what the unique key forbids.
+
+    Nothing is denormalised onto an interval, a cost row or a report: the owner
+    is resolved on read through ``services/idle_scope``, so re-assigning a
+    category re-labels every past surface at once with no migration and no
+    re-sync — the property ``wage_rate`` and ``idle_source`` already have. It
+    therefore moves NO figure, ever: it decides who is named and what their own
+    page is allowed to show, never what anything costs.
+    """
+    __tablename__ = "idle_category_owners"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    # "Cat A" … "Cat I" — the sheet's own key, as every category column on the
+    # platform spells it. A key that does not match its column is a key nobody
+    # can look up (services/sheets_reader).
+    category    = Column(String, nullable=False, unique=True, index=True)
+    # identity.profile_key — "idle-owner:7", "supervisor:5", …
+    profile_key = Column(String, nullable=False, index=True)
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+    # The admin who made the assignment. A Telegram id and not a profile key:
+    # this is an audit stamp of an ACT, and the action register keys actors the
+    # same way.
+    assigned_by = Column(BigInteger, nullable=True)

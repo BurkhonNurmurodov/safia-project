@@ -1454,6 +1454,14 @@ def decide_dispute(
         if action not in leader_dispute.ADM_ACTIONS:
             raise HTTPException(status_code=400,
                                 detail="action must be approved or rejected")
+        # A refusal here is the END of the chain and it is stated to the leader
+        # in their notice, so it cannot be made wordlessly. Checked before the
+        # core as the uplift guard above is, so the message names what to do
+        # rather than surfacing `decide_admin`'s storage word as a 409.
+        if action == "rejected" and not note:
+            raise HTTPException(
+                status_code=400,
+                detail="A comment is required to refuse this — the leader is told why")
         try:
             leader_dispute.decide_admin(
                 db, d, action=action, note=note or None, actor_name=who,
@@ -2756,6 +2764,12 @@ def decide_late_proof(
         if action not in ("approved", "rejected"):
             raise HTTPException(status_code=400,
                                 detail="action must be approved or rejected")
+        # Same rule as the objection chain next door: a refusal is the last
+        # word and the leader is told the reason, so there has to be one.
+        if action == "rejected" and not note:
+            raise HTTPException(
+                status_code=400,
+                detail="A comment is required to refuse this — the leader is told why")
         try:
             leader_late_proof.decide_admin(
                 db, row, action=action, note=note or None, actor_name=who,

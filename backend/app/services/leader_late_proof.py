@@ -464,13 +464,24 @@ def decide_admin(db: Session, row: LeaderLateProof, *, action: str,
     is immutable), so the correction is applied at read time by
     `routers/leaders._apply_overlays`, everywhere at once, for the register,
     the leaderboard, the day report and the corrected report DM alike.
+
+    A REFUSAL REQUIRES the admin's own reason, and it travels to the leader in
+    the notice (`late_proof_rejected` prints `{note}`). This is the end of the
+    chain: the leader did the work, filed it late, explained themselves to two
+    people and has no route left — so «rejected» with nothing beside it is the
+    platform declining to say why, on the one decision it cannot be argued
+    with. Approving needs none: the outcome IS the answer. Stage 1 is
+    deliberately untouched — the twin rule in `leader_dispute.decide_admin`.
     """
     if row.status != ADMIN:
         raise Refused(row.status)
     if action not in (APPROVED, REJECTED):
         raise Refused("bad action")
+    note = (note or "").strip()
+    if action == REJECTED and not note:
+        raise Refused("note required")
     row.adm_action = action
-    row.adm_note = (note or "").strip()[:1000] or None
+    row.adm_note = note[:1000] or None
     row.adm_by_name = actor_name
     row.adm_by_telegram = actor_telegram
     row.adm_at = datetime.now(timezone.utc)
@@ -484,7 +495,7 @@ def decide_admin(db: Session, row: LeaderLateProof, *, action: str,
         target_name=row.leader_name, unit_id=row.manager_id, day=row.date,
         details=[("leader", row.leader_name), ("task_id", row.task_id),
                  ("action", action)],
-        reason=(note or "").strip() or None,
+        reason=note or None,
     )
 
 

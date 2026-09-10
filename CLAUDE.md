@@ -1714,6 +1714,28 @@ number.
   by nothing. Consequence to know: the badge answers «how much is with the
   admins» for EVERY viewer, so a brigadir does now carry a number only an admin
   can clear.
+- **An ADMIN's REFUSAL cannot be made wordlessly, and the reason goes to the
+  leader** (2026-09-10, the operator's directive). It is the END of the chain —
+  the leader has explained their shift to two people, loses the point for good
+  and has no route left — so «rejected» with nothing beside it is the platform
+  declining to say why on the one decision that cannot be argued with.
+  `leader_dispute.decide_admin` refuses an empty note on `rejected`
+  (`Refused("note required")`, the word the uplift guard already uses),
+  `leader_dispute_rejected` prints it as «Sabab» (a REQUIRED reason, not the
+  optional «Izoh» its stage-1 twin keeps), and every door collects it: the
+  `/decide` endpoint pre-checks with a **400** naming what to do, the two
+  queues and the day report open the SAME note form the uplift uses
+  (`needsNote` — a property of the ROW as well as the verb), and the Telegram
+  card PAUSES on the tap (`telegram_bot._ad_ask_admin_reason` → an `ad_arej`
+  capture → `_decide_leader_dispute(note=…)`, which is also why that function
+  and `_log_leader_dispute` now take a note). The `ap:` keyboard is shared with
+  four other approval kinds, so the pause lives in `handle_approval_callback`'s
+  `ld` branch, never in the keyboard.
+  **APPROVING still needs none** — the outcome IS the answer — and **stage 1 is
+  deliberately untouched**: a brigadir's refusal is not the last word (an
+  admin's undo reaches it, and the leader may file again), so forcing words
+  there would be a rule with no consequence behind it. Same rule, same shape,
+  in `leader_late_proof.decide_admin`.
 - **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
   the «Qarorni bekor qilish» button under the objection box on the report page).
   Deciding is one tap and an ADMIN's own filing IS the approval, so the wrong
@@ -2457,6 +2479,14 @@ say about it.
   uses, so it moves the register, the leaderboard, the day report and the
   corrected report DM with no new scoring path. The lateness is not laundered:
   the row, its chip and the day report all go on saying it arrived late.
+- **An ADMIN's REFUSAL requires their reason and it is told to the leader**
+  (2026-09-10) — the twin of the rule in the objection chain above, for the
+  same reason and in the same shape: `decide_admin` refuses an empty note on
+  `rejected`, `late_proof_rejected` gained a `{note}` it never carried, the
+  endpoint pre-checks with a 400, «Kechikkan isbotlar» opens the uplift's own
+  form, and the Telegram card pauses on `lp:ar` for an `lp_arej` capture rather
+  than ruling on the tap. Approving needs none; the brigadir's stage-1 refusal
+  still needs none.
 - **Nothing expires it.** An undecided row waits in both queues with a badge
   until a person acts. The default is already 0 points, so a silent auto-reject
   would only take the decision away from the two people the flow exists to put
