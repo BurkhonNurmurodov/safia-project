@@ -4714,7 +4714,13 @@ def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
 
 class DocBulkBody(BaseModel):
     ids:    List[int]
-    action: str           # approve | cancel | delete
+    # approve | reject | cancel | delete.
+    #   reject — refuse a PENDING request; the record stays, marked rejected.
+    #   delete — erase the record for good (an approved one is reverted first).
+    # They are two acts and the toolbar names them separately, so neither has to
+    # stand in for the other. "delete" keeps its historical draft→reject branch
+    # for a browser tab still open on a bundle that had only three buttons.
+    action: str
 
 
 @router.post("/documents/bulk")
@@ -4770,6 +4776,17 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
             _grant_row(doc, "v.draft", "v.approved")
             pending_notify.append((doc, "approved"))
             resolved.append((doc.id, "approved"))
+        elif body.action == "reject":
+            # Refusing a PENDING request. Same core as the row button and the
+            # bot's ❌, so one refusal means one thing everywhere: the row is
+            # marked rejected and KEPT (the 2026-07-11 rule), never erased.
+            if doc.status != "draft" or not _may_reject_doc(doc, caller, db):
+                continue
+            if _doc_reject_via_grant(doc, caller, db):
+                grant_rows.append((f"#{doc.id} · {unit_name(db, doc.manager_id)} · {doc.date}",
+                                   tv("v.draft"), tv("v.rejected")))
+            _reject_document(doc, caller, db)
+            resolved.append((doc.id, "rejected"))
         elif body.action == "cancel":
             # Mirror of the approve branch: only an APPROVED document can be
             # un-posted. _cancel_doc no-ops on a draft, so without this a

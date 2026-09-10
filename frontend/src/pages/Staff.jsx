@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsUpDown,
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
-  LayoutGrid, FlaskConical, Filter,
+  LayoutGrid, FlaskConical, Filter, XCircle,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
@@ -18,6 +18,7 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TimeWheelPicker from "../components/ui/TimeWheelPicker";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { useToast } from "../components/ui/Toast";
 import CloseDayIdleNote from "../components/idle/CloseDayIdleNote";
 import CellPlacementPanel from "../components/staff/CellPlacementPanel";
 import Button from "../components/ui/Button";
@@ -1166,6 +1167,35 @@ export function CellDayView({ date, cellSel, hasCellData }) {
 // ════════════════════════════════════════════════════════════════════════════
 // HR Documents — document-driven change workflow
 // ════════════════════════════════════════════════════════════════════════════
+
+/** One action in the Requests bulk bar.
+ *
+ *  It states its own REACH: `count` is how many of the picked rows it will
+ *  actually touch, and at zero the button is disabled. A bar button must never
+ *  be a press that reports success and changes nothing — which is exactly what
+ *  «Bekor qilish» did over a selection of pending rows, since un-posting only
+ *  ever applied to an approved one.
+ *
+ *  `solid` is the destructive form (filled, white label). Erasing a record and
+ *  refusing a request are two different acts, so they never share an icon and
+ *  never share a weight: the tinted button is a decision, the solid one is
+ *  destruction. */
+function BulkBtn({ icon: Icon, label, count, fg, bg, bd, solid = false, onClick, title }) {
+  const off = count === 0;
+  return (
+    <button onClick={onClick} disabled={off} title={title}
+      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-opacity"
+      style={{
+        background: solid ? fg : bg,
+        color:      solid ? "#fff" : fg,
+        border:     `1px solid ${solid ? fg : bd}`,
+        opacity: off ? 0.4 : 1, cursor: off ? "not-allowed" : "pointer",
+      }}>
+      <Icon size={12} /> {label}
+      {count > 0 && <span className="tabular-nums opacity-80">· {count}</span>}
+    </button>
+  );
+}
 
 export const DOC_TYPE_TKEY = {
   role_change: "staff.roleChange",
@@ -2859,17 +2889,29 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
       : `doc-${d.id}`;
   }
 
+  // approve | reject | cancel | delete — only the picked rows the action really
+  // applies to are sent. The bar's counts and this partition read the SAME
+  // rights function, so a button can never post ids the endpoint would skip
+  // without saying so.
   async function handleBulk(action) {
-    const keys = [...selected];
-    const docIds   = keys.filter(k => k.startsWith("doc-")).map(k => parseInt(k.slice(4), 10));
-    const batchIds = keys.filter(k => k.startsWith("del-batch-")).map(k => k.slice(10));
-    // Solo/legacy deletion requests have no batch_id — addressed as solo-{id}.
-    const soloIds  = keys.filter(k => k.startsWith("del-") && !k.startsWith("del-batch-")).map(k => k.slice(4));
-    const batchAction = action === "approve" ? "approve" : action === "cancel" ? "reject" : "withdraw";
-    const calls = [];
-    if (docIds.length)   calls.push(api.post("/api/staff/documents/bulk", { ids: docIds, action }));
-    batchIds.forEach(bid => calls.push(api.post(`/api/staff/requests/batch/${bid}/${batchAction}`)));
-    soloIds.forEach(id  => calls.push(api.post(`/api/staff/requests/batch/solo-${id}/${batchAction}`)));
+    const take = selRows.filter(({ r }) =>
+      action === "approve" ? r.canApprove :
+      action === "cancel"  ? r.canCancel  :
+      action === "reject"  ? r.canReject  : r.canDelete);
+    if (!take.length) return;
+
+    const calls  = [];
+    const docIds = take.filter(x => !x.r.isDeletion).map(x => x.doc.id);
+    if (docIds.length) calls.push(api.post("/api/staff/documents/bulk", { ids: docIds, action }));
+    // Deletion requests live in the other queue and have no hard delete: they
+    // are approved, withdrawn by the unit that filed them, or rejected.
+    // Solo/legacy rows carry no batch_id — addressed as solo-{id}.
+    take.filter(x => x.r.isDeletion).forEach(({ doc, r }) => {
+      const bid = doc.batch_id || `solo-${doc.id}`;
+      const batchAction = action === "approve" ? "approve"
+        : r.isCreatorRole ? "withdraw" : "reject";
+      calls.push(api.post(`/api/staff/requests/batch/${bid}/${batchAction}`));
+    });
     await Promise.all(calls);
     invalidate();
     setSelected(new Set());
@@ -2927,6 +2969,99 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
     return r;
   }, [documents, dateFilter, createdFilter, typeFilter, supervisorFilter, approverFilter, statusFilter, sortCol, sortDir, lang]);
 
+  // ── What a row can actually take ───────────────────────────────────────────
+  // ONE definition, read by the row's own buttons AND by the bulk bar, so the
+  // toolbar can never offer an action over rows the endpoint would skip in
+  // silence.
+  //
+  // Reject and delete are two different acts and never both apply to one row:
+  // a PENDING request is REFUSED — the record stays, marked rejected, the rule
+  // since 2026-07-11 — while only an approved (reverted first) or an already
+  // rejected record is ERASED. A deletion request has no erase at all: its
+  // batch endpoints only approve / reject / withdraw, so `canDelete` is false
+  // for one and its refusal is `canReject` like everything else. That is the
+  // inversion this removes — the same red button used to mean "withdraw" on a
+  // deletion row and "reject" on the row above it.
+  function rowRights(doc) {
+    const isDeletion    = doc._source === "deletion";
+    const isExchange    = doc.doc_type === "people_exchange";
+    const isCreatorRole = role === "supervisor";
+    const isCreator     = myTelegramId != null && doc.created_by_telegram_id === myTelegramId;
+    const isExchangeReceiver = isExchange && doc.target_type === "supervisor"
+      && role === "supervisor" && doc.target_manager_id === myManagerId;
+    const hasPending = isDeletion && (doc.workers || []).some(w => w.status === "pending");
+    // Who may post / un-post THIS document (one approval is enough):
+    //  • exchange → supervisor: admin or the receiving supervisor
+    //  • exchange → task:       admin or a shift-manager
+    //  • role change / deletion: admin or shift-manager (isManager)
+    //  …plus, additively, whoever holds the matching capability
+    const canApproveDoc = isExchange
+      ? (doc.target_type === "supervisor"
+          ? (role === "admin" || isExchangeReceiver || grantDocs)
+          : (role === "admin" || role === "shift-manager" || grantDocs))
+      : canManageDocs;
+    const st = docStatus(doc);   // pending | approved | rejected (both sources)
+    return {
+      isDeletion, isExchange, isCreatorRole, st,
+      canApprove: isDeletion ? (canManageReqs && hasPending) : (canApproveDoc && st === "pending"),
+      // Un-posting reverses an approval, so a deletion batch has none: the rows
+      // it approved are off the day and no batch endpoint puts them back.
+      canCancel:  !isDeletion && canApproveDoc && st === "approved",
+      canEdit:    isDeletion
+        ? (isCreatorRole && hasPending)
+        : isExchange
+          ? (st === "pending" && (canApproveDoc || isCreator))
+          : (st === "pending" && (canManageDocs || isCreatorRole)),
+      canReject:  isDeletion
+        ? ((isCreatorRole || canManageReqs) && hasPending)
+        : st === "pending"
+          && (isExchange ? (canApproveDoc || canManageDocs || isCreator) : (canManageDocs || isCreatorRole)),
+      canDelete:  isDeletion
+        ? false
+        : st === "approved"
+          ? (isExchange ? canApproveDoc : canManageDocs)
+          : st === "rejected" && (canManageDocs || isCreator),
+    };
+  }
+
+  // The selection resolved to rows, each with its rights. Counting here is what
+  // lets every button in the bar state its reach instead of pressing into a
+  // silent skip.
+  const selRows = documents
+    .filter(d => selected.has(rowKey(d)))
+    .map(doc => ({ doc, r: rowRights(doc) }));
+  const bulkCount = {
+    approve: selRows.filter(x => x.r.canApprove).length,
+    cancel:  selRows.filter(x => x.r.canCancel).length,
+    reject:  selRows.filter(x => x.r.canReject).length,
+    delete:  selRows.filter(x => x.r.canDelete).length,
+  };
+
+  // Erasing records is the one bulk act with no way back, so it confirms first
+  // and the failure lands INSIDE the dialog — a mutation that fails must leave
+  // the dialog standing with the reason on it.
+  // A bulk press that fails must say so. Errors persist until dismissed —
+  // Telegram's WebView swallows window.alert, so a silent catch would make a
+  // failed refusal look exactly like a successful one.
+  const toast = useToast({ position: "bottom" });
+  const runBulk = (action) => handleBulk(action).catch(e =>
+    toast.error(e?.response?.data?.detail || e?.message || t("staff.bulkFailed")));
+
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [delBusy,    setDelBusy]    = useState(false);
+  const [delErr,     setDelErr]     = useState("");
+  async function runBulkDelete() {
+    setDelBusy(true); setDelErr("");
+    try {
+      await handleBulk("delete");
+      setConfirmDel(false);
+    } catch (e) {
+      setDelErr(e?.response?.data?.detail || e?.message || t("staff.bulkDeleteFailed"));
+    } finally {
+      setDelBusy(false);
+    }
+  }
+
   function toggleSel(key) {
     setSelected(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
@@ -2959,6 +3094,19 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
 
   return (
     <div className="space-y-3">
+      {toast.node}
+      {confirmDel && (
+        <ConfirmDialog
+          tone="danger"
+          title={t("staff.bulkDeleteTitle")}
+          message={t("staff.bulkDeleteMsg").replace("{n}", bulkCount.delete)}
+          confirmLabel={t("staff.delete")}
+          loading={delBusy}
+          error={delErr}
+          onCancel={() => { if (!delBusy) { setConfirmDel(false); setDelErr(""); } }}
+          onConfirm={runBulkDelete}
+        />
+      )}
       {/* ── Unified toolbar: bulk actions (always shown, disabled until a row is
             selected) on the left, a single Filters button on the right. Always
             rendered so selecting rows never shifts the table. ───────────────── */}
@@ -2966,26 +3114,28 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
         {/* Bulk actions — always visible; enabled only when rows are selected */}
         {canBulk && (
           <>
-            <button onClick={() => handleBulk("approve")} disabled={selected.size === 0}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-opacity"
-              style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e44",
-                opacity: selected.size === 0 ? 0.4 : 1, cursor: selected.size === 0 ? "not-allowed" : "pointer" }}>
-              <Check size={12} /> {t("staff.post")}
-            </button>
-            <button onClick={() => handleBulk("cancel")} disabled={selected.size === 0}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-opacity"
-              style={{ background: "#f59e0b22", color: "#d97706", border: "1px solid #f59e0b44",
-                opacity: selected.size === 0 ? 0.4 : 1, cursor: selected.size === 0 ? "not-allowed" : "pointer" }}>
-              <Ban size={12} /> {t("staff.unpost")}
-            </button>
+            <BulkBtn icon={Check} label={t("staff.post")} count={bulkCount.approve}
+              fg="#16a34a" bg="#22c55e22" bd="#22c55e44"
+              title={bulkCount.approve === 0 ? t("staff.bulkNoneApprove") : undefined}
+              onClick={() => runBulk("approve")} />
+            {/* Un-post reverses an APPROVAL — it has nothing to do with refusing
+                a pending request, which is «Rad etish» next to it. */}
+            <BulkBtn icon={Ban} label={t("staff.unpost")} count={bulkCount.cancel}
+              fg="#d97706" bg="#f59e0b22" bd="#f59e0b44"
+              title={bulkCount.cancel === 0 ? t("staff.bulkNoneCancel") : undefined}
+              onClick={() => runBulk("cancel")} />
+            <BulkBtn icon={XCircle} label={t("staff.reject")} count={bulkCount.reject}
+              fg="#ef4444" bg="#ef444422" bd="#ef444444"
+              title={bulkCount.reject === 0 ? t("staff.bulkNoneReject") : undefined}
+              onClick={() => runBulk("reject")} />
           </>
         )}
-        <button onClick={() => handleBulk("delete")} disabled={selected.size === 0}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-opacity"
-          style={{ background: "#ef444422", color: "#ef4444", border: "1px solid #ef444444",
-            opacity: selected.size === 0 ? 0.4 : 1, cursor: selected.size === 0 ? "not-allowed" : "pointer" }}>
-          <Trash2 size={12} /> {t("staff.delete")}
-        </button>
+        {/* The only button that ERASES. Solid, a different icon, and behind a
+            confirm — the tinted ✕ beside it refuses a request and keeps it. */}
+        <BulkBtn icon={Trash2} label={t("staff.delete")} count={bulkCount.delete} solid
+          fg="#ef4444" bg="#ef444422" bd="#ef444444"
+          title={bulkCount.delete === 0 ? t("staff.bulkNoneDelete") : undefined}
+          onClick={() => { setDelErr(""); setConfirmDel(true); }} />
 
         {/* Selected-count chip — appears inside the bar once rows are selected */}
         {selected.size > 0 && (
@@ -3130,40 +3280,9 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
             </thead>
             <tbody>
               {rows.map(doc => {
-                const isDeletion = doc._source === "deletion";
-                const isExchange = doc.doc_type === "people_exchange";
-                const isCreatorRole = role === "supervisor";
-                const isCreator = myTelegramId != null && doc.created_by_telegram_id === myTelegramId;
-                const isExchangeReceiver = isExchange && doc.target_type === "supervisor"
-                  && role === "supervisor" && doc.target_manager_id === myManagerId;
-                const hasPending = isDeletion && (doc.workers || []).some(w => w.status === "pending");
-                // Who may post / un-post THIS document (one approval is enough):
-                //  • exchange → supervisor: admin or the receiving supervisor
-                //  • exchange → task:       admin or a shift-manager
-                //  • role change / deletion: admin or shift-manager (isManager)
-                //  …plus, additively, whoever holds the matching capability
-                const canApproveDoc = isExchange
-                  ? (doc.target_type === "supervisor"
-                      ? (role === "admin" || isExchangeReceiver || grantDocs)
-                      : (role === "admin" || role === "shift-manager" || grantDocs))
-                  : canManageDocs;
-                const st = docStatus(doc);   // pending | approved | rejected (both sources)
-                const canApprove = isDeletion ? (canManageReqs && hasPending) : (canApproveDoc && st === "pending");
-                const canCancel  = isDeletion ? (canManageReqs && hasPending) : (canApproveDoc && st === "approved");
-                const canEdit    = isDeletion
-                  ? (isCreatorRole && hasPending)
-                  : isExchange
-                    ? (st === "pending" && (canApproveDoc || isCreator))
-                    : (st === "pending" && (canManageDocs || isCreatorRole));
-                // Pending documents are REJECTED (record kept, like the bot's ❌);
-                // hard delete only remains for approved (revert) / rejected (cleanup).
-                const canReject  = !isDeletion && st === "pending"
-                  && (isExchange ? (canApproveDoc || canManageDocs || isCreator) : (canManageDocs || isCreatorRole));
-                const canDelete  = isDeletion
-                  ? ((isCreatorRole && hasPending) || (canManageReqs && hasPending))
-                  : st === "approved"
-                    ? (isExchange ? canApproveDoc : canManageDocs)
-                    : st === "rejected" && (canManageDocs || isCreator);
+                // The row's buttons and the bulk bar read ONE rights function.
+                const { isDeletion, isExchange, isCreatorRole,
+                        canApprove, canCancel, canEdit, canReject, canDelete } = rowRights(doc);
                 const rKey    = rowKey(doc);
                 const expanded   = expandedId === rKey;
                 const colSpan = crossUnit ? 7 : 6;
@@ -3225,12 +3344,19 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                               {canCancel  && <ActionBtn icon={Ban}    label={t("staff.unpost")} color="#d97706"
                                 loading={busyKey === `${rowKey(doc)}:unpost`} disabled={!!busyKey}
                                 onClick={() => runAction(`${rowKey(doc)}:unpost`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "reject"  }) : single(doc.id, "cancel"))} />}
-                              {canReject  && <ActionBtn icon={Trash2} label={t("staff.reject")} color="#ef4444"
+                              {/* Refusing and erasing never share an icon: ✕ is a
+                                  decision that keeps the record, 🗑 destroys it. */}
+                              {/* A unit pulling its OWN request back is withdrawing it,
+                                  not refusing somebody else's — same call, honest label. */}
+                              {canReject  && <ActionBtn icon={XCircle} color="#ef4444"
+                                label={isDeletion && isCreatorRole ? t("staff.withdraw") : t("staff.reject")}
                                 loading={busyKey === `${rowKey(doc)}:reject`} disabled={!!busyKey}
-                                onClick={() => runAction(`${rowKey(doc)}:reject`, () => single(doc.id, "reject"))} />}
+                                onClick={() => runAction(`${rowKey(doc)}:reject`, () => isDeletion
+                                  ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: isCreatorRole ? "withdraw" : "reject" })
+                                  : single(doc.id, "reject"))} />}
                               {canDelete  && <ActionBtn icon={Trash2} label={t("staff.delete")} color="#ef4444"
                                 loading={busyKey === `${rowKey(doc)}:delete`} disabled={!!busyKey}
-                                onClick={() => runAction(`${rowKey(doc)}:delete`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: isCreatorRole ? "withdraw" : "reject" }) : single(doc.id, "delete"))} />}
+                                onClick={() => runAction(`${rowKey(doc)}:delete`, () => single(doc.id, "delete"))} />}
                               {!isDeletion && <ActionBtn icon={History} label={t("staff.history")} onClick={() => setHistoryId(doc.id)} />}
                             </div>
                           </div>
