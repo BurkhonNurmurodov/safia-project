@@ -649,7 +649,16 @@ def _profile_holders(db: Session) -> list[dict]:
     supervisor) for leaders. A leader has no shift of its own, so it INHERITS
     the shift of its supervisor's unit and the picker can nest shift ▸
     supervisor. They stay structured, never a pre-joined caption, so the
-    frontend renders them through t()/tl() in the viewer's language."""
+    frontend renders them through t()/tl() in the viewer's language.
+
+    THE ROLE TUPLE IS THE ONE ANSWER TO "WHO WORKS HERE", so a role missing from
+    it is invisible on every surface built out of this walk at once — the
+    Broadcast picker, the Permissions targets and the Education audience. That
+    is what happened to «Kutish mas'uli» (``idle-owner``): the role shipped with
+    its own profiles, its own registration branch and its own page, and could
+    still be sent nothing, granted nothing and taught nothing, because this
+    tuple had never heard of it. A new role belongs here on the day it exists;
+    it is listed in the same order as ``permissions.TOGGLEABLE_ROLES``."""
 
     def approved(role: str, role_id: int) -> list[int]:
         return _uniq([
@@ -662,7 +671,8 @@ def _profile_holders(db: Session) -> list[dict]:
     mgr_names = {m.id: m.name for m in mgr_rows}
     mgr_shifts = {m.id: m.shift for m in mgr_rows}
     blocks: list[dict] = []
-    for role in ("top-manager", "shift-manager", "supervisor", "leader", "admin", "guest"):
+    for role in ("top-manager", "shift-manager", "supervisor", "leader", "admin",
+                 "guest", "idle-owner"):
         profiles: list[dict] = []
         if role == "supervisor":
             for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all():
@@ -686,7 +696,7 @@ def _profile_holders(db: Session) -> list[dict]:
                 ids = _uniq([a.telegram_id for a in db.query(Admin).filter_by(profile_id=p.id).all()
                              if a.telegram_id])
                 profiles.append({"key": f"admin:{p.id}", "name": p.name, "user_ids": ids})
-        else:  # top-manager, shift-manager, guest — RoleProfile keyed by its own id
+        else:  # top-manager, shift-manager, guest, idle-owner — RoleProfile by own id
             for p in db.query(RoleProfile).filter_by(role=role).order_by(RoleProfile.name).all():
                 profiles.append({"key": f"{role}:{p.id}", "name": p.name,
                                  "shift": p.shift if role == "shift-manager" else None,

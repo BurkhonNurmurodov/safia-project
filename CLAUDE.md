@@ -1440,6 +1440,18 @@ own words.
   (Umumiy · Kunlar · Yacheykalar · Hodisalar) and carries the WHOLE register, not
   the page on screen — a workbook holding fifty of nine hundred rows lies about
   the period on its own cover.
+- **The role is a PERSON on the platform, so it is in every profile picker.**
+  `broadcast._profile_holders` is the ONE org walk behind three surfaces —
+  the Broadcast recipient tree, the Permissions «Lavozimlar» targets and the
+  Education audience — and its role tuple is what decides who exists on all
+  three at once. `idle-owner` shipped with its own profiles, its own
+  registration branch and its own page and was missing from that tuple, so a
+  «Kutish mas'uli» could be sent nothing, granted nothing and taught nothing,
+  with nothing on any of the three screens saying the role was absent rather
+  than unfilled (a role with no profiles is dropped, the same as an empty one).
+  A new role belongs in that tuple on the day it exists, in
+  `permissions.TOGGLEABLE_ROLES` order; the client already renders whatever
+  blocks arrive (`utils/broadcastTree.ROLE_SECTIONS`).
 - Admin: «Kutish mas'ullari» (`/admin/upload?tab=idleowners`), one row per
   category, everything a DRAFT until Save. **Admin-only and NOT grantable** — no
   `capKey`, so `capTabs.includes(capKey ?? id)` can never admit a grantee (the
