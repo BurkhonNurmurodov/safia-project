@@ -5452,3 +5452,39 @@ def report_zagruzka_gaps_xlsx() -> None:
     _send_report_once(ZGAPS_XLSX_FLAG, "zagruzka gaps XLSX",
                       zagruzka_gaps.send_xlsx, UNPRICED_DM_CHAT,
                       UNPRICED_DM_FROM, UNPRICED_DM_TO)
+
+
+# ── one-shot: SAP work centres claimed by MORE THAN ONE unit ─────────────────
+# The operator reported, on 2026-09-10, that a verifix code is unique per cell
+# while a SAP work centre is not — two shifts stand at one — and asked for the
+# whole picture once, in their own chat. v4.92.0 fixed the LABEL half (a work
+# centre now resolves to a cell inside its own unit); the QUANTITY half is open
+# and moves a number, so this reports it and changes nothing. The window is the
+# загрузка's own floor onward, because that is where a double-written quantity
+# starts moving the load; the EXTENT of the duplication is reported over the
+# whole stored history beside it.
+SHARED_WC_DM_FLAG = "shared_work_centers_dm_2026_09_10_v1"
+SHARED_WC_FROM = date(2026, 9, 2)     # = zagruzka_source.ZAGRUZKA_FROM
+SHARED_WC_TO = date(2026, 9, 9)
+
+
+def report_shared_work_centers() -> None:
+    """The shared-work-centre register, DMed once.
+
+    Flag-guarded like every other errand here: it delivers on the first boot
+    after its own deploy and never again, and a failed delivery is retried on
+    the next boot and then abandoned rather than re-fired forever. Changing what
+    it reports — a different window, a different chat, a different shape — needs
+    a NEW flag key, or the old "already ran" mark makes the new version a no-op
+    on every box that has booted since.
+
+    Nothing is stored: `shared_wc_report.collect` reads the registry, the
+    catalog and the stored quantities as they are, and takes its minutes from
+    `zagruzka_source.wc_labor` — the загрузка's own numerator — so a line
+    switched off auto-fill after this lands makes the report stale, never wrong
+    about the day it was taken.
+    """
+    from app.services import shared_wc_report
+    _send_report_once(SHARED_WC_DM_FLAG, "shared work centres DM",
+                      shared_wc_report.send, UNPRICED_DM_CHAT,
+                      SHARED_WC_FROM, SHARED_WC_TO)

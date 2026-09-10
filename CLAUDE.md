@@ -184,6 +184,19 @@ Raximova Kamola's shift 1 and 9423 on Olishev Islom's shift 2).
   upload leaves them alone and each brigadir types the half their shift made.
   Splitting the quantity automatically (evenly, or by the typed «Odam soni») is
   a GUESS about who produced what and needs the operator's decision first.
+- **The whole picture was DMed once** — `services/shared_wc_report.py`, fired by
+  `startup.report_shared_work_centers` (flag
+  `shared_work_centers_dm_2026_09_10_v1`; changing what it reports needs a NEW
+  key). Two registers kept apart because they have two different fixes: the
+  CELLS that share a code (a registry fact, harmless now the label is scoped)
+  and the CATALOG lines that share one (what writes a quantity twice). Its
+  minutes come from `zagruzka_source.wc_labor`, so the report and the page
+  cannot state different trudoyomkost for one day, and it prints TWO exposure
+  figures per unit, each named: «ulashilgan» (a work centre another unit also
+  carries — the risk surface, since the SKUs may not overlap) and «qo'sh
+  yozilgan» (a quantity really written to both — the part that is wrong today).
+  It reports and changes nothing. Delete the module and its two call lines once
+  the answer has landed.
 
 ## A worker belongs to a CELL, and the supervisor says which
 

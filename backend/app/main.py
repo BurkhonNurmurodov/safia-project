@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
         report_unpriced_ojidaniya,
         report_unpriced_ojidaniya_xlsx,
         report_zagruzka_gaps_xlsx,
+        report_shared_work_centers,
         add_pp_product_auto_fill,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
@@ -347,6 +348,10 @@ async def lifespan(app: FastAPI):
     # delivers on the first boot after this deploy and never again. Remove this
     # line and `services/zagruzka_gaps.py` once the file has landed.
     report_zagruzka_gaps_xlsx()
+    # Which SAP work centres more than one unit claims — the registry, the
+    # catalog overlaps and the quantities written twice. One DM, once; delete
+    # this line and `services/shared_wc_report.py` once it has landed.
+    report_shared_work_centers()
     yield
     shutdown_scheduler()
 
