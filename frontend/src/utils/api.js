@@ -26,6 +26,26 @@ const api = axios.create({
   },
 });
 
+/**
+ * THE auth headers every request to this backend carries.
+ *
+ * Exported because the interceptor below is not the only sender: a watch-progress
+ * flush fired as the page unloads has to go through `fetch(keepalive)` — axios
+ * cannot outlive the document, and `navigator.sendBeacon` cannot set headers at
+ * all — and a second spelling of "how do we prove who this is" is how one of the
+ * two senders quietly starts 401-ing.
+ */
+export function authHeaders() {
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (!isWebSession()) {
+    headers["X-Telegram-Init-Data"] = window.Telegram?.WebApp?.initData || "__dev__";
+  }
+  if (sessionStorage.getItem("ghost_mode") === "1") headers["X-Ghost-Mode"] = "1";
+  return headers;
+}
+
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;

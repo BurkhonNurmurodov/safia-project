@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Pencil, Archive, ArchiveRestore, Users, Eye, EyeOff } from "lucide-react";
+import { Pencil, Archive, ArchiveRestore, Users, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { LessonPoster, PlayBadge, PROVIDER_META } from "./VideoEmbed";
 
@@ -32,6 +32,13 @@ export default function LessonCard({ lesson, canManage, onEdit, onArchive, onRes
   const { t, lang } = useLang();
   const meta = PROVIDER_META[lesson.provider] || {};
   const isNew = lesson.assigned && !lesson.seen;
+  // Coverage for the person looking at the card. Only 100% is watched
+  // (services/education_progress), so `complete` and "has some progress" are two
+  // different marks: a bar that stops just short of the end is exactly the state
+  // this feature exists to make visible.
+  const prog = lesson.progress || {};
+  const pct = Math.max(0, Math.min(100, Math.round((Number(prog.pct) || 0) * 100)));
+  const showBar = Boolean(lesson.assigned) && pct > 0;
 
   return (
     <article
@@ -49,6 +56,26 @@ export default function LessonCard({ lesson, canManage, onEdit, onArchive, onRes
             style={{ background: "var(--brand)", color: "#fff" }}
           >
             {t("education.new")}
+          </span>
+        )}
+        {lesson.assigned && prog.complete && (
+          <span
+            className="absolute left-2 top-2 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ background: "#22c55e", color: "#fff" }}
+          >
+            <CheckCircle2 size={11} aria-hidden /> {t("education.watch.doneShort")}
+          </span>
+        )}
+        {/* Sat ON the poster's bottom edge, the way a video platform marks a
+            part-watched item — it belongs to the picture, not to the text under
+            it, and it costs the card no height. */}
+        {showBar && !prog.complete && (
+          <span
+            className="absolute inset-x-0 bottom-0 h-1"
+            style={{ background: "rgba(0,0,0,0.35)" }}
+            aria-hidden
+          >
+            <span className="block h-full" style={{ width: `${pct}%`, background: "var(--brand)" }} />
           </span>
         )}
         {lesson.archived && (

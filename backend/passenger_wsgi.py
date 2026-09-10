@@ -84,6 +84,7 @@ try:
         report_shared_work_centers_xlsx,
         report_cell_input_gaps_xlsx,
         add_pp_product_auto_fill,
+        add_education_duration,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
         purge_production_history,
@@ -175,6 +176,7 @@ try:
     seed_pp_autofill_default()
     set_forecast_autocall_capacity()
     add_pp_product_auto_fill()
+    add_education_duration()
     migrate_pp_line_daily_key()
     correct_pp_double_counted_days()
     purge_production_history()

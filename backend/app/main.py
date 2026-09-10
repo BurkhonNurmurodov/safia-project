@@ -81,6 +81,7 @@ async def lifespan(app: FastAPI):
         report_shared_work_centers_xlsx,
         report_cell_input_gaps_xlsx,
         add_pp_product_auto_fill,
+        add_education_duration,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
         purge_production_history,
@@ -171,6 +172,7 @@ async def lifespan(app: FastAPI):
     seed_pp_autofill_default()
     set_forecast_autocall_capacity()
     add_pp_product_auto_fill()
+    add_education_duration()
     migrate_pp_line_daily_key()
     correct_pp_double_counted_days()
     purge_production_history()
@@ -503,7 +505,13 @@ _CSP = (
     # verifies the URL before it is ever stored.
     "img-src 'self' data: blob: https://i.ytimg.com https://cdn.loom.com "
     "https://i.vimeocdn.com; "
-    "media-src 'self' data: blob:; "
+    # «Ta'lim» plays a LOOM lesson in the app's own <video> rather than
+    # Loom's iframe, because Loom's embed exposes no playback events and a
+    # lesson that cannot be measured cannot be reported on. The bytes are
+    # streamed by the viewer's browser straight from Loom's CDN — nothing is
+    # downloaded and nothing is stored here. ONE fixed host, which is what
+    # keeps this expressible: a "paste any link" field would need media-src *.
+    "media-src 'self' data: blob: https://cdn.loom.com; "
     # «Ta'lim» (/education) embeds video lessons. A lesson's link is parsed by
     # services/education_video, which accepts these THREE providers and refuses
     # everything else — so this list is the whole of what can ever be framed,

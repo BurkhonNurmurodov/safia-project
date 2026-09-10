@@ -9,6 +9,8 @@ import Button from "../components/ui/Button";
 import ErrorScreen from "../components/ui/ErrorScreen";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import VideoEmbed, { LessonPoster, PROVIDER_META } from "../components/education/VideoEmbed";
+import WatchProgress from "../components/education/WatchProgress";
+import useWatchTracker from "../hooks/useWatchTracker";
 import { lessonDate } from "../components/education/LessonCard";
 
 /**
@@ -43,6 +45,15 @@ export default function EducationLesson() {
   // Mark seen ONCE per mount, and only for a lesson actually addressed to this
   // viewer — an admin opening somebody else's lesson is not a member of the
   // class and must not appear in its watched count.
+  // Measure only what belongs to this viewer's own class. An admin opening
+  // somebody else's lesson is not a member of it and must not appear in its
+  // figures — the rule `mark_seen` already applies one line down, and the
+  // backend re-applies it, because a page is not an authorisation.
+  const tracker = useWatchTracker({
+    lessonId: lesson?.id,
+    enabled: Boolean(lesson?.assigned),
+  });
+
   const marked = useRef(null);
   const seen = useMutation({
     mutationFn: (lid) => api.post(`/api/education/seen/${lid}`).then(r => r.data),
@@ -103,7 +114,25 @@ export default function EducationLesson() {
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-4">
-            <VideoEmbed embed={lesson.embed} provider={lesson.provider} title={lesson.title} />
+            <VideoEmbed
+              lesson={lesson}
+              embed={lesson.embed}
+              provider={lesson.provider}
+              title={lesson.title}
+              tracker={lesson.assigned ? tracker : null}
+            />
+
+            {/* How far through this viewer is. Shown only to somebody the lesson
+                was actually given to — for anyone else there is no figure, and
+                an empty bar would read as "you have watched none of this". */}
+            {lesson.assigned && (
+              <WatchProgress
+                pct={tracker.progress?.pct ?? lesson.progress?.pct ?? 0}
+                complete={tracker.progress?.complete ?? lesson.progress?.complete ?? false}
+                coveredS={tracker.progress?.covered_s ?? lesson.progress?.covered_s ?? 0}
+                totalS={tracker.progress?.total_s ?? lesson.duration_s ?? 0}
+              />
+            )}
 
             {/* A black player is never a dead end. The embed can fail for
                 reasons this page cannot see — the video is private, the plant's

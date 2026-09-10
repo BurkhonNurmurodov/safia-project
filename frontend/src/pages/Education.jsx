@@ -14,6 +14,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { useToast } from "../components/ui/Toast";
 import LessonCard from "../components/education/LessonCard";
 import LessonWizard from "../components/education/LessonWizard";
+import WatchReport from "../components/education/WatchReport";
 
 /**
  * «Ta'lim» — the lesson grid.
@@ -40,18 +41,23 @@ export default function Education() {
 
   const canManage = !!data?.can_manage;
   const lessons = data?.lessons || [];
+  // A view a non-admin may not open cannot stand, and `usePersistentState`
+  // remembers across sessions — so a stored «report» outliving an admin grant
+  // would leave the page on a tab whose endpoint 403s.
+  const tab = (view === "report" && !canManage) ? "active" : view;
+  const isReport = tab === "report";
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return lessons.filter((l) => {
       // The archive view exists only for admins — a non-admin is never served
       // an archived lesson at all, so the toggle would filter an empty set.
-      if (canManage && (view === "archived") !== !!l.archived) return false;
+      if (canManage && (tab === "archived") !== !!l.archived) return false;
       if (!needle) return true;
       return `${l.title} ${l.description_text || ""} ${l.author || ""}`
         .toLowerCase().includes(needle);
     });
-  }, [lessons, q, view, canManage]);
+  }, [lessons, q, tab, canManage]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["education-lessons"] });
 
@@ -108,33 +114,40 @@ export default function Education() {
 
         {/* One toolbar row, 38px baseline. Search is always inline — a filter that
             narrows what is on screen must never be behind a button. */}
-        {(lessons.length > 0 || q) && (
+        {(lessons.length > 0 || q || canManage) && (
           <div className="flex flex-wrap items-center gap-2">
-            <SearchInput
-              value={q}
-              onChange={setQ}
-              placeholder={t("education.search")}
-              className="min-w-[200px] max-w-sm flex-1"
-              inputClassName="text-sm pl-8 pr-7 py-2"
-            />
+            {!isReport && (
+              <SearchInput
+                value={q}
+                onChange={setQ}
+                placeholder={t("education.search")}
+                className="min-w-[200px] max-w-sm flex-1"
+                inputClassName="text-sm pl-8 pr-7 py-2"
+              />
+            )}
             {canManage && (
               <SegmentedToggle
                 asTabs
-                value={view}
+                value={tab}
                 onChange={setView}
                 options={[
                   { value: "active", label: t("education.view.active") },
                   { value: "archived", label: t("education.view.archived") },
+                  { value: "report", label: t("education.view.report") },
                 ]}
               />
             )}
-            <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
-              {t("education.countN").replace("{n}", shown.length)}
-            </span>
+            {!isReport && (
+              <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
+                {t("education.countN").replace("{n}", shown.length)}
+              </span>
+            )}
           </div>
         )}
 
-        {isLoading ? (
+        {isReport ? (
+          <WatchReport />
+        ) : isLoading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="rounded-2xl overflow-hidden"

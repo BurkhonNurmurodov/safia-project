@@ -3552,6 +3552,18 @@ class EducationLesson(Base):
     # discovering it alone.
     access = Column(String(16), nullable=True)
 
+    # How long the video is, in seconds — the DENOMINATOR every viewer's
+    # coverage is measured against (services/education_progress). No provider
+    # tells us this without an API call the read path must not make, so it is
+    # learned from the players themselves: the longest duration any viewer has
+    # ever reported, and it never shrinks. That monotonicity is the point — a
+    # client can lie about the length of the video it is watching, and a viewer
+    # who reported ten seconds for a ten-minute lesson would otherwise reach
+    # "100%" in one flush. NULL until the first player reports metadata, and a
+    # lesson with no duration can never be complete, because an unknown
+    # denominator is unknown rather than satisfied.
+    duration_s = Column(Integer, nullable=True)
+
     created_by_profile = Column(String(80), nullable=True)  # "role:id" of the author
     created_by_name = Column(String(160), nullable=True)    # snapshotted; a rename must not rewrite history
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -3599,6 +3611,70 @@ class EducationLessonView(Base):
                        nullable=False, index=True)
     profile_key = Column(String(80), nullable=False, index=True)
     first_seen_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class EducationLessonProgress(Base):
+    """HOW MUCH of a lesson a profile has watched, and which parts.
+
+    The row beside this one (`EducationLessonView`) answers whether somebody
+    OPENED a lesson, which is what the «Yangi» mark needs and all the register
+    could say until 2026-09-10. This answers whether they watched it, which is a
+    different question with a different answer for most people.
+
+    **`spans` is a UNION of one-second bucket ranges** — ``[[0, 42], [90, 310]]``
+    — merged on every write by ``services/education_progress``, which is THE
+    definition of the arithmetic and the only place it lives. Storing the union
+    rather than a play-time counter is the whole feature: it is what makes a
+    skipped passage stay unwatched no matter how long the person sat on the
+    page, and what stops a re-watched opening minute counting twice.
+
+    **`covered_s` and `pct` are DERIVED and stored anyway.** They are recomputed
+    from `spans` on every write and never edited by hand, so they cannot drift;
+    they are columns because the register sorts and filters on them across every
+    profile on the platform, and unpacking a JSON union per row to answer "who
+    is under 50%" would make the one read that matters the slowest.
+
+    **Keyed by PROFILE**, like the target and view rows beside it: watching is an
+    act of the position, so a leader who watched under one login has watched, and
+    the progress does not reset when they open the app on another device.
+
+    `completed_at` is stamped the first time coverage reaches 100% and is never
+    cleared — a lesson whose duration is later corrected upward can drop a
+    finished viewer below the line, and un-completing somebody who genuinely
+    watched the whole video as it was then known would be a rewrite of their
+    record rather than a correction of ours.
+    """
+    __tablename__ = "education_lesson_progress"
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "profile_key", name="uq_edu_progress"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lesson_id = Column(Integer, ForeignKey("education_lessons.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    profile_key = Column(String(80), nullable=False, index=True)
+
+    # The union of watched bucket ranges. Merged, sorted, non-overlapping.
+    spans = Column(JSONB, nullable=False, default=list)
+    covered_s = Column(Integer, nullable=False, default=0, server_default="0")
+    # 0.0–1.0 against the LESSON's duration, not this viewer's report of it.
+    pct = Column(Float, nullable=False, default=0.0, server_default="0")
+
+    # Real seconds the SERVER has observed between flushes of a live session.
+    # `education_progress.allowance` bounds coverage against it, which is what
+    # a client claiming the whole video in one POST runs into.
+    watch_time_s = Column(Float, nullable=False, default=0.0, server_default="0")
+    # The client-minted id of the flushing session. Only a flush continuing the
+    # SAME session earns wall-clock credit; a fresh one starts from the grace.
+    session_id = Column(String(64), nullable=True)
+    # Flushes refused by that bound. Not a verdict on the person — a dropped
+    # connection replaying an old buffer lands here too — but a row with many of
+    # them is worth an admin's eye, so it is counted rather than discarded.
+    anomalies = Column(Integer, nullable=False, default=0, server_default="0")
+
+    first_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class WageRatePeriod(Base):

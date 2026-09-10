@@ -108,7 +108,12 @@ def parse(url: str) -> dict:
             "provider": "youtube", "video_id": vid,
             # -nocookie is the same player without the ad/tracking cookie; the
             # audience here is a shopfloor phone, not an advertising profile.
-            "embed": f"https://www.youtube-nocookie.com/embed/{vid}?rel=0&modestbranding=1",
+            # `enablejsapi=1` makes the player answer postMessage, which is the
+            # only way this app learns how much of a lesson was watched. We send
+            # `listening` and read `infoDelivery`; no `origin` is passed because
+            # we issue no player COMMANDS, and no YouTube script is loaded — that
+            # would need a script-src hole, and the CSP is the point.
+            "embed": f"https://www.youtube-nocookie.com/embed/{vid}?rel=0&modestbranding=1&enablejsapi=1",
             "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
             "watch": f"https://www.youtube.com/watch?v={vid}",
         }
@@ -143,7 +148,7 @@ def rebuild(provider: str, video_id: str) -> dict:
     every lesson ever created at the next deploy instead of only new ones.
     """
     if provider == "youtube":
-        return {"embed": f"https://www.youtube-nocookie.com/embed/{video_id}?rel=0&modestbranding=1",
+        return {"embed": f"https://www.youtube-nocookie.com/embed/{video_id}?rel=0&modestbranding=1&enablejsapi=1",
                 "thumb": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
                 "watch": f"https://www.youtube.com/watch?v={video_id}"}
     if provider == "loom":

@@ -4678,6 +4678,33 @@ def add_pp_product_auto_fill() -> None:
         db.close()
 
 
+def add_education_duration() -> None:
+    """2026-09-10: «Ta'lim» measures HOW MUCH of a lesson was watched.
+
+    `education_lessons.duration_s` is the shared DENOMINATOR every viewer's
+    coverage is divided by — learned from the players themselves and never
+    shrinking, so one client under-reporting the length of a video cannot lower
+    anybody's denominator, its own included. See models.EducationLesson and
+    services/education_progress.
+
+    The progress table itself needs nothing here: `create_all` CREATEs a table
+    it has never seen. It does not ALTER one, which is what this line is for.
+    Pure DDL, idempotent, no flag — NULL is the honest starting value (no player
+    has reported yet) and a lesson with no duration simply cannot be complete.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE education_lessons "
+            "ADD COLUMN IF NOT EXISTS duration_s INTEGER"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] education_lessons.duration_s migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def migrate_pp_line_daily_key() -> None:
     """Move pp_line_daily from a positional `line_no` to the durable `line_key`.
 
