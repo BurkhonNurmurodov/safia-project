@@ -249,7 +249,17 @@ function SupervisorDaily() {
   }
 
   const idleRow  = downtime?.rows?.[0];
-  const dayDocs  = allDocs.filter(d => d.date === date && (ownUnitOnly || d.manager_id === managerId));
+  // A people-exchange belongs to BOTH units' days. `manager_id` is the SENDING
+  // unit alone, so filtering on it hid every worker moved INTO the unit on
+  // screen — the rows that explain an extra name in its attendance and, since
+  // an accepted exchange assigns no cell, an unplaced one. The backend already
+  // serves the incoming leg (`_scope_documents`); only this filter dropped it.
+  const incomingDoc = d =>
+    d.doc_type === "people_exchange"
+    && d.target_type === "supervisor"
+    && Number(d.target_manager_id) === Number(managerId);
+  const dayDocs  = allDocs.filter(d =>
+    d.date === date && (ownUnitOnly || d.manager_id === managerId || incomingDoc(d)));
 
   // Day-close state machine: open → closed (waiting for request confirmation) → confirmed
   const dayState    = approval?.state;
@@ -482,7 +492,7 @@ function SupervisorDaily() {
                               {DOC_TYPE_TKEY[d.doc_type] ? t(DOC_TYPE_TKEY[d.doc_type]) : (d.doc_type_label || d.doc_type)}
                             </span>
                             {isExchange
-                              ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")} · → {d.target_type === "supervisor" ? `${tl(d.target_manager_name)}` : d.task_name}</span>
+                              ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")} · {tl(d.supervisor_name)} → {d.target_type === "supervisor" ? `${tl(d.target_manager_name)}` : d.task_name}</span>
                               : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")}{d.new_role ? ` · ${tl(d.new_role)}` : ""}</span>}
                           </td>
                           <td className="px-3 py-3 text-center">
