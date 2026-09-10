@@ -81,6 +81,7 @@ try:
         report_unpriced_ojidaniya_xlsx,
         report_zagruzka_gaps_xlsx,
         report_shared_work_centers,
+        report_shared_work_centers_xlsx,
         add_pp_product_auto_fill,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
@@ -315,6 +316,9 @@ try:
     # catalog overlaps and the quantities written twice. One DM, once; delete
     # this line and `services/shared_wc_report.py` once it has landed.
     report_shared_work_centers()
+    # …and the same register as a four-sheet workbook. Its own flag: the
+    # operator asked for the file after the message.
+    report_shared_work_centers_xlsx()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

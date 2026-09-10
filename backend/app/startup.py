@@ -5464,6 +5464,7 @@ def report_zagruzka_gaps_xlsx() -> None:
 # starts moving the load; the EXTENT of the duplication is reported over the
 # whole stored history beside it.
 SHARED_WC_DM_FLAG = "shared_work_centers_dm_2026_09_10_v1"
+SHARED_WC_XLSX_FLAG = "shared_work_centers_xlsx_2026_09_10_v1"
 SHARED_WC_FROM = date(2026, 9, 2)     # = zagruzka_source.ZAGRUZKA_FROM
 SHARED_WC_TO = date(2026, 9, 9)
 
@@ -5487,4 +5488,23 @@ def report_shared_work_centers() -> None:
     from app.services import shared_wc_report
     _send_report_once(SHARED_WC_DM_FLAG, "shared work centres DM",
                       shared_wc_report.send, UNPRICED_DM_CHAT,
+                      SHARED_WC_FROM, SHARED_WC_TO)
+
+
+def report_shared_work_centers_xlsx() -> None:
+    """The same register as a WORKBOOK — four sheets, one question each, sent as
+    a document with the headline in its caption.
+
+    A SEPARATE flag from the table above, for the reason `report_unpriced_ojidaniya_xlsx`
+    states about its own: the operator asked for the file AFTER the message, so
+    «already sent the DM» must not be read as «already sent this».
+
+    The evidence sheet lists every stored `pp_daily` row written to more than
+    one unit over the WHOLE history, while the impact figures are bounded by the
+    window — a quantity written twice is worth listing wherever it sits, but
+    minutes only mean something from `zagruzka_source.ZAGRUZKA_FROM`.
+    """
+    from app.services import shared_wc_report
+    _send_report_once(SHARED_WC_XLSX_FLAG, "shared work centres XLSX",
+                      shared_wc_report.send_xlsx, UNPRICED_DM_CHAT,
                       SHARED_WC_FROM, SHARED_WC_TO)

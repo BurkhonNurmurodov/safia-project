@@ -185,9 +185,17 @@ Raximova Kamola's shift 1 and 9423 on Olishev Islom's shift 2).
   Splitting the quantity automatically (evenly, or by the typed «Odam soni») is
   a GUESS about who produced what and needs the operator's decision first.
 - **The whole picture was DMed once** — `services/shared_wc_report.py`, fired by
-  `startup.report_shared_work_centers` (flag
-  `shared_work_centers_dm_2026_09_10_v1`; changing what it reports needs a NEW
-  key). Two registers kept apart because they have two different fixes: the
+  `startup.report_shared_work_centers` (rich-message tables, flag
+  `shared_work_centers_dm_2026_09_10_v1`) and `…_xlsx` (a four-sheet workbook —
+  Xulosa · Yacheykalar · Qo'sh yozilgan · Kunlik dalil — flag
+  `shared_work_centers_xlsx_2026_09_10_v1`). TWO flags because they are two
+  deliveries: the operator asked for the file after the message, so «already
+  sent the DM» must not be read as «already sent this»; changing what either
+  reports needs a NEW key. **The window bounds only the trudoyomkost IMPACT** —
+  minutes mean something only from `ZAGRUZKA_FROM` — while the duplicated
+  quantities and the per-row evidence sheet cover the WHOLE stored history, or a
+  sheet emptied by a window that misses the overlap would read as «this is not
+  happening». Two registers kept apart because they have two different fixes: the
   CELLS that share a code (a registry fact, harmless now the label is scoped)
   and the CATALOG lines that share one (what writes a quantity twice). Its
   minutes come from `zagruzka_source.wc_labor`, so the report and the page

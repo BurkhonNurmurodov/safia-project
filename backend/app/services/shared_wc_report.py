@@ -45,19 +45,33 @@ import html
 import json
 from collections import defaultdict
 from datetime import date
+from io import BytesIO
 
 import requests
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Cell, Factory, Manager, PPDaily, PPProduct, RoleProfile
 from app.services import zagruzka_source
+from app.services.ojidaniya_export import (CENTER, DATE_FMT, INDIGO, MIN,
+                                           _iso, _unp_cell, _unp_head, _xl)
+from app.services.quality_export import (AMBER, BAND, BRAND_SOFT, GREEN, INK_SOFT,
+                                         NUM, ORANGE, PANEL, RED, RIGHT, SLATE,
+                                         _banner, _fill, _kpi_cards, _meta_strip,
+                                         _section, _sheet)
 
 # Telegram's envelope is 32 768 UTF-8 chars / 500 blocks; the row cap is set
 # against the BLOCK budget, as `unpriced_report` explains — over-splitting costs
 # one extra message, guessing the other way costs the report.
 _MAX_ROWS_PER_MSG = 25
 _MAX_CHARS = 20000
+# The evidence sheet is one row per stored pp_daily row that was written to more
+# than one unit — 468 of them today. Capped so a workbook cannot become
+# unopenable if the overlap ever grows; the summary counts the whole history
+# either way, and the file says when it was trimmed.
+MAX_DAY_ROWS = 5000
 
 
 def _esc(v) -> str:
@@ -150,20 +164,45 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
     # work centre and hold no SKU in common, in which case nothing is doubled.
     dup_wcs = {wc for (wc, _sku) in dup_keys}
 
-    # ── the stored quantities, inside the window ─────────────────────────────
+    # ── the stored quantities ────────────────────────────────────────────────
+    # Aggregated per (work centre, SKU, unit) for the summary, and kept ROW BY
+    # ROW for the evidence sheet. Deliberately over the WHOLE stored history,
+    # not the window: the window bounds the загрузка IMPACT — minutes only mean
+    # something from `zagruzka_source.ZAGRUZKA_FROM` — while a quantity written
+    # twice is worth listing wherever it sits, and a day sheet that went empty
+    # because the duplication predates the window would read as "this is not
+    # happening".
     qty: dict[tuple[str, str, int], dict] = {}
-    for d in db.query(PPDaily).filter(PPDaily.date >= date_from,
-                                      PPDaily.date <= date_to).all():
+    dup_days: list[dict] = []
+    for d in db.query(PPDaily).order_by(PPDaily.date.desc()).all():
         key = (_norm(d.work_center), d.sap_code or "")
         if key not in dup_keys:
             continue
-        slot = qty.setdefault((key[0], key[1], int(d.manager_id)),
+        mid = int(d.manager_id)
+        plan = float(
+            (d.plan_override if d.plan_override is not None else d.plan_qty) or 0)
+        actual = float(
+            (d.actual_override if d.actual_override is not None else d.actual_qty) or 0)
+        slot = qty.setdefault((key[0], key[1], mid),
                               {"days": 0, "plan": 0.0, "actual": 0.0})
         slot["days"] += 1
-        slot["plan"] += float(
-            (d.plan_override if d.plan_override is not None else d.plan_qty) or 0)
-        slot["actual"] += float(
-            (d.actual_override if d.actual_override is not None else d.actual_qty) or 0)
+        slot["plan"] += plan
+        slot["actual"] += actual
+        if len(dup_days) < MAX_DAY_ROWS:
+            m = mgrs.get(mid)
+            dup_days.append({
+                "date": d.date.isoformat(), "wc": key[0], "sku": key[1],
+                "manager": (m.name if m else f"#{mid}"),
+                "shift": (m.shift if m else None),
+                "factory": factories.get(m.factory_id) if m else None,
+                "plan": plan, "actual": actual,
+                # A hand-typed value outranks the file, so a row carrying one is
+                # NOT the upload's doing and must not be read as evidence of it.
+                "typed": (d.plan_override is not None
+                          or d.actual_override is not None),
+            })
+    dup_days.sort(key=lambda x: (x["date"], x["wc"], x["sku"], x["manager"]),
+                  reverse=True)
 
     # ── the rows: one per (work centre, SKU, unit) written twice ─────────────
     dupes: list[dict] = []
@@ -256,6 +295,8 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
     return {
         "from": date_from, "to": date_to,
         "cells": cells, "dupes": dupes, "impact": impact,
+        "dup_days": dup_days,
+        "day_rows_capped": len(dup_days) >= MAX_DAY_ROWS,
         "shared_cat": {wc: sorted(ids) for wc, ids in shared_cat.items()},
         "managers": {int(k): (v.name, v.shift) for k, v in mgrs.items()},
         "counts": {
@@ -412,8 +453,10 @@ def render(rep: dict) -> list[str]:
                r["days"], _fmt(r["plan"], 1), _fmt(r["actual"], 1)])
          for i, r in enumerate(rep["dupes"], 1)],
         "Qo'sh yozilgan miqdorlar",
-        "Har bir (ish markazi + SKU + brigadir) alohida qator · ПЛАН/ФАКТ — "
-        "yuqoridagi davr yig'indisi · «Avto» = SAP avto-to'ldirish yoniqmi · "
+        "Har bir (ish markazi + SKU + brigadir) alohida qator · «Kun» va "
+        "ПЛАН/ФАКТ — saqlangan BUTUN tarix bo'yicha (yuqoridagi davr emas: "
+        "davr faqat trudoyomkostni chegaralaydi) · "
+        "«Avto» = SAP avto-to'ldirish yoniqmi · "
         "«Nomi» va «Trudoyomkost» bo'sh bo'lsa — bu brigadirning shu ish "
         "markazida bunday katalog qatori YO'Q, lekin yuklama unga baribir "
         "miqdor yozgan (SKU uning katalogining boshqa joyida bor)")
@@ -444,7 +487,8 @@ def _plain(rep: dict) -> list[str]:
             f"{_esc(r['manager'])} (sm.{_esc(r['shift'] or '—')}) · "
             f"lider {_esc(r['leader'] or '—')} · "
             f"katalogda: {_yn(r['in_catalog'])}")
-    lines += ["", "<b>Qo'sh yozilgan miqdorlar</b>"]
+    lines += ["", "<b>Qo'sh yozilgan miqdorlar</b> (kun va miqdorlar — "
+              "saqlangan butun tarix bo'yicha)"]
     for i, r in enumerate(rep["dupes"], 1):
         lines.append(
             f"{i}. <b>{_esc(r['wc'])}</b> · {_esc(r['sku'] or '—')} "
@@ -516,3 +560,324 @@ def send(db: Session, chat_id: int, date_from: date, date_to: date) -> int:
                              "parse_mode": "HTML"})
         sent += 1
     return sent
+
+
+# ── the same register as a workbook ──────────────────────────────────────────
+# The words live here, not on a client, for the reason `ojidaniya_deck` states
+# for its own: this file is built by a boot job and there is no browser in the
+# loop to send them. Uzbek Latin, whoever it reaches. The primitives come from
+# `quality_export` / `ojidaniya_export`, which are the house report style.
+XLS_LABELS = {
+    "shSummary": "Xulosa", "shCells": "Yacheykalar",
+    "shDupes": "Qo'sh yozilgan", "shDays": "Kunlik dalil",
+    "impact": "Brigadirlarga ta'siri",
+    "impactHint": "REJA trudoyomkost, daqiqa · «ulashilgan» = xavf maydoni, "
+                  "«qo'sh yozilgan» = bugun noto'g'ri bo'lgan qism",
+    "manager": "Brigadir", "shift": "Smena", "factory": "Zavod",
+    "leader": "Lider", "cell": "Yacheyka", "wc": "Ish markazi",
+    "sku": "SKU", "name": "Nomi", "labor": "Trudoyomkost", "op": "Опер.",
+    "auto": "Avto-to'ldirish", "days": "Kun", "plan": "ПЛАН", "actual": "ФАКТ",
+    "date": "Sana", "typed": "Qo'lda kiritilgan",
+    "inCatalog": "Katalogda", "units": "Brigadirlar", "shifts": "Smenalar",
+    "shared": "Ulashilgan", "dup": "Qo'sh yozilgan", "total": "Jami",
+    "pct": "Ulushi", "wcs": "Ish markazlari",
+    "cellsSub": "Bitta SAP kodini olib yurgan yacheykalar — brigadiri va smenasi bilan",
+    "dupesSub": "Miqdori ikki brigadirga yozilgan (ish markazi + SKU) juftliklari "
+                "— «Kun», ПЛАН va ФАКТ saqlangan butun tarix bo'yicha",
+    "daysSub": "Har bir qo'sh yozilgan pp_daily qatori — xom dalil",
+    "rowsWord": "qator",
+}
+
+
+def _title(rep: dict) -> tuple[str, str]:
+    return ("SAP ish markazi yagona EMAS — yacheyka yagona",
+            f"{_dmy(rep['from'].isoformat())} – {_dmy(rep['to'].isoformat())} · "
+            "barcha zavodlar · ikkala smena")
+
+
+def _scope(rep: dict) -> list[dict]:
+    c = rep["counts"]
+    return [
+        {"label": "Ta'sir davri", "value":
+            f"{_dmy(rep['from'].isoformat())} – {_dmy(rep['to'].isoformat())} — "
+            "trudoyomkost shu davr uchun o'lchandi"},
+        {"label": "Qo'sh yozish tarixi", "value":
+            (f"{_dmy(c['first'])} – {_dmy(c['last'])} — saqlangan barcha kunlar"
+             if c["first"] else "yo'q")},
+        {"label": "Qamrov", "value": "Barcha brigadirlar · ikkala smena · barcha zavodlar"},
+        {"label": "Hisoblash", "value":
+            "Daqiqalar — zagruzka_source.wc_labor (загрузкаning o'z numeratori); "
+            "bu yerda hech narsa qayta o'lchanmaydi"},
+        {"label": "Bu hisobot", "value":
+            "Faqat XABAR beradi — hech qanday raqamni o'zgartirmaydi"},
+    ]
+
+
+def _kpis(rep: dict) -> list[dict]:
+    c = rep["counts"]
+    return [
+        {"value": c["cell_codes"], "label": "Ulashilgan ish markazi (yacheyka)",
+         "color": INDIGO, "hint": f"{c['cell_codes_cross_shift']} tasi ikki smena orasida"},
+        {"value": c["cat_wcs"], "label": "Ulashilgan ish markazi (katalog)",
+         "color": AMBER, "hint": "ikki brigadirning katalogida"},
+        {"value": c["dup_pairs"], "label": "Qo'sh yozilgan juftlik",
+         "color": RED, "hint": "ish markazi + SKU"},
+        {"value": c["hist_keys"], "label": "Qo'sh yozilgan kun-juftlik",
+         "color": RED, "hint": f"jami {_fmt(c['hist_rows'])} qator"},
+        {"value": c["hist_days"], "label": "Ta'sirlangan kun",
+         "color": ORANGE, "hint": (f"{_dmy(c['first'])} – {_dmy(c['last'])}"
+                                   if c["first"] else "—")},
+        {"value": len(rep["cells"]), "label": "Ulashilgan yacheyka",
+         "color": SLATE, "hint": f"{c['cat_wcs']} ish markazi katalogda ham"},
+    ]
+
+
+_WHY = (
+    "Verifix kod bitta yacheykani bildiradi, SAP ish markazi esa bildirmaydi: "
+    "ikki smena bir ish markazida ishlaydi. TUZATILDI (v4.92.0): ish markazi "
+    "endi O'Z brigadirining yacheykasiga bog'lanadi — ilgari verifix bo'yicha "
+    "birinchi yacheyka qaytardi (Raximova sahifasida B2911 → Yogmirovning "
+    "2-smena yacheykasi 9121), /live da esa ikki smenaning REJA daqiqalari "
+    "bitta yacheykaga qo'shilib ketardi. OCHIQ: SAP yuklamasi фаза faylni har "
+    "bir brigadirning o'z ish markazlari va katalog SKU'lari bo'yicha kesadi, "
+    "shuning uchun ikki katalogda turgan ish markazining KUNLIK BUTUN "
+    "ПЛАН/ФАКТ i IKKALASIGA yoziladi. Fayl javob bera olmaydi: фаза qatorida "
+    "odam, brigada, smena va VAQT yo'q (faqat sana), «Опер.» esa hech qayerda "
+    "to'ldirilmagan. YECHIM: ulashilgan katalog qatorlarida «SAP "
+    "avto-to'ldirish» ni o'chiring — yuklama u qatorlarga tegmaydi va har bir "
+    "brigadir o'z smenasi qilgan qismini kiritadi."
+)
+
+
+def _summary_sheet(wb: Workbook, p: dict) -> None:
+    L = p["labels"]
+    ws = _sheet(wb, L["shSummary"], {2: 34, 3: 12, 4: 16, 5: 16, 6: 16, 7: 12,
+                                     8: 30, 9: 14, 10: 14, 11: 14, 12: 12, 13: 12})
+    r = _banner(ws, 2, 2, 13, p["title"], p["subtitle"])
+    r = _meta_strip(ws, r, 2, 13, p["scope"])
+    r = _kpi_cards(ws, r, 2, p["kpis"])
+
+    _unp_cell(ws, r, 2, _WHY, _fill(BRAND_SOFT), size=10)
+    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=13)
+    ws.row_dimensions[r].height = 92
+    r += 2
+
+    if p["impact"]:
+        r = _section(ws, r, 2, 13, L["impact"], L["impactHint"])
+        head = r
+        r = _unp_head(ws, r, 2, [(L["manager"], 34), (L["shift"], 12),
+                                 (L["shared"], 16), (L["dup"], 16),
+                                 (L["total"], 16), (L["pct"], 12),
+                                 (L["wcs"], 30)])
+        first = r
+        for i, x in enumerate(p["impact"]):
+            bg = _fill(PANEL if i % 2 == 0 else BAND)
+            _unp_cell(ws, r, 2, _xl(x["manager"]), bg)
+            _unp_cell(ws, r, 3, x["shift"], bg, align=CENTER)
+            _unp_cell(ws, r, 4, x["shared"], bg, fmt=MIN, align=RIGHT)
+            # The only figure on this sheet that is WRONG today, so it is the
+            # only one wearing the alarm colour.
+            _unp_cell(ws, r, 5, x["dup"] or None, bg, fmt=MIN, align=RIGHT,
+                      bold=bool(x["dup"]), color=RED if x["dup"] else INK_SOFT)
+            _unp_cell(ws, r, 6, x["total"], bg, fmt=MIN, align=RIGHT,
+                      color=INK_SOFT)
+            _unp_cell(ws, r, 7, (x["pct"] / 100.0) if x["pct"] is not None else None,
+                      bg, fmt="0.0%", align=RIGHT)
+            _unp_cell(ws, r, 8, _xl(", ".join(x["wcs"])), bg, size=9,
+                      color=INK_SOFT)
+            r += 1
+        ws.print_title_rows = f"{head}:{head}"
+        ws.freeze_panes = ws.cell(first, 2)
+
+
+def _cells_sheet(wb: Workbook, p: dict) -> None:
+    L = p["labels"]
+    cols = [(L["wc"], 14), (L["cell"], 12), (L["manager"], 30), (L["shift"], 10),
+            (L["factory"], 14), (L["leader"], 34), (L["inCatalog"], 13),
+            (L["units"], 13), (L["shifts"], 12)]
+    ws = _sheet(wb, L["shCells"], {}, landscape=True)
+    last = 1 + len(cols)
+    r = _banner(ws, 2, 2, last, p["title"], L["cellsSub"])
+    r = _section(ws, r, 2, last, L["shCells"],
+                 f"{len(p['cells'])} {L['rowsWord']}")
+    head = r
+    r = _unp_head(ws, r, 2, cols)
+    first = r
+    for i, x in enumerate(p["cells"]):
+        bg = _fill(PANEL if i % 2 == 0 else BAND)
+        _unp_cell(ws, r, 2, _xl(x["wc"]), bg, align=CENTER, bold=True)
+        _unp_cell(ws, r, 3, _xl(x["code"]), bg, align=CENTER, bold=True)
+        _unp_cell(ws, r, 4, _xl(x["manager"]), bg)
+        _unp_cell(ws, r, 5, x["shift"], bg, align=CENTER)
+        _unp_cell(ws, r, 6, _xl(x["factory"]), bg, align=CENTER)
+        _unp_cell(ws, r, 7, _xl(x["leader"]), bg, size=9, color=INK_SOFT)
+        _unp_cell(ws, r, 8, x["inCatalogLabel"], bg, align=CENTER, size=9,
+                  color=GREEN if x["in_catalog"] else INK_SOFT)
+        _unp_cell(ws, r, 9, x["units"], bg, fmt=NUM, align=RIGHT)
+        # More than one SHIFT is the case this whole report is about, so it is
+        # the one that is marked.
+        _unp_cell(ws, r, 10, x["shifts"], bg, fmt=NUM, align=RIGHT,
+                  bold=x["shifts"] > 1, color=AMBER if x["shifts"] > 1 else INK_SOFT)
+        r += 1
+    if r > first:
+        ws.auto_filter.ref = f"B{head}:{get_column_letter(last)}{r - 1}"
+    ws.freeze_panes = ws.cell(first, 4)
+    ws.print_title_rows = f"{head}:{head}"
+
+
+def _dupes_sheet(wb: Workbook, p: dict) -> None:
+    L = p["labels"]
+    cols = [(L["wc"], 14), (L["sku"], 14), (L["name"], 34), (L["manager"], 30),
+            (L["shift"], 10), (L["labor"], 14), (L["op"], 10), (L["auto"], 16),
+            (L["days"], 10), (L["plan"], 14), (L["actual"], 14)]
+    ws = _sheet(wb, L["shDupes"], {}, landscape=True)
+    last = 1 + len(cols)
+    r = _banner(ws, 2, 2, last, p["title"], L["dupesSub"])
+    r = _section(ws, r, 2, last, L["shDupes"],
+                 f"{len(p['dupes'])} {L['rowsWord']} · "
+                 "«Nomi» va «Trudoyomkost» bo'sh = bu brigadirda shu ish "
+                 "markazida katalog qatori YO'Q, lekin miqdor yozilgan")
+    head = r
+    r = _unp_head(ws, r, 2, cols)
+    first = r
+    for i, x in enumerate(p["dupes"]):
+        bg = _fill(PANEL if i % 2 == 0 else BAND)
+        _unp_cell(ws, r, 2, _xl(x["wc"]), bg, align=CENTER, bold=True)
+        _unp_cell(ws, r, 3, _xl(x["sku"]), bg, align=CENTER)
+        _unp_cell(ws, r, 4, _xl(x["name"]), bg,
+                  color=INK_SOFT if x["name"] else RED)
+        _unp_cell(ws, r, 5, _xl(x["manager"]), bg)
+        _unp_cell(ws, r, 6, x["shift"], bg, align=CENTER)
+        _unp_cell(ws, r, 7, x["labor"], bg, fmt=MIN, align=RIGHT)
+        _unp_cell(ws, r, 8, _xl(x["op"]), bg, align=CENTER, size=9,
+                  color=INK_SOFT)
+        # «Yo'q» here is the FIX already applied to that line, so it reads green.
+        _unp_cell(ws, r, 9, x["autoLabel"], bg, align=CENTER, size=9,
+                  color=(INK_SOFT if x["auto_fill"] is None
+                         else (RED if x["auto_fill"] else GREEN)))
+        _unp_cell(ws, r, 10, x["days"] or None, bg, fmt=NUM, align=RIGHT)
+        _unp_cell(ws, r, 11, x["plan"] or None, bg, fmt=MIN, align=RIGHT)
+        _unp_cell(ws, r, 12, x["actual"] or None, bg, fmt=MIN, align=RIGHT)
+        r += 1
+    if r > first:
+        ws.auto_filter.ref = f"B{head}:{get_column_letter(last)}{r - 1}"
+    ws.freeze_panes = ws.cell(first, 4)
+    ws.print_title_rows = f"{head}:{head}"
+
+
+def _days_sheet(wb: Workbook, p: dict) -> None:
+    L = p["labels"]
+    cols = [(L["date"], 12), (L["wc"], 14), (L["sku"], 14), (L["manager"], 30),
+            (L["shift"], 10), (L["factory"], 14), (L["plan"], 14),
+            (L["actual"], 14), (L["typed"], 16)]
+    ws = _sheet(wb, L["shDays"], {}, landscape=True)
+    last = 1 + len(cols)
+    r = _banner(ws, 2, 2, last, p["title"], L["daysSub"])
+    sub = f"{len(p['days'])} {L['rowsWord']}"
+    if p.get("day_rows_capped"):
+        sub += f" · {MAX_DAY_ROWS} qator bilan cheklandi"
+    r = _section(ws, r, 2, last, L["shDays"], sub)
+    head = r
+    r = _unp_head(ws, r, 2, cols)
+    first = r
+    for i, x in enumerate(p["days"]):
+        bg = _fill(PANEL if i % 2 == 0 else BAND)
+        _unp_cell(ws, r, 2, _iso(x["date"]), bg, fmt=DATE_FMT, align=CENTER)
+        _unp_cell(ws, r, 3, _xl(x["wc"]), bg, align=CENTER, bold=True)
+        _unp_cell(ws, r, 4, _xl(x["sku"]), bg, align=CENTER)
+        _unp_cell(ws, r, 5, _xl(x["manager"]), bg)
+        _unp_cell(ws, r, 6, x["shift"], bg, align=CENTER)
+        _unp_cell(ws, r, 7, _xl(x["factory"]), bg, align=CENTER)
+        _unp_cell(ws, r, 8, x["plan"] or None, bg, fmt=MIN, align=RIGHT)
+        _unp_cell(ws, r, 9, x["actual"] or None, bg, fmt=MIN, align=RIGHT)
+        # A hand-typed value outranks the file, so such a row is NOT the
+        # upload's doing and must not be read as evidence of it.
+        _unp_cell(ws, r, 10, x["typedLabel"], bg, align=CENTER, size=9,
+                  color=AMBER if x["typed"] else INK_SOFT)
+        r += 1
+    if r > first:
+        ws.auto_filter.ref = f"B{head}:{get_column_letter(last)}{r - 1}"
+    ws.freeze_panes = ws.cell(first, 5)
+    ws.print_title_rows = f"{head}:{head}"
+
+
+def build_workbook(p: dict) -> BytesIO:
+    """`payload()`'s output as the four-sheet file. A formatter: it re-derives
+    nothing, so the file, the caption and the DM can only ever state one set of
+    numbers."""
+    wb = Workbook()
+    wb.remove(wb.active)
+    _summary_sheet(wb, p)
+    _cells_sheet(wb, p)
+    _dupes_sheet(wb, p)
+    _days_sheet(wb, p)
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def payload(rep: dict) -> dict:
+    """`collect`'s output in the shape `build_workbook` reads. Pure
+    re-labelling — no figure is computed or rounded here, so the file, the
+    caption and the register can only ever state one set of numbers."""
+    title, subtitle = _title(rep)
+    return {
+        "labels": XLS_LABELS, "title": title, "subtitle": subtitle,
+        "scope": _scope(rep), "kpis": _kpis(rep),
+        "cells": [{**c, "inCatalogLabel": _yn(c["in_catalog"])}
+                  for c in rep["cells"]],
+        "dupes": [{**d, "autoLabel": _yn(d["auto_fill"])} for d in rep["dupes"]],
+        "days": [{**d, "typedLabel": _yn(d["typed"])} for d in rep["dup_days"]],
+        "impact": rep["impact"], "counts": rep["counts"],
+        "day_rows_capped": rep["day_rows_capped"],
+    }
+
+
+def _caption(rep: dict) -> str:
+    """Telegram caps a document caption at 1024 chars, so this is the finding
+    and the figures that frame it — the file carries the rest."""
+    c = rep["counts"]
+    head = ("📊 <b>SAP ish markazi yagona EMAS — yacheyka yagona</b>\n"
+            f"{_dmy(rep['from'].isoformat())} – {_dmy(rep['to'].isoformat())} · "
+            "barcha brigadirlar · ikkala smena")
+    lines = [
+        head, "",
+        f"🔵 <b>{c['cell_codes']}</b> ish markazi bir nechta brigadirning "
+        f"yacheykasida ({c['cell_codes_cross_shift']} tasi ikki SMENA orasida)",
+        f"🟠 <b>{c['cat_wcs']}</b> ish markazi bir nechta KATALOGDA",
+        f"🔴 <b>{c['dup_pairs']}</b> (ish markazi + SKU) juftligi ikki "
+        f"brigadirga qo'sh yozilgan — {_fmt(c['hist_keys'])} kun-juftlik, "
+        f"{_fmt(c['hist_rows'])} qator, {c['hist_days']} kun"
+        + (f" ({_dmy(c['first'])} – {_dmy(c['last'])})" if c["first"] else ""),
+        "",
+        "<i>«Xulosa» — nima bo'lgani va brigadirlarga ta'siri. «Yacheykalar» — "
+        "bitta SAP kodini olib yurgan yacheykalar. «Qo'sh yozilgan» — miqdori "
+        "ikki marta yozilgan juftliklar. «Kunlik dalil» — har bir qator "
+        "alohida.</i>",
+    ]
+    return "\n".join(lines)[:1024]
+
+
+def send_xlsx(db: Session, chat_id: int, date_from: date, date_to: date) -> int:
+    """Build the workbook and DM it. Returns 1 on delivery.
+
+    Deliberately NOT `xlsx_delivery.deliver_file`: that decides between a
+    browser download and a Telegram DM from the REQUEST it was called on, and
+    there is no request here — a boot job has one surface and it is the chat.
+    """
+    rep = collect(db, date_from, date_to)
+    buf = build_workbook(payload(rep))
+    name = (f"ulashilgan-ish-markazlari-{date_from.strftime('%d.%m.%Y')}-"
+            f"{date_to.strftime('%d.%m.%Y')}.xlsx")
+    r = requests.post(
+        f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendDocument",
+        data={"chat_id": chat_id, "caption": _caption(rep), "parse_mode": "HTML"},
+        files={"document": (name, buf.getvalue(),
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet")},
+        timeout=180)
+    j = r.json()
+    if not j.get("ok"):
+        raise RuntimeError(j.get("description") or f"HTTP {r.status_code}")
+    return 1
