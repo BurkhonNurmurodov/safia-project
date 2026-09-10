@@ -1241,12 +1241,16 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
         .filter(CellPerenaladka.cell_id == c.id).one())
 
     # Production joins Cell.sap_code → pp_daily.work_center (NOT pp's own
-    # sap_code, which is the SKU) — same join zagruzka_cell uses.
+    # sap_code, which is the SKU) — same join zagruzka_cell uses, and scoped to
+    # the cell's OWN unit for the same reason that one is: a work centre is not
+    # unique, so two shifts hold pp_daily rows for one code and an unscoped
+    # count credited each cell with the other shift's production days.
     prod = None
-    if c.sap_code:
+    if c.sap_code and c.manager_id is not None:
         prod_days, prod_last = (
             db.query(func.count(func.distinct(PPDaily.date)), func.max(PPDaily.date))
-            .filter(PPDaily.work_center == c.sap_code).one())
+            .filter(PPDaily.work_center == c.sap_code,
+                    PPDaily.manager_id == c.manager_id).one())
         prod = {"days": prod_days or 0,
                 "last": prod_last.isoformat() if prod_last else None}
 

@@ -446,9 +446,13 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # show the canonical workshop name / owner next to the raw code. Every WC in
     # the positions rows also appears here, so this one map covers them client-
     # side. Empty until admins fill SAP codes in the Cells tab (unmatched → null).
-    sap_tbl = by_sap(db, with_leader=True)
+    #
+    # Scoped to THIS brigadir, because a SAP work centre is not unique: two
+    # shifts stand at one, and a registry-wide lookup answered with whichever
+    # cell sorted first — so this page named and linked another shift's cell.
+    sap_tbl = by_sap(db, with_leader=True, manager_ids=[manager_id])
     for wc in result["work_centers"]:
-        wc["cell"] = resolve_sap(sap_tbl, wc.get("work_center"))
+        wc["cell"] = resolve_sap(sap_tbl, wc.get("work_center"), manager_id)
 
     # The day's lock rides on every dashboard, so the page can state it once at
     # the top instead of leaving the reader to notice that saving stopped
@@ -1924,10 +1928,13 @@ def admin_work_centers(manager_id: int = Query(...), _: dict = Depends(_verify_a
         PPWorkCenter.sort_order, PPWorkCenter.id).all()
     # Resolve each work-center code against the cells registry (code → sap_code)
     # so the admin capacity table can show the workshop name / owner beside it.
-    sap_tbl = by_sap(db, with_leader=True)
+    # Inside this unit only — a work centre shared with the other shift must not
+    # be labelled with that shift's cell and leader.
+    sap_tbl = by_sap(db, with_leader=True, manager_ids=[manager_id])
     return [{"id": w.id, "code": w.code, "shtatka": w.shtatka,
              "capacity": (float(w.capacity) if w.capacity is not None else None),
-             "active": w.active, "cell": resolve_sap(sap_tbl, w.code)} for w in wcs]
+             "active": w.active,
+             "cell": resolve_sap(sap_tbl, w.code, manager_id)} for w in wcs]
 
 
 class WorkCenterBody(BaseModel):

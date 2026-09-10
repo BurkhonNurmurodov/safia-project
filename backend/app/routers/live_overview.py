@@ -252,15 +252,20 @@ def get_live_overview(
 
     # ── ПЛАН / ФАКТ ──────────────────────────────────────────────────────
     plan_by_unit, wc_plan = _plan_inputs(db, unit_ids, day)
+    # Keyed by (unit, work centre), because a work centre is not unique across
+    # units: two shifts stand at one, and a {wc: cell} map both summed their
+    # plan minutes onto whichever cell won the key and left the other cell with
+    # no plan at all — a wrong number on a wall screen.
     wc_cell: dict = {}
     if wc_plan:
-        sap_tbl = by_sap(db)
-        for (_uid, wc) in wc_plan:
-            if wc in wc_cell:
+        sap_tbl = by_sap(db, manager_ids=unit_ids)
+        for key in wc_plan:
+            if key in wc_cell:
                 continue
-            cd = resolve_sap(sap_tbl, wc)
+            uid, wc = key
+            cd = resolve_sap(sap_tbl, wc, uid)
             if cd and cd["id"] in cell_id_set:
-                wc_cell[wc] = cd["id"]
+                wc_cell[key] = cd["id"]
 
     day_closed = {uid: day_state(db, uid, day)[0] != "open" for uid in unit_ids}
 

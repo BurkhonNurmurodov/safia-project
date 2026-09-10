@@ -309,8 +309,10 @@ def build(*, frame: dict, now: datetime, units: list, cells: list,
       idle_unit         idle_source.unit_downtime output for the day
       plan_by_unit      {unit_id: {plan_min, actual_min, updated_at, configured}}
       wc_plan           {(unit_id, wc): (plan_min, actual_min)}
-      wc_cell           {wc: cell_id} — SAP work centre → cell, where the
-                        registry carries the code
+      wc_cell           {(unit_id, wc): cell_id} — SAP work centre → cell,
+                        where the registry carries the code. Keyed by the UNIT
+                        too: a work centre is not unique across units, so a
+                        code-only map summed two shifts' plan onto one cell.
       day_closed        {unit_id: bool}
       att_uploaded      {unit_id: bool} — any attendance row at all today
     """
@@ -321,7 +323,7 @@ def build(*, frame: dict, now: datetime, units: list, cells: list,
     # Per-cell plan minutes, where a work centre resolves to a cell.
     cell_plan: dict = defaultdict(lambda: [0.0, 0.0])
     for (uid, wc), (p, a) in wc_plan.items():
-        cid = wc_cell.get(wc)
+        cid = wc_cell.get((uid, wc))
         if cid is None:
             continue
         cell_plan[cid][0] += p

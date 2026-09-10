@@ -136,6 +136,55 @@ modal title, a tooltip, a notification or an export column.
 - The stored names are untouched — nothing was migrated or deleted, so lifting
   this rule anywhere is a rendering change and nothing more.
 
+## A work centre is NOT unique — a cell is
+
+A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts
+routinely stand at the same one, so several cells — in different units, on
+different shifts — legitimately carry one `cells.sap_code`. Four codes are
+shared across units today; three of them across shifts (B2942 = 9411 on
+Raximova Kamola's shift 1 and 9423 on Olishev Islom's shift 2).
+
+- **`cell_lookup.by_sap` is keyed by `(manager_id, code)` and `resolve_sap`
+  demands the unit.** Keyed by the code alone it answered with whichever cell
+  sorted first by verifix code, so a work centre on one brigadir's page was
+  named after — and linked to — ANOTHER SHIFT's cell and leader: on Raximova's
+  production page B2911 resolved to Yogmirov Feruz's night-shift cell 9121. A
+  first-wins map cannot express a code two units both own, so the key carries
+  the owner and the call site cannot forget to name it. `by_verifix` stays keyed
+  by the code, because there the code really is the identity.
+  Consumers: the Production dashboard's `work_centers[].cell` (the «Команда»
+  chip, its `CellLink`, the staffing cards, «Odamlar soni»), the admin
+  work-centre register, and `/live` — whose `wc_cell` is `{(unit, wc): cell}`
+  for the same reason, having summed BOTH shifts' plan minutes onto one cell and
+  left the other cell with no plan at all. `/cells/:id`'s production count is
+  scoped to the cell's own unit too.
+- **Within ONE unit the code may still name several cells** (10 groups today)
+  and the first by verifix still wins — a registry question about one shopfloor,
+  answered arithmetically by `zagruzka_source.cell_people`, which splits the
+  typed headcount evenly.
+- **Everything that COMPUTES was already unit-scoped and did not move.** Every
+  `pp_*` table is keyed by `manager_id`, so two shifts hold their own catalog,
+  their own «Bugungi fakt» pin and their own quantities for one work centre;
+  `zagruzka_source`, `idle_source`, `/zagruzka-cell`, `ojidaniya_cost` and
+  `zagruzka_gaps` all group by `(manager_id, sap_code)`.
+- **OPEN, and it moves a number — ask before changing it.** The SAP upload is
+  the one place the sharing is not resolved: `_scoped_faza` cuts the фаза file
+  by the unit's own work centres ∪ catalog, so a work centre in TWO units'
+  catalogs has the day's WHOLE ПЛАН/ФАКТ written to both (A2761 → Murodali
+  Ochilov s2 + Xakimov Ruslan s1, identical figures, 234 rows over 48 days).
+  Both units' trudoyomkost — and so their загрузка — then counts the other
+  shift's output. **The file cannot answer it**: a фаза row is Заказ · Опер. ·
+  Команда · SKU · Наименование · План · Статус · Дата · Подтв., with no person,
+  no brigade, no shift and no TIME (`_to_date` keeps the date alone), and `op`
+  is empty on every line on the platform, so operations cannot separate the two
+  either. The plant already works around it by hand — Xakimov's lines are named
+  «барадинский 1-смена» beside Murodali's «Хлеб Бородинский», same SKU, same
+  work centre, different `labor_time`. The tool for it already exists and needs
+  no new rule: **`pp_products.auto_fill = false` on the shared lines**, so the
+  upload leaves them alone and each brigadir types the half their shift made.
+  Splitting the quantity automatically (evenly, or by the typed «Odam soni») is
+  a GUESS about who produced what and needs the operator's decision first.
+
 ## A worker belongs to a CELL, and the supervisor says which
 
 From **2026-08-30** the cell on a worker's row is answered in two places, and

@@ -10,9 +10,15 @@ Never cross them: a work center will not match verifix_code and vice-versa.
 
 Matching is whitespace/case-insensitive because cells.sap_code is hand-entered
 free text (only .strip()ed) and the quality register mixes zero-padded and bare
-spellings of verifix codes ("0111" vs "113"). cells.sap_code is nullable and NOT
-unique, so a lookup keeps the first row per key (cells ordered by verifix_code);
-any unmatched code resolves to None and the caller keeps the raw string.
+spellings of verifix codes ("0111" vs "113"). Any unmatched code resolves to
+None and the caller keeps the raw string.
+
+**The two namespaces do not have the same cardinality, and the tables differ
+because of it.** A verifix code identifies ONE cell, so `by_verifix` is keyed by
+the code. A SAP work centre does not: two shifts stand at one work centre, so
+`by_sap` is keyed by (owning unit, code) and every caller names the unit it is
+asking about. Within one unit the first row per key still wins (cells ordered by
+verifix_code).
 
 sap_code is currently populated only by hand via the admin Cells tab (the bulk
 seed fills verifix_code only), so the SAP-side maps are empty until admins fill
@@ -21,6 +27,7 @@ those codes — the enrichment is correct plumbing that lights up as data lands.
 from __future__ import annotations
 
 import re
+from typing import Iterable
 
 from sqlalchemy.orm import Session
 
@@ -104,20 +111,50 @@ def by_verifix(db: Session, with_leader: bool = False,
     return out
 
 
-def by_sap(db: Session, with_leader: bool = False) -> dict[str, dict]:
-    """{normalized SAP work-center code → cell dict} over cells that carry one."""
-    cells = (
+def by_sap(db: Session, with_leader: bool = False,
+           manager_ids: Iterable[int] | None = None) -> dict[tuple[int, str], dict]:
+    """``{(manager_id, normalized SAP work-center code) → cell dict}`` over cells
+    that carry one.
+
+    **The unit is part of the key, and that is the whole point.** A verifix code
+    is unique per cell; a SAP work centre is NOT. Two shifts routinely stand at
+    one work centre — B2942 is cell 9411 on Raximova Kamola's shift 1 and 9423
+    on Olishev Islom's shift 2 — and four codes are shared across units on the
+    platform today. Keyed by the code alone this table answered with whichever
+    cell sorted first by verifix code, so a work centre on one brigadir's page
+    was named after, and linked to, ANOTHER SHIFT's cell and leader: on
+    Raximova's production page B2911 resolved to Yogmirov Feruz's night-shift
+    cell 9121. A first-wins map cannot express a code two units both own, so the
+    key carries the owner and every caller has to name the unit it is asking
+    about — an invariant a call site would otherwise have to remember.
+
+    A cell with no ``manager_id`` belongs to no unit's production and is
+    therefore absent: it can never be the answer to "which of THIS brigadir's
+    cells is this work centre".
+
+    Within ONE unit the code may still name several cells (10 groups today) and
+    the first by verifix code still wins, unchanged — that is a registry
+    question about one shopfloor, and `zagruzka_source.cell_people` is where it
+    is answered arithmetically, by splitting the typed headcount evenly.
+    """
+    q = (
         db.query(Cell)
-        .filter(Cell.sap_code.isnot(None))
+        .filter(Cell.sap_code.isnot(None), Cell.manager_id.isnot(None))
         .order_by(Cell.verifix_code)
-        .all()
     )
+    if manager_ids is not None:
+        ids = sorted({int(m) for m in manager_ids})
+        if not ids:
+            return {}
+        q = q.filter(Cell.manager_id.in_(ids))
+    cells = q.all()
     leaders = _leader_names(db) if with_leader else {}
-    out: dict[str, dict] = {}
+    out: dict[tuple[int, str], dict] = {}
     for c in cells:
         key = _norm(c.sap_code)
         if key:
-            out.setdefault(key, _cell_dict(c, leaders.get(c.leader_id)))
+            out.setdefault((int(c.manager_id), key),
+                           _cell_dict(c, leaders.get(c.leader_id)))
     return out
 
 
@@ -152,10 +189,19 @@ def resolve_verifix(table: dict[str, dict], code) -> dict | None:
     return table.get(n) or table.get(n.lstrip("0"))
 
 
-def resolve_sap(table: dict[str, dict], code) -> dict | None:
-    """Look a SAP work-center code up in a by_sap() table."""
+def resolve_sap(table: dict[tuple[int, str], dict], code,
+                manager_id) -> dict | None:
+    """Look a SAP work-center code up in a by_sap() table, INSIDE one unit.
+
+    ``manager_id`` is required because the code alone does not identify a cell —
+    see :func:`by_sap`. A unit that does not own the code answers None and the
+    caller keeps the raw string, which is what an unmatched code has always
+    done.
+    """
     n = _norm(code)
-    return table.get(n) if n else None
+    if not n or manager_id is None:
+        return None
+    return table.get((int(manager_id), n))
 
 
 def workshop_name(cell: dict | None, lang: str = "ru") -> str | None:
