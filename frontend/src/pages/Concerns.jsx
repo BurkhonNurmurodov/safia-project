@@ -21,7 +21,7 @@ import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
 import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
 import ColumnsPicker from "../components/ui/ColumnsPicker";
-import { FilterPanel, OptsFilter, RngFilter, PickFilter } from "../components/ui/ColumnFilter";
+import { FilterPanel, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import CellLink from "../components/ui/CellLink";
 import {
@@ -39,6 +39,7 @@ import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
 import { CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON } from "../utils/concernCategories";
 import { shortPerson } from "../utils/personName";
+import { cellLabel } from "../utils/cellName";
 
 const STATUSES = ["todo", "doing", "done"];
 
@@ -398,6 +399,9 @@ const emptyForm = () => ({
   top_manager_profile_id: null,
 });
 
+// A stored multi-select pick, read defensively — localStorage may hold anything.
+const asList = (v) => (Array.isArray(v) ? v : []);
+
 export default function Concerns() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
@@ -475,11 +479,17 @@ export default function Concerns() {
   const [startDate, setStartDate] = usePersistentState("concerns_date_from", () => isoMinusDays(localTodayIso(), 6));
   const [endDate, setEndDate] = usePersistentState("concerns_date_to", () => localTodayIso());
   const [search, setSearch] = usePersistentState("concerns_search", "");
-  // Shift / supervisor top-bar filters (client-side, like the period). Hidden
-  // for single-unit viewers: a supervisor or leader only ever sees their own
-  // rows, and a shift-manager is already pinned to one shift.
+  // The org chain on the top bar — shift → brigadir → cell, each level scoping
+  // the next (client-side, like the period). Shift and brigadir are hidden for
+  // single-unit viewers: a supervisor or leader only ever sees their own rows,
+  // and a shift-manager is already pinned to one shift. Brigadir and cell are
+  // multi-selects whose stored picks are RAW — every reader goes through the
+  // effective `supSel` / `cellSel` below. (The old single brigadir pick lived
+  // under `concerns_supervisor` as a string; a new key, so it is never read as
+  // an array.)
   const [fShift, setFShift] = usePersistentState("concerns_shift", null);  // null = all | 1 | 2
-  const [fSup, setFSup] = usePersistentState("concerns_supervisor", "");   // "" = all | String(manager_id)
+  const [fSups, setFSups] = usePersistentState("concerns_sup_sel", []);    // [] = all | [String(manager_id)]
+  const [fCells, setFCells] = usePersistentState("concerns_cell_sel", []); // [] = all | [cell_code]
   const canFilterShift = role === "admin" || role === "top-manager";
   const canFilterSup = canFilterShift || role === "shift-manager";
 
@@ -661,24 +671,88 @@ export default function Concerns() {
     () => new Map(allManagers.map((m) => [m.manager_id, m.shift])),
     [allManagers]);
 
-  // Supervisor picker options come from the fetched rows, so they always match
-  // the viewer's scope; the active shift narrows the list further.
-  const supFilterOptions = useMemo(() => {
+  // A control the viewer is not shown must narrow nothing: the picks live in
+  // localStorage, which every profile in this browser shares.
+  const shiftF = canFilterShift ? fShift : null;
+
+  // Brigadir options come from the fetched rows, so they always match the
+  // viewer's scope; the active shift narrows the list further.
+  const supOpts = useMemo(() => {
     const seen = new Map();
     for (const r of rows) {
       if (r.brigadir_manager_id == null || !r.brigadir_name) continue;
-      if (fShift && shiftOf.get(r.brigadir_manager_id) !== fShift) continue;
+      if (shiftF && shiftOf.get(r.brigadir_manager_id) !== shiftF) continue;
       if (!seen.has(r.brigadir_manager_id)) seen.set(r.brigadir_manager_id, r.brigadir_name);
     }
-    return [
-      { value: "All", label: t("tasks.allSupervisors") },
-      ...[...seen.entries()]
-        .map(([id, name]) => ({ value: String(id), label: tl(name) }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    ];
-  }, [rows, fShift, shiftOf, t, tl]);
-  // A pick that fell out of the current shift is ignored, not an empty page.
-  const supSel = fSup && supFilterOptions.some((o) => o.value === fSup) ? fSup : "All";
+    return [...seen.entries()]
+      .map(([id, name]) => ({ value: String(id), label: tl(name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [rows, shiftF, shiftOf, tl]);
+  const supLabel = useMemo(() => new Map(supOpts.map((o) => [o.value, o.label])), [supOpts]);
+  // The EFFECTIVE picks: one the list no longer offers (another shift, another
+  // plant) narrows nothing — the effect below drops it, and until that lands it
+  // is simply not read.
+  const supSel = useMemo(
+    () => (canFilterSup ? asList(fSups).filter((v) => supLabel.has(v)) : []),
+    [canFilterSup, fSups, supLabel]);
+  const supSet = useMemo(() => new Set(supSel), [supSel]);
+
+  // Cell options: every cell the rows name under the shift + brigadirs picked
+  // above — the chain narrows the list below it, never the other way round. A
+  // cell is its CODE; the leader beside it is the one the backend resolves live
+  // from the cell.
+  const cellOpts = useMemo(() => {
+    const leaderOf = new Map();
+    for (const r of rows) {
+      const code = (r.cell_code || "").trim();
+      if (!code) continue;
+      if (shiftF && shiftOf.get(r.brigadir_manager_id) !== shiftF) continue;
+      if (supSet.size && !supSet.has(String(r.brigadir_manager_id))) continue;
+      if (!leaderOf.get(code)) leaderOf.set(code, r.cell_leader_name || "");
+    }
+    return [...leaderOf.entries()]
+      .map(([value, leader]) => ({ value, leader }))
+      .sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
+  }, [rows, shiftF, shiftOf, supSet]);
+  const cellLeader = useMemo(() => new Map(cellOpts.map((o) => [o.value, o.leader])), [cellOpts]);
+  // Multi-unit viewers always get the cell filter; anyone else (a leader) only
+  // once their rows span more than one cell — a single option is not a choice.
+  const cellCount = useMemo(
+    () => new Set(rows.map((r) => (r.cell_code || "").trim()).filter(Boolean)).size,
+    [rows]);
+  const canFilterCell = canFilterSup || isSupervisor || cellCount > 1;
+  const cellSel = useMemo(
+    () => (canFilterCell ? asList(fCells).filter((v) => cellLeader.has(v)) : []),
+    [canFilterCell, fCells, cellLeader]);
+  const cellSet = useMemo(() => new Set(cellSel), [cellSel]);
+
+  // A level above changed and a pick fell off its list: drop it — a control
+  // naming a value the page cannot show is worse than a reset. Never while the
+  // list is EMPTY: that reads as "still loading", and would wipe the picks on
+  // every refetch.
+  useEffect(() => {
+    if (!canFilterSup || !supOpts.length) return;
+    setFSups((sel) => {
+      const keep = asList(sel).filter((v) => supLabel.has(v));
+      return Array.isArray(sel) && keep.length === sel.length ? sel : keep;
+    });
+  }, [canFilterSup, supOpts, supLabel, setFSups]);
+  useEffect(() => {
+    if (!canFilterCell || !cellOpts.length) return;
+    setFCells((sel) => {
+      const keep = asList(sel).filter((v) => cellLeader.has(v));
+      return Array.isArray(sel) && keep.length === sel.length ? sel : keep;
+    });
+  }, [canFilterCell, cellOpts, cellLeader, setFCells]);
+
+  // The chain as ONE predicate, so the register and the padded trend window
+  // cannot apply two versions of it.
+  const chainPred = useCallback((r) => {
+    if (shiftF && shiftOf.get(r.brigadir_manager_id) !== shiftF) return false;
+    if (supSet.size && !supSet.has(String(r.brigadir_manager_id))) return false;
+    if (cellSet.size && !cellSet.has((r.cell_code || "").trim())) return false;
+    return true;
+  }, [shiftF, shiftOf, supSet, cellSet]);
 
   // Page view tabs — the register ("list") and the chart board ("analytics").
   // KPIs and the period/shift/brigadir bar stay above both; everything else is
@@ -711,16 +785,14 @@ export default function Concerns() {
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   }, [isLoading, view]);
 
-  // Period + shift + supervisor filters (client-side, over the fetched rows).
+  // Period + the org chain (shift → brigadir → cell), client-side over the rows.
   const scoped = useMemo(() => {
     return rows.filter((r) => {
       if (startDate && !(r.entry_date && r.entry_date >= startDate)) return false;
       if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
-      if (fShift && shiftOf.get(r.brigadir_manager_id) !== fShift) return false;
-      if (supSel !== "All" && String(r.brigadir_manager_id) !== supSel) return false;
-      return true;
+      return chainPred(r);
     });
-  }, [rows, startDate, endDate, fShift, shiftOf, supSel]);
+  }, [rows, startDate, endDate, chainPred]);
 
   // Trend-chart scope: same filter, but the period start is pulled back so the
   // chart never spans fewer than 7 days. KPIs, donut and table keep the exact
@@ -731,11 +803,9 @@ export default function Concerns() {
     return rows.filter((r) => {
       if (chartStart && !(r.entry_date && r.entry_date >= chartStart)) return false;
       if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
-      if (fShift && shiftOf.get(r.brigadir_manager_id) !== fShift) return false;
-      if (supSel !== "All" && String(r.brigadir_manager_id) !== supSel) return false;
-      return true;
+      return chainPred(r);
     });
-  }, [rows, scoped, chartStart, startDate, endDate, fShift, shiftOf, supSel]);
+  }, [rows, scoped, chartStart, startDate, endDate, chainPred]);
 
   // ── analytics (the three headline KPIs) ─────────────────────────────────────
   //  1) longest-running unresolved problem  2) slowest-resolving brigadir
@@ -1406,9 +1476,13 @@ export default function Concerns() {
       ),
     },
     {
-      key: "category", icon: Tag, label: t("concerns.colCategory"),
+      // Pinned beside the org chain: the department is the other axis this
+      // register is steered by, so it stays on the bar, not in «Filtrlar».
+      key: "category", icon: Tag, label: t("concerns.colCategory"), pinned: true,
       active: categorySel.length > 0,
-      display: `${categorySel.length} ${t("filter.selected2")}`,
+      display: categorySel.length === 1
+        ? categoryLabel(categorySel[0])
+        : `${categorySel.length} ${t("filter.selected2")}`,
       onClear: () => setCategorySel([]),
       render: () => (
         <OptsFilter
@@ -1440,12 +1514,33 @@ export default function Concerns() {
   };
 
   // ── one consolidated filter zone ───────────────────────────────────────────
-  // Plant / shift / supervisor join the register filters in ONE panel at the
-  // top of the page; every active narrowing surfaces as a chip on the bar.
+  // Plant / shift / brigadir / cell join the register filters in ONE panel at
+  // the top of the page. The org chain (shift → brigadir → cell) and category
+  // are PINNED: from md they stand on the bar beside the period as their own
+  // dropdowns, and only the rest fold into «Filtrlar» (below md the sheet keeps
+  // them all). Every active narrowing surfaces as a chip.
+  //
+  // Each level of the chain scopes the one below it and SAYS SO (`note`); a
+  // level narrowed down to nothing offers the way back out (`empty`) instead of
+  // an empty box — a short list must never read as missing data. The note names
+  // only the NEAREST narrowing level: that is the control to touch.
+  const shiftLabel = shiftF != null ? `S${shiftF}` : null;
+  const supNote = supSel.length === 1 ? supLabel.get(supSel[0])
+    : supSel.length ? t("tasks.colSupervisor") : null;
+  const chainNote = (parents, n) => {
+    const p = parents.filter(Boolean).pop();
+    return p ? t("concerns.narrowedBy").replace("{x}", p).replace("{n}", n) : null;
+  };
+  const widenTo = (label, onClick) => (
+    <div className="text-center py-1">
+      <p className="text-xs mb-2" style={{ color: "var(--text-3)" }}>{t("concerns.noneInScope")}</p>
+      <Button size="sm" variant="secondary" onClick={onClick}>{label}</Button>
+    </div>
+  );
   const pageSections = [
     ...(factorySection ? [factorySection] : []),
     ...(canFilterShift ? [{
-      key: "shift", icon: Layers, label: t("filter.shift"),
+      key: "shift", icon: Layers, label: t("filter.shift"), pinned: true,
       active: fShift != null,
       display: fShift != null ? `S${fShift}` : "",
       onClear: () => setFShift(null),
@@ -1455,20 +1550,55 @@ export default function Concerns() {
       ),
     }] : []),
     ...(canFilterSup ? [{
-      key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
-      active: supSel !== "All",
-      display: supSel !== "All" ? (supFilterOptions.find((o) => o.value === supSel)?.label || "") : "",
-      onClear: () => setFSup(""),
-      render: ({ close } = {}) => (
-        <PickFilter searchable close={close}
-          opts={supFilterOptions}
-          value={supSel}
-          onChange={(v) => setFSup(v === "All" ? "" : v)} />
+      key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"), pinned: true,
+      active: supSel.length > 0,
+      display: supSel.length === 1
+        ? (supLabel.get(supSel[0]) || "")
+        : `${supSel.length} ${t("filter.selected2")}`,
+      onClear: () => setFSups([]),
+      render: () => (
+        <OptsFilter
+          opts={supOpts.map((o) => o.value)}
+          sel={supSel}
+          onChange={setFSups}
+          searchable={supOpts.length > 8}
+          labelOf={(v) => supLabel.get(v) || v}
+          render={(v) => supLabel.get(v) || v}
+          note={chainNote([shiftLabel], supOpts.length)}
+          empty={shiftLabel ? widenTo(t("concerns.allShifts"), () => setFShift(null)) : null}
+        />
+      ),
+    }] : []),
+    ...(canFilterCell ? [{
+      key: "cell", icon: LayoutGrid, label: t("concerns.colCell"), pinned: true,
+      active: cellSel.length > 0,
+      display: cellSel.length === 1 ? cellSel[0] : `${cellSel.length} ${t("filter.selected2")}`,
+      onClear: () => setFCells([]),
+      render: () => (
+        <OptsFilter
+          opts={cellOpts.map((o) => o.value)}
+          sel={cellSel}
+          onChange={setFCells}
+          searchable={cellOpts.length > 8}
+          labelOf={(v) => cellLabel(v, tl(cellLeader.get(v) || ""))}
+          render={(v) => {
+            const leader = cellLeader.get(v);
+            return (
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <span className="tabular-nums flex-shrink-0">{v}</span>
+                {leader && <span className="truncate" style={{ color: "var(--text-4)" }}>{shortOwner(leader)}</span>}
+              </span>
+            );
+          }}
+          note={chainNote([shiftLabel, supNote], cellOpts.length)}
+          empty={supSel.length ? widenTo(t("concerns.allSupervisors"), () => setFSups([]))
+            : shiftLabel ? widenTo(t("concerns.allShifts"), () => setFShift(null)) : null}
+        />
       ),
     }] : []),
     ...filterSections,
   ];
-  const clearPage = () => { clearAllFilters(); setFShift(null); setFSup(""); };
+  const clearPage = () => { clearAllFilters(); setFShift(null); setFSups([]); setFCells([]); };
 
   // ── charts: daily still-open trend + status donut (Kaizen styling) ──────────
   // Category axis over the pre-built day list (one point per day) keeps the
@@ -2093,9 +2223,10 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")}>
-      {/* ONE-ROW filter bar for the whole page — period inline; plant / shift /
-          supervisor / status / owner / level / … all live in the consolidated
-          panel and surface as chips whenever they narrow the page. */}
+      {/* ONE-ROW filter bar for the whole page — the period, then the pinned
+          shift / brigadir / cell / category dropdowns, then «Filtrlar» with the
+          rest (plant / status / owner / level / …). Every active narrowing
+          surfaces as a chip; below md all of them live in the sheet. */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <DateRangePicker
           dateFrom={startDate}
