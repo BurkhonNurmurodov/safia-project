@@ -5548,9 +5548,13 @@ def report_shared_work_centers_xlsx() -> None:
 # fault. Same window as the reports beside it, so all three files describe one
 # week, and the same floor: before `zagruzka_source.ZAGRUZKA_FROM` the
 # production page was not the source of either input.
-CELL_GAPS_XLSX_FLAG = "cell_input_gaps_xlsx_2026_09_10_v1"
+# The window was re-asked on 2026-09-11 to take in the 10th, so this carries a
+# SECOND key: `_send_report_once` makes a flag it has already marked «sent» a
+# permanent no-op, and re-using the first one would have delivered nothing at
+# all — silently, on a box that had already booted. One key per delivery.
+CELL_GAPS_XLSX_FLAG = "cell_input_gaps_xlsx_2026_09_11_v1"
 CELL_GAPS_FROM = date(2026, 9, 2)     # = zagruzka_source.ZAGRUZKA_FROM
-CELL_GAPS_TO = date(2026, 9, 9)
+CELL_GAPS_TO = date(2026, 9, 10)
 
 
 def report_cell_input_gaps_xlsx() -> None:
