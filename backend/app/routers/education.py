@@ -399,22 +399,16 @@ def resolve(body: ResolveIn, payload: dict = Depends(require_page(PAGE))):
 
 # ── writes (admin only) ──────────────────────────────────────────────────────
 
-def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str]) -> int:
-    """Tell each newly-addressed profile about the lesson. One bell row per
-    profile plus a DM to every holder — `notify_profile` is the only correct
-    way to reach a person here, and it queues for an unclaimed profile instead
-    of dropping the news.
+def lesson_notice(lesson: EducationLesson):
+    """What a lesson's audience is TOLD about it: the params the bell row and
+    the classic DM render from, plus the «open the lesson» button and the rich
+    card, both built per recipient language. Returns
+    ``(params, markup_fn, rich_fn)``.
 
-    The publisher is NOT excluded. `notify_profile`'s `exclude_account` exists
-    to spare somebody the "you did this" buzz for an event they caused
-    incidentally — closing a day, approving a request. Naming yourself in a
-    lesson's audience is not that: it is an explicit statement that this lesson
-    is for you, and an admin who ticks their own profile and then receives
-    nothing has been shown the feature failing."""
-    if not keys:
-        return 0
+    ONE spelling for every door that announces a lesson, so a notification
+    re-sent to somebody by hand and the one a publish delivered can never be
+    two different cards."""
     from app.config import settings
-    from app.routers.staff import notify_profile
 
     # Straight at the LESSON, not at the page. A notification whose whole point
     # is "go and watch this" should not land somebody on a grid they then have
@@ -464,6 +458,26 @@ def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str]) -> in
         parts.append(f"<p><i>{escape(c['hint'])}</i></p>")
         return "".join(parts)
 
+    return params, markup_fn, rich_fn
+
+
+def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str]) -> int:
+    """Tell each newly-addressed profile about the lesson. One bell row per
+    profile plus a DM to every holder — `notify_profile` is the only correct
+    way to reach a person here, and it queues for an unclaimed profile instead
+    of dropping the news.
+
+    The publisher is NOT excluded. `notify_profile`'s `exclude_account` exists
+    to spare somebody the "you did this" buzz for an event they caused
+    incidentally — closing a day, approving a request. Naming yourself in a
+    lesson's audience is not that: it is an explicit statement that this lesson
+    is for you, and an admin who ticks their own profile and then receives
+    nothing has been shown the feature failing."""
+    if not keys:
+        return 0
+    from app.routers.staff import notify_profile
+
+    params, markup_fn, rich_fn = lesson_notice(lesson)
     dmed: set[int] = set()
     for key in keys:
         try:

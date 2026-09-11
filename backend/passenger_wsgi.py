@@ -83,6 +83,7 @@ try:
         report_shared_work_centers,
         report_shared_work_centers_xlsx,
         report_cell_input_gaps_xlsx,
+        notify_operator_education_lesson,
         add_pp_product_auto_fill,
         add_education_duration,
         migrate_pp_line_daily_key,
@@ -330,6 +331,12 @@ try:
     # to it. Flag-guarded — first boot after this deploy, never again. Remove
     # this line and `services/cell_input_gaps.py` once the file has landed.
     report_cell_input_gaps_xlsx()
+    # ⚠ TEMPORARY one-shot (2026-09-11) — the operator asked to receive, once,
+    # the notification the only «Ta'lim» lesson sends its audience: the same
+    # card and button, DMed to their own chat, and nothing else. Flag-guarded —
+    # first boot after this deploy, never again. Remove this line and
+    # `startup.notify_operator_education_lesson` once it has landed.
+    notify_operator_education_lesson()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

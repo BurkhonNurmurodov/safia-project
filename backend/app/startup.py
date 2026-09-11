@@ -5373,7 +5373,8 @@ _UNPRICED_DM_TRIES = 3
 
 
 def _send_report_once(flag: str, what: str, sender, chat: int,
-                      date_from: date, date_to: date) -> None:
+                      date_from: date | None = None,
+                      date_to: date | None = None) -> None:
     """Deliver one boot-job report, once, and record that it went.
 
     ONE report per flag: the row is written on the first successful delivery and
@@ -5382,7 +5383,8 @@ def _send_report_once(flag: str, what: str, sender, chat: int,
     a different shape — needs a NEW flag key, or the old "already ran" mark makes
     the new version a no-op on every box that has booted since. The sender takes
     ``(db, chat_id, date_from, date_to)`` and returns how many messages it sent;
-    everything else about the report is the sender's own business.
+    everything else about the report is the sender's own business. An errand
+    about no period at all leaves both dates None.
 
     The flag row doubles as the attempt counter, so a failure is retried on the
     next boot and then abandoned rather than re-fired forever. Nothing is stored
@@ -5426,8 +5428,8 @@ def _send_report_once(flag: str, what: str, sender, chat: int,
         else:
             db.add(AppSetting(key=flag, value=f"sent:{n}"))
         db.commit()
-        print(f"[startup] {what} sent to {chat} "
-              f"({n} message(s), {date_from}..{date_to})")
+        window = f", {date_from}..{date_to}" if date_from or date_to else ""
+        print(f"[startup] {what} sent to {chat} ({n} message(s){window})")
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
         print(f"[startup] {what} skipped: {exc}")
@@ -5576,3 +5578,64 @@ def report_cell_input_gaps_xlsx() -> None:
     _send_report_once(CELL_GAPS_XLSX_FLAG, "cell input gaps XLSX",
                       cell_input_gaps.send_xlsx, UNPRICED_DM_CHAT,
                       CELL_GAPS_FROM, CELL_GAPS_TO)
+
+
+# ── One-off: the «Ta'lim» lesson notification, shown to the operator ─────────
+# 2026-09-11: the operator asked to RECEIVE, once, the notification the only
+# lesson on /education sends its audience — the same card, in their own
+# language, with the same «Darsni ochish» button onto the lesson. It is a DM to
+# the operator's own chat and nothing more: no bell row (those are addressed to
+# a PROFILE, and this chat is an account), and the lesson's audience, targets
+# and watch register are untouched, so nobody else hears anything.
+EDU_LESSON_DM_FLAG = "education_lesson_dm_2026_09_11_v1"
+
+
+def _send_education_lesson(db, chat: int, *_window) -> int:
+    """The DM a reader of the lesson receives, rendered for ``chat`` exactly as
+    `notify_profile` renders it for one holder — minus the bell row.
+
+    «The only lesson» is checked, never assumed: the lessons a reader can see
+    are the ones not archived, and anything but exactly one of them means the
+    lesson the operator meant cannot be named from here. That is SAID in the
+    chat rather than guessed at — a card about the wrong lesson is worse than a
+    line explaining why none came — and the errand then ends (0 messages), so
+    no retry repeats the line on the next boot.
+    """
+    from app.models import EducationLesson
+    from app.routers.education import lesson_notice
+    from app.routers.staff import _get_user_lang, _mk_notif, _mk_notif_tg
+    from app.telegram_bot import bot, send_tg_notification
+
+    live = (db.query(EducationLesson)
+            .filter(EducationLesson.archived.is_(False))
+            .order_by(EducationLesson.id).all())
+    if len(live) != 1:
+        bot.send_message(chat, (
+            f"Ta'lim: faol video darslar {len(live)} ta — bittasi kutilgan "
+            f"edi, shuning uchun xabarnoma yuborilmadi."))
+        return 0
+
+    lesson = live[0]
+    params, markup_fn, rich_fn = lesson_notice(lesson)
+    lang = _get_user_lang(db, chat)
+    title, body = _mk_notif("education_lesson_new", params, lang)
+    html = _mk_notif_tg("education_lesson_new", params, lang)
+    if not send_tg_notification(chat, title, body, html=html,
+                                markup=markup_fn(lang), rich=rich_fn(lang)):
+        raise RuntimeError(f"Telegram refused the DM about lesson {lesson.id}")
+    print(f"[startup] education lesson DM: lesson {lesson.id} "
+          f"«{lesson.title}» ({lang})")
+    return 1
+
+
+def notify_operator_education_lesson() -> None:
+    """The «Ta'lim» lesson notification, DMed to the operator once.
+
+    Flag-guarded like every other errand here: first boot after its own deploy,
+    never again; a failed delivery is retried on the next boot and then
+    abandoned. Sending it again — or about another lesson — needs a NEW flag
+    key, or the old "already ran" mark makes it a no-op on every box that has
+    booted since.
+    """
+    _send_report_once(EDU_LESSON_DM_FLAG, "education lesson DM",
+                      _send_education_lesson, UNPRICED_DM_CHAT)
