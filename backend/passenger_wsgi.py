@@ -84,6 +84,7 @@ try:
         report_shared_work_centers_xlsx,
         report_cell_input_gaps_xlsx,
         notify_operator_education_lesson,
+        report_shared_sap_cells_raw_xlsx,
         add_pp_product_auto_fill,
         add_education_duration,
         migrate_pp_line_daily_key,
@@ -339,6 +340,13 @@ try:
     # first boot after this deploy, never again. Remove this line and
     # `startup.notify_operator_education_lesson` once it has landed.
     notify_operator_education_lesson()
+    # ⚠ TEMPORARY one-shot (2026-09-11) — every group of cells that carry one
+    # SAP code, as an UNFORMATTED workbook (header row + one row per cell) in
+    # the operator's chat. Broader than the shared-work-centre file above: a
+    # code several cells of ONE unit carry is in too. Flag-guarded — first boot
+    # after this deploy, never again. Remove this line and
+    # `shared_wc_report.send_cells_raw_xlsx` once it has landed.
+    report_shared_sap_cells_raw_xlsx()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

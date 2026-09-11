@@ -44,17 +44,20 @@ from __future__ import annotations
 import html
 import json
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import requests
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Cell, Factory, Manager, PPDaily, PPProduct, RoleProfile
 from app.services import zagruzka_source
+from app.services.latin_code import latin_code
 from app.services.ojidaniya_export import (CENTER, DATE_FMT, INDIGO, MIN,
                                            _iso, _unp_cell, _unp_head, _xl)
 from app.services.quality_export import (AMBER, BAND, BRAND_SOFT, GREEN, INK_SOFT,
@@ -874,6 +877,174 @@ def send_xlsx(db: Session, chat_id: int, date_from: date, date_to: date) -> int:
         f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendDocument",
         data={"chat_id": chat_id, "caption": _caption(rep), "parse_mode": "HTML"},
         files={"document": (name, buf.getvalue(),
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet")},
+        timeout=180)
+    j = r.json()
+    if not j.get("ok"):
+        raise RuntimeError(j.get("description") or f"HTTP {r.status_code}")
+    return 1
+
+
+# ── the CELLS register alone, as RAW data ────────────────────────────────────
+# Asked for on 2026-09-11, after the four-sheet file above: every group of
+# DIFFERENT cells that carry one SAP code, as plain rows the operator sorts,
+# filters and pivots themselves. It differs from that file's «Yacheykalar»
+# sheet twice, both on purpose:
+#
+# * It is BROADER. That sheet keeps a code only when more than one UNIT claims
+#   it — the case that put another shift's cell on a brigadir's page. The
+#   question here is simply «which cells share a code», so a code several cells
+#   of ONE unit carry is in too (ten groups when this was written), and so is a
+#   cell no unit owns. The three «Shu kodli …» counts are what tell the cases
+#   apart on a filter.
+# * It is UNFORMATTED. Row 1 is the header, every row after it is one cell, and
+#   every value is written as the value — no banner, no fill, no merged cell,
+#   no width, no frozen pane, no filter — so it pastes or pivots without being
+#   cleaned first. A blank is «does not apply» (no brigadir ⇒ no smena), never
+#   a dash that would have to be filtered out again.
+#
+# The code is grouped the way every join on the platform compares it —
+# `latin_code`, then `_norm` — and the value as STORED rides in the last
+# column, so a stray space or a Cyrillic twin shows instead of being folded
+# away in silence. No workshop name anywhere: a cell is its CODE.
+RAW_CELLS_SHEET = "Yacheykalar"
+RAW_CELLS_HEAD = [
+    "SAP kod", "Yacheyka", "Yacheyka ID", "Brigadir", "Brigadir ID", "Smena",
+    "Zavod", "Lider", "Brigadir arxivda", "Katalogda", "Shu kodli yacheykalar",
+    "Shu kodli brigadirlar", "Shu kodli smenalar", "SAP kod (yozilgani)",
+]
+
+
+def _code(v) -> str:
+    """The spelling a code is COMPARED in — Latin twins, no spaces, upper case."""
+    return _norm(latin_code(v))
+
+
+def _raw(v):
+    """A value as openpyxl may store it. Text loses only the control characters
+    openpyxl refuses — one pasted into a name would sink the whole file — and
+    None stays None, so the cell stays EMPTY."""
+    return ILLEGAL_CHARACTERS_RE.sub("", v) if isinstance(v, str) else v
+
+
+def _raw_yn(v):
+    return None if v is None else ("ha" if v else "yo'q")
+
+
+def collect_cells(db: Session) -> list[dict]:
+    """One row per cell whose SAP code at least one OTHER cell also carries,
+    ordered by code and then by verifix code.
+
+    Columns, not entities, so a column this report never reads cannot make it
+    fail on a database a migration has not reached yet."""
+    mgrs = {int(m.id): m for m in db.query(
+        Manager.id, Manager.name, Manager.shift, Manager.archived,
+        Manager.factory_id).all()}
+    factories = {int(f.id): (f.name_uz or f.name_ru or f.code or str(f.id))
+                 for f in db.query(Factory.id, Factory.name_uz, Factory.name_ru,
+                                   Factory.code).all()}
+
+    by_code: dict[str, list] = defaultdict(list)
+    for c in db.query(Cell.id, Cell.verifix_code, Cell.sap_code, Cell.manager_id,
+                      Cell.leader_id).filter(Cell.sap_code.isnot(None)).all():
+        code = _code(c.sap_code)
+        if code:
+            by_code[code].append(c)
+    groups = {k: v for k, v in by_code.items() if len(v) > 1}
+
+    lids = sorted({int(c.leader_id) for cs in groups.values() for c in cs
+                   if c.leader_id})
+    leaders = ({int(i): n for i, n in db.query(RoleProfile.id, RoleProfile.name)
+                .filter(RoleProfile.id.in_(lids)).all()} if lids else {})
+    # Does the brigadir's own catalog carry this work centre at all — i.e. does
+    # the shared code reach their production figures, or only their register.
+    cat = {(int(mid), _code(wc)) for mid, wc in
+           db.query(PPProduct.manager_id, PPProduct.work_center).distinct().all()
+           if mid is not None and wc}
+
+    rows: list[dict] = []
+    for code in sorted(groups):
+        cs = sorted(groups[code], key=lambda c: c.verifix_code or "")
+        mids = {int(c.manager_id) for c in cs if c.manager_id is not None}
+        shifts = {mgrs[i].shift for i in mids
+                  if i in mgrs and mgrs[i].shift is not None}
+        for c in cs:
+            mid = int(c.manager_id) if c.manager_id is not None else None
+            m = mgrs.get(mid)
+            rows.append({
+                "code": code, "cell": c.verifix_code, "cell_id": int(c.id),
+                "manager": (m.name if m
+                            else (f"#{mid}" if mid is not None else None)),
+                "manager_id": mid,
+                "shift": m.shift if m else None,
+                "factory": factories.get(m.factory_id) if m else None,
+                "leader": leaders.get(int(c.leader_id)) if c.leader_id else None,
+                "archived": bool(m.archived) if m else None,
+                "in_catalog": ((mid, code) in cat) if mid is not None else None,
+                "n_cells": len(cs), "n_units": len(mids),
+                "n_shifts": len(shifts),
+                "stored": c.sap_code,
+            })
+    return rows
+
+
+def build_cells_raw_workbook(rows: list[dict]) -> BytesIO:
+    """`collect_cells`' rows as ONE plain sheet — see the block comment above.
+    A code is written as TEXT, so a verifix «0028» keeps its leading zero."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = RAW_CELLS_SHEET
+    ws.append(RAW_CELLS_HEAD)
+    for r in rows:
+        ws.append([_raw(v) for v in (
+            r["code"], r["cell"], r["cell_id"], r["manager"], r["manager_id"],
+            r["shift"], r["factory"], r["leader"], _raw_yn(r["archived"]),
+            _raw_yn(r["in_catalog"]), r["n_cells"], r["n_units"],
+            r["n_shifts"], r["stored"])])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def _cells_raw_caption(rows: list[dict]) -> str:
+    """Plain text, no markup: the file is the answer, this only frames it."""
+    units = {r["code"]: r["n_units"] for r in rows}
+    shifts = {r["code"]: r["n_shifts"] for r in rows}
+    multi = sum(1 for u in units.values() if u > 1)
+    cross = sum(1 for s in shifts.values() if s > 1)
+    one = sum(1 for u in units.values() if u == 1)
+    none = sum(1 for u in units.values() if u == 0)
+    lines = [
+        "Bitta SAP kodini olib yurgan turli yacheykalar — xom ma'lumot, "
+        "formatlanmagan: 1-qator sarlavha, keyin har bir yacheyka alohida qator.",
+        "",
+        f"{len(units)} ta SAP kod · {len(rows)} ta yacheyka",
+        f"· {multi} ta kod turli brigadirlarda ({cross} tasi turli smenalarda)",
+        f"· {one} ta kod bitta brigadir ichida",
+    ]
+    if none:
+        lines.append(f"· {none} ta kod faqat brigadirsiz yacheykalarda")
+    lines += [
+        "",
+        "Oldingi fayldagi «Yacheykalar» varag'idan kengroq: u yerda faqat turli "
+        "brigadirlarga tegishli kodlar bor edi, bu yerda bitta brigadir "
+        "ichidagilari ham bor.",
+    ]
+    return "\n".join(lines)[:1024]
+
+
+def send_cells_raw_xlsx(db: Session, chat_id: int, *_window) -> int:
+    """Build the raw sheet and DM it. Returns 1 on delivery. A registry fact
+    has no period, so the window `_send_report_once` passes is ignored."""
+    rows = collect_cells(db)
+    stamp = datetime.now(ZoneInfo("Asia/Tashkent")).strftime("%d.%m.%Y")
+    r = requests.post(
+        f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendDocument",
+        data={"chat_id": chat_id, "caption": _cells_raw_caption(rows)},
+        files={"document": (f"bir-sap-kodli-yacheykalar-{stamp}.xlsx",
+                            build_cells_raw_workbook(rows).getvalue(),
                             "application/vnd.openxmlformats-officedocument."
                             "spreadsheetml.sheet")},
         timeout=180)

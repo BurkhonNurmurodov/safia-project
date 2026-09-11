@@ -5540,6 +5540,31 @@ def report_shared_work_centers_xlsx() -> None:
                       SHARED_WC_FROM, SHARED_WC_TO)
 
 
+# ── one-shot: every group of cells that share ONE SAP code, as raw data ──────
+# The operator asked, on 2026-09-11, for the cells that carry the same SAP code
+# as a plain, UNFORMATTED workbook in their own chat — after the four-sheet file
+# above. Its own key for the reason the cell-gaps block below states: a flag
+# `_send_report_once` has marked «sent» is a permanent no-op, so a new delivery
+# needs a new key. Broader than that file's «Yacheykalar» sheet on purpose — see
+# `shared_wc_report.collect_cells`. No window: a registry fact has no period.
+SHARED_CELLS_RAW_FLAG = "shared_sap_cells_raw_xlsx_2026_09_11_v1"
+
+
+def report_shared_sap_cells_raw_xlsx() -> None:
+    """Every cell whose SAP code another cell also carries, DMed once as raw
+    rows — header on row 1, one cell per row, no formatting.
+
+    Flag-guarded like every other errand here: first boot after its own deploy,
+    never again; a failed delivery is retried on the next boot and then
+    abandoned. Nothing is stored — the rows are read off the cell register as it
+    stands — so a code edited after this lands makes the file stale, never wrong
+    about the moment it was taken.
+    """
+    from app.services import shared_wc_report
+    _send_report_once(SHARED_CELLS_RAW_FLAG, "shared SAP cells raw XLSX",
+                      shared_wc_report.send_cells_raw_xlsx, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the
