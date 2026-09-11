@@ -192,7 +192,16 @@ Raximova Kamola's shift 1 and 9423 on Olishev Islom's shift 2).
   `shared_work_centers_xlsx_2026_09_10_v1`). TWO flags because they are two
   deliveries: the operator asked for the file after the message, so «already
   sent the DM» must not be read as «already sent this»; changing what either
-  reports needs a NEW key. **The window bounds only the trudoyomkost IMPACT** —
+  reports needs a NEW key. A THIRD delivery followed on 2026-09-11 for the same
+  reason — `startup.report_shared_sap_cells_raw_xlsx`, flag
+  `shared_sap_cells_raw_xlsx_2026_09_11_v1`, rows from
+  `shared_wc_report.collect_cells`: the CELLS register alone as an UNFORMATTED
+  one-sheet workbook (header row, one row per cell, no styling, and no window —
+  a registry fact has no period), BROADER than the four-sheet file's
+  «Yacheykalar», since it keeps every code two or more cells carry, cells of
+  ONE unit included, not only a code several units claim. Codes are grouped
+  through `latin_code` + `_norm`, with the stored spelling in its own column.
+  **The window bounds only the trudoyomkost IMPACT** —
   minutes mean something only from `ZAGRUZKA_FROM` — while the duplicated
   quantities and the per-row evidence sheet cover the WHOLE stored history, or a
   sheet emptied by a window that misses the overlap would read as «this is not
@@ -204,8 +213,12 @@ Raximova Kamola's shift 1 and 9423 on Olishev Islom's shift 2).
   figures per unit, each named: «ulashilgan» (a work centre another unit also
   carries — the risk surface, since the SKUs may not overlap) and «qo'sh
   yozilgan» (a quantity really written to both — the part that is wrong today).
-  It reports and changes nothing. Delete the module and its two call lines once
-  the answer has landed.
+  It reports and changes nothing. Delete the module together with ALL THREE of
+  its one-shots — `report_shared_work_centers`, `…_xlsx` and
+  `report_shared_sap_cells_raw_xlsx`, each imported and called in BOTH
+  `main.py` and `passenger_wsgi.py` — once the answers have landed: a call left
+  behind imports a deleted module at boot, and a failed boot rolls the deploy
+  back.
 
 ## A code is LATIN (`services/latin_code.py`)
 
