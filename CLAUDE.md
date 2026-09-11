@@ -207,6 +207,49 @@ Raximova Kamola's shift 1 and 9423 on Olishev Islom's shift 2).
   It reports and changes nothing. Delete the module and its two call lines once
   the answer has landed.
 
+## A code is LATIN (`services/latin_code.py`)
+
+From **2026-09-11** (the operator's call) every code a PERSON types is stored in
+Latin letters — a cell's SAP code, a catalog line's SAP code and Команда, a work
+centre in the catalog sheet's staffing block. A Cyrillic А, В, Е, К, М, Н, О, Р,
+С, Т or Х is drawn identically to its Latin twin and is a different character
+to every comparison, so a code typed on the Russian layout looks right on every
+screen and matches nothing. It surfaced twice: a «В2942» typed into the /cells
+search found neither 9411 nor 9423, and three of Suvonov Elshod OF's catalog
+lines carried «А1432 · А1435 · А1436» and never read the ПЛАН/ФАКТ the SAP file
+wrote under the Latin spelling.
+
+- **`latin_code()` is THE rule and it converts only a CODE**: the value must hold
+  a digit («ТОРТ» is a word made of twins) and every Cyrillic letter in it must
+  have a twin («Цех 1» stays Russian rather than turning half-Latin). Anything
+  else comes back untouched, which is what makes it safe on a column that
+  sometimes holds text.
+- **It sits on the doors a person types through**: `profiles._apply_cell_fields`
+  (the cell register and its form), `pp_parser.parse_catalog_workbook` (the ABC
+  sheet — an import re-creates every line, so without it each re-import brings
+  the Cyrillic spelling back) and the catalog's create / edit / bulk endpoints.
+  The SAP export is machine-written and deliberately not passed through it.
+- **Every join stays a plain string comparison.** That is the point of fixing
+  the data on write rather than teaching `cell_lookup._norm` and the `pp_calc`
+  key a second alphabet.
+- **A search folds BOTH sides** — `utils/latinCode.js` `latinFold`, on /cells:
+  per character, over the query and the text searched, so a code matches
+  whichever keyboard typed it and a Russian workshop name still finds itself.
+  Broader than the storage rule on purpose: it decides only whether two strings
+  match, never what is written.
+- **What was already stored was converted once** — `startup.latin_twin_codes`,
+  flag `latin_twin_codes_2026_09_11_v1` (changing what it converts needs a NEW
+  key). Catalog lines go through the catalog editor's own identity carry
+  (`_carry_manual_quantities`), so a ПЛАН/ФАКТ somebody typed follows the line
+  onto the Latin key; a register row or typed pin whose Latin twin already
+  exists is LEFT and named, never merged or deleted. One «Jurnal» row
+  (`production.codes_latinised`) lists what moved. **Consequence to know:** the
+  converted lines read the SAP figures the file had already stored under the
+  Latin key, on every stored date at once — closed days included.
+- Deliberately untouched: `quality_complaints.ref_no` (96 complaint numbers
+  with Cyrillic letters on the Sep-3 copy) — re-synced from the Quality sheet,
+  and nothing joins on it.
+
 ## A worker belongs to a CELL, and the supervisor says which
 
 From **2026-08-30** the cell on a worker's row is answered in two places, and

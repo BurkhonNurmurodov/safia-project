@@ -90,6 +90,7 @@ try:
         correct_pp_double_counted_days,
         purge_production_history,
         reorder_positions_plan_before_fact,
+        latin_twin_codes,
         seed_snabjenets_english_label,
         fix_orazov_schedule_2026_09_01,
         backfill_role_profiles,
@@ -182,6 +183,7 @@ try:
     correct_pp_double_counted_days()
     purge_production_history()
     reorder_positions_plan_before_fact()
+    latin_twin_codes()
     seed_snabjenets_english_label()
     fix_orazov_schedule_2026_09_01()
     add_concern_profile_columns()

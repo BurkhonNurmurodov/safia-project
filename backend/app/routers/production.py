@@ -62,6 +62,7 @@ from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, li
                                    line_keys, group_sizes, faza_quantities, takes_sap,
                                    DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
+from app.services.latin_code import latin_code
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
 
@@ -1999,8 +2000,10 @@ def admin_create_catalog(body: CatalogCreateBody,
     falls back to the name when there is no code (no migration needed)."""
     if not db.query(Manager).filter(Manager.id == body.manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {body.manager_id} not found")
-    sap = (body.sap_code or "").strip()
-    wc = (body.work_center or "").strip()
+    # Codes are stored in Latin letters (services/latin_code.py): a Cyrillic А
+    # typed into Команда looks right and matches nothing the SAP file writes.
+    sap = latin_code((body.sap_code or "").strip())
+    wc = latin_code((body.work_center or "").strip())
     name = (body.name or "").strip()
     if not wc:
         raise HTTPException(status_code=400, detail="work_center cannot be empty")
@@ -2282,7 +2285,7 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
         raise HTTPException(status_code=400,
                             detail=f"too many rows at once (max {_CATALOG_BULK_MAX})")
 
-    wc = body.work_center.strip() if body.work_center is not None else None
+    wc = latin_code(body.work_center.strip()) if body.work_center is not None else None
     if body.work_center is not None and not wc:
         raise HTTPException(status_code=400, detail="work_center cannot be empty")
     if wc is None and body.labor_time is None and body.auto_fill is None:
@@ -2374,12 +2377,12 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     # and the NEW key's is filled from the same stored фаза rows further down
     # (_rejoin_lines) instead of reading 0 until somebody re-uploads every date.
     if body.sap_code is not None:
-        sap = body.sap_code.strip()
+        sap = latin_code(body.sap_code.strip())
         if not sap and not (p.name or "").strip():
             raise HTTPException(status_code=400, detail="a line without a SAP code needs a name")
         p.sap_code = sap
     if body.work_center is not None:
-        wc = body.work_center.strip()
+        wc = latin_code(body.work_center.strip())
         if not wc:
             raise HTTPException(status_code=400, detail="work_center cannot be empty")
         p.work_center = wc

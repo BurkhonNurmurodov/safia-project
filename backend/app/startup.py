@@ -5639,3 +5639,192 @@ def notify_operator_education_lesson() -> None:
     """
     _send_report_once(EDU_LESSON_DM_FLAG, "education lesson DM",
                       _send_education_lesson, UNPRICED_DM_CHAT)
+
+
+LATIN_CODES_FLAG = "latin_twin_codes_2026_09_11_v1"
+_LATIN_LOG_CAP = 20   # conversions named in the «Jurnal» row; the rest are counted
+
+
+def latin_twin_codes() -> None:
+    """2026-09-11 (the operator's call): every stored code spelled with CYRILLIC
+    twins is rewritten in LATIN — the stored half of `services/latin_code.py`,
+    whose write doors keep every new code Latin from this deploy on.
+
+    Found on the Sep-3 copy of production: three of Suvonov Elshod OF's catalog
+    lines («торт радуга круглый», F00000094) carried Команда «А1432 · А1435 ·
+    А1436» with a Cyrillic А. The SAP file writes those work centres in Latin and
+    the catalog↔file join is a plain string comparison, so the three lines never
+    read the ПЛАН/ФАКТ the file holds for them (22 days each in that copy) — 0 on
+    the Positions table and 0 trudoyomkost. Nothing else held a Cyrillic code
+    then; whatever the live box holds is what this converts, and it says so.
+
+    Four registers, each moved the way its own editor would move it:
+
+    * CATALOG LINES go through the catalog editor's own identity carry
+      (`_catalog_snapshot` → `_carry_manual_quantities`), one unit at a time, so
+      a ПЛАН/ФАКТ somebody TYPED on such a line follows it onto the Latin key
+      exactly as if an admin had retyped the Команда by hand. The SAP snapshot
+      is already stored under the Latin key — the file wrote it there, which is
+      the whole bug — so the line reads it the moment it is renamed.
+      `_rejoin_lines` runs only for a pair the file has NO row for: it walks
+      every stored date, and a boot is no place to spend that restating rows
+      that are already there.
+    * CELLS — `sap_code` is a plain rename; nothing is keyed by it.
+    * The WORK-CENTRE REGISTER and the typed «BUGUNGI FAKT» PINS are unique per
+      unit (and per date). A row whose Latin twin already exists is LEFT as it
+      is and named in the log: two numbers for one work centre on one day is a
+      decision for a person, not a merge this can guess.
+
+    Nothing is deleted. The flag is set in the SAME commit as the renames, so a
+    failure before it leaves everything as it was and the next boot tries again.
+    Changing what this converts needs a NEW flag key, or the old "already ran"
+    mark makes it a no-op on every box that has booted once.
+    """
+    from collections import Counter
+
+    from sqlalchemy import or_
+
+    from app.models import Cell, PPDaily, PPProduct, PPWorkCenter, PPWorkCenterDaily
+    from app.services import action_log
+    from app.services.latin_code import CYRILLIC_SQL, latin_code
+
+    def cyr(col):
+        # Any Cyrillic letter at all: a superset of what latin_code converts,
+        # there only to keep the scan off rows that cannot qualify.
+        return col.op("~")(CYRILLIC_SQL)
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LATIN_CODES_FLAG).first():
+            return
+        # The router imports half the application; it is reached for only once
+        # the flag says this has not run.
+        from app.routers.production import (
+            _carry_manual_quantities, _catalog_snapshot, _rejoin_lines, _sap_pairs)
+
+        moved: list[str] = []   # what was rewritten, «old → new»
+        left: list[str] = []    # what could not be, and why
+
+        # ── cells ────────────────────────────────────────────────────────────
+        n_cells = 0
+        for c in db.query(Cell).filter(Cell.sap_code.isnot(None),
+                                       cyr(Cell.sap_code)).all():
+            new = latin_code(c.sap_code)
+            if new != c.sap_code:
+                moved.append(f"cell {c.verifix_code}: {c.sap_code} → {new}")
+                c.sap_code = new
+                n_cells += 1
+
+        # ── the work-centre register: one code per unit ─────────────────────
+        n_wcs = 0
+        wcs = [(w, latin_code(w.code)) for w in
+               db.query(PPWorkCenter).filter(cyr(PPWorkCenter.code)).all()]
+        wcs = [(w, new) for w, new in wcs if new != w.code]
+        if wcs:
+            taken = {tuple(r) for r in db.query(PPWorkCenter.manager_id,
+                                                PPWorkCenter.code).all()}
+            for w, new in wcs:
+                if (w.manager_id, new) in taken:
+                    left.append(f"work centre {w.code} (unit {w.manager_id}): "
+                                f"{new} is already registered")
+                    continue
+                taken.add((w.manager_id, new))
+                moved.append(f"work centre {w.code} → {new} (unit {w.manager_id})")
+                w.code = new
+                n_wcs += 1
+
+        # ── typed «Bugungi fakt» pins: one per unit, date and work centre ────
+        pins = [(p, latin_code(p.work_center)) for p in
+                db.query(PPWorkCenterDaily).filter(
+                    cyr(PPWorkCenterDaily.work_center)).all()]
+        pins = [(p, new) for p, new in pins if new != p.work_center]
+        pins_moved, pins_left = Counter(), Counter()
+        if pins:
+            taken = {tuple(r) for r in db.query(
+                PPWorkCenterDaily.manager_id, PPWorkCenterDaily.date,
+                PPWorkCenterDaily.work_center,
+            ).filter(
+                PPWorkCenterDaily.manager_id.in_({p.manager_id for p, _n in pins}),
+                PPWorkCenterDaily.work_center.in_({n for _p, n in pins}),
+            ).all()}
+            for p, new in pins:
+                key = (p.manager_id, p.date, new)
+                if key in taken:
+                    pins_left[(p.manager_id, p.work_center, new)] += 1
+                    continue
+                taken.add(key)
+                pins_moved[(p.manager_id, p.work_center, new)] += 1
+                p.work_center = new
+        moved += [f"«Bugungi fakt» {old} → {new} (unit {m}): {n} day(s)"
+                  for (m, old, new), n in pins_moved.items()]
+        left += [f"«Bugungi fakt» {old} (unit {m}): {n} day(s) where {new} was "
+                 f"typed as well" for (m, old, new), n in pins_left.items()]
+        n_pins = sum(pins_moved.values())
+
+        # ── catalog lines: the catalog editor's identity carry, per unit ────
+        by_unit: dict[int, list] = defaultdict(list)
+        for p in db.query(PPProduct).filter(
+                or_(cyr(PPProduct.sap_code), cyr(PPProduct.work_center))).all():
+            ns, nw = latin_code(p.sap_code), latin_code(p.work_center)
+            if (ns, nw) != (p.sap_code, p.work_center):
+                by_unit[p.manager_id].append((p, ns, nw))
+        n_lines = carried = 0
+        gaps: dict[int, set] = {}
+        for mid, items in by_unit.items():
+            before = _catalog_snapshot(db, mid)   # read BEFORE this unit moves
+            for p, ns, nw in items:
+                moved.append(f"line #{p.id} (unit {mid}): {p.sap_code} · "
+                             f"{p.work_center} → {ns} · {nw}")
+                p.sap_code, p.work_center = ns, nw
+            edited = {p.id: p for p, _s, _w in items}
+            after = [({**d, "sap_code": edited[d["id"]].sap_code,
+                       "work_center": edited[d["id"]].work_center}
+                      if d["id"] in edited else d) for d in before]
+            carried += _carry_manual_quantities(db, mid, before, after)
+            n_lines += len(items)
+            gap = {pair for pair in _sap_pairs(edited.values())
+                   if not db.query(PPDaily.id).filter(
+                       PPDaily.manager_id == mid, PPDaily.sap_code == pair[0],
+                       PPDaily.work_center == pair[1]).first()}
+            if gap:
+                gaps[mid] = gap
+
+        db.add(AppSetting(key=LATIN_CODES_FLAG, value="1"))
+        db.commit()
+
+        filled = 0
+        for mid, pairs in gaps.items():
+            try:
+                filled += _rejoin_lines(db, mid, pairs)["rows"]
+            except Exception as exc:
+                db.rollback()
+                left.append(f"unit {mid}: SAP re-join failed ({exc}) — re-saving "
+                            f"one of its lines fills it")
+
+        summary = (f"{n_lines} catalog line(s), {n_cells} cell(s), {n_wcs} work "
+                   f"centre(s), {n_pins} typed pin(s) rewritten in Latin; "
+                   f"{carried} typed value(s) carried, {filled} SAP row(s) joined")
+        print(f"[startup] latin twin codes: {summary}"
+              + (" | " + "; ".join(moved) if moved else "")
+              + (" | LEFT: " + "; ".join(left) if left else ""))
+        if moved or left:
+            named = moved[:_LATIN_LOG_CAP]
+            if len(moved) > len(named):
+                named.append(f"… +{len(moved) - len(named)}")
+            action_log.record_system(
+                "shopfloor", "production.codes_latinised",
+                target_kind="catalog", target_name="codes",
+                details=[("rows", n_lines or None), ("cells", n_cells or None),
+                         ("work_centers", n_wcs or None), ("pins", n_pins or None),
+                         ("carried_values", carried or None),
+                         ("filled_rows", filled or None),
+                         ("note", "; ".join(named) or None),
+                         ("left", "; ".join(left[:_LATIN_LOG_CAP]) or None)],
+                reason=("Operator directive: a code is stored in Latin letters; "
+                        "its Cyrillic twins (А В Е К М Н О Р С Т Х) were rewritten"),
+            )
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] latin twin codes skipped: {exc}")
+    finally:
+        db.close()

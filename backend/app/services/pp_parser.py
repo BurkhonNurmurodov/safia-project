@@ -25,6 +25,8 @@ import re
 from datetime import date, datetime
 from io import BytesIO
 
+from app.services.latin_code import latin_code
+
 # фаза (operations). FZ_DATE is the day an operation is BOOKED TO, and it is the
 # operation's START (col H «СамРанДатаНчлВыполнен»), never its scheduled finish.
 # A shift is credited on the day it started the work — which is what the Positions
@@ -331,10 +333,14 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
     order = 0
     blanks = 0
     for row in rows[header_i + 1:]:
-        sku = _str(_get(row, CAT_SKU))
+        # The codes are typed by hand, and a Cyrillic А in «А1432» is a
+        # different string from the Latin one the SAP file writes. An import
+        # re-creates every line, so without this each re-import would bring the
+        # Cyrillic spelling straight back (services/latin_code.py).
+        sku = latin_code(_str(_get(row, CAT_SKU)))
         name = _str(_get(row, CAT_NAME))
         labor = _get(row, CAT_LABOR)
-        wc = _str(_get(row, CAT_WC))
+        wc = latin_code(_str(_get(row, CAT_WC)))
         has_labor = isinstance(labor, (int, float))
         if sku == "0":                      # a failed lookup, not a code
             sku = ""
@@ -358,7 +364,10 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
     wc_by_code: dict[str, dict] = {}
     so = 0
     for row in rows:
-        code = _str(_get(row, CAT_WCM))
+        # Latin BEFORE the shape test: _WC_RE reads Latin letters only, so a
+        # work centre typed with a Cyrillic twin was silently left off the
+        # register rather than registered under its real code.
+        code = latin_code(_str(_get(row, CAT_WCM)))
         if not _WC_RE.match(code):
             continue
         cap = _get(row, CAT_CAP)

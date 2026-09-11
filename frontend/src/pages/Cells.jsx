@@ -20,6 +20,7 @@ import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
 import { cellName } from "../utils/cellName";
+import { latinFold } from "../utils/latinCode";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
@@ -182,11 +183,14 @@ export default function Cells() {
   const openEdit = (item) => setModal({ mode: "edit", item });
 
   // Global search over every visible field, then the two dropdown filters.
+  // Both sides go through `latinFold`: a code typed on the Russian layout
+  // («В2942» with a Cyrillic В) is a different string from the register's
+  // B2942 and used to find nothing, with nothing on screen saying why.
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = latinFold(search.trim());
     return cells.filter((c) => {
-      if (q && !`${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`
-            .toLowerCase().includes(q)) return false;
+      if (q && !latinFold(`${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`)
+            .includes(q)) return false;
       if (fBrigadir === "none" ? c.manager_id : fBrigadir && String(c.manager_id) !== fBrigadir) return false;
       if (fLeader === "none" ? c.leader_id : fLeader && String(c.leader_id) !== fLeader) return false;
       return true;

@@ -55,6 +55,7 @@ from app.identity import (
 )
 from app.permissions import require_page
 from app.services import action_log, cell_hours
+from app.services.latin_code import latin_code
 from app.models import (
     Admin, Cell, CellAttendance, CellOjidaniya, CellPerenaladka, Factory,
     LeaderConcern, LeaderTask, Manager, PPDaily, ProfilePhoto, RoleProfile,
@@ -779,7 +780,11 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
     for col in _CELL_TEXT_COLS:
         val = getattr(payload, col)
         if val is not None:
-            setattr(row, col, val.strip() or None)
+            val = val.strip() or None
+            # The SAP code is a CODE and is stored in Latin letters
+            # (services/latin_code.py): a Cyrillic В typed here looks right and
+            # matches no work centre. The workshop names are text, kept as typed.
+            setattr(row, col, latin_code(val) if col == "sap_code" else val)
     # Supervisor unit: 0 clears, a positive id must be a real managers row.
     # Applied before the leader so an owner (below) can override it.
     if payload.manager_id is not None:
