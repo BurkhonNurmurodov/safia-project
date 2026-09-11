@@ -7,13 +7,16 @@ twin in the wizard, say — is how a link that previews correctly gets stored as
 something the player cannot open, so the browser never parses a URL itself.
 
 Only three providers are accepted, and that is deliberate rather than a
-starting point. Every embed is an ``<iframe>`` against a FIXED host, so the
-app's Content-Security-Policy (`main.py`) can name those hosts in `frame-src`
-and refuse everything else. A "paste any link" field cannot be expressed in a
-CSP at all: it would need `frame-src *` (an open redirect into the app's own
-frame) or, for a bare .mp4, `media-src *`. A rejected link tells the admin
-which three are supported, which is a better outcome than a lesson that saves
-and then renders a grey rectangle on every leader's phone.
+starting point. Every player loads from a FIXED host, so the app's
+Content-Security-Policy (`main.py`) can name those hosts and refuse everything
+else: YouTube and Vimeo play in an ``<iframe>`` (`frame-src`), and Loom plays in
+the app's own ``<video>`` from Loom's CDN (`media-src`) — never in Loom's
+iframe, whose host `frame-src` deliberately leaves out. A "paste any link"
+field cannot be expressed in a CSP at all: it would need `frame-src *` (an open
+redirect into the app's own frame) or, for a bare .mp4, `media-src *`. A
+rejected link tells the admin which three are supported, which is a better
+outcome than a lesson that saves and then renders a grey rectangle on every
+leader's phone.
 
 `thumb` is None for Vimeo on purpose — Vimeo has no static thumbnail URL, only
 an API call — and the card draws its own poster in that case. Guessing a URL
@@ -30,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Provider → the label shown on a card's corner badge. Keys are what lands in
 # `education_lessons.provider`; adding one here means adding its host to the
-# CSP's frame-src in main.py, and there is no way round that.
+# CSP in main.py, and there is no way round that.
 PROVIDERS = ("youtube", "loom", "vimeo")
 
 # How a provider is NAMED to a person — on a notification card, in a log line.

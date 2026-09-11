@@ -134,30 +134,36 @@ export default function EducationLesson() {
               />
             )}
 
-            {/* A black player is never a dead end. The embed can fail for
-                reasons this page cannot see — the video is private, the plant's
-                network blocks the CDN, an in-app browser refuses the frame —
-                and none of them announce themselves: the iframe is cross-origin,
-                so there is no load error to catch. So the way out is ALWAYS
-                offered rather than shown on a failure that cannot be detected. */}
-            <p className="text-[11px]" style={{ color: "var(--text-4)" }}>
-              {t("education.player.trouble")}{" "}
-              <a
-                href={lesson.watch}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 underline underline-offset-2"
-                style={{ color: "var(--brand)" }}
-              >
-                {t("education.player.openIn").replace("{provider}", meta.label || "")}
-                <ExternalLink size={10} aria-hidden />
-              </a>
-            </p>
+            {/* A black player is never a dead end — for the two providers that
+                play in an IFRAME. Their embed can fail for reasons this page
+                cannot see — the video is private, the plant's network blocks
+                the CDN, an in-app browser refuses the frame — and none of them
+                announce themselves: the iframe is cross-origin, so there is no
+                load error to catch. So the way out is ALWAYS offered rather
+                than shown on a failure that cannot be detected.
+                Never for Loom: it plays in our own <video>, which does see its
+                failures and says why inside the frame, and Loom's own player is
+                offered to nobody (the operator's call, 2026-09-11). */}
+            {lesson.provider !== "loom" && (
+              <p className="text-[11px]" style={{ color: "var(--text-4)" }}>
+                {t("education.player.trouble")}{" "}
+                <a
+                  href={lesson.watch}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 underline underline-offset-2"
+                  style={{ color: "var(--brand)" }}
+                >
+                  {t("education.player.openIn").replace("{provider}", meta.label || "")}
+                  <ExternalLink size={10} aria-hidden />
+                </a>
+              </p>
+            )}
 
             {/* Admin-only: the probe said this video does not resolve for an
-                anonymous viewer, so the class is looking at a black rectangle.
-                Named here as well as on the card, because this is the page an
-                admin opens when somebody reports it. */}
+                anonymous viewer, so the class cannot play it. Named here as
+                well as on the card, because this is the page an admin opens
+                when somebody reports it. */}
             {lesson.access === "restricted" && (
               <p
                 className="flex items-start gap-2 rounded-xl px-3 py-2 text-xs"
@@ -185,7 +191,11 @@ export default function EducationLesson() {
                    style={{ color: "var(--text-3)" }}>
                 {lesson.author && <span>{lesson.author}</span>}
                 <span>{lessonDate(lesson.created_at, lang)}</span>
-                {meta.label && (
+                {/* The provider is always NAMED; it links out only where that
+                    provider's own player may be offered — never Loom's. */}
+                {meta.label && (lesson.provider === "loom" ? (
+                  <span>{meta.label}</span>
+                ) : (
                   <a
                     href={lesson.watch}
                     target="_blank"
@@ -195,7 +205,7 @@ export default function EducationLesson() {
                   >
                     {meta.label} <ExternalLink size={11} aria-hidden />
                   </a>
-                )}
+                ))}
                 {/* Admin-only facts: who it went to and how many opened it. */}
                 {lesson.targets && (
                   <>

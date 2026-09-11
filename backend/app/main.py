@@ -514,20 +514,23 @@ _CSP = (
     # verifies the URL before it is ever stored.
     "img-src 'self' data: blob: https://i.ytimg.com https://cdn.loom.com "
     "https://i.vimeocdn.com; "
-    # «Ta'lim» plays a LOOM lesson in the app's own <video> rather than
-    # Loom's iframe, because Loom's embed exposes no playback events and a
-    # lesson that cannot be measured cannot be reported on. The bytes are
-    # streamed by the viewer's browser straight from Loom's CDN — nothing is
-    # downloaded and nothing is stored here. ONE fixed host, which is what
-    # keeps this expressible: a "paste any link" field would need media-src *.
+    # «Ta'lim» plays a LOOM lesson in the app's own <video>, for every viewer,
+    # because Loom's embed exposes no playback events and a lesson that cannot
+    # be measured cannot be reported on. The bytes are streamed by the viewer's
+    # browser straight from Loom's CDN — nothing is downloaded and nothing is
+    # stored here. ONE fixed host, which is what keeps this expressible: a
+    # "paste any link" field would need media-src *.
     "media-src 'self' data: blob: https://cdn.loom.com; "
-    # «Ta'lim» (/education) embeds video lessons. A lesson's link is parsed by
-    # services/education_video, which accepts these THREE providers and refuses
-    # everything else — so this list is the whole of what can ever be framed,
-    # and a pasted link cannot widen it. A cross-origin iframe cannot read this
-    # origin's token, so it does not reopen what connect-src is guarding.
-    "frame-src https://www.youtube-nocookie.com https://www.loom.com "
-    "https://player.vimeo.com; "
+    # «Ta'lim» (/education) frames the other two providers. A lesson's link is
+    # parsed by services/education_video, which accepts three providers and
+    # refuses everything else — so this list is the whole of what can ever be
+    # framed, and a pasted link cannot widen it. A cross-origin iframe cannot
+    # read this origin's token, so it does not reopen what connect-src is
+    # guarding. www.loom.com is deliberately ABSENT: Loom's own player is shown
+    # to nobody (the operator's call, 2026-09-11), and leaving its host out
+    # makes that a rule the browser enforces rather than one the code must
+    # remember.
+    "frame-src https://www.youtube-nocookie.com https://player.vimeo.com; "
     "worker-src 'self' blob:; "
     f"connect-src {_CONNECT_SRC}"
 )

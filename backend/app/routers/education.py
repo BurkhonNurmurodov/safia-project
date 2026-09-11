@@ -727,19 +727,30 @@ def record_progress(body: ProgressIn, db: Session = Depends(get_db),
 @router.get("/media/{lesson_id}")
 def lesson_media(lesson_id: int, db: Session = Depends(get_db),
                  payload: dict = Depends(require_page(PAGE))):
-    """The direct MP4 for a LOOM lesson, so the app can play it in its own
-    ``<video>`` and measure what was watched.
+    """The direct MP4 for a LOOM lesson, which the app plays in its own
+    ``<video>`` for EVERY viewer — measured or not.
 
     Loom's embed SDK exposes no playback events at all — no position, no seek,
     no progress — so an iframe can be shown and cannot be measured. YouTube and
     Vimeo both answer postMessage, which is why only this provider needs a door
     of its own.
 
-    **Nothing is downloaded and nothing is stored.** The answer is a short-lived
-    signed URL on Loom's own CDN that the viewer's browser streams directly, so
-    no video bytes cross this server. It is resolved per request rather than
-    cached because the signature expires within minutes; a cached one would fail
-    mid-lesson for the next person.
+    Loom's own player is never shown instead, not even as a fallback (the
+    operator's call, 2026-09-11), so a video this door cannot resolve is a video
+    nobody can watch — and the refusal says which kind it is, because the
+    player puts it in front of the viewer:
+
+    * ``loom_restricted`` (424) — Loom answered that the video is not there for
+      an anonymous caller: workspace-private or deleted. Retrying changes
+      nothing; its sharing setting does. A 4xx on purpose: a proxy may swap a
+      5xx body for its own error page, and this detail is the whole message.
+    * ``loom_unavailable`` (502) — anything else (a timeout, an outage, a rate
+      limit), worth a retry.
+
+    **Nothing is downloaded and nothing is stored.** The answer is a signed URL
+    on Loom's own CDN that the viewer's browser streams directly, so no video
+    bytes cross this server. It is resolved per request rather than cached: the
+    signature lives about an hour, and the player asks again when it runs out.
     """
     lesson = _load(db, lesson_id)
     viewer = viewer_profile_key(db, payload)
@@ -755,12 +766,17 @@ def lesson_media(lesson_id: int, db: Session = Depends(get_db),
     try:
         with httpx.Client(timeout=10.0) as client:
             r = client.post(url, json={}, headers={"Accept": "application/json"})
+        if r.status_code in (401, 403, 404, 410):
+            logger.info("loom transcoded-url refused %s: HTTP %s",
+                        lesson.video_id, r.status_code)
+            raise HTTPException(status_code=424, detail="loom_restricted")
         r.raise_for_status()
         src = (r.json() or {}).get("url")
+    except HTTPException:
+        raise
     except Exception as exc:                       # noqa: BLE001 — see below
-        # Any failure here is the same fact to the reader — the video cannot be
-        # played right now — and the player falls back to Loom's own iframe, so
-        # the lesson is still watchable even though it stops being measurable.
+        # Any other failure is the same fact to the reader — the video cannot
+        # be played right now — and the player offers a retry.
         logger.warning("loom transcoded-url failed for %s: %s", lesson.video_id, exc)
         raise HTTPException(status_code=502, detail="loom_unavailable")
     if not src:
