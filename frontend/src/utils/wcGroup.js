@@ -16,12 +16,30 @@
  * for something with no group. Tables show the code chip with the letter as a
  * small badge beside it; anything that has to be a string uses this.
  */
+import { CATEGORY_COLORS, FOLD_COLOR } from "./chartPalette";
+
 const TWINS = {
   А: "A", В: "B", Е: "E", К: "K", М: "M", Н: "H", О: "O", Р: "P",
   С: "C", Т: "T", Х: "X", У: "Y", Ү: "Y", І: "I", Ј: "J", Ѕ: "S",
 };
 
 export const GROUP_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+// Each letter wears ONE fixed colour on every page — the operator's order
+// (2026-09-14): A red · B blue · C yellow · D green · E orange · F purple, then
+// the rest of the shared categorical palette in its own order (slate skipped:
+// it is the «other» fold colour). Hexes come from chartPalette, so a group reads
+// in the same hues as the work-centre chips and categories beside it.
+const FIRST_GROUP_COLORS = ["#ef4444", "#3b82f6", "#eab308", "#22c55e", "#f97316", "#a855f7"];
+const GROUP_COLOR_ORDER = [
+  ...FIRST_GROUP_COLORS,
+  ...CATEGORY_COLORS.filter((c) => !FIRST_GROUP_COLORS.includes(c) && c !== "#64748b"),
+];
+
+export function groupColor(letter) {
+  const i = GROUP_LETTERS.indexOf(String(letter ?? "").trim().toUpperCase());
+  return i < 0 ? FOLD_COLOR : GROUP_COLOR_ORDER[i % GROUP_COLOR_ORDER.length];
+}
 
 export function normGroup(value) {
   const s = String(value ?? "").trim().toUpperCase();

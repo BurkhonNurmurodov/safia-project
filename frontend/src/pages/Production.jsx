@@ -1756,6 +1756,15 @@ export default function Production() {
 
   const rows = data?.rows ?? [];
   const wcs = data?.work_centers ?? [];
+  // The «Команды» panel draws ONE CARD PER GROUP for a work centre typed per
+  // group (`typesPerGroup`): each group is its own cell with its own people,
+  // minutes and load, and a single card summing them hid exactly the figure a
+  // brigadir reads it for. An ORPHAN letter keeps a small display-only card, so
+  // a letter no cell carries stays visible. Every other centre — ungrouped, or
+  // lettered by orphans alone — keeps its one whole-centre card.
+  const teamCards = wcs.flatMap((w) => (typesPerGroup(w)
+    ? w.groups.map((g) => ({ w, g }))
+    : [{ w, g: null }]));
   // work-center code → canonical cell (workshop name / owner), from the staffing
   // list; every positions row's WC also appears here, so one map covers both.
   const wcCell = useMemo(
@@ -2732,7 +2741,7 @@ export default function Production() {
       {/* staffing panel — work-center cards with load bars */}
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={Users} title={t("production.teams")} right={
-          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${wcs.length} ${t("production.unitsCount")}`}</span>
+          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${teamCards.filter(({ g }) => !g?.orphan).length} ${t("production.unitsCount")}`}</span>
         } />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
           {loading && Array.from({ length: 6 }).map((_, i) => (
@@ -2745,7 +2754,72 @@ export default function Production() {
               <SkeletonBlock className="h-3 w-3/4 mt-2.5" />
             </div>
           ))}
-          {!loading && wcs.map((w) => {
+          {!loading && teamCards.map(({ w, g }) => {
+            if (g) {
+              // One group of a work centre typed per group: its own load, its own
+              // people (a typed pin gold, an untyped share muted and starred) and
+              // its share of the minutes. Штатка is configured for the whole work
+              // centre and is not split, so it prints the centre's and says so.
+              const gc = loadColor(g.load);
+              const wcg = wcColor(w.work_center);
+              const title = groupTitle(t, g, tl);
+              return (
+                <div key={gKey(w.work_center, g.group)} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wcg}` }}>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      {/* Links to the cell carrying this letter only — an orphan
+                          has none, so its chip stays inert. */}
+                      <CellLink id={g.orphan ? undefined : g.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={title} style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
+                      <GroupBadge group={g.group} tone={g.orphan ? "warn" : "neutral"} title={title} />
+                    </span>
+                    {!g.orphan && (
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-bold tabular-nums" style={{ color: gc }}>{pct(g.load)}</span>
+                        {canEditStaffing && (
+                          <Button
+                            variant="secondary"
+                            icon={<Pencil size={14} />}
+                            onClick={() => startWcEdit(w)}
+                            title={t("production.editManually")}
+                            aria-label={t("production.editManually")}
+                            style={{ background: "var(--bg-card)", paddingLeft: 8, paddingRight: 8 }}
+                          />
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  {g.orphan ? (
+                    // Display only: an orphan's minutes and pin are already inside
+                    // the cells' shares, so no load and nothing to add up here.
+                    <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                      {t("production.group.orphan")}
+                      {g.people != null && (
+                        <>{" · "}{t("production.oSoni")} <b className="tabular-nums" style={{ color: "var(--text-2)" }}>{fmt(g.people, 1)}</b></>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <Bar value={g.load} color={gc} height={6} track="var(--bg-card)" />
+                      <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                        <span className="truncate">
+                          {t("production.oSoni")} <b className="tabular-nums"
+                            title={g.people_overridden ? undefined : groupUntypedTitle(t, w, g)}
+                            style={{ color: g.people_overridden ? "var(--brand-text)" : "var(--text-3)" }}>
+                            {fmt(g.people, 1)}
+                            {!g.people_overridden && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                          </b>
+                          {" · "}
+                          {t("production.shtatka")} <b className="tabular-nums"
+                            title={t("production.group.shtatkaShared").replace("{code}", w.work_center)}
+                            style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
+                        </span>
+                        <span className="tabular-nums shrink-0">{fmt(g.total_labor, 0)} {t("production.minUnit")}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            }
             const c = loadColor(w.load);
             const wc = wcColor(w.work_center);
             return (

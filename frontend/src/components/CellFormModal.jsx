@@ -10,6 +10,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 import { GROUP_LETTERS } from "../utils/wcGroup";
+import GroupBadge from "./ui/GroupBadge";
 
 /**
  * THE add/edit form for one production cell — extracted from the /cells
@@ -142,7 +143,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           disabled={!canGroup}
           options={[
             { value: "", label: "—" },
-            ...GROUP_LETTERS.map((l) => ({ value: l, label: l })),
+            ...GROUP_LETTERS.map((l) => ({ value: l, label: <GroupBadge group={l} />, title: l })),
           ]}
         />
       </FormField>

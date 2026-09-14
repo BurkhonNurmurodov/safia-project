@@ -1,5 +1,6 @@
 const t = {
   uz: {
+    "production.group.shtatkaShared": "Shtat butun jamoa ({code}) uchun — guruhlar o'rtasida bo'linmaydi",
     "admin.profiles.cellGroupNeedsSap": "Guruh harfi uchun yacheykada SAP kod bo'lishi kerak",
     "admin.profiles.cellGroupNeedsUnit": "Guruh harfi uchun yacheykaga brigadir biriktirilgan bo'lishi kerak",
     "admin.profiles.cellGroupLetterFirst": "{code} bu brigadada {cells} bilan umumiy — avval {unlettered} yacheykasiga guruh harfi bering, keyin bu yacheykaga boshqasini",
@@ -5066,6 +5067,7 @@ const t = {
   },
 
   uz_cyrl: {
+    "production.group.shtatkaShared": "Штат бутун жамоа ({code}) учун — гуруҳлар ўртасида бўлинмайди",
     "admin.profiles.cellGroupNeedsSap": "Гуруҳ ҳарфи учун ячейкада SAP код бўлиши керак",
     "admin.profiles.cellGroupNeedsUnit": "Гуруҳ ҳарфи учун ячейкага бригадир бириктирилган бўлиши керак",
     "admin.profiles.cellGroupLetterFirst": "{code} бу бригадада {cells} билан умумий — аввал {unlettered} ячейкасига гуруҳ ҳарфи беринг, кейин бу ячейкага бошқасини",
@@ -10129,6 +10131,7 @@ const t = {
   },
 
   ru: {
+    "production.group.shtatkaShared": "Штатка — на всю команду {code}, между группами не делится",
     "admin.profiles.cellGroupNeedsSap": "Для буквы группы у ячейки должен быть SAP-код",
     "admin.profiles.cellGroupNeedsUnit": "Для буквы группы у ячейки должен быть бригадир",
     "admin.profiles.cellGroupLetterFirst": "{code} в этой бригаде общий с {cells} — сначала дайте букву группы {unlettered}, затем этой ячейке другую",
@@ -15192,6 +15195,7 @@ const t = {
   },
 
   en: {
+    "production.group.shtatkaShared": "Staffing belongs to the whole team {code} and is not split between groups",
     "admin.profiles.cellGroupNeedsSap": "A group letter needs a SAP code on the cell",
     "admin.profiles.cellGroupNeedsUnit": "A group letter needs a brigadir on the cell",
     "admin.profiles.cellGroupLetterFirst": "{code} is shared with {cells} in this unit — give {unlettered} a group letter first, then this cell a different one",

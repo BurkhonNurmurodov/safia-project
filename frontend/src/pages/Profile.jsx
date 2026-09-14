@@ -1107,7 +1107,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
               disabled={!((newCell.sap_code || "").trim() && form.manager_id)}
               options={[
                 { value: "", label: "—" },
-                ...GROUP_LETTERS.map((l) => ({ value: l, label: l })),
+                ...GROUP_LETTERS.map((l) => ({ value: l, label: <GroupBadge group={l} />, title: l })),
               ]}
             />
           </FormField>
