@@ -138,6 +138,34 @@ modal title, a tooltip, a notification or an export column.
 - The stored names are untouched — nothing was migrated or deleted, so lifting
   this rule anywhere is a rendering change and nothing more.
 
+## Supervisors read `/cells` — their own unit, read-only
+
+From **2026-09-14** (the operator's directive) the cells register opens to the
+`supervisor` role by default, narrowed to the cells of their OWN unit.
+
+- **The narrowing is server-side** — `_cells_viewer_unit` in
+  `routers/profiles.py`, applied by `GET /api/profiles/admin/cells`: a
+  supervisor's `role_id` is their unit, and the endpoint returns that unit's
+  cells, that unit as the only supervisor option, and its leaders (plus any
+  leader named on its cells). `scope` on the payload names the unit and is null
+  whenever the register is whole; the page reads the narrowing off it — never
+  off the viewer's role — and renders the unit as an inert brigadir chip.
+- **Read-only by construction.** Every write is `admin.cells.manage`
+  (`require_cap`), which a supervisor does not hold, so `canEdit` draws no
+  create / edit / delete. The Excel export stays: it is a read.
+- **Two personal grants widen it back to the whole register**: the edit grant
+  (whoever manages the register needs all of it) and `page.view.cells`, stored
+  at "all". «cells» deliberately stays out of `SCOPED_PAGES` — "own" would only
+  restate a supervisor's role default and narrow nothing for any other role,
+  and those keep reading the whole register when opened on the Access tab.
+- **`/cells/:id` is unchanged** — still auth-only for every session, because a
+  cell is pressable from pages that are not this one.
+- A stored matrix shadows `DEFAULT_PAGE_ACCESS`, so
+  `startup.open_cells_page_to_supervisors` (flag
+  `cells_page_supervisor_2026_09_14_v1`) ADDS the role to the stored `cells`
+  list once; the flag is what protects a later uncheck on the Access tab, and
+  changing what it does needs a NEW flag key.
+
 ## A work centre is NOT unique — a cell is
 
 A verifix code identifies ONE cell. A **SAP work centre does not**: two shifts

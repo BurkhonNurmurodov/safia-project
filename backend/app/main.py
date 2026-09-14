@@ -52,7 +52,8 @@ async def lifespan(app: FastAPI):
         add_notification_template_columns, add_admin_language_column, add_tg_name_column,
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
         relax_pp_upload_manager, rescale_pp_efficiency_base,
-        backfill_leader_page_access, add_profiles_columns, migrate_cells_table,
+        backfill_leader_page_access, open_cells_page_to_supervisors,
+        add_profiles_columns, migrate_cells_table,
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
         add_cell_shift_times,
@@ -251,6 +252,7 @@ async def lifespan(app: FastAPI):
     # After migrate_multi_roles — it owns the table's columns; this re-keys it.
     migrate_leader_role_uniqueness()
     backfill_leader_page_access()
+    open_cells_page_to_supervisors()
     seed_admins()
     seed_languages()
     seed_managers_and_sources()

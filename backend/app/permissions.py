@@ -71,10 +71,14 @@ DEFAULT_PAGE_ACCESS = {
     # admin-only by default; open up roles from the Access tab.
     "leaders": [],
     # Cell registry (verifix/SAP codes, workshop names, supervisor & leader
-    # assignment). Admin-only by default; hand out per-person view/edit on the
-    # Permissions tab (page.view.cells / admin.cells.manage) or open a role
-    # here on the Access tab.
-    "cells": [],
+    # assignment). Supervisors read it by default (2026-09-14) — narrowed
+    # server-side to their OWN unit's cells and read-only
+    # (routers/profiles.py `_cells_viewer_unit`; every write is
+    # admin.cells.manage). Admins, the edit grant and a per-person
+    # page.view.cells grant read the whole register, as does any other role
+    # opened here on the Access tab. A matrix saved before this shadows the
+    # default, so startup.open_cells_page_to_supervisors adds the role to it.
+    "cells": ["supervisor"],
     # Kaizen-session project analytics (synced from Notion). Admin-only by
     # default; open up roles from the Access tab.
     "kaizen": [],

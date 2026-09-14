@@ -2791,6 +2791,58 @@ def backfill_leader_page_access() -> None:
         db.close()
 
 
+CELLS_PAGE_SUPERVISOR_FLAG = "cells_page_supervisor_2026_09_14_v1"
+
+
+def open_cells_page_to_supervisors() -> None:
+    """2026-09-14 (the operator's directive): supervisors open /cells — their
+    own unit's cells, read-only.
+
+    ``DEFAULT_PAGE_ACCESS["cells"]`` now lists "supervisor", but a default only
+    decides a matrix that never stored the page: ``get_page_access`` lets a
+    stored per-page list shadow it, and every Access-tab save stores every
+    page. So on a box where that tab was ever saved the constant alone changes
+    nothing, silently. This adds the role to the stored list, once.
+
+    It only ADDS "supervisor" — every role already ticked stays ticked — and
+    leaves alone a box with no stored matrix, or one that never stored "cells",
+    since the default already answers there. The FLAG is what protects a later
+    uncheck on the Access tab: from the next boot on the page is the admin's
+    again, and changing what this does needs a NEW flag key, or the old
+    "already ran" mark makes it a no-op on every box that has booted once.
+
+    Config only. The narrowing to the supervisor's own unit and the absence of
+    any write belong to the endpoints (routers/profiles.py
+    ``_cells_viewer_unit``, CAP_CELLS_MANAGE), so nothing here widens what
+    anybody may change.
+    """
+    import json
+    from app.permissions import SETTING_KEY
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CELLS_PAGE_SUPERVISOR_FLAG).first():
+            return
+        row = db.query(AppSetting).filter_by(key=SETTING_KEY).first()
+        if row:
+            try:
+                stored = json.loads(row.value or "{}")
+            except (ValueError, TypeError):
+                stored = None
+            roles = stored.get("cells") if isinstance(stored, dict) else None
+            if isinstance(roles, list) and "supervisor" not in roles:
+                stored["cells"] = roles + ["supervisor"]
+                row.value = json.dumps(stored)
+                print(f"[startup] opened /cells to supervisors (was {roles})")
+        db.add(AppSetting(key=CELLS_PAGE_SUPERVISOR_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] /cells supervisor access not opened: {exc}")
+    finally:
+        db.close()
+
+
 def seed_admins() -> None:
     """Seed the admins table from ADMIN_TELEGRAM_ID (comma-separated) the
     first time — i.e. only while the table is empty. Once seeded, admins are

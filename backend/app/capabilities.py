@@ -145,6 +145,10 @@ def page_cap(page: str) -> str:
 # "own" and "all" mean different things. Every other page is already
 # factory-wide for whoever may open it, so its grant is stored at "all" and the
 # Permissions tab shows a static chip instead of a selector that does nothing.
+# «cells» stays out on purpose: a supervisor who opens it through the ROLE
+# matrix reads only their own unit, and a grant is what widens that to the
+# whole register — "own" would only restate a supervisor's role default and
+# would narrow nothing for any other role.
 SCOPED_PAGES = ("staff", "daily", "production", "concerns", "worker-concerns", "tasks", "leaders", "quality", "setup", "idle-cell")
 
 # key   → the capability id, also the i18n key suffix (caps.<key>.label/.hint)

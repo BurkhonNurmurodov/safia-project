@@ -46,7 +46,9 @@ from sqlalchemy.orm import Session
 
 from app import web_auth
 from app.capability_alerts import alert_grant_use, tv, unit_name
-from app.capabilities import CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, require_cap
+from app.capabilities import (
+    CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, caller_caps, page_cap, require_cap,
+)
 from app.config import settings
 from app.database import get_db
 from app.identity import (
@@ -878,9 +880,36 @@ def _check_cell_group(db: Session, row: Cell, before: Optional[tuple] = None,
         raise HTTPException(status_code=400, detail=err)
 
 
+def _cells_viewer_unit(db: Session, caller: dict) -> tuple[bool, Optional[int]]:
+    """Is the /cells register NARROWED for this caller, and to which unit?
+
+    A supervisor who opens the page through the ROLE matrix reads their OWN
+    unit's cells and nothing else (2026-09-14, the operator's directive) — and
+    only reads them: every write below is CAP_CELLS_MANAGE. ``role_id`` is the
+    unit, as on every supervisor payload (``factory_scope.viewer_factory_id``).
+
+    Two PERSONAL grants widen it back to the whole register, both deliberate:
+    the edit grant (whoever manages the register needs all of it — the form's
+    unit and leader pickers and the group rule are plant-wide) and a
+    ``page.view.cells`` grant, stored at "all" because "cells" is not in
+    ``SCOPED_PAGES``. Every other role reads the whole register it always read.
+    A supervisor payload carrying no unit is narrowed to NOTHING — an empty
+    register, never the whole plant.
+    """
+    if caller.get("role") != "supervisor":
+        return False, None
+    held = caller_caps(db, caller)
+    if CAP_CELLS_MANAGE in held or held.get(page_cap("cells")) == "all":
+        return False, None
+    try:
+        return True, int(caller.get("role_id"))
+    except (TypeError, ValueError):
+        return True, None
+
+
 @router.get("/admin/cells")
 def admin_list_cells(db: Session = Depends(get_db),
-                     _: dict = Depends(require_page("cells"))):
+                     caller: dict = Depends(require_page("cells"))):
     """The /cells page's read half. Gated by PAGE access, not by the
     cells-manage capability: anyone who may SEE the page (``page.view.cells``,
     the ``admin.cells.manage`` edit grant which implies it, a role ticked for
@@ -892,17 +921,39 @@ def admin_list_cells(db: Session = Depends(get_db),
     and leader option lists the table and edit modal need — never the full
     profile roster or the Telegram bindings that endpoint exposes. Registered
     before the /admin/{ptype}/{pid} routes so the static "cells" segment wins
-    (Starlette matches in registration order)."""
-    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
+    (Starlette matches in registration order).
+
+    A supervisor reads it narrowed to their own unit (``_cells_viewer_unit``):
+    that unit's cells, that unit as the only supervisor option, and its leaders
+    plus any leader named on its cells, so the leader filter offers only people
+    who can match a row. ``scope`` names the unit for the page's inert chip and
+    is null whenever the register is whole."""
+    narrowed, unit_id = _cells_viewer_unit(db, caller)
+    managers = db.query(Manager).order_by(Manager.id).all()
+    mgr_names = {m.id: m.name for m in managers}
     leader_profiles = (db.query(RoleProfile)
                        .filter(RoleProfile.role == "leader")
                        .order_by(RoleProfile.id).all())
     prof_names = {p.id: p.name for p in leader_profiles}
-    cell_rows = db.query(Cell).order_by(Cell.verifix_code).all()
+    if not narrowed:
+        cell_rows = db.query(Cell).order_by(Cell.verifix_code).all()
+    elif unit_id is None:
+        cell_rows = []
+    else:
+        cell_rows = (db.query(Cell).filter(Cell.manager_id == unit_id)
+                     .order_by(Cell.verifix_code).all())
+    if narrowed:
+        named = {c.leader_id for c in cell_rows}
+        managers = [m for m in managers if m.id == unit_id]
+        leader_profiles = [p for p in leader_profiles
+                           if (unit_id is not None and p.manager_id == unit_id)
+                           or p.id in named]
     return {
+        "scope": ({"unit_id": unit_id, "unit": mgr_names.get(unit_id)}
+                  if narrowed else None),
         "supervisors": [
             {"id": m.id, "name": m.name, "shift": m.shift, "archived": bool(m.archived)}
-            for m in db.query(Manager).order_by(Manager.id).all()
+            for m in managers
         ],
         "leaders": [
             {"id": p.id, "name": p.name, "manager_id": p.manager_id}

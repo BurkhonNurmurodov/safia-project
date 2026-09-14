@@ -42,6 +42,10 @@ import { exportXlsx } from "../utils/exportXlsx";
  * `canEdit` hides every write control for a view-only grantee; the backend
  * enforces the same split, so a hidden button that somehow fired still 403s.
  *
+ * Supervisors open it through their ROLE (from 2026-09-14) and are served it
+ * narrowed server-side to their own unit's cells, read-only. The payload's
+ * `scope` says so, and the page names that unit as an inert brigadir chip.
+ *
  * Data + endpoints are unchanged: GET /api/profiles/admin/cells returns the
  * register plus the brigadir/leader option lists; create/edit/delete ride the
  * POST/PUT/DELETE /api/profiles/admin/cells[/id] endpoints (the add/edit form
@@ -223,6 +227,20 @@ export default function Cells() {
   const [fBrigadir, setFBrigadir] = usePersistentState("cells_filter_brigadir", "");  // "" all · "none" unassigned · manager_id
   const [fLeader, setFLeader] = usePersistentState("cells_filter_leader", "");        // "" all · "none" unassigned · leader_id
 
+  // Set when the server narrowed the register to the viewer's OWN unit — a
+  // supervisor who opens the page through their role (backend
+  // `_cells_viewer_unit`). Read off the payload, never off the role: the same
+  // supervisor holding a grant is served the whole register with scope null.
+  const scope = data?.scope ?? null;
+  // The picks actually applied. A narrowed register holds one unit, so its
+  // brigadir control is an inert chip and a pick remembered from a wider
+  // session must not keep filtering behind it; a leader the list no longer
+  // offers is dropped the same way instead of hiding every row behind a chip
+  // that names nobody.
+  const brigadirSel = scope ? "" : fBrigadir;
+  const leaderSel = !data || fLeader === "" || fLeader === "none"
+    || leaders.some((l) => String(l.id) === fLeader) ? fLeader : "";
+
   // Per-column sort (desktop table headers) — key:null falls back to verifix.
   const [sort, setSort] = usePersistentState("cells_sort", { key: null, dir: "asc" });
   const onSort = (k) =>
@@ -257,12 +275,12 @@ export default function Cells() {
     return cells.filter((c) => {
       if (q && !latinFold(`${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`)
             .includes(q)) return false;
-      if (fBrigadir === "none" ? c.manager_id : fBrigadir && String(c.manager_id) !== fBrigadir) return false;
-      if (fLeader === "none" ? c.leader_id : fLeader && String(c.leader_id) !== fLeader) return false;
+      if (brigadirSel === "none" ? c.manager_id : brigadirSel && String(c.manager_id) !== brigadirSel) return false;
+      if (leaderSel === "none" ? c.leader_id : leaderSel && String(c.leader_id) !== leaderSel) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cells, search, fBrigadir, fLeader, lang, tl]);
+  }, [cells, search, brigadirSel, leaderSel, lang, tl]);
 
   // Sort by the clicked column; the default (no column picked) is a natural sort
   // by verifix code — the register's identity — shared by the table and cards.
@@ -381,22 +399,28 @@ export default function Cells() {
             />
             <FilterPanel
               sections={[
-                {
+                // A narrowed register names its one unit as an inert chip —
+                // the locked-viewer shape useFactorySection uses — never as a
+                // one-option picker.
+                scope ? {
+                  key: "brigadir", icon: ShieldCheck, label: t("admin.profiles.colSupervisor"), static: true,
+                  display: scope.unit ? tl(scope.unit) : "—",
+                } : {
                   key: "brigadir", icon: ShieldCheck, label: t("admin.profiles.cellFilterAllBrigadirs"),
-                  active: fBrigadir !== "",
-                  display: fBrigadir !== "" ? (brigadirOpts.find((o) => o.value === fBrigadir)?.label || "") : "",
+                  active: brigadirSel !== "",
+                  display: brigadirSel !== "" ? (brigadirOpts.find((o) => o.value === brigadirSel)?.label || "") : "",
                   onClear: () => setFBrigadir(""),
                   render: ({ close } = {}) => (
-                    <PickFilter searchable close={close} opts={brigadirOpts} value={fBrigadir} onChange={setFBrigadir} />
+                    <PickFilter searchable close={close} opts={brigadirOpts} value={brigadirSel} onChange={setFBrigadir} />
                   ),
                 },
                 {
                   key: "leader", icon: UserRound, label: t("admin.profiles.cellFilterAllLeaders"),
-                  active: fLeader !== "",
-                  display: fLeader !== "" ? (leaderFilterOpts.find((o) => o.value === fLeader)?.label || "") : "",
+                  active: leaderSel !== "",
+                  display: leaderSel !== "" ? (leaderFilterOpts.find((o) => o.value === leaderSel)?.label || "") : "",
                   onClear: () => setFLeader(""),
                   render: ({ close } = {}) => (
-                    <PickFilter searchable close={close} opts={leaderFilterOpts} value={fLeader} onChange={setFLeader} />
+                    <PickFilter searchable close={close} opts={leaderFilterOpts} value={leaderSel} onChange={setFLeader} />
                   ),
                 },
               ]}
