@@ -29,7 +29,8 @@ import { exportXlsx } from "../utils/exportXlsx";
 import CategoryMatrix from "../components/idle/CategoryMatrix";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { useAuth } from "../context/AuthContext";
-import { padChartParams } from "../utils/chartRange";
+import { padChartParams, axisDate, ticksForWidth, axisLabelPx } from "../utils/chartRange";
+import useElementWidth from "../hooks/useElementWidth";
 import { Info, Layers, UserRound, Tag, FileSpreadsheet, Presentation, Table2 } from "lucide-react";
 import { SectionHead } from "../components/ui/DataTable";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
@@ -423,6 +424,9 @@ export default function Downtime() {
     theme: { mode: "dark" },
   };
 
+  // The trend card measures itself so its date axis can thin to the room it
+  // actually has — full page column on a desktop, one narrow column on a phone.
+  const [trendRef, trendW] = useElementWidth();
   // Trend: fleet total downtime per day (padded ≥7-day window).
   // Dates arrive as "DD.MM.YYYY" strings, so a plain string sort mis-orders months
   // (01.07 before 27.06). Sort on a "YYYY-MM-DD" key to get true chronological order.
@@ -440,6 +444,10 @@ export default function Downtime() {
       : (r[totalKey] || 0);
   });
   const trendDates  = Object.keys(trendMap).sort((a, b) => dmyKey(a).localeCompare(dmyKey(b)));
+  // «14th Sep. 2026» — the platform's one axis-date spelling (utils/chartRange),
+  // never re-spelled here. The register stores «DD.MM.YYYY»; only the LABEL
+  // changes, so `trendDates` stays the sort/lookup key.
+  const trendLabels = trendDates.map(axisDate);
   const trendValues = trendDates.map((d) => Math.round(trendMap[d]));
   const trendSeries = [{ name: filterActive ? selectedCats.join(" + ") : t("downtime.totalDowntime"), data: trendValues }];
   // Single selected category paints the line in its doughnut colour.
@@ -478,11 +486,18 @@ export default function Downtime() {
       offsetY: -6,
     },
     xaxis: {
-      categories: trendDates,
+      categories: trendLabels,
       axisBorder: { show: false },
       axisTicks: { color: gridColor },
       labels: { style: { colors: labelColor, fontSize: "10px" }, rotate: -45, hideOverlappingLabels: true },
-      tickAmount: Math.min(trendDates.length, 12),
+      // Thinned to the card's MEASURED width (the fleet-trend rule,
+      // utils/chartRange). A fixed 12 could not survive the longer label: this
+      // card is the full page column on a desktop and ~350px on a phone, where
+      // twelve «14th Sep. 2026» anchors are a smear. `charPx` is cut from the
+      // default 6 because these labels sit at -45°, so each one's HORIZONTAL
+      // footprint is only ~0.7 of its length — measure them as 6px wide and the
+      // axis thins to half what it can comfortably hold.
+      tickAmount: ticksForWidth(trendW, trendLabels.length, axisLabelPx(trendLabels, 4.5)),
       tooltip: { enabled: false },
     },
     yaxis: {
@@ -1283,7 +1298,7 @@ export default function Downtime() {
       </div>
 
       {/* Downtime trend over time */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
+      <div ref={trendRef} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
         <div className="flex items-start justify-between gap-3 mb-1">
           <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
             {t("downtime.trend")}

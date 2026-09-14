@@ -78,3 +78,39 @@ export function ticksForWidth(width, count, labelPx = 52, max = 12) {
   const fit = Math.min(max, Math.max(2, Math.floor((width - AXIS_GUTTER_PX) / labelPx)));
   return count > fit ? fit : undefined;
 }
+
+// ─── date-axis label format ─────────────────────────────────────────────────
+// «14th Sep. 2026» — THE spelling of a day on a chart axis, in ONE place, so a
+// format settled on one chart is one import away from every other and two
+// charts can never name the same day two ways.
+//
+// Deliberately ENGLISH in all four UI languages: the ordinal suffix has no
+// counterpart in Russian or Uzbek, so a localised month beside it («14th Сен.
+// 2026») reads worse than one consistent label. Revisit that HERE if it is
+// ever revisited, never at a call site.
+//
+// It accepts both shapes the payloads carry — «DD.MM.YYYY» (the downtime
+// register's own spelling) and «YYYY-MM-DD» — and returns anything it cannot
+// parse UNCHANGED: a formatter that blanks an axis is worse than one that does
+// nothing.
+const AXIS_MONTHS = ["Jan.", "Feb.", "Mar.", "Apr.", "May", "Jun.",
+                     "Jul.", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."];
+
+// 1st · 2nd · 3rd · 4th … and the 11–13 exception, which the last digit alone
+// cannot express (11th, not 11st).
+export function ordinal(n) {
+  const teens = n % 100;
+  if (teens >= 11 && teens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] || "th"}`;
+}
+
+export function axisDate(value) {
+  const s = String(value ?? "").trim();
+  let d, m, y;
+  if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s)) [d, m, y] = s.split(".");
+  else if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) [y, m, d] = s.split("-");
+  else return s;
+  const day = Number(d), mon = Number(m);
+  if (!day || day > 31 || mon < 1 || mon > 12) return s;
+  return `${ordinal(day)} ${AXIS_MONTHS[mon - 1]} ${y}`;
+}
