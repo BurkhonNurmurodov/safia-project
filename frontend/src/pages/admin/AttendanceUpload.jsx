@@ -813,9 +813,13 @@ export default function AttendanceUpload() {
           mapMut.mutate({
             permanent: true,
             changes: [{ verifix_code: cell.verifix_code, manager_id: cell.manager_id, included: cell.included }],
+          }, {
+            // Said once the write has STUCK: announced at the press, a refused
+            // save showed «made permanent» beside the error saying it was not.
+            // A skipped-units warning from the shared onSuccess keeps the floor.
+            onSuccess: (payload) => { if (!payload?.skipped_managers?.length) say(t("attUp.madePermanent")); },
           });
           setConfirm(null);
-          say(t("attUp.madePermanent"));
         },
       }),
     },

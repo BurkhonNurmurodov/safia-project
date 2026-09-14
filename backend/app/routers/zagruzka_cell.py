@@ -20,14 +20,17 @@ tables instead of the per-supervisor sheet imports:
     ─────────────  ──────────────────────────────  ──────────────────────────────
     prod_plan      production_data.prod_plan       Σ pp_products.labor_time
     prod_actual    production_data.prod_actual       × pp_daily.plan_qty|actual_qty ÷ 60
-                                                     over the cell's work centre,
-                                                     ÷ the number of cells naming
-                                                     that work centre
+                                                     over the cell's work centre:
+                                                     its own GROUP's lines + an
+                                                     even share of the ungrouped
+                                                     rest (services/wc_group.py)
     official_hc    headcount_data.official_hc      O. SONI (N): from 2026-09-02
                                                      the TYPED «Bugungi fakt» pin
                                                      (pp_work_center_daily.people)
-                                                     and nothing else; before that
-                                                     the pin, else ROUND(W × Q ÷ S)
+                                                     — its own group's pin, else an
+                                                     even share of the whole-centre
+                                                     one — and nothing else; before
+                                                     that the pin, else ROUND(W×Q÷S)
                                                      exactly as pp_calc derives it
     attendance     attendance (verifix, per unit)  the SAME `attendance` rows,
                                                      split per cell by
@@ -81,17 +84,25 @@ Decisions taken with the user (2026-07-31), all deliberate:
     N was the people who actually worked that cell that day; from
     `zagruzka_source.ZAGRUZKA_FROM` it is the cell's typed O. SONI, the same
     weight `idle_source` applies to the fleet figure.
-  * **A work centre named by several cells is SPLIT EVENLY between them**
-    (2026-09-09) — ten groups today, the largest six cells wide. `pp_daily`
-    and `pp_work_center_daily` are keyed by the work centre, so there is no
-    per-cell трудоёмкость and no per-cell «Bugungi fakt»; giving each cell the
-    whole work centre measured one line's entire production against a fraction
-    of its people (the ±1000% cells) and counted its minutes once per cell in
-    the roll-up. Evenly, never by attendance: `zagruzka_source.cell_people`
-    already splits the same typed number evenly for the ojidaniya weight, and
-    one split must not have two spellings. Such a cell's figures are SHARES and
-    say so — `wc_share` / `wc_cells` on every input row,
-    `diagnostics.shared_work_centers` for the groups.
+  * **A work centre named by several cells is handed out by GROUP** (2026-09-14,
+    the operator's directive; `services/wc_group.py` is THE rule). Each such
+    cell carries a letter, and so do the catalog lines and the typed pins, so a
+    cell reads its OWN group's трудоёмкость and «Bugungi fakt»; whatever no
+    cell's letter claims (an ungrouped line, a whole-centre pin, an orphan
+    letter) is split EVENLY between the work centre's cells. A work centre whose
+    cells carry no letter is therefore split exactly as it was from 2026-09-09
+    to 2026-09-14 — evenly, never by attendance, because
+    `zagruzka_source.cell_people` splits the same typed number the same way for
+    the ojidaniya weight and one split must not have two spellings. Handing each
+    cell the WHOLE work centre (before 2026-09-09) measured one line's entire
+    production against a fraction of its people — the ±1000% cells. Every input
+    row says which reading it got (`wc_split` none | group | even, `wc_share`,
+    `wc_cells`, `wc_group`) and the diagnostics name the work centres still
+    split evenly (`shared_work_centers` — lettered ones included until some
+    cell's letter is named by a line or a typed pin), the ones really handed out
+    by group (`grouped_work_centers`), their ungrouped lines and orphan letters.
+    Cells meet work centres through `wc_group.cells_by_wc` (unit + normalised
+    code), the match every other per-cell reader uses.
   * A missing input is a plain zero, not a marker: no ojidaniya row for a day
     means downtime 0, exactly like a genuinely clean day.
   * Attendance rows are filtered by the same ``is_direct_role`` rule as the fleet
@@ -125,12 +136,13 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
-from app.services import zagruzka_source
+from app.services import wc_group, zagruzka_source
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
 from app.services.kpi_calculator import compute_metrics, is_direct_role
-from app.services.pp_calc import _round_half_up, daily_key, line_keys, line_minutes, takes_sap
+from app.services.pp_calc import (_round_half_up, daily_key, line_keys, line_minutes,
+                                  line_minutes_by_group, takes_sap)
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
 router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
@@ -283,46 +295,55 @@ def cell_zagruzka(
         }
 
     # ── Cell → work centre. Cells with no SAP code can never join production. ──
-    wc_of_cell: dict[int, str] = {c.id: c.sap_code for c in cells if c.sap_code}
-    cells_without_sap = [c.verifix_code for c in cells if not c.sap_code]
-    wanted_wcs = set(wc_of_cell.values())
+    # Matched through `wc_group.cells_by_wc` — unit + normalised code, the key
+    # the register rule, the ojidaniya weight (`zagruzka_source.cell_pins`) and
+    # every other per-cell reader use — so a cell stored as «a2894» and a line or
+    # a pin under «A2894» are ONE work centre here too, never two of which one
+    # reads nothing. Every work-centre key below goes through `wc_code` for the
+    # same reason. `cells` is one unit's, so the unit half of the key is constant.
+    def wc_code(code) -> str:
+        return wc_group.wc_key(mgr.id, code)[1]
 
-    # ── A work centre named by SEVERAL cells is split evenly between them ─────
-    # Ten groups on the platform today, the largest six cells wide (Ibragimova
-    # Sayyora's A2894). Such a group is ONE production line the registry spells
-    # several ways: `pp_daily` and `pp_work_center_daily` are keyed by the WORK
-    # CENTRE, so there is no per-cell trudoyomkost and no per-cell «Bugungi
-    # fakt» to read, and nothing in the data says which of the cells produced
-    # what.
+    cells_at_wc: dict[str, list] = {
+        code: cs for (_mid, code), cs in wc_group.cells_by_wc(cells).items()}
+    wc_of_cell: dict[int, str] = {c.id: code for code, cs in cells_at_wc.items() for c in cs}
+    cells_without_sap = [c.verifix_code for c in cells if c.id not in wc_of_cell]
+    wanted_wcs = set(cells_at_wc)
+
+    # ── A work centre named by SEVERAL cells is handed out by GROUP ──────────
+    # Ten such work centres on the platform today, the largest six cells wide
+    # (Ibragimova Sayyora's A2894). Handing each cell the WHOLE work centre —
+    # what this did until v4.82.0 — measured one line's entire production
+    # against a fraction of its people (the ±1000% cells: 7222 and 7223 on
+    # A14310 read 938%, 2498%, 1644%) and counted A2894 six times over in the
+    # roll-up. From v4.82.0 each cell carried an even 1/N instead, because the
+    # trudoyomkost and the «Bugungi fakt» were keyed by the work centre alone
+    # and nothing said which cell produced what.
     #
-    # Handing each cell the WHOLE work centre — what this did until v4.82.0 —
-    # broke both halves of the page. The cell measured the line's entire
-    # production against a fraction of its people, so `labor_surplus` drove
-    # `effective_hc` toward zero and the row read ±1000% (7222 and 7223 on
-    # A14310: 938%, 2498%, 1644%). And the roll-up then added those minutes and
-    # that headcount once PER CELL, so A2894 was counted six times over and the
-    # unit's own row could not be reconciled against /zagruzka at all.
+    # From 2026-09-14 something does: a GROUP letter on the cell, on the catalog
+    # lines and on the typed pins (`services/wc_group.py`). Each cell reads its
+    # own group's minutes and pin, plus an even share of whatever no cell's
+    # letter claims — `wc_group.share`, the SAME rule
+    # `zagruzka_source.cell_people` applies to the ojidaniya weight, so this
+    # page and /downtime can never weigh one cell-day two different ways. A
+    # work centre whose cells carry no letter is still split evenly, and Σ over
+    # a work centre's cells is always what the work centre carried, so the
+    # roll-up counts it exactly once either way.
     #
-    # So each cell carries 1/N of its work centre. EVENLY, and deliberately not
-    # by attendance: `zagruzka_source.cell_people` already splits the same typed
-    # number evenly across the same cells for the ojidaniya weight, and two
-    # spellings of one split is how this page and /downtime would start
-    # answering one cell-day two different ways. The per-cell figure is
-    # therefore a SHARE, not a measurement, and is published as one
-    # (`wc_share` / `wc_cells` on every input row) so it can never be read as
-    # a number somebody typed for that cell.
-    cells_per_wc: dict[str, int] = defaultdict(int)
-    for _code in wc_of_cell.values():
-        cells_per_wc[_code] += 1
-
-    def _share(wc: Optional[str]) -> float:
-        return 1.0 / cells_per_wc[wc] if wc and cells_per_wc.get(wc) else 1.0
-
-    shared_wcs = {
-        wc: sorted(c.verifix_code or f"#{c.id}" for c in cells
-                   if wc_of_cell.get(c.id) == wc)
-        for wc, n in cells_per_wc.items() if n > 1
+    # `cells` is in verifix order, and so is each `cells_at_wc` list
+    # (`cells_by_wc` keeps the caller's order): `share` hands out by position,
+    # and a stable order is what keeps a row's figure from moving between two
+    # requests.
+    pos_in_wc: dict[int, int] = {
+        c.id: i for cs in cells_at_wc.values() for i, c in enumerate(cs)
     }
+    letters_at_wc: dict[str, list] = {
+        wc: [c.wc_group or None for c in cs] for wc, cs in cells_at_wc.items()
+    }
+    # A work centre is split by group the moment ONE of its cells carries a
+    # letter. Every other work centre keeps the even split, spelled the way it
+    # always was (below), so a unit nobody has grouped reads the same floats.
+    lettered_wcs = {wc for wc, ls in letters_at_wc.items() if any(ls)}
 
     # ── Trudoyomkost: Σ labor_time × qty ÷ 60, per (work centre, date) ─────────
     # labor_time lives on the catalog line (per SAP code + WC + operation); the
@@ -343,7 +364,7 @@ def cell_zagruzka(
     # on comparing two computations of one number rather than two rules.
     sap_off: set[tuple[str, str, str]] = set()
     for p in all_products:
-        if not p.active or p.work_center not in wanted_wcs:
+        if not p.active or wc_code(p.work_center) not in wanted_wcs:
             continue
         if p.labor_time is None:
             products_missing_labor.add(f"{p.work_center}/{p.sap_code or p.name}")
@@ -362,7 +383,7 @@ def cell_zagruzka(
         PPDaily.date >= date_from,
         PPDaily.date <= date_to,
     ).all():
-        if d.work_center not in wanted_wcs:
+        if wc_code(d.work_center) not in wanted_wcs:
             continue
         shared[(d.work_center, d.sap_code, d.date)] = (
             float((d.plan_override if d.plan_override is not None else d.plan_qty) or 0),
@@ -378,7 +399,7 @@ def cell_zagruzka(
         PPLineDaily.date >= date_from,
         PPLineDaily.date <= date_to,
     ).all():
-        if lo.work_center not in wanted_wcs:
+        if wc_code(lo.work_center) not in wanted_wcs:
             continue
         per_line[(lo.work_center, lo.qty_key, lo.date, lo.line_key)] = (
             (float(lo.plan_override) if lo.plan_override is not None else None),
@@ -386,8 +407,62 @@ def cell_zagruzka(
         )
 
     _pm, _am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN, sap_off)
-    plan_min: dict[tuple[str, date], float] = defaultdict(float, _pm)
-    actual_min: dict[tuple[str, date], float] = defaultdict(float, _am)
+    # Onto the normalised work centre. `line_minutes` joins a line to its
+    # quantities under the spelling both were stored with; two spellings of one
+    # work centre are then that work centre's minutes, SUMMED. A single spelling
+    # is copied as-is, so an ordinary unit reads the same floats.
+    plan_min: dict[tuple[str, date], float] = defaultdict(float)
+    actual_min: dict[tuple[str, date], float] = defaultdict(float)
+    for _src, _dst in ((_pm, plan_min), (_am, actual_min)):
+        for (_w, _d), _v in _src.items():
+            _k = (wc_code(_w), _d)
+            _dst[_k] = _dst[_k] + _v if _k in _dst else _v
+
+    # …and the same minutes one level down, under the GROUP each line names.
+    # `line_minutes_by_group` is `line_minutes`' own loop returning its other
+    # half, so Σ over a work centre's groups is the figure above. The per-work-
+    # centre figures stay: the pre-floor O. SONI suggestion and a cell's
+    # `wc_share` are statements about the whole work centre.
+    group_of = wc_group.sku_groups(all_products)
+    _pg, _ag = line_minutes_by_group(lines_by_key, shared, per_line, _SEC_PER_MIN,
+                                     sap_off, group_of)
+    plan_grp: dict[tuple[str, date], dict] = defaultdict(dict)
+    actual_grp: dict[tuple[str, date], dict] = defaultdict(dict)
+    for _src, _dst in ((_pg, plan_grp), (_ag, actual_grp)):
+        for (_w, _g, _d), _v in _src.items():
+            _slot = _dst[(wc_code(_w), _d)]
+            _slot[_g] = _slot[_g] + _v if _g in _slot else _v
+    # The letters the ACTIVE catalog hands each work centre. A cell whose letter
+    # is here reads its own group's minutes even on a day they come to 0 — that
+    # is still its own figure, not a share of somebody else's.
+    letters_on_lines: dict[str, set] = defaultdict(set)
+    for (_w, _qkey) in lines_by_key:
+        if group_of.get((_w, _qkey)):
+            letters_on_lines[wc_code(_w)].add(group_of[(_w, _qkey)])
+
+    _labor_cache: dict[tuple[str, date], tuple[list, list]] = {}
+
+    def labor_split(wc: str, d: date) -> tuple[list, list]:
+        """(plan per cell, actual per cell) of one work centre-day, in
+        `cells_at_wc[wc]` order. A cell nothing reaches reads 0, as before."""
+        k = (wc, d)
+        hit = _labor_cache.get(k)
+        if hit is not None:
+            return hit
+        n = len(cells_at_wc[wc])
+        if wc not in lettered_wcs:
+            # No cell carries a letter, so every line is unclaimed and the answer
+            # is the even split — spelled `total × 1/N` exactly as it was before
+            # groups existed, so an ungrouped unit reads the same FLOATS and not
+            # merely the same numbers.
+            sh = 1.0 / n
+            hit = ([plan_min.get(k, 0.0) * sh] * n, [actual_min.get(k, 0.0) * sh] * n)
+        else:
+            letters = letters_at_wc[wc]
+            hit = ([v or 0.0 for v in wc_group.share(letters, plan_grp.get(k, {}))],
+                   [v or 0.0 for v in wc_group.share(letters, actual_grp.get(k, {}))])
+        _labor_cache[k] = hit
+        return hit
 
     # ── O. SONI (N) per (work centre, day) — the formula's headcount ─────────
     # Same derivation as the Production dashboard (services/pp_calc.py), so the
@@ -398,23 +473,38 @@ def cell_zagruzka(
     wcs = db.query(PPWorkCenter).filter(
         PPWorkCenter.manager_id == mgr.id, PPWorkCenter.active.is_(True)
     ).all()
-    shtatka: dict[str, float] = {w.code: float(w.shtatka or 0) for w in wcs}
+    shtatka: dict[str, float] = {wc_code(w.code): float(w.shtatka or 0) for w in wcs}
     capacity: dict[str, Optional[float]] = {
-        w.code: (float(w.capacity) if w.capacity is not None else None) for w in wcs
+        wc_code(w.code): (float(w.capacity) if w.capacity is not None else None)
+        for w in wcs
     }
-    work_centers_without_cell = sorted(set(shtatka) - wanted_wcs)
+    work_centers_without_cell = sorted({w.code for w in wcs
+                                        if wc_code(w.code) not in wanted_wcs})
 
     shtatka_pin: dict[tuple[str, date], float] = {}
-    people_pin: dict[tuple[str, date], float] = {}
+    # {(work centre, day): {group|None: people}} — a group pin under its letter,
+    # the whole-centre pin under None (services/wc_group.py).
+    people_pin: dict[tuple[str, date], dict] = defaultdict(dict)
+    # Typed group pins per (work centre, letter) — counted for `orphan_groups`.
+    pins_by_letter: dict[tuple[str, str], int] = defaultdict(int)
     for o in db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == mgr.id,
         PPWorkCenterDaily.date >= date_from,
         PPWorkCenterDaily.date <= date_to,
     ).all():
-        if o.shtatka is not None:
-            shtatka_pin[(o.work_center, o.date)] = float(o.shtatka)
+        # The day's штатка pin lives on the whole-centre row only; a group row
+        # carries people and nothing else.
+        o_wc = wc_code(o.work_center)
+        if o.shtatka is not None and not o.wc_group:
+            shtatka_pin[(o_wc, o.date)] = float(o.shtatka)
         if o.people is not None:
-            people_pin[(o.work_center, o.date)] = float(o.people)
+            # Two spellings of one work centre's pin are SUMMED — the rule
+            # `zagruzka_source.cell_pins` applies — never one overwriting the other.
+            _slot = people_pin[(o_wc, o.date)]
+            _g = o.wc_group or None
+            _slot[_g] = _slot[_g] + float(o.people) if _g in _slot else float(o.people)
+            if o.wc_group:
+                pins_by_letter[(o_wc, o.wc_group)] += 1
 
     day_pm_pin: dict[date, float] = {}
     for s in db.query(PPDaySetting).filter(
@@ -428,32 +518,58 @@ def cell_zagruzka(
     _, _global_pm = _pp_constants(db)
     unit_pm = _unit_per_head(wcs, _global_pm)
 
-    def o_soni(wc: str, d: date) -> tuple[float, bool]:
-        """Effective O. SONI for one (work centre, day): (value, was_pinned).
-
-        From `zagruzka_source.ZAGRUZKA_FROM` the TYPED «Bugungi fakt» is the
-        only answer — the same rule the fleet загрузка now runs on, so the two
-        pages cannot divide by two different headcounts for one cell-day. With
-        nothing typed the cell has no загрузка at all (0 here, and
-        `hc_required` below turns that into an explicit blank rather than a
-        figure built out of the attendance correction).
-
-        Before the floor the derived suggestion `ROUND(W × Q ÷ S)` still
-        answers, exactly as it always did, so history is untouched.
-        """
-        pin = people_pin.get((wc, d))
-        if pin is not None:
-            return pin, True
-        if zagruzka_source.uses_production(d):
-            return 0.0, False
+    def derived_o_soni(wc: str, d: date) -> float:
+        """`ROUND(W × Q ÷ S)` for the WHOLE work centre — the pre-floor
+        suggestion, derived exactly as pp_calc derives it."""
         w_eff = shtatka_pin.get((wc, d), shtatka.get(wc, 0.0))
         pm_pin = day_pm_pin.get(d)
         cap = capacity.get(wc)
         use_cap = bool(cap and cap > 0) and pm_pin is None
         s_eff = cap if use_cap else w_eff * (pm_pin if pm_pin else unit_pm)
         if s_eff > 0 and w_eff > 0:
-            return float(_round_half_up(w_eff * plan_min.get((wc, d), 0.0) / s_eff)), False
-        return 0.0, False
+            return float(_round_half_up(w_eff * plan_min.get((wc, d), 0.0) / s_eff))
+        return 0.0
+
+    _hc_cache: dict[tuple[str, date], list] = {}
+
+    def o_soni(c: Cell, wc: str, d: date) -> tuple[float, bool]:
+        """Effective O. SONI for one CELL-day: (value, came_from_a_typed_pin).
+
+        A typed pin answers first: the cell's OWN group's pin, plus an even
+        share of whatever no cell's letter claims — `wc_group.share` with the
+        pin rule on, the very split `zagruzka_source.cell_people` hands the
+        ojidaniya weight. A work centre nobody grouped is `pin × 1/N`, spelled
+        as it always was.
+
+        From `zagruzka_source.ZAGRUZKA_FROM` that typed figure is the only
+        answer — the rule the fleet загрузка runs on, so the two pages cannot
+        divide by two different headcounts for one cell-day. A cell no pin
+        reaches has no загрузка at all (0 here, and `hc_required` below turns
+        that into an explicit blank rather than a figure built out of the
+        attendance correction).
+
+        Before the floor an untyped cell still reads the work centre's derived
+        suggestion split EVENLY, exactly as it always did, so history is
+        untouched — the groups arrived long after those days were read.
+        """
+        k = (wc, d)
+        split = _hc_cache.get(k)
+        if split is None:
+            n = len(cells_at_wc[wc])
+            vals = people_pin.get(k)
+            if not vals:
+                split = [None] * n
+            elif wc not in lettered_wcs and set(vals) == {None}:
+                split = [vals[None] * (1.0 / n)] * n
+            else:
+                split = wc_group.share(letters_at_wc[wc], vals, pins=True)
+            _hc_cache[k] = split
+        v = split[pos_in_wc[c.id]]
+        if v is not None:
+            return v, True
+        if zagruzka_source.uses_production(d):
+            return 0.0, False
+        return derived_o_soni(wc, d) * (1.0 / len(cells_at_wc[wc])), False
 
     # ── Attendance per (cell, date) ───────────────────────────────────────────
     # PRIMARY source: the DAILY «Davomat» single-file upload. Its rows land in
@@ -689,14 +805,34 @@ def cell_zagruzka(
         for d, key in zip(dates, date_keys):
             att_rows = att_by_cell.get((c.id, d), [])
             downtime = idle_by_cell.get((c.id, d.isoformat()), 0.0)
-            # 1/N of the work centre where several cells name it — see the
-            # `cells_per_wc` block above. N == 1 for every other cell, so this
-            # is the identity for all but the ten shared groups.
-            share = _share(wc)
-            p_plan = plan_min.get((wc, d), 0.0) * share if wc else 0.0
-            p_actual = actual_min.get((wc, d), 0.0) * share if wc else 0.0
-            hc_wc, hc_pinned = o_soni(wc, d) if wc else (0.0, False)
-            hc = hc_wc * share
+            # This cell's slice of its work centre — its own group plus an even
+            # share of the unclaimed rest where several cells name it (see the
+            # `cells_at_wc` block above); the whole work centre otherwise.
+            if wc:
+                _plans, _acts = labor_split(wc, d)
+                p_plan = _plans[pos_in_wc[c.id]]
+                p_actual = _acts[pos_in_wc[c.id]]
+                hc, hc_pinned = o_soni(c, wc, d)
+            else:
+                p_plan = p_actual = 0.0
+                hc, hc_pinned = 0.0, False
+            # WHICH reading the row got, for the page to say so. «group» is a
+            # cell whose letter the catalog or a typed pin names — its figures
+            # are its own; «even» is a share of a number nobody attributed to it.
+            n_wc = len(cells_at_wc[wc]) if wc else 1
+            if n_wc <= 1:
+                wc_split, share = "none", 1.0
+            elif wc not in lettered_wcs:
+                wc_split, share = "even", 1.0 / n_wc
+            else:
+                own = c.wc_group
+                wc_split = ("group" if own and (own in letters_on_lines.get(wc, ())
+                                                or own in people_pin.get((wc, d), {}))
+                            else "even")
+                # The fraction of the work centre's plan minutes this cell carries;
+                # 1/N on a day with none, which is what the even rule would hand out.
+                tot = plan_min.get((wc, d), 0.0)
+                share = p_plan / tot if tot > 0 else 1.0 / n_wc
 
             # Attendance is a REQUIRED input, not an optional one. With no rows
             # verifix_labor is 0, so the surplus term (0 − prod_actual) ÷ base is
@@ -769,15 +905,21 @@ def cell_zagruzka(
             }
             inputs[label][key] = {
                 "work_center": wc,
-                # How much of that work centre this cell carries, and how many
-                # cells it is shared with. 1.0 / 1 for all but the ten shared
-                # groups. Published because trud_plan, trud_actual and o_soni
-                # are then SHARES of a work-centre-level number and not facts
-                # measured for this cell — a distinction the reader cannot make
-                # from the figure alone, and the same one «Bugungi fakt» draws
-                # between a typed pin and a derived suggestion.
+                # The cell's group of that work centre (None without one), and
+                # which reading its figures got: «none» — alone at its work
+                # centre; «group» — its own group's minutes and/or pin; «even» —
+                # only an even share. Published because under «even»
+                # trud_plan, trud_actual and o_soni are SHARES of a work-centre-
+                # level number and not facts measured for this cell — a
+                # distinction the reader cannot make from the figure alone, and
+                # the same one «Bugungi fakt» draws between a typed pin and a
+                # derived suggestion. `wc_share` is the cell's fraction of the
+                # work centre's plan minutes that day, `wc_cells` how many cells
+                # stand at it.
+                "wc_group": c.wc_group or None,
+                "wc_split": wc_split,
                 "wc_share": round(share, 4),
-                "wc_cells": cells_per_wc.get(wc, 1) if wc else 1,
+                "wc_cells": n_wc,
                 "trud_plan": round(p_plan, 2),
                 "trud_actual": round(p_actual, 2),
                 "o_soni": hc,
@@ -974,6 +1116,50 @@ def cell_zagruzka(
     idle_overlap_min = sum(float(mt["overlap_min"] or 0) for mt in idle_meta.values())
     idle_excluded_min = sum(float(mt["excluded_min"] or 0) for mt in idle_meta.values())
 
+    # ── What the groups leave unattributed ───────────────────────────────────
+    # Both lists name something that is split EVENLY although a grouped work
+    # centre exists to stop that: an active line with no letter at a work centre
+    # whose cells are lettered, and a letter (on an active line, or on a typed
+    # pin in the range) that no cell of THIS unit at that work centre carries.
+    # Named because an even share and a group's own figure look identical in a
+    # grid; only these lists say which one a row is standing on.
+    carried = {wc: {g for g in ls if g} for wc, ls in letters_at_wc.items()}
+    ungrouped_lines: dict[str, int] = defaultdict(int)
+    orphan: dict[tuple[str, str], dict] = {}
+    for p in all_products:
+        if not p.active:
+            continue
+        p_wc = wc_code(p.work_center)
+        if not p.wc_group:
+            if p_wc in lettered_wcs:
+                ungrouped_lines[p_wc] += 1
+        elif p.wc_group not in carried.get(p_wc, ()):
+            orphan.setdefault((p_wc, p.wc_group), {"lines": 0, "pins": 0})["lines"] += 1
+    for (p_wc, g), n_pins in pins_by_letter.items():
+        if g not in carried.get(p_wc, ()):
+            orphan.setdefault((p_wc, g), {"lines": 0, "pins": 0})["pins"] += n_pins
+
+    # Which lettered work centres are REALLY handed out by group: some cell's
+    # letter is named by an active line (`letters_on_lines`, the test each row's
+    # `wc_split` reads) or by a typed pin in the range. Letters on the cells alone
+    # change no figure — every line and every whole-centre pin is still split
+    # evenly — so a lettered work centre nothing names stays in the «shared» list
+    # beside its 1/N rows instead of reading green as though each cell measured
+    # its own group. A lone cell is in neither list: nothing is split there.
+    named = {wc: {c.wc_group for c in cells_at_wc[wc]
+                  if c.wc_group and (c.wc_group in letters_on_lines.get(wc, ())
+                                     or pins_by_letter.get((wc, c.wc_group)))}
+             for wc in lettered_wcs}
+    shared_wcs = {
+        wc: sorted(c.verifix_code or f"#{c.id}" for c in cs)
+        for wc, cs in cells_at_wc.items() if len(cs) > 1 and not named.get(wc)
+    }
+    grouped_wcs = {
+        wc: sorted(wc_group.label(c.verifix_code or f"#{c.id}", c.wc_group)
+                   for c in cells_at_wc[wc])
+        for wc in lettered_wcs if len(cells_at_wc[wc]) > 1 and named[wc]
+    }
+
     return {
         "manager": {"id": mgr.id, "name": mgr.name, "shift": mgr.shift},
         "dates": date_keys,
@@ -990,12 +1176,15 @@ def cell_zagruzka(
                 # purpose — DB text is spelled by the viewer's own `tl`.
                 "leader": leader_names.get(c.leader_id),
                 "sap_code": c.sap_code,
+                # The cell's group of its work centre — the letter printed
+                # beside the code, never instead of it.
+                "wc_group": c.wc_group or None,
                 "name_uz": c.name_workshop_uz,
                 "name_uz_cyrl": c.name_workshop_uz_cyrl,
                 "name_ru": c.name_workshop_ru,
                 "name_en": c.name_workshop_en,
-                "shtatka": shtatka.get(c.sap_code) if c.sap_code else None,
-                "joined": bool(c.sap_code and c.sap_code in shtatka),
+                "shtatka": shtatka.get(wc_of_cell[c.id]) if c.id in wc_of_cell else None,
+                "joined": bool(c.id in wc_of_cell and wc_of_cell[c.id] in shtatka),
             }
             for c in cells
         ],
@@ -1035,14 +1224,37 @@ def cell_zagruzka(
             "ojidaniya_excluded_min": round(idle_excluded_min, 1),
             # Cells dropped because partial attendance drove effective_hc ≤ 0.
             "collapsed_effective_hc": collapsed_hc,
-            # Work centres named by more than one cell. Each such cell carries
-            # 1/N of the work centre's трудоёмкость and typed people, because
-            # neither is recorded per cell — so those rows are SHARES and the
-            # page says so rather than letting a split figure read as a
-            # measurement.
+            # Work centres named by more than one cell and still split EVENLY —
+            # no cell carries a letter, or the cells do and no line and no typed
+            # pin names one yet — so each cell carries 1/N of the work centre's
+            # трудоёмкость and typed people. Those rows are SHARES and the page
+            # says so rather than letting a split figure read as a measurement.
+            # `lettered` (present only when true, so an ungrouped unit's payload
+            # is unchanged) marks the second kind: the fix there is grouping the
+            # lines or typing per group, not lettering the cells.
             "shared_work_centers": [
-                {"work_center": wc, "cells": codes}
+                {"work_center": wc, "cells": codes,
+                 **({"lettered": True} if wc in lettered_wcs else {})}
                 for wc, codes in sorted(shared_wcs.items())
+            ],
+            # Work centres where some cell's letter IS named by a line or a
+            # typed pin, each cell as «7421 · A» — such a cell reads its own
+            # group's numbers (what its row's `wc_split` says, day by day).
+            "grouped_work_centers": [
+                {"work_center": wc, "cells": labels}
+                for wc, labels in sorted(grouped_wcs.items())
+            ],
+            # Active catalog lines with no letter at a grouped work centre:
+            # their minutes are split evenly between its cells.
+            "lines_without_group": [
+                {"work_center": wc, "lines": n}
+                for wc, n in sorted(ungrouped_lines.items())
+            ],
+            # Letters on active lines or typed pins in the range that no cell of
+            # this unit at that work centre carries — also split evenly.
+            "orphan_groups": [
+                {"work_center": wc, "group": g, "lines": v["lines"], "pins": v["pins"]}
+                for (wc, g), v in sorted(orphan.items())
             ],
             # Cell-days blanked from `zagruzka_source.ZAGRUZKA_FROM` on because
             # nobody typed «Bugungi fakt» for that work centre. Named, because
@@ -1054,7 +1266,7 @@ def cell_zagruzka(
             "cells_without_sap": cells_without_sap,
             "cells_without_work_center": sorted(
                 c.verifix_code for c in cells
-                if c.sap_code and c.sap_code not in shtatka
+                if c.id in wc_of_cell and wc_of_cell[c.id] not in shtatka
             ),
             "work_centers_without_cell": work_centers_without_cell,
             "products_missing_labor_time": sorted(products_missing_labor),

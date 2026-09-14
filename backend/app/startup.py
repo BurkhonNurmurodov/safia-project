@@ -769,13 +769,30 @@ def migrate_cell_supervisor_column() -> None:
     try:
         db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS manager_id INTEGER"))
         # Backfill only rows without a supervisor yet, from their leader's unit.
+        # The work-centre group letter is dropped in the same statement: a
+        # unit-less cell may not carry one (wc_group.check_cell), and one left
+        # behind would meet its own letter in the unit it rejoins on
+        # uq_cells_wc_group — rolling this whole backfill back on every boot,
+        # for every cell waiting on it. The column is checked because this runs
+        # before `add_wc_groups` on a box that has never had it.
+        has_group = db.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() "
+            "AND table_name = 'cells' AND column_name = 'wc_group'")).first() is not None
+        lettered = db.execute(text(
+            "SELECT c.verifix_code, c.wc_group FROM cells c JOIN role_profiles p ON c.leader_id = p.id "
+            "WHERE c.manager_id IS NULL AND p.manager_id IS NOT NULL AND c.wc_group IS NOT NULL"
+        )).all() if has_group else []
         db.execute(text(
-            "UPDATE cells c SET manager_id = p.manager_id "
-            "FROM role_profiles p "
+            "UPDATE cells c SET manager_id = p.manager_id"
+            + (", wc_group = NULL" if has_group else "") +
+            " FROM role_profiles p "
             "WHERE c.leader_id = p.id AND c.manager_id IS NULL "
             "AND p.manager_id IS NOT NULL"
         ))
         db.commit()
+        if lettered:
+            print(f"[startup] cell supervisor backfill cleared {len(lettered)} group letter(s) "
+                  f"on unit-less cells: {', '.join(f'{v} {g}' for v, g in lettered[:50])}")
     except Exception as exc:
         db.rollback()
         print(f"[startup] cell supervisor column migration skipped: {exc}")
@@ -5851,5 +5868,240 @@ def latin_twin_codes() -> None:
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
         print(f"[startup] latin twin codes skipped: {exc}")
+    finally:
+        db.close()
+
+
+# ── Work-centre GROUPS (services/wc_group.py) ────────────────────────────────
+
+CELL_GROUPS_AUTOLETTER_FLAG = "cell_groups_autoletter_2026_09_14_v1"
+
+
+def add_wc_groups() -> None:
+    """2026-09-14: a work centre's GROUP — one Latin letter on the cell, on the
+    catalog line and on the typed «Bugungi fakt» pin (services/wc_group.py).
+
+    Pure DDL, idempotent, no flag: `create_all` never ALTERs an existing table.
+    Three nullable columns, so every existing row reads «no group», which is
+    exactly what every row meant until now — nothing moves until a letter is
+    set.
+
+    The pin table's unique key WIDENS from (unit, date, work centre) to
+    (unit, date, work centre, group), and it has to be an EXPRESSION index over
+    COALESCE(wc_group, ''): Postgres treats NULLs as DISTINCT inside a unique
+    key, so a plain four-column constraint would accept two whole-centre pins
+    for one day. The index keeps the old constraint's name, so the constraint is
+    dropped first — both in ONE transaction, so a failure leaves the old
+    constraint standing. On a fresh box `create_all` has built the index
+    already and the DROP is a no-op (an index is not a constraint).
+
+    Placed right after `add_cell_shift_times` in both entrypoints: nothing
+    earlier selects these models.
+    """
+    db = SessionLocal()
+    try:
+        for stmt in (
+            "ALTER TABLE cells ADD COLUMN IF NOT EXISTS wc_group VARCHAR(1)",
+            "ALTER TABLE pp_products ADD COLUMN IF NOT EXISTS wc_group VARCHAR(1)",
+            "ALTER TABLE pp_work_center_daily ADD COLUMN IF NOT EXISTS wc_group VARCHAR(1)",
+            "ALTER TABLE pp_work_center_daily DROP CONSTRAINT IF EXISTS uq_pp_wc_daily_key",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_pp_wc_daily_key ON pp_work_center_daily "
+            "(manager_id, date, work_center, COALESCE(wc_group, ''))",
+        ):
+            db.execute(text(stmt))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] wc_group migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def letter_shared_cells() -> None:
+    """2026-09-14 (the operator's call): letter the cells that share a work
+    centre inside one unit — A, B, C … in verifix-code order — then put the
+    register rule's backstop index on `cells`.
+
+    Only a (unit, SAP code) carried by TWO OR MORE cells is lettered, and only
+    when NONE of them carries a letter yet: a cell alone at its work centre
+    stays unlettered (it has nobody to be told apart from), and a work centre an
+    admin has already begun lettering by hand is theirs — it is left and named.
+    Codes are compared the way `wc_group` compares them (whitespace stripped,
+    upper-cased).
+
+    Config only. No pin, catalog line or quantity is touched and no catalog line
+    gets a group, so every lettered cell keeps exactly the even share of the
+    minutes it reads today, and the typed headcount stays the whole-centre pin
+    split evenly until somebody types it per group (wc_group.share). It moves
+    no number by itself.
+
+    The flag is set in the SAME commit as the letters, so a failure leaves
+    everything as it was and the next boot tries again. Changing what this
+    letters needs a NEW flag key, or the old "already ran" mark makes the change
+    a no-op on every box that has booted once.
+
+    The index (`uq_cells_wc_group`: partial, unique over unit + normalised code +
+    letter) is created on every boot IF NOT EXISTS, whether or not the one-shot
+    ran; a failure — an admin-made duplicate — is printed, never raised. The
+    register refuses a duplicate on write (wc_group.check_cell); the index is
+    only the backstop.
+    """
+    from app.models import Cell
+    from app.services import action_log
+    from app.services.cell_lookup import norm_code
+    from app.services.wc_group import LETTERS
+
+    db = SessionLocal()
+    try:
+        if not db.query(AppSetting).filter_by(key=CELL_GROUPS_AUTOLETTER_FLAG).first():
+            names = {m.id: m.name for m in db.query(Manager.id, Manager.name).all()}
+            by_wc: dict = defaultdict(list)
+            for c in (db.query(Cell)
+                      .filter(Cell.manager_id.isnot(None), Cell.sap_code.isnot(None))
+                      .order_by(Cell.verifix_code, Cell.id).all()):
+                code = norm_code(c.sap_code)
+                if code:
+                    by_wc[(int(c.manager_id), code)].append(c)
+            lettered: list[str] = []
+            left: list[str] = []
+            n_cells = 0
+            for (mid, code), cs in sorted(
+                    by_wc.items(), key=lambda kv: ((names.get(kv[0][0]) or ""), kv[0][1])):
+                if len(cs) < 2:
+                    continue
+                who = names.get(mid) or f"#{mid}"
+                if any(c.wc_group for c in cs):
+                    left.append(f"{who} · {code}: already lettered by hand — "
+                                + ", ".join(f"{c.verifix_code}={c.wc_group or '—'}" for c in cs))
+                    continue
+                if len(cs) > len(LETTERS):
+                    left.append(f"{who} · {code}: {len(cs)} cells, more than there are letters")
+                    continue
+                for letter, c in zip(LETTERS, cs):
+                    c.wc_group = letter
+                n_cells += len(cs)
+                lettered.append(f"{who} · {code}: "
+                                + ", ".join(f"{c.verifix_code}={c.wc_group}" for c in cs))
+            db.add(AppSetting(key=CELL_GROUPS_AUTOLETTER_FLAG,
+                              value=datetime.now(timezone.utc).isoformat()))
+            db.commit()
+            for line in lettered:
+                print(f"[startup] wc groups lettered: {line}")
+            for line in left:
+                print(f"[startup] wc groups NOT lettered: {line}")
+            print(f"[startup] wc groups: lettered {n_cells} cell(s) in "
+                  f"{len(lettered)} shared work centre(s); {len(left)} left alone")
+            note = "; ".join(lettered)
+            action_log.record_system(
+                "org", "org.cell_groups_lettered",
+                target_kind="cell", target_name="wc_group",
+                details=[("count", n_cells), ("work_center", len(lettered)),
+                         ("skipped", len(left) or None),
+                         ("note", (note[:900] + "…") if len(note) > 900 else (note or None))],
+            )
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] wc group lettering skipped: {exc}")
+    finally:
+        db.close()
+
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_cells_wc_group ON cells "
+            "(manager_id, upper(regexp_replace(sap_code, '\\s', '', 'g')), wc_group) "
+            "WHERE wc_group IS NOT NULL AND sap_code IS NOT NULL AND manager_id IS NOT NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] uq_cells_wc_group index NOT created: {exc}")
+    finally:
+        db.close()
+
+
+def report_wc_groups() -> None:
+    """Boot self-check for work-centre groups, printed with the deploy output.
+
+    Five things the writers refuse but a race, an import from before this
+    shipped or a hand edit could still leave behind — each one named, because
+    this repo has no test suite and a push to `main` is a deploy:
+
+    * a cell whose stored SAP code is not in the normal form
+      (`cell_lookup.norm_code`) — every group reader matches the normal form,
+      but a plain string join elsewhere does not;
+
+    * a (unit, SAP code) shared by several cells where one carries no letter or
+      two carry the same one (the register rule);
+    * a (work centre, SKU) whose catalog lines carry different groups (the
+      catalog rule) — read as UNCLAIMED, i.e. the even split;
+    * active catalog lines naming a letter no cell of their unit carries at that
+      work centre — their minutes are shared evenly, not given to a cell;
+    * active ungrouped lines at a work centre whose cells ARE lettered — shared
+      evenly too, which is the honest default and worth knowing about.
+
+    It reports and changes nothing.
+    """
+    from app.models import Cell, PPProduct
+    from app.services import wc_group
+    from app.services.cell_lookup import norm_code
+
+    db = SessionLocal()
+    try:
+        names = {m.id: m.name for m in db.query(Manager.id, Manager.name).all()}
+        cells = db.query(Cell).filter(Cell.manager_id.isnot(None)).all()
+        lines_out: list[str] = []
+        # Unit-less cells too: the spelling is a fact about the code, and a cell
+        # rejoining a unit brings it with it.
+        for c in (db.query(Cell).filter(Cell.sap_code.isnot(None))
+                  .order_by(Cell.verifix_code).all()):
+            if c.sap_code != norm_code(c.sap_code):
+                who = (names.get(c.manager_id) or f"#{c.manager_id}") if c.manager_id else "no unit"
+                lines_out.append(f"{who} · cell {c.verifix_code}: SAP code stored as "
+                                 f"{c.sap_code!r}, matched as {norm_code(c.sap_code)}")
+        for cf in wc_group.cell_conflicts(cells):
+            who = names.get(cf["manager_id"]) or f"#{cf['manager_id']}"
+            if cf["unlettered"]:
+                lines_out.append(f"{who} · {cf['sap_code']}: cells {', '.join(cf['unlettered'])} "
+                                 f"carry no group beside {', '.join(cf['cells'])}")
+            for g, codes in cf["duplicates"].items():
+                lines_out.append(f"{who} · {cf['sap_code']}: group {g} on {', '.join(codes)}")
+        letters: dict = defaultdict(set)
+        for c in cells:
+            if c.wc_group and c.sap_code:
+                letters[(int(c.manager_id), norm_code(c.sap_code))].add(c.wc_group)
+        by_unit: dict = defaultdict(list)
+        for p in db.query(PPProduct).all():
+            by_unit[int(p.manager_id)].append(p)
+        n_grouped_lines = 0
+        for mid, ls in sorted(by_unit.items()):
+            who = names.get(mid) or f"#{mid}"
+            for cf in wc_group.line_conflicts(ls):
+                lines_out.append(f"{who} · {cf['work_center']} · {cf['sap_code'] or cf['name']}: "
+                                 f"lines carry groups {', '.join(g or '—' for g in cf['groups'])}")
+            orphan: dict = defaultdict(int)
+            ungrouped: dict = defaultdict(int)
+            for p in ls:
+                if p.wc_group:
+                    n_grouped_lines += 1
+                if not p.active:
+                    continue
+                have = letters.get((mid, norm_code(p.work_center)), set())
+                if p.wc_group and p.wc_group not in have:
+                    orphan[(p.work_center, p.wc_group)] += 1
+                elif not p.wc_group and have:
+                    ungrouped[p.work_center] += 1
+            for (wc, g), n in sorted(orphan.items()):
+                lines_out.append(f"{who} · {wc}: {n} line(s) name group {g}, which no cell carries")
+            for wc, n in sorted(ungrouped.items()):
+                lines_out.append(f"{who} · {wc}: {n} active line(s) carry no group — shared evenly")
+        n_lettered = sum(1 for c in cells if c.wc_group)
+        print(f"[startup] wc groups self-check: {n_lettered} lettered cell(s), "
+              f"{n_grouped_lines} grouped catalog line(s), {len(lines_out)} note(s)")
+        for line in lines_out[:200]:
+            print(f"[startup] wc groups: {line}")
+        if len(lines_out) > 200:
+            print(f"[startup] wc groups: … and {len(lines_out) - 200} more")
+    except Exception as exc:
+        print(f"[startup] wc groups self-check failed: {exc}")
     finally:
         db.close()

@@ -95,6 +95,9 @@ def get_cell_hours(db: Session = Depends(get_db), _: dict = Depends(_manage)):
             "id": c.id,
             "verifix_code": c.verifix_code,
             "sap_code": c.sap_code,
+            # The work-centre group letter (services/wc_group.py) — shown beside
+            # the code wherever a shared work centre makes the code ambiguous.
+            "wc_group": c.wc_group,
             "name_workshop_uz": c.name_workshop_uz,
             "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
             "name_workshop_ru": c.name_workshop_ru,

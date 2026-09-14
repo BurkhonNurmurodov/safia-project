@@ -17,6 +17,9 @@ import StyledSelect from "../components/ui/StyledSelect";
 import LangTextInput from "../components/ui/LangTextInput";
 import ProfileAvatar, { useMyProfileDetails } from "../components/ui/ProfileAvatar";
 import CellLink from "../components/ui/CellLink";
+import CellFormModal from "../components/CellFormModal";
+import GroupBadge from "../components/ui/GroupBadge";
+import { GROUP_LETTERS, wcGroupLabel } from "../utils/wcGroup";
 import { SectionHead } from "../components/ui/DataTable";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import EmptyState from "../components/ui/EmptyState";
@@ -543,11 +546,15 @@ function MyProfile() {
               <InfoRow icon={LayoutGrid} label={t("profile.cells")} top>
                 <span className="inline-flex flex-wrap gap-1 justify-end">
                   {me.cells.map((c) => (
-                    <CellLink key={c.verifix_code} id={c.id}
-                          className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
-                          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-                      {c.verifix_code}
-                    </CellLink>
+                    <span key={c.verifix_code} className="inline-flex items-center gap-1">
+                      <CellLink id={c.id}
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
+                            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                        {c.verifix_code}
+                      </CellLink>
+                      {/* A cell sharing its work centre carries a group letter. */}
+                      <GroupBadge group={c.wc_group} title={wcGroupLabel(c.sap_code, c.wc_group)} />
+                    </span>
                   ))}
                 </span>
               </InfoRow>
@@ -819,7 +826,9 @@ function EditCard({ ptype, item, data, notify, onDone }) {
       setNewCell(null);
       setNewCellError("");
     },
-    onError: (e) => setNewCellError(e?.response?.data?.detail || t("admin.profiles.error")),
+    // The register form's own reading of a refusal, so a group-rule answer is
+    // said in the admin's language here too.
+    onError: (e) => setNewCellError(CellFormModal.errorText(e, t)),
   });
 
   const busy = updateMut.isPending || switchMut.isPending;
@@ -829,7 +838,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
 
   function openCellCreate(code) {
     setNewCell({
-      verifix_code: (code || "").trim(), sap_code: "",
+      verifix_code: (code || "").trim(), sap_code: "", wc_group: "",
       name_workshop_uz: "", name_workshop_uz_cyrl: "",
       name_workshop_ru: "", name_workshop_en: "",
     });
@@ -842,6 +851,9 @@ function EditCard({ ptype, item, data, notify, onDone }) {
     inlineCellCreateMut.mutate({
       verifix_code: code,
       sap_code: newCell.sap_code || "",
+      // "" = none; a group needs the SAP code it qualifies AND the unit it is
+      // unique inside (services/wc_group.py) — without either it is refused.
+      wc_group: (newCell.sap_code || "").trim() && form.manager_id ? (newCell.wc_group || "") : "",
       name_workshop_uz: newCell.name_workshop_uz || "",
       name_workshop_uz_cyrl: newCell.name_workshop_uz_cyrl || "",
       name_workshop_ru: newCell.name_workshop_ru || "",
@@ -1086,6 +1098,17 @@ function EditCard({ ptype, item, data, notify, onDone }) {
               onChange={(e) => setNewCell((c) => ({ ...c, sap_code: e.target.value }))}
               className={inputCls}
               style={inputStyle}
+            />
+          </FormField>
+          <FormField label={t("admin.profiles.colGroup")} hint={t("admin.profiles.cellGroupHint")}>
+            <StyledSelect
+              value={(newCell.sap_code || "").trim() && form.manager_id ? (newCell.wc_group || "") : ""}
+              onChange={(v) => setNewCell((c) => ({ ...c, wc_group: v }))}
+              disabled={!((newCell.sap_code || "").trim() && form.manager_id)}
+              options={[
+                { value: "", label: "—" },
+                ...GROUP_LETTERS.map((l) => ({ value: l, label: l })),
+              ]}
             />
           </FormField>
           <FormField label={t("admin.profiles.colWorkshop")}>

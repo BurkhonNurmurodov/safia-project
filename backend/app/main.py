@@ -83,6 +83,7 @@ async def lifespan(app: FastAPI):
         notify_operator_education_lesson,
         report_shared_sap_cells_raw_xlsx,
         add_pp_product_auto_fill,
+        add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
@@ -157,6 +158,7 @@ async def lifespan(app: FastAPI):
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     add_cell_shift_times()
+    add_wc_groups()
     add_education_thumb_url()
     add_idle_interval_client_key()
     add_leader_task_cell()
@@ -165,6 +167,7 @@ async def lifespan(app: FastAPI):
     migrate_dispute_stages()
     merge_brigadir_tasks_page()
     create_action_log()
+    letter_shared_cells()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()
     migrate_idle_interval_status()
@@ -337,6 +340,7 @@ async def lifespan(app: FastAPI):
     # still switch on, a spent floor, or weights that no longer total 100 —
     # the last of which silently re-bases every leader's percentage.
     report_leader_task_catalog()
+    report_wc_groups()
     # ⚠ TEMPORARY one-shot — remove this line and its module in the NEXT
     # version. Inert until a unit is named in `PURGE_TEST_UNITS`. Runs last, so
     # every table it deletes from is guaranteed to exist by now.

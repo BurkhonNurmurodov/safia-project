@@ -21,6 +21,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Field from "../components/ui/FormField";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
+import GroupBadge from "../components/ui/GroupBadge";
 import { useToast } from "../components/ui/Toast";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -33,6 +34,8 @@ import { useFactorySection } from "../components/ui/FactorySelect";
 import { useTranslit } from "../utils/transliterate";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { exportXlsx } from "../utils/exportXlsx";
+import { GROUP_LETTERS, wcGroupLabel } from "../utils/wcGroup";
+import { cellLabel } from "../utils/cellName";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 // Timezone-safe: build/shift dates from calendar parts, never via toISOString()
@@ -85,15 +88,16 @@ const hexToRgba = (hex, a) => {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
 
-// «Команда» → canonical workshop name: the backend resolves each work-center
-// code against the cells registry (code → cells.sap_code) and rides the result
-// on work_centers[].cell. Pick the viewer language, fall back across the rest.
-const CELL_LANGS = ["ru", "uz", "uz_cyrl", "en"];
-const pickCellName = (cell, lang) => {
-  if (!cell) return "";
-  for (const l of [lang, ...CELL_LANGS]) if (cell[l]) return cell[l];
-  return "";
-};
+// «Команда» → the registry cell standing there: the backend resolves each
+// work-center code against the cells registry (code → cells.sap_code) and rides
+// the result on work_centers[].cell (and groups[].cell). As a TOOLTIP a cell is
+// its CODE — with the group letter it carries — and the leader answerable for
+// it, never its workshop name («A cell is its CODE», utils/cellName.js). The chip
+// it sits on prints the work centre's code, so this is what says WHICH cell the
+// link opens. `group` defaults to the cell's own letter.
+const cellTitle = (cell, tl, group = cell?.wc_group) => (cell?.verifix_code
+  ? cellLabel(wcGroupLabel(cell.verifix_code, group), cell.leader ? tl(cell.leader) : "")
+  : "");
 
 // Column definitions — labels/hints resolved via t() at render (see COLS map below).
 // Order follows the ABC Excel ("Sheet1 ...") with ONE deliberate departure: ПЛАН
@@ -108,6 +112,10 @@ const COLS = [
   { key: "name", labelKey: "production.col.name", align: "left" },
   { key: "labor", labelKey: "production.col.labor", align: "center", hintKey: "production.col.laborHint" },
   { key: "wc", labelKey: "production.col.wc", align: "center" },
+  // The line's GROUP at its Команда (services/wc_group.py) — beside the Команда
+  // because it is the second half of that answer: which of the cells standing
+  // at one work centre this line's minutes belong to.
+  { key: "wc_group", labelKey: "production.col.group", align: "center", hintKey: "production.col.groupHint" },
   { key: "people", labelKey: "production.col.people", align: "center" },
   { key: "vyp", labelKey: "production.col.vyp", align: "center", hintKey: "production.col.vypHint" },
   { key: "plan", labelKey: "production.col.plan", align: "center", edit: true, hintKey: "production.col.planHint" },
@@ -137,7 +145,59 @@ const LOCKED_COLS = new Set(["name"]);
 // must be able to see the answer. Applied only while a profile has never saved
 // a visibility choice — a saved `hidden` list, an empty one included («Show
 // all»), is that person's answer and stands.
-const defaultHidden = (isAdmin) => (isAdmin ? ["op"] : ["op", "autofill"]);
+// «Guruh» follows the same reasoning: only an admin sets a line's group, and the
+// Команда chip already carries the letter beside the code for everybody else.
+const defaultHidden = (isAdmin) => (isAdmin ? ["op"] : ["op", "autofill", "wc_group"]);
+// The group column exists only for a unit that HAS groups — on every other unit
+// it would be a column of «—» and a picker row that toggles nothing, and a unit
+// nobody has grouped must read exactly as it did before groups existed.
+const GROUP_COL = "wc_group";
+// Letters are served sorted, but a letter appended as an `extra` is not.
+const byLetter = (a, b) => GROUP_LETTERS.indexOf(a) - GROUP_LETTERS.indexOf(b);
+// A work centre is grouped when the dashboard lists groups under it (contract:
+// its cells carry a letter, a line there carries one, or a group pin exists).
+// That answers «are there letters to SHOW», never «is there a group to TYPE».
+const isGrouped = (w) => Array.isArray(w?.groups) && w.groups.length > 0;
+// Is the centre's «Кол-во» typed per group? Only while a CELL carries one of its
+// letters. A centre lettered by ORPHANS alone (an unlettered cell, lines lettered
+// «A» from an ABC file) has no group anybody can type — an orphan row is
+// read-only and the backend refuses a new pin under its letter — so reading it as
+// grouped left its «Bugungi fakt» typable nowhere on this page while pp_calc went
+// on reading the whole-centre pin. Such a centre takes the ordinary input and its
+// letters stay on screen as display-only badges. This decides every INPUT shape
+// and every typed/complete rule; `isGrouped` is left deciding only the display.
+const typesPerGroup = (w) => isGrouped(w) && w.groups.some((g) => !g.orphan);
+// Is a work centre's «Кол-во» a FACT for the whole centre, off the SAVED pins?
+// Not typed per group (`typesPerGroup`): its pin — pp_calc raises the flag for a
+// stored orphan pin as well, since that pin answers for the centre. Typed per
+// group: once any group pin stands, every group a CELL
+// carries needs its own — an ORPHAN letter has no cell and nobody to count, so
+// it can never be what keeps a centre incomplete — and with no group pin, the
+// whole-centre pin (the cells share it). `people_overridden` alone read a centre
+// with one of two groups typed as fully typed: its ΣN and СР. ЗАГРУЖЕННОСТЬ lost
+// their «*» while the «Кол-во» tab marked the same centre incomplete. ONE rule
+// for the KPIs, the команда cards and that tab.
+const typedCentre = (w) => {
+  if (!typesPerGroup(w)) return !!w.people_overridden;
+  if (w.groups.some((g) => g.people_overridden)) {
+    return w.groups.filter((g) => !g.orphan).every((g) => g.people_overridden);
+  }
+  return w.people_whole != null;
+};
+// The draft key of one group's «Кол-во» — a work-centre code never holds «|».
+const gKey = (wc, group) => `${wc}|${group}`;
+// A group badge's tooltip: the cell carrying the letter, named by its CODE
+// («7421 · A», wcGroupLabel — the order /cells and the backend print) and its
+// leader — or, for an ORPHAN letter, that no cell of the unit carries it.
+const groupTitle = (t, g, tl) => (g?.orphan ? t("production.group.orphan")
+  : g?.cell?.verifix_code ? cellTitle(g.cell, tl, g.group) : g?.group);
+// Why an untyped group's figure is not a typed fact. An untyped group a cell
+// carries reads its SHARE of what the centre holds (wc_group.share) — the
+// whole-centre pin while no group is typed — so that is named; an orphan has no
+// cell at all; anything else is simply not entered.
+const groupUntypedTitle = (t, w, g) => (g.orphan ? t("production.group.orphan")
+  : g.people != null && w.people_whole != null && !w.groups.some((x) => x.people_overridden)
+    ? t("production.group.wholeCell") : t("production.peopleNotEnteredCell"));
 
 // Sort accessor per column — mirrors how each cell derives its value, so a header
 // click sorts on exactly what the row shows. Returns null for "missing" cells
@@ -150,6 +210,7 @@ const sortVal = (r, key) => {
     case "name":         return r.name;
     case "labor":        return r.has_labor ? r.labor_time : null;
     case "wc":           return r.work_center;
+    case "wc_group":     return r.wc_group ?? null;
     case "people":       return r.people;
     case "vyp":          return r.total_labor ? r.actual_labor / r.total_labor : null;
     case "fact":         return r.actual_qty;
@@ -400,7 +461,14 @@ function ModalInput({ value, onChange, type = "text", className = "", placeholde
 // modals so both stay identical. `draft` = { sap_code, name, labor_time,
 // work_center, op, auto_fill }; `setDraft` is the curried (key) => (value) => …
 // updater. A blank фаза keeps the cell following the day's фаза upload.
-function CatalogFields({ draft, setDraft }) {
+//
+// `groupOpts` = [{ group, code }] — the letters this line may carry at the
+// Команда the draft names right now (its cells' letters, plus the line's own),
+// each with the verifix code of the cell that carries it (a cell is its CODE, so
+// that is the one fact that tells the reader which cell a letter is). Empty ⇒
+// the field is not drawn at all: a work centre nobody has grouped offers only
+// «—», and a control with one answer is a control that says nothing.
+function CatalogFields({ draft, setDraft, groupOpts = [] }) {
   const { t } = useLang();
   // The auto-fill switch appears only on a CODED line, because only a coded one
   // has a choice to make: the фаза file reaches a position through its SAP code,
@@ -432,6 +500,32 @@ function CatalogFields({ draft, setDraft }) {
           <ModalInput value={draft.op ?? ""} onChange={setDraft("op")} className="font-mono" />
         </Field>
       </div>
+      {groupOpts.length > 0 && (
+        // The hint is the consequence, not a description: the backend writes a
+        // group onto EVERY line of this SKU at this Команда ("siblings follow"),
+        // so choosing it here moves rows the operator is not looking at.
+        <Field label={t("production.col.group")} hint={t("production.group.fieldHint")}>
+          <StyledSelect
+            value={draft.wc_group ?? ""}
+            onChange={setDraft("wc_group")}
+            options={[
+              { value: "", label: "—" },
+              ...groupOpts.map(({ group, code }) => ({
+                value: group,
+                label: (
+                  <span className="inline-flex items-center gap-1.5">
+                    <GroupBadge group={group} />
+                    {code
+                      ? <span className="font-mono">{code}</span>
+                      : <span style={{ color: "var(--text-4)" }}>{t("production.group.noCell")}</span>}
+                  </span>
+                ),
+                title: code ? wcGroupLabel(code, group) : group,
+              })),
+            ]}
+          />
+        </Field>
+      )}
       {hasCode && (
         <Field label={t("production.autofill.label")} hint={t("production.autofill.hint")}>
           <SegmentedToggle
@@ -588,13 +682,61 @@ const roundHalfUp = (x) => Math.floor(x + 0.5);
 // the table. Tall enough to clear the inputs (34px + padding).
 const PT_ROW = "h-[48px]";
 
+// The rows ONE grouped work centre contributes to POST /api/production/staffing.
+// `groupPeople` = [[letter, people|null], …] — the value each group should hold.
+//
+// Normally that is a header row carrying the centre's штатка (people null) plus
+// one row per group: once the body names a group, the groups are authoritative
+// and the whole-centre «Кол-во» is cleared. The ONE exception is a centre that
+// still holds a whole-centre figure while no group has been typed, on the
+// server or in this save: it goes back as the ordinary row carrying that figure.
+// Sending the grouped shape there would erase a number somebody typed on a save
+// that was about something else — a штатка, another team — and the hint under
+// the card already asks for it to be retyped per group. Typing any group moves
+// the centre onto the grouped shape, which is also what the backend does to the
+// whole-centre figure the moment a group pin is written.
+//
+// Shared by the tab's Save and by its undo snapshot, so the inverse of a save is
+// always built by the same rule as the save itself.
+function groupedStaffRows(w, shtatka, groupPeople) {
+  const anyGroup = w.groups.some((g) => g.people_overridden) || groupPeople.some(([, v]) => v != null);
+  if (w.people_whole != null && !anyGroup) {
+    return [{ work_center: w.work_center, people: w.people_whole, shtatka }];
+  }
+  return [
+    { work_center: w.work_center, people: null, shtatka },
+    ...groupPeople.map(([group, people]) => ({ work_center: w.work_center, group, people })),
+  ];
+}
+
+// The rows a centre NOT typed per group contributes (`typesPerGroup` false) —
+// ungrouped, or lettered by orphans alone. The ordinary row, with one exception
+// that CLEARS: a stored orphan pin still answers for such a centre (pp_calc folds
+// it into `people`, and the box seeds from that), while a whole-centre row with
+// no people leaves group pins standing — the backend drops them only for a typed
+// figure — so an emptied box would spring back to the very number just removed.
+// Emptying goes out as the grouped shape instead, every stored letter null: a
+// clear is never refused for a letter no cell carries, only a NEW pin is.
+// Shared by the tab's Save and its undo snapshot, like `groupedStaffRows`.
+function centreStaffRows(w, people, shtatka) {
+  const stored = isGrouped(w) ? w.groups.filter((g) => g.people_overridden) : [];
+  if (people == null && stored.length) {
+    return [
+      { work_center: w.work_center, people: null, shtatka },
+      ...stored.map((g) => ({ work_center: w.work_center, group: g.group, people: null })),
+    ];
+  }
+  return [{ work_center: w.work_center, people, shtatka }];
+}
+
 // `canEditEff` gates the EFFICIENCY box separately from the cell rows: it pins
 // the whole brigadir's unit for the day, so a leader — whose page is cut to
 // their own cells — may type their cells' headcount but never re-time cells
 // that are not theirs. Their save carries rows only; the backend refuses a
 // `productive_min` from a cell-scoped caller and leaves the unit's pin alone.
 function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hint, onSave, saving, savedAt }) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
+  const { tl } = useTranslit();
   const shiftMin = Number(constants?.shift_min) || 480;
   const curPm = Number(constants?.productive_min) || 408;
   const pctOf = (min) => Math.round((min / shiftMin) * 1000) / 10;   // 408 → 85
@@ -607,12 +749,25 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   // Re-seed only when the SAVED state changes (date switch, brigadir switch, or
   // our own save landing) — a background refetch returning identical pins must
   // not wipe what the user is in the middle of typing.
-  const seedKey = wcs.map((w) => `${w.work_center}:${w.people_overridden ? w.people : ""}:${w.shtatka_overridden ? w.shtatka : ""}`).join("|");
+  // A centre typed per group keeps its typed figures on its GROUPS, so they are
+  // part of the saved state too — a group pin landing must re-seed like any
+  // other. An orphan-only centre's box seeds from `people`, which already moves
+  // with a stored orphan pin, so its letters need no draft of their own.
+  const seedKey = wcs.map((w) => `${w.work_center}:${w.people_overridden ? w.people : ""}:${w.shtatka_overridden ? w.shtatka : ""}`
+    + (typesPerGroup(w) ? w.groups.map((g) => `/${g.group}=${g.people_overridden ? g.people : ""}`).join("") : "")).join("|");
   useEffect(() => {
-    setDraft(Object.fromEntries(wcs.map((w) => [w.work_center, {
-      people: w.people_overridden ? String(w.people) : "",
-      shtatka: w.shtatka_overridden ? String(w.shtatka) : "",
-    }])));
+    setDraft(Object.fromEntries(wcs.flatMap((w) => [
+      [w.work_center, {
+        people: w.people_overridden ? String(w.people) : "",
+        shtatka: w.shtatka_overridden ? String(w.shtatka) : "",
+      }],
+      // One draft per group, keyed `${wc}|${group}`. Only «Кол-во»: a group has
+      // no штатка of its own — the day's штатка pin lives on the whole centre.
+      ...(typesPerGroup(w) ? w.groups.map((g) => [gKey(w.work_center, g.group), {
+        people: g.people_overridden ? String(g.people) : "",
+        shtatka: "",
+      }]) : []),
+    ])));
   }, [seedKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setEffPct(String(pctOf(curPm))); setAppliedPm(curPm); }, [curPm]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -626,12 +781,16 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   // previewed per-head minutes — which is exactly what saving the % makes the
   // backend do, so the preview can never promise a number Save won't deliver.
   // (W then cancels out: N = ROUND(Q / pm).)
-  const suggest = (w, pm) => {
-    const W = Number(w.shtatka_cfg) || 0;
-    const Q = Number(w.total_labor) || 0;
+  // A GROUP row runs the same formula with its own share of the minutes as Q and
+  // the work centre's W — the group has no штатка of its own, and the backend's
+  // `people_calc` for a group is exactly ROUND(W × total_labor ÷ S).
+  const suggestQ = (shtatka, labor, pm) => {
+    const W = Number(shtatka) || 0;
+    const Q = Number(labor) || 0;
     const S = W * pm;
     return S > 0 && W > 0 ? roundHalfUp((W * Q) / S) : 0;
   };
+  const suggest = (w, pm) => suggestQ(w.shtatka_cfg, w.total_labor, pm);
 
   const setCell = (code, key) => (v) =>
     setDraft((d) => ({ ...d, [code]: { ...(d[code] || { people: "", shtatka: "" }), [key]: v } }));
@@ -647,8 +806,15 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
     (canEditEff && pctValid && Math.abs(previewPm - curPm) > 0.001) ||
     wcs.some((w) => {
       const d = draft[w.work_center] || { people: "", shtatka: "" };
-      return String(w.people_overridden ? w.people : "") !== String(d.people).trim() ||
-             String(w.shtatka_overridden ? w.shtatka : "") !== String(d.shtatka).trim();
+      const shtDirty = String(w.shtatka_overridden ? w.shtatka : "") !== String(d.shtatka).trim();
+      // A centre typed per group has no «Кол-во» input of its own — its groups
+      // are. An ORPHAN group is read-only, so it can never make the tab dirty.
+      if (typesPerGroup(w)) {
+        return shtDirty || w.groups.some((g) => !g.orphan &&
+          String(g.people_overridden ? g.people : "")
+            !== String((draft[gKey(w.work_center, g.group)] || { people: "" }).people).trim());
+      }
+      return shtDirty || String(w.people_overridden ? w.people : "") !== String(d.people).trim();
     });
 
   const apply = () => { if (pctValid) setAppliedPm(previewPm); };
@@ -657,9 +823,18 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
     if (canEditEff) setAppliedPm(previewPm);   // committing also lands it in the preview
     onSave({
       ...(canEditEff ? { productive_min: Math.round(previewPm * 100) / 100 } : {}),
-      rows: wcs.map((w) => {
+      rows: wcs.flatMap((w) => {
         const d = draft[w.work_center] || { people: "", shtatka: "" };
-        return { work_center: w.work_center, people: num(d.people), shtatka: num(d.shtatka) };
+        if (typesPerGroup(w)) {
+          // An ORPHAN group goes back exactly as stored: the backend refuses a
+          // new or changed pin for a letter no cell carries, and this tab never
+          // offers one — re-sending the stored value (or null) is accepted.
+          return groupedStaffRows(w, num(d.shtatka),
+            w.groups.map((g) => [g.group, g.orphan
+              ? (g.people_overridden ? g.people : null)
+              : num((draft[gKey(w.work_center, g.group)] || {}).people)]));
+        }
+        return centreStaffRows(w, num(d.people), num(d.shtatka));
       }),
     });
   };
@@ -674,8 +849,37 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   // (see `people_typed_only` in services/pp_calc.py); `w.people` itself is
   // already null when nothing was typed, so the read-only branch needs no
   // second rule.
+  // A work centre TYPED PER GROUP has no «Кол-во» typed on the centre — it is the sum
+  // of its groups, exactly as the backend resolves `work_centers[].people`. The
+  // one exception mirrors `groupedStaffRows`: a whole-centre figure nobody has
+  // yet retyped per group still counts, because the загрузка still reads it.
+  // `mode` says which of the two the number is (for its tooltip) and `complete`
+  // whether anything it stands for is missing (for the «*»).
+  // The SUM runs over every typed group, orphans included — the backend's ΣN
+  // counts an orphan pin too — while COMPLETENESS asks only about the groups a
+  // cell carries (`typedCentre`): an orphan has no people anybody could type, so
+  // demanding one left a «*» that only a phantom headcount could clear.
+  const groupedPeople = (w) => {
+    const typedOnServer = w.groups.some((g) => g.people_overridden);
+    if (!canEdit) {
+      if (typedOnServer) return { value: w.people ?? null, mode: "sum", complete: typedCentre(w) };
+      if (w.people_whole != null) return { value: w.people_whole, mode: "whole", complete: true };
+      return { value: null, mode: "sum", complete: false };
+    }
+    const vals = w.groups.map((g) => [g, num((draft[gKey(w.work_center, g.group)] || {}).people)]);
+    if (vals.some(([, v]) => v != null)) {
+      return {
+        value: vals.reduce((s, [, v]) => s + (v ?? 0), 0),
+        mode: "sum",
+        complete: vals.every(([g, v]) => g.orphan || v != null),
+      };
+    }
+    if (w.people_whole != null && !typedOnServer) return { value: w.people_whole, mode: "whole", complete: true };
+    return { value: null, mode: "sum", complete: false };
+  };
   const effOf = (w, key) => {
     if (key === "people") {
+      if (typesPerGroup(w)) return groupedPeople(w).value ?? 0;
       if (!canEdit) return Number(w.people) || 0;
       return num((draft[w.work_center] || {}).people) ?? 0;
     }
@@ -696,10 +900,21 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
   // NULL`). While editing, what counts as typed is what is in the INPUT rather
   // than what was last saved, so the JAMI mark follows the operator's typing
   // instead of lagging a save behind it.
+  // A grouped centre counts as typed only when EVERY group is (or the one
+  // whole-centre figure still stands): one group left blank is one cell's people
+  // missing from the sum, and the JAMI «*» must say so.
   const isTyped = (w, key) =>
-    canEdit
-      ? num((draft[w.work_center] || {})[key]) != null
-      : (key === "people" ? w.people_overridden : w.shtatka_overridden);
+    key === "people" && typesPerGroup(w)
+      ? groupedPeople(w).complete
+      : canEdit
+        ? num((draft[w.work_center] || {})[key]) != null
+        : (key === "people" ? w.people_overridden : w.shtatka_overridden);
+  // Centres typed per group whose «Кол-во» was typed for the WHOLE centre and
+  // not yet per group. Read off the saved state: it is a fact about what is
+  // stored. Never an orphan-only centre: there the whole figure IS the answer,
+  // and the hint would ask for per-group numbers no row lets anybody type.
+  const wholeOnly = wcs.filter((w) => typesPerGroup(w) && w.people_whole != null
+    && !w.groups.some((g) => g.people_overridden)).map((w) => w.work_center);
   const allTyped = (key) => wcs.every((w) => isTyped(w, key));
   const anyUntyped = wcs.length > 0 && (!allTyped("people") || !allTyped("shtatka"));
 
@@ -707,10 +922,52 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
     const c = wcColor(code);
     // A registry-matched WC chip opens the cell's page; unmatched stays inert.
     return (
-      <CellLink id={cell?.id} className="font-mono text-xs font-bold px-2 py-0.5 rounded-md" title={pickCellName(cell, lang) || code}
+      <CellLink id={cell?.id} className="font-mono text-xs font-bold px-2 py-0.5 rounded-md" title={cellTitle(cell, tl) || code}
         style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}`, textDecorationColor: "currentColor" }}>{code}</CellLink>
     );
   };
+  // A group row: the centre's chip — linked to the cell carrying the letter, and
+  // ONLY that cell: an orphan letter has none and its chip stays inert, never
+  // borrowing the centre's first cell (which carries another letter) — and the
+  // letter beside it. Indented, so the rows read as parts of the centre above
+  // them; an ORPHAN letter (no cell of the unit carries it) is the warning tone.
+  const groupLabel = (w, g) => (
+    <span className="inline-flex items-center gap-1.5 pl-4">
+      {chip(w.work_center, g.cell)}
+      <GroupBadge group={g.group} tone={g.orphan ? "warn" : "neutral"} title={groupTitle(t, g, tl)} />
+    </span>
+  );
+  // The two faces of a typed pin, shared by the centre rows and the group rows.
+  // Editable: typed is gold and bold, blank is muted — the placeholder is what an
+  // EMPTY box will count as. Read-only: the same vocabulary plus a «*» the legend
+  // under the card explains (see the read-only branch below for why).
+  const pinInput = (value, onChange, placeholder) => (
+    <input
+      value={value}
+      type="number"
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-20 rounded-lg px-2 py-1.5 text-sm text-center outline-none tabular-nums"
+      style={{
+        background: "var(--bg-inner)", border: "1px solid var(--border-md)",
+        color: String(value).trim() === "" ? "var(--text-2)" : "var(--brand-text)",
+        fontWeight: String(value).trim() === "" ? 400 : 700,
+      }}
+    />
+  );
+  // `digits` 1 for a GROUP: an untyped group reads its even SHARE of the centre
+  // (wc_group.share), a fraction of a person. `mark` false drops the «*» where
+  // nothing is missing — an orphan group has nobody to type.
+  const pinRead = (value, typed, untypedTitle, { digits = 0, mark = true } = {}) => (
+    <span
+      className="tabular-nums"
+      title={typed ? undefined : untypedTitle}
+      style={{ color: typed ? "var(--brand-text)" : "var(--text-3)", fontWeight: typed ? 700 : 400 }}
+    >
+      {fmt(value, digits)}
+      {!typed && mark && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+    </span>
+  );
 
   return (
     <>
@@ -775,12 +1032,27 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
               ))}
             </tr>
           ))}
+          {/* A grouped centre is a header row plus one row per group — in BOTH
+              tables, in the same order, so the two cards stay row-for-row level.
+              The header keeps the centre's own W and suggestion; a group row has
+              no W of its own («—») and suggests off its share of the minutes. */}
           {!loading && wcs.map((w) => (
-            <tr key={w.work_center} className={PT_ROW}>
-              <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
-              <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>{fmt(w.shtatka_cfg, 0)}</td>
-              <td className="px-3 py-2 text-center tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{fmt(suggest(w, appliedPm), 0)}</td>
-            </tr>
+            <Fragment key={w.work_center}>
+              <tr className={PT_ROW}>
+                <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
+                <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>{fmt(w.shtatka_cfg, 0)}</td>
+                <td className="px-3 py-2 text-center tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{fmt(suggest(w, appliedPm), 0)}</td>
+              </tr>
+              {isGrouped(w) && w.groups.map((g) => (
+                <tr key={gKey(w.work_center, g.group)} className={PT_ROW}>
+                  <td className="px-3 py-2">{groupLabel(w, g)}</td>
+                  <td className="px-3 py-2 text-center" style={{ color: "var(--text-4)" }}>—</td>
+                  <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>
+                    {fmt(suggestQ(w.shtatka_cfg, g.total_labor, appliedPm), 0)}
+                  </td>
+                </tr>
+              ))}
+            </Fragment>
           ))}
           {!loading && wcs.length > 0 && (
             <tr className={PT_ROW}>
@@ -819,8 +1091,13 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
             ))}
             {!loading && wcs.map((w) => {
               const d = draft[w.work_center] || { people: "", shtatka: "" };
+              // `grouped` = typed per group: the header «Кол-во» is their sum.
+              // An orphan-only centre gets the ordinary input instead.
+              const grouped = typesPerGroup(w);
+              const gp = grouped ? groupedPeople(w) : null;
               return (
-                <tr key={w.work_center} className={PT_ROW}>
+                <Fragment key={w.work_center}>
+                <tr className={PT_ROW}>
                   <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
                   {/* The placeholder is what an EMPTY box will count as. Штатка
                       falls back to the configured roster, so it previews it;
@@ -830,19 +1107,20 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
                       this page stopped doing. */}
                   {[["people", null], ["shtatka", w.shtatka_cfg]].map(([key, fallback]) => (
                     <td key={key} className="px-3 py-1 text-center">
-                      {canEdit ? (
-                        <input
-                          value={d[key]}
-                          type="number"
-                          placeholder={fmt(fallback, 0)}
-                          onChange={(e) => setCell(w.work_center, key)(e.target.value)}
-                          className="w-20 rounded-lg px-2 py-1.5 text-sm text-center outline-none tabular-nums"
-                          style={{
-                            background: "var(--bg-inner)", border: "1px solid var(--border-md)",
-                            color: String(d[key]).trim() === "" ? "var(--text-2)" : "var(--brand-text)",
-                            fontWeight: String(d[key]).trim() === "" ? 400 : 700,
-                          }}
-                        />
+                      {key === "people" && grouped ? (
+                        // A grouped centre's «Кол-во» is typed on its groups and
+                        // only SUMMED here, so it is never an input and never
+                        // gold: nobody typed this number, they typed its parts.
+                        <span
+                          className="tabular-nums font-semibold"
+                          title={t(gp.mode === "whole" ? "production.group.wholeCell" : "production.group.sumHint")}
+                          style={{ color: "var(--text-3)" }}
+                        >
+                          {fmt(gp.value, 0)}
+                          {!gp.complete && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                        </span>
+                      ) : canEdit ? (
+                        pinInput(d[key], setCell(w.work_center, key), fmt(fallback, 0))
                       ) : (
                         // READ-ONLY — a closed day, or a viewer who may not type
                         // here. This printed `w.people` bare while that field
@@ -859,23 +1137,47 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
                         // vocabulary as the editable branch above — typed is
                         // gold and bold, anything else is muted — plus a «*»
                         // the legend under the card explains.
-                        <span
-                          className="tabular-nums"
-                          title={isTyped(w, key) ? undefined
-                            : t(key === "people" ? "production.peopleNotEnteredCell"
-                                                 : "production.peopleNotTypedCell")}
-                          style={{
-                            color: isTyped(w, key) ? "var(--brand-text)" : "var(--text-3)",
-                            fontWeight: isTyped(w, key) ? 700 : 400,
-                          }}
-                        >
-                          {fmt(key === "people" ? w.people : w.shtatka, 0)}
-                          {!isTyped(w, key) && <sup style={{ color: "var(--text-4)" }}>*</sup>}
-                        </span>
+                        pinRead(
+                          key === "people" ? w.people : w.shtatka,
+                          isTyped(w, key),
+                          t(key === "people" ? "production.peopleNotEnteredCell"
+                                             : "production.peopleNotTypedCell"),
+                        )
                       )}
                     </td>
                   ))}
                 </tr>
+                {/* One row per group: its own «Кол-во» (the group pin), and «—»
+                    for ШТАТКА — the day's штатка belongs to the whole centre and
+                    stays on the header row above. An ORPHAN group is never an
+                    input: no cell carries its letter, so there is nobody to count
+                    and the backend refuses a new pin for it — it shows what is
+                    stored and says why it cannot be typed. Listed for EVERY
+                    lettered centre, as the suggestion card lists them, so the two
+                    cards stay row-for-row level: under an orphan-only centre's
+                    ordinary input they are its display-only letters. */}
+                {isGrouped(w) && w.groups.map((g) => {
+                  const k = gKey(w.work_center, g.group);
+                  const gd = draft[k] || { people: "" };
+                  return (
+                    <tr key={k} className={PT_ROW}>
+                      <td className="px-3 py-2">{groupLabel(w, g)}</td>
+                      <td className="px-3 py-1 text-center">
+                        {canEdit && !g.orphan
+                          ? pinInput(gd.people, setCell(k, "people"), fmt(null, 0))
+                          : g.orphan
+                            ? (
+                              <span title={t("production.group.orphanLocked")}>
+                                {pinRead(g.people, g.people_overridden, t("production.group.orphanLocked"), { digits: 1, mark: false })}
+                              </span>
+                            )
+                            : pinRead(g.people, g.people_overridden, groupUntypedTitle(t, w, g), { digits: 1 })}
+                      </td>
+                      <td className="px-3 py-2 text-center" style={{ color: "var(--text-4)" }}>—</td>
+                    </tr>
+                  );
+                })}
+                </Fragment>
               );
             })}
             {/* mirrors the suggestion's JAMI row — same position, so the two
@@ -908,6 +1210,17 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
         {!loading && anyUntyped && (
           <p className="text-[11px] leading-relaxed mt-2.5" style={{ color: "var(--text-3)" }}>
             {t("production.peopleNotTyped")}
+          </p>
+        )}
+
+        {/* A centre that became grouped after its «Кол-во» was typed for the
+            whole of it. That figure still counts, but the groups cannot share it
+            out by anything but an even guess — which is what grouping replaces —
+            so the page asks for it per group, by code. Both states: a closed day
+            carries the same stale figure and is read back as the record. */}
+        {!loading && wholeOnly.length > 0 && (
+          <p className="text-[11px] leading-relaxed mt-2.5" style={{ color: "#a16207" }}>
+            {t("production.group.wholeTyped").replace("{codes}", wholeOnly.join(", "))}
           </p>
         )}
 
@@ -1139,6 +1452,13 @@ export default function Production() {
   // spelling as `canSeeRaw` / `canEditCatalog` above, so one word means one
   // thing on this page.
   const isAdmin = auth?.role === "admin";
+  // Does the unit on screen carry any group at all — a centre that lists groups,
+  // or a line with a letter? Read off the dashboard, so the «Guruh» column and
+  // the group controls appear the day a letter lands and not a moment before.
+  const hasGroups = useMemo(
+    () => (data?.work_centers ?? []).some(isGrouped) || (data?.rows ?? []).some((r) => r.wc_group),
+    [data],
+  );
   const { data: savedCols } = useQuery({
     queryKey: ["ui-pref", COL_PREF_KEY],
     queryFn: () => api.get(`/api/ui-prefs/${COL_PREF_KEY}`).then((r) => r.data?.value),
@@ -1170,20 +1490,46 @@ export default function Production() {
     const hidden = Array.isArray(saved?.hidden)
       ? saved.hidden.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k))
       : defaultHidden(isAdmin).filter((k) => keys.includes(k) && !LOCKED_COLS.has(k));
+    // A saved list written before «Guruh» existed never answered anything about
+    // it, so it gets the default like a profile that never saved. Only this one
+    // column: every picker commit writes the full order (the reconcile above), so
+    // a saved order WITHOUT it can only predate it — and widening the test to the
+    // older columns would move choices people already live with.
+    if (Array.isArray(saved?.hidden) && !savedOrder.includes(GROUP_COL)
+        && defaultHidden(isAdmin).includes(GROUP_COL) && !hidden.includes(GROUP_COL)) {
+      hidden.push(GROUP_COL);
+    }
     return { order, hidden };
   }, [colsLocal, savedCols, isAdmin]);
   const saveCols = useMutation({
     mutationFn: (value) => api.put(`/api/ui-prefs/${COL_PREF_KEY}`, { value }),
   });
   const onColsChange = (value) => {
-    setColsLocal(value);
-    qc.setQueryData(["ui-pref", COL_PREF_KEY], value);
-    saveCols.mutate(value);
+    // On a unit with no groups the picker is never shown the «Guruh» column, and
+    // its hide-all / show-all / drag commits rebuild the lists from the columns
+    // it WAS shown — so they would quietly drop the reader's own choice for it.
+    // Put that half back exactly as the config had it.
+    let next = value;
+    if (!hasGroups) {
+      const hidden = value.hidden.filter((k) => k !== GROUP_COL);
+      if (colCfg.hidden.includes(GROUP_COL)) hidden.push(GROUP_COL);
+      const order = value.order.filter((k) => k !== GROUP_COL);
+      const at = colCfg.order.indexOf(GROUP_COL);
+      const before = at > 0 ? colCfg.order[at - 1] : null;
+      if (at === 0) order.unshift(GROUP_COL);
+      else if (before && order.includes(before)) order.splice(order.indexOf(before) + 1, 0, GROUP_COL);
+      // else: the reconcile above seats it where COLS puts it
+      next = { order, hidden };
+    }
+    setColsLocal(next);
+    qc.setQueryData(["ui-pref", COL_PREF_KEY], next);
+    saveCols.mutate(next);
   };
   const visibleCols = useMemo(() => {
     const hiddenSet = new Set(colCfg.hidden);
-    return colCfg.order.map((k) => COLS.find((c) => c.key === k)).filter((c) => c && !hiddenSet.has(c.key));
-  }, [colCfg]);
+    return colCfg.order.map((k) => COLS.find((c) => c.key === k))
+      .filter((c) => c && !hiddenSet.has(c.key) && (hasGroups || c.key !== GROUP_COL));
+  }, [colCfg, hasGroups]);
   // Every colSpan on this table counts the pick column too, or the skeleton, the
   // empty row and the action strip each stop one cell short of the header.
   const colCount = visibleCols.length + (canEditCatalog ? 1 : 0);
@@ -1201,14 +1547,17 @@ export default function Production() {
   // Staffing-card pin (O.soni / штатка) for one work center on the SELECTED date.
   // Admin-only; both fields ride every call, null = drop the pin and go back to
   // the computed N / configured штатка. Other dates and the config are untouched.
+  // The modal is closed by `saveWcEdit` once its WHOLE save has landed, not
+  // here: a grouped centre saves as a chain of calls (one per group, then the
+  // штатка), and closing on the first success would hide a failure in the next.
   const wcOverride = useMutation({
     mutationFn: (body) => api.post("/api/production/wc-override", { date, ...body }, { params: managerParam }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["production", date] });
-      setWcEdit(null);
     },
     onError: (e) => toast.error(writeErr(e)),
   });
+  const [wcSaving, setWcSaving] = useState(false);
   // «Odamlar soni» tab — the day's efficiency + every cell's actual O.soni /
   // штатка in ONE commit, after which the whole page recomputes off them.
   // A catalog write that moves a line onto another SAP key fills that key's
@@ -1223,8 +1572,15 @@ export default function Production() {
           .replace("{r}", String(f.rows)).replace("{d}", String(f.days))
       : "";
   };
+  // A group written on one line is written on every line of its SKU at that
+  // Команда ("siblings follow", services/wc_group.py). Those rows are not the
+  // ones the operator picked, so the save says how many more it moved.
+  const siblingsText = (res) => {
+    const n = res?.data?.group_siblings ?? 0;
+    return n > 0 ? " · " + t("production.group.siblings").replace("{n}", String(n)) : "";
+  };
   const sapFilled = (res) => {
-    const s = fillText(res);
+    const s = fillText(res) + siblingsText(res);
     if (s) toast.success(s.slice(3));
   };
   const staffing = useMutation({
@@ -1290,7 +1646,7 @@ export default function Production() {
       const skipped = res?.data?.skipped_no_code ?? 0;
       setBulkDraft(null);
       setCatPick([]);
-      const fill = fillText(res);
+      const fill = fillText(res) + siblingsText(res);
       if (skipped > 0) {
         toast.warning(`${t("production.bulk.done").replace("{n}", String(n))} · `
           + t("production.bulk.skippedNoCode").replace("{n}", String(skipped)) + fill);
@@ -1325,11 +1681,15 @@ export default function Production() {
   // an entry for a write that never landed offers to reverse a change that never
   // happened. The refusal itself is already on screen: every one of these
   // mutations toasts `writeErr` from its own onError.
+  // Answers whether the write landed, so a caller holding a dialog open can close
+  // it on success and leave it standing on a refusal.
   const tracked = async ({ label, forward, back }) => {
     try {
       await forward();
       history.push({ label, undo: back, redo: forward });
+      return true;
     } catch { /* the mutation's own onError already said why */ }
+    return false;
   };
 
   const doUndo = async () => {
@@ -1402,13 +1762,47 @@ export default function Production() {
     () => Object.fromEntries(wcs.filter((w) => w.cell).map((w) => [w.work_center, w.cell])),
     [wcs]
   );
-  const wcName = (code) => pickCellName(wcCell[code], lang);
+  // A work centre's tooltip: the cell its chip opens, by CODE and leader.
+  const wcTitle = (code) => cellTitle(wcCell[code], tl) || code;
+  // A work centre as a visible LABEL (the Команда filter): its code, plus the
+  // leader answerable for it when exactly ONE cell stands there and nobody
+  // grouped it — with several, the first cell's leader would name the wrong
+  // people. Never the workshop name («A cell is its CODE»).
+  const wcLabel = (code) => {
+    const w = wcs.find((x) => x.work_center === code);
+    const lead = w?.cell?.leader && !isGrouped(w) && (w.cells_n ?? 1) <= 1 ? tl(w.cell.leader) : "";
+    return cellLabel(code, lead);
+  };
+  // `${work_center}|${letter}` → that group's entry on its centre (cell, orphan),
+  // so a positions row can link its chip to the ONE cell its letter names.
+  const groupOf = useMemo(
+    () => Object.fromEntries(wcs.flatMap((w) => (isGrouped(w)
+      ? w.groups.map((g) => [gKey(w.work_center, g.group), g]) : []))),
+    [wcs]
+  );
+  // The letters a catalog line may carry at the Команда its draft names RIGHT
+  // NOW — so moving the draft to another Команда offers that centre's cells —
+  // plus any letter the line already has (`extra`), even where no cell carries
+  // it, or the select could not show the value it is about to send. Each comes
+  // with the verifix code of the cell carrying it.
+  const groupOptsFor = (wcCode, extra = []) => {
+    const code = String(wcCode ?? "").trim().toUpperCase();
+    const w = wcs.find((x) => String(x.work_center ?? "").trim().toUpperCase() === code);
+    const opts = isGrouped(w)
+      ? w.groups.filter((g) => !g.orphan).map((g) => ({ group: g.group, code: g.cell?.verifix_code ?? null }))
+      : [];
+    for (const g of extra) if (g && !opts.some((o) => o.group === g)) opts.push({ group: g, code: null });
+    return opts.sort((a, b) => byLetter(a.group, b.group));
+  };
   const totals = data?.totals ?? {};
   // Teams whose «Кол-во» nobody typed for this date. `people_overridden` is the
   // ONE thing that tells a typed figure from an absent one — `w.people` is null
   // for the second, but a typed 0 is a real answer and must not read as
   // missing, so the flag is what is counted and never the value.
-  const peopleUntyped = wcs.filter((w) => !w.people_overridden).length;
+  // A grouped centre counts as typed by `typedCentre` — every group a cell
+  // carries, or the whole-centre pin — never by `people_overridden`, which is
+  // true the moment ONE group is typed.
+  const peopleUntyped = wcs.filter((w) => !typedCentre(w)).length;
   const unknown = data?.unknown_skus ?? [];
   const missingLabor = data?.missing_labor_count ?? 0;
   // A leader owns CELLS, not a unit: the backend narrows this whole page —
@@ -1502,7 +1896,9 @@ export default function Production() {
   useEffect(() => { setCatPick([]); setBulkDraft(null); }, [managerParam.manager_id]);
   // `auto_fill: "keep"` is the third state a boolean cannot carry — "leave every
   // row as it is" — which is what a blank text field means beside it.
-  const openBulk = () => setBulkDraft({ work_center: "", labor_time: "", auto_fill: "keep" });
+  // `wc_group` carries the same "keep" state, and "" for «no group» — a blank
+  // cannot mean "leave alone" here, because clearing a group is a real answer.
+  const openBulk = () => setBulkDraft({ work_center: "", labor_time: "", auto_fill: "keep", wc_group: "keep" });
   const bulkWc = (bulkDraft?.work_center ?? "").trim();
   const bulkLaborRaw = String(bulkDraft?.labor_time ?? "").trim();
   const bulkLabor = bulkLaborRaw === "" ? null : Number(bulkLaborRaw.replace(",", "."));
@@ -1511,14 +1907,32 @@ export default function Production() {
   // nothing to say — the primary action stays disabled rather than sending a
   // call the backend answers 400 to.
   const bulkAuto = bulkDraft?.auto_fill ?? "keep";
+  // The letters the bulk editor may write: those a CELL carries at EVERY work
+  // centre the picked lines will stand at — the Команда typed in this form, or
+  // else each line's own. The union of the unit's letters offered «F» for lines
+  // at a centre whose cells stop at «D», and the backend writes it onto those
+  // lines and their SKU siblings unchecked, i.e. orphans no cell reads.
+  const bulkCentres = bulkWc
+    ? [bulkWc]
+    : [...new Set(rows.filter((r) => pickSet.has(r.id)).map((r) => r.work_center))];
+  const bulkLetters = bulkCentres.length
+    ? bulkCentres.map((c) => groupOptsFor(c).map((o) => o.group))
+        .reduce((acc, ls) => acc.filter((x) => ls.includes(x)))
+    : [];
+  // A letter that dropped out of that set (the Команда box changed under it)
+  // reads as «unchanged» and is never sent.
+  const bulkGroupRaw = bulkDraft?.wc_group ?? "keep";
+  const bulkGroup = bulkGroupRaw === "keep" || bulkGroupRaw === "" || bulkLetters.includes(bulkGroupRaw)
+    ? bulkGroupRaw : "keep";
   const canSaveBulk = !!bulkDraft && catPick.length > 0 && !bulkLaborBad
-    && (bulkWc !== "" || bulkLabor != null || bulkAuto !== "keep");
+    && (bulkWc !== "" || bulkLabor != null || bulkAuto !== "keep" || bulkGroup !== "keep");
   const saveBulk = () => {
     if (!canSaveBulk) return;
     const body = { ids: catPick };
     if (bulkWc) body.work_center = bulkWc;
     if (bulkLabor != null) body.labor_time = bulkLabor;
     if (bulkAuto !== "keep") body.auto_fill = bulkAuto === "sap";
+    if (bulkGroup !== "keep") body.wc_group = bulkGroup;   // "" clears
     bulkCatalog.mutate(body);
   };
 
@@ -1530,7 +1944,7 @@ export default function Production() {
     active: wcSel.length > 0,
     display: `${wcSel.length} ${t("filter.selected2")}`,
     render: () => <OptsFilter opts={wcOptions} sel={wcSel} onChange={setWcSel}
-      render={(code) => (wcName(code) ? `${code} — ${wcName(code)}` : code)} />,
+      render={wcLabel} />,
   }];
   const filterActiveCount = wcSel.length > 0 ? 1 : 0;
 
@@ -1560,11 +1974,17 @@ export default function Production() {
         ? Number(data.constants.productive_min)
         : null,
     }),
-    rows: wcs.map((w) => ({
-      work_center: w.work_center,
-      people: w.people_overridden ? w.people : null,
-      shtatka: w.shtatka_overridden ? w.shtatka : null,
-    })),
+    // Every centre is restored through the same rule its save used, from the
+    // pins as they stood: a centre typed per group from its groups, or the
+    // whole-centre figure nobody had yet retyped per group; any other from its
+    // figure. A stored ORPHAN pin a save removed comes back as that same figure
+    // on the whole centre — the backend refuses a new pin under a letter no cell
+    // carries, and the centre reads one number either way.
+    rows: wcs.flatMap((w) => (typesPerGroup(w)
+      ? groupedStaffRows(w, w.shtatka_overridden ? w.shtatka : null,
+          w.groups.map((g) => [g.group, g.people_overridden ? g.people : null]))
+      : centreStaffRows(w, w.people_overridden ? w.people : null,
+          w.shtatka_overridden ? w.shtatka : null))),
   });
   const saveStaffing = (body) => {
     const prev = staffingSnapshot();
@@ -1629,17 +2049,47 @@ export default function Production() {
               : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>}
           </td>
         );
-      case "wc":
+      case "wc": {
+        // A grouped line names ONE of the cells at its Команда, so the chip
+        // links to that cell and carries the letter beside it; a line with no
+        // group renders exactly the chip it always did.
+        const g = r.wc_group ? groupOf[gKey(r.work_center, r.wc_group)] : null;
+        // WCs ARE cells (Cell.sap_code): a registry match links to the cell's
+        // page; unmatched codes stay inert chips. A LETTERED line links only to
+        // the cell carrying its letter — an orphan letter has none and stays
+        // inert rather than opening the centre's first cell, which is another
+        // group's — and its tooltip names the cell the link actually opens.
+        const linked = r.wc_group ? g?.cell : wcCell[r.work_center];
+        const link = (
+          <CellLink id={linked?.id} className="font-mono text-[11px] px-1.5 py-0.5 rounded" title={cellTitle(linked, tl, r.wc_group || linked?.wc_group) || r.work_center}
+            style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}`, textDecorationColor: "currentColor" }}>{r.work_center}</CellLink>
+        );
         return (
           <td key={key} className="px-3 py-2 text-center">
-            {/* WCs ARE cells (Cell.sap_code): a registry match links to the
-                cell's page; unmatched codes stay inert chips. */}
-            <CellLink id={wcCell[r.work_center]?.id} className="font-mono text-[11px] px-1.5 py-0.5 rounded" title={wcName(r.work_center) || r.work_center}
-              style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}`, textDecorationColor: "currentColor" }}>{r.work_center}</CellLink>
+            {r.wc_group ? (
+              <span className="inline-flex items-center gap-1">
+                {link}
+                <GroupBadge group={r.wc_group} tone={g?.orphan ? "warn" : "neutral"}
+                  title={g ? groupTitle(t, g, tl) : r.wc_group} />
+              </span>
+            ) : link}
           </td>
         );
+      }
+      case "wc_group": {
+        const g = r.wc_group ? groupOf[gKey(r.work_center, r.wc_group)] : null;
+        return (
+          <td key={key} className="px-3 py-2 text-center">
+            {r.wc_group
+              ? <GroupBadge group={r.wc_group} tone={g?.orphan ? "warn" : "neutral"} title={g ? groupTitle(t, g, tl) : r.wc_group} />
+              : <span style={{ color: "var(--text-4)" }}>—</span>}
+          </td>
+        );
+      }
       case "people":
-        return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.people, 0)}</td>;
+        // One decimal: a line of an untyped group reads that group's SHARE of
+        // the centre, a fraction of a person (integers print unchanged).
+        return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.people, 1)}</td>;
       case "vyp":
         return <td key={key} className="px-3 py-2 text-center"><VypCell value={vyp} /></td>;
       // QtyCell IS the <td> — the spreadsheet editor fills the cell, so the cell
@@ -1751,14 +2201,44 @@ export default function Production() {
       // the STORED flag, not `sap_filled` — a code-less row answers "not filled"
       // while its switch is untouched, and the switch is what this seeds.
       auto_fill: r.auto_fill !== false,
+      wc_group: r.wc_group ?? "",
     });
     setEditRow(r);
   };
   const setDraft = (k) => (v) => setCatDraft((d) => ({ ...d, [k]: v }));
+  const sameWc = (a, b) =>
+    String(a ?? "").trim().toUpperCase() === String(b ?? "").trim().toUpperCase();
+  // The letters a CELL carries at a Команда — the only ones a catalog line may be
+  // GIVEN there. Any other letter makes the line, and every SKU sibling the
+  // backend writes it onto, an orphan no cell reads.
+  const cellLettersAt = (wcCode) => groupOptsFor(wcCode).map((o) => o.group);
+  // The catalog modals' setter. Two keys are not plain: a picked group records
+  // that it was PICKED (`group_picked`), and a Команда change settles the letter
+  // at once — kept while a cell carries it at the new Команда (or it is the line's
+  // own letter and the Команда is still the line's own); otherwise put back to
+  // the line's own letter at home, and to «—», unpicked, anywhere else. An
+  // unpicked letter at a new Команда is never sent, so the backend's adopt rule
+  // decides — the letter picked for the old Команda used to ride along and land
+  // on the destination's siblings.
+  const setCatField = (k) => {
+    if (k === "wc_group") return (v) => setCatDraft((d) => ({ ...d, wc_group: v, group_picked: true }));
+    if (k !== "work_center") return setDraft(k);
+    return (v) => setCatDraft((d) => {
+      const home = editRow != null && sameWc(v, editRow.work_center);
+      const own = editRow?.wc_group ?? "";
+      const grp = d.wc_group ?? "";
+      const keep = grp === ""
+        ? home && d.group_picked
+        : cellLettersAt(v).includes(grp) || (home && grp === own);
+      return keep
+        ? { ...d, work_center: v }
+        : { ...d, work_center: v, wc_group: home ? own : "", group_picked: false };
+    });
+  };
   // «Qo'shish» opens the create modal with a blank draft (same four fields).
   const openCreate = () => {
     setCatDraft({ sap_code: "", name: "", labor_time: "", work_center: "", op: "",
-                  auto_fill: true });
+                  auto_fill: true, wc_group: "" });
     setCreateOpen(true);
   };
   // Команда is always required; the SAP code is not — a line without one is
@@ -1783,6 +2263,12 @@ export default function Production() {
         // Only a coded line carries the choice; sending it for a code-less one
         // is a 400, and rightly so — there would be nothing for it to decide.
         ...(sap ? { auto_fill: catDraft.auto_fill !== false } : {}),
+        // Only a picked letter is sent: with none, the backend lets a new line
+        // adopt its SKU siblings' group at that Команда, which is the right
+        // default for a line added beside ones already grouped. And only one a
+        // cell carries there — anything else would be an orphan.
+        ...(catDraft.wc_group && cellLettersAt(wc).includes(catDraft.wc_group)
+          ? { wc_group: catDraft.wc_group } : {}),
       },
       { onSuccess: () => setCreateOpen(false) },
     );
@@ -1811,6 +2297,19 @@ export default function Production() {
     // contradiction, and the field is simply not sent.
     const autoFill = catDraft.auto_fill !== false;
     if (sap && autoFill !== (r.auto_fill !== false)) body.auto_fill = autoFill;
+    // Sent only when it cannot make an orphan. At the line's own Команда: when
+    // changed ("" clears) to a letter a cell carries. At a NEW Команда: only a
+    // letter the operator PICKED there that a cell carries (or a picked «—») —
+    // an untouched group lets the moved line adopt the group its SKU siblings
+    // carry there, which an echo of the old letter would overrule.
+    const grp = catDraft.wc_group ?? "";
+    if (sameWc(wc || r.work_center, r.work_center)) {
+      if (grp !== (r.wc_group ?? "") && (grp === "" || cellLettersAt(r.work_center).includes(grp))) {
+        body.wc_group = grp;
+      }
+    } else if (catDraft.group_picked && (grp === "" || cellLettersAt(wc).includes(grp))) {
+      body.wc_group = grp;
+    }
     const done = () => { setEditRow(null); setCatSel(null); };
     if (Object.keys(body).length) catalog.mutate({ id: r.id, body }, { onSuccess: done });
     else done();
@@ -1822,31 +2321,86 @@ export default function Production() {
     setWcDraft({
       people: w.people_overridden ? String(w.people) : "",
       shtatka: w.shtatka_overridden ? String(w.shtatka) : "",
+      groups: typesPerGroup(w)
+        ? Object.fromEntries(w.groups.map((g) => [g.group, g.people_overridden ? String(g.people) : ""]))
+        : {},
     });
     setWcEdit(w);
   };
-  const saveWcEdit = () => {
+  const saveWcEdit = async () => {
     if (!wcEdit) return;
+    const w = wcEdit;
     const num = (v) => {
       const s = String(v ?? "").trim();
       if (s === "") return null;                       // blank → clear the pin
       const n = Number(s.replace(",", "."));
       return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
     };
-    // Both fields ride every call, so the inverse is the pins as they stood —
-    // `null` where nothing was pinned, which is what puts the card back on the
-    // computed N / configured штатка rather than freezing today's figure.
-    const at = { work_center: wcEdit.work_center };
-    const prev = {
-      people: wcEdit.people_overridden ? wcEdit.people : null,
-      shtatka: wcEdit.shtatka_overridden ? wcEdit.shtatka : null,
-    };
-    const next = { people: num(wcDraft.people), shtatka: num(wcDraft.shtatka) };
-    tracked({
-      label: `${t("production.wcEditTitle")} · ${wcEdit.work_center}`,
-      forward: () => wcOverride.mutateAsync({ ...at, ...next }),
-      back: () => wcOverride.mutateAsync({ ...at, ...prev }),
-    });
+    const at = { work_center: w.work_center };
+    const label = `${t("production.wcEditTitle")} · ${w.work_center}`;
+    let op;
+    if (typesPerGroup(w)) {
+      // A centre typed per group saves as an AWAITED CHAIN, never in parallel: every
+      // call rewrites the same (unit, day, centre) pins, and two racing writes
+      // to one unique key is how a save reports success and keeps one of them.
+      // Groups first — one call per CHANGED group, people only — then the
+      // whole-centre штатка, only when it moved. That last call carries the
+      // whole-centre «Кол-во» the centre should end with: none once a group is
+      // typed (the backend clears it the moment a group pin lands anyway), and
+      // otherwise the figure it already held, so a штатка edit never erases it.
+      const prevG = Object.fromEntries(w.groups.map((g) => [g.group, g.people_overridden ? g.people : null]));
+      // An ORPHAN group is read-only in the dialog, so it ends where it began —
+      // the backend refuses a new or changed pin for a letter no cell carries.
+      const nextG = Object.fromEntries(w.groups.map((g) => [g.group,
+        g.orphan ? prevG[g.group] : num(wcDraft.groups?.[g.group])]));
+      const changed = w.groups.map((g) => g.group).filter((k) => prevG[k] !== nextG[k]);
+      const prevSht = w.shtatka_overridden ? w.shtatka : null;
+      const nextSht = num(wcDraft.shtatka);
+      const shtMoved = prevSht !== nextSht;
+      if (!changed.length && !shtMoved) { setWcEdit(null); return; }
+      const whole = w.people_whole ?? null;
+      const anyBefore = Object.values(prevG).some((v) => v != null);
+      const anyAfter = Object.values(nextG).some((v) => v != null);
+      const chain = async (vals, centre) => {
+        for (const group of changed) await wcOverride.mutateAsync({ ...at, group, people: vals[group] });
+        if (centre) await wcOverride.mutateAsync({ ...at, ...centre });
+      };
+      op = {
+        forward: () => chain(nextG, shtMoved ? { people: anyAfter ? null : whole, shtatka: nextSht } : null),
+        // The inverse also puts back a whole-centre figure the forward save's
+        // first group pin cleared — that write happened server-side, unasked.
+        back: () => chain(prevG, shtMoved || (whole != null && anyAfter)
+          ? { people: anyBefore ? null : whole, shtatka: prevSht } : null),
+      };
+    } else {
+      // Both fields ride every call, so the inverse is the pins as they stood —
+      // `null` where nothing was pinned, which is what puts the card back on the
+      // computed N / configured штатка rather than freezing today's figure.
+      const prev = {
+        people: w.people_overridden ? w.people : null,
+        shtatka: w.shtatka_overridden ? w.shtatka : null,
+      };
+      const next = { people: num(wcDraft.people), shtatka: num(wcDraft.shtatka) };
+      // An emptied box on an orphan-only centre also clears its stored orphan
+      // pins, one awaited call each (see `centreStaffRows`): a whole-centre write
+      // with no people leaves them answering, and the number would spring back.
+      const stale = next.people == null && isGrouped(w)
+        ? w.groups.filter((g) => g.people_overridden).map((g) => g.group) : [];
+      op = {
+        forward: async () => {
+          for (const group of stale) await wcOverride.mutateAsync({ ...at, group, people: null });
+          await wcOverride.mutateAsync({ ...at, ...next });
+        },
+        back: () => wcOverride.mutateAsync({ ...at, ...prev }),
+      };
+    }
+    // A refusal leaves the dialog standing with the draft in it; the mutation's
+    // own onError has already said why. A chain that failed part-way has written
+    // its earlier groups — pressing Save again rewrites them idempotently.
+    setWcSaving(true);
+    const ok = await tracked({ label, ...op });
+    setWcSaving(false);
+    if (ok) setWcEdit(null);
   };
 
   // The reveal strip is appended below its row inside the scroll container, so
@@ -2032,9 +2586,9 @@ export default function Production() {
             const c = wcColor(code);
             return (
               <CellLink key={code} id={wcCell[code]?.id} className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md"
-                title={wcName(code) || code}
+                title={wcTitle(code)}
                 style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}`, textDecorationColor: "currentColor" }}>
-                {code}{wcName(code) ? ` · ${wcName(code)}` : ""}
+                {code}
               </CellLink>
             );
           })}
@@ -2197,7 +2751,7 @@ export default function Production() {
             return (
               <div key={w.work_center} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wc}` }}>
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <CellLink id={w.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={wcName(w.work_center) || w.work_center} style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
+                  <CellLink id={w.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={wcTitle(w.work_center)} style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
                   {/* The staffing pin governs BOTH numbers below, so its control sits
                       in the header — above the pair — not appended to one of them. */}
                   <span className="flex items-center gap-2 shrink-0">
@@ -2224,13 +2778,49 @@ export default function Production() {
                       attendance still holds beside it. */}
                   <span className="truncate">
                     {t("production.oSoni")} <b
-                      title={w.people_overridden ? undefined : t("production.peopleNotEnteredCell")}
-                      style={{ color: w.people_overridden ? "var(--brand-text)" : "var(--text-3)" }}>{fmt(w.people, 0)}</b>
+                      // A grouped centre's figure is the sum of its group pins —
+                      // unless none is typed and the whole-centre pin still stands,
+                      // which is a number typed for the centre and must say so.
+                      title={typesPerGroup(w)
+                        ? t(w.groups.some((g) => g.people_overridden) || w.people_whole == null
+                            ? "production.group.sumHint" : "production.group.wholeCell")
+                        : w.people_overridden ? undefined : t("production.peopleNotEnteredCell")}
+                      // Gold only for a COMPLETE figure (`typedCentre`): a grouped
+                      // centre with one group typed printed that partial sum gold,
+                      // as if it were the centre's headcount. The «*» marks it —
+                      // centres typed per group only; any other untyped one reads «—».
+                      style={{ color: typedCentre(w) ? "var(--brand-text)" : "var(--text-3)" }}>
+                      {fmt(w.people, 0)}
+                      {typesPerGroup(w) && !typedCentre(w) && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                    </b>
                     {" · "}
                     {t("production.shtatka")} <b style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
                   </span>
                   <span className="tabular-nums shrink-0">{fmt(w.total_labor, 0)} {t("production.minUnit")}</span>
                 </div>
+                {/* A centre typed per group: its «Кол-во» above is the sum of
+                    these — each group's own typed figure beside its letter, in
+                    the same typed-gold / blank-muted vocabulary. An orphan-only
+                    centre shows them too, display-only, under its own figure. */}
+                {isGrouped(w) && (
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                    {w.groups.map((g) => (
+                      <span key={g.group} className="inline-flex items-center gap-1">
+                        <GroupBadge group={g.group} tone={g.orphan ? "warn" : "neutral"} title={groupTitle(t, g, tl)} />
+                        {/* An untyped group reads its SHARE — a fraction, muted and
+                            starred, never dressed as a typed figure. Display only:
+                            an orphan's figure is already inside the cells' shares
+                            and is never added into anything. */}
+                        <b className="tabular-nums"
+                          title={g.people_overridden ? undefined : groupUntypedTitle(t, w, g)}
+                          style={{ color: g.people_overridden ? "var(--brand-text)" : "var(--text-3)" }}>
+                          {fmt(g.people, 1)}
+                          {!g.people_overridden && !g.orphan && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                        </b>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -2289,7 +2879,8 @@ export default function Production() {
             )}
             <ColumnsPicker
               className="ml-auto"
-              columns={COLS.map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
+              columns={COLS.filter((c) => hasGroups || c.key !== GROUP_COL)
+                .map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
               order={colCfg.order}
               hidden={colCfg.hidden}
               onChange={onColsChange}
@@ -2472,6 +3063,27 @@ export default function Production() {
               ariaLabel={t("production.autofill.label")}
             />
           </Field>
+          {/* Offered only on a unit that has groups — elsewhere it would be a
+              control whose every answer is «no group». */}
+          {hasGroups && (
+            <Field label={t("production.col.group")} hint={bulkLetters.length
+              ? t("production.group.bulkHint")
+              : <>{t("production.group.bulkHint")}<span className="block mt-0.5">{t("production.group.bulkNoCommon")}</span></>}>
+              <StyledSelect
+                value={bulkGroup}
+                onChange={(v) => setBulkDraft((d) => ({ ...d, wc_group: v }))}
+                options={[
+                  { value: "keep", label: t("production.bulk.unchanged") },
+                  { value: "", label: t("production.group.clear") },
+                  ...bulkLetters.map((g) => ({
+                    value: g,
+                    label: <span className="inline-flex items-center gap-1.5"><GroupBadge group={g} /></span>,
+                    title: g,
+                  })),
+                ]}
+              />
+            </Field>
+          )}
           {/* SAP код and Наименование are missing on purpose, and the reader is
               told why rather than left to wonder where they went. */}
           <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
@@ -2485,16 +3097,72 @@ export default function Production() {
         <Modal
           onClose={() => setWcEdit(null)}
           title={t("production.wcEditTitle")}
-          subtitle={`${wcEdit.work_center}${wcName(wcEdit.work_center) ? ` — ${wcName(wcEdit.work_center)}` : ""} · ${ddmmyyyy(date)}`}
+          subtitle={`${wcEdit.work_center} · ${ddmmyyyy(date)}`}
           icon={<Users size={16} style={{ color: "var(--brand-text)" }} />}
-          dismissable={!wcOverride.isPending}
+          dismissable={!wcOverride.isPending && !wcSaving}
           footer={
             <>
-              <Button variant="secondary" onClick={() => setWcEdit(null)}>{t("production.cancelEdit")}</Button>
-              <Button icon={<Save size={14} />} loading={wcOverride.isPending} onClick={saveWcEdit}>{t("production.save")}</Button>
+              <Button variant="secondary" onClick={() => setWcEdit(null)} disabled={wcSaving}>{t("production.cancelEdit")}</Button>
+              <Button icon={<Save size={14} />} loading={wcOverride.isPending || wcSaving} onClick={saveWcEdit}>{t("production.save")}</Button>
             </>
           }
         >
+          {typesPerGroup(wcEdit) ? (<>
+            {/* A grouped centre: one «Кол-во» per group (each named by its letter
+                and the code of the cell carrying it) and the centre's own штатка.
+                There is no centre «Кол-во» box — that number is their sum. */}
+            <div className="grid grid-cols-2 gap-3">
+              {wcEdit.groups.map((g) => (
+                <Field key={g.group} alignTop label={
+                  <span className="inline-flex items-center gap-1.5">
+                    {t("production.oSoni")}
+                    <GroupBadge group={g.group} tone={g.orphan ? "warn" : "neutral"} title={groupTitle(t, g, tl)} />
+                    {g.cell?.verifix_code && <span className="font-mono normal-case">{g.cell.verifix_code}</span>}
+                  </span>
+                }>
+                  {g.orphan ? (
+                    // No cell carries this letter: nothing to count, and the
+                    // backend refuses a new pin — show what is stored, read-only.
+                    <div
+                      className="w-full rounded-lg px-3 py-2 text-sm tabular-nums"
+                      title={t("production.group.orphanLocked")}
+                      style={{
+                        background: "var(--bg-inner)", border: "1px solid var(--border)",
+                        color: g.people_overridden ? "var(--brand-text)" : "var(--text-3)",
+                      }}
+                    >
+                      {fmt(g.people, 1)}
+                    </div>
+                  ) : (
+                    <ModalInput
+                      type="number"
+                      value={wcDraft.groups?.[g.group] ?? ""}
+                      onChange={(v) => setWcDraft((d) => ({ ...d, groups: { ...(d.groups || {}), [g.group]: v } }))}
+                      placeholder={fmt(null, 0)}
+                      className="tabular-nums"
+                    />
+                  )}
+                </Field>
+              ))}
+            </div>
+            <Field label={t("production.shtatka")}>
+              <ModalInput
+                type="number"
+                value={wcDraft.shtatka}
+                onChange={(v) => setWcDraft((d) => ({ ...d, shtatka: v }))}
+                placeholder={fmt(wcEdit.shtatka_cfg, 0)}
+                className="tabular-nums"
+              />
+            </Field>
+            {wcEdit.people_whole != null && !wcEdit.groups.some((g) => g.people_overridden) && (
+              <p className="text-[11px] leading-relaxed" style={{ color: "#a16207" }}>
+                {t("production.group.wholeTyped").replace("{codes}", wcEdit.work_center)}
+              </p>
+            )}
+            <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+              {t("production.group.wcEditHint")} {t("production.wcEditHint")}
+            </p>
+          </>) : (<>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("production.oSoni")}>
               <ModalInput
@@ -2517,9 +3185,20 @@ export default function Production() {
               />
             </Field>
           </div>
+          {/* A centre lettered by ORPHANS alone is typed whole, above; its letters
+              stay visible and display-only — no cell carries them, so there is
+              nothing to type under them (`typesPerGroup`). */}
+          {isGrouped(wcEdit) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {wcEdit.groups.map((g) => (
+                <GroupBadge key={g.group} group={g.group} tone={g.orphan ? "warn" : "neutral"} title={groupTitle(t, g, tl)} />
+              ))}
+            </div>
+          )}
           <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
             {t("production.wcEditHint")}
           </p>
+          </>)}
         </Modal>
       )}
 
@@ -2538,7 +3217,11 @@ export default function Production() {
             </>
           }
         >
-          <CatalogFields draft={catDraft} setDraft={setDraft} />
+          {/* The line's own letter is offered only while the draft's Команда is
+              still the line's own — elsewhere it names a group nobody there has. */}
+          <CatalogFields draft={catDraft} setDraft={setCatField}
+            groupOpts={groupOptsFor(catDraft.work_center,
+              sameWc(catDraft.work_center, editRow.work_center) ? [editRow.wc_group] : [])} />
         </Modal>
       )}
 
@@ -2556,7 +3239,8 @@ export default function Production() {
             </>
           }
         >
-          <CatalogFields draft={catDraft} setDraft={setDraft} />
+          <CatalogFields draft={catDraft} setDraft={setCatField}
+            groupOpts={groupOptsFor(catDraft.work_center)} />
         </Modal>
       )}
 

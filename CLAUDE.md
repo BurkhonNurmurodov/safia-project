@@ -29,11 +29,12 @@ or copy-paste its markup into a page.
 | Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
 | Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. |
 | Table pager | `Pagination.jsx` | For registers too long to dump into the DOM (thousands of rows). Sits directly under the `TableCard`: "x–y of N" left, windowed page buttons right, built from `Button`. Renders nothing for a single page. |
-| Column show/hide + reorder | `ColumnsPicker.jsx` | 38px `Columns3` icon trigger on the toolbar's RIGHT edge (`className="ml-auto"`, hidden-count badge) + portaled panel listing every column IN TABLE ORDER — hidden ones stay dimmed in place (eye-off), never regrouped to the bottom. Hide all/Show all links; drag-to-reorder only arms via the panel's reorder button. Controlled: `columns [{key,label,locked}]`, `order`, `hidden`, `onChange({order,hidden})`. Persist via `/api/ui-prefs/{key}` (per-profile JSON blobs, `UiPref` model); reconcile saved keys against the current column catalog and keep identity columns `locked`. `t("cols.*")` keys exist in all 4 langs. Excel exports of a picker-equipped table must mirror it exactly — send the visible keys in on-screen order (`columns`) with the row-id `order`, backend formats keyed per column. (Exception: the Позиции export deliberately emits the fixed brigadir «ABC форма» formula workbook instead of a picker mirror — don't revert it. It reproduces the manual form cell-for-cell: totals row 1, headers row 2, positions row 3+, team block M:O, indicators P:Q; only Трудоемкость/Команда/Факт/ПЛАН and O. SONI are values, everything else is a live formula so the brigadir's edits recalculate. Trimmed hard on the operator's call (2026-08-31): the indicator block is THREE rows — «Nechta odam keldi» = `=SUM(N…)`, the people assigned to the cells that day; «Hozirgi odam bilan o`rtacha bandlik(smena boshida)» = `=I1/(keldi×shift_min)`, the same arithmetic as `pp_calc`'s `avg_load` so the file and the page answer with one number; and «Общ.трудаёмкост» = `=I1` — and the other six indicators, the whole «Сколько должна на штатке» block (Z:AA) and the team block's P:W half (Команда · минут · real load · capacity · kerak · Штатка) are gone. Everything removed was derived from hand-entered counts nobody fills in, so it printed 0 / 100% on every file. Consequence: O. SONI (N) loses the `=ROUND(U,0)` chain that fed it and is written as a VALUE — the block's one input, and what ЛЮДИ/Минут/Парето/Загруженность still recalculate off via the M:N VLOOKUP. The page itself (its reconciliation card, its Штатка/capacity columns) is untouched — only the export dropped them. Superseded the older «загрузка» two-shift layout.) See the Production «Позиции» table for the reference wiring (cells rendered by a per-key switch so hide/reorder is free). |
+| Column show/hide + reorder | `ColumnsPicker.jsx` | 38px `Columns3` icon trigger on the toolbar's RIGHT edge (`className="ml-auto"`, hidden-count badge) + portaled panel listing every column IN TABLE ORDER — hidden ones stay dimmed in place (eye-off), never regrouped to the bottom. Hide all/Show all links; drag-to-reorder only arms via the panel's reorder button. Controlled: `columns [{key,label,locked}]`, `order`, `hidden`, `onChange({order,hidden})`. Persist via `/api/ui-prefs/{key}` (per-profile JSON blobs, `UiPref` model); reconcile saved keys against the current column catalog and keep identity columns `locked`. `t("cols.*")` keys exist in all 4 langs. Excel exports of a picker-equipped table must mirror it exactly — send the visible keys in on-screen order (`columns`) with the row-id `order`, backend formats keyed per column. (Exception: the Позиции export deliberately emits the fixed brigadir «ABC форма» formula workbook instead of a picker mirror — don't revert it. It reproduces the manual form cell-for-cell: totals row 1, headers row 2, positions row 3+, team block M:O, indicators P:Q; only Трудоемкость/Команда/Факт/ПЛАН, «Группа» (column L, the former spacer, from 2026-09-14) and O. SONI are values, everything else is a live formula so the brigadir's edits recalculate. A work centre whose cells carry GROUP letters also gets an X:Y block («Команда · буква» = «A2894 · A», its O. SONI a yellow value): a grouped line's ЛЮДИ is `VLOOKUP(D&" · "&L,$X:$Y,2,0)`, the team's N becomes `=SUMIFS($Y:$Y,$X:$X,M&" · *")` when the block holds every cell of it and adds up to the page's N (else the page's value), and its Загруженность divides by N. A LEADER's file writes only their own groups' rows, so the minutes of the lines their cut hides ride as constants beside I1, F1 and the team's SUMIFS — the leader's load, bandlik and Парето then equal their page's and the brigadir's file. The block sits clear of every column `pp_parser` reads and its header names no group, so the round trip still finds «Группа» at L; an ungrouped unit's file differs only by the «Группа» header in L2 and L's width — the X:Y block is written only where cells carry letters. Trimmed hard on the operator's call (2026-08-31): the indicator block is THREE rows — «Nechta odam keldi» = `=SUM(N…)`, the people assigned to the cells that day; «Hozirgi odam bilan o`rtacha bandlik(smena boshida)» = `=I1/(keldi×shift_min)`, the same arithmetic as `pp_calc`'s `avg_load` so the file and the page answer with one number; and «Общ.трудаёмкост» = `=I1` — and the other six indicators, the whole «Сколько должна на штатке» block (Z:AA) and the team block's P:W half (Команда · минут · real load · capacity · kerak · Штатка) are gone. Everything removed was derived from hand-entered counts nobody fills in, so it printed 0 / 100% on every file. Consequence: O. SONI (N) loses the `=ROUND(U,0)` chain that fed it and is written as a VALUE — the block's one input, and what ЛЮДИ/Минут/Парето/Загруженность still recalculate off via the M:N VLOOKUP. The page itself (its reconciliation card, its Штатка/capacity columns) is untouched — only the export dropped them. Superseded the older «загрузка» two-shift layout.) See the Production «Позиции» table for the reference wiring (cells rendered by a per-key switch so hide/reorder is free). |
 | Factory (plant) switcher | `useFactorySection()` from `FactorySelect.jsx` | THE plant switcher — a `FilterPanel` SECTION, first in every factory-aware page's section list (plant → shift → supervisor → …), never a standalone control on the bar. (The standalone `FactorySelect` dropdown and the `FactoryTabs` strip before it are both retired from page toolbars: each cost a permanent toolbar cell on a phone-first platform for a value most users never change.) «All factories» is the FIRST option. Returns `null` when fewer than two factories exist; a locked viewer (supervisor/leader) gets a `static` section — an inert chip naming their plant, never a one-option control. The `FactorySelect` component itself survives only for non-toolbar surfaces (admin forms). |
 | Ojidaniya category owner ("who answers for this cause") | `components/idle/OwnerChip.jsx` | THE way a «Kutish mas'uli» is named beside a category — the «Xarajat» tree, the «Toifalar bo'yicha» matrix, `/idle-owner`. Fed the payload's `owners` map (category → person, from `services/idle_scope.owner_labels`), never a name copied onto every row. A NAME, not a status: no traffic light — it borrows the category's own hue where it sits on a coloured row. A category with NOBODY assigned renders **nothing at all**, never «—» and never an empty chip: twelve categories with two owners between them would grow ten placeholders saying only that the register is unfinished. (Workbooks DO print «—» — a blank spreadsheet cell reads as «this column did not apply here».) |
 | Cell label (how a cell is NAMED) | `utils/cellName.js` → `cellLabel(code, leader)` | A cell is its **verifix CODE**. The workshop name is NEVER printed — see the section below. |
 | Pressable cell reference | `CellLink.jsx` | THE way a production cell rendered as CONTENT (table cell, card, chip) opens its page `/cells/:id` — dotted-underline affordance via the `.cell-link` rule in `index.css`. `id` = cells.id; without one it renders inert text (never a dead link). Clicks stop propagation, so it nests in clickable rows. FILTER controls listing cells never navigate. Don't put it inside another `<button>` (IdleCell accordion / AttendanceUpload expander stay unlinked on purpose — nested-interactive + they hold unsaved drafts). `/cells/:id` (`CellDetails.jsx`) is auth-only like `/profile`; its edit modal is the shared `CellFormModal.jsx` (ONE form with the `/cells` register). |
+| Work-centre GROUP letter | `GroupBadge.jsx` + `utils/wcGroup.js` | THE letter a cell, a catalog line or a typed pin carries when several cells of one unit share a SAP work centre (backend `services/wc_group.py`). Sits right AFTER the code chip or the cell's code — never instead of it, never a second hand-rolled pill. Renders nothing without a group (a cell alone at its code has none, and ten placeholders would only say so). `tone="warn"` for an ORPHAN letter (lines or pins naming a group no cell carries). Plain text — a workbook cell, a toast, a tooltip — uses `wcGroupLabel(code, group)` → «A2894 · A»; a form normalises input with `normGroup` (Cyrillic twins → Latin, `undefined` = refuse). A group picker is a `StyledSelect` of «—» + the letters, never a free-text box. |
 | Empty-data placeholder | `EmptyState.jsx` | For page/section level. Table "no match" rows stay plain muted text. |
 | Full-screen "you can't see this page" state | `ErrorScreen.jsx` | THE template for 404, no-access, a crash, offline, and every blocked auth status (`AuthGate`'s screens, `NoAccess`, `ErrorBoundary` all render through it). Shape: tinted icon chip → status `code` → `title` → ONE sentence → ONE primary `action` → `secondary` escape hatch → `detail` collapsed. Tones are the status palette: `danger` broke, `warning` blocked-but-fixable, `neutral` slate just-not-there (404/403), `brand` an invitation (register) — never a raw emoji as the lead visual, which is what all eight hand-rolled copies used to do. Takes focus on the primary action at mount and pads for Telegram safe areas. `inline` drops the viewport wrapper for a screen rendered INSIDE `Layout` (the 404 keeps the sidebar, so the nav is itself an escape hatch). **Crashes are SCOPED and never technical**: use `ScopedErrorBoundary` from `ErrorBoundary.jsx` (never the bare class) — one inside `Layout` around the content column so a broken table keeps the nav alive, one above the routes so a broken page keeps the session, and the app-level one only for a provider. It clears itself on navigation (`resetKey` = pathname), shows the minified stack to ADMINS only, and posts every catch to `POST /api/crash-report` (`routers/boot.py`, the ONE client-failure door — fingerprint-deduped, one DM per crash per hour, always logged as `CLIENT-CRASH`). A user must never be the monitoring system. |
 | Loading | `Skeleton.jsx` blocks for page/section data loads; `Loader2` spinner inside buttons for actions | Never bare `…` / "Загрузка…" text. |
@@ -155,19 +156,23 @@ Raximova Kamola's shift 1 and 9423 on Olishev Islom's shift 2).
   by the code, because there the code really is the identity.
   Consumers: the Production dashboard's `work_centers[].cell` (the «Команда»
   chip, its `CellLink`, the staffing cards, «Odamlar soni»), the admin
-  work-centre register, and `/live` — whose `wc_cell` is `{(unit, wc): cell}`
-  for the same reason, having summed BOTH shifts' plan minutes onto one cell and
-  left the other cell with no plan at all. `/cells/:id`'s production count is
-  scoped to the cell's own unit too.
-- **Within ONE unit the code may still name several cells** (10 groups today)
-  and the first by verifix still wins — a registry question about one shopfloor,
-  answered arithmetically by `zagruzka_source.cell_people`, which splits the
-  typed headcount evenly.
+  work-centre register, and `/live` — which from 2026-09-14 maps no work centre
+  to one cell at all: it hands each work centre's plan to its cells through
+  `zagruzka_source.cell_labor` (unit + normalised code, then `wc_group.share`).
+  Keyed by the code alone it had summed BOTH shifts' plan minutes onto one cell
+  and left the other with no plan. `/cells/:id`'s production count is scoped to
+  the cell's own unit too.
+- **Within ONE unit the code may still name several cells** (10 groups today),
+  and from **2026-09-14** each of them carries a GROUP letter that tells them
+  apart — see «A work centre's GROUP» below. `by_sap` still answers a
+  group-less lookup with the first cell by verifix code; a lettered cell is also
+  keyed by (unit, code, group), and `resolve_sap(..., group=)` reads that key.
 - **Everything that COMPUTES was already unit-scoped and did not move.** Every
   `pp_*` table is keyed by `manager_id`, so two shifts hold their own catalog,
   their own «Bugungi fakt» pin and their own quantities for one work centre;
   `zagruzka_source`, `idle_source`, `/zagruzka-cell`, `ojidaniya_cost` and
-  `zagruzka_gaps` all group by `(manager_id, sap_code)`.
+  `zagruzka_gaps` all group by `(manager_id, sap_code)` — the code normalised through
+  `wc_group.cells_by_wc` from 2026-09-14.
 - **OPEN, and it moves a number — ask before changing it.** The SAP upload is
   the one place the sharing is not resolved: `_scoped_faza` cuts the фаза file
   by the unit's own work centres ∪ catalog, so a work centre in TWO units'
@@ -219,6 +224,160 @@ Raximova Kamola's shift 1 and 9423 on Olishev Islom's shift 2).
   `main.py` and `passenger_wsgi.py` — once the answers have landed: a call left
   behind imports a deleted module at boot, and a failed boot rolls the deploy
   back.
+
+## A work centre's GROUP (`services/wc_group.py`)
+
+From **2026-09-14** (the operator's directive) a cell that shares its SAP work
+centre with other cells of its UNIT carries a GROUP — one Latin capital letter
+(A, B, C …) — and so do the catalog lines that group produces and the «Bugungi
+fakt» typed for it. Inside one unit a (SAP code, group) names ONE cell. Before
+it A2894's six cells on Ibragimova Sayyora's shift could read only one typed
+headcount and one trudoyomkost for the whole line, SPLIT EVENLY, so their
+ojidaniya weight, their ojidaniya COST and their per-cell загрузка were guesses.
+
+- **`services/wc_group.py` is THE definition** — `norm_group`, `label`, `share`,
+  `sku_groups`, `line_conflicts`, `cell_conflicts`, `check_cell`, `in_scope`.
+  The client twins are `utils/wcGroup.js` and `components/ui/GroupBadge.jsx`.
+  Never re-spell a split, a normalisation or a scope test at a call site.
+- **Three nullable columns** — `cells.wc_group`, `pp_products.wc_group`,
+  `pp_work_center_daily.wc_group`. NULL = no group / the whole work centre,
+  which is exactly what every row stored before meant. The pin table's unique
+  key is an EXPRESSION index over `COALESCE(wc_group, '')`
+  (`startup.add_wc_groups`): Postgres treats NULLs as distinct inside a unique
+  key, so a plain four-column constraint would accept two whole-centre pins for
+  one day.
+- **The register rule is per UNIT, not per shift** (the operator's call): inside
+  one unit and one code there is ONE cell (lettered or not), or every cell is
+  lettered and no two alike — two brigadirs on one shift type their own pins
+  and keep their own catalogs, so their cells may reuse a letter.
+  `check_cell_detail` refuses a break on every register WRITE that moves a
+  cell's (unit, normalised code, letter) — the /cells form and the /profile
+  inline create; an edit leaving those three unchanged is not re-checked. The
+  refusal is STRUCTURED (`code` + `params`, the English sentence as `message`)
+  and both forms translate it. The forms offer and send a letter only when the
+  cell has BOTH a SAP code and a unit. A body that carries NO `wc_group` at all —
+  a /cells tab still open on 4.106 — is never refused over a letter it cannot
+  see: clearing the SAP code or the unit drops the letter, and a unit move
+  settles it like a cascade, both logged as `group_cleared`.
+- **TWO cascades never refuse**: a leader's unit move that drags cells, and the
+  admin «Davomat» «Doimiy qilish» write (`attendance_batch.update_cells`). Both
+  call `wc_group.settle_moved` once per destination unit, clear the one colliding
+  letter and log it as `group_cleared`; a permanent write that CLEARS a cell's
+  unit clears its letter the same way. An unlettered cell dragged into a
+  lettered work centre is left and named by `report_wc_groups`. The partial
+  index `uq_cells_wc_group` is the backstop — and because it exists,
+  `startup.migrate_cell_supervisor_column` now drops the letter of every
+  unit-less cell it re-attaches, or one leftover letter would roll that whole
+  backfill back on every boot.
+- **The catalog rule**: every line of one SKU at one work centre
+  (`pp_calc.daily_key`) carries the same group, because the SAP file writes ONE
+  quantity per (SKU, work centre). The editors make a break impossible instead
+  of refusing it — a group written on one line is written to its sibling lines
+  (`group_siblings` in the response), and a line moved onto another SKU or
+  Команда adopts the siblings' group there. The ABC import is the one place a
+  conflict is refused. **The group is not part of a line's identity**, so
+  changing it moves no typed quantity.
+- **`share` is ONE rule for minutes and for people**: a cell reads its own
+  group's value, and whatever no cell's letter claims — an ungrouped line, a
+  whole-centre pin, a letter no cell carries — is shared evenly between ALL the
+  work centre's cells. For a work centre nobody grouped that IS the old even
+  split, so **nothing moved when this shipped** — with TWO exceptions, both
+  corrections: /live used to put a shared work centre's whole plan on its first
+  cell by verifix code and now shares it evenly (unit figures unchanged), and the
+  «Xarajat» entries modal priced a cell of a shared work centre with the WHOLE
+  pin and now prices it with the cell's share, as the tree above it always did —
+  and Σ over a work centre's cells is always what the work centre carried. For pins the whole-centre pin is
+  ignored the moment any group pin exists; writing a group people pin clears the
+  whole-centre people pin and writing a whole-centre people pin deletes the
+  group pins. The day's штатка pin stays on the whole-centre row.
+- **The readers**: `zagruzka_source.typed_pins` (group-keyed), `typed_people`
+  (folded per work centre: Σ group pins, else the whole pin — so the fleet
+  загрузка keeps its shape), `cell_people` (the ojidaniya weight, which carries
+  groups into /downtime, «Xarajat», «Toifalar bo'yicha» and every workbook at
+  once), `wc_group_labor` + `cell_labor` (per-cell minutes), and
+  `pp_calc.line_minutes_by_group`, which is `line_minutes`' own loop returning
+  its other half, so Σ over the groups is the work centre's figure byte for
+  byte. `sap_groups_for_leader` + `in_scope` is a leader's group scope: the
+  leader of A2894·A reads group A and the ungrouped lines, never group B — but
+  the work centre's own figures (its people, load, each group's share and the
+  lines' ЛЮДИ/Минут) are computed over EVERY group first and only the rows are
+  narrowed afterwards, so a leader reads the brigadir's numbers, never a
+  recomputation over their slice (`wc_group.share` depends on every sibling
+  group and on the unclaimed part).
+  **Every per-cell reader matches cells to work centres through
+  `wc_group.cells_by_wc` / `wc_key`** (unit + `norm_code`), sums two stored
+  spellings of one work centre, and is handed EVERY cell of the unit: the split
+  is over the cells passed, so a one-cell list reads every other group's people
+  as unclaimed and takes them — the «Xarajat» entries modal did exactly that
+  until it weighed over the unit like its tree. The gap and unpriced reports read
+  a cell's pins through `zagruzka_source.cell_pins` (the one pin split;
+  `cell_people` is its `> 0` filter) and read `wc_group_labor` once, folded by
+  `fold_group_labor`.
+- **/production reads a group the way the weight does.** An untyped non-orphan
+  group's `people` is its SHARE of the whole-centre or orphan pins (a fraction,
+  `people_overridden` false, printed with one decimal and the untyped «*»); a
+  typed group publishes its own pin; `people_counted` is what its load and its
+  lines' ЛЮДИ/Минут divide by. Before the загрузка floor an untyped group reads
+  its share of the work centre's formula suggestion — the rule /zagruzka-cell
+  applies. So one cell-day states one headcount on
+  /production, /zagruzka-cell and /downtime. A work centre counts as TYPED by
+  one client rule, `typedCentre`: once any group pin exists every non-orphan
+  group needs one. A lettered chip links only to the cell carrying its letter
+  (inert for an orphan) and every tooltip names codes and the leader, never a
+  workshop.
+- **ORPHAN letters** (on lines or pins, carried by no cell of the unit) stay
+  visible with `included: true` — their minutes are already inside the cells'
+  shares, so nothing may add them into a total — and are READ-ONLY: a new or
+  changed orphan pin is refused (400), an unchanged re-send or a clear is
+  accepted. The client asks two questions, never one: `isGrouped` (are there
+  letters to SHOW) and `typesPerGroup` (is there a group to TYPE) — a work
+  centre whose only letters are orphans is typed as a whole, or its «Bugungi
+  fakt» could be typed nowhere. The row editor resets a letter no cell carries at a changed
+  Команда, and the bulk bar offers only letters a cell carries at EVERY
+  selected line's work centre.
+- **Old tabs and leaders.** A whole-centre people value equal to the Σ of the
+  work centre's group pins — or of the ones a leader can see — is an ECHO of
+  what an older tab was shown: it
+  writes no whole-centre people, deletes no group pin and still applies the
+  штатка — otherwise a 4.106 tab's Save would have collapsed typed groups into
+  their sum. Any other whole-centre number replaces the group pins. A leader's
+  WRITES follow their group scope: /override refuses another group's line, and a
+  staffing save may not delete a group pin the leader cannot see (403).
+  Catalog create with a blank group adopts the SKU siblings' group; an edit or a
+  bulk edit with an empty group clears it on every sibling.
+- **Where it is typed and shown**: «Odamlar soni» shows a grouped work centre as
+  a header row (its штатка, and the Σ of its groups read-only) plus one row per
+  group; «Позиции» has a «Guruh» column, the row editor and the bulk bar set it;
+  the ABC workbook reads a «Группа» column found by its header text and writes
+  the group in column L plus an X:Y group block (see the Позиции export
+  exception); /cells, /cells/:id and the cell form carry the letter;
+  /zagruzka-cell publishes `wc_split` («none» · «group» · «even») and lists as
+  `grouped_work_centers` only work centres where a line or a typed pin actually
+  names a cell's letter; /live gives each cell its own share of the plan; the
+  gap and unpriced reports name «this LETTERED cell's group was not typed» and
+  «this cell has no letter» (`cell_no_group`, fixed on /cells) as reasons of
+  their own.
+- **The one-shot** `startup.letter_shared_cells` (flag
+  `cell_groups_autoletter_2026_09_14_v1`) lettered A, B, C … by verifix code every (unit, code) carried by two or
+  more cells none of which was lettered yet — a code an admin had begun
+  lettering by hand, or one with more cells than letters, is left and named —
+  and left a lone cell blank.
+  Config only: no line got a group and no pin moved, so no number moved.
+  Changing what it letters needs a NEW flag key. `startup.report_wc_groups` is
+  the boot self-check — register breaks, a SKU split over groups, orphan letters,
+  ungrouped lines at a grouped work centre, cells whose stored code is not
+  normalised — and changes nothing.
+- **Consequence to know**: letters on the cells alone change NOTHING. A grouped
+  work centre whose brigadir keeps typing one whole-centre number still splits
+  it evenly, and one whose catalog lines carry no group still splits the minutes
+  evenly. Each cell's figure becomes a measurement only once its people are
+  typed per group AND its lines are grouped — a day re-typed per group, past or
+  future, starts weighing per cell at once, because nothing is stored.
+- **Deliberately unchanged**: the cross-UNIT double write (a work centre two
+  units' catalogs name still receives the file's whole quantity in both — the
+  OPEN question in «A work centre is NOT unique»), a cell's label (still its
+  verifix code; the letter sits beside it), and штатка, which stays per work
+  centre.
 
 ## A code is LATIN (`services/latin_code.py`)
 
@@ -670,7 +829,9 @@ for byte**; only where three numbers come from changes.
   exactly as a cell nobody worked in already did. **Where several cells of one
   unit name one work centre (10 groups today) the typed number is SPLIT evenly
   between them**, so ΣN equals what the brigadir typed rather than counting one
-  work centre four times over. It moves every surface at once, by design:
+  work centre four times over. From 2026-09-14 only what no GROUP letter claims
+  is split — a cell of a work centre typed per group reads its own group's row
+  (see «A work centre's GROUP»). It moves every surface at once, by design:
   /downtime and its bar modal, the matrix and its divisor, the weekly deck,
   both Excel exports, the bot card, the weekly svodka, /live and the Daily
   donut.
@@ -717,20 +878,25 @@ for byte**; only where three numbers come from changes.
   people nobody typed, or attendance with no «Код подразделения». Consequence to
   know: the unit row no longer equals the rows above it, and the page says so.
 - **A work centre named by SEVERAL cells is SPLIT EVENLY between them**
-  (2026-09-09) — ten groups today, the largest six cells wide (Ibragimova
-  Sayyora's A2894; Ergashev's 7222 · 7223 both name A14310). `pp_daily` and
-  `pp_work_center_daily` are keyed by the WORK CENTRE, so there is no per-cell
-  trudoyomkost and no per-cell «Bugungi fakt», and nothing in the data says
-  which of the cells produced what. Handing each cell the WHOLE work centre —
+  (2026-09-09; from 2026-09-14 only the part no GROUP letter claims — a lettered
+  cell reads its own group's catalog lines and typed pin, `wc_split` says which,
+  see «A work centre's GROUP») — ten groups today, the largest six cells wide (Ibragimova
+  Sayyora's A2894; Ergashev's 7222 · 7223 both name A14310). `pp_daily` is keyed by the WORK CENTRE and
+  `pp_work_center_daily` by work centre + GROUP, so a cell's own trudoyomkost and
+  «Bugungi fakt» exist only through its group letter; for whatever no letter
+  claims, nothing in the data says which of the cells produced what. Handing each cell the WHOLE work centre —
   what the page did until then — measured one line's entire production against a
   fraction of its people, so `labor_surplus` drove `effective_hc` toward zero and
   the row read ±1000% (938%, 2498%, 1644% on those two cells), and the roll-up
   then counted those minutes and that headcount once PER CELL. **Evenly, never
-  by attendance**: `zagruzka_source.cell_people` already splits the same typed
-  number evenly across the same cells for the ojidaniya weight, and one split
+  by attendance**: `zagruzka_source.cell_people` already splits that unclaimed
+  part of the typed number evenly across the same cells for the ojidaniya weight, and one split
   must not have two spellings. Such a cell's figures are SHARES and say so —
-  a `1/N` chip on its work centre, `wc_share` / `wc_cells` on every input row,
-  and `diagnostics.shared_work_centers` for the groups.
+  a `1/N` chip on its work centre (only while `wc_split` is «even»), `wc_share` /
+  `wc_cells` on every input row, `diagnostics.shared_work_centers` for the work
+  centres still split evenly (`lettered: true` where letters exist but no line
+  or pin names them yet), and `grouped_work_centers`, `lines_without_group` and
+  `orphan_groups` for the grouped ones (see «A work centre's GROUP»).
 - **That page serves EVERY unit from 2026-09-07** (the operator's directive),
   one at a time. The hard lock to «Suvonov Elshod Of» (#5) — its name regex,
   its id fallback and the `lock_warning` it published — is GONE; `?manager_id=`
@@ -1352,7 +1518,8 @@ weight `unit_downtime` divides by), and the day gate is the same `uses_cells`
   Brand gold only (a single-metric accent), amber only for unpriced.
 - Endpoints: `GET /api/downtime/cost` (the tree + the filter option lists),
   `GET /api/downtime/cost/entries` (the modal — a separate call, it can be
-  thousands of rows), `GET`/`PUT /api/downtime/wage-rates`, and
+  thousands of rows) — weighed over EVERY cell of the unit, the set
+  the tree prices with, so its headcount and cost equal the tree's, `GET`/`PUT /api/downtime/wage-rates`, and
   `POST /api/downtime/cost.xlsx` — a SEPARATE workbook from the page's own
   «Excel», because it carries a different measure. THREE sheets, one measure
   each: «Umumiy» (KPI + the category table the screen leads with, Σ by cause),

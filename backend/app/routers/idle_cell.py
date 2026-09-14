@@ -332,6 +332,7 @@ def _cell_json(c: Cell, intervals: list, requests: list, legacy: list,
         "cell_id": c.id,
         "verifix_code": c.verifix_code,
         "sap_code": c.sap_code,
+        "wc_group": c.wc_group,   # work-centre group letter (services/wc_group.py)
         "name_uz": c.name_workshop_uz,
         "name_uz_cyrl": c.name_workshop_uz_cyrl,
         "name_ru": c.name_workshop_ru,

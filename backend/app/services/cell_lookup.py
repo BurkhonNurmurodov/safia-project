@@ -78,6 +78,9 @@ def _cell_dict(c: Cell, leader: str | None, sup: str | None = None) -> dict:
         "id": c.id,
         "verifix_code": c.verifix_code,
         "sap_code": c.sap_code,
+        # The cell's group of its work centre (services/wc_group.py), None for
+        # a cell that has none — the letter a label prints beside the code.
+        "wc_group": getattr(c, "wc_group", None),
         "uz": c.name_workshop_uz,
         "uz_cyrl": c.name_workshop_uz_cyrl,
         "ru": c.name_workshop_ru,
@@ -132,10 +135,11 @@ def by_sap(db: Session, with_leader: bool = False,
     therefore absent: it can never be the answer to "which of THIS brigadir's
     cells is this work centre".
 
-    Within ONE unit the code may still name several cells (10 groups today) and
-    the first by verifix code still wins, unchanged — that is a registry
-    question about one shopfloor, and `zagruzka_source.cell_people` is where it
-    is answered arithmetically, by splitting the typed headcount evenly.
+    Within ONE unit the code may still name several cells (10 groups today).
+    Keyed by (unit, code) the first by verifix code still wins; from 2026-09-14
+    each LETTERED cell is also keyed by (unit, code, group), the key that names
+    exactly one cell of a shared work centre (services/wc_group.py) — pass
+    `group` to `resolve_sap` to read it.
     """
     q = (
         db.query(Cell)
@@ -153,8 +157,13 @@ def by_sap(db: Session, with_leader: bool = False,
     for c in cells:
         key = _norm(c.sap_code)
         if key:
-            out.setdefault((int(c.manager_id), key),
-                           _cell_dict(c, leaders.get(c.leader_id)))
+            d = _cell_dict(c, leaders.get(c.leader_id))
+            out.setdefault((int(c.manager_id), key), d)
+            # …and, for a LETTERED cell, under (unit, code, group) as well — the
+            # one key that names exactly this cell of a shared work centre
+            # (services/wc_group.py). `resolve_sap(..., group=)` reads it.
+            if getattr(c, "wc_group", None):
+                out.setdefault((int(c.manager_id), key, c.wc_group), d)
     return out
 
 
@@ -181,6 +190,19 @@ def sap_codes_for_leader(db: Session, leader_id: int) -> set[str]:
     return {n for (code,) in rows if (n := _norm(code))}
 
 
+def sap_groups_for_leader(db: Session, leader_id: int) -> set[tuple[str, str | None]]:
+    """{(normalised SAP code, group|None)} of every cell this leader owns — the
+    group-aware twin of :func:`sap_codes_for_leader`, read through
+    `wc_group.in_scope`. A cell with no letter answers (code, None), which
+    `in_scope` reads as the whole work centre. Same empty-set rule."""
+    rows = (
+        db.query(Cell.sap_code, Cell.wc_group)
+        .filter(Cell.leader_id == leader_id, Cell.sap_code.isnot(None))
+        .all()
+    )
+    return {(n, g or None) for (code, g) in rows if (n := _norm(code))}
+
+
 def resolve_verifix(table: dict[str, dict], code) -> dict | None:
     """Look a verifix-family code up in a by_verifix() table (raw then zero-stripped)."""
     n = _norm(code)
@@ -189,8 +211,8 @@ def resolve_verifix(table: dict[str, dict], code) -> dict | None:
     return table.get(n) or table.get(n.lstrip("0"))
 
 
-def resolve_sap(table: dict[tuple[int, str], dict], code,
-                manager_id) -> dict | None:
+def resolve_sap(table: dict[tuple, dict], code,
+                manager_id, group: str | None = None) -> dict | None:
     """Look a SAP work-center code up in a by_sap() table, INSIDE one unit.
 
     ``manager_id`` is required because the code alone does not identify a cell —
@@ -201,6 +223,10 @@ def resolve_sap(table: dict[tuple[int, str], dict], code,
     n = _norm(code)
     if not n or manager_id is None:
         return None
+    if group:
+        # A GROUP names one cell, or none: an orphan letter must not borrow the
+        # first cell of the work centre, which is somebody else's.
+        return table.get((int(manager_id), n, group))
     return table.get((int(manager_id), n))
 
 

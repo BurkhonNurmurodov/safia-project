@@ -210,6 +210,25 @@ def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
 CAT_SKU, CAT_NAME, CAT_LABOR, CAT_WC = 1, 2, 3, 4
 CAT_WCM, CAT_CAP, CAT_SHT = 13, 19, 23
 
+# The «Группа» column (2026-09-14, services/wc_group.py) has no fixed place on
+# the form: brigadirs add it wherever there is room, so it is found by its
+# HEADER text in the header row rather than by position. The fixed columns are
+# skipped so a caption that happens to mention a group can never hijack the SKU,
+# Команда or staffing block.
+_GROUP_HEADS = ("групп", "guruh", "group")
+_FIXED_COLS = {CAT_SKU, CAT_NAME, CAT_LABOR, CAT_WC, CAT_WCM, CAT_CAP, CAT_SHT}
+
+
+def _group_column(header_row) -> int | None:
+    """1-based index of the «Группа» column in the header row, or None."""
+    for i, c in enumerate(header_row or (), start=1):
+        if i in _FIXED_COLS:
+            continue
+        s = _str(c).lower()
+        if s and any(k in s for k in _GROUP_HEADS):
+            return i
+    return None
+
 
 def _pick_catalog_sheet(wb, sheet_name: str | None):
     if sheet_name:
@@ -320,7 +339,8 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
     a stray note has neither, and 5 such rows in a row end the table."""
     title, rows = _catalog_rows(content, sheet_name)
     if title is None:
-        return {"products": [], "work_centers": [], "sheet": None}
+        return {"products": [], "work_centers": [], "sheet": None,
+                "has_group_column": False}
 
     # header row = the one mentioning Трудоёмкость; data starts after it
     header_i = 0
@@ -328,6 +348,10 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
         if any("трудо" in _str(c).lower() for c in row):
             header_i = i
             break
+    # Raw text only: whether it is a valid letter, and whether one SKU carries
+    # one group, is the importer's decision (wc_group.norm_group / line_conflicts)
+    # — it has to name the offending row, and a parser that dropped it could not.
+    grp_col = _group_column(rows[header_i]) if rows else None
 
     products = []
     order = 0
@@ -356,6 +380,7 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
             "work_center": wc,
             "labor_time": (_num(labor) if has_labor else None),
             "sort_order": order,
+            "wc_group": ((_str(_get(row, grp_col)) or None) if grp_col else None),
         })
         order += 1
 
@@ -387,7 +412,10 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
             wc_by_code[code] = entry
 
     work_centers = sorted(wc_by_code.values(), key=lambda x: x["sort_order"])
-    return {"products": products, "work_centers": work_centers, "sheet": title}
+    # `has_group_column` is what makes a blank group cell mean «no group» rather
+    # than «the sheet does not say» — see production.import_catalog.
+    return {"products": products, "work_centers": work_centers, "sheet": title,
+            "has_group_column": grp_col is not None}
 
 
 def read_workbook_slices(content: bytes, target_date: date | None,

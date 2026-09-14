@@ -54,7 +54,8 @@ from app.identity import (
     profile_holders, profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
-from app.services import action_log, cell_hours
+from app.services import action_log, cell_hours, wc_group
+from app.services.cell_lookup import norm_code
 from app.services.latin_code import latin_code
 from app.models import (
     Admin, Cell, CellAttendance, CellOjidaniya, CellPerenaladka, Factory,
@@ -310,6 +311,7 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
         if c and c not in want:
             want.append(c)
     existing = db.query(Cell).filter_by(leader_id=leader_id).all()
+    moved: list[Cell] = []   # cells whose unit this sync changes (group settlement below)
     for row in existing:
         if row.verifix_code not in want:
             row.leader_id = None
@@ -324,6 +326,7 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
             # The other two writers already treat the leader as authoritative
             # (`_apply_cell_fields`, the create below); this is the third.
             row.manager_id = mgr_id
+            moved.append(row)
     have = {row.verifix_code for row in existing}
     for code in want:
         if code in have:
@@ -337,10 +340,15 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
                        f"{owner.name if owner else 'another leader'}")
         if row:
             row.leader_id = leader_id
-            if mgr_id:
+            if mgr_id and row.manager_id != mgr_id:
                 row.manager_id = mgr_id
+                moved.append(row)
         else:
             db.add(Cell(verifix_code=code, leader_id=leader_id, manager_id=mgr_id))
+    # A sync nobody chose cell by cell never refuses: a colliding letter yields.
+    cleared = wc_group.settle_moved(db, moved, mgr_id)
+    if cleared:
+        action_log.enrich(details=[("group_cleared", c) for c in cleared])
 
 
 def _release_leader_cells(db: Session, leader_id: int) -> None:
@@ -627,6 +635,7 @@ def admin_list_profiles(db: Session = Depends(get_db),
     prof_names = {p.id: p.name for p in profiles}
     out["cells"] = [{
         "id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
+        "wc_group": c.wc_group,
         "name_workshop_uz": c.name_workshop_uz,
         "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
         "name_workshop_ru": c.name_workshop_ru,
@@ -752,6 +761,9 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
 class CellPayload(BaseModel):
     verifix_code:          Optional[str] = None   # required on create
     sap_code:              Optional[str] = None   # "" clears; None = untouched
+    # The work-centre GROUP letter (services/wc_group.py): "" clears, None =
+    # untouched. Only meaningful beside a SAP code another cell of the unit shares.
+    wc_group:              Optional[str] = None
     name_workshop_uz:      Optional[str] = None
     name_workshop_uz_cyrl: Optional[str] = None
     name_workshop_ru:      Optional[str] = None
@@ -806,6 +818,64 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
                 row.manager_id = p.manager_id
         else:
             row.leader_id = None
+    if payload.wc_group is not None:
+        try:
+            row.wc_group = wc_group.norm_group(payload.wc_group)
+        except wc_group.InvalidGroup:
+            raise HTTPException(status_code=400,
+                                detail="A group is one Latin letter A–Z (or blank for none).")
+
+
+def _placement(row: Cell) -> tuple:
+    """What the register rule is ABOUT: the unit, the normalised SAP code and
+    the letter. Nothing else a form writes can put a cell in breach."""
+    return (row.manager_id, norm_code(row.sap_code), row.wc_group or None)
+
+
+def _check_cell_group(db: Session, row: Cell, before: Optional[tuple] = None,
+                      payload: Optional[CellPayload] = None) -> None:
+    """Refuse a register write that would break the group rule. Called AFTER
+    every field is applied — a leader pick moves the unit, so the destination is
+    only known then.
+
+    An update whose placement did not move is not checked: it adds no breach,
+    and an unlettered sibling left behind by a leader's unit move (reported by
+    the boot self-check) must not make every unrelated edit of its neighbours —
+    a workshop name, a leader swap inside the unit — impossible.
+
+    A body with NO `wc_group` key is a /cells form still open on 4.106, which has
+    no letter field — so it is never refused over a letter it cannot see or
+    change. A write of that kind that leaves the cell without a SAP code or
+    without a unit drops the letter (a letter needs both, which is exactly what
+    wc_group_needs_sap / _needs_unit refused), and one that moves the cell to
+    another unit — directly or through a leader pick — settles the letter the way
+    a cascade does (`wc_group.settle_moved`) instead of refusing the move. Each
+    dropped letter is logged as `group_cleared`. A body that DOES send `wc_group`
+    chose its letter and keeps the structured refusal below."""
+    if before is not None and before == _placement(row):
+        return
+    if payload is not None and payload.wc_group is None:
+        cleared: list[str] = []
+        if row.wc_group and (row.manager_id is None or not norm_code(row.sap_code)):
+            cleared.append(f"{row.verifix_code} {row.wc_group}")
+            row.wc_group = None
+        moved_unit = before is not None and before[0] != row.manager_id
+        if moved_unit and row.manager_id is not None:
+            cleared += wc_group.settle_moved(db, [row], row.manager_id)
+        if cleared:
+            action_log.enrich(details=[("group_cleared", c) for c in cleared])
+        if moved_unit:
+            # A cascade's rule, not the form's: an unlettered cell dragged beside
+            # lettered ones is left for startup.report_wc_groups to name.
+            return
+    err = wc_group.check_cell_detail(db, cell_id=row.id, manager_id=row.manager_id,
+                                     sap_code=row.sap_code, group=row.wc_group or None)
+    if err:
+        # The STRUCTURED refusal ({code, params, message}), so the cell forms can
+        # say it in the admin's language. utils/api.js flattens a dict detail to
+        # its `message` — the English sentence — and keeps the dict as
+        # `detail_raw`, so a client that knows no kind still reads the reason.
+        raise HTTPException(status_code=400, detail=err)
 
 
 @router.get("/admin/cells")
@@ -840,6 +910,7 @@ def admin_list_cells(db: Session = Depends(get_db),
         ],
         "cells": [{
             "id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
+            "wc_group": c.wc_group,
             "name_workshop_uz": c.name_workshop_uz,
             "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
             "name_workshop_ru": c.name_workshop_ru,
@@ -867,7 +938,7 @@ _CELLS_XLSX_T = {
         "title": "YACHEYKALAR REYESTRI", "sum_title": "BRIGADIRLAR BO'YICHA UMUMIY",
         "generated": "Shakllantirildi", "records": "Yozuvlar",
         "shown_of": "{n} ta ko'rsatilgan ({total} tadan)",
-        "num": "№", "verifix": "Verifix kod", "sap": "SAP kod",
+        "num": "№", "verifix": "Verifix kod", "sap": "SAP kod", "group": "Guruh",
         "workshop": "Sex nomi", "brigadir": "Brigadir", "leader": "Lider",
         "no_brigadir": "Brigadir yo'q", "unassigned": "Biriktirilmagan",
         "cells_cnt": "Yacheykalar", "with_leader": "Lider bilan",
@@ -878,7 +949,7 @@ _CELLS_XLSX_T = {
         "title": "ЯЧЕЙКАЛАР РЕЕСТРИ", "sum_title": "БРИГАДИРЛАР БЎЙИЧА УМУМИЙ",
         "generated": "Шакллантирилди", "records": "Ёзувлар",
         "shown_of": "{n} та кўрсатилган ({total} тадан)",
-        "num": "№", "verifix": "Verifix код", "sap": "SAP код",
+        "num": "№", "verifix": "Verifix код", "sap": "SAP код", "group": "Гуруҳ",
         "workshop": "Сех номи", "brigadir": "Бригадир", "leader": "Лидер",
         "no_brigadir": "Бригадир йўқ", "unassigned": "Бириктирилмаган",
         "cells_cnt": "Ячейкалар", "with_leader": "Лидер билан",
@@ -889,7 +960,7 @@ _CELLS_XLSX_T = {
         "title": "РЕЕСТР ЯЧЕЕК", "sum_title": "СВОДКА ПО БРИГАДИРАМ",
         "generated": "Сформировано", "records": "Записей",
         "shown_of": "показано {n} из {total}",
-        "num": "№", "verifix": "Verifix код", "sap": "SAP код",
+        "num": "№", "verifix": "Verifix код", "sap": "SAP код", "group": "Группа",
         "workshop": "Название цеха", "brigadir": "Бригадир", "leader": "Лидер",
         "no_brigadir": "Бригадир не назначен", "unassigned": "Не закреплена",
         "cells_cnt": "Ячеек", "with_leader": "С лидером",
@@ -900,7 +971,7 @@ _CELLS_XLSX_T = {
         "title": "CELLS REGISTER", "sum_title": "SUMMARY BY BRIGADIR",
         "generated": "Generated", "records": "Records",
         "shown_of": "{n} of {total} shown",
-        "num": "#", "verifix": "Verifix code", "sap": "SAP code",
+        "num": "#", "verifix": "Verifix code", "sap": "SAP code", "group": "Group",
         "workshop": "Workshop", "brigadir": "Brigadir", "leader": "Leader",
         "no_brigadir": "No brigadir", "unassigned": "Unassigned",
         "cells_cnt": "Cells", "with_leader": "With leader",
@@ -922,6 +993,7 @@ class CellsExportRow(BaseModel):
     still sending it is accepted rather than 422'd — it is simply not written."""
     verifix_code: str = ""
     sap_code:     str = ""
+    wc_group:     str = ""   # the work-centre group letter; "" = none
     workshop:     str = ""   # accepted from older bundles, never written
     supervisor:   str = ""   # "" = unassigned; the label is applied here
     leader:       str = ""   # "" = unassigned
@@ -985,7 +1057,7 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
     ws = wb.active
     ws.title = L["sheet"]
 
-    headers = [L["num"], L["verifix"], L["sap"], L["brigadir"], L["leader"]]
+    headers = [L["num"], L["verifix"], L["sap"], L["group"], L["brigadir"], L["leader"]]
     ncols = len(headers)
     last_col = get_column_letter(ncols)
 
@@ -1011,14 +1083,16 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
         ws.cell(y, 2, r.verifix_code or "—").font = Font(bold=True, size=10, color="111827")
         ws.cell(y, 2).alignment = center
         ws.cell(y, 3, r.sap_code or "—").alignment = center
-        ws.cell(y, 4, r.supervisor or L["no_brigadir"])
-        ws.cell(y, 5, r.leader or L["unassigned"])
+        # The group sits right after the code it qualifies (services/wc_group.py).
+        ws.cell(y, 4, r.wc_group or "—").alignment = center
+        ws.cell(y, 5, r.supervisor or L["no_brigadir"])
+        ws.cell(y, 6, r.leader or L["unassigned"])
         for i in range(1, ncols + 1):
             c = ws.cell(y, i)
             c.border = grid
-            if i in (1, 3):
+            if i in (1, 3, 4):
                 c.font = Font(size=10, color="6B7280")
-            elif i >= 4:
+            elif i >= 5:
                 c.alignment = left_mid
                 c.font = body_font
             if n % 2 == 0:
@@ -1026,12 +1100,14 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
         # Placeholders read as absent data, never as a value.
         if not r.sap_code:
             ws.cell(y, 3).font = muted
-        if not r.supervisor:
+        if not r.wc_group:
             ws.cell(y, 4).font = muted
-        if not r.leader:
+        if not r.supervisor:
             ws.cell(y, 5).font = muted
+        if not r.leader:
+            ws.cell(y, 6).font = muted
 
-    for col, width in zip("ABCDE", (5, 14, 13, 30, 36)):
+    for col, width in zip("ABCDEF", (5, 14, 13, 9, 30, 36)):
         ws.column_dimensions[col].width = width
     if rows:
         ws.auto_filter.ref = f"A{HEAD_ROW}:{last_col}{HEAD_ROW + len(rows)}"
@@ -1131,16 +1207,21 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
         raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
     row = Cell(verifix_code=code)
     _apply_cell_fields(db, row, payload)
+    # Before `db.add`: the new row is not in the session yet, so the sibling
+    # SELECT inside cannot meet it (cell_id=None excludes nothing).
+    _check_cell_group(db, row, payload=payload)
     db.add(row)
     unit = unit_name(db, row.manager_id)
     mid = row.manager_id
     cell_details = [("cell", code), ("unit", unit)]
+    if row.wc_group:
+        cell_details.append(("wc_group", wc_group.label(row.sap_code, row.wc_group)))
     db.commit()
     alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.created",
                     details=cell_details)
     action_log.enrich(target_kind="cell", target_id=row.id, target_name=code,
                       unit_id=mid, unit_name=unit, details=cell_details)
-    return {"ok": True, "id": row.id}
+    return {"ok": True, "id": row.id, "sap_code": row.sap_code, "wc_group": row.wc_group}
 
 
 @router.put("/admin/cells/{cid}")
@@ -1150,8 +1231,10 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
     old = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
+           "wc_group": row.wc_group,
            "manager_id": row.manager_id, "leader_id": row.leader_id,
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
+    before = _placement(row)
     if payload.verifix_code is not None:
         code = " ".join(payload.verifix_code.split())
         if not code:
@@ -1161,12 +1244,14 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
             raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
         row.verifix_code = code
     _apply_cell_fields(db, row, payload)
+    _check_cell_group(db, row, before, payload)
     new = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
+           "wc_group": row.wc_group,
            "manager_id": row.manager_id, "leader_id": row.leader_id,
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
     db.commit()
     diff = [(k, old[k], new[k])
-            for k in ("verifix_code", "sap_code", *_CELL_NAME_DIFF)
+            for k in ("verifix_code", "sap_code", "wc_group", *_CELL_NAME_DIFF)
             if old[k] != new[k]]
     if old["manager_id"] != new["manager_id"]:
         diff.append(("unit", unit_name(db, old["manager_id"]),
@@ -1184,7 +1269,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         unit_id=new["manager_id"],
         details=[("cell", old["verifix_code"])], changes=diff,
     )
-    return {"ok": True, "id": cid}
+    return {"ok": True, "id": cid, "sap_code": new["sap_code"], "wc_group": new["wc_group"]}
 
 
 @router.delete("/admin/cells/{cid}")
@@ -1274,6 +1359,7 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
     return {
         "cell": {
             "id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
+            "wc_group": c.wc_group,
             "name_workshop_uz": c.name_workshop_uz,
             "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
             "name_workshop_ru": c.name_workshop_ru,
@@ -2683,6 +2769,7 @@ def _factory_dict(f: Optional[Factory]) -> Optional[dict]:
 def _cell_dict(c: Cell) -> dict:
     # id rides along so the profile page's cell chips can link to /cells/:id.
     return {"id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
+            "wc_group": c.wc_group,
             "name_workshop_uz": c.name_workshop_uz,
             "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
             "name_workshop_ru": c.name_workshop_ru,

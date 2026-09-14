@@ -530,6 +530,11 @@ class Cell(Base):
     # NULL on BOTH = inherit the supervisor's shift default; see the docstring.
     shift_start  = Column(String(5), nullable=True)
     shift_end    = Column(String(5), nullable=True)
+    # 2026-09-14: which GROUP of its SAP work centre this cell is — one Latin
+    # capital letter, NULL = none. Inside ONE unit a (sap_code, wc_group) names
+    # one cell: either a code has a single cell, or every cell sharing it is
+    # lettered and no two alike. services/wc_group.py is the rule and the why.
+    wc_group     = Column(String(1), nullable=True)
 
 
 class CellOjidaniya(Base):
@@ -1089,6 +1094,12 @@ class PPProduct(Base):
     # behaviour every line has always had, so nothing moves until a row is
     # switched off.
     auto_fill   = Column(Boolean, nullable=False, server_default="true")
+    # 2026-09-14: the GROUP of its work centre that produces this line — one
+    # Latin letter, NULL = the whole work centre (shared evenly by its cells).
+    # Every line of one SKU at one work centre carries the same group, because
+    # the SAP file writes one quantity per (SKU, work centre). NOT part of the
+    # line's identity: changing it moves no quantity. services/wc_group.py.
+    wc_group    = Column(String(1), nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -1131,8 +1142,24 @@ class PPWorkCenterDaily(Base):
     shtatka     = Column(Integer, nullable=True)   # W override (штатка)
     updated_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    # 2026-09-14: a pin may belong to ONE group of the work centre — the
+    # «Odamlar soni» row per cell (services/wc_group.py). NULL = the whole work
+    # centre, which is every pin stored before groups existed. A group pin
+    # carries `people` only; the day's штатка pin stays on the whole-centre row.
+    # Group pins and a whole-centre people pin never both answer: the writers
+    # delete the other kind, and wc_group.share ignores the whole-centre pin the
+    # moment any group pin exists.
+    wc_group    = Column(String(1), nullable=True)
+
+    # One pin per (unit, date, work centre, group) — an EXPRESSION index over
+    # COALESCE(wc_group, ''), not a plain constraint, and that is load-bearing:
+    # Postgres treats NULLs as DISTINCT inside a unique key, so a four-column
+    # constraint would accept two whole-centre pins for one day. The index keeps
+    # the old constraint's name; `startup.add_wc_groups` swaps one for the other
+    # on an existing box and `create_all` builds the index on a new one.
     __table_args__ = (
-        UniqueConstraint("manager_id", "date", "work_center", name="uq_pp_wc_daily_key"),
+        Index("uq_pp_wc_daily_key", "manager_id", "date", "work_center",
+              func.coalesce(wc_group, ""), unique=True),
     )
 
 

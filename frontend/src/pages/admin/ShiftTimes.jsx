@@ -21,6 +21,8 @@ import SearchInput from "../../components/ui/SearchInput";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import TimeField from "../../components/ui/TimeField";
 import CellLink from "../../components/ui/CellLink";
+import GroupBadge from "../../components/ui/GroupBadge";
+import { wcGroupLabel } from "../../utils/wcGroup";
 import TableCard, { SectionHead, Th } from "../../components/ui/DataTable";
 import { FilterPanel, OptsFilter } from "../../components/ui/ColumnFilter";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
@@ -411,7 +413,7 @@ export default function ShiftTimes() {
       if (pickL.size && !pickL.has(c.leader_id)) return false;
       if (pickS.size && !pickS.has(c.source)) return false;
       if (q) {
-        const hay = `${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c) || ""} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`;
+        const hay = `${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c) || ""} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`;
         if (!hay.toLowerCase().includes(q)) return false;
       }
       return true;
@@ -803,6 +805,7 @@ export default function ShiftTimes() {
                   <CellLink id={c.id} className="text-sm font-semibold">
                     {c.verifix_code || "—"}
                   </CellLink>
+                  <GroupBadge group={c.wc_group} title={wcGroupLabel(c.sap_code, c.wc_group)} />
                   <span className="text-xs truncate min-w-0 flex-1" style={{ color: c.leader ? "var(--text-2)" : "var(--text-4)" }}>
                     {tl(c.leader) || "—"}
                   </span>
@@ -892,6 +895,8 @@ export default function ShiftTimes() {
                 <td className="px-3 py-2 font-semibold">
                   {/* e.g. «0822» → /cells/:id */}
                   <CellLink id={c.id}>{c.verifix_code || "—"}</CellLink>
+                  {/* Group letter of a shared work centre — beside the code, never instead. */}
+                  <GroupBadge className="ml-1.5" group={c.wc_group} title={wcGroupLabel(c.sap_code, c.wc_group)} />
                 </td>
                 <td className="px-3 py-2" style={{ color: c.supervisor ? "var(--text-2)" : "var(--text-4)" }}>
                   {tl(c.supervisor) || "—"}

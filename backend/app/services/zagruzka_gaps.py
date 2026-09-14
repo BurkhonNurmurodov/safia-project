@@ -10,14 +10,27 @@ their own chat, as a file they can sort and filter:
 загрузка is right and is not being filled.
 
 **Nothing is re-measured here.** Every input is read from the function the
-platform itself divides by: the typed pins from `zagruzka_source.typed_people`,
-the trudoyomkost from `zagruzka_source.wc_labor` — which `unit_labor`, the
-загрузка's own numerator, is now a fold of, so this file and the page cannot
-report different minutes — the day-close gate from `brigadirs._closed_pairs`,
-the cells' waiting from `ojidaniya_cost._events` / `_union`, the weighing rule
-from `zagruzka_source.cell_people`, and the counted-category set from
+platform itself divides by: the typed pins from `zagruzka_source.typed_pins`
+(folded per work centre by `fold_pins`, exactly what `typed_people` returns),
+the trudoyomkost from `zagruzka_source.wc_group_labor`, read ONCE and folded
+per work centre by `fold_group_labor` — the fold `wc_labor` equals, which
+`unit_labor`, the загрузка's own numerator, is a fold of, so this file and the
+page cannot report different minutes — the day-close gate from
+`brigadirs._closed_pairs`, the cells' waiting from `ojidaniya_cost._events` /
+`_union`, the weighing rule from `zagruzka_source.cell_pins` (the split
+`cell_people` filters, cells matched to work centres by `wc_group.cells_by_wc`),
+and the counted-category set from
 `sheets_reader.OJIDANIYA_ONLY_CATS`. A second spelling of any of them is how a
 report about a number and the number itself start disagreeing.
+
+**The cell questions are asked of the CELL, not of its work centre**
+(2026-09-14, services/wc_group.py). Several cells of one unit may stand at one
+work centre; once they carry group letters each reads its own group's pin and
+its own group's catalog lines, and an unlettered one reads an even share. So a
+cell is weighed when `cell_people` gives it a positive number, and its plan is
+`zagruzka_source.cell_labor` — what that cell carries, never the whole work
+centre's figure, which would call a cell «planned» on the strength of another
+group's lines. Work-centre and unit rows stay on the per-work-centre folds.
 
 **A (unit, day) is in scope only if the unit WORKED it** — attendance exists
 for that pair, the same predicate `build_metrics_list` skips on and the heatmap
@@ -66,7 +79,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import (Attendance, Cell, DayApproval, Factory, Manager,
                         PPProduct)
-from app.services import idle_source, ojidaniya_cost, zagruzka_source
+from app.services import idle_source, ojidaniya_cost, wc_group, zagruzka_source
 from app.services.ojidaniya_export import (CENTER, DATE_FMT, HC, INDIGO, MIN,
                                            _iso, _unp_cell, _unp_head, _xl)
 from app.services.quality_export import (AMBER, BAND, BRAND_SOFT, GREEN, INK_SOFT,
@@ -146,9 +159,26 @@ PROBLEMS: dict[str, tuple[str, str, str, str]] = {
         "Og'irligi 0 bo'lgani uchun bu daqiqalar brigadir o'rtachasidan tushib "
         "qoladi — kutish bordek ko'rinadi, hisobga esa olinmaydi.",
         "/production → «Odamlar soni» → «Bugungi fakt»"),
+    "cell_no_group": (
+        "Kutish bor, yacheykaga guruh harfi berilmagan", SKEW,
+        "Ish markaziga o'sha kuni «Bugungi fakt» guruhlar bo'yicha (A, B, …) "
+        "kiritilgan, shu yacheykada esa guruh harfi yo'q. Guruh qatori faqat o'z "
+        "harfli yacheykasiga yetadi, shuning uchun og'irligi 0 — bu daqiqalar "
+        "brigadir o'rtachasidan tushib qoladi. «Odamlar soni»da qo'shimcha raqam "
+        "emas, yacheykaga harf kerak.",
+        "/cells/:id → Guruh"),
+    "cell_group_not_typed": (
+        "Kutish bor, yacheyka guruhiga odam soni kiritilmagan", SKEW,
+        "Ish markaziga o'sha kuni «Bugungi fakt» guruhlar bo'yicha (A, B, …) "
+        "kiritilgan, lekin shu yacheykaning guruhi uchun emas. Guruhli ish "
+        "markazida har bir yacheyka faqat o'z guruhining odam sonini oladi, "
+        "shuning uchun og'irligi 0 — bu daqiqalar brigadir o'rtachasidan "
+        "tushib qoladi.",
+        "/production → «Odamlar soni» → yacheyka guruhining «Bugungi fakt»i"),
     "cell_typed_zero": (
         "Kutish bor, odam soni 0 kiritilgan", SKEW,
-        "Yacheyka kutish yozgan, ish markaziga 0 kiritilgan. 0 og'irlik — bu "
+        "Yacheyka kutish yozgan, uning odam soni 0 (o'z guruhiga 0 kiritilgan "
+        "yoki ish markazining umumiy sonidan ulushi 0). 0 og'irlik — bu "
         "daqiqalar brigadir o'rtachasiga kirmaydi.",
         "/production → «Odamlar soni» → «Bugungi fakt»"),
     "cell_wc_unknown": (
@@ -177,6 +207,14 @@ REG_PROBLEMS: dict[str, tuple[str, str, str]] = {
         "Yacheyka brigadir katalogida bo'lmagan ish markazini ko'rsatadi — unda "
         "hech qachon reja bo'lmaydi.",
         "/cells/:id → SAP kodi yoki /production → «Позиции»"),
+    "reg_wc_group_conflict": (
+        "Bir ish markazidagi yacheykalar guruhlarga ajratilmagan",
+        "Bitta brigadirda bir SAP ish markazida bir nechta yacheyka turibdi, "
+        "lekin ularning hammasiga turli guruh harfi (A, B, …) berilmagan: "
+        "harfsiz yacheyka bor yoki harf takrorlangan. «Bugungi fakt» va "
+        "trudoyomkost bunday yacheykalarga o'z raqami emas, teng ulush bo'lib "
+        "tushadi — har bir yacheykaning kutish og'irligi va загрузкаsi taxmin.",
+        "/cells/:id → Guruh (har bir yacheykaga alohida harf)"),
     "reg_line_no_labor": (
         "Katalog qatorida Трудоемкость yo'q",
         "Labor_time kiritilmagan qator trudoyomkostga 0 daqiqa qo'shadi — reja "
@@ -249,8 +287,15 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
         DayApproval.date >= lo, DayApproval.date <= date_to).all()}
 
     # ── the two загрузка inputs, from the functions the page divides by ──────
-    pins = zagruzka_source.typed_people(db, ids, lo, date_to)
-    labor = zagruzka_source.wc_labor(db, ids, lo, date_to)
+    # Group-keyed pins, folded once per work centre for the unit and work-centre
+    # rows (`fold_pins` IS `typed_people`) and kept whole for the cell rows.
+    group_pins = zagruzka_source.typed_pins(db, ids, lo, date_to)
+    pins = zagruzka_source.fold_pins(group_pins)
+    # The catalog and quantities are read ONCE — group-keyed for the cells,
+    # folded per work centre here. Reading `wc_labor` as well would walk the
+    # whole range's catalog a second time for the same numbers.
+    group_labor = zagruzka_source.wc_group_labor(db, ids, lo, date_to)
+    labor = zagruzka_source.fold_group_labor(group_labor)
 
     pins_by_day: dict[tuple[int, str], dict[str, float]] = defaultdict(dict)
     for (mid, day, wc), n in pins.items():
@@ -260,13 +305,15 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
         labor_by_day[(mid, day)][wc] = pa
 
     # ── the catalog, for «this work centre is not in it at all» ──────────────
+    # Normalised codes: a cell is compared with the catalog on the same key the
+    # split matches it with, or a case-variant spelling would read «unknown».
     cat_wcs: dict[int, set[str]] = defaultdict(set)
     no_labor_lines: list[dict] = []
     for p in db.query(PPProduct).filter(PPProduct.manager_id.in_(ids)).all():
         if not p.active:
             continue
         mid = int(p.manager_id)
-        cat_wcs[mid].add((p.work_center or "").strip())
+        cat_wcs[mid].add(wc_group.wc_key(mid, p.work_center)[1])
         if p.labor_time is None:
             no_labor_lines.append({
                 "manager_id": mid, "wc": (p.work_center or "").strip(),
@@ -280,6 +327,17 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
     for c in cells:
         if c.manager_id is not None:
             by_unit_cells[int(c.manager_id)].append(c)
+    # What each CELL carries (services/wc_group.py): its own pin including a
+    # typed 0 and the letters typed at its work centre (`cell_pins` — whose
+    # «> 0» filter IS the weight the unit's mean divides by, so «typed 0», «not
+    # typed», «another group was typed» and «no letter» can be told apart), and
+    # its share of the plan. All over EVERY cell of the unit — the split depends
+    # on who else stands at the work centre, not only on the cells that filed
+    # something — and matched to work centres by `wc_group.cells_by_wc`.
+    own_pins = zagruzka_source.cell_pins(cells, group_pins)
+    cell_plan = zagruzka_source.cell_labor(cells, group_labor)
+    code_of = {c.id: wcode for (_mid, wcode), cs in wc_group.cells_by_wc(cells).items()
+               for c in cs}
 
     units_src = idle_source.cell_units(db)
     wanted = [d.isoformat() for d in _days(lo, date_to)]
@@ -399,27 +457,39 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
                     if minutes <= 0:
                         continue
                     idle_total += minutes
+                    # Shown as stored; matched as normalised (`wcode`).
                     wc = (c.sap_code or "").strip()
-                    n = wcn.get(wc) if wc else None
-                    # EXACTLY `zagruzka_source.cell_people`'s rule: a cell is
-                    # weighed only through a work centre carrying a pin above 0.
-                    weighed = bool(wc) and n is not None and n > 0
-                    plan = wcp.get(wc, (0.0, 0.0))[0] if wc else 0.0
+                    wcode = code_of.get(c.id, "")
+                    n, typed_letters = (own_pins.get((c.id, day), (None, frozenset()))
+                                        if wcode else (None, frozenset()))
+                    # The weight IS `zagruzka_source.cell_people`: the cell's own
+                    # group pin, or its share of the whole-centre pin, above 0.
+                    weighed = bool(wcode) and n is not None and n > 0
+                    plan = cell_plan.get((c.id, day), (0.0, 0.0))[0] if wcode else 0.0
                     has_plan = plan > 0
                     if not weighed:
                         idle_lost += minutes
-                    if not wc:
+                    if not wcode:
                         key = "cell_no_sap"
+                    elif not weighed and typed_letters and not c.wc_group:
+                        # Typed per group and this cell has NO letter: no group
+                        # row can ever reach it — the fix is a letter on /cells.
+                        key = "cell_no_group"
+                    elif not weighed and typed_letters and c.wc_group not in typed_letters:
+                        # Typed per group, just not this cell's group: the fix is
+                        # one named row, which «not typed» would not point at.
+                        key = "cell_group_not_typed"
                     elif n is None:
                         key = "cell_not_typed"
                     elif n <= 0:
                         key = "cell_typed_zero"
                     elif not has_plan:
-                        key = ("cell_wc_unknown" if wc not in cat_wcs.get(mid, ())
+                        key = ("cell_wc_unknown" if wcode not in cat_wcs.get(mid, ())
                                else "cell_no_plan")
                     else:
                         continue            # weighed and planned — nothing wrong
-                    emit(key, mid=mid, day=day, level="cell", wc=wc,
+                    emit(key, mid=mid, day=day, level="cell",
+                         wc=wc_group.label(wc, c.wc_group) if wcode else "",
                          cell=c.verifix_code or "",
                          leader=leaders.get(c.leader_id) or "",
                          plan=plan or None, people=n, idle=minutes,
@@ -447,9 +517,10 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
         if mid is None or mid not in managers:
             continue
         wc = (c.sap_code or "").strip()
-        if not wc:
+        wcode = code_of.get(c.id, "")
+        if not wcode:
             key = "reg_cell_no_sap"
-        elif wc not in cat_wcs.get(mid, ()):
+        elif wcode not in cat_wcs.get(mid, ()):
             key = "reg_cell_wc_unknown"
         else:
             continue
@@ -460,6 +531,26 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
             "factory": factories.get(managers[mid].factory_id, ""),
             "cell": c.verifix_code or "", "wc": wc,
             "leader": leaders.get(c.leader_id) or "", "detail": "",
+        })
+    # A shared work centre whose cells break the register rule (an unlettered
+    # cell beside others, or one letter twice): dateless, one row per unit+code,
+    # because the fix is one pass over those cells, not one per day.
+    for cf in wc_group.cell_conflicts(cells):
+        m = managers.get(cf["manager_id"])
+        if m is None:
+            continue
+        label, why, fix = REG_PROBLEMS["reg_wc_group_conflict"]
+        parts = []
+        if cf["unlettered"]:
+            parts.append("harfsiz: " + ", ".join(cf["unlettered"]))
+        for g, codes in sorted(cf["duplicates"].items()):
+            parts.append(f"«{g}» takror: " + ", ".join(codes))
+        registry.append({
+            "key": "reg_wc_group_conflict", "problem": label, "why": why,
+            "fix": fix, "manager": m.name or "", "shift": m.shift,
+            "factory": factories.get(m.factory_id, ""),
+            "cell": ", ".join(cf["cells"]), "wc": cf["sap_code"], "leader": "",
+            "detail": " · ".join(parts),
         })
     for ln in no_labor_lines:
         label, why, fix = REG_PROBLEMS["reg_line_no_labor"]

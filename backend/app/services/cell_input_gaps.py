@@ -28,11 +28,23 @@ half, imported rather than re-spelled, so «people stood in this cell» means
 here exactly what it means everywhere else.
 
 **Nothing is re-measured.** The typed pins come from
-`zagruzka_source.typed_people` and the plan minutes from
-`zagruzka_source.wc_labor` — which `unit_labor`, the загрузка's own numerator,
-is a fold of — so this file and the page cannot report different figures for one
-day. The cell → work centre link is `Cell.sap_code`, exactly as
-`zagruzka_source.cell_people` resolves it.
+`zagruzka_source.typed_pins` and the plan minutes from
+`zagruzka_source.wc_group_labor` — whose per-work-centre fold is `wc_labor`,
+which `unit_labor`, the загрузка's own numerator, is a fold of — so this file
+and the page cannot report different figures for one day. The cell → work
+centre link is `Cell.sap_code` matched through `wc_group.cells_by_wc` (unit +
+normalised code), exactly as `zagruzka_source.cell_people` resolves it, and the
+cell's own pin is `zagruzka_source.cell_pins` — the split `cell_people` filters —
+so this register cannot diagnose a different split from the one the weighted
+mean divides by.
+
+**The pin and the plan are the CELL's, not its work centre's** (2026-09-14,
+services/wc_group.py). Several cells of one unit may name one work centre; once
+they carry group letters the brigadir types each group's people on its own row
+and each catalog line names the group that makes it, so a cell reads its own
+group's pin and minutes plus an even share of whatever no letter claims
+(`wc_group.share`, via `cell_people` / `cell_labor`). Answering «is this cell
+typed» off the whole work centre would call group B typed because group A was.
 
 **The window starts at `ZAGRUZKA_FROM`.** Before that floor «Odam soni» and
 «Трудоёмкость» came from the two sheet tabs and the production page answered
@@ -74,7 +86,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import (Attendance, DayApproval, Factory, Manager, PPProduct)
-from app.services import idle_source, ojidaniya_cost, zagruzka_source
+from app.services import idle_source, ojidaniya_cost, wc_group, zagruzka_source
 from app.services.ojidaniya_export import (CENTER, DATE_FMT, HC, INDIGO, MIN,
                                            _iso, _unp_cell, _unp_head, _xl)
 from app.services.quality_export import (AMBER, BAND, BRAND_SOFT, GREEN,
@@ -92,6 +104,8 @@ MAX_ROWS = 5000
 V_NO_SAP = "no_sap"
 V_WC_UNKNOWN = "wc_unknown"
 V_NEITHER = "neither"
+V_CELL_NO_GROUP = "cell_no_group"
+V_GROUP_NO_PEOPLE = "group_no_people"
 V_NO_PEOPLE = "no_people"
 V_PEOPLE_ZERO = "people_zero"
 V_NO_PLAN = "no_plan"
@@ -119,6 +133,22 @@ VERDICTS: dict[str, tuple[str, str, str]] = {
         "fakt», na reja daqiqalari bor. Bu yacheyka загрузка hisobida umuman "
         "ko'rinmaydi — ishlagan odamlar ham, ular bajargan ish ham.",
         "/production → «Odamlar soni» va «Позиции»"),
+    V_CELL_NO_GROUP: (
+        "Yacheykaga guruh harfi berilmagan",
+        "Ish markaziga o'sha kuni «Bugungi fakt» guruhlar bo'yicha (A, B, …) "
+        "kiritilgan, shu yacheykada esa guruh harfi yo'q. Guruh qatori faqat "
+        "o'z harfli yacheykasiga yetadi, shuning uchun bu yacheykada ishlagan "
+        "odamlar ΣN ga qo'shilmaydi — «Odamlar soni»da qo'shimcha raqam emas, "
+        "yacheykaga harf kerak.",
+        "/cells/:id → Guruh"),
+    V_GROUP_NO_PEOPLE: (
+        "Yacheyka guruhiga odam soni kiritilmagan",
+        "Ish markaziga o'sha kuni «Bugungi fakt» guruhlar bo'yicha (A, B, …) "
+        "kiritilgan, lekin shu yacheykaning guruhi uchun emas. Guruhli ish "
+        "markazida har bir yacheyka faqat o'z guruhining odam sonini oladi — bu "
+        "yacheykada ishlagan odamlar ΣN ga qo'shilmaydi, kutishi ham o'lchovga "
+        "kirmaydi.",
+        "/production → «Odamlar soni» → yacheyka guruhining «Bugungi fakt»i"),
     V_NO_PEOPLE: (
         "Odam soni kiritilmagan",
         "Yacheykada odamlar ishlagan, ish markaziga «Bugungi fakt» "
@@ -157,8 +187,9 @@ REG_PROBLEMS: dict[str, tuple[str, str, str]] = {
 
 # Where the gap sits, so the reader knows which page to open.
 FIX_PAGE = {
-    V_NO_SAP: "/cells", V_WC_UNKNOWN: "/cells",
-    V_NEITHER: "/production", V_NO_PEOPLE: "/production",
+    V_NO_SAP: "/cells", V_WC_UNKNOWN: "/cells", V_CELL_NO_GROUP: "/cells",
+    V_NEITHER: "/production", V_GROUP_NO_PEOPLE: "/production",
+    V_NO_PEOPLE: "/production",
     V_PEOPLE_ZERO: "/production", V_NO_PLAN: "/production",
 }
 
@@ -241,8 +272,20 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
         return empty
 
     # ── the two загрузка inputs, from the functions the page divides by ──────
-    pins = zagruzka_source.typed_people(db, ids, lo, date_to)
-    labor = zagruzka_source.wc_labor(db, ids, lo, date_to)
+    # Folded per work centre for the unit-wide counters (`fold_pins` IS
+    # `typed_people`), per CELL for the row's own answer.
+    group_pins = zagruzka_source.typed_pins(db, ids, lo, date_to)
+    pins = zagruzka_source.fold_pins(group_pins)
+    # The catalog and quantities are read ONCE: group-keyed for the cells,
+    # folded per work centre for the unit counters (`fold_group_labor` is the
+    # fold `wc_labor` equals).
+    group_labor = zagruzka_source.wc_group_labor(db, ids, lo, date_to)
+    labor = zagruzka_source.fold_group_labor(group_labor)
+    # The cell's own pin INCLUDING a typed 0 and a group nobody typed — what
+    # `cell_people`'s «> 0» filter drops, which this register must show because
+    # the two need different fixes — plus the letters typed at its work centre.
+    own_pins = zagruzka_source.cell_pins(cells, group_pins)
+    cell_plan = zagruzka_source.cell_labor(cells, group_labor)
     pins_by_day: dict[tuple[int, str], dict[str, float]] = defaultdict(dict)
     for (mid, day, wc), n in pins.items():
         pins_by_day[(mid, day)][wc] = n
@@ -250,26 +293,27 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
     for (mid, day, wc), pa in labor.items():
         labor_by_day[(mid, day)][wc] = pa
 
-    # The catalog, for «this work centre is not in it at all».
+    # The catalog, for «this work centre is not in it at all» — normalised
+    # codes, so a cell and a catalog line meet on the key every reader uses.
     cat_wcs: dict[int, set[str]] = defaultdict(set)
     for p in db.query(PPProduct.manager_id, PPProduct.work_center,
                       PPProduct.active).filter(PPProduct.manager_id.in_(ids)).all():
         if p.active:
-            cat_wcs[int(p.manager_id)].add((p.work_center or "").strip())
+            cat_wcs[int(p.manager_id)].add(wc_group.wc_key(p.manager_id, p.work_center)[1])
 
     closed = {(int(mid), d.isoformat()) for mid, d in db.query(
         DayApproval.manager_id, DayApproval.date).filter(
         DayApproval.manager_id.in_(ids),
         DayApproval.date >= lo, DayApproval.date <= date_to).all()}
 
-    # How many cells of one unit name one work centre: the typed pin is ONE box
-    # for all of them (`zagruzka_source.cell_people` splits it evenly), so the
-    # fix is one box and the row must say so rather than reading as N faults.
-    share: dict[tuple[int, str], int] = defaultdict(int)
-    for c in cells:
-        code = (c.sap_code or "").strip()
-        if code and c.manager_id is not None:
-            share[(int(c.manager_id), code)] += 1
+    # How many cells of one unit name one work centre: an ungrouped work
+    # centre's pin is ONE box for all of them (`zagruzka_source.cell_people`
+    # splits it evenly), so the fix is one box and the row must say so rather
+    # than reading as N faults. A GROUPED one is one box per letter — see `box`.
+    # `cells_by_wc` is THE match, so a count here is over the cells the split
+    # actually hands the work centre to.
+    at_wc = wc_group.cells_by_wc(cells)
+    code_of = {c.id: wcode for (_mid, wcode), cs in at_wc.items() for c in cs}
 
     rows: list[dict] = []
     all_rows: list[dict] = []
@@ -289,22 +333,40 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
         if m is None:
             continue
 
+        # Shown as stored; matched as normalised (`wcode`). `code` is the
+        # VERIFIX code this loop is keyed by — never rebind it.
         wc = (c.sap_code or "").strip()
+        wcode = code_of.get(c.id, "")
         wcn = pins_by_day.get((mid, day), {})
         wcp = labor_by_day.get((mid, day), {})
-        pin = wcn.get(wc) if wc else None
-        plan, actual = wcp.get(wc, (0.0, 0.0)) if wc else (0.0, 0.0)
+        # The cell's OWN pin — its group's row, or its share of the whole-centre
+        # pin — including a typed 0, and the letters typed at its work centre.
+        pin, typed_letters = (own_pins.get((c.id, day), (None, frozenset()))
+                              if wcode else (None, frozenset()))
+        plan, actual = cell_plan.get((c.id, day), (0.0, 0.0)) if wcode else (0.0, 0.0)
+        unweighed = pin is None or pin <= 0
+        # Typed per group and this cell has NO letter: no group row can ever
+        # reach it, so the fix is a letter on /cells, not a number to type.
+        no_letter = bool(typed_letters) and not c.wc_group and unweighed
+        # Typed per group, just not this cell's group: a named row to fill,
+        # which «not typed» would not point at.
+        group_missing = (bool(typed_letters) and bool(c.wc_group)
+                         and c.wc_group not in typed_letters and unweighed)
 
         # The two questions, answered INDEPENDENTLY. None = unanswerable,
         # because the cell reaches no work centre this unit's catalog carries.
-        in_catalog = bool(wc) and wc in cat_wcs.get(mid, ())
-        typed_ok = None if not wc else (pin is not None and pin > 0)
-        plan_ok = None if not wc else (plan > 0)
+        in_catalog = bool(wcode) and wcode in cat_wcs.get(mid, ())
+        typed_ok = None if not wcode else (pin is not None and pin > 0)
+        plan_ok = None if not wcode else (plan > 0)
 
-        if not wc:
+        if not wcode:
             verdict = V_NO_SAP
         elif not in_catalog:
             verdict = V_WC_UNKNOWN
+        elif no_letter:
+            verdict = V_CELL_NO_GROUP
+        elif group_missing:
+            verdict = V_GROUP_NO_PEOPLE
         elif pin is None and plan <= 0:
             verdict = V_NEITHER
         elif pin is None:
@@ -317,16 +379,27 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
             verdict = V_OK
 
         planned = {w for w, (pp, _a) in wcp.items() if pp > 0}
+        n_cells = len(at_wc.get((mid, wcode), ())) if wcode else 0
+        # Which «Bugungi fakt» box answers for this cell. A lettered cell of a
+        # shared work centre has its OWN group row — unless the day was typed
+        # as one whole-centre number, which is then still one box split evenly.
+        # `own_pins` holds the cell exactly when its work centre carries a pin.
+        if n_cells < 2:
+            box = "own"
+        elif c.wc_group and (typed_letters or (c.id, day) not in own_pins):
+            box = "group"
+        else:
+            box = "shared"
         row = {
             "date": day, "shift": m.shift, "manager": m.name or "",
             "manager_id": mid, "factory": factories.get(m.factory_id, ""),
             "cell": code, "leader": leaders.get(c.leader_id) or "",
-            "wc": wc, "verdict": verdict,
+            "wc": wc, "wc_group": c.wc_group, "verdict": verdict,
             "people": round(n, 2), "heads": heads[(code, day)],
             "pin": pin, "plan": plan or None, "actual": actual or None,
             "typed_ok": typed_ok, "plan_ok": plan_ok,
             "in_catalog": in_catalog if wc else None,
-            "shared": share.get((mid, wc), 0) if wc else 0,
+            "shared": n_cells, "box": box,
             "wc_planned": len(planned), "wc_typed": len(wcn),
             "unit_typed_any": bool(wcn),
             "closed": (mid, day) in closed,
@@ -370,9 +443,10 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
             continue
         mid = int(c.manager_id)
         wc = (c.sap_code or "").strip()
-        if not wc:
+        wcode = code_of.get(c.id, "")
+        if not wcode:
             key = V_NO_SAP
-        elif wc not in cat_wcs.get(mid, ()):
+        elif wcode not in cat_wcs.get(mid, ()):
             key = V_WC_UNKNOWN
         else:
             continue
@@ -587,7 +661,7 @@ def _rows_sheet(wb: Workbook, p: dict, key: str, sheet: str, sub: str,
         _unp_cell(ws, r, 5, _xl(x["manager"]), bg)
         _unp_cell(ws, r, 6, _xl(x["cell"]), bg, align=CENTER, bold=True)
         _unp_cell(ws, r, 7, _xl(x["leader"]), bg, size=9, color=INK_SOFT)
-        _unp_cell(ws, r, 8, _xl(x["wc"]), bg, align=CENTER)
+        _unp_cell(ws, r, 8, _xl(x["wcLabel"]), bg, align=CENTER)
         _unp_cell(ws, r, 9, _xl(x["verdictLabel"]), bg, bold=not ok,
                   color=GREEN if ok else RED)
         _unp_cell(ws, r, 10, x["typedLabel"], bg, align=CENTER, size=9,
@@ -705,10 +779,16 @@ XLS_LABELS = {
 }
 
 
-def _shared_label(n: int) -> str:
+def _shared_label(n: int, box: str = "shared", group=None) -> str:
     """A work centre named by several cells is ONE «Bugungi fakt» box, and the
-    row has to say so or N cells read as N separate faults."""
-    return "—" if n <= 1 else f"{n} ta yacheyka"
+    row has to say so or N cells read as N separate faults — until it is typed
+    per GROUP, when each lettered cell has a row of its own and N rows really
+    are N boxes to fill."""
+    if n <= 1:
+        return "—"
+    if box == "group" and group:
+        return f"«{group}» guruh qatori ({n} ta yacheykadan)"
+    return f"{n} ta yacheyka"
 
 
 def payload(rep: dict) -> dict:
@@ -738,7 +818,8 @@ def payload(rep: dict) -> dict:
         return {**r, "verdictLabel": label, "why": why, "fix": fix,
                 "typedLabel": _yn(r["typed_ok"]), "planLabel": _yn(r["plan_ok"]),
                 "closedLabel": _yn(r["closed"]),
-                "sharedLabel": _shared_label(r["shared"]),
+                "sharedLabel": _shared_label(r["shared"], r["box"], r["wc_group"]),
+                "wcLabel": wc_group.label(r["wc"], r["wc_group"]),
                 "attOther": ", ".join(r["att_other"])}
 
     return {

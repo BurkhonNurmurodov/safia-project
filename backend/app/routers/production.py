@@ -24,6 +24,7 @@ Admin-only:
 from __future__ import annotations
 
 import statistics
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from functools import lru_cache
 from io import BytesIO
@@ -56,12 +57,14 @@ from app.services import action_log
 from app.services import forecast_autocall
 from app.services import idle_lock
 from app.services import shift_scope
+from app.services import wc_group
 from app.services import zagruzka_source
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
                                    line_keys, group_sizes, faza_quantities, takes_sap,
                                    DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
-from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
+from app.services.cell_lookup import (by_sap, resolve_sap, norm_code, sap_codes_for_leader,
+                                      sap_groups_for_leader)
 from app.services.latin_code import latin_code
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
@@ -83,15 +86,19 @@ POSITIONS_TITLE = {"uz": "Pozitsiyalar", "uz_cyrl": "Позициялар", "ru"
 # EVERYTHING else is a live formula, so editing any of those recalculates the
 # whole sheet exactly as the manual form does. Labels stay in the template's
 # original mixed ru/uz wording regardless of UI language.
+# L was the form's empty spacer; from 2026-09-14 it carries the line's GROUP of
+# its Команда (services/wc_group.py) — a value, like Команда beside it, and blank
+# for a line of the whole work centre. The same header text is what the catalog
+# import finds a «Группа» column by, so an exported form re-imports its groups.
 ABC_HEADERS = ["Сап код", "SKU", "Трудоемкость", "Команда", "ЛЮДИ", "вып %",
-               "Факт", "ПЛАН", "Общ.трудаёмкост", "Минут", "Парето"]
+               "Факт", "ПЛАН", "Общ.трудаёмкост", "Минут", "Парето", "Группа"]
 # F is I's TWIN and must stay sized like it. Both hold minutes — F the actual
 # (C*G/60), I the plan (C*H/60) — so their per-row values and their row-1 sums
 # are the same magnitude. F was 8, wide enough for one position's «466,0» and
 # not for the sum of 170 of them: F1 printed ######## on every exported file,
 # which reads as a broken formula and was reported as one.
 ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 12.5, "G": 9.5,
-              "H": 9, "I": 12.5, "J": 8.5, "K": 8.5, "L": 4.5, "M": 10, "N": 8.5,
+              "H": 9, "I": 12.5, "J": 8.5, "K": 8.5, "L": 8, "M": 10, "N": 8.5,
               "O": 15, "P": 50, "Q": 11}
 # Bordered formula rows under the data, for SKUs the brigadir adds by hand. 0 by
 # the operator's call (2026-08-31): 15 of them printed a block of 0.0 / 0% rows
@@ -238,6 +245,30 @@ def _leader_wc_scope(db: Session, payload: dict) -> Optional[set[str]]:
     return sap_codes_for_leader(db, pid)
 
 
+def _leader_group_scope(db: Session, payload: Optional[dict]) -> Optional[set]:
+    """The (work centre, GROUP) pairs a LEADER may see — `_leader_wc_scope` one
+    level down (services/wc_group.py), read through `wc_group.in_scope`.
+
+    A leader of cell 7421 (A2894 · A) sees group A and the ungrouped part of
+    A2894, never group B: once a work centre is split into groups, owning one of
+    its cells is no longer owning all of it. Same None / empty-set rule as the
+    code scope, and the code scope still guards every code-level check."""
+    if not payload or payload.get("role") != "leader" or page_scope_is_all(db, payload, PAGE):
+        return None
+    pid = viewer_leader_profile_id(db, payload)
+    if not pid:
+        raise HTTPException(status_code=403, detail="No leader profile resolved for this account")
+    return sap_groups_for_leader(db, pid)
+
+
+def _group_or_400(value) -> Optional[str]:
+    """`wc_group.norm_group`, with a refusal the client can print as it is."""
+    try:
+        return wc_group.norm_group(value)
+    except wc_group.InvalidGroup as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 def _in_scope(scope: Optional[set[str]], code) -> bool:
     """Is this work center inside the caller's cell scope? True for everyone who
     has no scope pin, so call sites read the same for scoped and unscoped roles."""
@@ -286,7 +317,8 @@ def _parse_date(s: Optional[str]) -> date:
 
 def _build_dashboard(db: Session, manager_id: int, day: date,
                      wc_scope: Optional[set[str]] = None,
-                     payload: Optional[dict] = None) -> dict:
+                     payload: Optional[dict] = None,
+                     group_scope: Optional[set] = None) -> dict:
     """The unit's dashboard for one day, optionally narrowed to ``wc_scope`` —
     the work centers of a leader's own cells.
 
@@ -294,7 +326,23 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     staffing pins), so every derived number the engine returns — totals, KPIs,
     Парето, unknown SKUs — is computed over the scoped set instead of being
     filtered afterwards, and the page adds up on its own terms.
+
+    `group_scope` narrows a leader one level further, to the GROUPS of a work
+    centre their cells are (`_leader_group_scope`) — and it is the one narrowing
+    applied to the OUTPUT instead. A group's figures are a SHARE
+    (`wc_group.share`) that depends on every sibling group and on the part no
+    letter claims, so an engine run over one leader's groups states another
+    N, load and ЛЮДИ/Минут for the same work centre than the brigadir's page
+    does (A2894: 7 people for the admin, 4 for the leader of group A), and the
+    leader's ABC file inherits it. So the engine runs over the leader's CODES,
+    exactly as it did before groups, and only its output loses the other
+    groups' entries and lines: every figure left is the brigadir's. It is
+    derived from `payload` whenever a code scope is given and it is not, so a
+    caller cannot hand a leader the other groups of a shared work centre by
+    forgetting it.
     """
+    if group_scope is None and wc_scope is not None and payload is not None:
+        group_scope = _leader_group_scope(db, payload)
     products = (
         db.query(PPProduct)
         .filter(PPProduct.manager_id == manager_id, PPProduct.active.is_(True))
@@ -324,7 +372,30 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         wcs = [w for w in wcs if _in_scope(wc_scope, w.code)]
         daily = [d for d in daily if _in_scope(wc_scope, d.work_center)]
         wc_daily = [o for o in wc_daily if _in_scope(wc_scope, o.work_center)]
-    wc_overrides = {o.work_center: {"people": o.people, "shtatka": o.shtatka} for o in wc_daily}
+    # The whole-centre pins (wc_group IS NULL) feed N and the штатка exactly as
+    # before; the GROUP pins travel separately — mixing them into one dict keyed
+    # by the work centre would let a group row overwrite the whole-centre one.
+    wc_overrides = {o.work_center: {"people": o.people, "shtatka": o.shtatka}
+                    for o in wc_daily if not o.wc_group}
+    group_overrides = {(o.work_center, o.wc_group): {"people": o.people}
+                       for o in wc_daily if o.wc_group}
+
+    # The unit's registry cells at each of the dashboard's own work-centre codes
+    # — the cells a grouped work centre hands its minutes to. Codes meet through
+    # `norm_code`, so «a2894» typed on a cell and «A2894» on the catalog are one
+    # work centre. Unscoped on purpose: how many cells stand at a code is a fact
+    # about the unit, and the split rule needs every one of them.
+    cells_at: dict[str, list] = defaultdict(list)
+    for c in (db.query(Cell)
+              .filter(Cell.manager_id == manager_id, Cell.sap_code.isnot(None))
+              .order_by(Cell.verifix_code, Cell.id).all()):
+        n = norm_code(c.sap_code)
+        if n:
+            cells_at[n].append(c.wc_group or None)
+    wc_cells = {code: list(cells_at[norm_code(code)])
+                for code in ({w.code for w in wcs} | {p.work_center for p in products}
+                             | {o.work_center for o in wc_daily})
+                if code and norm_code(code) in cells_at}
 
     line_overrides: dict[tuple[str, str, str], dict] = {}
     for lo in line_daily:
@@ -361,6 +432,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             # through pp_calc.takes_sap, never here, so the page and the
             # загрузка cannot disagree about which rows the file answers for.
             "auto_fill": p.auto_fill,
+            "wc_group": p.wc_group,
             "line_key": keys.get(p.id, ""),
             "group_size": sizes.get((daily_key(p.sap_code, p.name), p.work_center or ""), 1),
         } for p in products],
@@ -384,7 +456,25 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         # данных» there, instead of the two contradicting each other. Days
         # before the floor are untouched.
         people_typed_only=zagruzka_source.uses_production(day),
+        wc_cells=wc_cells,
+        group_overrides=group_overrides,
     )
+    if group_scope is not None:
+        # The leader's slice is CUT from the code-scoped computation, never
+        # recomputed (see the docstring): another group's lines and group
+        # entries go, and everything kept — the work centre's people, load,
+        # people_whole and people_overridden, each kept group's share, the kept
+        # lines' ЛЮДИ/Минут and the totals over the leader's work centres —
+        # stays exactly as the engine stated it for the brigadir. A line with no
+        # letter is the whole work centre's and stays. Cut before
+        # `missing_labor_count` below, which counts the lines the leader is
+        # shown. The catalog stays whole, so another group's SKU is still a
+        # catalog SKU and never surfaces as an «unknown SKU».
+        result["rows"] = [r for r in result["rows"] if wc_group.in_scope(
+            group_scope, r["work_center"], r.get("wc_group"))]
+        for w in result["work_centers"]:
+            w["groups"] = [g for g in (w.get("groups") or []) if wc_group.in_scope(
+                group_scope, w["work_center"], g["group"])]
 
     # SKUs present in the SAP snapshot but absent from the catalog. A code-less
     # line's key is synthetic (see daily_key) and can never come out of the SAP
@@ -454,6 +544,10 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     sap_tbl = by_sap(db, with_leader=True, manager_ids=[manager_id])
     for wc in result["work_centers"]:
         wc["cell"] = resolve_sap(sap_tbl, wc.get("work_center"), manager_id)
+        # A letter names ONE cell or none — an orphan letter must not borrow the
+        # work centre's first cell, which is somebody else's (resolve_sap).
+        for g in wc.get("groups") or []:
+            g["cell"] = resolve_sap(sap_tbl, wc.get("work_center"), manager_id, g["group"])
 
     # The day's lock rides on every dashboard, so the page can state it once at
     # the top instead of leaving the reader to notice that saving stopped
@@ -521,6 +615,21 @@ def export_positions(
     SUMIFS loading — so the file keeps recalculating as the brigadir edits it
     during the shift.
 
+    Column L carries each line's GROUP (services/wc_group.py) under a «Группа»
+    header on EVERY unit's file — blank for a line of the whole work centre — so
+    an exported form re-imports its groups. Only the X:Y block depends on groups:
+    a work centre whose cells carry letters adds «A2894 · A» and that group's
+    O. SONI, the headcount the page divides the group's lines by, and those lines
+    look ЛЮДИ up there by D&" · "&L, so file and page print one ЛЮДИ/Минут per
+    row; its Загруженность divides by N. When the block holds every cell of the
+    work centre AND adds up to the page's N, that N is =SUMIFS over the block, so
+    an edit to a group's number reaches the team total; otherwise N is the page's
+    value. A leader's file carries the brigadir's figures cut to their own groups
+    (`_build_dashboard`), so both files state one X:Y value and one N — and the
+    minutes of the lines that cut hides ride as constants beside I1, F1 and the
+    team's SUMIFS, so the leader's load, bandlik and Парето equal their page's. A unit
+    nobody grouped writes no block, and its M:N and ЛЮДИ formulas are unchanged.
+
     Two deliberate departures from the manual form: the indicator block carries
     three rows and not nine (see the P:Q section), and division-prone cells are
     wrapped in IFERROR, so a position with no people or no plan prints 0 instead
@@ -529,7 +638,8 @@ def export_positions(
     mid = _resolve_manager_id(payload, body.manager_id, db)
     day = _parse_date(body.date)
     # A leader exports exactly what their page shows — their own cells.
-    dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload))
+    dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload),
+                            group_scope=_leader_group_scope(db, payload))
     rows = dash["rows"]
     if body.order:
         by_id = {r.get("id"): r for r in rows}
@@ -537,6 +647,70 @@ def export_positions(
     wcs = dash.get("work_centers") or []
     consts = dash.get("constants") or {}
     sm = int(consts.get("shift_min") or DEFAULT_SHIFT_MIN)
+
+    # What a LEADER's cut hides. `_build_dashboard` computes a leader's page over
+    # every group of their work centres and only then drops the other groups'
+    # rows, so the page's team minutes and totals still include those lines —
+    # while this file's SUMs can only see the rows it writes. Their minutes ride
+    # as constants beside I1, F1 and each team's SUMIFS, or a leader's
+    # Загруженность, bandlik and Парето would divide their own rows' minutes by
+    # the whole team's N and disagree with their page and the brigadir's file.
+    # Measured against the dashboard's own rows (before `body.order`), so a
+    # brigadir's search-filtered export — and every ungrouped unit's — cuts
+    # nothing: 0 everywhere, formulas byte-identical.
+    _row_plan: dict[str, float] = defaultdict(float)
+    _row_act: dict[str, float] = defaultdict(float)
+    for r in dash["rows"]:
+        _row_plan[r.get("work_center") or ""] += float(r.get("total_labor") or 0.0)
+        _row_act[r.get("work_center") or ""] += float(r.get("actual_labor") or 0.0)
+    cut_plan: dict[str, float] = {}
+    cut_act: dict[str, float] = {}
+    for w in wcs:
+        code = w.get("work_center") or ""
+        cp = float(w.get("total_labor") or 0.0) - _row_plan.get(code, 0.0)
+        ca = float(w.get("actual_labor") or 0.0) - _row_act.get(code, 0.0)
+        if cp > 1e-6:
+            cut_plan[code] = cp
+        if ca > 1e-6:
+            cut_act[code] = ca
+
+    def _team_minutes(code: str, rn: int) -> str:
+        base = f"SUMIFS($I:$I,$D:$D,$M{rn})"
+        return f"({base}+{cut_plan[code]:.4f})" if code in cut_plan else base
+
+    # The GROUP block (X:Y): one row per letter a CELL carries, in the order the
+    # page lists them. Orphan letters stay out — their lines read the work
+    # centre's N on the page (pp_calc pass 2), so they keep the M:N lookup here.
+    # X:Y sits clear of everything pp_parser reads back (A–D, M, S, W and the
+    # «Группа» header at L), and its header names no «групп/guruh/group», so an
+    # exported form still re-imports as a catalog.
+    gblock: list[tuple[str, str, Optional[float]]] = []   # (label, code, people)
+    grouped_wcs: set[str] = set()      # work centres that have a block
+    summed_wcs: set[str] = set()       # …whose block holds every cell ⇒ N = SUMIFS
+    for w in wcs:
+        code = w.get("work_center") or ""
+        own = [g for g in (w.get("groups") or []) if not g.get("orphan")]
+        if not code or not own:
+            continue
+        grouped_wcs.add(code)
+        for g in own:
+            gblock.append((wc_group.label(code, g["group"]), code,
+                           g.get("people_counted", g.get("people"))))
+        # N is the page's value unless the block provably IS that value. A
+        # leader's file is cut to their own groups; a register with an unlettered
+        # cell beside lettered ones shares people outside any letter; and before
+        # the загрузка floor a group nobody typed counts its share of the formula
+        # beside a typed sibling, which the page's N (the Σ of the typed pins)
+        # does not add. In each of those a SUMIFS would print another N than the
+        # page — and than the leader's file, which keeps the page's value —
+        # so the block must hold every cell AND sum to N (all blank for a blank N).
+        counted = [g.get("people_counted") for g in own]
+        page_n = w.get("people")
+        adds_up = (all(v is None for v in counted) if page_n is None
+                   else abs(sum(float(v or 0.0) for v in counted) - float(page_n)) < 1e-9)
+        if len(own) == (w.get("cells_n") or 0) and adds_up:
+            summed_wcs.add(code)
+    block_labels = {lbl for lbl, _c, _n in gblock}
 
     title_word = POSITIONS_TITLE.get(lang, POSITIONS_TITLE["ru"])
     mgr_name = dash.get("manager_name") or ""
@@ -566,9 +740,9 @@ def export_positions(
 
     # --- row 1: shift totals (вып % = actual/plan minutes, and the two sums) --
     ws["E1"] = "=IFERROR(F1/I1,0)"
-    ws["F1"] = f"=+SUM(F{ds}:F{data_end})"
+    ws["F1"] = f"=+SUM(F{ds}:F{data_end})" + (f"+{sum(cut_act.values()):.4f}" if cut_act else "")
     ws["H1"] = day                                        # the form's date cell
-    ws["I1"] = f"=SUM(I{ds}:I{data_end})"
+    ws["I1"] = f"=SUM(I{ds}:I{data_end})" + (f"+{sum(cut_plan.values()):.4f}" if cut_plan else "")
     # F1 and I1 are two sums of minutes standing side by side, so they wear ONE
     # format — the form's own space-grouped «78 000.00». F1's bare "0.00" spelled
     # a five-figure total with no separator at all.
@@ -602,13 +776,20 @@ def export_positions(
         act, plan = r.get("actual_qty"), r.get("plan_qty")
         ws.cell(row=rn, column=7, value=act if act else None)
         ws.cell(row=rn, column=8, value=plan if plan else None)
+        ws.cell(row=rn, column=12, value=r.get("wc_group") or None)   # L Группа
     for rn in range(ds, data_end + 1):
-        ws.cell(row=rn, column=5, value=f"=+IFERROR(VLOOKUP(D{rn},$M:$N,2,0),0)")   # ЛЮДИ
+        r = rows[rn - ds] if rn - ds < len(rows) else {}
+        if r.get("wc_group") and wc_group.label(r.get("work_center"), r["wc_group"]) in block_labels:
+            # a line of a group some cell carries reads that GROUP's people
+            ws.cell(row=rn, column=5,
+                    value=f'=+IFERROR(VLOOKUP(D{rn}&" · "&L{rn},$X:$Y,2,0),0)')        # ЛЮДИ
+        else:
+            ws.cell(row=rn, column=5, value=f"=+IFERROR(VLOOKUP(D{rn},$M:$N,2,0),0)")   # ЛЮДИ
         ws.cell(row=rn, column=6, value=f"=C{rn}*G{rn}/60")                          # вып %
         ws.cell(row=rn, column=9, value=f"=C{rn}*H{rn}/60")                          # Общ.трудаёмкост
         ws.cell(row=rn, column=10, value=f"=IFERROR(I{rn}/E{rn},0)")                 # Минут
         ws.cell(row=rn, column=11, value=f"=+IFERROR(I{rn}/$I$1,0)")                 # Парето
-        for cn in range(1, 12):
+        for cn in range(1, 13):
             c = ws.cell(row=rn, column=cn)
             c.border = border
             c.alignment = left if cn in (1, 2) else center
@@ -646,9 +827,19 @@ def export_positions(
         # then reads 0 until it is filled in, which is what a form is for.
         # The padding row of a unit with no teams at all stays blank too.
         _n = w.get("people")
-        ws.cell(row=rn, column=14, value=(float(_n) if (code and _n is not None) else None))
-        ws.cell(row=rn, column=15, value=(                                            # O Загруженность
-            f"=+IFERROR(SUMIFS($I:$I,$D:$D,$M{rn})/({sm}*VLOOKUP($M{rn},$D:$E,2,0)),0)"))
+        if code in summed_wcs:
+            # the team's people ARE its groups' — one edit in Y reaches N
+            ws.cell(row=rn, column=14, value=f'=SUMIFS($Y:$Y,$X:$X,M{rn}&" · *")')
+        else:
+            ws.cell(row=rn, column=14, value=(float(_n) if (code and _n is not None) else None))
+        if code in grouped_wcs:
+            # The first row's ЛЮДИ is ONE group's people on a grouped team, so the
+            # team's load divides by its own N, as the page's does.
+            ws.cell(row=rn, column=15,                                                # O Загруженность
+                    value=f"=+IFERROR({_team_minutes(code, rn)}/({sm}*N{rn}),0)")
+        else:
+            ws.cell(row=rn, column=15, value=(                                        # O Загруженность
+                f"=+IFERROR({_team_minutes(code, rn)}/({sm}*VLOOKUP($M{rn},$D:$E,2,0)),0)"))
         for cn in (13, 14, 15):
             c = ws.cell(row=rn, column=cn)
             c.border, c.alignment = border, center
@@ -661,6 +852,27 @@ def export_positions(
             ws.cell(row=rn, column=cn).number_format = nf
     tot = ws.cell(row=ttot, column=14, value=f"=SUM(N{t0}:N{t1})")
     tot.border, tot.alignment, tot.font, tot.number_format = border, center, bold, "0.0"
+
+    # --- X:Y — per-group block (feeds a grouped line's ЛЮДИ) ------------------
+    # Written only when a work centre is grouped, so an ungrouped unit's file
+    # keeps its exact layout. Y is a VALUE and the block's hand-editable cell,
+    # like N: the headcount the page counts the group with (its typed pin, or its
+    # share of a whole-team figure), blank when nothing reaches the group.
+    if gblock:
+        for col, h in ((24, "Команда · буква"), (25, "O. SONI")):
+            c = ws.cell(row=2, column=col, value=h)
+            c.font, c.alignment, c.border = bold, head_al, border
+        for idx, (lbl, code, n) in enumerate(gblock):
+            rn = t0 + idx
+            xc = ws.cell(row=rn, column=24, value=lbl)
+            yc = ws.cell(row=rn, column=25, value=(float(n) if n is not None else None))
+            xc.border = yc.border = border
+            xc.alignment = yc.alignment = center
+            fill, colour = _wc_style(code)
+            xc.fill, xc.font = fill, Font(color=colour, bold=True)
+            yc.fill, yc.number_format = yellow, "0.0"
+        ws.column_dimensions["X"].width = 15
+        ws.column_dimensions["Y"].width = 8.5
 
     # --- P:Q — indicator block ------------------------------------------------
     # THREE figures, by the operator's call (2026-08-31): the people standing in
@@ -806,6 +1018,20 @@ def set_override(
     scope = _leader_wc_scope(db, payload)
     if not _in_scope(scope, body.work_center):
         raise HTTPException(status_code=403, detail="This team is not one of your cells")
+    if scope is not None:
+        # …and inside a shared work centre, their own GROUP only (services/
+        # wc_group.py): the dashboard stopped showing a leader of 7421 (A2894 · A)
+        # group B's positions, so a write naming one is a write to a line they
+        # cannot see. The SKU's group is the catalog's answer for the whole unit,
+        # the key `wc_group.sku_groups` reads; a SKU with none is the whole work
+        # centre's and stays theirs.
+        gscope = _leader_group_scope(db, payload)
+        grp = wc_group.sku_groups(db.query(PPProduct).filter(
+            PPProduct.manager_id == mid,
+            PPProduct.work_center == body.work_center).all()).get(
+                (body.work_center or "", body.sap_code))
+        if not wc_group.in_scope(gscope, body.work_center, grp):
+            raise HTTPException(status_code=403, detail="This team is not one of your cells")
     # A day the unit has signed off on is immutable here for the same reason it
     # is on /idle-cell: ПЛАН/ФАКТ is what the загрузка divides, so editing it
     # behind a closed day rewrites a number the unit has already signed. An
@@ -1008,6 +1234,84 @@ class WcOverrideBody(BaseModel):
     # computed N / configured штатка.
     people: Optional[int] = None
     shtatka: Optional[int] = None
+    # 2026-09-14: the GROUP of the work centre this pin belongs to
+    # (services/wc_group.py). Absent/null = the whole work centre — the pin every
+    # caller wrote before groups existed. A group pin carries people only.
+    group: Optional[str] = None
+
+
+def _pins_at(db, mid: int, day: date, code: str) -> tuple:
+    """``(whole-centre row | None, {letter: group row})`` for one (unit, day,
+    work centre).
+
+    The whole-centre row is the one with NO group. Since 2026-09-14 a work
+    centre may hold several pin rows for one day, so «the row for this work
+    centre» is no longer an answer — every lookup of it filters on the group."""
+    rows = db.query(PPWorkCenterDaily).filter(
+        PPWorkCenterDaily.manager_id == mid, PPWorkCenterDaily.date == day,
+        PPWorkCenterDaily.work_center == code).all()
+    return (next((o for o in rows if not o.wc_group), None),
+            {o.wc_group: o for o in rows if o.wc_group})
+
+
+def _clear_whole_people(db, whole) -> Optional[int]:
+    """The pin rule from the group side: a typed GROUP pin retires the
+    whole-centre people pin, so the two never both answer (`wc_group.share`
+    ignores the whole-centre pin anyway — this keeps the table saying the same).
+    Its штатка stays: that pin belongs to the whole work centre. A row left with
+    nothing on it goes. Returns the people value cleared, for the log."""
+    if whole is None or whole.people is None:
+        return None
+    was = whole.people
+    if whole.shtatka is None:
+        db.delete(whole)
+    else:
+        whole.people = None
+    return was
+
+
+def _cell_letters(db, mid: int) -> dict[str, set]:
+    """``{normalised SAP code: {letters its cells carry}}`` for ONE unit, matched
+    through `wc_group.cells_by_wc` — the letters a group pin may be typed under."""
+    by = wc_group.cells_by_wc(db.query(Cell).filter(
+        Cell.manager_id == mid, Cell.sap_code.isnot(None)).all())
+    return {code: {c.wc_group for c in cs if c.wc_group} for (_m, code), cs in by.items()}
+
+
+def _refuse_orphan_pin(letters_at: dict, code: str, grp: Optional[str],
+                       people: Optional[int], stored: Optional[int]) -> None:
+    """400 for a NEW or CHANGED people pin under a letter no cell of the unit
+    carries at `code`. Such a pin reaches no cell of its own — it is only ever
+    spread evenly over the real cells — so typing one is a mistake the page
+    cannot show back. Re-sending the stored value (the page echoes every group it
+    lists) and clearing (None) stay allowed, so a pin already stored can always
+    be removed and is never a reason to refuse a save about something else."""
+    if grp is None or people is None or people == stored:
+        return
+    n = norm_code(code)
+    if grp in letters_at.get(n, set()):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=(f"{wc_group.label(code, grp)}: no cell of this unit carries group {grp} "
+                f"at {n}. Give a cell that letter on the Cells page first, or type the "
+                f"people on a group a cell carries."))
+
+
+def _echoes_group_sum(pins: dict, people: Optional[int]) -> bool:
+    """Is a whole-centre `people` just the Σ of the typed group pins `pins` (the
+    ones the caller can see) sent back?
+
+    The dashboard publishes that Σ as `work_centers[].people` with
+    `people_overridden` True, and a tab opened on an older bundle (4.106) seeds
+    its «Odamlar soni» draft from exactly those two fields and re-sends EVERY
+    work centre on any Save. Read as a typed whole-centre figure it would delete
+    the group pins and write their sum — the brigadir's per-cell split silently
+    collapsed by a save about a штатка or another team. So an equal number
+    changes no people pin; any OTHER whole-centre number still replaces the
+    group pins, as a typed whole figure always did."""
+    typed = [o.people for o in pins.values() if o.people is not None]
+    return people is not None and bool(typed) and people == sum(typed)
 
 
 @router.post("/api/production/wc-override")
@@ -1021,38 +1325,83 @@ def set_wc_override(
 
     Admin-only: everyone else sees the staffing cards read-only. The pin lives in
     pp_work_center_daily, so the master pp_work_centers config and every other
-    date keep their values — clearing both fields drops the row entirely."""
+    date keep their values — clearing both fields drops the row entirely.
+
+    With `group` it is that GROUP's people (services/wc_group.py): a штатка is
+    refused, because it describes the whole work centre, and a typed group pin
+    clears the whole-centre people pin. A typed whole-centre people pin, the
+    other way round, deletes the day's group pins — one level answers — unless
+    it only echoes their Σ (`_echoes_group_sum`), and a new group pin under a
+    letter no cell carries is refused (`_refuse_orphan_pin`)."""
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
     code = (body.work_center or "").strip()
     if not code:
         raise HTTPException(status_code=400, detail="work_center is required")
+    grp = _group_or_400(body.group)
+    if grp is not None and body.shtatka is not None:
+        raise HTTPException(status_code=400,
+                            detail="A group pin carries people only — the штатка "
+                                   "pin belongs to the whole work centre")
     idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
     for name, val in (("people", body.people), ("shtatka", body.shtatka)):
         if val is not None and not (0 <= val <= 9999):
             raise HTTPException(status_code=400, detail=f"{name} must be between 0 and 9999")
 
-    row = db.query(PPWorkCenterDaily).filter(
-        PPWorkCenterDaily.manager_id == mid, PPWorkCenterDaily.date == day,
-        PPWorkCenterDaily.work_center == code,
-    ).first()
-
-    was = (row.people, row.shtatka) if row else (None, None)
-    if body.people is None and body.shtatka is None:
-        if row:
-            db.delete(row)
-    elif row:
-        row.people, row.shtatka = body.people, body.shtatka
+    whole, pins = _pins_at(db, mid, day, code)
+    cleared_whole: Optional[int] = None
+    dropped: list[tuple[str, Optional[int]]] = []
+    new_people = body.people
+    echo = False
+    if grp is not None:
+        row = pins.get(grp)
+        if body.people is not None:
+            _refuse_orphan_pin(_cell_letters(db, mid), code, grp, body.people,
+                               row.people if row else None)
+        was = (row.people if row else None, None)
+        if body.people is None:
+            if row:
+                db.delete(row)
+        else:
+            if row:
+                row.people, row.shtatka = body.people, None
+            else:
+                db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
+                                         wc_group=grp, people=body.people))
+            cleared_whole = _clear_whole_people(db, whole)
     else:
-        db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
-                                 people=body.people, shtatka=body.shtatka))
+        row = whole
+        was = (row.people, row.shtatka) if row else (None, None)
+        # The staffing card of an older bundle submits `people` prefilled with
+        # the Σ of the group pins: an echo, so the save is about the штатка
+        # alone (`_echoes_group_sum`).
+        echo = _echoes_group_sum(pins, body.people)
+        if echo:
+            new_people = None
+        if new_people is None and body.shtatka is None:
+            if row:
+                db.delete(row)
+        elif row:
+            row.people, row.shtatka = new_people, body.shtatka
+        else:
+            db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
+                                     people=new_people, shtatka=body.shtatka))
+        if new_people is not None:
+            for g, o in sorted(pins.items()):
+                dropped.append((g, o.people))
+                db.delete(o)
     db.commit()
+    label = wc_group.label(code, grp)
     action_log.enrich(
-        target_kind="staffing", target_id=f"{mid}:{day}:{code}", target_name=code,
-        unit_id=mid, day=day,
-        details=[("date", str(day)), ("work_center", code)],
-        changes=[c for c in (("workers", was[0], body.people),
-                             ("staffing", was[1], body.shtatka))
+        target_kind="staffing", target_id=f"{mid}:{day}:{code}" + (f":{grp}" if grp else ""),
+        target_name=label, unit_id=mid, day=day,
+        details=[("date", str(day)), ("work_center", code), ("group", grp),
+                 ("cleared_whole_pin", cleared_whole),
+                 ("group_sum_echo", True if echo else None),
+                 ("dropped_group_pins",
+                  ", ".join(f"{wc_group.label(code, g)}={n}" for g, n in dropped) or None)],
+        changes=[c for c in (("workers", was[0], new_people),
+                             ("staffing", was[1], None if grp else body.shtatka))
                  if c[1] != c[2]],
     )
     return _build_dashboard(db, mid, day, None, payload)
@@ -1060,6 +1409,11 @@ def set_wc_override(
 
 class StaffingRow(BaseModel):
     work_center: str
+    # 2026-09-14: which GROUP of the work centre this row is — one «Odamlar soni»
+    # row per cell of a shared work centre (services/wc_group.py). Absent/null =
+    # the whole work centre (the header row of a grouped one). A group row
+    # carries people only.
+    group: Optional[str] = None
     people: Optional[int] = None
     shtatka: Optional[int] = None
 
@@ -1099,18 +1453,46 @@ def save_staffing(
     re-time cells that are not theirs. Their save carries rows only, and the
     unit's existing pin is left exactly as it stands (a scoped caller never
     reaches the PPDaySetting block below, so an omitted value cannot delete it
-    the way it does for a brigadir's explicit save)."""
+    the way it does for a brigadir's explicit save).
+
+    **Groups (2026-09-14, services/wc_group.py).** A work centre with at least
+    one row WITH a group in the body is typed per group: those rows are
+    authoritative for its group pins — a listed group is set or cleared, an
+    existing group pin the body does not list is deleted — its whole-centre
+    people pin is cleared, and its row WITHOUT a group contributes the day's
+    штатка only. A work centre with no group rows saves exactly as before, plus
+    the same rule from the other side: a typed whole-centre people pin deletes
+    that day's group pins. Group pins and a whole-centre people pin never both
+    answer. Two exceptions, both so that a page echoing what it was shown never
+    rewrites anything: a whole-centre people value equal to the Σ of the group
+    pins the caller can see is that Σ sent back (`_echoes_group_sum`) and is
+    saved as the штатка alone, and a group pin under a letter no cell carries
+    is refused only when it is NEW or CHANGED (`_refuse_orphan_pin`).
+
+    A leader is narrowed to their GROUPS as well as their codes
+    (`_leader_group_scope`): a group row outside it is refused, «unlisted» only
+    ever deletes a group pin they can see, and a whole-centre people pin that
+    would delete a group pin they cannot see is refused rather than wiping the
+    number another cell's leader typed."""
     if payload.get("role") not in ("admin", "supervisor", "leader"):
         raise HTTPException(status_code=403, detail="Not allowed to edit staffing")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
     scope = _leader_wc_scope(db, payload)
+    gscope = _leader_group_scope(db, payload) if scope is not None else None
+    # (work centre, group, row) in body order; a blank work centre is skipped,
+    # as it always was.
+    parsed: list[tuple[str, Optional[str], StaffingRow]] = []
+    for r in body.rows:
+        code = (r.work_center or "").strip()
+        if code:
+            parsed.append((code, _group_or_400(r.group), r))
     if scope is not None:
         if body.productive_min is not None:
             raise HTTPException(status_code=403,
                                 detail="Efficiency belongs to the whole unit")
-        for r in body.rows:
-            if (r.work_center or "").strip() and not _in_scope(scope, r.work_center):
+        for code, grp, _r in parsed:
+            if not _in_scope(scope, code) or (grp and not wc_group.in_scope(gscope, code, grp)):
                 raise HTTPException(status_code=403,
                                     detail="This team is not one of your cells")
     idle_lock.require_open(db, mid, day)   # a signed-off day is immutable
@@ -1124,33 +1506,127 @@ def save_staffing(
         if not (1 <= pm <= shift_min):
             raise HTTPException(status_code=400,
                                 detail=f"productive_min must be between 1 and {shift_min:g}")
-    for r in body.rows:
+    for code, grp, r in parsed:
         for name, val in (("people", r.people), ("shtatka", r.shtatka)):
             if val is not None and not (0 <= val <= 9999):
                 raise HTTPException(status_code=400, detail=f"{name} must be between 0 and 9999")
+        if grp is not None and r.shtatka is not None:
+            raise HTTPException(status_code=400,
+                                detail=f"{wc_group.label(code, grp)}: a group row carries "
+                                       f"people only — the штатка belongs to the whole work centre")
 
-    existing = {o.work_center: o for o in db.query(PPWorkCenterDaily).filter(
+    existing = {(o.work_center, o.wc_group or None): o for o in db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == mid, PPWorkCenterDaily.date == day).all()}
+    # One slot per work centre: its group rows (the last row per letter wins, so
+    # a repeated row cannot insert one pin twice) and its row without a group.
+    plan: dict[str, dict] = {}
+    for code, grp, r in parsed:
+        slot = plan.setdefault(code, {"groups": {}, "header": None})
+        if grp is None:
+            slot["header"] = r
+        else:
+            slot["groups"][grp] = r.people
+
+    def pins_of(code: str) -> dict:
+        return {g: o for (c, g), o in existing.items() if c == code and g}
+
+    # The echo is judged against the pins the caller was SHOWN. A leader's
+    # dashboard states the WHOLE work centre's N — `_build_dashboard` narrows its
+    # output to their groups but never recomputes the figures — so the Σ of every
+    # group pin is what their 4.106 tab sends back, exactly as a brigadir's does;
+    # a tab loaded before that change still holds the Σ of their own groups, and
+    # re-sending it is an echo too. Neither writes a people pin or deletes one,
+    # so accepting both widens nothing a leader may write (`_echoes_group_sum`).
+    def echoes(code: str, slot: dict) -> bool:
+        head = slot["header"]
+        if slot["groups"] or head is None:
+            return False
+        pins = pins_of(code)
+        return (_echoes_group_sum(pins, head.people)
+                or _echoes_group_sum({g: o for g, o in pins.items()
+                                      if wc_group.in_scope(gscope, code, g)}, head.people))
+
+    # Refused BEFORE anything is touched, so a 403 leaves the session clean.
+    if gscope is not None:
+        for code, slot in plan.items():
+            head = slot["header"]
+            if (not slot["groups"] and head is not None and head.people is not None
+                    and not echoes(code, slot)
+                    and any(not wc_group.in_scope(gscope, code, g) for g in pins_of(code))):
+                raise HTTPException(status_code=403,
+                                    detail="This team is typed per group — enter your own "
+                                           "group's people instead of the whole team's")
+    if any(slot["groups"] for slot in plan.values()):
+        letters_at = _cell_letters(db, mid)
+        for code, slot in plan.items():
+            pins = pins_of(code)
+            for g, n in slot["groups"].items():
+                _refuse_orphan_pin(letters_at, code, g, n,
+                                   pins[g].people if g in pins else None)
+
     # ONE log line per save, so the register carries the whole «Odamlar soni»
-    # press instead of one row per cell: the per-cell old→new rides as changes.
+    # press instead of one row per cell: the per-cell old→new rides as changes,
+    # each pin named by `wc_group.label` («A2894 · A»).
     cell_changes: list[tuple] = []
-    for r in body.rows:
-        code = (r.work_center or "").strip()
-        if not code:
+    for code, slot in plan.items():
+        whole = existing.get((code, None))
+        pins = pins_of(code)
+        head = slot["header"]
+        # An echoed Σ takes the grouped path with no group rows: the group pins
+        # stand untouched and the row without a group saves its штатка alone.
+        # «Unlisted ⇒ deleted» is a rule about a body that LISTS groups, so it
+        # must not run for an echo, which lists none.
+        if slot["groups"] or echoes(code, slot):
+            for g, o in (sorted(pins.items()) if slot["groups"] else ()):
+                if g not in slot["groups"] and wc_group.in_scope(gscope, code, g):
+                    cell_changes.append((wc_group.label(code, g), o.people, None))
+                    db.delete(o)
+            for g, n in sorted(slot["groups"].items()):
+                o = pins.get(g)
+                prev = o.people if o is not None else None
+                if prev != n:
+                    cell_changes.append((wc_group.label(code, g), prev, n))
+                if n is None:
+                    if o is not None:
+                        db.delete(o)
+                elif o is not None:
+                    o.people, o.shtatka = n, None
+                else:
+                    db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
+                                             wc_group=g, people=n))
+            # The whole-centre row keeps the штатка alone: from the header row
+            # when the body carries one, else whatever was already pinned.
+            sht = head.shtatka if head is not None else (whole.shtatka if whole else None)
+            prev_w = (whole.people, whole.shtatka) if whole else (None, None)
+            if prev_w != (None, sht):
+                cell_changes.append((code, f"{prev_w[0]}/{prev_w[1]}", f"None/{sht}"))
+            if sht is None:
+                if whole is not None:
+                    db.delete(whole)
+            elif whole is not None:
+                whole.people, whole.shtatka = None, sht
+            else:
+                db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
+                                         people=None, shtatka=sht))
             continue
-        row = existing.get(code)
-        prev = (row.people, row.shtatka) if row else (None, None)
-        if prev != (r.people, r.shtatka):
-            cell_changes.append((code, f"{prev[0]}/{prev[1]}",
+
+        r = head
+        prev_w = (whole.people, whole.shtatka) if whole else (None, None)
+        if prev_w != (r.people, r.shtatka):
+            cell_changes.append((code, f"{prev_w[0]}/{prev_w[1]}",
                                  f"{r.people}/{r.shtatka}"))
         if r.people is None and r.shtatka is None:
-            if row:
-                db.delete(row)
-        elif row:
-            row.people, row.shtatka = r.people, r.shtatka
+            if whole is not None:
+                db.delete(whole)
+        elif whole is not None:
+            whole.people, whole.shtatka = r.people, r.shtatka
         else:
             db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
                                      people=r.people, shtatka=r.shtatka))
+        if r.people is not None:
+            for g, o in sorted(pins.items()):
+                cell_changes.append((wc_group.label(code, g), o.people, None))
+                db.delete(o)
 
     was_pm = pm
     if scope is None:
@@ -1788,6 +2264,35 @@ async def import_catalog(
             detail="Каталог не найден. Укажите имя листа (напр. «Sheet1 Торт») с колонками Трудоёмкость/Команда.",
         )
 
+    # The GROUP of each line (2026-09-14, services/wc_group.py). A sheet with a
+    # «Группа» column is AUTHORITATIVE for every line — a blank cell there means
+    # «no group» — and is refused whole, BEFORE the old catalog is wiped, when
+    # one SKU at one Команда is split over two groups: the SAP file writes one
+    # quantity per (SKU, work centre), so the split is a question nothing can
+    # answer. This is the one catalog writer that refuses instead of resolving —
+    # it replaces every line at once, so there is no «line you named» for the
+    # siblings to follow. A sheet without the column carries each line's group
+    # from the old catalog on the line's own key, as the фаза pin and the
+    # auto-fill switch are carried below.
+    groups_from_sheet = bool(parsed.get("has_group_column"))
+    if groups_from_sheet:
+        for pr in parsed["products"]:
+            try:
+                pr["wc_group"] = wc_group.norm_group(pr.get("wc_group"))
+            except wc_group.InvalidGroup:
+                raise HTTPException(status_code=400, detail=(
+                    f"«Группа» у позиции {pr.get('sap_code') or pr.get('name') or '?'} "
+                    f"({pr.get('work_center') or '—'}): «{pr.get('wc_group')}» — "
+                    f"нужна одна латинская буква A–Z"))
+        clashes = wc_group.line_conflicts(parsed["products"])
+        if clashes:
+            items = [f"{c['work_center'] or '—'} · {c['sap_code'] or c['name']}: "
+                     + ", ".join(g or "—" for g in c["groups"]) for c in clashes[:10]]
+            more = f" (и ещё {len(clashes) - 10})" if len(clashes) > 10 else ""
+            raise HTTPException(status_code=400, detail=(
+                "Одна позиция в одной команде должна иметь одну группу — исправьте "
+                "«Группа» и загрузите снова: " + "; ".join(items) + more))
+
     # Hand-pinned фаза values live only here (the sheet has no such column), so
     # carry them across the wipe by the line's own key (daily_key + work centre),
     # which is the SAP code unless the line has none.
@@ -1800,14 +2305,22 @@ async def import_catalog(
     # the next upload would overwrite the number they typed.
     kept_manual = {(daily_key(p.sap_code, p.name), p.work_center)
                    for p in old_lines if not p.auto_fill}
+    # {(work centre, quantity key): group} — one answer per SKU by construction,
+    # so a carried catalog can never break the catalog rule.
+    kept_groups = wc_group.sku_groups(old_lines)
     replaced = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
+    grouped_lines = 0
     for i, p in enumerate(parsed["products"]):
         ident = (daily_key(p["sap_code"], p.get("name")), p.get("work_center") or "")
+        grp = (p.get("wc_group") if groups_from_sheet
+               else kept_groups.get((ident[1], ident[0])))
+        grouped_lines += 1 if grp else 0
         db.add(PPProduct(
             manager_id=manager_id, sap_code=p["sap_code"], name=p.get("name") or "",
             work_center=p.get("work_center") or "", labor_time=p.get("labor_time"),
             op=kept_ops.get(ident),
             auto_fill=ident not in kept_manual,
+            wc_group=grp,
             sort_order=i,
         ))
 
@@ -1835,6 +2348,8 @@ async def import_catalog(
         details=[("file", file.filename), ("name", parsed["sheet"]),
                  ("added", len(parsed["products"])), ("removed", replaced or 0),
                  ("work_center", f"+{wc_added} / ~{wc_updated}"),
+                 ("group", "sheet" if groups_from_sheet else "carried"),
+                 ("grouped_lines", grouped_lines),
                  ("note", "auto-fill off — not backfilled" if filled["skipped"]
                           else f"backfilled {filled['days']} day(s), "
                                f"{filled['rows']} row(s)")],
@@ -1845,6 +2360,7 @@ async def import_catalog(
         "work_centers_added": wc_added, "work_centers_updated": wc_updated,
         "backfilled_days": filled["days"], "backfilled_rows": filled["rows"],
         "backfill_skipped": filled["skipped"],
+        "groups_from_sheet": groups_from_sheet, "grouped_lines": grouped_lines,
     }
 
 
@@ -1975,7 +2491,68 @@ def admin_catalog(manager_id: int = Query(...), _: dict = Depends(_verify_admin)
              "work_center": p.work_center, "op": p.op,
              "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
              "active": p.active, "auto_fill": p.auto_fill,
+             "wc_group": p.wc_group,
              "sap_filled": takes_sap(p.sap_code, p.auto_fill)} for p in rows]
+
+
+def _line_ident(p) -> tuple[str, str]:
+    """(work centre, quantity key) — a catalog line's SIBLING key under the
+    catalog rule, in the order `wc_group.sku_groups` keys by."""
+    return (p.work_center or "", daily_key(p.sap_code, p.name))
+
+
+def _settle_line_groups(db, mid: int, edited: list, before: dict, *,
+                        explicit: bool, group: Optional[str]) -> int:
+    """Keep the catalog rule after an edit: every line of one unit at one work
+    centre with one quantity key carries ONE group (services/wc_group.py) —
+    the SAP file writes one quantity per (SKU, work centre), so a SKU cannot be
+    half one group and half another.
+
+    The editors never REFUSE it; they resolve it the two ways an operator means:
+
+      • an EXPLICIT group on a line is written to all its siblings («siblings
+        follow») — setting the group of one operation line is setting it on the
+        SKU;
+      • a line whose identity MOVES without one adopts the group its new
+        siblings already carry; with none there it keeps its own group only if
+        it stayed at the same work centre, because a letter means something at
+        its own work centre only — carrying «B» elsewhere names a group nobody has.
+
+    `edited` are the rows the request named, their fields already applied (a new
+    one flushed — the session does not autoflush); `before` their identity
+    before the edit, absent for a new line. Every line of the unit is read,
+    active or not, as `wc_group.line_conflicts` reads them: an inactive sibling
+    still holds the SKU's identity. Returns how many OTHER lines changed. The
+    caller commits. A group is not part of any quantity key, so nothing here
+    touches what `_carry_manual_quantities` carries.
+    """
+    ids = {p.id for p in edited}
+    siblings_of: dict[tuple[str, str], list] = defaultdict(list)
+    for q in db.query(PPProduct).filter(PPProduct.manager_id == mid).all():
+        siblings_of[_line_ident(q)].append(q)
+    changed = 0
+    if explicit:
+        for p in edited:
+            p.wc_group = group
+        for ident in {_line_ident(p) for p in edited}:
+            for q in siblings_of[ident]:
+                if q.id not in ids and (q.wc_group or None) != group:
+                    q.wc_group = group
+                    changed += 1
+        return changed
+    moved = {p.id for p in edited if before.get(p.id) != _line_ident(p)}
+    for p in edited:
+        if p.id not in moved:
+            continue
+        ident = _line_ident(p)
+        # Siblings are the lines already AT the destination: a line moving there
+        # in the same batch still carries the group of where it came from.
+        sibs = [q for q in siblings_of[ident] if q.id not in moved]
+        if sibs:
+            p.wc_group = wc_group.sku_groups(sibs).get(ident)
+        elif before.get(p.id) is None or before[p.id][0] != ident[0]:
+            p.wc_group = None
+    return changed
 
 
 class CatalogCreateBody(BaseModel):
@@ -1988,6 +2565,11 @@ class CatalogCreateBody(BaseModel):
     # Does the SAP upload fill this line's ПЛАН/ФАКТ? Only a CODED line can be
     # asked — see the 400 below. Omitted = the platform's default, on.
     auto_fill: Optional[bool] = None
+    # 2026-09-14: the GROUP of its work centre that makes this line
+    # (services/wc_group.py). A letter sets it and the line's siblings follow;
+    # blank or omitted adopts the siblings' group — a NEW line has no group of
+    # its own to clear, and a blank form field must not strip one off the SKU.
+    wc_group: Optional[str] = None
 
 
 @router.post("/admin/production/catalog")
@@ -2016,6 +2598,8 @@ def admin_create_catalog(body: CatalogCreateBody,
     if body.auto_fill is not None and not sap:
         raise HTTPException(status_code=400,
                             detail="auto-fill applies only to a line with a SAP code")
+    grp_explicit = (body.wc_group or "").strip() != ""
+    grp = _group_or_400(body.wc_group) if grp_explicit else None
     max_sort = db.query(func.max(PPProduct.sort_order)).filter(
         PPProduct.manager_id == body.manager_id).scalar() or 0
     p = PPProduct(
@@ -2025,6 +2609,9 @@ def admin_create_catalog(body: CatalogCreateBody,
         auto_fill=(True if body.auto_fill is None else bool(body.auto_fill)),
     )
     db.add(p)
+    db.flush()   # the sibling pass reads the unit's lines, this one included
+    group_siblings = _settle_line_groups(db, body.manager_id, [p], {},
+                                         explicit=grp_explicit, group=grp)
     db.commit()
     db.refresh(p)
     # Read out everything the log needs BEFORE the re-join commits: `enrich`'s
@@ -2032,7 +2619,7 @@ def admin_create_catalog(body: CatalogCreateBody,
     rec = {"id": p.id, "sap_code": p.sap_code or None, "product": p.name or None,
            "work_center": p.work_center, "phase": p.op, "auto_fill": p.auto_fill,
            "minutes": float(p.labor_time) if p.labor_time is not None else None,
-           "unit": p.manager_id}
+           "unit": p.manager_id, "group": p.wc_group}
     # The SAP join runs at UPLOAD time against the catalog as it stood then, so a
     # line added now would read 0 on every date already uploaded until somebody
     # re-uploaded the file for each of them. Fill its snapshot from the фаза rows
@@ -2044,10 +2631,13 @@ def admin_create_catalog(body: CatalogCreateBody,
         details=[("sap_code", rec["sap_code"]), ("product", rec["product"]),
                  ("work_center", rec["work_center"]), ("phase", rec["phase"]),
                  ("auto_fill", rec["auto_fill"]), ("minutes", rec["minutes"]),
+                 ("group", rec["group"]),
+                 ("group_siblings", group_siblings or None),
                  ("filled_days", filled["days"] or None),
                  ("filled_rows", filled["rows"] or None)],
     )
-    return {"ok": True, "id": rec["id"], "filled": filled}
+    return {"ok": True, "id": rec["id"], "filled": filled,
+            "group_siblings": group_siblings}
 
 
 def _catalog_snapshot(db, mid: int) -> list[dict]:
@@ -2219,6 +2809,9 @@ class CatalogBody(BaseModel):
     op: Optional[str] = None
     active: Optional[bool] = None
     auto_fill: Optional[bool] = None   # coded lines only — see the handler
+    # 2026-09-14: "A" sets the group, "" clears it, null leaves it — and the
+    # line's siblings follow either way (see _settle_line_groups).
+    wc_group: Optional[str] = None
 
 
 # REGISTERED BEFORE `/catalog/{prod_id}`, and it has to be: FastAPI matches
@@ -2237,6 +2830,9 @@ class CatalogBulkBody(BaseModel):
     work_center: Optional[str] = None
     labor_time: Optional[float] = None
     auto_fill: Optional[bool] = None
+    # 2026-09-14: "A" sets the group on every selected line, "" clears it, null
+    # leaves it; siblings outside the selection follow (_settle_line_groups).
+    wc_group: Optional[str] = None
 
 
 @router.put("/admin/production/catalog/bulk")
@@ -2288,7 +2884,11 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
     wc = latin_code(body.work_center.strip()) if body.work_center is not None else None
     if body.work_center is not None and not wc:
         raise HTTPException(status_code=400, detail="work_center cannot be empty")
-    if wc is None and body.labor_time is None and body.auto_fill is None:
+    grp = _group_or_400(body.wc_group) if body.wc_group is not None else None
+    # A group alone IS a change — «these positions are group B» is the whole
+    # request more often than not.
+    if (wc is None and body.labor_time is None and body.auto_fill is None
+            and body.wc_group is None):
         raise HTTPException(status_code=400, detail="nothing to change")
 
     prods = db.query(PPProduct).filter(PPProduct.id.in_(ids)).all()
@@ -2324,6 +2924,15 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                "labor_time": edited[d["id"]].labor_time}
               if d["id"] in edited else d) for d in before]
     carried = _carry_manual_quantities(db, mid, before, after)
+    # ONE group pass after every field is applied — the batch's lines are each
+    # other's siblings, and only the finished shape says who ends up where.
+    group_siblings = 0
+    if body.wc_group is not None or wc is not None:
+        group_siblings = _settle_line_groups(
+            db, mid, prods,
+            {d["id"]: (d.get("work_center") or "", daily_key(d.get("sap_code"), d.get("name")))
+             for d in before},
+            explicit=body.wc_group is not None, group=grp)
     # Which keys the batch has just pointed at, read while the rows are still
     # loaded. Only Команда moves a line onto a new SAP key — Трудоемкость and
     # auto_fill are not part of it, so neither can leave a line unfilled.
@@ -2337,13 +2946,16 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
         details=[("rows", len(prods)), ("work_center", wc),
                  ("minutes", body.labor_time),
                  ("auto_fill", body.auto_fill),
+                 ("group", (grp or "—") if body.wc_group is not None else None),
+                 ("group_siblings", group_siblings or None),
                  ("skipped_no_code", skipped_no_code or None),
                  ("carried_values", carried or None),
                  ("filled_days", filled["days"] or None),
                  ("filled_rows", filled["rows"] or None)],
     )
     return {"ok": True, "updated": len(prods), "carried": carried,
-            "skipped_no_code": skipped_no_code, "filled": filled}
+            "skipped_no_code": skipped_no_code, "filled": filled,
+            "group_siblings": group_siblings}
 
 
 @router.put("/admin/production/catalog/{prod_id}")
@@ -2352,8 +2964,11 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="product not found")
+    grp = _group_or_400(body.wc_group) if body.wc_group is not None else None
+    ident_before = _line_ident(p)
     was = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
            "phase": p.op, "enabled": p.active, "auto_fill": p.auto_fill,
+           "group": p.wc_group,
            "minutes": float(p.labor_time) if p.labor_time is not None else None}
     # The unit's catalog as it stands BEFORE the edit. Four of these fields are
     # what the line's stored plan/fact are keyed by, so the old identity is
@@ -2409,10 +3024,18 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
                    "work_center": p.work_center, "labor_time": p.labor_time}
                   if d["id"] == p.id else d) for d in before]
         carried = _carry_manual_quantities(db, p.manager_id, before, after)
+    # The group follows the catalog rule: an explicit one is written to the
+    # line's siblings, and a line moved onto another SKU or Команда takes the
+    # group of the lines already there (_settle_line_groups).
+    group_siblings = 0
+    if body.wc_group is not None or _line_ident(p) != ident_before:
+        group_siblings = _settle_line_groups(db, p.manager_id, [p], {p.id: ident_before},
+                                             explicit=body.wc_group is not None, group=grp)
     mid, pid = p.manager_id, p.id
     db.commit()
     now = {"sap_code": p.sap_code, "product": p.name, "work_center": p.work_center,
            "phase": p.op, "enabled": p.active, "auto_fill": p.auto_fill,
+           "group": p.wc_group,
            "minutes": float(p.labor_time) if p.labor_time is not None else None}
     # Re-pointing either half of the SAP key aims this line at quantities the
     # upload never wrote for it — the join ran against the OLD catalog — so the
@@ -2429,11 +3052,13 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         details=[("sap_code", now["sap_code"] or None),
                  ("work_center", now["work_center"]),
                  ("carried_values", carried or None),
+                 ("group_siblings", group_siblings or None),
                  ("filled_days", filled["days"] or None),
                  ("filled_rows", filled["rows"] or None)],
         changes=[(k, was[k], now[k]) for k in now if was[k] != now[k]],
     )
-    return {"ok": True, "carried": carried, "filled": filled}
+    return {"ok": True, "carried": carried, "filled": filled,
+            "group_siblings": group_siblings}
 
 
 @router.delete("/admin/production/catalog/{prod_id}")

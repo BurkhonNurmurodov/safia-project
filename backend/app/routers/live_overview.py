@@ -35,8 +35,8 @@ from app.models import (
     PPProduct, RoleProfile,
 )
 from app.permissions import require_page
-from app.services import cell_hours, idle_source, live_overview, shift_scope
-from app.services.cell_lookup import by_sap, resolve_sap
+from app.services import (cell_hours, idle_source, live_overview, shift_scope,
+                          wc_group, zagruzka_source)
 from app.services.day_state import day_state
 from app.services.factory_scope import (
     empty_scope, resolve_factory, scoped_manager_ids, viewer_factory_id,
@@ -45,7 +45,8 @@ from app.services.factory_scope import (
 # re-spelled: a second reading of "who counts as a person in this cell" is how
 # this screen and /downtime would start disagreeing about the same morning.
 from app.services.idle_source import _counted_hc
-from app.services.pp_calc import daily_key, line_keys, line_minutes, takes_sap
+from app.services.pp_calc import (daily_key, line_keys, line_minutes,
+                                  line_minutes_by_group, takes_sap)
 
 router = APIRouter(prefix="/api/live-overview", tags=["live-overview"])
 
@@ -73,13 +74,24 @@ def _own_scope(db: Session, payload: dict):
     return None, None
 
 
-def _plan_inputs(db: Session, unit_ids: list, day: date):
-    """ПЛАН / ФАКТ minutes per unit and per work centre, read exactly as the
-    Positions table and /zagruzka-cell read them (`pp_calc.line_minutes`)."""
+def _plan_inputs(db: Session, unit_ids: list, day: date, cells_rows: list):
+    """ПЛАН / ФАКТ minutes per unit and per CELL, read exactly as the Positions
+    table and /zagruzka-cell read them.
+
+    The unit figure is `pp_calc.line_minutes`, unchanged. A cell's figure is its
+    work centre's minutes split by GROUP (2026-09-14, services/wc_group.py):
+    `line_minutes_by_group` keys each catalog line under the letter it names,
+    and `zagruzka_source.cell_labor` hands each cell its own group's minutes
+    plus an even share of whatever no cell's letter claims — the one split rule,
+    so this screen and /zagruzka-cell cannot give one cell two plans. It
+    replaces a first-cell-wins lookup that put a shared work centre's WHOLE plan
+    on whichever of its cells sorted first by verifix code and left the others
+    with none."""
     plan_by_unit: dict = {}
-    wc_plan: dict = {}
+    cell_plan: dict = {}
     if not unit_ids:
-        return plan_by_unit, wc_plan
+        return plan_by_unit, cell_plan
+    group_labor: dict = {}
     prods = db.query(PPProduct).filter(PPProduct.manager_id.in_(unit_ids)).all()
     dailies = db.query(PPDaily).filter(
         PPDaily.manager_id.in_(unit_ids), PPDaily.date == day).all()
@@ -134,15 +146,22 @@ def _plan_inputs(db: Session, unit_ids: list, day: date):
             if lo.updated_at is not None and (updated is None or lo.updated_at > updated):
                 updated = lo.updated_at
         pm, am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN, sap_off)
-        for (wc, d), v in pm.items():
-            wc_plan[(uid, wc)] = (float(v), float(am.get((wc, d), 0.0)))
+        pg, ag = line_minutes_by_group(lines_by_key, shared, per_line, _SEC_PER_MIN,
+                                       sap_off, wc_group.sku_groups(ups))
+        for (wc, g, d), v in pg.items():
+            group_labor[(uid, d.isoformat(), wc, g)] = (
+                float(v), float(ag.get((wc, g, d), 0.0)))
         plan_by_unit[uid] = {
             "plan_min": float(sum(pm.values())),
             "actual_min": float(sum(am.values())),
             "updated_at": updated,
             "configured": bool(ups) or bool(by_daily.get(uid)),
         }
-    return plan_by_unit, wc_plan
+    iso = day.isoformat()
+    for (cid, d), pa in zagruzka_source.cell_labor(cells_rows, group_labor).items():
+        if d == iso:
+            cell_plan[cid] = pa
+    return plan_by_unit, cell_plan
 
 
 @router.get("")
@@ -203,7 +222,6 @@ def get_live_overview(
     cells = [{"id": c.id, "code": c.verifix_code, "unit_id": int(c.manager_id),
               "leader": leaders.get(c.leader_id)} for c in cells_rows]
     cell_ids = [c.id for c in cells_rows]
-    cell_id_set = set(cell_ids)
     codes = [c.verifix_code for c in cells_rows if c.verifix_code]
     code_to_cell = {c.verifix_code: c.id for c in cells_rows if c.verifix_code}
     iso = frame["day"]
@@ -251,21 +269,10 @@ def get_live_overview(
     idle_unit = idle_source.unit_downtime(db, unit_ids, day, day) if unit_ids else {}
 
     # ── ПЛАН / ФАКТ ──────────────────────────────────────────────────────
-    plan_by_unit, wc_plan = _plan_inputs(db, unit_ids, day)
-    # Keyed by (unit, work centre), because a work centre is not unique across
-    # units: two shifts stand at one, and a {wc: cell} map both summed their
-    # plan minutes onto whichever cell won the key and left the other cell with
-    # no plan at all — a wrong number on a wall screen.
-    wc_cell: dict = {}
-    if wc_plan:
-        sap_tbl = by_sap(db, manager_ids=unit_ids)
-        for key in wc_plan:
-            if key in wc_cell:
-                continue
-            uid, wc = key
-            cd = resolve_sap(sap_tbl, wc, uid)
-            if cd and cd["id"] in cell_id_set:
-                wc_cell[key] = cd["id"]
+    # Per CELL, handed out inside each unit (cells matched by unit + SAP code):
+    # a work centre is not unique across units — two shifts stand at one — nor
+    # inside one, where several cells may name it and each reads its own group.
+    plan_by_unit, cell_plan = _plan_inputs(db, unit_ids, day, cells_rows)
 
     day_closed = {uid: day_state(db, uid, day)[0] != "open" for uid in unit_ids}
 
@@ -277,7 +284,7 @@ def get_live_overview(
         intervals_by_cell=intervals_by_cell,
         unit_people=unit_people, cell_people=cell_people,
         idle_unit=idle_unit,
-        plan_by_unit=plan_by_unit, wc_plan=wc_plan, wc_cell=wc_cell,
+        plan_by_unit=plan_by_unit, cell_plan=cell_plan,
         day_closed=day_closed, att_uploaded=att_uploaded,
     )
     data["shifts"] = {

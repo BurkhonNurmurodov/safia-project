@@ -54,7 +54,9 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.models import PPDaily, PPLineDaily, PPProduct, PPWorkCenterDaily
-from app.services.pp_calc import daily_key, line_keys, line_minutes, takes_sap
+from app.services.pp_calc import (daily_key, line_keys, line_minutes,
+                                  line_minutes_by_group, takes_sap)
+from app.services import wc_group
 
 # THE floor: from this day the загрузка's headcount and trudoyomkost come from
 # the «Zagruzka fayli» page and the «Одам сони» / «Минут» sheet tabs are not a
@@ -86,23 +88,27 @@ def sheet_end(date_to: date) -> date:
     return min(date_to, ZAGRUZKA_FROM - timedelta(days=1))
 
 
-def typed_people(db: Session, manager_ids: Iterable[int],
-                 date_from: date, date_to: date) -> dict[tuple[int, str, str], float]:
-    """``{(manager_id, "YYYY-MM-DD", work_center): people}`` — the TYPED
-    «Bugungi fakt» pins alone.
+def typed_pins(db: Session, manager_ids: Iterable[int],
+               date_from: date, date_to: date) -> dict[tuple[int, str, str, Optional[str]], float]:
+    """``{(manager_id, "YYYY-MM-DD", work_center, group): people}`` — every
+    TYPED «Bugungi fakt» pin, a group pin keyed by its letter and a whole-centre
+    pin by None (services/wc_group.py).
 
     ``people IS NOT NULL`` is the whole predicate, and it is what makes the
     rule expressible: the column distinguishes «nobody typed anything» from a
     deliberately typed 0, which is a real answer (a cell that ran with nobody
-    in it) and must not be mistaken for silence.
+    in it) and must not be mistaken for silence. A group pin's `people` is the
+    only thing it carries, so a row holding just the day's штатка pin (people
+    NULL) is not a pin here.
     """
     ids = sorted({int(m) for m in manager_ids})
     if not ids or date_from > date_to:
         return {}
-    out: dict[tuple[int, str, str], float] = {}
+    out: dict[tuple[int, str, str, Optional[str]], float] = {}
     for r in db.query(
         PPWorkCenterDaily.manager_id, PPWorkCenterDaily.date,
-        PPWorkCenterDaily.work_center, PPWorkCenterDaily.people,
+        PPWorkCenterDaily.work_center, PPWorkCenterDaily.wc_group,
+        PPWorkCenterDaily.people,
     ).filter(
         PPWorkCenterDaily.manager_id.in_(ids),
         PPWorkCenterDaily.date >= date_from,
@@ -112,48 +118,123 @@ def typed_people(db: Session, manager_ids: Iterable[int],
         wc = (r.work_center or "").strip()
         if not wc:
             continue
-        out[(int(r.manager_id), r.date.isoformat(), wc)] = float(r.people)
+        out[(int(r.manager_id), r.date.isoformat(), wc, r.wc_group or None)] = float(r.people)
     return out
+
+
+def fold_pins(pins: dict) -> dict[tuple[int, str, str], float]:
+    """``{(manager_id, "YYYY-MM-DD", work_center): people}`` — one number per
+    work centre out of `typed_pins`: the Σ of its GROUP pins wherever any exist,
+    else its whole-centre pin. The pin rule of `wc_group.share`, folded up a
+    level, so the unit's ΣN and the cells' weights can never count one work
+    centre two ways."""
+    whole: dict[tuple[int, str, str], float] = {}
+    lettered: dict[tuple[int, str, str], float] = defaultdict(float)
+    for (mid, day, wc, group), n in pins.items():
+        if group:
+            lettered[(mid, day, wc)] += n
+        else:
+            whole[(mid, day, wc)] = n
+    out = dict(whole)
+    out.update(lettered)
+    return out
+
+
+def typed_people(db: Session, manager_ids: Iterable[int],
+                 date_from: date, date_to: date) -> dict[tuple[int, str, str], float]:
+    """``{(manager_id, "YYYY-MM-DD", work_center): people}`` — the TYPED
+    «Bugungi fakt» of each work centre: its group pins summed where the
+    brigadir typed it per group (2026-09-14), else the one whole-centre pin.
+    `fold_pins` over `typed_pins`; a work centre nobody typed is ABSENT."""
+    return fold_pins(typed_pins(db, manager_ids, date_from, date_to))
 
 
 def unit_people(pins: dict[tuple[int, str, str], float]) -> dict[tuple[int, str], float]:
     """``{(manager_id, "YYYY-MM-DD"): Σ typed people}``. A unit-day with no
     typed pin is ABSENT — not 0 — because "nobody typed it" and "nobody came"
-    are different facts and only one of them is a загрузка of zero."""
+    are different facts and only one of them is a загрузка of zero.
+
+    Takes `typed_people` (one number per work centre); handed `typed_pins`
+    instead it folds them first, so a group pin is never added on top of a
+    whole-centre one."""
+    if pins and len(next(iter(pins))) == 4:
+        pins = fold_pins(pins)
     out: dict[tuple[int, str], float] = defaultdict(float)
     for (mid, day, _wc), n in pins.items():
         out[(mid, day)] += n
     return dict(out)
 
 
-def cell_people(cells, pins: dict[tuple[int, str, str], float]) -> dict[tuple[int, str], float]:
+def cell_pins(cells, pins: dict) -> dict[tuple[int, str], tuple[Optional[float], frozenset]]:
+    """``{(cell_id, "YYYY-MM-DD"): (value, letters)}`` — what each cell reads of
+    its work centre's TYPED pins, before any «is it a weight» filter, plus the
+    letters that were typed per group at that work centre that day.
+
+    THE one spelling of the pin split, and `cell_people` is its `> 0` filter:
+    the gap and unpriced reports read the value AND the letters here to say WHY
+    a cell carries no weight, so a diagnosis can never describe a different
+    split from the one the weighted mean divides by.
+
+    `pins` is `typed_pins` (group-keyed; three-part legacy keys read as
+    whole-centre pins). Cells meet work centres through `wc_group.cells_by_wc`
+    (unit + normalised code), and pins under two spellings of one work centre
+    are SUMMED onto it rather than one overwriting the other. Each cell reads its
+    own group's pin plus an even share of whatever no cell's letter claims
+    (`wc_group.share`, pin rule on). `value` is None when nothing reaches the
+    cell — its group untyped and nothing unclaimed. A cell of a work centre with
+    no pin that day is absent.
+    """
+    by_wc = wc_group.cells_by_wc(cells)
+    per: dict[tuple[int, str, str], dict] = defaultdict(dict)
+    for key, n in pins.items():
+        if len(key) == 4:
+            mid, day, wc, group = key
+        else:
+            (mid, day, wc), group = key, None
+        mk = wc_group.wc_key(mid, wc)
+        slot = per[(mk[0], mk[1], day)]
+        g = group or None
+        slot[g] = slot.get(g, 0.0) + float(n)
+    out: dict[tuple[int, str], tuple[Optional[float], frozenset]] = {}
+    for (mid, code, day), vals in per.items():
+        cs = by_wc.get((mid, code))
+        if not cs:
+            continue
+        letters = frozenset(g for g in vals if g)
+        shares = wc_group.share([getattr(c, "wc_group", None) for c in cs], vals, pins=True)
+        for c, v in zip(cs, shares):
+            out[(c.id, day)] = (v, letters)
+    return out
+
+
+def cell_people(cells, pins: dict) -> dict[tuple[int, str], float]:
     """``{(cell_id, "YYYY-MM-DD"): people}`` — the ojidaniya weight.
 
-    A cell reaches a work centre through ``Cell.sap_code``; a cell with none
-    can never be weighed and is simply absent, which is the same treatment
-    `unit_downtime` already gives a cell nobody worked in.
+    A cell reaches a work centre through ``Cell.sap_code`` (unit + normalised
+    code, `wc_group.cells_by_wc`); a cell with none can never be weighed and is
+    simply absent, which is the same treatment `unit_downtime` already gives a
+    cell nobody worked in.
 
-    Where SEVERAL cells of one unit name the same work centre — 10 groups on
-    the platform today — the typed number is SPLIT evenly between them rather
-    than counted once per cell. ΣN over the unit then equals what the brigadir
-    actually typed, which is the property the whole weighted mean rests on: a
-    work centre carrying four cells must not out-weigh the rest of the unit
-    four times over just because the registry spells it four ways.
+    `pins` is `typed_pins`. Each cell of a work centre reads **its own group's
+    pin** — the brigadir typed that cell's people on its own «Odamlar soni» row —
+    and whatever no letter claims (the whole-centre pin of a work centre nobody
+    types per group, a letter no cell carries) is SPLIT evenly between the cells
+    that name the work centre rather than counted once per cell
+    (`wc_group.share`, pin rule on). ΣN over the unit then equals what the
+    brigadir actually typed, which is the property the whole weighted mean rests
+    on. A work centre nobody grouped is split exactly as before groups existed.
+
+    **Pass EVERY cell of the unit**, never a one-cell list: the split is over the
+    cells given, so a single cell handed alone would read every other group's
+    people as unclaimed and take them all.
+
+    A cell whose share is None (its group was not typed) or ≤ 0 carries no
+    weight and is absent — a typed 0 is a cell that ran empty, and it leaves
+    both sides of the mean exactly as a cell nobody worked in does. This is
+    `cell_pins` with that filter and nothing else.
     """
-    by_wc: dict[tuple[int, str], list[int]] = defaultdict(list)
-    for c in cells:
-        code = (c.sap_code or "").strip()
-        if code:
-            by_wc[(int(c.manager_id), code)].append(c.id)
-    out: dict[tuple[int, str], float] = defaultdict(float)
-    for (mid, day, wc), n in pins.items():
-        ids = by_wc.get((mid, wc))
-        if not ids or n <= 0:
-            continue
-        share = n / len(ids)
-        for cid in ids:
-            out[(cid, day)] += share
-    return dict(out)
+    return {k: v for k, (v, _letters) in cell_pins(cells, pins).items()
+            if v is not None and v > 0}
 
 
 def wc_labor(db: Session, manager_ids: Iterable[int],
@@ -175,15 +256,131 @@ def wc_labor(db: Session, manager_ids: Iterable[int],
     it: a catalog belongs to one brigadir, and pooling two would let one unit's
     line adopt another's positional suffix.
     """
+    prods, shared, per_line = _labor_inputs(db, manager_ids, date_from, date_to)
+    if not prods:
+        return {}
+
+    acc: dict[tuple[int, str, str], list] = {}
+    for mid, products in prods.items():
+        lines_by_key, sap_off = _lines_of(products)
+        if not lines_by_key:
+            continue
+        pm, am = line_minutes(lines_by_key, shared.get(mid, {}),
+                              per_line.get(mid, {}), _SEC_PER_MIN, sap_off)
+        for src, slot in ((pm, 0), (am, 1)):
+            for (wc, d), v in src.items():
+                key = (mid, d.isoformat() if hasattr(d, "isoformat") else str(d), wc)
+                row = acc.get(key)
+                if row is None:
+                    row = acc[key] = [0.0, 0.0]
+                row[slot] += float(v or 0)
+
+    return {k: (v[0], v[1]) for k, v in acc.items()}
+
+
+def wc_group_labor(db: Session, manager_ids: Iterable[int], date_from: date,
+                   date_to: date) -> dict[tuple[int, str, str, Optional[str]], tuple[float, float]]:
+    """``{(manager_id, "YYYY-MM-DD", work_center, group): (plan, actual)}`` —
+    `wc_labor` one level down (2026-09-14): each catalog line's minutes under the
+    group it names (`wc_group.sku_groups`), None for the ungrouped part. Same
+    inputs, same resolution (`pp_calc.line_minutes_by_group` is `line_minutes`'
+    own loop), so Σ over the groups of a work centre is its `wc_labor` figure.
+    Hand it to `cell_labor` for what each CELL carries."""
+    prods, shared, per_line = _labor_inputs(db, manager_ids, date_from, date_to)
+    acc: dict[tuple[int, str, str, Optional[str]], list] = {}
+    for mid, products in prods.items():
+        lines_by_key, sap_off = _lines_of(products)
+        if not lines_by_key:
+            continue
+        pg, ag = line_minutes_by_group(lines_by_key, shared.get(mid, {}),
+                                       per_line.get(mid, {}), _SEC_PER_MIN, sap_off,
+                                       wc_group.sku_groups(products))
+        for src, slot in ((pg, 0), (ag, 1)):
+            for (wc, g, d), v in src.items():
+                key = (mid, d.isoformat() if hasattr(d, "isoformat") else str(d), wc, g)
+                row = acc.get(key)
+                if row is None:
+                    row = acc[key] = [0.0, 0.0]
+                row[slot] += float(v or 0)
+    return {k: (v[0], v[1]) for k, v in acc.items()}
+
+
+def cell_labor(cells, group_labor: dict) -> dict[tuple[int, str], tuple[float, float]]:
+    """``{(cell_id, "YYYY-MM-DD"): (plan, actual)}`` — what each CELL carries of
+    its work centre's trudoyomkost: its own group's lines plus an even share of
+    whatever no cell's letter claims (`wc_group.share`). The minutes twin of
+    `cell_pins`, matched the same way (`wc_group.cells_by_wc`, two spellings of
+    one work centre summed), so a cell's minutes and a cell's people always
+    describe the same slice of the work centre. Pass EVERY cell of the unit.
+    Σ over the cells of a work centre is the work centre's figure. A cell
+    nothing reaches is absent."""
+    by_wc = wc_group.cells_by_wc(cells)
+    per: dict[tuple[int, str, str], dict] = defaultdict(dict)
+    for (mid, day, wc, g), (p, a) in group_labor.items():
+        mk = wc_group.wc_key(mid, wc)
+        slot = per[(mk[0], mk[1], day)]
+        prev = slot.get(g or None, (0.0, 0.0))
+        slot[g or None] = (prev[0] + p, prev[1] + a)
+    out: dict[tuple[int, str], tuple[float, float]] = {}
+    for (mid, code, day), vals in per.items():
+        cs = by_wc.get((mid, code))
+        if not cs:
+            continue
+        letters = [getattr(c, "wc_group", None) for c in cs]
+        plans = wc_group.share(letters, {g: pa[0] for g, pa in vals.items()})
+        acts = wc_group.share(letters, {g: pa[1] for g, pa in vals.items()})
+        for c, pv, av in zip(cs, plans, acts):
+            if pv is None and av is None:
+                continue
+            prev = out.get((c.id, day), (0.0, 0.0))
+            out[(c.id, day)] = (prev[0] + (pv or 0.0), prev[1] + (av or 0.0))
+    return out
+
+
+def fold_group_labor(group_labor: dict) -> dict[tuple[int, str, str], tuple[float, float]]:
+    """``{(manager_id, "YYYY-MM-DD", work_center): (plan, actual)}`` out of
+    `wc_group_labor` — the per-work-centre figure `wc_labor` reads, for a caller
+    that already holds the group-keyed minutes and must not read the whole range
+    a second time. Equal to `wc_labor` up to float summation order; the fleet
+    загрузка itself keeps calling `wc_labor`."""
+    acc: dict[tuple[int, str, str], list] = {}
+    for (mid, day, wc, _g), (p, a) in group_labor.items():
+        row = acc.setdefault((mid, day, wc), [0.0, 0.0])
+        row[0] += p
+        row[1] += a
+    return {k: (v[0], v[1]) for k, v in acc.items()}
+
+
+def _lines_of(products) -> tuple[dict, set]:
+    """One unit's active catalog lines as `line_minutes` reads them, plus the
+    lines the SAP upload does not answer for (`pp_calc.takes_sap`). `line_keys`
+    is computed over EVERY line of the unit, active or not — its own rule."""
+    keys = line_keys(products)
+    lines_by_key: dict[tuple[str, str], list] = defaultdict(list)
+    sap_off: set[tuple[str, str, str]] = set()
+    for p in products:
+        if not p.active or p.labor_time is None:
+            continue
+        qkey = daily_key(p.sap_code, p.name)
+        lines_by_key[(p.work_center, qkey)].append((keys.get(p.id, ""), float(p.labor_time)))
+        if not takes_sap(p.sap_code, p.auto_fill):
+            sap_off.add((p.work_center, qkey, keys.get(p.id, "")))
+    return lines_by_key, sap_off
+
+
+def _labor_inputs(db: Session, manager_ids: Iterable[int], date_from: date, date_to: date):
+    """The three reads behind `wc_labor` / `wc_group_labor`: every catalog line
+    of the units, the `pp_daily` quantities and the per-line overrides, grouped
+    by unit. ``({}, {}, {})`` for an empty or inverted range."""
     ids = sorted({int(m) for m in manager_ids})
     if not ids or date_from > date_to:
-        return {}
+        return {}, {}, {}
 
     prods: dict[int, list] = defaultdict(list)
     for p in db.query(PPProduct).filter(PPProduct.manager_id.in_(ids)).all():
         prods[int(p.manager_id)].append(p)
     if not prods:
-        return {}
+        return {}, {}, {}
 
     shared: dict[int, dict] = defaultdict(dict)
     for d in db.query(PPDaily).filter(
@@ -209,36 +406,7 @@ def wc_labor(db: Session, manager_ids: Iterable[int],
             (float(lo.plan_override) if lo.plan_override is not None else None),
             (float(lo.actual_override) if lo.actual_override is not None else None),
         )
-
-    acc: dict[tuple[int, str, str], list] = {}
-    for mid, products in prods.items():
-        keys = line_keys(products)
-        lines_by_key: dict[tuple[str, str], list] = defaultdict(list)
-        # The lines the SAP upload does not answer for — `pp_calc.takes_sap`,
-        # the same gate the Positions table applies, so the trudoyomkost the
-        # загрузка divides and the minutes the page prints stay one number.
-        sap_off: set[tuple[str, str, str]] = set()
-        for p in products:
-            if not p.active or p.labor_time is None:
-                continue
-            qkey = daily_key(p.sap_code, p.name)
-            lines_by_key[(p.work_center, qkey)].append(
-                (keys.get(p.id, ""), float(p.labor_time)))
-            if not takes_sap(p.sap_code, p.auto_fill):
-                sap_off.add((p.work_center, qkey, keys.get(p.id, "")))
-        if not lines_by_key:
-            continue
-        pm, am = line_minutes(lines_by_key, shared.get(mid, {}),
-                              per_line.get(mid, {}), _SEC_PER_MIN, sap_off)
-        for src, slot in ((pm, 0), (am, 1)):
-            for (wc, d), v in src.items():
-                key = (mid, d.isoformat() if hasattr(d, "isoformat") else str(d), wc)
-                row = acc.get(key)
-                if row is None:
-                    row = acc[key] = [0.0, 0.0]
-                row[slot] += float(v or 0)
-
-    return {k: (v[0], v[1]) for k, v in acc.items()}
+    return prods, shared, per_line
 
 
 def unit_labor(db: Session, manager_ids: Iterable[int],

@@ -611,7 +611,12 @@ def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
     rows.sort(key=lambda r: (r.date, idle_intervals.to_min(r.start) or 0), reverse=True)
     rows = rows[:MAX_ENTRIES]
 
-    hc = idle_source.cell_headcount(db, [cell], date_from, date_to)
+    # Weighed over EVERY cell of the unit — the set `build` prices the tree with
+    # — and read back for this one. `cell_people` splits a work centre over the
+    # cells it is handed, so a one-cell list reads every other group's people
+    # (and a whole-centre pin undivided) as this cell's own, and the modal would
+    # price the row with a headcount the tree above it never used.
+    hc = idle_source.cell_headcount(db, _cells_of(db, [manager_id]), date_from, date_to)
 
     out = []
     for r in rows:

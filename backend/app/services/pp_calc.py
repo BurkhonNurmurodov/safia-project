@@ -328,9 +328,42 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0,
     date the SAP file never covered, and walking the snapshot's dates alone would
     drop precisely those.
     """
+    plan_min, actual_min, _pg, _ag = _line_minutes(
+        lines_by_key, shared, per_line, sec_per_min, sap_off, None)
+    return plan_min, actual_min
+
+
+def line_minutes_by_group(lines_by_key, shared, per_line, sec_per_min: float = 60.0,
+                          sap_off=None, group_of=None):
+    """`line_minutes` one level down: planned / actual MINUTES per
+    (work centre, GROUP, date), the group being the one the catalog line names
+    (models.PPProduct.wc_group — services/wc_group.py).
+
+      group_of {(wc, qty_key): group|None} — `wc_group.sku_groups` over the
+               unit's catalog. A (wc, qty_key) it does not name is None: the
+               whole-work-centre part, which `wc_group.share` hands out evenly.
+
+    Same resolution, same loop, same day set as `line_minutes` — it is the SAME
+    private function returning its other half — so Σ over the groups of a work
+    centre is that work centre's `line_minutes` figure and the per-cell pages
+    can never state different minutes from the Positions table.
+    """
+    _pm, _am, plan_grp, actual_grp = _line_minutes(
+        lines_by_key, shared, per_line, sec_per_min, sap_off, group_of or {})
+    return plan_grp, actual_grp
+
+
+def _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, group_of):
+    """The one loop behind `line_minutes` and `line_minutes_by_group`. The
+    (wc, date) sums accumulate in exactly the order they always did, so the
+    fleet figure stays byte-identical; the (wc, group, date) sums ride beside
+    them only when `group_of` is given."""
     plan_min: dict = {}
     actual_min: dict = {}
+    plan_grp: dict = {}
+    actual_grp: dict = {}
     off = sap_off or ()
+    grouped = group_of is not None
 
     days: dict = {}
     for (wc, key, d) in shared:
@@ -339,6 +372,7 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0,
         days.setdefault((wc, key), set()).add(d)
 
     for (wc, key), lines in lines_by_key.items():
+        g = (group_of.get((wc, key)) or None) if grouped else None
         for d in days.get((wc, key), ()):
             sv = shared.get((wc, key, d)) or (0.0, 0.0)
             sp, sa = sv[0], sv[1]
@@ -349,11 +383,14 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0,
                 gated = bool(off) and (wc, key, line_key) in off
                 bp = sp if (typed_p or not gated) else 0.0
                 ba = sa if (typed_a or not gated) else 0.0
-                plan_min[(wc, d)] = plan_min.get((wc, d), 0.0) + \
-                    labor * (lp if lp is not None else bp) / sec_per_min
-                actual_min[(wc, d)] = actual_min.get((wc, d), 0.0) + \
-                    labor * (la if la is not None else ba) / sec_per_min
-    return plan_min, actual_min
+                pv = labor * (lp if lp is not None else bp) / sec_per_min
+                av = labor * (la if la is not None else ba) / sec_per_min
+                plan_min[(wc, d)] = plan_min.get((wc, d), 0.0) + pv
+                actual_min[(wc, d)] = actual_min.get((wc, d), 0.0) + av
+                if grouped:
+                    plan_grp[(wc, g, d)] = plan_grp.get((wc, g, d), 0.0) + pv
+                    actual_grp[(wc, g, d)] = actual_grp.get((wc, g, d), 0.0) + av
+    return plan_min, actual_min, plan_grp, actual_grp
 
 
 def is_local_key(key) -> bool:
@@ -393,6 +430,8 @@ def compute_dashboard(
     ignore_capacity: bool = False,
     line_overrides: Optional[dict[tuple[str, str, int], dict]] = None,
     people_typed_only: bool = False,
+    wc_cells: Optional[dict[str, list]] = None,
+    group_overrides: Optional[dict[tuple[str, str], dict]] = None,
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
@@ -433,6 +472,25 @@ def compute_dashboard(
 
                  `people_calc` is published either way: the «Расчёт (формула)»
                  table exists to show the suggestion, LABELLED as one.
+    wc_cells:    {work centre code: [group letter or None, one per registry cell of
+                 THIS unit standing at that code]} — the cells a work centre's
+                 minutes are handed to (services/wc_group.py). Omitted ⇒ no cell
+                 is known, which is what every caller computed before groups.
+    group_overrides: {(work centre code, letter): {people}} — the typed GROUP
+                 pins (pp_work_center_daily rows carrying a wc_group). A group pin
+                 carries people only; the day's штатка pin stays in
+                 `wc_overrides`.
+
+                 **Why both.** Several cells of ONE unit can stand at one SAP
+                 work centre, and until 2026-09-14 the page could only state the
+                 whole line's people and minutes. A work centre is GROUPED when a
+                 cell at its code, an active line there, or a typed pin for it
+                 carries a letter; it then publishes `groups` — one entry per
+                 letter, each with the minutes its cells carry under
+                 `wc_group.share` (the one split rule, so the Positions page and
+                 the per-cell pages hand out one work centre the same way), its
+                 typed pin and the formula's suggestion. With nothing lettered
+                 `groups` is empty and every other figure is byte-identical.
     ignore_capacity: the day carries a pinned efficiency, so S is W × productive_min
                  for EVERY work center and the configured capacity is bypassed.
                  `capacity` is only ever W × a per-head rate anyway (the rate
@@ -447,6 +505,17 @@ def compute_dashboard(
     # --- pass 1: per-row labor, and accumulate Q per work center -----------
     rows: list[dict] = []
     q_by_wc: dict[str, float] = {}
+    # Σ ФАКТ minutes per work centre, published beside `total_labor` so an export
+    # whose rows a leader's group scope has cut can add back what the page still
+    # counts (production.export_positions).
+    qa_by_wc: dict[str, float] = {}
+    # {wc: {group|None: minutes}} — the same Σ as q_by_wc, split by the group
+    # each line names (None = the ungrouped part), which is what
+    # `wc_group.share` hands out to the cells.
+    q_by_wc_group: dict[str, dict] = {}
+    # {wc: letters named by an active line}. Kept apart from the minutes: a
+    # lettered line with no labour still makes its work centre grouped.
+    line_letters: dict[str, set] = {}
 
     line_overrides = line_overrides or {}
     for i, p in enumerate(products, start=1):
@@ -483,9 +552,16 @@ def compute_dashboard(
 
         total_labor = (labor_f * plan_qty / 60.0) if has_labor else None
         actual_labor = (labor_f * actual_qty / 60.0) if has_labor else None
+        if actual_labor:
+            qa_by_wc[wc] = qa_by_wc.get(wc, 0.0) + actual_labor
 
+        grp = p.get("wc_group") or None
+        if grp:
+            line_letters.setdefault(wc, set()).add(grp)
         if total_labor:
             q_by_wc[wc] = q_by_wc.get(wc, 0.0) + total_labor
+            by_grp = q_by_wc_group.setdefault(wc, {})
+            by_grp[grp] = by_grp.get(grp, 0.0) + total_labor
 
         rows.append({
             "id": p.get("id"),               # PPProduct id — lets the client edit this catalog line
@@ -502,6 +578,9 @@ def compute_dashboard(
             "qty_key": key,
             "name": p.get("name") or "",
             "work_center": wc,
+            # the group of its work centre this line is produced by — None for
+            # a line of the whole work centre (services/wc_group.py)
+            "wc_group": grp,
             "labor_time": labor_f if has_labor else None,
             "has_labor": has_labor,
             "plan_qty": plan_qty,
@@ -555,8 +634,20 @@ def compute_dashboard(
             wc_codes.append(code)
 
     ov_all = wc_overrides or {}
+    cells_all = wc_cells or {}
+    # {wc: {letter: typed people}} — a group pin with no people is no pin, the
+    # `people IS NOT NULL` predicate `zagruzka_source.typed_pins` reads by.
+    typed_by_wc: dict[str, dict] = {}
+    for (gcode, letter), gv in (group_overrides or {}).items():
+        n = _opt_int((gv or {}).get("people"))
+        if gcode and letter and n is not None:
+            typed_by_wc.setdefault(gcode, {})[letter] = n
 
     people_by_wc: dict[str, int] = {}
+    # {(wc, letter): people} for the letters a CELL carries — what a lettered
+    # row reads instead of the whole work centre's N. A SHARE, so it may be a
+    # fraction (one whole-centre figure of 7 over two cells is 3.5 each).
+    group_people: dict[tuple[str, str], Optional[float]] = {}
     wc_panel: list[dict] = []
     for code in wc_codes:
         meta = wc_meta[code]
@@ -580,7 +671,99 @@ def compute_dashboard(
         people_calc = _round_half_up(shtatka * q / s_eff) if (s_eff > 0 and shtatka > 0) else 0
         people_ov = _opt_int(ov.get("people"))
         people = people_ov if (people_typed_only or people_ov is not None) else people_calc
+        people_overridden = people_ov is not None
+
+        cell_groups = list(cells_all.get(code) or [])
+        cell_letters = {g for g in cell_groups if g}
+        typed_groups = typed_by_wc.get(code, {})
+        letters = sorted(cell_letters | line_letters.get(code, set()) | set(typed_groups))
+        # Once the brigadir types the people per GROUP, those pins ARE the work
+        # centre's headcount — the pin rule of `wc_group.share`, folded up the
+        # way `zagruzka_source.fold_pins` folds it, so ΣN here and the fleet
+        # загрузка count one work centre one way. With no group pin the whole
+        # centre resolves exactly as it always did.
+        if letters and typed_groups:
+            people = sum(typed_groups.values())
+            people_overridden = True
         people_by_wc[code] = people
+
+        groups: list[dict] = []
+        if letters:
+            from app.services.wc_group import share  # local: wc_group imports this module
+            per_grp = q_by_wc_group.get(code, {})
+            # Each cell its own group's minutes plus an even share of what no
+            # letter claims; a letter's figure is the Σ over the cells carrying
+            # it (the register forbids two, and a sum cannot double-count one).
+            own_min: dict[str, float] = {}
+            if cell_groups:
+                for g, v in zip(cell_groups, share(cell_groups, per_grp)):
+                    if g:
+                        own_min[g] = own_min.get(g, 0.0) + (v or 0.0)
+            # …and the PEOPLE by the very same rule, pin rule on — exactly what
+            # `zagruzka_source.cell_people` hands the ojidaniya weight and
+            # /zagruzka-cell divides by. Reading the letter's own pin alone blanked
+            # every lettered line on a day typed as ONE whole-centre figure (the
+            # state the one-shot leaves until the brigadir retypes per group)
+            # while the per-cell pages split that figure evenly.
+            pin_vals: dict = dict(typed_groups)
+            if people_ov is not None:
+                pin_vals[None] = people_ov
+            shared_ppl: dict[str, float] = {}
+            if cell_groups and pin_vals:
+                for g, v in zip(cell_groups, share(cell_groups, pin_vals, pins=True)):
+                    if g and v is not None:
+                        shared_ppl[g] = shared_ppl.get(g, 0.0) + v
+            for g in letters:
+                orphan = g not in cell_letters
+                # An ORPHAN letter (on a line or a pin, on no cell) has no cell
+                # to hand minutes to — its lines' minutes are shown as they are,
+                # and `share` already spreads them over the real cells above.
+                tl_g = float(per_grp.get(g, 0.0)) if orphan else own_min.get(g, 0.0)
+                calc_g = (_round_half_up(shtatka * tl_g / s_eff)
+                          if (s_eff > 0 and shtatka > 0) else 0)
+                pin_g = typed_groups.get(g)
+                if orphan:
+                    counted = pin_g if pin_g is not None else (None if people_typed_only else calc_g)
+                else:
+                    # What the cell is COUNTED with: its share of the pins, else —
+                    # before the floor only — its share of the WORK CENTRE's
+                    # suggestion, handed out by `wc_group.share` exactly as
+                    # /zagruzka-cell's o_soni splits `derived_o_soni`. Not the
+                    # group's own formula (`calc_g`, still published as
+                    # people_calc to show it): ROUND(W × the group's minutes ÷ S)
+                    # rounds each group on its own — 1 and 0 where the work
+                    # centre's 2 splits 1 and 1 — so this page and the per-cell
+                    # page counted one cell-day with two headcounts.
+                    counted = shared_ppl.get(g)
+                    if counted is None and not people_typed_only:
+                        counted = sum(v or 0.0 for cg, v in zip(
+                            cell_groups, share(cell_groups, {None: people_calc}))
+                            if cg == g)
+                groups.append({
+                    "group": g,
+                    "cell": None,              # resolved by the router (cell_lookup)
+                    "orphan": orphan,
+                    # An orphan's minutes (and its pin) are already inside the
+                    # cells' shares — or, with no cell at the code, inside the
+                    # work centre's own total — so nothing may add this row into
+                    # a sum a second time. It stays visible as what was filed.
+                    "included": orphan,
+                    "total_labor": tl_g,
+                    # A TYPED pin is published as typed, never inflated by an
+                    # orphan's even share: the «Odamlar soni» input seeds from it,
+                    # and a re-save would write the share back as a pin. An untyped
+                    # group publishes the share it reads (people_overridden False).
+                    "people": pin_g if pin_g is not None else counted,
+                    "people_overridden": pin_g is not None,
+                    "people_calc": calc_g,
+                    # the headcount this group's load and its lines' ЛЮДИ divide by
+                    # — differs from `people` only where an orphan pin is shared in
+                    "people_counted": counted,
+                    "load": (None if counted is None
+                             else (tl_g / (shift_min * counted)) if counted > 0 else 0.0),
+                })
+                if not orphan:
+                    group_people[(code, g)] = counted
         # None ⇒ the load is UNKNOWN, not 0: nothing was divided. A typed 0 is a
         # real answer (a cell that ran empty) and keeps the 0.0 it always had.
         load = (None if people is None
@@ -594,19 +777,31 @@ def compute_dashboard(
             "per_head": (s_eff / shtatka) if shtatka > 0 else None,
             "people": people,             # O. SONI (N) — effective
             "total_labor": q,             # Σ Общ.трудоёмкость for this WC
+            "actual_labor": qa_by_wc.get(code, 0.0),   # Σ ФАКТ minutes for this WC
             "load": load,                 # Загруженность (O)
             "sort_order": meta["sort_order"],
             # what the card falls back to when an override is cleared
             "people_calc": people_calc,
             "shtatka_cfg": shtatka_cfg,
-            "people_overridden": people_ov is not None,
+            "people_overridden": people_overridden,
             "shtatka_overridden": shtatka_ov is not None,
+            # the typed whole-centre pin as stored, whether or not it answers —
+            # group pins outrank it, and the card must be able to say so
+            "people_whole": people_ov,
+            # how many registry cells of this unit stand at the code, and the
+            # per-group rows ([] for a work centre nobody lettered)
+            "cells_n": len(cell_groups),
+            "groups": groups,
         })
     wc_panel.sort(key=lambda x: (x["sort_order"], x["work_center"]))
 
     # --- pass 2: per-row people / minutes / pareto -------------------------
     for r in rows:
-        people = people_by_wc.get(r["work_center"])
+        # A line of a group some CELL carries reads that group's people; every
+        # other line — ungrouped, or of an orphan letter — the work centre's.
+        gkey = (r["work_center"], r.get("wc_group"))
+        people = (group_people[gkey] if (r.get("wc_group") and gkey in group_people)
+                  else people_by_wc.get(r["work_center"]))
         r["people"] = people
         tl = r["total_labor"]
         r["minutes"] = (tl / people) if (tl is not None and people) else None

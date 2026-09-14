@@ -51,7 +51,7 @@ from app.models import (
     AttendanceUploadFile, Cell, DailySubmission, EditRequest, HrDocument, Manager,
 )
 from app.routers.admin import verify_admin
-from app.services import action_log
+from app.services import action_log, wc_group
 from app.services.attendance_sheet import AttendanceSheetError, parse_attendance_workbook
 from app.services.day_state import day_state
 from app.services.kpi_calculator import is_direct_role
@@ -1114,6 +1114,8 @@ def update_cells(
     by_code = {bc.verifix_code: bc for bc in batch.cells}
     valid_managers = {m.id for m in db.query(Manager.id).all()}
     before = {bc.verifix_code: (bc.manager_id, bool(bc.included)) for bc in batch.cells}
+    moved: dict[int, tuple[Cell, Optional[int]]] = {}   # cell id → (cell, its unit before this call)
+    group_cleared: list[str] = []
 
     for ch in body.changes:
         bc = by_code.get(ch.verifix_code)
@@ -1142,8 +1144,46 @@ def update_cells(
                 if ch.included is not None:
                     cell.att_included = bool(ch.included)
                 if body.permanent:
+                    moved.setdefault(cell.id, (cell, cell.manager_id))
                     cell.manager_id = bc.manager_id
                     cell.att_included = bool(bc.included)
+                    # A letter tells apart the cells of ONE unit at one work
+                    # centre; with no unit it names nothing (wc_group.check_cell
+                    # forbids it), and the boot backfill that re-attaches the
+                    # cell to its leader's unit would collide on it. So clearing
+                    # the unit clears the letter, named in the log.
+                    if cell.manager_id is None and cell.wc_group:
+                        group_cleared.append(f"{cell.verifix_code} {cell.wc_group}")
+                        cell.wc_group = None
+
+    # «Doimiy qilish» moves a cell into a unit nobody chose its letter for. Like
+    # a leader's unit move it must never refuse, so a colliding letter yields
+    # (wc_group.settle_moved) — per DESTINATION, because one PUT can move cells
+    # into several units. An unlettered cell dragged beside lettered ones is
+    # left for startup.report_wc_groups.
+    into: dict[int, list[Cell]] = {}
+    for cell, was in moved.values():
+        if cell.manager_id is not None and cell.manager_id != was:
+            into.setdefault(cell.manager_id, []).append(cell)
+    kept: list[tuple[Cell, str]] = []
+    for mid, cells_in in into.items():
+        group_cleared += wc_group.settle_moved(db, cells_in, mid)
+        kept += [(c, c.wc_group) for c in cells_in if c.wc_group]
+    if kept:
+        # Settled letters are free at their destination only once EVERY write of
+        # this PUT has landed, and UPDATEs flush one row at a time in an order
+        # this code does not choose. So ONE kept letter is enough to meet the
+        # cell it replaces still standing there on uq_cells_wc_group: a SWAP of
+        # two same-letter cells, and equally a cell arriving in a letter another
+        # cell of this PUT is leaving by a cleared unit or by a collision in a
+        # third unit (108 → unit 2 while 114 → no unit). Every kept letter is
+        # dropped, the cleared letters and vacated units are flushed, and only
+        # then are the kept letters restored.
+        for c, _g in kept:
+            c.wc_group = None
+        db.flush()
+        for c, g in kept:
+            c.wc_group = g
 
     decided = []
     for ch in body.changes:
@@ -1162,7 +1202,8 @@ def update_cells(
         target_kind="batch", target_id=batch.id, day=d,
         details=[("date", str(d)), ("cells", len(body.changes)),
                  ("changed", len(decided)),
-                 ("scope", "permanent" if body.permanent else "day")],
+                 ("scope", "permanent" if body.permanent else "day"),
+                 *[("group_cleared", c) for c in group_cleared]],
         changes=decided,
     )
     db.refresh(batch)

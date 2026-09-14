@@ -312,6 +312,7 @@ _T = {
     "l.archived": ("Arxivlangan", "Архивланган", "Архивирован", "Archived"),
     "l.verifix_code": ("Verifix kodi", "Verifix коди", "Код Verifix", "Verifix code"),
     "l.sap_code": ("SAP kodi", "SAP коди", "Код SAP", "SAP code"),
+    "l.wc_group": ("Guruh", "Гуруҳ", "Группа", "Group"),
     "l.leader": ("Lider", "Лидер", "Лидер", "Leader"),
     "l.cells": ("Yacheykalar", "Ячейкалар", "Ячейки", "Cells"),
     "l.note": ("Izoh", "Изоҳ", "Примечание", "Note"),

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Settings2,
-  FileSpreadsheet, ShieldCheck, UserRound,
+  FileSpreadsheet, ShieldCheck, UserRound, Layers, AlertTriangle,
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
@@ -15,6 +15,8 @@ import EmptyState from "../components/ui/EmptyState";
 import TableCard, { Th } from "../components/ui/DataTable";
 import CellLink from "../components/ui/CellLink";
 import CellFormModal from "../components/CellFormModal";
+import GroupBadge from "../components/ui/GroupBadge";
+import { wcGroupLabel } from "../utils/wcGroup";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -49,6 +51,65 @@ import { exportXlsx } from "../utils/exportXlsx";
  * pattern as the Profiles tab rows; edit/delete stay as the row's icon pair
  * and stop the click from bubbling into the navigation.
  */
+
+// Whole-sentence templates with {placeholders} — word order differs per language.
+const fill = (s, vars) => String(s ?? "").replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : String(vars[k])));
+
+// The register rule of a work-centre GROUP (backend services/wc_group.py
+// `cell_conflicts`, which the boot self-check reports): inside ONE brigadir's
+// unit a SAP code is carried by exactly one cell, or by several cells that are
+// ALL lettered and all different. Computed here over the whole register — not
+// the filtered rows — so a sibling hidden by a filter still counts, and the
+// admin sees on the row what the self-check would name.
+const normSap = (v) => String(v ?? "").replace(/\s/g, "").toUpperCase();
+function groupIssues(cells) {
+  const by = new Map();
+  for (const c of cells) {
+    const code = normSap(c.sap_code);
+    if (c.manager_id == null || !code) continue;
+    const k = `${c.manager_id}|${code}`;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(c);
+  }
+  const out = new Map();
+  for (const cs of by.values()) {
+    if (cs.length < 2) continue;
+    for (const c of cs) {
+      const others = cs.filter((o) => o.id !== c.id);
+      if (!c.wc_group) {
+        out.set(c.id, { kind: "missing", code: normSap(c.sap_code),
+                        cells: others.map((o) => o.verifix_code).join(", ") });
+        continue;
+      }
+      const same = others.filter((o) => o.wc_group === c.wc_group);
+      if (same.length) {
+        out.set(c.id, { kind: "duplicate", code: normSap(c.sap_code), group: c.wc_group,
+                        cells: same.map((o) => o.verifix_code).join(", ") });
+      }
+    }
+  }
+  return out;
+}
+
+// The group cell of a row/card: the letter badge, amber when it collides with a
+// sibling's; a warning mark when a shared code leaves this cell unlettered.
+function GroupMark({ c, issue, t, placeholder = true }) {
+  const tip = issue
+    ? fill(t(issue.kind === "missing" ? "admin.profiles.cellGroupMissing" : "admin.profiles.cellGroupDuplicate"), issue)
+    : wcGroupLabel(c.sap_code, c.wc_group);
+  if (c.wc_group) {
+    return <GroupBadge group={c.wc_group} tone={issue ? "warn" : "neutral"} title={tip} />;
+  }
+  if (issue) {
+    return (
+      <span title={tip} aria-label={tip} className="inline-flex items-center gap-1 align-middle" style={{ color: "#eab308" }}>
+        <AlertTriangle size={13} />
+        {placeholder && <span className="text-[11px]">—</span>}
+      </span>
+    );
+  }
+  return placeholder ? <span style={{ color: "var(--text-4)" }}>—</span> : null;
+}
 
 // Compact gold-Edit / grey→red-Delete icon pair — shared by the desktop row and
 // the mobile card so both surfaces read identically. Clicks must not bubble:
@@ -86,7 +147,7 @@ function RowActions({ t, onEdit, onDelete, deleting }) {
 // the workshop name is never printed (utils/cellName.js), and the two people
 // answerable for the cell are what the card carries instead.
 // The whole card opens the cell's page; the icon pair stops propagation.
-function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onOpen }) {
+function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onOpen, issue }) {
   return (
     <div
       className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)] cursor-pointer"
@@ -103,6 +164,7 @@ function CellCard({ c, tl, t, canEdit, onEdit, onDelete, deleting, onOpen }) {
               {c.sap_code}
             </span>
           )}
+          {c.sap_code && <GroupMark c={c} issue={issue} t={t} placeholder={false} />}
         </div>
         {canEdit && (
           <div className="flex-shrink-0">
@@ -179,6 +241,10 @@ export default function Cells() {
     onError: (e) => { setConfirmDelete(null); toast.error(e?.response?.data?.detail || t("admin.profiles.error")); },
   });
 
+  // Cell id → what breaks the group rule for it (nothing for a sound register).
+  // Keyed on `data`, not `cells`: `cells` is a fresh [] on every render while loading.
+  const issues = useMemo(() => groupIssues(data?.cells ?? []), [data]);
+
   const openAdd = () => setModal({ mode: "add" });
   const openEdit = (item) => setModal({ mode: "edit", item });
 
@@ -189,7 +255,7 @@ export default function Cells() {
   const filtered = useMemo(() => {
     const q = latinFold(search.trim());
     return cells.filter((c) => {
-      if (q && !latinFold(`${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`)
+      if (q && !latinFold(`${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`)
             .includes(q)) return false;
       if (fBrigadir === "none" ? c.manager_id : fBrigadir && String(c.manager_id) !== fBrigadir) return false;
       if (fLeader === "none" ? c.leader_id : fLeader && String(c.leader_id) !== fLeader) return false;
@@ -204,6 +270,7 @@ export default function Cells() {
     const val = (c) => {
       switch (sort.key) {
         case "sap_code":   return c.sap_code || "";
+        case "wc_group":   return c.wc_group || "";
         case "supervisor": return tl(c.supervisor) || "";
         case "owner":      return tl(c.leader) || "";
         default:           return c.verifix_code || "";
@@ -230,6 +297,7 @@ export default function Cells() {
           rows: sorted.map((c) => ({
             verifix_code: c.verifix_code || "",
             sap_code: c.sap_code || "",
+            wc_group: c.wc_group || "",
             supervisor: c.supervisor ? tl(c.supervisor) : "",
             leader: c.leader ? tl(c.leader) : "",
           })),
@@ -240,7 +308,7 @@ export default function Cells() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
-  const colSpan = canEdit ? 5 : 4;
+  const colSpan = canEdit ? 6 : 5;
 
   const brigadirOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllBrigadirs") },
@@ -283,6 +351,7 @@ export default function Cells() {
           onDelete={() => setConfirmDelete(c)}
           deleting={deleteMut.isPending}
           onOpen={() => navigate(`/cells/${c.id}`)}
+          issue={issues.get(c.id)}
         />
       ))}
     </div>
@@ -367,10 +436,11 @@ export default function Cells() {
       >
         <thead>
           <tr>
-            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[18%]" />
-            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[18%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[28%]" />
-            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[28%]" />
+            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[16%]" />
+            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[16%]" />
+            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[10%]" />
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[25%]" />
+            <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[25%]" />
             {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[8%]" />}
           </tr>
         </thead>
@@ -395,6 +465,9 @@ export default function Cells() {
                 <CellLink id={c.id}>{c.verifix_code}</CellLink>
               </td>
               <td className="px-3 py-2 font-mono text-[var(--text-3)] whitespace-nowrap">{c.sap_code || "—"}</td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                <GroupMark c={c} issue={issues.get(c.id)} t={t} />
+              </td>
               <td className="px-3 py-2">
                 {c.supervisor
                   ? <span className="text-[var(--text-2)]">{tl(c.supervisor)}</span>

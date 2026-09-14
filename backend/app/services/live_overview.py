@@ -23,9 +23,10 @@ computes and never queries. The router hands it:
   * the unit ojidaniya figure from `idle_source.unit_downtime` — the
     headcount-weighted mean every KPI page prints, so the number a brigadir is
     ranked by here is the number `/downtime` will show tomorrow;
-  * planned / actual MINUTES per work centre from `pp_calc.line_minutes`, the
-    second reader of the per-line quantity rule, so ПЛАН and ФАКТ here are the
-    Positions table's own.
+  * planned / actual MINUTES per unit from `pp_calc.line_minutes`, the second
+    reader of the per-line quantity rule, so ПЛАН and ФАКТ here are the
+    Positions table's own — and per CELL, the work centre's minutes handed to
+    its cells by GROUP (`zagruzka_source.cell_labor`, services/wc_group.py).
 
 **Two things this module decides on its own, and both are said on screen.**
 
@@ -297,7 +298,7 @@ def _worse(a: str, b: str) -> str:
 
 def build(*, frame: dict, now: datetime, units: list, cells: list,
           intervals_by_cell: dict, unit_people: dict, cell_people: dict,
-          idle_unit: dict, plan_by_unit: dict, wc_plan: dict, wc_cell: dict,
+          idle_unit: dict, plan_by_unit: dict, cell_plan: dict,
           day_closed: dict, att_uploaded: dict) -> dict:
     """Assemble the payload. Pure: every input is a plain structure.
 
@@ -308,26 +309,19 @@ def build(*, frame: dict, now: datetime, units: list, cells: list,
       cell_people       {cell_id: Σ hc_weight}
       idle_unit         idle_source.unit_downtime output for the day
       plan_by_unit      {unit_id: {plan_min, actual_min, updated_at, configured}}
-      wc_plan           {(unit_id, wc): (plan_min, actual_min)}
-      wc_cell           {(unit_id, wc): cell_id} — SAP work centre → cell,
-                        where the registry carries the code. Keyed by the UNIT
-                        too: a work centre is not unique across units, so a
-                        code-only map summed two shifts' plan onto one cell.
+      cell_plan         {cell_id: (plan_min, actual_min)} — what each cell
+                        carries of its work centre's minutes: its own GROUP's
+                        lines plus an even share of what no letter claims
+                        (`zagruzka_source.cell_labor`). Resolved per unit by the
+                        router, because a work centre is not unique across
+                        units, nor — once lettered — to one cell inside a unit.
+                        A cell nothing reaches is absent and shows no plan.
       day_closed        {unit_id: bool}
       att_uploaded      {unit_id: bool} — any attendance row at all today
     """
     live = frame["state"] == "running"
     progress = float(frame["progress"])
     day_iso = frame["day"]
-
-    # Per-cell plan minutes, where a work centre resolves to a cell.
-    cell_plan: dict = defaultdict(lambda: [0.0, 0.0])
-    for (uid, wc), (p, a) in wc_plan.items():
-        cid = wc_cell.get((uid, wc))
-        if cid is None:
-            continue
-        cell_plan[cid][0] += p
-        cell_plan[cid][1] += a
 
     alerts: list = []
 

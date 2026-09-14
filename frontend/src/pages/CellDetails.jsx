@@ -4,13 +4,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, LayoutGrid, Hash, Users, Flag, Clock, Factory as FactoryIcon,
   Settings2, Activity, Pencil, ShieldCheck, CalendarDays, Timer, Wrench,
-  Boxes, SearchX, AlertTriangle,
+  Boxes, SearchX, AlertTriangle, Layers,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import ErrorScreen from "../components/ui/ErrorScreen";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import CellFormModal from "../components/CellFormModal";
+import GroupBadge from "../components/ui/GroupBadge";
+import { wcGroupLabel } from "../utils/wcGroup";
 import { SectionHead } from "../components/ui/DataTable";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
@@ -301,6 +303,9 @@ export default function CellDetails() {
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {c.sap_code && <CodeChip muted>SAP · {c.sap_code}</CodeChip>}
+                  {/* The work-centre group letter, right after the code it
+                      qualifies (services/wc_group.py) — none for a lone cell. */}
+                  {c.sap_code && <GroupBadge group={c.wc_group} title={wcGroupLabel(c.sap_code, c.wc_group)} />}
                   <Tag color={c.in_load ? GREEN : GREY}>
                     {t(c.in_load ? "cellPage.inLoadOn" : "cellPage.inLoadOff")}
                   </Tag>
@@ -330,6 +335,11 @@ export default function CellDetails() {
                 <InfoRow icon={Hash} label={t("admin.profiles.colSapCode")}>
                   {c.sap_code
                     ? <span className="font-mono">{c.sap_code}</span>
+                    : <span style={{ color: "var(--text-4)" }}>—</span>}
+                </InfoRow>
+                <InfoRow icon={Layers} label={t("admin.profiles.colGroup")}>
+                  {c.wc_group
+                    ? <GroupBadge group={c.wc_group} title={wcGroupLabel(c.sap_code, c.wc_group)} />
                     : <span style={{ color: "var(--text-4)" }}>—</span>}
                 </InfoRow>
               </div>

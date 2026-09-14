@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload, CheckCircle2, XCircle, Factory, Save, BookOpen, AlertTriangle, Users,
-  Wand2, PencilLine,
+  Wand2, PencilLine, Layers,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -427,6 +427,21 @@ function CatalogImport({ managerId, managerName }) {
                 t("admin.prod.catalogBackfill")
                   .replace("{d}", state.data.backfilled_days)
                   .replace("{r}", state.data.backfilled_rows)}
+            </span>
+          </div>
+        )}
+        {/* Where the lines' work-centre GROUPS came from. A «Группа» column in the
+            file is authoritative for every line — an empty cell there CLEARS a
+            group — so the card says the sheet decided even when it grouped
+            nothing. Without the column the groups are carried over from the old
+            catalog, and a unit nobody has grouped hears nothing about them. */}
+        {state.status === "ok" && (state.data.groups_from_sheet
+          || (state.data.grouped_lines ?? 0) > 0) && (
+          <div className="mt-2 flex items-start gap-2 text-xs" style={{ color: "var(--text-3)" }}>
+            <Layers size={13} className="flex-shrink-0 mt-0.5" />
+            <span className="leading-snug">
+              {t(state.data.groups_from_sheet ? "admin.prod.catalogGroupsSheet" : "admin.prod.catalogGroupsCarried")
+                .replace("{n}", String(state.data.grouped_lines ?? 0))}
             </span>
           </div>
         )}

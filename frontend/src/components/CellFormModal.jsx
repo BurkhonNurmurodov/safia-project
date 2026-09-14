@@ -9,6 +9,7 @@ import LangTextInput from "./ui/LangTextInput";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
+import { GROUP_LETTERS } from "../utils/wcGroup";
 
 /**
  * THE add/edit form for one production cell — extracted from the /cells
@@ -33,6 +34,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       ? {
           verifix_code: item.verifix_code || "",
           sap_code: item.sap_code || "",
+          wc_group: item.wc_group || "",
           manager_id: item.manager_id ? String(item.manager_id) : "",
           leader_id: item.leader_id ? String(item.leader_id) : "",
           name_workshop_uz: item.name_workshop_uz || "",
@@ -41,13 +43,13 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           name_workshop_en: item.name_workshop_en || "",
         }
       : {
-          verifix_code: "", sap_code: "", manager_id: "", leader_id: "",
+          verifix_code: "", sap_code: "", wc_group: "", manager_id: "", leader_id: "",
           name_workshop_uz: "", name_workshop_uz_cyrl: "",
           name_workshop_ru: "", name_workshop_en: "",
         });
   const [formError, setFormError] = useState("");
 
-  const fail = (e) => setFormError(e?.response?.data?.detail || t("admin.profiles.error"));
+  const fail = (e) => setFormError(cellWriteError(e, t));
   const done = () => { onSaved?.(); onClose(); };
 
   const createMut = useMutation({
@@ -61,6 +63,12 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
     onError: fail,
   });
   const busy = createMut.isPending || updateMut.isPending;
+  // A group letter qualifies a SAP code INSIDE one unit (services/wc_group.py),
+  // so it needs both — and the server refuses one beside either missing. The
+  // form neither offers nor sends it then, so clearing the brigadir clears the
+  // letter instead of drawing a refusal. `form.manager_id` already holds a
+  // picked leader's unit.
+  const canGroup = !!(form.sap_code || "").trim() && !!form.manager_id;
 
   function submit() {
     setFormError("");
@@ -69,6 +77,8 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
     const body = {
       verifix_code: code,
       sap_code: form.sap_code || "",
+      // Always sent: "" clears — and a blank code or unit clears it too.
+      wc_group: canGroup ? (form.wc_group || "") : "",
       name_workshop_uz: form.name_workshop_uz || "",
       name_workshop_uz_cyrl: form.name_workshop_uz_cyrl || "",
       name_workshop_ru: form.name_workshop_ru || "",
@@ -119,6 +129,21 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           onChange={(e) => setForm((f) => ({ ...f, sap_code: e.target.value }))}
           className={inputCls}
           style={inputStyle}
+        />
+      </FormField>
+      {/* The work-centre GROUP. Several cells of one brigadir's unit may stand
+          at one SAP code; each then needs its own letter so the typed people
+          and the catalog minutes reach the right cell. The server enforces the
+          rule and its refusal lands in formError below. */}
+      <FormField label={t("admin.profiles.colGroup")} hint={t("admin.profiles.cellGroupHint")}>
+        <StyledSelect
+          value={canGroup ? (form.wc_group || "") : ""}
+          onChange={(v) => setForm((f) => ({ ...f, wc_group: v }))}
+          disabled={!canGroup}
+          options={[
+            { value: "", label: "—" },
+            ...GROUP_LETTERS.map((l) => ({ value: l, label: l })),
+          ]}
         />
       </FormField>
       <FormField label={t("admin.profiles.colWorkshop")}>
@@ -177,3 +202,35 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
     </Modal>
   );
 }
+
+const fillVars = (s, vars) =>
+  String(s ?? "").replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : String(vars[k])));
+const joinCodes = (v) => (Array.isArray(v) ? v.join(", ") : v);
+
+// The register rule refuses a placement with a STRUCTURED detail
+// (wc_group.check_cell_detail: code + params, the English sentence as
+// `message`). utils/api.js flattens it to that sentence and keeps the object as
+// `detail_raw`; the kinds a cell form can meet are said here in the admin's
+// language, anything else falls back to the sentence the server sent.
+function cellWriteError(e, t) {
+  const res = e?.response?.data;
+  const raw = res?.detail_raw;
+  const p = raw?.params || {};
+  const vars = { code: p.code, group: p.group, free: p.free, unlettered: joinCodes(p.unlettered) };
+  switch (raw?.code) {
+    case "wc_group_needs_sap": return t("admin.profiles.cellGroupNeedsSap");
+    case "wc_group_needs_unit": return t("admin.profiles.cellGroupNeedsUnit");
+    case "wc_group_missing":
+      return fillVars(t(p.unlettered?.length ? "admin.profiles.cellGroupLetterFirst" : "admin.profiles.cellGroupMissing"),
+                      { ...vars, cells: joinCodes(p.cells) });
+    case "wc_group_duplicate":
+      return fillVars(t(p.free ? "admin.profiles.cellGroupDuplicateFree" : "admin.profiles.cellGroupDuplicate"),
+                      { ...vars, cells: p.cell });
+    default:
+      return (typeof res?.detail === "string" && res.detail) || t("admin.profiles.error");
+  }
+}
+
+// Shared with the inline cell create on /profile. A static, not a named export:
+// react-refresh allows a component module to export components only.
+CellFormModal.errorText = cellWriteError;

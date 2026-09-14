@@ -171,7 +171,8 @@ def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple
     counted (a split worker is a fraction of a person in each cell).
 
     **From the floor**: the TYPED «Bugungi fakt» on the work centre the cell's
-    `sap_code` names — the operator's directive, the same number the загрузка
+    `sap_code` names — the cell's OWN group row where the brigadir types per
+    group (2026-09-14, services/wc_group.py), else an even share of the pin; the operator's directive, the same number the загрузка
     itself now divides by. A cell whose work centre nobody typed has no weight
     and leaves BOTH sides of the mean, exactly as a cell nobody worked in
     already did; a unit where nothing was typed has ΣN = 0, no figure, and
@@ -208,7 +209,9 @@ def _n_by_cell(db: Session, cells, date_from: date, date_to: date) -> dict[tuple
     lo = zagruzka_source.range_start(date_from, date_to)
     if lo is not None:
         ids = sorted({int(c.manager_id) for c in cells})
-        pins = zagruzka_source.typed_people(db, ids, lo, date_to)
+        # Group-keyed: each cell reads its OWN group's pin where the brigadir
+        # typed per group (services/wc_group.py), else its even share.
+        pins = zagruzka_source.typed_pins(db, ids, lo, date_to)
         for key, n in zagruzka_source.cell_people(cells, pins).items():
             out[key] += n
 

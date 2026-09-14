@@ -31,16 +31,24 @@ from `ojidaniya_cost._union`, the headcount from `idle_source.cell_headcount`
 figure and the figure itself start disagreeing.
 
 **The reason is diagnosed, not guessed.** `cell_people` reaches a work centre
-through `Cell.sap_code` and skips a pin of 0 or less, so "no headcount" has
-four distinct causes that need four different actions from four different
-people. They are told apart against `zagruzka_source.typed_people`, which is
-the same query `_n_by_cell` weighs the day with:
+through `Cell.sap_code` and skips a value of 0 or less, so "no headcount" has
+six distinct causes that need different actions from different people. They
+are told apart against `zagruzka_source.typed_pins` — the same query
+`_n_by_cell` weighs the day with — through `zagruzka_source.cell_pins`, the
+one split and the one cell ↔ work-centre match, so a reason can never describe
+a different split from the weight it explains:
 
 * the cell names no work centre at all — a registry fix, on `/cells/:id`;
 * its work centre was typed by ANOTHER unit that day — the pin is on the wrong
   brigadir, so this cell can never see it;
-* «Bugungi fakt» was typed as 0 — a real answer about people that is not a
-  usable divisor;
+* the work centre was typed PER GROUP that day (2026-09-14,
+  services/wc_group.py) and this cell carries NO letter — nothing on
+  «Odamlar soni» can reach it, so the fix is a letter on `/cells`, not a number;
+* the work centre was typed PER GROUP that day but not for this cell's letter —
+  each cell of a grouped work centre reads its own group's row, so the others'
+  numbers never reach it;
+* the cell's OWN value is 0 — its group pin, or its share of the whole-centre
+  pin — a real answer about people that is not a usable divisor;
 * nobody typed anything — the ordinary case, fixed on `/production` →
   «Odamlar soni» for that work centre and that day.
 
@@ -64,7 +72,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Cell, Factory, Manager, RoleProfile
 from app.services import (idle_intervals, idle_source, ojidaniya_cost,
-                          wage_rate, zagruzka_source)
+                          wage_rate, wc_group, zagruzka_source)
 
 # A period this size is tens of events, not thousands; the cap exists so a
 # misaimed call can never try to render a year into a chat.
@@ -84,7 +92,11 @@ REASONS = {
     "no_rate": "Ish haqi stavkasi yo'q (o'sha kunga davr belgilanmagan)",
     "no_sap": "Yacheykaga SAP ish markazi biriktirilmagan (/cells)",
     "other_unit": "Ish markazi o'sha kuni BOSHQA brigadirda kiritilgan",
-    "typed_zero": "«Bugungi fakt» 0 kiritilgan (bo'luvchi bo'la olmaydi)",
+    "cell_no_group": "«Bugungi fakt» guruhlar bo'yicha kiritilgan, yacheykaga "
+                     "guruh harfi berilmagan (/cells)",
+    "group_not_typed": "«Bugungi fakt» guruhlar bo'yicha kiritilgan, yacheyka "
+                       "guruhiga emas (/production → Odamlar soni)",
+    "typed_zero": "Yacheykaning «Bugungi fakt»i 0 (bo'luvchi bo'la olmaydi)",
     "not_typed": "«Bugungi fakt» kiritilmagan (/production → Odamlar soni)",
 }
 
@@ -147,13 +159,22 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
 
     hc = idle_source.cell_headcount(db, cells, cell_from, date_to)
     rate_for = wage_rate.resolver(wage_rate.load(db))
-    # The pins themselves, to tell the four "no headcount" causes apart.
-    pins = zagruzka_source.typed_people(db, list(managers), cell_from, date_to)
+    # The pins themselves, to tell the "no headcount" causes apart: what each
+    # cell reads of its work centre's pins that day and which letters were typed
+    # there (`cell_pins` — present exactly when the cell's own unit typed its
+    # work centre), over EVERY cell, since the split depends on the siblings.
+    group_pins = zagruzka_source.typed_pins(db, list(managers), cell_from, date_to)
+    own_pins = zagruzka_source.cell_pins(cells, group_pins)
+    # Each cell's work centre, matched the way every reader matches it (unit +
+    # normalised code), so «a pin exists» and «the cell has a code» are asked
+    # of the same work centre `cell_pins` split.
+    code_of = {c.id: wcode for (_mid, wcode), cs in wc_group.cells_by_wc(cells).items()
+               for c in cs}
     # Every unit that typed this work centre on this day, whoever it was — a
     # pin on the wrong brigadir is invisible to the cell and looks like silence.
     wc_days = defaultdict(set)
-    for (mid, day, wc) in pins:
-        wc_days[(day, wc)].add(mid)
+    for (mid, day, wc, _g) in group_pins:
+        wc_days[(day, wc_group.wc_key(mid, wc)[1])].add(mid)
 
     per_pair = defaultdict(list)
     for e in events:
@@ -180,16 +201,27 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
             continue
 
         wc = (cell.sap_code or "").strip()
+        wcode = code_of.get(cid, "")
         mid = int(cell.manager_id) if cell.manager_id is not None else None
         if rate is None:
             reason = "no_rate"
-        elif not wc:
+        elif not wcode:
             reason = "no_sap"
-        elif (mid, day, wc) in pins:
-            # A pin exists for this very unit and day, so `cell_people` dropped
-            # it — which it only ever does for a figure of 0 or less.
-            reason = "typed_zero"
-        elif wc_days.get((day, wc)):
+        elif (cid, day) in own_pins:
+            # A pin exists for this very unit and day, so `cell_people` gave
+            # the cell nothing usable. Typed per group: an UNLETTERED cell can
+            # never be reached by a group row (its fix is a letter on /cells),
+            # and a lettered one reads no group when its own letter is missing.
+            # Otherwise its own value — its group pin, or its share of the
+            # whole-centre pin — is ≤ 0.
+            letters = own_pins[(cid, day)][1]
+            if letters and not cell.wc_group:
+                reason = "cell_no_group"
+            elif letters and cell.wc_group not in letters:
+                reason = "group_not_typed"
+            else:
+                reason = "typed_zero"
+        elif wc_days.get((day, wcode)):
             reason = "other_unit"
         else:
             reason = "not_typed"
@@ -212,7 +244,9 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
             "manager": (m.name if m else ""),
             "leader": leaders.get(cell.leader_id) or "",
             "code": cell.verifix_code or "",
-            "wc": wc,
+            # The letter beside the code: on a grouped work centre it is which
+            # «Odamlar soni» row the fix is typed into.
+            "wc": wc_group.label(wc, cell.wc_group),
             "minutes": minutes,
             "events": len(evs),
             "sum_minutes": sum(idle_intervals.duration(e.start, e.end) for e in evs),
@@ -231,7 +265,7 @@ def collect(db: Session, date_from: date, date_to: date) -> dict:
                 "manager": (m.name if m else ""),
                 "leader": leaders.get(cell.leader_id) or "",
                 "code": cell.verifix_code or "",
-                "wc": wc,
+                "wc": wc_group.label(wc, cell.wc_group),
                 "cat": code or (e.category or ""),
                 "cat_name": full,
                 "start": e.start,

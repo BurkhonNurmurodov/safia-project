@@ -35,12 +35,14 @@ import { segmentBands } from "../utils/segments";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonChart } from "../components/ui/Skeleton";
 import CellLink from "../components/ui/CellLink";
+import GroupBadge from "../components/ui/GroupBadge";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
 import { cellLabel } from "../utils/cellName";
 import { shortPerson } from "../utils/personName";
+import { wcGroupLabel } from "../utils/wcGroup";
 import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
@@ -147,10 +149,12 @@ function HeatmapHeader({ payload, heatmapMode, setHeatmapMode, segments, fullscr
   );
 }
 
-/** One diagnostics line — hidden entirely when the list is empty. */
+/** One diagnostics line — hidden entirely when the list is empty. `tone`:
+ *  "warn" (yellow) something to fix, "ok" (green) a state set up as intended
+ *  but worth naming, anything else red. */
 function DiagRow({ label, items, tone = "warn" }) {
   if (!items?.length) return null;
-  const color = tone === "warn" ? "#eab308" : "#ef4444";
+  const color = tone === "warn" ? "#eab308" : tone === "ok" ? "#22c55e" : "#ef4444";
   return (
     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1">
       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
@@ -630,6 +634,10 @@ export default function ZagruzkaCell() {
                   const meta = cellMeta[c];
                   const net = payload.data?.[c]?.[inputDate]?.net_util;
                   const idle = idleNote(inp, t);
+                  // The cell's group of its work centre. Off the day's input row
+                  // where one exists, else the registry — a day with no figure
+                  // still stands at the same letter.
+                  const grp = inp?.wc_group ?? meta?.wc_group ?? null;
                   return (
                     <tr key={c}>
                       {/* The code is the cell's name and the LEADER is the
@@ -646,15 +654,24 @@ export default function ZagruzkaCell() {
                           </span>
                         )}
                       </td>
-                      {/* The work centre, and — where several cells name it —
-                          how much of it this row carries. Трудоёмкость and
-                          «Bugungi fakt» are recorded per WORK CENTRE, so those
-                          cells hold 1/N of it and their figures are shares, not
-                          measurements. Saying so on the code itself is the only
+                      {/* The work centre, the cell's GROUP letter beside it, and
+                          — only where the row reads an EVEN share — the 1/N
+                          chip. A lettered cell reads its own group's
+                          трудоёмкость and «Bugungi fakt», so its figures are its
+                          own and carry no chip; an unlettered cell of a shared
+                          work centre holds 1/N of it, a share and not a
+                          measurement. Saying so on the code itself is the only
                           place the reader meets the work centre. */}
-                      <td className="px-3 py-2 text-center" style={{ color: meta?.joined ? "var(--text-2)" : "#ef4444" }}>
+                      <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: meta?.joined ? "var(--text-2)" : "#ef4444" }}>
                         {meta?.sap_code || "—"}
-                        {inp?.wc_cells > 1 && (
+                        <GroupBadge
+                          className="ml-1"
+                          group={grp}
+                          title={t("zcell.groupHint")
+                            .replaceAll("{wc}", meta?.sap_code ?? "")
+                            .replaceAll("{g}", grp ?? "")}
+                        />
+                        {inp?.wc_split === "even" && inp?.wc_cells > 1 && (
                           <span className="ml-1 text-[9px] px-1 rounded"
                                 title={t("zcell.wcShareHint").replaceAll("{n}", inp.wc_cells)}
                                 style={{ color: "#eab308", background: "rgba(234,179,8,0.12)" }}>
@@ -827,11 +844,35 @@ export default function ZagruzkaCell() {
               [t("zcell.diagNoSap"), diag.cells_without_sap],
               [t("zcell.diagNoWc"), diag.cells_without_work_center],
               [t("zcell.diagOrphanWc"), diag.work_centers_without_cell],
-              // Work centres split between several cells — those rows carry a
-              // share of a work-centre-level number, so the reader is told
-              // which ones rather than left to spot the 1/N chip.
+              // Work centres still split EVENLY between several cells — those
+              // rows carry a share of a work-centre-level number, so the reader
+              // is told which ones rather than left to spot the 1/N chip. A
+              // `lettered` one already has its cells lettered and says so: the
+              // letters alone change nothing, and the fix there is grouping the
+              // lines or typing per group, not lettering the cells again.
               [t("zcell.diagSharedWc"),
-               (diag.shared_work_centers ?? []).map((g) => `${g.work_center} → ${g.cells.join(" · ")}`)],
+               (diag.shared_work_centers ?? []).map((g) =>
+                 `${g.work_center} → ${g.cells.join(" · ")}`
+                 + (g.lettered ? ` (${t("zcell.diagSharedLettered")})` : ""))],
+              // Work centres really handed out by GROUP — some cell's letter is
+              // named by a catalog line or a typed pin. Not a fault — the state
+              // the letters exist for — so green, and listed so a reader sees
+              // which letter each cell reads. Cells joined with « / » because
+              // each label («7421 · A») already carries a « · ».
+              [t("zcell.diagGroupedWc"),
+               (diag.grouped_work_centers ?? []).map((g) => `${g.work_center} → ${g.cells.join(" / ")}`),
+               "ok"],
+              // What a grouped work centre STILL splits evenly: lines nobody
+              // lettered, and letters no cell of this unit carries.
+              [t("zcell.diagLinesNoGroup"),
+               (diag.lines_without_group ?? []).map((g) =>
+                 t("zcell.diagLinesNoGroupItem").replace("{wc}", g.work_center).replace("{n}", g.lines))],
+              [t("zcell.diagOrphanGroups"),
+               (diag.orphan_groups ?? []).map((g) =>
+                 t("zcell.diagOrphanGroupItem")
+                   .replace("{label}", wcGroupLabel(g.work_center, g.group))
+                   .replace("{lines}", g.lines)
+                   .replace("{pins}", g.pins))],
               [t("zcell.diagNoLabor"), diag.products_missing_labor_time],
               [t("zcell.diagExcluded"),
                (diag.excluded_job_titles ?? []).map((e) => `${e.title} (${e.rows} ${t("zcell.rowsWord")})`)],
@@ -840,7 +881,9 @@ export default function ZagruzkaCell() {
             if (!any) {
               return <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("zcell.diagClean")}</div>;
             }
-            return rows.map(([label, items]) => <DiagRow key={label} label={label} items={items} />);
+            return rows.map(([label, items, tone]) => (
+              <DiagRow key={label} label={label} items={items} tone={tone} />
+            ));
           })()}
         </div>
       )}
