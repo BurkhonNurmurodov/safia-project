@@ -86,6 +86,7 @@ try:
         report_cell_input_gaps_xlsx,
         notify_operator_education_lesson,
         report_shared_sap_cells_raw_xlsx,
+        report_sheet_concerns_xlsx,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
@@ -353,6 +354,12 @@ try:
     # after this deploy, never again. Remove this line and
     # `shared_wc_report.send_cells_raw_xlsx` once it has landed.
     report_shared_sap_cells_raw_xlsx()
+    # ⚠ TEMPORARY one-shot (2026-09-15) — who still writes concerns in the
+    # «Liderlar Havotirlar» Google sheets in September, as a workbook in the
+    # operator's chat. Scheduled (it re-crawls the sheets first), flag-guarded.
+    # Remove this line, `startup.report_sheet_concerns_xlsx` and
+    # `services/sheet_concerns_report.py` once it has landed.
+    report_sheet_concerns_xlsx()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()
