@@ -137,6 +137,9 @@ _MANAGER_REKEY_EXTRA_REFS = [
     ("leader_ai_reviews", "manager_id"),
     ("leader_ai_disputes", "manager_id"),
     ("leader_day_reports", "manager_id"),
+    # The brigadir's day-digest ledger: left under the old number, every
+    # unit-day it already reported reads as never sent and is DMed again.
+    ("leader_unit_reports", "manager_id"),
     ("leader_day_exclusions", "manager_id"),
     ("leader_cutoffs", "manager_id"),
     ("leader_late_requests", "manager_id"),

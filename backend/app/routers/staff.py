@@ -322,6 +322,24 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Ваш день снова учитывается", "Дата: {date} | Этот день ({score}%) возвращён в ваши результаты. Кто: {by}"),
         "en": ("Your day counts again", "Date: {date} | This day ({score}%) is back in your results. By: {by}"),
     },
+    # ── the brigadir's DAY DIGEST (services/leader_unit_report.py) ───────────
+    # From DIGEST_FROM a brigadir hears about a unit's whole day in ONE message
+    # instead of one per leader. A bell row is a one-liner by design, so it
+    # carries the counts; the DM is the rich table (services/leader_unit_rich),
+    # with the _NOTIF_TG_HTML twins below as its classic fallback. The update
+    # names what changed — a bare second table reads as the first one, twice.
+    "leader_unit_report": {
+        "uz": ("Liderlar hisoboti — brigada natijasi {score}", "Sana: {date} | Topshirildi: {submitted}/{owed} | Rad etilgan vazifasi bor: {rejected} | Topshirilmagan: {missing}"),
+        "uz_cyrl": ("Лидерлар ҳисоботи — бригада натижаси {score}", "Сана: {date} | Топширилди: {submitted}/{owed} | Рад этилган вазифаси бор: {rejected} | Топширилмаган: {missing}"),
+        "ru": ("Отчёт лидеров — итог бригады {score}", "Дата: {date} | Сдано: {submitted}/{owed} | С непринятыми задачами: {rejected} | Не сдано: {missing}"),
+        "en": ("Leaders' report — unit result {score}", "Date: {date} | Filed: {submitted}/{owed} | With rejected tasks: {rejected} | Not filed: {missing}"),
+    },
+    "leader_unit_report_corrected": {
+        "uz": ("Liderlar hisoboti yangilandi — brigada natijasi {score}", "Sana: {date} | O'zgardi: {changes}"),
+        "uz_cyrl": ("Лидерлар ҳисоботи янгиланди — бригада натижаси {score}", "Сана: {date} | Ўзгарди: {changes}"),
+        "ru": ("Отчёт лидеров обновлён — итог бригады {score}", "Дата: {date} | Изменилось: {changes}"),
+        "en": ("Leaders' report updated — unit result {score}", "Date: {date} | Changed: {changes}"),
+    },
     # ── a LEADER taken out of the results from a date on ─────────────────────
     # Not one day: everything from `{date}` onwards, days that do not exist yet
     # included. Sent once, at the decision, because "one message per affected
@@ -1248,6 +1266,95 @@ _NOTIF_TG_HTML = {
                "📊 <b>Was:</b> {before}% → <b>now:</b> {score}%\n"
                "❌ <b>Currently not accepted:</b> {rejected} task(s)\n\n"
                "<blockquote>What changed is in the report behind the button below.</blockquote>"),
+    },
+    # ── the brigadir's DAY DIGEST, as a classic DM ───────────────────────────
+    # What a client or API refusing the rich table gets instead. `{lines}` is
+    # the table as plain lines — glyphs, names, scores and task numbers, one
+    # string for all four languages — so the legend in the quote is what makes
+    # the glyphs readable. `{changes_lines}` is the update's before → after.
+    "leader_unit_report": {
+        "uz": ("📋 <b>Liderlar hisoboti</b>\n\n"
+               "👥 <b>Brigadir:</b> {supervisor}\n"
+               "📅 <b>Sana:</b> {date} · {shift}-smena\n"
+               "🎯 <b>Brigada natijasi:</b> {score}\n"
+               "📨 <b>Topshirildi:</b> {submitted} / {owed}\n\n"
+               "{lines}\n\n"
+               "<blockquote>✅ qabul qilindi · ⚠️ rad etilgan vazifa bor · ⏳ tekshirilmoqda · "
+               "🚫 topshirilmadi · ✏️ yopilmagan · ⚙️ tekshirib bo'lmadi · ➖ dalil yo'q · "
+               "⏸ hisobga olinmaydi\n\n"
+               "Batafsil hisobot — quyidagi tugmada.</blockquote>"),
+        "uz_cyrl": ("📋 <b>Лидерлар ҳисоботи</b>\n\n"
+                    "👥 <b>Бригадир:</b> {supervisor}\n"
+                    "📅 <b>Сана:</b> {date} · {shift}-смена\n"
+                    "🎯 <b>Бригада натижаси:</b> {score}\n"
+                    "📨 <b>Топширилди:</b> {submitted} / {owed}\n\n"
+                    "{lines}\n\n"
+                    "<blockquote>✅ қабул қилинди · ⚠️ рад этилган вазифа бор · ⏳ текширилмоқда · "
+                    "🚫 топширилмади · ✏️ ёпилмаган · ⚙️ текшириб бўлмади · ➖ далил йўқ · "
+                    "⏸ ҳисобга олинмайди\n\n"
+                    "Батафсил ҳисобот — қуйидаги тугмада.</blockquote>"),
+        "ru": ("📋 <b>Отчёт лидеров</b>\n\n"
+               "👥 <b>Бригадир:</b> {supervisor}\n"
+               "📅 <b>Дата:</b> {date} · {shift}-я смена\n"
+               "🎯 <b>Итог бригады:</b> {score}\n"
+               "📨 <b>Сдано:</b> {submitted} / {owed}\n\n"
+               "{lines}\n\n"
+               "<blockquote>✅ принято · ⚠️ есть непринятые задачи · ⏳ на проверке · "
+               "🚫 не сдан · ✏️ не закрыт · ⚙️ не проверено · ➖ нет фото · "
+               "⏸ не учитывается\n\n"
+               "Подробный отчёт — по кнопке ниже.</blockquote>"),
+        "en": ("📋 <b>Leaders' report</b>\n\n"
+               "👥 <b>Supervisor:</b> {supervisor}\n"
+               "📅 <b>Date:</b> {date} · shift {shift}\n"
+               "🎯 <b>Unit result:</b> {score}\n"
+               "📨 <b>Filed:</b> {submitted} / {owed}\n\n"
+               "{lines}\n\n"
+               "<blockquote>✅ accepted · ⚠️ has rejected tasks · ⏳ in review · "
+               "🚫 not filed · ✏️ not closed · ⚙️ not checked · ➖ no proofs · "
+               "⏸ not counted\n\n"
+               "The full report is behind the button below.</blockquote>"),
+    },
+    "leader_unit_report_corrected": {
+        "uz": ("🔄 <b>Liderlar hisoboti yangilandi</b>\n\n"
+               "👥 <b>Brigadir:</b> {supervisor}\n"
+               "📅 <b>Sana:</b> {date} · {shift}-smena\n"
+               "🎯 <b>Brigada natijasi:</b> {score}\n\n"
+               "🔻 <b>Nima o'zgardi:</b>\n{changes_lines}\n\n"
+               "{lines}\n\n"
+               "<blockquote>✅ qabul qilindi · ⚠️ rad etilgan vazifa bor · ⏳ tekshirilmoqda · "
+               "🚫 topshirilmadi · ✏️ yopilmagan · ⚙️ tekshirib bo'lmadi · ➖ dalil yo'q · "
+               "⏸ hisobga olinmaydi\n\n"
+               "Batafsil hisobot — quyidagi tugmada.</blockquote>"),
+        "uz_cyrl": ("🔄 <b>Лидерлар ҳисоботи янгиланди</b>\n\n"
+                    "👥 <b>Бригадир:</b> {supervisor}\n"
+                    "📅 <b>Сана:</b> {date} · {shift}-смена\n"
+                    "🎯 <b>Бригада натижаси:</b> {score}\n\n"
+                    "🔻 <b>Нима ўзгарди:</b>\n{changes_lines}\n\n"
+                    "{lines}\n\n"
+                    "<blockquote>✅ қабул қилинди · ⚠️ рад этилган вазифа бор · ⏳ текширилмоқда · "
+                    "🚫 топширилмади · ✏️ ёпилмаган · ⚙️ текшириб бўлмади · ➖ далил йўқ · "
+                    "⏸ ҳисобга олинмайди\n\n"
+                    "Батафсил ҳисобот — қуйидаги тугмада.</blockquote>"),
+        "ru": ("🔄 <b>Отчёт лидеров обновлён</b>\n\n"
+               "👥 <b>Бригадир:</b> {supervisor}\n"
+               "📅 <b>Дата:</b> {date} · {shift}-я смена\n"
+               "🎯 <b>Итог бригады:</b> {score}\n\n"
+               "🔻 <b>Что изменилось:</b>\n{changes_lines}\n\n"
+               "{lines}\n\n"
+               "<blockquote>✅ принято · ⚠️ есть непринятые задачи · ⏳ на проверке · "
+               "🚫 не сдан · ✏️ не закрыт · ⚙️ не проверено · ➖ нет фото · "
+               "⏸ не учитывается\n\n"
+               "Подробный отчёт — по кнопке ниже.</blockquote>"),
+        "en": ("🔄 <b>Leaders' report updated</b>\n\n"
+               "👥 <b>Supervisor:</b> {supervisor}\n"
+               "📅 <b>Date:</b> {date} · shift {shift}\n"
+               "🎯 <b>Unit result:</b> {score}\n\n"
+               "🔻 <b>What changed:</b>\n{changes_lines}\n\n"
+               "{lines}\n\n"
+               "<blockquote>✅ accepted · ⚠️ has rejected tasks · ⏳ in review · "
+               "🚫 not filed · ✏️ not closed · ⚙️ not checked · ➖ no proofs · "
+               "⏸ not counted\n\n"
+               "The full report is behind the button below.</blockquote>"),
     },
 }
 

@@ -88,6 +88,7 @@ const Production = lazyWithReload(() => import("./pages/Production"));
 const Trudoyomkost = lazyWithReload(() => import("./pages/Trudoyomkost"));
 const Leaders = lazyWithReload(() => import("./pages/Leaders"));
 const LeaderDayReport = lazyWithReload(() => import("./pages/LeaderDayReport"));
+const LeaderUnitReport = lazyWithReload(() => import("./pages/LeaderUnitReport"));
 const Cells = lazyWithReload(() => import("./pages/Cells"));
 const CellDetails = lazyWithReload(() => import("./pages/CellDetails"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
@@ -461,6 +462,10 @@ function AppWithLang() {
                 being told their unit's score is often somebody nobody granted
                 the /leaders page to. The backend scopes the row itself. */}
             <Route path="/leaders/report/:uid" element={<AuthGate><LeaderDayReport /></AuthGate>} />
+            {/* One brigadir's whole day — every leader's report in one place.
+                Where the brigadir's day digest DM lands, so AUTH-ONLY for the
+                same reason; the backend scopes the unit itself. */}
+            <Route path="/leaders/unit-report/:mid/:date" element={<AuthGate><LeaderUnitReport /></AuthGate>} />
             {/* The retired per-shift admin copies and the bot-only page they
                 replaced — old bookmarks and Telegram buttons land on the one
                 merged page, whose Smena filter does the narrowing now. */}

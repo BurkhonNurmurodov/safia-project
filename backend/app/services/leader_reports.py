@@ -13,6 +13,11 @@ against. The DM says what happened; the page says why. Neither re-derives the
 score — `routers.leaders.build_report_row` is the single source, so the
 register, the page and the message cannot print three different numbers for one
 day.
+
+The BRIGADIR's copy of a bot day dated on or after
+`leader_unit_report.DIGEST_FROM` is no longer a message of its own: it is one row
+of the unit's day digest (`services/leader_unit_report.py`), sent once for the
+whole unit-day. Everything older, and every sheet row, is still DMed from here.
 """
 
 import logging
@@ -231,6 +236,10 @@ def day_report(db: Session, uid: str) -> dict | None:
         "auto": auto,
         "autoFrom": leader_ai.AUTO_FROM,
         "score": round(float(row.get("completion") or 0)),
+        # Unrounded, for the one reader that averages several of these — the
+        # unit digest's result (`leader_unit_report._unit_score`), which must
+        # average what the register averages, not what this page prints.
+        "completion": float(row.get("completion") or 0),
         "rawScore": round(float(row.get("raw_completion")
                                 if row.get("raw_completion") is not None
                                 else row.get("completion") or 0)),
@@ -466,6 +475,7 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     from app.notify_ctx import notifications_suppressed
     from app.routers.leaders import build_report_row
     from app.routers.staff import notify_profile
+    from app.services import leader_unit_report
 
     # Ghost Mode: an admin testing the platform must not blast day reports at
     # every brigadir and leader. Returns BEFORE anything is written and does
@@ -587,7 +597,11 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     tone = "warning" if counts["rejected"] else "success"
 
     # ── the brigadir: the unit's number just became final ────────────────────
-    if row.get("manager_id"):
+    # …as a row of ONE message for the unit's whole day, for a bot day on or
+    # after the digest floor: `leader_unit_report.note` at the end, once the
+    # ledger is written. An older day, or a sheet row, keeps its own DM here.
+    digest = bool(row.get("manager_id")) and leader_unit_report.covers(uid, date)
+    if row.get("manager_id") and not digest:
         nkey = ("leader_day_report_corrected" if not first
                 else "leader_day_report_flagged" if counts["rejected"]
                 else "leader_day_report_clean")
@@ -638,6 +652,12 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
                  ("mode", "first" if first else "corrected")],
         changes=None if first else [("score", prev_score, score)],
     )
+    if digest:
+        # The unit's digest hears about this day only now, with the ledger
+        # committed, so its row is the report the leader was just told about.
+        # On a unit-day already digested this marks it for an update. `note`
+        # never raises: the leader's report above is never undone by it.
+        leader_unit_report.note(db, row["manager_id"], date)
     return True
 
 

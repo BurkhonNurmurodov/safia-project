@@ -976,8 +976,8 @@ def register_autoclose_job() -> None:
 
 
 def _sweep() -> None:
-    """Both passes, independently: a failure in one must not skip the other,
-    and neither is a precondition of the other."""
+    """Every pass, independently: a failure in one must not skip the others,
+    and none is a precondition of another."""
     from app.database import SessionLocal
     with SessionLocal() as db:
         try:
@@ -999,6 +999,17 @@ def _sweep() -> None:
                 leader_ai.run_async(discover_first=False)
         except Exception:
             logger.exception("day auto-close sweep failed")
+            db.rollback()
+        # …and the brigadir's day digest, AFTER the day close: a night the pass
+        # above just closed has queued its reviews, so the digest waits on them
+        # instead of reporting the night as unfinished.
+        try:
+            from app.services import leader_unit_report
+            n = leader_unit_report.sweep(db)
+            if n:
+                logger.info("unit day digest: sent %s", n)
+        except Exception:
+            logger.exception("unit day digest sweep failed")
             db.rollback()
 
 

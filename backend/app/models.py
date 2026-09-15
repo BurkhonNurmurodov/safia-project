@@ -2122,6 +2122,43 @@ class LeaderDayReport(Base):
     last_sent_at  = Column(DateTime(timezone=True), nullable=True)
 
 
+class LeaderUnitReport(Base):
+    """The ledger of the BRIGADIR's day digest — one row per (unit, date).
+
+    From `leader_unit_report.DIGEST_FROM` a brigadir is no longer DMed once per
+    leader-day. The unit's whole day arrives as ONE message — every leader who
+    owed a checklist, what each scored, what was rejected, who never filed —
+    and this row is what makes "once" and "again only when it changed" true.
+
+    `state_sent` is the table as it stood in the last DM (row key → [state,
+    printed score], plus the names, so a row that later leaves the table can
+    still be named in the update). `dirty_at` is when something first changed
+    after that DM: the sweep sends the update once the unit has been quiet for a
+    few minutes, so an admin ruling on five objections in a row sends one
+    message, not five. `parked` says why a unit-day will never be digested, so
+    the sweep stops asking — `sends = 0` keeps a park distinguishable from a
+    send, the `LeaderDayReport` rule.
+    """
+    __tablename__ = "leader_unit_reports"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, nullable=False, index=True)
+    date       = Column(String(10), nullable=False, index=True)
+    shift      = Column(Integer, nullable=True)
+
+    state_sent = Column(JSONB, nullable=True)
+    dirty_at   = Column(DateTime(timezone=True), nullable=True)
+    parked     = Column(String(120), nullable=True)
+
+    sends         = Column(Integer, nullable=False, default=0)
+    first_sent_at = Column(DateTime(timezone=True), nullable=True)
+    last_sent_at  = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("uq_leader_unit_report", "manager_id", "date", unique=True),
+    )
+
+
 class LeaderAiDispute(Base):
     """An objection to one automatic AI rejection, and the two rulings on it.
 
@@ -2484,19 +2521,23 @@ class LeaderTaskConfigAudit(Base):
 
 
 class UserActivity(Base):
-    """One row per (Telegram account, calendar day) — a rolling daily usage
+    """One row per (Telegram account, profile, day) — a rolling daily usage
     aggregate that powers the Users-Activity dashboard (active users, average
-    time-in-app, GitHub-style contribution grid).
+    time-in-app, GitHub-style contribution grid), read per PROFILE on one tab
+    and per ACCOUNT on the other (routers/activity.py).
 
     Filled by the heartbeat endpoint (POST /api/activity/ping): while the web app
-    is open and visible it pings every ~60 s. Each ping folds into that person's
-    row for the current UTC day:
+    is open and visible it pings every ~60 s. Each ping folds into that row for
+    the current day — the Tashkent wall-clock day from 2026-09-15, the UTC day
+    on every row written before it:
 
       • ``active_seconds`` accumulates the gap since the previous ping *only* when
         that gap is short enough to count as continuous engagement (≤ PING_MAX_GAP
         in services-less router logic) — long gaps start a fresh segment and add
         nothing, so idle/backgrounded time is never counted.
-      • ``event_count`` counts pings (a rough interaction volume).
+      • ``event_count`` counts pings (a rough interaction volume — NOT visits).
+      • ``session_count`` counts VISITS: the row's first ping, and every ping
+        after a gap longer than PING_MAX_GAP.
       • ``full_name`` / ``role`` snapshot the active JWT identity so the dashboard
         can name the account even for seeded admins (who have no telegram_users
         row).
@@ -2516,13 +2557,16 @@ class UserActivity(Base):
     # NULL for identities that cannot be resolved (seeded admins) — those still
     # aggregate by account.
     profile_key    = Column(String, nullable=True, index=True)
-    day            = Column(Date, nullable=False, index=True)   # UTC calendar day
+    day            = Column(Date, nullable=False, index=True)   # Tashkent day (UTC before 2026-09-15)
     full_name      = Column(String, nullable=True)              # snapshot from JWT
     role           = Column(String, nullable=True)              # snapshot from JWT
     first_seen     = Column(DateTime(timezone=True), nullable=True)
     last_seen      = Column(DateTime(timezone=True), nullable=True)
     active_seconds = Column(Integer, nullable=False, default=0)
     event_count    = Column(Integer, nullable=False, default=0)
+    # NULL on every row written before visits were counted (2026-09-15) — never
+    # 0, which would claim nobody opened the app on a day somebody plainly did.
+    session_count  = Column(Integer, nullable=True)
 
     __table_args__ = (
         # Uniqueness now spans the profile too. Enforced in the DB by a unique

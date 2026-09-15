@@ -25,7 +25,8 @@ from app import identity
 from app.models import RoleProfile
 from app.services import (
     action_log, leader_ai, leader_bot, leader_cells, leader_cutoffs,
-    leader_dispute, leader_exclusions, leader_late_proof, leader_reports)
+    leader_dispute, leader_exclusions, leader_late_proof, leader_reports,
+    leader_unit_report)
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -1190,6 +1191,53 @@ def get_day_report(
         raise HTTPException(status_code=404, detail="No such report")
 
     return _stamp_report_rights(db, payload, row)
+
+
+def unit_scope_ok(db: Session, payload: dict, manager_id: int | None) -> bool:
+    """May this viewer read one UNIT's day — every leader of it at once?
+
+    `report_scope_ok` for a whole unit, with one difference: a LEADER may not.
+    A leader's register is their own rows, and the unit page sets every
+    colleague's score beside theirs; reading that is the brigadir's view,
+    whatever the single day report above lets a leader open about themselves.
+    """
+    role = payload.get("role")
+    if role in ("admin", "shift-manager", "top-manager"):
+        return True
+    if page_scope_is_all(db, payload, "leaders"):
+        return True
+    if role == "guest":
+        return page_allowed(db, payload, "leaders")
+    if role == "supervisor":
+        return (manager_id is not None
+                and int(payload.get("role_id") or 0) == int(manager_id))
+    return False
+
+
+# ── the unit's day (every leader of one brigadir, one day) ───────────────────
+# Where the brigadir's day digest lands (`services/leader_unit_report.py`).
+# Auth-only and scoped for the reason the day report is: the brigadir it was
+# DMed to is often somebody nobody granted the /leaders page to.
+
+@router.get("/leaders/unit-report/{manager_id}/{day}")
+def get_unit_report(
+    manager_id: int,
+    day: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    try:
+        day = datetime.strptime(day, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=404, detail="No such report")
+    # 404, not 403, out of scope too: a supervisor probing unit ids must not
+    # learn which ones exist.
+    if not unit_scope_ok(db, payload, manager_id):
+        raise HTTPException(status_code=404, detail="No such report")
+    rep = leader_unit_report.build(db, manager_id, day)
+    if rep is None:
+        raise HTTPException(status_code=404, detail="No such report")
+    return rep
 
 
 def _stamp_report_rights(db: Session, payload: dict, row: dict) -> dict:

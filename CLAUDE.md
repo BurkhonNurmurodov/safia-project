@@ -1955,7 +1955,10 @@ number.
   discovers at the end of the month is how trust in the system dies. Both carry
   a `web_app` button onto `/leaders/report/<uid>`. A day the filing-window rule
   already voided is NOT reported: it scores 0 for a reason that outranks the
-  photos, and a "verified 62%" would contradict the register.
+  photos, and a "verified 62%" would contradict the register. **From
+  2026-09-15 the BRIGADIR's copy of a bot day is not a message of its own** —
+  it is one row of the unit's day digest; see «The brigadir's day digest»
+  below. The leader's own DM is unchanged.
 - **`leader_day_reports` is the ledger**, keyed by `leader_ai.report_key()`.
   `score_sent` is what makes corrections possible: a later re-review, triage
   ruling or upheld dispute re-sends ONLY when the number actually moved
@@ -2285,6 +2288,65 @@ number.
 
 Related memory: `leader-ai-proof-review`, `leader-task-photo-window`,
 `leaders-shift1-submission-window`, `leader-task-requirements-tab`.
+
+## The brigadir's day digest (`leader_unit_report`)
+
+From **2026-09-15** (the operator's directive) a brigadir is no longer DMed once
+per leader-day — six near-identical «Kun tasdiqlandi» messages spread over an
+evening, and nothing at all about the leader who never filed. The unit's whole
+day arrives as ONE Rich message: a table of every leader who owed a checklist,
+what each scored, what was rejected (by task NAME, in the reader's language),
+who is still in review and who never filed — with one button onto
+**`/leaders/unit-report/:mid/:date`**, where each leader's own day report opens
+in place. **The LEADER's own per-day DM is unchanged.**
+
+- **`services/leader_unit_report.py` is THE definition** — `DIGEST_FROM`,
+  `covers`, `build`, `note`, `sweep`. `services/leader_unit_rich.py` renders the
+  rich body and the classic fallback lines and computes nothing. The ledger is
+  `leader_unit_reports`, one row per (unit, date). Bell/classic keys:
+  `leader_unit_report` and `leader_unit_report_corrected`.
+- **It computes no score.** Every row is `leader_reports.day_report`, so the DM,
+  the unit page and the day report cannot print two numbers for one leader-day.
+  The one figure it adds, «Brigada natijasi», is `_unit_score` — the ONE-DAY
+  twin of `unitSlots` in Leaders.jsx (the mean over every leader who owed a
+  checklist, an unfiled one counting 0). Keep the two in step.
+- **When it goes out** (`_ready`): every checklist the unit owed is closed, or
+  its filing window has shut (`leader_tasks.expired_through`) — AND nothing is
+  still in review (`_pending`, the `unfinished_reports` rule) or about to be
+  auto-closed. `MAX_WAIT_H` past the deadline it goes out anyway, the rows still
+  moving marked ⏳. **Consequence to know:** a shift-1 unit where somebody never
+  files gets its digest just after midnight, when the 23:59 window shuts.
+- **Two doors.** `send_for_uid` no longer DMs the brigadir for a covered day (a
+  bot uid dated on or after the floor); after the leader's ledger commits it
+  calls `note`, the fast path. `sweep` rides the 5-minute `leader_close._sweep`,
+  AFTER the day auto-close, and sends the first digests waiting on a deadline.
+- **Updates are batched.** After the first send `note` only sets `dirty_at`, and
+  so does the sweep for a checklist closed after `last_sent_at`. The update goes
+  out once the unit has been quiet `CORRECTION_QUIET_MIN`, and only when a row's
+  state or PRINTED score moved (`changes`, keyed by leader + cell, never by uid,
+  so a late filer is one row moving from «not filed» to a score). Every change
+  is named before → after. A row still in review stores no score, so its score
+  drifting mid-review is not an update.
+- **Rows**: one per checklist (a per-cell unit has one per cell), worst first —
+  `rejected · missing · open · error · checking · noproof · verified ·
+  excluded`. Owed = the unit's leader roster minus a cutoff or ANY exclusion on
+  the leader-day (the day report stamps every row off one exclusion), expanded
+  by `leader_cells.expected_days`. A rehearsal day is neither a row nor «not
+  filed». A unit that filed nothing at all gets no digest — a holiday must not
+  DM «0 / 6».
+- **Parks** (`parked`, `sends = 0`) — outside the automatic regime, or nothing to
+  report — so the sweep stops asking. `_lock` keeps the drain thread and the
+  scheduler from sending one unit-day twice (one worker process). Ghost Mode
+  returns before anything is written.
+- **Scope**: `unit_scope_ok` is `report_scope_ok` for a unit, except a LEADER may
+  not read it — it sets colleagues' scores beside theirs. 404 when out of scope.
+- Everything before `DIGEST_FROM`, and every SHEET row, keeps the per-leader
+  brigadir DM and its corrections. The floor must never move LATER.
+- **One report component.** `components/leaders/DayReportView.jsx` is the day
+  report, extracted from `pages/LeaderDayReport.jsx` (now a frame) so both pages
+  draw one report; `embedded` drops the header, the width cap and the
+  full-screen error. The day report's header links up to the unit page for every
+  viewer but a leader. Logged as `report.unit_sent`.
 
 ## In-app camera proofs (`proof_kind`, `/proof/camera`)
 
