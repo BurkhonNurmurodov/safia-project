@@ -1,4 +1,4 @@
-// «Smena hisoboti» — the first block on Overview. One row per brigadir of the
+// «Smena hisoboti» — Overview, under the KPI cards. One row per brigadir of the
 // viewer's shift, five columns, and no figure computed here: every value comes
 // from GET /api/shift-report, which reads each one through the page that owns it
 // (backend/app/services/shift_report.py names them). This file only paints.

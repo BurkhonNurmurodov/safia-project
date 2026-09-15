@@ -4722,9 +4722,10 @@ says; a supervisor or leader would see their own unit only).
 
 ## The shift report on Overview («Smena hisoboti»)
 
-From **2026-09-15** (the operator's directive) the first block of `/` is a
-status board for the shift manager: one row per brigadir of their shift, five
-columns — `components/overview/ShiftReportTable.jsx` over `GET
+From **2026-09-15** (the operator's directive) `/` carries a status board for
+the shift manager, directly under its four KPI cards (it shipped above them;
+the operator moved the cards back on top the same day, v4.110.2): one row per
+brigadir of their shift, five columns — `components/overview/ShiftReportTable.jsx` over `GET
 /api/shift-report` (`routers/shift_report.py` fetches and scopes,
 `services/shift_report.py` folds). It replaced a Google Sheet somebody filled
 and coloured by hand every morning, with «XATO» wherever a brigadir had entered
