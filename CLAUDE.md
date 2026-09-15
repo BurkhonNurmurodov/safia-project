@@ -3961,6 +3961,24 @@ both date rules, the switch.
   DMed by the clock can never differ from the one the modal would have shown
   for that date. Same DM, same `call_forecast` bell row, same
   `ForecastCallNotice`.
+- **The DM carries the CARD** (2026-09-15, the operator's go-ahead after trying
+  it on `/forecast`): a Rich message whose figure is `forecast_card`'s PNG —
+  the same-weekday history the count was averaged over, drawn from the row's
+  own `samples` — above a facts table that adds the plan in trudoyomkost
+  minutes. It is attached in `_send_call_notice`, so the clock AND the modal
+  send it, and `forecast_rich.card()` is THE builder for both and for
+  `/forecast`, the bot's test door, so a test cannot show a message the send
+  does not. It degrades one thing at a time — rich → the card as a photo under
+  the classic HTML caption → the classic text — and a card that fails to render
+  costs the card, never the DM. **The facts on it are the SENT numbers**: the
+  modal lets a person edit the count, so «Tavsiya» / «Maksimum» read what the
+  message states while the chart and «o'rtacha» stay the computed history — an
+  edited send reads «Tavsiya 60» beside a «Prognoz 54» point, each under its
+  own label. The trudoyomkost is the mean of the recorded plans, never
+  `count × capacity`, so about a quarter of units divide back to one person off
+  the recommendation — documented in `forecast_card.collect`, not a bug. The
+  bell row is unchanged, and a DM queued for an unclaimed profile still goes out
+  as text when it is claimed.
 - **Each shift is sent its NEXT shift-day, and the two are not the same
   calendar arithmetic** (`target_date`, never re-derived at a call site). At
   19:00 a shift-1 brigadir is on today's day shift, so the next one they staff

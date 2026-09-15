@@ -178,13 +178,22 @@ def _fmt_min(v: float) -> str:
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 
-def collect(row: dict, target: date, weeks: int) -> dict:
+def collect(row: dict, target: date, weeks: int, count=None,
+            max_count=None) -> dict:
     """Fold ONE ``_call_rows`` row into the slots the chart draws.
 
     Every one of the ``weeks`` preceding same-weekday dates gets a slot, present
     in the row's samples or not — a week the source sheet has no plan for is a
     hole in the evidence, and closing it up would make a one-sample forecast
     look like a three-sample one.
+
+    ``count`` / ``max_count`` are the numbers the MESSAGE states. The call modal
+    lets a person edit the recommendation before sending, and the facts printed
+    on a card must be the facts the DM around it carries. Left None they are the
+    computed forecast and its upper band — what the clock sends. The chart and
+    the «o'rtacha» line never read them: those describe the history, and an
+    edited number is not history, so an edited send reads «Tavsiya 60» beside a
+    «Prognoz 54» point, each under its own label.
     """
     by_date = {s["date"]: s for s in (row.get("samples") or [])}
     slots = []
@@ -210,7 +219,14 @@ def collect(row: dict, target: date, weeks: int) -> dict:
     # agree means changing how the RECOMMENDATION is computed — which is the
     # number the automatic send DMs the plant — not how this one is displayed.
     plans = [s["plan_min"] for s in slots if s["plan_min"] is not None]
+    fc, hi = row.get("forecast"), row.get("band_hi")
     return {
+        "count": fc if count is None else count,
+        # «Maksimum» by the DM's own rule — the upper band, with the
+        # recommendation standing in when there is none, exactly as both
+        # callers of _send_call_notice derive it
+        "max_count": ((hi if hi is not None else fc) if max_count is None
+                      else max_count),
         "slots": slots,
         "plan_mean": (sum(plans) / len(plans)) if plans else None,
         "target": target,
@@ -229,7 +245,7 @@ def collect(row: dict, target: date, weeks: int) -> dict:
 
 def _kpi_trio(draw, y, data: dict, eff: int, t: dict) -> None:
     tile_w = (W - PAD * 2 - 2 * 16) // 3
-    fc, hi = data["forecast"], data["band_hi"]
+    fc, hi = data["count"], data["max_count"]
     tiles = [
         (t["rec"], f"{fc} {t['people']}" if fc is not None else "—", BRAND),
         (t["max"], f"{hi} {t['people']}" if hi is not None else "—", AMBER),
@@ -447,7 +463,9 @@ def _png(img: Image.Image) -> bytes:
 
 def render_forecast_card(row: dict, target: date, lang: str = "ru",
                          eff: int = 100, weeks: int = 3,
-                         scope: str = "") -> bytes:
+                         scope: str = "", count=None,
+                         max_count=None) -> bytes:
     """THE entry point: one ``_call_rows`` row → the card. Nothing is computed
-    here, so the picture can never state a count the DM beside it does not."""
-    return render(collect(row, target, weeks), lang, eff, scope)
+    here, so the picture can never state a count the DM beside it does not.
+    ``count`` / ``max_count``: see ``collect``."""
+    return render(collect(row, target, weeks, count, max_count), lang, eff, scope)

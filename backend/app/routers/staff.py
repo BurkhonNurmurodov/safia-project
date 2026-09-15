@@ -1368,7 +1368,7 @@ def flush_queued_supervisor_dms(db: Session, telegram_id: int, manager_id: int) 
 def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
                    type: str = "info", exclude_account: int | None = None,
                    skip_accounts: set[int] | None = None,
-                   markup_fn=None, rich_fn=None) -> set[int]:
+                   markup_fn=None, rich_fn=None, photo_fn=None) -> set[int]:
     """Notify a PROFILE — the person — wherever they are.
 
     Writes ONE bell row addressed to the profile (so every account holding it
@@ -1403,6 +1403,13 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
     refuses it (see ``send_tg_notification``), so a key that defines one is
     never worse off than a key that does not. The bell row is unchanged — it
     still reads the ``_NOTIF_STRINGS`` template.
+
+    ``photo_fn(lang)`` returns an image for the DM, ``{"id", "name", "data"}``
+    (the call forecast's card). With a rich body it rides as that body's
+    figure; without one, or when rich is refused, it goes as a photo carrying
+    the classic HTML as its caption, and only after that as the classic text.
+    Built per language because a card prints words, and guarded like
+    ``rich_fn``: the bell row never carries it.
     """
     if notifications_suppressed() or not profile:
         return set()
@@ -1442,9 +1449,15 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
             except Exception:
                 # A broken card must cost the reader the CARD, never the DM.
                 logger.exception("notify_profile: rich build failed for %s", nkey)
+        photo = None
+        if photo_fn is not None:
+            try:
+                photo = photo_fn(lang)
+            except Exception:
+                logger.exception("notify_profile: photo build failed for %s", nkey)
         try:
             send_tg_notification(tid, title, body, html=html, markup=markup,
-                                 rich=rich)
+                                 rich=rich, photo=photo)
         except Exception:
             pass
         dmed.add(tid)
@@ -1452,9 +1465,11 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
 
 
 def _notify_supervisor_all(db: Session, manager_id: int, nkey: str,
-                           params: dict, type: str = "info") -> None:
-    """Notify the supervisor profile of a unit (managers.id IS its profile id)."""
-    notify_profile(db, _profile_key("supervisor", manager_id), nkey, params, type)
+                           params: dict, type: str = "info", **kw) -> None:
+    """Notify the supervisor profile of a unit (managers.id IS its profile id).
+    ``kw`` rides through to ``notify_profile`` — ``rich_fn`` / ``photo_fn``."""
+    notify_profile(db, _profile_key("supervisor", manager_id), nkey, params,
+                   type, **kw)
 
 
 # ── profile addressing ────────────────────────────────────────────────────────

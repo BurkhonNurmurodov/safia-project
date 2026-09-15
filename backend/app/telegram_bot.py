@@ -1313,24 +1313,64 @@ def _record_dm_outcome(telegram_id: int, error: str | None) -> None:
         pass        # bookkeeping must never break the notification itself
 
 
-def _send_rich_message(chat_id: int, rich_html: str, reply_markup=None) -> None:
+# Telegram's cap on a photo/document caption. Compared against the raw HTML,
+# which can only over-count the visible text, so a caption that passes fits.
+_TG_CAPTION_MAX = 1024
+
+
+def _send_rich_message(chat_id: int, rich_html: str, reply_markup=None,
+                       photo: dict | None = None) -> None:
     """sendRichMessage (Bot API 10.1+) with one Rich-HTML body. The pinned
     telebot predates the method, so this goes through the raw HTTP door the
     Broadcast tab already uses. Raises on any refusal — the caller decides what
-    to fall back to."""
+    to fall back to.
+
+    ``photo`` (``{"id", "name", "data"}``) is attached as the body's media, so a
+    ``tg://photo?id=…`` figure inside it resolves — the shape /ojidaniya has
+    always sent its day card in."""
     from app.routers.broadcast import _tg_api
-    data = {"chat_id": chat_id,
-            "rich_message": json.dumps({"html": rich_html, "is_rtl": False})}
+    rich = {"html": rich_html, "is_rtl": False}
+    files = None
+    if photo is not None:
+        rich["media"] = [{"id": photo["id"],
+                          "media": {"type": "photo", "media": "attach://f0"}}]
+        files = {"f0": (photo["name"], photo["data"])}
+    data = {"chat_id": chat_id, "rich_message": json.dumps(rich)}
     if reply_markup is not None:
         data["reply_markup"] = (reply_markup.to_json()
                                 if hasattr(reply_markup, "to_json")
                                 else json.dumps(reply_markup))
-    _tg_api("sendRichMessage", data)
+    _tg_api("sendRichMessage", data, files)
+
+
+def _send_photo_card(chat_id: int, photo: dict, caption: str | None,
+                     reply_markup=None, parse_mode: str = "HTML") -> None:
+    """A picture with its words as the caption — the step between a refused
+    rich message and plain text, so a client that cannot render rich still gets
+    the IMAGE instead of losing it along with the layout. A photo, not a
+    document: the card is meant to be looked at in the chat, and at 1000 px it
+    sits under the size Telegram re-scales. A caption over the cap is refused
+    outright, so a long one follows as its own message rather than costing the
+    picture. Raises on refusal, like ``_send_rich_message``."""
+    pic = (photo["name"], photo["data"])
+    if caption and len(caption) <= _TG_CAPTION_MAX:
+        bot.send_photo(chat_id, photo=pic, caption=caption,
+                       parse_mode=parse_mode, reply_markup=reply_markup)
+        return
+    bot.send_photo(chat_id, photo=pic,
+                   reply_markup=None if caption else reply_markup)
+    if caption:
+        if parse_mode == "HTML":
+            _send_html_message(chat_id, caption, reply_markup=reply_markup)
+        else:
+            bot.send_message(chat_id, caption, parse_mode=parse_mode,
+                             reply_markup=reply_markup)
 
 
 def send_tg_notification(telegram_id: int, title: str, body: str,
                          html: str | None = None, markup=None,
-                         rich: str | None = None) -> bool:
+                         rich: str | None = None,
+                         photo: dict | None = None) -> bool:
     """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
     it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
     labels + <blockquote>); otherwise falls back to the default Markdown layout.
@@ -1343,7 +1383,13 @@ def send_tg_notification(telegram_id: int, title: str, body: str,
     the capability alerts and the bot's /ojidaniya card already use: a client
     that cannot render rich messages, or an API that refuses the body, still
     gets the classic ``html``/Markdown DM, so a notification never goes silent
-    on an old client for the sake of a nicer one on a new one."""
+    on an old client for the sake of a nicer one on a new one.
+
+    ``photo`` (``{"id", "name", "data"}`` — the call forecast's card) rides as
+    the rich body's figure. When rich is refused, or there is no rich body, it
+    is sent as a photo with the classic HTML as its caption, and only when that
+    is refused too does the classic text go out. Each step gives up one thing —
+    the layout, then the picture — and never the message."""
     # Piggyback a menu-button refresh on every notification so the persistent
     # WebApp button picks up label changes without the user re-running /start.
     # _set_menu_button guards its own errors, so this can't block the DM.
@@ -1351,12 +1397,24 @@ def send_tg_notification(telegram_id: int, title: str, body: str,
     msg = f"🔔 *{title}*\n{body}"
     if rich is not None:
         try:
-            _send_rich_message(telegram_id, rich, reply_markup=markup)
+            _send_rich_message(telegram_id, rich, reply_markup=markup,
+                               photo=photo)
             _record_dm_outcome(telegram_id, None)
             return True
         except Exception as e:
-            logger.info("Rich notification to %s not accepted, sending the "
-                        "classic DM instead: %s", telegram_id, e)
+            logger.info("Rich notification to %s not accepted, falling back: %s",
+                        telegram_id, e)
+    if photo is not None:
+        try:
+            _send_photo_card(telegram_id, photo,
+                             html if html is not None else msg,
+                             reply_markup=markup,
+                             parse_mode="HTML" if html is not None else "Markdown")
+            _record_dm_outcome(telegram_id, None)
+            return True
+        except Exception as e:
+            logger.info("Photo notification to %s not accepted, sending the "
+                        "classic text instead: %s", telegram_id, e)
     try:
         if html is not None:
             _send_html_message(telegram_id, html, reply_markup=markup)
@@ -5363,7 +5421,6 @@ def _ojidaniya_cmd(message: types.Message):
 # supervisor testing this sees their own shift's brigadirs, an admin sees all.
 
 _FC_PER_ROW = 2          # inline buttons per row — a name needs half a phone
-_TG_CAPTION_MAX = 1024   # Telegram's cap on a photo/document caption
 
 
 def _fc_managers(db, payload: dict) -> list:
@@ -5446,8 +5503,6 @@ def _fc_callback(call: types.CallbackQuery):
     from app.routers.production import FORECAST_WEEKS, _call_rows
     from app.routers.staff import _mk_notif_tg
     from app.services import forecast_autocall, forecast_rich
-    from app.services.downtime_card import CardError
-    from app.services.forecast_card import render_forecast_card
 
     tid = call.from_user.id
     lang = _get_lang(tid)
@@ -5487,69 +5542,50 @@ def _fc_callback(call: types.CallbackQuery):
                 bot.send_message(call.message.chat.id, _msg(lang, "fc_gone"))
                 return
 
-            png = render_forecast_card(row, target, lang, eff, FORECAST_WEEKS)
-            # The body the brigadir would actually receive — same key, same
-            # params as _send_call_notice builds, so the test shows the message
-            # and not a description of it. band_hi is the DM's «Maksimum», with
-            # the recommended count standing in when there is no band.
+            # THE builder the real send uses (production._send_call_notice),
+            # fed the numbers that send states — so this door shows the message
+            # a brigadir receives, not a description of it. band_hi is the DM's
+            # «Maksimum», the recommendation standing in when there is no band.
             fc = row["forecast"]
+            max_workers = row["band_hi"] if row["band_hi"] is not None else fc
+            rich, photo = forecast_rich.card(row, target, lang, eff, FORECAST_WEEKS)
             body = _mk_notif_tg("call_forecast", {
                 "name": mgr.name, "date": target, "eff": eff,
                 "count": fc if fc is not None else "—",
-                "max": row["band_hi"] if row["band_hi"] is not None else (
-                    fc if fc is not None else "—"),
+                "max": max_workers if max_workers is not None else "—",
             }, lang)
-            # …and the Rich variant of the same facts, with the card as its
-            # figure. Built here so a failure costs the RICH body only: the
-            # classic caption above is already in hand as the fallback.
-            try:
-                rich = forecast_rich.body(row, target, lang, eff, FORECAST_WEEKS)
-            except Exception:
-                logger.exception("Forecast rich body failed for %s", tid)
-                rich = None
-    except CardError as exc:
-        logger.error("Forecast card failed for %s: %s", tid, exc)
-        bot.send_message(call.message.chat.id, _msg(lang, "shot_failed"))
-        return
     except Exception:
         logger.exception("Forecast card failed for %s (manager %s)", tid, mid)
         bot.send_message(call.message.chat.id, _msg(lang, "shot_failed"))
         return
 
-    fname = f"forecast-{mgr.id}-{target:%Y%m%d}.png"
+    # The degrade chain send_tg_notification runs for the real DM, step for
+    # step: the rich layout with the card as its figure, then the card as a
+    # photo under the classic caption, then the classic text alone.
     chat = call.message.chat.id
-
-    # Rich message first — the card as the figure of a laid-out body, the same
-    # try-rich-then-degrade shape /ojidaniya uses. The PNG rides as ordinary
-    # photo media, so BOTH paths put an image in the chat rather than a file.
+    delivered = False
     if rich:
         try:
-            from app.routers.broadcast import _tg_api
-            payload_rich = {"html": rich, "is_rtl": False,
-                            "media": [{"id": forecast_rich.PHOTO_ID,
-                                       "media": {"type": "photo",
-                                                 "media": "attach://f0"}}]}
-            _tg_api("sendRichMessage",
-                    {"chat_id": chat, "rich_message": json.dumps(payload_rich)},
-                    {"f0": (fname, png)})
-            return
+            _send_rich_message(chat, rich, photo=photo)
+            delivered = True
         except Exception as exc:
-            logger.warning("sendRichMessage failed for %s, falling back to the "
-                           "photo: %s", tid, exc)
-
-    # Degrade to a photo with the classic DM body as its caption. A caption over
-    # Telegram's 1024-char cap is refused outright, so a long body is sent as
-    # its own message rather than costing the reader the picture.
-    if body and len(body) <= _TG_CAPTION_MAX:
-        bot.send_photo(chat, photo=(fname, png), caption=body, parse_mode="HTML")
-        return
-    bot.send_photo(chat, photo=(fname, png),
-                   caption=f"{mgr.name} · {target:%d.%m.%Y}")
-    if body:
+            logger.warning("Forecast rich message refused for %s: %s", tid, exc)
+    if not delivered and photo is not None:
+        try:
+            _send_photo_card(chat, photo, body)
+            delivered = True
+        except Exception as exc:
+            logger.warning("Forecast photo refused for %s: %s", tid, exc)
+    if not delivered and body:
         try:
             _send_html_message(chat, body)
+            delivered = True
         except Exception:
-            logger.warning("Forecast body send failed for %s", tid, exc_info=True)
+            logger.warning("Forecast text refused for %s", tid, exc_info=True)
+    if not delivered or photo is None:
+        # The real send goes quietly past a card that failed to render — it
+        # must never cost a brigadir the message. A TEST must say so instead.
+        bot.send_message(chat, _msg(lang, "shot_failed"))
 
 
 @bot.message_handler(func=lambda m: _awaiting_contact(m.from_user.id),

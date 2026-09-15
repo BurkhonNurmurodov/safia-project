@@ -30,6 +30,7 @@ complete on its own rather than referencing a figure that will not resolve.
 """
 from __future__ import annotations
 
+import logging
 from datetime import date
 from html import escape
 
@@ -38,6 +39,8 @@ from app.services.forecast_card import _RU_WD_NOM, _fmt_min, _t, basis_line
 # The media id the figure resolves against; the sender attaches the PNG under
 # it. Must match the ``id`` in the sendRichMessage media array.
 PHOTO_ID = "fc1"
+
+logger = logging.getLogger(__name__)
 
 
 def _esc(v) -> str:
@@ -68,17 +71,21 @@ def _notif(lang: str) -> tuple[str, str]:
 
 
 def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
-         weeks: int = 3, with_image: bool = True) -> str:
-    """The Rich-HTML body for ONE brigadir's call forecast."""
+         weeks: int = 3, with_image: bool = True, count=None,
+         max_count=None) -> str:
+    """The Rich-HTML body for ONE brigadir's call forecast. ``count`` /
+    ``max_count`` are the numbers the message states — see
+    ``forecast_card.collect``."""
     from app.services.forecast_card import collect
 
     t = _t(lang)
-    data = collect(row, target, weeks)
+    data = collect(row, target, weeks, count, max_count)
     title, disclaimer = _notif(lang)
     wd = target.weekday()
     wd_name = _RU_WD_NOM[wd] if lang == "ru" else t["wd"][wd]
     name = _esc(data["name"])
-    fc, hi, plan = data["forecast"], data["band_hi"], data["plan_mean"]
+    fc, plan = data["forecast"], data["plan_mean"]
+    rec, mx = data["count"], data["max_count"]
     people = _esc(t["people"])
 
     parts = [f"<h3>{_esc(title)}</h3>"]
@@ -94,9 +101,9 @@ def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
         f'<tr><td>📅 {_esc(t["day"])}</td><td align="right">{target:%d.%m.%Y}</td></tr>\n'
         f'<tr><td>📊 {_esc(t["load"])}</td><td align="right">{eff}%</td></tr>\n'
         f'<tr><td>🧑‍🍳 {_esc(t["rec"])}</td><td align="right">'
-        f'<b>{fc if fc is not None else "—"} {people}</b></td></tr>\n'
+        f'<b>{rec if rec is not None else "—"} {people}</b></td></tr>\n'
         f'<tr><td>⚠️ {_esc(t["max"])}</td><td align="right">'
-        f'{hi if hi is not None else "—"} {people}</td></tr>\n'
+        f'{mx if mx is not None else "—"} {people}</td></tr>\n'
         # The plan the count is for, in the plant's own unit. Brigadirs read
         # trudoyomkost all day on «Zagruzka fayli»; the count alone made them
         # take the minutes on trust.
@@ -125,3 +132,41 @@ def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
                      + _esc(disclaimer).replace("\n", "<br/>")
                      + "</blockquote>")
     return "\n".join(parts)
+
+
+def card(row: dict, target: date, lang: str = "ru", eff: int = 100,
+         weeks: int = 3, count=None, max_count=None):
+    """``(rich body, photo)`` for ONE recipient language — THE builder behind
+    the real call DM (``production._send_call_notice``, so the clock AND the
+    modal) and behind ``/forecast``, the bot's test door, so what a test shows
+    and what a brigadir receives are the output of one function.
+
+    Never raises. The PNG is rendered FIRST because the body points at it: a
+    card that fails to render (no font on the box — ``CardError``) yields a body
+    built WITHOUT the figure rather than one referencing media that was never
+    attached, and a body that fails yields None, so the sender degrades to the
+    photo or to the classic DM. A broken card must cost the reader the CARD,
+    never the message.
+
+    ``photo`` is ``{"id", "name", "data"}``: ``id`` is what the body's
+    ``tg://photo?id=…`` resolves against, ``name`` / ``data`` are the upload.
+    """
+    from app.services.forecast_card import render_forecast_card
+
+    photo = None
+    try:
+        png = render_forecast_card(row, target, lang, eff, weeks,
+                                   count=count, max_count=max_count)
+        photo = {"id": PHOTO_ID, "data": png,
+                 "name": f"forecast-{row.get('manager_id', 'x')}-{target:%Y%m%d}.png"}
+    except Exception:
+        logger.exception("forecast card: render failed for %s on %s",
+                         row.get("name"), target)
+    try:
+        rich = body(row, target, lang, eff, weeks, with_image=photo is not None,
+                    count=count, max_count=max_count)
+    except Exception:
+        logger.exception("forecast card: rich body failed for %s on %s",
+                         row.get("name"), target)
+        rich = None
+    return rich, photo

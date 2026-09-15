@@ -22,6 +22,7 @@ Admin-only:
     DELETE /admin/production/catalog/{id}
 """
 from __future__ import annotations
+import logging
 
 import statistics
 from collections import defaultdict
@@ -68,6 +69,8 @@ from app.services.cell_lookup import (by_sap, resolve_sap, norm_code, sap_codes_
 from app.services.latin_code import latin_code
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["production"])
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
@@ -3792,7 +3795,8 @@ class CallNotifyRequest(BaseModel):
 
 
 def _send_call_notice(db: Session, mgr: Manager, target: date, eff: int,
-                      workers: int, max_workers: int, actor: int) -> None:
+                      workers: int, max_workers: int, actor: int,
+                      row: dict | None = None) -> None:
     """Send ONE brigadir their call forecast for `target`, and record it.
 
     A bell row keyed to the supervisor PROFILE (seen by every account holding
@@ -3802,15 +3806,43 @@ def _send_call_notice(db: Session, mgr: Manager, target: date, eff: int,
     stops the automatic send from repeating a notice a person already sent by
     hand. `actor` is the sender's telegram id, or forecast_autocall.AUTO_SENDER
     when the clock sent it.
+
+    `row` is this unit's ``_call_rows`` row for `target`. With it the DM
+    carries the CARD (``forecast_rich.card``) — a Rich message whose figure is
+    the same-weekday history the count was averaged over, degrading to the card
+    as a photo and then to the classic text. Without it the DM is the classic
+    text alone, which is what every notice was before the card existed. The
+    card states `workers` / `max_workers`, the numbers this notice SENDS, so an
+    edit made in the modal is what the brigadir reads on the picture as well.
     """
     # function-level import: staff.py is heavy and imports would be circular-prone
     from app.routers.staff import _notify_supervisor_all
+
+    card_kw = {}
+    if row is not None:
+        from app.services import forecast_rich
+
+        built: dict[str, tuple] = {}
+
+        def _card(lang: str) -> tuple:
+            # One render per LANGUAGE, shared by every holder who reads it — and
+            # the body and the picture always come out of the SAME call, so a
+            # body can never point at a figure that failed to render.
+            if lang not in built:
+                built[lang] = forecast_rich.card(
+                    row, target, lang, eff, FORECAST_WEEKS,
+                    count=workers, max_count=max_workers)
+            return built[lang]
+
+        card_kw = {"rich_fn": lambda lang: _card(lang)[0],
+                   "photo_fn": lambda lang: _card(lang)[1]}
 
     _notify_supervisor_all(
         db, mgr.id,
         nkey="call_forecast",
         params={"name": mgr.name, "date": target, "eff": eff,
                 "count": workers, "max": max_workers},
+        **card_kw,
     )
     db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
                               workers=workers, sent_by=actor))
@@ -3844,6 +3876,22 @@ def trudoyomkost_call_notify(
     )}
     sent = []
     called: list[str] = []      # «who was called for how many», for the register
+    # Each unit's forecast row, so its DM carries the card: computed ONCE per
+    # target date, at the capacity this request states — the modal's own
+    # «Smena unumi», i.e. the very rows the modal drew its numbers from.
+    rows_at: dict[date, dict[int, dict]] = {}
+
+    def _row_for(day: date, manager_id: int) -> dict | None:
+        if day not in rows_at:
+            try:
+                rows_at[day] = {r["manager_id"]: r for r in
+                                _call_rows(db, day, req.capacity_pct)}
+            except Exception:
+                # no card, never no DM: the notice still goes out as text
+                logger.exception("call-notify: forecast rows failed for %s", day)
+                rows_at[day] = {}
+        return rows_at[day].get(manager_id)
+
     for i, item in enumerate(req.items):
         mgr = by_id.get(item.manager_id)
         if mgr is None or item.workers < 0:
@@ -3852,7 +3900,8 @@ def trudoyomkost_call_notify(
         # Maksimum = the upper band; fall back to the recommended count when the
         # client didn't send one (older client / insufficient-data row).
         max_workers = item.max_workers if item.max_workers is not None else item.workers
-        _send_call_notice(db, mgr, target, eff, item.workers, max_workers, actor)
+        _send_call_notice(db, mgr, target, eff, item.workers, max_workers, actor,
+                          row=_row_for(target, mgr.id))
         sent.append(mgr.id)
         called.append(f"{mgr.name}: {item.workers} ({target})")
     db.commit()

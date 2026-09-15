@@ -165,8 +165,10 @@ def run(shift: int) -> dict:
                 continue
             band_hi = r["band_hi"]
             max_workers = band_hi if band_hi is not None else r["forecast"]
+            # the row rides along so the DM carries the card drawn FROM it —
+            # the very history this count was averaged over, never re-derived
             _send_call_notice(db, mgr, target, eff, r["forecast"], max_workers,
-                              AUTO_SENDER)
+                              AUTO_SENDER, row=r)
             called.append(f"{mgr.name}: {r['forecast']}")
         db.commit()
         summary["sent"] = len(called)
