@@ -223,15 +223,18 @@ def _legacy_profiles(db: Session, legacy: set[tuple]) -> dict[tuple, Optional[st
     Telegram account. Nothing is written; each (account, role, name) is resolved
     on read, and only where the answer is not a guess:
 
-      admin       → the admins row's profile.
-      other roles → among the profiles of that role the account holds, the ONE
-                    whose name matches the snapshot in either alphabet; failing
-                    that, a DIRECT role (whose role_id IS the profile) the
-                    account holds exactly once — its snapshot is often a slot
-                    name («Shift Admin 3») or the other alphabet's spelling.
-      otherwise   → None, and the rows stay with their account. A leader account
-                    can be handed to somebody else, so an unmatched leader name
-                    is never pinned on the profile that account holds today.
+      1. admin — the admins row's profile, where one is bound;
+      2. the ONE profile of that role the account holds whose name matches the
+         snapshot in either alphabet;
+      3. the ONE profile of that role anywhere that carries the snapshot's name
+         — an account handed to somebody else holds the new person's profile
+         today, while its old rows still name the person who pinged;
+      4. a DIRECT role (whose role_id IS the profile) the account holds exactly
+         once — its snapshot is often a slot name («Shift Admin 3») or a
+         spelling the fold cannot bridge («Уразов Аскар» / «O'razov Asqar»).
+         Never for a leader: a leader account's profile today says nothing
+         about whose rows these were.
+      Otherwise None, and the rows stay with their account, marked as such.
     """
     if not legacy:
         return {}
@@ -256,20 +259,32 @@ def _legacy_profiles(db: Session, legacy: set[tuple]) -> dict[tuple, Optional[st
             if names.get(k):
                 folded.add(_fold_name(names[k]))
 
+    # Every profile of the roles these rows name, by folded name — answer 3.
+    roles = {role for _, role, _ in legacy if role}
+    by_name: dict[tuple, set] = defaultdict(set)          # (role, folded name) → keys
+    if "supervisor" in roles:
+        for mid, mname in db.query(Manager.id, Manager.name):
+            by_name[("supervisor", _fold_name(mname))].add(f"supervisor:{mid}")
+    if roles - {"supervisor"}:
+        for pid, prole, pname in db.query(RoleProfile.id, RoleProfile.role, RoleProfile.name
+                                          ).filter(RoleProfile.role.in_(roles - {"supervisor"})):
+            by_name[(prole, _fold_name(pname))].add(f"{prole}:{pid}")
+
     out = {}
     for tid, role, name in legacy:
-        if role == "admin":
-            out[(tid, role, name)] = identity.profile_key("admin", admins.get(tid))
-            continue
-        keys = held.get((tid, role), {})
         want = _fold_name(name)
-        match = [k for k, folded in keys.items() if want and want in folded]
-        if len(match) == 1:
-            out[(tid, role, name)] = match[0]
-        elif role in identity._DIRECT_ROLES and len(keys) == 1:
-            out[(tid, role, name)] = next(iter(keys))
-        else:
-            out[(tid, role, name)] = None
+        key = identity.profile_key("admin", admins.get(tid)) if role == "admin" else None
+        if key is None:
+            keys = held.get((tid, role), {})
+            match = [k for k, folded in keys.items() if want and want in folded]
+            named = by_name.get((role, want), set()) if want else set()
+            if len(match) == 1:
+                key = match[0]
+            elif len(named) == 1:
+                key = next(iter(named))
+            elif role in identity._DIRECT_ROLES and len(keys) == 1:
+                key = next(iter(keys))
+        out[(tid, role, name)] = key
     return out
 
 
