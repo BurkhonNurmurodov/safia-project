@@ -3777,6 +3777,31 @@ def add_activity_profile_key() -> None:
         print(f"[startup] user_activity profile_key migration skipped: {exc}")
     finally:
         db.close()
+    add_activity_session_count()
+
+
+def add_activity_session_count() -> None:
+    """Count VISITS in the usage ledger (2026-09-15, `routers/activity._fold`).
+
+    Nullable with no default, deliberately: NULL says «not counted» about every
+    row written before this ran, where 0 would claim somebody opened the app
+    zero times on a day they plainly used it. Its own transaction, so nothing
+    the older statements above might trip on can hold it back — the model reads
+    this column on every ledger query.
+
+    Called from `add_activity_profile_key`, so it rides the one call both
+    entrypoints already make instead of growing a second pair of call sites.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE user_activity "
+                        "ADD COLUMN IF NOT EXISTS session_count INTEGER"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] user_activity session_count migration skipped: {exc}")
+    finally:
+        db.close()
 
 
 def add_leader_task_setting_names() -> None:
