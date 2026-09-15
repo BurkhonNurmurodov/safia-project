@@ -240,7 +240,11 @@ def _legacy_profiles(db: Session, legacy: set[tuple]) -> dict[tuple, Optional[st
                   .filter(Admin.telegram_id.in_(tids)).all())
 
     held: dict[tuple, dict[str, set]] = defaultdict(dict)   # (tid, role) → key → names
-    for r in db.query(TelegramUserRole).filter(
+    # The five columns `role_row_profile_key` reads, not the entity: heal=False
+    # never assigns, and a read has no business loading the rest of the row.
+    for r in db.query(TelegramUserRole.telegram_id, TelegramUserRole.role,
+                      TelegramUserRole.role_id, TelegramUserRole.full_name,
+                      TelegramUserRole.profile_key).filter(
             TelegramUserRole.telegram_id.in_(tids),
             TelegramUserRole.status == "approved"):
         key = identity.role_row_profile_key(db, r, heal=False)

@@ -1,0 +1,1 @@
+import{r as s,s as o}from"./createLucideIcon-zre5HGj8.js";import{t as i}from"./Layout-Lld3NH75.js";import{rt as m}from"./index-M5RqfVzE.js";import{n,t as r}from"./DayReportView-754wszSA.js";var t=o();function l(){const{uid:a}=m(),{lang:e}=s();return(0,t.jsx)(i,{title:(r[e]||r.ru).title,children:(0,t.jsx)(n,{uid:a})})}export{l as default};
