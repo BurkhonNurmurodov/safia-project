@@ -23,10 +23,14 @@ Four rules:
   leader-day. The one figure it adds, the unit's result, is `_unit_score`: the
   one-day twin of `unitSlots` in pages/Leaders.jsx, never a new rule.
 
-* **It goes out once the day is SETTLED** (`_ready`): every checklist the unit
-  owed is in, or its filing window has shut — and nothing is still being
-  checked. A digest sent while half the unit is mid-review is the six messages
-  again, only slower.
+* **It goes out as soon as the last leader's time is up** (`_ready`, the
+  operator's ruling of 2026-09-15): every checklist the unit owed is in, or the
+  time of every leader still missing has run out (`_time_up_at`) — and nothing
+  is still being checked. Never the day's filing deadline for its own sake: on a
+  unit that closes each task, that deadline is a ceiling hours after the last
+  task has closed, and waiting for it put a shift-1 digest just after midnight.
+  A digest sent while half the unit is mid-review is the six messages again,
+  only slower.
 
 * **A change after it went out is an UPDATE, and updates are batched.** A later
   ruling, re-review or late filing marks the ledger dirty (`note`, and the sweep
@@ -36,9 +40,9 @@ Four rules:
 
 * **Nothing waits forever.** A review stuck behind a quota, or a task an admin
   re-opened on a closed night, would hold the whole unit's message hostage;
-  `MAX_WAIT_H` past the deadline it goes out with those rows marked, and the
-  update follows when they settle — the rule `leader_ai.unfinished_reports`
-  already keeps for a single report.
+  `MAX_WAIT_MIN` after the unit's day became final it goes out with those rows
+  marked, and the update follows when they settle — the rule
+  `leader_ai.unfinished_reports` already keeps for a single report.
 """
 from __future__ import annotations
 
@@ -73,8 +77,11 @@ DIGEST_FROM = "2026-09-15"
 # Quiet a sent digest needs after its first change before the update goes out.
 CORRECTION_QUIET_MIN = 10
 
-# How long past the filing deadline a digest may wait on unfinished reviews.
-MAX_WAIT_H = 4
+# How long a digest may wait on unfinished reviews once the unit's day is final —
+# its last checklist closed, or its last missing leader's time run out. Short on
+# purpose: the brigadir is told as soon as the leaders' time is up, and a row
+# that settles later reaches them as an update.
+MAX_WAIT_MIN = 60
 
 # Unit-days one sweep pass may send, per kind — a backstop, not pacing.
 SWEEP_CAP = 40
@@ -126,16 +133,45 @@ def _autoclose_shifts() -> tuple:
     return AUTOCLOSE_SHIFTS
 
 
+def _time_up_at(db: Session, prof: RoleProfile, shift: int | None, date: str,
+                per_task: bool) -> datetime | None:
+    """The instant this leader's checklist for `date` stops accepting work.
+
+    A leader's «time» is whatever the platform already enforces, read from the
+    rule that enforces it and never re-derived here:
+
+    * a unit that closes each TASK (`per_task_close`): the LATEST
+      `leader_close.due_at` of the leader's enabled tasks — the hour
+      `autoclose_due` locks the last of them on. Each is the end of the task's
+      own window, an admin's deadline, or the day's filing deadline for a task
+      with neither, which is also every task's ceiling — so with the default
+      windows 20:00 on shift 1 and 09:00 the next morning on shift 2;
+    * a unit that closes the DAY: the day's filing deadline, when its checklist
+      stops taking the button.
+
+    Seated on the SHIFT by `due_at`, so a night's «09:00» is the morning after.
+    None only when the date cannot be read."""
+    from app.services import leader_close
+    day_end = leader_close.due_at(None, shift, date)
+    if not per_task:
+        return day_end
+    cfg = leader_tasks.effective_leader_config(db, prof, shift, day=date)
+    ends = [e for e in (leader_close.due_at(s, shift, date)
+                        for s in cfg.values() if s.get("enabled"))
+            if e is not None]
+    return max(ends) if ends else day_end
+
+
 # ── the frame: who owed, who filed, is anything still moving ─────────────────
 
 def _frame(db: Session, manager_id: int, date: str,
            now: datetime | None = None) -> dict | None:
     """Everything the readiness test needs, WITHOUT reading a single report.
 
-    Cheap on purpose: the sweep asks this of every unit-day still waiting on its
-    deadline, every five minutes, and only a unit-day that turns out to be ready
-    pays for the per-leader reports (`_payload`). None when the unit does not
-    exist."""
+    Cheap on purpose: the sweep asks this of every unit-day still waiting on a
+    leader's time, every five minutes — one config per leader still missing —
+    and only a unit-day that turns out to be ready pays for the per-leader
+    reports (`_payload`). None when the unit does not exist."""
     d = str(date or "")[:10]
     unit = (db.query(Manager).filter_by(id=int(manager_id)).first()
             if manager_id else None)
@@ -196,19 +232,44 @@ def _frame(db: Session, manager_id: int, date: str,
                     missing.append((p, cid))
 
     expired = d <= leader_tasks.expired_through(shift, now)
+
+    # WHEN the day is final — «as soon as the last leader's time finishes up»
+    # (the operator, 2026-09-15). A leader still missing is waited on until THEIR
+    # time is up and no longer: the day's filing deadline is a ceiling, hours
+    # after the last task of a per-task unit has closed. One config per leader,
+    # however many cells they owe a checklist for.
+    per_task = leader_tasks.per_task_close(db, unit.id)
+    ends: dict[int, datetime | None] = {}
+    for p, _cid in missing:
+        if p.id not in ends:
+            ends[p.id] = _time_up_at(db, p, shift, d, per_task)
+
+    def up(leader_id) -> bool:
+        end = ends.get(leader_id)
+        return expired if end is None else now >= end
+
+    # The moment nothing is left to wait for but the reviewer — the last close,
+    # or the last missing leader's time. The cap on a stuck review runs from it.
+    marks = [x.closed_at for x in closed if x.closed_at is not None]
+    marks += [e for e in ends.values() if e is not None]
+    final_at = max(marks) if marks else None
     return {
         "unit": unit, "shift": shift, "date": d,
         "auto": leader_ai.in_auto_regime(d, shift),
         "closed": closed, "profs": profs, "skipped": skipped,
         "missing": missing, "started": started,
         "expired": expired,
-        "overdue": d <= leader_tasks.expired_through(
-            shift, now - timedelta(hours=MAX_WAIT_H)),
+        "waiting": any(not up(p.id) for p, _cid in missing),
+        "overdue": (final_at is not None
+                    and now >= final_at + timedelta(minutes=MAX_WAIT_MIN)),
         "pending": _pending(db, [x.id for x in closed]),
-        # An expired open day on a shift the platform closes by itself is a day
-        # the 5-minute sweep is about to close and send for review: the digest
-        # waits for it rather than reporting it as unfinished.
-        "closing": bool(started) and expired and shift in _autoclose_shifts(),
+        # An open checklist whose leader's time is up is one the platform is
+        # about to close by itself and send for review — task by task on a
+        # per-task unit (`autoclose_due`), whole on a shift the day sweep closes
+        # — so the digest waits for it rather than reporting it as unfinished.
+        "closing": any(up(lid) and (per_task or (
+                           expired and shift in _autoclose_shifts()))
+                       for lid, _cid in started),
     }
 
 
@@ -236,13 +297,14 @@ def _pending(db: Session, day_ids: list[int]) -> bool:
 def _ready(f: dict) -> bool:
     """May the FIRST digest of this unit-day go out now?
 
-    Every checklist the unit owed is in, or the filing window has shut — and
-    nothing is still in review or about to be auto-closed. Past `MAX_WAIT_H` the
-    second half is dropped: the rows still moving go out marked, and the update
-    follows once they settle."""
+    Every checklist the unit owed is in, or the time of every leader still
+    missing has run out — and nothing is still in review or about to be closed
+    by the platform. `MAX_WAIT_MIN` after the day became final the second half
+    is dropped: the rows still moving go out marked, and the update follows once
+    they settle."""
     if not f["closed"]:
         return False
-    if f["missing"] and not f["expired"]:
+    if f["waiting"]:
         return False
     return not (f["pending"] or f["closing"]) or f["overdue"]
 

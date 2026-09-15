@@ -2310,16 +2310,24 @@ in place. **The LEADER's own per-day DM is unchanged.**
   The one figure it adds, «Brigada natijasi», is `_unit_score` — the ONE-DAY
   twin of `unitSlots` in Leaders.jsx (the mean over every leader who owed a
   checklist, an unfiled one counting 0). Keep the two in step.
-- **When it goes out** (`_ready`): every checklist the unit owed is closed, or
-  its filing window has shut (`leader_tasks.expired_through`) — AND nothing is
-  still in review (`_pending`, the `unfinished_reports` rule) or about to be
-  auto-closed. `MAX_WAIT_H` past the deadline it goes out anyway, the rows still
-  moving marked ⏳. **Consequence to know:** a shift-1 unit where somebody never
-  files gets its digest just after midnight, when the 23:59 window shuts.
+- **When it goes out** (`_ready`) — **as soon as the last leader's time is up**
+  (the operator's ruling, 2026-09-15): every checklist the unit owed is closed,
+  or the time of every leader still missing has run out — AND nothing is still
+  in review (`_pending`, the `unfinished_reports` rule) or about to be closed by
+  the platform. A leader's time is `_time_up_at`, read off the rule that already
+  enforces it: on a per-task unit the LATEST `leader_close.due_at` of their
+  enabled tasks — the hour `autoclose_due` locks the last one on, so 20:00 on
+  shift 1 and 09:00 on shift 2 with the default windows — and on a day-close
+  unit the day's filing deadline. It first shipped waiting for that deadline
+  whenever anybody was missing, which put a shift-1 digest just after midnight,
+  hours after the last task had closed; do not go back to it. `MAX_WAIT_MIN`
+  (60) after the day became final — its last close, or its last missing
+  leader's time — it goes out anyway, the rows still moving marked ⏳.
 - **Two doors.** `send_for_uid` no longer DMs the brigadir for a covered day (a
   bot uid dated on or after the floor); after the leader's ledger commits it
   calls `note`, the fast path. `sweep` rides the 5-minute `leader_close._sweep`,
-  AFTER the day auto-close, and sends the first digests waiting on a deadline.
+  AFTER both auto-closes, and sends the first digests waiting on a leader's
+  time.
 - **Updates are batched.** After the first send `note` only sets `dirty_at`, and
   so does the sweep for a checklist closed after `last_sent_at`. The update goes
   out once the unit has been quiet `CORRECTION_QUIET_MIN`, and only when a row's
