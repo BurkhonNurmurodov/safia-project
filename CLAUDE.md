@@ -4362,6 +4362,46 @@ the only write on the tab.
   the traffic light and the categories are separated by ICON, so a category chip
   can never be mistaken for a verdict.
 
+## Who uses the app (`/activity`)
+
+From **2026-09-15** (the operator's call) «Foydalanuvchilar faolligi» is TWO
+tabs over ONE ledger, `user_activity` — one row per (Telegram account, PROFILE,
+day), filled by the 60 s heartbeat `POST /api/activity/ping`.
+`routers/activity.py` reads it twice; `pages/UsersActivity.jsx` draws both.
+
+- **«Profillar bo'yicha» is a PERSON** (the identity rule): every account working
+  as a profile folds into its row, time summed, accounts listed.
+  **«Foydalanuvchilar bo'yicha» is a LOGIN**: one Telegram account, the profiles
+  it worked as listed. `?by=profile|account` picks the unit on the SERVER, so the
+  two tabs always add up to the same minutes and neither is derived from the
+  other's rows. No `by` means profile — what a tab still open on the one-view
+  bundle asks for.
+- **Every day count is DISTINCT days.** A profile held by several accounts writes
+  a row per account per day; counting rows read as 69 active days in a 30-day
+  month.
+- **The ledger day is the plant's wall clock** (`TZ`, Tashkent) from 2026-09-15.
+  It was the UTC day, so 00:00–05:00 landed on yesterday and «Bugun faol»
+  answered for the day before until 05:00. Older rows keep their UTC label — a
+  row stores a total, not its hours.
+- **«Kirishlar» counts VISITS** — `session_count`, bumped by a row's first ping
+  and by every ping after a gap longer than `PING_MAX_GAP`. It used to print
+  `event_count`, the PING count (about one a minute). NULL on every row written
+  before 2026-09-15, never 0, and `sessions_from` on the payload is what lets the
+  page say from which day it counts. `add_activity_session_count` is its
+  migration, called from `add_activity_profile_key` so both entrypoints run it.
+- **Legacy rows are resolved on READ, never rewritten** (`_legacy_profiles`). The
+  NULL-`profile_key` rows from before 2026-07-25 are matched by the account's
+  admins row, then the ONE held profile whose name matches the snapshot
+  (script-blind, `_fold_name`), then the ONE profile of that role carrying that
+  name, then a DIRECT role the account holds exactly once — never that last step
+  for a leader, whose account may have been handed on. What stays unresolved is
+  shown with its account and marked «Profil aniqlanmagan», never guessed.
+- **An «open as this profile» session counts as the ADMIN who opened it**
+  (`_heartbeat_owner`, the token's `imp`) — its `sub` is the holder's account, so
+  read as written it showed a leader in the app while they were not.
+- Page key `activity`, admin-only by default. Every figure is derived per
+  request; nothing but the heartbeat writes.
+
 ## Browser login (the second door)
 
 The app has two front doors into the **same** session. Telegram is the first:

@@ -187,8 +187,11 @@ def _fold_name(name: Optional[str]) -> str:
     «Талипова Мамура» and «Talipova Mamura» compare equal. Applied to BOTH
     sides, so it only ever merges spellings of one name."""
     s = (transliterate(name or "", "uz") or "").casefold()
-    s = re.sub(r"[’ʻʼ'`‘]", "", s)
-    s = s.replace("kh", "x").replace("ye", "e").replace("q", "k")
+    s = re.sub(r"[’ʻʼ`‘]", "'", s)
+    # The Russian alphabet spells Uzbek sounds its own way: ў is у (O'razov /
+    # Уразов), ҳ and х are both х (Muhammad / Мухаммад), қ is к (Asqar / Аскар).
+    s = s.replace("o'", "u").replace("'", "")
+    s = s.replace("kh", "x").replace("h", "x").replace("ye", "e").replace("q", "k")
     return " ".join(re.sub(r"[^\w]+", " ", s).split())
 
 
