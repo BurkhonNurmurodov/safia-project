@@ -29,6 +29,7 @@ import { diffStatus } from "../utils/segments";
 import { utilNumbers, utilInputs, differenceNumbers, differenceInputs, differencePctNumbers, hcEquivNumbers, hcEquivInputs, avgWorkloadNumbers, rangeDays } from "../utils/formulas";
 import { padChartParams } from "../utils/chartRange";
 import api from "../utils/api";
+import ShiftReportTable from "../components/overview/ShiftReportTable";
 
 const INIT_FILTERS = {
   name: "", shifts: [], statuses: [],
@@ -424,6 +425,12 @@ export default function Overview() {
           ]}
         />
       </div>
+
+      {/* «Smena hisoboti» — the shift manager's first view: one row per brigadir,
+          today's load, yesterday's completion, quality closure, open concerns.
+          Its windows are fixed and printed in its headers; the period picker
+          above does not reach it. */}
+      <ShiftReportTable />
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-6">

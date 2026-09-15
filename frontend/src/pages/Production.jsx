@@ -33,6 +33,7 @@ import { useFactory } from "../context/FactoryContext";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useTranslit } from "../utils/transliterate";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
+import { GREEN, AMBER, RED, vypColor, loadColor } from "../utils/statusBands";
 import { exportXlsx } from "../utils/exportXlsx";
 import { GROUP_LETTERS, wcGroupLabel } from "../utils/wcGroup";
 import { cellLabel } from "../utils/cellName";
@@ -54,25 +55,10 @@ const ddmmyyyy = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.
 // answers everywhere rather than a set derived from the loaded rows.
 const SHIFTS = ["all", "1", "2"];
 
-// status colours (theme-agnostic, work on both dark & light)
-const GREEN = "#22c55e", AMBER = "#eab308", RED = "#ef4444";
-// completion: ≥95% good, ≥70% partial, below = behind
-const vypColor = (v) => (v == null ? "var(--text-4)" : v >= 0.95 ? GREEN : v >= 0.7 ? AMBER : RED);
-// load (Загруженность): ≥90% green, 80–89% yellow, below that red — the
-// operator's scale (2026-09-06), read by BOTH surfaces that print the figure:
-// each команда card and the СР. ЗАГРУЖЕННОСТЬ KPI above them.
-// Two things went with it, deliberately. Over-capacity is no longer a case of
-// its own: a cell above 100% now reads GREEN, where >100.1% used to read red.
-// And under-loaded stops being brand gold — gold is an accent on this platform,
-// never a status, so the one band that was not a traffic light now is one.
-// The bands are compared against the WHOLE percent the reader sees, because
-// `pct` rounds to one: judging the raw fraction is what paints a number on one
-// side of a threshold in the colour of the other («90%» in yellow for 0.8951).
-const loadColor = (v) => {
-  if (v == null || Number.isNaN(v)) return "var(--text-4)";
-  const p = Math.round(v * 100);
-  return p >= 90 ? GREEN : p >= 80 ? AMBER : RED;
-};
+// Status colours and the completion / load bands live in utils/statusBands.js —
+// the «Smena hisoboti» table on Overview paints these same two figures, and one
+// number must not read green here and yellow there. Both bands compare the
+// WHOLE percent `pct` prints.
 
 // per-команда identity colour — stable for a given work-center code (hash → palette),
 // so the same team keeps its colour across the cards and the table regardless of order.

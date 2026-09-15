@@ -91,7 +91,10 @@ const CAT_COLORS = {
 const STATUS_COLORS = { done: C_DONE, open: C_OPEN, waiting: C_WAIT, repeat: C_REPEAT, not_required: C_NA };
 
 // Statuses that describe work: «не требуется мера» is not a failure to fix, so
-// it never enters a resolution rate.
+// it never enters a resolution rate. Twinned in
+// backend/app/services/shift_report.py (ACTIONABLE): the Overview «Smena
+// hisoboti» table states this same closure rate per brigadir, so the two lists
+// must stay one rule.
 const ACTIONABLE = ["done", "open", "waiting", "repeat"];
 const OPEN_STATES = ["open", "waiting", "repeat"];
 

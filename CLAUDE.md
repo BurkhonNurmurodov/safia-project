@@ -46,7 +46,7 @@ Other UI conventions:
 - `FilterPanel` (in `ColumnFilter.jsx`) is THE page/table filter zone. **Every page's scope controls (plant / shift / supervisor / leader / cell / category) live INSIDE it as sections — never as standalone selects stacked above the content.** The page bar is ONE row: the period control (`DateRangePicker compactLabel`, or `DayStepper` on daily pages) inline, then `FilterPanel`, then chips. It adapts to space: on md+ it unfolds into one dropdown per filter while the WHOLE toolbar row fits on a single line, else it collapses to the grouped «Filtrlar» button (below md: bottom sheet). Whenever controls are not visible inline, every ACTIVE section renders as a CHIP beside the trigger — `display` text + per-chip ✕ (`onClear`); chip body re-opens the panel; `static: true` sections are inert chips (locked viewer's plant). Sections: `{ key, icon, label, active, display, render({close}), onClear?, static?, group?, pinned? }` — `PickFilter` (single-select list, closes on pick), `OptsFilter` (multi), `RngFilter`, or an embedded `SegmentedToggle fill`. `group` (a translated caption) splits the collapsed surfaces into labelled blocks in first-appearance order; use it wherever a page carries both a scope CHAIN and record filters, so ten anonymous rows read as two short lists (Quality: «Kim va qayerda» = plant → shift → brigadir → leader → cell, «Nima bo'ldi» = the register filters). **A cascading level narrows the level below it and SAYS SO**: build each list under the levels above it, pass `PickFilter`'s `note` ("narrowed by «X» · N") so a shortened list is never mistaken for missing data, pass `empty` (a message + a button clearing the parent) for a level narrowed to nothing, and drop a child pick its own list no longer offers when the parent changes — a control naming a value the page cannot show is worse than a reset. See the Quality org chain for the reference wiring. Omit `activeCount`/`anyActive`/`onClearAll` unless overriding — the panel computes them from sections. `pinned: true` keeps a section's own inline dropdown on the toolbar even while the rest collapse — for a page carrying so many filters that the fit check can never unfold the row (ARC's thirteen), so the controls that steer the page are not buried behind a button that names none of them. Pin the two or three controls the reader steers with — and when a page's TABS ask different questions, pinning follows the open tab (ARC pins smena → brigadir → lider on «Yacheykalar bo'yicha», bo'lim / holat / kategoriya on «Barchasi»; every filter still narrows both tabs, only where its control sits changes). Below md nothing is pinned (the sheet keeps them all) and a pinned section drops its chip on md+, where its own trigger already states it. Keep it a DIRECT child of the toolbar flex row — the fit check measures that row's children (flex-grow spacers count as 0). View switches (tabs) stay OUTSIDE the panel; text search stays an inline `SearchInput`.
 - All colors via CSS variables (`var(--bg-card)`, `var(--bg-inner)`, `var(--text-1..4)`, `var(--border)`, `var(--brand)`) — no hardcoded grays/hex for chrome, including on admin pages.
 - No raw emojis — lucide icons in soft tint chips (see `ProjectIcon` in `Kaizen.jsx`).
-- Status colors are traffic-light: red `#ef4444` / yellow `#eab308` / green `#22c55e`; "not started" is grey `#94a3b8`; brand gold `#C8973F` is an accent, never a status.
+- Status colors are traffic-light: red `#ef4444` / yellow `#eab308` / green `#22c55e`; "not started" is grey `#94a3b8`; brand gold `#C8973F` is an accent, never a status. The band a headline figure is judged by (load, completion, quality closure, open concerns) is defined once, in `utils/statusBands.js`.
 - Categorical chart colors (roles, units, products, people, series identities) come from `utils/chartPalette.js` `CATEGORY_COLORS`, assigned generic-first in this exact order: red → green → blue → yellow → orange → purple → teal → pink → … One fixed hue per category, reused across every chart that shows it; «Остальные/Other» folds are `FOLD_COLOR` slate. Brand gold NEVER represents a category (all pages except `/leaders`). Single-metric accents, status palettes, and value-intensity ramps are separate and may keep gold.
 - Date-axis line/area charts never show fewer than 7 days — use `utils/chartRange.js`.
 - **A date axis thins its labels to its MEASURED width, never to a fixed count.**
@@ -4719,6 +4719,71 @@ says; a supervisor or leader would see their own unit only).
 - **Grid tiles are deliberately INERT** (no `CellLink`): a dense grid on a
   touch TV must not navigate away from the monitor. The alert feed and the
   unit rows carry the links instead.
+
+## The shift report on Overview («Smena hisoboti»)
+
+From **2026-09-15** (the operator's directive) the first block of `/` is a
+status board for the shift manager: one row per brigadir of their shift, five
+columns — `components/overview/ShiftReportTable.jsx` over `GET
+/api/shift-report` (`routers/shift_report.py` fetches and scopes,
+`services/shift_report.py` folds). It replaced a Google Sheet somebody filled
+and coloured by hand every morning, with «XATO» wherever a brigadir had entered
+nothing.
+
+- **No figure is computed here, and none may be.** «O'rtacha yuklanish» (today)
+  and «Bajarish %» (yesterday) are `totals.avg_load` / `totals.completion` of
+  `production._build_dashboard` — the very call `/api/production/dashboard`
+  makes, so they ARE the «Zagruzka fayli» KPI cards. «Bartaraf etilgan %» is the
+  Quality page's closure rate over the WHOLE register: `supervisor_match` over
+  every live unit (a subset lets the fuzzy matcher hand a row to the wrong unit),
+  done ÷ actionable, where `shift_report.ACTIONABLE` is the twin of
+  `Quality.jsx`'s `ACTIONABLE` and the two must stay one list. «Ochiq
+  xavotirlar» counts `leader_concerns` at level `supervisor` with status
+  todo/doing, per unit. The headers reuse the owning pages' own words
+  (`production.kpiAvgLoad`, `production.kpiVyp`, the Quality page's «Bartaraf
+  etilgan»).
+- **«Today» is the SHIFT FRAME, not the calendar** (`shift_report.report_days` →
+  `live_overview.shift_frame` over `cell_hours.defaults`): the most recent shift
+  start names the day — the rule `/live` runs on and the date a night's leaders
+  file under. At 09:00 shift 2's today is the night that has just ended; shift
+  1's today flips at its own 08:00, so before it the board shows the last
+  finished day shift. A unit with no shift reads the calendar date.
+- **The period picker does not reach it.** The request carries the toolbar's
+  scope (plant, shift, supervisor) and never its dates. Every column header
+  prints its own window — with the date while one shift is on screen; with two,
+  a group row per shift prints both of its dates, which can differ.
+- **A blank is «—» plus a REASON, never 0**: `not_configured` (no catalog),
+  `no_people` (nobody typed «Bugungi fakt»), `no_plan` (no plan minutes — a 0%
+  load against no plan is not a load), `no_fact` (plan minutes and no actual
+  minutes at all — `/live`'s «fakt kiritilmagan», never «0%, behind»),
+  `no_records` (nothing in the quality register). The load checks people before
+  plan, the heatmap's order. The amber header chip counts rows with a load or
+  completion blank — the sheet's «Holat» folded into one number; `no_records`
+  is not a gap and is not counted. «*» on a load is the Production page's
+  partial-headcount mark (`people_untyped > 0`).
+- **Bands live ONCE, in `utils/statusBands.js`**, which the «Zagruzka fayli»
+  page imports too: load ≥90 / 80–89 / <80 (the 2026-09-06 scale), completion
+  ≥95 / 70–94 / <70, quality closure ≥90 / 70–89 / <70 and open concerns
+  0 / 1–2 / ≥3 (the last two read off the sheet, 2026-09-15). Every percentage
+  band compares the WHOLE percent printed — `vypColor` moved onto that rule
+  with this change, so a completion of 94.5–94.99% now reads green on
+  `/production`, where it prints «95%». The bands are printed as a legend under
+  the table. Pill text reads `--status-ok/warn/bad` (700 shades on light, the
+  platform's own hexes on dark, a lighter red) over a 14% tint of the hex.
+- **Scope is the reach each role already has** (`concerns._scope_query`'s tiers)
+  on top of `scoped_manager_ids`: admin and top-manager every unit, both shifts
+  as groups; a shift-manager their shift ∩ plant (`shift_scope.unit_ids`), and a
+  profile naming no shift reads an EMPTY board with `note = "no_shift"`, never
+  the plant; a supervisor or leader (only via a page grant) their own unit. The
+  page key stays `overview`.
+- **It stays a table on a phone**, fitted to ~358px: short labels, the inactive
+  sort chevron hidden and the active one stacked under its label, a blank's
+  reason as an icon whose words move into the legend. Rows open
+  `/brigadir/:id`. No per-cell links: a shift manager does not hold
+  `/production`, and a link that 403s is a dead link.
+- Up to two engine runs per configured unit per request, uncached; `staleTime`
+  60 s and a refetch on focus. Deliberately NOT built: KRU %, «Kiritish soni»,
+  an export, a ColumnsPicker.
 
 ## Workflow
 
