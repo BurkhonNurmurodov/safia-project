@@ -4888,7 +4888,12 @@ nothing.
   picks, the rule `HeatmapChart` already applied and now imports from
   `statusBands` rather than spelling itself. Cells are square, full-bleed and
   ruled by a 1px line of the CARD's own colour, which is what makes the grid
-  show against any fill in both themes. Three shapes were tried and are the
+  show against any fill in both themes — **set INLINE, never as a class**,
+  because `DataTable` paints every cell's border through
+  `[&_td]:border-[var(--border)]`, a descendant selector that outranks any
+  plain utility on the cell itself: a `border-[…]` class there compiles, loses,
+  and leaves the grid invisible with nothing on screen to say why. Three shapes
+  were tried and are the
   mistakes this one answers: a tinted badge in a right-aligned cell (five short
   values across a full-width table left the board mostly empty space — the
   first thing anybody saw); muted 700-shade fills whose `--border` gridline
