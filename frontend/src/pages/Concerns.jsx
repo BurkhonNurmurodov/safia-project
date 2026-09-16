@@ -1515,10 +1515,11 @@ export default function Concerns() {
 
   // ── one consolidated filter zone ───────────────────────────────────────────
   // Plant / shift / brigadir / cell join the register filters in ONE panel at
-  // the top of the page. The org chain (shift → brigadir → cell) and category
-  // are PINNED: from md they stand on the bar beside the period as their own
-  // dropdowns, and only the rest fold into «Filtrlar» (below md the sheet keeps
-  // them all). Every active narrowing surfaces as a chip.
+  // the top of the page. Plant, the top of the org chain (shift → brigadir) and
+  // category are PINNED: from md they stand on the bar beside the period as
+  // their own dropdowns, and the rest — the cell included — fold into
+  // «Filtrlar» (below md the sheet keeps them all). Every active narrowing
+  // surfaces as a chip.
   //
   // Each level of the chain scopes the one below it and SAYS SO (`note`); a
   // level narrowed down to nothing offers the way back out (`empty`) instead of
@@ -1540,10 +1541,10 @@ export default function Concerns() {
   const pageSections = [
     // The plant is PINNED and stands first, immediately after the period: it is
     // the broadest narrowing on the page, so the bar reads plant → shift →
-    // brigadir → yacheyka → kategoriya, the same broad→narrow direction the
+    // brigadir → kategoriya, the same broad→narrow direction the
     // filter panel itself is ordered in. Unpinned it folded into «Filtrlar»
     // behind a button naming none of it, while every level it scopes stood on
-    // the row — a reader could not see which plant the four controls beside it
+    // the row — a reader could not see which plant the controls beside it
     // were narrowing. A locked viewer's section is `static`, which ignores the
     // pin and keeps its inert chip.
     ...(factorySection ? [{ ...factorySection, pinned: true }] : []),
@@ -1578,7 +1579,12 @@ export default function Concerns() {
       ),
     }] : []),
     ...(canFilterCell ? [{
-      key: "cell", icon: LayoutGrid, label: t("concerns.colCell"), pinned: true,
+      // Deliberately NOT pinned: the cell is the FINEST step of the chain and
+      // the one a reader reaches for last, so it folds into «Filtrlar» and
+      // leaves the bar to the levels above it. Its chip still states an active
+      // pick beside the button, and the note/empty wiring below is unchanged —
+      // where the control SITS is all that moved.
+      key: "cell", icon: LayoutGrid, label: t("concerns.colCell"),
       active: cellSel.length > 0,
       display: cellSel.length === 1 ? cellSel[0] : `${cellSel.length} ${t("filter.selected2")}`,
       onClear: () => setFCells([]),
