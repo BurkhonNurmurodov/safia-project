@@ -634,7 +634,7 @@ def export_positions(
     nobody grouped writes no block, and its M:N and ЛЮДИ formulas are unchanged.
 
     Two deliberate departures from the manual form: the indicator block carries
-    three rows and not nine (see the P:Q section), and division-prone cells are
+    five rows and not nine (see the P:Q section), and division-prone cells are
     wrapped in IFERROR, so a position with no people or no plan prints 0 instead
     of #DIV/0!. Rows render in the exact order the client sends (`body.order`)."""
     lang = body.lang
@@ -650,6 +650,7 @@ def export_positions(
     wcs = dash.get("work_centers") or []
     consts = dash.get("constants") or {}
     sm = int(consts.get("shift_min") or DEFAULT_SHIFT_MIN)
+    pm = float(consts.get("productive_min") or DEFAULT_PRODUCTIVE_MIN)
 
     # What a LEADER's cut hides. `_build_dashboard` computes a leader's page over
     # every group of their work centres and only then drops the other groups'
@@ -878,23 +879,47 @@ def export_positions(
         ws.column_dimensions["Y"].width = 8.5
 
     # --- P:Q — indicator block ------------------------------------------------
-    # THREE figures, by the operator's call (2026-08-31): the people standing in
-    # the cells, how loaded they are, and the shift's total labour. The rest of
-    # what the manual form prints here — kelishi kerak edi, kerak, spare people,
-    # the kerakli-odam bandlik, обеспеч, абсетеизм — was computed off the
-    # hand-entered «Сколько должна на штатке» counts, which nobody fills in, so
-    # each of them read 0 or 100% on every exported file. That block (Z:AA) is
-    # gone with them.
+    # FIVE figures. The 2026-08-31 trim cut the manual form's nine down to three,
+    # because everything it removed was computed off the hand-entered «Сколько
+    # должна на штатке» counts, which nobody fills in, so each of them read 0 or
+    # 100% on every exported file — that block (Z:AA) went with them. On
+    # 2026-09-16 the operator asked for two of the six back, and they are exactly
+    # the two that need no hand-entered count at all: both are computed off I1 and
+    # the keldi row, so both print a real figure on every unit's file.
     #   keldi   = ΣO. SONI (N) — the people assigned to the cells that day, the
     #             same total the block prints under itself. A live SUM, so it
     #             follows the brigadir's own edits to N.
+    #   kerak   = I1 ÷ productive_min — the people the day's plan needs, at the
+    #             unit's OWN productive minutes per worker. That is `pp_calc`'s S
+    #             per person — the divisor the «Odamlar soni» tab's suggestion
+    #             N = ROUND(W×Q/S) already uses — so the file and the page size a
+    #             shift by one rule. Its default, 408, IS the manual form's own
+    #             0.85 × 480, so an unconfigured unit's file reproduces the form.
+    #             Never hard-code the 0.85: `pp_shift_min` and `pp_productive_min`
+    #             are per-unit settings and this row must follow them.
+    #   bo`sh   = keldi − kerak. Negative means short-handed and prints RED, the
+    #             one figure in this file carrying a verdict — the manual form
+    #             marks it the same way. It divides nothing, so no IFERROR: on a
+    #             day nobody typed N it reads −kerak, which is what a form nobody
+    #             has filled in should say, and it corrects itself as N is typed.
     #   bandlik = I1 ÷ (keldi × shift_min) — the unit's average load for the day,
     #             the same arithmetic as pp_calc's `avg_load`, so the file and the
     #             page answer with one number. Divides by the row above it, so it
-    #             re-reads whatever headcount the brigadir leaves in N.
+    #             re-reads whatever headcount the brigadir leaves in N. It reads
+    #             keldi at Q{ds}, which the two new rows sit UNDER, so inserting
+    #             them moved no reference.
+    # The manual form's other four stay out: «kelishi kerak edi» is the штатка row
+    # itself and «% абсетеизм» divides by it, while «% обеспеч» (keldi ÷ kerak) and
+    # «Kerakli odam bilan o`rtacha bandlik» (I1 ÷ kerak × shift_min) were simply
+    # not asked for — both are computable now that kerak is back, so wanting either
+    # later is one more entry in this list, not new arithmetic.
     indicators = [
         ("Nechta odam keldi",                                   f"=SUM(N{t0}:N{t1})",
          "0"),
+        ("Nechta odam kerak",                                   f"=ROUND(I1/{pm:g},0)",
+         "0"),
+        ("Bo`sh odam/kerakli odam",                             f"=+Q{ds}-Q{ds + 1}",
+         "0;[Red]-0"),
         ("Hozirgi odam bilan o`rtacha bandlik(smena boshida)",  f"=IFERROR(I1/(Q{ds}*{sm}),0)",
          "0%"),
         ("Общ.трудаёмкост",                                     "=I1",
