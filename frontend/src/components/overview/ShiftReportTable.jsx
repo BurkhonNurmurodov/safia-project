@@ -16,7 +16,10 @@
 //   intensities — and the figures sit centred in the fill, because the colour
 //   does the comparing now and centred digits cost nothing. Every row is ONE
 //   line high and carries ONE figure per cell, so nothing beside the value can
-//   double the board's height or compete with it.
+//   double the board's height or compete with it. The cell is the загрузка
+//   heatmap's cell — same saturated hues, same auto-contrast ink, same square
+//   full-bleed rectangle ruled by a 1px line — because one platform should not
+//   have two things that are both «the heatmap».
 // - The name column stays uncoloured: it is the rail the eye returns to, and it
 //   is what keeps the table from becoming one sheet of colour. A BLANK cell
 //   stays uncoloured too — a missing figure should read as a hole in a coloured
@@ -39,8 +42,8 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import {
-  LOAD_BANDS, COMPL_BANDS, RESOLVED_BANDS,
-  loadTone, vypTone, resolvedTone, toneFill, toneTint,
+  LOAD_BANDS, COMPL_BANDS, RESOLVED_BANDS, CONCERN_BANDS,
+  loadTone, vypTone, resolvedTone, concernsTone, toneFill, toneTint,
 } from "../../utils/statusBands";
 import api from "../../utils/api";
 
@@ -70,39 +73,21 @@ const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 const fill = (s, vars) =>
   Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), s);
 
-// A band the way the legend prints it: ≥90%  80–89%  <80%.
+// A band the way the legend prints it: ≥90%  80–89%  <80%  ·  ≤5  6–20  ≥21.
 const pctBand = ({ ok, warn }) => [`≥${ok}%`, `${warn}–${ok - 1}%`, `<${warn}%`];
+const countBand = ({ ok, warn }) => [`≤${ok}`, `${ok + 1}–${warn}`, `≥${warn + 1}`];
 
 // A tone only where there is a figure to judge — a blank is never coloured.
 const cellTone = (cell, toneFn) =>
   (cell && !cell.reason && isNum(cell.value) ? toneFn(cell.value) : null);
 
-// Open concerns carry NO traffic light, and that is deliberate. Nothing on this
-// platform defines how many open concerns is «bad»: real counts run from 6 to
-// 105, so the 0 / 1–2 / ≥3 band this shipped with painted every cell red, and a
-// column that is red everywhere carries no information at all. It is a
-// MAGNITUDE, so it gets the platform's value-intensity ramp — brand gold, the
-// «Toifalar bo'yicha» matrix's own easing — scaled to the largest count on
-// screen, with the legend saying so. Red here would be a verdict nobody has
-// defined, which is the same reason «Xarajat» refuses one.
-// The ramp does not start at nothing: beside three SOLID columns a 6% gold
-// would read as an empty cell, and «a few» is not «none» — 0 is the only count
-// this column leaves unfilled. Eased, so the long tail of small backlogs still
-// separates (the matrix's own exponent).
-const RAMP_LO = 0.14, RAMP_HI = 0.92;
-const rampAlpha = (k) => RAMP_LO + k * (RAMP_HI - RAMP_LO);
-const RAMP = [0, 0.2, 0.4, 0.6, 0.8, 1].map(rampAlpha);
-function concernCell(n, max) {
-  if (!n || !max) return undefined;
-  const a = rampAlpha(Math.pow(Math.min(n / max, 1), 0.62));
-  return {
-    background: `rgba(var(--brand-rgb), ${a.toFixed(3)})`,
-    // Gold at full strength needs dark ink in BOTH themes, so this one literal
-    // is theme-independent by construction — the matrix carries it for the
-    // same reason.
-    color: a > 0.55 ? "#1a1508" : "var(--text-1)",
-  };
-}
+// Open concerns are judged by the same three colours as the columns beside
+// them — one board, one vocabulary (the operator's call, 2026-09-16). What is
+// different is the BANDS, not the palette: `statusBands.CONCERN_BANDS` says
+// why, and the legend prints the numbers because nobody has ruled on them yet.
+// A gold intensity ramp stood here for an afternoon and is not what a reader
+// of this board wants: a shade has to be compared against the rest of the
+// screen before it means anything, and a verdict should not.
 
 function sortRows(rows, sort, nameOf) {
   const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
@@ -160,15 +145,15 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // would push five columns past a phone's width.
 const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-sm:[&>span]:flex-col "
   + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
-// Each figure is a TILE, not a painted cell (the operator's call, 2026-09-16):
-// solid fills that run edge to edge merge into one block, so a row of three
-// greens reads as one shape and a column stops being a column. The `td` gives
-// up its padding to a gutter of the card's own colour and the tile carries the
-// fill inside it — the «Toifalar bo'yicha» grammar, which is what a heatmap on
-// this platform already looks like. The table's own 1px separators fall inside
-// that gutter and become its grid lines.
-const TD_FIG = "p-[3px] align-middle";
-const TILE = "rounded-md px-1 sm:px-2 py-2 text-center tabular-nums leading-tight text-[11px] sm:text-xs";
+// The cell IS the swatch — square, full-bleed, and ruled by a 1px line of the
+// CARD's own colour, which is the загрузка heatmap's cell exactly. Two earlier
+// shapes are the mistakes this one answers: painted cells whose gridline was
+// `--border` (a 5% white that a muted fill swallows, so three greens read as
+// one block), and rounded tiles floating in a 3px gutter, which read as a row
+// of buttons rather than a heatmap. Drawing the rule in the card's colour is
+// what makes it show against ANY fill in BOTH themes.
+const TD_FIG = "px-1 sm:px-2 py-2.5 text-center align-middle tabular-nums "
+  + "leading-tight text-[11px] sm:text-xs border border-[var(--bg-card)]";
 
 // The name placeholders cycle a fixed list — Math.random() re-rolls on every
 // render and makes the skeleton twitch (the SkeletonMatrix rule).
@@ -216,8 +201,6 @@ export default function ShiftReportTable({ pageReady = true }) {
   const anyPartial = rows.some((r) => r.load?.partial && !r.load?.reason);
   const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.compl?.reason, r.quality?.reason]))]
     .filter((k) => REASON_ICON[k]);
-  // The ramp's domain is the board on screen, which is what the legend states.
-  const concernMax = rows.reduce((m, r) => Math.max(m, r.concerns?.open ?? 0), 0);
 
   const shiftName = (s) => (s === 1 || s === 2
     ? fill(t("overview.sr.subShift"), { n: s })
@@ -252,15 +235,14 @@ export default function ShiftReportTable({ pageReady = true }) {
     const blank = !!cell?.reason;
     const title = blank ? t(`overview.sr.reason.${cell.reason}`) : extraTitle;
     return (
-      <td className={TD_FIG} title={title}>
-        <div
-          className={`${TILE} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
-          style={toneFill(tone)}
-        >
-          {blank ? <Blank reason={cell.reason} />
-            : isNum(cell?.value) ? render(cell)
-            : <span style={{ color: "var(--text-4)" }}>—</span>}
-        </div>
+      <td
+        className={`${TD_FIG} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
+        style={toneFill(tone)}
+        title={title}
+      >
+        {blank ? <Blank reason={cell.reason} />
+          : isNum(cell?.value) ? render(cell)
+          : <span style={{ color: "var(--text-4)" }}>—</span>}
       </td>
     );
   };
@@ -290,8 +272,8 @@ export default function ShiftReportTable({ pageReady = true }) {
           <SkeletonBlock className={`h-3.5 ${SK_NAME[i % SK_NAME.length]}`} />
         </td>
         {[0, 1, 2, 3].map((j) => (
-          <td key={j} className={TD_FIG}>
-            <SkeletonBlock className="h-[31px] w-full rounded-md" />
+          <td key={j} className="p-0 border border-[var(--bg-card)]">
+            <SkeletonBlock className="h-[36px] w-full" style={{ borderRadius: 0 }} />
           </td>
         ))}
       </tr>
@@ -355,11 +337,17 @@ export default function ShiftReportTable({ pageReady = true }) {
               {figCell(r.quality, resolvedTone, (c) => pctText(c.value),
                 r.quality && !r.quality.reason && isNum(r.quality.value)
                   ? `${r.quality.done}/${r.quality.actionable}` : undefined)}
-              <td className={TD_FIG}>
-                <div className={`${TILE} font-semibold`} style={concernCell(open_, concernMax)}>
-                  {open_ === 0 ? <span style={{ color: "var(--text-4)" }}>0</span> : open_}
-                </div>
-              </td>
+              {(() => {
+                const tone = concernsTone(open_);
+                return (
+                  <td
+                    className={`${TD_FIG} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
+                    style={toneFill(tone)}
+                  >
+                    {open_}
+                  </td>
+                );
+              })()}
             </tr>
           );
         })}
@@ -390,6 +378,7 @@ export default function ShiftReportTable({ pageReady = true }) {
     { key: "load", full: t("production.kpiAvgLoad"), short: t("overview.sr.colLoadShort"), bands: pctBand(LOAD_BANDS) },
     { key: "compl", full: t("production.kpiVyp"), short: t("overview.sr.colComplShort"), bands: pctBand(COMPL_BANDS) },
     { key: "quality", full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"), bands: pctBand(RESOLVED_BANDS) },
+    { key: "concerns", full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"), bands: countBand(CONCERN_BANDS) },
   ];
 
   return (
@@ -446,7 +435,7 @@ export default function ShiftReportTable({ pageReady = true }) {
 
       {rows.length > 0 && (
         <div className="mt-2 px-1 flex flex-col gap-1.5 text-[10.5px] leading-snug" style={{ color: "var(--text-3)" }}>
-          <div className="grid grid-cols-1 gap-y-1 sm:flex sm:flex-wrap sm:gap-x-6">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:flex sm:flex-wrap sm:gap-x-6">
             {bandRows.map((b) => (
               <span key={b.key} className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
                 <span>
@@ -456,7 +445,7 @@ export default function ShiftReportTable({ pageReady = true }) {
                 {["ok", "warn", "bad"].map((tone, i) => (
                   <span
                     key={tone}
-                    className="rounded px-1 py-px font-semibold tabular-nums"
+                    className="rounded-sm px-1.5 py-px font-semibold tabular-nums"
                     style={toneFill(tone)}
                   >
                     {b.bands[i]}
@@ -464,20 +453,6 @@ export default function ShiftReportTable({ pageReady = true }) {
                 ))}
               </span>
             ))}
-            {/* The concerns column is a magnitude, so its legend is the ramp and
-                the number it tops out at, not a threshold. */}
-            <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
-              <span>
-                <span className="sm:hidden">{t("overview.sr.colConcernsShort")}</span>
-                <span className="max-sm:hidden">{t("overview.sr.colConcerns")}</span>
-              </span>
-              <span className="inline-flex h-2.5 rounded overflow-hidden border" style={{ borderColor: "var(--border)" }}>
-                {RAMP.map((a) => (
-                  <i key={a} className="block w-3.5" style={{ background: `rgba(var(--brand-rgb), ${a})` }} />
-                ))}
-              </span>
-              <span>{fill(t("overview.sr.concernRamp"), { n: concernMax })}</span>
-            </span>
           </div>
           {anyPartial && <div>* — {t("overview.sr.partial")}</div>}
           {reasons.length > 0 && (

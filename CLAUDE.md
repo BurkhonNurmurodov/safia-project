@@ -4881,50 +4881,39 @@ nothing.
   are printed as a legend under the table, in the very tints the cells wear.
   Ink is `--status-ok/warn/bad` (700 shades on light, the platform's own hexes
   on dark, a lighter red).
-- **It is a HEATMAP: the whole CELL carries its band's colour** (the operator's
-  call, 2026-09-16), and `statusBands.toneFill` is the one definition of that
-  paint — background AND ink as one pair, since neither is a choice on its own.
-  It shipped as a tinted badge in a right-aligned cell, and five short values
-  strung across a full-width table left the board mostly empty space — the
-  first thing anybody saw. The fill is **SOLID and FLAT per band**: a
-  translucent tint spends most of its colour on the card underneath, so three
-  bands read as three shades of one murk on a board this dense (the operator's
-  second call, same day), and a gradient would invite reading the shade as the
-  value when these are verdicts. Green and red are the 700 shades `--status-*`
-  already carries on light, with WHITE ink; **yellow is the platform's own
-  `AMBER` with DARK ink and must stay light** — a yellow dark enough for white
-  ink is brown, which is the one thing the middle of a traffic light cannot
-  read as. A band therefore names a PAIR (`TONE_PAINT`), never a background:
-  the ink is a property of the hue. A solid cell covers the card, so both
-  halves are theme-independent by construction. `toneTint` is the soft tint
-  that remains, for a badge that sits ON the card. Each figure is a **TILE, not
-  a painted cell**: solid fills running edge to edge merge into one block, so a
-  row of three greens reads as one shape and a column stops being a column —
-  the `td` gives its padding up to a gutter of the card's own colour and the
-  tile carries the fill, the «Toifalar bo'yicha» grammar, with the table's 1px
-  separators falling inside that gutter as its grid lines. The figures are **centred
-  both ways**, because the colour does the comparing now; and every row is
-  **ONE line high with ONE figure per cell** — the quality cell's
-  `done/actionable` is on its tooltip and nowhere else, and a blank is its dash
-  and icon alone. The NAME
-  column stays uncoloured — it is the rail the eye returns to and what keeps the
-  table from becoming one sheet of colour — and so does a BLANK cell, which
-  should read as a hole in a coloured field. The fills cover the row's own hover
-  tint, so hover marks the name cell with a brand bar instead.
-- **The open-concerns column carries NO traffic light, and giving it one needs a
-  decision.** It had 0 / 1–2 / ≥3 for a day; against the register's real counts
-  (6 to 105) that painted every unit red, and a column that is red everywhere
-  states nothing. A count with no defined threshold is a MAGNITUDE, so it is
-  drawn with the platform's value-intensity ramp — brand gold over
-  `--brand-rgb`, the «Toifalar bo'yicha» easing — scaled to the largest count ON
-  SCREEN, with the legend naming that number. 0 is left unfilled. Red here would
-  be a verdict nobody has defined, the reason «Xarajat» refuses one too.
-- **Scope is the reach each role already has** (`concerns._scope_query`'s tiers)
-  on top of `scoped_manager_ids`: admin and top-manager every unit, both shifts
-  as groups; a shift-manager their shift ∩ plant (`shift_scope.unit_ids`), and a
-  profile naming no shift reads an EMPTY board with `note = "no_shift"`, never
-  the plant; a supervisor or leader (only via a page grant) their own unit. The
-  page key stays `overview`.
+- **It is a HEATMAP, and it is the загрузка heatmap's own cell** (the
+  operator's call, 2026-09-16). `statusBands.toneFill` is the one definition of
+  that paint — background AND ink as one pair, since neither is a choice on its
+  own — and it is `TONE_HEX` at full saturation with the ink `contrastText`
+  picks, the rule `HeatmapChart` already applied and now imports from
+  `statusBands` rather than spelling itself. Cells are square, full-bleed and
+  ruled by a 1px line of the CARD's own colour, which is what makes the grid
+  show against any fill in both themes. Three shapes were tried and are the
+  mistakes this one answers: a tinted badge in a right-aligned cell (five short
+  values across a full-width table left the board mostly empty space — the
+  first thing anybody saw); muted 700-shade fills whose `--border` gridline
+  disappeared into them, so three greens read as one block, and whose yellow
+  could only be brown; and rounded tiles in a 3px gutter, which read as a row
+  of buttons. **Flat per band, never a gradient** — these are verdicts, not
+  intensities. The figures are **centred both ways**, because the colour does
+  the comparing now, and every row is **ONE line high with ONE figure per
+  cell**: the quality cell's `done/actionable` is on its tooltip and nowhere
+  else, and a blank is its dash and icon alone. `toneTint` is the soft tint
+  that remains, for a badge that sits ON the card. The NAME column stays
+  uncoloured — it is the rail the eye returns to and what keeps the table from
+  becoming one sheet of colour — and so does a BLANK cell, which should read as
+  a hole in a coloured field. The fills cover the row's own hover tint, so
+  hover marks the name cell with a brand bar instead.
+- **All four columns wear those three colours; only the BANDS differ.** Open
+  concerns are `CONCERN_BANDS` — ≤5 green, 6–20 yellow, ≥21 red — and those
+  numbers are the part nobody has ruled on: the sheet's own 0 / 1–2 / ≥3
+  shipped for a day and painted every unit red, because the register really
+  holds 6 to 105 open concerns per unit, and a column that is red everywhere
+  states nothing. They split today's fleet into roughly even thirds and are
+  printed in the legend precisely so they can be corrected. A brand-gold
+  intensity ramp stood here for an afternoon and was withdrawn: a shade has to
+  be compared against the rest of the screen before it means anything, and a
+  verdict should not.
 - **It stays a table on a phone**, fitted to ~358px: short labels, the inactive
   sort chevron hidden and the active one stacked under its label, a blank's
   reason as a bare icon (its words are in the legend at every width, since the

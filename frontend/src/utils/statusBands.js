@@ -47,19 +47,28 @@ export const toneTint = (tone) => (tone ? `${TONE_HEX[tone]}${FILL_ALPHA}` : "tr
 // is: both halves are theme-independent by construction rather than by
 // omission, the rule the «Toifalar bo'yicha» ramp keeps for its own top end.
 //
-// Green and red are the 700 shades `--status-*` already carries on light, dark
-// enough to take white ink. **Yellow is not, and must not be made to be** (the
-// operator's call, 2026-09-16): a yellow dark enough for white ink is BROWN,
-// which is the one thing the middle of a traffic light cannot read as. So warn
-// is the platform's own `AMBER` — the same hue its tint and its text already
-// use — and it carries DARK ink instead. That is why a band names a PAIR here
-// and not a background: the ink is a property of the hue, not a constant.
-export const TONE_PAINT = {
-  ok:   { background: "#15803d", color: "#ffffff" },
-  warn: { background: AMBER,     color: "#2b2000" },
-  bad:  { background: "#b91c1c", color: "#ffffff" },
-};
-export const toneFill = (tone) => (tone ? TONE_PAINT[tone] : undefined);
+// It is the SAME cell the загрузка heatmap already paints (`HeatmapChart`, the
+// platform's own heatmap): the band's hue at FULL SATURATION — `TONE_HEX`, the
+// one place a status colour is named — with the ink `contrastText` picks for
+// it. Muting the hue was tried for a day and is the mistake to avoid: a dark
+// green takes white ink but also swallows the 1px gridline between two cells,
+// so a row of three of them reads as one block, and a yellow dark enough for
+// white ink is brown, which the middle of a traffic light cannot read as. At
+// full saturation the ink follows the hue instead — dark on green and yellow,
+// white on red — which is why a band names a PAIR here and never a background.
+//
+// `contrastText` is that rule and `HeatmapChart` imports it from here; two
+// spellings is how one green ends up with two different inks on two pages.
+export function contrastText(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  // Perceived luminance (WCAG formula, simplified).
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.52 ? "#111827" : "#ffffff";
+}
+
+export const toneFill = (tone) =>
+  (tone ? { background: TONE_HEX[tone], color: contrastText(TONE_HEX[tone]) } : undefined);
 
 // Загруженность (O'rt. zagruzka): ≥90% green, 80–89% yellow, below that red —
 // the operator's scale (2026-09-06). Two things went with it, deliberately.
@@ -81,10 +90,17 @@ export const vypColor = (v) => hex(vypTone(v));
 export const RESOLVED_BANDS = { ok: 90, warn: 70 };
 export const resolvedTone = (v) => pctTone(v, RESOLVED_BANDS);
 
-// Open concerns at the brigadir's level deliberately have NO band here, and
-// nothing should give them one without a decision. They had 0 / 1–2 / ≥3 for a
-// day (2026-09-15, read off the same sheet); against the register's real counts
-// — 6 to 105 — that painted every unit red, and a column that is red everywhere
-// states nothing. A count with no defined threshold is a MAGNITUDE, so the
-// «Smena hisoboti» table draws it with the platform's value-intensity ramp
-// (brand gold, the «Toifalar bo'yicha» rule) instead of a verdict colour.
+// Open concerns at the brigadir's level — a COUNT, so FEWER is better:
+// 0–5 green, 6–20 yellow, 21 and up red. It carries the same three colours as
+// the columns beside it (the operator's call, 2026-09-16 — one board, one
+// vocabulary), and what changed is only the NUMBERS. The sheet's own
+// 0 / 1–2 / ≥3 shipped for a day and painted every unit red, because the
+// register really holds 6 to 105 open concerns per unit; a column that is red
+// everywhere states nothing at all. These three bands split today's fleet into
+// roughly even thirds, and they are printed in the legend precisely because
+// nobody has ruled on them yet: they are numbers to move, not a measurement.
+export const CONCERN_BANDS = { ok: 5, warn: 20 };
+export const concernsTone = (n) => {
+  if (n === null || n === undefined || Number.isNaN(n)) return null;
+  return n <= CONCERN_BANDS.ok ? "ok" : n <= CONCERN_BANDS.warn ? "warn" : "bad";
+};

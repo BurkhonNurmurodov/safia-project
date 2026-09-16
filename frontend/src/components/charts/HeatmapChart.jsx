@@ -4,6 +4,10 @@ import useIsMobile from "../../hooks/useIsMobile";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import PendingInfoModal, { PENDING_ICONS, PENDING_MSG_KEYS } from "../ui/PendingInfoModal";
+// The ink on a solid status fill is ONE rule — this file had its own copy of
+// it and «Smena hisoboti» paints the same cell, so the rule moved to the file
+// that owns the bands and both read it there.
+import { contrastText } from "../../utils/statusBands";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -25,16 +29,6 @@ export const DEFAULT_SEGMENTS = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Pick black or white text so it's legible on any solid hex background. */
-function contrastText(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  // Perceived luminance (WCAG formula, simplified)
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return lum > 0.52 ? "#111827" : "#ffffff";
-}
 
 function getSegmentColor(v, segs) {
   if (v == null || v < 0) return { bg: "transparent", fg: "var(--text-4)", accent: "var(--text-4)", noData: true };
