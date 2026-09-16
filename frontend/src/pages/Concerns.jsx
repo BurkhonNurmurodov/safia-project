@@ -1538,7 +1538,15 @@ export default function Concerns() {
     </div>
   );
   const pageSections = [
-    ...(factorySection ? [factorySection] : []),
+    // The plant is PINNED and stands first, immediately after the period: it is
+    // the broadest narrowing on the page, so the bar reads plant → shift →
+    // brigadir → yacheyka → kategoriya, the same broad→narrow direction the
+    // filter panel itself is ordered in. Unpinned it folded into «Filtrlar»
+    // behind a button naming none of it, while every level it scopes stood on
+    // the row — a reader could not see which plant the four controls beside it
+    // were narrowing. A locked viewer's section is `static`, which ignores the
+    // pin and keeps its inert chip.
+    ...(factorySection ? [{ ...factorySection, pinned: true }] : []),
     ...(canFilterShift ? [{
       key: "shift", icon: Layers, label: t("filter.shift"), pinned: true,
       active: fShift != null,
