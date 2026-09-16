@@ -4890,9 +4890,13 @@ nothing.
   translucent tint spends most of its colour on the card underneath, so three
   bands read as three shades of one murk on a board this dense (the operator's
   second call, same day), and a gradient would invite reading the shade as the
-  value when these are verdicts. The hues are the 700 shades `--status-*`
-  already carries on light, with WHITE ink — a solid cell covers the card, so
-  the pair is theme-independent by construction. `toneTint` is the soft tint
+  value when these are verdicts. Green and red are the 700 shades `--status-*`
+  already carries on light, with WHITE ink; **yellow is the platform's own
+  `AMBER` with DARK ink and must stay light** — a yellow dark enough for white
+  ink is brown, which is the one thing the middle of a traffic light cannot
+  read as. A band therefore names a PAIR (`TONE_PAINT`), never a background:
+  the ink is a property of the hue. A solid cell covers the card, so both
+  halves are theme-independent by construction. `toneTint` is the soft tint
   that remains, for a badge that sits ON the card. Each figure is a **TILE, not
   a painted cell**: solid fills running edge to edge merge into one block, so a
   row of three greens reads as one shape and a column stops being a column —

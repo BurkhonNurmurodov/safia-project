@@ -43,15 +43,23 @@ export const toneTint = (tone) => (tone ? `${TONE_HEX[tone]}${FILL_ALPHA}` : "tr
 // never a gradient: these are verdicts, not intensities, and a shade a reader
 // can compare invites reading the shade as the value.
 //
-// The hues are deliberately the 700 shades `--status-*` already carries on
-// light — strong enough to tell three bands apart at a glance, dark enough to
-// take white ink. A solid cell COVERS the card, so the pair must not depend on
-// what the card is: it is theme-independent by construction rather than by
+// A solid cell COVERS the card, so the pair must not depend on what the card
+// is: both halves are theme-independent by construction rather than by
 // omission, the rule the «Toifalar bo'yicha» ramp keeps for its own top end.
-export const TONE_SOLID = { ok: "#15803d", warn: "#a16207", bad: "#b91c1c" };
-export const SOLID_INK = "#ffffff";
-export const toneFill = (tone) =>
-  (tone ? { background: TONE_SOLID[tone], color: SOLID_INK } : undefined);
+//
+// Green and red are the 700 shades `--status-*` already carries on light, dark
+// enough to take white ink. **Yellow is not, and must not be made to be** (the
+// operator's call, 2026-09-16): a yellow dark enough for white ink is BROWN,
+// which is the one thing the middle of a traffic light cannot read as. So warn
+// is the platform's own `AMBER` — the same hue its tint and its text already
+// use — and it carries DARK ink instead. That is why a band names a PAIR here
+// and not a background: the ink is a property of the hue, not a constant.
+export const TONE_PAINT = {
+  ok:   { background: "#15803d", color: "#ffffff" },
+  warn: { background: AMBER,     color: "#2b2000" },
+  bad:  { background: "#b91c1c", color: "#ffffff" },
+};
+export const toneFill = (tone) => (tone ? TONE_PAINT[tone] : undefined);
 
 // Загруженность (O'rt. zagruzka): ≥90% green, 80–89% yellow, below that red —
 // the operator's scale (2026-09-06). Two things went with it, deliberately.
