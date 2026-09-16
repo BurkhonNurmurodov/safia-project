@@ -38,6 +38,7 @@ const ALL_LINKS = [
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell",   icon: Timer, group: "prod" },
   { to: "/staff",    page: "staff",    key: "nav.staff",           icon: Fingerprint, group: "people" },
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
+  { to: "/shift-daily", page: "shift-daily", key: "nav.shiftDaily", icon: ClipboardList, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
   // Leader monitoring — ONE page for every role (the per-shift admin copies

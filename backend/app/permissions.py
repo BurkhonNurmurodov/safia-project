@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "education"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "education"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -59,6 +59,14 @@ DEFAULT_PAGE_ACCESS = {
     "downtime": ["shift-manager", "idle-owner"],
     "staff":    ["shift-manager", "supervisor"],
     "daily":    ["shift-manager", "supervisor"],
+    # «Smena kunligi» — the shift dashboard `/daily` already forks to for a
+    # shift-manager, given a route and a page key of its own so an ADMIN or a
+    # TOP-MANAGER can open it (the operator's directive, 2026-09-16); before it
+    # they reached `/daily` and were forked to the per-supervisor view, so the
+    # shift's own board was a page only one role could see. Deliberately NOT
+    # granted to shift-manager: their «Kunlik» still lands there and a second
+    # nav row onto the same view would be the only thing that changed for them.
+    "shift-daily": ["top-manager"],
     # Pilot: admin-only by default. Above supervisors pick a configured brigadir
     # from the dashboard picker (shift-managers within their shift, top-managers
     # across all); flip those roles on here to let them in. "supervisor" grants

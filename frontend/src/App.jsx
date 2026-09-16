@@ -75,6 +75,9 @@ function lazyWithReload(importer) {
   );
 }
 const Overview = lazyWithReload(() => import("./pages/Overview"));
+// The shift dashboard has a route of its own so an admin or a top-manager can
+// open it; /daily still forks a shift-manager to the same component.
+const ShiftDaily = lazyWithReload(() => import("./pages/ShiftDaily"));
 const Zagruzka = lazyWithReload(() => import("./pages/Zagruzka"));
 const Leaderboard = lazyWithReload(() => import("./pages/Leaderboard"));
 const BrigadirProfile = lazyWithReload(() => import("./pages/BrigadirProfile"));
@@ -454,6 +457,7 @@ function AppWithLang() {
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
+            <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />

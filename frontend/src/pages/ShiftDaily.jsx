@@ -10,6 +10,7 @@ import { DEFAULT_SEGMENTS } from "../components/charts/HeatmapChart";
 import { DEFAULT_DIFF_SEGMENTS } from "../components/charts/ComparisonTable";
 import BarRankingChart from "../components/charts/BarChart";
 import BrigadirTable from "../components/ui/BrigadirTable";
+import ShiftReportTable from "../components/overview/ShiftReportTable";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
@@ -223,6 +224,24 @@ export default function ShiftDaily() {
           </>
         )}
       </div>
+
+      {/* «Smena hisoboti» — the shift's status board, under the KPI cards: one
+          row per brigadir with today's load, yesterday's completion, quality
+          closure and open concerns. It moved here from Overview (the
+          operator's directive, 2026-09-16), which is where a shift manager's
+          day is read.
+
+          **The day stepper above does NOT reach it**, exactly as Overview's
+          period picker did not: every figure on it comes from the page that
+          owns it, over that page's own fixed window, and each column prints
+          the window and the date it is showing. Wiring it to the stepper would
+          mean recomputing four figures here, which is the one thing this board
+          may never do.
+
+          It fetches LAST: one of its requests can run the «Zagruzka fayli»
+          engine twice per configured unit, and fired with the page's own
+          queries it takes the seconds the cards and the charts need to paint. */}
+      <ShiftReportTable pageReady={!isLoading && !hmLoading} />
 
       {/* Planned vs Actual load — merges to a single difference bar on toggle */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">

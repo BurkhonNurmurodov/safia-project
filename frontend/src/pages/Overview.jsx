@@ -29,7 +29,6 @@ import { diffStatus } from "../utils/segments";
 import { utilNumbers, utilInputs, differenceNumbers, differenceInputs, differencePctNumbers, hcEquivNumbers, hcEquivInputs, avgWorkloadNumbers, rangeDays } from "../utils/formulas";
 import { padChartParams } from "../utils/chartRange";
 import api from "../utils/api";
-import ShiftReportTable from "../components/overview/ShiftReportTable";
 
 const INIT_FILTERS = {
   name: "", shifts: [], statuses: [],
@@ -491,15 +490,6 @@ export default function Overview() {
           </>
         )}
       </div>
-
-      {/* «Smena hisoboti» — the shift manager's status board, directly under the
-          KPI cards: one row per brigadir with today's load, yesterday's
-          completion, quality closure and open concerns. Its windows are fixed
-          and printed in its headers; the period picker above does not reach it.
-          It fetches LAST, on purpose: one of its requests can run the «Zagruzka
-          fayli» engine twice per configured unit, and while that ran it took
-          the seconds the KPI cards and the trend needed to paint. */}
-      <ShiftReportTable pageReady={!summaryLoading && !isLoading} />
 
       {/* ── Fleet trend line chart ── */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">

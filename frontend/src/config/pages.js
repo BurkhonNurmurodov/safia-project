@@ -38,6 +38,7 @@ export const PAGES = [
   { key: "downtime", route: "/downtime", labelKey: "nav.idleTime" },
   { key: "staff",    route: "/staff",    labelKey: "nav.staff" },
   { key: "daily",    route: "/daily",    labelKey: "nav.daily" },
+  { key: "shift-daily", route: "/shift-daily", labelKey: "nav.shiftDaily" },
   { key: "production", route: "/production", labelKey: "nav.production" },
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },

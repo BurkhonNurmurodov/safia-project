@@ -4830,16 +4830,38 @@ says; a supervisor or leader would see their own unit only).
   touch TV must not navigate away from the monitor. The alert feed and the
   unit rows carry the links instead.
 
-## The shift report on Overview («Smena hisoboti»)
+## The shift report («Smena hisoboti»), on the shift dashboard
 
-From **2026-09-15** (the operator's directive) `/` carries a status board for
-the shift manager, directly under its four KPI cards (it shipped above them;
-the operator moved the cards back on top the same day, v4.110.2): one row per
-brigadir of their shift, five columns — `components/overview/ShiftReportTable.jsx` over `GET
-/api/shift-report` (`routers/shift_report.py` fetches and scopes,
-`services/shift_report.py` folds). It replaced a Google Sheet somebody filled
-and coloured by hand every morning, with «XATO» wherever a brigadir had entered
-nothing.
+From **2026-09-15** (the operator's directive) a status board for the shift
+manager: one row per brigadir of their shift, five columns —
+`components/overview/ShiftReportTable.jsx` over `GET /api/shift-report`
+(`routers/shift_report.py` fetches and scopes, `services/shift_report.py`
+folds). It replaced a Google Sheet somebody filled and coloured by hand every
+morning, with «XATO» wherever a brigadir had entered nothing.
+
+- **It lives on the SHIFT DASHBOARD** — `pages/ShiftDaily.jsx`, under its four
+  KPI cards (the operator's directive, 2026-09-16). It shipped on Overview (`/`)
+  and moved whole: the component, its scope and its endpoint are untouched, and
+  Overview no longer renders it. The shift dashboard is where a shift manager's
+  DAY is read, and the board answers a question about that day.
+  - **The day stepper does NOT reach it**, exactly as Overview's period picker
+    did not — and the risk is sharper here, beside a control that moves every
+    other figure on the page. Each column carries its own fixed window and
+    prints it, with its date, in its own header. Wiring the stepper to it would
+    mean recomputing four figures in this file, which is the one thing this
+    board may never do (the rule at the top of this section).
+  - **That dashboard is now a page of its own**, `/shift-daily`, page key
+    `shift-daily`, default roles `["top-manager"]` plus admin implicitly, in
+    the «Ishlab chiqarish» nav group. `/daily` still forks a SHIFT-MANAGER to
+    the same component, which is why the key is deliberately NOT granted to
+    them: their «Kunlik» already lands there, and a second nav row onto one
+    view would be all that changed for the role the page belongs to. Before
+    this, an admin or a top-manager opening `/daily` was forked to the
+    per-supervisor view, so the shift's own board was a page exactly one role
+    could reach — and moving the table off Overview would have taken it away
+    from them. **A new page key needs no one-shot**: `get_page_access` resolves
+    a key the stored matrix has never heard of against `DEFAULT_PAGE_ACCESS`,
+    verified against a simulated legacy matrix before this shipped.
 
 - **No figure is computed here, and none may be.** «O'rtacha yuklanish» (today)
   and «Bajarish %» (yesterday) are `totals.avg_load` / `totals.completion` of
@@ -4952,8 +4974,8 @@ nothing.
   `/production`, and a link that 403s is a dead link.
 - Up to two engine runs per configured unit per request, uncached; `staleTime`
   60 s and a refetch on focus. **It is the LAST thing on the page to fetch**
-  (`pageReady`, handed down by `Overview.jsx`): that cost competes with the
-  queries the KPI cards and the trend are waiting on — one uvicorn worker — so
+  (`pageReady`, handed down by its page): that cost competes with the queries
+  the KPI cards and the charts are waiting on — one uvicorn worker — so
   fired together the whole page read as «still loading» for as long as the
   slowest block on it took. Held until the page's own data is in, the board
   fills in under a page that is already readable, and its skeleton carries the
