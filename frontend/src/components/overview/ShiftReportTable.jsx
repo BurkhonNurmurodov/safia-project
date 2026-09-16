@@ -29,20 +29,24 @@
 //   threshold nobody can read is a verdict nobody can check.
 // - It stays a TABLE on a phone. The rows are read against each other, which
 //   cards would take away; the headers shorten and a blank shows its icon alone.
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, FileClock, FileX, Inbox, ListChecks, PackageX, UserX } from "lucide-react";
+import {
+  AlertTriangle, FileClock, FileX, Inbox, ListChecks, PackageX, SlidersHorizontal, UserX,
+} from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
+import StatusBandsModal from "./StatusBandsModal";
 import Button from "../ui/Button";
 import { SkeletonBlock } from "../ui/Skeleton";
+import { useAuth } from "../../context/AuthContext";
 import { useFilters } from "../../context/FilterContext";
 import { useFactory, useFactoryParams } from "../../context/FactoryContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
+import useStatusBands from "../../hooks/useStatusBands";
 import {
-  LOAD_BANDS, COMPL_BANDS, RESOLVED_BANDS, CONCERN_BANDS,
   loadTone, vypTone, resolvedTone, concernsTone, toneFill, toneTint,
 } from "../../utils/statusBands";
 import api from "../../utils/api";
@@ -175,6 +179,11 @@ const SK_NAME = ["w-3/4", "w-1/2", "w-2/3", "w-3/5", "w-4/5", "w-7/12"];
 // true: a caller that does not say otherwise gets the old behaviour.
 export default function ShiftReportTable({ pageReady = true }) {
   const { t } = useLang();
+  const { auth } = useAuth();
+  // The bands in force. Calling this is also what tells `utils/statusBands`
+  // what an admin has set — the tone helpers below answer from it.
+  const bands = useStatusBands();
+  const [bandsOpen, setBandsOpen] = useState(false);
   const { tl } = useTranslit();
   const navigate = useNavigate();
   const { shift, brigadirIds, ready } = useFilters();
@@ -362,7 +371,8 @@ export default function ShiftReportTable({ pageReady = true }) {
     ));
   }
 
-  const right = rows.length > 0 && (
+  const isAdmin = auth?.role === "admin";
+  const right = (rows.length > 0 || isAdmin) && (
     <div className="flex items-center gap-2 flex-wrap justify-end">
       {missing > 0 && (
         <span
@@ -373,19 +383,34 @@ export default function ShiftReportTable({ pageReady = true }) {
           {fill(t("overview.sr.incomplete"), { n: missing })}
         </span>
       )}
-      <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
-        {fill(t("overview.sr.rows"), { n: rows.length })}
-      </span>
+      {rows.length > 0 && (
+        <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
+          {fill(t("overview.sr.rows"), { n: rows.length })}
+        </span>
+      )}
+      {/* Where the colours are decided, for the one person who may decide
+          them. The endpoint behind it is admin-only too — this button is the
+          way in, never the lock. */}
+      {isAdmin && (
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<SlidersHorizontal size={14} />}
+          onClick={() => setBandsOpen(true)}
+          title={t("overview.sr.bands.open")}
+          aria-label={t("overview.sr.bands.open")}
+        />
+      )}
     </div>
   );
 
   // The legend wears the table's own tints, so a band and the cells it judges
   // are read in one vocabulary.
   const bandRows = [
-    { key: "load", full: t("production.kpiAvgLoad"), short: t("overview.sr.colLoadShort"), bands: pctBand(LOAD_BANDS) },
-    { key: "compl", full: t("production.kpiVyp"), short: t("overview.sr.colComplShort"), bands: pctBand(COMPL_BANDS) },
-    { key: "quality", full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"), bands: pctBand(RESOLVED_BANDS) },
-    { key: "concerns", full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"), bands: countBand(CONCERN_BANDS) },
+    { key: "load", full: t("production.kpiAvgLoad"), short: t("overview.sr.colLoadShort"), bands: pctBand(bands.load) },
+    { key: "compl", full: t("production.kpiVyp"), short: t("overview.sr.colComplShort"), bands: pctBand(bands.compl) },
+    { key: "quality", full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"), bands: pctBand(bands.quality) },
+    { key: "concerns", full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"), bands: countBand(bands.concerns) },
   ];
 
   return (
@@ -439,6 +464,10 @@ export default function ShiftReportTable({ pageReady = true }) {
         </thead>
         <tbody>{body}</tbody>
       </TableCard>
+
+      {isAdmin && (
+        <StatusBandsModal open={bandsOpen} onClose={() => setBandsOpen(false)} bands={bands} />
+      )}
 
       {rows.length > 0 && (
         <div className="mt-2 px-1 flex flex-col gap-1.5 text-[10.5px] leading-snug" style={{ color: "var(--text-3)" }}>

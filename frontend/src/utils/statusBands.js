@@ -76,19 +76,19 @@ export const toneFill = (tone) =>
 // And under-loaded stops being brand gold — gold is an accent on this platform,
 // never a status, so the one band that was not a traffic light now is one.
 export const LOAD_BANDS = { ok: 90, warn: 80 };
-export const loadTone = (v) => pctTone(v, LOAD_BANDS);
+export const loadTone = (v) => pctTone(v, ACTIVE.load);
 export const loadColor = (v) => hex(loadTone(v));
 
 // Выполнение (Compl. %): ≥95% good, ≥70% partial, below = behind.
 export const COMPL_BANDS = { ok: 95, warn: 70 };
-export const vypTone = (v) => pctTone(v, COMPL_BANDS);
+export const vypTone = (v) => pctTone(v, ACTIVE.compl);
 export const vypColor = (v) => hex(vypTone(v));
 
 // Quality corrective-action closure (Hal qilingan %): ≥90% green, 70–89%
 // yellow, below that red — read off the hand-coloured shift sheet the
 // «Smena hisoboti» table replaced (2026-09-15).
 export const RESOLVED_BANDS = { ok: 90, warn: 70 };
-export const resolvedTone = (v) => pctTone(v, RESOLVED_BANDS);
+export const resolvedTone = (v) => pctTone(v, ACTIVE.quality);
 
 // Open concerns at the brigadir's level — a COUNT, so FEWER is better:
 // 0–5 green, 6–20 yellow, 21 and up red. It carries the same three colours as
@@ -102,5 +102,47 @@ export const resolvedTone = (v) => pctTone(v, RESOLVED_BANDS);
 export const CONCERN_BANDS = { ok: 5, warn: 20 };
 export const concernsTone = (n) => {
   if (n === null || n === undefined || Number.isNaN(n)) return null;
-  return n <= CONCERN_BANDS.ok ? "ok" : n <= CONCERN_BANDS.warn ? "warn" : "bad";
+  return n <= ACTIVE.concerns.ok ? "ok" : n <= ACTIVE.concerns.warn ? "warn" : "bad";
 };
+
+// ─── The bands IN FORCE ───────────────────────────────────────────────────────
+// The four constants above are the FLOOR — what every figure is judged by until
+// an admin says otherwise, and what a corrupt or half-written setting falls
+// back to, edge by edge, on the server (`routers/settings.py` ships the same
+// numbers and the two must be changed together).
+//
+// An admin moves them from «Smena hisoboti» (`StatusBandsModal`), and the
+// answer is deliberately held HERE, in module state, rather than threaded
+// through props: `loadColor(v)` is called from inside cells and helpers all
+// over `/production`, and a band that had to be passed to each of them would be
+// forgotten at one call site and paint one figure by two rules. What is global
+// in truth — «the bands this platform is currently judging by» — is held in the
+// one file that owns them, and `hooks/useStatusBands.js` is the ONE writer:
+// every page that paints a band calls it, which is also what makes the page
+// re-render when the answer arrives.
+//
+// Until it does, the floor answers. A board that paints defaults for one frame
+// and then corrects itself is the honest cost of not blocking the page on a
+// settings fetch.
+export const BAND_DEFAULTS = Object.freeze({
+  load: LOAD_BANDS, compl: COMPL_BANDS, quality: RESOLVED_BANDS, concerns: CONCERN_BANDS,
+});
+
+let ACTIVE = { ...BAND_DEFAULTS };
+
+/** The bands in force — read it, never mutate what it returns. */
+export const activeBands = () => ACTIVE;
+
+/** Adopt what the server answered. Each EDGE falls back on its own, so a
+ *  partial answer can never blank a band. */
+export function applyBands(next) {
+  if (!next || typeof next !== "object") return ACTIVE;
+  const out = {};
+  for (const [key, def] of Object.entries(BAND_DEFAULTS)) {
+    const v = next[key] || {};
+    const num = (x, fallback) => (Number.isFinite(Number(x)) ? Number(x) : fallback);
+    out[key] = { ok: num(v.ok, def.ok), warn: num(v.warn, def.warn) };
+  }
+  ACTIVE = out;
+  return ACTIVE;
+}

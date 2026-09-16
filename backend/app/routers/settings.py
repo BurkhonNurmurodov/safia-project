@@ -32,6 +32,61 @@ DEFAULT_DIFF_SEGMENTS = [
 ]
 
 
+# ─── Traffic-light bands ──────────────────────────────────────────────────────
+# The bands a headline figure is JUDGED by — «Smena hisoboti» on Overview and
+# the «Zagruzka fayli» KPI cards read the same ones, because one figure must not
+# be green on one page and yellow on the next. These numbers are the twin of
+# `frontend/src/utils/statusBands.js`, which ships them as the floor the client
+# paints with until this endpoint answers: change one and change the other.
+#
+# Concerns are a COUNT and fewer is better, so its two edges read the other way
+# round — ok is the TOP of green, warn the top of yellow.
+STATUS_BANDS_KEY = "status_bands"
+DEFAULT_STATUS_BANDS = {
+    "load":     {"ok": 90, "warn": 80},
+    "compl":    {"ok": 95, "warn": 70},
+    "quality":  {"ok": 90, "warn": 70},
+    "concerns": {"ok": 5,  "warn": 20},
+}
+
+
+def _band(stored: dict, key: str) -> dict:
+    """One figure's band, each EDGE falling back to its default on its own."""
+    d = DEFAULT_STATUS_BANDS[key]
+    v = stored.get(key) if isinstance(stored, dict) else None
+    if not isinstance(v, dict):
+        return dict(d)
+    out = {}
+    for edge in ("ok", "warn"):
+        try:
+            out[edge] = int(v[edge])
+        except (KeyError, TypeError, ValueError):
+            out[edge] = d[edge]
+    return out
+
+
+@router.get("/status-bands")
+def get_status_bands(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
+    """The bands in force, resolved figure by figure against the defaults.
+
+    EVERY viewer reads this — it is what paints their screen — while only an
+    admin writes it, through `PUT /admin/settings` (`status_bands`), so the
+    write is already admin-gated, action-logged and undoable with no second
+    door to keep in step.
+
+    Resolving key by key is the point: a blob written by an older client, one
+    missing a figure added since, or one somebody corrupted can never blank a
+    band — each edge falls back to the very number the client ships as its own
+    floor. The rule `heatmap-thresholds` already follows, one level finer.
+    """
+    row = db.query(AppSetting).filter(AppSetting.key == STATUS_BANDS_KEY).first()
+    try:
+        stored = json.loads(row.value) if row else {}
+    except (TypeError, ValueError):
+        stored = {}
+    return {"bands": {k: _band(stored, k) for k in DEFAULT_STATUS_BANDS}}
+
+
 @router.get("/heatmap-thresholds")
 def get_heatmap_thresholds(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
     row = db.query(AppSetting).filter(AppSetting.key == "heatmap_segments").first()

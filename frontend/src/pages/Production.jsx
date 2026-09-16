@@ -34,6 +34,11 @@ import { useFactorySection } from "../components/ui/FactorySelect";
 import { useTranslit } from "../utils/transliterate";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { GREEN, AMBER, RED, vypColor, loadColor } from "../utils/statusBands";
+// The bands these colours are judged by are an admin setting now, edited on
+// «Smena hisoboti». This page paints them, so it subscribes: the helpers above
+// answer from module state, and without the subscription this page would go on
+// painting the defaults until something else happened to re-render it.
+import useStatusBands from "../hooks/useStatusBands";
 import { exportXlsx } from "../utils/exportXlsx";
 import { GROUP_LETTERS, wcGroupLabel } from "../utils/wcGroup";
 import { cellLabel } from "../utils/cellName";
@@ -1236,6 +1241,8 @@ function PeopleTab({ wcs, constants, loading, canEdit, canEditEff = canEdit, hin
 export default function Production() {
   const { auth } = useAuth();
   const { seesAllOn } = useCapabilities();
+  // Subscribes this page to the admin's bands (see the import's note).
+  useStatusBands();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();

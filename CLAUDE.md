@@ -4872,10 +4872,35 @@ nothing.
   completion blank — the sheet's «Holat» folded into one number; `no_records`
   is not a gap and is not counted. «*» on a load is the Production page's
   partial-headcount mark (`people_untyped > 0`).
+- **An ADMIN moves the bands, from this table's own header** (2026-09-16): a
+  gear in the card header — admin only, and the endpoint behind it is
+  admin-only too, so the button is the way in and never the lock — opens
+  `StatusBandsModal`, four rows of two numbers with the resulting three ranges
+  painted underneath in the cells' own colours. It edits NUMBERS and never
+  COLOURS: the traffic light is the platform's status vocabulary, so a picker
+  there would let one board disagree with every other surface about what a
+  colour means, while where the LINES sit is the part nobody had ruled on.
+  - **`GET /api/status-bands` is the read and `PUT /admin/settings`
+    (`status_bands`, one JSON blob) is the write** — no second writer, so the
+    change is already admin-gated, action-logged and undoable. The read
+    resolves **edge by edge** against the defaults, so a blob from an older
+    client, one missing a figure added since, or one somebody corrupted can
+    never blank a band; `routers/settings.py` ships the same numbers as
+    `utils/statusBands.js` and the two must be changed together.
+  - **It is PLATFORM-WIDE and the modal says so.** The same bands paint the
+    «Zagruzka fayli» KPI cards, so `statusBands` holds the answer in MODULE
+    state and `hooks/useStatusBands.js` is its one writer: `loadColor(v)` is
+    called from inside cells and helpers all over `/production`, and a band
+    threaded as a prop would be forgotten at one call site and paint one figure
+    by two rules. **Every page that paints a band must call that hook** — the
+    helpers answer from module state, so a page that never subscribes goes on
+    painting the defaults until something else re-renders it. Until the query
+    lands, the floor answers; a board that paints defaults for one frame and
+    corrects itself is the price of not blocking the page on a settings fetch.
 - **Bands live ONCE, in `utils/statusBands.js`**, which the «Zagruzka fayli»
   page imports too: load ≥90 / 80–89 / <80 (the 2026-09-06 scale), completion
   ≥95 / 70–94 / <70 and quality closure ≥90 / 70–89 / <70 (the last read off the
-  sheet, 2026-09-15). Every percentage band compares the WHOLE percent printed —
+  sheet, 2026-09-15) — all four now the DEFAULTS an admin can move, above. Every percentage band compares the WHOLE percent printed —
   `vypColor` moved onto that rule with this change, so a completion of
   94.5–94.99% now reads green on `/production`, where it prints «95%». The bands
   are printed as a legend under the table, in the very tints the cells wear.
