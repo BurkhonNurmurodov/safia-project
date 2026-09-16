@@ -15,7 +15,8 @@
 //   are FLAT band colours, never a gradient — these are verdicts, not
 //   intensities — and the figures sit centred in the fill, because the colour
 //   does the comparing now and centred digits cost nothing. Every row is ONE
-//   line high, so a second text line can never double the board's height.
+//   line high and carries ONE figure per cell, so nothing beside the value can
+//   double the board's height or compete with it.
 // - The name column stays uncoloured: it is the rail the eye returns to, and it
 //   is what keeps the table from becoming one sheet of colour. A BLANK cell
 //   stays uncoloured too — a missing figure should read as a hole in a coloured
@@ -39,7 +40,7 @@ import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import {
   LOAD_BANDS, COMPL_BANDS, RESOLVED_BANDS,
-  loadTone, vypTone, resolvedTone, toneFill,
+  loadTone, vypTone, resolvedTone, toneFill, toneTint,
 } from "../../utils/statusBands";
 import api from "../../utils/api";
 
@@ -72,9 +73,6 @@ const fill = (s, vars) =>
 // A band the way the legend prints it: ≥90%  80–89%  <80%.
 const pctBand = ({ ok, warn }) => [`≥${ok}%`, `${warn}–${ok - 1}%`, `<${warn}%`];
 
-// The whole-cell fill for a band, and the ink that reads on it.
-const toneCell = (tone) =>
-  (tone ? { background: toneFill(tone), color: `var(--status-${tone})` } : undefined);
 // A tone only where there is a figure to judge — a blank is never coloured.
 const cellTone = (cell, toneFn) =>
   (cell && !cell.reason && isNum(cell.value) ? toneFn(cell.value) : null);
@@ -87,16 +85,22 @@ const cellTone = (cell, toneFn) =>
 // «Toifalar bo'yicha» matrix's own easing — scaled to the largest count on
 // screen, with the legend saying so. Red here would be a verdict nobody has
 // defined, which is the same reason «Xarajat» refuses one.
-const RAMP = [0.06, 0.2, 0.38, 0.58, 0.78, 0.95];
+// The ramp does not start at nothing: beside three SOLID columns a 6% gold
+// would read as an empty cell, and «a few» is not «none» — 0 is the only count
+// this column leaves unfilled. Eased, so the long tail of small backlogs still
+// separates (the matrix's own exponent).
+const RAMP_LO = 0.14, RAMP_HI = 0.92;
+const rampAlpha = (k) => RAMP_LO + k * (RAMP_HI - RAMP_LO);
+const RAMP = [0, 0.2, 0.4, 0.6, 0.8, 1].map(rampAlpha);
 function concernCell(n, max) {
   if (!n || !max) return undefined;
-  const k = Math.pow(Math.min(n / max, 1), 0.62);
+  const a = rampAlpha(Math.pow(Math.min(n / max, 1), 0.62));
   return {
-    background: `rgba(var(--brand-rgb), ${(k * 0.9).toFixed(3)})`,
+    background: `rgba(var(--brand-rgb), ${a.toFixed(3)})`,
     // Gold at full strength needs dark ink in BOTH themes, so this one literal
     // is theme-independent by construction — the matrix carries it for the
     // same reason.
-    color: k > 0.55 ? "#1a1508" : "var(--text-1)",
+    color: a > 0.55 ? "#1a1508" : "var(--text-1)",
   };
 }
 
@@ -244,7 +248,7 @@ export default function ShiftReportTable({ pageReady = true }) {
     return (
       <td
         className={`${TD_FIG} ${TD_INK} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
-        style={toneCell(tone)}
+        style={toneFill(tone)}
         title={title}
       >
         {blank ? <Blank reason={cell.reason} />
@@ -338,18 +342,12 @@ export default function ShiftReportTable({ pageReady = true }) {
                 </>
               ))}
               {figCell(r.compl, vypTone, (c) => pctText(c.value))}
-              {figCell(r.quality, resolvedTone, (c) => (
-                <>
-                  {pctText(c.value)}
-                  {/* The sample size stays on the SAME line — 100% of 2 is not
-                      100% of 80 — and moves into the cell's tooltip on a phone,
-                      where there is no room for it. */}
-                  <span className="max-sm:hidden ml-1 text-[10px] font-normal opacity-70">
-                    {c.done}/{c.actionable}
-                  </span>
-                </>
-              ), r.quality && !r.quality.reason && isNum(r.quality.value)
-                ? `${r.quality.done}/${r.quality.actionable}` : undefined)}
+              {/* The percentage is the figure. «done/actionable» was printed
+                  beside it and is not (the operator's call, 2026-09-16) — it
+                  stays on the cell as its tooltip, where it costs no width. */}
+              {figCell(r.quality, resolvedTone, (c) => pctText(c.value),
+                r.quality && !r.quality.reason && isNum(r.quality.value)
+                  ? `${r.quality.done}/${r.quality.actionable}` : undefined)}
               <td
                 className={`${TD_FIG} ${TD_INK} font-semibold`}
                 style={concernCell(open_, concernMax)}
@@ -368,7 +366,7 @@ export default function ShiftReportTable({ pageReady = true }) {
       {missing > 0 && (
         <span
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap"
-          style={{ color: "var(--status-warn)", background: toneFill("warn") }}
+          style={{ color: "var(--status-warn)", background: toneTint("warn") }}
         >
           <AlertTriangle size={11} aria-hidden="true" />
           {fill(t("overview.sr.incomplete"), { n: missing })}
@@ -453,7 +451,7 @@ export default function ShiftReportTable({ pageReady = true }) {
                   <span
                     key={tone}
                     className="rounded px-1 py-px font-semibold tabular-nums"
-                    style={toneCell(tone)}
+                    style={toneFill(tone)}
                   >
                     {b.bands[i]}
                   </span>

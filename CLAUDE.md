@@ -4883,14 +4883,21 @@ nothing.
   on dark, a lighter red).
 - **It is a HEATMAP: the whole CELL carries its band's colour** (the operator's
   call, 2026-09-16), and `statusBands.toneFill` is the one definition of that
-  fill. It shipped as a tinted badge in a right-aligned cell, and five short
-  values strung across a full-width table left the board mostly empty space —
-  the first thing anybody saw. The fill is **FLAT per band, never a gradient**
-  (these are verdicts, not intensities, and a comparable shade invites reading
-  the shade as the value); the figures are **centred both ways**, because the
-  colour does the comparing now and centred digits cost nothing; and every row
-  is **ONE line high**, so the quality cell's `n/N` sits on the same line
-  (tooltip only on a phone) and a blank is its dash and icon alone. The NAME
+  paint — background AND ink as one pair, since neither is a choice on its own.
+  It shipped as a tinted badge in a right-aligned cell, and five short values
+  strung across a full-width table left the board mostly empty space — the
+  first thing anybody saw. The fill is **SOLID and FLAT per band**: a
+  translucent tint spends most of its colour on the card underneath, so three
+  bands read as three shades of one murk on a board this dense (the operator's
+  second call, same day), and a gradient would invite reading the shade as the
+  value when these are verdicts. The hues are the 700 shades `--status-*`
+  already carries on light, with WHITE ink — a solid cell covers the card, so
+  the pair is theme-independent by construction. `toneTint` is the soft tint
+  that remains, for a badge that sits ON the card. The figures are **centred
+  both ways**, because the colour does the comparing now; and every row is
+  **ONE line high with ONE figure per cell** — the quality cell's
+  `done/actionable` is on its tooltip and nowhere else, and a blank is its dash
+  and icon alone. The NAME
   column stays uncoloured — it is the rail the eye returns to and what keeps the
   table from becoming one sheet of colour — and so does a BLANK cell, which
   should read as a hole in a coloured field. The fills cover the row's own hover

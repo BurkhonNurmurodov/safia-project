@@ -28,12 +28,30 @@ const pctTone = (v, { ok, warn }) => {
 
 const hex = (tone) => (tone ? TONE_HEX[tone] : MUTED);
 
-// The whole-cell heatmap fill for a band — a FLAT tint of the band's own hue,
-// one alpha for every band, read together with `--status-*` as the ink on it.
-// Flat and never a gradient: these are verdicts, not intensities, and a shade
-// a reader can compare invites reading the shade as the value.
+// A soft TINT of a band, for a badge or a chip — something that sits ON the
+// card rather than replacing it, with `--status-*` as its ink.
 export const FILL_ALPHA = "33";
-export const toneFill = (tone) => (tone ? `${TONE_HEX[tone]}${FILL_ALPHA}` : "transparent");
+export const toneTint = (tone) => (tone ? `${TONE_HEX[tone]}${FILL_ALPHA}` : "transparent");
+
+// The whole-cell heatmap PAINT for a band — background and the ink that reads
+// on it, as one pair, because neither is a choice on its own.
+//
+// SOLID, and flat per band (the operator's call, 2026-09-16). A translucent
+// tint spends most of its colour on the card underneath, so three bands
+// separated at 20% read as three shades of the same murk across a board this
+// dense; a solid fill is what makes a column scannable as one lane. Flat and
+// never a gradient: these are verdicts, not intensities, and a shade a reader
+// can compare invites reading the shade as the value.
+//
+// The hues are deliberately the 700 shades `--status-*` already carries on
+// light — strong enough to tell three bands apart at a glance, dark enough to
+// take white ink. A solid cell COVERS the card, so the pair must not depend on
+// what the card is: it is theme-independent by construction rather than by
+// omission, the rule the «Toifalar bo'yicha» ramp keeps for its own top end.
+export const TONE_SOLID = { ok: "#15803d", warn: "#a16207", bad: "#b91c1c" };
+export const SOLID_INK = "#ffffff";
+export const toneFill = (tone) =>
+  (tone ? { background: TONE_SOLID[tone], color: SOLID_INK } : undefined);
 
 // Загруженность (O'rt. zagruzka): ≥90% green, 80–89% yellow, below that red —
 // the operator's scale (2026-09-06). Two things went with it, deliberately.
