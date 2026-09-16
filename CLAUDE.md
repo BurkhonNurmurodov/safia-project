@@ -4916,7 +4916,13 @@ nothing.
   `/brigadir/:id`. No per-cell links: a shift manager does not hold
   `/production`, and a link that 403s is a dead link.
 - Up to two engine runs per configured unit per request, uncached; `staleTime`
-  60 s and a refetch on focus. Deliberately NOT built: KRU %, «Kiritish soni»,
+  60 s and a refetch on focus. **It is the LAST thing on the page to fetch**
+  (`pageReady`, handed down by `Overview.jsx`): that cost competes with the
+  queries the KPI cards and the trend are waiting on — one uvicorn worker — so
+  fired together the whole page read as «still loading» for as long as the
+  slowest block on it took. Held until the page's own data is in, the board
+  fills in under a page that is already readable, and its skeleton carries the
+  heatmap's silhouette so the wait states what is coming. Deliberately NOT built: KRU %, «Kiritish soni»,
   an export, a ColumnsPicker.
 
 ## Workflow

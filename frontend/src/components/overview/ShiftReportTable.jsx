@@ -161,7 +161,18 @@ const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-sm:[&>span]:flex-col "
 const TD_FIG = "px-1 sm:px-2 py-2.5 text-center align-middle tabular-nums leading-tight";
 const TD_INK = "text-[11px] sm:text-xs";
 
-export default function ShiftReportTable() {
+// The name placeholders cycle a fixed list — Math.random() re-rolls on every
+// render and makes the skeleton twitch (the SkeletonMatrix rule).
+const SK_NAME = ["w-3/4", "w-1/2", "w-2/3", "w-3/5", "w-4/5", "w-7/12"];
+
+// `pageReady` is what keeps this board off the page's critical path. One
+// request can run the «Zagruzka fayli» engine twice per configured unit, and
+// on a single-worker backend that competes with the very queries the KPI cards
+// and the trend are waiting on — so the whole page read as «still loading»
+// while the slowest block on it worked. Held until the page's own data is in,
+// the board fills in UNDER a page that is already readable. The default is
+// true: a caller that does not say otherwise gets the old behaviour.
+export default function ShiftReportTable({ pageReady = true }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const navigate = useNavigate();
@@ -179,7 +190,7 @@ export default function ShiftReportTable() {
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["shift-report", params],
     queryFn: () => api.get("/api/shift-report", { params }).then((r) => r.data),
-    enabled: ready,
+    enabled: ready && pageReady,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
@@ -260,11 +271,17 @@ export default function ShiftReportTable() {
       </tr>
     );
   } else if (isLoading || !data) {
+    // The loaded cell is a filled lane edge to edge, so the placeholder is one
+    // too — a small centred block would promise a board that no longer exists.
     body = Array.from({ length: 6 }).map((_, i) => (
       <tr key={`sk-${i}`}>
-        <td className="px-2 sm:px-3 py-2.5"><SkeletonBlock className="h-3.5 w-20 sm:w-40" /></td>
+        <td className="px-2 sm:px-3 py-2.5">
+          <SkeletonBlock className={`h-3.5 ${SK_NAME[i % SK_NAME.length]}`} />
+        </td>
         {[0, 1, 2, 3].map((j) => (
-          <td key={j} className={TD_FIG}><SkeletonBlock className="h-4 w-9 mx-auto" /></td>
+          <td key={j} className="px-1 py-1.5 align-middle">
+            <SkeletonBlock className="h-6 w-full rounded-md" />
+          </td>
         ))}
       </tr>
     ));
