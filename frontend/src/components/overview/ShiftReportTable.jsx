@@ -6,15 +6,25 @@
 // Rules it keeps, so nobody has to rediscover them:
 // - The period picker beside it does NOT reach it. Each column has its own fixed
 //   window and prints it — with the date — in its own header.
-// - A figure the platform cannot state is «—» with its REASON (an icon, plus the
-//   words from `sm` up), never a 0 that would read as an idle or failing unit.
-// - Colour is the traffic light from utils/statusBands.js — the bands the
-//   «Zagruzka fayli» page paints the same figures with — and the bands are
-//   printed under the table: a threshold nobody can read is a verdict nobody
-//   can check.
+// - A figure the platform cannot state is «—» with its REASON (an icon, and the
+//   words under the table), never a 0 that would read as an idle or failing unit.
+// - It is a HEATMAP (the operator's call, 2026-09-16): the whole cell carries
+//   its band's colour, so each column reads as one lane down the page. Five
+//   short values right-aligned across a full-width table left the board mostly
+//   empty space, and that emptiness was the first thing anybody saw. The tints
+//   are FLAT band colours, never a gradient — these are verdicts, not
+//   intensities — and the figures sit centred in the fill, because the colour
+//   does the comparing now and centred digits cost nothing. Every row is ONE
+//   line high, so a second text line can never double the board's height.
+// - The name column stays uncoloured: it is the rail the eye returns to, and it
+//   is what keeps the table from becoming one sheet of colour. A BLANK cell
+//   stays uncoloured too — a missing figure should read as a hole in a coloured
+//   field, which is exactly what it is.
+// - Colour is never the only signal: every cell prints its own figure, and the
+//   bands are printed under the table in the very tints the cells wear — a
+//   threshold nobody can read is a verdict nobody can check.
 // - It stays a TABLE on a phone. The rows are read against each other, which
-//   cards would take away; headers shorten, a blank shows its icon, and the
-//   icon's words move into the legend.
+//   cards would take away; the headers shorten and a blank shows its icon alone.
 import { Fragment, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -28,8 +38,8 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import {
-  AMBER, TONE_HEX, LOAD_BANDS, COMPL_BANDS, RESOLVED_BANDS, CONCERN_BANDS,
-  loadTone, vypTone, resolvedTone, concernsTone,
+  LOAD_BANDS, COMPL_BANDS, RESOLVED_BANDS,
+  loadTone, vypTone, resolvedTone, toneFill,
 } from "../../utils/statusBands";
 import api from "../../utils/api";
 
@@ -59,9 +69,36 @@ const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 const fill = (s, vars) =>
   Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), s);
 
-// A band the way the legend prints it: ≥90%  80–89%  <80%  ·  0  1–2  ≥3.
+// A band the way the legend prints it: ≥90%  80–89%  <80%.
 const pctBand = ({ ok, warn }) => [`≥${ok}%`, `${warn}–${ok - 1}%`, `<${warn}%`];
-const countBand = ({ ok, warn }) => [`${ok}`, `${ok + 1}–${warn}`, `≥${warn + 1}`];
+
+// The whole-cell fill for a band, and the ink that reads on it.
+const toneCell = (tone) =>
+  (tone ? { background: toneFill(tone), color: `var(--status-${tone})` } : undefined);
+// A tone only where there is a figure to judge — a blank is never coloured.
+const cellTone = (cell, toneFn) =>
+  (cell && !cell.reason && isNum(cell.value) ? toneFn(cell.value) : null);
+
+// Open concerns carry NO traffic light, and that is deliberate. Nothing on this
+// platform defines how many open concerns is «bad»: real counts run from 6 to
+// 105, so the 0 / 1–2 / ≥3 band this shipped with painted every cell red, and a
+// column that is red everywhere carries no information at all. It is a
+// MAGNITUDE, so it gets the platform's value-intensity ramp — brand gold, the
+// «Toifalar bo'yicha» matrix's own easing — scaled to the largest count on
+// screen, with the legend saying so. Red here would be a verdict nobody has
+// defined, which is the same reason «Xarajat» refuses one.
+const RAMP = [0.06, 0.2, 0.38, 0.58, 0.78, 0.95];
+function concernCell(n, max) {
+  if (!n || !max) return undefined;
+  const k = Math.pow(Math.min(n / max, 1), 0.62);
+  return {
+    background: `rgba(var(--brand-rgb), ${(k * 0.9).toFixed(3)})`,
+    // Gold at full strength needs dark ink in BOTH themes, so this one literal
+    // is theme-independent by construction — the matrix carries it for the
+    // same reason.
+    color: k > 0.55 ? "#1a1508" : "var(--text-1)",
+  };
+}
 
 function sortRows(rows, sort, nameOf) {
   const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
@@ -78,29 +115,15 @@ function sortRows(rows, sort, nameOf) {
   });
 }
 
-function Pill({ tone, children }) {
-  return (
-    <span
-      className={`inline-block rounded-md px-1 sm:px-1.5 py-0.5 text-[11px] sm:text-xs leading-tight tabular-nums ${
-        tone === "bad" ? "font-bold" : "font-semibold"}`}
-      style={tone
-        ? { color: `var(--status-${tone})`, background: `${TONE_HEX[tone]}24` }
-        : { color: "var(--text-2)" }}
-    >
-      {children}
-    </span>
-  );
-}
-
-function Blank({ reason, label }) {
+// A blank is one line: the dash and its reason's icon. The words are under the
+// table, for every width — a second line in the cell is what made most rows
+// twice as tall as they needed to be.
+function Blank({ reason }) {
   const Icon = REASON_ICON[reason];
   return (
-    <span className="inline-flex flex-col items-end leading-tight">
-      <span aria-hidden="true" style={{ color: "var(--text-4)" }}>—</span>
-      <span className="inline-flex items-center gap-1 mt-0.5 text-[10px]" style={{ color: "var(--text-3)" }}>
-        {Icon && <Icon size={11} aria-hidden="true" className="flex-shrink-0" />}
-        <span className="max-sm:sr-only">{label}</span>
-      </span>
+    <span className="inline-flex items-center justify-center gap-1" style={{ color: "var(--text-4)" }}>
+      <span aria-hidden="true">—</span>
+      {Icon && <Icon size={11} aria-hidden="true" className="flex-shrink-0" />}
     </span>
   );
 }
@@ -115,7 +138,7 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
     </>
   );
   return (
-    <span className={`flex flex-col leading-tight whitespace-normal ${left ? "items-start text-left" : "items-end text-right"}`}>
+    <span className={`flex flex-col leading-tight whitespace-normal ${left ? "items-start text-left" : "items-center text-center"}`}>
       <span className="text-[10.5px] sm:text-xs" style={active ? { color: "var(--brand-text)" } : undefined}>
         {swap(full, short)}
       </span>
@@ -131,9 +154,12 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // Below `sm` a figure header stacks its sort chevron under the label and shows
 // it only on the column that is sorted — a chevron beside every label is what
 // would push five columns past a phone's width.
-const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1.5 max-sm:[&>span]:flex-col "
-  + "max-sm:[&>span]:items-end max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
-const TD_FIG = "px-1.5 sm:px-3 py-2 text-right align-middle";
+const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-sm:[&>span]:flex-col "
+  + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
+// The cell IS the swatch, so its padding is the fill's height: one line of
+// figures, centred both ways.
+const TD_FIG = "px-1 sm:px-2 py-2.5 text-center align-middle tabular-nums leading-tight";
+const TD_INK = "text-[11px] sm:text-xs";
 
 export default function ShiftReportTable() {
   const { t } = useLang();
@@ -170,6 +196,8 @@ export default function ShiftReportTable() {
   const anyPartial = rows.some((r) => r.load?.partial && !r.load?.reason);
   const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.compl?.reason, r.quality?.reason]))]
     .filter((k) => REASON_ICON[k]);
+  // The ramp's domain is the board on screen, which is what the legend states.
+  const concernMax = rows.reduce((m, r) => Math.max(m, r.concerns?.open ?? 0), 0);
 
   const shiftName = (s) => (s === 1 || s === 2
     ? fill(t("overview.sr.subShift"), { n: s })
@@ -196,23 +224,24 @@ export default function ShiftReportTable() {
     }
   };
 
-  const figure = (cell, render) => {
-    if (cell?.reason) return <Blank reason={cell.reason} label={t(`overview.sr.reason.${cell.reason}`)} />;
-    if (!isNum(cell?.value)) return <span style={{ color: "var(--text-4)" }}>—</span>;
-    return render(cell);
+  // One figure cell: the fill is the verdict, the figure is printed on it, and
+  // a blank keeps the card's own background.
+  const figCell = (cell, toneFn, render, extraTitle) => {
+    const tone = cellTone(cell, toneFn);
+    const blank = !!cell?.reason;
+    const title = blank ? t(`overview.sr.reason.${cell.reason}`) : extraTitle;
+    return (
+      <td
+        className={`${TD_FIG} ${TD_INK} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
+        style={toneCell(tone)}
+        title={title}
+      >
+        {blank ? <Blank reason={cell.reason} />
+          : isNum(cell?.value) ? render(cell)
+          : <span style={{ color: "var(--text-4)" }}>—</span>}
+      </td>
+    );
   };
-
-  const head = (k, props) => (
-    <Th
-      k={k}
-      sort={sort}
-      onSort={onSort}
-      align="right"
-      cls={TH_FIG}
-      {...props}
-      label={<HeadLabel active={sort?.key === k} {...props.label} />}
-    />
-  );
 
   let body;
   // A failed refetch keeps the rows already on screen; only a board with
@@ -235,7 +264,7 @@ export default function ShiftReportTable() {
       <tr key={`sk-${i}`}>
         <td className="px-2 sm:px-3 py-2.5"><SkeletonBlock className="h-3.5 w-20 sm:w-40" /></td>
         {[0, 1, 2, 3].map((j) => (
-          <td key={j} className={TD_FIG}><SkeletonBlock className="h-4 w-9 ml-auto" /></td>
+          <td key={j} className={TD_FIG}><SkeletonBlock className="h-4 w-9 mx-auto" /></td>
         ))}
       </tr>
     ));
@@ -265,48 +294,54 @@ export default function ShiftReportTable() {
             </td>
           </tr>
         )}
-        {g.rows.map((r) => (
-          <tr
-            key={r.manager_id}
-            tabIndex={0}
-            onClick={() => open(r)}
-            onKeyDown={(e) => onRowKey(e, r)}
-            className="cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
-          >
-            <td className="px-2 sm:px-3 py-2 align-middle">
-              <span
-                className="block whitespace-normal sm:whitespace-nowrap text-[11.5px] sm:text-xs font-medium leading-snug"
-                style={{ color: "var(--text-1)" }}
-              >
-                {tl(r.name || "")}
-              </span>
-            </td>
-            <td className={TD_FIG}>
-              {figure(r.load, (c) => (
-                <Pill tone={loadTone(c.value)}>
+        {g.rows.map((r) => {
+          const open_ = r.concerns?.open ?? 0;
+          return (
+            <tr
+              key={r.manager_id}
+              tabIndex={0}
+              onClick={() => open(r)}
+              onKeyDown={(e) => onRowKey(e, r)}
+              className="group cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]"
+            >
+              {/* The fills cover the row's own hover tint, so the rail carries
+                  the mark instead: a brand bar down the name cell. */}
+              <td className="px-2 sm:px-3 py-2 align-middle group-hover:shadow-[inset_3px_0_0_0_var(--brand)]">
+                <span
+                  className="block whitespace-normal sm:whitespace-nowrap text-[11.5px] sm:text-xs font-medium leading-snug"
+                  style={{ color: "var(--text-1)" }}
+                >
+                  {tl(r.name || "")}
+                </span>
+              </td>
+              {figCell(r.load, loadTone, (c) => (
+                <>
                   {pctText(c.value)}
-                  {c.partial && <span className="ml-px font-normal" style={{ color: "var(--text-3)" }}>*</span>}
-                </Pill>
+                  {c.partial && <span className="ml-px font-normal opacity-70">*</span>}
+                </>
               ))}
-            </td>
-            <td className={TD_FIG}>
-              {figure(r.compl, (c) => <Pill tone={vypTone(c.value)}>{pctText(c.value)}</Pill>)}
-            </td>
-            <td className={TD_FIG}>
-              {figure(r.quality, (c) => (
-                <span className="inline-flex flex-col items-end leading-tight">
-                  <Pill tone={resolvedTone(c.value)}>{pctText(c.value)}</Pill>
-                  <span className="mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--text-3)" }}>
+              {figCell(r.compl, vypTone, (c) => pctText(c.value))}
+              {figCell(r.quality, resolvedTone, (c) => (
+                <>
+                  {pctText(c.value)}
+                  {/* The sample size stays on the SAME line — 100% of 2 is not
+                      100% of 80 — and moves into the cell's tooltip on a phone,
+                      where there is no room for it. */}
+                  <span className="max-sm:hidden ml-1 text-[10px] font-normal opacity-70">
                     {c.done}/{c.actionable}
                   </span>
-                </span>
-              ))}
-            </td>
-            <td className={TD_FIG}>
-              <Pill tone={concernsTone(r.concerns?.open ?? 0)}>{r.concerns?.open ?? 0}</Pill>
-            </td>
-          </tr>
-        ))}
+                </>
+              ), r.quality && !r.quality.reason && isNum(r.quality.value)
+                ? `${r.quality.done}/${r.quality.actionable}` : undefined)}
+              <td
+                className={`${TD_FIG} ${TD_INK} font-semibold`}
+                style={concernCell(open_, concernMax)}
+              >
+                {open_ === 0 ? <span style={{ color: "var(--text-4)" }}>0</span> : open_}
+              </td>
+            </tr>
+          );
+        })}
       </Fragment>
     ));
   }
@@ -316,7 +351,7 @@ export default function ShiftReportTable() {
       {missing > 0 && (
         <span
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap"
-          style={{ color: "var(--status-warn)", background: `${AMBER}24` }}
+          style={{ color: "var(--status-warn)", background: toneFill("warn") }}
         >
           <AlertTriangle size={11} aria-hidden="true" />
           {fill(t("overview.sr.incomplete"), { n: missing })}
@@ -328,11 +363,12 @@ export default function ShiftReportTable() {
     </div>
   );
 
+  // The legend wears the table's own tints, so a band and the cells it judges
+  // are read in one vocabulary.
   const bandRows = [
     { key: "load", full: t("production.kpiAvgLoad"), short: t("overview.sr.colLoadShort"), bands: pctBand(LOAD_BANDS) },
     { key: "compl", full: t("production.kpiVyp"), short: t("overview.sr.colComplShort"), bands: pctBand(COMPL_BANDS) },
     { key: "quality", full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"), bands: pctBand(RESOLVED_BANDS) },
-    { key: "concerns", full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"), bands: countBand(CONCERN_BANDS) },
   ];
 
   return (
@@ -353,34 +389,35 @@ export default function ShiftReportTable() {
               cls="align-bottom sm:w-[32%] max-sm:px-2 max-sm:[&_.lucide-chevrons-up-down]:hidden"
               label={<HeadLabel left active={sort?.key === "name"} full={t("overview.sr.colName")} />}
             />
-            {head("load", {
-              hint: t("overview.sr.hintLoad"),
-              label: {
+            {[
+              ["load", t("overview.sr.hintLoad"), {
                 full: t("production.kpiAvgLoad"), short: t("overview.sr.colLoadShort"),
                 cap: dated("overview.sr.today", single?.today),
-              },
-            })}
-            {head("compl", {
-              hint: t("overview.sr.hintCompl"),
-              label: {
+              }],
+              ["compl", t("overview.sr.hintCompl"), {
                 full: t("production.kpiVyp"), short: t("overview.sr.colComplShort"),
                 cap: dated("overview.sr.yesterday", single?.yesterday),
-              },
-            })}
-            {head("quality", {
-              hint: t("overview.sr.hintQuality"),
-              label: {
+              }],
+              ["quality", t("overview.sr.hintQuality"), {
                 full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"),
                 cap: t("overview.sr.capQuality"), capShort: t("overview.sr.capQualityShort"),
-              },
-            })}
-            {head("concerns", {
-              hint: t("overview.sr.hintConcerns"),
-              label: {
+              }],
+              ["concerns", t("overview.sr.hintConcerns"), {
                 full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"),
                 cap: t("overview.sr.capConcerns"), capShort: t("overview.sr.capConcernsShort"),
-              },
-            })}
+              }],
+            ].map(([k, hint, label]) => (
+              <Th
+                key={k}
+                k={k}
+                sort={sort}
+                onSort={onSort}
+                align="center"
+                cls={TH_FIG}
+                hint={hint}
+                label={<HeadLabel active={sort?.key === k} {...label} />}
+              />
+            ))}
           </tr>
         </thead>
         <tbody>{body}</tbody>
@@ -388,24 +425,42 @@ export default function ShiftReportTable() {
 
       {rows.length > 0 && (
         <div className="mt-2 px-1 flex flex-col gap-1.5 text-[10.5px] leading-snug" style={{ color: "var(--text-3)" }}>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:flex sm:flex-wrap sm:gap-x-6">
+          <div className="grid grid-cols-1 gap-y-1 sm:flex sm:flex-wrap sm:gap-x-6">
             {bandRows.map((b) => (
-              <span key={b.key} className="inline-flex flex-wrap items-baseline gap-x-1.5">
+              <span key={b.key} className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
                 <span>
                   <span className="sm:hidden">{b.short}</span>
                   <span className="max-sm:hidden">{b.full}</span>
                 </span>
                 {["ok", "warn", "bad"].map((tone, i) => (
-                  <span key={tone} className="font-semibold tabular-nums" style={{ color: `var(--status-${tone})` }}>
+                  <span
+                    key={tone}
+                    className="rounded px-1 py-px font-semibold tabular-nums"
+                    style={toneCell(tone)}
+                  >
                     {b.bands[i]}
                   </span>
                 ))}
               </span>
             ))}
+            {/* The concerns column is a magnitude, so its legend is the ramp and
+                the number it tops out at, not a threshold. */}
+            <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span>
+                <span className="sm:hidden">{t("overview.sr.colConcernsShort")}</span>
+                <span className="max-sm:hidden">{t("overview.sr.colConcerns")}</span>
+              </span>
+              <span className="inline-flex h-2.5 rounded overflow-hidden border" style={{ borderColor: "var(--border)" }}>
+                {RAMP.map((a) => (
+                  <i key={a} className="block w-3.5" style={{ background: `rgba(var(--brand-rgb), ${a})` }} />
+                ))}
+              </span>
+              <span>{fill(t("overview.sr.concernRamp"), { n: concernMax })}</span>
+            </span>
           </div>
           {anyPartial && <div>* — {t("overview.sr.partial")}</div>}
           {reasons.length > 0 && (
-            <div className="sm:hidden flex flex-wrap gap-x-3 gap-y-1">
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
               {reasons.map((k) => {
                 const Icon = REASON_ICON[k];
                 return (

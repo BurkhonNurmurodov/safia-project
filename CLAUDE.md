@@ -4874,13 +4874,35 @@ nothing.
   partial-headcount mark (`people_untyped > 0`).
 - **Bands live ONCE, in `utils/statusBands.js`**, which the «Zagruzka fayli»
   page imports too: load ≥90 / 80–89 / <80 (the 2026-09-06 scale), completion
-  ≥95 / 70–94 / <70, quality closure ≥90 / 70–89 / <70 and open concerns
-  0 / 1–2 / ≥3 (the last two read off the sheet, 2026-09-15). Every percentage
-  band compares the WHOLE percent printed — `vypColor` moved onto that rule
-  with this change, so a completion of 94.5–94.99% now reads green on
-  `/production`, where it prints «95%». The bands are printed as a legend under
-  the table. Pill text reads `--status-ok/warn/bad` (700 shades on light, the
-  platform's own hexes on dark, a lighter red) over a 14% tint of the hex.
+  ≥95 / 70–94 / <70 and quality closure ≥90 / 70–89 / <70 (the last read off the
+  sheet, 2026-09-15). Every percentage band compares the WHOLE percent printed —
+  `vypColor` moved onto that rule with this change, so a completion of
+  94.5–94.99% now reads green on `/production`, where it prints «95%». The bands
+  are printed as a legend under the table, in the very tints the cells wear.
+  Ink is `--status-ok/warn/bad` (700 shades on light, the platform's own hexes
+  on dark, a lighter red).
+- **It is a HEATMAP: the whole CELL carries its band's colour** (the operator's
+  call, 2026-09-16), and `statusBands.toneFill` is the one definition of that
+  fill. It shipped as a tinted badge in a right-aligned cell, and five short
+  values strung across a full-width table left the board mostly empty space —
+  the first thing anybody saw. The fill is **FLAT per band, never a gradient**
+  (these are verdicts, not intensities, and a comparable shade invites reading
+  the shade as the value); the figures are **centred both ways**, because the
+  colour does the comparing now and centred digits cost nothing; and every row
+  is **ONE line high**, so the quality cell's `n/N` sits on the same line
+  (tooltip only on a phone) and a blank is its dash and icon alone. The NAME
+  column stays uncoloured — it is the rail the eye returns to and what keeps the
+  table from becoming one sheet of colour — and so does a BLANK cell, which
+  should read as a hole in a coloured field. The fills cover the row's own hover
+  tint, so hover marks the name cell with a brand bar instead.
+- **The open-concerns column carries NO traffic light, and giving it one needs a
+  decision.** It had 0 / 1–2 / ≥3 for a day; against the register's real counts
+  (6 to 105) that painted every unit red, and a column that is red everywhere
+  states nothing. A count with no defined threshold is a MAGNITUDE, so it is
+  drawn with the platform's value-intensity ramp — brand gold over
+  `--brand-rgb`, the «Toifalar bo'yicha» easing — scaled to the largest count ON
+  SCREEN, with the legend naming that number. 0 is left unfilled. Red here would
+  be a verdict nobody has defined, the reason «Xarajat» refuses one too.
 - **Scope is the reach each role already has** (`concerns._scope_query`'s tiers)
   on top of `scoped_manager_ids`: admin and top-manager every unit, both shifts
   as groups; a shift-manager their shift ∩ plant (`shift_scope.unit_ids`), and a
@@ -4889,7 +4911,8 @@ nothing.
   page key stays `overview`.
 - **It stays a table on a phone**, fitted to ~358px: short labels, the inactive
   sort chevron hidden and the active one stacked under its label, a blank's
-  reason as an icon whose words move into the legend. Rows open
+  reason as a bare icon (its words are in the legend at every width, since the
+  cell can no longer spare a second line). Rows open
   `/brigadir/:id`. No per-cell links: a shift manager does not hold
   `/production`, and a link that 403s is a dead link.
 - Up to two engine runs per configured unit per request, uncached; `staleTime`

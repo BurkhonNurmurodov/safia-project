@@ -28,6 +28,13 @@ const pctTone = (v, { ok, warn }) => {
 
 const hex = (tone) => (tone ? TONE_HEX[tone] : MUTED);
 
+// The whole-cell heatmap fill for a band — a FLAT tint of the band's own hue,
+// one alpha for every band, read together with `--status-*` as the ink on it.
+// Flat and never a gradient: these are verdicts, not intensities, and a shade
+// a reader can compare invites reading the shade as the value.
+export const FILL_ALPHA = "33";
+export const toneFill = (tone) => (tone ? `${TONE_HEX[tone]}${FILL_ALPHA}` : "transparent");
+
 // Загруженность (O'rt. zagruzka): ≥90% green, 80–89% yellow, below that red —
 // the operator's scale (2026-09-06). Two things went with it, deliberately.
 // Over-capacity is no longer a case of its own: a load above 100% reads GREEN.
@@ -48,10 +55,10 @@ export const vypColor = (v) => hex(vypTone(v));
 export const RESOLVED_BANDS = { ok: 90, warn: 70 };
 export const resolvedTone = (v) => pctTone(v, RESOLVED_BANDS);
 
-// Open concerns at the brigadir's level — a COUNT, so fewer is better:
-// 0 green, 1–2 yellow, 3 or more red (2026-09-15, same sheet).
-export const CONCERN_BANDS = { ok: 0, warn: 2 };
-export const concernsTone = (n) => {
-  if (n === null || n === undefined || Number.isNaN(n)) return null;
-  return n <= CONCERN_BANDS.ok ? "ok" : n <= CONCERN_BANDS.warn ? "warn" : "bad";
-};
+// Open concerns at the brigadir's level deliberately have NO band here, and
+// nothing should give them one without a decision. They had 0 / 1–2 / ≥3 for a
+// day (2026-09-15, read off the same sheet); against the register's real counts
+// — 6 to 105 — that painted every unit red, and a column that is red everywhere
+// states nothing. A count with no defined threshold is a MAGNITUDE, so the
+// «Smena hisoboti» table draws it with the platform's value-intensity ramp
+// (brand gold, the «Toifalar bo'yicha» rule) instead of a verdict colour.
