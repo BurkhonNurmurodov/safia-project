@@ -160,10 +160,15 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // would push five columns past a phone's width.
 const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-sm:[&>span]:flex-col "
   + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
-// The cell IS the swatch, so its padding is the fill's height: one line of
-// figures, centred both ways.
-const TD_FIG = "px-1 sm:px-2 py-2.5 text-center align-middle tabular-nums leading-tight";
-const TD_INK = "text-[11px] sm:text-xs";
+// Each figure is a TILE, not a painted cell (the operator's call, 2026-09-16):
+// solid fills that run edge to edge merge into one block, so a row of three
+// greens reads as one shape and a column stops being a column. The `td` gives
+// up its padding to a gutter of the card's own colour and the tile carries the
+// fill inside it — the «Toifalar bo'yicha» grammar, which is what a heatmap on
+// this platform already looks like. The table's own 1px separators fall inside
+// that gutter and become its grid lines.
+const TD_FIG = "p-[3px] align-middle";
+const TILE = "rounded-md px-1 sm:px-2 py-2 text-center tabular-nums leading-tight text-[11px] sm:text-xs";
 
 // The name placeholders cycle a fixed list — Math.random() re-rolls on every
 // render and makes the skeleton twitch (the SkeletonMatrix rule).
@@ -239,21 +244,23 @@ export default function ShiftReportTable({ pageReady = true }) {
     }
   };
 
-  // One figure cell: the fill is the verdict, the figure is printed on it, and
-  // a blank keeps the card's own background.
+  // One figure cell: the tile is the verdict, the figure is printed on it, and
+  // a blank grows no tile at all — a missing figure reads as a hole in a
+  // coloured field, which is what it is.
   const figCell = (cell, toneFn, render, extraTitle) => {
     const tone = cellTone(cell, toneFn);
     const blank = !!cell?.reason;
     const title = blank ? t(`overview.sr.reason.${cell.reason}`) : extraTitle;
     return (
-      <td
-        className={`${TD_FIG} ${TD_INK} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
-        style={toneFill(tone)}
-        title={title}
-      >
-        {blank ? <Blank reason={cell.reason} />
-          : isNum(cell?.value) ? render(cell)
-          : <span style={{ color: "var(--text-4)" }}>—</span>}
+      <td className={TD_FIG} title={title}>
+        <div
+          className={`${TILE} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
+          style={toneFill(tone)}
+        >
+          {blank ? <Blank reason={cell.reason} />
+            : isNum(cell?.value) ? render(cell)
+            : <span style={{ color: "var(--text-4)" }}>—</span>}
+        </div>
       </td>
     );
   };
@@ -283,8 +290,8 @@ export default function ShiftReportTable({ pageReady = true }) {
           <SkeletonBlock className={`h-3.5 ${SK_NAME[i % SK_NAME.length]}`} />
         </td>
         {[0, 1, 2, 3].map((j) => (
-          <td key={j} className="px-1 py-1.5 align-middle">
-            <SkeletonBlock className="h-6 w-full rounded-md" />
+          <td key={j} className={TD_FIG}>
+            <SkeletonBlock className="h-[31px] w-full rounded-md" />
           </td>
         ))}
       </tr>
@@ -348,11 +355,10 @@ export default function ShiftReportTable({ pageReady = true }) {
               {figCell(r.quality, resolvedTone, (c) => pctText(c.value),
                 r.quality && !r.quality.reason && isNum(r.quality.value)
                   ? `${r.quality.done}/${r.quality.actionable}` : undefined)}
-              <td
-                className={`${TD_FIG} ${TD_INK} font-semibold`}
-                style={concernCell(open_, concernMax)}
-              >
-                {open_ === 0 ? <span style={{ color: "var(--text-4)" }}>0</span> : open_}
+              <td className={TD_FIG}>
+                <div className={`${TILE} font-semibold`} style={concernCell(open_, concernMax)}>
+                  {open_ === 0 ? <span style={{ color: "var(--text-4)" }}>0</span> : open_}
+                </div>
               </td>
             </tr>
           );

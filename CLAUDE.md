@@ -4893,7 +4893,12 @@ nothing.
   value when these are verdicts. The hues are the 700 shades `--status-*`
   already carries on light, with WHITE ink — a solid cell covers the card, so
   the pair is theme-independent by construction. `toneTint` is the soft tint
-  that remains, for a badge that sits ON the card. The figures are **centred
+  that remains, for a badge that sits ON the card. Each figure is a **TILE, not
+  a painted cell**: solid fills running edge to edge merge into one block, so a
+  row of three greens reads as one shape and a column stops being a column —
+  the `td` gives its padding up to a gutter of the card's own colour and the
+  tile carries the fill, the «Toifalar bo'yicha» grammar, with the table's 1px
+  separators falling inside that gutter as its grid lines. The figures are **centred
   both ways**, because the colour does the comparing now; and every row is
   **ONE line high with ONE figure per cell** — the quality cell's
   `done/actionable` is on its tooltip and nowhere else, and a blank is its dash
