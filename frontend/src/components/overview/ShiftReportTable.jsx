@@ -148,12 +148,19 @@ const TH_FIG = "align-bottom sm:w-[17%] max-sm:px-1 max-sm:[&>span]:flex-col "
 // The cell IS the swatch — square, full-bleed, and ruled by a 1px line of the
 // CARD's own colour, which is the загрузка heatmap's cell exactly. Two earlier
 // shapes are the mistakes this one answers: painted cells whose gridline was
-// `--border` (a 5% white that a muted fill swallows, so three greens read as
-// one block), and rounded tiles floating in a 3px gutter, which read as a row
-// of buttons rather than a heatmap. Drawing the rule in the card's colour is
-// what makes it show against ANY fill in BOTH themes.
+// `--border` (a 5% white that any fill swallows, so three greens read as one
+// block), and rounded tiles floating in a 3px gutter, which read as a row of
+// buttons rather than a heatmap. Drawing the rule in the card's colour is what
+// makes it show against ANY fill in BOTH themes.
+//
+// The COLOUR has to be inline and cannot be a class: `DataTable` paints every
+// cell's border through `[&_td]:border-[var(--border)]`, a descendant selector
+// that outranks any plain utility on the cell itself — a `border-[…]` class
+// here compiles, loses, and leaves the grid invisible with nothing to show for
+// it. `RULE` is that one declaration and every figure cell carries it.
 const TD_FIG = "px-1 sm:px-2 py-2.5 text-center align-middle tabular-nums "
-  + "leading-tight text-[11px] sm:text-xs border border-[var(--bg-card)]";
+  + "leading-tight text-[11px] sm:text-xs border";
+const RULE = { borderColor: "var(--bg-card)" };
 
 // The name placeholders cycle a fixed list — Math.random() re-rolls on every
 // render and makes the skeleton twitch (the SkeletonMatrix rule).
@@ -237,7 +244,7 @@ export default function ShiftReportTable({ pageReady = true }) {
     return (
       <td
         className={`${TD_FIG} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
-        style={toneFill(tone)}
+        style={{ ...toneFill(tone), ...RULE }}
         title={title}
       >
         {blank ? <Blank reason={cell.reason} />
@@ -272,7 +279,7 @@ export default function ShiftReportTable({ pageReady = true }) {
           <SkeletonBlock className={`h-3.5 ${SK_NAME[i % SK_NAME.length]}`} />
         </td>
         {[0, 1, 2, 3].map((j) => (
-          <td key={j} className="p-0 border border-[var(--bg-card)]">
+          <td key={j} className="p-0 border" style={RULE}>
             <SkeletonBlock className="h-[36px] w-full" style={{ borderRadius: 0 }} />
           </td>
         ))}
@@ -342,7 +349,7 @@ export default function ShiftReportTable({ pageReady = true }) {
                 return (
                   <td
                     className={`${TD_FIG} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
-                    style={toneFill(tone)}
+                    style={{ ...toneFill(tone), ...RULE }}
                   >
                     {open_}
                   </td>
