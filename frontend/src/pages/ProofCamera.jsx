@@ -11,6 +11,10 @@ import ErrorScreen from "../components/ui/ErrorScreen";
 import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
 import { enqueue, flush, newKey, pending } from "../utils/proofQueue";
+import {
+  answerPresence, askOthers, beatHolder, cameraList, createRecorder, deviceEnv, otherHolders,
+  probeSmaller, readTrackFrame, sendCameraReport, shortId, trackSnap, videoSnap,
+} from "../utils/cameraDiag";
 
 /**
  * `/proof/camera` — where a leader SHOOTS a checklist proof.
@@ -422,12 +426,26 @@ export default function ProofCamera() {
   const streamRef = useRef(null);
   const offsetRef = useRef(null);          // serverMs − performance.now()
 
+  // The camera's flight recorder, and what a failure report needs to know
+  // about how the failure came about — utils/cameraDiag. Refs, not state:
+  // nothing here is drawn, and the page re-renders four times a second.
+  const recRef = useRef(null);
+  if (!recRef.current) recRef.current = createRecorder();
+  const note = useCallback((ev, detail) => recRef.current.note(ev, detail), []);
+  const pageIdRef = useRef(Math.random().toString(36).slice(2, 10));
+  // Which check put the failure screen up, and what it saw when it did.
+  const failRef = useRef({ kind: null, error: null, stall: null });
+  const opensRef = useRef({ total: 0, hidden: 0, lastMs: null, openedAt: 0, remembered: false });
+  // The report's hold on a clone of the stream. A new open releases it first.
+  const probeHoldRef = useRef(null);
+
   const [mode, setMode] = useState("live");   // live | review | slot
   const [shot, setShot] = useState(null);     // { url, blob, ms, ar }
   const [viewing, setViewing] = useState(null);
   const [retakeSlot, setRetakeSlot] = useState(null);
   const [camErr, setCamErr] = useState(null);
   const [camBusy, setCamBusy] = useState(false);   // opening: black, but not broken
+  const [reported, setReported] = useState(false); // the server has this failure's report
   const [facing, setFacing] = useState("environment");
   const [devices, setDevices] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -569,11 +587,20 @@ export default function ProofCamera() {
   // Frame bookkeeping for the watchdog: the last `currentTime` seen, when it
   // was seen, and how many silent re-opens this stall has already cost.
   const framesRef = useRef({ time: -1, at: 0, fixes: 0 });
-  const startCamera = useCallback(async (want = facing) => {
+  const startCamera = useCallback(async (want = facing, why = "start") => {
+    // A failure report may be holding a clone of the old stream, and a clone
+    // keeps the camera source alive underneath the open about to start.
+    probeHoldRef.current?.();
+    probeHoldRef.current = null;
     if (startingRef.current) return;
     startingRef.current = true;
     const attempt = ++attemptRef.current;
     const mine = () => attemptRef.current === attempt;
+    const hidden = document.visibilityState !== "visible";
+    opensRef.current.total += 1;
+    if (hidden) opensRef.current.hidden += 1;
+    note("open", `${why} · ${want}${hidden ? " · page hidden" : ""}`);
+    const t0 = performance.now();
     setCamErr(null);
     setCamBusy(true);
     framesRef.current = { time: -1, at: 0, fixes: framesRef.current.fixes };
@@ -581,8 +608,26 @@ export default function ProofCamera() {
       if (!mine()) return;
       startingRef.current = false;
       setCamBusy(false);
+      failRef.current = { kind: "open_timeout", error: null, stall: null };
+      note("open", `no answer in ${OPEN_TIMEOUT_MS / 1000} s → failure screen`);
       setCamErr("stalled");
     }, OPEN_TIMEOUT_MS);
+    // Every getUserMedia of this attempt, timed and recorded: which path
+    // opened the camera, and how long Android took to answer, is half of any
+    // failure report.
+    const gum = async (path, video) => {
+      const g0 = performance.now();
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+        const st = s.getVideoTracks()[0]?.getSettings?.() || {};
+        note("gum", `${path} → ok in ${Math.round(performance.now() - g0)} ms · ${st.width}x${st.height}`);
+        return s;
+      } catch (e) {
+        note("gum", `${path} → ${e?.name || "error"} in ${Math.round(performance.now() - g0)} ms`
+          + (e?.message ? ` · ${e.message}` : ""));
+        throw e;
+      }
+    };
     try {
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
       // ONE getUserMedia whenever this phone's lens is already known.
@@ -609,12 +654,11 @@ export default function ProofCamera() {
       const remembered = localStorage.getItem(`${LENS_KEY}.${want}`);
       const known = await lenses();
       let stream = null;
+      opensRef.current.remembered = false;
       if (remembered && known.some((d) => d.deviceId === remembered)) {
         try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: { exact: remembered }, ...VIDEO_SIZE },
-            audio: false,
-          });
+          stream = await gum("remembered lens", { deviceId: { exact: remembered }, ...VIDEO_SIZE });
+          opensRef.current.remembered = true;
         } catch (e) {
           // A refusal is the leader's ANSWER, not a bad lens. Re-asking with
           // different constraints is a second sheet for the same «no».
@@ -629,29 +673,28 @@ export default function ProofCamera() {
         // override the requested side, falling back to ideal if the device
         // lacks it (e.g. laptops).
         try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: want }, ...VIDEO_SIZE },
-            audio: false,
-          });
+          stream = await gum(`facing ${want} exact`, { facingMode: { exact: want }, ...VIDEO_SIZE });
         } catch (e) {
           if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: want }, ...VIDEO_SIZE },
-            audio: false,
-          });
+          stream = await gum(`facing ${want} ideal`, { facingMode: { ideal: want }, ...VIDEO_SIZE });
         }
-        const id = pickLens(await lenses(), want);
+        const list = await lenses();
+        const id = pickLens(list, want);
+        note("lens", id ? `picked ${shortId(id)} of ${list.length}` : `none picked of ${list.length}`);
         if (id && stream.getVideoTracks()[0]?.getSettings?.().deviceId !== id) {
           stream.getTracks().forEach((tr) => tr.stop());
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: { exact: id }, ...VIDEO_SIZE },
-            audio: false,
-          });
+          stream = await gum("picked lens", { deviceId: { exact: id }, ...VIDEO_SIZE });
         }
         if (id) localStorage.setItem(`${LENS_KEY}.${want}`, id);
       }
-      if (!mine()) { stream.getTracks().forEach((tr) => tr.stop()); return; }
+      if (!mine()) {
+        stream.getTracks().forEach((tr) => tr.stop());
+        note("open", "superseded by a newer open; stream dropped");
+        return;
+      }
       streamRef.current = stream;
+      opensRef.current.lastMs = Math.round(performance.now() - t0);
+      opensRef.current.openedAt = Date.now();
       // A phone whose rear camera is ONE fused device can open it at 0.5x, and
       // the labels above cannot see that: the device they picked really is the
       // main camera, it is simply pointed at its widest member. Correct it on
@@ -664,13 +707,21 @@ export default function ProofCamera() {
       // back the instant it ends, while they are still on the viewfinder.
       // (`stop()` never fires this, so re-opening cannot loop.)
       stream.getVideoTracks().forEach((tr) => {
+        const st = tr.getSettings?.() || {};
+        note("stream", `${st.width}x${st.height}@${Math.round(st.frameRate || 0)} · ${tr.label || "no label"}`
+          + (tr.muted ? " · muted" : ""));
+        // Chrome mutes a camera stream that stops delivering — the one event
+        // that says so from inside the browser.
+        tr.addEventListener("mute", () => note("stream", "mute"));
+        tr.addEventListener("unmute", () => note("stream", "unmute"));
         tr.addEventListener("ended", () => {
-          if (document.visibilityState === "visible") startCameraRef.current?.(want);
+          note("stream", "ended");
+          if (document.visibilityState === "visible") startCameraRef.current?.(want, "stream ended");
         });
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
+        await videoRef.current.play().catch((e) => note("play", e?.name || "rejected"));
       }
       // A negotiation slow enough to have been called stalled can still end in
       // a working camera: clear the verdict rather than leave an overlay across
@@ -682,18 +733,24 @@ export default function ProofCamera() {
       }
     } catch (e) {
       if (!mine()) return;
+      failRef.current = {
+        kind: "gum_error",
+        error: { name: e?.name || "", message: String(e?.message || "").slice(0, 200) },
+        stall: null,
+      };
+      note("open", `failed: ${e?.name || "error"}`);
       setCamErr(e?.name === "NotAllowedError" ? "denied"
         : e?.name === "NotFoundError" ? "none" : "failed");
     } finally {
       clearTimeout(deadline);
       if (mine()) { startingRef.current = false; setCamBusy(false); }
     }
-  }, [facing, pickLens]);
+  }, [facing, pickLens, note]);
   startCameraRef.current = startCamera;
 
   useEffect(() => {
     if (!task || dayClosed) return undefined;
-    startCamera(facing);
+    startCamera(facing, "page open or flip");
     return () => {
       // Retire what is IN FLIGHT along with what is open. An attempt that
       // outlives its effect — the flip pressed while the first open was still
@@ -722,8 +779,11 @@ export default function ProofCamera() {
     camWatch.current = null;
     videoRef.current = el;
     if (!el) return;
-    const sync = () => {
+    const sync = (ev) => {
       if (el.videoWidth && el.videoHeight) setCamAR(el.videoWidth / el.videoHeight);
+      // A 2×2 here is Chrome's black placeholder for a stream that ended before
+      // its first real frame — worth its line in a failure report.
+      if (ev?.type) recRef.current?.note("video", `${ev.type} ${el.videoWidth}x${el.videoHeight}`);
     };
     el.addEventListener("loadedmetadata", sync);
     el.addEventListener("resize", sync);   // a rotation changes the frame's shape
@@ -732,7 +792,10 @@ export default function ProofCamera() {
       el.removeEventListener("resize", sync);
     };
     const s = streamRef.current;
-    if (s && el.srcObject !== s) { el.srcObject = s; el.play?.().catch(() => {}); }
+    if (s && el.srcObject !== s) {
+      el.srcObject = s;
+      el.play?.().catch((e) => recRef.current?.note("play", e?.name || "rejected"));
+    }
     sync();
   }, []);
 
@@ -750,11 +813,11 @@ export default function ProofCamera() {
     if (camErr || startingRef.current) return;  // a refusal is not retried in a loop
     const s = streamRef.current;
     const alive = !!s && s.getVideoTracks().some((tr) => tr.readyState === "live");
-    if (!alive) { startCamera(facing); return; }
+    if (!alive) { startCamera(facing, s ? "stream no longer live" : "no stream"); return; }
     const v = videoRef.current;
     if (!v) return;
     if (v.srcObject !== s) v.srcObject = s;
-    if (v.paused) v.play?.().catch(() => {});
+    if (v.paused) v.play?.().catch((e) => note("play", e?.name || "rejected"));
 
     // Is anything actually ARRIVING? Every check above can pass on a stream
     // that delivers no frames, and a leader looking at that has been handed the
@@ -769,14 +832,25 @@ export default function ProofCamera() {
     }
     if (!f.at) { framesRef.current = { ...f, at: now }; return; }
     if (now - f.at < FRAME_STALL_MS) return;
+    const seen = {
+      w: v.videoWidth, h: v.videoHeight, t: Math.round((v.currentTime || 0) * 100) / 100,
+      paused: v.paused, ready: v.readyState,
+    };
+    const what = `no frame for ${FRAME_STALL_MS / 1000} s (video ${seen.w}x${seen.h}, t ${seen.t})`;
     // ONE silent re-open, because a WebView that lost the camera usually hands
     // it straight back and a leader should never have to know. A second dead
     // stream is not a hiccup: say so and give them the button, rather than
     // restarting the camera behind a black screen for the rest of the shift.
-    if (f.fixes >= 1) { setCamErr("stalled"); return; }
+    if (f.fixes >= 1) {
+      failRef.current = { kind: "no_frames", error: null, stall: seen };
+      note("watch", `${what} again → failure screen`);
+      setCamErr("stalled");
+      return;
+    }
+    note("watch", `${what} → silent re-open`);
     framesRef.current = { time: -1, at: 0, fixes: f.fixes + 1 };
-    startCamera(facing);
-  }, [mode, task, dayClosed, camErr, facing, startCamera]);
+    startCamera(facing, "no frames");
+  }, [mode, task, dayClosed, camErr, facing, startCamera, note]);
 
   useEffect(() => { ensureCamera(); }, [ensureCamera]);
 

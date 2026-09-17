@@ -10,7 +10,9 @@ Two kinds, one delivery path — never add a third endpoint for a fourth kind:
   * /api/crash-report — the app started and then a render threw. Posted
     automatically by the ErrorBoundary, with no user involvement. The same
     door carries `kind="recovered"`: a DOM desync utils/domGuard.js absorbed
-    before it could reach a boundary at all.
+    before it could reach a boundary at all — and `kind="camera"`: the proof
+    camera page landing on a failure screen, with what the device measured
+    about why (services/camera_report.py lays that one out).
 
 Both are throttled and size-capped so neither can be turned into a spam relay,
 and the automatic one is de-duplicated by fingerprint as well: one crash that
@@ -21,6 +23,7 @@ import html
 import logging
 import time
 from collections import deque
+from typing import Optional
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -31,6 +34,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import TelegramUser
 from app.routers.auth import _validate_init_data
+from app.services import camera_report
 from app.telegram_bot import bot, _admin_ids
 
 logger = logging.getLogger(__name__)
@@ -149,8 +153,14 @@ class CrashReport(BaseModel):
     # The two are told apart HERE and nowhere else: a recovery announced as a
     # crash costs somebody a morning chasing a page that never broke, and a
     # recovery announced as nothing at all is a guard nobody can see firing.
+    # "camera" — the proof camera page (/proof/camera) landed on a failure
+    # screen; `camera` below carries what the device measured about why.
     # Optional and defaulted, so a tab still open on an older bundle is unmoved.
     kind: str = Field("crash", max_length=20)
+    # kind="camera" only. Built by frontend/src/utils/cameraDiag.js, laid out by
+    # services/camera_report.py. A dict, not a model: it is one client's
+    # measurements, and every reader of it tolerates any shape.
+    camera: Optional[dict] = None
 
 
 def _crash_who(db: Session, request: Request) -> str:
@@ -200,19 +210,27 @@ def _fingerprint(body: CrashReport) -> str:
 def crash_report(body: CrashReport, request: Request, db: Session = Depends(get_db)):
     who = _crash_who(db, request)
     path = (body.url or "?").split("?")[0]
+    camera = body.kind == "camera"
 
     # The log line lands regardless of throttling, de-duplication or whether
     # Telegram is reachable — it is the record that survives.
-    logger.error(
-        "[CLIENT-%s] %s | v%s | %s | %s | %s\n%s\n%s",
-        "RECOVERED" if body.kind == "recovered" else "CRASH",
-        who, body.version or "?", path, body.message or "(no message)",
-        body.ua or "(no UA)",
-        (body.stack or "").strip(), (body.component or "").strip(),
-    )
+    if camera:
+        logger.error(
+            "[CLIENT-CAMERA] %s | v%s | %s | %s | %s\n%s",
+            who, body.version or "?", path, body.message or "(no message)",
+            body.ua or "(no UA)", camera_report.log_json(body.camera),
+        )
+    else:
+        logger.error(
+            "[CLIENT-%s] %s | v%s | %s | %s | %s\n%s\n%s",
+            "RECOVERED" if body.kind == "recovered" else "CRASH",
+            who, body.version or "?", path, body.message or "(no message)",
+            body.ua or "(no UA)",
+            (body.stack or "").strip(), (body.component or "").strip(),
+        )
 
     now = time.time()
-    fp = _fingerprint(body)
+    fp = camera_report.fingerprint(body.camera, who) if camera else _fingerprint(body)
     seen = _CRASH_SEEN.get(fp)
     if seen and now - seen["sent"] < _CRASH_WINDOW_S:
         seen["count"] += 1
@@ -229,30 +247,36 @@ def crash_report(body: CrashReport, request: Request, db: Session = Depends(get_
         return {"ok": True, "reported": False, "throttled": True}
     _CRASH_RECENT.append(now)
 
-    # The first lines of the component stack name the failing component and the
-    # chunk it came from — that is what identifies the PAGE in a minified build,
-    # so it is the part worth carrying into the message.
-    where = "\n".join((body.component or "").strip().splitlines()[:6]) or "(no component stack)"
-    recovered = body.kind == "recovered"
-    lines = [
-        ("🩹 <b>DOM desync recovered</b>" if recovered else "🐞 <b>App crash</b>")
-        + (f" · v{html.escape(body.version)}" if body.version else ""),
-        f"Who: {html.escape(who)}",
-        f"Page: {html.escape(path or '?')}",
-    ]
-    # Which browser/WebView it happened in is most of the diagnosis for anything
-    # that goes wrong in the DOM, and it was the one field collected and never
-    # printed. Trimmed: the DM is read on a phone.
-    if body.ua:
-        lines.append(f"Device: {html.escape(body.ua[:140])}")
-    if recovered:
-        lines.append("The page kept running — nobody saw an error screen.")
-    if repeats:
-        lines.append(f"Also seen {repeats}× in the previous hour")
-    text = "\n".join(lines) + (
-        f"\n\n<pre>{html.escape(body.message or '(no message)')}</pre>"
-        f"\n<pre>{html.escape(where)}</pre>"
-    )
+    if camera:
+        # Not a stack: what the device measured about a camera that failed, laid
+        # out as a diagnosis with its evidence under it.
+        text = camera_report.message(body.camera, who=who, version=body.version,
+                                     ua=body.ua, repeats=repeats)
+    else:
+        # The first lines of the component stack name the failing component and
+        # the chunk it came from — that is what identifies the PAGE in a
+        # minified build, so it is the part worth carrying into the message.
+        where = "\n".join((body.component or "").strip().splitlines()[:6]) or "(no component stack)"
+        recovered = body.kind == "recovered"
+        lines = [
+            ("🩹 <b>DOM desync recovered</b>" if recovered else "🐞 <b>App crash</b>")
+            + (f" · v{html.escape(body.version)}" if body.version else ""),
+            f"Who: {html.escape(who)}",
+            f"Page: {html.escape(path or '?')}",
+        ]
+        # Which browser/WebView it happened in is most of the diagnosis for
+        # anything that goes wrong in the DOM, and it was the one field
+        # collected and never printed. Trimmed: the DM is read on a phone.
+        if body.ua:
+            lines.append(f"Device: {html.escape(body.ua[:140])}")
+        if recovered:
+            lines.append("The page kept running — nobody saw an error screen.")
+        if repeats:
+            lines.append(f"Also seen {repeats}× in the previous hour")
+        text = "\n".join(lines) + (
+            f"\n\n<pre>{html.escape(body.message or '(no message)')}</pre>"
+            f"\n<pre>{html.escape(where)}</pre>"
+        )
 
     delivered = 0
     for chat_id in _recipients():
