@@ -39,6 +39,9 @@ _TZ = timezone(timedelta(hours=5))
 _MAX_TEXT = 3900
 _MAX_LOG = 20000
 _TIMELINE_MAX = 60
+# How recently an earlier camera page must have been seen holding the camera
+# to be named as the likely holder.
+_SUSPECT_MS = 30 * 60 * 1000
 
 _BUSY = {"NotReadableError", "TrackStartError", "AbortError"}
 _CONSTRAINT = {"OverconstrainedError", "ConstraintNotSatisfiedError"}
@@ -164,14 +167,18 @@ def _live_other(c: dict) -> dict:
 
 
 def _stale(c: dict) -> str:
-    """An earlier camera page on this device last seen holding the camera."""
+    """An earlier camera page on this device, seen holding the camera recently.
+
+    Recently, because a WebView Telegram destroys may never get to write that it
+    let go: a line hours old is a page nobody closed cleanly, not a suspect. The
+    details section still lists every line with its age."""
     now = _num(c.get("now"))
     for h in _l(c.get("holders")):
         h = _d(h)
-        if h.get("live") and not h.get("released"):
-            seen = _ago(now - h["beat"]) if now and _num(h.get("beat")) else "?"
+        beat = _num(h.get("beat"))
+        if h.get("live") and not h.get("released") and now and beat and now - beat <= _SUSPECT_MS:
             return (f"An earlier camera page ({_label(h)}) took the camera at {_clock(h.get('opened'))} "
-                    f"and was last seen still holding it {seen} ago.")
+                    f"and was still holding it {_ago(now - beat)} ago.")
     return ""
 
 
@@ -350,8 +357,8 @@ def _message(c: dict, *, who: str, version: str, ua: str, repeats: int) -> str:
         f"Android {_t(env.get('android'), 12)}" if env.get("android") else "",
         f"WebView {_t(env.get('webview'), 24)}" if env.get("webview") else "",
         f"Telegram {_t(env.get('telegram'), 16)}" if env.get("telegram") else "",
-        _t(env.get("perf"), 12),
-        f"{_t(tg.get('platform'), 16)} Bot API {_t(tg.get('api'), 8)}" if tg else "",
+        f"performance class {_t(env.get('perf'), 12)}" if env.get("perf") else "",
+        f"Bot API {_t(tg.get('api'), 8) or '?'} ({_t(tg.get('platform'), 16) or '?'})" if tg else "",
     ) if x))
     L.append(" · ".join(x for x in (
         f"screen {_t(env.get('screen'), 24)}" if env.get("screen") else "",
@@ -448,7 +455,7 @@ def _message(c: dict, *, who: str, version: str, ua: str, repeats: int) -> str:
     for h in _l(c.get("holders"))[:4]:
         h = _d(h)
         seen = f"{_ago(now - h['beat'])} ago" if now and _num(h.get("beat")) else "?"
-        state = ("still holding the camera" if h.get("live") and not h.get("released")
+        state = ("was holding the camera when last seen" if h.get("live") and not h.get("released")
                  else f"let it go at {_clock(h.get('released'))}" if _num(h.get("released")) else "not holding it")
         L.append("Earlier camera page on this device: " + " · ".join(x for x in (
             _label(h),

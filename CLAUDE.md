@@ -2546,6 +2546,46 @@ SERVER's; the phone never authors it.
     screen. And the shutter is DISABLED until a frame has arrived: `capture`
     returns silently without `videoWidth`, so an armed-looking button that did
     nothing was the last thing the leader was left with.
+- **A camera failure REPORTS ITSELF to the admins** (2026-09-17, the
+  operator's directive, after the first «Kamera tasvir bermayapti» reached us as
+  a leader's screenshot — which says what happened and nothing about why, and
+  the why exists only on that tablet). `utils/cameraDiag.js` gathers,
+  `services/camera_report.py` lays it out, and it travels through the ONE
+  client-failure door, `POST /api/crash-report` with `kind: "camera"` — never a
+  new endpoint.
+  - **The page keeps a flight recorder** of every camera event (why each open
+    started, every getUserMedia with its path and answer time, the settings the
+    stream opened at, `mute`/`unmute`/`ended`, `play()` rejections, video
+    dimension changes, page visibility, Telegram `activated`/`deactivated`), and
+    `failRef` names WHICH check put the failure screen up — `open_timeout`,
+    `no_frames` or `gum_error`, three different failures behind two screens.
+  - **On a failure screen (never on «denied»: a refusal is an answer) it probes,
+    then posts** — device model and Android / WebView / Telegram versions (the
+    Telegram-Android suffix of the user agent names the tablet), the camera
+    list, the stream's settings, capabilities and state, one frame read straight
+    off the stream through a CLONE (tells a camera that sends nothing apart from
+    a page that does not show what it sends), the same stream re-asked for
+    640×480 through `applyConstraints` (tells a size the device cannot deliver
+    apart from a camera dead at any size), and the other camera pages of the
+    same Telegram, asked over a BroadcastChannel and read from a localStorage
+    ledger (a MINIMIZED camera page still holding the camera). The DM leads with
+    a «Likely cause» and prints every fact it was drawn from under it.
+  - **The probes never ask and never hold.** No getUserMedia is called, so no
+    «Allow camera?» sheet; the clone's release is parked on `probeHoldRef` and
+    `startCamera` calls it FIRST, because a clone left running keeps the dead
+    source alive under the leader's retry; and a page not on screen runs no
+    probe at all, since touching the camera from the background could take it
+    from the page in use. The 640×480 probe runs only on a stream the page has
+    already given up on — whatever it finds, Retry replaces that stream.
+  - One DM per person per failure kind per page visibility per hour (the person
+    is in the fingerprint: leaders on identical tablets share a user agent); at
+    most three reports per page. The leader sees one muted line,
+    `proof.cam.reported`, and only once the server HAS the report.
+  - **Reading a screenshot of this page without a report:** the stamp sits on
+    the picture box, and the box is shaped by `camAR`. A SQUARE box is Chrome's
+    2×2 black placeholder — the frame a video renders when its stream ENDS
+    before delivering one real frame — so the camera never sent a single frame
+    on that page. It is not a freeze after working.
 - **The main lens is chosen TWICE, because 0.5x arrives two different ways**
   (user, 2026-08-20 — a pilot phone opened on the ultra-wide). A phone that
   exposes each rear sensor as its own DEVICE is answered by label: `lensScore`

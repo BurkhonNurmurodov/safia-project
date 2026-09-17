@@ -870,6 +870,142 @@ export default function ProofCamera() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [ensureCamera]);
 
+  /* ── when the camera fails, the device says why — utils/cameraDiag ────── */
+
+  // The page's own comings and goings, into the recorder: a camera that stops
+  // right after Telegram minimized the page is a different failure from one
+  // that never started on a page nobody left.
+  useEffect(() => {
+    const vis = () => note("page", document.visibilityState);
+    const hide = () => note("page", "pagehide");
+    const tg = tgApp();
+    const on = () => note("telegram", "activated");
+    const off = () => note("telegram", "deactivated");
+    document.addEventListener("visibilitychange", vis);
+    window.addEventListener("pagehide", hide);
+    tg?.onEvent?.("activated", on);
+    tg?.onEvent?.("deactivated", off);
+    return () => {
+      document.removeEventListener("visibilitychange", vis);
+      window.removeEventListener("pagehide", hide);
+      tg?.offEvent?.("activated", on);
+      tg?.offEvent?.("deactivated", off);
+    };
+  }, [note]);
+
+  // How this page describes itself to a sibling camera page that asks. Read
+  // through a ref, because the answer must be the page as it is NOW, not the
+  // render the listener was registered in.
+  const describeRef = useRef(null);
+  describeRef.current = () => {
+    const tr = streamRef.current?.getVideoTracks?.()[0];
+    let st = {};
+    try { st = tr?.getSettings?.() || {}; } catch { /* optional */ }
+    const f = framesRef.current;
+    return {
+      task: taskId, taskName: task?.name || "", vis: document.visibilityState,
+      active: tgApp()?.isActive, mode, err: camErr || "",
+      live: tr?.readyState === "live", muted: !!tr?.muted,
+      size: st.width ? `${st.width}x${st.height}` : "",
+      opened: opensRef.current.openedAt,
+      frameAgo: f.time >= 0 && f.at ? Date.now() - f.at : null,
+      opens: opensRef.current.total, opensHidden: opensRef.current.hidden,
+    };
+  };
+
+  // Answer sibling camera pages, and keep this page's line in the device's
+  // camera ledger for the sibling too frozen to answer at all.
+  useEffect(() => {
+    const id = pageIdRef.current;
+    const stop = answerPresence(id, () => describeRef.current());
+    const beat = () => {
+      if (!opensRef.current.openedAt) return;   // never held a camera: nothing to own up to
+      const d = describeRef.current();
+      beatHolder(id, {
+        task: d.task, taskName: d.taskName, opened: d.opened, live: d.live,
+        vis: d.vis, active: d.active, frameAgo: d.frameAgo,
+      });
+    };
+    const timer = setInterval(beat, 5000);
+    const bye = () => { if (opensRef.current.openedAt) beatHolder(id, { live: false, vis: "closed" }); };
+    window.addEventListener("pagehide", bye);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("pagehide", bye);
+      bye();
+      stop();
+    };
+  }, []);
+
+  // The failure report: once per failure screen, at most three per page — a
+  // fourth would say nothing the first did not. Nothing on screen changes
+  // while it is gathered; once the server has it, one line says so.
+  const camErrRef = useRef(camErr);
+  camErrRef.current = camErr;
+  const reportRef = useRef({ busy: false, sent: 0 });
+  useEffect(() => {
+    if (!camErr || camErr === "denied") return;   // a refusal is the leader's answer, not a fault
+    setReported(false);
+    const r = reportRef.current;
+    if (r.busy || r.sent >= 3) return;
+    r.busy = true;
+    r.sent += 1;
+    const attempt = attemptRef.current;
+    const same = () => attemptRef.current === attempt;   // Retry starts a new attempt
+    const hold = (release) => { probeHoldRef.current = release; };
+    (async () => {
+      try {
+        const fail = failRef.current;
+        // Only a stream that opened and went silent is THIS failure's stream;
+        // after a failed or unfinished open, streamRef still names the last one.
+        const stream = fail.kind === "no_frames" ? streamRef.current : null;
+        const track = stream?.getVideoTracks?.()[0] || null;
+        let openId = "";
+        try { openId = track?.getSettings?.().deviceId || ""; } catch { /* optional */ }
+        const cam = {
+          screen: camErr, trigger: fail.kind || "unknown", error: fail.error, stall: fail.stall,
+          now: Date.now(), mode,
+          ctx: {
+            task: task?.name, taskId, leader: data?.leader?.name, date: data?.day?.date,
+            cell: cellId, late: lateMode, facing,
+          },
+          opens: { ...opensRef.current, lens: shortId(localStorage.getItem(`${LENS_KEY}.${facing}`) || "") },
+          track: trackSnap(track),
+          video: videoSnap(videoRef.current, streamRef.current),
+        };
+        cam.env = await deviceEnv();
+        cam.cameras = await cameraList(openId);
+        cam.others = await askOthers(pageIdRef.current);
+        cam.holders = otherHolders(pageIdRef.current);
+        if (fail.kind === "no_frames") {
+          // The probes touch the camera, so a page in the background never
+          // runs them: it could take the camera from the page in use.
+          const onScreen = document.visibilityState === "visible";
+          const heldElsewhere = Array.isArray(cam.others) && cam.others.some((o) => o.live);
+          cam.frames = !same() ? { got: null, why: "retry pressed" }
+            : !onScreen ? { got: null, why: "page not on screen" }
+            : await readTrackFrame(track, 3000, hold);
+          cam.smaller = !same() ? { tried: false, why: "retry pressed" }
+            : !onScreen ? { tried: false, why: "page not on screen" }
+            : heldElsewhere ? { tried: false, why: "another camera page holds the camera" }
+            : cam.frames?.got !== false
+              ? { tried: false, why: cam.frames?.got ? "frames arrived" : (cam.frames?.why || "no frame probe") }
+              : await probeSmaller(track, 3000, hold);
+        }
+        cam.interrupted = !same();
+        cam.still = same() && !!camErrRef.current;
+        cam.timeline = recRef.current.list();
+        const res = await sendCameraReport(cam);
+        if (res?.ok && same() && camErrRef.current) setReported(true);
+      } catch { /* the report must never become a second failure */ } finally {
+        r.busy = false;
+      }
+    })();
+    // Once per failure: everything else it reads is a ref, or the render the
+    // failure appeared in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camErr]);
+
   /* ── the frame area, measured, so the picture box can be built from it ──── */
   const frameWatch = useRef(null);
   const setFrameEl = useCallback((el) => {
@@ -1208,9 +1344,16 @@ export default function ProofCamera() {
                 style={{ color: "rgba(255,255,255,0.65)" }}>
                 {t(`proof.cam.${camErr}Msg`)}
               </p>
-              <Button size="lg" onClick={() => startCamera(facing)}>
+              <Button size="lg" onClick={() => startCamera(facing, "retry button")}>
                 <RefreshCw size={16} /> {t("proof.cam.retry")}
               </Button>
+              {/* Said only once the server HAS the report: reassurance for a
+                  send that has not happened is a promise the page cannot keep. */}
+              {reported ? (
+                <p className="mt-3 text-[11px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+                  {t("proof.cam.reported")}
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}
