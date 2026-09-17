@@ -5730,6 +5730,45 @@ def _sheet_concerns_job() -> None:
                       SHEET_CONCERNS_FROM, SHEET_CONCERNS_TO)
 
 
+# ── one-shot: the leader checklist AS PRODUCTION RUNS IT ─────────────────────
+# The operator asked, on 2026-09-17, before the new checklist rules go to every
+# unit, for production's own record of the checklist: which units and leaders
+# changed a window, a date rule or a task, what leaders actually file and when,
+# and a sample of the last three days' proofs to try the new AI texts on. It
+# READS and writes nothing but its own flag; the files land in the operator's
+# chat as ZIPs (`services/checklist_setup_report.py`). Scheduled rather than run
+# inline: it downloads a few hundred proof photos from Telegram, and a boot that
+# stalls past /health rolls the deploy back.
+CHECKLIST_SETUP_FLAG = "checklist_setup_report_2026_09_17_v1"
+_CHECKLIST_SETUP_DELAY_S = 90
+
+
+def report_checklist_setup() -> None:
+    """The checklist setup report, DMed once as ZIP files.
+
+    Flag-guarded like every other errand here: delivered on the first boot
+    after its own deploy and never again; a failed delivery is retried on the
+    next boot and then abandoned. Changing what it reports needs a NEW flag
+    key. Never raises.
+    """
+    try:
+        if not _report_pending(CHECKLIST_SETUP_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("checklist-setup-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_CHECKLIST_SETUP_DELAY_S),
+                    _checklist_setup_job)
+    except Exception as exc:
+        print(f"[startup] checklist setup report could not be scheduled: {exc}")
+
+
+def _checklist_setup_job() -> None:
+    from app.services import checklist_setup_report
+    _send_report_once(CHECKLIST_SETUP_FLAG, "checklist setup report",
+                      checklist_setup_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the

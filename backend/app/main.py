@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
         notify_operator_education_lesson,
         report_shared_sap_cells_raw_xlsx,
         report_sheet_concerns_xlsx,
+        report_checklist_setup,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
@@ -398,6 +399,13 @@ async def lifespan(app: FastAPI):
     # once. Remove this line, `startup.report_sheet_concerns_xlsx` and
     # `services/sheet_concerns_report.py` once it has landed.
     report_sheet_concerns_xlsx()
+    # ⚠ TEMPORARY one-shot (2026-09-17) — the leader checklist as production
+    # runs it (every level of the task chain, filing times, a proof sample), as
+    # ZIP files in the operator's chat, before the new rules go to every unit.
+    # Scheduled, flag-guarded — delivers once. Remove this line,
+    # `startup.report_checklist_setup` and `services/checklist_setup_report.py`
+    # once it has landed.
+    report_checklist_setup()
     yield
     shutdown_scheduler()
 
