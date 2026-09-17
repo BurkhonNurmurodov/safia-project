@@ -1,9 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { Layers } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DayStepper from "../components/ui/DayStepper";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
+import { FilterPanel } from "../components/ui/ColumnFilter";
+import { useFactorySection } from "../components/ui/FactorySelect";
 import KpiDeltaCard from "../components/ui/KpiDeltaCard";
 import LoadBarChart from "../components/charts/LoadBarChart";
 import { DEFAULT_SEGMENTS } from "../components/charts/HeatmapChart";
@@ -14,6 +17,8 @@ import ShiftReportTable from "../components/overview/ShiftReportTable";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
+import { useAuth } from "../context/AuthContext";
+import { useFactoryParams } from "../context/FactoryContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -37,7 +42,8 @@ function signed(n, fmt) {
 const WINDOW_DAYS = 7; // trend sparkline span, ending on the selected date
 
 export default function ShiftDaily() {
-  const { unit, setUnit } = useFilters();
+  const { unit, setUnit, shift: shiftPick, setShift } = useFilters();
+  const { auth } = useAuth();
   const { t } = useLang();
   const { tl } = useTranslit();
   const navigate = useNavigate();
@@ -55,26 +61,49 @@ export default function ShiftDaily() {
 
   const winFrom = addDaysISO(date, -(WINDOW_DAYS - 1));
 
-  // Supervisors are already scoped to the shift-manager's own shift server-side;
-  // their shift number drives the dashboard's shift filter.
-  const { data: supervisors = [] } = useQuery({
+  // Scope: plant → shift, picked in the FilterPanel like every other page. The
+  // plant is the shared FactoryContext value and the shift the shared
+  // FilterContext one, so a pick carries across Overview, Zagruzka and
+  // Ojidaniya. A SHIFT-MANAGER works one shift and the board below is locked to
+  // it server-side, so the whole page reads that shift for them and states it
+  // as an inert chip — S1/S2 there would put another shift's cards over an
+  // empty board. Their shift is read off their own units, which
+  // /api/staff/supervisors already scopes to it.
+  const isShiftManager = auth?.role === "shift-manager";
+  const { data: supervisors = [], isFetched: supsFetched } = useQuery({
     queryKey: ["staff-supervisors"],
     queryFn: () => api.get("/api/staff/supervisors").then(r => r.data),
     staleTime: 120_000,
+    enabled: isShiftManager,
   });
-  const shift = supervisors[0]?.shift ?? null;
+  const ownShift = isShiftManager ? (supervisors[0]?.shift ?? null) : null;
+  const shift = isShiftManager ? ownShift : shiftPick;
+  // A shift-manager whose shift is unknown reads nothing rather than both
+  // shifts: /api/brigadirs and /api/heatmap do not pin a shift themselves.
+  const scopePending = isShiftManager && !supsFetched;
+  const scopeKnown = !isShiftManager || ownShift != null;
 
-  const { data: brigadirs = [], isLoading } = useQuery({
-    queryKey: ["shift-daily-brigadirs", shift, date],
-    queryFn: () => api.get("/api/brigadirs", { params: { date_from: date, date_to: date, shift } }).then(r => r.data),
-    enabled: !!shift,
+  const dayBase = useMemo(
+    () => ({ date_from: date, date_to: date, ...(shift ? { shift } : {}) }), [date, shift]);
+  const winBase = useMemo(
+    () => ({ date_from: winFrom, date_to: date, ...(shift ? { shift } : {}) }), [winFrom, date, shift]);
+  const dayParams = useFactoryParams(dayBase);
+  const winParams = useFactoryParams(winBase);
+
+  const { data: brigadirs = [], isLoading: brigLoading } = useQuery({
+    queryKey: ["shift-daily-brigadirs", dayParams],
+    queryFn: () => api.get("/api/brigadirs", { params: dayParams }).then(r => r.data),
+    enabled: scopeKnown,
   });
 
-  const { data: heatmap, isLoading: hmLoading } = useQuery({
-    queryKey: ["shift-daily-heatmap", shift, winFrom, date],
-    queryFn: () => api.get("/api/heatmap", { params: { date_from: winFrom, date_to: date, shift } }).then(r => r.data),
-    enabled: !!shift,
+  const { data: heatmap, isLoading: heatLoading } = useQuery({
+    queryKey: ["shift-daily-heatmap", winParams],
+    queryFn: () => api.get("/api/heatmap", { params: winParams }).then(r => r.data),
+    enabled: scopeKnown,
   });
+  // While the scope is still resolving the page is loading, not empty.
+  const isLoading = brigLoading || scopePending;
+  const hmLoading = heatLoading || scopePending;
 
   // Live colour thresholds from admin config — shared (same query keys) with the
   // Zagruzka page. P bars use the fleet-heatmap segments; A bars use the
@@ -153,6 +182,29 @@ export default function ShiftDaily() {
 
   const hasData = brigadirs.length > 0;
 
+  // Plant switcher (null on a single-plant install, an inert chip for a
+  // locked viewer), then the shift.
+  const factorySection = useFactorySection();
+  const shiftSection = isShiftManager
+    ? (ownShift != null && {
+        key: "shift", icon: Layers, static: true,
+        label: t("filter.shift"), display: `S${ownShift}`,
+      })
+    : {
+        key: "shift", icon: Layers, label: t("filter.shift"),
+        active: shiftPick != null,
+        display: shiftPick != null ? `S${shiftPick}` : "",
+        onClear: () => setShift(null),
+        render: () => (
+          <SegmentedToggle
+            fill
+            value={shiftPick}
+            onChange={setShift}
+            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+          />
+        ),
+      };
+
   const unitToggle = (
     <SegmentedToggle
       value={unit}
@@ -163,9 +215,13 @@ export default function ShiftDaily() {
 
   return (
     <Layout title={t("shiftDaily.title")}>
-      {/* Controls: date + unit */}
-      <div className="flex flex-wrap items-center gap-3 mb-5">
+      {/* ONE-ROW filter bar: the day inline, plant / shift inside the shared
+          FilterPanel (active narrowings surface as chips), the unit at the
+          right edge. The panel stays a DIRECT child of this row — its fit
+          check measures the row's children. */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
         <DayStepper value={date} onChange={setDate} />
+        <FilterPanel sections={[factorySection, shiftSection].filter(Boolean)} />
         <div className="ml-auto">{unitToggle}</div>
       </div>
 
@@ -236,12 +292,13 @@ export default function ShiftDaily() {
           owns it, over that page's own fixed window, and each column prints
           the window and the date it is showing. Wiring it to the stepper would
           mean recomputing four figures here, which is the one thing this board
-          may never do.
+          may never do. The plant and the shift in the filter bar DO reach it:
+          they are scope, not period.
 
           It fetches LAST: one of its requests can run the «Zagruzka fayli»
           engine twice per configured unit, and fired with the page's own
           queries it takes the seconds the cards and the charts need to paint. */}
-      <ShiftReportTable pageReady={!isLoading && !hmLoading} />
+      <ShiftReportTable shift={shift} pageReady={!isLoading && !hmLoading} />
 
       {/* Planned vs Actual load — merges to a single difference bar on toggle */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">

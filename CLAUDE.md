@@ -4850,6 +4850,20 @@ morning, with «XATO» wherever a brigadir had entered nothing.
     prints it, with its date, in its own header. Wiring the stepper to it would
     mean recomputing four figures in this file, which is the one thing this
     board may never do (the rule at the top of this section).
+  - **The page carries the platform's filter bar** (2026-09-17): `DayStepper`
+    → `FilterPanel` holding `useFactorySection()` then the shift, and the KPI
+    cards, both charts, the table and the board all read that one scope. The
+    plant is the shared FactoryContext value and the shift the shared
+    FilterContext one, so a pick carries to Overview, Zagruzka and Ojidaniya.
+    **A SHIFT-MANAGER's shift is an inert `static` chip**: the board is locked
+    to it server-side (`routers/shift_report._scope`) while `/api/brigadirs` and
+    `/api/heatmap` are not, so a free S1/S2 would put another shift's cards over
+    an empty board. Their shift is still read off `/api/staff/supervisors`,
+    which now only a shift-manager's page calls — before this an admin read
+    whichever shift the first unit in that list carried, and a top-manager,
+    whom that endpoint refuses, read empty cards. **The board takes `shift` as
+    a PROP and never reads the global supervisor pick**: the page has no such
+    control, so a pick left standing on Overview narrowed it invisibly.
   - **That dashboard is now a page of its own**, `/shift-daily`, page key
     `shift-daily`, default roles `["top-manager"]` plus admin implicitly, in
     the «Ishlab chiqarish» nav group. `/daily` still forks a SHIFT-MANAGER to
@@ -4881,8 +4895,8 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   file under. At 09:00 shift 2's today is the night that has just ended; shift
   1's today flips at its own 08:00, so before it the board shows the last
   finished day shift. A unit with no shift reads the calendar date.
-- **The period picker does not reach it.** The request carries the toolbar's
-  scope (plant, shift, supervisor) and never its dates. Every column header
+- **The period picker does not reach it.** The request carries the page's
+  scope (plant, shift) and never its dates. Every column header
   prints its own window — with the date while one shift is on screen; with two,
   a group row per shift prints both of its dates, which can differ.
 - **A blank is «—» plus a REASON, never 0**: `not_configured` (no catalog),

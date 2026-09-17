@@ -1,11 +1,16 @@
-// «Smena hisoboti» — Overview, under the KPI cards. One row per brigadir of the
-// viewer's shift, five columns, and no figure computed here: every value comes
-// from GET /api/shift-report, which reads each one through the page that owns it
-// (backend/app/services/shift_report.py names them). This file only paints.
+// «Smena hisoboti» — the shift dashboard (pages/ShiftDaily.jsx), under the KPI
+// cards. One row per brigadir of the viewer's shift, five columns, and no figure
+// computed here: every value comes from GET /api/shift-report, which reads each
+// one through the page that owns it (backend/app/services/shift_report.py names
+// them). This file only paints.
 //
 // Rules it keeps, so nobody has to rediscover them:
-// - The period picker beside it does NOT reach it. Each column has its own fixed
+// - The day stepper beside it does NOT reach it. Each column has its own fixed
 //   window and prints it — with the date — in its own header.
+// - Its scope is the PAGE's filter bar: the shared plant, and the `shift` the
+//   page hands it. A supervisor pick is never read — the page has no such
+//   control, so one left standing on another page would narrow the board with
+//   nothing on screen saying so.
 // - A figure the platform cannot state is «—» with its REASON (an icon, and the
 //   words under the table), never a 0 that would read as an idle or failing unit.
 // - It is a HEATMAP (the operator's call, 2026-09-16): the whole cell carries
@@ -40,7 +45,6 @@ import StatusBandsModal from "./StatusBandsModal";
 import Button from "../ui/Button";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useAuth } from "../../context/AuthContext";
-import { useFilters } from "../../context/FilterContext";
 import { useFactory, useFactoryParams } from "../../context/FactoryContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -177,7 +181,7 @@ const SK_NAME = ["w-3/4", "w-1/2", "w-2/3", "w-3/5", "w-4/5", "w-7/12"];
 // while the slowest block on it worked. Held until the page's own data is in,
 // the board fills in UNDER a page that is already readable. The default is
 // true: a caller that does not say otherwise gets the old behaviour.
-export default function ShiftReportTable({ pageReady = true }) {
+export default function ShiftReportTable({ shift = null, pageReady = true }) {
   const { t } = useLang();
   const { auth } = useAuth();
   // The bands in force. Calling this is also what tells `utils/statusBands`
@@ -186,21 +190,17 @@ export default function ShiftReportTable({ pageReady = true }) {
   const [bandsOpen, setBandsOpen] = useState(false);
   const { tl } = useTranslit();
   const navigate = useNavigate();
-  const { shift, brigadirIds, ready } = useFilters();
   const { factory, locked } = useFactory();
   const [sort, setSort] = usePersistentState("overview_sr_sort", DEFAULT_SORT);
 
-  // The toolbar's scope only — never its dates.
-  const base = useMemo(() => ({
-    ...(shift ? { shift } : {}),
-    ...(brigadirIds?.length ? { manager_id: brigadirIds } : {}),
-  }), [shift, brigadirIds]);
+  // The page's scope only — never its dates.
+  const base = useMemo(() => (shift ? { shift } : {}), [shift]);
   const params = useFactoryParams(base);
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["shift-report", params],
     queryFn: () => api.get("/api/shift-report", { params }).then((r) => r.data),
-    enabled: ready && pageReady,
+    enabled: pageReady,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
@@ -295,7 +295,7 @@ export default function ShiftReportTable({ pageReady = true }) {
       </tr>
     ));
   } else if (!rows.length) {
-    const filtered = !!shift || !!brigadirIds?.length || (factory != null && !locked);
+    const filtered = !!shift || (factory != null && !locked);
     body = (
       <tr>
         <td colSpan={COLS} className="px-4 py-6 text-center text-xs whitespace-normal" style={{ color: "var(--text-3)" }}>
