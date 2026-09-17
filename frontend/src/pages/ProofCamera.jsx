@@ -57,6 +57,11 @@ const RETRY_EVERY_MS = 20 * 1000;
 // said nothing and could not be recovered from. After this the guard is
 // released and the failure is stated instead.
 const OPEN_TIMEOUT_MS = 20 * 1000;
+// How long an open left waiting in the background gets, once the page is back
+// on screen, to finish before it is replaced. Its «Allow camera?» sheet may only
+// now be in front of the leader, and a second request on top of a sheet still
+// up is a second sheet — or none at all.
+const RETURN_GRACE_MS = 8 * 1000;
 // A video track reads `live`, unpaused and attached, while the WebView delivers
 // no frames at all — the state Android leaves behind when another app takes the
 // camera, and the one thing that looks pixel-for-pixel like a working
@@ -587,19 +592,44 @@ export default function ProofCamera() {
   // Frame bookkeeping for the watchdog: the last `currentTime` seen, when it
   // was seen, and how many silent re-opens this stall has already cost.
   const framesRef = useRef({ time: -1, at: 0, fixes: 0 });
+  // The camera is only ever opened ON SCREEN. A request made from the
+  // background cannot finish — nobody can answer «Allow camera?» there, and
+  // Android does not hand the camera to an app it cannot see — so it hung for
+  // OPEN_TIMEOUT_MS and put a failure screen in front of a leader whose camera
+  // was never broken. That is the 2026-09-17 report: the page went to the
+  // background at 54 s, the watchdog read the paused picture as a dead camera
+  // at 64 s, re-opened it from the background, and failed at 84 s. An open
+  // asked for while hidden is noted here and made when the page comes back.
+  const deferredRef = useRef(false);
+  // For the return to settle: whether the open in flight spent time in the
+  // background, the promise of that whole open, its deadline, and a token
+  // that stands the watchdog aside while the return is being settled.
+  const openHiddenRef = useRef(false);
+  const openDoneRef = useRef(Promise.resolve());
+  const deadlineRef = useRef(null);
+  const returningRef = useRef(0);
   const startCamera = useCallback(async (want = facing, why = "start") => {
     // A failure report may be holding a clone of the old stream, and a clone
     // keeps the camera source alive underneath the open about to start.
     probeHoldRef.current?.();
     probeHoldRef.current = null;
+    if (document.visibilityState !== "visible") {
+      if (!deferredRef.current) {
+        opensRef.current.hidden += 1;
+        note("open", `put off until the page is back on screen · ${why} · ${want}`);
+      }
+      deferredRef.current = true;
+      return;
+    }
     if (startingRef.current) return;
     startingRef.current = true;
     const attempt = ++attemptRef.current;
     const mine = () => attemptRef.current === attempt;
-    const hidden = document.visibilityState !== "visible";
+    let finished = () => {};
+    openDoneRef.current = new Promise((resolve) => { finished = resolve; });
+    openHiddenRef.current = false;
     opensRef.current.total += 1;
-    if (hidden) opensRef.current.hidden += 1;
-    note("open", `${why} · ${want}${hidden ? " · page hidden" : ""}`);
+    note("open", `${why} · ${want}`);
     const t0 = performance.now();
     setCamErr(null);
     setCamBusy(true);
@@ -608,10 +638,14 @@ export default function ProofCamera() {
       if (!mine()) return;
       startingRef.current = false;
       setCamBusy(false);
-      failRef.current = { kind: "open_timeout", error: null, stall: null };
+      failRef.current = {
+        kind: "open_timeout", error: null, stall: null,
+        hidden: document.visibilityState !== "visible", at: Date.now(),
+      };
       note("open", `no answer in ${OPEN_TIMEOUT_MS / 1000} s → failure screen`);
       setCamErr("stalled");
     }, OPEN_TIMEOUT_MS);
+    deadlineRef.current = deadline;
     // Every getUserMedia of this attempt, timed and recorded: which path
     // opened the camera, and how long Android took to answer, is half of any
     // failure report.
@@ -716,7 +750,8 @@ export default function ProofCamera() {
         tr.addEventListener("unmute", () => note("stream", "unmute"));
         tr.addEventListener("ended", () => {
           note("stream", "ended");
-          if (document.visibilityState === "visible") startCameraRef.current?.(want, "stream ended");
+          // Off screen this is put off, and made when the page comes back.
+          startCameraRef.current?.(want, "stream ended");
         });
       });
       if (videoRef.current) {
@@ -736,7 +771,7 @@ export default function ProofCamera() {
       failRef.current = {
         kind: "gum_error",
         error: { name: e?.name || "", message: String(e?.message || "").slice(0, 200) },
-        stall: null,
+        stall: null, hidden: document.visibilityState !== "visible", at: Date.now(),
       };
       note("open", `failed: ${e?.name || "error"}`);
       setCamErr(e?.name === "NotAllowedError" ? "denied"
@@ -744,6 +779,7 @@ export default function ProofCamera() {
     } finally {
       clearTimeout(deadline);
       if (mine()) { startingRef.current = false; setCamBusy(false); }
+      finished();
     }
   }, [facing, pickLens, note]);
   startCameraRef.current = startCamera;
@@ -810,6 +846,14 @@ export default function ProofCamera() {
       framesRef.current = { ...framesRef.current, time: -1, at: 0 };
       return;                                            // nothing to look through
     }
+    // Off screen the WebView pauses the picture itself, so silence there says
+    // nothing about the camera — and nothing may be re-opened from there. The
+    // stall clock starts again from zero when the page comes back.
+    if (document.visibilityState !== "visible") {
+      framesRef.current = { time: -1, at: 0, fixes: 0 };
+      return;
+    }
+    if (returningRef.current) return;           // a return is settling the camera
     if (camErr || startingRef.current) return;  // a refusal is not retried in a loop
     const s = streamRef.current;
     const alive = !!s && s.getVideoTracks().some((tr) => tr.readyState === "live");
@@ -842,7 +886,7 @@ export default function ProofCamera() {
     // stream is not a hiccup: say so and give them the button, rather than
     // restarting the camera behind a black screen for the rest of the shift.
     if (f.fixes >= 1) {
-      failRef.current = { kind: "no_frames", error: null, stall: seen };
+      failRef.current = { kind: "no_frames", error: null, stall: seen, hidden: false, at: now };
       note("watch", `${what} again → failure screen`);
       setCamErr("stalled");
       return;
@@ -864,11 +908,6 @@ export default function ProofCamera() {
     return () => clearInterval(id);
   }, [mode, task, dayClosed, ensureCamera]);
 
-  useEffect(() => {
-    const onVis = () => { if (document.visibilityState === "visible") ensureCamera(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [ensureCamera]);
 
   /* ── when the camera fails, the device says why — utils/cameraDiag ────── */
 
@@ -944,8 +983,12 @@ export default function ProofCamera() {
   camErrRef.current = camErr;
   const reportRef = useRef({ busy: false, sent: 0 });
   useEffect(() => {
-    if (!camErr || camErr === "denied") return;   // a refusal is the leader's answer, not a fault
+    if (!camErr) return;
     setReported(false);
+    if (camErr === "denied") return;   // a refusal is the leader's answer, not a fault
+    // Raised while the page was hidden: nobody saw it, and the return clears it
+    // and opens again. If THAT open fails, it fails on screen and is reported.
+    if (failRef.current.hidden) return;
     const r = reportRef.current;
     if (r.busy || r.sent >= 3) return;
     r.busy = true;
@@ -1005,6 +1048,63 @@ export default function ProofCamera() {
     // failure appeared in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camErr]);
+
+  /* ── back on screen ─────────────────────────────────────────────────────── */
+
+  // Everything the background left behind is settled here: an open that was
+  // put off, an open that was still waiting when the page left, and a failure
+  // screen raised while nobody could see it. None of them reaches the leader as
+  // a failure — the camera is opened again, now that someone is there to
+  // answer «Allow camera?».
+  const settleReturn = useCallback(async () => {
+    if (!task || dayClosed) return;
+    const deferred = deferredRef.current;
+    const waiting = startingRef.current && openHiddenRef.current;
+    const failedHidden = !!camErrRef.current && !!failRef.current.hidden;
+    deferredRef.current = false;
+    if (!deferred && !waiting && !failedHidden) { ensureCamera(); return; }
+    const token = ++returningRef.current;
+    const since = Date.now();
+    const attempt = attemptRef.current;
+    note("page", `back on screen · ${waiting ? "an open was left waiting"
+      : failedHidden ? "a failure was raised while hidden" : "making the open that was put off"}`);
+    // The waiting open's own deadline must not fire a failure screen while it
+    // gets its last chance below.
+    clearTimeout(deadlineRef.current);
+    setCamErr(null);
+    setCamBusy(true);
+    // Never two camera requests at once: the open from before the page left
+    // may still be waiting on an «Allow camera?» sheet that is only now in
+    // front of the leader.
+    await Promise.race([
+      openDoneRef.current,
+      new Promise((resolve) => { setTimeout(resolve, RETURN_GRACE_MS); }),
+    ]);
+    if (returningRef.current !== token) return;      // a newer return took over
+    returningRef.current = 0;
+    if (attemptRef.current !== attempt) return;       // something newer is opening already
+    if (opensRef.current.openedAt >= since) return;   // the waiting open finished
+    if (failRef.current.at >= since) {                // it failed on screen: that screen stands
+      setCamBusy(false);
+      return;
+    }
+    // Drop the open that never finished, and start one the leader can answer.
+    attemptRef.current += 1;
+    startingRef.current = false;
+    startCamera(facing, "back on screen");
+  }, [task, dayClosed, ensureCamera, startCamera, facing, note]);
+
+  useEffect(() => {
+    const onVis = () => {
+      // Whichever way the page went, the stall clock starts again from zero:
+      // the time spent hidden is not time the camera failed to deliver.
+      framesRef.current = { time: -1, at: 0, fixes: 0 };
+      if (document.visibilityState === "visible") { settleReturn(); return; }
+      if (startingRef.current) openHiddenRef.current = true;
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [settleReturn]);
 
   /* ── the frame area, measured, so the picture box can be built from it ──── */
   const frameWatch = useRef(null);

@@ -149,12 +149,44 @@ def _last(c: dict, ev: str) -> str:
     return ""
 
 
-def _backgrounded(c: dict) -> bool:
-    for r in _rows(c):
-        if (r[1] == "page" and r[2] == "hidden") or (r[1] == "telegram" and r[2] == "deactivated") \
-                or (r[1] == "open" and "page hidden" in str(r[2])):
-            return True
-    return False
+# The recorder's "open" rows that are an OUTCOME, not the start of an open.
+_OPEN_OUTCOMES = ("no answer", "failed", "superseded", "put off")
+
+
+def _last_open(c: dict):
+    """(index, detail) of the last open that STARTED, or (None, "")."""
+    rows = _rows(c)
+    for i in range(len(rows) - 1, -1, -1):
+        if rows[i][1] == "open" and not str(rows[i][2]).startswith(_OPEN_OUTCOMES):
+            return i, str(rows[i][2])
+    return None, ""
+
+
+def _hidden_during_last_open(c: dict) -> bool:
+    i, _ = _last_open(c)
+    if i is None:
+        return False
+    return any((r[1] == "page" and r[2] == "hidden") or (r[1] == "telegram" and r[2] == "deactivated")
+               for r in _rows(c)[i + 1:])
+
+
+def _last_stream(c: dict) -> str:
+    """How the last stream on the page opened, e.g. «1080x1920@30 · camera 0, facing back»."""
+    for r in reversed(_rows(c)):
+        if r[1] == "stream" and str(r[2]) not in ("mute", "unmute", "ended"):
+            return str(r[2])
+    return ""
+
+
+def _worked_before(c: dict) -> str:
+    """Whether the camera had delivered a picture on this page before it failed —
+    the one fact that clears the camera itself."""
+    last = _last_stream(c)
+    frames = _num(_d(c.get("video")).get("frames"))
+    if not last or not frames:
+        return ""
+    return (f"The camera had worked on this page before ({_t(last.split(' · ')[0], 20)}, "
+            f"{_fmt(frames)} frames shown), so the camera itself is not broken.")
 
 
 def _live_other(c: dict) -> dict:
@@ -240,12 +272,24 @@ def verdict(cam) -> str:
 
     if trig == "open_timeout":
         parts = ["Opening the camera never finished; the page gave up after 20 s."]
+        _, start = _last_open(c)
         if held:
             parts.append(held)
-        elif _backgrounded(c):
-            parts.append("Telegram went to the background while it was opening, which can leave the open hanging.")
-        elif _d(c.get("env")).get("perm") == "prompt":
-            parts.append("The «Allow camera?» prompt was most likely never answered.")
+        elif "page hidden" in start:
+            # Only a tab still running a bundle from before the page kept every
+            # open ON SCREEN can report this; the page no longer starts one there.
+            parts.append("The page itself started this open while it was in the background, where an open can "
+                         "never finish: nobody can answer «Allow camera?» there, and Android does not give the "
+                         "camera to an app it cannot see.")
+        elif _hidden_during_last_open(c):
+            parts.append("The page went to the background while the camera was opening, which can leave the "
+                         "open hanging.")
+        else:
+            parts.append("The page stayed on screen, so either «Allow camera?» was left unanswered or Android "
+                         "never answered the request.")
+        worked = _worked_before(c)
+        if worked:
+            parts.append(worked)
         return " ".join(parts) + cut
 
     if trig == "no_frames":
@@ -386,8 +430,10 @@ def _message(c: dict, *, who: str, version: str, ua: str, repeats: int) -> str:
     else:
         L.append(f"<b>Cameras</b>: not listed ({_t(_d(cams).get('error'), 30) or 'no answer'})")
     if opens.get("lens"):
-        L.append(f"Remembered lens: {_t(opens.get('lens'), 10)}"
-                 + (" (this stream was opened with it)" if opens.get("remembered") else " (not used for this stream)"))
+        used = ""
+        if track:
+            used = " (this stream was opened with it)" if opens.get("remembered") else " (not used for this stream)"
+        L.append(f"Remembered lens: {_t(opens.get('lens'), 10)}{used}")
 
     # ── the stream ─────────────────────────────────────────────────────────
     L += ["", "<b>Stream</b>"]
@@ -412,9 +458,16 @@ def _message(c: dict, *, who: str, version: str, ua: str, repeats: int) -> str:
         if can:
             L.append(f"Camera can do: {can}")
     else:
-        L.append("No stream is open to describe (the camera never finished opening).")
+        last = _last_stream(c)
+        frames = _num(video.get("frames"))
+        if last:
+            L.append(f"No stream is open now. The last one on this page opened at {_t(last, 90)}"
+                     + (f", and {_fmt(frames)} frames reached the screen before it stopped." if frames else "."))
+        else:
+            L.append("No stream is open, and the recorded events show none opening on this page.")
     if video:
-        L.append(f"Video element: ready {_t(video.get('ready'), 3) or '?'} · {_size(video.get('w'), video.get('h'))}"
+        L.append(("Video element" if track else "Video element, still on the last stream")
+                 + f": ready {_t(video.get('ready'), 3) or '?'} · {_size(video.get('w'), video.get('h'))}"
                  f" · t {_t(video.get('t'), 10) or '?'} · paused {_yn(video.get('paused'))}"
                  f" · frames {_t(video.get('frames'), 10) or '?'} · stream attached {_yn(video.get('attached'))}"
                  + (f" · box {_t(video.get('box'), 12)}" if video.get("box") else ""))
@@ -424,7 +477,7 @@ def _message(c: dict, *, who: str, version: str, ua: str, repeats: int) -> str:
                  f" · paused {_yn(stall.get('paused'))} · ready {_t(stall.get('ready'), 3) or '?'}")
     if opens:
         L.append(f"Camera opens on this page: {_t(opens.get('total'), 4) or '0'}"
-                 f" ({_t(opens.get('hidden'), 4) or '0'} while hidden)"
+                 f" ({_t(opens.get('hidden'), 4) or '0'} asked for while the page was hidden)"
                  + (f" · the last took {_t(opens.get('lastMs'), 6)} ms" if _num(opens.get("lastMs")) is not None else "")
                  + (f" · page open {_ago(env.get('uptime'))}" if _num(env.get("uptime")) is not None else ""))
 

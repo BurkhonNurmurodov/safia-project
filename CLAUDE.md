@@ -2546,6 +2546,29 @@ SERVER's; the phone never authors it.
     screen. And the shutter is DISABLED until a frame has arrived: `capture`
     returns silently without `videoWidth`, so an armed-looking button that did
     nothing was the last thing the leader was left with.
+- **The camera is only ever opened ON SCREEN** (2026-09-17, found by the first
+  camera report). A request made from the background cannot finish — nobody can
+  answer «Allow camera?» there, and Android does not hand the camera to an app
+  it cannot see — so it hung for `OPEN_TIMEOUT_MS` and greeted the returning
+  leader with «Kamera tasvir bermayapti» over a camera that was never broken.
+  The report showed exactly that: the page went to the background at 54 s, the
+  watchdog read the paused picture as a dead camera at 64 s, re-opened from the
+  background, and failed at 84 s. Three rules now hold:
+  - **Off screen nothing opens.** `startCamera` puts the request off
+    (`deferredRef`) instead of calling getUserMedia, and `ensureCamera` does not
+    measure frames at all while hidden — the WebView pauses the picture itself,
+    so silence there says nothing about the camera. The stall clock restarts
+    from zero on every visibility change.
+  - **`settleReturn` is THE way back, and it runs on every return.** An open
+    that was put off is made; a failure raised while hidden is cleared (and was
+    never reported — `failRef.hidden`); an open that was still in flight when
+    the page left gets `RETURN_GRACE_MS` to finish, because its «Allow camera?»
+    sheet may only now be in front of the leader, and is replaced only if it
+    does not. Never two camera requests at once: a second one on top of a sheet
+    still up is a second sheet, or none. The watchdog stands aside
+    (`returningRef`) until the return is settled.
+  - A failure that happens ON SCREEN after the return is a real one: it stands,
+    and it is reported.
 - **A camera failure REPORTS ITSELF to the admins** (2026-09-17, the
   operator's directive, after the first «Kamera tasvir bermayapti» reached us as
   a leader's screenshot — which says what happened and nothing about why, and
