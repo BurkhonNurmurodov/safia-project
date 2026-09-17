@@ -352,6 +352,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/arc/export.xlsx",                      "sync_export", "export.arc"),
     (("POST",),   "/api/quality/export.xlsx",                  "sync_export", "export.quality"),
     (("POST",),   "/api/worker-concerns/export.xlsx",          "sync_export", "export.worker_concerns"),
+    (("POST",),   "/api/concerns/export.xlsx",                 "sync_export", "export.concerns"),
     (("POST",),   "/api/production/export.xlsx",               "sync_export", "export.production"),
     (("POST",),   "/api/downtime/cell-detail/export.xlsx",     "sync_export", "export.ojidaniya_detail"),
     (("POST",),   "/api/downtime/export.xlsx",                 "sync_export", "export.ojidaniya"),

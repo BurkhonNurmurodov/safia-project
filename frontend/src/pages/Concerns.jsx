@@ -7,7 +7,7 @@ import {
   Check, Eye, CalendarClock, UserRound, UserCheck, ShieldCheck, FileText,
   CircleDot, Clock, Hourglass, Gauge, TrendingUp, PieChart, Timer, Layers,
   ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
-  MessageSquare, Hash
+  MessageSquare, Hash, FileSpreadsheet
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -24,11 +24,13 @@ import ColumnsPicker from "../components/ui/ColumnsPicker";
 import { FilterPanel, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import CellLink from "../components/ui/CellLink";
+import { useToast } from "../components/ui/Toast";
 import {
   LEVEL_COLOR, LevelChip, InsightCard, Metric, Subject, ChartCard, Chart, NoChart,
   Empty, StackLegend, RankedList, useRowFit,
 } from "../components/ui/AnalysisBoard";
 import api from "../utils/api";
+import { exportXlsx } from "../utils/exportXlsx";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -374,6 +376,12 @@ const isoPlusDays = (iso, n) => isoMinusDays(iso, -n);
 // Whole days from b to a (positive when a is later) — deadline countdowns.
 const isoDiffDays = (a, b) =>
   Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
+// Overdue on the register = still open and past entry_date + deadline_days (the
+// due day itself is not yet overdue). ONE predicate for the deadline cell and
+// the Excel export, so the file can never mark a row the table does not.
+const rowOverdue = (r) =>
+  r.status !== "done" && r.deadline_days != null && !!r.entry_date &&
+  isoDiffDays(isoPlusDays(r.entry_date, r.deadline_days), localTodayIso()) < 0;
 const emptyForm = () => ({
   id: null,
   leader_name: "",          // display-only, kept for legacy rows shown on edit
@@ -1867,6 +1875,185 @@ export default function Concerns() {
   const respShown = respRows.slice(0, respFit);
   const respHidden = respRows.length - respShown.length;
 
+  // ── Excel export ───────────────────────────────────────────────────────────
+  // The page as it stands, as one workbook: the register under exactly the
+  // filters on screen — through the columns the viewer has visible, in their
+  // order and sort — plus every board of the analysis tab, built over the same
+  // rows. The page sends its OWN figures, already in the viewer's language; the
+  // backend only formats (services/concerns_export.py), so the file cannot
+  // disagree with the screen it was pressed from.
+  const toast = useToast();
+  const [exporting, setExporting] = useState(false);
+
+  // One register cell per column key — the export's twin of `listCell`. Where
+  // the screen stacks two facts (date over time, code over leader, owner over
+  // position) both travel and the file gives each its own column. Names go in
+  // FULL: the short form exists for a narrow table cell, while a spreadsheet is
+  // filtered by name, and there no two people may share a label.
+  const exportCell = {
+    num:         (r) => ({ num: concernNo(r) }),
+    date:        (r) => ({ d: r.entry_date || null, time: r.created_at ? fmtTime(r.created_at) : null }),
+    cell:        (r) => ({ cell: r.cell_code || null, cellLeader: r.cell_leader_name ? tl(r.cell_leader_name) : null }),
+    category:    (r) => ({ category: r.category ? categoryLabel(r.category) : null, categoryColor: CATEGORY_COLOR[r.category] || null }),
+    owner:       (r) => ({ owner: r.owner_name ? tl(r.owner_name) : null, ownerRole: r.owner_role ? roleLabel(r.owner_role) : null }),
+    concern:     (r) => ({ text: [tl(r.concern_text || ""), r.solution ? `✓ ${tl(r.solution)}` : ""].filter(Boolean).join("\n") }),
+    status:      (r) => ({ status: statusLabel(r.status), statusColor: STATUS_COLOR[r.status] || null }),
+    level:       (r) => { const lv = r.level || "supervisor"; return { level: levelLabel(lv), levelColor: LEVEL_COLOR[lv] || null }; },
+    responsible: (r) => ({ responsible: r.responsible_name ? tl(r.responsible_name) : null }),
+    deadline:    (r) => ({ deadline: r.deadline_days ?? null, overdue: rowOverdue(r) }),
+    resolution:  (r) => ({ minutes: resolutionMinutes(r) }),
+    comments:    (r) => ({ comments: r.comment_count || 0 }),
+  };
+
+  const buildExportBody = () => {
+    const dmy = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "");
+    const period = startDate || endDate
+      ? `${fmtDate(startDate, lang) || "…"} – ${fmtDate(endDate, lang) || "…"}`
+      : t("concerns.periodAll");
+    const title = t("concerns.title");
+    const count = `${sorted.length} ${t("concerns.itemsUnit")}`;
+    // A multi-pick names what it picked while that still fits a strip cell.
+    const picks = (vals, labelOf) => (vals.length <= 3
+      ? vals.map(labelOf).join(", ")
+      : `${vals.length} ${t("filter.selected2")}`);
+    const all = t("filter.all");
+    const levelBits = [
+      levelSel.length ? picks(levelSel, levelLabel) : null,
+      onlyMyLevel && myLevel ? t("concerns.myLevelOnly") : null,
+    ].filter(Boolean);
+    // The scope the numbers were taken under: period and the org chain always
+    // (as far as this viewer has them), every other narrowing only while it is on.
+    const meta = [
+      { label: t("concerns.period"), value: period },
+      ...(factorySection ? [{ label: factorySection.label, value: factorySection.display || t("factory.all") }] : []),
+      ...(canFilterShift ? [{ label: t("filter.shift"), value: shiftLabel || all }] : []),
+      ...(canFilterSup ? [{ label: t("tasks.colSupervisor"), value: supSel.length ? picks(supSel, (v) => supLabel.get(v) || v) : all }] : []),
+      ...(cellSel.length ? [{ label: t("concerns.colCell"), value: picks(cellSel, (v) => v) }] : []),
+      ...(statusSel.length ? [{ label: t("concerns.colStatus"), value: picks(statusSel, statusLabel) }] : []),
+      ...(categorySel.length ? [{ label: t("concerns.colCategory"), value: picks(categorySel, categoryLabel) }] : []),
+      ...(levelBits.length ? [{ label: t("concerns.colLevel"), value: levelBits.join(" · ") }] : []),
+      ...(respSel.length ? [{ label: t("concerns.responsible"), value: picks(respSel, (n) => tl(n) || n) }] : []),
+      ...(ownerSel.length ? [{ label: t("concerns.colOwner"), value: picks(ownerSel, (o) => tl(o) || o) }] : []),
+      ...(deadlineActive ? [{ label: t("concerns.colDeadline"), value: `${deadlineMin || "0"}–${deadlineMax || "∞"}` }] : []),
+      ...(search.trim() ? [{ label: t("concerns.xSearch"), value: `«${search.trim()}»` }] : []),
+      { label: t("concerns.xGenerated"), value: fmtDateTime(new Date().toISOString()) },
+    ];
+    const dayWord = (n) => t(n === 1 ? "concerns.day" : "concerns.days");
+    const parts = STACK_PARTS.map(({ key, label, color }) => ({ key, label, color }));
+    return {
+      filename: startDate || endDate ? `${title} ${dmy(startDate)}–${dmy(endDate)}` : title,
+      title,
+      subtitle: period,
+      caption: `📊 ${title} · ${period} · ${count}`,
+      sheets: {
+        overview: t("concerns.xShOverview"), trend: t("concerns.xShTrend"),
+        analysis: t("concerns.viewAnalytics"), register: t("concerns.xShRegister"),
+      },
+      labels: {
+        kpi: t("concerns.xKpis"), insights: t("concerns.xInsights"),
+        count: t("concerns.xCount"), share: t("concerns.xShare"),
+        total: t("concerns.kpiTotal"), empty: t("concerns.empty"),
+      },
+      meta,
+      // The donut's four disjoint buckets — an overdue row has left its
+      // todo/doing bucket — framed by the total and the unresolved pool.
+      kpis: [
+        { label: t("concerns.kpiTotal"), value: charts.total, color: CHART_BRAND },
+        { label: statusLabel("done"), value: charts.done, color: STATUS_COLOR.done,
+          hint: charts.total ? `${Math.round((charts.done / charts.total) * 100)}%` : "" },
+        { label: statusLabel("doing"), value: charts.doing, color: STATUS_COLOR.doing },
+        { label: statusLabel("todo"), value: charts.todo, color: CHART_TODO },
+        { label: t("concerns.chartOverdue"), value: charts.overdue, color: CHART_OVERDUE },
+        { label: t("concerns.cardUnresolved"), value: charts.todo + charts.doing + charts.overdue, color: CHART_BRAND },
+      ],
+      // The three headline cards, over the same period + chain they read on screen.
+      insights: [
+        { label: t("concerns.kpiLongestOpen"), color: "#ef4444", empty: t("concerns.allClear"),
+          ...(insights.longest ? {
+            // The number rides along: it is how the row is found on the register tab.
+            subject: `№${concernNo(insights.longest.row)} · ${tl(insights.longest.row.concern_text)}`,
+            value: insights.longest.age, unit: dayWord(insights.longest.age),
+          } : {}) },
+        { label: t("concerns.kpiSlowestBrigadir"), color: "#f59e0b", empty: t("concerns.noData"),
+          ...(insights.slowest ? {
+            subject: tl(insights.slowest.name), value: insights.slowest.avg,
+            unit: `${dayWord(insights.slowest.avg)} · ${t("concerns.avgSuffix")}`,
+          } : {}) },
+        { label: t("concerns.kpiPeakDate"), color: "#3b82f6", empty: t("concerns.allClear"),
+          ...(insights.peak ? {
+            subject: fmtDate(insights.peak.date, lang), value: insights.peak.count, unit: t("concerns.openLower"),
+          } : {}) },
+      ],
+      status: charts.total ? {
+        title: t("concerns.chartStatusTitle"), colLabel: t("concerns.colStatus"),
+        rows: donutRows.map((r) => ({ label: r.label, n: r.n, color: r.color })),
+      } : null,
+      levels: analytics.openTotal ? {
+        title: t("concerns.chartLevels"), subtitle: t("concerns.chartLevelsSub"), colLabel: t("concerns.colLevel"),
+        rows: levelRows.map((r) => ({ label: r.label, n: r.n, color: r.color })),
+      } : null,
+      trend: charts.trend.length ? {
+        title: t("concerns.chartTrend"), subtitle: `${t("concerns.chartTrendSub")} · ${t("concerns.chartFlowSub")}`,
+        flowTitle: t("concerns.chartFlow"),
+        colDate: t("concerns.colDate"), colOpened: t("concerns.seriesOpened"),
+        colClosed: t("concerns.seriesClosed"), colOpen: t("concerns.seriesOpen"),
+        rows: charts.trend.map((p) => ({ d: p.day, opened: p.opened, closed: p.closed, open: p.open })),
+      } : null,
+      age: charts.total ? {
+        title: t("concerns.chartAge"), subtitle: t("concerns.chartAgeSub"), colBucket: t("concerns.xDays"),
+        buckets: AGE_BUCKETS,
+        series: ageSeries.map((s, i) => ({ name: s.name, data: s.data, color: [STATUS_COLOR.done, CHART_OPEN][i] })),
+      } : null,
+      categories: catRows.length ? {
+        title: t("concerns.chartByCategory"), subtitle: t("concerns.chartByCategorySub"),
+        colLabel: t("concerns.colCategory"), parts,
+        rows: catRows.map((r) => ({
+          label: categoryLabel(r.key), color: CATEGORY_COLOR[r.key] || null,
+          done: r.done, doing: r.doing, todo: r.todo, overdue: r.overdue, total: r.total,
+        })),
+      } : null,
+      // Every holder the board's level toggle leaves in — the card cuts the list
+      // to what fits beside its neighbour, the file does not.
+      responsible: respRows.length ? {
+        title: t("concerns.chartByResp"),
+        subtitle: [t("concerns.chartByRespSub").replace("{n}", String(respRows.length)),
+                   respLvlSel ? levelLabel(respLvlSel) : null].filter(Boolean).join(" · "),
+        colName: t("concerns.responsible"), colLevel: t("concerns.colLevel"), parts,
+        rows: respRows.map((r) => ({
+          name: r.title, none: r.key === NO_RESP,
+          level: r.level ? levelLabel(r.level) : "", levelColor: r.level ? LEVEL_COLOR[r.level] : null,
+          done: r.done, doing: r.doing, todo: r.todo, overdue: r.overdue, total: r.total,
+        })),
+      } : null,
+      register: {
+        title: t("concerns.listTitle"),
+        countLabel: count,
+        columns: visibleCols.map((c) => ({ key: c.key, label: t(c.labelKey) })),
+        labels: {
+          time: t("concerns.xTime"), leader: t("concerns.colLeader"), role: t("concerns.xRole"),
+          duration: `${t("concerns.colResolution")} (${t("general.unitHour")}:${t("general.unitMin")})`,
+        },
+        rows: sorted.map((r) => Object.assign({}, ...visibleCols.map((c) => exportCell[c.key]?.(r) || {}))),
+      },
+    };
+  };
+
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const via = await exportXlsx("/api/concerns/export.xlsx", {
+        body: buildExportBody(),
+        fallbackName: "concerns.xlsx",
+      });
+      toast.success(t(via === "download" ? "staff.exportDownloaded" : "staff.exportToast"));
+    } catch (e) {
+      // An error toast stays until dismissed — Telegram's WebView swallows alert().
+      toast.error(`${t("concerns.exportFailed")}: ${e?.response?.data?.detail || e?.message || ""}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Per-row action buttons — one source for the desktop expanded row and the
   // expanded mobile card, so the two layouts always offer the same actions.
   const rowActions = (r) => (
@@ -2021,10 +2208,7 @@ export default function Concerns() {
       // Overdue = still open and past entry_date + deadline_days (same
       // convention as the mobile card and the charts).
       case "deadline": {
-        const dueIso = r.status !== "done" && r.deadline_days != null && r.entry_date
-          ? isoPlusDays(r.entry_date, r.deadline_days)
-          : null;
-        const overdue = dueIso != null && isoDiffDays(dueIso, localTodayIso()) < 0;
+        const overdue = rowOverdue(r);
         return (
           <td key={key} className="px-3 py-2.5 text-center font-mono text-[11px]"
               style={{ color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : undefined }}>
@@ -2252,6 +2436,24 @@ export default function Concerns() {
           triggerClassName="px-3 py-2 text-sm"
         />
         <FilterPanel sections={pageSections} onClearAll={clearPage} />
+        {/* The page as a report, under exactly the filters on screen — last on
+            the row so it sits at the toolbar's right edge. A DIRECT child of
+            the row on purpose: FilterPanel's fit check measures the row's
+            children, and this button is one of them. Icon only on a phone,
+            where the row has no room for a word. */}
+        <Button
+          size="lg"
+          variant="secondary"
+          className="ml-auto"
+          loading={exporting}
+          disabled={isLoading || sorted.length === 0}
+          icon={!exporting ? <FileSpreadsheet size={14} /> : null}
+          onClick={exportExcel}
+          title={t("concerns.export")}
+          aria-label={t("concerns.export")}
+        >
+          <span className="hidden sm:inline">{t("concerns.export")}</span>
+        </Button>
       </div>
 
       {/* KPIs — three headline insights (rich, colour-coded cards). Units are
@@ -3291,6 +3493,9 @@ export default function Concerns() {
           onClose={() => setCommentsRow(null)}
         />
       )}
+
+      {/* Export outcome — «downloaded» / «sent to your chat», or why it failed. */}
+      {toast.node}
     </Layout>
   );
 }

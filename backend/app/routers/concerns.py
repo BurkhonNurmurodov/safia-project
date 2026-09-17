@@ -42,10 +42,11 @@ unclaimed profile inherits the bell row on registration; the author is never
 notified about their own action and no account is DMed twice.
 Access is gated by the ``concerns`` page in the access matrix.
 """
+import re
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -59,13 +60,18 @@ from app.capabilities import page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.services import action_log, shift_scope
+from app.services.concerns_export import build_concerns_workbook
 from app.services.factory_scope import factory_manager_ids, resolve_factory
+from app.xlsx_delivery import deliver_xlsx
 # Reuse the shared notification helpers: notify_profile addresses a PERSON (one
 # bell row on the profile + a DM to every account holding it), _notify is the
 # single-account fallback for legacy rows that resolve to no profile.
 from app import identity
 from app.routers.auth import ADMIN_ROLE_REF
 from app.routers.staff import _notify, _profile_key, notify_profile
+# The export's meta strip flattened for the action register — the same
+# `meta` shape the Quality export sends, so one spelling serves both.
+from app.routers.quality import _scope_line
 
 router = APIRouter(prefix="/api/concerns", tags=["concerns"])
 
@@ -1014,6 +1020,67 @@ def list_cell_codes(
         LeaderConcern.cell_code != "",
     ).distinct().all()
     return sorted({r[0] for r in rows})
+
+
+class ConcernsExportBody(BaseModel):
+    """The page as it stands, computed and labelled by the page itself — see
+    services/concerns_export.py for why the figures travel in the body. A block
+    the page has nothing for is simply absent, and its sheet or section is
+    skipped."""
+    filename: Optional[str] = None
+    title: str = "Concerns"
+    subtitle: Optional[str] = None
+    caption: Optional[str] = None
+    sheets: dict[str, str] = {}          # tab names
+    labels: dict[str, Any] = {}          # shared words (Total / Count / Share …)
+    meta: list[dict[str, Any]] = []      # the scope: period, plant, chain, filters, time
+    kpis: list[dict[str, Any]] = []      # the four status buckets + total / unresolved
+    insights: list[dict[str, Any]] = []  # the three headline cards
+    status: Optional[dict[str, Any]] = None
+    levels: Optional[dict[str, Any]] = None
+    trend: Optional[dict[str, Any]] = None
+    age: Optional[dict[str, Any]] = None
+    categories: Optional[dict[str, Any]] = None
+    responsible: Optional[dict[str, Any]] = None
+    register: Optional[dict[str, Any]] = None
+
+
+@router.post("/export.xlsx")
+def export_concerns(
+    request: Request,
+    body: ConcernsExportBody,
+    payload: dict = Depends(require_page("concerns")),
+):
+    """Excel export of the page as it stands: the register under exactly the
+    filters on screen, through the columns the viewer has visible, plus the
+    analysis board built over the same rows. Read-only, so it rides PAGE access
+    like the list itself. It is built from what the page was served and goes to
+    the caller alone — a browser session downloads it, inside Telegram it lands
+    in their own chat (app/xlsx_delivery.py)."""
+    bio = build_concerns_workbook(body.model_dump())
+    # A translated title and two dates; path separators are the one thing a
+    # filename must never carry.
+    fname = re.sub(r'[\\/:*?"<>|]+', " ", (body.filename or "").strip()).strip() or "concerns"
+    if not fname.endswith(".xlsx"):
+        fname += ".xlsx"
+    caption = body.caption or f"📊 {body.title}"
+    try:
+        data = bio.read()
+        resp = deliver_xlsx(request, payload, fname, data, caption)
+        action_log.enrich(
+            target_kind="report", target_id=fname, target_name=body.title,
+            details=[
+                ("file", fname),
+                ("rows", len(((body.register or {}).get("rows")) or [])),
+                ("size", len(data)),
+                ("scope", _scope_line(body.meta)),
+            ],
+        )
+        return resp
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
 
 
 def _validate(body: ConcernIn):
