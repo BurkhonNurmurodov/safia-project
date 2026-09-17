@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Trophy, Gauge, ClipboardCheck, Lightbulb, ShieldCheck, UserCheck,
   ListOrdered, TrendingUp, ArrowUp, ArrowDown, Minus, Info, ChevronDown,
@@ -432,10 +432,329 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st, t, nm }) {
 }
 
 /* ═══════════════════════ breakdown (an opened row) ═══════════════════
- * The five statistics against the TEAM — each value with its bar, the team
- * average as a tick on the same bar, and the change since the first week —
- * plus the two strongest and two weakest named outright. */
-function BreakdownBody({ s, catMeta, teamAvg, st, t }) {
+ * The five statistics against the TEAM, drawn as a spider chart: the
+ * brigadir's own shape in brand gold (gold means the selected brigadir on
+ * this page, and an opened row is always the selected one), the team average
+ * as a dashed outline under it, every vertex dot in its value's traffic-light
+ * band and every vertex NAMED with its value and its change since the first
+ * week — plus the two strongest and two weakest named outright. */
+
+/* Radar geometry. The radius is SOLVED from the measured width and the
+ * measured labels, never fixed: one opened row is ~450px of a desktop table
+ * and ~320px of a phone card, and a fixed radius either runs the side labels
+ * off the phone or shrinks the web to a thumbnail on the desktop. */
+const RADAR = {
+  maxW: 460,              // the drawing never grows wider than this…
+  rMax: 104, rMin: 52,    // …nor its web past this radius
+  pad: 4,                 // clear margin inside the drawing
+  gapX: 10,               // vertex → a label beside it
+  gapY: 11,               // vertex → a label above / below (clears an enlarged dot)
+  icon: 12, iconGap: 4,
+  nameFs: 11.5, valueFs: 13.5, deltaFs: 10.5,
+  nameBase: 11, valueBase: 27, blockH: 31, // baselines inside one label block
+  rings: [20, 40, 60, 80, 100],
+};
+const TIP_W = 220, TIP_GAP = 14;
+
+const px1 = (v) => Math.round(v * 10) / 10;
+const fmtDelta = (d) => (d == null ? "" : `${d > 0 ? "+" : d < 0 ? "−" : ""}${fmt(Math.abs(d))}`);
+
+/* Label widths decide the radius, so they are MEASURED in the page's own font
+ * rather than guessed from a character count — the short names run from six
+ * to ten characters across the four languages. Padded by 5%: a webfont that
+ * lands after the first measure must not push a label over its edge. */
+let measureCtx, measureFamily;
+function textWidth(str, px, weight) {
+  if (!str) return 0;
+  if (measureCtx === undefined) {
+    measureCtx = (typeof document !== "undefined" && document.createElement("canvas").getContext("2d")) || null;
+    measureFamily = (measureCtx && getComputedStyle(document.body).fontFamily) || "sans-serif";
+  }
+  if (!measureCtx) return str.length * px * 0.62;
+  measureCtx.font = `${weight} ${px}px ${measureFamily}`;
+  return measureCtx.measureText(str).width;
+}
+
+/* Where everything sits for a given width. Axis 0 points straight up and the
+ * rest follow clockwise; a label rides beside its vertex on the flanks and
+ * above / below it at the top and bottom. Every label extent is linear in
+ * the radius, so the largest radius at which all of them clear both edges
+ * solves in closed form — no trial rendering. */
+function radarLayout(width, blocks) {
+  const { pad, gapX, gapY, blockH, rMax, rMin } = RADAR;
+  const n = blocks.length;
+  let W, cx;
+  const axes = blocks.map((b, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    const ux = Math.cos(a), uy = Math.sin(a);
+    const place = uy < -0.55 ? "above" : uy > 0.55 ? "below" : "side";
+    return { ux, uy, place, align: place === "side" ? (ux > 0 ? "start" : "end") : "middle", w: b.w, nameW: b.nameW };
+  });
+  const span = (ax, r) => {
+    const x = cx + ax.ux * r + (ax.place === "side" ? Math.sign(ax.ux) * gapX : 0);
+    return ax.align === "start" ? [x, x + ax.w] : ax.align === "end" ? [x - ax.w, x] : [x - ax.w / 2, x + ax.w / 2];
+  };
+  // Narrower than even the smallest web needs (a 320px phone, English
+  // labels) the drawing is laid out at the width it needs and SCALED down to
+  // the box — smaller text beats labels clipped off the edge.
+  const fit = () => {
+    W = Math.min(width, RADAR.maxW); cx = W / 2;
+    const lim = axes.reduce((acc, ax) => {
+      const [l0, r0] = span(ax, 0);
+      if (ax.ux > 1e-6) acc = Math.min(acc, (W - pad - r0) / ax.ux);
+      if (ax.ux < -1e-6) acc = Math.min(acc, (l0 - pad) / -ax.ux);
+      return acc;
+    }, rMax);
+    if (lim >= rMin) return lim;
+    W = Math.ceil(2 * (pad + Math.max(...axes.map((ax) => { const [l, rt] = span(ax, rMin); return Math.max(cx - l, rt - cx); }))));
+    cx = W / 2;
+    return rMin;
+  };
+  let r = fit();
+  // Labels under the web centre on their vertices while they clear each
+  // other; once two would touch, both turn outward instead.
+  const below = axes.filter((ax) => ax.place === "below").sort((p, q) => p.ux - q.ux);
+  if (below.some((ax, k) => k > 0 && span(below[k - 1], r)[1] + 12 > span(ax, r)[0])) {
+    below.forEach((ax) => { ax.align = ax.ux < 0 ? "end" : "start"; });
+    r = fit();
+  }
+  const top = (ax) => ax.uy * r + (ax.place === "above" ? -gapY - blockH : ax.place === "below" ? gapY : -blockH / 2);
+  const cy = pad - Math.min(-r, ...axes.map(top));
+  const H = Math.ceil(cy + Math.max(...axes.map((ax) => Math.max(ax.uy * r, top(ax) + blockH))) + pad);
+  return {
+    W, H, cx, cy, r, scale: Math.min(1, width / W),
+    axes: axes.map((ax) => { const [left, right] = span(ax, r); return { ...ax, left, right, top: cy + top(ax) }; }),
+    at: (i, pct) => [cx + axes[i].ux * r * (pct / 100), cy + axes[i].uy * r * (pct / 100)],
+  };
+}
+
+/* One series as paths over the axes that carry a value: the closed area, and
+ * its outline — whole when nothing is missing, otherwise split so an edge
+ * that skips an axis with no data is drawn apart (dotted). A solid straight
+ * edge across that axis would read as a value on it. */
+function radarShape(L, vals) {
+  const n = vals.length, idx = [];
+  vals.forEach((v, i) => { if (v != null) idx.push(i); });
+  const p = (i) => L.at(i, clamp(vals[i], 0, 100)).map(px1).join(",");
+  const area = idx.length >= 3 ? `M${idx.map(p).join("L")}Z` : "";
+  let edges = "", skips = "";
+  if (idx.length >= 2 && idx.length < n) {
+    idx.forEach((i, k) => {
+      if (idx.length === 2 && k === 1) return;
+      const j = idx[(k + 1) % idx.length];
+      if ((j - i + n) % n === 1) edges += `M${p(i)}L${p(j)}`; else skips += `M${p(i)}L${p(j)}`;
+    });
+  }
+  return { area, edges, skips, whole: idx.length === n };
+}
+
+/* A series key: a short stroke in the series' own line style — what the
+ * chart draws, not a filled box. */
+function LineKey({ tone, dashed }) {
+  return (
+    <svg width="16" height="6" className="flex-shrink-0" aria-hidden="true">
+      <line x1="1" y1="3" x2="15" y2="3" stroke={tone} strokeWidth="2" strokeLinecap={dashed ? "butt" : "round"} strokeDasharray={dashed ? "3 2" : undefined} />
+    </svg>
+  );
+}
+
+/* The spider chart. Reading one axis is a hover on a mouse, a tap on a phone
+ * (tap again, or anywhere else, to close) and the arrow keys once focused;
+ * the pointer never has to land on a 2px line — whichever axis is nearest by
+ * ANGLE is the one read. Every value the readout shows is also printed on the
+ * chart or in its aria-label, so the readout adds the team's number beside
+ * the brigadir's and gates nothing. */
+function RadarChart({ s, catMeta, teamAvg, st, t, nm }) {
+  const [measureRef, width] = useElementWidth();
+  const [active, setActive] = useState(null);
+  const [tipPos, setTipPos] = useState(null); // { i, left, top } — the readout's measured placement
+  const boxRef = useRef(null), svgRef = useRef(null);
+  const shapeRef = useRef(null), tipRef = useRef(null), tapRef = useRef(null);
+  const setBox = useCallback((el) => { boxRef.current = el; measureRef(el); }, [measureRef]);
+  const n = CATS.length;
+
+  const rows = useMemo(() => CATS.map((c) => {
+    const v = s.s[c.key], arr = s.sparks[c.key];
+    return { key: c.key, meta: catMeta[c.key], v, avg: teamAvg[c.key], d: arr && v != null ? v - arr[0] : null };
+  }), [s, catMeta, teamAvg]);
+
+  const L = useMemo(() => {
+    if (!width) return null;
+    const { icon, iconGap, nameFs, valueFs, deltaFs } = RADAR;
+    return radarLayout(width, rows.map((row) => {
+      const nameW = icon + iconGap + textWidth(row.meta.short, nameFs, 500);
+      const valueW = (row.v == null ? textWidth(t("leaderboard.noData"), nameFs, 500) : textWidth(`${fmt(row.v)}%`, valueFs, 700))
+        + (row.d == null ? 0 : 4 + textWidth(fmtDelta(row.d), deltaFs, 600));
+      return { nameW: nameW * 1.05, w: Math.ceil(Math.max(nameW, valueW) * 1.05) + 2 };
+    }));
+  }, [width, rows, t]);
+
+  // The brigadir's shape grows out of the centre once, as the row opens.
+  const drawn = !!L;
+  useEffect(() => {
+    const el = shapeRef.current;
+    if (!drawn || !el || !el.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    el.animate([{ opacity: 0, transform: "scale(0.6)" }, { opacity: 1, transform: "scale(1)" }], { duration: 420, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+  }, [drawn]);
+
+  // Where the readout goes — MEASURED, both its own height (a long category
+  // name wraps) and the room around it. Next to the label of the axis being
+  // read and never over it: under a label on the flanks, beside one at the
+  // top and bottom. Where the opened row has no room for that (a phone) it
+  // docks to the half of the chart AWAY from the axis instead. Never past the
+  // row, which sits in a scrolling table that would clip it. Runs before
+  // paint, so an unplaced readout is never seen.
+  useLayoutEffect(() => {
+    const tipEl = tipRef.current, box = boxRef.current;
+    if (active == null || !L || !tipEl || !box) return;
+    const k = L.scale, h = tipEl.offsetHeight, chartH = L.H * k, offX = (width - L.W * k) / 2;
+    const b = box.getBoundingClientRect();
+    const row = (box.closest("[data-breakdown]") || box).getBoundingClientRect();
+    const lo = row.left - b.left + 2, hi = row.right - b.left - TIP_W - 2;
+    const ax = L.axes[active];
+    const lb = { l: offX + ax.left * k, r: offX + ax.right * k, t: ax.top * k, b: (ax.top + RADAR.blockH) * k };
+    let left, top;
+    if (ax.place === "side") { left = ax.ux > 0 ? lb.l : lb.r - TIP_W; top = lb.b + 6; }
+    else { left = ax.ux < -0.2 ? lb.l - TIP_GAP - TIP_W : lb.r + TIP_GAP; top = ax.place === "above" ? lb.t : lb.b - h; }
+    if (left >= lo && left <= hi) top = clamp(top, 0, Math.max(0, chartH - h));
+    else {
+      const vy = L.at(active, clamp(rows[active].v ?? rows[active].avg ?? 100, 0, 100))[1] * k;
+      left = clamp((width - TIP_W) / 2, lo, Math.max(lo, hi));
+      top = vy > chartH / 2 ? 0 : Math.max(0, chartH - h);
+    }
+    left = Math.round(left); top = Math.round(top);
+    if (!tipPos || tipPos.i !== active || tipPos.left !== left || tipPos.top !== top) setTipPos({ i: active, left, top });
+  }, [active, L, width, rows, tipPos]);
+
+  // A tap anywhere outside the chart closes the readout.
+  useEffect(() => {
+    if (active == null) return undefined;
+    const off = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setActive(null); };
+    document.addEventListener("pointerdown", off);
+    return () => document.removeEventListener("pointerdown", off);
+  }, [active]);
+
+  if (!L) return <div ref={setBox} className="w-full" />;
+
+  const axisAt = (e) => {
+    const box = svgRef.current.getBoundingClientRect();
+    const k = L.W / (box.width || L.W); // screen px → drawing units, for a scaled-down chart
+    const x = (e.clientX - box.left) * k - L.cx, y = (e.clientY - box.top) * k - L.cy;
+    if (Math.hypot(x, y) < 6) return active; // the dead centre names no axis
+    const turn = (Math.atan2(y, x) + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI);
+    return Math.round(turn / ((2 * Math.PI) / n)) % n;
+  };
+  const onKeyDown = (e) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") setActive((c) => (c == null ? 0 : (c + 1) % n));
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") setActive((c) => (c == null ? n - 1 : (c - 1 + n) % n));
+    else if (e.key === "Escape") setActive(null);
+    else return;
+    e.preventDefault();
+  };
+
+  const mine = radarShape(L, rows.map((row) => row.v));
+  const team = radarShape(L, rows.map((row) => row.avg));
+  const noData = t("leaderboard.noData");
+  const summary = `${nm(s.name)} — ` + rows.map((row) =>
+    `${row.meta.name}: ${row.v == null ? noData : `${fmt(row.v)}%`} (${t("leaderboard.teamAvg")}: ${row.avg == null ? "—" : `${fmt(row.avg)}%`})`).join("; ");
+
+  const cur = active != null ? rows[active] : null;
+  const CurIcon = cur?.meta.icon;
+
+  return (
+    <div ref={setBox} className="relative w-full">
+      <div tabIndex={0} role="img" aria-label={summary} onKeyDown={onKeyDown} onBlur={() => setActive(null)}
+        className="mx-auto rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]" style={{ width: L.W * L.scale }}>
+        <svg ref={svgRef} width={px1(L.W * L.scale)} height={px1(L.H * L.scale)} viewBox={`0 0 ${L.W} ${L.H}`} style={{ display: "block" }} aria-hidden="true"
+          onPointerMove={(e) => { if (e.pointerType === "mouse") setActive(axisAt(e)); }}
+          onPointerLeave={(e) => { if (e.pointerType === "mouse") setActive(null); }}
+          onPointerDown={(e) => { tapRef.current = e.pointerType === "mouse" ? null : [e.clientX, e.clientY]; }}
+          onPointerUp={(e) => {
+            // A tap, not a drag — a scroll that starts on the chart cancels the
+            // pointer instead, so it never gets here.
+            const at = tapRef.current;
+            tapRef.current = null;
+            if (!at || Math.hypot(e.clientX - at[0], e.clientY - at[1]) > 10) return;
+            const i = axisAt(e);
+            setActive((c) => (c === i ? null : i));
+          }}>
+          {/* the web: a ring every 20 points, one spoke per statistic */}
+          {RADAR.rings.map((pct) => (
+            <path key={pct} d={`M${CATS.map((_, i) => L.at(i, pct).map(px1).join(",")).join("L")}Z`} fill="none" stroke="var(--border-md)" strokeWidth="1" />
+          ))}
+          {CATS.map((c, i) => {
+            const [x, y] = L.at(i, 100);
+            return <line key={c.key} x1={px1(L.cx)} y1={px1(L.cy)} x2={px1(x)} y2={px1(y)} stroke={active === i ? "var(--text-3)" : "var(--border-md)"} strokeWidth="1" />;
+          })}
+
+          {/* the team average under the brigadir — seen through their wash */}
+          {team.area && <path d={team.area} fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeDasharray="4 3" strokeLinejoin="round" />}
+
+          <g ref={shapeRef} style={{ transformOrigin: `${px1(L.cx)}px ${px1(L.cy)}px` }}>
+            {mine.area && <path d={mine.area} fill="var(--brand)" fillOpacity="0.16" stroke={mine.whole ? "var(--brand)" : "none"} strokeWidth="2" strokeLinejoin="round" />}
+            {mine.edges && <path d={mine.edges} fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" />}
+            {mine.skips && <path d={mine.skips} fill="none" stroke="var(--brand)" strokeWidth="1.5" strokeDasharray="1 4" strokeLinecap="round" />}
+            {rows.map((row, i) => {
+              if (row.v == null) return null;
+              const [x, y] = L.at(i, clamp(row.v, 0, 100));
+              return <circle key={row.key} cx={px1(x)} cy={px1(y)} r={active === i ? 6 : 4.5} fill={bandFill(st, row.v)} stroke="var(--bg-inner)" strokeWidth="2" />;
+            })}
+          </g>
+
+          {/* where the team sits on the axis being read */}
+          {cur && cur.avg != null && (() => {
+            const [x, y] = L.at(active, clamp(cur.avg, 0, 100));
+            return <circle cx={px1(x)} cy={px1(y)} r="3.5" fill="var(--bg-inner)" stroke="var(--text-2)" strokeWidth="1.5" />;
+          })()}
+
+          {/* the labels: identity icon + short name, then value and change */}
+          {rows.map((row, i) => {
+            const ax = L.axes[i], Icon = row.meta.icon, on = active === i;
+            const nameX = ax.align === "start" ? ax.left : ax.align === "end" ? ax.right - ax.nameW : (ax.left + ax.right - ax.nameW) / 2;
+            const valueX = ax.align === "start" ? ax.left : ax.align === "end" ? ax.right : (ax.left + ax.right) / 2;
+            return (
+              <g key={row.key}>
+                <Icon x={px1(nameX)} y={px1(ax.top + RADAR.nameBase - 10)} size={RADAR.icon} color={row.meta.hue} strokeWidth={2.25} aria-hidden="true" />
+                <text x={px1(nameX + RADAR.icon + RADAR.iconGap)} y={px1(ax.top + RADAR.nameBase)} fontSize={RADAR.nameFs} fontWeight={on ? 600 : 500} fill={on ? "var(--text-1)" : "var(--text-2)"}>{row.meta.short}</text>
+                <text x={px1(valueX)} y={px1(ax.top + RADAR.valueBase)} textAnchor={ax.align} style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {row.v == null
+                    ? <tspan fontSize={RADAR.nameFs} fontWeight="500" fill={st.none}>{noData}</tspan>
+                    : <tspan fontSize={RADAR.valueFs} fontWeight="700" fill={bandInk(st, row.v)}>{fmt(row.v)}%</tspan>}
+                  {row.d != null && <tspan dx="4" fontSize={RADAR.deltaFs} fontWeight="600" fill={deltaInk(st, row.d)}>{fmtDelta(row.d)}</tspan>}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {cur && (
+        <div ref={tipRef} className="absolute z-10 pointer-events-none rounded-lg px-2.5 py-2"
+          style={{ left: tipPos?.left ?? 0, top: tipPos?.top ?? 0, visibility: tipPos?.i === active ? "visible" : "hidden", width: TIP_W, background: "var(--bg-accent)", border: "1px solid var(--border-md)", boxShadow: "0 6px 20px rgba(0,0,0,0.25)" }}>
+          <div className="flex items-start gap-1.5 text-xs font-bold leading-snug" style={{ color: "var(--text-1)" }}>
+            <CurIcon size={12} className="flex-shrink-0 mt-[2px]" style={{ color: cur.meta.hue }} />
+            <span className="min-w-0">{cur.meta.name}</span>
+          </div>
+          <div className="grid items-center gap-x-2 gap-y-1 mt-1.5 text-[11px] leading-tight" style={{ gridTemplateColumns: "16px auto minmax(0,1fr)" }}>
+            <LineKey tone="var(--brand)" />
+            <b className="tabular-nums text-right" style={{ color: bandInk(st, cur.v) }}>{cur.v == null ? "" : `${fmt(cur.v)}%`}</b>
+            <span style={{ color: "var(--text-3)" }}>{shortPerson(nm(s.name))}{cur.v == null && <span style={{ color: st.none }}> · {noData}</span>}</span>
+            <LineKey tone="var(--text-3)" dashed />
+            <b className="tabular-nums text-right" style={{ color: "var(--text-1)" }}>{cur.avg == null ? "—" : `${fmt(cur.avg)}%`}</b>
+            <span style={{ color: "var(--text-3)" }}>{t("leaderboard.teamAvg")}</span>
+            {cur.d != null && <>
+              <span className="flex justify-center" style={{ color: deltaInk(st, cur.d) }}>{cur.d > 0 ? <ArrowUp size={11} /> : cur.d < 0 ? <ArrowDown size={11} /> : <Minus size={11} />}</span>
+              <b className="tabular-nums text-right" style={{ color: deltaInk(st, cur.d) }}>{fmtDelta(cur.d)}</b>
+              <span style={{ color: "var(--text-3)" }}>{t("leaderboard.vsEightWeeks")}</span>
+            </>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BreakdownBody({ s, catMeta, teamAvg, st, t, nm }) {
   const have = CATS.filter((c) => s.s[c.key] != null);
   const sorted = [...have].sort((a, b) => s.s[b.key] - s.s[a.key]);
   const strong = sorted.slice(0, 2), weak = sorted.slice(-2).reverse();
@@ -446,33 +765,14 @@ function BreakdownBody({ s, catMeta, teamAvg, st, t }) {
     </span>
   );
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_236px]">
+    <div data-breakdown className="grid gap-4 lg:grid-cols-[minmax(0,520px)_236px] lg:justify-center lg:items-center lg:gap-x-12">
       <div className="flex flex-col gap-2 min-w-0">
-        {CATS.map((c) => {
-          const meta = catMeta[c.key], Icon = meta.icon;
-          const v = s.s[c.key], arr = s.sparks[c.key];
-          const d = arr ? v - arr[0] : null;
-          const avg = teamAvg[c.key];
-          return (
-            <div key={c.key} className="grid items-center gap-3" style={{ gridTemplateColumns: "minmax(88px,150px) 44px minmax(40px,1fr) 40px" }}>
-              <span className="flex items-center gap-2 min-w-0 text-[12.5px] font-medium" style={{ color: "var(--text-1)" }} title={meta.name}>
-                <span className="inline-flex items-center justify-center rounded-md flex-shrink-0" style={{ width: 22, height: 22, background: hexA(meta.hue, 0.14), color: meta.hue }}><Icon size={12} /></span>
-                <span className="truncate">{meta.name}</span>
-              </span>
-              <b className="tabular-nums text-right text-[13.5px]" style={{ color: bandInk(st, v) }}>{v == null ? t("leaderboard.noData") : `${fmt(v)}%`}</b>
-              <div className="relative" style={{ height: 14 }} title={avg != null ? `${t("leaderboard.teamAvg")}: ${fmt(avg)}%` : undefined}>
-                <div className="absolute inset-x-0 rounded-full overflow-hidden" style={{ top: 4, height: 6, background: "var(--border-md)" }}>
-                  {v != null && <i className="block h-full rounded-full" style={{ width: `${v}%`, background: bandFill(st, v) }} />}
-                </div>
-                {avg != null && <i className="absolute rounded-sm" style={{ left: `calc(${avg}% - 1px)`, top: 1, width: 2, height: 12, background: "var(--text-2)" }} />}
-              </div>
-              <span className="tabular-nums text-right text-[11px] font-semibold" title={t("leaderboard.vsEightWeeks")} style={{ color: deltaInk(st, d) }}>
-                {d == null ? "" : `${d > 0 ? "+" : d < 0 ? "−" : ""}${fmt(Math.abs(d))}`}
-              </span>
-            </div>
-          );
-        })}
-        <div className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("leaderboard.breakdownLegend")}</div>
+        <RadarChart s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} />
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+          <span className="inline-flex items-center gap-1.5"><LineKey tone="var(--brand)" />{shortPerson(nm(s.name))}</span>
+          <span className="inline-flex items-center gap-1.5"><LineKey tone="var(--text-3)" dashed />{t("leaderboard.teamAvg")}</span>
+          <span style={{ color: "var(--text-4)" }}>{t("leaderboard.radarLegend")}</span>
+        </div>
       </div>
       <div className="flex flex-col gap-2">
         <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("leaderboard.strengths")}</span>
@@ -540,7 +840,7 @@ function TableRow({ s, isSel, isExp, onClick, sortKey, catMeta, teamAvg, st, med
       {isExp && (
         <tr>
           <td colSpan={5 + CATS.length} className="px-4 py-3" style={{ background: "var(--bg-inner)" }}>
-            <BreakdownBody s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} />
+            <BreakdownBody s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} />
           </td>
         </tr>
       )}
@@ -571,7 +871,7 @@ function MobileRow({ s, isSel, isExp, onClick, catMeta, teamAvg, st, medal, t, n
       </button>
       {isExp && (
         <div className="px-3 py-3" style={{ background: "var(--bg-inner)" }}>
-          <BreakdownBody s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} />
+          <BreakdownBody s={s} catMeta={catMeta} teamAvg={teamAvg} st={st} t={t} nm={nm} />
         </div>
       )}
     </div>
