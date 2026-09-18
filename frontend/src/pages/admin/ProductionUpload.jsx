@@ -48,6 +48,10 @@ const fmtDay = (iso) => {
 // Workshop name of a resolved cell — falls back across the four languages.
 const wsName = (cell) => (cell ? cell.ru || cell.uz || cell.uz_cyrl || cell.en || "" : "");
 
+// A SAP quantity, printed whole: «Поставлено» counts items, and a deferred
+// total runs to five figures, so it gets the reader's own group separator.
+const fmtNum = (v) => Math.round(Number(v) || 0).toLocaleString();
+
 // ── штатка / capacity editor ─────────────────────────────────────────────────
 function WorkCenters({ managerId, managerName }) {
   const { t } = useLang();
@@ -726,6 +730,16 @@ export default function ProductionUpload() {
                   .replace("{n}", ok.faza_operations)
                   .replace("{m}", ok.zaga_orders)}
               </div>
+              {/* «Поставлено» this day did not count, because the order's
+                  БазисСрокКонца names another day. Said out loud: a delivery
+                  that moves days must never do it silently. */}
+              {ok.fact_deferred > 0 && (
+                <div className="text-xs mt-1 leading-snug" style={{ color: "var(--text-3)" }}>
+                  {t("admin.prod.factDeferred")
+                    .replace("{n}", ok.fact_deferred)
+                    .replace("{q}", fmtNum(ok.fact_deferred_qty))}
+                </div>
+              )}
               {incomplete && (
                 <div className="text-xs mt-2 leading-snug" style={{ color: "#a16207" }}>
                   {t("admin.prod.warnIncomplete")}

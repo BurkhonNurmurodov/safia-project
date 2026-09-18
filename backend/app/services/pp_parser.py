@@ -178,9 +178,19 @@ def _extract_faza(ws, target_date: date | None, own_wcs: set[str]) -> dict:
 
 def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
     """order→SKU map (ALL orders, for the join) + order→«Поставлено» map (drives
-    «Факт», = the Excel «План пост» VLOOKUP) + display rows (catalog SKUs)."""
+    «Факт», = the Excel «План пост» VLOOKUP) + order→«БазисСрокКонца» map (WHICH
+    DAY that «Поставлено» counts on — `pp_calc.deliv_for_day`) + display rows
+    (catalog SKUs).
+
+    Deliberately NOT date-filtered, unlike `_extract_faza`. The заголовок is the
+    order→SKU dictionary the фаза is joined THROUGH, so cutting it to one day
+    would leave every order due another day resolving to no SKU at all — which
+    drops its ПЛАН as well as its delivery. The day question is asked of the
+    `order_due` map one level up, and of the DELIVERY alone.
+    """
     order_sku: dict[str, str] = {}
     order_deliv: dict[str, float] = {}
+    order_due: dict[str, object] = {}
     rows: list[list] = []
     seen = 0
     for row in ws.iter_rows(values_only=True):
@@ -192,6 +202,8 @@ def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
             order_sku[order] = sku
             # «ПоставлКол-во» (col F) — what Excel's «План пост» (col M) looks up.
             order_deliv[order] = _num(_get(row, ZG_DELIV))
+            # «БазисСрокКонца» (col J) — the day that delivery belongs to.
+            order_due[order] = _to_date(_get(row, ZG_DATE))
         seen += 1
         if catalog_skus and sku not in catalog_skus:
             continue
@@ -202,7 +214,8 @@ def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
             _str(_get(row, ZG_NAME)), _str(_get(row, ZG_STATUS)),
         ])
     return {"order_sku": order_sku, "order_deliv": order_deliv,
-            "columns": ZAGA_COLUMNS, "rows": rows, "seen": seen}
+            "order_due": order_due, "columns": ZAGA_COLUMNS, "rows": rows,
+            "seen": seen}
 
 
 # catalog sheet ("Sheet1 …"): main table A=SKU B=name C=labor D=WC; staffing
@@ -424,7 +437,8 @@ def read_workbook_slices(content: bytes, target_date: date | None,
     """Read an uploaded workbook once; return whichever of faza/zaga it holds.
 
     faza → {"raw": [op dicts], "dates": [...]}  (SKU resolved by the caller)
-    zaga → {"order_sku": {...}, "rows": [...], "columns": [...]}
+    zaga → {"order_sku": {...}, "order_deliv": {...}, "order_due": {...},
+            "rows": [...], "columns": [...]}
     force_type ('faza'|'zaga') skips auto-detection."""
     import openpyxl  # lazy — heavy import
 

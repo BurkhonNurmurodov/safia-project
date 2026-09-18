@@ -63,7 +63,7 @@ from app.services import zagruzka_source
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
                                    line_keys, group_sizes, faza_quantities, takes_sap,
-                                   DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
+                                   deliv_for_day, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import (by_sap, resolve_sap, norm_code, sap_codes_for_leader,
                                       sap_groups_for_leader)
 from app.services.latin_code import latin_code
@@ -1905,7 +1905,14 @@ def _num(v) -> float:
 def _stored_slices(db, day: date) -> tuple[list[dict], dict, dict]:
     """Rebuild (faza_ops, order_sku, order_deliv) for a date from the PPUpload
     rows kept at upload time, so a brigadir configured AFTER the SAP files
-    landed can be ingested without re-uploading them."""
+    landed can be ingested without re-uploading them.
+
+    `order_deliv` is what «Поставлено» counts on THIS day — `deliv_for_day`,
+    the same gate the upload applies, read off the БазисСрокКонца the stored
+    заголовок row carries (index 6, the ISO date `_extract_zaga` wrote). Both
+    callers rebuild one date at a time, so a re-join or a catalog backfill must
+    resolve a delivery to the very day the upload did; gating only on upload
+    would put it back on every day the order has operations."""
     ups = db.query(PPUpload).filter(PPUpload.date == day).all()
 
     # The global (manager_id NULL) row is the whole plant file; legacy
@@ -1920,13 +1927,17 @@ def _stored_slices(db, day: date) -> tuple[list[dict], dict, dict]:
 
     order_sku: dict[str, str] = {}
     order_deliv: dict[str, float] = {}
+    order_due: dict[str, object] = {}
     for up in sorted((u for u in ups if u.file_type == "zaga"),
                      key=lambda u: u.manager_id is not None):   # global first
-        for r in (up.rows or []):     # [order, sku, plant, ordqty, deliv, conf, …]
+        for r in (up.rows or []):     # [order, sku, plant, ordqty, deliv, conf, date, …]
             if len(r) >= 2 and r[0] and r[1]:
                 order_sku.setdefault(str(r[0]), str(r[1]))
                 if len(r) > 4:
                     order_deliv.setdefault(str(r[0]), _num(r[4]))
+                if len(r) > 6:
+                    order_due.setdefault(str(r[0]), r[6])
+    order_deliv, _deferred = deliv_for_day(order_deliv, order_due, day)
     return faza_ops, order_sku, order_deliv
 
 
@@ -2060,6 +2071,7 @@ async def upload_phase(
     faza_dates: set = set()
     order_sku: dict[str, str] = {}     # order → SKU, from заголовок (global)
     order_deliv: dict[str, float] = {} # order → «Поставлено» (= Excel «План пост»), drives «Факт»
+    order_due: dict[str, object] = {}  # order → «БазисСрокКонца», the day that «Поставлено» counts on
     zaga_rows_all: list[list] = []
     zaga_cols = None
     faza_present = zaga_present = False
@@ -2081,6 +2093,7 @@ async def upload_phase(
             zaga_present = True
             order_sku.update(zg["order_sku"])
             order_deliv.update(zg.get("order_deliv", {}))
+            order_due.update(zg.get("order_due", {}))
             zaga_rows_all += zg["rows"]
             zaga_cols = zg["columns"]
             zaga_file = name
@@ -2107,6 +2120,15 @@ async def upload_phase(
                     order_sku.setdefault(str(r[0]), str(r[1]))
                     if len(r) > 4:
                         order_deliv.setdefault(str(r[0]), float(r[4] or 0))
+                    if len(r) > 6:
+                        order_due.setdefault(str(r[0]), r[6])
+
+    # WHICH day this «Поставлено» counts on — pp_calc.deliv_for_day, applied
+    # ONCE here so both the parsed заголовок and the stored fallback above go
+    # through it. An order due another day contributes 0 to this one; it is not
+    # dropped in silence but reported back, because a delivery gated off today
+    # only lands on its own day if that day's фаза holds the same order.
+    order_deliv, deferred = deliv_for_day(order_deliv, order_due, day)
 
     # Store the raw slices ONCE, globally (manager_id NULL) — the file is
     # plant-wide; the raw views scope it to a brigadir at read time.
@@ -2170,7 +2192,8 @@ async def upload_phase(
                                                    ("zaga", zaga_present)) if on)),
                  ("rows", total_rows), ("count", len(targets)),
                  ("note", "picked" if named else "auto-fill"),
-                 ("total", len(faza_ops) if faza_present else 0)],
+                 ("total", len(faza_ops) if faza_present else 0),
+                 ("deferred", len(deferred))],
     )
     return {
         "status": "ok", "date": day.isoformat(), "mode": mode,
@@ -2178,6 +2201,11 @@ async def upload_phase(
         "targets": targets, "picked": bool(named),
         "faza_operations": len(faza_ops) if faza_present else 0,
         "zaga_orders": len(order_sku),
+        # «Поставлено» this day does NOT count, because the order's
+        # БазисСрокКонца names another one. A count and a quantity, never a
+        # silent zero — the operator has to be able to see a delivery move.
+        "fact_deferred": len(deferred),
+        "fact_deferred_qty": round(sum(q for _o, q, _d in deferred), 3),
         "files": file_reports,
     }
 

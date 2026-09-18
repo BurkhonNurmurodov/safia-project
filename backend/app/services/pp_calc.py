@@ -40,6 +40,7 @@ The two constants are configurable (app_settings):
 from __future__ import annotations
 
 import math
+from datetime import date, datetime
 from typing import Optional
 
 DEFAULT_SHIFT_MIN = 480.0
@@ -157,6 +158,90 @@ def line_numbers(products) -> dict:
         if pid is not None:
             out[pid] = n
     return out
+
+
+# ── Which DAY a delivery counts on ────────────────────────────────────────────
+# THE floor. From this day «Поставлено» counts on the order's БазисСрокКонца
+# (заголовок col J) and on NO other day.
+#
+# «Поставлено» is an ORDER-header field and carries no date of its own, so the
+# only thing that could ever date it was the фаза operation it is joined
+# through. `faza_quantities` folds it once per order INSIDE one day, but the
+# ingest runs per DATE — so an order whose operations start on two days had its
+# FULL delivered quantity written to both, once each, with nothing on screen
+# saying so. The order's own basic finish date is the one field that can pin a
+# delivery to a single day, which is what the operator asked for (2026-09-17).
+#
+# ПЛАН is untouched and still follows the operation's own START date
+# (`pp_parser.FZ_DATE`, col H «СамРанДатаНчлВыполнен»): a shift is credited on
+# the day it started the work, and an operation that begins in the evening and
+# finishes the next morning is the ordinary shape of shift 2. That is the
+# 29.08.2026 ruling and it is deliberately NOT reopened here — only the
+# DELIVERY moves, and only from this floor on.
+#
+# A FLOOR, never a rewrite: every day before it resolves exactly what it always
+# resolved, so nothing already closed and reported moves. It must never be moved
+# LATER — that would hand days back to the old rule which have already been read
+# under this one.
+FACT_DUE_FROM = date(2026, 9, 17)
+
+
+def _as_day(v):
+    """A date from a date, a datetime or an ISO string; None from anything else.
+
+    Both spellings really occur: the parser hands over `date` objects, while a
+    slice rebuilt from `PPUpload.rows` carries the ISO text `_extract_zaga`
+    wrote — and the заголовок leaves БазисСрокКонца blank on some rows.
+    """
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    if isinstance(v, str) and v.strip():
+        try:
+            return date.fromisoformat(v.strip()[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def fact_by_due(day) -> bool:
+    """Does this day date its ФАКТ by the order's БазисСрокКонца? THE test —
+    never re-spell the comparison at a call site."""
+    d = _as_day(day)
+    return d is not None and d >= FACT_DUE_FROM
+
+
+def deliv_for_day(order_deliv: dict, order_due: dict, day) -> tuple[dict, list]:
+    """(what «Поставлено» counts on `day`, what it defers to another day).
+
+    Below the floor this is the identity: the whole map back, nothing deferred,
+    so every pre-floor caller computes exactly what it always computed.
+
+    An order the file gives NO readable БазисСрокКонца keeps the old rule and is
+    counted where its operations are. A file that does not say when an order was
+    due must not make a real delivery vanish — and a vanished quantity is the one
+    failure this change could introduce, since a delivery gated off one day only
+    lands on another if that day's фаза holds the same order.
+
+    Everything else this day does not count is RETURNED, never dropped in
+    silence: it is a real quantity belonging to another day, and the upload says
+    how much. Zero-delivery orders are not reported — there is nothing to defer.
+    """
+    src = order_deliv or {}
+    if not fact_by_due(day):
+        return dict(src), []
+    d = _as_day(day)
+    kept: dict = {}
+    deferred: list = []
+    for order, qty in src.items():
+        due = _as_day((order_due or {}).get(order))
+        if due is None or due == d:
+            kept[order] = qty
+        elif _f(qty) > 0:
+            deferred.append((order, _f(qty), due))
+    deferred.sort(key=lambda t: -t[1])
+    return kept, deferred
 
 
 def faza_quantities(rows) -> dict:

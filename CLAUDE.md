@@ -4083,6 +4083,55 @@ inflated on both sides.
   never creates or deletes a row, so a day's set of positions is exactly what it
   was.
 
+### Which DAY a delivery counts on (`pp_calc.FACT_DUE_FROM`)
+
+From **2026-09-17** (`FACT_DUE_FROM`, the operator's directive) «Поставлено»
+counts on the order's **БазисСрокКонца** — заголовок col J — and on no other day.
+
+- **The defect it closes.** «Поставлено» is an ORDER-header field carrying no
+  date of its own, so the only thing that could ever date it was the фаза
+  operation it is joined through. `faza_quantities` folds it once per order
+  INSIDE one day, but the ingest runs per DATE — so an order whose operations
+  start on two days had its FULL delivered quantity written to **both**, once
+  each, with nothing on screen saying so. The per-order fold fixed the
+  double-count within a day; this fixes it across days.
+- **`pp_calc.deliv_for_day` is THE gate and `fact_by_due` THE test** — never
+  re-spell the comparison at a call site. It is applied at the two places a
+  day's `order_deliv` map is BUILT — `upload_phase` (parsed заголовок ∪ the
+  фаза-only stored fallback) and `_stored_slices` (the re-join and the catalog
+  backfill, which rebuild one date at a time) — so `_scoped_faza`,
+  `faza_quantities` and `_ingest_for_manager` keep their signatures and know
+  nothing about it.
+- **ПЛАН did NOT move and the 29.08.2026 ruling is not reopened.** It still
+  follows the operation's own START (`pp_parser.FZ_DATE`, col H
+  «СамРанДатаНчлВыполнен»): a shift is credited on the day it started the work,
+  and an operation that begins in the evening and finishes next morning is the
+  ordinary shape of shift 2. Only the DELIVERY moves.
+- **The заголовок is still read WHOLE, never date-filtered.** It is the
+  order→SKU dictionary the фаза is joined through, so cutting it to one day
+  would leave every order due another day resolving to no SKU at all — dropping
+  its ПЛАН as well as its delivery. `_extract_zaga` publishes `order_due`
+  beside `order_deliv` and the day question is asked one level up.
+- **An order with NO readable БазисСрокКонца keeps the old rule** and is counted
+  where its operations are. A file that does not say when an order was due must
+  not make a real delivery vanish.
+- **What the day does not count is REPORTED, never silently zeroed.** A
+  delivery gated off today lands on its own day only if that day's фаза holds
+  the same order — so `fact_deferred` / `fact_deferred_qty` ride on the upload
+  response, the admin card prints «N orders' «Поставлено» (Q) not counted on
+  this day», and the count rides the action log. **Known limit, deliberate:** an
+  order whose фаза operations never coincide with its due date is counted
+  NOWHERE, and that report is the trail. Making it land would mean pulling the
+  order's фаза rows from another stored date, which writes a position with ФАКТ
+  and no ПЛАН — a separate decision, not a bug fix.
+- **A FLOOR, never a rewrite.** Every day before 17.09.2026 resolves exactly
+  what it always resolved, so nothing already closed and reported moves, and no
+  one-shot replays history. The floor must never be moved LATER — that hands
+  days back to the old rule which have already been read under this one.
+  `startup.correct_pp_double_counted_days` is untouched and still folds with the
+  old semantics: it is flag-guarded, has already run, and an empty DB has no
+  stored day for it to reach.
+
 ## Who a SAP upload fills (`/admin/upload?tab=production`)
 
 From **2026-08-31** the plant-wide фаза/заголовок export no longer reaches every
