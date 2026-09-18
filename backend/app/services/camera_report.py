@@ -50,6 +50,11 @@ _MISSING = {"NotFoundError", "DevicesNotFoundError"}
 # What the leader was looking at, in the words on their screen.
 _SCREEN = {
     "stalled": "«Kamera tasvir bermayapti»",
+    # From 2026-09-18: the page ASKED the other camera pages of that Telegram to
+    # let go, one answered that it still holds the camera, and the leader was
+    # shown that and told to close it. So this row is not «we do not know why» —
+    # it is «we know, we said so, and it was still held after being asked».
+    "held": "«Kamerani boshqa oyna band qilgan» (the leader was told to close it)",
     "failed": "«Kamera ochilmadi»",
     "none": "«Kamera topilmadi»",
 }

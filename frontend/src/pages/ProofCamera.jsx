@@ -99,7 +99,18 @@ const CAM_WATCH_MS = 2 * 1000;
 // closed — stops being the reason the NEXT task's camera cannot open. The grace
 // is what keeps the «Allow camera?» sheet down to one per open, since coming
 // back to a released camera costs another one.
-const HIDDEN_RELEASE_MS = 15 * 1000;
+// Cut from 15 s to 3 s on 2026-09-18, once a report showed what a holder
+// actually costs and what a re-open actually costs. COST OF HOLDING: Android
+// now hands the second client a live 1920x1080 track in under a second that
+// then delivers NO FRAMES — so a page left holding the camera no longer makes
+// the next one slow, it makes it BLACK, which is the harder failure to read.
+// COST OF RE-OPENING: none worth the name. The «Allow camera?» sheet belongs to
+// the WebView and is raised at a page's FIRST open; the same report shows two
+// `getUserMedia` calls on one page answered in 933 ms and 834 ms, which is not
+// a leader tapping «Allow». So the grace only has to cover a glance away.
+const HIDDEN_RELEASE_MS = 3 * 1000;
+// How long a stalled viewfinder waits for the holder it just asked to let go.
+const HOLDER_ASK_MS = 1200;
 // How long an open waits, having asked the other pages of this Telegram to let
 // go, before asking Android for the camera anyway. Short: this is a message to
 // a page in the same browser, not a negotiation.
@@ -488,6 +499,10 @@ export default function ProofCamera() {
   const [viewing, setViewing] = useState(null);
   const [retakeSlot, setRetakeSlot] = useState(null);
   const [camErr, setCamErr] = useState(null);
+  // Read by everything that finishes AFTER the render it started in — the
+  // holder enquiry on a stall, the failure report, the return from background.
+  const camErrRef = useRef(camErr);
+  camErrRef.current = camErr;
   const [camBusy, setCamBusy] = useState(false);   // opening: black, but not broken
   const [camSlow, setCamSlow] = useState(false);  // opening, and taking long enough to say so
   const [reported, setReported] = useState(false); // the server has this failure's report
@@ -940,6 +955,9 @@ export default function ProofCamera() {
    * the only reason a second shot is possible, because the element the leader
    * comes back to after a save is not always the one they shot the first with.
    */
+  // One holder enquiry at a time: the watchdog ticks every CAM_WATCH_MS and
+  // `askOthers` takes longer than that to answer.
+  const stallRef = useRef(false);
   const camWatch = useRef(null);
   const setVideoEl = useCallback((el) => {
     camWatch.current?.();
@@ -1012,19 +1030,43 @@ export default function ProofCamera() {
       paused: v.paused, ready: v.readyState,
     };
     const what = `no frame for ${FRAME_STALL_MS / 1000} s (video ${seen.w}x${seen.h}, t ${seen.t})`;
-    // ONE silent re-open, because a WebView that lost the camera usually hands
-    // it straight back and a leader should never have to know. A second dead
-    // stream is not a hiccup: say so and give them the button, rather than
-    // restarting the camera behind a black screen for the rest of the shift.
-    if (f.fixes >= 1) {
-      failRef.current = { kind: "no_frames", error: null, stall: seen, hidden: false, at: now };
-      note("watch", `${what} again → failure screen`);
-      setCamErr("stalled");
-      return;
-    }
-    note("watch", `${what} → silent re-open`);
-    framesRef.current = { time: -1, at: 0, fixes: f.fixes + 1 };
-    startCamera(facing, "no frames");
+    // A stream that opened in under a second and then sends nothing is what
+    // Android gives a SECOND client: the camera is not broken, somebody else
+    // has it. Re-opening blind buys another zombie — the 2026-09-18 report did
+    // exactly that twice in nineteen seconds — so the holder is ASKED first,
+    // and given a moment to answer, before anything is re-opened.
+    if (stallRef.current) return;                 // one enquiry at a time
+    stallRef.current = true;
+    const attempt = attemptRef.current;
+    framesRef.current = { ...f, at: now };        // don't re-enter on the next tick
+    (async () => {
+      try {
+        announceNeed(pageIdRef.current);
+        const others = await askOthers(pageIdRef.current, HOLDER_ASK_MS);
+        const held = Array.isArray(others) && others.some((o) => o.live);
+        if (camErrRef.current || attemptRef.current !== attempt) return;
+        // ONE silent re-open, because a WebView that lost the camera usually
+        // hands it straight back and a leader should never have to know — and
+        // by now whoever was asked has had HOLDER_ASK_MS to let go.
+        if (f.fixes < 1) {
+          note("watch", `${what} → asked${held ? " (a page still holds it)" : ""} → silent re-open`);
+          framesRef.current = { time: -1, at: 0, fixes: f.fixes + 1 };
+          startCameraRef.current?.(facing, "no frames");
+          return;
+        }
+        // A second dead stream is not a hiccup. If a sibling page ANSWERS that
+        // it still holds the camera, that is the whole failure and the leader
+        // is the only one who can end it — nothing on this page can close
+        // another of Telegram's windows. So it is named, with the one action
+        // that works, instead of «the camera sent no picture», which is true
+        // and leaves them nothing to do.
+        failRef.current = {
+          kind: "no_frames", error: null, stall: seen, held: !!held, hidden: false, at: Date.now(),
+        };
+        note("watch", `${what} again → failure screen${held ? " · another page holds the camera" : ""}`);
+        setCamErr(held ? "held" : "stalled");
+      } finally { stallRef.current = false; }
+    })();
   }, [mode, task, dayClosed, camErr, facing, startCamera, note]);
 
   useEffect(() => { ensureCamera(); }, [ensureCamera]);
@@ -1118,8 +1160,6 @@ export default function ProofCamera() {
   // The failure report: once per failure screen, at most three per page — a
   // fourth would say nothing the first did not. Nothing on screen changes
   // while it is gathered; once the server has it, one line says so.
-  const camErrRef = useRef(camErr);
-  camErrRef.current = camErr;
   const reportRef = useRef({ busy: false, sent: 0 });
   useEffect(() => {
     if (!camErr) return;
@@ -1235,6 +1275,14 @@ export default function ProofCamera() {
   }, [task, dayClosed, ensureCamera, startCamera, facing, note]);
 
   useEffect(() => {
+    const arm = () => {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = setTimeout(() => {
+        // Checked again here, not only when armed: this timer outlives the
+        // effect that set it, and the page may be back.
+        if (document.visibilityState !== "visible") releaseCamera("hidden");
+      }, HIDDEN_RELEASE_MS);
+    };
     const onVis = () => {
       // Whichever way the page went, the stall clock starts again from zero:
       // the time spent hidden is not time the camera failed to deliver.
@@ -1252,17 +1300,28 @@ export default function ProofCamera() {
       // enough to be worth the next task's shift, and it lets go. On the way
       // back `ensureCamera` opens it again, and only once the viewfinder is
       // what is on screen.
-      clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = setTimeout(() => releaseCamera("hidden"), HIDDEN_RELEASE_MS);
+      arm();
     };
     // A page really going away lets go at once: there is no grace to spend.
     const bye = () => releaseCamera("page going away");
+    // Telegram MINIMIZING the mini app is the moment a page becomes the next
+    // task's problem, and it is not always a `visibilitychange`.
+    const tg = tgApp();
+    const off = () => { if (document.visibilityState !== "visible") arm(); };
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pagehide", bye);
+    tg?.onEvent?.("deactivated", off);
+    // NOTE: the pending release is deliberately NOT cleared here. This effect
+    // re-registers whenever `settleReturn` changes identity, and that follows
+    // `ensureCamera`, which follows `mode`, `camErr` and the task query — so a
+    // background refetch landing while the page was hidden used to cancel the
+    // release and leave the camera held for good, which is the state this
+    // whole section exists to end. The timer checks for itself that the page is
+    // still hidden, so an extra one is harmless and a lost one is not.
     return () => {
-      clearTimeout(hideTimerRef.current);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pagehide", bye);
+      tg?.offEvent?.("deactivated", off);
     };
   }, [settleReturn, releaseCamera]);
 
@@ -1601,10 +1660,13 @@ export default function ProofCamera() {
             style={{ background: "rgba(11,13,16,0.94)" }}>
             <div className="max-w-xs">
               <div className="mx-auto mb-3 grid place-items-center rounded-2xl"
-                style={{ width: 48, height: 48, background: "rgba(239,68,68,0.16)" }}>
-                {camErr === "stalled"
-                  ? <ImageOff size={22} color="#ef4444" />
-                  : <Camera size={22} color="#ef4444" />}
+                style={{ width: 48, height: 48,
+                  background: camErr === "held" ? "rgba(234,179,8,0.16)" : "rgba(239,68,68,0.16)" }}>
+                {camErr === "held"
+                  ? <Camera size={22} color="#eab308" />
+                  : camErr === "stalled"
+                    ? <ImageOff size={22} color="#ef4444" />
+                    : <Camera size={22} color="#ef4444" />}
               </div>
               <div className="text-[15px] font-semibold mb-1.5">
                 {t(`proof.cam.${camErr}`)}

@@ -2716,6 +2716,35 @@ SERVER's; the phone never authors it.
     `OPEN_SLOW_MS` (9 s) the viewfinder says it is still opening and that
     another window may be holding the camera, and asks them not to leave. That
     line is the one thing that breaks the loop.
+  - **A holder no longer makes the next open SLOW — it makes it BLACK**
+    (2026-09-18, the second report). Android hands the second client a live
+    1920×1080 track in under a second and then delivers no frames at all, so
+    the contention now arrives as `no_frames` rather than a long open. Two
+    consequences. `HIDDEN_RELEASE_MS` is **3 s**, not 15: the cost of holding
+    went up and the cost of re-opening is near zero — the «Allow camera?» sheet
+    belongs to the WebView and is raised at a page's FIRST open, and that same
+    report shows two `getUserMedia` calls on one page answered in 933 ms and
+    834 ms, which is not a leader tapping «Allow». And a stalled viewfinder
+    **asks the holder and waits `HOLDER_ASK_MS` before re-opening**, instead of
+    re-opening blind into a second zombie, which is what that report did twice
+    in nineteen seconds.
+  - **The pending release is NOT cleared by the effect's cleanup**, and that is
+    load-bearing. That effect re-registers whenever `settleReturn` changes
+    identity, which follows `ensureCamera`, which follows `mode`, `camErr` and
+    the task query — so a background refetch landing while the page was hidden
+    cancelled the release and left the camera held for good, which is the state
+    the whole section exists to end. The timer re-checks that the page is still
+    hidden, so a duplicate is harmless where a lost one is not. It is also
+    armed on Telegram's own `deactivated`, since minimizing is not always a
+    `visibilitychange`.
+  - **`held` is a screen of its own, and it is AMBER.** When a sibling page
+    ANSWERS the channel saying it still holds the camera, that is the whole
+    failure, and nothing on this page can close another of Telegram's windows —
+    only the leader can. So it is named, with the one action that works («close
+    the other camera window, then Retry»), instead of «the camera sent no
+    picture», which is true and leaves them nothing to do. It is still
+    REPORTED: a holder that will not let go after being asked is exactly what
+    an admin needs to know is still happening.
 
 - **A camera failure REPORTS ITSELF to the admins** (2026-09-17, the
   operator's directive, after the first «Kamera tasvir bermayapti» reached us as
