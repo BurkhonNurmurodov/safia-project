@@ -56,7 +56,29 @@ const RETRY_EVERY_MS = 20 * 1000;
 // returned at it, and the leader was left looking at a black rectangle that
 // said nothing and could not be recovered from. After this the guard is
 // released and the failure is stated instead.
-const OPEN_TIMEOUT_MS = 20 * 1000;
+// Raised from 20 s on 2026-09-18. It measures ONE thing — how long Android
+// takes to answer `getUserMedia` — and on a device where a sibling page holds
+// the camera that answer is simply slow: the report that day was answered OK
+// after 17.4 s, i.e. inside a 20 s budget only by three seconds. A ceiling set
+// near the honest worst case turns a slow open into a failure screen, a
+// support message and a leader who backs out and re-opens the task — which
+// leaves ANOTHER page holding the camera and makes the next open slower still.
+// The ceiling is now far past any open that has ever succeeded, so what it
+// catches is a camera that never answers at all.
+const OPEN_TIMEOUT_MS = 45 * 1000;
+// …but silence is not something to leave a leader staring at. Past this the
+// viewfinder SAYS it is still opening and why, so waiting is a thing being
+// done rather than a thing that has broken.
+const OPEN_SLOW_MS = 9 * 1000;
+// «The camera is busy» is a fact about another app or another page, not about
+// this camera, and the fix for it is to ask again a moment later. These are the
+// names Chrome gives it; `NotAllowedError` is deliberately not among them,
+// because a refusal is the leader's answer and re-asking is a second sheet.
+const BUSY_ERRORS = new Set([
+  "NotReadableError", "AbortError", "TrackStartError", "SourceUnavailableError",
+]);
+const BUSY_RETRIES = 2;
+const BUSY_RETRY_MS = 1500;
 // How long an open left waiting in the background gets, once the page is back
 // on screen, to finish before it is replaced. Its «Allow camera?» sheet may only
 // now be in front of the leader, and a second request on top of a sheet still
@@ -467,6 +489,7 @@ export default function ProofCamera() {
   const [retakeSlot, setRetakeSlot] = useState(null);
   const [camErr, setCamErr] = useState(null);
   const [camBusy, setCamBusy] = useState(false);   // opening: black, but not broken
+  const [camSlow, setCamSlow] = useState(false);  // opening, and taking long enough to say so
   const [reported, setReported] = useState(false); // the server has this failure's report
   const [facing, setFacing] = useState("environment");
   const [devices, setDevices] = useState([]);
@@ -624,6 +647,7 @@ export default function ProofCamera() {
   const openHiddenRef = useRef(false);
   const openDoneRef = useRef(Promise.resolve());
   const deadlineRef = useRef(null);
+  const slowRef = useRef(null);
   const returningRef = useRef(0);
   // The grace a page off screen gets before it lets the camera go.
   const hideTimerRef = useRef(null);
@@ -682,11 +706,20 @@ export default function ProofCamera() {
     const t0 = performance.now();
     setCamErr(null);
     setCamBusy(true);
+    setCamSlow(false);
     framesRef.current = { time: -1, at: 0, fixes: framesRef.current.fixes };
+    // Slow is SAID, not judged. A leader left in front of a silent black
+    // rectangle backs out and re-opens the task from the bot — which leaves one
+    // more page holding the camera and makes the next open slower still. The
+    // one thing that breaks that loop is telling them it is still working.
+    const slow = setTimeout(() => { if (mine()) { setCamSlow(true); note("open", "slow"); } },
+      OPEN_SLOW_MS);
+    slowRef.current = slow;
     const deadline = setTimeout(() => {
       if (!mine()) return;
       startingRef.current = false;
       setCamBusy(false);
+      setCamSlow(false);
       failRef.current = {
         kind: "open_timeout", error: null, stall: null,
         hidden: document.visibilityState !== "visible", at: Date.now(),
@@ -741,41 +774,63 @@ export default function ProofCamera() {
         setDevices(list);          // the flip button reads this count
         return list;
       };
-      const remembered = localStorage.getItem(`${LENS_KEY}.${want}`);
-      const known = await lenses();
+      const acquire = async () => {
+        const remembered = localStorage.getItem(`${LENS_KEY}.${want}`);
+        const known = await lenses();
+        let stream = null;
+        opensRef.current.remembered = false;
+        if (remembered && known.some((d) => d.deviceId === remembered)) {
+          try {
+            stream = await gum("remembered lens", { deviceId: { exact: remembered }, ...VIDEO_SIZE });
+            opensRef.current.remembered = true;
+          } catch (e) {
+            // A refusal is the leader's ANSWER, not a bad lens. Re-asking with
+            // different constraints is a second sheet for the same «no».
+            if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
+            localStorage.removeItem(`${LENS_KEY}.${want}`);
+          }
+        }
+        if (!stream) {
+          // First pass gets permission (labels are blank until it is granted),
+          // then the device list becomes readable and the right lens chosen.
+          // We try exact facingMode first so that resolution preferences don't
+          // override the requested side, falling back to ideal if the device
+          // lacks it (e.g. laptops).
+          try {
+            stream = await gum(`facing ${want} exact`, { facingMode: { exact: want }, ...VIDEO_SIZE });
+          } catch (e) {
+            if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
+            stream = await gum(`facing ${want} ideal`, { facingMode: { ideal: want }, ...VIDEO_SIZE });
+          }
+          const list = await lenses();
+          const id = pickLens(list, want);
+          note("lens", id ? `picked ${shortId(id)} of ${list.length}` : `none picked of ${list.length}`);
+          if (id && stream.getVideoTracks()[0]?.getSettings?.().deviceId !== id) {
+            stream.getTracks().forEach((tr) => tr.stop());
+            stream = await gum("picked lens", { deviceId: { exact: id }, ...VIDEO_SIZE });
+          }
+          if (id) localStorage.setItem(`${LENS_KEY}.${want}`, id);
+        }
+        return stream;
+      };
+      // «Busy» is somebody else holding the camera, and the whole fix for it is
+      // to ask again a moment later — a sibling page too frozen to have heard
+      // `announceNeed` is usually let go of by Android within a second or two
+      // of being asked. Retried here rather than shown, because a failure
+      // screen for a camera that is about to be free costs the leader their
+      // shot AND puts a support message in front of an admin for nothing.
+      // Bounded: a camera busy three times over is a real failure, and the
+      // leader is owed the screen rather than another wait.
       let stream = null;
-      opensRef.current.remembered = false;
-      if (remembered && known.some((d) => d.deviceId === remembered)) {
-        try {
-          stream = await gum("remembered lens", { deviceId: { exact: remembered }, ...VIDEO_SIZE });
-          opensRef.current.remembered = true;
-        } catch (e) {
-          // A refusal is the leader's ANSWER, not a bad lens. Re-asking with
-          // different constraints is a second sheet for the same «no».
-          if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
-          localStorage.removeItem(`${LENS_KEY}.${want}`);
+      for (let go = 0; ; go += 1) {
+        try { stream = await acquire(); break; } catch (e) {
+          if (go >= BUSY_RETRIES || !BUSY_ERRORS.has(e?.name)) throw e;
+          note("open", `${e.name} — the camera is held; asking again (${go + 1})`);
+          setCamSlow(true);
+          announceNeed(pageIdRef.current);
+          await new Promise((resolve) => { setTimeout(resolve, BUSY_RETRY_MS); });
+          if (!mine()) return;
         }
-      }
-      if (!stream) {
-        // First pass gets permission (labels are blank until it is granted),
-        // then the device list becomes readable and the right lens chosen.
-        // We try exact facingMode first so that resolution preferences don't
-        // override the requested side, falling back to ideal if the device
-        // lacks it (e.g. laptops).
-        try {
-          stream = await gum(`facing ${want} exact`, { facingMode: { exact: want }, ...VIDEO_SIZE });
-        } catch (e) {
-          if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
-          stream = await gum(`facing ${want} ideal`, { facingMode: { ideal: want }, ...VIDEO_SIZE });
-        }
-        const list = await lenses();
-        const id = pickLens(list, want);
-        note("lens", id ? `picked ${shortId(id)} of ${list.length}` : `none picked of ${list.length}`);
-        if (id && stream.getVideoTracks()[0]?.getSettings?.().deviceId !== id) {
-          stream.getTracks().forEach((tr) => tr.stop());
-          stream = await gum("picked lens", { deviceId: { exact: id }, ...VIDEO_SIZE });
-        }
-        if (id) localStorage.setItem(`${LENS_KEY}.${want}`, id);
       }
       if (!mine()) {
         stream.getTracks().forEach((tr) => tr.stop());
@@ -853,7 +908,8 @@ export default function ProofCamera() {
         : e?.name === "NotFoundError" ? "none" : "failed");
     } finally {
       clearTimeout(deadline);
-      if (mine()) { startingRef.current = false; setCamBusy(false); }
+      clearTimeout(slow);
+      if (mine()) { startingRef.current = false; setCamBusy(false); setCamSlow(false); }
       finished();
     }
   }, [facing, pickLens, note, releaseCamera]);
@@ -1154,6 +1210,7 @@ export default function ProofCamera() {
     // The waiting open's own deadline must not fire a failure screen while it
     // gets its last chance below.
     clearTimeout(deadlineRef.current);
+    clearTimeout(slowRef.current);
     setCamErr(null);
     setCamBusy(true);
     // Never two camera requests at once: the open from before the page left
@@ -1526,6 +1583,15 @@ export default function ProofCamera() {
               <div className="text-[13px]" style={{ color: "rgba(255,255,255,0.75)" }}>
                 {t("proof.cam.opening")}
               </div>
+              {/* Past OPEN_SLOW_MS, why. A silent black rectangle is what sends
+                  a leader back to the bot to open the task again — and that new
+                  page is one more holder of the camera they are waiting for. */}
+              {camSlow ? (
+                <div className="text-[12px] leading-snug max-w-[17rem]"
+                  style={{ color: "rgba(255,255,255,0.55)" }}>
+                  {t("proof.cam.openingSlow")}
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}

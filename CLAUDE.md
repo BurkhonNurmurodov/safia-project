@@ -2680,6 +2680,24 @@ SERVER's; the phone never authors it.
     settles, and awaiting it held `startingRef` shut, which stands the watchdog
     down — so the check that would have named the failure never ran) and the
     lens correction is bounded by `LENS_FIX_MS`.
+  - **A camera that is BUSY is retried, not reported** (`BUSY_ERRORS` —
+    NotReadableError · AbortError · TrackStartError · SourceUnavailableError,
+    `BUSY_RETRIES` 2 at `BUSY_RETRY_MS`, re-announcing the need each time).
+    That error names another holder, not a broken camera, and a sibling too
+    frozen to have heard `announceNeed` is usually let go of by Android a
+    second or two after being asked. A failure screen there costs the leader
+    their shot and puts a DM in front of an admin for a camera that was about
+    to be free. `NotAllowedError` is deliberately NOT in the set: a refusal is
+    the leader's answer, and re-asking is a second sheet for the same «no».
+  - **`OPEN_TIMEOUT_MS` is 45 s and it is a CEILING, not an expectation.** At
+    20 s it sat three seconds past the honest worst case, so a slow answer
+    became a failure screen — and a leader who reads one backs out and re-opens
+    the task from the bot, which leaves ANOTHER page holding the camera and
+    makes the next open slower still. What it catches now is a camera that
+    never answers at all. The waiting is carried by words instead: past
+    `OPEN_SLOW_MS` (9 s) the viewfinder says it is still opening and that
+    another window may be holding the camera, and asks them not to leave. That
+    line is the one thing that breaks the loop.
 
 - **A camera failure REPORTS ITSELF to the admins** (2026-09-17, the
   operator's directive, after the first «Kamera tasvir bermayapti» reached us as
