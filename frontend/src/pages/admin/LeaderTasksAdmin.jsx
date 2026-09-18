@@ -66,7 +66,7 @@ const COLS = [
   { k: "photos",   keys: ["min_media"] },
   { k: "proof",    keys: ["proof_kind"] },
   { k: "window",   keys: ["win_from", "win_to"] },
-  { k: "dateRule", keys: ["date_check", "time_check", "day_check"] },
+  { k: "dateRule", keys: ["date_check", "time_check", "day_check", "date_plus"] },
   { k: "deadline", keys: ["deadline"] },
   { k: "desc",     keys: ["description"] },
   { k: "crit",     keys: ["criteria"] },
@@ -81,8 +81,8 @@ const DETAIL_ROWS = COLS.filter((c) => !["desc", "crit"].includes(c.k));
 // Every field the chain resolves, in the payload's own spelling. Used to build
 const FIELD_KEYS = [
   "enabled", "weight", "min_media", "proof_kind", "win_from", "win_to",
-  "date_check", "time_check", "day_check", "deadline", "description", "criteria",
-  "names",
+  "date_check", "time_check", "day_check", "date_plus", "deadline",
+  "description", "criteria", "names",
 ];
 const eq = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const clip = (s, n = 46) => {
@@ -761,7 +761,14 @@ export default function LeaderTasksAdmin() {
       case "window": return (r.win_from || r.win_to)
         ? `${r.win_from || "…"}–${r.win_to || "…"}`
         : (lvl.kind === "std" ? t("admin.ltasks.empty") : t("admin.ltasks.vWholeShift"));
-      case "dateRule": return t(`admin.ltasks.dateMode.${dcMode(r)}`);
+      case "dateRule": {
+        // The tolerance rides WITH the mode: `leader_ai.date_rule_for` returns
+        // them as one NamedTuple, and a mode printed without it is a rule the
+        // reader cannot tell is widened.
+        const mode = t(`admin.ltasks.dateMode.${dcMode(r)}`);
+        const plus = Number(r.date_plus || 0);
+        return plus > 0 ? `${mode} +${plus}` : mode;
+      }
       case "deadline": return r.deadline || t("admin.ltasks.vWinEnd");
       case "desc": return clip(r.description || r.criteria) || t("admin.ltasks.empty");
       case "crit": return clip(r.criteria) || t("admin.ltasks.empty");

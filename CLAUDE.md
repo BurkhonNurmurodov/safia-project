@@ -2327,15 +2327,31 @@ arms it.
   be atomic. Every write is idempotent instead, so a pass that dies half-way is
   re-run whole by the next boot. Verified: running both passes twice changes
   zero config rows and re-derives zero verdicts.
-- **Besides the texts the pass writes exactly three things**: task 11
-  `date_plus` = 1 (a staff list may be dated the next day), task 13 `day_check`
-  = False (TIME ONLY — the hour is still judged against the window, the day is
-  not, and the day question moves into the criteria as the relation between the
-  two dates on screen), and task 3 `min_media` = 3 plus the GLOBAL
-  `default_min_media` 1 → 3. That last one has no setter and no endpoint — it is
-  written at seed time and by `create_task` and nowhere else — so the pass
-  touches the ORM attribute directly, and it is what a unit with no row of its
-  own resolves to.
+- **Besides the texts the pass writes the DATE MODE, whole, and two numbers.**
+  `DATE_MODES` carries all three flags per task — 11 is DATE ONLY
+  (`date_check` T, `day_check` T, `time_check` F) and 13 is TIME ONLY
+  (T / F / T) — because writing one flag and inheriting the rest is how a task
+  ends up in a mode nobody chose. Two proofs of that, both found on the 11 Sep
+  copy: **task 11 was DATE-ONLY on all 13 shift-1 units and STRICT on all 8
+  shift-2 units**, which inherit the global `time_check` True — so the same
+  «+1 day» meant two different things, and shift 2 went on failing staff lists
+  on the CLOCK while the criteria shipped beside it says the clock is not judged
+  at all. And task 13's TIME-ONLY would have rested on a global `time_check` an
+  admin may edit, at which point `date_flags` returns nothing and the task is
+  silently EXEMPT (`not check or not (days or times)`) — the one mode the admin
+  UI never offers. Then task 11 `date_plus` = 1, and task 3 `min_media` = 3 plus
+  the GLOBAL `default_min_media` 1 → 3. That last one has no setter and no
+  endpoint — it is written at seed time and by `create_task` and nowhere else —
+  so the pass touches the ORM attribute directly, and it is what a unit with no
+  row of its own resolves to.
+- **A leader with their own `criteria` and no `description` is made coherent
+  FIRST** (`keep_leader_texts_coherent`). Such a leader reads their own criteria
+  as the instruction, because `_resolve_description` falls back to the resolved
+  criteria — and the moment the unit gains a description that fallback stops
+  applying, so they would be TOLD the unit's new instruction and GRADED on their
+  own older criteria. Their description is materialised from their own criteria
+  before any unit description exists, which changes nothing they see today. Their
+  criteria is left alone: it is a deliberate admin edit.
 - **Task 13's WINDOW is deliberately NOT written.** `leader_ai.resolve_window`
   falls through to `shift_window(shift)`, so a shift-1 unit storing no window is
   ALREADY judged against 07:00—20:00 and its task ALREADY closes at 20:00 —
@@ -2345,10 +2361,12 @@ arms it.
   merely inherit. Shift 2 keeps its own 00:00—08:00.
 - **Consequence to know: scores from 13 Aug moved, once, retroactively.**
   `sync_date_flags` takes no date bound, so the pass re-derives every stored
-  verdict on tasks 11 and 13 — measured on the production copy: **81 of 4,871
-  rows moved, 74 date rejections LIFTED, 1 gained (on a row already rejected for
-  `not_proven`, so no score moved) and 6 reclassified `date_mismatch` →
-  `no_date`**. No corrected report is re-DMed, which is the platform's standing
+  verdict on tasks 11 and 13 — measured on the production copy: **433 of 4,871
+  rows moved, 426 date rejections LIFTED, 1 gained (on a row already rejected
+  for `not_proven`, so no score moved) and 6 reclassified `date_mismatch` →
+  `no_date`. NOTHING that was clean before is flagged now.** The bulk of it is
+  task 11 on shift 2 — 352 lifted — which is the mode correction above, not the
+  tolerance: 248 `date_mismatch` → 8 and 112 `no_date` → 0. No corrected report is re-DMed, which is the platform's standing
   rule for a date-rule edit — so the pass's own DM states the count, or nobody
   learns a month of scores changed. It is called ONCE for the whole pass, never
   per unit: the re-derive is per TASK and walks the entire corpus, so

@@ -1783,7 +1783,7 @@ export default function ProofCamera() {
                 English prose since 19.09 — so it is only the fallback, for a
                 session served before the backend carried a description. */}
             {(task.description || task.criteria) ? (
-              <p className="text-[13px] leading-relaxed mb-3" style={{ color: "var(--text-2)" }}>
+              <p className="text-[13px] leading-relaxed mb-3 whitespace-pre-line" style={{ color: "var(--text-2)" }}>
                 {task.description || task.criteria}
               </p>
             ) : null}

@@ -225,6 +225,11 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 "date_check": td.date_check is not False,
                 "time_check": td.time_check is not False,
                 "day_check": td.day_check is not False,
+                # The tolerance travels WITH the three flags — `date_rule_for`
+                # returns them as one rule — so the strip's «Standart» level
+                # must carry it too, or a global tolerance would be invisible
+                # while a unit's shows.
+                "date_plus": int(td.date_plus or 0),
                 # HOW the proof is collected. Never null at this level either —
                 # it is the floor of the chain — so the matrix shows a plain
                 # two-way pick here and an "inherit" state below.

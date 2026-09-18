@@ -6351,11 +6351,18 @@ def _rules_run_at(shift: int, now):
         return due
     if not _rules_in_shift(shift, now):
         return now + timedelta(minutes=1)
-    close = now.replace(hour=20 if shift == 1 else 9, minute=1,
-                        second=0, microsecond=0)
-    if close <= now:
-        close += timedelta(days=1)
-    return close
+    # The shift is running, so wait for the NEXT day's own instant rather than
+    # for the shift's closing hour. One minute after the close is still the
+    # wrong moment: `leader_close._sweep` runs every five minutes and closes
+    # that day's last tasks ON the hour, then hands them to the AI — so a pass
+    # landing at 20:01 would rewrite the criteria while the day filed under the
+    # old ones was still being judged, and one leader-day would be graded by two
+    # rulebooks. 00:30 / 16:30 the following day sits well clear of both the
+    # close and the drain, which is the whole reason those two hours were picked.
+    nxt = due
+    while nxt <= now or _rules_in_shift(shift, nxt):
+        nxt += timedelta(days=1)
+    return nxt
 
 
 def register_leader_rules_sep19() -> None:
@@ -6397,8 +6404,10 @@ def _leader_rules_job(shift: int) -> None:
                           value=datetime.now(timezone.utc).isoformat()))
         db.commit()
         print(f"[startup] leader rules 19.09: shift {shift} — {out['units']} unit(s), "
-              f"{out['texts']} text pair(s), min_media on {len(out['min_media'])}, "
-              f"global default {'raised' if out.get('global_min_media') else 'unchanged'}")
+              f"{out['texts']} text pair(s), date modes on {out['modes']}, "
+              f"min_media on {len(out['min_media'])}, "
+              f"global default {'raised' if out.get('global_min_media') else 'unchanged'}, "
+              f"leader texts kept coherent: {len(out.get('kept_coherent') or [])}")
 
         # ONE re-derive for the whole pass, not one per unit: it is per TASK and
         # walks the entire stored corpus. It has no date bound, so every verdict
@@ -6406,20 +6415,23 @@ def _leader_rules_job(shift: int) -> None:
         # scores move retroactively and NO corrected report is re-DMed, which is
         # the platform's standing rule for a date-rule edit. Say the number out
         # loud, or nobody learns a month of scores changed.
-        moved = 0
+        # None, never 0, when it did not run: "0 verdicts moved" and "the
+        # re-derive failed" are opposite facts and both readers must be able to
+        # tell them apart.
+        moved = None
         try:
             moved = leader_ai.sync_date_flags(db, [11, 13]) or 0
             print(f"[startup] leader rules 19.09: re-derived {moved} verdict(s)")
         except Exception as exc:
-            print(f"[startup] leader rules 19.09: re-derive failed: {exc}")
+            print(f"[startup] leader rules 19.09: re-derive FAILED: {exc}")
 
         try:
             action_log.record_system(
                 "leader_config", "ltask.rules_applied",
                 target_kind="task", target_name="checklist",
                 details=[("level", "unit"), ("shift", shift),
-                         ("count", out["units"]), ("task", out["texts"]),
-                         ("moved", moved or None),
+                         ("count", out["units"]), ("texts", out["texts"]),
+                         ("moved", moved), ("modes", out["modes"]),
                          ("skipped", len(left) or None)],
                 reason=("Operator directive 18.09.2026: unit-level AI criteria and "
                         "Uzbek leader descriptions for tasks 2-7, 10-13; task 11 "
@@ -6428,27 +6440,74 @@ def _leader_rules_job(shift: int) -> None:
             )
         except Exception:
             pass
-        _leader_rules_dm(shift, out, left, moved)
+        sent = _leader_rules_dm(shift, out, left, moved)
+        if not sent:
+            try:
+                action_log.record_system(
+                    "leader_config", "ltask.rules_applied",
+                    target_kind="task", target_name="checklist",
+                    outcome="error",
+                    details=[("shift", shift), ("note", "summary DM reached nobody")],
+                )
+            except Exception:
+                pass
     except Exception as exc:
+        # The pass is idempotent and the flag is written LAST, so a failure here
+        # leaves the shift PART-converted and the next boot re-runs it whole.
+        # That self-heals only if a boot follows — so say it out loud, in the
+        # deploy output and in the operators' chat, rather than leaving a
+        # half-written shift nobody knows about.
         db.rollback()
-        print(f"[startup] leader rules 19.09 shift {shift} skipped: {exc}")
+        print(f"[startup] leader rules 19.09 shift {shift} FAILED (partly "
+              f"written; the next boot retries it whole): {exc}")
+        try:
+            import html as _html
+            from app.routers.boot import _recipients
+            from app.telegram_bot import bot
+            for chat_id in _recipients():
+                try:
+                    bot.send_message(
+                        chat_id,
+                        f"🛑 <b>Chek-list qoidalari: {shift}-smena yozilmadi</b>\n"
+                        + _html.escape(str(exc)[:400], quote=False)
+                        + "\n\nQisman yozilgan bo'lishi mumkin — keyingi "
+                          "ishga tushishda qaytadan to'liq yoziladi.",
+                        parse_mode="HTML")
+                except Exception:
+                    pass
+        except Exception:
+            pass
     finally:
         db.close()
 
 
-def _leader_rules_dm(shift: int, out: dict, left: list[str], moved: int) -> None:
-    """Tell the admins what just changed, including what it did NOT reach."""
+def _leader_rules_dm(shift: int, out: dict, left: list[str],
+                     moved: int | None) -> int:
+    """Tell the admins what just changed, including what it did NOT reach.
+
+    Returns how many chats it reached. A pass whose summary reached NOBODY is
+    a pass the operator never learns about — the flag is already set, so no
+    later boot will try again — so the count is recorded on the audit row and
+    printed, rather than swallowed by the per-recipient `except`.
+    """
+    sent = 0
     try:
         import html
         from app.routers.boot import _recipients
         from app.telegram_bot import bot
         body = [f"Smena {shift}: {out['units']} brigada, "
                 f"{out['texts']} ta matn jufti (kriteriya + tavsif)",
-                f"11-vazifa: +1 kun · 13-vazifa: faqat vaqt tekshiriladi",
+                f"11-vazifa: faqat sana + 1 kun · 13-vazifa: faqat vaqt "
+                f"({out['modes']} brigadada)",
                 f"3-vazifa: 3 ta rasm — {len(out['min_media'])} brigadada o'zgardi"]
+        if out.get("kept_coherent"):
+            body.append(f"O'z kriteriyasi bor liderlar uchun tavsif saqlandi: "
+                        f"{len(out['kept_coherent'])}")
         if out.get("global_min_media"):
             body.append("3-vazifa: global standart ham 3 ta rasmga ko'tarildi")
-        body.append(f"Qayta hisoblangan xulosa: {moved} ta "
+        body.append("Qayta hisoblash BAJARILMADI — xulosalar eski holicha"
+                    if moved is None else
+                    f"Qayta hisoblangan xulosa: {moved} ta "
                     f"(13-avgustdan beri, tuzatilgan hisobot yuborilmaydi)")
         if left:
             body.append(f"Tegilmagan lider sozlamalari: {len(left)}")
@@ -6463,7 +6522,12 @@ def _leader_rules_dm(shift: int, out: dict, left: list[str], moved: int) -> None
         for chat_id in _recipients():
             try:
                 bot.send_message(chat_id, text, parse_mode="HTML")
+                sent += 1
             except Exception:
                 pass
     except Exception as exc:
         print(f"[startup] leader rules 19.09 summary not delivered: {exc}")
+    if not sent:
+        print("[startup] leader rules 19.09: summary reached NOBODY — the pass "
+              "ran and its flag is set; read the Jurnal row for what it did")
+    return sent

@@ -56,8 +56,32 @@ SHIFT_TASKS = (13,)
 
 #: task 11 — a staff list may be dated the day after the report's.
 DATE_PLUS_TASK, DATE_PLUS = 11, 1
-#: task 13 — TIME ONLY: the hour is judged, the day is not.
-DAY_CHECK_TASK, DAY_CHECK = 13, False
+
+#: The DATE MODE each task is judged in, written WHOLE — (date_check, day_check,
+#: time_check) — never one flag of it.
+#:
+#: Writing a single flag and inheriting the rest is how a task ends up in a mode
+#: nobody chose. Two proofs of that, both found on the 11 Sep production copy:
+#: task 11 is DATE-ONLY on all 13 shift-1 units (they carry `time_check` False)
+#: and STRICT on all 8 shift-2 units, which inherit the global True — so the
+#: same «+1 day» tolerance means two different things across the fleet, and
+#: shift 2 was still failing staff lists on the CLOCK while the criteria text
+#: shipped beside it says the clock is not judged at all. And task 13 inherits
+#: its `time_check` from the global floor, so writing only `day_check` False
+#: leaves TIME-ONLY resting on a global value an admin may edit — at which point
+#: `date_flags` returns nothing at all and the task is silently exempt
+#: (`not check or not (days or times)`), which is the one mode the admin UI
+#: never offers.
+#:
+#: 11 — DATE ONLY: the day must be the report's (or the day after, `date_plus`),
+#:      the hour is never compared.
+#: 13 — TIME ONLY: the hour must be inside the window, the day is not compared;
+#:      the day question lives in the criteria instead, as the relation between
+#:      the two dates visible on the screen.
+DATE_MODES = {
+    11: {"date_check": True, "day_check": True, "time_check": False},
+    13: {"date_check": True, "day_check": False, "time_check": True},
+}
 #: task 3 — the criteria demands three photos, so the app must demand three.
 MIN_MEDIA_TASK, MIN_MEDIA = 3, 3
 
@@ -130,6 +154,43 @@ def set_global_min_media(db: Session) -> bool:
     return True
 
 
+def keep_leader_texts_coherent(db: Session, shift: int) -> list[str]:
+    """Stop a leader being TOLD one thing and GRADED on another.
+
+    A leader row that carries its own `criteria` and no `description` reads, on
+    «Vazifalar» and on the camera sheet, whatever `_resolve_description` falls
+    back to — and that fallback is the RESOLVED criteria, i.e. their own text.
+    The moment this pass puts a description on the unit, the fallback stops
+    applying: the leader is shown the unit's new instruction while the grader
+    still judges them by their own older criteria, which is the one failure a
+    checklist must never have.
+
+    So their description is materialised from their OWN criteria first, which
+    changes nothing they see today and keeps the two texts describing one task.
+    Their criteria is left exactly as it is — it is a deliberate admin edit, and
+    overwriting it is not this pass's decision to make.
+    """
+    from app.models import LeaderTaskLeaderSetting, RoleProfile
+    ids = {m.id for m in units(db, shift)}
+    if not ids:
+        return []
+    fixed = []
+    rows = (db.query(LeaderTaskLeaderSetting, RoleProfile)
+            .join(RoleProfile, RoleProfile.id == LeaderTaskLeaderSetting.leader_id)
+            .filter(RoleProfile.manager_id.in_(ids),
+                    LeaderTaskLeaderSetting.task_id.in_(
+                        tuple(TASKS) + tuple(SHIFT_TASKS)))
+            .all())
+    for row, prof in rows:
+        own = (row.criteria or "").strip()
+        if not own or (row.description or "").strip():
+            continue
+        leader_tasks.set_description(db, task_id=row.task_id, description=own,
+                                     leader_id=row.leader_id)
+        fixed.append(f"{prof.name} · task {row.task_id}")
+    return sorted(fixed)
+
+
 def apply(db: Session, shift: int) -> dict:
     """Write every agreed rule onto every non-archived unit of ONE shift.
 
@@ -151,7 +212,10 @@ def apply(db: Session, shift: int) -> dict:
     own; the caller wraps it.
     """
     out = {"shift": shift, "units": 0, "texts": 0, "date_plus": 0,
-           "day_check": 0, "min_media": [], "names": []}
+           "modes": 0, "min_media": [], "names": [],
+           # Done BEFORE any unit description exists, or the fallback these
+           # leaders read has already been taken away from them.
+           "kept_coherent": keep_leader_texts_coherent(db, shift)}
 
     for m in units(db, shift):
         # min_media FIRST: `apply_supervisor_cell` is the only door to that
@@ -188,10 +252,18 @@ def apply(db: Session, shift: int) -> dict:
 
         leader_tasks.set_date_plus(db, task_id=DATE_PLUS_TASK, date_plus=DATE_PLUS,
                                    manager_id=m.id, rejudge=False)
-        leader_tasks.set_day_check(db, task_id=DAY_CHECK_TASK, day_check=DAY_CHECK,
-                                   manager_id=m.id, rejudge=False)
+        # One after the other, never in parallel: all three land on the SAME
+        # materialised row and would race `uq_ltask_setting` (the 2026-08-19
+        # camera-pilot incident).
+        for tid, mode in sorted(DATE_MODES.items()):
+            leader_tasks.set_date_check(db, task_id=tid, date_check=mode["date_check"],
+                                        manager_id=m.id, rejudge=False)
+            leader_tasks.set_day_check(db, task_id=tid, day_check=mode["day_check"],
+                                       manager_id=m.id, rejudge=False)
+            leader_tasks.set_time_check(db, task_id=tid, time_check=mode["time_check"],
+                                        manager_id=m.id, rejudge=False)
         out["date_plus"] += 1
-        out["day_check"] += 1
+        out["modes"] += 1
         out["units"] += 1
         out["names"].append(m.name)
 
@@ -222,9 +294,18 @@ def leader_overrides_left(db: Session, shift: int) -> list[str]:
                         tuple(TASKS) + tuple(SHIFT_TASKS)))
             .all())
     for row, prof in rows:
-        what = [k for k in ("criteria", "description", "win_from", "win_to",
-                            "deadline", "date_check", "time_check", "day_check",
-                            "date_plus", "min_media")
+        # ONLY the fields this pass writes for THAT task. A leader's own photo
+        # window or deadline shadows nothing here, so counting it would bury the
+        # one row that matters — the shift-2 pass named twenty leaders on the
+        # production copy and every one of them carried nothing but a window.
+        fields = ["criteria", "description"]
+        if row.task_id in DATE_MODES:
+            fields += ["date_check", "day_check", "time_check"]
+        if row.task_id == DATE_PLUS_TASK:
+            fields.append("date_plus")
+        if row.task_id == MIN_MEDIA_TASK:
+            fields.append("min_media")
+        what = [k for k in fields
                 if getattr(row, k, None) is not None
                 and str(getattr(row, k)).strip() != ""]
         if what:
