@@ -6265,9 +6265,12 @@ def letter_shared_cells() -> None:
 def report_wc_groups() -> None:
     """Boot self-check for work-centre groups, printed with the deploy output.
 
-    Five things the writers refuse but a race, an import from before this
+    Four things the writers refuse but a race, an import from before this
     shipped or a hand edit could still leave behind — each one named, because
-    this repo has no test suite and a push to `main` is a deploy:
+    this repo has no test suite and a push to `main` is a deploy. A (work
+    centre, SKU) whose lines carry DIFFERENT letters was a fifth until
+    2026-09-18 and is now an ordinary catalog: two operations of one position
+    may be performed by two cells (services/wc_group.py):
 
     * a cell whose stored SAP code is not in the normal form
       (`cell_lookup.norm_code`) — every group reader matches the normal form,
@@ -6275,8 +6278,6 @@ def report_wc_groups() -> None:
 
     * a (unit, SAP code) shared by several cells where one carries no letter or
       two carry the same one (the register rule);
-    * a (work centre, SKU) whose catalog lines carry different groups (the
-      catalog rule) — read as UNCLAIMED, i.e. the even split;
     * active catalog lines naming a letter no cell of their unit carries at that
       work centre — their minutes are shared evenly, not given to a cell;
     * active ungrouped lines at a work centre whose cells ARE lettered — shared
@@ -6318,9 +6319,6 @@ def report_wc_groups() -> None:
         n_grouped_lines = 0
         for mid, ls in sorted(by_unit.items()):
             who = names.get(mid) or f"#{mid}"
-            for cf in wc_group.line_conflicts(ls):
-                lines_out.append(f"{who} · {cf['work_center']} · {cf['sap_code'] or cf['name']}: "
-                                 f"lines carry groups {', '.join(g or '—' for g in cf['groups'])}")
             orphan: dict = defaultdict(int)
             ungrouped: dict = defaultdict(int)
             for p in ls:

@@ -264,7 +264,7 @@ headcount and one trudoyomkost for the whole line, SPLIT EVENLY, so their
 ojidaniya weight, their ojidaniya COST and their per-cell загрузка were guesses.
 
 - **`services/wc_group.py` is THE definition** — `norm_group`, `label`, `share`,
-  `sku_groups`, `line_conflicts`, `cell_conflicts`, `check_cell`, `in_scope`.
+  `line_groups`, `cell_conflicts`, `check_cell`, `in_scope`.
   The client twins are `utils/wcGroup.js` and `components/ui/GroupBadge.jsx`.
   Never re-spell a split, a normalisation or a scope test at a call site.
 - **Three nullable columns** — `cells.wc_group`, `pp_products.wc_group`,
@@ -297,14 +297,39 @@ ojidaniya weight, their ojidaniya COST and their per-cell загрузка were 
   `startup.migrate_cell_supervisor_column` now drops the letter of every
   unit-less cell it re-attaches, or one leftover letter would roll that whole
   backfill back on every boot.
-- **The catalog rule**: every line of one SKU at one work centre
-  (`pp_calc.daily_key`) carries the same group, because the SAP file writes ONE
-  quantity per (SKU, work centre). The editors make a break impossible instead
-  of refusing it — a group written on one line is written to its sibling lines
-  (`group_siblings` in the response), and a line moved onto another SKU or
-  Команда adopts the siblings' group there. The ABC import is the one place a
-  conflict is refused. **The group is not part of a line's identity**, so
-  changing it moves no typed quantity.
+- **The catalog rule: a LINE carries its own letter and NOTHING propagates**
+  (2026-09-18, the operator's directive — `wc_group.line_groups` is the one
+  reader). Two operations of one position may be performed by two cells — the
+  предзаг. step in one, the finishing in another — and each cell is handed the
+  minutes of the operation it actually performs, because a line's minutes are
+  its OWN Трудоемкость × the day's quantity. So «Печенье Шрек» (341 s) and
+  «Печенье Шрек (предзаг.)» (289 s) at A2894 may name B and A.
+  From 2026-09-14 to that date every line of one (SKU, work centre) had to
+  carry ONE letter, on the reading that the SAP file writes one quantity for the
+  pair and cannot say which cell made which part of it. It does not have to —
+  the quantity is shared, the Трудоемкость is not — and the rule PROPAGATED:
+  setting a letter on the row an operator was looking at silently moved every
+  other row of that SKU, which is how they found it. Gone with it: `sku_groups`
+  (folded a SKU to one letter, answering «unclaimed» when its lines disagreed),
+  `line_conflicts`, the «siblings follow» write, the adoption of a destination's
+  letter by a moved line, a blank create adopting its SKU's letter, the ABC
+  import's refusal of a split SKU, and the boot check's «SKU split over groups».
+  `group_siblings` stays on the three catalog responses and always reads 0, so a
+  tab open on an older bundle prints nothing rather than breaking.
+  **Σ over a work centre's groups is unchanged**, so no unit figure moves — only
+  the split between cells does, and only where somebody letters two lines of one
+  SKU differently.
+  What SURVIVES: a line moved to another Команда still loses its letter (a
+  letter names a cell AT a work centre), an ORPHAN letter is still legal and
+  still named by the boot check, and **the group is still not part of a line's
+  identity**, so changing it moves no typed quantity.
+  The ABC import now believes the sheet's «Группа» column line by line and
+  carries an unlettered sheet's groups across the wipe on the LINE's own key
+  (`pp_calc.line_keys` — name + Трудоемкость, the identity `PPLineDaily`
+  already stores quantities under). A line whose name or Трудоемкость the sheet
+  CHANGED cannot be followed (the import may never guess by position) and comes
+  back ungrouped — the even split, where it sat before anybody lettered
+  anything — and the boot check names it.
 - **`share` is ONE rule for minutes and for people**: a cell reads its own
   group's value, and whatever no cell's letter claims — an ungrouped line, a
   whole-centre pin, a letter no cell carries — is shared evenly between ALL the
@@ -371,8 +396,9 @@ ojidaniya weight, their ojidaniya COST and their per-cell загрузка were 
   their sum. Any other whole-centre number replaces the group pins. A leader's
   WRITES follow their group scope: /override refuses another group's line, and a
   staffing save may not delete a group pin the leader cannot see (403).
-  Catalog create with a blank group adopts the SKU siblings' group; an edit or a
-  bulk edit with an empty group clears it on every sibling.
+  A catalog create with a blank group leaves the line UNGROUPED, and an edit or
+  a bulk edit with an empty group clears it on the rows the request named and on
+  no others.
 - **Where it is typed and shown**: the «Команды» panel draws ONE CARD PER GROUP
   for a work centre typed per group — its own load, people and minutes; штатка
   stays the centre's and says so — with a display-only card for an orphan letter;
@@ -395,9 +421,10 @@ ojidaniya weight, their ojidaniya COST and their per-cell загрузка were 
   and left a lone cell blank.
   Config only: no line got a group and no pin moved, so no number moved.
   Changing what it letters needs a NEW flag key. `startup.report_wc_groups` is
-  the boot self-check — register breaks, a SKU split over groups, orphan letters,
-  ungrouped lines at a grouped work centre, cells whose stored code is not
-  normalised — and changes nothing.
+  the boot self-check — register breaks, orphan letters, ungrouped lines at a
+  grouped work centre, cells whose stored code is not normalised — and changes
+  nothing. A SKU whose lines carry different letters was on that list until
+  2026-09-18 and is now an ordinary catalog.
 - **Consequence to know**: letters on the cells alone change NOTHING. A grouped
   work centre whose brigadir keeps typing one whole-centre number still splits
   it evenly, and one whose catalog lines carry no group still splits the minutes

@@ -423,7 +423,7 @@ def cell_zagruzka(
     # half, so Σ over a work centre's groups is the figure above. The per-work-
     # centre figures stay: the pre-floor O. SONI suggestion and a cell's
     # `wc_share` are statements about the whole work centre.
-    group_of = wc_group.sku_groups(all_products)
+    group_of = wc_group.line_groups(all_products)
     _pg, _ag = line_minutes_by_group(lines_by_key, shared, per_line, _SEC_PER_MIN,
                                      sap_off, group_of)
     plan_grp: dict[tuple[str, date], dict] = defaultdict(dict)
@@ -435,10 +435,15 @@ def cell_zagruzka(
     # The letters the ACTIVE catalog hands each work centre. A cell whose letter
     # is here reads its own group's minutes even on a day they come to 0 — that
     # is still its own figure, not a share of somebody else's.
+    # Read per LINE, as `group_of` is keyed (wc_group.line_groups): one SKU's
+    # operations may name different letters, so asking it per (wc, SKU) would
+    # miss every letter but the one the first operation happens to carry.
     letters_on_lines: dict[str, set] = defaultdict(set)
-    for (_w, _qkey) in lines_by_key:
-        if group_of.get((_w, _qkey)):
-            letters_on_lines[wc_code(_w)].add(group_of[(_w, _qkey)])
+    for (_w, _qkey), _lines in lines_by_key.items():
+        for _lkey, _labor in _lines:
+            _g = group_of.get((_w, _qkey, _lkey))
+            if _g:
+                letters_on_lines[wc_code(_w)].add(_g)
 
     _labor_cache: dict[tuple[str, date], tuple[list, list]] = {}
 

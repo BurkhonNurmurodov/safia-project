@@ -147,7 +147,7 @@ def _plan_inputs(db: Session, unit_ids: list, day: date, cells_rows: list):
                 updated = lo.updated_at
         pm, am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN, sap_off)
         pg, ag = line_minutes_by_group(lines_by_key, shared, per_line, _SEC_PER_MIN,
-                                       sap_off, wc_group.sku_groups(ups))
+                                       sap_off, wc_group.line_groups(ups))
         for (wc, g, d), v in pg.items():
             group_labor[(uid, d.isoformat(), wc, g)] = (
                 float(v), float(ag.get((wc, g, d), 0.0)))

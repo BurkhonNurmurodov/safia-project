@@ -492,9 +492,10 @@ function CatalogFields({ draft, setDraft, groupOpts = [] }) {
         </Field>
       </div>
       {groupOpts.length > 0 && (
-        // The hint is the consequence, not a description: the backend writes a
-        // group onto EVERY line of this SKU at this Команда ("siblings follow"),
-        // so choosing it here moves rows the operator is not looking at.
+        // The hint is the consequence, not a description: the letter is written
+        // on THIS line and on no other (2026-09-18), so the two operations of one
+        // position may name two cells — which is what the hint has to say, since
+        // until that date choosing it here moved every line of the SKU.
         <Field label={t("production.col.group")} hint={t("production.group.fieldHint")}>
           <StyledSelect
             value={draft.wc_group ?? ""}
@@ -1565,15 +1566,11 @@ export default function Production() {
           .replace("{r}", String(f.rows)).replace("{d}", String(f.days))
       : "";
   };
-  // A group written on one line is written on every line of its SKU at that
-  // Команда ("siblings follow", services/wc_group.py). Those rows are not the
-  // ones the operator picked, so the save says how many more it moved.
-  const siblingsText = (res) => {
-    const n = res?.data?.group_siblings ?? 0;
-    return n > 0 ? " · " + t("production.group.siblings").replace("{n}", String(n)) : "";
-  };
+  // A group is written on the line the operator picked and on NO other
+  // (2026-09-18, services/wc_group.py), so a save has nothing extra to report —
+  // the «siblings follow» count this used to print is gone with the rule.
   const sapFilled = (res) => {
-    const s = fillText(res) + siblingsText(res);
+    const s = fillText(res);
     if (s) toast.success(s.slice(3));
   };
   const staffing = useMutation({
@@ -1639,7 +1636,7 @@ export default function Production() {
       const skipped = res?.data?.skipped_no_code ?? 0;
       setBulkDraft(null);
       setCatPick([]);
-      const fill = fillText(res) + siblingsText(res);
+      const fill = fillText(res);
       if (skipped > 0) {
         toast.warning(`${t("production.bulk.done").replace("{n}", String(n))} · `
           + t("production.bulk.skippedNoCode").replace("{n}", String(skipped)) + fill);
@@ -1912,8 +1909,8 @@ export default function Production() {
   // The letters the bulk editor may write: those a CELL carries at EVERY work
   // centre the picked lines will stand at — the Команда typed in this form, or
   // else each line's own. The union of the unit's letters offered «F» for lines
-  // at a centre whose cells stop at «D», and the backend writes it onto those
-  // lines and their SKU siblings unchecked, i.e. orphans no cell reads.
+  // at a centre whose cells stop at «D», and the backend writes it unchecked,
+  // i.e. an orphan letter no cell reads.
   const bulkCentres = bulkWc
     ? [bulkWc]
     : [...new Set(rows.filter((r) => pickSet.has(r.id)).map((r) => r.work_center))];
@@ -2211,8 +2208,7 @@ export default function Production() {
   const sameWc = (a, b) =>
     String(a ?? "").trim().toUpperCase() === String(b ?? "").trim().toUpperCase();
   // The letters a CELL carries at a Команда — the only ones a catalog line may be
-  // GIVEN there. Any other letter makes the line, and every SKU sibling the
-  // backend writes it onto, an orphan no cell reads.
+  // GIVEN there. Any other letter makes the line an orphan no cell reads.
   const cellLettersAt = (wcCode) => groupOptsFor(wcCode).map((o) => o.group);
   // The catalog modals' setter. Two keys are not plain: a picked group records
   // that it was PICKED (`group_picked`), and a Команда change settles the letter
@@ -2265,10 +2261,11 @@ export default function Production() {
         // Only a coded line carries the choice; sending it for a code-less one
         // is a 400, and rightly so — there would be nothing for it to decide.
         ...(sap ? { auto_fill: catDraft.auto_fill !== false } : {}),
-        // Only a picked letter is sent: with none, the backend lets a new line
-        // adopt its SKU siblings' group at that Команда, which is the right
-        // default for a line added beside ones already grouped. And only one a
-        // cell carries there — anything else would be an orphan.
+        // Only a picked letter is sent. With none the line is created
+        // UNGROUPED — since 2026-09-18 it no longer adopts the letter its SKU's
+        // other operations carry, because they may be made in another cell — so
+        // its minutes go to the even split until somebody letters it. And only
+        // a letter a cell carries there: anything else would be an orphan.
         ...(catDraft.wc_group && cellLettersAt(wc).includes(catDraft.wc_group)
           ? { wc_group: catDraft.wc_group } : {}),
       },
@@ -2302,8 +2299,8 @@ export default function Production() {
     // Sent only when it cannot make an orphan. At the line's own Команда: when
     // changed ("" clears) to a letter a cell carries. At a NEW Команда: only a
     // letter the operator PICKED there that a cell carries (or a picked «—») —
-    // an untouched group lets the moved line adopt the group its SKU siblings
-    // carry there, which an echo of the old letter would overrule.
+    // with none picked the backend drops the letter, since it named a cell at
+    // the Команда the line has just left.
     const grp = catDraft.wc_group ?? "";
     if (sameWc(wc || r.work_center, r.work_center)) {
       if (grp !== (r.wc_group ?? "") && (grp === "" || cellLettersAt(r.work_center).includes(grp))) {

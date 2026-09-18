@@ -440,14 +440,19 @@ def line_minutes(lines_by_key, shared, per_line, sec_per_min: float = 60.0,
 
 
 def line_minutes_by_group(lines_by_key, shared, per_line, sec_per_min: float = 60.0,
-                          sap_off=None, group_of=None):
+                          sap_off=None, line_group_of=None):
     """`line_minutes` one level down: planned / actual MINUTES per
     (work centre, GROUP, date), the group being the one the catalog line names
     (models.PPProduct.wc_group — services/wc_group.py).
 
-      group_of {(wc, qty_key): group|None} — `wc_group.sku_groups` over the
-               unit's catalog. A (wc, qty_key) it does not name is None: the
+      line_group_of {(wc, qty_key, line_key): group|None} — `wc_group.line_groups`
+               over the unit's catalog. A line it does not name is None: the
                whole-work-centre part, which `wc_group.share` hands out evenly.
+               Keyed per LINE since 2026-09-18, because two operations of one
+               SKU may be made by two cells; it was keyed by (wc, qty_key) while
+               the catalog rule forced one letter per SKU. `compute_dashboard`
+               has always read `wc_group` off the line itself, so this is also
+               what makes the Positions table and the per-cell pages agree.
 
     Same resolution, same loop, same day set as `line_minutes` — it is the SAME
     private function returning its other half — so Σ over the groups of a work
@@ -455,7 +460,7 @@ def line_minutes_by_group(lines_by_key, shared, per_line, sec_per_min: float = 6
     can never state different minutes from the Positions table.
     """
     _pm, _am, plan_grp, actual_grp = _line_minutes(
-        lines_by_key, shared, per_line, sec_per_min, sap_off, group_of or {})
+        lines_by_key, shared, per_line, sec_per_min, sap_off, line_group_of or {})
     return plan_grp, actual_grp
 
 
@@ -463,7 +468,8 @@ def _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, group_of
     """The one loop behind `line_minutes` and `line_minutes_by_group`. The
     (wc, date) sums accumulate in exactly the order they always did, so the
     fleet figure stays byte-identical; the (wc, group, date) sums ride beside
-    them only when `group_of` is given."""
+    them only when `group_of` is given — keyed per LINE, so the letter is read
+    inside the line loop and two operations of one SKU may answer differently."""
     plan_min: dict = {}
     actual_min: dict = {}
     plan_grp: dict = {}
@@ -478,7 +484,6 @@ def _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, group_of
         days.setdefault((wc, key), set()).add(d)
 
     for (wc, key), lines in lines_by_key.items():
-        g = (group_of.get((wc, key)) or None) if grouped else None
         for d in days.get((wc, key), ()):
             sv = shared.get((wc, key, d)) or (0.0, 0.0)
             sp, sa = sv[0], sv[1]
@@ -494,6 +499,7 @@ def _line_minutes(lines_by_key, shared, per_line, sec_per_min, sap_off, group_of
                 plan_min[(wc, d)] = plan_min.get((wc, d), 0.0) + pv
                 actual_min[(wc, d)] = actual_min.get((wc, d), 0.0) + av
                 if grouped:
+                    g = group_of.get((wc, key, line_key)) or None
                     plan_grp[(wc, g, d)] = plan_grp.get((wc, g, d), 0.0) + pv
                     actual_grp[(wc, g, d)] = actual_grp.get((wc, g, d), 0.0) + av
     return plan_min, actual_min, plan_grp, actual_grp

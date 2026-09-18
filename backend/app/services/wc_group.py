@@ -25,11 +25,19 @@ The rules, each spelled once, here:
   more cells that are ALL lettered and all DIFFERENT. Per UNIT, never per shift
   (the operator's call): two brigadirs on one shift type their own pins and keep
   their own catalogs, so their cells may reuse a letter.
-* **The catalog rule** (`line_conflicts`, `sku_groups`): every line of one unit
-  at one work centre with one quantity key (`pp_calc.daily_key` — the SKU, or
-  the name of a code-less line) carries the SAME group. The SAP file writes ONE
-  quantity per (SKU, work centre), so a SKU split over two groups is a question
-  the file cannot answer. Its operation lines always stay together.
+* **The catalog rule** (`line_groups`): a LINE carries its own group, and
+  nothing propagates — the operator's directive, 2026-09-18. From 2026-09-14 to
+  that day every line of one (SKU, work centre) had to carry ONE group, on the
+  reading that the SAP file writes one quantity per (SKU, work centre) and could
+  not say which cell made which part of it. It does not have to: a line's
+  minutes are its OWN Трудоемкость × that quantity, so «Печенье Шрек» (341 s)
+  and «Печенье Шрек (предзаг.)» (289 s) at A2894 can be made by two cells and
+  each cell is handed the minutes of the operation it actually performs. The old
+  rule could not express that and, worse, propagated: setting a letter on one
+  line silently moved every other line of the SKU — which is how the operator
+  found it. Σ over the groups of a work centre is unchanged either way, so no
+  unit figure moves; only the split between cells does, and only where somebody
+  letters two lines of one SKU differently.
 * **The split** (`share`): whatever a work centre carries is handed to its
   cells — each cell its own group's value, plus an EVEN share of everything no
   cell's letter CLAIMS (an ungrouped catalog line, a whole-centre pin, a letter
@@ -49,7 +57,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from app.services.cell_lookup import norm_code
 from app.services.latin_code import _TWINS
-from app.services.pp_calc import daily_key
+from app.services.pp_calc import daily_key, line_keys
 
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _ONE = re.compile(r"^[A-Z]$")
@@ -152,37 +160,36 @@ def share(cell_groups: Sequence[Optional[str]],
     return out
 
 
-def sku_groups(lines: Iterable) -> dict[tuple[str, str], Optional[str]]:
-    """``{(work_centre, qty_key): group}`` over one unit's catalog lines.
+def line_groups(lines: Iterable) -> dict[tuple[str, str, str], Optional[str]]:
+    """``{(work_centre, qty_key, line_key): group}`` over ONE unit's catalog
+    lines — THE answer to «which cell's minutes is this line».
 
-    A (work centre, SKU) whose lines disagree — the catalog rule broken, which
-    every writer refuses — answers None, i.e. UNCLAIMED: it degrades to the even
-    split rather than guessing which of the two groups made it, and the boot
-    self-check names it."""
-    seen: dict[tuple[str, str], set] = defaultdict(set)
+    Keyed by the LINE and not by its SKU (2026-09-18, the operator's directive):
+    two operations of one position may be performed by two different cells, and
+    each is handed its own Трудоемкость × the day's quantity. It was
+    `sku_groups`, which folded a (work centre, SKU) to one letter and answered
+    None — UNCLAIMED, i.e. the even split — the moment two lines disagreed; a
+    disagreement is now the ordinary case and means exactly what it says.
+
+    The line key is `pp_calc.line_keys` over the SAME list, so pass what
+    `pp_calc.line_minutes`' `lines_by_key` was built from — every line of the
+    unit, active or not — or the two disagree about a line's `#n` suffix. Every
+    line must carry an `id`, which is that function's own rule.
+
+    A line with no letter answers None: the ungrouped part of its work centre,
+    which `share` hands out evenly. That is what every line carried before
+    groups existed."""
+    keys = line_keys(lines)
+    out: dict[tuple[str, str, str], Optional[str]] = {}
     for p in lines:
-        key = (_get(p, "work_center") or "", daily_key(_get(p, "sap_code"), _get(p, "name")))
-        seen[key].add(_get(p, "wc_group") or None)
-    return {k: (next(iter(v)) if len(v) == 1 else None) for k, v in seen.items()}
-
-
-def line_conflicts(lines: Iterable) -> list[dict]:
-    """Every (work centre, SKU) of ONE unit whose lines carry different groups.
-
-    Lines are compared active or not: an inactive sibling still holds the SKU's
-    identity and comes back the day it is re-ticked."""
-    seen: dict[tuple[str, str], dict] = {}
-    for p in lines:
-        wc = _get(p, "work_center") or ""
-        key = (wc, daily_key(_get(p, "sap_code"), _get(p, "name")))
-        slot = seen.setdefault(key, {"work_center": wc,
-                                     "sap_code": (_get(p, "sap_code") or "").strip(),
-                                     "name": _get(p, "name") or "",
-                                     "groups": set(), "lines": 0})
-        slot["groups"].add(_get(p, "wc_group") or None)
-        slot["lines"] += 1
-    return [{**v, "groups": sorted(g or "" for g in v["groups"])}
-            for v in seen.values() if len(v["groups"]) > 1]
+        pid = _get(p, "id")
+        if pid is None:
+            continue
+        key = (_get(p, "work_center") or "",
+               daily_key(_get(p, "sap_code"), _get(p, "name")),
+               keys.get(pid, ""))
+        out[key] = _get(p, "wc_group") or None
+    return out
 
 
 def cell_conflicts(cells: Iterable) -> list[dict]:

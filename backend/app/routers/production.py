@@ -1047,19 +1047,30 @@ def set_override(
     scope = _leader_wc_scope(db, payload)
     if not _in_scope(scope, body.work_center):
         raise HTTPException(status_code=403, detail="This team is not one of your cells")
+    # WHICH catalog line this write is aimed at — resolved before the group
+    # check below, which is a question about that line.
+    line = _resolve_line(db, mid, body)
     if scope is not None:
         # …and inside a shared work centre, their own GROUP only (services/
         # wc_group.py): the dashboard stopped showing a leader of 7421 (A2894 · A)
         # group B's positions, so a write naming one is a write to a line they
-        # cannot see. The SKU's group is the catalog's answer for the whole unit,
-        # the key `wc_group.sku_groups` reads; a SKU with none is the whole work
-        # centre's and stays theirs.
+        # cannot see. Asked per LINE (`wc_group.line_groups`) since 2026-09-18,
+        # because two operations of one SKU may be made by two cells — asking
+        # per SKU would hand a leader a line their own page does not list, which
+        # filters on the line's own letter. A line with no letter is the whole
+        # work centre's and stays theirs.
         gscope = _leader_group_scope(db, payload)
-        grp = wc_group.sku_groups(db.query(PPProduct).filter(
-            PPProduct.manager_id == mid,
-            PPProduct.work_center == body.work_center).all()).get(
-                (body.work_center or "", body.sap_code))
-        if not wc_group.in_scope(gscope, body.work_center, grp):
+        groups = wc_group.line_groups(db.query(PPProduct).filter(
+            PPProduct.manager_id == mid).all())
+        at_key = {k: g for k, g in groups.items()
+                  if k[0] == (body.work_center or "") and k[1] == body.sap_code}
+        # No line named: an older bundle writing the whole group (`_set_whole_group`
+        # touches every line of it), so EVERY one of them must be theirs. An
+        # unknown SKU the catalog does not carry has no line and no letter — the
+        # whole work centre's, exactly as before.
+        mine = ([at_key.get((body.work_center or "", body.sap_code, line))] if line
+                else (list(at_key.values()) or [None]))
+        if not all(wc_group.in_scope(gscope, body.work_center, g) for g in mine):
             raise HTTPException(status_code=403, detail="This team is not one of your cells")
     # A day the unit has signed off on is immutable here for the same reason it
     # is on /idle-cell: ПЛАН/ФАКТ is what the загрузка divides, so editing it
@@ -1068,7 +1079,6 @@ def set_override(
     idle_lock.require_open(db, mid, day)
 
     col = "plan_override" if body.field == "plan" else "actual_override"
-    line = _resolve_line(db, mid, body)
 
     # ONE writer either way, and the retry is what makes it safe to run twice.
     # Every first edit of a line on a day is an INSERT against
@@ -2417,14 +2427,11 @@ async def import_catalog(
 
     # The GROUP of each line (2026-09-14, services/wc_group.py). A sheet with a
     # «Группа» column is AUTHORITATIVE for every line — a blank cell there means
-    # «no group» — and is refused whole, BEFORE the old catalog is wiped, when
-    # one SKU at one Команда is split over two groups: the SAP file writes one
-    # quantity per (SKU, work centre), so the split is a question nothing can
-    # answer. This is the one catalog writer that refuses instead of resolving —
-    # it replaces every line at once, so there is no «line you named» for the
-    # siblings to follow. A sheet without the column carries each line's group
-    # from the old catalog on the line's own key, as the фаза pin and the
-    # auto-fill switch are carried below.
+    # «no group». Two lines of one SKU may name two letters: since 2026-09-18 a
+    # group belongs to the LINE, so the file is simply believed, and the refusal
+    # that used to reject such a sheet whole is gone. A sheet WITHOUT the column
+    # carries each line's group from the old catalog on the line's own key, as
+    # the фаза pin and the auto-fill switch are carried below.
     groups_from_sheet = bool(parsed.get("has_group_column"))
     if groups_from_sheet:
         for pr in parsed["products"]:
@@ -2435,15 +2442,6 @@ async def import_catalog(
                     f"«Группа» у позиции {pr.get('sap_code') or pr.get('name') or '?'} "
                     f"({pr.get('work_center') or '—'}): «{pr.get('wc_group')}» — "
                     f"нужна одна латинская буква A–Z"))
-        clashes = wc_group.line_conflicts(parsed["products"])
-        if clashes:
-            items = [f"{c['work_center'] or '—'} · {c['sap_code'] or c['name']}: "
-                     + ", ".join(g or "—" for g in c["groups"]) for c in clashes[:10]]
-            more = f" (и ещё {len(clashes) - 10})" if len(clashes) > 10 else ""
-            raise HTTPException(status_code=400, detail=(
-                "Одна позиция в одной команде должна иметь одну группу — исправьте "
-                "«Группа» и загрузите снова: " + "; ".join(items) + more))
-
     # Hand-pinned фаза values live only here (the sheet has no such column), so
     # carry them across the wipe by the line's own key (daily_key + work centre),
     # which is the SAP code unless the line has none.
@@ -2456,15 +2454,25 @@ async def import_catalog(
     # the next upload would overwrite the number they typed.
     kept_manual = {(daily_key(p.sap_code, p.name), p.work_center)
                    for p in old_lines if not p.auto_fill}
-    # {(work centre, quantity key): group} — one answer per SKU by construction,
-    # so a carried catalog can never break the catalog rule.
-    kept_groups = wc_group.sku_groups(old_lines)
+    # A line's group rides across the wipe on the LINE's own key — its name and
+    # Трудоемкость (`pp_calc.line_keys`), the identity `PPLineDaily` already
+    # stores its quantities under — so a line the sheet leaves alone keeps its
+    # letter exactly as it keeps the number somebody typed for it. Keyed per SKU
+    # until 2026-09-18, which folded two operations' letters into one answer.
+    # A line whose name or Трудоемкость the sheet CHANGED is a line this cannot
+    # follow (the import may not guess by position — `pp_calc.line_keys`), so it
+    # comes back ungrouped: its minutes go to the even split, which is where
+    # they were before anybody lettered anything, and `startup.report_wc_groups`
+    # names it at the next boot.
+    kept_groups = wc_group.line_groups(old_lines)
+    new_keys = line_keys([{**p, "id": i, "sort_order": i}
+                          for i, p in enumerate(parsed["products"])])
     replaced = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
     grouped_lines = 0
     for i, p in enumerate(parsed["products"]):
         ident = (daily_key(p["sap_code"], p.get("name")), p.get("work_center") or "")
         grp = (p.get("wc_group") if groups_from_sheet
-               else kept_groups.get((ident[1], ident[0])))
+               else kept_groups.get((ident[1], ident[0], new_keys.get(i, ""))))
         grouped_lines += 1 if grp else 0
         db.add(PPProduct(
             manager_id=manager_id, sap_code=p["sap_code"], name=p.get("name") or "",
@@ -2647,63 +2655,53 @@ def admin_catalog(manager_id: int = Query(...), _: dict = Depends(_verify_admin)
 
 
 def _line_ident(p) -> tuple[str, str]:
-    """(work centre, quantity key) — a catalog line's SIBLING key under the
-    catalog rule, in the order `wc_group.sku_groups` keys by."""
+    """(work centre, quantity key) — where a catalog line stands, in the order
+    `wc_group.line_groups` keys its first two fields by."""
     return (p.work_center or "", daily_key(p.sap_code, p.name))
 
 
 def _settle_line_groups(db, mid: int, edited: list, before: dict, *,
                         explicit: bool, group: Optional[str]) -> int:
-    """Keep the catalog rule after an edit: every line of one unit at one work
-    centre with one quantity key carries ONE group (services/wc_group.py) —
-    the SAP file writes one quantity per (SKU, work centre), so a SKU cannot be
-    half one group and half another.
+    """Apply a catalog edit's GROUP to the lines the request named — and to
+    nothing else (2026-09-18, the operator's directive).
 
-    The editors never REFUSE it; they resolve it the two ways an operator means:
+    A letter belongs to the LINE (services/wc_group.py): two operations of one
+    position may be performed by two cells, so «Печенье Шрек» and «Печенье Шрек
+    (предзаг.)» at one Команда may name two of them. Until this date an explicit
+    letter was written to every line of the SKU («siblings follow») and a moved
+    line adopted the letter already there — so setting a group on the row an
+    operator was looking at silently moved rows they were not, which is how the
+    old rule was found. Nothing propagates now: what the request names is what
+    changes, and the count this returns is always 0 — kept so the three callers,
+    the action log and the response field stay one shape.
 
-      • an EXPLICIT group on a line is written to all its siblings («siblings
-        follow») — setting the group of one operation line is setting it on the
-        SKU;
-      • a line whose identity MOVES without one adopts the group its new
-        siblings already carry; with none there it keeps its own group only if
-        it stayed at the same work centre, because a letter means something at
-        its own work centre only — carrying «B» elsewhere names a group nobody has.
+    The ONE thing still settled for the operator is a letter that would name
+    nothing: a line moved to another WORK CENTRE loses it, because a letter
+    names a cell AT a work centre and carrying «B» elsewhere points at a group
+    nobody has. A line staying at its work centre keeps its own letter through
+    any other edit.
 
     `edited` are the rows the request named, their fields already applied (a new
     one flushed — the session does not autoflush); `before` their identity
-    before the edit, absent for a new line. Every line of the unit is read,
-    active or not, as `wc_group.line_conflicts` reads them: an inactive sibling
-    still holds the SKU's identity. Returns how many OTHER lines changed. The
-    caller commits. A group is not part of any quantity key, so nothing here
-    touches what `_carry_manual_quantities` carries.
+    before the edit, absent for a new line. The caller commits. A group is not
+    part of any quantity key, so nothing here touches what
+    `_carry_manual_quantities` carries.
     """
-    ids = {p.id for p in edited}
-    siblings_of: dict[tuple[str, str], list] = defaultdict(list)
-    for q in db.query(PPProduct).filter(PPProduct.manager_id == mid).all():
-        siblings_of[_line_ident(q)].append(q)
-    changed = 0
     if explicit:
         for p in edited:
             p.wc_group = group
-        for ident in {_line_ident(p) for p in edited}:
-            for q in siblings_of[ident]:
-                if q.id not in ids and (q.wc_group or None) != group:
-                    q.wc_group = group
-                    changed += 1
-        return changed
-    moved = {p.id for p in edited if before.get(p.id) != _line_ident(p)}
+        return 0
     for p in edited:
-        if p.id not in moved:
-            continue
         ident = _line_ident(p)
-        # Siblings are the lines already AT the destination: a line moving there
-        # in the same batch still carries the group of where it came from.
-        sibs = [q for q in siblings_of[ident] if q.id not in moved]
-        if sibs:
-            p.wc_group = wc_group.sku_groups(sibs).get(ident)
-        elif before.get(p.id) is None or before[p.id][0] != ident[0]:
+        was = before.get(p.id)
+        # A NEW line (no `before`) keeps the letter it was created with, which
+        # for a blank form field is none — it no longer adopts the SKU's. An
+        # ORPHAN letter (one no cell of the unit carries at that work centre)
+        # stays legal on a line, as it always was: its minutes are unclaimed and
+        # shared evenly, and `startup.report_wc_groups` names it at boot.
+        if was is not None and was[0] != ident[0]:
             p.wc_group = None
-    return changed
+    return 0
 
 
 class CatalogCreateBody(BaseModel):
@@ -2717,9 +2715,10 @@ class CatalogCreateBody(BaseModel):
     # asked — see the 400 below. Omitted = the platform's default, on.
     auto_fill: Optional[bool] = None
     # 2026-09-14: the GROUP of its work centre that makes this line
-    # (services/wc_group.py). A letter sets it and the line's siblings follow;
-    # blank or omitted adopts the siblings' group — a NEW line has no group of
-    # its own to clear, and a blank form field must not strip one off the SKU.
+    # (services/wc_group.py). A letter sets it on THIS line and on no other;
+    # blank or omitted leaves the line ungrouped — it no longer adopts the
+    # letter its SKU's other operations carry, because they may be made
+    # elsewhere (2026-09-18).
     wc_group: Optional[str] = None
 
 
@@ -2960,8 +2959,8 @@ class CatalogBody(BaseModel):
     op: Optional[str] = None
     active: Optional[bool] = None
     auto_fill: Optional[bool] = None   # coded lines only — see the handler
-    # 2026-09-14: "A" sets the group, "" clears it, null leaves it — and the
-    # line's siblings follow either way (see _settle_line_groups).
+    # 2026-09-14: "A" sets the group, "" clears it, null leaves it — on THIS
+    # line alone since 2026-09-18 (see _settle_line_groups).
     wc_group: Optional[str] = None
 
 
@@ -2982,7 +2981,8 @@ class CatalogBulkBody(BaseModel):
     labor_time: Optional[float] = None
     auto_fill: Optional[bool] = None
     # 2026-09-14: "A" sets the group on every selected line, "" clears it, null
-    # leaves it; siblings outside the selection follow (_settle_line_groups).
+    # leaves it. The SELECTION is the whole scope since 2026-09-18 — a line
+    # outside it is never touched, whatever SKU it shares (_settle_line_groups).
     wc_group: Optional[str] = None
 
 
@@ -3075,8 +3075,8 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                "labor_time": edited[d["id"]].labor_time}
               if d["id"] in edited else d) for d in before]
     carried = _carry_manual_quantities(db, mid, before, after)
-    # ONE group pass after every field is applied — the batch's lines are each
-    # other's siblings, and only the finished shape says who ends up where.
+    # ONE group pass after every field is applied: a Команда change decides
+    # whether a letter still names a cell, so only the finished shape answers.
     group_siblings = 0
     if body.wc_group is not None or wc is not None:
         group_siblings = _settle_line_groups(
@@ -3175,9 +3175,9 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
                    "work_center": p.work_center, "labor_time": p.labor_time}
                   if d["id"] == p.id else d) for d in before]
         carried = _carry_manual_quantities(db, p.manager_id, before, after)
-    # The group follows the catalog rule: an explicit one is written to the
-    # line's siblings, and a line moved onto another SKU or Команда takes the
-    # group of the lines already there (_settle_line_groups).
+    # The group is this line's own: an explicit one is written here and nowhere
+    # else, and a line moved to another Команда loses a letter that would name
+    # no cell there (_settle_line_groups).
     group_siblings = 0
     if body.wc_group is not None or _line_ident(p) != ident_before:
         group_siblings = _settle_line_groups(db, p.manager_id, [p], {p.id: ident_before},

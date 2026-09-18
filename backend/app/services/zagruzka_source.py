@@ -282,7 +282,9 @@ def wc_group_labor(db: Session, manager_ids: Iterable[int], date_from: date,
                    date_to: date) -> dict[tuple[int, str, str, Optional[str]], tuple[float, float]]:
     """``{(manager_id, "YYYY-MM-DD", work_center, group): (plan, actual)}`` —
     `wc_labor` one level down (2026-09-14): each catalog line's minutes under the
-    group it names (`wc_group.sku_groups`), None for the ungrouped part. Same
+    group it names (`wc_group.line_groups` — the LINE's own letter since
+    2026-09-18, so two operations of one SKU may feed two cells), None for the
+    ungrouped part. Same
     inputs, same resolution (`pp_calc.line_minutes_by_group` is `line_minutes`'
     own loop), so Σ over the groups of a work centre is its `wc_labor` figure.
     Hand it to `cell_labor` for what each CELL carries."""
@@ -294,7 +296,7 @@ def wc_group_labor(db: Session, manager_ids: Iterable[int], date_from: date,
             continue
         pg, ag = line_minutes_by_group(lines_by_key, shared.get(mid, {}),
                                        per_line.get(mid, {}), _SEC_PER_MIN, sap_off,
-                                       wc_group.sku_groups(products))
+                                       wc_group.line_groups(products))
         for src, slot in ((pg, 0), (ag, 1)):
             for (wc, g, d), v in src.items():
                 key = (mid, d.isoformat() if hasattr(d, "isoformat") else str(d), wc, g)

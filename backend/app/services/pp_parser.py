@@ -361,9 +361,10 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
         if any("трудо" in _str(c).lower() for c in row):
             header_i = i
             break
-    # Raw text only: whether it is a valid letter, and whether one SKU carries
-    # one group, is the importer's decision (wc_group.norm_group / line_conflicts)
-    # — it has to name the offending row, and a parser that dropped it could not.
+    # Raw text only: whether it is a valid letter is the importer's decision
+    # (wc_group.norm_group) — it has to name the offending row, and a parser
+    # that dropped it could not. Two lines of one SKU may carry two letters
+    # (2026-09-18): a group belongs to the LINE, so nothing here compares them.
     grp_col = _group_column(rows[header_i]) if rows else None
 
     products = []
