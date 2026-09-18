@@ -601,6 +601,10 @@ def effective_settings(db: Session, manager_id: int, day=_NOW) -> dict[int, dict
             # Same tri-state again: None = inherit, False = this unit's DAY is
             # not compared. Read with `time_check` — the pair names the mode.
             "day_check": s.day_check if s else None,
+            # RAW: None = inherit the days AFTER the report's that a proof
+            # may be dated. `or None` would destroy a deliberate 0 exactly as
+            # it would a tri-state, so the test is `is None`.
+            "date_plus": (s.date_plus if s else None),
             # RAW: None = inherit the global collection mode. "camera" here is
             # what enrols a whole unit in in-app capture.
             "proof_kind": (s.proof_kind if s else None) or None,
@@ -659,6 +663,7 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "date_check": r.date_check,
             "time_check": r.time_check,
             "day_check": r.day_check,
+            "date_plus": r.date_plus,
             "proof_kind": r.proof_kind or None,
         }
     return out
@@ -728,7 +733,7 @@ def resolve_proof_kind(*levels) -> str:
 OWN_FIELDS = (
     "enabled", "min_media", "weight", "names", "criteria", "description",
     "win_from", "win_to", "deadline", "date_check", "time_check", "day_check",
-    "proof_kind",
+    "date_plus", "proof_kind",
 )
 
 # The three clocks compare NORMALISED — "9:00" and "09:00" are one value, and a
@@ -788,6 +793,9 @@ def global_level(td: LeaderTaskDef) -> dict:
         "date_check": td.date_check is not False,
         "time_check": td.time_check is not False,
         "day_check": td.day_check is not False,
+        # NOT NULL at this level either: 0 = the report day alone, which is what
+        # every task did before the tolerance existed.
+        "date_plus": int(td.date_plus or 0),
         "proof_kind": (td.proof_kind or "screenshot"),
     }
 
@@ -1466,6 +1474,50 @@ def set_day_check(db: Session, *, task_id: int, day_check: bool | None,
                     manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
 
 
+def set_date_plus(db: Session, *, task_id: int, date_plus: int | None,
+                  manager_id: int | None = None, leader_id: int | None = None,
+                  rejudge: bool = True) -> None:
+    """Write the date TOLERANCE — how many days after the report's a proof may
+    also be dated — at one level of the chain.
+
+    The integer twin of `_set_chain_flag`, and it shares every rule with it: the
+    narrowest non-NULL level wins, None clears a level, the GLOBAL level is the
+    chain's floor and stores 0 rather than "inherit", and the write re-judges
+    every verdict already written from its stored clocks (no Gemini call). It is
+    read through `leader_ai.resolve_date_plus`, which is why a deliberate 0 has
+    to survive: 0 is "the report day alone", not "nothing said".
+
+    Written for the work-schedule task, whose proof is dated by what it is ABOUT
+    and not by when it was made — a schedule filed today for tomorrow.
+    """
+    v = None if date_plus is None else max(0, min(int(date_plus),
+                                                  leader_ai.MAX_DATE_PLUS))
+
+    if leader_id is not None:
+        row = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+        if not row:
+            if v is None:
+                return  # nothing stored, nothing to clear
+            row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
+            db.add(row)
+    elif manager_id is not None:
+        row = _sup_row(db, manager_id, task_id, create=v is not None)
+        if row is None:
+            return
+    else:
+        row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+        if not row:
+            return
+        v = 0 if v is None else v       # the floor of the chain is never "inherit"
+    row.date_plus = v
+    if leader_id is not None and _leader_row_bare(row):
+        db.delete(row)
+    db.commit()
+    if rejudge:
+        leader_ai.sync_date_flags(db, [task_id])
+
+
 def _sup_row(db: Session, manager_id: int, task_id: int, *,
              create: bool) -> "LeaderTaskSetting | None":
     """This supervisor's row for this task, materialised on demand — and
@@ -1998,7 +2050,7 @@ def _leader_row_extras(row) -> bool:
     # next cell write would then delete the row and silently re-arm the date
     # check on a task somebody had exempted.
     return any(getattr(row, k, None) is not None
-               for k in ("date_check", "time_check", "day_check"))
+               for k in ("date_check", "time_check", "day_check", "date_plus"))
 
 
 def _leader_row_bare(row) -> bool:

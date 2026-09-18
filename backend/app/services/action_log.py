@@ -218,6 +218,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/admin/leader-tasks/date-check",            "leader_config", "ltask.date_check_set"),
     (("PUT",),    "/admin/leader-tasks/time-check",            "leader_config", "ltask.time_check_set"),
     (("PUT",),    "/admin/leader-tasks/day-check",             "leader_config", "ltask.day_check_set"),
+    (("PUT",),    "/admin/leader-tasks/date-plus",             "leader_config", "ltask.date_plus_set"),
     (("PUT",),    "/admin/leader-tasks/proof-kind",            "leader_config", "ltask.proof_kind_set"),
     (("PUT",),    "/admin/leader-tasks/unit",                  "leader_config", "ltask.unit_settings_set"),
     (("PUT",),    "/admin/leader-tasks/cell-from",             "leader_config", "ltask.cell_from_set"),

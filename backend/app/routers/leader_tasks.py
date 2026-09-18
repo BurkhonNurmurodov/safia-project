@@ -46,7 +46,8 @@ from app.services.leader_tasks import (
     effective_date, effective_leader_config, effective_settings, ensure_task_defs,
     expired_through, leader_overrides, reorder_tasks, set_archived,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
-    per_task_units, revert_audit, set_criteria, set_date_check, set_day_check,
+    per_task_units, revert_audit, set_criteria, set_date_check, set_date_plus,
+    set_day_check,
     set_deadline,
     set_description, set_proof_kind, set_unit_settings, unit_bot_from_map,
     set_time_check, set_window, window_shift_problems,
@@ -1225,6 +1226,39 @@ def put_day_check(body: DayCheckIn, db: Session = Depends(get_db),
     """
     return _write_date_rule(db, body, setter=set_day_check, kw="day_check",
                             value=body.day_check)
+
+
+class DatePlusIn(BaseModel):
+    """And how many days AFTER the report's may the proof be dated? The date
+    rule's fourth field, addressed and staged exactly like `DateCheckIn` —
+    global, one supervisor, one leader, or a scoped fan-out.
+
+    An INTEGER, not a flag, and null still means «inherit the level above»; 0 is
+    a decision («the report day alone»), which is why it is read with `is None`
+    and never with `or`. It exists for a proof dated by what it is ABOUT rather
+    than by when it was made — a work schedule filed the day before it applies.
+    """
+    task_id: int
+    date_plus: int | None = None
+    manager_id: int | None = None
+    leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.put("/admin/leader-tasks/date-plus")
+def put_date_plus(body: DatePlusIn, db: Session = Depends(get_db),
+                  _: dict = Depends(verify_admin)):
+    """Let a task's proof also be dated the days AFTER the report's day.
+
+    Applies at once and re-derives the verdicts ALREADY written from their
+    stored clocks, exactly like the window and the three flags beside it — no
+    Gemini call, no quota. Widening it clears the `date_mismatch` flags (and, in
+    the automatic regime, the deductions they caused) off proofs dated inside
+    the new tolerance; narrowing it back restores them.
+    """
+    return _write_date_rule(db, body, setter=set_date_plus, kw="date_plus",
+                            value=body.date_plus)
 
 
 def _write_date_rule(db: Session, body, *, setter, kw: str,
