@@ -787,6 +787,10 @@ export default function ProofCamera() {
         const list = (await navigator.mediaDevices.enumerateDevices())
           .filter((d) => d.kind === "videoinput");
         setDevices(list);          // the flip button reads this count
+        // Kept on the open record too: whether the device has ANY camera is
+        // what tells a broken camera apart from a computer, and the failure
+        // below has to answer that without waiting for a render.
+        opensRef.current.cams = list.length;
         return list;
       };
       const acquire = async () => {
@@ -916,7 +920,8 @@ export default function ProofCamera() {
       failRef.current = {
         kind: "gum_error",
         error: { name: e?.name || "", message: String(e?.message || "").slice(0, 200) },
-        stall: null, hidden: document.visibilityState !== "visible", at: Date.now(),
+        stall: null, cams: opensRef.current.cams ?? null,
+        hidden: document.visibilityState !== "visible", at: Date.now(),
       };
       note("open", `failed: ${e?.name || "error"}`);
       setCamErr(e?.name === "NotAllowedError" ? "denied"
@@ -1165,6 +1170,19 @@ export default function ProofCamera() {
     if (!camErr) return;
     setReported(false);
     if (camErr === "denied") return;   // a refusal is the leader's answer, not a fault
+    // A device with NO camera at all is not a fault either, and it is the same
+    // kind of answer: on 2026-09-18 a leader opened a camera proof from
+    // Telegram DESKTOP on a Windows PC — zero video inputs, `NotFoundError` in
+    // four milliseconds — and an admin was DMed about it. Nothing about that
+    // device is for an admin to fix; the screen already tells the leader the
+    // one thing that works, which is to open the task on their phone. A
+    // `NotFoundError` on a device that DOES list cameras is a different matter
+    // and still reports, which is why the count is the test and not the error
+    // name. An unknown count reports, as it always did.
+    if (camErr === "none" && failRef.current.cams === 0) {
+      recRef.current?.note("open", "no camera on this device — not reported");
+      return;
+    }
     // Raised while the page was hidden: nobody saw it, and the return clears it
     // and opens again. If THAT open fails, it fails on screen and is reported.
     if (failRef.current.hidden) return;
@@ -1675,9 +1693,26 @@ export default function ProofCamera() {
                 style={{ color: "rgba(255,255,255,0.65)" }}>
                 {t(`proof.cam.${camErr}Msg`)}
               </p>
-              <Button size="lg" onClick={() => startCamera(facing, "retry button")}>
-                <RefreshCw size={16} /> {t("proof.cam.retry")}
-              </Button>
+              {/* On a device with NO camera — a leader who opened the proof
+                  from Telegram on a computer — «Qayta urinish» is a button that
+                  fails again in four milliseconds. The way out is the action,
+                  and retrying stays underneath it for the webcam somebody has
+                  just plugged in. */}
+              {camErr === "none" && devices.length === 0 ? (
+                <div className="space-y-2">
+                  <Button size="lg" className="w-full" onClick={() => tgApp()?.close?.()}>
+                    <X size={16} /> {t("proof.gate.close")}
+                  </Button>
+                  <Button size="md" variant="ghost" className="w-full"
+                    onClick={() => startCamera(facing, "retry button")}>
+                    <RefreshCw size={15} /> {t("proof.cam.retry")}
+                  </Button>
+                </div>
+              ) : (
+                <Button size="lg" onClick={() => startCamera(facing, "retry button")}>
+                  <RefreshCw size={16} /> {t("proof.cam.retry")}
+                </Button>
+              )}
               {/* Said only once the server HAS the report: reassurance for a
                   send that has not happened is a promise the page cannot keep. */}
               {reported ? (

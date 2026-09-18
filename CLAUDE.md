@@ -2745,6 +2745,17 @@ SERVER's; the phone never authors it.
     picture», which is true and leaves them nothing to do. It is still
     REPORTED: a holder that will not let go after being asked is exactly what
     an admin needs to know is still happening.
+  - **A device with NO camera is an ANSWER, not a fault, and is not reported.**
+    On 2026-09-18 a leader opened a camera proof from Telegram DESKTOP on a
+    Windows PC: zero video inputs, `NotFoundError` in four milliseconds, and an
+    admin was DMed about it. Nothing there is for an admin to fix. Same rule
+    `NotAllowedError` already keeps — a refusal is the leader's answer — and the
+    test is the CAMERA COUNT, never the error name: a `NotFoundError` on a
+    device that does list cameras is a real fault and still reports, and an
+    unknown count reports too. The screen also stops offering «Qayta urinish»
+    as its action there, since retrying fails again in four milliseconds; the
+    way out (close, and open the task on the phone) is the action, with retry
+    underneath it for a webcam somebody has just plugged in.
 
 - **A camera failure REPORTS ITSELF to the admins** (2026-09-17, the
   operator's directive, after the first «Kamera tasvir bermayapti» reached us as
