@@ -6,7 +6,11 @@
 //
 // Rules it keeps, so nobody has to rediscover them:
 // - The day stepper beside it does NOT reach it. Each column has its own fixed
-//   window and prints it — with the date — in its own header.
+//   window and prints it — with the date — in its own header. «Bartaraf etilgan
+//   %» covers the CURRENT MONTH (the operator's call, 2026-09-18), and the
+//   month it names is the one the SERVER counted (`quality_month` on the
+//   payload) — a month derived from the browser's clock is how the header and
+//   the figures would come to name two different windows.
 // - Its scope is the PAGE's filter bar: the shared plant, and the `shift` the
 //   page hands it. A supervisor pick is never read — the page has no such
 //   control, so one left standing on another page would narrow the board with
@@ -227,6 +231,11 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
   const dated = (whenKey, iso) => (single && iso
     ? fill(t("overview.sr.capDated"), { when: t(whenKey), date: ddmm(iso) })
     : t(whenKey));
+  // «2026-09» → the month's name in the reader's language. Empty until the
+  // payload lands, and the caption then says «sifat» alone rather than naming
+  // a month nothing has counted yet.
+  const qm = Number(String(data?.quality_month || "").slice(5, 7));
+  const qMonth = qm >= 1 && qm <= 12 ? t(`cal.m${qm - 1}`) : "";
 
   const onSort = (k) => setSort((s) => {
     const first = FIRST_DIR[k] || "asc";
@@ -442,7 +451,12 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
               }],
               ["quality", t("overview.sr.hintQuality"), {
                 full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"),
-                cap: t("overview.sr.capQuality"), capShort: t("overview.sr.capQualityShort"),
+                cap: qMonth
+                  ? fill(t("overview.sr.capQualityMonth"), { month: qMonth })
+                  : t("overview.sr.capQuality"),
+                // On a phone the month alone is the caption; with none yet,
+                // `HeadLabel` falls back to the full one.
+                capShort: qMonth || undefined,
               }],
               ["concerns", t("overview.sr.hintConcerns"), {
                 full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"),

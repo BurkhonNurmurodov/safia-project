@@ -18,7 +18,7 @@ A shift manager whose profile names no shift reads an EMPTY board with
 `note = "no_shift"`, never the whole plant: an empty scope is a real answer.
 
 The period picker beside the table does not reach it. Each column has a fixed
-window — today, yesterday, whole time — and its header prints it.
+window — today, yesterday, this month, whole time — and its header prints it.
 """
 from typing import List, Optional
 
@@ -65,7 +65,16 @@ def get_shift_report(
 ):
     now = live_overview.now_local()
     ids, note = _scope(db, payload, factory, manager_id)
-    out = {"generated_at": now.isoformat(timespec="seconds"), "note": note, "shifts": []}
+    # The quality window rides on the payload from the first line, so an empty
+    # board still states which month its (absent) closure rates would have been
+    # counted over, and the header never has to guess it off the browser clock.
+    month, m_from, m_to = shift_report.quality_window(now.date())
+    out = {
+        "generated_at": now.isoformat(timespec="seconds"),
+        "note": note,
+        "quality_month": month,
+        "shifts": [],
+    }
     if empty_scope(ids):
         return out
 
@@ -90,14 +99,16 @@ def get_shift_report(
             return None
         return production._build_dashboard(db, mid, day)["totals"]
 
-    # ── Hal qilingan % — the whole quality register, attributed exactly as the
-    # Quality page attributes it: «Отв. бригадир» resolved against EVERY live
-    # unit (a subset would let the fuzzy matcher hand a row to the wrong unit),
-    # over every spelling the register holds.
+    # ── Hal qilingan % — the quality register for the CURRENT MONTH
+    # (`shift_report.quality_window`, which is also what says why), attributed
+    # exactly as the Quality page attributes it: «Отв. бригадир» resolved against
+    # EVERY live unit (a subset would let the fuzzy matcher hand a row to the
+    # wrong unit), over every spelling the register holds.
     counts = (
         db.query(QualityComplaint.brigadir, QualityComplaint.status,
                  func.count(QualityComplaint.id))
-        .filter(QualityComplaint.brigadir.isnot(None))
+        .filter(QualityComplaint.brigadir.isnot(None),
+                QualityComplaint.date >= m_from, QualityComplaint.date < m_to)
         .group_by(QualityComplaint.brigadir, QualityComplaint.status)
         .all()
     )

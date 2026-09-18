@@ -5,7 +5,7 @@ One row per brigadir, five columns, and not one of them is a new measurement:
     Brigadir          Manager.name
     O'rt. zagruzka    the «Zagruzka fayli» page's СР. ЗАГРУЖЕННОСТЬ, for TODAY
     Bajarilish %      the same page's «Compl. %», for YESTERDAY
-    Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, whole time
+    Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, THIS MONTH
     Ochiq xavotirlar  concerns still open at the brigadir's own level, whole time
 
 It replaced a Google Sheet somebody filled and coloured by hand every morning,
@@ -64,6 +64,32 @@ def report_days(now: datetime, shift: Optional[int],
     return today, today - timedelta(days=1)
 
 
+def quality_window(day: date) -> tuple[str, str, str]:
+    """(month, first, next_first) — the CURRENT MONTH, as the three ISO strings
+    the quality register is cut by.
+
+    From 2026-09-18 (the operator's directive) «Hal qilingan %» is the closure
+    rate of the month in progress, not of the whole register: a rate carrying
+    every record ever filed moves by a fraction of a point whatever a unit does
+    this week, so it stated how the register has gone rather than how the unit
+    is going.
+
+    `QualityComplaint.date` is an ISO "YYYY-MM-DD" STRING, so the cut is a plain
+    string range — `first <= date < next_first` orders exactly as the dates do —
+    and a row carrying no date, one no month can place, falls outside it.
+
+    ONE month for the whole board, and the CALENDAR month of the plant's wall
+    clock rather than a shift frame: the register's own date is a calendar date,
+    and on the first morning of a month two shift groups would otherwise read
+    two different months for one register. It rides on the payload so the header
+    names the month the figures were actually counted over — never the browser's
+    own idea of «this month», which is the drift `deck-window` already answers.
+    """
+    first = day.replace(day=1)
+    nxt = (first + timedelta(days=32)).replace(day=1)
+    return first.strftime("%Y-%m"), first.isoformat(), nxt.isoformat()
+
+
 def _blank(reason: str, **extra) -> dict:
     return {"value": None, **extra, "reason": reason}
 
@@ -113,7 +139,11 @@ def compl_cell(totals: Optional[dict]) -> dict:
 
 
 def fold_quality(counts: Iterable[tuple], match: dict) -> dict[int, dict]:
-    """{manager_id: {"done": n, "actionable": N}} over the WHOLE register.
+    """{manager_id: {"done": n, "actionable": N}} over the month handed in.
+
+    The window is the router's — this module never queries — so a spelling that
+    filed nothing this month is simply absent, and its unit reads the blank
+    `no_records` rather than a 0% it did not earn.
 
     `counts` is (register brigadir spelling, status, rows); `match` is
     `name_map.supervisor_match` over EVERY live unit — the Quality page's own
@@ -133,8 +163,11 @@ def fold_quality(counts: Iterable[tuple], match: dict) -> dict[int, dict]:
 
 
 def quality_cell(acc: Optional[dict]) -> dict:
-    """«Hal qilingan %» — resolved ÷ actionable, with both counts beside it:
-    «0%» of one record and «0%» of forty are different facts."""
+    """«Hal qilingan %» — resolved ÷ actionable over the month, with both counts
+    beside it: «0%» of one record and «0%» of forty are different facts.
+
+    A month in progress starts every unit at `no_records`, and that blank is the
+    honest answer — «nothing filed yet» is not «nothing resolved»."""
     if not acc or not acc.get("actionable"):
         return _blank("no_records", done=0, actionable=0)
     return {

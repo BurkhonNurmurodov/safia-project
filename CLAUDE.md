@@ -5170,7 +5170,7 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   and «Bajarish %» (yesterday) are `totals.avg_load` / `totals.completion` of
   `production._build_dashboard` — the very call `/api/production/dashboard`
   makes, so they ARE the «Zagruzka fayli» KPI cards. «Bartaraf etilgan %» is the
-  Quality page's closure rate over the WHOLE register: `supervisor_match` over
+  Quality page's closure rate over the CURRENT MONTH: `supervisor_match` over
   every live unit (a subset lets the fuzzy matcher hand a row to the wrong unit),
   done ÷ actionable, where `shift_report.ACTIONABLE` is the twin of
   `Quality.jsx`'s `ACTIONABLE` and the two must stay one list. «Ochiq
@@ -5184,6 +5184,24 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   file under. At 09:00 shift 2's today is the night that has just ended; shift
   1's today flips at its own 08:00, so before it the board shows the last
   finished day shift. A unit with no shift reads the calendar date.
+- **«Bartaraf etilgan %» is the MONTH IN PROGRESS** (the operator's directive,
+  2026-09-18), `shift_report.quality_window` — which is the one place the cut
+  lives. It was the whole register, and a rate carrying every record ever filed
+  moves by a fraction of a point whatever a unit does this week: it stated how
+  the register has gone, not how the unit is going. `QualityComplaint.date` is
+  an ISO string, so the cut is a plain string range (`first <= date <
+  next_first`), and a row with no date — one no month can place — falls
+  outside it. **The CALENDAR month of the plant's wall clock, one window for the whole
+  board, never a shift frame**: the register's own date is a calendar date, and
+  on the first morning of a month two shift groups would otherwise read two
+  different months for one register. It rides on the payload as `quality_month`
+  and the header prints that month by name (`cal.m*`), because a month derived
+  from the browser's clock is how the header and the figures come to name two
+  different windows — the `deck-window` rule. **Consequence to know: the
+  figures moved, and a month in progress starts every unit at «—»
+  `no_records`** until something is filed, which is the honest answer —
+  «nothing filed yet» is not «nothing resolved». The tooltip's `done/actionable` and the sort are the
+  month's.
 - **The period picker does not reach it.** The request carries the page's
   scope (plant, shift) and never its dates. Every column header
   prints its own window — with the date while one shift is on screen; with two,
@@ -5192,10 +5210,10 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   `no_people` (nobody typed «Bugungi fakt»), `no_plan` (no plan minutes — a 0%
   load against no plan is not a load), `no_fact` (plan minutes and no actual
   minutes at all — `/live`'s «fakt kiritilmagan», never «0%, behind»),
-  `no_records` (nothing in the quality register). The load checks people before
-  plan, the heatmap's order. The amber header chip counts rows with a load or
-  completion blank — the sheet's «Holat» folded into one number; `no_records`
-  is not a gap and is not counted. «*» on a load is the Production page's
+  `no_records` (nothing in the quality register THIS MONTH). The load checks
+  people before plan, the heatmap's order. The amber header chip counts rows
+  with a load or completion blank — the sheet's «Holat» folded into one number;
+  `no_records` is not a gap and is not counted. «*» on a load is the Production page's
   partial-headcount mark (`people_untyped > 0`).
 - **An ADMIN moves the bands, from this table's own header** (2026-09-16): a
   gear in the card header — admin only, and the endpoint behind it is
