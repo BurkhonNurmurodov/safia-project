@@ -181,7 +181,18 @@ def preview(db: Session, shift: int) -> dict:
     carries `PREVIEW_NOTE` saying when it starts, and the real pass overwrites
     it.
     """
-    out = {"shift": shift, "units": 0, "texts": 0, "names": []}
+    out = {"shift": shift, "units": 0, "texts": 0, "names": [], "global": 0}
+    # The GLOBAL level too, and for the same reason it is safe: a description
+    # scores nothing. «Vazifalar» opens on «Umumiy standart» when no brigadir is
+    # picked, so leaving the global level alone means the page an admin opens
+    # goes on showing the old instruction until the 19th. Task 13 is skipped —
+    # its two texts differ by shift and the global level has no shift. The
+    # global CRITERIA are not touched: those would change what every unit is
+    # judged by, immediately, in the middle of a running shift.
+    for tid in TASKS:
+        leader_tasks.set_description(db, task_id=tid,
+                                     description=PREVIEW_NOTE + DESCRIPTIONS[tid])
+        out["global"] += 1
     for m in units(db, shift):
         for tid in TASKS:
             leader_tasks.set_description(db, task_id=tid,
