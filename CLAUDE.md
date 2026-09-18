@@ -2418,6 +2418,22 @@ arms it.
   its two texts differ by shift and the global level has no shift, so a future
   unit inherits the old task-13 text until somebody gives it one.
 
+- **Tasks 1, 8 and 9 get an INSTRUCTION and no criteria** (`AUTO_DESCRIPTIONS`).
+  They are the three becoming automatic checks later, so what they are judged by
+  is untouched — but a leader still has to be told what the job is. **These state
+  the JOB, never the pass mark**, and that is the operator's rule (18 Sep): a
+  minimum exists so nobody fails on a technicality, and printed as the
+  instruction it becomes the target — a leader who reads «at least one concern»
+  files one concern. So they read «enter the plan and the people for your
+  cells», «get your workers writing concerns to you and write one to your
+  brigadir», «reach 50% of the plan by the set time», while the thresholds the
+  checks will actually use (one concern, 30%) stay where they belong, inside the
+  check. Task 9's instruction says 50% though its automatic check passes at 30%,
+  and that gap is deliberate. They carry NO «starts on the 19th» notice, because
+  none of it starts on the 19th — it is the job as it already is — which is also
+  why the pass rewrites them verbatim rather than leaving the preview's copy as
+  the last word.
+
 - **It is a TEMPORARY one-shot.** Remove `register_leader_rules_sep19` from both
   entrypoints together with `startup.register_leader_rules_sep19` and
   `services/leader_rules_sep19.py` once both passes have landed — a call left

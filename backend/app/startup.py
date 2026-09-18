@@ -6329,7 +6329,7 @@ LEADER_RULES_DUE = {1: (2026, 9, 19, 0, 30), 2: (2026, 9, 19, 16, 30)}
 # v2: the first pass wrote unit descriptions only, so «Vazifalar» opening on
 # «Umumiy standart» still showed the old text. A flag already marked done is
 # a permanent no-op, so widening what this writes needs a NEW key.
-LEADER_RULES_PREVIEW_FLAG = "leader_rules_2026_09_19_preview_v2"
+LEADER_RULES_PREVIEW_FLAG = "leader_rules_2026_09_19_preview_v3"
 
 
 def preview_leader_rules_sep19() -> None:

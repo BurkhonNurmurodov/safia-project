@@ -86,6 +86,46 @@ DATE_MODES = {
 MIN_MEDIA_TASK, MIN_MEDIA = 3, 3
 
 
+#: Tasks 1, 8 and 9 — the three becoming automatic checks later. They get an
+#: INSTRUCTION now and no criteria: what the AI judges them by is unchanged.
+#:
+#: These state the JOB, never the pass mark. A minimum exists so nobody fails on
+#: a technicality; printed as the instruction it becomes the target, and the
+#: leader who reads «at least one concern» files one concern. So: enter the plan
+#: and the people, get concerns written, reach half the plan by the set time —
+#: and the thresholds the checks actually use (one concern, 30%) stay where they
+#: belong, in the check.
+#:
+#: They carry NO «starts on the 19th» notice, because none of this starts on the
+#: 19th — it is the job as it already is. That is also why `apply()` rewrites
+#: them verbatim: without that, the preview's text would be the last word and a
+#: notice, if one were added, could never be cleared.
+AUTO_TASKS = (1, 8, 9)
+
+AUTO_DESCRIPTIONS = {
+    1: ("Yacheykalaringiz uchun bugungi planni va xodimlarni kiriting. "
+        "«Zagruzka fayli» sahifasida har bir pozitsiyaning plani va «Bugungi "
+        "fakt» (odam soni) to'ldirilgan bo'lsin. Buni smena boshida, ish "
+        "boshlanishidan oldin qiling — kun davomidagi barcha hisob-kitob shu "
+        "ma'lumotdan chiqadi.\n\n"
+        "Hozircha buni isbotlash uchun skrinshot ham yuborasiz: SAPdagi "
+        "zagruzka yoki «Zagruzka fayli» sahifasidan yuklab olingan Excel "
+        "faylning skrinshoti, monoblok sanasi va soati ko'rinib tursin."),
+    8: ("Xodimlaringizni sizga xavotir yozishga chaqiring, o'zingiz esa "
+        "brigadiringizga xavotir yozing. Yacheykada ishga to'sqinlik "
+        "qilayotgan har bir narsa — uskuna, xom ashyo, kutish, sifat — yozib "
+        "borilsin. Xavotir qancha aniq yozilsa, muammo shuncha tez hal "
+        "bo'ladi.\n\n"
+        "Hozircha buni isbotlash uchun «Xavotirlar» bo'limidan skrinshot "
+        "yuborasiz: yuqoridagi sana filtri o'sha kunga qo'yilgan bo'lsin."),
+    9: ("Belgilangan vaqtgacha kunlik rejaning 50% ini bajaring. Ishni shunday "
+        "rejalashtiringki, smena o'rtasiga borib reja yarmi bajarilgan bo'lsin "
+        "— qolgani oxirgi soatlarga qolib ketmasin.\n\n"
+        "Hozircha buni isbotlash uchun skrinshot yuborasiz: jadvalda rejaning "
+        "bajarilishi ko'rinib tursin."),
+}
+
+
 #: task_id -> the English text Gemini is given after "TALAB:".
 CRITERIA = {
     2: "The proof for this task is a photo of the start-of-shift meeting: the leader stands among the cell's workers, before work has started. One of the workers takes the photo on the leader's phone.\n\nPASSES if all of the following are visible:\n- A group of people standing together in one place. There is no limit on how many, but this must be a gathering, not a photo of one person.\n- Nobody is working: no one is handling products, dough, tools or machines — the people are listening or talking.\n\nFAILS if:\n- There is only one person in the photo, or nobody.\n- The people are not gathered together; each one is at their own workstation.\n- At least one person is clearly working (kneading dough, arranging products, operating a machine).\n- The photo shows a document or a screen.\n\nNOT JUDGED: which person is the leader — you cannot recognise people by face, so do not require it; clothing and uniform; whether the people are looking at the camera.",
@@ -193,6 +233,10 @@ def preview(db: Session, shift: int) -> dict:
         leader_tasks.set_description(db, task_id=tid,
                                      description=PREVIEW_NOTE + DESCRIPTIONS[tid])
         out["global"] += 1
+    for tid in AUTO_TASKS:
+        leader_tasks.set_description(db, task_id=tid,
+                                     description=AUTO_DESCRIPTIONS[tid])
+        out["global"] += 1
     for m in units(db, shift):
         for tid in TASKS:
             leader_tasks.set_description(db, task_id=tid,
@@ -204,6 +248,11 @@ def preview(db: Session, shift: int) -> dict:
                 db, task_id=tid,
                 description=PREVIEW_NOTE + DESCRIPTIONS_BY_SHIFT[tid][shift],
                 manager_id=m.id)
+            out["texts"] += 1
+        for tid in AUTO_TASKS:
+            leader_tasks.set_description(db, task_id=tid,
+                                         description=AUTO_DESCRIPTIONS[tid],
+                                         manager_id=m.id)
             out["texts"] += 1
         out["units"] += 1
         out["names"].append(m.name)
@@ -306,6 +355,14 @@ def apply(db: Session, shift: int) -> dict:
                                          manager_id=m.id)
             out["texts"] += 1
 
+        # Description only — tasks 1, 8 and 9 keep the criteria they are judged
+        # by until the automatic checks are built.
+        for tid in AUTO_TASKS:
+            leader_tasks.set_description(db, task_id=tid,
+                                         description=AUTO_DESCRIPTIONS[tid],
+                                         manager_id=m.id)
+            out["texts"] += 1
+
         leader_tasks.set_date_plus(db, task_id=DATE_PLUS_TASK, date_plus=DATE_PLUS,
                                    manager_id=m.id, rejudge=False)
         # One after the other, never in parallel: all three land on the SAME
@@ -356,6 +413,9 @@ def apply_global(db: Session) -> dict:
     for tid in TASKS:
         leader_tasks.set_criteria(db, task_id=tid, criteria=CRITERIA[tid])
         leader_tasks.set_description(db, task_id=tid, description=DESCRIPTIONS[tid])
+        out["tasks"].append(tid)
+    for tid in AUTO_TASKS:
+        leader_tasks.set_description(db, task_id=tid, description=AUTO_DESCRIPTIONS[tid])
         out["tasks"].append(tid)
     return out
 
