@@ -2382,6 +2382,20 @@ arms it.
   English grader prose. And «Vazifalar» prints both texts RAW: it ran them
   through `useTranslit`, the NAME transliterator, which remaps x→kh and q→k for
   the English UI and garbles authored prose in either language.
+- **The INSTRUCTIONS were published early, on 18 Sep, and nothing else was**
+  (`preview`, flag `leader_rules_2026_09_19_preview_v1`). The operator asked for
+  leaders to be able to read the new texts and prepare before anything they are
+  scored by moved. Only `description` is written, which is the one column here
+  that cannot move a verdict, so it is safe to write mid-shift — measured on the
+  production copy: 196 descriptions written, **0 of 31,962 verdicts and 0 of
+  1,404 resolved rules changed**. Writing an instruction without its rule is a
+  trap on its own (a leader who reads «the list may be dated tomorrow» and files
+  that way the night before would still be judged by the old rule), so every
+  preview text carries `PREVIEW_NOTE` saying when it starts, and the 19 Sep pass
+  rewrites the same column without it — the notice removes itself. A shift whose
+  real pass has already run is skipped, or a box booting later would paste
+  «starts on 19 September» over texts already in force.
+
 - **It is a TEMPORARY one-shot.** Remove `register_leader_rules_sep19` from both
   entrypoints together with `startup.register_leader_rules_sep19` and
   `services/leader_rules_sep19.py` once both passes have landed — a call left
