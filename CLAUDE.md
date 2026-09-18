@@ -2385,10 +2385,17 @@ arms it.
 - **The INSTRUCTIONS were published early, on 18 Sep, and nothing else was**
   (`preview`, flag `leader_rules_2026_09_19_preview_v1`). The operator asked for
   leaders to be able to read the new texts and prepare before anything they are
-  scored by moved. Only `description` is written, which is the one column here
+  scored by moved. Only `description` is written — at the UNIT level and at the
+  GLOBAL one, because «Vazifalar» opens on «Umumiy standart» when no brigadir or
+  leader is picked, so a unit-only preview left the page an ADMIN opens still
+  showing the old text (reported from production, 18 Sep; widening it needed a
+  NEW key, `…_preview_v2`, the first being already marked done). Task 13 is
+  skipped globally — two shift variants, no global shift — and the global
+  CRITERIA are deliberately NOT touched, since those would change what every
+  unit is judged by at once, mid-shift. `description` is the one column here
   that cannot move a verdict, so it is safe to write mid-shift — measured on the
-  production copy: 196 descriptions written, **0 of 31,962 verdicts and 0 of
-  1,404 resolved rules changed**. Writing an instruction without its rule is a
+  production copy: **0 of 31,962 verdicts and 0 of 1,404 resolved rules
+  changed**, global criteria untouched. Writing an instruction without its rule is a
   trap on its own (a leader who reads «the list may be dated tomorrow» and files
   that way the night before would still be judged by the old rule), so every
   preview text carries `PREVIEW_NOTE` saying when it starts, and the 19 Sep pass
