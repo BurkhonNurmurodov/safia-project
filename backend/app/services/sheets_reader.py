@@ -16,7 +16,7 @@ _gc: Optional[gspread.Client] = None
 # Ojidaniya «To'xtaganda» tab and the загрузка KPIs, the second feeds the
 # «To'xtamaganda» tab. Confirmed intentional 2026-07-22 — never merge them.
 #
-# Cat A2 is «Категория A2» (Xoladilnikdan GP mahsulot kutish — waiting for
+# Cat A2 is «Категория A2» (Xolodilnikdan GP mahsulot kutish — waiting for
 # FINISHED goods from the cooler, where Cat A is the raw one), added
 # 2026-09-03 by user directive and seated straight after Cat A.
 #

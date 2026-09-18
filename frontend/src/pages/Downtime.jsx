@@ -596,7 +596,7 @@ export default function Downtime() {
     return seasonMatrix(labels, colTotals, catCol);
   }, [seasonMode, seasonData, ns, catKey, data, dateFrom, dateTo, MONTHS]);
 
-  // "Cat A — Xoladilnikdan mahsulot kutish" (plain code when untranslated).
+  // "Cat A — Xolodilnikdan mahsulot kutish" (plain code when untranslated).
   const catFull = (cat) => {
     const meaning = t(`downtime.cat.${cat.replace(/^Cat\s*/i, "")}.label`);
     return meaning && !meaning.startsWith("downtime.cat.") ? `${cat} — ${meaning}` : cat;

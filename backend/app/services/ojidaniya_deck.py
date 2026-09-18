@@ -111,8 +111,8 @@ CW = W - 2 * M              # content width
 # and this file.
 CATS: list[tuple[str, str, str, str]] = [
     # (stored name, code, short label, full label)
-    ("Cat A",  "A",  "Xoladilnikdan mahsulot",  "Xoladilnikdan mahsulot kutish"),
-    ("Cat A2", "A2", "Xoladilnikdan GP",        "Xoladilnikdan GP mahsulot kutish"),
+    ("Cat A",  "A",  "Xolodilnikdan mahsulot",  "Xolodilnikdan mahsulot kutish"),
+    ("Cat A2", "A2", "Xolodilnikdan GP",        "Xolodilnikdan GP mahsulot kutish"),
     ("Cat B",  "B",  "Uskuna nosozligi",        "Oborudivaniya buzilishi"),
     ("Cat C",  "C",  "List / vagonetka",        "List/vaganetka kutish"),
     ("Cat D",  "D",  "Skladdan xomashyo",       "Skladdan mahsulot yoki hom ashyo kutish"),

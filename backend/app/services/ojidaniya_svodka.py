@@ -16,8 +16,8 @@ TZ = timezone(timedelta(hours=5))
 
 CAT_LABELS = {
     "uz": {
-        "Cat A": "Xoladilnikdan mahsulot kutish",
-        "Cat A2": "Xoladilnikdan GP mahsulot kutish",
+        "Cat A": "Xolodilnikdan mahsulot kutish",
+        "Cat A2": "Xolodilnikdan GP mahsulot kutish",
         "Cat B": "Oborudivaniya buzilishi",
         "Cat C": "List/vaganetka kutish", "Cat D": "Skladdan mahsulot yoki hom ashyo kutish",
         "Cat D2": "Skladdan qo'shimcha zayavka orqali hom ashyo kutish",
