@@ -63,7 +63,8 @@ from app.services import zagruzka_source
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, line_numbers,
                                    line_keys, group_sizes, faza_quantities, takes_sap,
-                                   deliv_for_day, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
+                                   ops_for_day, by_due_day,
+                                   DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import (by_sap, resolve_sap, norm_code, sap_codes_for_leader,
                                       sap_groups_for_leader)
 from app.services.latin_code import latin_code
@@ -1902,43 +1903,111 @@ def _num(v) -> float:
         return 0.0
 
 
-def _stored_slices(db, day: date) -> tuple[list[dict], dict, dict]:
+# How far a day reaches for фаза rows filed under ANOTHER date. A row is stored
+# under the date its own col H names, while the day that OWNS it is the one its
+# order is due — so from `pp_calc.DUE_DAY_FROM` a day must read its neighbours'
+# slices or a position whose operation started earlier would be counted nowhere.
+# That is precisely what dropped 28 operations when col I was tried on 29.08.
+# The window bounds the read: an ingest is not a scan of the whole history.
+_SLICE_BACK = 30
+_SLICE_FWD = 7
+
+
+def _load_slices(db, lo: date, hi: date) -> dict:
+    """Every stored фаза operation and order fact filed between two dates.
+
+    Kept PER DATE, because below the floor a day may see nothing but its own
+    slice — that is what makes `_stored_slices` return byte-for-byte what it
+    always returned there — while above it the day merges the window.
+
+    One load serves a whole loop of days: `_backfill_manager` and `_rejoin_lines`
+    walk every stored date, and a per-day query of a 37-day window would re-read
+    the same slices dozens of times.
+    """
+    ups = db.query(PPUpload).filter(PPUpload.date >= lo, PPUpload.date <= hi).all()
+    by_date: dict = {}
+    for up in ups:
+        by_date.setdefault(up.date, []).append(up)
+
+    ops: dict = {}
+    orders: dict = {}
+    for d, ups_d in by_date.items():
+        # The global (manager_id NULL) row is the whole plant file; legacy
+        # per-brigadir slices are disjoint crops, so fall back to all of them.
+        faza_ups = [u for u in ups_d if u.file_type == "faza"]
+        faza_ups = [u for u in faza_ups if u.manager_id is None] or faza_ups
+        ops[d] = [
+            # stored faza row: [order, op, wc, sku, name, plan, status, date, conf]
+            {"order": str(r[0]), "wc": str(r[2] or ""), "plan": _num(r[5]),
+             "date": (r[7] if len(r) > 7 and r[7] else d)}
+            for up in faza_ups for r in (up.rows or [])
+            if len(r) >= 6 and r[0]
+        ]
+        o = orders.setdefault(d, {"sku": {}, "deliv": {}, "due": {}})
+        for up in sorted((u for u in ups_d if u.file_type == "zaga"),
+                         key=lambda u: u.manager_id is not None):   # global first
+            for r in (up.rows or []):  # [order, sku, plant, ordqty, deliv, conf, date, …]
+                if len(r) >= 2 and r[0] and r[1]:
+                    o["sku"].setdefault(str(r[0]), str(r[1]))
+                    if len(r) > 4:
+                        o["deliv"].setdefault(str(r[0]), _num(r[4]))
+                    if len(r) > 6:
+                        o["due"].setdefault(str(r[0]), r[6])
+    return {"ops": ops, "orders": orders}
+
+
+def _all_slices(db, days) -> dict:
+    """`_load_slices` over the whole span a day LOOP walks, loaded once.
+
+    Every day in the loop reaches `_SLICE_BACK`/`_SLICE_FWD` around itself, so
+    the span is the union of those windows; one query then serves the lot.
+    """
+    if not days:
+        return {"ops": {}, "orders": {}}
+    return _load_slices(db, min(days) - timedelta(days=_SLICE_BACK),
+                        max(days) + timedelta(days=_SLICE_FWD))
+
+
+def _stored_slices(db, day: date, data: dict | None = None) -> tuple[list[dict], dict, dict]:
     """Rebuild (faza_ops, order_sku, order_deliv) for a date from the PPUpload
     rows kept at upload time, so a brigadir configured AFTER the SAP files
     landed can be ingested without re-uploading them.
 
-    `order_deliv` is what «Поставлено» counts on THIS day — `deliv_for_day`,
-    the same gate the upload applies, read off the БазисСрокКонца the stored
-    заголовок row carries (index 6, the ISO date `_extract_zaga` wrote). Both
-    callers rebuild one date at a time, so a re-join or a catalog backfill must
-    resolve a delivery to the very day the upload did; gating only on upload
-    would put it back on every day the order has operations."""
-    ups = db.query(PPUpload).filter(PPUpload.date == day).all()
+    From `pp_calc.DUE_DAY_FROM` this is the day's OWNED operations —
+    `ops_for_day`, the one filter — drawn from every slice in the window, since
+    a position belongs to the day its order is due and its фаза row is filed
+    under the date the operation started. Below the floor the day reads its own
+    slice and its own заголовок, exactly as it always did.
 
-    # The global (manager_id NULL) row is the whole plant file; legacy
-    # per-brigadir slices are disjoint crops, so fall back to all of them.
-    faza_ups = [u for u in ups if u.file_type == "faza"]
-    faza_ups = [u for u in faza_ups if u.manager_id is None] or faza_ups
-    faza_ops = [
-        {"order": str(r[0]), "wc": str(r[2] or ""), "plan": _num(r[5])}
-        for up in faza_ups for r in (up.rows or [])   # [order, op, wc, sku, name, plan, …]
-        if len(r) >= 6 and r[0]
-    ]
+    The order facts are merged newest-date-first above the floor: «Поставлено»
+    is cumulative as of the moment the export was taken, so the most recent file
+    naming an order is the most current statement about it — and the day that
+    owns the order is often earlier than the file that finally reports its
+    delivery. Below the floor only the day's own заголовок is read, or a
+    historical day's ФАКТ would move the first time anything re-ingested it.
+    """
+    lo = day - timedelta(days=_SLICE_BACK)
+    hi = day + timedelta(days=_SLICE_FWD)
+    data = data if data is not None else _load_slices(db, lo, hi)
 
-    order_sku: dict[str, str] = {}
-    order_deliv: dict[str, float] = {}
-    order_due: dict[str, object] = {}
-    for up in sorted((u for u in ups if u.file_type == "zaga"),
-                     key=lambda u: u.manager_id is not None):   # global first
-        for r in (up.rows or []):     # [order, sku, plant, ordqty, deliv, conf, date, …]
-            if len(r) >= 2 and r[0] and r[1]:
-                order_sku.setdefault(str(r[0]), str(r[1]))
-                if len(r) > 4:
-                    order_deliv.setdefault(str(r[0]), _num(r[4]))
-                if len(r) > 6:
-                    order_due.setdefault(str(r[0]), r[6])
-    order_deliv, _deferred = deliv_for_day(order_deliv, order_due, day)
-    return faza_ops, order_sku, order_deliv
+    own = data["orders"].get(day) or {"sku": {}, "deliv": {}, "due": {}}
+    if not by_due_day(day):
+        ops, _other = ops_for_day(data["ops"].get(day) or [], own["due"], day)
+        return ops, dict(own["sku"]), dict(own["deliv"])
+
+    order_sku: dict = {}
+    order_deliv: dict = {}
+    order_due: dict = {}
+    pool: list = []
+    for d in sorted(k for k in data["ops"] if lo <= k <= hi):
+        pool += data["ops"][d]
+    for d in sorted(k for k in data["orders"] if lo <= k <= hi):   # latest wins
+        o = data["orders"][d]
+        order_sku.update(o["sku"])
+        order_deliv.update(o["deliv"])
+        order_due.update(o["due"])
+    ops, _other = ops_for_day(pool, order_due, day)
+    return ops, order_sku, order_deliv
 
 
 def _backfill_manager(db, manager_id: int) -> dict:
@@ -1956,9 +2025,10 @@ def _backfill_manager(db, manager_id: int) -> dict:
         return {"days": 0, "rows": 0, "skipped": True}
     days = [d for (d,) in db.query(PPUpload.date).filter(
         PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()]
+    slices = _all_slices(db, days)
     filled_days = filled_rows = 0
     for day in days:
-        faza_ops, order_sku, order_deliv = _stored_slices(db, day)
+        faza_ops, order_sku, order_deliv = _stored_slices(db, day, slices)
         if not faza_ops:
             continue
         n = _ingest_for_manager(db, manager_id, day, "both", faza_ops=faza_ops,
@@ -2006,9 +2076,10 @@ def _rejoin_lines(db, manager_id: int, pairs: set) -> dict:
     products, own_wcs, catalog_skus = _unit_sap_scope(db, manager_id)
     days = [d for (d,) in db.query(PPUpload.date).filter(
         PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()]
+    slices = _all_slices(db, days)
     filled_days = filled_rows = 0
     for day in days:
-        faza_ops, order_sku, order_deliv = _stored_slices(db, day)
+        faza_ops, order_sku, order_deliv = _stored_slices(db, day, slices)
         if not faza_ops:
             continue
         agg = faza_quantities(_scoped_faza(faza_ops, order_sku, order_deliv,
@@ -2123,12 +2194,14 @@ async def upload_phase(
                     if len(r) > 6:
                         order_due.setdefault(str(r[0]), r[6])
 
-    # WHICH day this «Поставлено» counts on — pp_calc.deliv_for_day, applied
-    # ONCE here so both the parsed заголовок and the stored fallback above go
-    # through it. An order due another day contributes 0 to this one; it is not
-    # dropped in silence but reported back, because a delivery gated off today
-    # only lands on its own day if that day's фаза holds the same order.
-    order_deliv, deferred = deliv_for_day(order_deliv, order_due, day)
+    # What of THIS file belongs to another day — `ops_for_day` over the file's
+    # own rows, so the card can say it. The upload deliberately writes only the
+    # date it was given: in mode «Reja + Fakt» an ingest DELETES the date's rows
+    # and clears its overrides, so silently reaching into a neighbouring day
+    # would wipe numbers somebody typed there.
+    _kept_here, moved = ops_for_day(faza_ops, order_due, day)
+    moved_days = sorted(moved)
+    moved_rows = sum(len(v) for v in moved.values())
 
     # Store the raw slices ONCE, globally (manager_id NULL) — the file is
     # plant-wide; the raw views scope it to a brigadir at read time.
@@ -2177,10 +2250,29 @@ async def upload_phase(
                 "Нет настроенных бригадиров — сначала импортируйте каталог хотя бы одному.",
             )
 
+    # Ingest the day's OWN operations, read back out of the stored slices rather
+    # than out of the file just parsed — from `pp_calc.DUE_DAY_FROM` a position
+    # belongs to the day its order is due, and its фаза row is filed under the
+    # date the operation started, so a day's rows commonly sit in an earlier
+    # file. `_stored_slices` is that one reader, shared with the re-join and the
+    # catalog backfill, so an upload and a re-ingest of the same date cannot
+    # produce two different answers. Below the floor it hands back this date's
+    # own slice, which is the file that was just written.
+    #
+    # Only when this upload actually carries a фаза. A заголовок-only upload
+    # wrote nothing before — `faza_agg` was empty and `_ingest_for_manager`
+    # returned without touching the date — and reading the stored фаза back here
+    # would turn it into a full mode-«both» ingest that DELETES the date's rows
+    # and clears every override on it. Re-stating a day is the фаза's job.
+    faza_own = faza_ops
+    if faza_present:
+        db.flush()
+        faza_own, order_sku, order_deliv = _stored_slices(db, day)
+    taken_in = max(0, len(faza_own) - len(_kept_here))
     total_rows = 0
     for mid in targets:
         total_rows += _ingest_for_manager(
-            db, mid, day, mode, faza_ops=faza_ops, order_sku=order_sku,
+            db, mid, day, mode, faza_ops=faza_own, order_sku=order_sku,
             order_deliv=order_deliv)
     db.commit()
     action_log.enrich(
@@ -2193,7 +2285,7 @@ async def upload_phase(
                  ("rows", total_rows), ("count", len(targets)),
                  ("note", "picked" if named else "auto-fill"),
                  ("total", len(faza_ops) if faza_present else 0),
-                 ("deferred", len(deferred))],
+                 ("moved", moved_rows), ("taken", taken_in)],
     )
     return {
         "status": "ok", "date": day.isoformat(), "mode": mode,
@@ -2201,11 +2293,14 @@ async def upload_phase(
         "targets": targets, "picked": bool(named),
         "faza_operations": len(faza_ops) if faza_present else 0,
         "zaga_orders": len(order_sku),
-        # «Поставлено» this day does NOT count, because the order's
-        # БазисСрокКонца names another one. A count and a quantity, never a
-        # silent zero — the operator has to be able to see a delivery move.
-        "fact_deferred": len(deferred),
-        "fact_deferred_qty": round(sum(q for _o, q, _d in deferred), 3),
+        # What moved, both ways. A position is keyed by its order's
+        # БазисСрокКонца, so part of the file just uploaded belongs to other
+        # days — and part of what this day counts came out of earlier files.
+        # Both are said out loud: a row that changes days must never do it
+        # silently, and the days named are the ones to re-upload.
+        "rows_other_days": moved_rows,
+        "other_days": [d.isoformat() for d in moved_days],
+        "rows_taken_in": taken_in,
         "files": file_reports,
     }
 

@@ -160,38 +160,50 @@ def line_numbers(products) -> dict:
     return out
 
 
-# ── Which DAY a delivery counts on ────────────────────────────────────────────
-# THE floor. From this day «Поставлено» counts on the order's БазисСрокКонца
-# (заголовок col J) and on NO other day.
+# ── Which DAY a position counts on ────────────────────────────────────────────
+# THE floor. From this day BOTH figures of a position — ПЛАН and ФАКТ — count on
+# the order's БазисСрокКонца (заголовок col J) and on no other day, for BOTH
+# shifts. The operator's directive, 2026-09-17.
 #
-# «Поставлено» is an ORDER-header field and carries no date of its own, so the
-# only thing that could ever date it was the фаза operation it is joined
-# through. `faza_quantities` folds it once per order INSIDE one day, but the
-# ingest runs per DATE — so an order whose operations start on two days had its
-# FULL delivered quantity written to both, once each, with nothing on screen
-# saying so. The order's own basic finish date is the one field that can pin a
-# delivery to a single day, which is what the operator asked for (2026-09-17).
+# The defect it closes. «Поставлено» is an ORDER-header field carrying no date of
+# its own, so the only thing that could ever date it was the фаза operation it is
+# joined through: `faza_quantities` folds it once per order INSIDE one day, but
+# the ingest runs per DATE, so an order whose operations start on two days had
+# its FULL delivered quantity written to both. And the ПЛАН of an order due
+# TOMORROW was counted against TODAY's delivery: on 17.09.2026 F00001895 at A1443
+# read ПЛАН 680 — order 1764353 (360, due 17.09) plus order 1765394 (320, due
+# 18.09) — against ФАКТ 340, i.e. 50% for a day that had in fact delivered 340 of
+# the 360 it owed. The order's own basic finish date is the one field that puts
+# both halves of a position on the same day.
 #
-# ПЛАН is untouched and still follows the operation's own START date
-# (`pp_parser.FZ_DATE`, col H «СамРанДатаНчлВыполнен»): a shift is credited on
-# the day it started the work, and an operation that begins in the evening and
-# finishes the next morning is the ordinary shape of shift 2. That is the
-# 29.08.2026 ruling and it is deliberately NOT reopened here — only the
-# DELIVERY moves, and only from this floor on.
+# What this reopens, deliberately and with the consequence stated to the operator
+# first: the 29.08.2026 ruling that a shift is credited on the day it STARTED the
+# work (`pp_parser.FZ_DATE`, col H «СамРанДатаНчлВыполнен»). On shift 2 the due
+# date is the morning AFTER by construction, so a night that opens 17.09 at 20:00
+# is due 18.09 and its plan now lands there — on a date whose typed headcount and
+# attendance belong to the next night. The загрузка divides one by the other.
+# Asked and answered: "for both plan and fakt and for both shifts".
+#
+# What keeps the 29.08 incident from repeating is `ops_for_day`'s reach: a фаза
+# row is stored under the date its own col H names, and the day that OWNS it
+# reads it back out of every slice in `_SLICE_BACK`/`_SLICE_FWD`. So a row does
+# not have to appear in its due day's own file to be counted there, which is
+# exactly what dropped 28 operations when col I was tried.
 #
 # A FLOOR, never a rewrite: every day before it resolves exactly what it always
 # resolved, so nothing already closed and reported moves. It must never be moved
 # LATER — that would hand days back to the old rule which have already been read
 # under this one.
-FACT_DUE_FROM = date(2026, 9, 17)
+DUE_DAY_FROM = date(2026, 9, 17)
 
 
 def _as_day(v):
     """A date from a date, a datetime or an ISO string; None from anything else.
 
     Both spellings really occur: the parser hands over `date` objects, while a
-    slice rebuilt from `PPUpload.rows` carries the ISO text `_extract_zaga`
-    wrote — and the заголовок leaves БазисСрокКонца blank on some rows.
+    slice rebuilt from `PPUpload.rows` carries the ISO text `_extract_zaga` and
+    `_extract_faza` wrote — and the заголовок leaves БазисСрокКонца blank on some
+    rows.
     """
     if isinstance(v, datetime):
         return v.date()
@@ -205,43 +217,52 @@ def _as_day(v):
     return None
 
 
-def fact_by_due(day) -> bool:
-    """Does this day date its ФАКТ by the order's БазисСрокКонца? THE test —
-    never re-spell the comparison at a call site."""
+def by_due_day(day) -> bool:
+    """Is this day keyed by the order's БазисСрокКонца? THE test — never
+    re-spell the comparison at a call site."""
     d = _as_day(day)
-    return d is not None and d >= FACT_DUE_FROM
+    return d is not None and d >= DUE_DAY_FROM
 
 
-def deliv_for_day(order_deliv: dict, order_due: dict, day) -> tuple[dict, list]:
-    """(what «Поставлено» counts on `day`, what it defers to another day).
+def ops_for_day(ops, order_due: dict, day) -> tuple[list, dict]:
+    """(the фаза operations this day OWNS, {other day: [ops]}) — THE day filter.
 
-    Below the floor this is the identity: the whole map back, nothing deferred,
-    so every pre-floor caller computes exactly what it always computed.
+    `ops` are the raw operation dicts (`order`, `wc`, `plan`, `date`), handed in
+    from as many stored slices as the caller chose to reach across. Because both
+    figures of a position are keyed the same way from the floor on, this is the
+    ONE filter: a kept operation's delivery is this day's by construction, and a
+    skipped one takes its ПЛАН and its «Поставлено» away together. There is no
+    second gate on the quantity.
 
-    An order the file gives NO readable БазисСрокКонца keeps the old rule and is
-    counted where its operations are. A file that does not say when an order was
-    due must not make a real delivery vanish — and a vanished quantity is the one
-    failure this change could introduce, since a delivery gated off one day only
-    lands on another if that day's фаза holds the same order.
+    Below the floor an operation belongs to the day its OWN col H names, which is
+    what the parse-time filter already wrote into each slice — so a caller handing
+    in one date's slice gets that slice straight back and computes exactly what it
+    always computed.
 
-    Everything else this day does not count is RETURNED, never dropped in
-    silence: it is a real quantity belonging to another day, and the upload says
-    how much. Zero-delivery orders are not reported — there is nothing to defer.
+    An order the заголовок gives NO readable БазисСрокКонца keeps that old rule
+    too. A file that does not say when an order was due must not make a real
+    position vanish, and a row whose own date is this day is the honest floor.
+
+    What the day does not own is RETURNED, grouped by the day that does, never
+    dropped in silence: an upload has to be able to say that part of the file it
+    was just handed belongs somewhere else.
     """
-    src = order_deliv or {}
-    if not fact_by_due(day):
-        return dict(src), []
     d = _as_day(day)
-    kept: dict = {}
-    deferred: list = []
-    for order, qty in src.items():
-        due = _as_day((order_due or {}).get(order))
-        if due is None or due == d:
-            kept[order] = qty
-        elif _f(qty) > 0:
-            deferred.append((order, _f(qty), due))
-    deferred.sort(key=lambda t: -t[1])
-    return kept, deferred
+    kept: list = []
+    other: dict = {}
+    for op in ops or ():
+        own = _as_day(op.get("date"))
+        if not by_due_day(d):
+            if own == d:
+                kept.append(op)
+            continue
+        due = _as_day((order_due or {}).get(op.get("order")))
+        target = due if due is not None else own
+        if target == d:
+            kept.append(op)
+        elif target is not None:
+            other.setdefault(target, []).append(op)
+    return kept, other
 
 
 def faza_quantities(rows) -> dict:
