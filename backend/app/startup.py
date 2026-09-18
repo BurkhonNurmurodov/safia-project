@@ -5769,23 +5769,36 @@ def _checklist_setup_job() -> None:
                       checklist_setup_report.send, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: every proof photo of the last week, as a zipped folder ─────────
+# ── one-shot: a SAMPLE of the last week's proofs, as a zipped folder ─────────
 # The operator asked, on 2026-09-18, for the last 7 days of leader proof images
 # out of the archive channel — as a folder, with a JSON inside saying which
 # picture is whose, for which day and for which task. It READS and writes
 # nothing but its own flag; `services/proof_archive.py` builds the manifest and
 # the ZIP parts.
 #
+# The first version sent the WHOLE week and was withdrawn mid-run: 9,141 photos
+# is ~60 ZIP parts at one every three minutes, and it buried the operator's own
+# day-close and approval notifications. This one samples `PER_GROUP` filings per
+# (shift, task) over the ten tasks with new requirements — tasks 1, 8 and 9 are
+# out, being the three that become automatic checks and so have no criteria to
+# sample against — which is ~300 filings in ~3 parts and covers every task
+# rather than the six a chronological run reaches first.
+#
+# A NEW flag key, because it delivers something different: the old one was never
+# marked sent (the run never completed), so reusing it would work and would
+# still be wrong — one key per delivery is what keeps "already sent" meaning one
+# thing.
+#
 # Scheduled rather than run inline, and further out than the reports above: it
-# downloads a few THOUSAND photos from Telegram and uploads a run of 40 MB
-# documents back, so it must be nowhere near the boot that /health is waiting
-# on — a boot that stalls past it rolls the deploy back.
-PROOF_ARCHIVE_FLAG = "proof_archive_7d_2026_09_18_v1"
+# downloads a few hundred photos from Telegram and uploads ZIPs back, so it must
+# be nowhere near the boot that /health is waiting on — a boot that stalls past
+# it rolls the deploy back.
+PROOF_ARCHIVE_FLAG = "proof_archive_sample_2026_09_18_v1"
 _PROOF_ARCHIVE_DELAY_S = 120
 
 
 def report_proof_archive() -> None:
-    """The week's proof photos, DMed once as ZIP parts.
+    """A sample of the week's proof photos, DMed once as ZIP parts.
 
     Flag-guarded like every other errand here: delivered on the first boot after
     its own deploy and never again, and a failed delivery is retried on the next
@@ -5808,7 +5821,7 @@ def report_proof_archive() -> None:
 
 def _proof_archive_job() -> None:
     from app.services import proof_archive
-    _send_report_once(PROOF_ARCHIVE_FLAG, "proof archive (7d)",
+    _send_report_once(PROOF_ARCHIVE_FLAG, "proof archive (7d sample)",
                       proof_archive.send, UNPRICED_DM_CHAT)
 
 

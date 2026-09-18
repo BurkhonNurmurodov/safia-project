@@ -5,6 +5,23 @@ the archive channel, as a folder, with a JSON file inside saying which picture
 belongs to whom, to which day and to which task. This platform has no shell, so
 the answer is a boot job like every other one-off in `startup.py`.
 
+**It is a SAMPLE, and that is the second version of this errand.** Sending the
+whole week was the first, and it was wrong in the only way that mattered: 9,141
+photos is ~60 ZIP parts at one every three minutes, which buried the operator's
+own day-close and approval notifications under three hours of documents before
+they stopped it. The question worth asking is not "every photo" but "enough of
+each task to see how it is really filed", so this samples `PER_GROUP` FILINGS
+per (shift, task) over the tasks that have new requirements — which is ~300
+filings in ~3 parts, and covers all ten tasks instead of the six a chronological
+run reaches first.
+
+**The unit of sampling is a FILING, never a photo**, and that is load-bearing:
+three of these tasks are judged on a SET of pictures — task 3 wants three
+different processes, tasks 7 and 10 let a long form or a long order list run
+across several screenshots — so a sample of loose photos cannot be judged
+against the very criteria it was drawn to test. A picked filing brings every
+photo it has.
+
 It READS and writes nothing but its own flag. No photo is re-encoded, cropped
 or resized: the bytes that reach the chat are byte-for-byte what the archive
 channel holds, because the point of a proof is the picture.
@@ -70,6 +87,11 @@ TZ = timezone(timedelta(hours=5))   # the plant's wall clock
 # and a window that stopped at yesterday would leave out the shift they are
 # most likely asking about.
 WINDOW_DAYS = 7
+
+# Filings per (shift, task). 15 is ~300 filings and ~3 parts on this week's
+# traffic, measured rather than guessed — see the note above about what the
+# unsampled version cost.
+PER_GROUP = 15
 
 # sendDocument refuses above 50 MB, and the manifest rides in every part, so the
 # cap is set well under it rather than at the edge.
@@ -325,6 +347,145 @@ def collect(db: Session, today: date) -> dict:
     }
 
 
+# ── which tasks, and the rule each one is judged by ──────────────────────────
+
+def task_rules() -> dict:
+    """The tasks with NEW requirements, and the texts stating them.
+
+    DERIVED from `leader_rules_sep19`, never re-listed here: that module is the
+    definition of what changed on the 19th, and a second copy of the task
+    numbers is a copy that is wrong the first time one of them moves. The three
+    becoming automatic checks (1, 8 and 9) are excluded by their own membership
+    of `AUTO_DESCRIPTIONS` — they were given an instruction and deliberately no
+    criteria, so there is no rule to sample them against.
+
+    Task 13's rule differs by shift (shift 1 fills the report on the day it
+    worked, shift 2 after midnight), so its entry is keyed by shift and the
+    others are not.
+    """
+    from app.services import leader_rules_sep19 as R
+    auto = set(getattr(R, "AUTO_DESCRIPTIONS", {}))
+    out: dict = {}
+    for tid, text in R.CRITERIA.items():
+        if tid not in auto:
+            out[tid] = {"criteria": text, "description": R.DESCRIPTIONS.get(tid)}
+    for tid, by_shift in getattr(R, "CRITERIA_BY_SHIFT", {}).items():
+        if tid in auto:
+            continue
+        out.setdefault(tid, {})["criteria_by_shift"] = dict(by_shift)
+        out[tid]["description_by_shift"] = dict(
+            getattr(R, "DESCRIPTIONS_BY_SHIFT", {}).get(tid, {}))
+    return out
+
+
+def _proof_key(im: dict):
+    """What counts as ONE filing.
+
+    A checklist answer is its entry; a late proof is its own row; an unfinished
+    camera roll has neither, so it is keyed by the (day, task) it sits on —
+    which is exactly the roll it is.
+    """
+    if im["kind"] == "checklist":
+        return ("e", im["entry_id"])
+    if im["kind"] == "late_proof":
+        return ("l", im.get("late_id"))
+    return ("r", im["day_id"], im["task_id"])
+
+
+def _round_robin(items: list, n: int) -> list:
+    """Up to `n` filings, one UNIT at a time and each unit starting on a
+    different DAY, so the sample spreads over both axes.
+
+    Units first, because without it the sample is whatever sorted first, and on
+    this register that is one or two big units for every task — which answers
+    "how does Suvonov file task 5", not "how is task 5 filed".
+
+    Then the rotation, which is the half that is easy to miss: a group takes
+    about one filing per unit, so whatever sits at the head of each unit's queue
+    is the whole sample. Ordered by date alone that head is the same MONDAY for
+    every unit, and a week's sample came back holding three dates out of seven —
+    a picture of how the week STARTED, when the useful question is how it is
+    being filed now. Each unit's queue is therefore rotated by its own position,
+    so unit 1 leads with its first day, unit 2 with its second, and so on. It
+    stays deterministic: the same week sampled twice gives the same file.
+    """
+    buckets: dict = {}
+    for it in items:
+        buckets.setdefault(it[0]["unit_id"], []).append(it)
+    ordered = sorted(buckets.items(), key=lambda kv: kv[0] or 0)
+    for k, (unit, q) in enumerate(ordered):
+        q.sort(key=lambda v: v[0]["date"])
+        # The offset is spread over the WHOLE queue, not over the unit count: a
+        # unit files ~30 times a week per task and `k % len(q)` only ever reaches
+        # the first thirteen of them, which are all the first days — the very
+        # clustering the rotation is here to break (measured: 221 of 379 photos
+        # still landed on one date).
+        off = (k * len(q)) // max(1, len(ordered))
+        buckets[unit] = q[off:] + q[:off]
+    queues = [buckets[u] for u, _ in ordered]
+    out: list = []
+    while len(out) < n and any(queues):
+        for q in queues:
+            if q and len(out) < n:
+                out.append(q.pop(0))
+    return out
+
+
+def sample(manifest: dict, rules: dict, per_group: int = PER_GROUP) -> dict:
+    """Narrow a complete manifest to `per_group` filings per (shift, task).
+
+    Returns a manifest of the SAME shape — the packer and the closing message
+    need to know nothing about sampling — with the rule for each task attached
+    and a per-group census saying what each sample was drawn from. The census
+    is what stops a thin group reading as a quiet week: task 4 on shift 2 has
+    148 filings against shift 1's 328, and only the file can say so.
+    """
+    groups: dict = {}
+    for im in manifest["images"]:
+        if im["task_id"] not in rules:
+            continue
+        groups.setdefault((im["shift"], im["task_id"]), {}) \
+              .setdefault(_proof_key(im), []).append(im)
+
+    picked: list = []
+    census: list = []
+    for (shift, task), proofs in sorted(groups.items(),
+                                        key=lambda kv: (kv[0][0] or 0, kv[0][1])):
+        items = [sorted(v, key=lambda x: (x.get("pos") or 0, x["file"]))
+                 for v in proofs.values()]
+        items.sort(key=lambda v: (v[0]["date"], v[0]["unit_id"] or 0,
+                                  v[0]["leader_id"] or 0, v[0]["file"]))
+        take = _round_robin(items, per_group)
+        census.append({"shift": shift, "task_id": task,
+                       "filings": len(items), "photos": sum(len(v) for v in items),
+                       "sampled_filings": len(take),
+                       "sampled_photos": sum(len(v) for v in take),
+                       "units": len({v[0]["unit_id"] for v in items})})
+        for v in take:
+            for n, im in enumerate(v):
+                picked.append({**im, "proof_photos": len(v), "proof_index": n})
+
+    by_kind: dict = {}
+    for im in picked:
+        by_kind[im["kind"]] = by_kind.get(im["kind"], 0) + 1
+    return {
+        **manifest,
+        "sample": {"per_group": per_group, "tasks": sorted(rules),
+                   "groups": census,
+                   "note": ("Har bir (smena, vazifa) uchun {n} ta ISBOT tanlandi "
+                            "(rasm emas — isbot: 3, 7 va 10-vazifalarda bir isbot "
+                            "bir nechta rasmdan iborat bo'lishi mumkin, va ular "
+                            "birgalikda baholanadi). Tanlov bo'limlar bo'yicha "
+                            "navbatma-navbat, shuning uchun bitta bo'lim butun "
+                            "namunani egallamaydi.").format(n=per_group)},
+        "rules": rules,
+        "counts": {**manifest["counts"], "images": len(picked),
+                   "by_kind": by_kind,
+                   "available_images": manifest["counts"]["images"]},
+        "images": picked,
+    }
+
+
 # ── delivery ─────────────────────────────────────────────────────────────────
 
 def _send_file(chat_id: int, path: str, name: str, caption: str) -> None:
@@ -381,7 +542,8 @@ def send(db: Session, chat_id: int, *_window) -> int:
     if not settings.telegram_bot_token:
         raise RuntimeError("telegram bot token not configured")
 
-    manifest = collect(db, datetime.now(TZ).date())
+    rules = task_rules()
+    manifest = sample(collect(db, datetime.now(TZ).date()), rules)
     db.rollback()
 
     blob = json.dumps(manifest, ensure_ascii=False, indent=1, default=str).encode()
@@ -395,7 +557,7 @@ def send(db: Session, chat_id: int, *_window) -> int:
     try:
         if not total:
             _say(chat_id, f"Isbot rasmlari {win['from']}..{win['to']}: "
-                          f"bu oynada hech qanday rasm yo'q.")
+                          f"bu oynada tanlangan vazifalar bo'yicha rasm yo'q.")
             return 0
 
         zf = part_path = None
@@ -413,9 +575,9 @@ def send(db: Session, chat_id: int, *_window) -> int:
             if zf is not None and part_size + len(data) > PART_BYTES:
                 zf.close()
                 _send_file(chat_id, part_path,
-                           f"isbotlar-{stamp}-{part_no:02d}.zip",
-                           f"Isbot rasmlari {win['from']}..{win['to']} — "
-                           f"{part_no}-qism. Ichida proofs.json (to'liq ro'yxat).")
+                           f"isbot-namuna-{stamp}-{part_no:02d}.zip",
+                           f"Isbot NAMUNASI {win['from']}..{win['to']} — "
+                           f"{part_no}-qism. Ichida proofs.json (talablar bilan).")
                 sent += 1
                 os.remove(part_path)
                 zf = None
@@ -437,20 +599,27 @@ def send(db: Session, chat_id: int, *_window) -> int:
             part_size += len(data) + 512
         if zf is not None:
             zf.close()
-            _send_file(chat_id, part_path, f"isbotlar-{stamp}-{part_no:02d}.zip",
-                       f"Isbot rasmlari {win['from']}..{win['to']} — "
+            _send_file(chat_id, part_path, f"isbot-namuna-{stamp}-{part_no:02d}.zip",
+                       f"Isbot NAMUNASI {win['from']}..{win['to']} — "
                        f"{part_no}-qism (oxirgi). Ichida proofs.json.")
             sent += 1
             os.remove(part_path)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    kinds = ", ".join(f"{k}: {v}" for k, v in sorted(manifest["counts"]["by_kind"].items()))
-    lines = [f"Isbot rasmlari {win['from']}..{win['to']} ({WINDOW_DAYS} kun).",
-             f"Ro'yxatda {total} ta rasm ({kinds}).",
+    sm = manifest["sample"]
+    thin = [g for g in sm["groups"] if g["sampled_filings"] < sm["per_group"]]
+    lines = [f"Isbot NAMUNASI {win['from']}..{win['to']} ({WINDOW_DAYS} kun).",
+             f"Vazifalar: {', '.join(str(t) for t in sm['tasks'])} "
+             f"(avtomatlashtiriladigan 1, 8, 9 kirmaydi).",
+             f"Har (smena, vazifa) uchun {sm['per_group']} ta isbot — "
+             f"jami {total} ta rasm, {manifest['counts']['available_images']} tadan.",
              f"Yuborildi: {packed} ta rasm, {sent} ta ZIP qism.",
              "Barcha qismlarni BITTA papkaga chiqaring — proofs.json har bir "
-             "qismda bir xil va to'liq."]
+             "qismda bir xil, va unda har vazifaning YANGI talabi bor."]
+    if thin:
+        lines.append("To'liq to'lmagan guruhlar: " + ", ".join(
+            f"s{g['shift']}·t{g['task_id']} ({g['sampled_filings']})" for g in thin[:10]))
     if capped:
         lines.append(f"⚠ TO'LIQ EMAS — {MAX_PARTS} ta qismdan keyin to'xtatildi "
                      f"({total - packed} ta rasm yuborilmadi). Butun hafta ~60 "

@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
         report_shared_sap_cells_raw_xlsx,
         report_sheet_concerns_xlsx,
         report_checklist_setup,
+        report_proof_archive,
         preview_leader_rules_sep19,
         register_leader_rules_sep19,
         add_pp_product_auto_fill,
@@ -408,18 +409,17 @@ async def lifespan(app: FastAPI):
     # `startup.report_checklist_setup` and `services/checklist_setup_report.py`
     # once it has landed.
     report_checklist_setup()
-    # ⚠ WITHDRAWN (2026-09-18, the operator's call, mid-run) — the 7-day proof
-    # archive. It is NOT called: a week is ~9,100 photos, i.e. ~60 ZIP parts at
-    # one every three minutes, which buried the operator's own notifications
-    # under three hours of documents. The module stays for a narrower re-run
-    # (a sample per task, or one day), which needs a NEW flag key — the old one
-    # was never marked sent, because `_send_report_once` writes it only after a
-    # completed delivery.
-    #
-    # Removing this call is also what STOPS a run already in flight: the job
-    # lives in the scheduler's memory jobstore, so the restart this deploy
-    # triggers kills it, and with nothing re-arming it at boot it stays dead.
-    # report_proof_archive()
+    # ⚠ TEMPORARY one-shot (2026-09-18) — a SAMPLE of the last 7 days' leader
+    # proofs: PER_GROUP filings per (shift, task) over the ten tasks that have
+    # new requirements (1, 8 and 9 are out — they become automatic checks and
+    # have no criteria), as ~3 ZIP parts in the operator's chat, each carrying
+    # the same proofs.json with each task's NEW criteria beside its photos.
+    # Sending the whole week was the first version and was withdrawn mid-run for
+    # flooding the chat; MAX_PARTS in the module is what stops that recurring.
+    # Scheduled, flag-guarded — delivers once. Remove this line,
+    # `startup.report_proof_archive` and `services/proof_archive.py` once the
+    # files have landed.
+    report_proof_archive()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
     # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
     # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.
