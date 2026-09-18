@@ -6318,6 +6318,64 @@ LEADER_RULES_FLAGS = {1: "leader_rules_2026_09_19_shift1_v1",
 LEADER_RULES_DUE = {1: (2026, 9, 19, 0, 30), 2: (2026, 9, 19, 16, 30)}
 
 
+#: Publishing the INSTRUCTIONS early is a separate delivery from applying the
+#: rules, so it carries its own key. The operator asked on 18 Sep for leaders to
+#: be able to read the new texts and prepare before anything they are scored by
+#: changes.
+LEADER_RULES_PREVIEW_FLAG = "leader_rules_2026_09_19_preview_v1"
+
+
+def preview_leader_rules_sep19() -> None:
+    """Put the new leader INSTRUCTIONS on the page now, scored by nothing.
+
+    Runs inline at boot rather than on the two scheduled passes, and that is
+    safe for exactly one reason: `description` is the one column here that
+    cannot move a verdict, so writing it in the middle of a running shift
+    changes nothing anybody is graded on. Every other field this feature
+    touches waits for its shift's own pass.
+
+    A shift whose real pass has ALREADY run is skipped — otherwise a box booting
+    for the first time on the 20th would paste «starts on 19 September» back
+    over texts that are already in force. Never raises.
+    """
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_RULES_PREVIEW_FLAG).first():
+            return
+        from app.services import leader_rules_sep19 as rules
+        done = []
+        for shift in (1, 2):
+            if db.query(AppSetting).filter_by(key=LEADER_RULES_FLAGS[shift]).first():
+                continue
+            out = rules.preview(db, shift)
+            done.append(f"shift {shift}: {out['units']} unit(s), "
+                        f"{out['texts']} instruction(s)")
+        db.add(AppSetting(key=LEADER_RULES_PREVIEW_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        for line in done:
+            print(f"[startup] leader rules 19.09 PREVIEW — {line}")
+        if done:
+            try:
+                from app.services import action_log
+                action_log.record_system(
+                    "leader_config", "ltask.rules_previewed",
+                    target_kind="task", target_name="checklist",
+                    details=[("level", "unit"), ("note", "; ".join(done))],
+                    reason=("Operator directive 18.09.2026: publish the new leader "
+                            "instructions early so leaders can prepare. Descriptions "
+                            "only — nothing that scores them changes until 19.09."),
+                )
+            except Exception:
+                pass
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader rules 19.09 preview skipped: {exc}")
+    finally:
+        db.close()
+
+
+
 def _rules_in_shift(shift: int, now) -> bool:
     """Is that shift working RIGHT NOW? Tashkent wall clock, the same hours
     `leader_ai.SHIFT_WINDOW` carries: shift 1 is a daytime range, shift 2

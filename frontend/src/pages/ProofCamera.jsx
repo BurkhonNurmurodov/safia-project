@@ -183,6 +183,14 @@ async function useMainLens(track) {
 
 const tgApp = () => window.Telegram?.WebApp;
 
+// Telegram's own name for where the mini app is running. A leader who opened a
+// camera proof on one of these has a screen to read, not a camera to fix, so
+// the page can tell them WHY rather than name an error. An unrecognised value
+// (a plain browser answers «unknown») falls back to the general wording, which
+// is true either way.
+const DESKTOP_PLATFORMS = new Set(["tdesktop", "macos", "web", "weba", "webk", "linux"]);
+const onDesktop = () => DESKTOP_PLATFORMS.has(tgApp()?.platform || "");
+
 /* ── the stamp, drawn live exactly as the server burns it ─────────────────── */
 
 function pad2(n) { return String(n).padStart(2, "0"); }
@@ -1579,6 +1587,13 @@ export default function ProofCamera() {
   const ar = (mode === "review" ? shot?.ar : mode === "slot" ? viewAR : camAR)
     || camAR || 3 / 4;
   const fit = fitBox(frame.w, frame.h, ar);
+  // Two of the camera screens are not faults: a device with NO camera (the
+  // leader opened a camera proof on a computer) and a camera another of
+  // Telegram's own windows is holding. Both are answered by the leader, not by
+  // an admin — which is why neither is painted red, and why the first is not
+  // reported at all.
+  const noCamera = camErr === "none" && devices.length === 0;
+  const notAFault = camErr === "held" || noCamera;
 
   return (
     <div className="fixed inset-0 flex flex-col select-none"
@@ -1679,8 +1694,8 @@ export default function ProofCamera() {
             <div className="max-w-xs">
               <div className="mx-auto mb-3 grid place-items-center rounded-2xl"
                 style={{ width: 48, height: 48,
-                  background: camErr === "held" ? "rgba(234,179,8,0.16)" : "rgba(239,68,68,0.16)" }}>
-                {camErr === "held"
+                  background: notAFault ? "rgba(234,179,8,0.16)" : "rgba(239,68,68,0.16)" }}>
+                {notAFault
                   ? <Camera size={22} color="#eab308" />
                   : camErr === "stalled"
                     ? <ImageOff size={22} color="#ef4444" />
@@ -1689,16 +1704,21 @@ export default function ProofCamera() {
               <div className="text-[15px] font-semibold mb-1.5">
                 {t(`proof.cam.${camErr}`)}
               </div>
+              {/* A device with no camera is not an error and is not reported,
+                  so the screen has to do the whole job on its own: say what is
+                  missing, why this task needs it, and where to go instead. */}
               <p className="text-[13px] leading-relaxed mb-4"
                 style={{ color: "rgba(255,255,255,0.65)" }}>
-                {t(`proof.cam.${camErr}Msg`)}
+                {noCamera && onDesktop()
+                  ? t("proof.cam.noneDesktopMsg")
+                  : t(`proof.cam.${camErr}Msg`)}
               </p>
               {/* On a device with NO camera — a leader who opened the proof
                   from Telegram on a computer — «Qayta urinish» is a button that
                   fails again in four milliseconds. The way out is the action,
                   and retrying stays underneath it for the webcam somebody has
                   just plugged in. */}
-              {camErr === "none" && devices.length === 0 ? (
+              {noCamera ? (
                 <div className="space-y-2">
                   <Button size="lg" className="w-full" onClick={() => tgApp()?.close?.()}>
                     <X size={16} /> {t("proof.gate.close")}

@@ -2756,6 +2756,16 @@ SERVER's; the phone never authors it.
     as its action there, since retrying fails again in four milliseconds; the
     way out (close, and open the task on the phone) is the action, with retry
     underneath it for a webcam somebody has just plugged in.
+    **The screen carries the whole explanation, because nobody else is told.**
+    It says what is missing, why this task needs it and where to go instead —
+    and on a DESKTOP Telegram (`DESKTOP_PLATFORMS`, matched on the mini app's
+    own `platform`) it names that too, since «camera not found» reads as a
+    broken camera to somebody sitting at a computer. An unrecognised platform
+    (a plain browser answers «unknown») keeps the general wording, which is
+    true either way.
+    **Neither of the not-a-fault screens is painted red** (`notAFault`): this
+    one and `held` are both answered by the leader, and red is what the page
+    says when something is wrong with it.
 
 - **A camera failure REPORTS ITSELF to the admins** (2026-09-17, the
   operator's directive, after the first «Kamera tasvir bermayapti» reached us as

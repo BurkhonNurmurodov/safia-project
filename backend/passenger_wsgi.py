@@ -88,6 +88,7 @@ try:
         report_shared_sap_cells_raw_xlsx,
         report_sheet_concerns_xlsx,
         report_checklist_setup,
+        preview_leader_rules_sep19,
         register_leader_rules_sep19,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
@@ -375,6 +376,11 @@ try:
     # run. Remove this line, `startup.register_leader_rules_sep19` and
     # `services/leader_rules_sep19.py` once BOTH passes have landed.
     register_leader_rules_sep19()
+    # ⚠ TEMPORARY one-shot (2026-09-18) — publish the new leader INSTRUCTIONS
+    # early so leaders can read them and prepare. Descriptions only: nothing
+    # they are scored by changes until the two passes above fire on the 19th.
+    # Remove with them.
+    preview_leader_rules_sep19()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

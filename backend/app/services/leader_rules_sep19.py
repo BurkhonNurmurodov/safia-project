@@ -154,6 +154,51 @@ def set_global_min_media(db: Session) -> bool:
     return True
 
 
+#: What a leader is told while the new instructions are ON THE PAGE but the new
+#: rules are not yet in force. The 19 Sep pass rewrites this same column without
+#: it, so the notice removes itself — there is nothing to clean up.
+PREVIEW_NOTE = (
+    "\u26a0\ufe0f YANGI TALAB \u2014 19-sentabrdan kuchga kiradi. Bugun va "
+    "bugun kechasi vazifa eski qoida bo'yicha baholanadi; quyidagini oldindan "
+    "o'qib, tayyorlanib qo'ying.\n\n"
+)
+
+
+def preview(db: Session, shift: int) -> dict:
+    """Publish the new INSTRUCTIONS early, so leaders can prepare, while every
+    rule that scores them stays exactly as it is until 19 September.
+
+    Only `description` is written. That column is the one thing here that cannot
+    move a verdict — `leader_ai._prompt` does not know it exists — so unlike the
+    criteria, the date modes, the tolerance and the photo count, it is safe to
+    write in the middle of a running shift, which is when a leader actually
+    needs to read it.
+
+    Writing the instruction WITHOUT its rule is a trap on its own, though: a
+    leader who reads «the list may be dated tomorrow» (task 11) or «the
+    monoblok's date is one day after the table's» (task 13) and files that way
+    tonight would be judged by tonight's rules and lose the point. So every text
+    carries `PREVIEW_NOTE` saying when it starts, and the real pass overwrites
+    it.
+    """
+    out = {"shift": shift, "units": 0, "texts": 0, "names": []}
+    for m in units(db, shift):
+        for tid in TASKS:
+            leader_tasks.set_description(db, task_id=tid,
+                                         description=PREVIEW_NOTE + DESCRIPTIONS[tid],
+                                         manager_id=m.id)
+            out["texts"] += 1
+        for tid in SHIFT_TASKS:
+            leader_tasks.set_description(
+                db, task_id=tid,
+                description=PREVIEW_NOTE + DESCRIPTIONS_BY_SHIFT[tid][shift],
+                manager_id=m.id)
+            out["texts"] += 1
+        out["units"] += 1
+        out["names"].append(m.name)
+    return out
+
+
 def keep_leader_texts_coherent(db: Session, shift: int) -> list[str]:
     """Stop a leader being TOLD one thing and GRADED on another.
 
