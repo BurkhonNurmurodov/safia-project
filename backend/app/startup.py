@@ -6292,3 +6292,178 @@ def report_wc_groups() -> None:
         print(f"[startup] wc groups self-check failed: {exc}")
     finally:
         db.close()
+
+
+# ── one-shot: the 19 September 2026 leader-checklist rules ──────────────────
+# The operator rewrote the checklist's AI criteria and the leaders' own
+# instructions (agreed task by task, 14—18 Sep) and asked for them to start on
+# shift 1's day of 19 Sep and shift 2's night of 19—20 Sep.
+#
+# TWO passes and TWO flags, because they are two deliveries at two instants and
+# "shift 1 is done" must never read as "this is done" — the `shared_work_centers`
+# precedent. Each fires while its own shift is NOT running, so no leader is ever
+# re-judged in the middle of a checklist they are still filling.
+#
+# The flag is written LAST, after the writes, and not in one transaction with
+# them: the chain setters in `leader_tasks` each commit for themselves, so this
+# pass cannot be atomic. Every write is idempotent instead, so a pass that dies
+# half-way is simply re-run whole by the next boot. Changing what either pass
+# writes needs a NEW flag key, or the old "already ran" mark makes the change a
+# no-op on every box that has booted once.
+LEADER_RULES_FLAGS = {1: "leader_rules_2026_09_19_shift1_v1",
+                      2: "leader_rules_2026_09_19_shift2_v1"}
+#: Tashkent wall clock. Each sits in its shift's own gap — shift 1 works
+#: 07:00—20:00, shift 2 works 17:00—09:00 — so the pass lands before the shift
+#: it changes opens, never inside it.
+LEADER_RULES_DUE = {1: (2026, 9, 19, 0, 30), 2: (2026, 9, 19, 16, 30)}
+
+
+def _rules_in_shift(shift: int, now) -> bool:
+    """Is that shift working RIGHT NOW? Tashkent wall clock, the same hours
+    `leader_ai.SHIFT_WINDOW` carries: shift 1 is a daytime range, shift 2
+    crosses midnight."""
+    hm = now.hour * 60 + now.minute
+    if shift == 2:
+        return hm >= 17 * 60 or hm < 9 * 60
+    return 7 * 60 <= hm < 20 * 60
+
+
+def _rules_run_at(shift: int, now):
+    """When this shift's pass should fire, given the clock at boot.
+
+    Three cases, and the middle one is the whole point. Before the agreed
+    instant: at it. After it, with the shift NOT running: in a minute — a boot
+    that came up late must not lose the pass to APScheduler's 300-second
+    misfire grace, which drops a fire time already in the past and leaves the
+    flag unset forever with nothing on screen saying so. After it, with the
+    shift RUNNING: at the first minute AFTER that shift closes, so the day
+    already being filed is judged by the rules it started under and the NEXT one
+    gets the new texts. Late is the acceptable failure here; mid-shift is not.
+    """
+    from datetime import timedelta
+    due = now.replace(year=LEADER_RULES_DUE[shift][0],
+                      month=LEADER_RULES_DUE[shift][1],
+                      day=LEADER_RULES_DUE[shift][2],
+                      hour=LEADER_RULES_DUE[shift][3],
+                      minute=LEADER_RULES_DUE[shift][4],
+                      second=0, microsecond=0)
+    if now < due:
+        return due
+    if not _rules_in_shift(shift, now):
+        return now + timedelta(minutes=1)
+    close = now.replace(hour=20 if shift == 1 else 9, minute=1,
+                        second=0, microsecond=0)
+    if close <= now:
+        close += timedelta(days=1)
+    return close
+
+
+def register_leader_rules_sep19() -> None:
+    """Arm both passes. Called on EVERY boot, because the scheduler's jobstore
+    is in memory and a deploy kills whatever was pending; only the flag stops a
+    second run. Never raises."""
+    try:
+        from app.scheduler import SCHEDULER_TZ, schedule_at
+        now = datetime.now(timezone.utc).astimezone(SCHEDULER_TZ)
+        db = SessionLocal()
+        try:
+            for shift, flag in sorted(LEADER_RULES_FLAGS.items()):
+                if db.query(AppSetting).filter_by(key=flag).first():
+                    continue
+                run_at = _rules_run_at(shift, now)
+                # default arg, or both jobs close over the last shift
+                schedule_at(f"leader-rules-sep19-s{shift}", run_at,
+                            lambda s=shift: _leader_rules_job(s))
+                print(f"[startup] leader rules 19.09: shift {shift} armed for "
+                      f"{run_at:%d.%m %H:%M} ({SCHEDULER_TZ})")
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[startup] leader rules 19.09 could not be armed: {exc}")
+
+
+def _leader_rules_job(shift: int) -> None:
+    """Write one shift's rules, then flag, re-derive, log and report."""
+    from app.services import action_log, leader_ai, leader_rules_sep19 as rules
+
+    flag = LEADER_RULES_FLAGS[shift]
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=flag).first():
+            return
+        out = rules.apply(db, shift)
+        left = rules.leader_overrides_left(db, shift)
+        db.add(AppSetting(key=flag,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] leader rules 19.09: shift {shift} — {out['units']} unit(s), "
+              f"{out['texts']} text pair(s), min_media on {len(out['min_media'])}, "
+              f"global default {'raised' if out.get('global_min_media') else 'unchanged'}")
+
+        # ONE re-derive for the whole pass, not one per unit: it is per TASK and
+        # walks the entire stored corpus. It has no date bound, so every verdict
+        # on tasks 11 and 13 from the review floor onward is re-judged at once —
+        # scores move retroactively and NO corrected report is re-DMed, which is
+        # the platform's standing rule for a date-rule edit. Say the number out
+        # loud, or nobody learns a month of scores changed.
+        moved = 0
+        try:
+            moved = leader_ai.sync_date_flags(db, [11, 13]) or 0
+            print(f"[startup] leader rules 19.09: re-derived {moved} verdict(s)")
+        except Exception as exc:
+            print(f"[startup] leader rules 19.09: re-derive failed: {exc}")
+
+        try:
+            action_log.record_system(
+                "leader_config", "ltask.rules_applied",
+                target_kind="task", target_name="checklist",
+                details=[("level", "unit"), ("shift", shift),
+                         ("count", out["units"]), ("task", out["texts"]),
+                         ("moved", moved or None),
+                         ("skipped", len(left) or None)],
+                reason=("Operator directive 18.09.2026: unit-level AI criteria and "
+                        "Uzbek leader descriptions for tasks 2-7, 10-13; task 11 "
+                        "date_plus=1; task 13 day_check off (time only); task 3 "
+                        "min_media=3."),
+            )
+        except Exception:
+            pass
+        _leader_rules_dm(shift, out, left, moved)
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader rules 19.09 shift {shift} skipped: {exc}")
+    finally:
+        db.close()
+
+
+def _leader_rules_dm(shift: int, out: dict, left: list[str], moved: int) -> None:
+    """Tell the admins what just changed, including what it did NOT reach."""
+    try:
+        import html
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        body = [f"Smena {shift}: {out['units']} brigada, "
+                f"{out['texts']} ta matn jufti (kriteriya + tavsif)",
+                f"11-vazifa: +1 kun · 13-vazifa: faqat vaqt tekshiriladi",
+                f"3-vazifa: 3 ta rasm — {len(out['min_media'])} brigadada o'zgardi"]
+        if out.get("global_min_media"):
+            body.append("3-vazifa: global standart ham 3 ta rasmga ko'tarildi")
+        body.append(f"Qayta hisoblangan xulosa: {moved} ta "
+                    f"(13-avgustdan beri, tuzatilgan hisobot yuborilmaydi)")
+        if left:
+            body.append(f"Tegilmagan lider sozlamalari: {len(left)}")
+        # quote=False: Telegram's HTML parser decodes &lt; &gt; &amp; and
+        # nothing else, so the default escaping would print «o&#x27;zgardi»
+        # for every Uzbek apostrophe. Same rule as `leader_unit_rich._esc`.
+        esc = lambda v: html.escape(str(v), quote=False)
+        text = ("📋 <b>Chek-list qoidalari yangilandi (19.09)</b>\n"
+                + esc("\n".join(body)))
+        if left:
+            text += "\n\n<pre>" + esc("\n".join(left[:15])) + "</pre>"
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, text, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] leader rules 19.09 summary not delivered: {exc}")

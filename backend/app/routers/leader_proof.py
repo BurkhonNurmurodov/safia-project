@@ -245,6 +245,11 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
                     "id": task,
                     "name": config_name(entry, lang),
                     "criteria": entry.get("criteria") or "",
+                    # The leader-facing instruction. `criteria` is the GRADER's test —
+                    # English prose since 19.09 — so the sheet must not print it where a
+                    # description exists. Kept beside it: a tab open on an older bundle
+                    # still reads `criteria` and must go on working.
+                    "description": entry.get("description") or entry.get("criteria") or "",
                     # A late filing has no min_media contract — one photo is
                     # enough and the submit refuses none. Serving 1 keeps every
                     # arithmetic the page already does valid (slot 0 is
@@ -276,6 +281,11 @@ def proof_session(leader: int | None = Query(None), task: int = Query(...),
             "id": task,
             "name": config_name(entry, lang),
             "criteria": entry.get("criteria") or "",
+            # The leader-facing instruction. `criteria` is the GRADER's test —
+            # English prose since 19.09 — so the sheet must not print it where a
+            # description exists. Kept beside it: a tab open on an older bundle
+            # still reads `criteria` and must go on working.
+            "description": entry.get("description") or entry.get("criteria") or "",
             "min_media": need,
             "max_slots": leader_proof.max_slots(need),
             "window": list(entry.get("window") or ()),

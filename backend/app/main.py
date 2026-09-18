@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
         report_shared_sap_cells_raw_xlsx,
         report_sheet_concerns_xlsx,
         report_checklist_setup,
+        register_leader_rules_sep19,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
@@ -406,6 +407,14 @@ async def lifespan(app: FastAPI):
     # `startup.report_checklist_setup` and `services/checklist_setup_report.py`
     # once it has landed.
     report_checklist_setup()
+    # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
+    # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
+    # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.
+    # Two flag-guarded passes, each armed to fire while its own shift is NOT
+    # running. Re-armed on every boot (memory jobstore); the flags stop a second
+    # run. Remove this line, `startup.register_leader_rules_sep19` and
+    # `services/leader_rules_sep19.py` once BOTH passes have landed.
+    register_leader_rules_sep19()
     yield
     shutdown_scheduler()
 

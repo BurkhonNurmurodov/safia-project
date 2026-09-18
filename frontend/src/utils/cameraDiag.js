@@ -265,15 +265,38 @@ const HOLDER_TTL_MS = 12 * 3600 * 1000;
  *  camera page is still a page with a camera open. Every camera page answers on
  *  one BroadcastChannel, so a failing page can ask whether a sibling is the
  *  reason. Returns the closer. */
-export function answerPresence(selfId, describe) {
+export function answerPresence(selfId, describe, onNeed) {
   let ch;
   try { ch = new BroadcastChannel(CHANNEL); } catch { return () => {}; }
   ch.onmessage = (e) => {
     const m = e?.data;
-    if (!m || m.type !== "who" || m.from === selfId) return;
+    if (!m || m.from === selfId) return;
+    // A sibling page is about to open the camera. Only one page on this device
+    // can have it, so whoever hears this and is not the page in front of the
+    // leader is asked to let go — see `announceNeed`.
+    if (m.type === "need") { try { onNeed?.(m); } catch { /* never the caller's failure */ } return; }
+    if (m.type !== "who") return;
     try { ch.postMessage({ type: "here", to: m.from, from: selfId, ...describe() }); } catch { /* closed */ }
   };
   return () => { try { ch.close(); } catch { /* closed */ } };
+}
+
+/** Tell the other camera pages of this Telegram that the camera is wanted HERE.
+ *
+ *  Android hands the camera to one client at a time and Telegram MINIMIZES a
+ *  mini app rather than closing it, so a leader on their third task of the
+ *  shift is queued behind two abandoned viewfinders — the 2026-09-18 report
+ *  waited 17.4 s for a `getUserMedia` while two sibling pages held live
+ *  cameras from the background. Waiting for Android to arbitrate is what that
+ *  17.4 s was; asking is instant, and a minimized page has no claim on the
+ *  camera anyway. Best-effort by construction: a sibling too frozen to hear
+ *  this is exactly what the holder ledger below exists to report. */
+export function announceNeed(selfId) {
+  try {
+    const ch = new BroadcastChannel(CHANNEL);
+    ch.postMessage({ type: "need", from: selfId });
+    setTimeout(() => { try { ch.close(); } catch { /* closed */ } }, 1000);
+  } catch { /* unsupported */ }
 }
 
 /** Ask every other camera page of this Telegram to describe itself. */

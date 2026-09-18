@@ -2289,6 +2289,87 @@ number.
 Related memory: `leader-ai-proof-review`, `leader-task-photo-window`,
 `leaders-shift1-submission-window`, `leader-task-requirements-tab`.
 
+## The 19 September 2026 checklist rules (`leader_rules_sep19`)
+
+The operator rewrote the leader checklist task by task (agreed 14—18 Sep 2026)
+and the new rules start on **shift 1's day of 19 Sep and shift 2's night of
+19—20 Sep**, for EVERY non-archived unit at once. `services/leader_rules_sep19.py`
+holds the agreed texts and the one pass that writes them; `startup.register_leader_rules_sep19`
+arms it.
+
+- **The `criteria` are ENGLISH and the `description`s are UZBEK, and that split
+  is the point.** `criteria` is the grader's test — the reviewer follows
+  compound rules most consistently in English — and `description` is the
+  instruction the leader reads, in the operator's own words. They are two
+  columns for the reason the 2026-09-06 split states: `leader_ai._prompt` does
+  not know `description` exists, so an instruction can never move a verdict, and
+  a criteria edit only reaches proofs reviewed AFTER it, never the ones already
+  judged.
+- **Task 13 carries TWO of each, picked by the unit's SHIFT.** Its date rule
+  differs: shift 1 fills the report on the day it worked, so the table's date
+  equals the computer's clock; shift 2 fills it after midnight, so the clock is
+  exactly ONE DAY LATER than the table (table 18.09, clock 19.09). A unit belongs
+  to exactly one shift, so per-unit texts express that with no new mechanism.
+  Tasks 1, 8 and 9 are deliberately absent — they keep today's rules until the
+  automatic checks are built.
+- **Two passes, two flags, and neither ever fires mid-shift.** Shift 1 at
+  19 Sep 00:30 and shift 2 at 16:30, Tashkent — each in its own shift's gap, so
+  no leader is re-judged in the middle of a checklist they are still filling.
+  TWO flags because they are two deliveries and "shift 1 is done" must not read
+  as "this is done" (the `shared_work_centers` precedent). `_rules_run_at` is
+  the rule: before the instant, at it; after it with the shift idle, in a minute
+  (APScheduler drops a fire time already 300s past, which would leave the flag
+  unset forever with nothing on screen saying so); after it with the shift
+  RUNNING, at the first minute after that shift closes. Late is the acceptable
+  failure here; mid-shift is not.
+- **The flag is written LAST and not in one transaction with the writes** — the
+  chain setters in `leader_tasks` each commit for themselves, so the pass cannot
+  be atomic. Every write is idempotent instead, so a pass that dies half-way is
+  re-run whole by the next boot. Verified: running both passes twice changes
+  zero config rows and re-derives zero verdicts.
+- **Besides the texts the pass writes exactly three things**: task 11
+  `date_plus` = 1 (a staff list may be dated the next day), task 13 `day_check`
+  = False (TIME ONLY — the hour is still judged against the window, the day is
+  not, and the day question moves into the criteria as the relation between the
+  two dates on screen), and task 3 `min_media` = 3 plus the GLOBAL
+  `default_min_media` 1 → 3. That last one has no setter and no endpoint — it is
+  written at seed time and by `create_task` and nowhere else — so the pass
+  touches the ORM attribute directly, and it is what a unit with no row of its
+  own resolves to.
+- **Task 13's WINDOW is deliberately NOT written.** `leader_ai.resolve_window`
+  falls through to `shift_window(shift)`, so a shift-1 unit storing no window is
+  ALREADY judged against 07:00—20:00 and its task ALREADY closes at 20:00 —
+  confirmed on the 11 Sep production copy, where 62 of the 68 shift-1 task-13
+  closes after 20:00 land in the 20:00—20:04 autoclose sweep. Writing the same
+  hours would move nothing and would mark 13 units as overriding a value they
+  merely inherit. Shift 2 keeps its own 00:00—08:00.
+- **Consequence to know: scores from 13 Aug moved, once, retroactively.**
+  `sync_date_flags` takes no date bound, so the pass re-derives every stored
+  verdict on tasks 11 and 13 — measured on the production copy: **81 of 4,871
+  rows moved, 74 date rejections LIFTED, 1 gained (on a row already rejected for
+  `not_proven`, so no score moved) and 6 reclassified `date_mismatch` →
+  `no_date`**. No corrected report is re-DMed, which is the platform's standing
+  rule for a date-rule edit — so the pass's own DM states the count, or nobody
+  learns a month of scores changed. It is called ONCE for the whole pass, never
+  per unit: the re-derive is per TASK and walks the entire corpus, so
+  `rejudge=False` rides every date-rule write inside the loop.
+- **Per-LEADER rows are left alone and NAMED.** A leader row shadows the unit
+  row under it, so a leader carrying their own criteria, window or date rule on
+  these tasks keeps it — those are deliberate admin edits. `leader_overrides_left`
+  lists them and the DM prints them, because a rule that silently does not apply
+  to some leaders is exactly what nobody finds out about.
+- **Two small surfaces changed with it.** The camera info sheet now prints the
+  `description` (`routers/leader_proof.py` sends it on both session payloads,
+  `ProofCamera.jsx` prefers it) — without that it would have shown leaders the
+  English grader prose. And «Vazifalar» prints both texts RAW: it ran them
+  through `useTranslit`, the NAME transliterator, which remaps x→kh and q→k for
+  the English UI and garbles authored prose in either language.
+- **It is a TEMPORARY one-shot.** Remove `register_leader_rules_sep19` from both
+  entrypoints together with `startup.register_leader_rules_sep19` and
+  `services/leader_rules_sep19.py` once both passes have landed — a call left
+  behind imports a deleted module at boot, and a failed boot rolls the deploy
+  back. Changing what either pass writes needs a NEW flag key.
+
 ## The brigadir's day digest (`leader_unit_report`)
 
 From **2026-09-15** (the operator's directive) a brigadir is no longer DMed once
@@ -2569,6 +2650,37 @@ SERVER's; the phone never authors it.
     (`returningRef`) until the return is settled.
   - A failure that happens ON SCREEN after the return is a real one: it stands,
     and it is reported.
+- **A page that is not on screen LETS THE CAMERA GO** (2026-09-18, from the
+  first «Kamera tasvir bermayapti» report to name its cause). Android hands the
+  camera to ONE client at a time and Telegram MINIMIZES a mini app rather than
+  closing it, so every proof page a leader opened this shift was still a page
+  holding a camera — and the third task's `getUserMedia` queued behind them.
+  In the report it answered after **17.4 s**, with two sibling «SOP standarti»
+  pages six hours old reporting live cameras from the background. Three rules:
+  - **`releaseCamera` on a `HIDDEN_RELEASE_MS` (15 s) grace, and at once on
+    `pagehide`.** The grace is the point: re-opening costs another «Allow
+    camera?» sheet, which is the one cost this page is built to keep down, so a
+    leader glancing away pays nothing while a page left behind stops being the
+    next task's problem. Nothing new re-opens it — `ensureCamera` already opens
+    a live viewfinder with no stream, so the camera comes back when the
+    VIEWFINDER does and not merely when the page does.
+  - **A sibling asks, and a hidden page answers at once** — `announceNeed` on
+    the BroadcastChannel the presence ledger already uses, and every open waits
+    `NEED_RELEASE_MS` (350 ms) for it before asking Android. A page nobody is
+    looking at has no claim on the camera, and asking is instant where waiting
+    for the OS to arbitrate is what those 17.4 s were.
+  - **The open deadline ends at the STREAM, not at the picture.** It asks one
+    question — did Android answer — so it is cleared the moment the stream is
+    adopted; whether a picture ARRIVES is the frame watchdog's question, with
+    its own clock and its own silent re-open. Left running across that line it
+    judged both, and 17.4 s of a 20 s budget left too little for the rest: a
+    camera that had just opened was reported as one that never did, and the
+    leader was shown a failure screen over a working viewfinder. For the same
+    reason `play()` is **never awaited** (on a stream sending no frames it never
+    settles, and awaiting it held `startingRef` shut, which stands the watchdog
+    down — so the check that would have named the failure never ran) and the
+    lens correction is bounded by `LENS_FIX_MS`.
+
 - **A camera failure REPORTS ITSELF to the admins** (2026-09-17, the
   operator's directive, after the first «Kamera tasvir bermayapti» reached us as
   a leader's screenshot — which says what happened and nothing about why, and

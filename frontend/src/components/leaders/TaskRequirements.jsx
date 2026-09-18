@@ -11,7 +11,6 @@ import { SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { ExamplePhoto } from "./ProofPhoto";
 import { useLang } from "../../context/LangContext";
-import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 
 /**
@@ -186,7 +185,7 @@ function Tile({ icon: Icon, label, value, sub }) {
   );
 }
 
-function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, perTask, onZoom, flash }) {
+function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perTask, onZoom, flash }) {
   const name = task.names?.[lang] || task.names?.uz || `T${task.id}`;
   const note = task.note?.[lang] || task.note?.uz || "";
   const criteria = (task.criteria || "").trim();
@@ -262,7 +261,7 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
       {description && (
         <div>
           <div className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: "var(--text-3)" }}>{T.what}</div>
-          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-1)" }}>{tl(description)}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-1)" }}>{description}</p>
         </div>
       )}
 
@@ -273,7 +272,7 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
         <div>
           <div className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: "var(--text-3)" }}>{T.criteria}</div>
           {criteria
-            ? <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{tl(criteria)}</p>
+            ? <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{criteria}</p>
             : <p className="text-xs italic" style={{ color: "var(--text-4)" }}>
                 {dateOn ? T.noCriteria : T.noCriteriaNoDate}
               </p>}
@@ -329,7 +328,6 @@ export default function TaskRequirements({
   focusTaskId = null, onFocusDone,
 }) {
   const { lang } = useLang();
-  const { tl } = useTranslit();
   const T = TXT[lang] || TXT.uz;
   const [zoom, setZoom] = useState("");
   const [flash, setFlash] = useState(null);
@@ -462,7 +460,7 @@ export default function TaskRequirements({
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} lang={lang} T={T} tl={tl} total={total}
+            <TaskCard key={task.id} task={task} lang={lang} T={T} total={total}
               shift={shift} filingTo={filingTo} filingOvernight={!!filing.overnight}
               perTask={perTask}
               onZoom={setZoom} flash={flash === task.id} />

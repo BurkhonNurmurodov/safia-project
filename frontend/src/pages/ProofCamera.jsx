@@ -12,7 +12,7 @@ import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
 import { enqueue, flush, newKey, pending } from "../utils/proofQueue";
 import {
-  answerPresence, askOthers, beatHolder, cameraList, createRecorder, deviceEnv, otherHolders,
+  announceNeed, answerPresence, askOthers, beatHolder, cameraList, createRecorder, deviceEnv, otherHolders,
   probeSmaller, readTrackFrame, sendCameraReport, shortId, trackSnap, videoSnap,
 } from "../utils/cameraDiag";
 
@@ -71,6 +71,20 @@ const RETURN_GRACE_MS = 8 * 1000;
 const FRAME_STALL_MS = 6 * 1000;
 // How often the viewfinder is checked while it is on screen.
 const CAM_WATCH_MS = 2 * 1000;
+// How long a page that has gone off screen keeps the camera before letting it
+// go. A leader who glances away and comes straight back pays nothing; a page
+// left behind — which is every proof page Telegram has minimized rather than
+// closed — stops being the reason the NEXT task's camera cannot open. The grace
+// is what keeps the «Allow camera?» sheet down to one per open, since coming
+// back to a released camera costs another one.
+const HIDDEN_RELEASE_MS = 15 * 1000;
+// How long an open waits, having asked the other pages of this Telegram to let
+// go, before asking Android for the camera anyway. Short: this is a message to
+// a page in the same browser, not a negotiation.
+const NEED_RELEASE_MS = 350;
+// A lens correction that the WebView never answers must not hold the open guard
+// shut — the guard is what stands the frame watchdog down.
+const LENS_FIX_MS = 1500;
 // A shot's own quality. 0.92 keeps small print (a gauge, a label, a serial)
 // legible for the reviewer; the server re-encodes to its own long edge anyway.
 const JPEG_Q = 0.92;
@@ -127,7 +141,10 @@ async function useMainLens(track) {
     const z = track?.getCapabilities?.().zoom;
     if (!z || !(z.min < 1) || !(z.max >= 1)) return;
     if (track.getSettings?.().zoom === 1) return;
-    await track.applyConstraints({ ...VIDEO_SIZE, zoom: 1 });
+    await Promise.race([
+      track.applyConstraints({ ...VIDEO_SIZE, zoom: 1 }),
+      new Promise((resolve) => { setTimeout(resolve, LENS_FIX_MS); }),
+    ]);
   } catch { /* a lens that will not move is still a lens */ }
 }
 
@@ -608,6 +625,38 @@ export default function ProofCamera() {
   const openDoneRef = useRef(Promise.resolve());
   const deadlineRef = useRef(null);
   const returningRef = useRef(0);
+  // The grace a page off screen gets before it lets the camera go.
+  const hideTimerRef = useRef(null);
+
+  /** Let the camera GO.
+   *
+   *  Letting go is as much this page's job as opening. Android hands the camera
+   *  to ONE client at a time, and Telegram MINIMIZES a mini app instead of
+   *  closing it — so every proof page a leader has opened this shift is still a
+   *  page holding a camera. By the third task the open they are waiting on is
+   *  queued behind two abandoned viewfinders: in the 2026-09-18 report
+   *  `getUserMedia` took 17.4 s to answer while two sibling «SOP standarti»
+   *  pages reported live cameras from the background, and the open deadline
+   *  then put a failure screen over a camera that had in fact just opened.
+   *  Nothing here can close a sibling page; what it can do is not BE one.
+   */
+  const releaseCamera = useCallback((why) => {
+    clearTimeout(hideTimerRef.current);
+    const s = streamRef.current;
+    if (!s) return;
+    streamRef.current = null;
+    // `stop()` fires no `ended`, so this can never loop back into a re-open.
+    s.getTracks().forEach((tr) => tr.stop());
+    framesRef.current = { time: -1, at: 0, fixes: 0 };
+    note("stream", `released · ${why}`);
+    // Write the ledger NOW rather than wait for the 5 s heartbeat: a page about
+    // to be frozen or closed never sends another one, and the next page reads
+    // this line to find out who is holding the camera.
+    if (opensRef.current.openedAt) {
+      beatHolder(pageIdRef.current, { live: false, vis: document.visibilityState });
+    }
+  }, [note]);
+
   const startCamera = useCallback(async (want = facing, why = "start") => {
     // A failure report may be holding a clone of the old stream, and a clone
     // keeps the camera source alive underneath the open about to start.
@@ -664,6 +713,13 @@ export default function ProofCamera() {
     };
     try {
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
+      streamRef.current = null;
+      // Ask before queueing. A minimized sibling page holding the camera hears
+      // this and releases at once; waiting for Android to arbitrate instead is
+      // what the 17.4 s open of the 2026-09-18 report was made of. Best-effort:
+      // a sibling too frozen to hear it is what the holder ledger reports.
+      announceNeed(pageIdRef.current);
+      await new Promise((resolve) => { setTimeout(resolve, NEED_RELEASE_MS); });
       // ONE getUserMedia whenever this phone's lens is already known.
       //
       // Inside Telegram's WebView every getUserMedia call raises its own
@@ -729,6 +785,21 @@ export default function ProofCamera() {
       streamRef.current = stream;
       opensRef.current.lastMs = Math.round(performance.now() - t0);
       opensRef.current.openedAt = Date.now();
+      // The deadline asks ONE question — did Android answer — and it is
+      // answered here. Everything below (the lens correction, `play()`) happens
+      // on a camera that is already open, and whether a picture ARRIVES is the
+      // frame watchdog's question, with its own clock and its own silent
+      // re-open. Left running across this line it judged both: in the
+      // 2026-09-18 report `getUserMedia` came back OK after 17.4 s of the 20 s
+      // budget, and the 2.6 s left were not enough for the rest — so a camera
+      // that had just opened was reported as one that never did.
+      clearTimeout(deadline);
+      // A stream that landed while the page was off screen is on the grace too,
+      // or a page nobody is looking at holds the camera for the rest of the day.
+      if (document.visibilityState !== "visible") {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = setTimeout(() => releaseCamera("hidden"), HIDDEN_RELEASE_MS);
+      }
       // A phone whose rear camera is ONE fused device can open it at 0.5x, and
       // the labels above cannot see that: the device they picked really is the
       // main camera, it is simply pointed at its widest member. Correct it on
@@ -756,7 +827,11 @@ export default function ProofCamera() {
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch((e) => note("play", e?.name || "rejected"));
+        // NOT awaited. `play()` on a stream that never delivers a frame simply
+        // never settles, and awaiting it held `startingRef` shut — which stands
+        // the frame watchdog down, so the one check that could have named this
+        // failure never ran. The ref callback and `ensureCamera` both re-play.
+        videoRef.current.play?.().catch((e) => note("play", e?.name || "rejected"));
       }
       // A negotiation slow enough to have been called stalled can still end in
       // a working camera: clear the verdict rather than leave an overlay across
@@ -781,7 +856,7 @@ export default function ProofCamera() {
       if (mine()) { startingRef.current = false; setCamBusy(false); }
       finished();
     }
-  }, [facing, pickLens, note]);
+  }, [facing, pickLens, note, releaseCamera]);
   startCameraRef.current = startCamera;
 
   useEffect(() => {
@@ -956,7 +1031,14 @@ export default function ProofCamera() {
   // camera ledger for the sibling too frozen to answer at all.
   useEffect(() => {
     const id = pageIdRef.current;
-    const stop = answerPresence(id, () => describeRef.current());
+    const stop = answerPresence(id, () => describeRef.current(), () => {
+      // Another camera page of this Telegram is opening. Only one page on this
+      // device can have the camera, and a page nobody is looking at has no
+      // claim on it — so it goes back now, without waiting out the grace.
+      if (document.visibilityState !== "visible") {
+        releaseCamera("another page needs the camera");
+      }
+    });
     const beat = () => {
       if (!opensRef.current.openedAt) return;   // never held a camera: nothing to own up to
       const d = describeRef.current();
@@ -974,7 +1056,8 @@ export default function ProofCamera() {
       bye();
       stop();
     };
-  }, []);
+    // `releaseCamera` is stable, so this still registers once.
+  }, [releaseCamera]);
 
   // The failure report: once per failure screen, at most three per page — a
   // fourth would say nothing the first did not. Nothing on screen changes
@@ -1099,12 +1182,32 @@ export default function ProofCamera() {
       // Whichever way the page went, the stall clock starts again from zero:
       // the time spent hidden is not time the camera failed to deliver.
       framesRef.current = { time: -1, at: 0, fixes: 0 };
-      if (document.visibilityState === "visible") { settleReturn(); return; }
+      if (document.visibilityState === "visible") {
+        clearTimeout(hideTimerRef.current);
+        settleReturn();
+        return;
+      }
       if (startingRef.current) openHiddenRef.current = true;
+      // Off screen the camera is held a little longer, in case the leader is
+      // only glancing away — coming back to a released camera costs another
+      // «Allow camera?» sheet, and that sheet is the one cost this page is
+      // built to keep down. Past the grace the page is not coming back soon
+      // enough to be worth the next task's shift, and it lets go. On the way
+      // back `ensureCamera` opens it again, and only once the viewfinder is
+      // what is on screen.
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = setTimeout(() => releaseCamera("hidden"), HIDDEN_RELEASE_MS);
     };
+    // A page really going away lets go at once: there is no grace to spend.
+    const bye = () => releaseCamera("page going away");
     document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [settleReturn]);
+    window.addEventListener("pagehide", bye);
+    return () => {
+      clearTimeout(hideTimerRef.current);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", bye);
+    };
+  }, [settleReturn, releaseCamera]);
 
   /* ── the frame area, measured, so the picture box can be built from it ──── */
   const frameWatch = useRef(null);
@@ -1610,9 +1713,12 @@ export default function ProofCamera() {
               paddingBottom: "calc(1rem + var(--tg-safe-bottom))" }}
             onClick={(e) => e.stopPropagation()}>
             <div className="text-[15px] font-semibold mb-2">{task.name}</div>
-            {task.criteria ? (
+            {/* The leader's own instruction. `criteria` is the GRADER's text —
+                English prose since 19.09 — so it is only the fallback, for a
+                session served before the backend carried a description. */}
+            {(task.description || task.criteria) ? (
               <p className="text-[13px] leading-relaxed mb-3" style={{ color: "var(--text-2)" }}>
-                {task.criteria}
+                {task.description || task.criteria}
               </p>
             ) : null}
             <ul className="text-[13px] space-y-1.5 mb-4" style={{ color: "var(--text-2)" }}>
