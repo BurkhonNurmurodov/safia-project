@@ -25,10 +25,15 @@ the extension is never in doubt), and the part a file happens to land in is a
 delivery detail, not an answer to "whose proof is this". Unzip every part into
 one directory and the result is ONE folder with one `proofs.json` in it.
 
-**It is split because Telegram refuses a document over 50 MB.** A week is a few
-thousand photos, so this sends a run of parts rather than one file; the caption
-numbers them and the final message says how many there were and what could not
-be fetched.
+**It is split because Telegram refuses a document over 50 MB**, and `MAX_PARTS`
+is what stops the split becoming a flood. A week is ~9,100 photos — about 60
+parts at one every three minutes, which is three hours of documents burying
+every real notification in the chat, and that is exactly what a whole week did
+to the operator on 2026-09-18. So the run stops at the cap and SAYS it stopped:
+a truncated delivery that announces itself is recoverable, one that pretends to
+be complete is not. Never raise the cap to "just send them all" — narrow the
+QUESTION instead (a sample per task, a single day), which is what anybody
+asking for proofs actually wants.
 
 Delete this module together with `startup.report_proof_archive`,
 `startup._proof_archive_job` and the call in BOTH entrypoints once the files
@@ -74,6 +79,11 @@ PART_BYTES = 40 * 1024 * 1024
 # Telegram's per-chat flood limit; a 429 is obeyed on top of it (`_send_file`).
 PART_PAUSE_S = 2
 SEND_RETRIES = 3
+
+# The most documents one run may put in a chat. See the note above: this is a
+# ceiling on how much of somebody's chat this errand may occupy, not a guess at
+# how much there is to send.
+MAX_PARTS = 12
 
 TEXT_MAX = 300      # free text is cut, never dropped
 ERRORS_NAMED = 20   # how many failed photos the closing message names
@@ -390,6 +400,7 @@ def send(db: Session, chat_id: int, *_window) -> int:
 
         zf = part_path = None
         part_size = 0
+        capped = False
         for im in manifest["images"]:
             try:
                 data, _mime = leader_ai.fetch_bot_image(im["file_id"])
@@ -410,6 +421,9 @@ def send(db: Session, chat_id: int, *_window) -> int:
                 zf = None
                 time.sleep(PART_PAUSE_S)
             if zf is None:
+                if part_no >= MAX_PARTS:
+                    capped = True
+                    break
                 part_no += 1
                 part_path = os.path.join(tmp, f"part-{part_no}.zip")
                 zf = zipfile.ZipFile(part_path, "w")
@@ -437,6 +451,11 @@ def send(db: Session, chat_id: int, *_window) -> int:
              f"Yuborildi: {packed} ta rasm, {sent} ta ZIP qism.",
              "Barcha qismlarni BITTA papkaga chiqaring — proofs.json har bir "
              "qismda bir xil va to'liq."]
+    if capped:
+        lines.append(f"⚠ TO'LIQ EMAS — {MAX_PARTS} ta qismdan keyin to'xtatildi "
+                     f"({total - packed} ta rasm yuborilmadi). Butun hafta ~60 "
+                     f"qism bo'ladi; kerak bo'lsa oynani torayting (bir kun, "
+                     f"yoki har vazifadan namuna).")
     if failed:
         lines.append(f"Olib bo'lmadi: {len(failed)} ta.")
         lines += [f"  · {f}" for f in failed[:ERRORS_NAMED]]
