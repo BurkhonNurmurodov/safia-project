@@ -100,15 +100,22 @@ def get_shift_report(
         return production._build_dashboard(db, mid, day)["totals"]
 
     # ── Hal qilingan % — the quality register for the CURRENT MONTH
-    # (`shift_report.quality_window`, which is also what says why), attributed
-    # exactly as the Quality page attributes it: «Отв. бригадир» resolved against
-    # EVERY live unit (a subset would let the fuzzy matcher hand a row to the
-    # wrong unit), over every spelling the register holds.
+    # (`shift_report.quality_window`, which is also what says why), WITHOUT the
+    # hair category (`SKIP_CATEGORY`, ditto), attributed exactly as the Quality
+    # page attributes it: «Отв. бригадир» resolved against EVERY live unit (a
+    # subset would let the fuzzy matcher hand a row to the wrong unit), over
+    # every spelling the register holds.
+    #
+    # The category test keeps a row whose category is NULL: in SQL `category !=
+    # 'hair'` is NULL there, i.e. false, so an uncategorised record would be
+    # dropped as though it were hair.
     counts = (
         db.query(QualityComplaint.brigadir, QualityComplaint.status,
                  func.count(QualityComplaint.id))
         .filter(QualityComplaint.brigadir.isnot(None),
-                QualityComplaint.date >= m_from, QualityComplaint.date < m_to)
+                QualityComplaint.date >= m_from, QualityComplaint.date < m_to,
+                or_(QualityComplaint.category.is_(None),
+                    QualityComplaint.category != shift_report.SKIP_CATEGORY))
         .group_by(QualityComplaint.brigadir, QualityComplaint.status)
         .all()
     )

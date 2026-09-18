@@ -5170,7 +5170,8 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   and «Bajarish %» (yesterday) are `totals.avg_load` / `totals.completion` of
   `production._build_dashboard` — the very call `/api/production/dashboard`
   makes, so they ARE the «Zagruzka fayli» KPI cards. «Bartaraf etilgan %» is the
-  Quality page's closure rate over the CURRENT MONTH: `supervisor_match` over
+  Quality page's closure rate over the CURRENT MONTH, hair aside:
+  `supervisor_match` over
   every live unit (a subset lets the fuzzy matcher hand a row to the wrong unit),
   done ÷ actionable, where `shift_report.ACTIONABLE` is the twin of
   `Quality.jsx`'s `ACTIONABLE` and the two must stay one list. «Ochiq
@@ -5202,6 +5203,17 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   `no_records`** until something is filed, which is the honest answer —
   «nothing filed yet» is not «nothing resolved». The tooltip's `done/actionable` and the sort are the
   month's.
+- **A HAIR record is not counted** (the operator's call, 2026-09-18) —
+  `shift_report.SKIP_CATEGORY`, applied in the router's own query, because this
+  module never queries. «соч / волос» is the register's commonest foreign-object
+  kind and the Quality page itself opens WITHOUT it (`quality_hair_mode`
+  defaults to «Sochsiz», dropping hair from its KPIs, charts and tables), so a
+  board counting them stated a closure rate the page beside it never shows. A
+  row with NO category is KEPT — «uncategorised» is not «hair» — which is why
+  the clause is `category IS NULL OR category <> 'hair'`: in SQL `<> 'hair'` is
+  NULL on a NULL category, i.e. false, so the obvious spelling would drop the
+  rows it should keep. The column hint states the exclusion in all four
+  languages, and a unit whose whole month is hair reads the `no_records` blank.
 - **The period picker does not reach it.** The request carries the page's
   scope (plant, shift) and never its dates. Every column header
   prints its own window — with the date while one shift is on screen; with two,

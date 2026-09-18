@@ -5,7 +5,8 @@ One row per brigadir, five columns, and not one of them is a new measurement:
     Brigadir          Manager.name
     O'rt. zagruzka    the «Zagruzka fayli» page's СР. ЗАГРУЖЕННОСТЬ, for TODAY
     Bajarilish %      the same page's «Compl. %», for YESTERDAY
-    Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, THIS MONTH
+    Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, THIS
+                      MONTH, hair records left out
     Ochiq xavotirlar  concerns still open at the brigadir's own level, whole time
 
 It replaced a Google Sheet somebody filled and coloured by hand every morning,
@@ -31,6 +32,15 @@ from app.services import live_overview
 # Quality page state two different closure rates for one brigadir.
 ACTIONABLE = ("done", "open", "waiting", "repeat")
 RESOLVED = "done"
+
+# The foreign-object category this column does NOT count (the operator's call,
+# 2026-09-18). A «соч / волос» record is the register's commonest kind and the
+# Quality page itself opens WITHOUT it — `quality_hair_mode` defaults to
+# "without", dropping every hair record from its KPIs, charts and tables — so a
+# board counting them stated a closure rate the page beside it never shows. The
+# router applies it (this module never queries); a row with NO category is kept,
+# because «uncategorised» is not «hair».
+SKIP_CATEGORY = "hair"
 
 # routers/concerns.py VALID_STATUSES = todo | doing | done; open = not done.
 OPEN_CONCERN = ("todo", "doing")
@@ -142,8 +152,9 @@ def fold_quality(counts: Iterable[tuple], match: dict) -> dict[int, dict]:
     """{manager_id: {"done": n, "actionable": N}} over the month handed in.
 
     The window is the router's — this module never queries — so a spelling that
-    filed nothing this month is simply absent, and its unit reads the blank
-    `no_records` rather than a 0% it did not earn.
+    filed nothing this month, or nothing but `SKIP_CATEGORY` records, is simply
+    absent, and its unit reads the blank `no_records` rather than a 0% it did
+    not earn.
 
     `counts` is (register brigadir spelling, status, rows); `match` is
     `name_map.supervisor_match` over EVERY live unit — the Quality page's own

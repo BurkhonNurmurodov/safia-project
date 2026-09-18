@@ -561,7 +561,8 @@ export default function Quality() {
   // Top-level «Soch bilan / Sochsiz» switch: "without" drops every hair-category
   // (соч/волос) foreign-object record from the WHOLE page — KPIs, charts, tables
   // and the previous-period deltas alike — so the register reads as if hair
-  // complaints don't exist. "with" (default) keeps them, i.e. today's behaviour.
+  // complaints don't exist. It is the DEFAULT, and the shift report's «Bartaraf
+  // etilgan %» leaves hair out for that reason; "with" keeps them.
   const [hairMode, setHairMode] = usePersistentState("quality_hair_mode", "without");
 
   // Brigadir (supervisor) profile: the page is locked to this one supervisor's

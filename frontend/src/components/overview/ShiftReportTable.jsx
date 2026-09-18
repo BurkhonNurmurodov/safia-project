@@ -10,7 +10,9 @@
 //   %» covers the CURRENT MONTH (the operator's call, 2026-09-18), and the
 //   month it names is the one the SERVER counted (`quality_month` on the
 //   payload) — a month derived from the browser's clock is how the header and
-//   the figures would come to name two different windows.
+//   the figures would come to name two different windows. It also leaves HAIR
+//   records out, which is the Quality page's own default reading of the
+//   register; the column's hint says so.
 // - Its scope is the PAGE's filter bar: the shared plant, and the `shift` the
 //   page hands it. A supervisor pick is never read — the page has no such
 //   control, so one left standing on another page would narrow the board with
