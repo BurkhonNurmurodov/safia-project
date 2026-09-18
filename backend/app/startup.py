@@ -5769,6 +5769,49 @@ def _checklist_setup_job() -> None:
                       checklist_setup_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: every proof photo of the last week, as a zipped folder ─────────
+# The operator asked, on 2026-09-18, for the last 7 days of leader proof images
+# out of the archive channel — as a folder, with a JSON inside saying which
+# picture is whose, for which day and for which task. It READS and writes
+# nothing but its own flag; `services/proof_archive.py` builds the manifest and
+# the ZIP parts.
+#
+# Scheduled rather than run inline, and further out than the reports above: it
+# downloads a few THOUSAND photos from Telegram and uploads a run of 40 MB
+# documents back, so it must be nowhere near the boot that /health is waiting
+# on — a boot that stalls past it rolls the deploy back.
+PROOF_ARCHIVE_FLAG = "proof_archive_7d_2026_09_18_v1"
+_PROOF_ARCHIVE_DELAY_S = 120
+
+
+def report_proof_archive() -> None:
+    """The week's proof photos, DMed once as ZIP parts.
+
+    Flag-guarded like every other errand here: delivered on the first boot after
+    its own deploy and never again, and a failed delivery is retried on the next
+    boot and then abandoned rather than re-fired forever. Changing what it sends
+    — a different window, a different chat, a different shape — needs a NEW flag
+    key, or the old "already ran" mark makes the new version a no-op on every box
+    that has booted since. Never raises.
+    """
+    try:
+        if not _report_pending(PROOF_ARCHIVE_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("proof-archive-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_PROOF_ARCHIVE_DELAY_S),
+                    _proof_archive_job)
+    except Exception as exc:
+        print(f"[startup] proof archive could not be scheduled: {exc}")
+
+
+def _proof_archive_job() -> None:
+    from app.services import proof_archive
+    _send_report_once(PROOF_ARCHIVE_FLAG, "proof archive (7d)",
+                      proof_archive.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the

@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
         report_shared_sap_cells_raw_xlsx,
         report_sheet_concerns_xlsx,
         report_checklist_setup,
+        report_proof_archive,
         preview_leader_rules_sep19,
         register_leader_rules_sep19,
         add_pp_product_auto_fill,
@@ -408,6 +409,13 @@ async def lifespan(app: FastAPI):
     # `startup.report_checklist_setup` and `services/checklist_setup_report.py`
     # once it has landed.
     report_checklist_setup()
+    # ⚠ TEMPORARY one-shot (2026-09-18) — every leader proof photo of the last
+    # 7 days out of the archive channel, as ZIP parts in the operator's chat,
+    # each carrying the same complete proofs.json (which picture is whose, for
+    # which day, for which task). Scheduled, flag-guarded — delivers once.
+    # Remove this line, `startup.report_proof_archive` and
+    # `services/proof_archive.py` once the files have landed.
+    report_proof_archive()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
     # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
     # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.
