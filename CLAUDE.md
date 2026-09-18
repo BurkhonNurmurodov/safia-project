@@ -2396,6 +2396,21 @@ arms it.
   real pass has already run is skipped, or a box booting later would paste
   «starts on 19 September» over texts already in force.
 
+- **The nine shift-invariant texts are ALSO written at the GLOBAL level, as a
+  baseline** (`apply_global`, flag `leader_rules_2026_09_19_global_v1`, the
+  operator's call 18 Sep). It runs in whichever per-unit pass finishes LAST and
+  never before them: written first, a unit not yet processed would resolve to
+  the new text in the middle of its own shift, which is what the two passes
+  exist to prevent. **The unit level still wins** — the chain resolves narrowest
+  first, so all 21 units go on reading their own text and an admin who edits one
+  keeps that edit; measured, the global write changes **0 resolved rules** and,
+  since `set_criteria`/`set_description` never rejudge, it cannot move a verdict
+  at all. It exists for the unit that does not exist yet, which would otherwise
+  inherit «three photos» from the raised `default_min_media` and the OLD task-3
+  criteria explaining one. **Task 13 is not written globally and cannot be** —
+  its two texts differ by shift and the global level has no shift, so a future
+  unit inherits the old task-13 text until somebody gives it one.
+
 - **It is a TEMPORARY one-shot.** Remove `register_leader_rules_sep19` from both
   entrypoints together with `startup.register_leader_rules_sep19` and
   `services/leader_rules_sep19.py` once both passes have landed — a call left

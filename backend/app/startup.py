@@ -6312,6 +6312,10 @@ def report_wc_groups() -> None:
 # no-op on every box that has booted once.
 LEADER_RULES_FLAGS = {1: "leader_rules_2026_09_19_shift1_v1",
                       2: "leader_rules_2026_09_19_shift2_v1"}
+#: The GLOBAL baseline, written by whichever per-unit pass finishes LAST — never
+#: before them, or a unit not yet processed would resolve to the new text in the
+#: middle of its own shift. Its own key, because it is its own delivery.
+LEADER_RULES_GLOBAL_FLAG = "leader_rules_2026_09_19_global_v1"
 #: Tashkent wall clock. Each sits in its shift's own gap — shift 1 works
 #: 07:00—20:00, shift 2 works 17:00—09:00 — so the pass lands before the shift
 #: it changes opens, never inside it.
@@ -6498,6 +6502,27 @@ def _leader_rules_job(shift: int) -> None:
             )
         except Exception:
             pass
+        # The GLOBAL baseline, once BOTH shifts' units carry their own texts —
+        # so it is shadowed everywhere and moves nothing for anybody alive. It
+        # exists for the unit that does not exist yet, which would otherwise
+        # inherit «three photos» from the raised catalog default and the OLD
+        # task-3 criteria explaining one.
+        try:
+            if (not db.query(AppSetting)
+                      .filter_by(key=LEADER_RULES_GLOBAL_FLAG).first()
+                    and all(db.query(AppSetting).filter_by(key=f).first()
+                            for f in LEADER_RULES_FLAGS.values())):
+                g = rules.apply_global(db)
+                db.add(AppSetting(key=LEADER_RULES_GLOBAL_FLAG,
+                                  value=datetime.now(timezone.utc).isoformat()))
+                db.commit()
+                out["global_tasks"] = g["tasks"]
+                print(f"[startup] leader rules 19.09: global baseline written for "
+                      f"task(s) {g['tasks']} (unit texts still win)")
+        except Exception as exc:
+            db.rollback()
+            print(f"[startup] leader rules 19.09: global baseline NOT written: {exc}")
+
         sent = _leader_rules_dm(shift, out, left, moved)
         if not sent:
             try:
@@ -6558,6 +6583,10 @@ def _leader_rules_dm(shift: int, out: dict, left: list[str],
                 f"11-vazifa: faqat sana + 1 kun · 13-vazifa: faqat vaqt "
                 f"({out['modes']} brigadada)",
                 f"3-vazifa: 3 ta rasm — {len(out['min_media'])} brigadada o'zgardi"]
+        if out.get("global_tasks"):
+            body.append(f"Umumiy standart ham yangilandi: "
+                        f"{len(out['global_tasks'])} ta vazifa "
+                        f"(brigada matnlari ustun turadi)")
         if out.get("kept_coherent"):
             body.append(f"O'z kriteriyasi bor liderlar uchun tavsif saqlandi: "
                         f"{len(out['kept_coherent'])}")

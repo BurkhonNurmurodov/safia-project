@@ -317,6 +317,38 @@ def apply(db: Session, shift: int) -> dict:
     return out
 
 
+def apply_global(db: Session) -> dict:
+    """Write the nine SHIFT-INVARIANT texts at the GLOBAL level, as a baseline.
+
+    The operator's call, 18 Sep. The per-unit writes stay exactly as they are and
+    this changes nothing for any unit alive today: the chain resolves NARROWEST
+    FIRST (leader, then supervisor, then global), so a unit carrying its own text
+    — which after the two passes is all 21 of them — goes on reading its own, and
+    an admin who edits one later keeps that edit. The global value answers only
+    for a unit that has none.
+
+    What it is FOR is the unit that does not exist yet. `default_min_media` was
+    raised to 3 platform-wide, so a unit created after this would otherwise
+    inherit «three photos» from the catalog and the OLD task-3 criteria
+    explaining one — a contradiction nobody would have written on purpose.
+
+    Task 13 is NOT written here and cannot be: its two texts differ by shift and
+    the global level has no shift to pick between them. A future unit inherits
+    the old task-13 text until somebody gives it one, which is the honest floor.
+
+    Must run AFTER both per-unit passes — see the caller. Written globally BEFORE
+    them, a unit not yet processed would resolve to the new text in the middle of
+    its own shift, which is the one thing this whole feature is arranged to
+    prevent.
+    """
+    out = {"tasks": []}
+    for tid in TASKS:
+        leader_tasks.set_criteria(db, task_id=tid, criteria=CRITERIA[tid])
+        leader_tasks.set_description(db, task_id=tid, description=DESCRIPTIONS[tid])
+        out["tasks"].append(tid)
+    return out
+
+
 def leader_overrides_left(db: Session, shift: int) -> list[str]:
     """The per-LEADER rows this pass deliberately does not reach, named.
 
