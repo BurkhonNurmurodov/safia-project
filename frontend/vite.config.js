@@ -66,6 +66,10 @@ const ROOT_STATICS = [
   '/favicon-192.png',
   '/apple-touch-icon.png',
   '/icons.svg',
+  // Drawn by the ES5 boot screens in index.html (stale-version, slow-link,
+  // recovery) and fetched by nothing else — the in-app logo is a data URI —
+  // so without this the one screen that shows offline would show it broken.
+  '/logo.png',
 ]
 function emitServiceWorker() {
   let root = process.cwd()

@@ -23,6 +23,18 @@
  */
 import { inTelegram } from "./session";
 
+/**
+ * THE kill switch. Flip to false and deploy: the next load of the new bundle
+ * unregisters every worker of this origin and drops its caches, in every
+ * browser that opens the app — the old worker still serves that first load
+ * network-first, so the new bundle always arrives. It has to live HERE, in the
+ * bundle, and not in a replacement sw.js: a worker that unregistered itself
+ * and re-navigated its clients would be re-registered by the very bundle those
+ * clients then load, and loop. Nothing else on the platform has a shell or a
+ * toggle for this, which is why it is one line.
+ */
+const PWA_ENABLED = true;
+
 let deferred = null; // the beforeinstallprompt event, held until the menu row asks
 let installed = false;
 const subs = new Set();
@@ -107,6 +119,10 @@ export function bootPwa() {
 function registerWorker() {
   if (!import.meta.env.PROD) return; // dev serves no dist/sw.js
   if (!("serviceWorker" in navigator)) return;
+  if (!PWA_ENABLED) {
+    retireWorkers();
+    return;
+  }
   if (launchedByTelegram()) return;
   const register = () =>
     navigator.serviceWorker
@@ -117,6 +133,18 @@ function registerWorker() {
   // After load, so it never competes with the page's own requests.
   if (document.readyState === "complete") register();
   else window.addEventListener("load", register, { once: true });
+}
+
+/** The kill switch's act: every registration of this origin gone, every cache dropped. */
+async function retireWorkers() {
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k.startsWith("safia-")).map((k) => caches.delete(k)));
+  } catch {
+    /* nothing registered, or storage refused — there is nothing left to retire */
+  }
 }
 
 /** Ask the registered worker to check for a newer sw.js now. No-op without one. */

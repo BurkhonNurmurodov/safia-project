@@ -12,8 +12,10 @@
  *   - /api, /bot, /health, /docs, the backend's /admin routes, /build.json and
  *     /sw.js are never cached and never answered from cache;
  *   - a navigation to an SPA route is NETWORK FIRST with a timeout, then the
- *     cached shell, then a plain offline page — so a reload still fetches the
- *     deployed index.html and UpdatePrompt's «reload» keeps its meaning;
+ *     cached shell — for offline, a slow origin AND an origin 5xx (nginx during
+ *     the backend restart every deploy performs); a 4xx is never masked — then
+ *     a plain offline page. So a reload still fetches the deployed index.html
+ *     and UpdatePrompt's «reload» keeps its meaning;
  *   - a navigation whose path names a FILE (an export opened in a new tab) is
  *     left to the browser: the shell fallback must never answer a slow .xlsx;
  *   - /assets/* is CACHE FIRST — content-hashed and served immutable, so a
@@ -27,8 +29,8 @@
  * and lazyWithReload reloads it — exactly what happens today without a worker.
  */
 
-const BUILD = "2026-09-19T11:46:10.821Z";
-const PRECACHE = ["/","/assets/AdminPanel-BUJFqC6R.js","/assets/AnalysisBoard-DxEne9i6.js","/assets/Arc-C5m44vQV.js","/assets/AttendanceModal-C9UsOYu8.js","/assets/BrigadirProfile-CnklVSL1.js","/assets/BroadcastReceivers-DOySVL6z.js","/assets/BroadcastRecord-D_oPTyAk.js","/assets/CatLockNotice-D-vGYjP9.js","/assets/CategoryLegendModal-CHu-RIax.js","/assets/CellConcerns-DVRKYICF.js","/assets/CellDetails-BUCfsupY.js","/assets/CellFormModal-DpkWDfPK.js","/assets/CellLink-DCeYQEtX.js","/assets/Cells-BIZGfmTN.js","/assets/ColumnFilter-Crn-NffL.js","/assets/ColumnsPicker-D7QRQy8I.js","/assets/CommentsModal-t3XSs6A3.js","/assets/ComparisonTable-2yv77CGB.js","/assets/Concerns-Bf3FORSu.js","/assets/ConfirmDialog-ILKlIk9j.js","/assets/Daily-iBe8RvjV.js","/assets/DataTable-BxuWi2Wu.js","/assets/DateRangePicker-38MCspWL.js","/assets/DayReportView-DJrp2JyL.js","/assets/DayStepper-DfYDboST.js","/assets/DifferenceBreakdown-ClLZrwHz.js","/assets/Downtime-DeOhk5w_.js","/assets/Education-BUMekfZs.js","/assets/EducationLesson-BfNlvDkE.js","/assets/EmptyState-Ki31VkyX.js","/assets/FactorySelect-x68COt6Z.js","/assets/FormField-CsB23uVI.js","/assets/Gamification-qRcJx3q4.js","/assets/GroupBadge-yPLHxV2r.js","/assets/HeatmapChart-CUfKkv_T.js","/assets/IdleCell-B4HexcXc.js","/assets/KPICard-CQMwHbsm.js","/assets/Kaizen-DUXv9aAW.js","/assets/KpiDeltaCard-DhbsI-7p.js","/assets/LangTextInput-CYScChPC.js","/assets/Layout-k4oqYWTt.js","/assets/LeaderDayReport-C31fM0nE.js","/assets/LeaderUnitReport-CV8CJatB.js","/assets/Leaderboard-BGYLkoGv.js","/assets/Leaders-C2sbVn6O.js","/assets/LiveOverview-C9s0s4O8.js","/assets/Login-j9NfXy8v.js","/assets/NotFound-BNt8q7ij.js","/assets/Overview-J3yc65q6.js","/assets/Pagination-B_osah8a.js","/assets/PerenaladkaFactTable-C2iPxIsg.js","/assets/PlanFulfillment-CGr3qotD.js","/assets/Production-BCqDQJDD.js","/assets/Profile-sTFTwTLd.js","/assets/ProofCamera-CmxJn3uu.js","/assets/ProofPhoto-BZu7MfRe.js","/assets/Quality-BlJAfk_F.js","/assets/RichTextEditor-CCZjVlTz.js","/assets/SearchInput-DNaFMBLH.js","/assets/SeasonalityHeatmap-DxdpAkip.js","/assets/SegmentedToggle-CHKhO329.js","/assets/SetupTimes-CPaFMFvU.js","/assets/ShiftDaily-BATY289k.js","/assets/Skeleton-_JcFteNA.js","/assets/Staff-CXpMmFUn.js","/assets/StatusBadge-CN5OJmaQ.js","/assets/StyledSelect-BD435fuP.js","/assets/Tasks-BmdT6M98.js","/assets/TimeField-D30Z6wbu.js","/assets/TimeWheelPicker-C8JmdsLH.js","/assets/Toast-DlmpUNN4.js","/assets/Tooltip-daKuxzJM.js","/assets/TrendChart-NXURzu_y.js","/assets/TripleSpeedometer-Cjuk4k0e.js","/assets/Trudoyomkost-DK3hnT4_.js","/assets/UsersActivity-Bal9CxV5.js","/assets/WatchProgress-BqWTzw3m.js","/assets/WebLogin-Cs3p1LAz.js","/assets/WorkerConcerns-DQQFEKZb.js","/assets/Workers-CKkTs1gy.js","/assets/Zagruzka-Bw8lHTRH.js","/assets/ZagruzkaCell-B3rv99JS.js","/assets/alarm-clock-nGVIdby5.js","/assets/api-CJYm72uI.js","/assets/archive-D2Kq2eoD.js","/assets/archive-restore-4RkxQ7NW.js","/assets/arrow-down-DFW942w1.js","/assets/arrow-left-fxmlw7iG.js","/assets/arrow-left-right-BSw0YSbo.js","/assets/arrow-right-CKBE7h3p.js","/assets/arrow-up-L68FK0a-.js","/assets/award-Cb-nPqY9.js","/assets/ban-KAND4Pst.js","/assets/bot-D4tB8ImE.js","/assets/boxes-BwX9Z381.js","/assets/brigadirFilters-CnDgbqjw.js","/assets/broadcastTree-DG9wbncu.js","/assets/building-2-DcnW97UF.js","/assets/calendar-8KiIhnrF.js","/assets/calendar-clock-CFip1CoC.js","/assets/calendar-days-CLWnG1Fv.js","/assets/calendar-range-Cco8voy0.js","/assets/camera-D9G3vz5t.js","/assets/categories-CLjvdsJ8.js","/assets/cellName-BTmmfvZn.js","/assets/chart-column-ClWmtinK.js","/assets/chart-line-61qvRBMX.js","/assets/chart-pie-MecKuzlr.js","/assets/chartPalette-CPwjb6Rj.js","/assets/chartRange-BnPffmqx.js","/assets/check-W7GEEJQA.js","/assets/check-check-D6tquIB4.js","/assets/chevron-left-BzwAx5WR.js","/assets/chevrons-up-down-BM8Sg_gZ.js","/assets/circle-dot-DVSlCzYO.js","/assets/circle-minus-BZLSeu16.js","/assets/circle-slash-YNkYpu6F.js","/assets/circle-user-round-CL65y8cl.js","/assets/compass-DEq4ApRP.js","/assets/concernCategories-Bvq73nnz.js","/assets/copy-B8D_nxdZ.js","/assets/corner-down-right-Vsk4o8FS.js","/assets/createLucideIcon-xTHRU0Rn.js","/assets/exportXlsx-D3yAKRnY.js","/assets/external-link-gMvNt6uZ.js","/assets/file-clock-CcZVDKjK.js","/assets/file-spreadsheet-DGPEMBPQ.js","/assets/file-text-CgHq-dby.js","/assets/flag-DSaMfquT.js","/assets/flame-wa7ezlCU.js","/assets/formatters-YGHSWdVb.js","/assets/formulas-fPbGX_DQ.js","/assets/funnel-21PUWMbZ.js","/assets/hash-CCiik2wM.js","/assets/history-CrnHd62P.js","/assets/hourglass-ByRyb3iv.js","/assets/image-B_TA2i0z.js","/assets/image-off-Df_HuAZ2.js","/assets/index-Mj557yIU.js","/assets/index-PYkJVL39.css","/assets/keyboard-BR2b5liE.js","/assets/languages-3xMl6d_Z.js","/assets/layers-D4oJjTwa.js","/assets/leaderReason-DW8dIUuy.js","/assets/lightbulb-DFnqxncK.js","/assets/link-2-BQIlqq-_.js","/assets/list-checks-kAuPFRTe.js","/assets/list-ordered-BxuVoE_-.js","/assets/lock-open-Bo6mqKk0.js","/assets/log-in-CSy_rQbz.js","/assets/message-square-CQGopQJA.js","/assets/minimize-2-BJrQq_dX.js","/assets/minus-B8wnQcOB.js","/assets/paperclip-nEXF9-wu.js","/assets/pencil-B7SBcXI8.js","/assets/pencil-line-D6yq0RWF.js","/assets/personName-B4KId4zS.js","/assets/pin-CgmT9QwO.js","/assets/play-CDpgEpvQ.js","/assets/prop-types-8gqrvcsY.js","/assets/radio-DA7Q3Igx.js","/assets/react-apexcharts.esm-CxJyrz6i.js","/assets/refresh-cw-DcD7hQv-.js","/assets/repeat-BJIS6GB6.js","/assets/rotate-ccw-hv9jashZ.js","/assets/rotate-cw-BFTH-Yk6.js","/assets/save-Bo9KDH7-.js","/assets/scale-ClJFs3hK.js","/assets/scroll-text-BYjOxf-x.js","/assets/search-x-BsfBsVf_.js","/assets/segments-DLwvMKqH.js","/assets/send-Hi01WAWq.js","/assets/settings-2-CIVexuyV.js","/assets/shield-alert-DlJhRjAO.js","/assets/shield-cchH10nb.js","/assets/shield-check-bI3Qkw6m.js","/assets/shield-question-mark-De5ipkBB.js","/assets/siren-CXuuJgfn.js","/assets/smartphone-CmyeSNQ5.js","/assets/snowflake-CJ6KgoSP.js","/assets/star-COC8iKEy.js","/assets/statusBands-CveVCtu1.js","/assets/table-2-Do2KgoJA.js","/assets/tag-C5NV2rVB.js","/assets/trash-2-BviRJ9Zl.js","/assets/trending-down-sOLPb-YJ.js","/assets/trending-up-qpNTcBkC.js","/assets/undo-2-51EI9niO.js","/assets/useChartTheme-C9wu5jog.js","/assets/useElementWidth-D35BgnSK.js","/assets/useIsMobile-D6ggCGo4.js","/assets/useMutation-ByvCXJ00.js","/assets/useStatusBands-B9iF6PTe.js","/assets/user-check-DKgkzc9A.js","/assets/user-cog-BXL2Mun9.js","/assets/user-minus-N-a-mTAu.js","/assets/users-CWlc37ce.js","/assets/verifyState-BzqMARhR.js","/assets/video-ZG17LRib.js","/assets/warehouse-CPJYo7E9.js","/icons/icon-192-maskable.png","/icons/icon-192.png","/icons/icon-512-maskable.png","/icons/icon-512.png","/manifest.webmanifest","/telegram-web-app.js","/favicon.ico","/favicon-32.png","/favicon-192.png","/apple-touch-icon.png","/icons.svg"];
+const BUILD = "2026-09-19T19:09:24.469Z";
+const PRECACHE = ["/","/assets/AdminPanel-B7Y-lXuL.js","/assets/AnalysisBoard-CpNfPXEh.js","/assets/Arc-Cc19VYlr.js","/assets/AttendanceModal-B1nUDyd2.js","/assets/BrigadirProfile-DZ8TTeOt.js","/assets/BroadcastReceivers-Nz2d4UXD.js","/assets/BroadcastRecord-Db8ipvG7.js","/assets/CatLockNotice-Dgjzaa5G.js","/assets/CategoryLegendModal-C3uiAGn0.js","/assets/CellConcerns-CyBVfoGD.js","/assets/CellDetails-BgxQV_CA.js","/assets/CellFormModal-DQqpuLaO.js","/assets/CellLink-BLIg2mTj.js","/assets/Cells-LOHWs8j2.js","/assets/ColumnFilter-AngfswCa.js","/assets/ColumnsPicker-qVnHSrYQ.js","/assets/CommentsModal-DV9Qu3YO.js","/assets/ComparisonTable-DDFRG_ck.js","/assets/Concerns-B7vrU8fT.js","/assets/ConfirmDialog-D20hlV22.js","/assets/Daily-DlFCI3vl.js","/assets/DataTable-T-4UfR9w.js","/assets/DateRangePicker-BP6rdC9I.js","/assets/DayReportView-CHVBDcHc.js","/assets/DayStepper-BcTAagUn.js","/assets/DifferenceBreakdown-CJKh3DKb.js","/assets/Downtime-B7BgYLBe.js","/assets/Education-BM40MNOR.js","/assets/EducationLesson-Xj8MgHV4.js","/assets/EmptyState-RNX9fb3n.js","/assets/FactorySelect-B96r49ey.js","/assets/FormField-BwaHkYHo.js","/assets/Gamification-C9iTIC-T.js","/assets/GroupBadge-Ys8S0zIt.js","/assets/HeatmapChart-BZi_3iiG.js","/assets/IdleCell-1ar7pC_u.js","/assets/KPICard-BrA1K7O7.js","/assets/Kaizen-DN-KOPFB.js","/assets/KpiDeltaCard-ChBv-ptq.js","/assets/LangTextInput-DToSMjfG.js","/assets/Layout-yONSX_si.js","/assets/LeaderDayReport-CvwXkpSq.js","/assets/LeaderUnitReport-DAEhvnE6.js","/assets/Leaderboard-Dkal3LAV.js","/assets/Leaders-CL089vMc.js","/assets/LiveOverview-82JPDx-l.js","/assets/Login-CQh-D3Pi.js","/assets/NotFound-Cr4zH2vN.js","/assets/Overview-lHXig-b2.js","/assets/Pagination-CDc9AKKp.js","/assets/PerenaladkaFactTable-DR1QCoza.js","/assets/PlanFulfillment-D6E7KlhW.js","/assets/Production-CEEcYY3g.js","/assets/Profile-CAGA-b7S.js","/assets/ProofCamera-W65hJXx6.js","/assets/ProofPhoto-BMA8IBKR.js","/assets/Quality-feCCW0ai.js","/assets/RichTextEditor-rj7LiZgc.js","/assets/SearchInput-8yk_wc7V.js","/assets/SeasonalityHeatmap-Cjnm5oJJ.js","/assets/SegmentedToggle-t75dR3iI.js","/assets/SetupTimes--SRvgdu6.js","/assets/ShiftDaily-B5RpJFAo.js","/assets/Skeleton-BtzQ3Got.js","/assets/Staff-CCq7oZ7o.js","/assets/StatusBadge-SQ_nRkqQ.js","/assets/StyledSelect-DUCLiI-D.js","/assets/Tasks-DgDaOO3P.js","/assets/TimeField-CiOWyUaV.js","/assets/TimeWheelPicker-B8wzkKJ-.js","/assets/Toast-JOpdMNE9.js","/assets/Tooltip-BLnf8N-R.js","/assets/TrendChart-C8G9EAml.js","/assets/TripleSpeedometer-Ck_BNioG.js","/assets/Trudoyomkost-B4aOvAnq.js","/assets/UsersActivity-DxniJqor.js","/assets/WatchProgress-KYd_Doqi.js","/assets/WebLogin-BOh7n2gH.js","/assets/WorkerConcerns-CAh3fPjQ.js","/assets/Workers-jRMPwiMg.js","/assets/Zagruzka-BANzOahF.js","/assets/ZagruzkaCell-DUc3veOD.js","/assets/alarm-clock-CoyFyrAd.js","/assets/api-BKx7cAwy.js","/assets/archive-BHAgYrmG.js","/assets/archive-restore-CxHnpBEm.js","/assets/arrow-down-ggfzxiRP.js","/assets/arrow-left-BhXS-GGN.js","/assets/arrow-left-right-B5kvcXSi.js","/assets/arrow-right-zuqPIqtC.js","/assets/arrow-up-C5gpkvO7.js","/assets/award-C372yIgL.js","/assets/ban-CQhAZSLx.js","/assets/bot-DlhQkTvX.js","/assets/boxes-w4GbIVGi.js","/assets/brigadirFilters-csYPSPhM.js","/assets/broadcastTree-CtIV35j1.js","/assets/building-2-pgQdt2NL.js","/assets/calendar-XY-kORSR.js","/assets/calendar-clock-BW38J3QF.js","/assets/calendar-days-CJX_bIly.js","/assets/calendar-range-KBQcI-OV.js","/assets/camera-CNxFGWg5.js","/assets/categories-B3TrEhnR.js","/assets/cellName-BTmmfvZn.js","/assets/chart-column-Wg2ef1h7.js","/assets/chart-line-sFbx9weh.js","/assets/chart-pie-DvI9kgkI.js","/assets/chartPalette-CPwjb6Rj.js","/assets/chartRange-DA_y_Lph.js","/assets/check-CVbSSzgN.js","/assets/check-check-OfoX6pzi.js","/assets/chevron-left-CNYLQKLE.js","/assets/chevrons-up-down-DObbtK_D.js","/assets/circle-dot-6SEl_Qcw.js","/assets/circle-minus-DRphJbdF.js","/assets/circle-slash-nYEyaxgo.js","/assets/circle-user-round-CUeVnmxL.js","/assets/compass-Bk4Jg0_B.js","/assets/concernCategories-DDJY-u-4.js","/assets/copy-CCqffeTh.js","/assets/corner-down-right-BytTUZ4E.js","/assets/createLucideIcon-BBhf0S2D.js","/assets/exportXlsx-Ci6QQzu1.js","/assets/external-link-mjQ9cHg3.js","/assets/file-clock-Dh47x4y1.js","/assets/file-spreadsheet-CnoSl7EQ.js","/assets/file-text-BWnPmpfx.js","/assets/flag-CP8uoLOv.js","/assets/flame-BnyIDJlu.js","/assets/formatters-YGHSWdVb.js","/assets/formulas-BncXeJGP.js","/assets/funnel-mjdW6E0C.js","/assets/hash-C30BSe82.js","/assets/history-DVtCPdPT.js","/assets/hourglass-CFAZzlcE.js","/assets/image-DSZw-BLN.js","/assets/image-off-Btbs2wB8.js","/assets/index-DwDk0Zxg.js","/assets/index-PYkJVL39.css","/assets/keyboard-CFdxABJ6.js","/assets/languages-BxlzzuZE.js","/assets/layers-CvboUKOR.js","/assets/leaderReason-DW8dIUuy.js","/assets/lightbulb-BbQzNEpj.js","/assets/link-2-CACwsqQY.js","/assets/list-checks-tC9ifrOo.js","/assets/list-ordered-YwxLET6d.js","/assets/lock-open-6qg0m6Ls.js","/assets/log-in-D6eUC9rM.js","/assets/message-square-C_jNKW9Z.js","/assets/minimize-2-BdaxND6R.js","/assets/minus-BURS7hC2.js","/assets/paperclip-CgFMUE_V.js","/assets/pencil-DAUSPzw-.js","/assets/pencil-line-Dh8RcwSJ.js","/assets/personName-B4KId4zS.js","/assets/pin-BLvNg0Cy.js","/assets/play-sZWSDkws.js","/assets/prop-types-Bn8atY9z.js","/assets/radio-CkynbZk_.js","/assets/react-apexcharts.esm-DOEYkucQ.js","/assets/refresh-cw-BAYf7KZo.js","/assets/repeat-C6AVhvku.js","/assets/rotate-ccw-xualhUE4.js","/assets/rotate-cw-Dqfr6ZZl.js","/assets/save-Bvls6IFI.js","/assets/scale-BraGP3LF.js","/assets/scroll-text-5wfDoJAT.js","/assets/search-x-B2_GOgIZ.js","/assets/segments-B-hEnwz_.js","/assets/send-omyMV7TF.js","/assets/settings-2-MoY7xQIQ.js","/assets/shield-BLg8Q9XN.js","/assets/shield-alert-DKpY0E9U.js","/assets/shield-check-CuCcGV5Z.js","/assets/shield-question-mark-CNZQjnOP.js","/assets/siren-kOMEawPU.js","/assets/smartphone-DiKxzAk4.js","/assets/snowflake-GdGmDODo.js","/assets/star-BZVf2FqC.js","/assets/statusBands-BeRXZNa8.js","/assets/table-2-BQUgIrYN.js","/assets/tag-ChcS8JKO.js","/assets/trash-2-BmMSm7j8.js","/assets/trending-down-B4ovP82U.js","/assets/trending-up-Bpf04zxw.js","/assets/undo-2-x8jcaEWG.js","/assets/useChartTheme-I0QSWCxP.js","/assets/useElementWidth-kgw-PbU9.js","/assets/useIsMobile-C8HESoom.js","/assets/useMutation-CKxo-aqP.js","/assets/useStatusBands-BjNipiTu.js","/assets/user-check-wusF2wPb.js","/assets/user-cog-DROUi5f7.js","/assets/user-minus-D72-t0TS.js","/assets/users-D-J_-luF.js","/assets/verifyState-BImPTEW2.js","/assets/video-CwikoLKT.js","/assets/warehouse-CW40tCSq.js","/icons/icon-192-maskable.png","/icons/icon-192.png","/icons/icon-512-maskable.png","/icons/icon-512.png","/manifest.webmanifest","/telegram-web-app.js","/favicon.ico","/favicon-32.png","/favicon-192.png","/apple-touch-icon.png","/icons.svg","/logo.png"];
 const CACHE = "safia-" + BUILD;
 const SHELL = "/";
 const NAV_TIMEOUT_MS = 5000;
@@ -54,9 +56,10 @@ self.addEventListener("install", (event) => {
     // Never atomic: a file that is missing must not keep the whole build out of
     // the cache. Eight at a time, not two hundred at once — a phone on a slow
     // link should not have every chunk of the app competing with the page it
-    // is showing. Hashed assets come out of the browser's own HTTP cache where
-    // it already holds them (they are served immutable), so a deploy only ever
-    // downloads what changed.
+    // is showing. An unchanged hashed asset comes out of the browser's own HTTP
+    // cache (served immutable) — but chunk hashes cascade with the import
+    // graph, so most deploys rename most chunks and re-download most of the
+    // graph; CLAUDE.md records that cost as accepted and names the knob.
     const BATCH = 8;
     for (let i = 0; i < PRECACHE.length; i += BATCH) {
       await Promise.allSettled(PRECACHE.slice(i, i + BATCH).map((path) => cache.add(path)));
@@ -100,24 +103,66 @@ self.addEventListener("fetch", (event) => {
 // are content-hashed — identical for every origin — so Vary says nothing here.
 const MATCH = { ignoreVary: true };
 
+// The Cache API can refuse — storage evicted or "in a broken state" mid-session,
+// a quota error while the origin's data is being cleared, a private window that
+// registered the worker earlier. A refusal inside respondWith() is a FAILED
+// request for a server that is perfectly reachable, so every cache call on the
+// fetch path goes through these three, and a failing cache degrades to plain
+// network — never to an error page or a dead module.
+async function safeOpen() {
+  try {
+    return await caches.open(CACHE);
+  } catch {
+    return null;
+  }
+}
+async function safeMatch(key) {
+  try {
+    return (await caches.match(key, MATCH)) || null;
+  } catch {
+    return null;
+  }
+}
+function safePut(cache, key, res) {
+  if (!cache) return;
+  try {
+    cache.put(key, res.clone()).catch(() => {});
+  } catch {
+    /* body already used, or storage refused */
+  }
+}
+// Only a body of the kind the URL names is stored: serve_spa answers ANY
+// unknown same-origin path with index.html/200, so without this a renamed
+// icon or a stale <img src> would park the shell under a static's URL. The
+// shell itself is stored by shell(), under SHELL and nowhere else.
+function storable(res) {
+  return res.status === 200 && !(res.headers.get("content-type") || "").includes("text/html");
+}
+
 async function shell(req) {
-  const cache = await caches.open(CACHE);
+  const cache = await safeOpen();
   const fresh = fetch(req).then((res) => {
     if (res.ok && (res.headers.get("content-type") || "").includes("text/html")) {
-      cache.put(SHELL, res.clone());
+      safePut(cache, SHELL, res);
     }
     return res;
   });
   fresh.catch(() => {}); // a failure after the cached shell already went out is not an error
   const late = new Promise((resolve) => setTimeout(resolve, NAV_TIMEOUT_MS, null));
+  let res = null;
   try {
-    const res = await Promise.race([fresh, late]);
-    if (res) return res;
+    res = await Promise.race([fresh, late]);
   } catch {
     // offline — fall through to the cached shell
   }
-  const cached = await cache.match(SHELL, MATCH);
+  // A 5xx is the origin saying it is not there right now — nginx during the
+  // backend restart every deploy performs, a Cloudflare 52x — and that is the
+  // one moment the cached shell exists for: the app then shows its own
+  // offline/error state instead of the proxy's page. A 4xx is never masked.
+  if (res && res.status < 500) return res;
+  const cached = await safeMatch(SHELL);
   if (cached) return cached;
+  if (res) return res;
   try {
     return await fresh;
   } catch {
@@ -126,23 +171,24 @@ async function shell(req) {
 }
 
 async function cacheFirst(req) {
-  const hit = await caches.match(req, MATCH);
+  const hit = await safeMatch(req);
   if (hit) return hit;
   const res = await fetch(req);
-  if (res.status === 200) (await caches.open(CACHE)).put(req, res.clone());
+  if (storable(res)) safePut(await safeOpen(), req, res);
   return res;
 }
 
 async function networkFirst(req) {
+  let res;
   try {
-    const res = await fetch(req);
-    if (res.status === 200) (await caches.open(CACHE)).put(req, res.clone());
-    return res;
+    res = await fetch(req);
   } catch (err) {
-    const hit = await caches.match(req, MATCH);
+    const hit = await safeMatch(req);
     if (hit) return hit;
     throw err;
   }
+  if (storable(res)) safePut(await safeOpen(), req, res);
+  return res;
 }
 
 // Shown only when the app has never been cached on this device and there is no

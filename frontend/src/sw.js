@@ -12,8 +12,10 @@
  *   - /api, /bot, /health, /docs, the backend's /admin routes, /build.json and
  *     /sw.js are never cached and never answered from cache;
  *   - a navigation to an SPA route is NETWORK FIRST with a timeout, then the
- *     cached shell, then a plain offline page — so a reload still fetches the
- *     deployed index.html and UpdatePrompt's «reload» keeps its meaning;
+ *     cached shell — for offline, a slow origin AND an origin 5xx (nginx during
+ *     the backend restart every deploy performs); a 4xx is never masked — then
+ *     a plain offline page. So a reload still fetches the deployed index.html
+ *     and UpdatePrompt's «reload» keeps its meaning;
  *   - a navigation whose path names a FILE (an export opened in a new tab) is
  *     left to the browser: the shell fallback must never answer a slow .xlsx;
  *   - /assets/* is CACHE FIRST — content-hashed and served immutable, so a
@@ -54,9 +56,10 @@ self.addEventListener("install", (event) => {
     // Never atomic: a file that is missing must not keep the whole build out of
     // the cache. Eight at a time, not two hundred at once — a phone on a slow
     // link should not have every chunk of the app competing with the page it
-    // is showing. Hashed assets come out of the browser's own HTTP cache where
-    // it already holds them (they are served immutable), so a deploy only ever
-    // downloads what changed.
+    // is showing. An unchanged hashed asset comes out of the browser's own HTTP
+    // cache (served immutable) — but chunk hashes cascade with the import
+    // graph, so most deploys rename most chunks and re-download most of the
+    // graph; CLAUDE.md records that cost as accepted and names the knob.
     const BATCH = 8;
     for (let i = 0; i < PRECACHE.length; i += BATCH) {
       await Promise.allSettled(PRECACHE.slice(i, i + BATCH).map((path) => cache.add(path)));
@@ -100,24 +103,66 @@ self.addEventListener("fetch", (event) => {
 // are content-hashed — identical for every origin — so Vary says nothing here.
 const MATCH = { ignoreVary: true };
 
+// The Cache API can refuse — storage evicted or "in a broken state" mid-session,
+// a quota error while the origin's data is being cleared, a private window that
+// registered the worker earlier. A refusal inside respondWith() is a FAILED
+// request for a server that is perfectly reachable, so every cache call on the
+// fetch path goes through these three, and a failing cache degrades to plain
+// network — never to an error page or a dead module.
+async function safeOpen() {
+  try {
+    return await caches.open(CACHE);
+  } catch {
+    return null;
+  }
+}
+async function safeMatch(key) {
+  try {
+    return (await caches.match(key, MATCH)) || null;
+  } catch {
+    return null;
+  }
+}
+function safePut(cache, key, res) {
+  if (!cache) return;
+  try {
+    cache.put(key, res.clone()).catch(() => {});
+  } catch {
+    /* body already used, or storage refused */
+  }
+}
+// Only a body of the kind the URL names is stored: serve_spa answers ANY
+// unknown same-origin path with index.html/200, so without this a renamed
+// icon or a stale <img src> would park the shell under a static's URL. The
+// shell itself is stored by shell(), under SHELL and nowhere else.
+function storable(res) {
+  return res.status === 200 && !(res.headers.get("content-type") || "").includes("text/html");
+}
+
 async function shell(req) {
-  const cache = await caches.open(CACHE);
+  const cache = await safeOpen();
   const fresh = fetch(req).then((res) => {
     if (res.ok && (res.headers.get("content-type") || "").includes("text/html")) {
-      cache.put(SHELL, res.clone());
+      safePut(cache, SHELL, res);
     }
     return res;
   });
   fresh.catch(() => {}); // a failure after the cached shell already went out is not an error
   const late = new Promise((resolve) => setTimeout(resolve, NAV_TIMEOUT_MS, null));
+  let res = null;
   try {
-    const res = await Promise.race([fresh, late]);
-    if (res) return res;
+    res = await Promise.race([fresh, late]);
   } catch {
     // offline — fall through to the cached shell
   }
-  const cached = await cache.match(SHELL, MATCH);
+  // A 5xx is the origin saying it is not there right now — nginx during the
+  // backend restart every deploy performs, a Cloudflare 52x — and that is the
+  // one moment the cached shell exists for: the app then shows its own
+  // offline/error state instead of the proxy's page. A 4xx is never masked.
+  if (res && res.status < 500) return res;
+  const cached = await safeMatch(SHELL);
   if (cached) return cached;
+  if (res) return res;
   try {
     return await fresh;
   } catch {
@@ -126,23 +171,24 @@ async function shell(req) {
 }
 
 async function cacheFirst(req) {
-  const hit = await caches.match(req, MATCH);
+  const hit = await safeMatch(req);
   if (hit) return hit;
   const res = await fetch(req);
-  if (res.status === 200) (await caches.open(CACHE)).put(req, res.clone());
+  if (storable(res)) safePut(await safeOpen(), req, res);
   return res;
 }
 
 async function networkFirst(req) {
+  let res;
   try {
-    const res = await fetch(req);
-    if (res.status === 200) (await caches.open(CACHE)).put(req, res.clone());
-    return res;
+    res = await fetch(req);
   } catch (err) {
-    const hit = await caches.match(req, MATCH);
+    const hit = await safeMatch(req);
     if (hit) return hit;
     throw err;
   }
+  if (storable(res)) safePut(await safeOpen(), req, res);
+  return res;
 }
 
 // Shown only when the app has never been cached on this device and there is no

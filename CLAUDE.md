@@ -4952,10 +4952,18 @@ no event; the route is the share sheet).
   knob is the precache list `emitServiceWorker` writes — shrink it to the entry
   graph and let the rest cache on use if that cost ever matters.
 - **What the worker does, and what it must never do.** A navigation to an SPA
-  route: NETWORK FIRST with a 5 s timeout, the cached shell as the fallback and
-  a plain offline page last — so a reload still fetches the deployed
-  index.html and `UpdatePrompt`'s reload keeps its meaning. `/assets/*`: cache
-  first (content-hashed, immutable). Root statics: network first.
+  route: NETWORK FIRST with a 5 s timeout, the cached shell as the fallback —
+  for offline, a slow origin AND an origin 5xx (nginx answers 502 during the
+  backend restart every deploy performs, which is exactly when `UpdatePrompt`
+  has just asked for a reload); a 4xx is never masked — and a plain offline
+  page last. So a reload still fetches the deployed index.html and the reload
+  keeps its meaning. `/assets/*`: cache first (content-hashed, immutable). Root
+  statics, plus `/logo.png` for the boot screens: network first. **A failing
+  Cache API degrades to plain network** (`safeOpen` / `safeMatch` / `safePut`
+  in `sw.js`) — a storage refusal inside `respondWith` would otherwise turn a
+  reachable server into a dead navigation — and a non-navigation is stored only
+  when it is not HTML, because `serve_spa` answers any unknown path with the
+  shell and a renamed static would otherwise park index.html under its URL.
   **Not intercepted at all**: anything non-GET, anything cross-origin (the
   worker's own CSP `connect-src` would refuse a font re-fetch), `/api/*`,
   `/bot/*`, `/health`, `/docs`, the backend's `/admin/*` routes (only `/admin`
@@ -4981,14 +4989,16 @@ no event; the route is the share sheet).
   BEFORE the user presses reload. A tab left open keeps its old chunks in the
   old cache until the new worker activates; then a missing chunk 404s and
   `lazyWithReload` reloads, exactly as before.
-- **The kill switch is a deploy, and a ROLLBACK is not one.** There is no
-  shell and no toggle: a worker that misbehaves is replaced by pushing a
-  `src/sw.js` whose `install` calls `skipWaiting()` and whose `activate` runs
-  `self.registration.unregister()`, deletes every `safia-*` cache and
-  re-navigates the open clients (`clients.matchAll({ type: "window" })` →
-  `client.navigate(client.url)`). Browsers fetch `/sw.js` on every navigation
-  (it is `no-store`), so the replacement reaches every installed copy on its
-  next open. Rolling back to a commit WITHOUT `sw.js` removes nothing:
+- **The kill switch is ONE constant, and a ROLLBACK is not one.** There is no
+  shell and no toggle: flip `PWA_ENABLED` in `utils/pwa.js` to `false` and
+  deploy. The next load of the new bundle unregisters every worker of the
+  origin and deletes the `safia-*` caches (`retireWorkers`), in every browser
+  that opens the app — the old worker still serves that first load
+  network-first, so the new bundle always arrives. It lives in the BUNDLE and
+  not in a replacement `sw.js` on purpose: a worker that unregistered itself
+  and re-navigated its clients (which, before `clients.claim()`, it does not
+  even hold) would be re-registered by the bundle those clients then load, and
+  loop. Rolling back to a commit WITHOUT `sw.js` removes nothing:
   `serve_spa` answers a missing file with index.html, the browser's update
   check refuses the HTML, and every registered worker stays exactly as it was
   — harmless (network-first navigations, cache-first hashed assets), but alive.
@@ -5007,10 +5017,12 @@ no event; the route is the share sheet).
   the bundle runs, so a light-theme user no longer opens on a dark page under a
   dark bar; the manifest carries the dark values because dark is the default
   and a static manifest cannot follow a stored choice.
-- **The icons are rendered from `public/logo.png`, all four together**: 192/512
-  `any` keep the round logo's transparent corners (the favicon look), 192/512
-  `maskable` put it on the ring gold scaled to the 80% safe zone. Never
-  hand-edit one of them.
+- **The icons are rendered from `public/logo.png` by `scripts/render-icons.py`**
+  (Pillow — `backend/venv/bin/python scripts/render-icons.py`), all four
+  together: 192/512 `any` keep the round logo's transparent corners (the
+  favicon look), 192/512 `maskable` put it on the ring gold (`#D5B26F`, the
+  disc's own colour) scaled to the 80% safe zone. Never hand-edit one of them;
+  re-run the script, and rename the outputs (see the Cloudflare note).
 - An installed iOS app keeps its own storage, so the login is entered once
   more there; nothing else about the session model changes (`webSession`, the
   profile wallet and the JWT are exactly what the browser tab holds).
