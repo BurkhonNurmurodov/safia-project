@@ -276,7 +276,7 @@ def verdict(cam) -> str:
         return " ".join(x for x in (base, held) if x) + cut
 
     if trig == "open_timeout":
-        parts = ["Opening the camera never finished; the page gave up after 20 s."]
+        parts = ["Opening the camera never finished; the page gave up after 45 s."]
         _, start = _last_open(c)
         if held:
             parts.append(held)
@@ -390,7 +390,7 @@ def _message(c: dict, *, who: str, version: str, ua: str, repeats: int) -> str:
         L.append(f"Proof: {proof}")
     what = {
         "no_frames": "the camera opened but no picture arrived (no frame for 6 s; the page had already re-opened it once)",
-        "open_timeout": "opening the camera did not finish within 20 s",
+        "open_timeout": "opening the camera did not finish within 45 s",
         "gum_error": f"opening failed with {_t(err.get('name'), 40) or '?'}"
                      + (f": {_t(err.get('message'), 140)}" if err.get("message") else ""),
     }.get(trig, _t(trig, 40) or "no check named")
