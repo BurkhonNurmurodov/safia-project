@@ -5769,6 +5769,109 @@ def _checklist_setup_job() -> None:
                       checklist_setup_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the 19 Sep EXAMPLE photos, at the global level ─────────────────
+# The operator picked one correct proof per task against the new criteria and
+# asked for them to become the platform's examples (19 Sep 2026). It REPLACES
+# the global level of nine tasks — see `services/leader_task_examples_sep19.py`
+# for what it deliberately leaves alone and why.
+#
+# Run INLINE rather than scheduled, unlike the report jobs beside it: it writes
+# config that today's reviews are judged against, it touches twelve rows, and
+# it must be in force before the first checklist of the day is reviewed. A
+# failure cannot stop the boot (`_send_report_once`'s own rule) — it is caught,
+# recorded and retried on the next boot.
+EXAMPLES_SEP19_FLAG = "leader_task_examples_2026_09_19_v1"
+
+
+def write_leader_task_examples() -> None:
+    """The new example photos, written once. Never raises.
+
+    Flag-guarded like every other errand here: applied on the first boot after
+    its own deploy and never again, so an admin who edits an example afterwards
+    keeps their edit. Changing WHICH photos it writes needs a NEW flag key, or
+    the old "already ran" mark makes the new version a no-op on every box that
+    has booted since.
+    """
+    db = SessionLocal()
+    try:
+        row = db.query(AppSetting).filter_by(key=EXAMPLES_SEP19_FLAG).first()
+        if row and (row.value or "").startswith("done"):
+            return
+        tries = 0
+        if row:
+            try:
+                tries = int((row.value or "0").split(":")[-1])
+            except ValueError:
+                tries = _UNPRICED_DM_TRIES
+        if tries >= _UNPRICED_DM_TRIES:
+            return
+
+        from app.services import leader_task_examples_sep19 as ex
+        try:
+            out = ex.apply(db)
+        except Exception as exc:
+            db.rollback()
+            tries += 1
+            if row:
+                row.value = f"failed:{tries}"
+            else:
+                db.add(AppSetting(key=EXAMPLES_SEP19_FLAG, value=f"failed:{tries}"))
+            db.commit()
+            print(f"[startup] leader task examples failed "
+                  f"(attempt {tries}/{_UNPRICED_DM_TRIES}): {exc}")
+            return
+
+        if row:
+            row.value = f"done:{len(out['added'])}"
+        else:
+            db.add(AppSetting(key=EXAMPLES_SEP19_FLAG,
+                              value=f"done:{len(out['added'])}"))
+        db.commit()
+        print(f"[startup] leader task examples: +{len(out['added'])} "
+              f"-{len(out['removed'])} (global)")
+        _examples_sep19_dm(out)
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] leader task examples skipped: {exc}")
+    finally:
+        db.close()
+
+
+def _examples_sep19_dm(out: dict) -> None:
+    """Tell the operator what moved, naming every row that was deleted.
+
+    A pass that silently replaces what the REVIEWER compares against is one
+    nobody can audit afterwards; the ids are what make the 17 Sep export a
+    restore path rather than a hope.
+    """
+    try:
+        import requests
+        per_task: dict = {}
+        for a in out["added"]:
+            per_task.setdefault(a["task"], []).append(a["file"])
+        lines = ["🖼 Chek-list namuna rasmlari yangilandi (global daraja).",
+                 f"Qo'shildi: {len(out['added'])} ta rasm, "
+                 f"{len(per_task)} ta vazifaga.",
+                 f"O'chirildi (eski global): {len(out['removed'])} ta."]
+        for task in sorted(per_task):
+            lines.append(f"  · {task}-vazifa: {len(per_task[task])} ta rasm")
+        if out["removed"]:
+            lines.append("O'chirilgan qatorlar (17-sentabr «checklist-setup» "
+                         "faylidan tiklash mumkin): " +
+                         ", ".join(f"t{r['task']}#{r['id']}"
+                                   for r in out["removed"]))
+        lines.append(f"Tegilmagan vazifalar: "
+                     f"{', '.join(str(t) for t in out['untouched_tasks']) or '—'}"
+                     f" · brigadir/lider darajasidagi qatorlar saqlandi: "
+                     f"{out['scoped_rows_left']} ta.")
+        requests.post(
+            f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
+            data={"chat_id": UNPRICED_DM_CHAT, "text": "\n".join(lines)[:4000]},
+            timeout=60)
+    except Exception as exc:
+        print(f"[startup] leader task examples DM failed: {exc}")
+
+
 # ── one-shot: a SAMPLE of the last week's proofs, as a zipped folder ─────────
 # The operator asked, on 2026-09-18, for the last 7 days of leader proof images
 # out of the archive channel — as a folder, with a JSON inside saying which

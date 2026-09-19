@@ -89,6 +89,7 @@ try:
         report_sheet_concerns_xlsx,
         report_checklist_setup,
         report_proof_archive,
+        write_leader_task_examples,
         preview_leader_rules_sep19,
         register_leader_rules_sep19,
         add_pp_product_auto_fill,
@@ -380,6 +381,14 @@ try:
     # `startup.report_proof_archive` and `services/proof_archive.py` once the
     # files have landed.
     report_proof_archive()
+    # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
+    # against the new criteria, written at the GLOBAL level of nine tasks and
+    # REPLACING what was there. Inline, not scheduled: it is config today's
+    # reviews are judged against. Flag-guarded — applies once. Remove this line,
+    # `startup.write_leader_task_examples`,
+    # `services/leader_task_examples_sep19.py` and `app/data/task_examples/`
+    # once it has landed.
+    write_leader_task_examples()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
     # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
     # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.
