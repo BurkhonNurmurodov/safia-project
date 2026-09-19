@@ -5769,6 +5769,93 @@ def _checklist_setup_job() -> None:
                       checklist_setup_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: clear what the 19 Sep go-live left behind ──────────────────────
+# The operator asked on the morning of 19 Sep for two things to go: the «YANGI
+# TALAB — 19-sentabrdan kuchga kiradi» notice, which now contradicts itself on
+# the page, and the example photos of tasks 1, 8 and 9, which become automatic
+# checks and so have no photo requirement to illustrate.
+# `services/rules_cleanup_sep19.py` does both and nothing else.
+RULES_CLEANUP_FLAG = "leader_rules_cleanup_2026_09_19_v1"
+
+
+def cleanup_rules_sep19() -> None:
+    """Strip the preview notice and drop the automatic tasks' examples, once.
+
+    Flag-guarded like every other errand here, and inline for the same reason
+    the examples pass is: it is what leaders read today. Never raises.
+    """
+    db = SessionLocal()
+    try:
+        row = db.query(AppSetting).filter_by(key=RULES_CLEANUP_FLAG).first()
+        if row and (row.value or "").startswith("done"):
+            return
+        tries = 0
+        if row:
+            try:
+                tries = int((row.value or "0").split(":")[-1])
+            except ValueError:
+                tries = _UNPRICED_DM_TRIES
+        if tries >= _UNPRICED_DM_TRIES:
+            return
+
+        from app.services import rules_cleanup_sep19 as rc
+        try:
+            out = rc.apply(db)
+        except Exception as exc:
+            db.rollback()
+            tries += 1
+            value = f"failed:{tries}"
+            if row:
+                row.value = value
+            else:
+                db.add(AppSetting(key=RULES_CLEANUP_FLAG, value=value))
+            db.commit()
+            print(f"[startup] rules cleanup failed "
+                  f"(attempt {tries}/{_UNPRICED_DM_TRIES}): {exc}")
+            return
+
+        n_desc = sum(out["stripped"].values())
+        if row:
+            row.value = f"done:{n_desc}"
+        else:
+            db.add(AppSetting(key=RULES_CLEANUP_FLAG, value=f"done:{n_desc}"))
+        db.commit()
+        print(f"[startup] rules cleanup: notice stripped from {n_desc} "
+              f"description(s), {len(out['removed'])} auto-task example(s) removed")
+        _rules_cleanup_dm(out)
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] rules cleanup skipped: {exc}")
+    finally:
+        db.close()
+
+
+def _rules_cleanup_dm(out: dict) -> None:
+    """Say what went, naming every deleted example by id — the 17 Sep
+    «checklist-setup» export holds the bytes, so this is the restore path."""
+    try:
+        import requests
+        n_desc = sum(out["stripped"].values())
+        lines = ["🧹 19-sentabr yig'ishtirish.",
+                 f"«YANGI TALAB» ogohlantirishi {n_desc} ta matndan olib tashlandi "
+                 "(" + ", ".join(f"{k}: {v}" for k, v in out["stripped"].items()) + ").",
+                 f"Avtomatlashtiriladigan vazifalar "
+                 f"({', '.join(str(t) for t in out['auto_tasks'])}) namuna "
+                 f"rasmlari o'chirildi: {len(out['removed'])} ta."]
+        if out["removed"]:
+            lines.append("O'chirilgan qatorlar (17-sentabr «checklist-setup» "
+                         "faylidan tiklash mumkin): " +
+                         ", ".join(f"t{r['task']}#{r['id']}({r['level']})"
+                                   for r in out["removed"]))
+        lines.append("Kriteriylar (AI testi) tegilmadi.")
+        requests.post(
+            f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
+            data={"chat_id": UNPRICED_DM_CHAT, "text": "\n".join(lines)[:4000]},
+            timeout=60)
+    except Exception as exc:
+        print(f"[startup] rules cleanup DM failed: {exc}")
+
+
 # ── one-shot: the 19 Sep EXAMPLE photos, at the global level ─────────────────
 # The operator picked one correct proof per task against the new criteria and
 # asked for them to become the platform's examples (19 Sep 2026). It REPLACES

@@ -188,18 +188,11 @@ function Tile({ icon: Icon, label, value, sub }) {
 function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perTask, onZoom, flash }) {
   const name = task.names?.[lang] || task.names?.uz || `T${task.id}`;
   const note = task.note?.[lang] || task.note?.uz || "";
-  const criteria = (task.criteria || "").trim();
-  // Split from the criteria on 2026-09-06: this is the instruction, that is
-  // the grader's test. The backend already falls back to the criteria when no
-  // level has written one, so this is never blank while a criteria exists —
-  // and when the two are the same string the second block would just repeat
-  // it, so it is dropped rather than printed twice.
+  // The instruction, and the only text shown to a leader. The backend falls
+  // back to the criteria where no level has written a description, so a task
+  // whose description nobody has authored still reads as something rather than
+  // as nothing.
   const description = (task.description || "").trim();
-  // Only a NON-EMPTY duplicate is dropped. With both texts empty the two would
-  // also be "equal", and hiding the criteria block there would take the «no
-  // requirement written» line away from exactly the task that needs it. An old
-  // backend sends no description at all, which lands here the same safe way.
-  const dupe = !!description && description === criteria;
   const [wFrom, wTo] = task.window || [];
   // The window is only a RULE while the CLOCK is judged. Where it is not, the
   // chip states what is actually asked instead — a leader reading hours nothing
@@ -265,19 +258,16 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
         </div>
       )}
 
-      {/* The rule this leader is JUDGED by stays visible — that is why the
-          criteria became leader-facing in the first place — but it is now named
-          as the AI's test rather than passed off as the task's description. */}
-      {!dupe && (
-        <div>
-          <div className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: "var(--text-3)" }}>{T.criteria}</div>
-          {criteria
-            ? <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{criteria}</p>
-            : <p className="text-xs italic" style={{ color: "var(--text-4)" }}>
-                {dateOn ? T.noCriteria : T.noCriteriaNoDate}
-              </p>}
-        </div>
-      )}
+      {/* The «AI nimani tekshiradi» block is GONE (2026-09-19, the operator's
+          call). The criteria were made leader-facing in August, when they were
+          short Uzbek sentences and were the only statement of the task; the
+          2026-09-06 split gave the leader an instruction of their own, and the
+          19 Sep rules made the criteria what they are meant to be — the
+          grader's test, written in ENGLISH because that is what the reviewer
+          follows most consistently. Printing that under an Uzbek instruction
+          gave a leader the same requirement twice, the second time in a
+          language they may not read. `description` is what a person is told;
+          `criteria` stays on the admin surfaces, where it is edited. */}
 
       <div className="flex flex-wrap gap-1.5">
         <Fact icon={Scale}>

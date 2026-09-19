@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
         report_checklist_setup,
         report_proof_archive,
         write_leader_task_examples,
+        cleanup_rules_sep19,
         preview_leader_rules_sep19,
         register_leader_rules_sep19,
         add_pp_product_auto_fill,
@@ -429,6 +430,11 @@ async def lifespan(app: FastAPI):
     # `services/leader_task_examples_sep19.py` and `app/data/task_examples/`
     # once it has landed.
     write_leader_task_examples()
+    # ⚠ TEMPORARY one-shot (2026-09-19) — clear what the go-live left behind:
+    # the «YANGI TALAB» preview notice, which now contradicts itself, and the
+    # example photos of the three tasks that become automatic checks. Inline and
+    # flag-guarded. Remove with `leader_rules_sep19`.
+    cleanup_rules_sep19()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
     # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
     # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.
