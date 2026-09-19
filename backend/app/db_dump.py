@@ -37,7 +37,11 @@ log = logging.getLogger(__name__)
 # The restore path refuses any script that doesn't carry this line. It is the
 # real guard on that endpoint: without it, "upload a file" would be a
 # general-purpose SQL console pointed at production.
-DUMP_MARKER = "Safia dashboard — full database dump"
+DUMP_MARKER = "Safia IMS — full database dump"
+# Dumps written before the 2026-09-19 rebrand carry the old spelling. They must
+# stay restorable, so the restore gate accepts either marker; only the new one
+# is ever written.
+LEGACY_DUMP_MARKERS = ("Safia dashboard — full database dump",)
 
 SCHEMA = "public"
 
@@ -574,7 +578,7 @@ def restore_from_file(path: str, *, gzipped: bool) -> dict:
     """
     with _open_dump(path, gzipped) as fh:
         head = fh.read(4096)
-    if DUMP_MARKER not in head:
+    if not any(m in head for m in (DUMP_MARKER, *LEGACY_DUMP_MARKERS)):
         raise ValueError(
             "This file is not a Safia database dump (missing the header marker). "
             "Only a dump produced by the Backup tab can be restored here."

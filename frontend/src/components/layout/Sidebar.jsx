@@ -340,7 +340,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                     className="text-xs font-semibold uppercase tracking-widest mb-0.5 whitespace-nowrap"
                     style={{ color: "var(--brand-text)" }}
                   >
-                    Safia Dashboard
+                    Safia IMS
                   </div>
                   <div
                     className="text-[11px] truncate"

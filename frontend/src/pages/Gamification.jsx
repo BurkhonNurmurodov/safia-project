@@ -1241,7 +1241,7 @@ export default function Gamification() {
                   <span aria-hidden className="absolute inset-2 rounded-lg pointer-events-none" style={{ border: `1px solid ${hexA("#C8973F", 0.3)}` }} />
                   <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(140% 90% at 50% -30%, ${hexA("#C8973F", 0.14)} 0%, transparent 60%)` }} />
                   <div className="relative flex flex-col items-center gap-3">
-                    <div className="text-[10px] font-bold" style={{ letterSpacing: "0.42em", color: "var(--text-3)" }}>SAFIA DASHBOARD</div>
+                    <div className="text-[10px] font-bold" style={{ letterSpacing: "0.42em", color: "var(--text-3)" }}>SAFIA IMS</div>
                     <Medallion size={84} glyph="champion" />
                     <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.12em", color: "var(--brand-text)" }}>
                       {t("gami.certHeading")}

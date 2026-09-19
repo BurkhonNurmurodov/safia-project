@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 
-const APP_NAME = "Safia Dashboard";
+const APP_NAME = "Safia IMS";
 const SEP = " · "; // U+00B7 — the same separator the nav labels already use
 
 // App language → the BCP-47 tag <html lang> takes. The document ships as

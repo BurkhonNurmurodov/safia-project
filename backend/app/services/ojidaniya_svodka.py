@@ -98,7 +98,7 @@ L = {
         "m3_kpi": "Kategoriyalar — zagruzka KPI tarkibiga kiradiganlari («Zagruzkada hisoblanadi» rejimi).",
         "m3_all": "Smena hisobotining barcha kategoriyalari hisobga olindi («Barchasi» rejimi).",
         "m4": "Batafsil grafiklar — Ojidaniya sahifasida; bugungi raqamlar uchun botga /ojidaniya yuboring.",
-        "footer": "Manba: Safia Dashboard — Ojidaniya sahifasi",
+        "footer": "Manba: Safia IMS — Ojidaniya sahifasi",
     },
     "uz_cyrl": {
         "title": "Ожидания — ҳафталик сводка", "period": "Давр",
@@ -129,7 +129,7 @@ L = {
         "m3_kpi": "Категориялар — загрузка KPI таркибига кирадиганлари («Загрузкада ҳисобланади» режими).",
         "m3_all": "Смена ҳисоботининг барча категориялари ҳисобга олинди («Барчаси» режими).",
         "m4": "Батафсил графиклар — Ожидания саҳифасида; бугунги рақамлар учун ботга /ojidaniya юборинг.",
-        "footer": "Манба: Safia Dashboard — Ожидания саҳифаси",
+        "footer": "Манба: Safia IMS — Ожидания саҳифаси",
     },
     "ru": {
         "title": "Ожидания — недельная сводка", "period": "Период",
@@ -160,7 +160,7 @@ L = {
         "m3_kpi": "Категории — входящие в KPI загрузки (режим «Учитывается в загрузке»).",
         "m3_all": "Учтены все категории сменного отчёта (режим «Все»).",
         "m4": "Подробные графики — на странице «Ожидания»; за сегодняшними цифрами отправьте боту /ojidaniya.",
-        "footer": "Источник: Safia Dashboard — страница «Ожидания»",
+        "footer": "Источник: Safia IMS — страница «Ожидания»",
     },
     "en": {
         "title": "Idle time — weekly summary", "period": "Period",
@@ -191,7 +191,7 @@ L = {
         "m3_kpi": "Categories are those counted by the workload KPIs (the “Counted on workload” mode).",
         "m3_all": "Every category of the shift report is included (the “All” mode).",
         "m4": "Detailed charts live on the Idle Time page; send /ojidaniya to the bot for today's numbers.",
-        "footer": "Source: Safia Dashboard — Idle Time page",
+        "footer": "Source: Safia IMS — Idle Time page",
     },
 }
 
@@ -297,7 +297,7 @@ def build_svodka(db, payload: dict, day_to: date, lang: str = "uz",
             dv=fmt_n(day_tot[worst_day]))
             + f"<cite>{t['cite'].format(range=rng)}</cite></blockquote>\n")
     figure = ('<figure><img src="tg://photo?id=scr1"/>'
-              f'<figcaption>Ojidaniya · {day_to:%d.%m.%Y}<cite>Safia Dashboard</cite></figcaption></figure>\n'
+              f'<figcaption>Ojidaniya · {day_to:%d.%m.%Y}<cite>Safia IMS</cite></figcaption></figure>\n'
               if with_image else "")
     ns_row = (f'<tr><td>{t["ns_total"]}</td><td align="right">{fmt_n(total_ns)} {t["daq"]}</td></tr>\n'
               if total_ns > 0 else "")

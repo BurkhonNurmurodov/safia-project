@@ -1,6 +1,6 @@
 # Late Proofs & Objections — how the two "ways back" work
 
-*Safia Dashboard · Leaders monitoring · feature reference + leader instructions*
+*Safia IMS · Leaders monitoring · feature reference + leader instructions*
 
 ---
 

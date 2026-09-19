@@ -1,4 +1,4 @@
-# Safia Dashboard — Liderlar uchun video qo'llanma (ovoz matni)
+# Safia IMS — Liderlar uchun video qo'llanma (ovoz matni)
 
 **Til:** O'zbek (lotin) · **Auditoriya:** liderlar · **Yozib olish:** lider akkauntida ekran yozuvi
 **Taxminiy davomiylik:** 14–17 daqiqa (bo'limlar bo'yicha vaqtlar quyida)
@@ -11,7 +11,7 @@
 
 `[EKRAN: Dashboard bosh sahifasi lider akkauntida ochilgan — sidebar va sarlavha ko'rinib turibdi]`
 
-Assalomu alaykum, hurmatli liderlar! Bu videoda men sizga Safia Dashboard tizimini to'liq ko'rsatib beraman — lider sifatida siz har kuni ishlatadigan barcha sahifalar va funksiyalarni birma-bir tushuntiraman.
+Assalomu alaykum, hurmatli liderlar! Bu videoda men sizga Safia IMS tizimini to'liq ko'rsatib beraman — lider sifatida siz har kuni ishlatadigan barcha sahifalar va funksiyalarni birma-bir tushuntiraman.
 
 Tizimga kirishning ikki yo'li bor. Birinchisi — Telegram orqali: botga kirasiz va «Ochish» tugmasini bosasiz — tizim Telegramning ichida ochiladi. Ikkinchisi — brauzer orqali: production nuqta safiacorporate nuqta uz manziliga kirib, sizga berilgan login va parol bilan kirasiz. Login va parolingizni «Profil» sahifasida ko'rishingiz mumkin — buni videoning oxirida ko'rsataman. Ikkalasida ham bitta tizim, bitta ma'lumot.
 

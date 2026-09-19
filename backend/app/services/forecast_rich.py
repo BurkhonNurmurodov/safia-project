@@ -93,7 +93,7 @@ def body(row: dict, target: date, lang: str = "ru", eff: int = 100,
         parts.append(
             f'<figure><img src="tg://photo?id={PHOTO_ID}"/>'
             f'<figcaption>{name} · {_esc(wd_name)}, {target:%d.%m.%Y}'
-            f'<cite>Safia Dashboard</cite></figcaption></figure>')
+            f'<cite>Safia IMS</cite></figcaption></figure>')
 
     parts.append(
         '<table bordered striped>\n'

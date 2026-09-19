@@ -646,7 +646,7 @@ def build_ojidaniya_workbook(p: dict) -> BytesIO:
                     {c: 13.0 for c in range(2, 14)})
         _banner(ws, 2, 2, 13, p.get("title") or "", p.get("subtitle") or "")
     wb.properties.title = p.get("title") or "Ojidaniya"
-    wb.properties.creator = "Safia Dashboard"
+    wb.properties.creator = "Safia IMS"
     wb.properties.created = datetime.now()
     bio = BytesIO()
     wb.save(bio)
@@ -839,7 +839,7 @@ def build_matrix_workbook(p: dict) -> BytesIO:
     ws.freeze_panes = ws.cell(row=first, column=C1 + 1)
 
     wb.properties.title = p.get("title") or "Ojidaniya"
-    wb.properties.creator = "Safia Dashboard"
+    wb.properties.creator = "Safia IMS"
     wb.properties.created = datetime.now()
     bio = BytesIO()
     wb.save(bio)

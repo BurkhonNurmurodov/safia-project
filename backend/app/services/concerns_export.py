@@ -656,7 +656,7 @@ def build_concerns_workbook(p: dict) -> BytesIO:
     _analysis(wb, p)
     _register(wb, p)
     wb.properties.title = p.get("title") or "Concerns"
-    wb.properties.creator = "Safia Dashboard"
+    wb.properties.creator = "Safia IMS"
     wb.properties.created = datetime.now()
     bio = BytesIO()
     wb.save(bio)

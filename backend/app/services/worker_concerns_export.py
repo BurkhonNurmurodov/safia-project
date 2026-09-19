@@ -524,7 +524,7 @@ def build_worker_concerns_workbook(p: dict) -> BytesIO:
     _leaders_sheet(wb, p, sts)
     _register_sheet(wb, p)
     wb.properties.title = p.get("title") or "Worker concerns"
-    wb.properties.creator = "Safia Dashboard"
+    wb.properties.creator = "Safia IMS"
     wb.properties.created = datetime.now()
     bio = BytesIO()
     wb.save(bio)

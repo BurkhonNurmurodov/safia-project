@@ -1,4 +1,4 @@
-# Safia Dashboard — project instructions
+# Safia IMS — project instructions
 
 ## UI element templates (mandatory)
 

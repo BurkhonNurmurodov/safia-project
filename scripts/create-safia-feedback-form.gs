@@ -1,5 +1,5 @@
 /**
- * Safia Dashboard — foydalanuvchilar so'rovnomasi
+ * Safia IMS — foydalanuvchilar so'rovnomasi
  * Google Apps Script generator for a Google Form + linked response sheet.
  *
  * HOW TO RUN
@@ -14,7 +14,7 @@
  */
 
 function createSafiaFeedbackForm() {
-  var TITLE = "Safia Dashboard — foydalanuvchilar so’rovnomasi";
+  var TITLE = "Safia IMS — foydalanuvchilar so’rovnomasi";
 
   var form = FormApp.create(TITLE);
   form.setTitle(TITLE);
