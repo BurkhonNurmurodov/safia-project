@@ -6626,6 +6626,27 @@ def preview_leader_rules_sep19() -> None:
         db.close()
 
 
+def patch_task10_description_sep19() -> None:
+    """Hotfix to apply the new Task 10 description to production."""
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key="task10_desc_patch_v1").first():
+            return
+        from app.models import LeaderTaskDef
+        from app.services.leader_rules_sep19 import DESCRIPTIONS
+        task = db.query(LeaderTaskDef).filter_by(id=10).first()
+        if task:
+            task.description = DESCRIPTIONS[10]
+        db.add(AppSetting(key="task10_desc_patch_v1", value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print("[startup] Patched Task 10 description")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] Patched Task 10 description failed: {exc}")
+    finally:
+        db.close()
+
+
 
 def _rules_in_shift(shift: int, now) -> bool:
     """Is that shift working RIGHT NOW? Tashkent wall clock, the same hours

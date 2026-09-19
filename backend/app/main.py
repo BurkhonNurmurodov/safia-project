@@ -89,6 +89,7 @@ async def lifespan(app: FastAPI):
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
+        patch_task10_description_sep19,
         register_leader_rules_sep19,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
@@ -448,6 +449,7 @@ async def lifespan(app: FastAPI):
     # they are scored by changes until the two passes above fire on the 19th.
     # Remove with them.
     preview_leader_rules_sep19()
+    patch_task10_description_sep19()
     yield
     shutdown_scheduler()
 
