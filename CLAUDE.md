@@ -4912,6 +4912,101 @@ re-verifies it on every request. The second is a username + password at
   `utils/session.js` `inTelegram()`, which tests `WebApp.platform !== "unknown"`
   — `window.Telegram.WebApp` exists in every browser and proves nothing.
 
+## The browser door as an INSTALLABLE APP (PWA)
+
+From **2026-09-19** the browser door can be installed — «Safia IMS» on a
+desktop, a home-screen icon on a phone, standalone (no browser chrome).
+`frontend/public/manifest.webmanifest` names it, `public/icons/` is the
+launcher art, `src/sw.js` is the service worker, `utils/pwa.js` owns the
+runtime half (the `beforeinstallprompt` capture, the `appinstalled` mark, the
+registration), `hooks/usePwaInstall.js` is what a component asks, and the ONE
+surface is the «Ilovani o'rnatish» row in the header's profile menu — Chrome
+and Edge get the captured prompt, an iPhone gets a two-line hint (Safari fires
+no event; the route is the share sheet).
+
+- **Never inside Telegram, and the gate fails CLOSED.** `registerWorker`
+  registers nothing when `launchedByTelegram()` — the SDK's `platform`, OR
+  `tgWebAppData` / `tgWebAppPlatform` in the launch URL, which is what a
+  Telegram WebView whose copy of the SDK never loaded (the antivirus-intercept
+  case) still carries. The mini-app is the primary device and its boot
+  overlay, stale-chunk reload and update prompt were all tuned to a tab with
+  no cache layer underneath it; iOS's WKWebView has no service worker anyway.
+  Known bound: Telegram WEB (web.telegram.org) frames the same origin, so a
+  person who also uses the browser door in that same browser profile has the
+  mini-app iframe controlled by the worker they registered there — harmless
+  (assets cache-first, navigations network-first), and not a registration.
+  Lifting the bound is one condition and a separate decision.
+- **`dist/sw.js` is WRITTEN BY THE BUILD** (`emitServiceWorker` in
+  `vite.config.js`, a `writeBundle` twin of `emitBuildInfo`): it takes
+  `src/sw.js` and fills in the build stamp and the precache list — `/` (the
+  shell), every file under `dist/assets`, the icons (listed from `public/`, since
+  Vite copies it on its own schedule) and the root statics. ONE cache per build,
+  named by the stamp; activation drops every other build's cache, and
+  `skipWaiting` + `clients.claim` make that immediate. Precaching is bounded to
+  eight fetches at a time; unchanged hashed assets come out of the HTTP cache
+  (immutable), so a deploy downloads only what changed — but a first visit does
+  pull the whole chunk graph (~5.5 MB uncompressed), which is the price of an
+  app that opens offline and was accepted.
+- **What the worker does, and what it must never do.** A navigation to an SPA
+  route: NETWORK FIRST with a 5 s timeout, the cached shell as the fallback and
+  a plain offline page last — so a reload still fetches the deployed
+  index.html and `UpdatePrompt`'s reload keeps its meaning. `/assets/*`: cache
+  first (content-hashed, immutable). Root statics: network first.
+  **Not intercepted at all**: anything non-GET, anything cross-origin (the
+  worker's own CSP `connect-src` would refuse a font re-fetch), `/api/*`,
+  `/bot/*`, `/health`, `/docs`, the backend's `/admin/*` routes (only `/admin`
+  and `/admin/upload` are SPA paths — `SPA_ADMIN` in `sw.js` is a hand copy of
+  `App.jsx`'s two `/admin` routes and must move with them), `/build.json`,
+  `/sw.js`, and any navigation whose path names a file — an export opened in a
+  new tab must reach the server on its own terms, because the shell fallback
+  would otherwise answer a slow `.xlsx` with index.html.
+- **Every cache lookup ignores `Vary`.** The CORS layer stamps `Vary: Origin`
+  on assets, the Cache API honours it by default, and a module-script request
+  carries an `Origin` header where a plain `fetch()` does not — so the entry
+  chunk `fetch()` found was a MISS for the module loader and an offline start
+  died on it (found in local testing before the first deploy). Assets are
+  content-hashed, identical for every origin; `MATCH = { ignoreVary: true }`.
+- **`sw.js` is served `no-store` and the manifest as
+  `application/manifest+json`** (`serve_spa`), for the reason `build.json`
+  is: Cloudflare caches `.js` by extension, and a pinned worker script pins the
+  previous build's precache list for as long as the edge keeps it.
+  `updateViaCache: "none"` at registration is the browser-side half.
+- **The update model is unchanged.** `useAppUpdate` still polls `build.json`
+  (never cached — no route matches it), and when it sees a newer build it
+  nudges `registration.update()` so the new worker precaches the new build
+  BEFORE the user presses reload. A tab left open keeps its old chunks in the
+  old cache until the new worker activates; then a missing chunk 404s and
+  `lazyWithReload` reloads, exactly as before.
+- **The kill switch is a deploy.** There is no shell and no toggle: a worker
+  that misbehaves is replaced by pushing a `src/sw.js` whose `install` calls
+  `skipWaiting()` and whose `activate` runs `self.registration.unregister()`,
+  deletes every `safia-*` cache and re-navigates the open clients
+  (`clients.matchAll({ type: "window" })` → `client.navigate(client.url)`).
+  Browsers fetch `/sw.js` on every navigation (it is `no-store`), so the
+  replacement reaches every installed copy on its next open.
+- **Outside Telegram the safe-area insets follow the OS.** `index.css`'s
+  `:root` defaults for `--tg-safe-bottom/left/right` are `env(safe-area-inset-*)`,
+  because the installed app on an iPhone runs full-bleed under the home
+  indicator (`viewport-fit=cover` + standalone) and every bottom-anchored
+  surface pads by those variables; a desktop resolves them to 0 and Telegram
+  still overwrites them from `main.jsx`. `theme-color` follows the in-app theme
+  — `ThemeContext` rewrites the meta from the computed `--bg-base`, so the
+  standalone title bar matches the header; the manifest carries the dark values
+  because dark is the default.
+- **The icons are rendered from `public/logo.png`, all four together**: 192/512
+  `any` keep the round logo's transparent corners (the favicon look), 192/512
+  `maskable` put it on the ring gold scaled to the 80% safe zone. Never
+  hand-edit one of them.
+- An installed iOS app keeps its own storage, so the login is entered once
+  more there; nothing else about the session model changes (`webSession`, the
+  profile wallet and the JWT are exactly what the browser tab holds).
+- Not built, on purpose: push notifications (Telegram is the notification
+  channel), an offline data layer (every page is live data; `ProofCamera`'s
+  upload queue is the one offline flow and predates this), and a Workbox
+  dependency — the worker is ~140 lines whose every rule is stated above, and
+  `vite-plugin-pwa` would have added a peer-dependency risk to a pipeline whose
+  `npm ci` is a deploy.
+
 ## ARC tickets (`/arc`, page key `arc`)
 
 A mirror of «АРС Фабрика» from IT's **internal read-only API**

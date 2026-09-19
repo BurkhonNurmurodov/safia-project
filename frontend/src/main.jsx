@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { installDomGuard } from './utils/domGuard'
+import { bootPwa } from './utils/pwa'
 
 // Read by the boot-diagnostics overlay in index.html
 window.__bootStage = 'bundle-start'
@@ -11,6 +12,11 @@ window.__bootStage = 'bundle-start'
 // translator, a WebView add-on) makes React's own node removal throw, and a
 // commit-phase throw costs the whole page. See utils/domGuard.js.
 installDomGuard()
+
+// Installable from a browser: holds Chrome's install prompt for the header
+// menu's row and registers the service worker after load — in a browser only,
+// never inside Telegram. See utils/pwa.js.
+bootPwa()
 
 // Expand / fullscreen the WebApp as early as possible (before React renders).
 // Wrapped in try/catch: a half-initialized Telegram object must never prevent

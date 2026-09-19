@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
@@ -51,6 +51,51 @@ function emitBuildInfo() {
   }
 }
 
+// The service worker. src/sw.js is the SOURCE and dist/sw.js is written here,
+// with the build's own stamp and precache list filled in: the shell (/), every
+// file under dist/assets, the launcher icons and the root statics below. It is
+// derived by the build rather than dropped in public/ for the reason build.json
+// is — a worker can only ever describe the build it shipped with — and it is
+// served no-store by serve_spa for the same reason too. Registered by
+// utils/pwa.js, in a browser only (never inside Telegram).
+const ROOT_STATICS = [
+  '/manifest.webmanifest',
+  '/telegram-web-app.js',
+  '/favicon.ico',
+  '/favicon-32.png',
+  '/favicon-192.png',
+  '/apple-touch-icon.png',
+  '/icons.svg',
+]
+function emitServiceWorker() {
+  let root = process.cwd()
+  let outDir = 'dist'
+  return {
+    name: 'emit-service-worker',
+    apply: 'build',
+    configResolved(config) {
+      root = config.root
+      outDir = config.build.outDir
+    },
+    writeBundle() {
+      const dist = resolve(root, outDir)
+      const assets = readdirSync(resolve(dist, 'assets')).map((f) => `/assets/${f}`)
+      // Listed from the SOURCE dir, not dist: public/ is copied by Vite on its
+      // own schedule and need not be on disk yet when this hook runs.
+      const icons = readdirSync(resolve(root, 'public', 'icons')).map((f) => `/icons/${f}`)
+      const precache = ['/', ...assets, ...icons, ...ROOT_STATICS]
+      const src = readFileSync(resolve(root, 'src', 'sw.js'), 'utf8')
+      // Function replacers: a `$` in the JSON must never be read as a pattern.
+      writeFileSync(
+        resolve(dist, 'sw.js'),
+        src
+          .replace('"__BUILD__"', () => JSON.stringify(BUILD_TIME))
+          .replace('__PRECACHE__', () => JSON.stringify(precache)),
+      )
+    },
+  }
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
@@ -60,6 +105,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     emitBuildInfo(),
+    emitServiceWorker(),
   ],
   build: {
     minify: 'esbuild',

@@ -132,18 +132,24 @@ body.sidebar-open { overflow: hidden; }
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-io:  cubic-bezier(.65, 0, .35, 1);
 
-  /* Telegram safe-area insets. main.jsx overwrites these on mobile Telegram
-     clients; everywhere else — a desktop browser, Telegram Desktop — the
-     variables must still RESOLVE, or every `calc(var(--tg-safe-top) + …)` that
-     depends on them (modal backdrops, toasts, the sticky header) collapses to
-     an invalid value and the padding silently disappears. */
+  /* Safe-area insets. main.jsx overwrites these on mobile Telegram clients
+     (its inline setProperty outranks this rule); everywhere else the variables
+     must still RESOLVE, or every `calc(var(--tg-safe-top) + …)` that depends on
+     them (modal backdrops, toasts, the sticky header) collapses to an invalid
+     value and the padding silently disappears. Outside Telegram they follow the
+     OS: the app can be INSTALLED from a browser (public/manifest.webmanifest,
+     display standalone) and index.html declares viewport-fit=cover, so an
+     iPhone launched from the home screen runs full-bleed under the home
+     indicator — env() is what says by how much, and a desktop browser resolves
+     it to 0. Top stays 0: the standalone status-bar style keeps content below
+     the status bar. */
   --tg-safe-top: 0px;
-  --tg-safe-bottom: 0px;
-  /* Side insets are 0 in portrait; a landscape Android phone parks its nav bar
-     on one of them, so the shell pads by these rather than letting a wide table
-     slide under the buttons. */
-  --tg-safe-left: 0px;
-  --tg-safe-right: 0px;
+  --tg-safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Side insets are 0 in portrait; a landscape phone parks its nav bar on one
+     of them, so the shell pads by these rather than letting a wide table slide
+     under the buttons. */
+  --tg-safe-left: env(safe-area-inset-left, 0px);
+  --tg-safe-right: env(safe-area-inset-right, 0px);
 
   /* Widest the reading column ever gets. The pages were laid out for a phone;
      stretched across a 27" monitor a table's first and last column end up a

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BUILD_TIME } from "../utils/version";
 import { isOutdated, subscribeCompat } from "../utils/compat";
+import { updateWorker } from "../utils/pwa";
 
 /**
  * Is the tab running an older build than the one deployed?
@@ -78,6 +79,13 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
 
   const deployed = typeof data?.buildTime === "string" ? data.buildTime : "";
   const updateReady = Boolean(deployed && BUILD_TIME && deployed !== BUILD_TIME);
+
+  // A newer build is deployed: tell the service worker (browsers only; a no-op
+  // where none is registered) to fetch its new copy now, so the new build is
+  // precached BEFORE the user presses reload rather than during it.
+  useEffect(() => {
+    if (updateReady) updateWorker();
+  }, [updateReady]);
 
   // Dismissal is per deployed build, so "later" silences THIS update and the
   // next deploy still gets to speak up. sessionStorage, not local: a fresh tab

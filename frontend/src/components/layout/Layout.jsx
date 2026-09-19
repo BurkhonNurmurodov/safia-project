@@ -4,12 +4,13 @@ import { useTheme } from "../../context/ThemeContext";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
-import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2, UserRoundCog } from "lucide-react";
+import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2, UserRoundCog, Download, Share } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
 import UpdatePrompt from "./UpdatePrompt";
+import { usePwaInstall } from "../../hooks/usePwaInstall";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
@@ -46,6 +47,7 @@ function UserProfile() {
   const [switching, setSwitching] = useState("");
   const ref = useRef(null);
   const { data: me } = useMyProfileDetails();
+  const pwa = usePwaInstall();
 
   useEffect(() => {
     function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
@@ -235,6 +237,38 @@ function UserProfile() {
             <UserPlus size={14} />
             <span>{t("menu.addProfile") || "Add new profile"}</span>
           </button>
+
+          {/* Install as an app — the browser door only (usePwaInstall answers
+              false for both inside Telegram). Chrome/Edge hand the page a
+              beforeinstallprompt that utils/pwa.js holds for this tap; iOS
+              fires no event, so its row is a hint naming the share-sheet route
+              rather than a button that would do nothing. Gone once the app is
+              running installed. */}
+          {pwa.canInstall && (
+            <button
+              onClick={() => { setOpen(false); pwa.install(); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+              style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
+              {...rowHover}
+            >
+              <Download size={14} />
+              <span>{t("menu.installApp")}</span>
+            </button>
+          )}
+          {pwa.iosHint && (
+            <div
+              className="w-full flex items-start gap-3 px-4 py-3 text-xs"
+              style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
+            >
+              <Share size={14} className="mt-0.5 flex-shrink-0" />
+              <span className="min-w-0">
+                <span className="block">{t("menu.installApp")}</span>
+                <span className="block mt-0.5 text-[10px]" style={{ color: "var(--text-3)" }}>
+                  {t("menu.installHintIos")}
+                </span>
+              </span>
+            </div>
+          )}
 
           {/* Sign out.
               In Telegram this is an UNREGISTER: it drops the profile binding

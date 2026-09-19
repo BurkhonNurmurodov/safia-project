@@ -1,5 +1,7 @@
 const t = {
   uz: {
+    "menu.installApp": "Ilovani o'rnatish",
+    "menu.installHintIos": "Brauzerda: «Ulashish» → «Bosh ekranga qo'shish»",
     "production.group.shtatkaShared": "Shtat butun jamoa ({code}) uchun — guruhlar o'rtasida bo'linmaydi",
     "admin.profiles.cellGroupNeedsSap": "Guruh harfi uchun yacheykada SAP kod bo'lishi kerak",
     "admin.profiles.cellGroupNeedsUnit": "Guruh harfi uchun yacheykaga brigadir biriktirilgan bo'lishi kerak",
@@ -5144,6 +5146,8 @@ const t = {
   },
 
   uz_cyrl: {
+    "menu.installApp": "Иловани ўрнатиш",
+    "menu.installHintIos": "Браузерда: «Улашиш» → «Бош экранга қўшиш»",
     "production.group.shtatkaShared": "Штат бутун жамоа ({code}) учун — гуруҳлар ўртасида бўлинмайди",
     "admin.profiles.cellGroupNeedsSap": "Гуруҳ ҳарфи учун ячейкада SAP код бўлиши керак",
     "admin.profiles.cellGroupNeedsUnit": "Гуруҳ ҳарфи учун ячейкага бригадир бириктирилган бўлиши керак",
@@ -10285,6 +10289,8 @@ const t = {
   },
 
   ru: {
+    "menu.installApp": "Установить приложение",
+    "menu.installHintIos": "В браузере: «Поделиться» → «На экран „Домой“»",
     "production.group.shtatkaShared": "Штатка — на всю команду {code}, между группами не делится",
     "admin.profiles.cellGroupNeedsSap": "Для буквы группы у ячейки должен быть SAP-код",
     "admin.profiles.cellGroupNeedsUnit": "Для буквы группы у ячейки должен быть бригадир",
@@ -15426,6 +15432,8 @@ const t = {
   },
 
   en: {
+    "menu.installApp": "Install the app",
+    "menu.installHintIos": "In the browser: Share → “Add to Home Screen”",
     "production.group.shtatkaShared": "Staffing belongs to the whole team {code} and is not split between groups",
     "admin.profiles.cellGroupNeedsSap": "A group letter needs a SAP code on the cell",
     "admin.profiles.cellGroupNeedsUnit": "A group letter needs a brigadir on the cell",

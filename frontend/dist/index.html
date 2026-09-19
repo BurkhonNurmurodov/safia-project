@@ -17,6 +17,19 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Installable as an app from a BROWSER (PWA): the manifest names it and
+         points at the launcher art under public/icons; theme-color paints the
+         standalone title bar (kept on the in-app theme by ThemeContext); the
+         apple-* pair is iOS's own add-to-home-screen contract. The worker
+         (src/sw.js → dist/sw.js) is registered by utils/pwa.js — never inside
+         Telegram, where nothing here changes anything. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f1117" />
+    <meta name="application-name" content="Safia IMS" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Safia IMS" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- Pre-JS title. Once the router mounts, components/DocumentTitle.jsx
          appends the current page: "Safia IMS · <page>". -->
@@ -29,10 +42,10 @@
          inspection), which broke the app with a masked "Script error.".
          Re-sync the copy occasionally. -->
     <script src="/telegram-web-app.js"></script>
-    <script type="module" crossorigin src="/assets/index-VT522Yw5.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/api-DN4_jZXc.js">
-    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-BYGL6npy.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-CM0hdOvu.css">
+    <script type="module" crossorigin src="/assets/index-D4jc-iLy.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/api-CM5ZsYg1.js">
+    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-CPfDR77o.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-PYkJVL39.css">
   </head>
   <body>
     <div id="root"></div>

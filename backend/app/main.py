@@ -873,6 +873,21 @@ if STATIC_DIR:
             # no-store treatment for exactly the same reason.
             if clean_path == "build.json":
                 return FileResponse(file_path, headers=NO_STORE)
+            # sw.js is the service worker (browser installs only — see
+            # frontend/src/sw.js). A deploy is a new worker carrying the new
+            # build's precache list, and Cloudflare caches .js by extension: a
+            # pinned worker script pins the PREVIOUS build's list for as long
+            # as the edge keeps it, so it gets build.json's treatment.
+            if clean_path == "sw.js":
+                return FileResponse(file_path, headers=NO_STORE)
+            # The web app manifest. Browsers re-read it on every visit to see
+            # whether the installed app changed, so revalidate rather than pin,
+            # and name the type explicitly — the box's mimetypes table decides
+            # it otherwise, and an unknown type fails the install criteria
+            # without a word on screen.
+            if clean_path == "manifest.webmanifest":
+                return FileResponse(file_path, media_type="application/manifest+json",
+                                    headers={"Cache-Control": "no-cache"})
             return FileResponse(file_path)
         # Otherwise serve index.html for SPA frontend routing
         return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers=NO_STORE)
