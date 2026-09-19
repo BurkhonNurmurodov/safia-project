@@ -4943,10 +4943,14 @@ no event; the route is the share sheet).
   Vite copies it on its own schedule) and the root statics. ONE cache per build,
   named by the stamp; activation drops every other build's cache, and
   `skipWaiting` + `clients.claim` make that immediate. Precaching is bounded to
-  eight fetches at a time; unchanged hashed assets come out of the HTTP cache
-  (immutable), so a deploy downloads only what changed — but a first visit does
-  pull the whole chunk graph (~5.5 MB uncompressed), which is the price of an
-  app that opens offline and was accepted.
+  eight fetches at a time. An unchanged hashed asset comes out of the HTTP
+  cache (immutable) — but chunk hashes CASCADE (a shared chunk's change renames
+  nearly every chunk that imports it), so in practice most deploys re-download
+  most of the graph, ~5 MB per browser client per deploy, the same figure a
+  first visit pays. Accepted for the audience the browser door has (desks on
+  the office network; phones are on Telegram, where no worker exists); the one
+  knob is the precache list `emitServiceWorker` writes — shrink it to the entry
+  graph and let the rest cache on use if that cost ever matters.
 - **What the worker does, and what it must never do.** A navigation to an SPA
   route: NETWORK FIRST with a 5 s timeout, the cached shell as the fallback and
   a plain offline page last — so a reload still fetches the deployed
@@ -4977,13 +4981,20 @@ no event; the route is the share sheet).
   BEFORE the user presses reload. A tab left open keeps its old chunks in the
   old cache until the new worker activates; then a missing chunk 404s and
   `lazyWithReload` reloads, exactly as before.
-- **The kill switch is a deploy.** There is no shell and no toggle: a worker
-  that misbehaves is replaced by pushing a `src/sw.js` whose `install` calls
-  `skipWaiting()` and whose `activate` runs `self.registration.unregister()`,
-  deletes every `safia-*` cache and re-navigates the open clients
-  (`clients.matchAll({ type: "window" })` → `client.navigate(client.url)`).
-  Browsers fetch `/sw.js` on every navigation (it is `no-store`), so the
-  replacement reaches every installed copy on its next open.
+- **The kill switch is a deploy, and a ROLLBACK is not one.** There is no
+  shell and no toggle: a worker that misbehaves is replaced by pushing a
+  `src/sw.js` whose `install` calls `skipWaiting()` and whose `activate` runs
+  `self.registration.unregister()`, deletes every `safia-*` cache and
+  re-navigates the open clients (`clients.matchAll({ type: "window" })` →
+  `client.navigate(client.url)`). Browsers fetch `/sw.js` on every navigation
+  (it is `no-store`), so the replacement reaches every installed copy on its
+  next open. Rolling back to a commit WITHOUT `sw.js` removes nothing:
+  `serve_spa` answers a missing file with index.html, the browser's update
+  check refuses the HTML, and every registered worker stays exactly as it was
+  — harmless (network-first navigations, cache-first hashed assets), but alive.
+- **Icons are edge-cached by Cloudflare (~4 h, by extension) under fixed
+  paths**, so a regenerated icon must change its file name (and the manifest's
+  `src`) or it reaches nobody for hours.
 - **Outside Telegram the safe-area insets follow the OS.** `index.css`'s
   `:root` defaults for `--tg-safe-bottom/left/right` are `env(safe-area-inset-*)`,
   because the installed app on an iPhone runs full-bleed under the home
@@ -4991,8 +5002,11 @@ no event; the route is the share sheet).
   surface pads by those variables; a desktop resolves them to 0 and Telegram
   still overwrites them from `main.jsx`. `theme-color` follows the in-app theme
   — `ThemeContext` rewrites the meta from the computed `--bg-base`, so the
-  standalone title bar matches the header; the manifest carries the dark values
-  because dark is the default.
+  standalone title bar matches the header, and the ES5 boot script in
+  `index.html` paints a stored «light» onto `data-theme` and the meta BEFORE
+  the bundle runs, so a light-theme user no longer opens on a dark page under a
+  dark bar; the manifest carries the dark values because dark is the default
+  and a static manifest cannot follow a stored choice.
 - **The icons are rendered from `public/logo.png`, all four together**: 192/512
   `any` keep the round logo's transparent corners (the favicon look), 192/512
   `maskable` put it on the ring gold scaled to the 80% safe zone. Never

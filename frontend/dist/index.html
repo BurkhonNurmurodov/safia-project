@@ -42,9 +42,9 @@
          inspection), which broke the app with a masked "Script error.".
          Re-sync the copy occasionally. -->
     <script src="/telegram-web-app.js"></script>
-    <script type="module" crossorigin src="/assets/index-D4jc-iLy.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/api-CM5ZsYg1.js">
-    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-CPfDR77o.js">
+    <script type="module" crossorigin src="/assets/index-BqI1H9l7.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/api-B3TE4Odf.js">
+    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-DoRY6UfN.js">
     <link rel="stylesheet" crossorigin href="/assets/index-PYkJVL39.css">
   </head>
   <body>
@@ -62,6 +62,21 @@
           if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
             window.Telegram.WebApp.expand();
+          }
+        } catch (e) {}
+
+        // Paint the STORED theme before the bundle runs. index.css defaults to
+        // dark and ThemeContext only sets data-theme once React mounts, so a
+        // light-theme user saw a dark page — and, since the app is installable,
+        // a dark title bar (theme-color) — on every launch until the bundle was
+        // in, longest on the slow links the screens below exist for. Both are
+        // written here, together: the meta alone would put a cream bar over a
+        // page still flashing dark. palette() is hoisted; it reads the same key.
+        try {
+          if (localStorage.getItem('theme') === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+            var themeMeta = document.querySelector('meta[name="theme-color"]');
+            if (themeMeta) themeMeta.setAttribute('content', palette().bg);
           }
         } catch (e) {}
 
