@@ -426,6 +426,42 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Решение ИИ остаётся в силе.\nКомментарий: {note}"),
         "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | The AI ruling stands.\nComment: {note}"),
     },
+    # ── automatic checklist tasks (services/leader_auto.py) ──────────────────
+    # Three messages, and the two result ones go out on a PASS as well as a
+    # fail. Points now come off without anybody pressing anything, and a
+    # deduction discovered at the end of the month is how trust in the platform
+    # dies — the pass is the receipt that makes the failure readable as a
+    # verdict rather than an accusation out of nowhere.
+    "leader_auto_soon": {
+        "uz": ("Avtomatik tekshiruv yaqinlashdi",
+               "⏳ Vazifa: {task}\n🕐 Tekshiruv: {time} · {date}\n"
+               "Bu vazifani tizim o'zi tekshiradi — rasm yubormaysiz. "
+               "Ma'lumotlarni belgilangan vaqtgacha kiriting."),
+        "uz_cyrl": ("Автоматик текширув яқинлашди",
+                    "⏳ Вазифа: {task}\n🕐 Текширув: {time} · {date}\n"
+                    "Бу вазифани тизим ўзи текширади — расм юбормайсиз. "
+                    "Маълумотларни белгиланган вақтгача киритинг."),
+        "ru": ("Скоро автоматическая проверка",
+               "⏳ Задача: {task}\n🕐 Проверка: {time} · {date}\n"
+               "Эту задачу проверяет система — фото отправлять не нужно. "
+               "Внесите данные до указанного времени."),
+        "en": ("Automatic check coming up",
+               "⏳ Task: {task}\n🕐 Check: {time} · {date}\n"
+               "The system checks this task itself — no photo needed. "
+               "Enter the data before that hour."),
+    },
+    "leader_auto_passed": {
+        "uz": ("Vazifa bajarildi", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+        "uz_cyrl": ("Вазифа бажарилди", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+        "ru": ("Задача выполнена", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+        "en": ("Task passed", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+    },
+    "leader_auto_failed": {
+        "uz": ("Vazifa bajarilmadi", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+        "uz_cyrl": ("Вазифа бажарилмади", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+        "ru": ("Задача не выполнена", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+        "en": ("Task not done", "✖️ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
+    },
     "leader_dispute_approved": {
         "uz": ("Norozilik qabul qilindi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa yana bajarilgan deb hisoblanadi.\nIzoh: {note}"),
         "uz_cyrl": ("Норозилик қабул қилинди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа яна бажарилган деб ҳисобланади.\nИзоҳ: {note}"),

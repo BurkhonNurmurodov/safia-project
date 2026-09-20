@@ -93,6 +93,8 @@ try:
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
         register_leader_rules_sep19,
+        add_leader_auto_checks,
+        register_leader_auto_sep20,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
@@ -395,6 +397,10 @@ try:
     # example photos of the three tasks that become automatic checks. Inline and
     # flag-guarded. Remove with `leader_rules_sep19`.
     cleanup_rules_sep19()
+    # Schema for the automatic checklist tasks. Permanent, not a one-shot:
+    # `create_all` never ALTERs an existing table, and the ledger's unique
+    # key is an EXPRESSION index. Must run before anything arms the rollout.
+    add_leader_auto_checks()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
     # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
     # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.
@@ -403,6 +409,13 @@ try:
     # run. Remove this line, `startup.register_leader_rules_sep19` and
     # `services/leader_rules_sep19.py` once BOTH passes have landed.
     register_leader_rules_sep19()
+    # ⚠ TEMPORARY (20.09.2026): tasks 1, 8 and 9 become automatic checks.
+    # Delete this line, `startup.register_leader_auto_sep20`,
+    # `startup._leader_auto_job/_leader_auto_dm/_auto_run_at/_auto_first_check`
+    # and `services/leader_auto_rollout.py` once BOTH flags are set.
+    # `add_leader_auto_checks` and `services/leader_auto.py` STAY — they are
+    # the feature, not the rollout.
+    register_leader_auto_sep20()
     # ⚠ TEMPORARY one-shot (2026-09-18) — publish the new leader INSTRUCTIONS
     # early so leaders can read them and prepare. Descriptions only: nothing
     # they are scored by changes until the two passes above fire on the 19th.

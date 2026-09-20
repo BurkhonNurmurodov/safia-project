@@ -18,6 +18,7 @@ import { useLang } from "../../context/LangContext";
 import { ReportPhoto, BotPhoto } from "./ProofPhoto";
 import { VERIFY, GROUP_ORDER, groupOf, taskState, disputeOpen } from "./verifyState";
 import api from "../../utils/api";
+import { showReason } from "../../utils/leaderReason";
 
 /**
  * One leader's day, verified — the body of `/leaders/report/:uid`, and of every
@@ -65,6 +66,9 @@ const T_ALL = {
     gNone: "Tekshirilmagan",
     answerYes: "Bajarildi", answerNo: "Bajarilmadi", noAnswer: "Javob berilmagan",
     reason: "Sabab", weight: "Ulush", photos: "Dalil rasmlari",
+    missedDeadline: "Lider bu vazifani soat {time} gacha topshirmadi.",
+    autoReason: "Tizim soat {time} da tekshirdi — {why}.",
+    autoWhy: { ok: "hammasi joyida", no_plan: "bugunga reja kiritilmagan", no_staffing: "odamlar soni kiritilmagan", no_concern: "xavotir yozilmagan", under_target: "reja foizi yetmadi", no_sap_code: "yacheykada SAP kodi yo'q", started_late: "chek-list tekshiruvdan keyin boshlangan", not_checked: "tekshiruv o'tkazilmadi", no_data: "ma'lumot o'qilmadi" },
     shotInApp: "ilovada olingan", shotLate: "kech", shotDeferred: "keyin yuborilgan",
     aiVerdict: "AI xulosasi", window: "Ruxsat etilgan vaqt", onPhoto: "Rasmda",
     needDate: "Kerakli sana",
@@ -130,6 +134,9 @@ const T_ALL = {
     gNone: "Текширилмаган",
     answerYes: "Бажарилди", answerNo: "Бажарилмади", noAnswer: "Жавоб берилмаган",
     reason: "Сабаб", weight: "Улуш", photos: "Далил расмлари",
+    missedDeadline: "Лидер бу вазифани соат {time} гача топширмади.",
+    autoReason: "Тизим соат {time} да текширди — {why}.",
+    autoWhy: { ok: "ҳаммаси жойида", no_plan: "бугунга режа киритилмаган", no_staffing: "одамлар сони киритилмаган", no_concern: "хавотир ёзилмаган", under_target: "режа фоизи етмади", no_sap_code: "ячейкада SAP коди йўқ", started_late: "чек-лист текширувдан кейин бошланган", not_checked: "текширув ўтказилмади", no_data: "маълумот ўқилмади" },
     shotInApp: "иловада олинган", shotLate: "кеч", shotDeferred: "кейин юборилган",
     aiVerdict: "AI хулосаси", window: "Рухсат этилган вақт", onPhoto: "Расмда",
     needDate: "Керакли сана",
@@ -195,6 +202,9 @@ const T_ALL = {
     gNone: "Без проверки",
     answerYes: "Выполнено", answerNo: "Не выполнено", noAnswer: "Нет ответа",
     reason: "Причина", weight: "Вес", photos: "Фото-подтверждения",
+    missedDeadline: "Лидер не отправил эту задачу до {time}.",
+    autoReason: "Система проверила в {time} — {why}.",
+    autoWhy: { ok: "всё на месте", no_plan: "план на сегодня не внесён", no_staffing: "количество людей не внесено", no_concern: "обеспокоенность не записана", under_target: "процент плана не достигнут", no_sap_code: "у ячейки нет кода SAP", started_late: "чек-лист начат после проверки", not_checked: "проверка не проводилась", no_data: "данные не прочитаны" },
     shotInApp: "снято в приложении", shotLate: "поздно", shotDeferred: "отправлено позже",
     aiVerdict: "Заключение ИИ", window: "Допустимое время", onPhoto: "На фото",
     needDate: "Нужная дата",
@@ -260,6 +270,9 @@ const T_ALL = {
     gNone: "Not checked",
     answerYes: "Done", answerNo: "Not done", noAnswer: "No answer",
     reason: "Reason", weight: "Weight", photos: "Proof photos",
+    missedDeadline: "The leader didn't submit this task before {time}.",
+    autoReason: "The system checked at {time} — {why}.",
+    autoWhy: { ok: "everything in place", no_plan: "no plan entered for today", no_staffing: "headcount not entered", no_concern: "no concern written", under_target: "plan percentage not reached", no_sap_code: "the cell has no SAP code", started_late: "the checklist began after the check", not_checked: "the check did not run", no_data: "the data could not be read" },
     shotInApp: "taken in the app", shotLate: "late", shotDeferred: "sent later",
     aiVerdict: "AI verdict", window: "Allowed window", onPhoto: "On the photo",
     needDate: "Required date",
@@ -404,7 +417,15 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
           {!t.done && t.reason && (
             <p className="text-[12px] leading-snug pt-2.5" style={{ color: "var(--text-2)" }}>
               <span className="font-semibold" style={{ color: "var(--text-4)" }}>{T.reason}: </span>
-              {t.reason}
+              {/* NEVER the raw column: a not-done reason is either the
+                  leader's own words or one of two machine sentinels
+                  (`__missed__|HH:MM`, `__auto__|HH:MM|code`), and printing a
+                  sentinel at the person whose score it explains is the
+                  regression utils/leaderReason.js exists to prevent. */}
+              {showReason(t.reason, T.missedDeadline, {
+                template: T.autoReason,
+                why: (c) => (T.autoWhy || {})[c],
+              })}
             </p>
           )}
 

@@ -155,7 +155,10 @@ function TaskRow({ task, uid, lang, T, onPhoto, onReopen, onWipe, busy }) {
       {task.reason ? (
         <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
           <span style={{ color: "var(--text-4)" }}>{t("admin.ltd.reason")}: </span>
-          {showReason(task.reason, t("admin.ltd.missedAt"))}
+          {showReason(task.reason, t("admin.ltd.missedAt"), {
+            template: t("admin.ltd.autoAt"),
+            why: (c) => t(`admin.ltd.autoWhy.${c}`),
+          })}
         </p>
       ) : null}
 

@@ -90,6 +90,17 @@ def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
         return False
     if not cfg_entry or not cfg_entry.get("enabled"):
         return False
+    # An AUTOMATIC task has no late door, because it had no door at all: nobody
+    # was allowed to file it, so nobody can be late for it. Without this refusal
+    # every auto task matches the whole of the rest of this function — enabled,
+    # untouched, past its hour, not done — and the leader is offered «Kechikkan
+    # isbot» on a verdict the platform reached by reading its own database, then
+    # a brigadir and an admin are put in front of a two-stage ruling about a
+    # photograph of it. This is the ONE place it can be refused once: the bot
+    # screen and `routers/leader_proof._late_ctx` both read this predicate.
+    from app.services import leader_auto
+    if leader_auto.is_auto(cfg_entry):
+        return False
     # A DAY ROW MAY NOT EXIST, and that is the commonest case this feature is
     # for. `LeaderTaskDay` is created lazily by the first SAVED task, so a
     # leader who filed nothing all day has none — and `autoclose_due` only

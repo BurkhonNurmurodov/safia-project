@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ListChecks, User, Users, Layers, Camera, Clock, AlarmClock, Scale, Info,
-  Image as ImageIcon, RefreshCw, CalendarCheck,
+  Image as ImageIcon, RefreshCw, CalendarCheck, Cog,
 } from "lucide-react";
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
@@ -52,6 +52,7 @@ const TXT = {
     nextMorning: "ertalab",
     deadlineNote: "Muddat ma'lumot uchun ko'rsatiladi: baho faqat kunlik topshirish oynasi bo'yicha hisoblanadi.",
     proof: "Isbot", minPhotos: "kamida {n} ta rasm", noPhotos: "rasm talab qilinmaydi",
+    autoCheck: "Avtomatik tekshiriladi", inAuto: "Bu vazifani tizim o'zi tekshiradi: belgilangan soatda ma'lumotlaringiz o'qiladi va natija yoziladi. Rasm yubormaysiz, botdagi «Ha»/«Yo'q» tugmalari bu vazifada ishlamaydi. Tekshiruvdan 30 daqiqa oldin eslatma, tekshiruvdan so'ng natija keladi.", autoAt: "Tekshiruv: {t}",
     inApp: "Bu vazifaning rasmi botdagi «📷 Kamerani ochish» tugmasi orqali ILOVADA olinadi. Chatga rasm yuborib bo'lmaydi; sana va vaqt rasmga server soati bo'yicha avtomatik yoziladi.",
     what: "Nima qilish kerak",
     criteria: "AI nimani tekshiradi", noCriteria: "Talab yozilmagan — AI faqat rasm vaqtini tekshiradi.",
@@ -80,6 +81,7 @@ const TXT = {
     nextMorning: "эрталаб",
     deadlineNote: "Муддат маълумот учун кўрсатилади: баҳо фақат кунлик топшириш ойнаси бўйича ҳисобланади.",
     proof: "Исбот", minPhotos: "камида {n} та расм", noPhotos: "расм талаб қилинмайди",
+    autoCheck: "Автоматик текширилади", inAuto: "Бу вазифани тизим ўзи текширади: белгиланган соатда маълумотларингиз ўқилади ва натижа ёзилади. Расм юбормайсиз, ботдаги «Ҳа»/«Йўқ» тугмалари бу вазифада ишламайди. Текширувдан 30 дақиқа олдин эслатма, текширувдан сўнг натижа келади.", autoAt: "Текширув: {t}",
     inApp: "Бу вазифанинг расми ботдаги «📷 Камерани очиш» тугмаси орқали ИЛОВАДА олинади. Чатга расм юбориб бўлмайди; сана ва вақт расмга сервер соати бўйича автоматик ёзилади.",
     what: "Нима қилиш керак",
     criteria: "AI нимани текширади", noCriteria: "Талаб ёзилмаган — AI фақат расм вақтини текширади.",
@@ -108,6 +110,7 @@ const TXT = {
     nextMorning: "утра",
     deadlineNote: "Срок носит справочный характер: оценка считается только по дневному окну сдачи отчёта.",
     proof: "Доказательство", minPhotos: "минимум {n} фото", noPhotos: "фото не требуется",
+    autoCheck: "Проверяется автоматически", inAuto: "Эту задачу проверяет система: в назначенный час читаются ваши данные и записывается результат. Фото отправлять не нужно, кнопки «Да»/«Нет» в боте для неё не работают. За 30 минут до проверки придёт напоминание, после — результат.", autoAt: "Проверка: {t}",
     inApp: "Фото для этой задачи снимается В ПРИЛОЖЕНИИ — кнопкой «📷 Открыть камеру» в боте. Отправить фото в чат нельзя; дата и время наносятся на снимок автоматически по часам сервера.",
     what: "Что нужно сделать",
     criteria: "Что проверяет ИИ", noCriteria: "Требование не задано — ИИ проверяет только время фото.",
@@ -136,6 +139,7 @@ const TXT = {
     nextMorning: "next morning",
     deadlineNote: "The deadline is informational: the score is computed only against the day's filing window.",
     proof: "Proof", minPhotos: "at least {n} photo(s)", noPhotos: "no photo required",
+    autoCheck: "Checked automatically", inAuto: "The system checks this task itself: at the set hour it reads your data and records the result. You send no photo, and the Yes/No buttons in the bot do nothing for it. A reminder arrives 30 minutes before the check and the result right after it.", autoAt: "Check: {t}",
     inApp: "This task's photo is taken IN THE APP — with the «📷 Open the camera» button in the bot. No photo can be sent to the chat; the date and time are burnt in automatically from the server's clock.",
     what: "What to do",
     criteria: "What the AI checks", noCriteria: "No requirement written — the AI checks only the photo time.",
@@ -186,6 +190,10 @@ function Tile({ icon: Icon, label, value, sub }) {
 }
 
 function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perTask, onZoom, flash }) {
+  // Answered by the PLATFORM, not by this leader. Read once: five things on
+  // this card change meaning for such a task, and a re-test at each is a
+  // re-test one of them would eventually be missing.
+  const isAuto = task.proof_kind === "auto";
   const name = task.names?.[lang] || task.names?.uz || `T${task.id}`;
   const note = task.note?.[lang] || task.note?.uz || "";
   // The instruction, and the only text shown to a leader. The backend falls
@@ -229,10 +237,19 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>{name}</h3>
           <div className="mt-0.5 flex items-center gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
-            <Camera size={12} className="flex-shrink-0" />
+            {isAuto ? <Cog size={12} className="flex-shrink-0" />
+              : <Camera size={12} className="flex-shrink-0" />}
             <span className="truncate">
-              {note ? `${note} · ` : `${T.proof} · `}
-              {task.min_media > 0 ? fill(T.minPhotos, { n: task.min_media }) : T.noPhotos}
+              {/* An AUTOMATIC task has no photos and no photo minimum, so it
+                  must not print one: `min_media` is still resolved down the
+                  chain for it and still reads 1 or 3, which would tell a leader
+                  to photograph a task the bot refuses to accept a photo for. */}
+              {isAuto ? T.autoCheck : (
+                <>
+                  {note ? `${note} · ` : `${T.proof} · `}
+                  {task.min_media > 0 ? fill(T.minPhotos, { n: task.min_media }) : T.noPhotos}
+                </>
+              )}
             </span>
           </div>
           {/* WHERE this task is answered. Stated first, and as a sentence
@@ -240,6 +257,14 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
               to send a file to the chat and finds the bot refusing it has been
               left to guess, and that is a support call, not a misunderstanding
               they can resolve alone. */}
+          {isAuto && (
+            <div className="mt-1.5 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[11px] leading-snug"
+              style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",
+                       border: "1px solid rgba(200,151,63,0.30)" }}>
+              <Cog size={12} className="flex-shrink-0 mt-px" style={{ color: "var(--brand)" }} />
+              <span>{T.inAuto}</span>
+            </div>
+          )}
           {task.proof_kind === "camera" && (
             <div className="mt-1.5 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[11px] leading-snug"
               style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",

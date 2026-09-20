@@ -4465,6 +4465,23 @@ def report_leader_deadline_rules() -> None:
     except Exception as exc:
         print(f"[startup] per-cell self-check skipped: {exc}")
 
+    # …and the AUTOMATIC tasks, for the same reason and in the same breath: an
+    # auto task on a unit that closes whole DAYS has nothing to close it, and an
+    # auto task with no readable check hour is never asked at all. Both leave a
+    # checklist day open forever, which every read surface on this platform
+    # reads as «this leader filed nothing».
+    try:
+        from app.database import SessionLocal
+        from app.services.leader_auto_rollout import self_check as _auto_check
+        db = SessionLocal()
+        try:
+            for line in _auto_check(db):
+                bad.append(f"auto: {line}")
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[startup] automatic-task self-check skipped: {exc}")
+
     if not bad:
         print("[startup] leader deadline rules: OK")
         return
@@ -6693,6 +6710,224 @@ def _rules_run_at(shift: int, now):
     while nxt <= now or _rules_in_shift(shift, nxt):
         nxt += timedelta(days=1)
     return nxt
+
+
+def add_leader_auto_checks() -> None:
+    """2026-09-20: the schema behind automatic checklist tasks.
+
+    Two things `create_all` cannot do on its own — it never ALTERs an existing
+    table, and it does not build the expression index this ledger needs:
+
+    * `leader_task_defs.auto_check` — WHICH check decides a task, NULL for the
+      ordinary ones, which is every task until the rollout names three.
+    * `leader_auto_checks`, and its `COALESCE(cell_id, 0)` unique index. The
+      plain four-column constraint would NOT hold: Postgres treats NULLs as
+      DISTINCT inside a unique key, so a cell-less leader-day could take two
+      rows for one task and the pass would stop being idempotent. Same shape and
+      same reason as `uq_ltask_day`.
+
+    Pure DDL, idempotent, no flag. Nothing reads either until a task is given a
+    check, so the migration moves no number by itself.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE leader_task_defs "
+                        "ADD COLUMN IF NOT EXISTS auto_check VARCHAR(24)"))
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS leader_auto_checks (
+                id          SERIAL PRIMARY KEY,
+                leader_id   INTEGER NOT NULL REFERENCES role_profiles(id),
+                date        VARCHAR(10) NOT NULL,
+                cell_id     INTEGER REFERENCES cells(id),
+                task_id     INTEGER NOT NULL,
+                manager_id  INTEGER NOT NULL,
+                "check"     VARCHAR(24) NOT NULL,
+                due_at      TIMESTAMPTZ,
+                warned_at   TIMESTAMPTZ,
+                checked_at  TIMESTAMPTZ,
+                outcome     VARCHAR(12),
+                code        VARCHAR(32),
+                facts       JSONB,
+                entry_id    INTEGER
+            )"""))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_ltask_auto_leader "
+                        "ON leader_auto_checks (leader_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_ltask_auto_date "
+                        "ON leader_auto_checks (date)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_ltask_auto_manager "
+                        "ON leader_auto_checks (manager_id)"))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_ltask_auto ON "
+            "leader_auto_checks (leader_id, date, COALESCE(cell_id, 0), task_id)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader_auto_checks migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+# ── 20 September 2026: tasks 1, 8 and 9 become AUTOMATIC ────────────────────
+#
+# TWO flags, for the reason the 19 Sep passes have two: they are two
+# deliveries, and «shift 1 is switched» must never read as «this is done».
+# Changing what either writes needs a NEW flag key — an old "already ran" mark
+# makes a rewritten pass a no-op on every box that has booted once.
+LEADER_AUTO_FLAGS = {1: "leader_auto_2026_09_20_shift1_v1",
+                     2: "leader_auto_2026_09_20_shift2_v1"}
+# Shift 1's day of the 20th, and shift 2's night of the 20th→21st. Each sits in
+# its own shift's GAP: 06:45 is before shift 1 opens at 07:00, and 16:30 is
+# after the night of the 19th→20th has closed (09:00) and before the night of
+# the 20th→21st opens (17:00).
+LEADER_AUTO_DUE = {1: (2026, 9, 20, 6, 45), 2: (2026, 9, 20, 16, 30)}
+
+
+def _auto_run_at(shift: int, now):
+    """When this shift's switch should fire — the `_rules_run_at` rule, on this
+    pass's own instants. Before it, at it; after it with the shift idle, in a
+    minute; after it with the shift RUNNING, at the next day's instant, so a
+    checklist already being filled is never re-configured underneath it."""
+    from datetime import timedelta
+    due = now.replace(year=LEADER_AUTO_DUE[shift][0],
+                      month=LEADER_AUTO_DUE[shift][1],
+                      day=LEADER_AUTO_DUE[shift][2],
+                      hour=LEADER_AUTO_DUE[shift][3],
+                      minute=LEADER_AUTO_DUE[shift][4],
+                      second=0, microsecond=0)
+    if now < due:
+        return due
+    if not _rules_in_shift(shift, now):
+        return now + timedelta(minutes=1)
+    # ONE deliberate exception to the never-mid-shift rule, and only until the
+    # first warning of the day has gone out.
+    #
+    # That rule exists because a criteria edit RE-JUDGES a checklist already
+    # being filled. This pass judges nothing: a task the leader has already
+    # answered keeps its entry untouched (`leader_auto._settle` records it
+    # `already_filed` and writes nothing), so nobody can lose a point they had
+    # earned. What a late switch costs is a leader who was about to photograph
+    # #1 finding it decided for them — and what DEFERRING costs is the whole
+    # day, because the three checks are at fixed hours and a pass landing after
+    # them would switch the tasks over with every check of the day already gone.
+    # So the switch is allowed to land inside the shift up to the first warning,
+    # and is deferred to the next day's instant after it.
+    first = min(_auto_first_check(shift), default=None)
+    if first is not None and now < first:
+        return now + timedelta(minutes=1)
+    nxt = due
+    while nxt <= now or _rules_in_shift(shift, nxt):
+        nxt += timedelta(days=1)
+    return nxt
+
+
+def _auto_first_check(shift: int):
+    """The warning instants of this shift's checks, on the day the switch is
+    due — the last moments at which switching still buys that day anything."""
+    from datetime import datetime as _dt, timedelta
+    from app.services.leader_auto import WARN_BEFORE
+    from app.services.leader_auto_rollout import TASKS
+    from app.scheduler import SCHEDULER_TZ
+    y, mo, d, _h, _mi = LEADER_AUTO_DUE[shift]
+    out = []
+    for _tid, (_check, hours) in TASKS.items():
+        hh = hours.get(shift)
+        if not hh:
+            continue
+        # A night's hours before its 17:00 opening belong to the NEXT calendar
+        # day, which is the same seat `leader_ai.window_offset` gives them.
+        plus = 1 if (shift == 2 and hh < "17:00") else 0
+        out.append(_dt(y, mo, d, int(hh[:2]), int(hh[3:]),
+                       tzinfo=SCHEDULER_TZ) + timedelta(days=plus) - WARN_BEFORE)
+    return out
+
+
+def register_leader_auto_sep20() -> None:
+    """Arm both switches. Called on EVERY boot: the scheduler's jobstore is in
+    memory and a deploy kills whatever was pending, so only the flag stops a
+    second run. Never raises."""
+    try:
+        from app.scheduler import SCHEDULER_TZ, schedule_at
+        now = datetime.now(timezone.utc).astimezone(SCHEDULER_TZ)
+        db = SessionLocal()
+        try:
+            for shift, flag in sorted(LEADER_AUTO_FLAGS.items()):
+                if db.query(AppSetting).filter_by(key=flag).first():
+                    continue
+                run_at = _auto_run_at(shift, now)
+                schedule_at(f"leader-auto-sep20-s{shift}", run_at,
+                            lambda s=shift: _leader_auto_job(s))
+                print(f"[startup] auto checks 20.09: shift {shift} armed for "
+                      f"{run_at:%d.%m %H:%M} ({SCHEDULER_TZ})")
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[startup] auto checks 20.09 could not be armed: {exc}")
+
+
+def _leader_auto_job(shift: int) -> None:
+    """Switch one shift's units, then flag, log and report."""
+    from app.services import action_log, leader_auto_rollout as roll
+    flag = LEADER_AUTO_FLAGS[shift]
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=flag).first():
+            return
+        out = roll.apply(db, shift)
+        left = roll.leader_overrides_left(db, shift)
+        db.add(AppSetting(key=flag, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        action_log.record_system(
+            "leader_config", "ltask.auto_applied", db=db,
+            details=[("shift", shift), ("units", out["units"]),
+                     ("tasks", ", ".join(f"#{t}" for t in sorted(roll.TASKS))),
+                     ("checks", out["checks"]), ("hours", out["deadlines"]),
+                     ("texts", out["texts"]), ("leader_overrides", len(left))])
+        db.commit()
+        print(f"[startup] auto checks 20.09 applied: shift {shift} → {out}")
+        _leader_auto_dm(shift, out, left)
+    except Exception as exc:
+        print(f"[startup] auto checks 20.09 FAILED for shift {shift}: {exc}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        _leader_auto_dm(shift, None, [], error=str(exc))
+    finally:
+        db.close()
+
+
+def _leader_auto_dm(shift: int, out, left, error: str | None = None) -> None:
+    """Say what happened, to every admin. This platform has no shell, so a pass
+    that changed how twenty-one units are scored and told nobody is a pass
+    nobody can check."""
+    try:
+        import html
+        from app.routers.boot import _recipients
+        from app.services import leader_auto_rollout as roll
+        from app.telegram_bot import bot
+        esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+        if error:
+            text = ("\U0001F6D1 <b>Avtomatik tekshiruv o'rnatilmadi</b>\n"
+                    f"Smena {shift}\n<pre>{esc(error[:600])}</pre>")
+        else:
+            rows = "\n".join(esc(x) for x in roll.preview(None, shift))
+            text = ("\u2699\ufe0f <b>Avtomatik tekshiruvlar yoqildi</b>\n"
+                    f"Smena {shift} · {out['units']} ta brigada\n\n"
+                    f"<pre>{rows}</pre>\n"
+                    f"Vazifa matnlari yangilandi: {out['texts']}\n"
+                    "#1, #8 va #9 endi tizim tomonidan tekshiriladi — "
+                    "liderlar ularga rasm yubormaydi.")
+            if left:
+                text += ("\n\n\u26a0\ufe0f Quyidagi liderlarda o'z sozlamasi "
+                         "bor, ularga tegilmadi:\n<pre>"
+                         + esc("\n".join(left[:15])) + "</pre>")
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, text, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] auto checks 20.09 report not delivered: {exc}")
 
 
 def register_leader_rules_sep19() -> None:

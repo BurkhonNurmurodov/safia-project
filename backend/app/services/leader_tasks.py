@@ -684,10 +684,22 @@ def resolve_deadline(*levels) -> str | None:
     return None
 
 
-# The two ways a proof can be collected. "screenshot" is the floor: a level
-# that says nothing, and a platform that never ran the migration, both land
-# here, so in-app capture is only ever something an admin switched ON.
-PROOF_KINDS = ("screenshot", "camera")
+# The three ways a task is ANSWERED. "screenshot" is the floor: a level that
+# says nothing, and a platform that never ran the migration, both land here, so
+# neither in-app capture nor an automatic check is ever something a unit drifts
+# into — both are only ever switched ON.
+#
+# "auto" is the odd one and is not a kind of PROOF at all: the task is decided
+# by the platform reading its own data at a fixed hour, so there is no proof,
+# no photo, no Gemini call and nothing for the leader to send. It is spelled as
+# a proof kind regardless, because every surface that asks "how is this task
+# answered" already branches on this one field — a fourth question ("…and is it
+# automatic?") would have to be added to each of them and would be forgotten at
+# one. WHICH check runs is `LeaderTaskDef.auto_check`, read by
+# `services/leader_auto.py`; a task that says "auto" and names no check is a
+# misconfiguration and `leader_auto.is_auto` refuses it, so the task stays an
+# ordinary one rather than becoming an unanswerable one.
+PROOF_KINDS = ("screenshot", "camera", "auto")
 
 # In-app capture is a PILOT, and a pilot must not be switchable for the whole
 # company by one tap in the wrong modal. The global level of the chain is the
@@ -797,6 +809,7 @@ def global_level(td: LeaderTaskDef) -> dict:
         # every task did before the tolerance existed.
         "date_plus": int(td.date_plus or 0),
         "proof_kind": (td.proof_kind or "screenshot"),
+        "auto_check": (td.auto_check or None),
     }
 
 
@@ -1048,6 +1061,13 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
             # camera. The bot branches on it, so it is resolved here with
             # everything else the bot reads rather than looked up separately.
             "proof_kind": resolve_proof_kind(r, s, td),
+            # WHICH automatic check decides this task, or None for the
+            # ordinary case. Global-only (see `LeaderTaskDef.auto_check`), so it
+            # is read straight off the def rather than resolved down the chain —
+            # but it rides in the SAME dict as `proof_kind`, because the two are
+            # only meaningful together and a reader holding one without the
+            # other cannot tell an auto task from a misconfigured one.
+            "auto_check": (td.auto_check or None),
         }
     return out
 
@@ -1116,6 +1136,13 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                 "description": desc,
                 "deadline": resolve_deadline(s, td),
                 "proof_kind": resolve_proof_kind(s, td),
+                # WHICH automatic check decides this task, or None for the
+                # ordinary case. Global-only (see `LeaderTaskDef.auto_check`), so it
+                # is read straight off the def rather than resolved down the chain —
+                # but it rides in the SAME dict as `proof_kind`, because the two are
+                # only meaningful together and a reader holding one without the
+                # other cannot tell an auto task from a misconfigured one.
+                "auto_check": (td.auto_check or None),
             }
         level = "supervisor" if manager is not None else "global"
 
@@ -1883,6 +1910,35 @@ def missed_reason(shift: int | None) -> str:
     VIEWER instead, which is also what keeps the time out of AM/PM.
     """
     return f"{MISSED_PREFIX}{deadline_hhmm(shift)}"
+
+
+AUTO_PREFIX = "__auto__|"
+
+
+def auto_reason(hhmm: str, code: str) -> str:
+    """Sentinel reason for a task the PLATFORM answered — `__auto__|HH:MM|code`.
+
+    The twin of `missed_reason` above and for the same reason: `reason` is free
+    text a leader typed in their own language, so it cannot also carry one fixed
+    sentence for four viewers. Here it carries two facts instead — the hour the
+    check was taken at, and WHY it went the way it did — and each reader renders
+    them in its own locale (`utils/leaderReason.js#showReason` is the client
+    twin, and it must learn this prefix or it prints the sentinel at an operator
+    verbatim, which is exactly what `__missed__` did on 2026-08-27).
+
+    The code is a stable key, never a sentence: the same string is stored on the
+    `leader_auto_checks` ledger row beside the numbers it was taken on.
+    """
+    return f"{AUTO_PREFIX}{hhmm}|{code}"
+
+
+def read_auto_reason(reason: str | None) -> tuple[str, str] | None:
+    """`(hhmm, code)` off an auto sentinel, or None when it is not one."""
+    s = str(reason or "")
+    if not s.startswith(AUTO_PREFIX):
+        return None
+    parts = s[len(AUTO_PREFIX):].split("|", 1)
+    return (parts[0], parts[1] if len(parts) > 1 else "")
 
 
 def compute_completion(settings: dict[int, dict], entries: list[LeaderTaskEntry]) -> float:

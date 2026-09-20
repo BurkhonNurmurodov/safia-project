@@ -1551,6 +1551,20 @@ class LeaderTaskDef(Base):
     # two override levels below = inherit, and "screenshot" at this level is the
     # floor, so nothing changes anywhere until an admin picks camera.
     proof_kind   = Column(String(12), nullable=False, default="screenshot")
+    # WHICH automatic check decides this task, or NULL for the ordinary case:
+    # a proof somebody files and a person or Gemini judges.
+    #
+    # GLOBAL and not on the global → supervisor → leader chain, deliberately.
+    # The chain answers questions a unit may reasonably differ on (how many
+    # photos, which hours, what a correct proof looks like); WHAT «Kunlik plan»
+    # means is not one of them — it is the same question about the same
+    # dashboard for every unit on the platform, and a per-unit answer would be
+    # a per-unit definition of a word. What IS per unit is WHEN it is asked,
+    # and that is the chain `deadline` beside it, so a night shift can be asked
+    # at 23:00 what a day shift is asked at 10:00.
+    #
+    # Reading it is `leader_auto.check_of`; the values are its CHECKS keys.
+    auto_check   = Column(String(24), nullable=True)
     # Virtual-default weight: a supervisor with no leader_task_settings row for
     # this task uses this (the seeded weights sum to 100, so untouched
     # supervisors never trip the ≠100 warning).
@@ -1815,6 +1829,55 @@ class LeaderTaskEntry(Base):
     closed_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (UniqueConstraint("day_id", "task_id", name="uq_ltask_entry"),)
+
+
+class LeaderAutoCheck(Base):
+    """One automatic checklist verdict — the ledger of `services/leader_auto.py`.
+
+    A task whose `proof_kind` is "auto" is not filed by anybody: at a fixed hour
+    the platform reads the dashboard (or the concerns register), decides, writes
+    the leader's `LeaderTaskEntry` itself and closes the task. This table is
+    what makes that pass idempotent and, more importantly, ANSWERABLE — a score
+    that moved because of a machine has to be explainable months later, and the
+    entry alone carries only a verdict.
+
+    One row per (leader, date, cell, task), the key every per-cell surface on
+    this platform uses, with the same COALESCE expression index `uq_ltask_day`
+    needs and for the same reason: Postgres treats NULLs as DISTINCT inside a
+    unique key, so a plain four-column constraint would accept two cell-less
+    rows for one leader-day.
+
+    A row is written at the WARNING (30 minutes before), so `warned_at` alone
+    with `checked_at` NULL is «this leader was told, and at the check there was
+    no checklist to judge». That absence is load-bearing: it is how a day
+    started AFTER the check is recognised later and recorded as such, with no
+    `created_at` on the day itself.
+    """
+    __tablename__ = "leader_auto_checks"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    leader_id  = Column(Integer, ForeignKey("role_profiles.id"), nullable=False, index=True)
+    date       = Column(String(10), nullable=False, index=True)   # the CHECKLIST day
+    cell_id    = Column(Integer, ForeignKey("cells.id"), nullable=True, index=True)
+    task_id    = Column(Integer, nullable=False)
+    manager_id = Column(Integer, nullable=False, index=True)       # the unit at check time
+    check      = Column(String(24), nullable=False)                # leader_auto.CHECKS key
+    due_at     = Column(DateTime(timezone=True), nullable=True)    # the instant it was asked at
+    warned_at  = Column(DateTime(timezone=True), nullable=True)
+    checked_at = Column(DateTime(timezone=True), nullable=True)
+    # passed | failed | skipped — never NULL once `checked_at` is set
+    outcome    = Column(String(12), nullable=True)
+    # WHY, as a stable key the four locales render: no_plan, no_staffing,
+    # no_concern, under_target, no_sap_code, started_late, no_data …
+    code       = Column(String(32), nullable=True)
+    # The numbers the verdict was taken on — the whole reason this row exists.
+    facts      = Column(JSONB, nullable=True)
+    entry_id   = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("uq_ltask_auto", "leader_id", "date",
+              text("COALESCE(cell_id, 0)"), "task_id", unique=True),
+    )
 
 
 class LeaderTaskCapture(Base):

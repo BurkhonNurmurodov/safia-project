@@ -25,8 +25,8 @@ from app.models import (
 )
 from app.reg_token import make_reg_token
 from app.services import (
-    action_log, leader_ai, leader_cells, leader_close, leader_late_proof,
-    leader_proof, leader_tasks,
+    action_log, leader_ai, leader_auto, leader_cells, leader_close,
+    leader_late_proof, leader_proof, leader_tasks,
 )
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
@@ -2016,6 +2016,14 @@ def _broadcast_callback(call: types.CallbackQuery):
 # table — NOT process memory: Passenger dispatches consecutive updates to
 # different worker processes, exactly like the broadcast_drafts flow.
 
+# Every `lt:` action whose third segment is a TASK id. Kept as one set so the
+# automatic-task refusal in the dispatcher cannot fall out of step with the
+# branches it guards.
+_LT_TASK_ACTIONS = frozenset({
+    "task", "tclose", "tcconf", "rconf", "crst", "crok",
+    "yes", "no", "save",
+})
+
 _LT_MESSAGES = {
     "uz": {
         "not_leader": "Siz lider emassiz.",
@@ -2062,6 +2070,11 @@ _LT_MESSAGES = {
         "pt_need_more": "\n\nYopish uchun kamida {min} ta rasm kerak.",
         "pt_auto": "\n\n\u23f0 {t} da avtomatik yopiladi.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
+        "auto_head": '⚙️ {task}\n\nBu vazifani tizim o‘zi tekshiradi — rasm yuborish shart emas.\n\n🕑 Tekshiruv vaqti: {t}\n',
+        "auto_wait": '\nHozircha tekshirilmagan. Belgilangan vaqtda natija o‘zi keladi.',
+        "auto_done": '\n✅ Bajarildi ({why})',
+        "auto_fail": '\n✖️ Bajarilmadi — {why}',
+        "auto_locked": 'Bu vazifani tizim o‘zi tekshiradi — javob berish shart emas.',
         "pt_state_pending": "\u23f3 Tekshirilmoqda\u2026",
         "pt_state_passed": "\u2705 Qabul qilindi \u00b7 {w}/{w} ball",
         "pt_state_failed": "\u26a0\ufe0f Rad etildi \u00b7 0/{w} ball",
@@ -2207,6 +2220,11 @@ _LT_MESSAGES = {
         "pt_need_more": "\n\nЁпиш учун камида {min} та расм керак.",
         "pt_auto": "\n\n\u23f0 {t} да автоматик ёпилади.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
+        "auto_head": '⚙️ {task}\n\nБу вазифани тизим ўзи текширади — расм юбориш шарт эмас.\n\n🕑 Текширув вақти: {t}\n',
+        "auto_wait": '\nҲозирча текширилмаган. Белгиланган вақтда натижа ўзи келади.',
+        "auto_done": '\n✅ Бажарилди ({why})',
+        "auto_fail": '\n✖️ Бажарилмади — {why}',
+        "auto_locked": 'Бу вазифани тизим ўзи текширади — жавоб бериш шарт эмас.',
         "pt_state_pending": "\u23f3 Текширилмоқда\u2026",
         "pt_state_passed": "\u2705 Қабул қилинди \u00b7 {w}/{w} балл",
         "pt_state_failed": "\u26a0\ufe0f Рад этилди \u00b7 0/{w} балл",
@@ -2351,6 +2369,11 @@ _LT_MESSAGES = {
         "pt_need_more": "\n\nДля закрытия нужно минимум {min} фото.",
         "pt_auto": "\n\n\u23f0 Автоматически закроется в {t}.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
+        "auto_head": '⚙️ {task}\n\nЭту задачу проверяет система — фото отправлять не нужно.\n\n🕑 Время проверки: {t}\n',
+        "auto_wait": '\nПока не проверено. Результат придёт сам в назначенное время.',
+        "auto_done": '\n✅ Выполнено ({why})',
+        "auto_fail": '\n✖️ Не выполнено — {why}',
+        "auto_locked": 'Эту задачу проверяет система — отвечать не нужно.',
         "pt_state_pending": "\u23f3 Проверяется\u2026",
         "pt_state_passed": "\u2705 Принято \u00b7 {w}/{w} баллов",
         "pt_state_failed": "\u26a0\ufe0f Отклонено \u00b7 0/{w} баллов",
@@ -2495,6 +2518,11 @@ _LT_MESSAGES = {
         "pt_need_more": "\n\nAt least {min} photo(s) are needed before closing.",
         "pt_auto": "\n\n\u23f0 Closes automatically at {t}.",
         "pt_closed_head": "\U0001F512 {task}\n\n",
+        "auto_head": '⚙️ {task}\n\nThis task is checked by the system — no photo is needed.\n\n🕑 Check time: {t}\n',
+        "auto_wait": '\nNot checked yet. The result arrives by itself at that hour.',
+        "auto_done": '\n✅ Done ({why})',
+        "auto_fail": '\n✖️ Not done — {why}',
+        "auto_locked": 'This task is checked by the system — there is nothing to answer.',
         "pt_state_pending": "\u23f3 Being checked\u2026",
         "pt_state_passed": "\u2705 Accepted \u00b7 {w}/{w} points",
         "pt_state_failed": "\u26a0\ufe0f Rejected \u00b7 0/{w} points",
@@ -2864,6 +2892,89 @@ def _lt_pt_close_btn(lang: str, pid: int, task_id: int, ready: bool,
     return _lt_btn(_lt(lang, "btn_close_task"), f"lt:tclose:{_lt_ref(pid, cid)}:{task_id}") if ready else None
 
 
+# Why an automatic check went the way it did, in the reader's own language.
+# The CODE is what travels (it is on the `leader_auto_checks` ledger row and in
+# the entry's own `__auto__|HH:MM|code` sentinel); every surface renders it for
+# itself, which is the same split `__missed__` already uses.
+_AUTO_WHY = {
+    "uz": {"ok": "hammasi joyida", "no_plan": "bugunga reja kiritilmagan",
+           "no_staffing": "odamlar soni kiritilmagan",
+           "no_concern": "xavotir yozilmagan",
+           "under_target": "reja foizi yetmadi",
+           "no_sap_code": "yacheykada SAP kodi yo\u2018q",
+           "started_late": "chek-list tekshiruvdan keyin boshlangan",
+           "not_checked": "tekshiruv o\u2018tkazilmadi",
+           "no_data": "ma\u2019lumot o\u2018qilmadi"},
+    "uz_cyrl": {"ok": "ҳаммаси жойида", "no_plan": "бугунга режа киритилмаган",
+                "no_staffing": "одамлар сони киритилмаган",
+                "no_concern": "хавотир ёзилмаган",
+                "under_target": "режа фоизи етмади",
+                "no_sap_code": "ячейкада SAP коди йўқ",
+                "started_late": "чек-лист текширувдан кейин бошланган",
+                "not_checked": "текширув ўтказилмади",
+                "no_data": "маълумот ўқилмади"},
+    "ru": {"ok": "всё на месте", "no_plan": "план на сегодня не внесён",
+           "no_staffing": "количество людей не внесено",
+           "no_concern": "обеспокоенность не записана",
+           "under_target": "процент плана не достигнут",
+           "no_sap_code": "у ячейки нет кода SAP",
+           "started_late": "чек-лист начат после проверки",
+           "not_checked": "проверка не проводилась",
+           "no_data": "данные не прочитаны"},
+    "en": {"ok": "everything in place", "no_plan": "no plan entered for today",
+           "no_staffing": "headcount not entered",
+           "no_concern": "no concern written",
+           "under_target": "plan percentage not reached",
+           "no_sap_code": "the cell has no SAP code",
+           "started_late": "the checklist began after the check",
+           "not_checked": "the check did not run",
+           "no_data": "the data could not be read"},
+}
+
+
+def _auto_why(lang: str, code: str) -> str:
+    return (_AUTO_WHY.get(lang) or _AUTO_WHY["uz"]).get(code, code)
+
+
+def _lt_auto_view(db, tid: int, pid: int, lang: str, chat_id: int,
+                  msg_id: int | None, task_id: int, entry_cfg: dict,
+                  day, shift: int | None, cid: int | None = None) -> None:
+    """The screen for a task the PLATFORM answers.
+
+    Read-only by construction: no camera, no upload, no «Qayta topshirish», no
+    close button and no capture row — a leader cannot act on this task, so a
+    screen offering an action would be a button that silently does nothing.
+    What it owes them instead is the RULE and the HOUR, plus the verdict once
+    it exists, because points now come off without anybody pressing anything.
+
+    It also clears any capture row left over from another task: without that, a
+    photo sent to the chat while this screen is up would be swallowed by the
+    previous task's handler.
+    """
+    name = config_name(entry_cfg, lang)
+    text = _lt(lang, "auto_head").format(
+        task=name, t=leader_close.task_deadline(entry_cfg, shift))
+    if desc := (entry_cfg.get("description") or "").strip():
+        text += "\n" + desc[:600] + "\n"
+    entry = (db.query(LeaderTaskEntry)
+             .filter_by(day_id=day.id, task_id=task_id).first()
+             if day is not None else None)
+    parsed = leader_tasks.read_auto_reason(entry.reason if entry else None)
+    if entry is None:
+        text += _lt(lang, "auto_wait")
+    elif entry.done:
+        text += _lt(lang, "auto_done").format(
+            why=_auto_why(lang, parsed[1] if parsed else "ok"))
+    else:
+        text += _lt(lang, "auto_fail").format(
+            why=_auto_why(lang, parsed[1] if parsed else "no_data"))
+    db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
+    db.commit()
+    kb = types.InlineKeyboardMarkup()
+    kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{_lt_ref(pid, cid)}"))
+    _lt_edit(chat_id, msg_id, text, kb)
+
+
 def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
                      msg_id: int | None, task_id: int, entry_cfg: dict,
                      prof, day, shift: int | None, cid: int | None = None) -> None:
@@ -2900,6 +3011,16 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
     # normally after the hour has gone is not a better outcome the leader is
     # being denied: the photo is out of window, the verdict is `date_mismatch`,
     # and the task scores 0 with nobody to appeal to.
+    # AUTOMATIC first, ahead of everything: an auto task is untouched, has no
+    # roll and its hour has passed — the exact shape the late door is built to
+    # catch — so without this every one of them funnels the leader into «file a
+    # late proof» for a task they were never allowed to file, and puts a
+    # brigadir and an admin in front of a ruling about a check no human made.
+    if leader_auto.is_auto(entry_cfg):
+        _lt_auto_view(db, tid, pid, lang, chat_id, msg_id, task_id, entry_cfg,
+                      day, shift, cid=cid)
+        return
+
     if not leader_close.locked(entry, day) and leader_late_proof.eligible(
             db, day=day, task_id=task_id, cfg_entry=entry_cfg, shift=shift,
             per_task=leader_tasks_per_task(db, prof)):
@@ -3267,8 +3388,13 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                 # thing: somebody looked at your proof and refused it.
                 mark = {"open": "", "draft": "✏️ ", "pending": "⏳ ",
                         "passed": "✅ ", "notdone": "✖️ ",
-                        "expired": "⏱ ", "rejected": "⚠️ "}.get(st, "")
-                if st == "open" and s.get("proof_kind") == "camera":
+                        "expired": "⏱ ", "rejected": "⚠️ ",
+                        # The platform's own verdicts, told apart from the
+                        # leader's: ⚙️ is «this one is not yours to do».
+                        "autopass": "✅ ", "autofail": "✖️ "}.get(st, "")
+                if st == "open" and leader_auto.is_auto(s):
+                    mark = "⚙️ "
+                elif st == "open" and s.get("proof_kind") == "camera":
                     k = shot.get(td_id, 0)
                     mark = f"📷 {k}/{s['min_media']} · " if k else "📷 "
                 # An untouched task whose hour has gone reads as ⏱, not as one
@@ -3277,7 +3403,8 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                 # ones they had already lost — and the late door is behind
                 # exactly those. Asked only for a row that is still open, so
                 # the menu costs no extra query for anything already answered.
-                if st == "open" and leader_late_proof.eligible(
+                if st == "open" and not leader_auto.is_auto(s) \
+                        and leader_late_proof.eligible(
                         db, day=day, task_id=td_id, cfg_entry=s, shift=shift,
                         per_task=True):
                     mark = "⏱ "
@@ -3617,6 +3744,28 @@ def _lt_callback(call: types.CallbackQuery):
                 except Exception:
                     pass
             return
+
+        # ── AUTOMATIC tasks are nobody's to answer ──────────────────────
+        # One guard rather than eight. Every branch below that carries a task
+        # id can reach a task the PLATFORM decides — «Ha», «Yo'q», the camera,
+        # the reset, the confirm and the per-task close — and a refusal written
+        # into each of them is a refusal forgotten in the ninth. `is_auto`
+        # answers False unless the task is BOTH switched to auto and names a
+        # check that exists, so a mistyped setting leaves an ordinary task
+        # rather than an unanswerable one.
+        if action in _LT_TASK_ACTIONS and len(parts) > 3:
+            try:
+                _tsk = int(parts[3])
+            except (TypeError, ValueError):
+                _tsk = None
+            if _tsk is not None and leader_auto.is_auto(cfg.get(_tsk)):
+                bot.answer_callback_query(
+                    call.id,
+                    None if action == "task" else _lt(lang, "auto_locked"),
+                    show_alert=(action != "task"))
+                _lt_auto_view(db, tid, pid, lang, chat_id, msg_id, _tsk,
+                              cfg[_tsk], day, shift, cid=cid)
+                return
 
         if action == "task":
             task_id = int(parts[3])

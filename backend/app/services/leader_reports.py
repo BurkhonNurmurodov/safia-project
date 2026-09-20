@@ -34,6 +34,7 @@ from app.models import (
 )
 from app.services import (
     action_log, leader_ai, leader_bot, leader_cutoffs, leader_exclusions,
+    leader_tasks,
 )
 
 log = logging.getLogger(__name__)
@@ -196,6 +197,11 @@ def day_report(db: Session, uid: str) -> dict | None:
             "admin_by": tk.get("admin_by"),
             "admin_at": tk.get("admin_at"),
             "review": verdicts.get(tid),
+            # Decided by the PLATFORM, not by a person and not by Gemini. Read
+            # off the reason sentinel rather than the config, because a report
+            # is read months later and the config may have moved since.
+            "auto": str(tk.get("reason") or "").startswith(
+                leader_tasks.AUTO_PREFIX),
             "queued": bool(rev and rev.status == "pending"),
             "dispute": _dispute_out(d) if d is not None else None,
         })
@@ -377,6 +383,19 @@ def _tally(tasks: list[dict]) -> tuple[int, int, int, int, int]:
         rev = t.get("review")
         if t["ai_rejected"]:
             rejected += 1
+        # An AUTOMATIC task carries a verdict and will never carry a review
+        # row: no photo exists, so no queue door ever sees it. Counted apart
+        # from the AI's rejections and never as `ai_rejected`, which is what
+        # the score overlays read — the score already moved through `done`.
+        # Left out of both, it inflated `total` while contributing to nothing,
+        # so the report header read «13 tasks, 10 checked» forever and the
+        # brigadir's digest called a day whose only failures were automatic
+        # «verified».
+        if t.get("auto"):
+            checked += 1
+            if not t.get("done"):
+                rejected += 1
+            continue
         if rev and rev["status"] in ("ok", "flagged"):
             checked += 1
         elif rev and rev["status"] == "error":

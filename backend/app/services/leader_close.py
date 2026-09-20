@@ -37,7 +37,9 @@ from app.models import (
     LeaderAiDispute, LeaderAiReview, LeaderTaskDay, LeaderTaskEntry,
     LeaderTaskMedia, Manager, RoleProfile,
 )
-from app.services import action_log, leader_ai, leader_proof, leader_tasks
+from app.services import (
+    action_log, leader_ai, leader_auto, leader_proof, leader_tasks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -467,6 +469,14 @@ def reset_task(db: Session, day: LeaderTaskDay | None, task_id: int) -> bool:
 
     Returns whether anything was actually emptied, so a caller can say so.
     """
+    # A verdict this platform wrote is not the leader's to empty and not an
+    # admin's to empty either: the next sweep would simply write it again from
+    # the same data, so «Tozalash» would look like it worked and change nothing.
+    # Refused here, at the shared core, rather than at the two doors that call it.
+    _e = (db.query(LeaderTaskEntry)
+          .filter_by(day_id=day.id, task_id=task_id).first()) if day else None
+    if _e is not None and str(_e.reason or "").startswith(leader_tasks.AUTO_PREFIX):
+        return False
     if not day:
         return False
     e = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
@@ -600,6 +610,15 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
             # empties it again. Such a day stays OPEN until then and shows on
             # «Tozalash» → «Yakunlanmagan», which exists to expose exactly that.
             if tid in graced:
+                continue
+            # AUTOMATIC tasks belong to `leader_auto` and to nothing else. This
+            # pass would record one not-done with the missed-deadline sentinel
+            # — «you ran out of time» for a task nobody was allowed to answer —
+            # and it runs in the SAME sweep, so whichever ran first would win.
+            # One owner: the evaluator writes the entry and closes the task, and
+            # if it cannot decide (a dashboard that will not build) the task is
+            # left OPEN and tried again rather than failed on this module's say-so.
+            if leader_auto.is_auto(s):
                 continue
             # NOT YET STARTED. The operator's reading of the 26 Aug night, and
             # the one that explains why the day closed at 22:36 rather than at
@@ -745,8 +764,17 @@ def close_expired_days(db: Session, prof, shift: int,
                 db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
         for tid, s in cfg.items():
             if s["enabled"] and tid not in have:
-                db.add(LeaderTaskEntry(day_id=day.id, task_id=tid,
-                                       done=False, reason=reason))
+                # An automatic task the evaluator never reached is recorded as
+                # what it is — unchecked — and never as «you ran out of time»:
+                # the leader could not have answered it, so `__missed__` would
+                # be the platform blaming them for its own gap. It still scores
+                # 0, because the day has to close on something, and the ledger
+                # row beside it says the check never ran.
+                db.add(LeaderTaskEntry(
+                    day_id=day.id, task_id=tid, done=False,
+                    reason=(leader_tasks.auto_reason(
+                        task_deadline(s, shift), "not_checked")
+                        if leader_auto.is_auto(s) else reason)))
         db.flush()
         from app.services import leader_late_proof   # cycle: see reset_task
         day.closed_at = now
@@ -891,6 +919,12 @@ def score_line(db: Session, day: LeaderTaskDay | None,
     for tid, s in enabled.items():
         e = entries.get(tid)
         if not e or e.closed_at is None:
+            # An AUTOMATIC task with no entry yet is waiting on its check, not
+            # on the leader — so it is counted as pending rather than silently
+            # left out. Without this the running score reads «24/30» all
+            # morning and then moves for a reason the leader cannot see.
+            if leader_auto.is_auto(s):
+                pending += 1
             continue                      # not submitted yet — not in the score
         weight = int(s.get("weight") or 0)
         rev = verdicts.get(tid)
@@ -910,7 +944,7 @@ def score_line(db: Session, day: LeaderTaskDay | None,
 # rejected are three different facts with three different things to do about
 # them, and the warning triangle made all three read as an accusation (the
 # operator's report, 2026-08-27).
-FAILED_STATES = frozenset({"notdone", "expired", "rejected"})
+FAILED_STATES = frozenset({"notdone", "expired", "rejected", "autofail"})
 
 
 def task_state(entry: LeaderTaskEntry | None, rev, has_media: bool,
@@ -937,12 +971,21 @@ def task_state(entry: LeaderTaskEntry | None, rev, has_media: bool,
     if not locked(entry, day):
         return "draft"
     if not entry.done:
+        # Three sentinels, three different facts. `__auto__` is the platform's
+        # own verdict — nobody answered this and nobody could have — so it is
+        # neither «I decided not to» (notdone) nor «I ran out of time»
+        # (expired). It is still a FAILED_STATE: it scores 0 and the leader
+        # needs to see that it did.
+        if str(entry.reason or "").startswith(leader_tasks.AUTO_PREFIX):
+            return "autofail"
         # The missed-deadline sentinel is what separates «I decided not to» from
         # «nobody ever asked me»: `force_answer` and the day close write it,
         # a leader answering «Yo'q» writes their own words.
         return ("expired"
                 if str(entry.reason or "").startswith(leader_tasks.MISSED_PREFIX)
                 else "notdone")
+    if str(entry.reason or "").startswith(leader_tasks.AUTO_PREFIX):
+        return "autopass"          # decided here; no proof exists and none can
     if has_media and (rev is None or rev.status in ("pending", "error")):
         return "pending"
     if rev is not None and rev.status == "flagged" and rev.resolution != "approved":
@@ -980,6 +1023,22 @@ def _sweep() -> None:
     and none is a precondition of another."""
     from app.database import SessionLocal
     with SessionLocal() as db:
+        # FIRST, and that order is load-bearing: both closes below write an
+        # entry for any enabled task that has none, so a pass running after
+        # them would find the platform had already recorded its own checks as
+        # the leader's failure.
+        try:
+            t = leader_auto.run(db)
+            if t.get("checked") or t.get("warned"):
+                logger.info("auto checks: %s", t)
+                if t.get("checked"):
+                    action_log.record_system(
+                        "leader_review", "checklist.task_autochecked", db=db,
+                        details=[(k, v) for k, v in t.items() if v])
+                    db.commit()
+        except Exception:
+            logger.exception("automatic checklist sweep failed")
+            db.rollback()
         try:
             n = autoclose_due(db)
             if n:

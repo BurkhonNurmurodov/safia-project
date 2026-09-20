@@ -240,6 +240,8 @@ const TXT = {
     ovTitle: "Admin bahosi", ovDone: "Bajarildi", ovFail: "Bajarilmadi",
     ovChip: "Admin", ovUndo: "Belgini olib tashlash — liderning o'z javobi qaytadi",
     missedDeadline: "Lider bu vazifani soat {time} gacha topshirmadi.",
+    autoReason: "Tizim soat {time} da tekshirdi — {why}.",
+    autoWhy: { ok: "hammasi joyida", no_plan: "bugunga reja kiritilmagan", no_staffing: "odamlar soni kiritilmagan", no_concern: "xavotir yozilmagan", under_target: "reja foizi yetmadi", no_sap_code: "yacheykada SAP kodi yo'q", started_late: "chek-list tekshiruvdan keyin boshlangan", not_checked: "tekshiruv o'tkazilmadi", no_data: "ma'lumot o'qilmadi" },
     task: "Vazifa", noData: "Ma'lumot yo'q", taskInfoTitle: "Vazifalar mazmuni va talablari",
     taskDesc: "Vazifa tavsifi", taskWeight: "Vazni", taskNote: "Eslatma / Talablar",
     lowTask: "Eng past vazifa", lowSup: "Eng past brigadir", lowLeader: "Eng past lider",
@@ -414,6 +416,8 @@ const TXT = {
     ovTitle: "Админ баҳоси", ovDone: "Бажарилди", ovFail: "Бажарилмади",
     ovChip: "Админ", ovUndo: "Белгини олиб ташлаш — лидернинг ўз жавоби қайтади",
     missedDeadline: "Лидер бу вазифани соат {time} гача топширмади.",
+    autoReason: "Тизим соат {time} да текширди — {why}.",
+    autoWhy: { ok: "ҳаммаси жойида", no_plan: "бугунга режа киритилмаган", no_staffing: "одамлар сони киритилмаган", no_concern: "хавотир ёзилмаган", under_target: "режа фоизи етмади", no_sap_code: "ячейкада SAP коди йўқ", started_late: "чек-лист текширувдан кейин бошланган", not_checked: "текширув ўтказилмади", no_data: "маълумот ўқилмади" },
     task: "Вазифа", noData: "Маълумот йўқ", taskInfoTitle: "Вазифалар мазмуни ва талаблари",
     taskDesc: "Вазифа тавсифи", taskWeight: "Вазни", taskNote: "Эслатма / Талаблар",
     lowTask: "Энг паст вазифа", lowSup: "Энг паст бригадир", lowLeader: "Энг паст лидер",
@@ -588,6 +592,8 @@ const TXT = {
     ovTitle: "Оценка админа", ovDone: "Выполнено", ovFail: "Не выполнено",
     ovChip: "Админ", ovUndo: "Снять отметку — вернётся собственный ответ лидера",
     missedDeadline: "Лидер не отправил эту задачу до {time}.",
+    autoReason: "Система проверила в {time} — {why}.",
+    autoWhy: { ok: "всё на месте", no_plan: "план на сегодня не внесён", no_staffing: "количество людей не внесено", no_concern: "обеспокоенность не записана", under_target: "процент плана не достигнут", no_sap_code: "у ячейки нет кода SAP", started_late: "чек-лист начат после проверки", not_checked: "проверка не проводилась", no_data: "данные не прочитаны" },
     task: "Задача", noData: "Нет данных", taskInfoTitle: "Содержание и требования задач",
     taskDesc: "Описание задачи", taskWeight: "Вес", taskNote: "Примечания / Требования",
     lowTask: "Худшая задача", lowSup: "Худший бригадир", lowLeader: "Худший лидер",
@@ -762,6 +768,8 @@ const TXT = {
     ovTitle: "Admin ruling", ovDone: "Done", ovFail: "Not done",
     ovChip: "Admin", ovUndo: "Clear the ruling — the leader's own answer returns",
     missedDeadline: "The leader didn't submit this task before {time}.",
+    autoReason: "The system checked at {time} — {why}.",
+    autoWhy: { ok: "everything in place", no_plan: "no plan entered for today", no_staffing: "headcount not entered", no_concern: "no concern written", under_target: "plan percentage not reached", no_sap_code: "the cell has no SAP code", started_late: "the checklist began after the check", not_checked: "the check did not run", no_data: "the data could not be read" },
     task: "Task", noData: "No Data", taskInfoTitle: "Task Details & Requirements",
     taskDesc: "Task Description", taskWeight: "Weight", taskNote: "Notes / Requirements",
     lowTask: "Lowest Task", lowSup: "Lowest Supervisor", lowLeader: "Lowest Leader",
@@ -786,7 +794,13 @@ const TXT = {
    here renders it in the VIEWER's language, and keeps the deadline in 24-hour
    time: ru/uz never print AM/PM. Anything else is a real typed reason and
    passes through untouched. */
-const showReason = (raw, T) => expandReason(raw, T.missedDeadline);
+// Two sentinels, one reader. `autoWhy` is a plain map rather than a
+// function so the four language blocks carry the words the same way
+// every other string on this page does.
+const showReason = (raw, T) => expandReason(raw, T.missedDeadline, {
+  template: T.autoReason,
+  why: (c) => (T.autoWhy || {})[c],
+});
 
 const DAY = 86400000;
 const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };

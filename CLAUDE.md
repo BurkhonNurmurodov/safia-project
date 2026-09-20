@@ -2467,6 +2467,152 @@ arms it.
   behind imports a deleted module at boot, and a failed boot rolls the deploy
   back. Changing what either pass writes needs a NEW flag key.
 
+## Tasks the PLATFORM answers (`leader_auto`, from 20 Sep 2026)
+
+Three of the thirteen checklist tasks ask about something this platform already
+holds, and until **20 September 2026** a leader proved each of them by
+screenshotting one of our own pages and sending it to Telegram, where Gemini
+read a date off the image to confirm a row sitting in our own database. The
+proof was a photograph of the truth. From that day they are decided by
+`services/leader_auto.py` instead: at a fixed hour it reads the data, writes
+the leader's `LeaderTaskEntry` itself and closes the task.
+
+- **`proof_kind` gains a third value, `"auto"`, and it is not a kind of proof.**
+  There is no photo, no upload, no camera and no Gemini call. It is spelled as a
+  proof kind because every surface that asks «how is this task answered» already
+  branches on that one field; a fourth question would have to be added to each
+  of them and would be forgotten at one. **`leader_auto.is_auto` is THE test and
+  it asks BOTH halves** — switched to "auto" AND naming a check that exists.
+  A task that says "auto" and names nothing would be unanswerable: no leader may
+  file it and no sweep would close it, so its day would hang open forever, which
+  every read surface reads as «this leader filed nothing».
+- **WHICH check is global; WHEN it is asked is per unit.** `LeaderTaskDef.auto_check`
+  (`plan_staffing` · `concerns` · `plan_pct:30`) is deliberately NOT on the
+  global → supervisor → leader chain: what «Kunlik plan» MEANS is the same
+  question about the same dashboard for every unit, and a per-unit answer would
+  be a per-unit definition of a word. The HOUR is the chain `deadline`, read
+  through `leader_close.due_at`, so it is an ordinary admin field on «Chek-list
+  sozlamalari» and a night shift is asked at 23:00 what a day shift is asked at
+  10:00. This module chooses no clock of its own and must not start — two
+  anchors for one hour is how a task closes before it opens (2026-08-26).
+  **A per-LEADER `deadline` on an auto task is not honoured** (`_unit_due` reads
+  the unit level only): a check is a statement about a shift, and two leaders of
+  one brigade asked at two hours could not be compared. `leader_auto_rollout.leader_overrides_left`
+  names any that exist rather than letting them sit unread.
+- **Nothing is re-measured.** The plan and the percentage come from
+  `routers/production._build_dashboard` — the function `GET /api/production/dashboard`
+  itself calls — narrowed by the leader's own `sap_codes_for_leader` /
+  `sap_groups_for_leader`; the typed people come through `zagruzka_source.typed_pins`,
+  the one door for that question. It imports a ROUTER from a service, lazily and
+  on purpose (`leader_tasks` already reaches for `routers.leaders.WINDOW` the
+  same way): re-deriving the plan here would give the check and the page two
+  answers about one shift, and the check is the one nobody can argue with.
+- **The three rules, all the operator's** (agreed 14—18 Sep): `plan_staffing`
+  (#1, 10:00 / 23:00) — a plan above 0 on the leader's own work centres AND the
+  people TYPED for every cell they own, the cell's own group pin where it carries
+  a letter and the whole-centre pin where it does not, **a typed 0 passing**
+  (`people_overridden` and never the value is what tells typed from absent);
+  `plan_pct:30` (#9, 14:00 / 03:00) — the «Bajarish %» the leader's own
+  /production page states, at or above the target **carried in the setting**, so
+  the threshold moves without a deploy; `concerns` (#8, 17:00 / 06:00) — one
+  `leader_concerns` row created between 00:00 of the checklist day and the check,
+  written BY the leader or filed by a worker against one of their cells, tested on
+  `created_at` and never `level_since`, so passing an older concern up does not count.
+- **Shift 2's hours are those same points of a NIGHT** — three, seven and ten
+  hours after a 20:00 start — because a night asked at 10:00 would be asked five
+  hours after its checklist has already closed. They are settings, not constants.
+- **`AUTO_FROM = "2026-09-20"` is a FLOOR with no override**, and it is
+  load-bearing rather than tidy. Units carry OPEN checklist days from earlier
+  dates, and every one of those has an auto task whose hour went by long ago:
+  without the floor the first pass settles all of them at once. Measured on the
+  11 Sep production copy, one pass at 09:00 on the 20th wrote **103 verdicts, 96
+  of them failures**, into days going back weeks. It must never be moved EARLIER.
+- **The ledger is `leader_auto_checks`**, one row per (leader, date, cell, task)
+  under the same `COALESCE(cell_id, 0)` expression index `uq_ltask_day` needs and
+  for the same reason. It makes the pass idempotent and, more importantly,
+  ANSWERABLE — a score moved by a machine has to be explainable months later, and
+  the entry carries only a verdict; `facts` holds the numbers it was taken on.
+  It also carries a fact nothing else can: a row with `warned_at` set and code
+  `no_day` says «at the check there was no checklist», which is how a day that
+  appears AFTER the check is recognised and recorded `started_late`. That is why
+  no `created_at` was added to `LeaderTaskDay`. **`no_day` is a CODE and
+  «skipped» is the OUTCOME** — testing the outcome against it is never true, and
+  the whole «started after the check» rule silently degrades into an ordinary
+  late evaluation that passes a leader who entered the plan half an hour after
+  the hour that asked for it (found by running it, 2026-09-20).
+- **`entry_id` is the only final marker.** A check that could not read its data
+  is `skipped` / `no_data` with `entry_id` NULL — left unsettled, retried next
+  pass — because a task failed on a number nobody could read is worse than a
+  task still open.
+- **The reason sentinel is `__auto__|HH:MM|code`** (`leader_tasks.auto_reason` /
+  `read_auto_reason`), the twin of `__missed__|HH:MM` and for the same reason:
+  `reason` is free text a leader typed in their own language, so it cannot also
+  carry one fixed sentence for four viewers. `utils/leaderReason.js#showReason`
+  is the client twin and must expand it, or it prints the sentinel at an
+  operator verbatim — exactly what `__missed__` did on 2026-08-27.
+- **`task_state` gains `autopass` and `autofail`**, and `autofail` is in
+  `FAILED_STATES`. A failed auto check is neither «I decided not to» (notdone)
+  nor «I ran out of time» (expired): nobody answered it and nobody could have.
+  It still scores 0 and the leader still has to see that it did.
+- **The sweep runs FIRST in `leader_close._sweep`** — the existing FIVE-minute
+  job, not a job of its own, so the ordering below is a fact about one pass
+  rather than a race between two. **Consequence to know: a check fires within
+  five minutes of its hour**, so a leader who types the plan at 10:03 can pass
+  a 10:00 check; `LATE_GRACE` is the same five minutes, so an ordinary lag is
+  not marked late and a real outage is. It runs ahead of `autoclose_due`
+  and `sweep_expired_days`. Both of those write an entry for any enabled task
+  that has none, so a pass running after them would find the platform had
+  already recorded its own checks as the leader's failure. `autoclose_due` skips
+  auto tasks outright; `close_expired_days` writes `__auto__|HH:MM|not_checked`
+  rather than the missed-deadline sentinel.
+- **Every door back is closed, deliberately and in one place each.**
+  `leader_late_proof.eligible` refuses an auto task — without it every one of
+  them matches the whole of that predicate (enabled, untouched, past its hour,
+  not done) and the leader is funnelled into «Kechikkan isbot» for a task they
+  were never allowed to file, putting a brigadir and an admin in front of a
+  two-stage ruling about a check no human made. `leader_close.reset_task`
+  refuses one too, at the shared core rather than at the two doors that call it:
+  the next sweep would rewrite the verdict from the same data, so «Tozalash»
+  would look like it worked and change nothing. **The route back is the admin
+  override** (`LeaderTaskOverride`), which `_apply_overlays` already scores.
+- **The bot refuses it once, not eight times.** `_LT_TASK_ACTIONS` in
+  `telegram_bot.py` is the set of `lt:` actions carrying a task id, and one guard
+  in the dispatcher sends every one of them to `_lt_auto_view` — a read-only
+  screen naming the rule, the hour and the verdict, with no camera, no upload, no
+  «Qayta topshirish», no close button and no `LeaderTaskCapture` row (a stale one
+  would swallow the next photo sent to the chat). A refusal written into each
+  branch is a refusal forgotten in the ninth.
+- **The rollout is a TEMPORARY one-shot**: `services/leader_auto_rollout.py`,
+  two flags (`leader_auto_2026_09_20_shift1_v1` / `…_shift2_v1`), armed by
+  `startup.register_leader_auto_sep20` in both entrypoints. It writes the hour
+  and the instruction FIRST and the switch LAST — written the other way round a
+  unit would carry an auto task with no hour of its own for the seconds in
+  between. Delete it and its scheduling helpers once both flags are set;
+  `startup.add_leader_auto_checks` and `services/leader_auto.py` STAY, because
+  they are the feature and not the rollout. Changing what either pass writes
+  needs a NEW flag key.
+- **ONE deliberate exception to the never-mid-shift rule**, in `_auto_run_at`:
+  the switch may land inside a running shift up to that shift's FIRST warning
+  instant, and is deferred to the next day's instant after it. The rule exists
+  because a criteria edit RE-JUDGES a checklist being filled; this pass judges
+  nothing — a task the leader has already answered keeps its entry untouched
+  (`already_filed`), so nobody can lose a point they had earned — while
+  deferring costs the whole day, since the three checks are at fixed hours.
+- **The three instructions lost their «for now, also send a screenshot»
+  paragraph** (`leader_auto_rollout.DESCRIPTIONS`). That paragraph told leaders
+  to do something the bot now refuses. The THRESHOLD stays out of them: task 9
+  goes on saying 50% while its check passes at 30%, which is the operator's
+  standing rule — a minimum exists so nobody fails on a technicality, and
+  printed as the instruction it becomes the target.
+- **Boot says out loud what is wrong**: `leader_auto_rollout.self_check` rides
+  `startup.report_leader_deadline_rules` and names an auto task on a unit that
+  closes whole DAYS (nothing would close it) or one with no readable check hour.
+  This repo has no test suite and a push to main is a deploy.
+- **A leader whose cells carry no SAP code** fails #1 and #9 with code
+  `no_sap_code` and the admins are DMed: it is a REGISTER error somebody has to
+  fix, so it is named rather than absorbed as the leader's failure. One leader of
+  Aripova Manzura's unit was in that state on the 11 Sep copy.
+
 ## The brigadir's day digest (`leader_unit_report`)
 
 From **2026-09-15** (the operator's directive) a brigadir is no longer DMed once

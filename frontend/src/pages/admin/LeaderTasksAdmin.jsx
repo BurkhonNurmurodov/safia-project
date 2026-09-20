@@ -79,6 +79,16 @@ const COLS = [
 // printed in full underneath instead of squeezed into a grid cell.
 const DETAIL_ROWS = COLS.filter((c) => !["desc", "crit"].includes(c.k));
 // Every field the chain resolves, in the payload's own spelling. Used to build
+// How a task is ANSWERED, in one map. "auto" is not a kind of proof at all —
+// the platform reads its own data and decides — but it rides this field because
+// every surface already branches on it (see leader_tasks.PROOF_KINDS).
+const PROOF_LABEL = {
+  screenshot: "admin.ltasks.proofScreenshot",
+  camera: "admin.ltasks.proofCamera",
+  auto: "admin.ltasks.proofAuto",
+};
+const PROOF_KIND = (v) => (PROOF_LABEL[v] ? v : "screenshot");
+
 const FIELD_KEYS = [
   "enabled", "weight", "min_media", "proof_kind", "win_from", "win_to",
   "date_check", "time_check", "day_check", "date_plus", "deadline",
@@ -757,7 +767,10 @@ export default function LeaderTasksAdmin() {
       case "enabled": return r.enabled ? t("admin.ltasks.vAsked") : t("admin.ltasks.vNotAsked");
       case "weight": return `${r.weight}%`;
       case "photos": return t("admin.ltasks.vCount").replace("{n}", r.min_media);
-      case "proof": return t(r.proof_kind === "camera" ? "admin.ltasks.proofCamera" : "admin.ltasks.proofScreenshot");
+      // Three-valued, never a ternary: an AUTOMATIC task rendered as
+      // «Skrinshot» would read as ordinary in the one register this page
+      // was rebuilt to make readable.
+      case "proof": return t(PROOF_LABEL[r.proof_kind] || PROOF_LABEL.screenshot);
       case "window": return (r.win_from || r.win_to)
         ? `${r.win_from || "…"}–${r.win_to || "…"}`
         : (lvl.kind === "std" ? t("admin.ltasks.empty") : t("admin.ltasks.vWholeShift"));
@@ -1024,8 +1037,10 @@ export default function LeaderTasksAdmin() {
       return { halves: vals.map((x) => ({ sh: x.sh, text: render(x.v), strong: render.strongOf(x.v) })) };
     };
 
-    const proofText = (v) => t(v === "camera" ? "admin.ltasks.proofCamera" : "admin.ltasks.proofScreenshot");
-    proofText.strongOf = (v) => v === "camera";
+    const proofText = (v) => t(PROOF_LABEL[v] || PROOF_LABEL.screenshot);
+    // Both non-default modes are noteworthy: "screenshot" is the floor every
+    // untouched task sits at, so anything else is somebody's decision.
+    proofText.strongOf = (v) => v === "camera" || v === "auto";
     out.push({ k: "proof", ...perShift("proof_kind", proofText) });
 
     const shotsText = (v) => t("admin.ltasks.ruleShots").replace("{n}", Number(v) || 0);
@@ -2431,14 +2446,15 @@ export default function LeaderTasksAdmin() {
             </FormField>
           ) : (
             <FormField label={withMark(t("admin.ltasks.proofKind"), ownPill("proof_kind"))}
-              hint={`${t(`admin.ltasks.proofHint.${edit.proof_kind === "camera" ? "camera" : "screenshot"}`)} ${
+              hint={`${t(`admin.ltasks.proofHint.${PROOF_KIND(edit.proof_kind)}`)} ${
                 editLvl.kind === "shift" ? t("admin.ltasks.proofScope.units").replace("{n}", unitsOf(editLvl.shift).length)
                   : editLvl.kind === "unit" ? t("admin.ltasks.proofScope.unit")
                     : t("admin.ltasks.proofScope.leader")}`}>
               <SegmentedToggle fill value={edit.proof_kind || "screenshot"}
                 onChange={(k) => setEdit((c) => ({ ...c, proof_kind: k }))}
                 options={[["screenshot", t("admin.ltasks.proofScreenshot")],
-                ["camera", t("admin.ltasks.proofCamera")]]} />
+                ["camera", t("admin.ltasks.proofCamera")],
+                ["auto", t("admin.ltasks.proofAuto")]]} />
             </FormField>
           )}
           <div className="flex flex-wrap gap-3">
