@@ -6716,55 +6716,162 @@ def add_leader_auto_checks() -> None:
     """2026-09-20: the schema behind automatic checklist tasks.
 
     Two things `create_all` cannot do on its own — it never ALTERs an existing
-    table, and it does not build the expression index this ledger needs:
+    table, and it does not build the expression index the ledger needs:
 
     * `leader_task_defs.auto_check` — WHICH check decides a task, NULL for the
-      ordinary ones, which is every task until the rollout names three.
-    * `leader_auto_checks`, and its `COALESCE(cell_id, 0)` unique index. The
-      plain four-column constraint would NOT hold: Postgres treats NULLs as
-      DISTINCT inside a unique key, so a cell-less leader-day could take two
-      rows for one task and the pass would stop being idempotent. Same shape and
-      same reason as `uq_ltask_day`.
+      ordinary ones.
+    * `leader_auto_checks`, and its `COALESCE(cell_id, 0)` unique index. A plain
+      four-column constraint would NOT hold: Postgres treats NULLs as DISTINCT
+      inside a unique key, so a cell-less leader-day could take two rows for one
+      task and the pass would stop being idempotent. Same shape and same reason
+      as `uq_ltask_day`.
 
-    Pure DDL, idempotent, no flag. Nothing reads either until a task is given a
-    check, so the migration moves no number by itself.
+    **Every statement runs in its OWN transaction, and the ALTER runs first and
+    alone.** One shared transaction with one `except` is how a failure in the
+    last statement silently rolls back the first: the column would be missing,
+    the migration would print «skipped» into a log this platform has no shell to
+    read, and every ORM read of `LeaderTaskDef` would then raise — which on this
+    model means the bot's `/tasks`, the checklist config and all three sweeps.
+
+    It also VERIFIES afterwards and says so out loud. A migration that cannot
+    prove it worked is a migration nobody can tell has not.
     """
+    ok = _run_ddl([
+        # First, alone, and with a lock timeout: ADD COLUMN takes an ACCESS
+        # EXCLUSIVE lock, so a single long-running reader can block it — and a
+        # block that ends in an exception is indistinguishable from a broken
+        # statement unless it is isolated like this.
+        "SET lock_timeout = '15s'",
+        "ALTER TABLE leader_task_defs ADD COLUMN IF NOT EXISTS auto_check VARCHAR(24)",
+    ])
+    _run_ddl(["""
+        CREATE TABLE IF NOT EXISTS leader_auto_checks (
+            id          SERIAL PRIMARY KEY,
+            leader_id   INTEGER NOT NULL REFERENCES role_profiles(id),
+            date        VARCHAR(10) NOT NULL,
+            cell_id     INTEGER REFERENCES cells(id),
+            task_id     INTEGER NOT NULL,
+            manager_id  INTEGER NOT NULL,
+            "check"     VARCHAR(24) NOT NULL,
+            due_at      TIMESTAMPTZ,
+            warned_at   TIMESTAMPTZ,
+            checked_at  TIMESTAMPTZ,
+            outcome     VARCHAR(12),
+            code        VARCHAR(32),
+            facts       JSONB,
+            entry_id    INTEGER
+        )"""])
+    for stmt in (
+        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_leader ON leader_auto_checks (leader_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_date ON leader_auto_checks (date)",
+        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_manager ON leader_auto_checks (manager_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_ltask_auto ON "
+        "leader_auto_checks (leader_id, date, COALESCE(cell_id, 0), task_id)",
+    ):
+        _run_ddl([stmt])
+
+    present = _has_auto_check()
+    if present:
+        print("[startup] leader_task_defs.auto_check: present")
+        return
+    # Not present, so every ORM read of LeaderTaskDef is about to raise. One
+    # retry without the lock timeout, then say so where somebody will see it —
+    # this platform has no shell, so a log line is not a warning.
+    print("[startup] leader_task_defs.auto_check MISSING after migration "
+          f"(first attempt ok={ok}) — retrying")
+    _run_ddl(["ALTER TABLE leader_task_defs ADD COLUMN IF NOT EXISTS auto_check VARCHAR(24)"])
+    if _has_auto_check():
+        print("[startup] leader_task_defs.auto_check: present after retry")
+        return
+    _dm_admins_plain(
+        "\U0001F6D1 <b>leader_task_defs.auto_check qo'shilmadi</b>\n"
+        "Avtomatik tekshiruvlar sxemasi o'rnatilmadi — chek-list vazifalari "
+        "o'qilmaydi. Keyingi deploy takrorlaydi.")
+
+
+def _has_auto_check() -> bool:
+    """Does the column actually exist? Asked of the catalog, not of our hopes."""
     db = SessionLocal()
     try:
-        db.execute(text("ALTER TABLE leader_task_defs "
-                        "ADD COLUMN IF NOT EXISTS auto_check VARCHAR(24)"))
-        db.execute(text("""
-            CREATE TABLE IF NOT EXISTS leader_auto_checks (
-                id          SERIAL PRIMARY KEY,
-                leader_id   INTEGER NOT NULL REFERENCES role_profiles(id),
-                date        VARCHAR(10) NOT NULL,
-                cell_id     INTEGER REFERENCES cells(id),
-                task_id     INTEGER NOT NULL,
-                manager_id  INTEGER NOT NULL,
-                "check"     VARCHAR(24) NOT NULL,
-                due_at      TIMESTAMPTZ,
-                warned_at   TIMESTAMPTZ,
-                checked_at  TIMESTAMPTZ,
-                outcome     VARCHAR(12),
-                code        VARCHAR(32),
-                facts       JSONB,
-                entry_id    INTEGER
-            )"""))
-        db.execute(text("CREATE INDEX IF NOT EXISTS ix_ltask_auto_leader "
-                        "ON leader_auto_checks (leader_id)"))
-        db.execute(text("CREATE INDEX IF NOT EXISTS ix_ltask_auto_date "
-                        "ON leader_auto_checks (date)"))
-        db.execute(text("CREATE INDEX IF NOT EXISTS ix_ltask_auto_manager "
-                        "ON leader_auto_checks (manager_id)"))
-        db.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_ltask_auto ON "
-            "leader_auto_checks (leader_id, date, COALESCE(cell_id, 0), task_id)"))
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        print(f"[startup] leader_auto_checks migration skipped: {exc}")
+        return bool(db.execute(text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'leader_task_defs' AND column_name = 'auto_check'"
+        )).first())
+    except Exception:
+        return False
     finally:
         db.close()
+
+
+def _run_ddl(statements: list[str]) -> bool:
+    """Run one small group of DDL in its own transaction. Never raises."""
+    db = SessionLocal()
+    try:
+        for stmt in statements:
+            db.execute(text(stmt))
+        db.commit()
+        return True
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] DDL skipped ({str(exc)[:160]}): {statements[0][:60]}…")
+        return False
+    finally:
+        db.close()
+
+
+def _dm_admins_plain(html_text: str) -> None:
+    """Say something to every admin. Used where a failure would otherwise be
+    invisible — the same door `report_leader_deadline_rules` uses."""
+    try:
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, html_text, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] admin alert not delivered: {exc}")
+
+
+def report_auto_schema() -> None:
+    """Say ONCE, out loud, whether the automatic-check schema is really there.
+
+    A one-shot rather than a boot-every-time report, because it exists to answer
+    a single question that could not be answered any other way: this platform
+    has no shell and no way to read production's catalog, so «the migration
+    printed skipped» and «the migration worked» look identical from outside.
+    The 05:19 deploy on 20 Sep DMed a catalog failure for exactly this column —
+    from a boot whose DDL still ran AFTER the report that read it — and nothing
+    available from here could tell a stale alarm from a live one.
+
+    Flag-guarded, so it is one message and not noise on every deploy. Changing
+    what it reports needs a NEW flag key.
+    """
+    flag = "auto_schema_report_2026_09_20_v1"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=flag).first():
+            return
+        col = _has_auto_check()
+        tbl = bool(db.execute(text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_name = 'leader_auto_checks'")).first())
+        db.add(AppSetting(key=flag, value=f"col={col} tbl={tbl}"))
+        db.commit()
+    except Exception as exc:
+        print(f"[startup] auto-schema report skipped: {exc}")
+        return
+    finally:
+        db.close()
+    mark = "\u2705" if (col and tbl) else "\U0001F6D1"
+    _dm_admins_plain(
+        f"{mark} <b>Avtomatik tekshiruv sxemasi</b>\n"
+        f"leader_task_defs.auto_check: {'bor' if col else 'YO`Q'}\n"
+        f"leader_auto_checks jadvali: {'bor' if tbl else 'YO`Q'}\n"
+        + ("Hammasi joyida — 20.09 tekshiruvlari ishlaydi."
+           if (col and tbl) else
+           "Sxema to'liq emas — chek-list o'qilmaydi, zudlik bilan tekshiring."))
 
 
 # ── 20 September 2026: tasks 1, 8 and 9 become AUTOMATIC ────────────────────

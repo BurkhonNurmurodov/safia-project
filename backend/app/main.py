@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI):
         register_leader_rules_sep19,
         add_leader_auto_checks,
         register_leader_auto_sep20,
+        report_auto_schema,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
@@ -460,6 +461,9 @@ async def lifespan(app: FastAPI):
     # and `services/leader_auto_rollout.py` once BOTH flags are set.
     # `add_leader_auto_checks` and `services/leader_auto.py` STAY — they are
     # the feature, not the rollout.
+    # Says once whether that schema really landed. The only way to see
+    # production's catalog from outside — see its docstring.
+    report_auto_schema()
     register_leader_auto_sep20()
     # ⚠ TEMPORARY one-shot (2026-09-18) — publish the new leader INSTRUCTIONS
     # early so leaders can read them and prepare. Descriptions only: nothing
