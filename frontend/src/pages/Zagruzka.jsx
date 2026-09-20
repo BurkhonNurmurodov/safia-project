@@ -296,7 +296,7 @@ export default function Zagruzka() {
             columnSummary
             title={t("zagruzka.fullTable")}
             note={t("zagruzka.fullTableNote")}
-            onToggleFullscreen={() => setCompFullscreen(true)}
+            onToggleFullscreen={() => { setSimpleFullscreen(false); setCompFullscreen(true); }}
           />
         </div>
       ) : null}
@@ -326,7 +326,7 @@ export default function Zagruzka() {
             columnSummary
             title={t("zagruzka.simpleTable")}
             note={t("zagruzka.simpleTableNote")}
-            onToggleFullscreen={() => setSimpleFullscreen(true)}
+            onToggleFullscreen={() => { setCompFullscreen(false); setSimpleFullscreen(true); }}
           />
         </div>
       ) : null}
@@ -363,7 +363,7 @@ export default function Zagruzka() {
       )}
 
       {/* Simplified table fullscreen — portaled for the same reason. */}
-      {simpleFullscreen && createPortal(
+      {simpleFullscreen && heatmap?.managers?.length ? createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
@@ -388,7 +388,7 @@ export default function Zagruzka() {
           </div>
         </div>,
         document.body
-      )}
+      ) : null}
 
       {/* ── Fleet Heatmap ── */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">

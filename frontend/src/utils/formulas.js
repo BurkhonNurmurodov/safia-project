@@ -344,9 +344,19 @@ export const PRODUCTIVE_SHARE = 0.9;   // 480 × 0.9 = 432 productive minutes
 // A ZERO is treated as NO DATA, and that is deliberate rather than defensive:
 // `DailyMetrics` defaults both prod_plan and prod_actual to 0.0, so a day the
 // file never mentioned arrives as 0 and is indistinguishable from a day that
-// genuinely planned nothing. The full table already blanks both cases (its
-// `ratio` is falsy at 0), so blanking them here keeps the two grids marking the
-// same days as "no answer" instead of one printing 0% where the other prints —.
+// genuinely planned nothing, and printing 0% would assert something the payload
+// cannot support.
+//
+// It does NOT follow that the two tables blank the same days, and the gap is
+// common rather than exotic — the SAP «Поставлено» often lands once, after the
+// shift. Each half here is blanked by its OWN numerator, while the full table
+// kills BOTH halves whenever prod_actual is 0: `ratio = safe_div(0, plan)` is
+// falsy, so kpi_calculator leaves baseline_util and net_util None. So a day
+// with a plan and no delivery reads «— / —» on the full table and «93% / —»
+// here. That is the simplified formula being able to answer where the full one
+// cannot (its P needs no ratio), not a disagreement — but it means the two
+// tables' AVG-P figures are averaged over DIFFERENT numbers of days, and
+// neither says so. Worth knowing before comparing the two summary columns.
 function simpleUtil(minutes, hc) {
   const m = Number(minutes);
   const n = Number(hc);
@@ -381,10 +391,6 @@ export function simplePlanNumbers(cell, approx = false) {
   return simpleNumbers(cell, cell?.prod_plan, "P", approx);
 }
 
-export function simpleActualNumbers(cell, approx = false) {
-  return simpleNumbers(cell, cell?.prod_actual, "A", approx);
-}
-
 function simpleInputs(cell, t, minutes, minutesLabel, minutesSrc) {
   if (!cell) return [];
   const out = [];
@@ -399,10 +405,6 @@ function simpleInputs(cell, t, minutes, minutesLabel, minutesSrc) {
 
 export function simplePlanInputs(cell, t) {
   return simpleInputs(cell, t, cell?.prod_plan, t("profile.prodPlan"), t("fm.srcPlan"));
-}
-
-export function simpleActualInputs(cell, t) {
-  return simpleInputs(cell, t, cell?.prod_actual, t("overview.fm.trudoyomkost"), t("overview.fm.srcProduction"));
 }
 
 // ── CommentModal blocks (percentage form + a legend naming every number) ─────
