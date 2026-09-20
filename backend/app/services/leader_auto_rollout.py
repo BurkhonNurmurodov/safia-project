@@ -106,8 +106,18 @@ def apply(db: Session, shift: int) -> dict:
     boot. The setters commit for themselves, so this cannot be one transaction
     — which is exactly why nothing here is an increment."""
     out = {"units": 0, "checks": set_checks(db), "deadlines": 0,
-           "kinds": 0, "texts": 0, "shift": shift}
+           "kinds": 0, "texts": 0, "skipped": 0, "shift": shift}
+    # The evaluator only visits units that close tasks ONE AT A TIME
+    # (`leader_auto.run` is bounded to `per_task_units`), and on a day-close
+    # unit an auto task would be answerable by nobody: no entry is ever
+    # written, the bot refuses every button, and «KUNNI YOPISH» refuses to end
+    # a day while an enabled task has no entry — so the leader could not close
+    # their day at all. Refused rather than reported.
+    per_task = leader_tasks.per_task_units(db)
     for m in units(db, shift):
+        if m.id not in per_task:
+            out["skipped"] += 1
+            continue
         out["units"] += 1
         for tid, (_check, hours) in sorted(TASKS.items()):
             hh = hours.get(shift)
@@ -152,7 +162,15 @@ def leader_overrides_left(db: Session, shift: int) -> list[str]:
                     LeaderTaskLeaderSetting.task_id.in_(list(TASKS))).all())
     out = []
     for r, prof in rows:
-        fields = [f for f in ("proof_kind", "deadline")
+        # EVERY field a leader row can use to shadow what this pass writes.
+        # `description` matters most and was missed at first: a leader carrying
+        # their own instruction is switched to auto by the unit's `proof_kind`
+        # and goes on being told to send a screenshot the bot now refuses —
+        # precisely the state this module exists to prevent. `win_from`/`win_to`
+        # matter because `leader_close.closing_time` falls back to the window
+        # when no deadline is set, and the evaluator reads the UNIT's.
+        fields = [f for f in ("proof_kind", "deadline", "description",
+                              "win_from", "win_to")
                   if (getattr(r, f, None) or "") != ""]
         if fields:
             out.append(f"{prof.name} · vazifa {r.task_id} · {', '.join(fields)}")
@@ -194,9 +212,14 @@ def self_check(db: Session) -> list[str]:
                 if m.id not in per_task:
                     bad.append(f"{m.name}: #{tid} is automatic but the unit "
                                f"closes whole DAYS — nothing closes the task")
+                # `requirements_for` publishes the window as ONE key, a
+                # two-element list. Reading `win_from`/`win_to` off it (which
+                # do not exist there) passed `(None, None)`, `closing_time`
+                # dropped it and fell through to the day's filing deadline —
+                # always a valid clock — so this invariant could never fire.
                 due = leader_close.due_at(
                     {"deadline": entry.get("deadline"),
-                     "window": (entry.get("win_from"), entry.get("win_to"))},
+                     "window": entry.get("window")},
                     shift, leader_tasks.effective_date(shift))
                 if due is None:
                     bad.append(f"{m.name}: #{tid} is automatic with no readable "

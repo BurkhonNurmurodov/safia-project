@@ -236,6 +236,14 @@ try:
     add_leader_task_time_check()
     add_leader_task_day_check()
     add_leader_task_date_plus()
+    # Schema for the automatic checklist tasks. Permanent, not a one-shot:
+    # `create_all` never ALTERs an existing table, and the ledger's unique key
+    # is an EXPRESSION index. It MUST run here, with the other DDL and before
+    # `report_leader_deadline_rules` — that report is the only caller of
+    # `leader_auto_rollout.self_check`, and with the column still missing every
+    # ORM read of LeaderTaskDef raises, so the boot that applies the rollout
+    # would be the one boot whose self-check was skipped.
+    add_leader_auto_checks()
     add_leader_task_proof_kind()
     add_leader_task_catalog()
     add_leader_task_example_scope()
@@ -397,10 +405,6 @@ try:
     # example photos of the three tasks that become automatic checks. Inline and
     # flag-guarded. Remove with `leader_rules_sep19`.
     cleanup_rules_sep19()
-    # Schema for the automatic checklist tasks. Permanent, not a one-shot:
-    # `create_all` never ALTERs an existing table, and the ledger's unique
-    # key is an EXPRESSION index. Must run before anything arms the rollout.
-    add_leader_auto_checks()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
     # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
     # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.

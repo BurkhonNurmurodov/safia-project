@@ -6907,8 +6907,16 @@ def _leader_auto_dm(shift: int, out, left, error: str | None = None) -> None:
         from app.telegram_bot import bot
         esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
         if error:
-            text = ("\U0001F6D1 <b>Avtomatik tekshiruv o'rnatilmadi</b>\n"
-                    f"Smena {shift}\n<pre>{esc(error[:600])}</pre>")
+            # «Not installed» would be a lie: the setters commit one at a
+            # time, so a pass that died half way has switched some units and
+            # not others. The next boot re-runs it whole (the flag is written
+            # last and every write is a set-to-this-value), and the message
+            # has to say so or somebody goes looking for a rollback.
+            text = ("\U0001F6D1 <b>Avtomatik tekshiruv to'liq o'rnatilmadi</b>\n"
+                    f"Smena {shift} — ba'zi brigadalar yoqilgan bo'lishi "
+                    "mumkin. Keyingi qayta ishga tushishda pass to'liq "
+                    "takrorlanadi.\n"
+                    f"<pre>{esc(error[:600])}</pre>")
         else:
             rows = "\n".join(esc(x) for x in roll.preview(None, shift))
             text = ("\u2699\ufe0f <b>Avtomatik tekshiruvlar yoqildi</b>\n"
@@ -6917,9 +6925,16 @@ def _leader_auto_dm(shift: int, out, left, error: str | None = None) -> None:
                     f"Vazifa matnlari yangilandi: {out['texts']}\n"
                     "#1, #8 va #9 endi tizim tomonidan tekshiriladi — "
                     "liderlar ularga rasm yubormaydi.")
+            if out.get("skipped"):
+                text += (f"\n\u26a0\ufe0f {out['skipped']} ta brigada "
+                         "o'tkazilmadi (vazifalarni bittalab yopmaydi).")
             if left:
+                # NOT «they were not touched»: a leader whose only override is
+                # a `deadline` IS switched to auto (the kind comes from the
+                # unit) and merely keeps their own clock. What the list says is
+                # which of their own values still wins.
                 text += ("\n\n\u26a0\ufe0f Quyidagi liderlarda o'z sozlamasi "
-                         "bor, ularga tegilmadi:\n<pre>"
+                         "bor — o'sha maydon ularda o'zgarmadi:\n<pre>"
                          + esc("\n".join(left[:15])) + "</pre>")
         for chat_id in _recipients():
             try:

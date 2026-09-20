@@ -103,6 +103,14 @@ AUTO_FROM = "2026-09-20"
 # How long before the check every leader of the unit is told it is coming.
 WARN_BEFORE = timedelta(minutes=30)
 
+# How long a check that cannot read its data is retried before it gives up and
+# records itself as unchecked. Unbounded, it is not merely noisy: an auto task
+# with no entry holds its checklist day open, `autoclose_due` skips auto tasks,
+# and shift 1 has no day-level sweep at all — so one leader-day would stay open
+# for good, which every read surface here reads as «this leader filed nothing».
+# Long enough to ride out an outage, short enough to end inside the shift.
+GIVE_UP = timedelta(hours=6)
+
 # How late a pass may still take a check before it says so. A sweep runs every
 # minute, so anything beyond this is an outage or a restart — and a verdict
 # taken an hour late read data entered after the hour it asked about, which the
@@ -200,13 +208,13 @@ class _Ctx:
     """Everything one verdict is taken from, resolved once per leader-day."""
 
     __slots__ = ("db", "prof", "manager", "shift", "date", "cell", "due",
-                 "now", "_dash", "_pins", "_pairs")
+                 "now", "_dash", "_pins", "_pairs", "_cells")
 
     def __init__(self, db, prof, manager, shift, date, cell, due, now):
         self.db, self.prof, self.manager = db, prof, manager
         self.shift, self.date, self.cell = shift, date, cell
         self.due, self.now = due, now
-        self._dash = self._pins = self._pairs = None
+        self._dash = self._pins = self._pairs = self._cells = None
 
     # The leader's (work centre, group letter) pairs — their cells, and the one
     # definition of «what is mine» the /production page itself applies.
@@ -237,14 +245,45 @@ class _Ctx:
         return self._dash
 
     @property
-    def pins(self) -> set[tuple[str, str | None]]:
-        """The (work centre, group) pairs the brigadir TYPED people for, through
-        the one door for that question."""
+    def cells(self) -> list:
+        """The leader's own cells — or the ONE cell a per-cell checklist is
+        about."""
+        if self._cells is None:
+            if self.cell is not None:
+                self._cells = [self.cell]
+            else:
+                self._cells = (self.db.query(Cell)
+                               .filter(Cell.leader_id == self.prof.id).all())
+        return self._cells
+
+    @property
+    def pins(self) -> dict:
+        """What each of the UNIT's cells reads of the typed «Bugungi fakt», as
+        `zagruzka_source.cell_pins` answers it — `{(cell_id, day): (value, …)}`,
+        `value` None when nothing reaches that cell.
+
+        THE one door, and going through it is the whole point. Asking instead
+        whether the exact `(code, letter)` pair carries a pin — which is what
+        this did first — fails a lettered cell whose brigadir typed ONE
+        whole-centre number, because the two pin kinds are mutually exclusive by
+        design. CLAUDE.md records the fleet as being in exactly that state («A
+        grouped work centre whose brigadir keeps typing one whole-centre number
+        still splits it evenly», ten such work centres, the largest six cells
+        wide), so the check would have deducted task #1's ten points every day
+        from leaders whose /production page plainly shows the number filled in,
+        for a brigadir behaviour change nobody has asked for.
+
+        It is handed EVERY cell of the unit, never the leader's alone: the split
+        is over the cells passed, so a short list reads every other group's
+        people as unclaimed and takes them — the mistake the «Xarajat» entries
+        modal made until it was fixed.
+        """
         if self._pins is None:
             d = _as_date(self.date)
             raw = zagruzka_source.typed_pins(self.db, [self.manager.id], d, d)
-            self._pins = {(cell_lookup.norm_code(wc), g or None)
-                          for (_m, _d, wc, g) in raw}
+            unit_cells = (self.db.query(Cell)
+                          .filter(Cell.manager_id == self.manager.id).all())
+            self._pins = zagruzka_source.cell_pins(unit_cells, raw)
         return self._pins
 
 
@@ -267,13 +306,14 @@ def _check_plan_staffing(ctx: _Ctx, target: float | None) -> Verdict:
     if not planned:
         return Verdict(FAILED, "no_plan", {"lines": len(rows), "with_plan": 0})
 
-    pins = ctx.pins
+    pins, day = ctx.pins, str(ctx.date)[:10]
     missing = sorted(
-        wc_group.label(code, grp) if grp else code
-        for (code, grp) in ctx.pairs if (code, grp) not in pins
+        (c.verifix_code or wc_group.label(c.sap_code, c.wc_group) or "?")
+        for c in ctx.cells
+        if (pins.get((c.id, day)) or (None,))[0] is None
     )
     facts = {"lines": len(rows), "with_plan": len(planned),
-             "cells": len(ctx.pairs), "untyped": missing}
+             "cells": len(ctx.cells), "untyped": missing}
     if missing:
         return Verdict(FAILED, "no_staffing", facts)
     return Verdict(PASSED, "ok", facts)
@@ -372,12 +412,24 @@ def evaluate(db: Session, *, prof: RoleProfile, manager: Manager,
 # `__missed__` over any task with no entry, so a pass that ran after it would
 # find the platform had already recorded its own checks as the leader's failure.
 
-def _open_day_dates(db: Session, manager_id: int) -> set[str]:
+# How far back an OPEN day is still swept. Bounded on purpose: shift 1 has no
+# day-level auto-close at all (`leader_close.AUTOCLOSE_SHIFTS = (2,)`), so an
+# abandoned shift-1 day stays open for the life of the platform — and every one
+# of those dates would otherwise be walked, per leader, per task, every five
+# minutes, forever. A day nobody touched for a fortnight is not one a check is
+# going to rescue.
+OPEN_DAY_LOOKBACK = 14
+
+
+def _open_day_dates(db: Session, manager_id: int, now: datetime) -> set[str]:
     """Dates this unit still has an OPEN checklist on — the stale nights a
     verdict must still reach, or their days never close."""
+    floor = max(AUTO_FROM,
+                (now - timedelta(days=OPEN_DAY_LOOKBACK)).strftime("%Y-%m-%d"))
     return {str(d) for (d,) in db.query(LeaderTaskDay.date).filter(
         LeaderTaskDay.manager_id == manager_id,
-        LeaderTaskDay.closed_at.is_(None)).distinct().all()}
+        LeaderTaskDay.closed_at.is_(None),
+        LeaderTaskDay.date >= floor).distinct().all()}
 
 
 def _unit_due(db: Session, manager: Manager, defs: dict[int, LeaderTaskDef],
@@ -406,6 +458,28 @@ def _unit_due(db: Session, manager: Manager, defs: dict[int, LeaderTaskDef],
         if due is not None:
             out[tid] = (due, leader_close.task_deadline(entry, manager.shift))
     return out
+
+
+def check_hour(db: Session, manager_id: int | None, shift: int | None,
+               task_id: int, cfg_entry: dict | None) -> str:
+    """The clock this task's check fires at, "HH:MM" — the UNIT's answer.
+
+    What a leader is SHOWN has to be what actually fires. `_unit_due` reads the
+    unit and global levels only (see its docstring), so a leader-level
+    `deadline` or window would otherwise make the task screen and the warning
+    DM name one hour while the check took another. Falls back to the resolved
+    entry when the unit cannot be read, which is still better than nothing.
+    """
+    from app.services import leader_close
+    if manager_id is not None:
+        m = db.query(Manager).filter(Manager.id == manager_id).first()
+        td = db.query(LeaderTaskDef).filter(LeaderTaskDef.id == task_id).first()
+        if m is not None and td is not None:
+            got = _unit_due(db, m, {task_id: td},
+                            leader_tasks.effective_date(m.shift))
+            if task_id in got:
+                return got[task_id][1]
+    return leader_close.task_deadline(cfg_entry or {}, shift)
 
 
 def _ledger(db: Session, leader_id: int, date: str, task_id: int,
@@ -454,7 +528,8 @@ def _warn(db: Session, prof, td, due: datetime, hhmm: str) -> bool:
     return True
 
 
-def _tell(db: Session, prof, td, v: Verdict, hhmm: str, date: str) -> None:
+def _tell(db: Session, prof, td, v: Verdict, hhmm: str, date: str,
+          cell_id: int | None = None) -> None:
     """Tell one leader how their check went — always, pass or fail.
 
     The same reasoning the day report's own DM rests on: points now come off
@@ -469,11 +544,22 @@ def _tell(db: Session, prof, td, v: Verdict, hhmm: str, date: str) -> None:
     if notifications_suppressed():
         return
     nkey = "leader_auto_passed" if v.done else "leader_auto_failed"
+    # On a per-cell unit this fires once per CELL, and the verdicts genuinely
+    # differ — so the message has to say which cell it is about, or a leader of
+    # six cells gets six indistinguishable DMs for one task.
+    facts = _facts_line(v)
+    if cell_id is not None:
+        from app.services import cell_lookup as _cl
+        code = (db.query(Cell.verifix_code)
+                .filter(Cell.id == cell_id).scalar())
+        if code:
+            facts = f"{code} · {facts}"
+        _ = _cl
     notify_profile(db, profile_key("leader", int(prof.id)), nkey,
                    {"task": _task_name(td), "time": hhmm,
                     "date": str(date)[:10],
                     "why": _WHY.get(v.code, v.code),
-                    "facts": _facts_line(v)},
+                    "facts": facts},
                    type="success" if v.done else "warning")
 
 
@@ -530,7 +616,7 @@ def run(db: Session, now: datetime | None = None) -> dict:
         if getattr(m, "archived", False):
             continue
         dates = {leader_tasks.effective_date(m.shift, now)}
-        dates |= _open_day_dates(db, m.id)
+        dates |= _open_day_dates(db, m.id, now)
         dates = {d for d in dates if str(d)[:10] >= AUTO_FROM}
         leaders = None
         for date in sorted(dates):
@@ -560,7 +646,7 @@ def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None
     # or an exclusion says this leader-day costs nobody anything.
     if leader_exclusions.excluded(db, prof.id, date, leader_name=prof.name):
         return
-    cfg = None
+    cfg = cells = None
     for tid, (due, hhmm) in live.items():
         td = defs.get(tid)
         parsed = parse_check(td.auto_check if td else None)
@@ -575,14 +661,26 @@ def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None
         # what says the task is theirs at all, and whether it is automatic.
         if not s or not s.get("enabled") or not is_auto(s):
             continue
-        cells = leader_cells.expected_days(db, prof, date)
+        if cells is None:
+            # Once per leader-day, never once per task: each call costs a
+            # `unit_floor` query plus a `filing_cells` query, and the answer
+            # cannot differ between two tasks of one checklist.
+            cells = leader_cells.expected_days(db, prof, date)
         if not cells:
             continue
 
         if now < due:
-            row = _row_for(db, prof=prof, manager=m, date=date, task_id=tid,
-                           cell_id=cells[0], check=check, due=due)
-            if row.warned_at is None:
+            # «Have I warned?» is a question about the LEADER-day, so it is
+            # asked of every row and not of `cells[0]`: `filing_cells` orders
+            # by verifix code, so a cell assigned inside the 30-minute window
+            # changes which row that is, and the branch would re-enter and send
+            # a second DM — the one double-message this ledger exists to stop.
+            warned = (db.query(LeaderAutoCheck.id).filter(
+                LeaderAutoCheck.leader_id == prof.id,
+                LeaderAutoCheck.date == date,
+                LeaderAutoCheck.task_id == tid,
+                LeaderAutoCheck.warned_at.isnot(None)).first())
+            if warned is None:
                 for cid in cells:
                     r = _row_for(db, prof=prof, manager=m, date=date,
                                  task_id=tid, cell_id=cid, check=check, due=due)
@@ -604,8 +702,27 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
     """Decide ONE (leader, date, cell, task). True when anything was written."""
     row = _row_for(db, prof=prof, manager=m, date=date, task_id=tid,
                    cell_id=cell_id, check=check, due=due)
+    # TERMINAL means the task is CLOSED, never merely that an entry exists.
+    # `entry_id` alone was the first spelling and it stranded days: nothing
+    # else writes `closed_at` for an auto task any more (`autoclose_due` skips
+    # them, the bot refuses every button, `close_expired_days` drops a day
+    # holding a reopened task), so an entry left unlocked had no writer left
+    # at all and its day stayed open forever — which every read surface on
+    # this platform reads as «this leader filed nothing». Three ways to reach
+    # it: the process dying between the commit below and `close_task`, a
+    # pre-existing DRAFT recorded `already_filed`, and an admin reopening the
+    # task. The third is now refused outright; the first two heal here,
+    # because this test sends them round again.
     if row.entry_id is not None:
-        return False                      # settled for good
+        done = (db.query(LeaderTaskEntry)
+                .filter(LeaderTaskEntry.id == row.entry_id,
+                        LeaderTaskEntry.closed_at.isnot(None)).first())
+        if done is not None:
+            return False                  # settled for good
+    if row.code == "day_closed":
+        # The day ended without this check; nothing can be written to it now
+        # and nothing may keep re-stating that every five minutes.
+        return False
 
     day = (db.query(LeaderTaskDay)
            .filter(LeaderTaskDay.leader_id == prof.id,
@@ -624,15 +741,30 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
         return False
 
     if day.closed_at is not None:
+        if row.code == "day_closed":
+            return False
         row.checked_at, row.outcome, row.code = now, SKIPPED, "day_closed"
         return True
 
     entry = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=tid).first()
     if entry is not None:
         # The leader answered it before the unit was switched, or an admin did.
-        # Their answer stands: this module writes a verdict, never over one.
+        # Their answer STANDS: this module writes a verdict, never over one.
+        #
+        # But it must still be CLOSED. A leader mid-checklist holds a DRAFT —
+        # answered, not submitted — and that is exactly what the rollout's own
+        # mid-shift exception produces: the switch lands, the leader can no
+        # longer press «Vazifani yopish» (the bot refuses every button on an
+        # auto task) and nothing else closes it, so the day hangs open behind
+        # one task nobody on earth can submit. Closing it here hands the photos
+        # they took to the AI exactly as their own press would have.
         row.checked_at, row.outcome, row.code = now, SKIPPED, "already_filed"
         row.entry_id = entry.id
+        db.commit()
+        if entry.closed_at is None:
+            cfg = leader_tasks.effective_leader_config(db, prof, m.shift, day=date)
+            leader_close.close_task(db, day=day, entry=entry, cfg=cfg,
+                                    actor=f"avtomatik · {prof.name}")
         tally["skipped"] += 1
         return True
 
@@ -650,13 +782,19 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
                      cell=_cell(db, cell_id), check=check, target=target,
                      due=due, now=now)
         if v.outcome == SKIPPED:
-            # A data failure is NOT recorded as the leader's. Left unsettled so
-            # the next pass tries again; `entry_id` stays None, so nothing here
-            # is final and the day is not closed on a number nobody could read.
-            row.checked_at, row.outcome, row.code = now, SKIPPED, v.code
-            row.facts = v.facts
-            tally["skipped"] += 1
-            return True
+            if now < due + GIVE_UP:
+                # A data failure is NOT recorded as the leader's. Left
+                # unsettled so the next pass tries again; `entry_id` stays
+                # None, so nothing here is final and the day is not closed on a
+                # number nobody could read.
+                row.checked_at, row.outcome, row.code = now, SKIPPED, v.code
+                row.facts = v.facts
+                tally["skipped"] += 1
+                return True
+            # …but not forever. Past the window the entry is written as
+            # UNCHECKED so the task closes and its day can end: a day held open
+            # by a platform fault costs the leader every other task on it.
+            v = Verdict(FAILED, "not_checked", dict(v.facts, gave_up=True))
 
     late = max(0, int((now - due).total_seconds() // 60))
     if late > LATE_GRACE.total_seconds() // 60:
@@ -675,10 +813,28 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
                             actor=f"avtomatik · {prof.name}")
     tally["checked"] += 1
     tally[PASSED if v.done else FAILED] += 1
-    _tell(db, prof, td, v, hhmm, date)
-    if v.code == "no_sap_code":
+    _tell(db, prof, td, v, hhmm, date, cell_id)
+    if v.code == "no_sap_code" and not _already_alerted(db, prof.id, date, tid):
         _alert_admins(db, prof, m, td, date)
     return True
+
+
+def _already_alerted(db: Session, leader_id: int, date: str,
+                     task_id: int) -> bool:
+    """Has this leader's missing SAP code already been reported today?
+
+    Two of the three checks answer `no_sap_code` for the same leader on the
+    same day, and `_alert_admins` broadcasts to EVERY admin. Without this a
+    register error nobody has got round to fixing yet costs every admin two
+    DMs per affected leader, every single day — which is how people learn to
+    ignore the alerts that matter. One per leader-day; the condition is a
+    standing fact about /cells, not news that repeats.
+    """
+    return bool(db.query(LeaderAutoCheck.id).filter(
+        LeaderAutoCheck.leader_id == leader_id,
+        LeaderAutoCheck.date == date,
+        LeaderAutoCheck.task_id != task_id,
+        LeaderAutoCheck.code == "no_sap_code").first())
 
 
 def _cell(db: Session, cell_id: int | None) -> Cell | None:

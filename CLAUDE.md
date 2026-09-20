@@ -2509,9 +2509,18 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   answers about one shift, and the check is the one nobody can argue with.
 - **The three rules, all the operator's** (agreed 14—18 Sep): `plan_staffing`
   (#1, 10:00 / 23:00) — a plan above 0 on the leader's own work centres AND the
-  people TYPED for every cell they own, the cell's own group pin where it carries
-  a letter and the whole-centre pin where it does not, **a typed 0 passing**
-  (`people_overridden` and never the value is what tells typed from absent);
+  people TYPED for every cell they own, **asked through
+  `zagruzka_source.cell_pins`, the platform's one pin split**, and never by
+  testing whether the exact `(code, letter)` pair carries a pin: the two pin
+  kinds are mutually exclusive by design, so that spelling fails a LETTERED cell
+  whose brigadir typed one whole-centre number — the state CLAUDE.md records the
+  fleet as being in («A grouped work centre whose brigadir keeps typing one
+  whole-centre number still splits it evenly», ten such work centres) — and would
+  have deducted ten points a day from leaders whose /production page plainly
+  shows the number filled in. `cell_pins` is handed EVERY cell of the unit, never
+  the leader's alone, or a short list reads every other group's people as
+  unclaimed. **A typed 0 passes**, because `people_overridden` and never the
+  value is what tells typed from absent;
   `plan_pct:30` (#9, 14:00 / 03:00) — the «Bajarish %» the leader's own
   /production page states, at or above the target **carried in the setting**, so
   the threshold moves without a deploy; `concerns` (#8, 17:00 / 06:00) — one
@@ -2540,10 +2549,32 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   the whole «started after the check» rule silently degrades into an ordinary
   late evaluation that passes a leader who entered the plan half an hour after
   the hour that asked for it (found by running it, 2026-09-20).
-- **`entry_id` is the only final marker.** A check that could not read its data
-  is `skipped` / `no_data` with `entry_id` NULL — left unsettled, retried next
-  pass — because a task failed on a number nobody could read is worse than a
-  task still open.
+- **TERMINAL means the task is CLOSED, never merely that an entry exists.**
+  `entry_id is not None` was the first spelling and it stranded whole days:
+  nothing else writes `closed_at` for an auto task (`autoclose_due` skips them,
+  every bot button is refused, `close_expired_days` drops a day holding a
+  reopened task), so an entry left unlocked had no writer left at all. Three
+  ways to reach it — the process dying between the commit and `close_task`, a
+  pre-existing DRAFT recorded `already_filed`, and an admin reopening the task.
+  The first two HEAL, because `_settle` re-reads whether the entry is closed;
+  the third is refused outright in `leader_close.reopen_task` AND in
+  `routers/leader_tasks.reopen_submitted_task`, since that endpoint is reachable
+  without the UI. A stranded day is invisible on every read surface here, which
+  is the same thing as «this leader filed nothing».
+- **`already_filed` still CLOSES the task.** A leader mid-checklist holds a
+  DRAFT — answered, not submitted — and that is exactly what the mid-shift
+  exception below produces. Their answer stands; their task is closed for them,
+  or the day hangs open behind one task nobody on earth can submit.
+- **A check that cannot read its data is retried, but not forever.** It is
+  `skipped` / `no_data` with `entry_id` NULL until `GIVE_UP` (6 h) past its hour,
+  and is then written as `not_checked` so the task closes and the day can end: a
+  day held open by a platform fault costs the leader every other task on it.
+  Shift 1 has no day-level sweep at all, so nothing else would have ended it.
+- **`autoclose_due` skips an auto task only from `AUTO_FROM` on.** The config
+  chain is not versioned, so an open day from before the floor still resolves
+  `proof_kind="auto"` while the evaluator refuses to look at it — skipping it
+  there too would leave that task with no closer and hold its checklist open
+  for good.
 - **The reason sentinel is `__auto__|HH:MM|code`** (`leader_tasks.auto_reason` /
   `read_auto_reason`), the twin of `__missed__|HH:MM` and for the same reason:
   `reason` is free text a leader typed in their own language, so it cannot also
@@ -2562,7 +2593,10 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   not marked late and a real outage is. It runs ahead of `autoclose_due`
   and `sweep_expired_days`. Both of those write an entry for any enabled task
   that has none, so a pass running after them would find the platform had
-  already recorded its own checks as the leader's failure. `autoclose_due` skips
+  already recorded its own checks as the leader's failure. **`telegram_bot._lt_cmd`
+  is the OTHER door into those two closes and carries the same order**, or a
+  `/tasks` typed after a check hour but before the next tick would do exactly
+  that, permanently — a closed day can no longer be settled. `autoclose_due` skips
   auto tasks outright; `close_expired_days` writes `__auto__|HH:MM|not_checked`
   rather than the missed-deadline sentinel.
 - **Every door back is closed, deliberately and in one place each.**
@@ -2576,7 +2610,10 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   would look like it worked and change nothing. **The route back is the admin
   override** (`LeaderTaskOverride`), which `_apply_overlays` already scores.
 - **The bot refuses it once, not eight times.** `_LT_TASK_ACTIONS` in
-  `telegram_bot.py` is the set of `lt:` actions carrying a task id, and one guard
+  `telegram_bot.py` is the set of `lt:` actions carrying a task id — **the
+  ADMIN's `aop`/`awp`/`aopok`/`awpok` included**, because a Telegram callback
+  button never expires and one minted before the switch is still live in
+  somebody's chat — and one guard
   in the dispatcher sends every one of them to `_lt_auto_view` — a read-only
   screen naming the rule, the hour and the verdict, with no camera, no upload, no
   «Qayta topshirish», no close button and no `LeaderTaskCapture` row (a stale one

@@ -2022,6 +2022,12 @@ def _broadcast_callback(call: types.CallbackQuery):
 _LT_TASK_ACTIONS = frozenset({
     "task", "tclose", "tcconf", "rconf", "crst", "crok",
     "yes", "no", "save",
+    # The ADMIN's «Qayta ochish» / «Tozalash» pair and their confirms. They
+    # belong here for the sharpest reason of all: a reopened auto task has no
+    # writer left for its `closed_at`, so it would strand the whole checklist
+    # day — and a Telegram callback button never expires, so one minted before
+    # the 20 Sep switch is still live in somebody's chat today.
+    "aop", "awp", "aopok", "awpok",
 })
 
 _LT_MESSAGES = {
@@ -2952,8 +2958,15 @@ def _lt_auto_view(db, tid: int, pid: int, lang: str, chat_id: int,
     previous task's handler.
     """
     name = config_name(entry_cfg, lang)
+    # The UNIT's hour, not the leader-resolved one. `leader_auto._unit_due`
+    # reads the unit level alone, by design, so a leader-level `deadline` or
+    # window on one of these tasks would make this screen and the 30-minute
+    # warning DM name different clocks — and the leader would be judged at the
+    # one they were not shown. Three such leader rows exist in production.
     text = _lt(lang, "auto_head").format(
-        task=name, t=leader_close.task_deadline(entry_cfg, shift))
+        task=name,
+        t=leader_auto.check_hour(db, day.manager_id if day else None, shift,
+                                 task_id, entry_cfg))
     if desc := (entry_cfg.get("description") or "").strip():
         text += "\n" + desc[:600] + "\n"
     entry = (db.query(LeaderTaskEntry)
@@ -3047,7 +3060,14 @@ def _lt_pt_task_view(db, tid: int, pid: int, lang: str, chat_id: int,
             # and one the clock caught are not in the same position.
             key = {"pending": "pt_state_pending", "passed": "pt_state_passed",
                    "rejected": "pt_state_failed", "expired": "pt_state_expired",
-                   "notdone": "pt_state_undone"}.get(state, "pt_state_undone")
+                   "notdone": "pt_state_undone",
+                   # The platform's own verdicts. Unreachable while the task is
+                   # auto (the early return above catches it) and reachable the
+                   # moment somebody switches one back off, when a past
+                   # `__auto__` pass would otherwise render as «rad etildi»
+                   # over a day that scored it done.
+                   "autopass": "pt_state_passed",
+                   "autofail": "pt_state_undone"}.get(state, "pt_state_undone")
             text += _lt(lang, key).format(w=weight)
             # The AI's own words, when it has any — the leader is entitled to read
             # the reason a task they cannot change any more was rejected.
@@ -3533,6 +3553,14 @@ def _lt_cmd(message: types.Message):
             bot.send_message(message.chat.id, _lt(lang, "not_leader"))
             return
         try:
+            # The evaluator FIRST, exactly as `leader_close._sweep` runs it
+            # and for the same reason: both closes here write an entry for any
+            # enabled task that has none, so a `/tasks` typed after a check
+            # hour but before the next 5-minute tick would record the
+            # platform's own checks as the leader's failure — permanently,
+            # because a closed day can no longer be settled. Two doors, one
+            # rule, and the rule has to hold in both.
+            leader_auto.run(db)
             # Per-task units have per-task deadlines, and a deadline that only
             # bites when a scheduler happens to run is not one. The timer job
             # does this too; whichever gets there first wins.

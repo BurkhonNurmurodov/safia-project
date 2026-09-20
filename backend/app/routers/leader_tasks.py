@@ -41,7 +41,8 @@ from app.services import (
     action_log, leader_ai, leader_bot, leader_cells, leader_close,
     leader_reports)
 from app.services.leader_tasks import (
-    CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list, cancel_pending, channel_chat_id,
+    AUTO_PREFIX, CAMERA_IS_PILOT, CHANNEL_SETTING_KEY, PROOF_KINDS, audit_list,
+    cancel_pending, channel_chat_id,
     catalog_floor, clean_day, config_ownership, create_task,
     effective_date, effective_leader_config, effective_settings, ensure_task_defs,
     expired_through, leader_overrides, reorder_tasks, set_archived,
@@ -2556,6 +2557,13 @@ def reopen_submitted_task(
              .filter_by(day_id=day.id, task_id=body.task_id).first())
     if not leader_close.locked(entry, day):
         raise HTTPException(status_code=409, detail="This task is not locked")
+    # An AUTOMATIC task is not a submission and cannot be handed back: nothing
+    # writes `closed_at` for one once it is reopened, so the checklist day
+    # would stay open forever. Refused at the endpoint AND in
+    # `leader_close.reopen_task`, because this endpoint is reachable without
+    # the UI. The route back from a machine verdict is the admin override.
+    if entry is not None and str(entry.reason or "").startswith(AUTO_PREFIX):
+        raise HTTPException(status_code=409, detail="auto_task_not_reopenable")
 
     prof = db.query(RoleProfile).filter_by(id=day.leader_id).first()
     actor = _actor(admin)

@@ -384,6 +384,20 @@ def reopen_task(db: Session, *, day: LeaderTaskDay | None, task_id: int,
     Returns what it actually lifted, so the caller can SAY so. A reopen that
     found nothing locked must not read like one that undid a submission.
     """
+    # An AUTOMATIC task is never handed back, and this refusal is what keeps a
+    # day from being stranded forever. Nothing else writes `closed_at` for one:
+    # `autoclose_due` skips them, every bot button is refused, and
+    # `close_expired_days` drops a day holding a reopened task before it ever
+    # reaches its own `not_checked` fallback — so a reopened auto task has no
+    # writer left at all and its checklist stays open for good, which every
+    # read surface here reads as «this leader filed nothing». The route back
+    # from a machine verdict is the admin override (`LeaderTaskOverride`),
+    # which `_apply_overlays` already scores.
+    _e = (db.query(LeaderTaskEntry)
+          .filter_by(day_id=day.id, task_id=task_id).first()) if day else None
+    if _e is not None and str(_e.reason or "").startswith(leader_tasks.AUTO_PREFIX):
+        return {"task": False, "day": False, "verdict": False,
+                "disputes": 0, "refused": "auto"}
     lifted = {"task": False, "day": False, "verdict": False, "disputes": 0}
     if day is None:
         return lifted
@@ -618,7 +632,13 @@ def autoclose_due(db: Session, now: datetime | None = None) -> int:
             # One owner: the evaluator writes the entry and closes the task, and
             # if it cannot decide (a dashboard that will not build) the task is
             # left OPEN and tried again rather than failed on this module's say-so.
-            if leader_auto.is_auto(s):
+            # …but ONLY from the day the checks actually run. A day older than
+            # `AUTO_FROM` resolves the same config (the chain is not versioned)
+            # while `leader_auto` refuses to look at it, so skipping it here
+            # too would leave that task with no closer at all and hold its
+            # checklist open forever. Below the floor it is an ordinary task
+            # and this pass closes it exactly as it always did.
+            if leader_auto.is_auto(s) and str(day.date)[:10] >= leader_auto.AUTO_FROM:
                 continue
             # NOT YET STARTED. The operator's reading of the 26 Aug night, and
             # the one that explains why the day closed at 22:36 rather than at
@@ -1029,7 +1049,11 @@ def _sweep() -> None:
         # the leader's failure.
         try:
             t = leader_auto.run(db)
-            if t.get("checked") or t.get("warned"):
+            # `skipped` is logged too: a check that cannot read its data is
+            # retried every pass and is otherwise completely silent, so a
+            # structural failure would repeat for hours with nothing anywhere
+            # saying it was happening.
+            if t.get("checked") or t.get("warned") or t.get("skipped"):
                 logger.info("auto checks: %s", t)
                 if t.get("checked"):
                     action_log.record_system(
