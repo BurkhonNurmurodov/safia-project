@@ -575,6 +575,10 @@ _WHY = {
     "under_target": "Reja belgilangan foizga yetmagan",
     "no_sap_code": "Yacheykangizda SAP kodi yo'q — adminlarga xabar berildi",
     "started_late": "Chek-list tekshiruv vaqtidan keyin boshlangan",
+    # The give-up verdict (`GIVE_UP`). It is the PLATFORM's failure, not the
+    # leader's, and the wording says so — the code was missing from this map,
+    # so such a DM would have arrived reading «not_checked» at a leader.
+    "not_checked": "Tekshiruv o'tkazilmadi — tizimda nosozlik",
     "no_data": "Ma'lumot o'qilmadi",
 }
 
