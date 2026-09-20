@@ -13,7 +13,10 @@ import ColorGuideModal from "../ui/ColorGuideModal";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
-import { pValueNumbers, pValueInputs, KAIZEN_BUFFER, VERIFIX_EFFICIENCY } from "../../utils/formulas";
+import {
+  pValueNumbers, pValueInputs, KAIZEN_BUFFER, VERIFIX_EFFICIENCY,
+  simplePlanUtil, simpleActualUtil, simplePlanNumbers, simplePlanInputs,
+} from "../../utils/formulas";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -186,6 +189,24 @@ export default function ComparisonTable({
   // saying so. Two numbers for one day mean two different questions, and the
   // reader has to be able to tell which is which without asking.
   pinnedRow = null,
+  // WHICH ARITHMETIC the grid reads. "full" (the default) is the platform's
+  // official загрузка — baseline_util for P, net_util-with-factors for A — and
+  // is byte-for-byte what this table has always shown. "simple" is the second
+  // table on /zagruzka («Soddalashtirilgan hisob»): BOTH halves divided by the
+  // same person-minutes of productive capacity, 480 × 0.9 × the reported
+  // headcount (services → utils/formulas.js, where the rule is documented).
+  //
+  // It is a PROP and not a second component on purpose: everything else about
+  // the two tables — the P·A·D toggle, the colour bands, the sort, the pinned
+  // and column summaries, the pending markers, the approval gate, the comment
+  // threads — is identical, and a fork would be one copy of all of it that
+  // stops being maintained the first time any of them changes.
+  basis = "full",
+  // Card title + an optional one-line note under the subtitle. Both default to
+  // nothing, so every existing call site renders exactly as before; the two
+  // tables on /zagruzka pass them so neither is the unlabelled one.
+  title = null,
+  note = null,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
@@ -202,7 +223,21 @@ export default function ComparisonTable({
 
   const isAdmin = auth?.role === "admin";
   const factors = calcFactors || DEFAULT_CALC_FACTORS;
-  const calcModified = !(factors.downtime && factors.early && factors.kaizen && factors.perenalatka);
+  const simple = basis === "simple";
+  // ── THE two value readers. Every P and every A on this table — the cells,
+  // both summaries, the unit row and the formula popups — goes through these,
+  // so the grid and the numbers under it can never be computed two ways.
+  const planOf = simple ? simplePlanUtil   : (cell) => (cell?.baseline_util ?? null);
+  const actOf  = simple ? simpleActualUtil : (cell) => actualUtil(cell, factors);
+  // Rounded exactly as the heatmap rounds — Math.round(util × 100) — and in ONE
+  // place, so a cell and the average under it can never disagree by a point.
+  const pctOf  = (v) => (v != null ? Math.round(v * 100) : null);
+  // The ⚙ factors are all terms of the FULL formula (ojidaniya, early arrival,
+  // the kaizen buffer, the 0.85 changeover allowance). None of them appears in
+  // the simplified arithmetic, so on that table the button is not offered and
+  // the "factors active" banner can never fire — a control that reports a
+  // change and moves no number is the one thing a duplicate must not copy.
+  const calcModified = !simple && !(factors.downtime && factors.early && factors.kaizen && factors.perenalatka);
   const excludedNames = CALC_FACTOR_DEFS
     .filter(f => !factors[f.key]).map(f => t(f.label)).join(", ");
   const [nameAsc, setNameAsc]     = useState(true);
@@ -235,6 +270,13 @@ export default function ComparisonTable({
   // Display spelling of a row key. Rows sort by the KEY (the cell code), so a
   // leader's name appended here never reorders the grid.
   const shown = (name, full = false) => (labelFor ? labelFor(name, full) : tl(name));
+
+  // The P half opens a FormulaModal; which arithmetic it spells out follows the
+  // basis, or the simplified table would explain itself with the full formula.
+  const planFormula = (cell) => (simple
+    ? (simplePlanNumbers(cell) || "P = prod_plan ÷ (480 × 0.9 × headcount) × 100")
+    : `${pValueNumbers(cell) || "P = prod_plan ÷ (480 × headcount) × 100"}\n${t("fm.planOnlyNote")}`);
+  const planInputs = (cell) => (simple ? simplePlanInputs(cell, t) : pValueInputs(cell, t));
 
   const psegs = pSegments.length    ? pSegments    : DEFAULT_P_SEGMENTS;
   const dsegs = diffSegments.length ? diffSegments : DEFAULT_DIFF_SEGMENTS;
@@ -309,9 +351,8 @@ export default function ComparisonTable({
     const valuesOf = (name, d) => {
       const cell = data[name]?.[d];
       if (!isApproved(name, d)) return { p: null, a: null, d: null };
-      const p = cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
-      const aRaw = actualUtil(cell, factors);
-      const a = aRaw != null ? Math.round(aRaw * 100) : null;
+      const p = pctOf(planOf(cell));
+      const a = pctOf(actOf(cell));
       return { p, a, d: (p !== null && a !== null) ? p - a : null };
     };
 
@@ -397,9 +438,8 @@ export default function ComparisonTable({
     if (!pinnedRow?.data || !dates.length) return null;
     const per = dates.map(d => {
       const cell = pinnedRow.data[d];
-      const p = cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
-      const aRaw = actualUtil(cell, factors);
-      const a = aRaw != null ? Math.round(aRaw * 100) : null;
+      const p = pctOf(planOf(cell));
+      const a = pctOf(actOf(cell));
       return { p, a, d: (p !== null && a !== null) ? p - a : null, cell };
     });
     // The pinned summary follows `summaryMode` like every other row, so one
@@ -448,8 +488,8 @@ export default function ComparisonTable({
                     onClick={() => setFormulaModal({
                       title: `${t("zagruzka.planned")} (P) — ${shortDate(d)}`,
                       value: `${v.p}%`,
-                      formula: `${pValueNumbers(v.cell) || "P = prod_plan ÷ (480 × headcount) × 100"}\n${t("fm.planOnlyNote")}`,
-                      inputs: pValueInputs(v.cell, t),
+                      formula: planFormula(v.cell),
+                      inputs: planInputs(v.cell),
                     })}
                     style={btn(pColor.fg)}
                   >{v.p}%</button>
@@ -491,13 +531,18 @@ export default function ComparisonTable({
         <div className="flex items-center gap-1.5 w-full sm:flex-1 sm:w-auto min-w-0">
           <div className="min-w-0">
             <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
-              {t("zagruzka.comparisonTable")}
+              {title || t("zagruzka.comparisonTable")}
             </div>
             <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
               {isDiff
                 ? t("zagruzka.diffSubtitle")
                 : t("zagruzka.compareSubtitle")}
             </div>
+            {note && (
+              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
+                {note}
+              </div>
+            )}
             {calcModified && (
               <div className="text-[10px] mt-0.5 font-medium" style={{ color: "var(--brand)" }}>
                 {t("zagruzka.calcActive").replace("{list}", excludedNames)}
@@ -523,7 +568,7 @@ export default function ComparisonTable({
             onChange={setMode}
             options={[["compare", t("zagruzka.modeCompare")], ["diff", t("zagruzka.modeDiff")]]}
           />
-          {isAdmin && onCalcFactorsChange && (
+          {isAdmin && !simple && onCalcFactorsChange && (
             <button
               onClick={() => setShowCalc(true)}
               title={t("zagruzka.calcTitle")}
@@ -756,21 +801,14 @@ export default function ComparisonTable({
               // Un-approved days are excluded from the visible summaries.
               const pVals = dates.map(d => {
                 const cell = data[name]?.[d];
-                return isApproved(name, d) && cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
+                return isApproved(name, d) ? pctOf(planOf(cell)) : null;
               });
               const aVals = dates.map(d => {
                 const cell = data[name]?.[d];
-                const a = actualUtil(cell, factors);
-                return isApproved(name, d) && a != null ? Math.round(a * 100) : null;
+                return isApproved(name, d) ? pctOf(actOf(cell)) : null;
               });
-              const dVals = dates.map(d => {
-                const cell = data[name]?.[d];
-                if (!isApproved(name, d)) return null;
-                const pv = cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
-                const a  = actualUtil(cell, factors);
-                const av = a != null ? Math.round(a * 100) : null;
-                return (pv !== null && av !== null) ? pv - av : null;
-              });
+              const dVals = dates.map((d, i) =>
+                (pVals[i] !== null && aVals[i] !== null) ? pVals[i] - aVals[i] : null);
 
               let pSummary, aSummary, dSummary;
               if (summaryMode === "avg") {
@@ -827,9 +865,8 @@ export default function ComparisonTable({
                   {/* Per-date cell — colSpan=2, animated P and A/D inside */}
                   {dates.map((d, i) => {
                     const cell = data[name]?.[d];
-                    const pv = cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
-                    const aRaw = actualUtil(cell, factors);
-                    const av = aRaw != null ? Math.round(aRaw * 100) : null;
+                    const pv = pctOf(planOf(cell));
+                    const av = pctOf(actOf(cell));
                     const dv = (pv !== null && av !== null) ? pv - av : null;
 
                     const pColor = pv !== null
@@ -923,8 +960,8 @@ export default function ComparisonTable({
                                 onClick={() => setFormulaModal({
                                   title: `${t("zagruzka.planned")} (P) — ${shortDate(d)}`,
                                   value: `${pv}%`,
-                                  formula: `${pValueNumbers(cell) || "P = prod_plan ÷ (480 × headcount) × 100"}\n${t("fm.planOnlyNote")}`,
-                                  inputs: pValueInputs(cell, t),
+                                  formula: planFormula(cell),
+                                  inputs: planInputs(cell),
                                 })}
                                 style={{ fontSize: 11, fontWeight: 700, color: pColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
                               >
@@ -1241,6 +1278,7 @@ export default function ComparisonTable({
           date={comment.date}
           rawCell={comment.rawCell}
           mode={comment.mode}
+          basis={basis}
           onClose={() => setComment(null)}
           formulaOnly={comment.formulaOnly ?? !allowComments}
           formulaCollapsible

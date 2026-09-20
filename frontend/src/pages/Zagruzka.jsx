@@ -111,6 +111,9 @@ export default function Zagruzka() {
   const [heatmapMode, setHeatmapMode] = usePersistentState("zagruzka_heatmap_mode", "actual");
   const [heatmapFullscreen, setHeatmapFullscreen] = useState(false);
   const [compFullscreen, setCompFullscreen] = useState(false);
+  // The simplified table gets a fullscreen of its OWN — one shared flag would
+  // blow up whichever table the reader did not press.
+  const [simpleFullscreen, setSimpleFullscreen] = useState(false);
   const [comment, setComment] = useState(null);
   // Admin-only comparison-table factor toggles — lifted here so the inline and
   // fullscreen table instances share one state. Resets to all-ON per visit.
@@ -291,7 +294,39 @@ export default function Zagruzka() {
             calcFactors={calcFactors}
             onCalcFactorsChange={setCalcFactors}
             columnSummary
+            title={t("zagruzka.fullTable")}
+            note={t("zagruzka.fullTableNote")}
             onToggleFullscreen={() => setCompFullscreen(true)}
+          />
+        </div>
+      ) : null}
+
+      {/* ── Comparison Table — «Soddalashtirilgan hisob» ──
+          The SAME grid, the SAME data, the SAME colour bands (so an admin
+          editing the thresholds moves both at once) and the same P·A·D toggle,
+          sort, summaries, pending markers and comment threads. One thing
+          differs, and it is the whole reason the table exists: both halves are
+          divided by the unit's people × a productive shift —
+            P = «Ishlab chiqarish plani» ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
+            A = «Trudoyomkost»           ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
+          — with none of the full formula's four corrections, which is why it is
+          passed no calcFactors and draws no ⚙. ── */}
+      {heatmap?.managers?.length ? (
+        <div className="mb-6">
+          <ComparisonTable
+            dates={heatmap.dates}
+            managers={heatmap.managers}
+            data={heatmap.data}
+            pSegments={pSegments}
+            diffSegments={diffSegments}
+            managerIds={managerIds}
+            approvedCells={approvedCells}
+            commentedCells={commentedCells}
+            basis="simple"
+            columnSummary
+            title={t("zagruzka.simpleTable")}
+            note={t("zagruzka.simpleTableNote")}
+            onToggleFullscreen={() => setSimpleFullscreen(true)}
           />
         </div>
       ) : null}
@@ -317,8 +352,38 @@ export default function Zagruzka() {
               calcFactors={calcFactors}
               onCalcFactorsChange={setCalcFactors}
               columnSummary
+              title={t("zagruzka.fullTable")}
+              note={t("zagruzka.fullTableNote")}
               fullscreen
               onToggleFullscreen={() => setCompFullscreen(false)}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Simplified table fullscreen — portaled for the same reason. */}
+      {simpleFullscreen && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex flex-col"
+          style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
+        >
+          <div className="flex-1 overflow-auto p-4">
+            <ComparisonTable
+              dates={heatmap.dates}
+              managers={heatmap.managers}
+              data={heatmap.data}
+              pSegments={pSegments}
+              diffSegments={diffSegments}
+              managerIds={managerIds}
+              approvedCells={approvedCells}
+              commentedCells={commentedCells}
+              basis="simple"
+              columnSummary
+              title={t("zagruzka.simpleTable")}
+              note={t("zagruzka.simpleTableNote")}
+              fullscreen
+              onToggleFullscreen={() => setSimpleFullscreen(false)}
             />
           </div>
         </div>,

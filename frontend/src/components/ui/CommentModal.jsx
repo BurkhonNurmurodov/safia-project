@@ -6,7 +6,10 @@ import { useAuth } from "../../context/AuthContext";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import { commentPlanFormula, commentActualFormula, commentEffectiveHcFormula, commentAvailMinFormula } from "../../utils/formulas";
+import {
+  commentPlanFormula, commentActualFormula, commentEffectiveHcFormula, commentAvailMinFormula,
+  commentSimplePlanFormula, commentSimpleActualFormula,
+} from "../../utils/formulas";
 
 // Convert DD.MM.YYYY → YYYY-MM-DD for API calls
 function toIsoDate(date) {
@@ -23,7 +26,12 @@ function withTitle(built, title) {
   return built ? { ...built, title } : null;
 }
 
-export default function CommentModal({ managerId, managerName, date, rawCell, mode, onClose, formulaOnly = false, formulaCollapsible = false }) {
+// `basis` says WHICH arithmetic the "how it's calculated" block explains, and
+// it must be the same one the cell the reader tapped was computed with — the
+// thread is keyed to (manager, date) and is therefore reachable from BOTH
+// comparison tables on /zagruzka, so a fixed formula here would explain one
+// table's number with the other table's equation.
+export default function CommentModal({ managerId, managerName, date, rawCell, mode, onClose, formulaOnly = false, formulaCollapsible = false, basis = "full" }) {
   const { auth } = useAuth();
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -107,14 +115,15 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
         <div className="overflow-y-auto" style={{ flex: "1 1 auto", minHeight: 0 }}>
         {/* Formula section — only when opened from a heatmap cell */}
         {rawCell && (() => {
-          const plan = commentPlanFormula(rawCell, t);
-          const actual = commentActualFormula(rawCell, t);
+          const simple = basis === "simple";
+          const plan = simple ? commentSimplePlanFormula(rawCell, t) : commentPlanFormula(rawCell, t);
+          const actual = simple ? commentSimpleActualFormula(rawCell, t) : commentActualFormula(rawCell, t);
           // The two inputs of the Actual formula that are themselves COMPUTED —
           // a number the reader is asked to trust is a number the popup owes
           // them the arithmetic for. Each hangs off the legend row that names
           // it (`key` on the legend item) rather than sitting in a block below,
           // so the answer appears where the question was asked.
-          const details = {
+          const details = simple ? {} : {
             effectiveHc: withTitle(commentEffectiveHcFormula(rawCell, t), t("comment.effectiveHcTitle")),
             availMin: withTitle(commentAvailMinFormula(rawCell, t), t("comment.availMinTitle")),
           };
@@ -209,7 +218,9 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
                       className="text-[11px] font-mono rounded-lg px-2.5 py-2"
                       style={{ background: "var(--bg-card)", color: "var(--text-2)" }}
                     >
-                      {plan?.formula || "P = prod_plan ÷ (480 × headcount) × 100%"}
+                      {plan?.formula || (simple
+                        ? "P = prod_plan ÷ (480 × 0.9 × headcount) × 100%"
+                        : "P = prod_plan ÷ (480 × headcount) × 100%")}
                     </div>
                     {plan && <Legend items={plan.legend} />}
                   </div>
@@ -220,7 +231,9 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
                       className="text-[11px] font-mono rounded-lg px-2.5 py-2"
                       style={{ background: "var(--bg-card)", color: "var(--text-2)" }}
                     >
-                      {actual?.formula || "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100%"}
+                      {actual?.formula || (simple
+                        ? "A = trudoyomkost ÷ (480 × 0.9 × headcount) × 100%"
+                        : "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100%")}
                     </div>
                     {actual && <Legend items={actual.legend} />}
                   </div>

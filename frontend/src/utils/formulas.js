@@ -314,3 +314,117 @@ export function rangeDays(dateFrom, dateTo) {
   const days = Math.round((b - a) / 86400000) + 1;
   return days > 0 ? days : 1;
 }
+
+// ── «Soddalashtirilgan hisob» — the second comparison table on /zagruzka ──────
+// One denominator for BOTH columns: the unit's people × a PRODUCTIVE shift.
+//
+//   Plan   = prod_plan   ÷ (480 × 0.9 × official_hc)
+//   Actual = prod_actual ÷ (480 × 0.9 × official_hc)
+//
+// Read it in units and it explains itself: the numerator is PERSON-MINUTES OF
+// WORK (Σ over the unit's catalog lines of quantity × Трудоемкость ÷ 60 — the
+// «Ishlab chiqarish plani» / «Trudoyomkost» figures), the denominator is
+// person-minutes of CAPACITY, and 0.9 says a person is productive for 432 of
+// the shift's 480 minutes rather than all of them.
+//
+// What it deliberately does NOT carry, and the full table does: the effective-HC
+// attendance correction, the plan-ratio scaling of avail_min, the ojidaniya
+// deduction, the early-arrival deduction and the 10-minute kaizen buffer. That
+// is the whole point of the second table — none of those four admin factor
+// toggles appears here, which is why the ⚙ button is not offered on it.
+//
+// Consequence worth knowing: both columns share one denominator, so
+//   Actual ÷ Plan = prod_actual ÷ prod_plan = ВЫП%,
+// and D = Plan − Actual is exactly the plan shortfall expressed in загрузка
+// points. And Plan is the full table's P ÷ 0.9 — the same measurement, rebased
+// on 432 productive minutes, so every value reads 11.1% higher.
+export const SHIFT_MIN = 480;
+export const PRODUCTIVE_SHARE = 0.9;   // 480 × 0.9 = 432 productive minutes
+
+// A ZERO is treated as NO DATA, and that is deliberate rather than defensive:
+// `DailyMetrics` defaults both prod_plan and prod_actual to 0.0, so a day the
+// file never mentioned arrives as 0 and is indistinguishable from a day that
+// genuinely planned nothing. The full table already blanks both cases (its
+// `ratio` is falsy at 0), so blanking them here keeps the two grids marking the
+// same days as "no answer" instead of one printing 0% where the other prints —.
+function simpleUtil(minutes, hc) {
+  const m = Number(minutes);
+  const n = Number(hc);
+  if (!Number.isFinite(m) || !Number.isFinite(n)) return null;
+  if (!(m > 0) || !(n > 0)) return null;
+  return m / (SHIFT_MIN * PRODUCTIVE_SHARE * n);
+}
+
+export function simplePlanUtil(cell)   { return simpleUtil(cell?.prod_plan,   cell?.official_hc); }
+export function simpleActualUtil(cell) { return simpleUtil(cell?.prod_actual, cell?.official_hc); }
+
+// ── FormulaModal text (the P half of a simplified cell) ──────────────────────
+// Spells the division out twice — once with 480 × 0.9 × N named, once with the
+// 432 × N it collapses to — because the reader's question is usually "where did
+// that denominator come from", and then states the rounding, so the number in
+// the popup reconciles with the number in the cell.
+function simpleNumbers(cell, minutes, letter, approx = false) {
+  const v = simpleUtil(minutes, cell?.official_hc);
+  if (v == null) return null;
+  const op = approx ? "≈" : "=";
+  const pct = v * 100;
+  const den = SHIFT_MIN * PRODUCTIVE_SHARE * Number(cell.official_hc);
+  return [
+    `${letter} = ${letter === "P" ? "prod_plan" : "trudoyomkost"} ÷ (480 × ${PRODUCTIVE_SHARE} × headcount) × 100`,
+    `${op} ${num(minutes, 0)} ÷ (480 × ${PRODUCTIVE_SHARE} × ${num(cell.official_hc, 0)}) × 100`,
+    `${op} ${num(minutes, 0)} ÷ ${num(den, 0)} × 100`,
+    `${op} ${num(pct, 1)}%  →  ${num(Math.round(pct), 0)}%`,
+  ].join("\n");
+}
+
+export function simplePlanNumbers(cell, approx = false) {
+  return simpleNumbers(cell, cell?.prod_plan, "P", approx);
+}
+
+export function simpleActualNumbers(cell, approx = false) {
+  return simpleNumbers(cell, cell?.prod_actual, "A", approx);
+}
+
+function simpleInputs(cell, t, minutes, minutesLabel, minutesSrc) {
+  if (!cell) return [];
+  const out = [];
+  if (minutes != null)
+    out.push(inp(minutesLabel, `${num(minutes, 0)} min`, minutesSrc));
+  if (cell.official_hc != null)
+    out.push(inp(t("overview.fm.reportedHC"), num(cell.official_hc, 0), t("overview.fm.srcVerifix")));
+  out.push(inp(t("fm.shiftStd"), "480 min", t("fm.srcConst")));
+  out.push(inp(t("fm.productiveShare"), String(PRODUCTIVE_SHARE), t("fm.srcConst")));
+  return out;
+}
+
+export function simplePlanInputs(cell, t) {
+  return simpleInputs(cell, t, cell?.prod_plan, t("profile.prodPlan"), t("fm.srcPlan"));
+}
+
+export function simpleActualInputs(cell, t) {
+  return simpleInputs(cell, t, cell?.prod_actual, t("overview.fm.trudoyomkost"), t("overview.fm.srcProduction"));
+}
+
+// ── CommentModal blocks (percentage form + a legend naming every number) ─────
+function simpleComment(cell, t, minutes, minutesLabelKey) {
+  const v = simpleUtil(minutes, cell?.official_hc);
+  if (v == null) return null;
+  const pct = Math.round(v * 100);
+  return {
+    formula: `${num(minutes, 0)} ÷ (480 × ${PRODUCTIVE_SHARE} × ${num(cell.official_hc, 0)}) × 100% = ${pct}%`,
+    legend: [
+      { num: num(minutes, 0), label: t(minutesLabelKey) },
+      { num: "480", label: t("comment.legend.shiftStd") },
+      { num: String(PRODUCTIVE_SHARE), label: t("comment.legend.productiveShare") },
+      { num: num(cell.official_hc, 0), label: t("comment.legend.headcount") },
+    ],
+  };
+}
+
+export function commentSimplePlanFormula(cell, t) {
+  return simpleComment(cell, t, cell?.prod_plan, "comment.legend.prodPlan");
+}
+
+export function commentSimpleActualFormula(cell, t) {
+  return simpleComment(cell, t, cell?.prod_actual, "comment.legend.prodActual");
+}
