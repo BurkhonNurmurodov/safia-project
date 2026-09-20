@@ -975,6 +975,69 @@ for byte**; only where three numbers come from changes.
   Permissions — widening the units it covers is not the same decision as
   widening who may open it.
 
+## TWO comparison tables on `/zagruzka` («Soddalashtirilgan hisob»)
+
+From **2026-09-20** (the operator's directive) `/zagruzka` carries a SECOND
+comparison table directly under the first. Same grid, same data, same colour
+bands, same everything — one thing differs, and it is the whole reason the
+table exists:
+
+    Plan   (P) = «Ishlab chiqarish plani» ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
+    Actual (A) = «Trudoyomkost»           ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
+
+i.e. `prod_plan` and `prod_actual` over ONE denominator — the unit's reported
+people × a PRODUCTIVE shift. Read it in units and it explains itself: the
+numerator is person-minutes of WORK (Σ over the unit's catalog lines of
+quantity × Трудоемкость ÷ 60), the denominator person-minutes of CAPACITY, and
+0.9 says a person is productive for 432 of the shift's 480 minutes.
+
+- **`utils/formulas.js` is THE definition** — `SHIFT_MIN`, `PRODUCTIVE_SHARE`,
+  `simplePlanUtil`, `simpleActualUtil` and the three popup builders beside them.
+  Never re-spell the division at a call site: the cell, the pinned summary, the
+  column footer, the FormulaModal and the CommentModal all read those two
+  functions, so one unit-day can never be computed two ways.
+- **It is a PROP on the existing component, never a fork** —
+  `ComparisonTable basis="simple"`, resolved once into `planOf` / `actOf` /
+  `pctOf`. Everything else about the two tables (the P·A·D toggle, the bands,
+  the sort, both summaries, the pending ⏳/👥 markers, the approval gate, the
+  comment threads, fullscreen) is identical, and a copy would be one duplicate
+  of all of it that stops being maintained the first time any of them changes.
+  `basis` defaults to `"full"`, so `/zagruzka-cell` and every other caller
+  compute byte-for-byte what they always did.
+- **The ⚙ calculator is NOT offered on it**, and that is the one thing the
+  duplicate deliberately does not copy. Its four switches — ojidaniya, early
+  arrival, the 10-minute kaizen buffer, the 0.85 changeover allowance — are all
+  terms of the FULL formula and none of them appears in this arithmetic, so
+  flipping one could not move a number. A control that reports a change and
+  changes nothing is worse than an absent one. The page therefore passes it no
+  `calcFactors` either, so the "factors active" banner can never fire.
+- **The two tables show DIFFERENT numbers for the same unit-day, by design, and
+  both are titled so neither is the unlabelled default** — «To'liq hisob» and
+  «Soddalashtirilgan hisob», each printing its own formula under the subtitle.
+  Plan is the full table's P ÷ 0.9, so **every value reads 11.1% higher**, and
+  the shared colour bands (deliberately the SAME admin thresholds, so one edit
+  on the admin panel moves both tables at once) therefore paint this table
+  greener: a unit reading 77% next door reads 86% here, i.e. green. That is the
+  operator's call, not an oversight.
+- **Both columns share one denominator**, so `A ÷ P = prod_actual ÷ prod_plan`
+  = ВЫП%, and `D = P − A` is exactly the plan shortfall in загрузка points.
+- **A ZERO is treated as NO DATA.** `DailyMetrics` defaults both `prod_plan`
+  and `prod_actual` to 0.0, so a figure the file never mentioned is
+  indistinguishable from a real zero; the full table already blanks both cases
+  (its `ratio` is falsy at 0), so blanking them here keeps the two grids
+  marking the same days as "no answer". **One deliberate difference:** a day
+  with a plan and NO actual shows the simplified table's Plan and a dash for
+  Actual, where the full table blanks BOTH halves — the simplified Plan needs
+  no `ratio`, so it can answer where the full one cannot.
+- **`official_hc` is the headcount either way**, so nothing here cares which
+  basis the day is on: it is the typed «Bugungi fakt» from
+  `zagruzka_source.ZAGRUZKA_FROM` and the «Одам сони» sheet before it.
+- **`/zagruzka` only** (the operator's call). `/zagruzka-cell` was considered
+  and deliberately left alone — its rows are cells, whose headcount is a
+  per-group SHARE, so the same formula there is a different decision.
+- Everything is derived per request from the existing `/api/heatmap` payload —
+  no backend change, nothing stored, so no migration and no re-sync.
+
 ## Which ojidaniya categories the загрузка counts
 
 `sheets_reader.OJIDANIYA_ONLY_CATS` is **THE list** of categories that show on
