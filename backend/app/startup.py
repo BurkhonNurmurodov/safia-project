@@ -6146,6 +6146,48 @@ def _proof_archive_job() -> None:
                       proof_archive.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: EVERY proof of 19–20 September, with what the AI made of it ────
+# The operator asked, on 2026-09-21, for all the proof photos of the checklist
+# days 19.09 and 20.09 (both shifts) as a ZIP, with a JSON inside saying for
+# each proof whose it is, which task, when, the text the AI judged it against,
+# the verdict and its reasons, which flags an admin approved afterwards and
+# which objections were upheld. It READS and writes nothing but its flag and its
+# own progress row; `services/proof_review_report.py` builds the report and the
+# parts. Not a sample, unlike the report above: the operator named two days
+# (~15 parts measured), and a restart mid-run RESUMES from the progress row
+# rather than sending the parts again. Scheduled well clear of the boot /health
+# waits on, for the same reason as every photo errand here. Changing what it
+# sends needs a NEW flag key.
+PROOF_REVIEW_FLAG = "proof_review_sep19_20_2026_09_21_v1"
+_PROOF_REVIEW_DELAY_S = 150
+
+
+def report_proof_review_sep19_20() -> None:
+    """Every 19–20.09 proof with its AI verdict, DMed once as ZIP parts.
+
+    Flag-guarded like every other errand here: delivered on the first boot
+    after its own deploy and never again; a run that fails is retried on the
+    next boot and then abandoned, and a run a deploy kills resumes where it
+    stopped. Never raises.
+    """
+    try:
+        if not _report_pending(PROOF_REVIEW_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("proof-review-sep19-20",
+                    datetime.now(timezone.utc) + timedelta(seconds=_PROOF_REVIEW_DELAY_S),
+                    _proof_review_job)
+    except Exception as exc:
+        print(f"[startup] proof review 19-20.09 could not be scheduled: {exc}")
+
+
+def _proof_review_job() -> None:
+    from app.services import proof_review_report
+    _send_report_once(PROOF_REVIEW_FLAG, "proof review 19-20.09",
+                      proof_review_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the
