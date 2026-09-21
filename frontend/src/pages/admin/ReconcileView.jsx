@@ -86,7 +86,7 @@ function Stat({ label, value, tone, hint }) {
 
 export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const [reason, setReason] = useState("all");
   const [search, setSearch] = useState("");
   const [confirm, setConfirm] = useState(false);
@@ -229,7 +229,7 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
                 <ReasonChip reason={r.reason} t={t} />
               </div>
               <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                {r.date} · {r.verifix_code || "—"} · {tl(r.job_title || "") || "—"}
+                {r.date} · {r.verifix_code || "—"} · {tx(r.job_title || "") || "—"}
               </div>
               <div className="flex items-center justify-between text-[11px]" style={{ color: "var(--text-4)" }}>
                 <span>{tl(r.manager_name || "")}</span>
@@ -272,7 +272,7 @@ export default function ReconcileView({ dateFrom, dateTo, setDateFrom, setDateTo
             <tr key={`${r.date}-${r.worker_name}`}>
               <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{r.date}</td>
               <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{r.worker_name}</td>
-              <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.job_title || "") || "—"}</td>
+              <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tx(r.job_title || "") || "—"}</td>
               <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{r.verifix_code || "—"}</td>
               <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.manager_name || "")}</td>
               <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{r.clock_in_out || "—"}</td>

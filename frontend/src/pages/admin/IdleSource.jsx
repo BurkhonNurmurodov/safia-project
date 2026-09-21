@@ -75,7 +75,7 @@ function ShiftChip({ shift, t }) {
 
 export default function IdleSource() {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast();
   const { can } = useCapabilities();
@@ -329,7 +329,7 @@ export default function IdleSource() {
                   <ShiftChip shift={u.shift} t={t} />
                 </div>
                 <div className="text-[11px] truncate" style={{ color: u.factory_name ? "var(--text-3)" : "var(--text-4)" }}>
-                  {tl(u.factory_name || "") || "—"}
+                  {tx(u.factory_name || "") || "—"}
                 </div>
                 <div>{sourceControl(u)}</div>
                 <div className="text-xs">{dateControl(u, true)}</div>
@@ -372,7 +372,7 @@ export default function IdleSource() {
                 </td>
                 <td className="px-3 py-2"><ShiftChip shift={u.shift} t={t} /></td>
                 <td className="px-3 py-2" style={{ color: u.factory_name ? "var(--text-2)" : "var(--text-4)" }}>
-                  {tl(u.factory_name || "") || "—"}
+                  {tx(u.factory_name || "") || "—"}
                 </td>
                 <td className="px-3 py-2">{sourceControl(u)}</td>
                 <td className="px-3 py-2 text-xs">{dateControl(u)}</td>

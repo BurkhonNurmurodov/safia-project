@@ -4,7 +4,7 @@ import SearchInput from "../../components/ui/SearchInput";
 import dict from "../../i18n/translations";
 import { useLang } from "../../context/LangContext";
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { transliterate } from "../../utils/transliterate";
+import { transliterate, transliterateText } from "../../utils/transliterate";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import Pagination from "../../components/ui/Pagination";
 import Button from "../../components/ui/Button";
@@ -136,7 +136,7 @@ export default function TranslationsEditor() {
     if (isNameGroup(group)) {
       const src = NAME_GROUPS.find((n) => n.g === group)?.src;
       return (dbNames[src] || [])
-        .filter((n) => !q || n.toLowerCase().includes(q) || transliterate(n, "en").toLowerCase().includes(q))
+        .filter((n) => !q || n.toLowerCase().includes(q) || (src === "job_titles" ? transliterateText : transliterate)(n, "en").toLowerCase().includes(q))
         .map((n) => ({ key: `${NAME_PREFIX}${n}`, label: n, rawName: n }))
         .filter(({ key }) => !missing || missingIn(key));
     }
@@ -367,7 +367,7 @@ export default function TranslationsEditor() {
                           <input
                             value={cellValue(l.code, key)}
                             onChange={(e) => setCell(l.code, key, e.target.value)}
-                            placeholder={rawName ? transliterate(rawName, l.code) : (dict.en?.[key] || "")}
+                            placeholder={rawName ? (group === "names:jobs" ? transliterateText : transliterate)(rawName, l.code) : (dict.en?.[key] || "")}
                             className={inputCls}
                             style={dirty
                               ? { borderColor: "var(--brand)" }
