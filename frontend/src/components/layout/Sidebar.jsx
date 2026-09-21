@@ -13,8 +13,7 @@ import {
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes, Megaphone, ClipboardList, MonitorDot, MessageSquarePlus,
-  GraduationCap, PlaySquare,
-} from "lucide-react";
+  GraduationCap, PlaySquare, Goal } from "lucide-react";
 import api from "../../utils/api";
 import VersionBadge from "./VersionBadge";
 import { useAuth } from "../../context/AuthContext";
@@ -30,6 +29,9 @@ const ALL_LINKS = [
   // Admin-only gamification & rewards design preview («Safia Honors») — demo
   // data only, no page-access key (the adminOnly pilot pattern).
   { to: "/gamification", adminOnly: true, key: "nav.gamification", icon: Medal, group: "lab" },
+  // «Maqsadlar» — goal board test screen: per-profile demo data, no page-access
+  // key (the same adminOnly pilot pattern as /gamification).
+  { to: "/targets", adminOnly: true, key: "nav.targets", icon: Goal, group: "lab" },
   { to: "/workers",  page: "workers",  key: "nav.workers",         icon: Users, group: "people" },
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "lab" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
