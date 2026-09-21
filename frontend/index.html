@@ -37,6 +37,31 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" rel="stylesheet" />
+    <!-- Telegram's native bridge can die under a page that is still running.
+         Android drops the Java object behind TelegramWebviewProxy when it
+         tears a mini app down (closed mid-load, replaced by another task's
+         button, evicted from the minimized tabs), and from then on EVERY
+         WebApp call throws «Error invoking postEvent: Java object is gone»,
+         synchronously, from whichever caller made it. On a slow link React
+         mounts after that moment, and AuthProvider's ready() took
+         /proof/camera down with it (v4.143.0). The SDK looks the proxy up at
+         CALL time, so wrapping it here — before the SDK tag, which also covers
+         the SDK's own start-up requests — makes a dead bridge a no-op for every
+         caller at once: nobody is listening at the other end any more, so there
+         is nothing to tell. Never move this below the SDK tag. -->
+    <script>
+      (function () {
+        try {
+          var bridge = window.TelegramWebviewProxy;
+          if (!bridge) return;
+          window.TelegramWebviewProxy = {
+            postEvent: function (type, data) {
+              try { bridge.postEvent(type, data); } catch (e) {}
+            }
+          };
+        } catch (e) {}
+      })();
+    </script>
     <!-- Self-hosted copy of https://telegram.org/js/telegram-web-app.js —
          some Windows machines block/intercept telegram.org (antivirus HTTPS
          inspection), which broke the app with a masked "Script error.".

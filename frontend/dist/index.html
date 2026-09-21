@@ -37,14 +37,39 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" rel="stylesheet" />
+    <!-- Telegram's native bridge can die under a page that is still running.
+         Android drops the Java object behind TelegramWebviewProxy when it
+         tears a mini app down (closed mid-load, replaced by another task's
+         button, evicted from the minimized tabs), and from then on EVERY
+         WebApp call throws «Error invoking postEvent: Java object is gone»,
+         synchronously, from whichever caller made it. On a slow link React
+         mounts after that moment, and AuthProvider's ready() took
+         /proof/camera down with it (v4.143.0). The SDK looks the proxy up at
+         CALL time, so wrapping it here — before the SDK tag, which also covers
+         the SDK's own start-up requests — makes a dead bridge a no-op for every
+         caller at once: nobody is listening at the other end any more, so there
+         is nothing to tell. Never move this below the SDK tag. -->
+    <script>
+      (function () {
+        try {
+          var bridge = window.TelegramWebviewProxy;
+          if (!bridge) return;
+          window.TelegramWebviewProxy = {
+            postEvent: function (type, data) {
+              try { bridge.postEvent(type, data); } catch (e) {}
+            }
+          };
+        } catch (e) {}
+      })();
+    </script>
     <!-- Self-hosted copy of https://telegram.org/js/telegram-web-app.js —
          some Windows machines block/intercept telegram.org (antivirus HTTPS
          inspection), which broke the app with a masked "Script error.".
          Re-sync the copy occasionally. -->
     <script src="/telegram-web-app.js"></script>
-    <script type="module" crossorigin src="/assets/index-DOlOqDCj.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/api-c75rQW1n.js">
-    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-Cy6abugn.js">
+    <script type="module" crossorigin src="/assets/index-CDOBcDgM.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/api-DrLs4zdQ.js">
+    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-AHSwvQx2.js">
     <link rel="stylesheet" crossorigin href="/assets/index-BXqTV2jf.css">
   </head>
   <body>
