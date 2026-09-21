@@ -7243,3 +7243,37 @@ def _leader_rules_dm(shift: int, out: dict, left: list[str],
         print("[startup] leader rules 19.09: summary reached NOBODY — the pass "
               "ran and its flag is set; read the Jurnal row for what it did")
     return sent
+
+
+# ── one-shot: the redesigned «automatic check coming up» DM, as a TEST ───────
+# The operator asked, on 2026-09-21, for the auto-check warning to be rebuilt
+# as a Rich message that leaves no question open (what is read, where it is
+# typed, how far the leader is right now, what happens at the hour) — and to
+# see it first, before any leader does. So: three test copies (tasks 1, 9, 8),
+# rendered off a REAL leader's live day, DMed once to the operator's own chat.
+# Leaders keep the classic text until it is adopted. Scheduled a minute after
+# boot: the leader search may build up to a dozen /production dashboards, which
+# is not work for the boot path. Flag-guarded — delivers once.
+LEADER_AUTO_SOON_PREVIEW_FLAG = "leader_auto_soon_rich_preview_2026_09_21_v1"
+_LEADER_AUTO_SOON_PREVIEW_DELAY_S = 60
+
+
+def preview_leader_auto_soon_rich() -> None:
+    """Never raises. Changing what it sends needs a NEW flag key."""
+    try:
+        if not _report_pending(LEADER_AUTO_SOON_PREVIEW_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("leader-auto-soon-preview",
+                    datetime.now(timezone.utc)
+                    + timedelta(seconds=_LEADER_AUTO_SOON_PREVIEW_DELAY_S),
+                    _leader_auto_soon_preview_job)
+    except Exception as exc:
+        print(f"[startup] leader auto-soon preview could not be scheduled: {exc}")
+
+
+def _leader_auto_soon_preview_job() -> None:
+    from app.services import leader_auto_rich
+    _send_report_once(LEADER_AUTO_SOON_PREVIEW_FLAG, "leader auto-soon rich preview",
+                      leader_auto_rich.send_preview, UNPRICED_DM_CHAT)
