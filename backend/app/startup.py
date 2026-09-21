@@ -1097,6 +1097,120 @@ def migrate_dispute_stages() -> None:
         db.close()
 
 
+PRE_SEP_APPEALS_FLAG = "pre_sep_appeals_purge_2026_09_21_v1"
+
+
+def purge_pre_september_appeals() -> None:
+    """2026-09-21, the operator: delete every objection to the AI about a day
+    before 1 September — anything before September doesn't count — and the
+    late proofs with them, reasons included.
+
+    For every checklist day before `leader_dispute.APPEALS_FROM` this deletes:
+
+    - every objection to an AI rejection (`leader_ai_disputes`), WHATEVER its
+      state — open at either stage, approved, refused or cancelled;
+    - every late proof (`leader_late_proofs`) with its photos
+      (`leader_late_proof_media`, a NO ACTION FK, so the photos go first), and
+      any draft roll still sitting on such a day (`leader_late_proof_shots`);
+    - the `approval_notices` rows tracking their Telegram cards. Forgotten, not
+      edited — the `approvals.forget_notices` rule for a record deleted
+      outright: a tap on an old card finds no row and answers «already
+      handled», so nothing can be ruled off one.
+
+    **NO SCORE MOVES, and that is deliberate.** An approved objection gave its
+    task the weight back through `LeaderAiReview.resolution`, an approved late
+    proof through a `LeaderTaskOverride`; both are rows of their own and both
+    are left exactly as they are, so a point somebody was already given stays
+    given. What goes is the paper trail and the queue, which is what was asked
+    for. The filing doors refuse those days from this same deploy
+    (`leader_dispute.appealable`), so the two queues cannot refill.
+
+    ONE transaction with the flag inside it: a pass that fails part-way leaves
+    nothing half-deleted and is simply retried by the next boot. Changing what
+    it deletes needs a NEW flag key.
+    """
+    from sqlalchemy import func, select
+
+    from app.models import (
+        ApprovalNotice, LeaderAiDispute, LeaderLateProof, LeaderLateProofMedia,
+        LeaderLateProofShot, LeaderTaskDay,
+    )
+    from app.services import action_log
+    from app.services.leader_dispute import APPEALS_FROM
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PRE_SEP_APPEALS_FLAG).first():
+            return
+        d_ids = [i for (i,) in db.query(LeaderAiDispute.id)
+                 .filter(LeaderAiDispute.date < APPEALS_FROM).all()]
+        l_ids = [i for (i,) in db.query(LeaderLateProof.id)
+                 .filter(LeaderLateProof.date < APPEALS_FROM).all()]
+        d_states = dict(db.query(LeaderAiDispute.status, func.count())
+                        .filter(LeaderAiDispute.date < APPEALS_FROM)
+                        .group_by(LeaderAiDispute.status).all())
+        l_states = dict(db.query(LeaderLateProof.status, func.count())
+                        .filter(LeaderLateProof.date < APPEALS_FROM)
+                        .group_by(LeaderLateProof.status).all())
+
+        notices = photos = drafts = 0
+        # `approval_notices.ref` is a plain STRING with no FK, so the notices
+        # are matched by the ids gathered above, before their rows go.
+        if d_ids:
+            notices += (db.query(ApprovalNotice)
+                        .filter(ApprovalNotice.kind.in_(
+                                    ("leader_dispute", "leader_dispute_sup")),
+                                ApprovalNotice.ref.in_([str(i) for i in d_ids]))
+                        .delete(synchronize_session=False))
+            (db.query(LeaderAiDispute)
+             .filter(LeaderAiDispute.id.in_(d_ids))
+             .delete(synchronize_session=False))
+        if l_ids:
+            notices += (db.query(ApprovalNotice)
+                        .filter(ApprovalNotice.kind.in_(
+                                    ("leader_lateproof_sup", "leader_lateproof_adm")),
+                                ApprovalNotice.ref.in_([str(i) for i in l_ids]))
+                        .delete(synchronize_session=False))
+            photos = (db.query(LeaderLateProofMedia)
+                      .filter(LeaderLateProofMedia.late_id.in_(l_ids))
+                      .delete(synchronize_session=False))
+            (db.query(LeaderLateProof)
+             .filter(LeaderLateProof.id.in_(l_ids))
+             .delete(synchronize_session=False))
+        drafts = (db.query(LeaderLateProofShot)
+                  .filter(LeaderLateProofShot.day_id.in_(
+                      select(LeaderTaskDay.id)
+                      .where(LeaderTaskDay.date < APPEALS_FROM)))
+                  .delete(synchronize_session=False))
+        db.add(AppSetting(key=PRE_SEP_APPEALS_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] pre-September appeals purge skipped: {exc}")
+        return
+    finally:
+        db.close()
+
+    def fmt(states: dict) -> str:
+        return ", ".join(f"{k} {v}" for k, v in sorted(states.items())) or "none"
+
+    print(f"[startup] pre-September appeals purged (days < {APPEALS_FROM}): "
+          f"{len(d_ids)} objection(s) [{fmt(d_states)}], "
+          f"{len(l_ids)} late proof(s) [{fmt(l_states)}] with {photos} photo(s), "
+          f"{drafts} draft shot(s), {notices} Telegram card record(s)")
+    if d_ids or l_ids or drafts:
+        action_log.record_system(
+            "leader_review", "checklist.appeals_purged",
+            details=[("disputes", len(d_ids) or None),
+                     ("late_proofs", len(l_ids) or None),
+                     ("photos", photos or None), ("drafts", drafts or None),
+                     ("notices", notices or None), ("before", APPEALS_FROM)],
+            reason=("Operator directive: nothing before 1 September 2026 "
+                    "counts — objections and late proofs about those days "
+                    "deleted; points already given back were left in place"),
+        )
+
+
 def add_attendance_split_columns() -> None:
     """2026-08-30: one worker-day may be SPLIT across two of the unit's own
     cells, so an attendance row has to be able to say it is a FRACTION of a

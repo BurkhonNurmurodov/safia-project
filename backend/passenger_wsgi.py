@@ -65,7 +65,7 @@ try:
         add_leader_task_cell,
         add_late_proof_provenance,
         add_late_proof_timing,
-        migrate_dispute_stages,
+        migrate_dispute_stages, purge_pre_september_appeals,
         merge_brigadir_tasks_page,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
@@ -182,6 +182,9 @@ try:
     migrate_dispute_stages()
     merge_brigadir_tasks_page()
     create_action_log()
+    # After the dispute stage columns and the action register it reports
+    # into. One-shot: pre-September objections + late proofs, deleted.
+    purge_pre_september_appeals()
     letter_shared_cells()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()

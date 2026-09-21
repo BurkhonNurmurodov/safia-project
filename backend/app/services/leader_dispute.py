@@ -93,6 +93,25 @@ ADM_ACTIONS = (APPROVED, REJECTED)
 
 REASON_MAX = 1000
 
+# Nothing about a day BEFORE this can be argued any more — neither an objection
+# to an AI rejection nor a late proof (the operator, 2026-09-21: «anything
+# before September doesn't count»). THE floor for both appeal flows:
+# `leader_late_proof.eligible` reads it as well, the day report stops offering
+# the objection button below it, and `startup.purge_pre_september_appeals`
+# deleted every row of either kind below it, once. Compared against the
+# CHECKLIST day a ruling would be about, never the day it is filed — a night of
+# 31 August objected to on the 1st is still an August night.
+APPEALS_FROM = "2026-09-01"
+
+
+def appealable(day: str | None) -> bool:
+    """May anybody still ask for a ruling about this checklist day?
+
+    A plain string compare: every date on these rows is ISO "YYYY-MM-DD", and a
+    missing date answers False rather than opening a door nobody can place.
+    """
+    return bool(day) and str(day)[:10] >= APPEALS_FROM
+
 
 class Refused(Exception):
     """The ruling cannot be made — already decided, or the wrong stage."""

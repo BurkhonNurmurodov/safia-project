@@ -1252,8 +1252,11 @@ def _stamp_report_rights(db: Session, payload: dict, row: dict) -> dict:
     role = payload.get("role")
     # Objecting is the LEADER's door first — `_may_dispute_for`, not the
     # late-DAY flow's `_may_request_for`, which answers a different question
-    # about a different table.
-    row["canDispute"] = _may_dispute_for(db, payload, row)
+    # about a different table. A day before `leader_dispute.APPEALS_FROM` offers
+    # no button at all: `file_dispute` refuses it, and a button that answers
+    # 409 is worse than none.
+    row["canDispute"] = (_may_dispute_for(db, payload, row)
+                         and leader_dispute.appealable(row.get("date")))
     sup_ok = (role == "admin") or (
         role == "supervisor" and row.get("managerId") is not None
         and payload.get("role_id") == row["managerId"])
@@ -1363,6 +1366,10 @@ def file_dispute(
         raise HTTPException(status_code=404, detail="No such report")
     if not _may_dispute_for(db, payload, report):
         raise HTTPException(status_code=403, detail="Not yours to dispute")
+    if not leader_dispute.appealable(report.get("date")):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Days before {leader_dispute.APPEALS_FROM} can no longer be disputed")
 
     task = next((t for t in report["tasks"] if t["id"] == task_id), None)
     if task is None:

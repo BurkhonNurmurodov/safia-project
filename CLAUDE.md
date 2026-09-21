@@ -3855,6 +3855,35 @@ So:
   own filings) and `/leaders/report/:uid`, where the objection is filed and
   where both stage rulings can also be made inline.
 
+## Nothing before 1 September 2026 can be argued (`APPEALS_FROM`)
+
+From **2026-09-21** (the operator: «anything before September doesn't count»)
+no ruling may be asked for about a checklist day before **2026-09-01** — neither
+an objection to an AI rejection nor a late proof.
+
+- **`leader_dispute.APPEALS_FROM` + `appealable(day)` are THE floor** for BOTH
+  appeal flows: `file_dispute` answers 409 below it, `_stamp_report_rights`
+  serves `canDispute` false so the day report draws no button, and
+  `leader_late_proof.eligible` refuses such a day. Compared against the
+  CHECKLIST day, never the filing day — a night of 31 August objected to on the
+  1st is an August night.
+- **Everything below it was DELETED once** —
+  `startup.purge_pre_september_appeals` (flag
+  `pre_sep_appeals_purge_2026_09_21_v1`; changing what it deletes needs a NEW
+  key): every `leader_ai_disputes` row in any state, every `leader_late_proofs`
+  row with its photos, any draft roll on those days, and the `approval_notices`
+  rows tracking their Telegram cards (forgotten, not edited: an old card's tap
+  finds no row and answers «already handled»). One transaction with the flag
+  inside it, one «Jurnal» row (`checklist.appeals_purged`) with the counts.
+- **No score moved, deliberately.** An approved objection's
+  `LeaderAiReview.resolution` and an approved late proof's `LeaderTaskOverride`
+  are rows of their own and were left in place — a point already given back
+  stays given; only the paper trail and the queue went. Taking those points
+  back as well is a separate decision.
+- Deliberately NOT touched: `leader_late_requests` (the shift-1 late-DAY
+  requests), whose approval IS the score, and the bell notifications already
+  sent about the deleted rows.
+
 ## An UNFINISHED bot day is visible («Tozalash» → «Yakunlanmagan»)
 
 Every read surface on the platform serves a CLOSED bot day — the `/leaders`

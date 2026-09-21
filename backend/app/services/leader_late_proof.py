@@ -54,7 +54,8 @@ from app.models import (
     LeaderTaskEntry, LeaderTaskOverride, Manager, RoleProfile,
 )
 from app.services import (
-    action_log, leader_bot, leader_close, leader_proof, leader_tasks)
+    action_log, leader_bot, leader_close, leader_dispute, leader_proof,
+    leader_tasks)
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,10 @@ def eligible(db: Session, *, day: LeaderTaskDay | None, task_id: int,
     if day is not None and day.closed_at is not None:
         return False
     date = day.date if day is not None else leader_tasks.effective_date(shift)
+    # Nothing before 1 September 2026 can be argued any more — the floor the
+    # objection chain applies too, defined once in `leader_dispute`.
+    if not leader_dispute.appealable(date):
+        return False
     # A task an admin handed back is on the DAY's deadline and is not late.
     if day is not None and task_id in leader_close.reopened_tasks(day):
         return False
