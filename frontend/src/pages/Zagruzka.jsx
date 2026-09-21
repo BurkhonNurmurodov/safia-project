@@ -12,6 +12,7 @@ import DifferenceBreakdown from "../components/ui/DifferenceBreakdown";
 import CommentModal from "../components/ui/CommentModal";
 import ColorGuideModal from "../components/ui/ColorGuideModal";
 import { segmentBands } from "../utils/segments";
+import { fulfilUtil, effUtil } from "../utils/formulas";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
@@ -24,7 +25,15 @@ import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
 
-function HeatmapHeader({ heatmap, heatmapMode, setHeatmapMode, segments, fullscreen, onToggleFullscreen, t }) {
+// The header of every heatmap card on this page. The fleet heatmap passes only
+// the originals and renders exactly as before; the two single-metric heatmaps
+// pass a title, subtitle, formula note and guide heading of their own, and
+// `showMode={false}` — they read ONE number, so there is no Plan/Fact switch to
+// offer, and a toggle that changed nothing would be a control that lies.
+function HeatmapHeader({
+  heatmap, heatmapMode, setHeatmapMode, segments, fullscreen, onToggleFullscreen, t,
+  title = null, subtitle = null, note = null, showMode = true, guideHeading = null,
+}) {
   const [showGuide, setShowGuide] = useState(false); // info icon → color meanings modal
   return (
     <>
@@ -33,11 +42,16 @@ function HeatmapHeader({ heatmap, heatmapMode, setHeatmapMode, segments, fullscr
         <div className="flex items-center gap-1.5 w-full sm:flex-1 sm:w-auto min-w-0">
           <div className="min-w-0">
             <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
-              {t("zagruzka.fleetHeatmap")}
+              {title || t("zagruzka.fleetHeatmap")}
             </div>
             <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-              {t("zagruzka.finalDays").replace("{n}", heatmap?.dates?.length ?? 0)}
+              {(subtitle || t("zagruzka.finalDays")).replace("{n}", heatmap?.dates?.length ?? 0)}
             </div>
+            {note && (
+              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
+                {note}
+              </div>
+            )}
           </div>
           {/* Info icon right after title */}
           <button
@@ -53,11 +67,13 @@ function HeatmapHeader({ heatmap, heatmapMode, setHeatmapMode, segments, fullscr
 
         {/* Mode switcher + fullscreen — 2nd row on mobile */}
         <div className="flex items-center gap-2">
-          <SegmentedToggle
-            value={heatmapMode}
-            onChange={setHeatmapMode}
-            options={HEATMAP_MODES.map((m) => [m, t(`zagruzka.mode.${m}`)])}
-          />
+          {showMode && (
+            <SegmentedToggle
+              value={heatmapMode}
+              onChange={setHeatmapMode}
+              options={HEATMAP_MODES.map((m) => [m, t(`zagruzka.mode.${m}`)])}
+            />
+          )}
           <button
             onClick={onToggleFullscreen}
             title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
@@ -75,7 +91,7 @@ function HeatmapHeader({ heatmap, heatmapMode, setHeatmapMode, segments, fullscr
           subtitle={t("zagruzka.colorGuideSub")}
           sections={[
             {
-              heading: t("zagruzka.guide.workloadSection"),
+              heading: guideHeading || t("zagruzka.guide.workloadSection"),
               segments: segments?.length ? segments : DEFAULT_SEGMENTS,
             },
           ]}
@@ -104,16 +120,87 @@ function HeatmapHeader({ heatmap, heatmapMode, setHeatmapMode, segments, fullscr
   );
 }
 
+// ONE card for both single-metric heatmaps, so they are identical by
+// construction: the inline card (header + grid) and its fullscreen overlay,
+// portaled to <body> for the reason every overlay on this page is — the
+// .page-enter transform would otherwise contain a `position: fixed`.
+function MetricHeatmapCard({
+  which, cellValue, title, note, heatmap, hmLoading, segments,
+  managerIds, commentedCells, approvedCells, onCellClick, openFull, setOpenFull, t,
+}) {
+  const full = openFull === which;
+  const header = (isFull) => (
+    <HeatmapHeader
+      heatmap={heatmap}
+      segments={segments}
+      fullscreen={isFull}
+      onToggleFullscreen={() => setOpenFull(isFull ? null : which)}
+      title={title}
+      subtitle={t("zagruzka.periodDays")}
+      note={note}
+      guideHeading={title}
+      showMode={false}
+      t={t}
+    />
+  );
+  const grid = (isFull) => (
+    <HeatmapChart
+      dates={heatmap.dates}
+      managers={heatmap.managers}
+      data={heatmap.data}
+      cellValue={cellValue}
+      managerIds={managerIds}
+      segments={segments}
+      commentedCells={commentedCells}
+      approvedCells={approvedCells}
+      onCellClick={onCellClick}
+      fullscreen={isFull}
+    />
+  );
+  return (
+    <>
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
+        {header(false)}
+        {hmLoading ? (
+          <SkeletonChart className="h-64" />
+        ) : heatmap?.managers?.length ? (
+          grid(false)
+        ) : (
+          <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
+        )}
+      </div>
+
+      {full && heatmap?.managers?.length ? createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex flex-col"
+          style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
+        >
+          <div
+            className="flex-shrink-0 px-4 lg:px-6 py-3"
+            style={{ background: "var(--bg-card)", borderBottom: "1px solid var(--border)" }}
+          >
+            {header(true)}
+          </div>
+          <div className="flex-1 overflow-hidden" style={{ height: 0 }}>
+            {grid(true)}
+          </div>
+        </div>,
+        document.body
+      ) : null}
+    </>
+  );
+}
+
 export default function Zagruzka() {
   const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t } = useLang();
   const { tl, lang } = useTranslit();
   const [heatmapMode, setHeatmapMode] = usePersistentState("zagruzka_heatmap_mode", "actual");
-  const [heatmapFullscreen, setHeatmapFullscreen] = useState(false);
-  const [compFullscreen, setCompFullscreen] = useState(false);
-  // The simplified table gets a fullscreen of its OWN — one shared flag would
-  // blow up whichever table the reader did not press.
-  const [simpleFullscreen, setSimpleFullscreen] = useState(false);
+  // Which overlay is open: null | "comp" | "simple" | "heatmap" | "fulfil" | "eff".
+  // ONE value, so two overlays can never be open at once and Escape closes
+  // whichever it is — a flag per overlay let the simplified table's slip past
+  // the Escape handler, which only knew the two original ones.
+  const [openFull, setOpenFull] = useState(null);
   const [comment, setComment] = useState(null);
   // Admin-only comparison-table factor toggles — lifted here so the inline and
   // fullscreen table instances share one state. Resets to all-ON per visit.
@@ -123,13 +210,18 @@ export default function Zagruzka() {
     setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: heatmapMode });
   }
 
+  // The two single-metric heatmaps open the (brigadir, date) comment THREAD
+  // with their own formula above it (the operator's choice) — unlike the fleet
+  // heatmap, which opens its formula alone. `basis` is what makes the «how it's
+  // calculated» block explain THIS table's number and not the fleet's.
+  const metricCellClick = (basis) => (name, d, _v, cell) => {
+    setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, basis, formulaOnly: false });
+  };
+
   // Close fullscreen on Escape key
   useEffect(() => {
     function onKey(e) {
-      if (e.key === "Escape") {
-        setHeatmapFullscreen(false);
-        setCompFullscreen(false);
-      }
+      if (e.key === "Escape") setOpenFull(null);
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -296,7 +388,7 @@ export default function Zagruzka() {
             columnSummary
             title={t("zagruzka.fullTable")}
             note={t("zagruzka.fullTableNote")}
-            onToggleFullscreen={() => { setSimpleFullscreen(false); setCompFullscreen(true); }}
+            onToggleFullscreen={() => setOpenFull("comp")}
           />
         </div>
       ) : null}
@@ -326,7 +418,7 @@ export default function Zagruzka() {
             columnSummary
             title={t("zagruzka.simpleTable")}
             note={t("zagruzka.simpleTableNote")}
-            onToggleFullscreen={() => { setCompFullscreen(false); setSimpleFullscreen(true); }}
+            onToggleFullscreen={() => setOpenFull("simple")}
           />
         </div>
       ) : null}
@@ -334,7 +426,7 @@ export default function Zagruzka() {
       {/* ── Comparison Table fullscreen overlay — portaled to <body> so its
           `fixed inset-0` anchors to the viewport, not the .page-enter transform
           (see the DateRangePicker fix). ── */}
-      {compFullscreen && createPortal(
+      {openFull === "comp" && createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
@@ -355,7 +447,7 @@ export default function Zagruzka() {
               title={t("zagruzka.fullTable")}
               note={t("zagruzka.fullTableNote")}
               fullscreen
-              onToggleFullscreen={() => setCompFullscreen(false)}
+              onToggleFullscreen={() => setOpenFull(null)}
             />
           </div>
         </div>,
@@ -363,7 +455,7 @@ export default function Zagruzka() {
       )}
 
       {/* Simplified table fullscreen — portaled for the same reason. */}
-      {simpleFullscreen && heatmap?.managers?.length ? createPortal(
+      {openFull === "simple" && heatmap?.managers?.length ? createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
@@ -383,7 +475,7 @@ export default function Zagruzka() {
               title={t("zagruzka.simpleTable")}
               note={t("zagruzka.simpleTableNote")}
               fullscreen
-              onToggleFullscreen={() => setSimpleFullscreen(false)}
+              onToggleFullscreen={() => setOpenFull(null)}
             />
           </div>
         </div>,
@@ -398,7 +490,7 @@ export default function Zagruzka() {
           setHeatmapMode={setHeatmapMode}
           segments={segments}
           fullscreen={false}
-          onToggleFullscreen={() => setHeatmapFullscreen(true)}
+          onToggleFullscreen={() => setOpenFull("heatmap")}
           t={t}
         />
         {hmLoading ? (
@@ -411,7 +503,7 @@ export default function Zagruzka() {
       </div>
 
       {/* ── Fleet Heatmap fullscreen overlay ── */}
-      {heatmapFullscreen && createPortal(
+      {openFull === "heatmap" && createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
@@ -427,7 +519,7 @@ export default function Zagruzka() {
               setHeatmapMode={setHeatmapMode}
               segments={segments}
               fullscreen={true}
-              onToggleFullscreen={() => setHeatmapFullscreen(false)}
+              onToggleFullscreen={() => setOpenFull(null)}
               t={t}
             />
           </div>
@@ -455,6 +547,35 @@ export default function Zagruzka() {
         document.body
       )}
 
+      {/* ── Two single-metric heatmaps: copies of the fleet heatmap above ──
+          Same grid, same admin colour bands (an edit on the admin panel moves
+          all three at once), same pending markers, sort and AVG/MAX/MIN —
+          each reading ONE number per unit-day through `cellValue`:
+            Reja bajarilishi = TRUDOYOMKOST ÷ ISHLAB CHIQARISH PLANI
+            Samaradorlik     = TRUDOYOMKOST ÷ (verifix min × 0.9
+                               − XODIMLAR × (ojidaniya + early + 10))
+          utils/formulas.js is the definition of both. ── */}
+      <MetricHeatmapCard
+        which="fulfil"
+        cellValue={fulfilUtil}
+        title={t("zagruzka.fulfilTable")}
+        note={t("zagruzka.fulfilNote")}
+        heatmap={heatmap} hmLoading={hmLoading} segments={segments}
+        managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
+        onCellClick={metricCellClick("fulfil")}
+        openFull={openFull} setOpenFull={setOpenFull} t={t}
+      />
+      <MetricHeatmapCard
+        which="eff"
+        cellValue={effUtil}
+        title={t("zagruzka.effTable")}
+        note={t("zagruzka.effNote")}
+        heatmap={heatmap} hmLoading={hmLoading} segments={segments}
+        managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
+        onCellClick={metricCellClick("eff")}
+        openFull={openFull} setOpenFull={setOpenFull} t={t}
+      />
+
       {/* Fleet Funnel */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
         <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider mb-1">
@@ -479,8 +600,10 @@ export default function Zagruzka() {
           date={comment.date}
           rawCell={comment.rawCell}
           mode={comment.mode}
+          basis={comment.basis}
           onClose={() => setComment(null)}
-          formulaOnly
+          formulaOnly={comment.formulaOnly ?? true}
+          formulaCollapsible={comment.formulaOnly === false}
         />
       )}
     </Layout>

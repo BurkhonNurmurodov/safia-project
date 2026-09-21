@@ -430,3 +430,136 @@ export function commentSimplePlanFormula(cell, t) {
 export function commentSimpleActualFormula(cell, t) {
   return simpleComment(cell, t, cell?.prod_actual, "comment.legend.prodActual");
 }
+
+// ── Two single-metric heatmaps under the fleet heatmap on /zagruzka ──────────
+// Copies of the fleet heatmap — same grid, same admin colour bands — each
+// reading ONE number per unit-day instead of the P/A pair:
+//
+//   Plan fulfilment («Reja bajarilishi»)
+//     = TRUDOYOMKOST ÷ ISHLAB CHIQARISH PLANI            (prod_actual ÷ prod_plan)
+//
+//   Efficiency («Samaradorlik»)
+//     = TRUDOYOMKOST ÷ productive capacity, where
+//       capacity = VERIFIX MINUTES × 0.9
+//                − HISOBOTDAGI XODIMLAR × (ojidaniya + early arrival + 10)
+//
+// Efficiency is OUTPUT over AVAILABLE TIME, so high = good on it exactly as on
+// every other table on the page and the shared bands mean one thing throughout
+// (the operator's ruling, 2026-09-21, over capacity ÷ output — which is a COST
+// measure where LOWER is better and would need reversed bands). It is the
+// attendance-based twin of the full table's A (net_util): same three per-person
+// deductions, same 10-minute kaizen buffer, but capacity comes from the minutes
+// actually CLOCKED × 0.9 rather than the typed headcount corrected by labour
+// surplus. A gap between the two therefore says the typed headcount and the
+// attendance file disagree about the day.
+//
+// VERIFIX MINUTES are RAW attendance minutes (hours × 60) over the platform's
+// direct-role rows — the set `verifix_labor` is summed over. The payload ships
+// only `verifix_labor` = hours × 60 × 0.85, so the raw figure is recovered as
+// `verifix_labor ÷ VERIFIX_EFFICIENCY`. That is exact up to the 2-decimal
+// rounding kpi_calculator stores it at: an error under 0.01 minute on a
+// capacity of ~14,000, which cannot move a rounded percentage. The 0.85 is
+// NOT applied: the operator's 0.9 is the only productivity factor, and
+// stacking both (0.765) read ~18 points higher on real data.
+//
+// ojidaniya (`equip_downtime`) and early arrival (`avg_early_arrival`) are
+// PER-PERSON minutes on this payload — the full formula subtracts them from a
+// per-person base — which is why they are multiplied by the headcount here to
+// become the unit's total. A missing one reads 0, exactly as the full formula
+// reads it (`cell.equip_downtime || 0`).
+//
+// Blanks, and why each is a blank rather than a number:
+//   • no ФАКТ (prod_actual 0)  — a zero is the payload's default for "the file
+//     never said", so 0% would assert what the data cannot. Both tables.
+//   • no plan (prod_plan 0)    — fulfilment has no denominator.
+//   • no reported headcount    — the platform's standing rule: a unit-day with
+//     nobody typed has NO загрузка, and the blank IS the warning.
+//   • capacity ≤ 0             — deductions exceeding attendance; a negative or
+//     infinite percentage would describe nothing.
+const fin = (v) => (v == null ? NaN : Number(v));
+
+export function fulfilUtil(cell) {
+  const a = fin(cell?.prod_actual), p = fin(cell?.prod_plan);
+  if (!(a > 0) || !(p > 0)) return null;
+  return a / p;
+}
+
+export function verifixMinutes(cell) {
+  const vl = fin(cell?.verifix_labor);
+  if (!(vl > 0)) return null;
+  return vl / VERIFIX_EFFICIENCY;
+}
+
+function effParts(cell) {
+  const raw = verifixMinutes(cell);
+  const hc = fin(cell?.official_hc);
+  if (raw == null || !(hc > 0)) return null;
+  const idle  = fin(cell?.equip_downtime)    || 0;
+  const early = fin(cell?.avg_early_arrival) || 0;
+  const cap = raw * PRODUCTIVE_SHARE - hc * (idle + early + KAIZEN_BUFFER);
+  return { raw, hc, idle, early, cap };
+}
+
+export function effCapacity(cell) {
+  const p = effParts(cell);
+  return p && p.cap > 0 ? p.cap : null;
+}
+
+export function effUtil(cell) {
+  const a = fin(cell?.prod_actual);
+  if (!(a > 0)) return null;
+  const cap = effCapacity(cell);
+  return cap == null ? null : a / cap;
+}
+
+// ── CommentModal blocks for the two heatmaps ─────────────────────────────────
+export function commentFulfilFormula(cell, t) {
+  const v = fulfilUtil(cell);
+  if (v == null) return null;
+  return {
+    formula: `${num(cell.prod_actual, 0)} ÷ ${num(cell.prod_plan, 0)} × 100% = ${Math.round(v * 100)}%`,
+    legend: [
+      { num: num(cell.prod_actual, 0), label: t("comment.legend.prodActual") },
+      { num: num(cell.prod_plan, 0), label: t("comment.legend.prodPlan") },
+    ],
+  };
+}
+
+// The capacity is the one number in the efficiency formula that is itself
+// DERIVED, so its legend row expands into its own arithmetic (`key:
+// "capacity"`) — a number the reader is asked to trust is a number the popup
+// owes them the working for, answered where the question is asked.
+export function commentEffFormula(cell, t) {
+  const v = effUtil(cell);
+  if (v == null) return null;
+  const cap = effCapacity(cell);
+  return {
+    formula: `${num(cell.prod_actual, 0)} ÷ ${num(cap, 0)} × 100% = ${Math.round(v * 100)}%`,
+    legend: [
+      { num: num(cell.prod_actual, 0), label: t("comment.legend.prodActual") },
+      { num: num(cap, 0), label: t("comment.legend.capacity"), key: "capacity" },
+    ],
+  };
+}
+
+export function commentCapacityFormula(cell, t) {
+  const p = effParts(cell);
+  if (!p || !(p.cap > 0)) return null;
+  return {
+    // The two per-person terms print at 2 decimals, not the 1 the full
+    // formula's popup uses: here they are MULTIPLIED by the headcount, so a
+    // 0.03 hidden by rounding becomes a minute per 33 people, and at 1 decimal
+    // the working a reader redoes by hand drifted up to 7.6 minutes from the
+    // result printed beside it. At 2 decimals it reconciles to within a minute
+    // (the remainder is the whole-minute rounding of the attendance figure).
+    formula: `${num(p.raw, 0)} × ${PRODUCTIVE_SHARE} − ${num(p.hc, 2)} × (${num(p.idle, 2)} + ${num(p.early, 2)} + ${KAIZEN_BUFFER}) = ${num(p.cap, 0)}`,
+    legend: [
+      { num: num(p.raw, 0), label: t("comment.legend.verifixMinutes") },
+      { num: String(PRODUCTIVE_SHARE), label: t("comment.legend.productiveShare") },
+      { num: num(p.hc, 2), label: t("comment.legend.headcount") },
+      { num: num(p.idle, 2), label: t("comment.legend.idlePerPerson") },
+      { num: num(p.early, 2), label: t("comment.legend.earlyArr") },
+      { num: String(KAIZEN_BUFFER), label: t("comment.legend.kaizen") },
+    ],
+  };
+}

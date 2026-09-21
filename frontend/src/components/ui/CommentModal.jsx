@@ -9,6 +9,7 @@ import { useTranslit } from "../../utils/transliterate";
 import {
   commentPlanFormula, commentActualFormula, commentEffectiveHcFormula, commentAvailMinFormula,
   commentSimplePlanFormula, commentSimpleActualFormula,
+  commentFulfilFormula, commentEffFormula, commentCapacityFormula,
 } from "../../utils/formulas";
 
 // Convert DD.MM.YYYY → YYYY-MM-DD for API calls
@@ -30,7 +31,9 @@ function withTitle(built, title) {
 // it must be the same one the cell the reader tapped was computed with — the
 // thread is keyed to (manager, date) and is therefore reachable from BOTH
 // comparison tables on /zagruzka, so a fixed formula here would explain one
-// table's number with the other table's equation.
+// table's number with the other table's equation. "full" and "simple" explain a
+// P/A PAIR; "fulfil" and "eff" (the two single-metric heatmaps) explain ONE
+// number, so they render one formula row instead of two.
 export default function CommentModal({ managerId, managerName, date, rawCell, mode, onClose, formulaOnly = false, formulaCollapsible = false, basis = "full" }) {
   const { auth } = useAuth();
   const { t } = useLang();
@@ -116,14 +119,32 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
         {/* Formula section — only when opened from a heatmap cell */}
         {rawCell && (() => {
           const simple = basis === "simple";
-          const plan = simple ? commentSimplePlanFormula(rawCell, t) : commentPlanFormula(rawCell, t);
-          const actual = simple ? commentSimpleActualFormula(rawCell, t) : commentActualFormula(rawCell, t);
+          const rows = basis === "fulfil"
+            ? [{ label: t("zagruzka.fulfilTable"), built: commentFulfilFormula(rawCell, t),
+                 fallback: "trudoyomkost ÷ prod_plan × 100%" }]
+            : basis === "eff"
+              ? [{ label: t("zagruzka.effTable"), built: commentEffFormula(rawCell, t),
+                   fallback: "trudoyomkost ÷ (verifix_min × 0.9 − headcount × (ojidaniya + early + 10)) × 100%" }]
+              : [
+                  { label: `${t("zagruzka.planned")} (P)`,
+                    built: simple ? commentSimplePlanFormula(rawCell, t) : commentPlanFormula(rawCell, t),
+                    fallback: simple
+                      ? "P = prod_plan ÷ (480 × 0.9 × headcount) × 100%"
+                      : "P = prod_plan ÷ (480 × headcount) × 100%" },
+                  { label: `${t("zagruzka.actual")} (A)`,
+                    built: simple ? commentSimpleActualFormula(rawCell, t) : commentActualFormula(rawCell, t),
+                    fallback: simple
+                      ? "A = trudoyomkost ÷ (480 × 0.9 × headcount) × 100%"
+                      : "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100%" },
+                ];
           // The two inputs of the Actual formula that are themselves COMPUTED —
           // a number the reader is asked to trust is a number the popup owes
           // them the arithmetic for. Each hangs off the legend row that names
           // it (`key` on the legend item) rather than sitting in a block below,
           // so the answer appears where the question was asked.
-          const details = simple ? {} : {
+          const details = basis === "eff" ? {
+            capacity: withTitle(commentCapacityFormula(rawCell, t), t("comment.capacityTitle")),
+          } : (simple || basis === "fulfil") ? {} : {
             effectiveHc: withTitle(commentEffectiveHcFormula(rawCell, t), t("comment.effectiveHcTitle")),
             availMin: withTitle(commentAvailMinFormula(rawCell, t), t("comment.availMinTitle")),
           };
@@ -211,32 +232,21 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
               )}
               {(!formulaCollapsible || formulaOpen) && (
                 <>
-                  {/* Planned (P) row */}
-                  <div className="mb-3">
-                    <div className="text-[10px] mb-1" style={{ color: "var(--text-4)" }}>{t("zagruzka.planned")} (P)</div>
-                    <div
-                      className="text-[11px] font-mono rounded-lg px-2.5 py-2"
-                      style={{ background: "var(--bg-card)", color: "var(--text-2)" }}
-                    >
-                      {plan?.formula || (simple
-                        ? "P = prod_plan ÷ (480 × 0.9 × headcount) × 100%"
-                        : "P = prod_plan ÷ (480 × headcount) × 100%")}
+                  {/* One block per formula row — the P/A pair on the two
+                      comparison tables, a single row on the two heatmaps.
+                      Every row but the last keeps the gap under it. */}
+                  {rows.map((r, i) => (
+                    <div key={r.label} className={i < rows.length - 1 ? "mb-3" : undefined}>
+                      <div className="text-[10px] mb-1" style={{ color: "var(--text-4)" }}>{r.label}</div>
+                      <div
+                        className="text-[11px] font-mono rounded-lg px-2.5 py-2"
+                        style={{ background: "var(--bg-card)", color: "var(--text-2)" }}
+                      >
+                        {r.built?.formula || r.fallback}
+                      </div>
+                      {r.built && <Legend items={r.built.legend} />}
                     </div>
-                    {plan && <Legend items={plan.legend} />}
-                  </div>
-                  {/* Actual (A) row */}
-                  <div>
-                    <div className="text-[10px] mb-1" style={{ color: "var(--text-4)" }}>{t("zagruzka.actual")} (A)</div>
-                    <div
-                      className="text-[11px] font-mono rounded-lg px-2.5 py-2"
-                      style={{ background: "var(--bg-card)", color: "var(--text-2)" }}
-                    >
-                      {actual?.formula || (simple
-                        ? "A = trudoyomkost ÷ (480 × 0.9 × headcount) × 100%"
-                        : "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100%")}
-                    </div>
-                    {actual && <Legend items={actual.legend} />}
-                  </div>
+                  ))}
                 </>
               )}
             </div>

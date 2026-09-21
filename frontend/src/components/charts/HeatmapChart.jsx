@@ -46,13 +46,14 @@ function getSegmentColor(v, segs) {
 
 function shortDate(d) { return d.slice(0, 5); }
 
-// Compute row statistic based on mode (only over approved days)
-function rowStat(managerName, mode, data, dates, statMode, isApproved) {
+// Compute row statistic (only over approved days). `read` is the grid's one
+// value reader, so the pinned AVG/MAX/MIN reads exactly what the cells do.
+function rowStat(managerName, read, data, dates, statMode, isApproved) {
   const vals = dates
     .map(d => {
       if (isApproved && !isApproved(managerName, d)) return null;
       const cell = data[managerName]?.[d];
-      const v = mode === "planned" ? cell?.baseline_util : cell?.net_util;
+      const v = read(cell);
       return v != null ? Math.round(v * 100) : null;
     })
     .filter(v => v !== null);
@@ -117,10 +118,15 @@ function SingleGrid({
   rowLabel = "Brigadir", labelWidth = LABEL_W,
   labelFor = null,
   pinnedRow = null,
+  cellValue = null,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MAX/MIN column
+  // THE value reader — every cell, the unit row and both summaries go through
+  // it. Without `cellValue` it is the fleet heatmap's own Plan/Fact switch,
+  // byte-for-byte what this grid has always read.
+  const read = cellValue || ((cell) => (mode === "planned" ? cell?.baseline_util : cell?.net_util));
   const [hoveredRow,  setHoveredRow]  = useState(null);
   const [hoveredCol,  setHoveredCol]  = useState(null);
   const [hoveredCell, setHoveredCell] = useState(null);
@@ -306,7 +312,7 @@ function SingleGrid({
             const mgrSel   = selection?.type === "manager";
             const thisSel  = mgrSel && selection.value === name;
             const thisGray = mgrSel && selection.value !== name;
-            const stat     = rowStat(name, mode, data, dates, avgMode, isApproved);
+            const stat     = rowStat(name, read, data, dates, avgMode, isApproved);
             const statColor = getSegmentColor(stat, segs);
 
             return (
@@ -345,7 +351,7 @@ function SingleGrid({
                 {/* Data cells */}
                 {dates.map(d => {
                   const cell   = data[name]?.[d];
-                  const val    = mode === "planned" ? cell?.baseline_util : cell?.net_util;
+                  const val    = read(cell);
                   const v      = val != null ? Math.round(val * 100) : -1;
                   const hasData = v >= 0;
                   // Pending = Verifix data uploaded but the value can't show
@@ -474,7 +480,7 @@ function SingleGrid({
 
               {dates.map(d => {
                 const cell = pinnedRow.data[d];
-                const val  = mode === "planned" ? cell?.baseline_util : cell?.net_util;
+                const val  = read(cell);
                 const v    = val != null ? Math.round(val * 100) : -1;
                 const color = getSegmentColor(v, segs);
                 const colH  = noSel && hoveredCol === d;
@@ -517,7 +523,7 @@ function SingleGrid({
               {!isMobile && (() => {
                 // The same statistic the rows use, over the unit's own values —
                 // so the pinned column reads one way down the whole table.
-                const stat = rowStat(pinnedRow.label, mode, { [pinnedRow.label]: pinnedRow.data },
+                const stat = rowStat(pinnedRow.label, read, { [pinnedRow.label]: pinnedRow.data },
                                      dates, avgMode, null);
                 const statColor = getSegmentColor(stat, segs);
                 return (
@@ -583,6 +589,20 @@ export default function HeatmapChart({
   // the unit's own inputs, never averaged out of the rows above — which is why
   // it is a row of its own and carries a note saying what it is.
   pinnedRow = null,
+  // WHICH NUMBER a cell shows: `(cell) => util | null`, as a fraction (0.87 →
+  // 87%). Omitted, the grid reads the fleet heatmap's own `mode` switch —
+  // baseline_util for "planned", net_util for "actual" — exactly as before, so
+  // every existing caller is untouched. The two single-metric heatmaps under
+  // the fleet heatmap on /zagruzka pass `fulfilUtil` / `effUtil` from
+  // utils/formulas.js: the SAME grid, bands, pending markers, sort and
+  // summaries, one different number. A prop and not a copy, so a change to the
+  // grid reaches all three at once.
+  //
+  // NEVER name this `valueOf`. Every object inherits `Object.prototype.valueOf`,
+  // and a destructuring default applies only to `undefined` — so a caller that
+  // passes nothing would get the inherited method instead of null, and the
+  // fleet heatmap (which passes nothing) would call it on each cell and crash.
+  cellValue = null,
 }) {
   const { labelColor } = useChartTheme();
   const { t } = useLang();
@@ -617,7 +637,7 @@ export default function HeatmapChart({
     segs, selection, toggleSel, clearSel,
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
     avgMode, onCycleAvg: cycleAvg, cellTitle,
-    rowLabel, labelWidth, labelFor, pinnedRow,
+    rowLabel, labelWidth, labelFor, pinnedRow, cellValue,
   };
 
   return (
