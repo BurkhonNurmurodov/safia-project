@@ -36,7 +36,7 @@ from app.config import settings
 from app.database import get_db
 from app.notify_ctx import notifications_suppressed
 from app.permissions import get_page_access, role_can_access, require_page
-from app.translit import transliterate
+from app.translit import transliterate, transliterate_text
 from app.models import (
     Admin, Attendance, Cell, DayApproval, EditRequest, ExchangeTask, HrDocument,
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
@@ -813,6 +813,23 @@ def _render_body(tmpl: str, values: dict, *, html: bool = False) -> str:
     return "\n".join(out).strip("\n")
 
 
+# The params that carry a PERSON's name. Only these get the English name
+# convention (x→kh, q→k, oʻ→u — Burxon → Burkhon); every other param is Uzbek
+# DB text (a task, a job title, a reason, a concern's own words) and keeps its
+# Uzbek Latin spelling in English (the operator's rule, 2026-09-21 — «qayd
+# qilish» printed «kayd kilish»). `lines` / `changes*` are the unit digest's
+# «glyph leader · cell — score» rows, i.e. mostly names; `target` is left OUT
+# on purpose: an exchange's target is a task name («Uyga qaytarilgan») three
+# times out of four, a receiving supervisor the rest — `target_kind` on the row
+# says which (see _notif_values).
+_NAME_PARAMS = frozenset({
+    "actor_name", "admin_name", "author", "author_name", "by", "closer_name",
+    "creator_name", "decided_by", "leader", "leader_name", "name", "owner",
+    "processor_name", "reopener_name", "supervisor", "supervisor_name",
+    "undoer", "worker_name", "lines", "changes", "changes_lines",
+})
+
+
 def _notif_values(params: dict, lang: str, *, escape: bool = False) -> dict:
     """The interpolation values behind BOTH notification renderers — the plain
     bell/DM text and the HTML Telegram body. One prep step, so an HTML DM can
@@ -824,8 +841,16 @@ def _notif_values(params: dict, lang: str, *, escape: bool = False) -> dict:
     params = params or {}
     # Latinise embedded DB values (names, job titles) for uz/en so notifications
     # match the dashboard; ru/uz_cyrl keep the original Cyrillic. No-op on the
-    # already-Latin/non-string params (count, etc.).
-    values = {k: transliterate(v, lang) for k, v in params.items()}
+    # already-Latin/non-string params (count, etc.). Names only take the English
+    # name remap (_NAME_PARAMS); everything else stays Uzbek Latin.
+    values = {k: (transliterate(v, lang) if k in _NAME_PARAMS
+                  else transliterate_text(v, lang))
+              for k, v in params.items()}
+    # An exchange's `target` is a receiving supervisor OR a task. Rows written
+    # since 2026-09-21 carry `target_kind` saying which; older rows carry none
+    # and stay on the text rule, which task targets dominate.
+    if params.get("target_kind") == "supervisor":
+        values["target"] = transliterate(params.get("target"), lang)
     if "date" in params:
         values["date"] = _fmt_date(params["date"], lang)
     # Back-compat: call_forecast gained ``eff`` (Zagruzka %) then ``name``
@@ -4023,6 +4048,10 @@ def _notify_exchange(db: Session, doc: HrDocument, event: str, actor_tg_id: int,
         "actor_name": doc.created_by_name or "",
         "count":      len(payload.get("employees", [])),
         "target":     _exchange_target_label(payload),
+        # Says whether `target` is a PERSON (the receiving supervisor) or a task
+        # name, so _notif_values can give only the person the English name remap.
+        "target_kind": ("supervisor" if payload.get("target_type") == "supervisor"
+                        else "task"),
         "date":       doc.date,
     }
     _notify_all_parties(db, doc.manager_id, nkey, params, ntype="info",

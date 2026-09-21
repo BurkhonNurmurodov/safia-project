@@ -11,7 +11,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import Notification
 from app.services import action_log
-from app.translit import transliterate
+from app.translit import transliterate_text
 # Notification text is template-based: rows store a template key + raw params and
 # the renderer lives with the templates in routers.staff. Importing it here lets
 # us render each row in the *viewer's* current language at request time.
@@ -58,8 +58,8 @@ def _row(r, lang: str):
         except Exception:
             title, body = r.title or r.nkey, r.body or ""
     else:
-        title = transliterate(r.title or "", lang)
-        body  = transliterate(r.body or "", lang)
+        title = transliterate_text(r.title or "", lang)
+        body  = transliterate_text(r.body or "", lang)
     return {
         "id":         r.id,
         "title":      title,

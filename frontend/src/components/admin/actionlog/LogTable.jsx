@@ -62,6 +62,30 @@ const val = (v) => {
   return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 };
 
+// `target` is a snapshot of WHATEVER the row acted on — a person on one row, a
+// task's text, a plant or a file on the next — so its `target_kind` decides how
+// it is rendered: a person's name through `tl` (the English name convention),
+// every other kind through `tx`, which keeps Uzbek words spelled as Uzbek.
+// ("document" names the one worker an HR document covers.)
+const NAME_KINDS = new Set([
+  "profile", "user", "weblogin", "worker", "leader", "unit", "day",
+  "dispute", "lateday", "request", "photo", "autofill", "report", "document",
+]);
+// A kind is the DEFAULT, not a guarantee: a few writers file a person under a
+// kind whose other rows hold text, and the reverse. These actions say which.
+// A LEADER filed under «task» (a manual override, a late proof, an auto-close):
+const NAME_ACTIONS = new Set([
+  "ltask.task_overridden", "late_proof.decided", "checklist.task_autoclosed",
+  "checklist.late_proof_filed", "checklist.late_proof_supervisor", "checklist.late_proof_admin",
+]);
+// A report TITLE or a plant filed under «report», whose other rows name people:
+const TEXT_ACTIONS = new Set([
+  "export.quality", "export.concerns", "export.worker_concerns", "export.ojidaniya_deck",
+]);
+const isNameTarget = (r) =>
+  NAME_ACTIONS.has(r.action) || (!TEXT_ACTIONS.has(r.action) && NAME_KINDS.has(r.target_kind));
+const targetText = (r, { tl, tx }) => (isNameTarget(r) ? tl : tx)(r.target);
+
 function Mark({ text, title }) {
   return (
     <span
@@ -200,10 +224,10 @@ function cell(key, r, ctx) {
     case "unit":     return val(tl(r.unit)) && <Plain w="160px">{tl(r.unit)}</Plain>;
     case "day":      return r.day ? <span className="tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDay(r.day)}</span> : null;
     case "change":   return <ChangeCell r={r} t={t} />;
-    case "target":   return val(tl(r.target)) && <Plain w="200px">{tl(r.target)}</Plain>;
+    case "target":   return val(targetText(r, ctx)) && <Plain w="200px">{targetText(r, ctx)}</Plain>;
 
     case "document": {
-      const v = firstOf(tl(r.target), labelOf(t, "logs.f.", detail(r, ["doc_type"])));
+      const v = firstOf(targetText(r, ctx), labelOf(t, "logs.f.", detail(r, ["doc_type"])));
       return v && <Plain w="180px">{v}</Plain>;
     }
     case "worker": {
@@ -211,7 +235,7 @@ function cell(key, r, ctx) {
       return v && <Plain w="160px">{tl(String(v))}</Plain>;
     }
     case "profile": {
-      const v = firstOf(tl(r.target), detail(r, ["user", "profile"]));
+      const v = firstOf(targetText(r, ctx), detail(r, ["user", "profile"]));
       return v && <Plain w="180px">{v}</Plain>;
     }
     case "role": {
@@ -219,15 +243,15 @@ function cell(key, r, ctx) {
       return v && <Plain w="140px">{roleLabel(t, v)}</Plain>;
     }
     case "login": {
-      const v = firstOf(detail(r, ["user", "login", "username"]), tl(r.target));
+      const v = firstOf(detail(r, ["user", "login", "username"]), targetText(r, ctx));
       return v && <Plain w="180px">{v}</Plain>;
     }
     case "object": {
-      const v = firstOf(tl(r.target), tl(r.unit), detail(r, ["unit", "cell", "name"]));
+      const v = firstOf(targetText(r, ctx), tl(r.unit), detail(r, ["unit", "cell", "name"]));
       return v && <Plain w="200px">{v}</Plain>;
     }
     case "task": {
-      const v = firstOf(tl(r.target), detail(r, ["task", "task_id"]));
+      const v = firstOf(targetText(r, ctx), detail(r, ["task", "task_id"]));
       return v && <Plain w="180px">{v}</Plain>;
     }
     case "level": {
@@ -235,19 +259,22 @@ function cell(key, r, ctx) {
       return v && <Plain w="130px">{labelOf(t, "logs.f.", v)}</Plain>;
     }
     case "leader": {
-      const v = firstOf(detail(r, ["leader"]), tl(r.target));
-      return v && <Plain w="170px">{tl(String(v))}</Plain>;
+      // The «leader» detail is a name; the fallback target is often a TASK
+      // (a checklist answer names no leader), so it is rendered by its kind.
+      const lead = detail(r, ["leader"]);
+      const v = lead != null ? tl(String(lead)) : targetText(r, ctx);
+      return v && <Plain w="170px">{v}</Plain>;
     }
     case "verdict": {
       const v = detail(r, ["verdict", "resolution", "status", "state"]);
       return v && <Plain w="140px">{labelOf(t, "logs.f.", v)}</Plain>;
     }
     case "item": {
-      const v = firstOf(tl(r.target), detail(r, ["task", "concern", "text"]));
+      const v = firstOf(targetText(r, ctx), detail(r, ["task", "concern", "text"]));
       return v && <Plain w="260px">{v}</Plain>;
     }
     case "audience": {
-      const v = firstOf(detail(r, ["audience"]), tl(r.target));
+      const v = firstOf(detail(r, ["audience"]), targetText(r, ctx));
       return v && <Plain w="220px">{v}</Plain>;
     }
     case "sent": {
@@ -263,11 +290,11 @@ function cell(key, r, ctx) {
       );
     }
     case "setting": {
-      const v = firstOf(tl(r.target), detail(r, ["key", "setting", "id"]));
+      const v = firstOf(targetText(r, ctx), detail(r, ["key", "setting", "id"]));
       return v && <Plain w="200px">{labelOf(t, "logs.f.", v)}</Plain>;
     }
     case "scope": {
-      const v = firstOf(tl(r.unit), tl(r.target), detail(r, ["unit", "date", "state"]));
+      const v = firstOf(tl(r.unit), targetText(r, ctx), detail(r, ["unit", "date", "state"]));
       return v && <Plain w="200px">{v}</Plain>;
     }
     case "reason":
@@ -355,13 +382,13 @@ function UndoBar({ r, onUndo, busy }) {
 
 export function LogDetail({ r, onUndo, busy = false }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
 
   // The identification block always leads with the row's own anchors, then the
   // handler's own lines. A category whose columns already show one of these
   // still repeats it here: the panel has to be readable on its own.
   const facts = [
-    r.target ? [t("logs.det.target"), `${tl(r.target)}${r.target_kind ? ` · ${labelOf(t, "logs.f.", r.target_kind)}` : ""}`] : null,
+    r.target ? [t("logs.det.target"), `${targetText(r, { tl, tx })}${r.target_kind ? ` · ${labelOf(t, "logs.f.", r.target_kind)}` : ""}`] : null,
     r.unit ? [labelOf(t, "logs.col.", "unit"), tl(r.unit)] : null,
     r.day ? [labelOf(t, "logs.col.", "day"), fmtDay(r.day)] : null,
     ...(r.details || [])
@@ -528,10 +555,10 @@ export default function LogTable({
   onUndo, undoing = null,
 }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const [openId, setOpenId] = useState(null);
   const cols = colsFor(category);
-  const ctx = { t, tl, multiDay };
+  const ctx = { t, tl, tx, multiDay };
 
   const toggle = (id) => setOpenId((cur) => (cur === id ? null : id));
   const onKey = (e, id) => {
