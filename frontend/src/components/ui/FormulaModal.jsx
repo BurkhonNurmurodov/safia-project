@@ -11,13 +11,19 @@ import { useLang } from "../../context/LangContext";
  *   formula – formula string (multi-line supported via \n)
  *   inputs  – [{ label, val, note?, source? }]
  *   onClose
+ *   zIndex  – backdrop z-index (default 60). Opened from INSIDE a page's
+ *             fullscreen overlay (z-[200]) it must be raised above it — pass
+ *             210, the value PendingInfoModal already uses — or the popup
+ *             mounts behind the overlay and the tap looks like it did nothing.
+ *             Telegram has no Escape key, so on a phone there is no way to
+ *             find it without leaving fullscreen.
  */
-export default function FormulaModal({ title, value, formula, inputs, onClose }) {
+export default function FormulaModal({ title, value, formula, inputs, onClose, zIndex = 60 }) {
   const { t } = useLang();
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.6)", zIndex, paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}
       onClick={onClose}
     >
       <div

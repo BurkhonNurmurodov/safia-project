@@ -143,6 +143,11 @@ function MetricHeatmapCard({
       t={t}
     />
   );
+  const body = (isFull) => (hmLoading ? (
+    <SkeletonChart className="h-64" />
+  ) : heatmap?.managers?.length ? grid(isFull) : (
+    <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
+  ));
   const grid = (isFull) => (
     <HeatmapChart
       dates={heatmap.dates}
@@ -161,16 +166,10 @@ function MetricHeatmapCard({
     <>
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
         {header(false)}
-        {hmLoading ? (
-          <SkeletonChart className="h-64" />
-        ) : heatmap?.managers?.length ? (
-          grid(false)
-        ) : (
-          <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
-        )}
+        {body(false)}
       </div>
 
-      {full && heatmap?.managers?.length ? createPortal(
+      {full ? createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
@@ -182,7 +181,7 @@ function MetricHeatmapCard({
             {header(true)}
           </div>
           <div className="flex-1 overflow-hidden" style={{ height: 0 }}>
-            {grid(true)}
+            {body(true)}
           </div>
         </div>,
         document.body
@@ -604,6 +603,9 @@ export default function Zagruzka() {
           onClose={() => setComment(null)}
           formulaOnly={comment.formulaOnly ?? true}
           formulaCollapsible={comment.formulaOnly === false}
+          // Above the fullscreen overlays (z-[200]) whenever one is open, or a
+          // tap inside fullscreen opens a thread nobody can see.
+          zIndex={openFull ? 210 : undefined}
         />
       )}
     </Layout>

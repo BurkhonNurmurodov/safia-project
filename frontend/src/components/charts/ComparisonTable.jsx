@@ -143,6 +143,11 @@ function findExtremeIdx(dVals, pVals, mode) {
 
 const SUMMARY_CYCLE = { avg: "min", min: "max", max: "avg" };
 
+// A popup opened from this table while it is FULLSCREEN sits inside the page's
+// z-[200] overlay, so it must be raised above it (PendingInfoModal's 210) or it
+// mounts invisibly behind it. Inline, the popups keep their own defaults.
+const ABOVE_OVERLAY = 210;
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ComparisonTable({
@@ -1268,6 +1273,7 @@ export default function ComparisonTable({
           formula={formulaModal.formula}
           inputs={formulaModal.inputs}
           onClose={() => setFormulaModal(null)}
+          zIndex={fullscreen ? ABOVE_OVERLAY : undefined}
         />
       )}
 
@@ -1282,6 +1288,7 @@ export default function ComparisonTable({
           onClose={() => setComment(null)}
           formulaOnly={comment.formulaOnly ?? !allowComments}
           formulaCollapsible
+          zIndex={fullscreen ? ABOVE_OVERLAY : undefined}
         />
       )}
 

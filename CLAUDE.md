@@ -41,7 +41,7 @@ or copy-paste its markup into a page.
 
 Other UI conventions:
 
-- Modal stacking: base modals z=50 (`Modal` default), nested modals pass `zIndex={60+}`, `ConfirmDialog` defaults to 100.
+- Modal stacking: base modals z=50 (`Modal` default), nested modals pass `zIndex={60+}`, `ConfirmDialog` defaults to 100. **A popup opened from INSIDE a page's fullscreen overlay (the `z-[200]` portals on `/zagruzka`) must pass `zIndex={210}`** — `PendingInfoModal` already sits there. At its default it mounts BEHIND the overlay, the tap looks like it did nothing, and in Telegram — no Escape key — the reader must leave fullscreen to find it. `CommentModal` and `FormulaModal` take a `zIndex` prop for exactly this (defaults unchanged, 50 / 60), and `ComparisonTable` raises both whenever it is `fullscreen`. Found 2026-09-21 on the new heatmaps; the fleet heatmap and both comparison tables had carried it since before.
 - Table-toolbar controls share ONE height — 38px, the `FilterPanel` trigger (`px-3 py-2 text-sm` + border). `SearchInput` default and `SegmentedToggle` md are also 38px. `Button` is the exception: md/sm are compact (≈30/26px) for modals & inline actions, so a toolbar action button must use **`size="lg"`** (38px) to line up with the filter/search controls next to it. All `Button` variants carry a border (transparent on borderless ones) so heights line up — don't strip it.
 - `FilterPanel` (in `ColumnFilter.jsx`) is THE page/table filter zone. **Every page's scope controls (plant / shift / supervisor / leader / cell / category) live INSIDE it as sections — never as standalone selects stacked above the content.** The page bar is ONE row: the period control (`DateRangePicker compactLabel`, or `DayStepper` on daily pages) inline, then `FilterPanel`, then chips. It adapts to space: on md+ it unfolds into one dropdown per filter while the WHOLE toolbar row fits on a single line, else it collapses to the grouped «Filtrlar» button (below md: bottom sheet). Whenever controls are not visible inline, every ACTIVE section renders as a CHIP beside the trigger — `display` text + per-chip ✕ (`onClear`); chip body re-opens the panel; `static: true` sections are inert chips (locked viewer's plant). Sections: `{ key, icon, label, active, display, render({close}), onClear?, static?, group?, pinned? }` — `PickFilter` (single-select list, closes on pick), `OptsFilter` (multi), `RngFilter`, or an embedded `SegmentedToggle fill`. `group` (a translated caption) splits the collapsed surfaces into labelled blocks in first-appearance order; use it wherever a page carries both a scope CHAIN and record filters, so ten anonymous rows read as two short lists (Quality: «Kim va qayerda» = plant → shift → brigadir → leader → cell, «Nima bo'ldi» = the register filters). **A cascading level narrows the level below it and SAYS SO**: build each list under the levels above it, pass `PickFilter`'s `note` ("narrowed by «X» · N") so a shortened list is never mistaken for missing data, pass `empty` (a message + a button clearing the parent) for a level narrowed to nothing, and drop a child pick its own list no longer offers when the parent changes — a control naming a value the page cannot show is worse than a reset. See the Quality org chain for the reference wiring. Omit `activeCount`/`anyActive`/`onClearAll` unless overriding — the panel computes them from sections. `pinned: true` keeps a section's own inline dropdown on the toolbar even while the rest collapse — for a page carrying so many filters that the fit check can never unfold the row (ARC's thirteen), so the controls that steer the page are not buried behind a button that names none of them. Pin the two or three controls the reader steers with — and when a page's TABS ask different questions, pinning follows the open tab (ARC pins smena → brigadir → lider on «Yacheykalar bo'yicha», bo'lim / holat / kategoriya on «Barchasi»; every filter still narrows both tabs, only where its control sits changes). Below md nothing is pinned (the sheet keeps them all) and a pinned section drops its chip on md+, where its own trigger already states it. Keep it a DIRECT child of the toolbar flex row — the fit check measures that row's children (flex-grow spacers count as 0). View switches (tabs) stay OUTSIDE the panel; text search stays an inline `SearchInput`.
 - All colors via CSS variables (`var(--bg-card)`, `var(--bg-inner)`, `var(--text-1..4)`, `var(--border)`, `var(--brand)`) — no hardcoded grays/hex for chrome, including on admin pages.
@@ -1037,6 +1037,75 @@ quantity × Трудоемкость ÷ 60), the denominator person-minutes of C
   per-group SHARE, so the same formula there is a different decision.
 - Everything is derived per request from the existing `/api/heatmap` payload —
   no backend change, nothing stored, so no migration and no re-sync.
+
+## Plan fulfilment and Efficiency heatmaps (`/zagruzka`)
+
+From **2026-09-21** (the operator's directive) two single-metric heatmaps sit
+directly under the fleet heatmap («Карта нагрузки») and above the funnel —
+COPIES of it: same grid, same admin colour bands (`heatmap_segments`, so an
+edit on the admin panel moves all three), same pending markers, sort and
+AVG/MAX/MIN column. Each reads ONE number per unit-day:
+
+    Reja bajarilishi = TRUDOYOMKOST ÷ ISHLAB CHIQARISH PLANI      (prod_actual ÷ prod_plan)
+    Samaradorlik     = TRUDOYOMKOST ÷ capacity
+      capacity       = VERIFIX MINUTES × 0.9
+                     − HISOBOTDAGI XODIMLAR × (ojidaniya + early arrival + 10)
+
+- **`utils/formulas.js` is THE definition** — `fulfilUtil`, `verifixMinutes`,
+  `effCapacity`, `effUtil` and the three CommentModal builders. The cell, the
+  row summary and the popup all read those functions.
+- **A prop on the existing grid, never a copy** — `HeatmapChart cellValue={…}`,
+  resolved once into `read` and used at every read site. Omitted, it is the
+  fleet heatmap's own Plan/Fact switch, byte for byte. **Never name that prop
+  `valueOf`**: every object inherits `Object.prototype.valueOf`, a destructuring
+  default applies only to `undefined`, and the fleet heatmap (which passes
+  nothing) then called the inherited method on each cell and crashed. That was
+  caught in the browser before it shipped; the comment at the prop says why.
+- **Efficiency is OUTPUT ÷ AVAILABLE TIME, so high = good** (the operator's
+  ruling, 2026-09-21). The inverse (capacity ÷ output) was the formula first
+  written down; it is a COST measure where lower is better, and under the
+  shared bands it painted an idle shift green and an over-producing one red.
+- **It is the attendance-based twin of the full table's A (`net_util`)**: same
+  three per-person deductions and the same 10-minute kaizen buffer, but the
+  capacity comes from minutes actually CLOCKED × 0.9 instead of the typed
+  headcount corrected by labour surplus. A gap between the two says the typed
+  headcount and the attendance file disagree about the day.
+- **VERIFIX MINUTES are RAW (hours × 60) over the direct-role rows** — the set
+  `verifix_labor` is summed over. The payload ships only `verifix_labor` =
+  hours × 60 × 0.85, so the raw figure is `verifix_labor ÷ VERIFIX_EFFICIENCY`,
+  exact to the 2-decimal rounding it is stored at (verified against the
+  attendance table summed directly: 247/247 unit-days, max drift 0.006 min).
+  **The 0.85 is NOT applied** — the operator's 0.9 is the only productivity
+  factor; stacking both (0.765) read ~18 points higher.
+- **ojidaniya and early arrival are PER-PERSON minutes** on this payload (the
+  full formula subtracts them from a per-person base), which is why they are
+  multiplied by the headcount here to become the unit's total.
+- **Blanks**: no ФАКТ (a 0 is the payload's default for "never said"), no plan
+  (fulfilment), no reported headcount (the platform's standing rule — the blank
+  IS the warning), and capacity ≤ 0 (deductions exceeding attendance).
+- **A cell tap opens the (brigadir, date) comment THREAD with this table's own
+  formula** (the operator's choice) — unlike the fleet heatmap, whose tap is
+  formula-only. `CommentModal basis="fulfil"|"eff"` renders ONE formula row
+  instead of the P/A pair (its rows are data now, one list for all four bases),
+  and the efficiency popup's capacity row expands into its own arithmetic. The
+  per-person terms print at 2 decimals: they are multiplied by the headcount,
+  and at 1 decimal the working a reader redoes by hand drifted up to 7.6
+  minutes from the printed result; at 2 it reconciles to within one.
+  Consequence to know: like the simplified comparison table, a comment is
+  stored against (brigadir, date) only, with no record of which table's number
+  it was about.
+- **No Plan/Fact toggle** on either — one number, nothing to switch.
+- **Their fullscreen opens at once, data or not**, and shows the loader or the
+  empty state inside — the fleet heatmap's behaviour. The first cut guarded the
+  overlay on data, so on an empty or still-loading period the button armed
+  `openFull` and drew nothing, and the overlay then opened by ITSELF the moment
+  data arrived.
+- **ONE fullscreen state** on the page (`openFull`: null | comp | simple |
+  heatmap | fulfil | eff) replaced a boolean per overlay: with five overlays at
+  one z-index, "one at a time" has to be structural, and the simplified table's
+  flag had slipped past the Escape handler, which only knew the two originals.
+- Everything is derived per request from the existing `/api/heatmap` payload —
+  no backend change, nothing stored.
 
 ## Which ojidaniya categories the загрузка counts
 

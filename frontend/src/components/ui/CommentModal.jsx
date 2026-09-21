@@ -34,7 +34,11 @@ function withTitle(built, title) {
 // table's number with the other table's equation. "full" and "simple" explain a
 // P/A PAIR; "fulfil" and "eff" (the two single-metric heatmaps) explain ONE
 // number, so they render one formula row instead of two.
-export default function CommentModal({ managerId, managerName, date, rawCell, mode, onClose, formulaOnly = false, formulaCollapsible = false, basis = "full" }) {
+// `zIndex` (default 50) must be raised when the modal is opened from INSIDE a
+// fullscreen overlay (z-[200]): pass 210, PendingInfoModal's value. At 50 the
+// thread mounted behind the overlay, the tap looked like a no-op, and on a
+// phone — no Escape key — the reader had to leave fullscreen to find it.
+export default function CommentModal({ managerId, managerName, date, rawCell, mode, onClose, formulaOnly = false, formulaCollapsible = false, basis = "full", zIndex = 50 }) {
   const { auth } = useAuth();
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -93,7 +97,7 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
     c.is_own ?? (myId && String(c.author_telegram_id) === myId);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }} onClick={onClose}>
+    <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", zIndex, paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }} onClick={onClose}>
       <div
         className="rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", maxHeight: "min(80dvh, 100%)" }}
