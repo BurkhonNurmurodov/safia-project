@@ -33,7 +33,8 @@ import ColorGuideModal from "../components/ui/ColorGuideModal";
 import TableCard, { Th } from "../components/ui/DataTable";
 import { segmentBands } from "../utils/segments";
 import EmptyState from "../components/ui/EmptyState";
-import { SkeletonChart } from "../components/ui/Skeleton";
+import { SkeletonBlock, SKELETON_NAME_WIDTHS, skeletonWave } from "../components/ui/Skeleton";
+import { listChartDays } from "../utils/chartRange";
 import CellLink from "../components/ui/CellLink";
 import GroupBadge from "../components/ui/GroupBadge";
 import { useFilters } from "../context/FilterContext";
@@ -52,6 +53,28 @@ const HEATMAP_MODES = ["planned", "actual"];
 // it — not a supervisor's name alone. Still truncated with a tooltip past this,
 // but code + name fit without eating the date columns.
 const LABEL_W = 260;
+
+// Loading rows on the grids and the inputs table. A unit's cell count is not
+// known until the payload is, so this is a typical unit's, not a promise.
+const SK_ROWS = 8;
+// The inputs table's figure columns (after the cell name and its work centre),
+// in on-screen order: the placeholder width each one's number takes.
+const SK_INPUT_W = ["w-10", "w-10", "w-6", "w-10", "w-7", "w-8", "w-7", "w-9"];
+
+/** The diagnostics card's body while the payload is in flight: a dot and a
+ *  line per finding, the shape the real list reads in. */
+function DiagSkeleton() {
+  return (
+    <div aria-hidden="true">
+      {["w-2/3", "w-1/2", "w-3/5", "w-2/5"].map((w, i) => (
+        <div key={i} className="flex items-center gap-2 py-1.5">
+          <SkeletonBlock className="w-2 h-2 flex-shrink-0" style={{ borderRadius: "50%" }} />
+          <SkeletonBlock className={`h-2.5 ${w}`} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const num = (v, d = 0) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toFixed(d);
@@ -200,7 +223,9 @@ export default function ZagruzkaCell() {
     () => ({ date_from: dateFrom, date_to: dateTo,
              ...(mgrId != null ? { manager_id: mgrId } : {}) }),
     [dateFrom, dateTo, mgrId]));
-  const { data: payload, isLoading } = useQuery({
+  // `isPending`, not `isLoading`: before the filters are `ready` the query is
+  // disabled, isLoading reads false and the page flashed «no cells» first.
+  const { data: payload, isPending: loading } = useQuery({
     queryKey: ["zagruzka-cell", params],
     queryFn: () => api.get("/api/zagruzka-cell", { params }).then((r) => r.data),
     enabled: ready && !!dateFrom,
@@ -233,6 +258,15 @@ export default function ZagruzkaCell() {
   const pSegments = compThresholdData?.p_segments ?? [];
 
   const dates = payload?.dates ?? [];
+  // What the grids draw their columns from. While loading that is the picked
+  // period itself — the endpoint returns every one of its days — so the gold
+  // headers carry the real dates before the numbers under them arrive. Kept
+  // apart from `dates`, which the input-day default below must only ever read
+  // off a real payload.
+  const skDates = useMemo(
+    () => listChartDays(dateFrom, dateTo).map((iso) => iso.split("-").reverse().join(".")),
+    [dateFrom, dateTo]);
+  const gridDates = loading ? skDates : dates;
   const cells = payload?.managers ?? [];
   const diag = payload?.diagnostics ?? {};
 
@@ -383,20 +417,22 @@ export default function ZagruzkaCell() {
         />
       </div>
 
-      {isLoading ? (
-        <SkeletonChart className="h-64" />
-      ) : !cells.length ? (
+      {/* While loading, every card below renders in its real shape with its
+          values pulsing — the page then fills in rather than assembling. */}
+      {!loading && !cells.length ? (
         <EmptyState title={t("zcell.noCells")} message={t("zcell.noCellsMsg")} height="h-48" />
-      ) : !hasAnyValue ? (
+      ) : !loading && !hasAnyValue ? (
         <EmptyState title={t("zcell.noData")} message={t("zcell.noDataMsg")} height="h-48" />
       ) : (
         <>
           {/* ── Comparison table: rows = cells, columns = dates ── */}
           <div className="mb-6">
             <ComparisonTable
-              dates={dates}
+              loading={loading}
+              loadingRows={SK_ROWS}
+              dates={gridDates}
               managers={cells}
-              data={payload.data}
+              data={payload?.data ?? {}}
               pSegments={pSegments}
               diffSegments={diffSegments}
               managerIds={{}}
@@ -426,7 +462,7 @@ export default function ZagruzkaCell() {
 
           {/* Portaled to <body>: .page-enter's transform would otherwise become
               the containing block for this fixed overlay. */}
-          {compFullscreen && createPortal(
+          {compFullscreen && !loading && createPortal(
             <div
               className="fixed inset-0 z-[200] flex flex-col"
               style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
@@ -460,7 +496,7 @@ export default function ZagruzkaCell() {
           {/* ── Heatmap ── */}
           <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
             <HeatmapHeader
-              payload={payload}
+              payload={payload ?? { dates: skDates }}
               heatmapMode={heatmapMode}
               setHeatmapMode={setHeatmapMode}
               segments={segments}
@@ -469,9 +505,11 @@ export default function ZagruzkaCell() {
               t={t}
             />
             <HeatmapChart
-              dates={dates}
+              loading={loading}
+              loadingRows={SK_ROWS}
+              dates={gridDates}
               managers={cells}
-              data={payload.data}
+              data={payload?.data ?? {}}
               mode={heatmapMode}
               managerIds={{}}
               segments={segments}
@@ -495,7 +533,7 @@ export default function ZagruzkaCell() {
                 style={{ background: "var(--bg-card)", borderBottom: "1px solid var(--border)" }}
               >
                 <HeatmapHeader
-                  payload={payload}
+                  payload={payload ?? { dates: skDates }}
                   heatmapMode={heatmapMode}
                   setHeatmapMode={setHeatmapMode}
                   segments={segments}
@@ -506,9 +544,11 @@ export default function ZagruzkaCell() {
               </div>
               <div className="flex-1 overflow-hidden" style={{ height: 0 }}>
                 <HeatmapChart
-                  dates={dates}
+                  loading={loading}
+                  loadingRows={SK_ROWS}
+                  dates={gridDates}
                   managers={cells}
-                  data={payload.data}
+                  data={payload?.data ?? {}}
                   mode={heatmapMode}
                   managerIds={{}}
                   segments={segments}
@@ -534,7 +574,7 @@ export default function ZagruzkaCell() {
             <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
               {t("zcell.funnelSub")}
             </div>
-            <DifferenceBreakdown data={funnel} height={280} diffSegments={diffSegments} />
+            <DifferenceBreakdown loading={loading} data={funnel} height={280} diffSegments={diffSegments} />
           </div>
 
           {/* ── Reconciliation against the fleet page ── */}
@@ -549,7 +589,7 @@ export default function ZagruzkaCell() {
               <thead>
                 <tr>
                   <Th label="" cls="w-[180px]" />
-                  {dates.map((d) => <Th key={d} label={d.slice(0, 5)} align="center" />)}
+                  {gridDates.map((d) => <Th key={d} label={d.slice(0, 5)} align="center" />)}
                 </tr>
               </thead>
               <tbody>
@@ -562,21 +602,30 @@ export default function ZagruzkaCell() {
                     with no SAP code, people nobody typed, or attendance with no
                     «Код подразделения». */}
                 {[
-                  { key: "cells", label: t("zcell.totalsRow"), get: (d) => payload.cells_sum?.[d]?.net_util },
-                  { key: "fleet", label: t("zcell.fleetRow"), get: (d) => payload.fleet?.[d]?.net_util },
-                ].map((row) => (
+                  { key: "cells", label: t("zcell.totalsRow"), get: (d) => payload?.cells_sum?.[d]?.net_util },
+                  { key: "fleet", label: t("zcell.fleetRow"), get: (d) => payload?.fleet?.[d]?.net_util },
+                ].map((row, r) => (
                   <tr key={row.key}>
                     <td className="px-3 py-2 font-medium" style={{ color: "var(--text-2)" }}>{row.label}</td>
-                    {dates.map((d) => (
+                    {gridDates.map((d, i) => (
                       <td key={d} className="px-3 py-2 text-center" style={{ color: "var(--text-1)" }}>
-                        {pct(row.get(d))}
+                        {loading
+                          ? <SkeletonBlock className="h-3 w-7 mx-auto" style={skeletonWave(i, r)} />
+                          : pct(row.get(d))}
                       </td>
                     ))}
                   </tr>
                 ))}
                 <tr>
                   <td className="px-3 py-2 font-medium" style={{ color: "var(--text-3)" }}>{t("zcell.deltaRow")}</td>
-                  {dates.map((d) => {
+                  {gridDates.map((d, i) => {
+                    if (loading) {
+                      return (
+                        <td key={d} className="px-3 py-2 text-center">
+                          <SkeletonBlock className="h-3 w-7 mx-auto" style={skeletonWave(i, 2)} />
+                        </td>
+                      );
+                    }
                     const a = payload.cells_sum?.[d]?.net_util;
                     const b = payload.fleet?.[d]?.net_util;
                     if (a == null || b == null) {
@@ -605,12 +654,18 @@ export default function ZagruzkaCell() {
               minWidth={880}
               right={
                 <div className="w-40">
-                  <StyledSelect
-                    value={inputDate ?? ""}
-                    onChange={setInputDate}
-                    options={dateOptions}
-                    triggerClassName="px-2.5 py-1.5 text-xs"
-                  />
+                  {loading ? (
+                    // The day picker's own footprint: it lists the payload's
+                    // days, so there is nothing to pick until they arrive.
+                    <SkeletonBlock className="h-[30px] w-full" style={{ borderRadius: 12 }} />
+                  ) : (
+                    <StyledSelect
+                      value={inputDate ?? ""}
+                      onChange={setInputDate}
+                      options={dateOptions}
+                      triggerClassName="px-2.5 py-1.5 text-xs"
+                    />
+                  )}
                 </div>
               }
             >
@@ -629,7 +684,22 @@ export default function ZagruzkaCell() {
                 </tr>
               </thead>
               <tbody>
-                {cells.map((c) => {
+                {loading && Array.from({ length: SK_ROWS }, (_, r) => (
+                  <tr key={`sk-${r}`} aria-hidden="true">
+                    <td className="px-3 py-2.5">
+                      <SkeletonBlock className={`h-3 ${SKELETON_NAME_WIDTHS[r % SKELETON_NAME_WIDTHS.length]}`} style={skeletonWave(0, r)} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <SkeletonBlock className="h-3 w-12 mx-auto" style={skeletonWave(1, r)} />
+                    </td>
+                    {SK_INPUT_W.map((w, j) => (
+                      <td key={j} className="px-3 py-2.5">
+                        <SkeletonBlock className={`h-3 ${w} ml-auto`} style={skeletonWave(j + 2, r)} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {!loading && cells.map((c) => {
                   const inp = payload.inputs?.[c]?.[inputDate];
                   const meta = cellMeta[c];
                   const net = payload.data?.[c]?.[inputDate]?.net_util;
@@ -756,14 +826,15 @@ export default function ZagruzkaCell() {
 
       {/* ── Data-coverage diagnostics — always shown, even with no numbers, so a
            broken SAP join is visible instead of reading as "a quiet week". ── */}
-      {!isLoading && (
-        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <ShieldAlert size={14} style={{ color: "var(--brand-text)" }} />
-            <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
-              {t("zcell.diagTitle")}
-            </div>
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4" aria-busy={loading || undefined}>
+        <div className="flex items-center gap-2 mb-2">
+          <ShieldAlert size={14} style={{ color: "var(--brand-text)" }} />
+          <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
+            {t("zcell.diagTitle")}
           </div>
+        </div>
+      {loading ? <DiagSkeleton /> : (
+        <>
           {/* Attendance coverage — always shown, and first. Every blank day on
               the grid is a day whose attendance was never uploaded, which is
               otherwise indistinguishable from "the cells were idle". */}
@@ -885,8 +956,9 @@ export default function ZagruzkaCell() {
               <DiagRow key={label} label={label} items={items} tone={tone} />
             ));
           })()}
-        </div>
+        </>
       )}
+      </div>
 
       {comment && (
         <CommentModal

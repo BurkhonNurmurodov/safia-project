@@ -14,8 +14,9 @@ import ColorGuideModal from "../components/ui/ColorGuideModal";
 import { segmentBands } from "../utils/segments";
 import { fulfilUtil, effUtil } from "../utils/formulas";
 import EmptyState from "../components/ui/EmptyState";
-import { SkeletonChart } from "../components/ui/Skeleton";
+import { listChartDays } from "../utils/chartRange";
 import { useFilters } from "../context/FilterContext";
+import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useFactorySection } from "../components/ui/FactorySelect";
@@ -127,11 +128,12 @@ function HeatmapHeader({
 function MetricHeatmapCard({
   which, cellValue, title, note, heatmap, hmLoading, segments,
   managerIds, commentedCells, approvedCells, onCellClick, openFull, setOpenFull, t,
+  skDates, skRows,
 }) {
   const full = openFull === which;
   const header = (isFull) => (
     <HeatmapHeader
-      heatmap={heatmap}
+      heatmap={heatmap ?? { dates: skDates }}
       segments={segments}
       fullscreen={isFull}
       onToggleFullscreen={() => setOpenFull(isFull ? null : which)}
@@ -144,7 +146,12 @@ function MetricHeatmapCard({
     />
   );
   const body = (isFull) => (hmLoading ? (
-    <SkeletonChart className="h-64" />
+    <HeatmapChart
+      loading loadingRows={skRows}
+      dates={skDates} managers={[]} data={{}}
+      segments={segments}
+      fullscreen={isFull}
+    />
   ) : heatmap?.managers?.length ? grid(isFull) : (
     <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
   ));
@@ -234,7 +241,9 @@ export default function Zagruzka() {
   // an inert chip for locked viewers).
   const factorySection = useFactorySection();
 
-  const { data: heatmap, isLoading: hmLoading } = useQuery({
+  // `isPending`, not `isLoading`: before the filters are `ready` the query is
+  // disabled, isLoading reads false and the page flashed «no data» first.
+  const { data: heatmap, isPending: hmLoading } = useQuery({
     queryKey: ["heatmap", fparams],
     queryFn: () => api.get("/api/heatmap", { params: fparams }).then((r) => r.data),
     enabled: ready,
@@ -260,7 +269,7 @@ export default function Zagruzka() {
   const diffSegments = compThresholdData?.diff_segments ?? DEFAULT_DIFF_SEGMENTS;
   const pSegments    = compThresholdData?.p_segments    ?? [];
 
-  const { data: brigadirs = [], isLoading: brigLoading } = useQuery({
+  const { data: brigadirs = [], isPending: brigLoading } = useQuery({
     queryKey: ["brigadirs", fparams],
     queryFn: () => api.get("/api/brigadirs", { params: fparams }).then((r) => r.data),
     enabled: ready,
@@ -288,6 +297,23 @@ export default function Zagruzka() {
   const supValue = brigadirIds.length === 1 ? String(brigadirIds[0]) : "All";
 
   const managerIds = Object.fromEntries(brigadirs.map((b) => [b.name, b.manager_id]));
+
+  // ── The loading frame ──
+  // Every grid on this page keeps its real shape while /api/heatmap is in
+  // flight. The COLUMNS are known exactly — the endpoint returns every day of
+  // the picked period — so the gold headers print the real dates. The ROWS are
+  // an estimate: the picked brigadirs, one for a viewer locked to their own
+  // unit, else the plant's units on the picked shift (the heatmap drops only
+  // the ones with no data at all in the period).
+  const { auth } = useAuth();
+  const skDates = useMemo(
+    () => listChartDays(dateFrom, dateTo).map((iso) => iso.split("-").reverse().join(".")),
+    [dateFrom, dateTo]);
+  const skRows = brigadirIds.length
+    ? brigadirIds.length
+    : ["supervisor", "leader"].includes(auth?.role)
+      ? 1
+      : Math.min(scopedSupervisors.filter((s) => shift == null || s.shift === shift).length, 40) || 8;
 
   // Fetch all comments for the visible date range to mark cells
   const { data: rangeComments = [] } = useQuery({
@@ -371,12 +397,14 @@ export default function Zagruzka() {
       </div>
 
       {/* ── Comparison Table ── */}
-      {heatmap?.managers?.length ? (
+      {hmLoading || heatmap?.managers?.length ? (
         <div className="mb-6">
           <ComparisonTable
-            dates={heatmap.dates}
-            managers={heatmap.managers}
-            data={heatmap.data}
+            loading={hmLoading}
+            loadingRows={skRows}
+            dates={heatmap?.dates ?? skDates}
+            managers={heatmap?.managers ?? []}
+            data={heatmap?.data ?? {}}
             pSegments={pSegments}
             diffSegments={diffSegments}
             managerIds={managerIds}
@@ -402,12 +430,14 @@ export default function Zagruzka() {
             A = «Trudoyomkost»           ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
           — with none of the full formula's four corrections, which is why it is
           passed no calcFactors and draws no ⚙. ── */}
-      {heatmap?.managers?.length ? (
+      {hmLoading || heatmap?.managers?.length ? (
         <div className="mb-6">
           <ComparisonTable
-            dates={heatmap.dates}
-            managers={heatmap.managers}
-            data={heatmap.data}
+            loading={hmLoading}
+            loadingRows={skRows}
+            dates={heatmap?.dates ?? skDates}
+            managers={heatmap?.managers ?? []}
+            data={heatmap?.data ?? {}}
             pSegments={pSegments}
             diffSegments={diffSegments}
             managerIds={managerIds}
@@ -425,7 +455,7 @@ export default function Zagruzka() {
       {/* ── Comparison Table fullscreen overlay — portaled to <body> so its
           `fixed inset-0` anchors to the viewport, not the .page-enter transform
           (see the DateRangePicker fix). ── */}
-      {openFull === "comp" && createPortal(
+      {openFull === "comp" && heatmap?.managers?.length ? createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
@@ -451,7 +481,7 @@ export default function Zagruzka() {
           </div>
         </div>,
         document.body
-      )}
+      ) : null}
 
       {/* Simplified table fullscreen — portaled for the same reason. */}
       {openFull === "simple" && heatmap?.managers?.length ? createPortal(
@@ -484,7 +514,7 @@ export default function Zagruzka() {
       {/* ── Fleet Heatmap ── */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
         <HeatmapHeader
-          heatmap={heatmap}
+          heatmap={heatmap ?? { dates: skDates }}
           heatmapMode={heatmapMode}
           setHeatmapMode={setHeatmapMode}
           segments={segments}
@@ -493,7 +523,7 @@ export default function Zagruzka() {
           t={t}
         />
         {hmLoading ? (
-          <SkeletonChart className="h-64" />
+          <HeatmapChart loading loadingRows={skRows} dates={skDates} managers={[]} data={{}} segments={segments} />
         ) : heatmap?.managers?.length ? (
           <HeatmapChart dates={heatmap.dates} managers={heatmap.managers} data={heatmap.data} mode={heatmapMode} managerIds={managerIds} segments={segments} commentedCells={commentedCells} approvedCells={approvedCells} onCellClick={handleCellClick} />
         ) : (
@@ -513,7 +543,7 @@ export default function Zagruzka() {
             style={{ background: "var(--bg-card)", borderBottom: "1px solid var(--border)" }}
           >
             <HeatmapHeader
-              heatmap={heatmap}
+              heatmap={heatmap ?? { dates: skDates }}
               heatmapMode={heatmapMode}
               setHeatmapMode={setHeatmapMode}
               segments={segments}
@@ -525,7 +555,9 @@ export default function Zagruzka() {
 
           {/* Scrollable table — no padding, fills remaining height */}
           <div className="flex-1 overflow-hidden" style={{ height: 0 }}>
-            {heatmap?.managers?.length ? (
+            {hmLoading ? (
+              <HeatmapChart loading loadingRows={skRows} dates={skDates} managers={[]} data={{}} segments={segments} fullscreen />
+            ) : heatmap?.managers?.length ? (
               <HeatmapChart
                 dates={heatmap.dates}
                 managers={heatmap.managers}
@@ -563,6 +595,7 @@ export default function Zagruzka() {
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
         onCellClick={metricCellClick("fulfil")}
         openFull={openFull} setOpenFull={setOpenFull} t={t}
+        skDates={skDates} skRows={skRows}
       />
       <MetricHeatmapCard
         which="eff"
@@ -573,6 +606,7 @@ export default function Zagruzka() {
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
         onCellClick={metricCellClick("eff")}
         openFull={openFull} setOpenFull={setOpenFull} t={t}
+        skDates={skDates} skRows={skRows}
       />
 
       {/* Fleet Funnel */}
@@ -584,7 +618,7 @@ export default function Zagruzka() {
           {t("zagruzka.funnelSub")}
         </div>
         {brigLoading ? (
-          <SkeletonChart className="h-48" />
+          <DifferenceBreakdown loading height={280} />
         ) : brigadirs.length ? (
           <DifferenceBreakdown data={fleetFunnel} height={280} diffSegments={diffSegments} />
         ) : (

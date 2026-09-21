@@ -32,6 +32,9 @@
   --input-bg:   #12151f;
   --hover-bg:   rgba(255,255,255,0.05);
   --scrollbar:  #2e3347;
+  /* Loading placeholders (components/ui/Skeleton.jsx). A token, not a
+     white-alpha utility: 6% white vanishes on the light theme's white cards. */
+  --skeleton:   rgba(255,255,255,0.06);
 
   /* Brand */
   --brand:         #C8973F;
@@ -71,6 +74,7 @@
   --input-bg:   #f0ece4;
   --hover-bg:   rgba(0,0,0,0.04);
   --scrollbar:  #cbd5e1;
+  --skeleton:   rgba(0,0,0,0.07);
 
   /* Brand */
   --brand:         #B07828;

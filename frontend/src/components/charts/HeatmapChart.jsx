@@ -8,6 +8,7 @@ import PendingInfoModal, { PENDING_ICONS, PENDING_MSG_KEYS } from "../ui/Pending
 // it and «Smena hisoboti» paints the same cell, so the rule moved to the file
 // that owns the bands and both read it there.
 import { contrastText } from "../../utils/statusBands";
+import { SkeletonBlock, SKELETON_NAME_WIDTHS, skeletonWave } from "../ui/Skeleton";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -119,6 +120,8 @@ function SingleGrid({
   labelFor = null,
   pinnedRow = null,
   cellValue = null,
+  loading = false,
+  loadingRows = 6,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -200,6 +203,59 @@ function SingleGrid({
     whiteSpace: "nowrap",
     background: "var(--brand)",
   };
+
+  // Loading rows: the real row in every measure — the sticky name column, a
+  // full-bleed fill per day where the coloured cell will land (inset a pixel so
+  // the card shows between cells as the grid rule), blank pads, the pinned
+  // AVG column — pulsing as one diagonal wave.
+  const skFill = (col, row) => ({
+    position: "absolute", inset: 1,
+    background: "var(--skeleton)",
+    ...skeletonWave(col, row),
+  });
+  const skRows = loading ? Array.from({ length: loadingRows }, (_, r) => (
+    <tr key={`sk-${r}`} aria-hidden="true">
+      <td style={{
+        ...stickyNameBase,
+        paddingLeft: 12, paddingRight: 8,
+        width: labelWidth, maxWidth: labelWidth,
+        verticalAlign: "middle", height: 34,
+      }}>
+        <SkeletonBlock
+          className={`h-3 ${SKELETON_NAME_WIDTHS[r % SKELETON_NAME_WIDTHS.length]}`}
+          style={skeletonWave(0, r)}
+        />
+      </td>
+      {dates.map((d, i) => (
+        <td key={d} style={{
+          position: "relative", padding: 0,
+          width: cellW, minWidth: cellW, height: 34,
+          border: "1px solid var(--border)",
+        }}>
+          <div className="animate-pulse" style={skFill(i + 1, r)} />
+        </td>
+      ))}
+      {pads.map((_, i) => (
+        <td key={`sk-pad-${r}-${i}`} style={{
+          width: cellW, minWidth: cellW, height: 34,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }} />
+      ))}
+      {!isMobile && (
+        <td style={{
+          ...stickyAvg,
+          zIndex: 4, padding: 0,
+          width: AVG_W, minWidth: AVG_W, height: 34,
+          border: "1px solid var(--border)",
+          borderLeft: "2px solid var(--border-md)",
+          background: "var(--bg-card)",
+        }}>
+          <div className="animate-pulse" style={skFill(dates.length + 1, r)} />
+        </td>
+      )}
+    </tr>
+  )) : null;
 
   return (
     <div
@@ -308,7 +364,7 @@ function SingleGrid({
         </thead>
 
         <tbody>
-          {displayManagers.map(name => {
+          {loading ? skRows : displayManagers.map(name => {
             const mgrSel   = selection?.type === "manager";
             const thisSel  = mgrSel && selection.value === name;
             const thisGray = mgrSel && selection.value !== name;
@@ -603,6 +659,13 @@ export default function HeatmapChart({
   // passes nothing would get the inherited method instead of null, and the
   // fleet heatmap (which passes nothing) would call it on each cell and crash.
   cellValue = null,
+  // The page's data is still in flight: the grid keeps its real frame — the
+  // gold header carrying `dates` (the period's own days, known before the
+  // payload is), the sticky name and AVG columns — and draws `loadingRows`
+  // pulsing rows where the coloured ones will land, so nothing jumps when
+  // they do. `managers` / `data` are not read.
+  loading = false,
+  loadingRows = 6,
 }) {
   const { labelColor } = useChartTheme();
   const { t } = useLang();
@@ -638,6 +701,7 @@ export default function HeatmapChart({
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
     avgMode, onCycleAvg: cycleAvg, cellTitle,
     rowLabel, labelWidth, labelFor, pinnedRow, cellValue,
+    loading, loadingRows,
   };
 
   return (

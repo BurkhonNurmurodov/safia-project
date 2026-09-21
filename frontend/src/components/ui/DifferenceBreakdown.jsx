@@ -1,4 +1,5 @@
 import { useLang } from "../../context/LangContext";
+import { SkeletonBlock } from "./Skeleton";
 
 /**
  * DifferenceBreakdown
@@ -40,9 +41,75 @@ function valStr(v) {
   return `${r > 0 ? "+" : ""}${r}%`;
 }
 
-export default function DifferenceBreakdown({ data, height = 260, diffSegments }) {
+// Loading bars: fixed spans off the centre line (a random one would re-roll on
+// every render and twitch), leaning the way the causes usually do.
+const SK_BARS = [
+  { side: "right", w: "34%" },
+  { side: "right", w: "18%" },
+  { side: "left", w: "9%" },
+  { side: "right", w: "13%" },
+];
+
+export default function DifferenceBreakdown({ data, height = 260, diffSegments, loading = false }) {
   const { t } = useLang();
   const segs = diffSegments?.length ? diffSegments : FB_DIFF;
+
+  // While the data is in flight the breakdown keeps its real layout — the
+  // «Planned → Final» line, the four cause labels, each track with its centre
+  // line — and only the figures and the bars pulse.
+  if (loading) {
+    return (
+      <div className="flex flex-col" style={{ minHeight: height }} aria-hidden="true">
+        <div className="flex items-center justify-between gap-3 mb-4 pb-3"
+          style={{ borderBottom: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-1.5 text-sm flex-wrap">
+            <span style={{ color: "var(--text-3)" }}>{t("profile.diff.planned")}</span>
+            <SkeletonBlock className="h-4 w-9" />
+            <span style={{ color: "var(--text-4)" }}>→</span>
+            <span style={{ color: "var(--text-3)" }}>{t("profile.diff.final")}</span>
+            <SkeletonBlock className="h-4 w-9" />
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+              {t("profile.diff.total")}
+            </div>
+            <div className="h-7 flex items-center justify-end">
+              <SkeletonBlock className="h-5 w-14" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3.5 flex-1 justify-center">
+          {PIECES.map(({ key, tKey }, i) => {
+            const bar = SK_BARS[i % SK_BARS.length];
+            return (
+              <div key={key} className="flex items-center gap-3">
+                <div className="w-24 text-xs flex-shrink-0" style={{ color: "var(--text-2)" }}>
+                  {t(tKey)}
+                </div>
+                <div className="relative flex-1 h-5">
+                  <div className="absolute inset-0 rounded-md" style={{ background: "var(--bg-inner)" }} />
+                  <div className="absolute top-0 bottom-0" style={{ left: "50%", width: 1, background: "var(--border-md)" }} />
+                  <SkeletonBlock
+                    className="absolute top-1/2"
+                    style={{
+                      height: 12, transform: "translateY(-50%)",
+                      width: bar.w,
+                      ...(bar.side === "right" ? { left: "50%" } : { right: "50%" }),
+                      animationDelay: `-${i * 140}ms`,
+                    }}
+                  />
+                </div>
+                <div className="w-16 flex-shrink-0 flex justify-end">
+                  <SkeletonBlock className="h-3 w-10" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   const b   = data?.baseline_util;
   const adj = data?.adjusted_util;

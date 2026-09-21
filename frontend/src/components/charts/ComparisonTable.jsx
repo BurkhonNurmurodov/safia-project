@@ -13,6 +13,7 @@ import ColorGuideModal from "../ui/ColorGuideModal";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
+import { SkeletonBlock, SKELETON_NAME_WIDTHS, skeletonWave } from "../ui/Skeleton";
 import {
   pValueNumbers, pValueInputs, KAIZEN_BUFFER, VERIFIX_EFFICIENCY,
   simplePlanUtil, simpleActualUtil, simplePlanNumbers, simplePlanInputs,
@@ -212,6 +213,14 @@ export default function ComparisonTable({
   // tables on /zagruzka pass them so neither is the unlabelled one.
   title = null,
   note = null,
+  // The page's data is still in flight. The card keeps its real frame — title,
+  // legend, the gold header carrying `dates` (the period's own days, which the
+  // caller knows before the payload does), the sticky name and summary columns,
+  // the AVG footer — and only the values pulse, `loadingRows` rows of them. A
+  // grey slab in its place was a different page: the table then arrived
+  // hundreds of pixels tall and shoved everything under it down.
+  loading = false,
+  loadingRows = 6,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
@@ -526,9 +535,70 @@ export default function ComparisonTable({
     );
   }
 
+  // ── Loading placeholders ─────────────────────────────────────────────────────
+  // One placeholder cell is a data cell's two halves: the same P | A split, the
+  // same widths, following the P·A·D toggle exactly as a real cell does, each
+  // half inset a pixel so the card shows between cells as a grid rule.
+  function skHalf(side, row, col) {
+    const half = "calc(50% - 1.5px)";
+    const width = side === "left"
+      ? (isDiff ? "0%" : half)
+      : (isDiff ? "calc(100% - 2px)" : half);
+    return {
+      position: "absolute", top: 1, bottom: 1, [side]: 1, width,
+      transition: `width ${DUR} ${EASE}`,
+      background: "var(--skeleton)",
+      ...skeletonWave(col, row),
+    };
+  }
+  function skPair(row, col, key, extra = {}, height = 34) {
+    return (
+      <td key={key} colSpan={2} style={{
+        padding: 0, position: "relative",
+        border: "1px solid var(--border)",
+        height, verticalAlign: "middle",
+        ...extra,
+      }}>
+        <div className="animate-pulse" style={skHalf("left", row, col)} />
+        <div className="animate-pulse" style={skHalf("right", row, col)} />
+      </td>
+    );
+  }
+  const dateEdge = (i) => ((i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined);
+  const skRows = loading ? Array.from({ length: loadingRows }, (_, r) => (
+    <tr key={`sk-${r}`} aria-hidden="true">
+      <td style={{
+        position: "sticky", left: 0, zIndex: 3,
+        background: "var(--bg-card)",
+        borderRight: "2px solid var(--border-md)",
+        paddingLeft: 12, paddingRight: 8,
+        verticalAlign: "middle", height: 34,
+        width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
+      }}>
+        <SkeletonBlock
+          className={`h-3 ${SKELETON_NAME_WIDTHS[r % SKELETON_NAME_WIDTHS.length]}`}
+          style={skeletonWave(0, r)}
+        />
+      </td>
+      {dates.map((d, i) => skPair(r, i + 1, `sk-${r}-${d}`, { borderRight: dateEdge(i) }))}
+      {pads.map((_, i) => (
+        <td key={`sk-pad-${r}-${i}`} colSpan={2} style={{
+          padding: 0, height: 34,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }} />
+      ))}
+      {!isMobile && skPair(r, dates.length + 1, `sk-sum-${r}`, {
+        ...stickySum, zIndex: 4,
+        background: "var(--bg-card)",
+        borderLeft: "2px solid var(--border-md)",
+      })}
+    </tr>
+  )) : null;
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
+    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4" aria-busy={loading || undefined}>
 
       {/* Title row */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -591,10 +661,14 @@ export default function ComparisonTable({
             </button>
           )}
           {onToggleFullscreen && (
+            // Held in place but inert while loading: there is no grid yet to
+            // blow up, and dropping the button would shift the toggle beside it
+            // sideways the moment the data lands.
             <button
               onClick={onToggleFullscreen}
+              disabled={loading}
               title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
-              className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
+              className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:cursor-default"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
             >
               {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
@@ -802,7 +876,7 @@ export default function ComparisonTable({
           </thead>
 
           <tbody>
-            {displayManagers.map(name => {
+            {loading ? skRows : displayManagers.map(name => {
               // Un-approved days are excluded from the visible summaries.
               const pVals = dates.map(d => {
                 const cell = data[name]?.[d];
@@ -1128,7 +1202,7 @@ export default function ComparisonTable({
               column, and driven by the same `summaryMode`: pressing the AVG
               header on the right cycles this row with it. The label is a second
               handle on that one control, not a second control. */}
-          {(unitVals || columnStats) && (
+          {(unitVals || columnStats || (loading && columnSummary)) && (
             <tfoot>
               {/* One blank row of air between the grid and the footer. The
                   footer answers a different question from the rows above it
@@ -1255,6 +1329,52 @@ export default function ComparisonTable({
                   borderLeft: "2px solid var(--border-md)",
                   borderTop: "2px solid var(--border-md)",
                 })}
+              </tr>
+              )}
+
+              {/* The same AVG row while loading — its label is real, its
+                  values pulse with the grid above it. */}
+              {loading && columnSummary && (
+              <tr aria-hidden="true">
+                <td style={{
+                  position: "sticky", left: 0, zIndex: 3,
+                  background: "var(--bg-card)",
+                  borderRight: "2px solid var(--border-md)",
+                  borderTop: "2px solid var(--border-md)",
+                  textAlign: "left", paddingLeft: 12, paddingRight: 8,
+                  fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
+                  textTransform: "uppercase", color: "var(--text-3)",
+                  whiteSpace: "nowrap",
+                  verticalAlign: "middle", height: 30,
+                  width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
+                }}>
+                  {summaryMode.toUpperCase()}
+                  <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
+                    {t("comparison.perDay")}
+                  </span>
+                </td>
+
+                {dates.map((d, i) => skPair(loadingRows + 1, i + 1, `sk-stat-${d}`, {
+                  borderTop: "2px solid var(--border-md)",
+                  borderRight: dateEdge(i),
+                }, 30))}
+
+                {pads.map((_, i) => (
+                  <td key={`sk-stat-pad-${i}`} colSpan={2} style={{
+                    padding: 0, height: 30,
+                    border: "1px solid var(--border)",
+                    borderTop: "2px solid var(--border-md)",
+                    background: "var(--bg-card)",
+                  }} />
+                ))}
+
+                {!isMobile && skPair(loadingRows + 1, dates.length + 1, "sk-stat-all", {
+                  ...stickySum,
+                  zIndex: 4,
+                  background: "var(--bg-card)",
+                  borderLeft: "2px solid var(--border-md)",
+                  borderTop: "2px solid var(--border-md)",
+                }, 30)}
               </tr>
               )}
             </tfoot>
