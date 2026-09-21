@@ -2773,6 +2773,26 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   goes on saying 50% while its check passes at 30%, which is the operator's
   standing rule — a minimum exists so nobody fails on a technicality, and
   printed as the instruction it becomes the target.
+- **The warning DM tells the leader what to do, not just that a check is
+  coming** (2026-09-21, the operator's directive, approved off a test copy).
+  `services/leader_auto_rich.py` is the card: the hour and minutes left, the
+  task, WHERE on the platform, the leader's LIVE figures (what the check would
+  read now — `leader_auto`'s own `_Ctx` + runner, never a second measurement),
+  numbered steps, the rule (no photo; late = not done, −N points) and a web_app
+  button onto the page. Rich first; a client that refuses rich gets the SAME
+  card as HTML through `notify_profile(html_fn=…)`, which exists for exactly
+  this. **The BELL row is a different, shorter text** — the per-check template
+  `leader_auto_soon_<check>` in `routers/staff.py`: what to do, where, by when,
+  and NO figures, because a bell row renders at view time and a completion
+  printed an hour ago is no longer true. The old `leader_auto_soon` key stays
+  for rows written before the split and for a check the card does not know.
+  Page and control names are copied from the UI per language (`nav.*`,
+  `production.*`, `concerns.*` in translations.js — «Pozitsiyalar», «REJA»,
+  «Fakt», «Bajarish %», «Odamlar soni» → «Bugungi fakt», «Xavotir qo'shish»);
+  **rename one there and rename it in both places here**, or a step names a
+  control the reader cannot find. Task 9 is told 50% (`TARGET_PCT`) and the
+  30% pass mark is never printed — the standing rule. A card that cannot be
+  built costs the card, never the warning: the bell template goes out alone.
 - **Boot says out loud what is wrong**: `leader_auto_rollout.self_check` rides
   `startup.report_leader_deadline_rules` and names an auto task on a unit that
   closes whole DAYS (nothing would close it) or one with no readable check hour.

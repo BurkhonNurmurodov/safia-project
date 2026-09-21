@@ -450,6 +450,93 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
                "The system checks this task itself — no photo needed. "
                "Enter the data before that hour."),
     },
+    # From 2026-09-21 the warning is PER CHECK, because the three checks are
+    # three different jobs and "enter the data before that hour" named none of
+    # them. These rows are the BELL (and the DM fallback of last resort): what
+    # to do, where, by when — and no live figures, since a bell row is read at
+    # view time and a completion printed an hour ago is no longer true. The DM
+    # itself is the card in `services/leader_auto_rich.py`. Page and control
+    # names are the UI's own per language (`nav.*` / `production.*` /
+    # `concerns.*` in translations.js) — rename one there, rename it here.
+    # «leader_auto_soon» above stays for bell rows written before the split.
+    "leader_auto_soon_plan_pct": {
+        "uz": ("Avtomatik tekshiruv: {time}",
+               "📋 Vazifa: {task}\n🕐 Tekshiruv: {time} · {date}\n"
+               "📍 Qayerda: «Zagruzka fayli» → «Pozitsiyalar»\n"
+               "1. Har bir pozitsiyaning «Fakt» katagiga hozirgacha ishlab chiqarilgan miqdorni kiriting.\n"
+               "2. Sahifa tepasidagi «Bajarish %» 50% dan kam bo'lmasin.\n"
+               "Tizim {time} da sahifani o'zi o'qiydi — rasm yubormaysiz."),
+        "uz_cyrl": ("Автоматик текширув: {time}",
+                    "📋 Вазифа: {task}\n🕐 Текширув: {time} · {date}\n"
+                    "📍 Қаерда: «Загрузка файли» → «Позициялар»\n"
+                    "1. Ҳар бир позициянинг «Факт» катагига ҳозиргача ишлаб чиқарилган миқдорни киритинг.\n"
+                    "2. Саҳифа тепасидаги «Бажариш %» 50% дан кам бўлмасин.\n"
+                    "Тизим {time} да саҳифани ўзи ўқийди — расм юбормайсиз."),
+        "ru": ("Автоматическая проверка: {time}",
+               "📋 Задача: {task}\n🕐 Проверка: {time} · {date}\n"
+               "📍 Где: «Файл загрузки» → «Позиции»\n"
+               "1. В «Факт» каждой позиции внесите объём, произведённый к этому часу.\n"
+               "2. «Вып %» вверху страницы — не ниже 50%.\n"
+               "В {time} система сама прочитает страницу — фото не нужно."),
+        "en": ("Automatic check at {time}",
+               "📋 Task: {task}\n🕐 Check: {time} · {date}\n"
+               "📍 Where: «Workload file» → «Positions»\n"
+               "1. In each position's «Actual» enter the quantity produced so far.\n"
+               "2. «Compl. %» at the top of the page must be at least 50%.\n"
+               "At {time} the system reads the page itself — no photo needed."),
+    },
+    "leader_auto_soon_plan_staffing": {
+        "uz": ("Avtomatik tekshiruv: {time}",
+               "📋 Vazifa: {task}\n🕐 Tekshiruv: {time} · {date}\n"
+               "📍 Qayerda: «Zagruzka fayli» → «Pozitsiyalar» va «Odamlar soni»\n"
+               "1. «Pozitsiyalar»: bugungi pozitsiyalarda «REJA» 0 dan katta bo'lsin.\n"
+               "2. «Odamlar soni»: har bir yacheykangizning «Bugungi fakt» katagiga bugun ishlayotgan odam sonini kiriting.\n"
+               "Tizim {time} da sahifani o'zi o'qiydi — rasm yubormaysiz."),
+        "uz_cyrl": ("Автоматик текширув: {time}",
+                    "📋 Вазифа: {task}\n🕐 Текширув: {time} · {date}\n"
+                    "📍 Қаерда: «Загрузка файли» → «Позициялар» ва «Одамлар сони»\n"
+                    "1. «Позициялар»: бугунги позицияларда «РЕЖА» 0 дан катта бўлсин.\n"
+                    "2. «Одамлар сони»: ҳар бир ячейкангизнинг «Бугунги факт» катагига бугун ишлаётган одам сонини киритинг.\n"
+                    "Тизим {time} да саҳифани ўзи ўқийди — расм юбормайсиз."),
+        "ru": ("Автоматическая проверка: {time}",
+               "📋 Задача: {task}\n🕐 Проверка: {time} · {date}\n"
+               "📍 Где: «Файл загрузки» → «Позиции» и «Количество людей»\n"
+               "1. «Позиции»: у сегодняшних позиций «ПЛАН» больше 0.\n"
+               "2. «Количество людей»: в «Факт на день» каждой вашей ячейки — число работающих сегодня.\n"
+               "В {time} система сама прочитает страницу — фото не нужно."),
+        "en": ("Automatic check at {time}",
+               "📋 Task: {task}\n🕐 Check: {time} · {date}\n"
+               "📍 Where: «Workload file» → «Positions» and «Headcount»\n"
+               "1. «Positions»: today's positions carry a «PLAN» above 0.\n"
+               "2. «Headcount»: in «Today's actual» of each of your cells, enter the people working today.\n"
+               "At {time} the system reads the page itself — no photo needed."),
+    },
+    "leader_auto_soon_concerns": {
+        "uz": ("Avtomatik tekshiruv: {time}",
+               "📋 Vazifa: {task}\n🕐 Tekshiruv: {time} · {date}\n"
+               "📍 Qayerda: «Xavotirlar» sahifasi\n"
+               "1. «Xavotir qo'shish» — yacheykada ishga nima to'sqinlik qilayotganini yozing.\n"
+               "2. Xodimlaringiz yacheykangizga yozgan xavotir ham hisobga olinadi.\n"
+               "Tizim {time} da o'zi tekshiradi — rasm yubormaysiz."),
+        "uz_cyrl": ("Автоматик текширув: {time}",
+                    "📋 Вазифа: {task}\n🕐 Текширув: {time} · {date}\n"
+                    "📍 Қаерда: «Хавотирлар» саҳифаси\n"
+                    "1. «Хавотир қўшиш» — ячейкада ишга нима тўсқинлик қилаётганини ёзинг.\n"
+                    "2. Ходимларингиз ячейкангизга ёзган хавотир ҳам ҳисобга олинади.\n"
+                    "Тизим {time} да ўзи текширади — расм юбормайсиз."),
+        "ru": ("Автоматическая проверка: {time}",
+               "📋 Задача: {task}\n🕐 Проверка: {time} · {date}\n"
+               "📍 Где: страница «Обеспокоенности»\n"
+               "1. «Добавить обеспокоенность» — опишите, что мешает работе в ячейке.\n"
+               "2. Обеспокоенность, которую ваши работники написали на вашу ячейку, тоже учитывается.\n"
+               "В {time} система проверит сама — фото не нужно."),
+        "en": ("Automatic check at {time}",
+               "📋 Task: {task}\n🕐 Check: {time} · {date}\n"
+               "📍 Where: the «Concerns» page\n"
+               "1. «Add concern» — write what is holding up work in the cell.\n"
+               "2. A concern your workers wrote to your cell counts as well.\n"
+               "At {time} the system checks it itself — no photo needed."),
+    },
     "leader_auto_passed": {
         "uz": ("Vazifa bajarildi", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
         "uz_cyrl": ("Вазифа бажарилди", "✅ {task}\n🕐 {time} · {date}\n{why} · {facts}"),
@@ -1536,7 +1623,8 @@ def flush_queued_supervisor_dms(db: Session, telegram_id: int, manager_id: int) 
 def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
                    type: str = "info", exclude_account: int | None = None,
                    skip_accounts: set[int] | None = None,
-                   markup_fn=None, rich_fn=None, photo_fn=None) -> set[int]:
+                   markup_fn=None, rich_fn=None, photo_fn=None,
+                   html_fn=None) -> set[int]:
     """Notify a PROFILE — the person — wherever they are.
 
     Writes ONE bell row addressed to the profile (so every account holding it
@@ -1578,6 +1666,13 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
     the classic HTML as its caption, and only after that as the classic text.
     Built per language because a card prints words, and guarded like
     ``rich_fn``: the bell row never carries it.
+
+    ``html_fn(lang)`` replaces the classic HTML DM body the template would
+    produce — for a DM that carries LIVE figures the stored bell row must not
+    (the auto-check warning: its bell says what to do, its DM also says where
+    the leader stands right now, which an hour later is no longer true). It is
+    what a client refusing ``rich_fn`` receives, so the two DMs can carry one
+    card. Guarded like the others: a failure falls back to the template's HTML.
     """
     if notifications_suppressed() or not profile:
         return set()
@@ -1603,7 +1698,14 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
             continue
         lang = _get_user_lang(db, tid)
         title, body = _mk_notif(nkey, params, lang)
-        html = _mk_notif_tg(nkey, params, lang)
+        html = None
+        if html_fn is not None:
+            try:
+                html = html_fn(lang)
+            except Exception:
+                logger.exception("notify_profile: html build failed for %s", nkey)
+        if html is None:
+            html = _mk_notif_tg(nkey, params, lang)
         markup = None
         if markup_fn is not None:
             try:

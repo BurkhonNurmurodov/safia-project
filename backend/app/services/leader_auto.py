@@ -511,20 +511,50 @@ def _task_name(td: LeaderTaskDef | None, lang: str = "uz") -> str:
     return (getattr(td, f"name_{lang}", None) or td.name_uz or "").strip() or "—"
 
 
-def _warn(db: Session, prof, td, due: datetime, hhmm: str) -> bool:
+def _warn(db: Session, prof, td, due: datetime, hhmm: str, *,
+          manager: Manager | None = None, check: str | None = None,
+          target: float | None = None, date: str | None = None,
+          now: datetime | None = None, weight=None) -> bool:
     """Tell one leader a check is coming. One DM per leader per task per day,
     whatever the cell count: the warning is about a RULE, and three copies of it
-    for three cells would teach the leader to stop reading them."""
+    for three cells would teach the leader to stop reading them.
+
+    From 2026-09-21 the DM is the card in `leader_auto_rich` — where to go, what
+    to type, the leader's LIVE figures, the rule — built once off one snapshot
+    and rendered per recipient language, with a web_app button onto the page.
+    The bell row is the per-check template (`leader_auto_soon_<check>`), which
+    says what to do and carries no figures. A card that cannot be built costs
+    the card, never the warning: the bell template goes out as before."""
     from app.routers.staff import notify_profile
     from app.identity import profile_key
     from app.notify_ctx import notifications_suppressed
     if notifications_suppressed():
         return False
-    notify_profile(db, profile_key("leader", int(prof.id)),
-                   "leader_auto_soon",
+    from app.services import leader_auto_rich as card
+    known = check in card.PAGE
+    nkey = f"leader_auto_soon_{check}" if known else "leader_auto_soon"
+    kw: dict = {}
+    if known and manager is not None:
+        try:
+            at = (now or datetime.now(timezone.utc)).astimezone(TASHKENT)
+            snap = card.snapshot(db, prof, manager, check, target, due, at,
+                                 date=date)
+
+            def _args(lang: str) -> dict:
+                return dict(task_id=td.id, task_name=_task_name(td, lang),
+                            due=due, hhmm=hhmm, now=at, snap=snap, lang=lang,
+                            weight=weight)
+            kw = dict(rich_fn=lambda lang: card.body(check, **_args(lang)),
+                      html_fn=lambda lang: card.classic(check, **_args(lang)),
+                      markup_fn=lambda lang: card.markup(check, lang))
+        except Exception:                          # noqa: BLE001 - see doc
+            logger.exception("auto-soon card failed for leader %s task %s",
+                             getattr(prof, "id", None), getattr(td, "id", None))
+            kw = {}
+    notify_profile(db, profile_key("leader", int(prof.id)), nkey,
                    {"task": _task_name(td), "time": hhmm,
                     "date": due.astimezone(TASHKENT).strftime("%d.%m.%Y")},
-                   type="warning")
+                   type="warning", **kw)
     return True
 
 
@@ -690,7 +720,9 @@ def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None
                                  task_id=tid, cell_id=cid, check=check, due=due)
                     r.warned_at = now
                 db.commit()
-                if _warn(db, prof, td, due, hhmm):
+                if _warn(db, prof, td, due, hhmm, manager=m, check=check,
+                         target=target, date=date, now=now,
+                         weight=s.get("weight")):
                     tally["warned"] += 1
                     db.commit()
             continue

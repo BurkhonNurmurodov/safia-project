@@ -4,52 +4,60 @@
 about to decide one of their tasks by itself. The first cut was four lines
 naming the task and the hour, and it left every question open: WHAT is read,
 WHERE it is typed, HOW FAR the leader is from the mark right now, and what
-happens if the hour passes. A warning that raises questions is a warning that
-gets ignored, so this module answers all of them on the card:
+happens when the hour passes. A warning that raises questions is a warning
+that gets ignored, so the card answers all of them (the operator's directive,
+2026-09-21, approved off a test copy):
 
     ⏰ header      the hour, and how many minutes are left
     table          task · hour · WHERE on the platform · who checks (the system)
     📊 state       the leader's LIVE figures — what the check would read now
     ✅ steps       what to do, page by page, in the order it is done
-    quote          the rule: no photo, the platform reads the page, late = not done
+    quote          the rule: no photo, the page is read, late = not done (−N)
     button         the page itself (web_app, so the WebView carries the identity)
 
+**Three surfaces, two contents.** The rich body and the classic HTML fallback
+(`classic`, for a client that refuses rich messages) carry the SAME card, live
+figures included. The BELL row does not: it is rendered at view time from the
+per-check `leader_auto_soon_<check>` template in `routers/staff.py`, which
+carries the instruction and no figures — a bell row read an hour later would
+otherwise print a completion that is no longer true.
+
 **Nothing here is a second measurement.** The state block is `leader_auto`'s
-own `_Ctx` + runner — the very code that decides the task at the hour — so the
-number on the warning and the number in the verdict are one computation. This
-module only adds words around it.
+own `_Ctx` + runner — the code that decides the task at the hour — so the
+number on the warning and the number in the verdict are one computation. On a
+per-cell unit the check runs per cell while the warning is one per leader
+(`_warn`'s own rule), so the figure here is over all of the leader's cells.
 
-**The warning states the JOB, never the pass mark** (the operator's standing
-rule, CLAUDE.md «Tasks the PLATFORM answers»): task 9 is printed as «50%» while
-its check passes at 30, so `TARGET_PCT` here is the instruction's figure and
-the check's `target` fact is deliberately not printed. The state block
-therefore carries no pass/fail verdict — it shows the figure and the goal, and
-the verdict comes at the hour.
+**The warning states the JOB, never the pass mark** (CLAUDE.md «Tasks the
+PLATFORM answers»): task 9 is told «50%» while its check passes at 30, so
+`TARGET_PCT` is the instruction's figure, the check's own `target` is never
+printed, and the state block carries no pass/fail verdict.
 
-Wiring: `body` / `classic` / `markup` are pure; `snapshot` reads. `send_preview`
-is the boot one-shot's sender (`startup.preview_leader_auto_soon_rich`) — the
-operator's own test copy, rendered from a real leader's day.
+**Page and control names are the UI's own**, per language — the `nav.*`,
+`production.*` and `concerns.*` strings in `frontend/src/i18n/translations.js`.
+A step naming «Позиции» to a reader whose screen says «Pozitsiyalar» is a step
+they cannot follow; rename one there and it must move here and in the three
+bell templates too.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from html import escape
 
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Cell, LeaderTaskDef, Manager, RoleProfile
+from app.models import Cell, Manager, RoleProfile
 from app.services import leader_auto, leader_tasks
 from app.services.leader_auto import TASHKENT
 
 logger = logging.getLogger(__name__)
 
-# The instruction's figure for task 9 — what the leader is TOLD (see module doc).
+# The instruction's figure for task 9 — what the leader is TOLD (module doc).
 TARGET_PCT = 50
 
-# Which page each check is answered on. `plan_staffing` and `plan_pct` are read
-# off the leader's own /production page; `concerns` off the concerns register.
+# Which page each check is answered on — also the set of checks this card knows.
 PAGE = {
     "plan_staffing": "/production",
     "plan_pct": "/production",
@@ -68,9 +76,8 @@ _WD = {
 }
 
 # ── the words ────────────────────────────────────────────────────────────────
-# Every check has its own WHERE, its own state rows, its own steps: three
-# different jobs share a frame, not a text. Keys used by all three sit under
-# "common"; per-check keys under the check's name.
+# Three different jobs share a frame, not a text: each check has its own WHERE,
+# state rows and steps. Keys shared by all three sit under "common".
 
 L: dict[str, dict] = {
     "uz": {
@@ -94,12 +101,13 @@ L: dict[str, dict] = {
             "pcs": "ta",
             "btn_production": "Zagruzka faylini ochish",
             "btn_concerns": "Xavotir yozish",
-            "preview": "🧪 Sinov nusxasi · {leader} · {unit} · {date}",
             "no_data": "Ma'lumot o'qilmadi — sahifani o'zingiz tekshiring.",
-            "no_sap": "Yacheykangizda SAP kodi yo'q — tizim rejani o'qiy olmaydi. Brigadiringizga yoki adminga ayting: kod /cells reyestrida kiritiladi.",
+            "no_sap": ("Yacheykangizda SAP kodi yo'q — tizim rejani o'qiy olmaydi. "
+                       "Brigadiringizga yoki adminga ayting: kod «Yacheykalar» "
+                       "reyestrida kiritiladi."),
         },
         "plan_pct": {
-            "where": "«Zagruzka fayli» → «Позиции»",
+            "where": "«Zagruzka fayli» → «Pozitsiyalar»",
             "plan": "Reja (trudoyomkost)",
             "fact": "Fakt (trudoyomkost)",
             "pct": "Bajarish",
@@ -112,8 +120,8 @@ L: dict[str, dict] = {
             "gap_noplan": ("Bugunga reja kiritilmagan. Rejasiz vazifa bajarilmagan "
                            "hisoblanadi — avval reja (№1 vazifa) kiritilsin."),
             "steps": [
-                "«Zagruzka fayli» sahifasini oching → «Позиции» jadvali.",
-                ("Har bir pozitsiyaning ФАКТ katagiga hozirgacha ishlab "
+                "«Zagruzka fayli» sahifasini oching → «Pozitsiyalar» jadvali.",
+                ("Har bir pozitsiyaning «Fakt» katagiga hozirgacha ishlab "
                  "chiqarilgan miqdorni kiriting. SAP fayli tushgan bo'lsa raqam "
                  "o'zi turadi — to'g'riligini tekshiring."),
                 "Sahifa tepasidagi «Bajarish %» {t}% dan kam bo'lmasin.",
@@ -122,20 +130,20 @@ L: dict[str, dict] = {
             ],
         },
         "plan_staffing": {
-            "where": "«Zagruzka fayli» → «Позиции» va «Odamlar soni»",
+            "where": "«Zagruzka fayli» → «Pozitsiyalar» va «Odamlar soni»",
             "lines": "Reja kiritilgan pozitsiyalar",
             "people": "Odam soni («Bugungi fakt»)",
             "people_ok": "✅ hamma yacheykada kiritilgan",
             "people_missing": "kiritilmagan: {codes}",
             "cells": "Yacheykalaringiz",
             "gap_noplan": ("Bugunga birorta pozitsiyada reja yo'q. SAP fayli "
-                           "tushmagan bo'lsa brigadirga ayting yoki ПЛАН ni "
+                           "tushmagan bo'lsa brigadirga ayting yoki «REJA» ni "
                            "qo'lda kiriting."),
             "gap_untyped": "{n} ta yacheykada odam soni yo'q: {codes}.",
             "gap_ok": "Ikkalasi ham joyida — {time} gacha shunday qolsin.",
             "steps": [
-                ("«Zagruzka fayli» → «Позиции»: bugungi pozitsiyalarda ПЛАН "
-                 "0 dan katta bo'lsin."),
+                ("«Zagruzka fayli» → «Pozitsiyalar»: bugungi pozitsiyalarda "
+                 "«REJA» 0 dan katta bo'lsin."),
                 ("«Odamlar soni» → har bir yacheykangizning «Bugungi fakt» "
                  "katagiga bugun ishlayotgan odam sonini kiriting. 0 ham javob — "
                  "bo'sh katak emas."),
@@ -149,11 +157,11 @@ L: dict[str, dict] = {
             "gap_none": "Hozircha bitta ham xavotir yo'q.",
             "gap_ok": "✅ Xavotir yozilgan — {time} da hisobga olinadi.",
             "steps": [
-                "«Xavotirlar» sahifasini oching → «Yangi xavotir».",
+                "«Xavotirlar» sahifasini oching → «Xavotir qo'shish».",
                 ("Yacheykada ishga to'sqinlik qilayotgan narsani yozing: uskuna, "
                  "xom ashyo, kutish, sifat. Aniq va qisqa."),
-                ("Xodimingiz botda sizning yacheykangizga yozgan xavotir ham "
-                 "hisobga olinadi."),
+                ("Xodimlaringiz yacheykangizga yozgan xavotir ham hisobga "
+                 "olinadi."),
                 "{time} gacha.",
             ],
         },
@@ -179,12 +187,13 @@ L: dict[str, dict] = {
             "pcs": "та",
             "btn_production": "Загрузка файлини очиш",
             "btn_concerns": "Хавотир ёзиш",
-            "preview": "🧪 Синов нусхаси · {leader} · {unit} · {date}",
             "no_data": "Маълумот ўқилмади — саҳифани ўзингиз текширинг.",
-            "no_sap": "Ячейкангизда SAP коди йўқ — тизим режани ўқий олмайди. Бригадирингизга ёки админга айтинг: код /cells реестрида киритилади.",
+            "no_sap": ("Ячейкангизда SAP коди йўқ — тизим режани ўқий олмайди. "
+                       "Бригадирингизга ёки админга айтинг: код «Ячейкалар» "
+                       "реестрида киритилади."),
         },
         "plan_pct": {
-            "where": "«Загрузка файли» → «Позиции»",
+            "where": "«Загрузка файли» → «Позициялар»",
             "plan": "Режа (трудоёмкость)",
             "fact": "Факт (трудоёмкость)",
             "pct": "Бажариш",
@@ -197,8 +206,8 @@ L: dict[str, dict] = {
             "gap_noplan": ("Бугунга режа киритилмаган. Режасиз вазифа бажарилмаган "
                            "ҳисобланади — аввал режа (№1 вазифа) киритилсин."),
             "steps": [
-                "«Загрузка файли» саҳифасини очинг → «Позиции» жадвали.",
-                ("Ҳар бир позициянинг ФАКТ катагига ҳозиргача ишлаб чиқарилган "
+                "«Загрузка файли» саҳифасини очинг → «Позициялар» жадвали.",
+                ("Ҳар бир позициянинг «Факт» катагига ҳозиргача ишлаб чиқарилган "
                  "миқдорни киритинг. SAP файли тушган бўлса рақам ўзи туради — "
                  "тўғрилигини текширинг."),
                 "Саҳифа тепасидаги «Бажариш %» {t}% дан кам бўлмасин.",
@@ -207,18 +216,18 @@ L: dict[str, dict] = {
             ],
         },
         "plan_staffing": {
-            "where": "«Загрузка файли» → «Позиции» ва «Одамлар сони»",
+            "where": "«Загрузка файли» → «Позициялар» ва «Одамлар сони»",
             "lines": "Режа киритилган позициялар",
             "people": "Одам сони («Бугунги факт»)",
             "people_ok": "✅ ҳамма ячейкада киритилган",
             "people_missing": "киритилмаган: {codes}",
             "cells": "Ячейкаларингиз",
             "gap_noplan": ("Бугунга бирорта позицияда режа йўқ. SAP файли тушмаган "
-                           "бўлса бригадирга айтинг ёки ПЛАН ни қўлда киритинг."),
+                           "бўлса бригадирга айтинг ёки «РЕЖА» ни қўлда киритинг."),
             "gap_untyped": "{n} та ячейкада одам сони йўқ: {codes}.",
             "gap_ok": "Иккаласи ҳам жойида — {time} гача шундай қолсин.",
             "steps": [
-                ("«Загрузка файли» → «Позиции»: бугунги позицияларда ПЛАН "
+                ("«Загрузка файли» → «Позициялар»: бугунги позицияларда «РЕЖА» "
                  "0 дан катта бўлсин."),
                 ("«Одамлар сони» → ҳар бир ячейкангизнинг «Бугунги факт» "
                  "катагига бугун ишлаётган одам сонини киритинг. 0 ҳам жавоб — "
@@ -233,11 +242,10 @@ L: dict[str, dict] = {
             "gap_none": "Ҳозирча битта ҳам хавотир йўқ.",
             "gap_ok": "✅ Хавотир ёзилган — {time} да ҳисобга олинади.",
             "steps": [
-                "«Хавотирлар» саҳифасини очинг → «Янги хавотир».",
+                "«Хавотирлар» саҳифасини очинг → «Хавотир қўшиш».",
                 ("Ячейкада ишга тўсқинлик қилаётган нарсани ёзинг: ускуна, "
                  "хом ашё, кутиш, сифат. Аниқ ва қисқа."),
-                ("Ходимингиз ботда сизнинг ячейкангизга ёзган хавотир ҳам "
-                 "ҳисобга олинади."),
+                "Ходимларингиз ячейкангизга ёзган хавотир ҳам ҳисобга олинади.",
                 "{time} гача.",
             ],
         },
@@ -263,9 +271,10 @@ L: dict[str, dict] = {
             "pcs": "шт",
             "btn_production": "Открыть файл загрузки",
             "btn_concerns": "Написать обеспокоенность",
-            "preview": "🧪 Тестовая копия · {leader} · {unit} · {date}",
             "no_data": "Данные не прочитались — проверьте страницу сами.",
-            "no_sap": "У вашей ячейки нет кода SAP — система не может прочитать план. Скажите бригадиру или админу: код вносится в реестре /cells.",
+            "no_sap": ("У вашей ячейки нет кода SAP — система не может прочитать "
+                       "план. Скажите бригадиру или админу: код вносится в "
+                       "реестре «Ячейки»."),
         },
         "plan_pct": {
             "where": "«Файл загрузки» → «Позиции»",
@@ -275,35 +284,35 @@ L: dict[str, dict] = {
             "need": "нужно: {t}%",
             "nofact": "Позиции без факта",
             "of": "{n} из {total}",
-            "gap_under": ("До {t}% не хватает ≈ {need} мин факта."),
+            "gap_under": "До {t}% не хватает ≈ {need} мин факта.",
             "gap_ok": "{t}% достигнуто — удержите уровень до {time}.",
             "gap_noplan": ("На сегодня план не внесён. Без плана задача считается "
                            "невыполненной — сначала внесите план (задача №1)."),
             "steps": [
                 "Откройте «Файл загрузки» → таблица «Позиции».",
-                ("В ячейку ФАКТ каждой позиции внесите объём, произведённый к "
-                 "этому часу. Если файл SAP загружен, цифра уже стоит — "
-                 "проверьте её."),
-                "«Выполнение %» вверху страницы должно быть не ниже {t}%.",
+                ("В «Факт» каждой позиции внесите объём, произведённый к этому "
+                 "часу. Если файл SAP загружен, цифра уже стоит — проверьте её."),
+                "«Вып %» вверху страницы должно быть не ниже {t}%.",
                 ("Всё внести до {time} — в этот час система читает цифру со "
                  "страницы."),
             ],
         },
         "plan_staffing": {
-            "where": "«Файл загрузки» → «Позиции» и «Кол-во людей»",
+            "where": "«Файл загрузки» → «Позиции» и «Количество людей»",
             "lines": "Позиций с планом",
-            "people": "Кол-во людей («Факт на сегодня»)",
+            "people": "Люди («Факт на день»)",
             "people_ok": "✅ внесено по всем ячейкам",
             "people_missing": "не внесено: {codes}",
             "cells": "Ваши ячейки",
             "gap_noplan": ("Ни у одной позиции нет плана на сегодня. Если файл SAP "
-                           "не загружен — скажите бригадиру или внесите ПЛАН вручную."),
-            "gap_untyped": "Нет кол-ва людей в {n} ячейк.: {codes}.",
+                           "не загружен — скажите бригадиру или внесите «ПЛАН» "
+                           "вручную."),
+            "gap_untyped": "Нет числа людей в ячейках ({n}): {codes}.",
             "gap_ok": "Оба поля на месте — так и держите до {time}.",
             "steps": [
-                ("«Файл загрузки» → «Позиции»: у сегодняшних позиций ПЛАН "
+                ("«Файл загрузки» → «Позиции»: у сегодняшних позиций «ПЛАН» "
                  "должен быть больше 0."),
-                ("«Кол-во людей» → в «Факт на сегодня» каждой вашей ячейки "
+                ("«Количество людей» → в «Факт на день» каждой вашей ячейки "
                  "внесите число работающих сегодня. 0 — тоже ответ, пустая "
                  "клетка — нет."),
                 "Оба поля — до {time}.",
@@ -316,10 +325,10 @@ L: dict[str, dict] = {
             "gap_none": "Пока ни одной обеспокоенности.",
             "gap_ok": "✅ Обеспокоенность записана — учтётся в {time}.",
             "steps": [
-                "Откройте «Обеспокоенности» → «Новая обеспокоенность».",
+                "Откройте «Обеспокоенности» → «Добавить обеспокоенность».",
                 ("Опишите, что мешает работе в ячейке: оборудование, сырьё, "
                  "ожидание, качество. Коротко и конкретно."),
-                ("Обеспокоенность, которую ваш работник написал в боте на вашу "
+                ("Обеспокоенность, которую ваши работники написали на вашу "
                  "ячейку, тоже учитывается."),
                 "До {time}.",
             ],
@@ -343,14 +352,15 @@ L: dict[str, dict] = {
             "pts": " (−{w} pts)",
             "min": "min",
             "pcs": "",
-            "btn_production": "Open the load file",
+            "btn_production": "Open the workload file",
             "btn_concerns": "Write a concern",
-            "preview": "🧪 Test copy · {leader} · {unit} · {date}",
             "no_data": "The data could not be read — check the page yourself.",
-            "no_sap": "Your cell has no SAP code — the system cannot read the plan. Tell your brigadir or an admin: the code is set in the /cells register.",
+            "no_sap": ("Your cell has no SAP code — the system cannot read the "
+                       "plan. Tell your brigadir or an admin: the code is set in "
+                       "the «Cells» register."),
         },
         "plan_pct": {
-            "where": "«Load file» → «Positions»",
+            "where": "«Workload file» → «Positions»",
             "plan": "Plan (labour minutes)",
             "fact": "Actual (labour minutes)",
             "pct": "Completion",
@@ -362,30 +372,30 @@ L: dict[str, dict] = {
             "gap_noplan": ("No plan entered for today. Without a plan the task "
                            "counts as not done — enter the plan first (task №1)."),
             "steps": [
-                "Open the «Load file» page → the «Positions» table.",
-                ("In each position's ACTUAL cell enter the quantity produced so "
+                "Open the «Workload file» page → the «Positions» table.",
+                ("In each position's «Actual» enter the quantity produced so "
                  "far. If the SAP file is loaded the figure is already there — "
                  "check it."),
-                "«Completion %» at the top of the page must be at least {t}%.",
+                "«Compl. %» at the top of the page must be at least {t}%.",
                 "Enter everything by {time} — that is when the system reads it.",
             ],
         },
         "plan_staffing": {
-            "where": "«Load file» → «Positions» and «Headcount»",
+            "where": "«Workload file» → «Positions» and «Headcount»",
             "lines": "Positions with a plan",
-            "people": "Headcount («Today's actual»)",
+            "people": "People («Today's actual»)",
             "people_ok": "✅ entered for every cell",
             "people_missing": "missing: {codes}",
             "cells": "Your cells",
             "gap_noplan": ("No position has a plan today. If the SAP file is not "
-                           "loaded, tell your brigadir or enter the PLAN by hand."),
+                           "loaded, tell your brigadir or enter the «PLAN» by hand."),
             "gap_untyped": "No headcount on {n} cell(s): {codes}.",
             "gap_ok": "Both are in place — keep them so until {time}.",
             "steps": [
-                ("«Load file» → «Positions»: today's positions must have a PLAN "
-                 "above 0."),
+                ("«Workload file» → «Positions»: today's positions must carry a "
+                 "«PLAN» above 0."),
                 ("«Headcount» → in «Today's actual» of each of your cells enter "
-                 "the people working today. 0 is an answer; an empty cell is not."),
+                 "the people working today. 0 is an answer; an empty box is not."),
                 "Both by {time}.",
             ],
         },
@@ -396,11 +406,10 @@ L: dict[str, dict] = {
             "gap_none": "No concern yet.",
             "gap_ok": "✅ A concern is written — it counts at {time}.",
             "steps": [
-                "Open «Concerns» → «New concern».",
+                "Open «Concerns» → «Add concern».",
                 ("Write what is holding up work in the cell: equipment, raw "
                  "material, waiting, quality. Short and specific."),
-                ("A concern your worker wrote to your cell in the bot counts "
-                 "as well."),
+                "A concern your workers wrote to your cell counts as well.",
                 "By {time}.",
             ],
         },
@@ -426,15 +435,27 @@ def _fmt_min(v) -> str:
     return f"{n:,}".replace(",", " ")
 
 
+def _fmt_pts(w) -> str | None:
+    """A task weight as the quote prints it — «10», never «10.0»; None for a
+    weight that is missing or zero, which drops the «(−N)» altogether."""
+    try:
+        f = float(w)
+    except (TypeError, ValueError):
+        return None
+    if f <= 0:
+        return None
+    return str(int(f)) if f.is_integer() else f"{f:.1f}"
+
+
 # ── the live state ───────────────────────────────────────────────────────────
 
 def snapshot(db: Session, prof: RoleProfile, manager: Manager, check: str,
              target: float | None, due: datetime, now: datetime,
              date: str | None = None, cell: Cell | None = None) -> dict:
     """What the check would read RIGHT NOW — `leader_auto`'s own context and
-    runner, never a second computation. `{"facts": …, "code": …}` plus, for
-    `plan_pct`, the positions that carry a plan and no actual yet. Never
-    raises: a data error is `{"error": …}` and the card says so."""
+    runner, never a second computation. `{"facts", "code"}` plus, for
+    `plan_pct`, the positions carrying a plan and no actual yet. Never raises:
+    a data error is `{"error": …}` and the card says so rather than guessing."""
     date = date or leader_tasks.effective_date(manager.shift, now)
     out: dict = {"check": check, "facts": {}, "code": None}
     runner = leader_auto._RUNNERS.get(check)
@@ -454,6 +475,12 @@ def snapshot(db: Session, prof: RoleProfile, manager: Manager, check: str,
     except Exception as exc:                        # noqa: BLE001 - see doc
         logger.exception("auto-soon snapshot %s failed for leader %s",
                          check, getattr(prof, "id", None))
+        # A failed read may leave the transaction aborted; the warning's own
+        # bell row is written on this session right after, so clear it.
+        try:
+            db.rollback()
+        except Exception:                           # noqa: BLE001
+            pass
         out["error"] = str(exc)[:200]
     return out
 
@@ -462,7 +489,7 @@ def snapshot(db: Session, prof: RoleProfile, manager: Manager, check: str,
 
 def _state_rows(check: str, snap: dict, t: dict, c: dict, hhmm: str
                 ) -> tuple[list[tuple[str, str]], str]:
-    """`([(label, value)…], gap sentence)` for the state block."""
+    """`([(label, value-html)…], gap sentence)` for the state block."""
     f, code = snap.get("facts") or {}, snap.get("code")
     if snap.get("error"):
         return [], c["no_data"]
@@ -478,11 +505,11 @@ def _state_rows(check: str, snap: dict, t: dict, c: dict, hhmm: str
         rows = [
             (t["plan"], f"{_fmt_min(plan)} {c['min']}"),
             (t["fact"], f"{_fmt_min(fact)} {c['min']}"),
-            (t["pct"], f"<b>{pct}%</b> · {t['need'].format(t=TARGET_PCT)}"),
+            (t["pct"], f"<b>{_esc(pct)}%</b> · {_esc(t['need'].format(t=TARGET_PCT))}"),
         ]
         if snap.get("positions") is not None:
-            rows.append((t["nofact"], t["of"].format(
-                n=snap.get("no_fact", 0), total=snap.get("positions", 0))))
+            rows.append((t["nofact"], _esc(t["of"].format(
+                n=snap.get("no_fact", 0), total=snap.get("positions", 0)))))
         if float(pct) >= TARGET_PCT:
             return rows, t["gap_ok"].format(t=TARGET_PCT, time=hhmm)
         need = max(0.0, plan * TARGET_PCT / 100.0 - fact)
@@ -493,9 +520,9 @@ def _state_rows(check: str, snap: dict, t: dict, c: dict, hhmm: str
         if len(untyped) > 8:
             codes += " …"
         rows = [(t["lines"], f"{f.get('with_plan', 0)} / {f.get('lines', 0)}"),
-                (t["people"], (t["people_missing"].format(codes=codes)
-                               if untyped else t["people_ok"])),
-                (t["cells"], f"{f.get('cells', 0)} {c['pcs']}".strip())]
+                (t["people"], _esc(t["people_missing"].format(codes=codes)
+                                   if untyped else t["people_ok"])),
+                (t["cells"], _esc(f"{f.get('cells', 0)} {c['pcs']}".strip()))]
         if code == "no_plan" or int(f.get("with_plan") or 0) == 0:
             return rows, t["gap_noplan"]
         if untyped:
@@ -503,14 +530,14 @@ def _state_rows(check: str, snap: dict, t: dict, c: dict, hhmm: str
         return rows, t["gap_ok"].format(time=hhmm)
     if check == "concerns":
         n = int(f.get("found") or 0)
-        rows = [(t["found"], f"<b>{n}</b> {c['pcs']}".strip())]
+        rows = [(t["found"], f"<b>{n}</b> {_esc(c['pcs'])}".strip())]
         if f.get("from") and f.get("to"):
-            rows.append((t["window"], f"{f['from']} → {f['to']}"))
+            rows.append((t["window"], _esc(f"{f['from']} → {f['to']}")))
         return rows, (t["gap_ok"].format(time=hhmm) if n else t["gap_none"])
     return [], ""
 
 
-def _steps(check: str, t: dict, hhmm: str) -> list[str]:
+def _steps(t: dict, hhmm: str) -> list[str]:
     return [s.format(t=TARGET_PCT, time=hhmm) for s in t["steps"]]
 
 
@@ -524,14 +551,18 @@ def _mins_left(due: datetime, now: datetime) -> int:
     return max(0, int(round((due - now).total_seconds() / 60)))
 
 
+def _quote(c: dict, hhmm: str, weight) -> str:
+    w = _fmt_pts(weight)
+    return c["quote"].format(time=hhmm, pts=c["pts"].format(w=w) if w else "")
+
+
 def body(check: str, *, task_id: int, task_name: str, due: datetime,
          hhmm: str, now: datetime, snap: dict, lang: str = "uz",
-         weight=None, preview: str | None = None) -> str:
+         weight=None) -> str:
     """The Rich-HTML body for ONE recipient language."""
     lt = _t(lang)
     c, t = lt["common"], lt[check]
     rows, gap = _state_rows(check, snap, t, c, hhmm)
-    pts = c["pts"].format(w=weight) if weight else ""
     parts = [
         f"<h3>{_esc(c['h3'].format(time=hhmm))}</h3>",
         f"<p><b>{_esc(c['left'].format(mins=_mins_left(due, now)))}</b></p>",
@@ -546,47 +577,42 @@ def body(check: str, *, task_id: int, task_name: str, due: datetime,
     if rows:
         parts.append(
             "<table bordered striped>\n"
-            + "\n".join(f"<tr><td>{_esc(k)}</td><td align=\"right\">{v}</td></tr>"
+            + "\n".join(f'<tr><td>{_esc(k)}</td><td align="right">{v}</td></tr>'
                         for k, v in rows)
             + "\n</table>")
     if gap:
         parts.append(f"<p>{_esc(gap)}</p>")
     parts.append(f"<h4>{_esc(c['todo'])}</h4>\n<ol>\n"
-                 + "\n".join(f"<li>{_esc(s)}</li>" for s in _steps(check, t, hhmm))
+                 + "\n".join(f"<li>{_esc(s)}</li>" for s in _steps(t, hhmm))
                  + "\n</ol>")
-    parts.append(f"<blockquote>{_esc(c['quote'].format(time=hhmm, pts=pts))}"
-                 "</blockquote>")
-    if preview:
-        parts.append(f"<p>{_esc(preview)}</p>")
+    parts.append(f"<blockquote>{_esc(_quote(c, hhmm, weight))}</blockquote>")
     return "\n".join(parts)
 
 
 def classic(check: str, *, task_id: int, task_name: str, due: datetime,
             hhmm: str, now: datetime, snap: dict, lang: str = "uz",
-            weight=None, preview: str | None = None) -> tuple[str, str]:
-    """`(title, html)` — the same card as plain Telegram HTML, for a client that
-    refuses rich messages. Same words, same order, one message."""
+            weight=None) -> str:
+    """The same card as plain Telegram HTML, for a client that refuses rich
+    messages. Same words, same order, one self-contained message (it carries
+    its own title — the HTML send path has no separate title line)."""
     lt = _t(lang)
     c, t = lt["common"], lt[check]
     rows, gap = _state_rows(check, snap, t, c, hhmm)
-    pts = c["pts"].format(w=weight) if weight else ""
-    title = c["title"].format(time=hhmm)
-    lines = [f"<b>⏰ {_esc(title)}</b> · {_esc(c['left'].format(mins=_mins_left(due, now)))}",
-             f"📋 {_esc(c['task'])}: №{task_id} · {_esc(task_name)}",
-             f"🕐 {_esc(c['when'])}: <b>{_esc(_when(due, hhmm, lang))}</b>",
-             f"📍 {_esc(c['where'])}: {_esc(t['where'])}",
-             f"🤖 {_esc(c['who'])}: {_esc(c['who_v'])}",
+    lines = [f"<b>⏰ {_esc(c['title'].format(time=hhmm))}</b> · "
+             f"{_esc(c['left'].format(mins=_mins_left(due, now)))}",
+             f"📋 <b>{_esc(c['task'])}:</b> №{task_id} · {_esc(task_name)}",
+             f"🕐 <b>{_esc(c['when'])}:</b> {_esc(_when(due, hhmm, lang))}",
+             f"📍 <b>{_esc(c['where'])}:</b> {_esc(t['where'])}",
+             f"🤖 <b>{_esc(c['who'])}:</b> {_esc(c['who_v'])}",
              "",
              f"<b>{_esc(c['state'])}</b>"]
     lines += [f"• {_esc(k)}: {v}" for k, v in rows]
     if gap:
         lines.append(_esc(gap))
     lines += ["", f"<b>{_esc(c['todo'])}</b>"]
-    lines += [f"{i}. {_esc(s)}" for i, s in enumerate(_steps(check, t, hhmm), 1)]
-    lines += ["", f"<blockquote>{_esc(c['quote'].format(time=hhmm, pts=pts))}</blockquote>"]
-    if preview:
-        lines.append(_esc(preview))
-    return title, "\n".join(lines)
+    lines += [f"{i}. {_esc(s)}" for i, s in enumerate(_steps(t, hhmm), 1)]
+    lines += ["", f"<blockquote>{_esc(_quote(c, hhmm, weight))}</blockquote>"]
+    return "\n".join(lines)
 
 
 def markup(check: str, lang: str = "uz"):
@@ -598,88 +624,6 @@ def markup(check: str, lang: str = "uz"):
     label = c["btn_concerns"] if page == "/concerns" else c["btn_production"]
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton(
-        label, web_app=types.WebAppInfo(url=f"{settings.webapp_url.rstrip('/')}{page}")))
+        label, web_app=types.WebAppInfo(
+            url=f"{settings.webapp_url.rstrip('/')}{page}")))
     return kb
-
-
-# ── the operator's test copy ─────────────────────────────────────────────────
-
-_PREVIEW_TASKS = ((1, "plan_staffing"), (9, "plan_pct"), (8, "concerns"))
-_PREVIEW_SCAN = 12          # dashboard builds the leader search may spend
-
-
-def _pick_leader(db: Session, now: datetime, defs: dict):
-    """A leader with SAP-coded cells whose page carries a plan today — the
-    first one found, so the preview shows real figures rather than the no-plan
-    branch. Falls back to the first leader with cells at all."""
-    units = leader_tasks.per_task_units(db)
-    managers = (db.query(Manager)
-                .filter(Manager.id.in_(list(units)) if units else False,
-                        Manager.archived.is_(False))
-                .order_by(Manager.shift, Manager.id).all())
-    fallback = None
-    tried = 0
-    for m in managers:
-        date = leader_tasks.effective_date(m.shift, now)
-        due_by = leader_auto._unit_due(db, m, defs, date)
-        if 9 not in due_by:
-            continue
-        leaders = (db.query(RoleProfile)
-                   .join(Cell, Cell.leader_id == RoleProfile.id)
-                   .filter(RoleProfile.role == "leader",
-                           RoleProfile.manager_id == m.id,
-                           Cell.sap_code.isnot(None))
-                   .distinct().order_by(RoleProfile.name).all())
-        for prof in leaders[:3]:
-            if fallback is None:
-                fallback = (m, prof, date, due_by, None)
-            snap = snapshot(db, prof, m, "plan_pct", 30.0, due_by[9][0], now,
-                            date=date)
-            tried += 1
-            if float((snap.get("facts") or {}).get("plan_min") or 0) > 0:
-                return (m, prof, date, due_by, snap)
-            if tried >= _PREVIEW_SCAN:
-                return fallback
-    return fallback
-
-
-def send_preview(db: Session, chat_id: int, date_from=None, date_to=None,
-                 lang: str = "uz") -> int:
-    """DM `chat_id` the three warnings as one real leader would receive them
-    today — the `_send_report_once` sender shape. Returns messages sent."""
-    from app.telegram_bot import send_tg_notification
-    from app.translit import transliterate
-
-    now = datetime.now(timezone.utc).astimezone(TASHKENT)
-    defs = {td.id: td for td in db.query(LeaderTaskDef)
-            .filter(LeaderTaskDef.id.in_([tid for tid, _ in _PREVIEW_TASKS])).all()}
-    picked = _pick_leader(db, now, defs)
-    if picked is None:
-        raise RuntimeError("no leader with SAP-coded cells on a per-task unit")
-    m, prof, date, due_by, snap9 = picked
-    cfg = leader_tasks.effective_leader_config(db, prof, m.shift, day=date)
-    who = _t(lang)["common"]["preview"].format(
-        leader=transliterate(prof.name, lang) or prof.name,
-        unit=transliterate(m.name, lang) or m.name, date=date)
-    sent = 0
-    for tid, check in _PREVIEW_TASKS:
-        td = defs.get(tid)
-        if td is None or tid not in due_by:
-            continue
-        due, hhmm = due_by[tid]
-        # A check whose hour is already past today still previews as the
-        # warning would have looked ~28 minutes before it.
-        shown_now = now if now < due - timedelta(minutes=5) else due - timedelta(minutes=28)
-        target = 30.0 if check == "plan_pct" else None
-        snap = snap9 if (check == "plan_pct" and snap9) else snapshot(
-            db, prof, m, check, target, due, now, date=date)
-        weight = (cfg.get(tid) or {}).get("weight")
-        kw = dict(task_id=tid, task_name=leader_auto._task_name(td, lang),
-                  due=due, hhmm=hhmm, now=shown_now, snap=snap, lang=lang,
-                  weight=weight, preview=who)
-        title, html = classic(check, **kw)
-        if send_tg_notification(chat_id, title, html, html=html,
-                                markup=markup(check, lang),
-                                rich=body(check, **kw)):
-            sent += 1
-    return sent

@@ -93,7 +93,6 @@ async def lifespan(app: FastAPI):
         register_leader_rules_sep19,
         add_leader_auto_checks,
         register_leader_auto_sep20,
-        preview_leader_auto_soon_rich,
         report_auto_schema,
         add_pp_product_auto_fill,
         add_wc_groups, letter_shared_cells, report_wc_groups,
@@ -466,13 +465,6 @@ async def lifespan(app: FastAPI):
     # production's catalog from outside — see its docstring.
     report_auto_schema()
     register_leader_auto_sep20()
-    # ⚠ TEMPORARY one-shot (2026-09-21) — the redesigned «automatic check
-    # coming up» warning, DMed ONCE to the operator as three test copies
-    # (tasks 1, 9, 8) off a real leader's live day. Leaders still get the old
-    # text until it is adopted. Scheduled, flag-guarded. Remove this line,
-    # `startup.preview_leader_auto_soon_rich` and `leader_auto_rich.send_preview`
-    # once the operator has ruled.
-    preview_leader_auto_soon_rich()
     # ⚠ TEMPORARY one-shot (2026-09-18) — publish the new leader INSTRUCTIONS
     # early so leaders can read them and prepare. Descriptions only: nothing
     # they are scored by changes until the two passes above fire on the 19th.
