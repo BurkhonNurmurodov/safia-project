@@ -120,6 +120,16 @@ def transliterate(value, lang: str):
     return latin
 
 
+def transliterate_text(value, lang: str):
+    """`transliterate` for DB text that is NOT a person's name — a task, a job
+    title, a category, a reason, a note, a broadcast. English keeps the Uzbek
+    Latin spelling here: the x→kh / q→k / oʻ→u remap is the convention for
+    rendering a NAME in English, and applied to Uzbek words it misspells them
+    («qayd qilish» → «kayd kilish», reported from the floor 2026-09-21).
+    Cyrillic is still Latinised for uz/en, exactly as for a name."""
+    return transliterate(value, "uz" if lang == "en" else lang)
+
+
 def _split_keep_ws(s: str):
     """Yield alternating non-space / space runs (re.split with capture, no regex)."""
     if not s:

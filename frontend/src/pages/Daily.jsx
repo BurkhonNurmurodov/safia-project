@@ -87,14 +87,14 @@ function IdleCatGuide({ byCategory }) {
 function IdleDonut({ byCategory }) {
   const { theme } = useTheme();
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tx } = useTranslit();
   const minLabel = t("general.min");
   const hrsLabel = t("general.hrs");
   const entries = idleEntries(byCategory);
   if (!entries.length) {
     return <div className="py-12 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("daily.noIdle")}</div>;
   }
-  const labels = entries.map(([k]) => tl(k));
+  const labels = entries.map(([k]) => tx(k));
   const series = entries.map(([, v]) => Math.round(v));
   const options = {
     chart: {
@@ -134,7 +134,7 @@ function Section({ icon: Icon, title, action, children }) {
 function SupervisorDaily() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const { unit, setUnit } = useFilters();
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -483,7 +483,7 @@ function SupervisorDaily() {
                             </span>
                             {isExchange
                               ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")} · → {d.target_type === "supervisor" ? `${tl(d.target_manager_name)}` : d.task_name}</span>
-                              : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")}{d.new_role ? ` · ${tl(d.new_role)}` : ""}</span>}
+                              : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")}{d.new_role ? ` · ${tx(d.new_role)}` : ""}</span>}
                           </td>
                           <td className="px-3 py-3 text-center">
                             <DeletionStatusBadge status={d.approved ? "approved" : (d.status === "rejected" ? "rejected" : "pending")} />

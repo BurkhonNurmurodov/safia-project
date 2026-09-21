@@ -413,7 +413,7 @@ const asList = (v) => (Array.isArray(v) ? v : []);
 export default function Concerns() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
   const { factory } = useFactory();
@@ -1135,7 +1135,7 @@ export default function Concerns() {
         case "cell":     return (r.cell_code || "").toLowerCase();
         case "category": return categoryLabel(r.category || "");
         case "owner":    return tl(r.owner_name || "");
-        case "concern":  return tl(r.concern_text || "");
+        case "concern":  return tx(r.concern_text || "");
         case "deadline": return r.deadline_days;
         case "resolution": return resolutionMinutes(r);
         case "status":   return STATUSES.indexOf(r.status);
@@ -1159,7 +1159,7 @@ export default function Concerns() {
       if (sort.key === "status" || sort.key === "level") return (va - vb) * dir;
       return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
     });
-  }, [filtered, sort, tl]);
+  }, [filtered, sort, tl, tx]);
 
   // ── register column visibility / order ──────────────────────────────────
   // Notion-style picker, persisted per ACTIVE profile via /api/ui-prefs (so it
@@ -1896,7 +1896,7 @@ export default function Concerns() {
     cell:        (r) => ({ cell: r.cell_code || null, cellLeader: r.cell_leader_name ? tl(r.cell_leader_name) : null }),
     category:    (r) => ({ category: r.category ? categoryLabel(r.category) : null, categoryColor: CATEGORY_COLOR[r.category] || null }),
     owner:       (r) => ({ owner: r.owner_name ? tl(r.owner_name) : null, ownerRole: r.owner_role ? roleLabel(r.owner_role) : null }),
-    concern:     (r) => ({ text: [tl(r.concern_text || ""), r.solution ? `✓ ${tl(r.solution)}` : ""].filter(Boolean).join("\n") }),
+    concern:     (r) => ({ text: [tx(r.concern_text || ""), r.solution ? `✓ ${tx(r.solution)}` : ""].filter(Boolean).join("\n") }),
     status:      (r) => ({ status: statusLabel(r.status), statusColor: STATUS_COLOR[r.status] || null }),
     level:       (r) => { const lv = r.level || "supervisor"; return { level: levelLabel(lv), levelColor: LEVEL_COLOR[lv] || null }; },
     responsible: (r) => ({ responsible: r.responsible_name ? tl(r.responsible_name) : null }),
@@ -1971,7 +1971,7 @@ export default function Concerns() {
         { label: t("concerns.kpiLongestOpen"), color: "#ef4444", empty: t("concerns.allClear"),
           ...(insights.longest ? {
             // The number rides along: it is how the row is found on the register tab.
-            subject: `№${concernNo(insights.longest.row)} · ${tl(insights.longest.row.concern_text)}`,
+            subject: `№${concernNo(insights.longest.row)} · ${tx(insights.longest.row.concern_text)}`,
             value: insights.longest.age, unit: dayWord(insights.longest.age),
           } : {}) },
         { label: t("concerns.kpiSlowestBrigadir"), color: "#f59e0b", empty: t("concerns.noData"),
@@ -2152,7 +2152,7 @@ export default function Concerns() {
       case "concern":
         return (
           <td key={key} className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ color: "var(--text-1)" }}>
-            <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
+            <div className="line-clamp-2" title={r.concern_text}>{tx(r.concern_text)}</div>
             {/* Legacy resolution note. Every note is a message in the concern's
                 thread now — the ones written before that were moved there by a
                 one-shot at boot — so this renders nothing at all in practice.
@@ -2160,7 +2160,7 @@ export default function Concerns() {
                 reach: a note nobody can read is worse than a footnote. */}
             {r.solution && (
               <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
-                ✓ {tl(r.solution)}
+                ✓ {tx(r.solution)}
               </div>
             )}
           </td>
@@ -2315,7 +2315,7 @@ export default function Concerns() {
 
             {/* the concern itself is the headline */}
             <div className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
-              {tl(r.concern_text)}
+              {tx(r.concern_text)}
             </div>
             {r.solution && (
               <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-[11px] leading-snug"
@@ -2323,7 +2323,7 @@ export default function Concerns() {
                 <Check size={12} className="flex-shrink-0 mt-px" style={{ color: STATUS_COLOR.done }} />
                 <span>
                   <span className="font-semibold" style={{ color: STATUS_COLOR.done }}>{t("concerns.fieldSolution")}: </span>
-                  <span style={{ color: "var(--text-2)" }}>{tl(r.solution)}</span>
+                  <span style={{ color: "var(--text-2)" }}>{tx(r.solution)}</span>
                 </span>
               </div>
             )}
@@ -2464,7 +2464,7 @@ export default function Concerns() {
         <InsightCard icon={Hourglass} tint="#ef4444" label={t("concerns.kpiLongestOpen")}>
           {insights.longest ? (
             <>
-              <Subject text={tl(insights.longest.row.concern_text)} title={insights.longest.row.concern_text} />
+              <Subject text={tx(insights.longest.row.concern_text)} title={insights.longest.row.concern_text} />
               <Metric value={insights.longest.age} unit={t(insights.longest.age === 1 ? "concerns.day" : "concerns.days")} color="var(--kpi-red)" />
             </>
           ) : (
@@ -3035,7 +3035,7 @@ export default function Concerns() {
         <Modal
           onClose={() => setEscalate(null)}
           title={escalate.direction === "up" ? t("concerns.upliftTitle") : t("concerns.sendBackTitle")}
-          subtitle={tl(escalate.row.concern_text || "").slice(0, 90)}
+          subtitle={tx(escalate.row.concern_text || "").slice(0, 90)}
           icon={escalate.direction === "up" ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
           footer={
             <>
@@ -3113,7 +3113,7 @@ export default function Concerns() {
         <Modal
           onClose={() => setResolveRow(null)}
           title={t("concerns.resolveTitle")}
-          subtitle={tl(resolveRow.concern_text || "").slice(0, 90)}
+          subtitle={tx(resolveRow.concern_text || "").slice(0, 90)}
           icon={<Check size={16} />}
           footer={
             <>
@@ -3177,7 +3177,7 @@ export default function Concerns() {
                 {t("concerns.colConcern")}
               </div>
               <div className="text-sm leading-snug whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
-                {tl(viewRow.concern_text)}
+                {tx(viewRow.concern_text)}
               </div>
             </div>
 
@@ -3187,7 +3187,7 @@ export default function Concerns() {
                 <Check size={13} className="flex-shrink-0 mt-px" style={{ color: STATUS_COLOR.done }} />
                 <span className="min-w-0">
                   <span className="font-semibold" style={{ color: STATUS_COLOR.done }}>{t("concerns.fieldSolution")}: </span>
-                  <span className="whitespace-pre-wrap break-words" style={{ color: "var(--text-2)" }}>{tl(viewRow.solution)}</span>
+                  <span className="whitespace-pre-wrap break-words" style={{ color: "var(--text-2)" }}>{tx(viewRow.solution)}</span>
                 </span>
               </div>
             )}
@@ -3282,7 +3282,7 @@ export default function Concerns() {
         <Modal
           onClose={() => setHistoryRow(null)}
           title={t("concerns.historyTitle")}
-          subtitle={tl(historyRow.concern_text || "").slice(0, 90)}
+          subtitle={tx(historyRow.concern_text || "").slice(0, 90)}
           icon={<History size={16} />}
           footer={
             <Button variant="secondary" onClick={() => setHistoryRow(null)}>{t("concerns.cancel")}</Button>
@@ -3341,7 +3341,7 @@ export default function Concerns() {
                       {/* Why the holder could not solve it — mandatory on every move. */}
                       {e.reason && (
                         <div className="text-xs mt-1.5 whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
-                          {tl(e.reason)}
+                          {tx(e.reason)}
                         </div>
                       )}
                       {e.solution && (
@@ -3349,7 +3349,7 @@ export default function Concerns() {
                           <span className="font-semibold" style={{ color: STATUS_COLOR.done }}>
                             {t("concerns.fieldSolution")}:{" "}
                           </span>
-                          {tl(e.solution)}
+                          {tx(e.solution)}
                         </div>
                       )}
 
@@ -3487,7 +3487,7 @@ export default function Concerns() {
           queryKey={["concern-comments", commentsRow.id]}
           refreshKeys={[["concerns"]]}   // comment_count on the row
           title={t("concerns.commentsTitle")}
-          subtitle={tl(commentsRow.concern_text)}
+          subtitle={tx(commentsRow.concern_text)}
           // Opened from the detail view it sits on top of that modal.
           zIndex={viewRow ? 60 : undefined}
           onClose={() => setCommentsRow(null)}

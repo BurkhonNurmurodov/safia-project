@@ -279,6 +279,18 @@ export function transliterate(value, lang) {
 }
 
 /**
+ * transliterate() for DB TEXT that is not a person's name — a task, a job
+ * title, a category, a SKU, a reason, a note. English keeps the Uzbek Latin
+ * spelling: the x→kh / q→k / oʻ→u remap is the convention for rendering a
+ * NAME in English, and applied to Uzbek words it misspells them («qayd
+ * qilish» → «kayd kilish»). Cyrillic is still Latinised for uz/en.
+ * Twin of transliterate_text in backend/app/translit.py.
+ */
+export function transliterateText(value, lang) {
+  return transliterate(value, lang === "en" ? "uz" : lang);
+}
+
+/**
  * React hook — wraps transliterate() with the current language from context.
  *
  * Returns `tl(value)` — a helper that renders a dynamic DB value (worker name,
@@ -314,13 +326,24 @@ export function useTranslit() {
     return out;
   }, [nameOverrides, lang]);
 
+  const override = (value) => {
+    const raw = String(value).trim();
+    return nameOverrides?.[lang]?.[`name.${raw}`] ?? folded.get(normaliseNameKey(raw));
+  };
+
   return {
-    /** Render a DB string for the current language (override → transliterate). */
+    /** Render a PERSON's name for the current language (override →
+     *  transliterate). For English this applies the name convention
+     *  (Burxon → Burkhon) — never use it on anything that is not a name. */
     tl: (value) => {
       if (!value) return value;
-      const raw = String(value).trim();
-      const custom = nameOverrides?.[lang]?.[`name.${raw}`] ?? folded.get(normaliseNameKey(raw));
-      return custom || transliterate(value, lang);
+      return override(value) || transliterate(value, lang);
+    },
+    /** Render any other DB TEXT (task, job title, category, SKU, note…):
+     *  Cyrillic → Latin for uz/en, but English keeps the Uzbek spelling. */
+    tx: (value) => {
+      if (!value) return value;
+      return override(value) || transliterateText(value, lang);
     },
     /** The current language, in case callers need it. */
     lang,

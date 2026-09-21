@@ -129,7 +129,7 @@ const RANK_SHOWN = 8;
 export default function Tasks() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
   const isLeader = auth?.role === "leader";
@@ -444,7 +444,7 @@ export default function Tasks() {
 
     const val = (r) => {
       switch (sort.key) {
-        case "task":     return tl(r.task_text || "");
+        case "task":     return tx(r.task_text || "");
         // The column key stays "priority" so a saved sort keeps working; what
         // it sorts by is the flame.
         case "priority": return isUrgent(r) ? 0 : 1;
@@ -467,7 +467,7 @@ export default function Tasks() {
     active.sort(cmp);
     done.sort(cmp);
     return [...active, ...done];
-  }, [filtered, sort, tl]);
+  }, [filtered, sort, tl, tx]);
 
   // ── mutations — every write goes to the router that owns the row's tier ───
   const invalidate = () => qc.invalidateQueries({ queryKey: ["task-board"] });
@@ -667,7 +667,7 @@ export default function Tasks() {
       case "task":
         return (
           <td key={key} className="px-3 py-2.5 min-w-[240px] max-w-md">
-            <div className="line-clamp-2" title={r.task_text}>{tl(r.task_text)}</div>
+            <div className="line-clamp-2" title={r.task_text}>{tx(r.task_text)}</div>
           </td>
         );
       case "priority":
@@ -1016,7 +1016,7 @@ export default function Tasks() {
             <InsightCard icon={Hourglass} tint={CHART_OVERDUE} label={t("tasks.insOldest")}>
               {isLoading ? <SkeletonBlock className="h-10 w-full" /> : analytics.oldest ? (
                 <>
-                  <Subject text={tl(analytics.oldest.row.task_text)} />
+                  <Subject text={tx(analytics.oldest.row.task_text)} />
                   <Metric value={analytics.oldest.age} unit={t("tasks.daysUnit")} color={CHART_OVERDUE}
                           suffix={shortPerson(tl(analytics.oldest.row.assignee_name || ""))} />
                 </>
@@ -1365,7 +1365,7 @@ export default function Tasks() {
           queryKey={["task-comments", commentsTask.assignee_kind, commentsTask.id]}
           refreshKeys={[["task-board"]]}   // comment_count on the row
           title={t("tasks.commentsTitle")}
-          subtitle={tl(commentsTask.task_text)}
+          subtitle={tx(commentsTask.task_text)}
           canComment={!!commentsTask.can_comment}
           onClose={() => setCommentsTask(null)}
         />

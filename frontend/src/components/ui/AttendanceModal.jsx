@@ -13,7 +13,7 @@ import { useTranslit } from "../../utils/transliterate";
 export default function AttendanceModal({ managerId, date, dateFrom, dateTo, managerName, onClose }) {
   const { unit } = useFilters();
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const [nameAsc, setNameAsc] = useState(true);
 
   const isRange = !date && (dateFrom || dateTo);
@@ -97,7 +97,7 @@ export default function AttendanceModal({ managerId, date, dateFrom, dateTo, man
                         <tr key={r.worker_name} style={{ borderBottom: "1px solid var(--border)" }}
                           className="hover:opacity-80">
                           <td className="py-2 pr-3" style={{ color: "var(--text-1)" }}>{tl(r.worker_name) || "—"}</td>
-                          <td className="py-2 pr-3" style={{ color: "var(--text-2)" }}>{tl(r.job_title) || "—"}</td>
+                          <td className="py-2 pr-3" style={{ color: "var(--text-2)" }}>{tx(r.job_title) || "—"}</td>
                           {!isSingleDay && <td className="py-2 text-right font-mono" style={{ color: "var(--text-2)" }}>{r.days_present}</td>}
                         </tr>
                       ))}
@@ -137,7 +137,7 @@ export default function AttendanceModal({ managerId, date, dateFrom, dateTo, man
                       <tr key={r.id} style={{ borderBottom: "1px solid var(--border)" }}
                         className="hover:opacity-80">
                         <td className="py-2 pr-3" style={{ color: "var(--text-1)" }}>{tl(r.worker_name) || "—"}</td>
-                        <td className="py-2 pr-3" style={{ color: "var(--text-2)" }}>{tl(r.job_title) || "—"}</td>
+                        <td className="py-2 pr-3" style={{ color: "var(--text-2)" }}>{tx(r.job_title) || "—"}</td>
                         <td className="py-2 pr-3" style={{ color: "var(--text-2)" }}>{r.schedule || "—"}</td>
                         <td className="py-2 pr-3" style={{ color: "var(--text-2)" }}>{r.clock_in_out || "—"}</td>
                         <td className="py-2 pr-3 text-right font-mono" style={{ color: "var(--text-1)" }}>

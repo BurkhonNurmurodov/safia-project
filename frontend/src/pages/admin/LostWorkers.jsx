@@ -86,7 +86,7 @@ function isoDaysAgo(n) {
 
 export default function LostWorkers() {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
 
   // Which question is on screen. Both ask "who is missing"; the exchange one
   // is narrow and repairable, the reconciliation one is general.
@@ -364,7 +364,7 @@ export default function LostWorkers() {
                 <StateChip state={r.state} t={t} />
               </div>
               <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                {r.date} · {r.verifix_code || "—"} · {tl(r.job_title || "") || "—"}
+                {r.date} · {r.verifix_code || "—"} · {tx(r.job_title || "") || "—"}
               </div>
               <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
                 {tl(r.sender_name || "")} → {tl(r.target_name || "")}
@@ -412,7 +412,7 @@ export default function LostWorkers() {
             <tr key={`${r.date}-${r.worker_name}`}>
               <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{r.date}</td>
               <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{r.worker_name}</td>
-              <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.job_title || "") || "—"}</td>
+              <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tx(r.job_title || "") || "—"}</td>
               <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{r.verifix_code || "—"}</td>
               <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.sender_name || "")}</td>
               <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.target_name || "")}</td>

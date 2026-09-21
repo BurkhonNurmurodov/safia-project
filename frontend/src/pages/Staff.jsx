@@ -237,7 +237,7 @@ function ExportModal({ filteredCount, totalCount, hasFilter, onExport, onClose, 
 
 export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preSelected, replaceBatchId, onClose, onDeleted }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const qc = useQueryClient();
   const [query, setQuery]       = useState("");
   const [selected, setSelected] = useState(() => preSelected ? new Set(preSelected) : new Set());
@@ -414,7 +414,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
                   {tl(w.worker_name)}
                 </div>
                 <div className="w-52 text-xs flex-shrink-0" style={{ color: "var(--text-3)" }}>
-                  {tl(w.job_title) || "—"}
+                  {tx(w.job_title) || "—"}
                 </div>
               </div>
             );
@@ -434,7 +434,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const { t } = useLang();
   // `lang` is read only as a memo KEY: `tl` is a new function on every render,
   // so the language is what those memos actually depend on.
-  const { tl, lang } = useTranslit();
+  const { tl, tx, lang } = useTranslit();
   const [rawFilters, setFilters]        = usePersistentState("staff_workers_filters", INIT_FILTERS);
   const [showExport, setShowExport]     = useState(false);
   const [exporting, setExporting]       = useState(false);
@@ -761,7 +761,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                   <button
                     key={title}
                     onClick={() => toggleRole(title)}
-                    title={tl(title) || title}
+                    title={tx(title) || title}
                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors"
                     style={{
                       background: active ? "var(--brand-bg)" : "var(--bg-inner)",
@@ -769,7 +769,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                       color: active ? "var(--brand-text)" : "var(--text-2)",
                     }}
                   >
-                    <span className="truncate max-w-[160px]">{tl(title) || title}</span>
+                    <span className="truncate max-w-[160px]">{tx(title) || title}</span>
                     <span
                       className="font-semibold tabular-nums px-1.5 rounded-md text-[11px]"
                       style={{
@@ -867,7 +867,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                 </th>
                 <th className={thCls} style={{ borderColor: "var(--border)" }}>
                   <ColFilter label={t("staff.colRole")} active={filters.job_titles.length > 0}>
-                    <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={v => setF("job_titles", v)} render={o => tl(o) || o} />
+                    <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={v => setF("job_titles", v)} render={o => tx(o) || o} />
                   </ColFilter>
                 </th>
                 {showCellCol && (
@@ -924,7 +924,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(w.job_title) || "—"}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.job_title) || "—"}</td>
                   {/* Code only — the workshop name is four words of Russian per
                       row and pushed every column after it off a phone. It stays
                       in the tooltip and in the Yacheyka filter, where there is
@@ -938,8 +938,8 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                       )}
                     </td>
                   )}
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(w.schedule) || "—"}</td>
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(w.clock_in_out) || "—"}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.schedule) || "—"}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(w.clock_in_out) || "—"}</td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
                     {w.hours_worked != null ? w.hours_worked : "—"}
                   </td>
@@ -1009,7 +1009,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
 
 export function CellDayView({ date, cellSel, hasCellData }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const [search, setSearch] = useState("");
 
   // Same query key + params as the Yacheyka column and the parent's picker
@@ -1057,7 +1057,7 @@ export function CellDayView({ date, cellSel, hasCellData }) {
   const q = search.trim().toLowerCase();
   const rows = allRows
     .filter(r => !q ||
-      `${r.worker_name || ""} ${tl(r.worker_name) || ""} ${r.job_title || ""} ${tl(r.job_title) || ""}`
+      `${r.worker_name || ""} ${tl(r.worker_name) || ""} ${r.job_title || ""} ${tx(r.job_title) || ""}`
         .toLowerCase().includes(q))
     .sort((a, b) => (tl(a.worker_name) || "").localeCompare(tl(b.worker_name) || ""));
 
@@ -1138,8 +1138,8 @@ export function CellDayView({ date, cellSel, hasCellData }) {
               {rows.map(r => (
                 <tr key={r.id} className="border-b hover:bg-white/5" style={{ borderColor: "var(--border)" }}>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.worker_name)}</td>
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.job_title) || "—"}</td>
-                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.schedule) || "—"}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(r.job_title) || "—"}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tx(r.schedule) || "—"}</td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
                     {r.clock_in && r.clock_out ? `${r.clock_in} - ${r.clock_out}` : (r.day_raw || "—")}
                   </td>
@@ -1328,7 +1328,7 @@ export function DeletionStatusBadge({ status }) {
 
 export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClose, onSaved }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const qc = useQueryClient();
   const isEdit  = !!editDoc;
   const date    = isEdit ? editDoc.date       : selectedDate;
@@ -1480,7 +1480,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
           <StyledSelect
             value={newRole}
             onChange={setNewRole}
-            options={(roleOpts.assignable_job_titles ?? roleOpts.job_titles).map(j => ({ value: j, label: tl(j) }))}
+            options={(roleOpts.assignable_job_titles ?? roleOpts.job_titles).map(j => ({ value: j, label: tx(j) }))}
             placeholder={t("staff.selectRoleOpt")}
             className="flex-1 min-w-[200px] text-xs"
           />
@@ -1533,7 +1533,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
                         <input type="checkbox" checked={on} readOnly />
                       </td>
                       <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{tl(w.worker_name)}</td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(w.job_title) || "—"}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tx(w.job_title) || "—"}</td>
                     </tr>
                   );
                 })}
@@ -1551,7 +1551,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
 export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, onClose, onSaved }) {
   const { t } = useLang();
   // `lang` is read only as a memo KEY — see AttendanceTable.
-  const { tl, lang } = useTranslit();
+  const { tl, tx, lang } = useTranslit();
   const qc = useQueryClient();
   const isEdit  = !!editDoc;
   const date    = isEdit ? editDoc.date       : selectedDate;
@@ -2010,7 +2010,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
                         <input type="checkbox" checked={on} readOnly />
                       </td>
                       <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{tl(w.worker_name)}</td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(w.job_title) || "—"}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tx(w.job_title) || "—"}</td>
                     </tr>
                   );
                 })}
@@ -2053,7 +2053,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
 export function DocumentViewModal({ docId, onClose }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const { data: doc, isLoading } = useQuery({
     queryKey: ["staff-document", docId],
     queryFn: () => api.get(`/api/staff/documents/${docId}`).then(r => r.data),
@@ -2119,7 +2119,7 @@ export function DocumentViewModal({ docId, onClose }) {
                       {(doc.employees || []).map(e => (
                         <tr key={e.worker_name} className="border-t" style={{ borderColor: "var(--border)" }}>
                           <td className="px-3 py-1.5" style={{ color: "var(--text-1)" }}>{tl(e.worker_name)}</td>
-                          <td className="px-3 py-1.5" style={{ color: "var(--text-3)" }}>{tl(e.old_role) || "—"}</td>
+                          <td className="px-3 py-1.5" style={{ color: "var(--text-3)" }}>{tx(e.old_role) || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2129,7 +2129,7 @@ export function DocumentViewModal({ docId, onClose }) {
             ) : (
             <div className="text-xs">
               <div className="font-semibold mb-1.5" style={{ color: "var(--text-2)" }}>
-                {t("staff.targetRole")} <span style={{ color: "var(--brand-text)" }}>{tl(doc.new_role)}</span>
+                {t("staff.targetRole")} <span style={{ color: "var(--brand-text)" }}>{tx(doc.new_role)}</span>
               </div>
               <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
                 <table className="w-full">
@@ -2146,7 +2146,7 @@ export function DocumentViewModal({ docId, onClose }) {
                         <td className="px-3 py-1.5" style={{ color: "var(--text-3)" }}>
                           <span style={{ textDecoration: "line-through", color: "var(--text-4)" }}>{e.old_role || "—"}</span>
                           {" → "}
-                          <span style={{ color: "var(--text-1)", fontWeight: 500 }}>{tl(doc.new_role)}</span>
+                          <span style={{ color: "var(--text-1)", fontWeight: 500 }}>{tx(doc.new_role)}</span>
                         </td>
                       </tr>
                     ))}
@@ -2821,7 +2821,7 @@ function FilterButton({ activeCount, anyFilterActive, clearAllFilters, children 
 
 function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoading, onEdit }) {
   const { t, lang } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const qc = useQueryClient();
   const { can, canAll } = useCapabilities();
   const isManager = role === "admin" || role === "shift-manager";
@@ -3305,7 +3305,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                           ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")}</span>
                           : isExchange
                           ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · → {doc.target_type === "supervisor" ? `${tl(doc.target_manager_name)}` : doc.task_name}</span>
-                          : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · {tl(doc.new_role)}</span>}
+                          : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · {tx(doc.new_role)}</span>}
                       </td>
                       <td className="px-3 py-3 text-center">
                         <DeletionStatusBadge status={doc.approved ? "approved" : (doc.status === "rejected" ? "rejected" : "pending")} />

@@ -140,7 +140,7 @@ function ModeSwitches({ scope, setScope, measure, setMeasure, t }) {
 export default function Workers() {
   const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t, lang } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const [view, setView] = usePersistentState("workers_view", "attendance");   // "attendance" | "movements"
   const [tgtTab, setTgtTab] = usePersistentState("workers_tgt_tab", "supervisor"); // exchange-targets chart: "supervisor" | "task"
@@ -158,7 +158,7 @@ export default function Workers() {
   const trendTip = useRef(null);                       // attendance-trend below-chart tooltip panel
   const trendDefault = useRef("");                      // latest-day HTML for the idle/leave state
 
-  const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
+  const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tx(r));
 
   // ── data ─────────────────────────────────────────────────────────────────────
   // Every request on this page carries the active plant (see FactoryContext);
@@ -673,7 +673,7 @@ export default function Workers() {
     colors: [REQ_COLORS.exchange],
     dataLabels: { enabled: false },
     xaxis: {
-      categories: reqTargetsView.map((g) => (tgtTab === "task" ? tl(g.label) : `→ ${tl(g.label)}`)),
+      categories: reqTargetsView.map((g) => (tgtTab === "task" ? tx(g.label) : `→ ${tl(g.label)}`)),
       labels: axisLabels,
     },
     yaxis: { labels: axisLabelsMd },
@@ -691,7 +691,7 @@ export default function Workers() {
     plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3 } },
     colors: [REQ_COLORS.roleChange],
     dataLabels: { enabled: false },
-    xaxis: { categories: reqRoles.map((r) => tl(r.role)), labels: axisLabels },
+    xaxis: { categories: reqRoles.map((r) => tx(r.role)), labels: axisLabels },
     yaxis: { labels: axisLabelsMd },
     legend: { show: false }, grid: gridCfg,
     tooltip: {
@@ -715,7 +715,7 @@ export default function Workers() {
       return { from, cells, total: cells.reduce((s, v) => s + v, 0) };
     })
     .sort((a, b) => b.total - a.total);
-  const transRoleLabel = (name) => (!name || name === "-" || name === "—" ? t("workers.req.unspecified") : tl(name));
+  const transRoleLabel = (name) => (!name || name === "-" || name === "—" ? t("workers.req.unspecified") : tx(name));
 
   // Same per-row height for the two side-by-side supervisor lists so the
   // paired cards come out near-equal.
@@ -1079,7 +1079,7 @@ export default function Workers() {
                               {t("workers.req.fromRole")} ↓
                             </div>
                             {toRoles.map((to) => (
-                              <div key={to} className="self-end text-center text-xs font-medium pb-1" style={{ color: "var(--text-2)" }}>{tl(to)}</div>
+                              <div key={to} className="self-end text-center text-xs font-medium pb-1" style={{ color: "var(--text-2)" }}>{tx(to)}</div>
                             ))}
                             <div className="self-end text-right text-[11px] pr-1.5 pb-1" style={{ color: "var(--text-4)" }}>{t("workers.total")}</div>
                             {transRows.map((row) => (
@@ -1090,7 +1090,7 @@ export default function Workers() {
                                 {row.cells.map((v, i) => {
                                   const b = transBin(v);
                                   return (
-                                    <div key={toRoles[i]} title={`${transRoleLabel(row.from)} → ${tl(toRoles[i])}: ${v}`}
+                                    <div key={toRoles[i]} title={`${transRoleLabel(row.from)} → ${tx(toRoles[i])}: ${v}`}
                                       className="h-[34px] rounded flex items-center justify-center text-[13px] font-medium tabular-nums"
                                       style={b ? { background: b.bg, color: b.fg } : { background: "var(--bg-inner)", color: "var(--text-4)" }}>
                                       {b ? v : "·"}
@@ -1150,8 +1150,8 @@ export default function Workers() {
                         {s.role_changes} {t("workers.req.docs")} · {s.role_change_workers} {t("workers.req.workers")}
                       </td>
                       <td className={numCell} style={{ color: "var(--text-1)" }}>{s.posted}/{s.total}</td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{s.top_target ? tl(s.top_target) : "—"}</td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{s.top_role ? tl(s.top_role) : "—"}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{s.top_target ? (reqTargets.some((g) => g.label === s.top_target && g.type === "task") ? tx(s.top_target) : tl(s.top_target)) : "—"}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{s.top_role ? tx(s.top_role) : "—"}</td>
                     </tr>
                   ))}
                 </tbody>

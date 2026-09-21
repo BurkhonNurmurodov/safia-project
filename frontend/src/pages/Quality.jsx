@@ -478,7 +478,7 @@ export default function Quality() {
   const { lang, t } = useLang();
   const { auth } = useAuth();
   const { seesAllOn } = useCapabilities();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const qc = useQueryClient();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();
   const { factory, current: currentFactory, enabled: factoryEnabled } = useFactory();
@@ -494,7 +494,7 @@ export default function Quality() {
 
   // A sheet label the dictionary doesn't know (a new type the QA team typed
   // yesterday) still has to render — transliterate it instead of dropping it.
-  const L = (group, key) => (key ? (LBL[group]?.[key]?.[li] || tl(key)) : "—");
+  const L = (group, key) => (key ? (LBL[group]?.[key]?.[li] || tx(key)) : "—");
 
   const MONTHS = useMemo(() => {
     const f = new Intl.DateTimeFormat(lang === "en" ? "en" : "ru", { month: "short" });
@@ -1050,7 +1050,7 @@ export default function Quality() {
     };
     const dir = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => String(val(a)).localeCompare(String(val(b)), undefined, { numeric: true }) * dir);
-  }, [filtered, sort, tl, li, cellMap, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, sort, tl, tx, li, cellMap, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);

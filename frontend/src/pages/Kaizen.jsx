@@ -268,7 +268,7 @@ function Tally({ color, n }) {
 export default function Kaizen() {
   const { lang, t } = useLang();
   const { auth } = useAuth();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
   const T = TXT[lang] || TXT.ru;
@@ -390,12 +390,12 @@ export default function Kaizen() {
       if (projectSel.length && !projectSel.includes(t.project_key)) return false;
       if (statusSel.length && !statusSel.includes(t.status)) return false;
       if (q) {
-        const hay = `${tl(t.title)} ${t.title} ${(t.responsible || []).map(tl).join(" ")} ${(t.customer || []).map(tl).join(" ")} ${tl(t.task_type || "")}`.toLowerCase();
+        const hay = `${tx(t.title)} ${t.title} ${(t.responsible || []).map(tl).join(" ")} ${(t.customer || []).map(tl).join(" ")} ${tx(t.task_type || "")}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [tasks, projectSel, statusSel, search, tl]);
+  }, [tasks, projectSel, statusSel, search, tl, tx]);
 
   // ── task-table toolbar filters (shared <FilterPanel>) ───────────────────────
   const filterSections = [
@@ -411,7 +411,7 @@ export default function Kaizen() {
             return (
               <span className="inline-flex items-center gap-1.5 min-w-0">
                 <Icon size={12} strokeWidth={2.4} className="flex-shrink-0" style={{ color }} />
-                <span className="truncate">{tl(p?.name || k)}</span>
+                <span className="truncate">{tx(p?.name || k)}</span>
               </span>
             );
           }} />
@@ -443,9 +443,9 @@ export default function Kaizen() {
     if (!sort.key) return filtered;
     const val = (t) => {
       switch (sort.key) {
-        case "project":  return tl(t.project || "");
+        case "project":  return tx(t.project || "");
         case "task":     return t.title || "";
-        case "type":     return tl(t.task_type || "");
+        case "type":     return tx(t.task_type || "");
         case "resp":     return (t.responsible || []).map(tl).join(", ");
         case "customer": return (t.customer || []).map(tl).join(", ");
         case "deadline": return t.deadline || "";
@@ -463,7 +463,7 @@ export default function Kaizen() {
       }
       return va.localeCompare(vb, undefined, { numeric: true }) * dir;
     });
-  }, [filtered, sort, tl, T]);
+  }, [filtered, sort, tl, tx, T]);
 
   // ── charts ───────────────────────────────────────────────────────────────────
   const gaugeOpts = {
@@ -546,7 +546,7 @@ export default function Kaizen() {
   ];
 
   const topTypes = A.types.slice(0, 8);
-  const typeCats = topTypes.map((t) => tl(t.type === "—" ? "—" : t.type));
+  const typeCats = topTypes.map((t) => tx(t.type === "—" ? "—" : t.type));
   const typeOpts = {
     chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     theme: chartTheme,
@@ -793,11 +793,11 @@ export default function Kaizen() {
                   const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
                   return (
                     <div key={t.id} className="flex items-center gap-3 px-2 py-2.5" style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
-                      <ProjectIcon pkey={t.project_key} size="lg" title={tl(t.project)} />
+                      <ProjectIcon pkey={t.project_key} size="lg" title={tx(t.project)} />
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }} title={t.title}>{t.title}</div>
                         <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
-                          {t.task_type ? tl(t.task_type) : tl(t.project)}
+                          {t.task_type ? tx(t.task_type) : tx(t.project)}
                           {t.responsible?.length ? ` · ${t.responsible.map(tl).join(", ")}` : ""}
                         </div>
                       </div>
@@ -830,7 +830,7 @@ export default function Kaizen() {
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <ProjectIcon pkey={p.key} />
-                        <span className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }} title={tl(p.name)}>{tl(p.name)}</span>
+                        <span className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }} title={tx(p.name)}>{tx(p.name)}</span>
                       </div>
                       {p.overdue > 0 && (
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: hexA(C_OVERDUE, 0.14), color: C_OVERDUE }}>
@@ -970,9 +970,9 @@ export default function Kaizen() {
                     const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
                     return (
                       <tr key={t.id}>
-                        <td className="px-4 py-2 whitespace-nowrap"><ProjectIcon pkey={t.project_key} title={tl(t.project)} /></td>
+                        <td className="px-4 py-2 whitespace-nowrap"><ProjectIcon pkey={t.project_key} title={tx(t.project)} /></td>
                         <td className="px-4 py-2 max-w-xs"><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</span></td>
-                        <td className="px-4 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
+                        <td className="px-4 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>{t.task_type ? tx(t.task_type) : "—"}</td>
                         <td className="px-4 py-2 hidden sm:table-cell" style={{ color: "var(--text-2)" }}>
                           {t.responsible?.length ? <span title={t.responsible.map(tl).join(", ")}>{t.responsible.map((n) => shortName(tl(n))).join(", ")}</span> : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
                         </td>

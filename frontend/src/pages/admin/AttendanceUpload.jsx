@@ -249,7 +249,7 @@ function UploadsList({ uploads, t, tl, busy, onRemove }) {
 
 // ── worker table (inside an expanded cell row) ────────────────────────────────
 
-function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd, onRevert }) {
+function WorkerTable({ cell, locked, t, tl, tx, onEdit, onDelete, onAdd, onRevert }) {
   const cols = [
     t("attUp.colWorker"), t("attUp.colJob"), t("attUp.colSchedule"),
     t("attUp.colClock"), t("attUp.colHours"), t("attUp.colEarly"),
@@ -307,7 +307,7 @@ function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd, onRevert })
                   </div>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-3)", borderRight: "1px solid var(--border)" }}>
-                  {tl(r.job_title) || "—"}
+                  {tx(r.job_title) || "—"}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-3)", borderRight: "1px solid var(--border)" }}>
                   {r.schedule || "—"}
@@ -532,7 +532,7 @@ function Section({
 
 export default function AttendanceUpload() {
   const { t } = useLang();
-  const { tl, lang } = useTranslit();
+  const { tl, tx, lang } = useTranslit();
   const qc = useQueryClient();
 
   const [date, setDate] = usePersistentState("attup_date", todayISO());
@@ -765,8 +765,8 @@ export default function AttendanceUpload() {
     const byLang = {
       uz: cell.name_uz, uz_cyrl: cell.name_uz_cyrl, ru: cell.name_ru, en: cell.name_en,
     }[lang];
-    return tl(byLang || cell.name_ru || cell.name || "") || t("attUp.unnamedCell");
-  }, [lang, tl, t]);
+    return tx(byLang || cell.name_ru || cell.name || "") || t("attUp.unnamedCell");
+  }, [lang, tx, t]);
 
   const filtered = useMemo(() => {
     if (!data) return { sections: [], unassigned: [] };
@@ -869,6 +869,7 @@ export default function AttendanceUpload() {
       locked={locked || (section && section.manager_id && section.day_state !== "open")}
       t={t}
       tl={tl}
+      tx={tx}
       onEdit={(row) => setRowForm({ mode: "edit", row, cell })}
       onAdd={() => setRowForm({ mode: "add", cell })}
       onRevert={(row) => setConfirm({
@@ -889,7 +890,7 @@ export default function AttendanceUpload() {
         onConfirm: () => { rowMut.mutate({ action: "delete", row }); setConfirm(null); },
       })}
     />
-  ), [locked, t, tl, rowMut]);
+  ), [locked, t, tl, tx, rowMut]);
 
   // ── save flow ──────────────────────────────────────────────────────────────
   async function openSave() {

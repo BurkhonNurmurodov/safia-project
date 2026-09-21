@@ -161,6 +161,7 @@ function Stat({ label, value, tone }) {
  * be missed. The undo control is a SIBLING button, never nested inside it.
  */
 function WorkerLine({ entry, t, tl, selected, selectable, onSelect, onUndo }) {
+  const { tx } = useTranslit();
   const isSplit = entry.splitKind != null;
   return (
     <div
@@ -197,7 +198,7 @@ function WorkerLine({ entry, t, tl, selected, selectable, onSelect, onUndo }) {
           </div>
           <div className="text-[10px] mt-0.5 truncate" style={{ color: "var(--text-4)" }}>
             {[
-              entry.job ? tl(entry.job) : null,
+              entry.job ? tx(entry.job) : null,
               entry.clock || null,
               entry.splitAt ? `${t("cellPlace.splitAtShort")} ${entry.splitAt}` : null,
               entry.fromUnit ? t("cellPlace.fromUnit").replace("{name}", tl(entry.fromUnit)) : null,
