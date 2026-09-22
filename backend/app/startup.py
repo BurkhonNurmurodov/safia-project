@@ -6223,6 +6223,39 @@ def _auto_check_report_job() -> None:
                       auto_check_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the points «one cell is enough» gives back ─────────────────────
+# The operator ruled on 2026-09-22 that a leader with several cells passes #1,
+# #8 and #9 when ANY ONE cell meets the task (`services/leader_auto.py`), and
+# asked for every earlier failure that rule would have passed — proven on time,
+# multi-cell cases only — as a list with ONE button that gives the points back
+# (`services/auto_check_restore.py`, the `acr:` callback in telegram_bot.py).
+# This sends the list; the button is step two. Scheduled after the 20–21 Sep
+# report so the two never build production pages at once. Changing what it
+# lists needs a NEW flag key.
+AUTO_CHECK_RESTORE_FLAG = "auto_check_restore_list_2026_09_22_v1"
+_AUTO_CHECK_RESTORE_DELAY_S = 240
+
+
+def report_auto_check_restore() -> None:
+    """The «one cell is enough» restore list, DMed once. Never raises."""
+    try:
+        if not _report_pending(AUTO_CHECK_RESTORE_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("auto-check-restore-list",
+                    datetime.now(timezone.utc) + timedelta(seconds=_AUTO_CHECK_RESTORE_DELAY_S),
+                    _auto_check_restore_job)
+    except Exception as exc:
+        print(f"[startup] auto-check restore list could not be scheduled: {exc}")
+
+
+def _auto_check_restore_job() -> None:
+    from app.services import auto_check_restore
+    _send_report_once(AUTO_CHECK_RESTORE_FLAG, "auto-check restore list",
+                      auto_check_restore.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: which leader-days never got their day report ───────────────────
 # A leader reported on 2026-09-22 that the final report never came after they
 # closed their last task, and that they could not object to the AI. Reading the

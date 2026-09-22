@@ -5765,6 +5765,47 @@ def _fc_callback(call: types.CallbackQuery):
         bot.send_message(chat, _msg(lang, "shot_failed"))
 
 
+# ⚠ TEMPORARY (2026-09-22) — the one button under the «one cell is enough»
+# restore list (services/auto_check_restore.py). Delete with that module.
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("acr:"))
+def _acr_callback(call: types.CallbackQuery):
+    """Give back every point on the stored list — all or nothing, once.
+
+    Admin-only, checked HERE and not by who was sent the message: callback data
+    is typeable and a message can be forwarded. The operator reads this card in
+    English, like the list it sits under, so its answers are not translated."""
+    tid = call.from_user.id
+    if tid not in _admin_ids():
+        bot.answer_callback_query(call.id, "Admins only.", show_alert=True)
+        return
+    parts = call.data.split(":")
+    lid = parts[2] if len(parts) > 2 else ""
+    name = (admin_profile_name(tid)
+            or " ".join(filter(None, (call.from_user.first_name,
+                                      call.from_user.last_name)))
+            or str(tid))
+    from app.services import auto_check_restore
+    try:
+        with SessionLocal() as db:
+            res = auto_check_restore.apply(db, actor_tid=tid, actor_name=name, lid=lid)
+    except Exception:
+        logger.exception("auto-check restore: the button failed for %s", tid)
+        bot.answer_callback_query(call.id, "Failed — nothing was given back. "
+                                           "Tap again, or tell the developer.",
+                                  show_alert=True)
+        return
+    text = auto_check_restore.result_text(res)
+    bot.answer_callback_query(call.id, text[:190], show_alert=True)
+    if res.get("status") in ("done", "already"):
+        try:
+            bot.edit_message_text(f"{call.message.text or ''}\n\n{text}",
+                                  chat_id=call.message.chat.id,
+                                  message_id=call.message.message_id,
+                                  reply_markup=None)
+        except Exception:
+            logger.warning("auto-check restore: could not edit the card", exc_info=True)
+
+
 @bot.message_handler(func=lambda m: _awaiting_contact(m.from_user.id),
                      content_types=["text"])
 def _typed_instead_of_contact(message: types.Message):

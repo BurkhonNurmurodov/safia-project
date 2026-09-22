@@ -17,18 +17,39 @@ WHAT IS DECIDED, and where each rule comes from
 -----------------------------------------------
 Every threshold below is the operator's, agreed task by task (14—18 Sep 2026).
 
-* `plan_staffing` (#1) — the leader's own work centres carry a plan above 0
-  (from SAP or typed), AND the people are TYPED for every cell they own: the
-  cell's own group pin where the cell carries a letter, the whole-centre pin
-  where it does not. **A typed 0 passes** — a cell that ran empty is a real
-  answer, and `people_overridden` and never the value is what tells typed from
-  absent (the `zagruzka_source` rule).
+**ONE CELL IS ENOUGH** (the operator's ruling, 2026-09-22). A leader who owns
+several cells passes a task when ANY ONE of them meets it — before that date #1
+demanded every cell and #9 read the leader's combined percentage, so one cell
+the leader could never type (no SAP code, a work centre missing from the
+unit's catalog, a work centre with no plan that day and so not on the «Odamlar
+soni» tab at all) cost the point every day however well the other cell was
+kept. A leader with one cell reads exactly what they read before.
+
+* `plan_staffing` (#1) — at least one of the leader's cells carries a plan
+  above 0 on its OWN positions (from SAP or typed; its group's lines and the
+  ungrouped lines of its work centre, `wc_group.in_scope`) AND its people
+  TYPED: the cell's own group pin where the cell carries a letter, the
+  whole-centre pin where it does not. Plan and people on the SAME cell — a plan
+  on one cell and people on another is not a cell anybody filled. **A typed 0
+  passes** — a cell that ran empty is a real answer, and `people_overridden`
+  and never the value is what tells typed from absent (the `zagruzka_source`
+  rule).
 * `concerns` (#8) — one `leader_concerns` row created between 00:00 of the
   checklist day and the check, either written BY the leader or filed by a worker
-  against one of their cells. A pass-up of an older concern does not count,
+  against any one of their cells. A pass-up of an older concern does not count,
   which is why the test is `created_at` and never `level_since`.
-* `plan_pct` (#9) — the «Bajarish %» the leader's own /production page states,
-  at or above the target carried in the setting (`plan_pct:30`).
+* `plan_pct` (#9) — the «Bajarish %» of any one of the leader's work centres,
+  as the /production page states it for a leader of that cell, at or above the
+  target carried in the setting (`plan_pct:30`, unchanged). The warning card
+  and the facts still carry the leader's combined figure — that is the JOB
+  («50% of your plan»), and the pass mark is never printed as the instruction.
+
+**A per-cell unit judges the LEADER once** (same ruling). Its leaders file one
+checklist per cell, but the three checks ask about the leader: the verdict is
+taken once, over all of their cells, and the same verdict is written onto every
+cell checklist — including a cell checklist opened after the hour, when another
+of their checklists existed at it (`_sibling_verdict`). One verdict DM per
+task, not one per cell.
 
 WHAT IS DELIBERATELY NOT DECIDED HERE
 --------------------------------------
@@ -208,13 +229,14 @@ class _Ctx:
     """Everything one verdict is taken from, resolved once per leader-day."""
 
     __slots__ = ("db", "prof", "manager", "shift", "date", "cell", "due",
-                 "now", "_dash", "_pins", "_pairs", "_cells")
+                 "now", "_dash", "_pins", "_pairs", "_cells", "_by_code")
 
     def __init__(self, db, prof, manager, shift, date, cell, due, now):
         self.db, self.prof, self.manager = db, prof, manager
         self.shift, self.date, self.cell = shift, date, cell
         self.due, self.now = due, now
         self._dash = self._pins = self._pairs = self._cells = None
+        self._by_code = {}
 
     # The leader's (work centre, group letter) pairs — their cells, and the one
     # definition of «what is mine» the /production page itself applies.
@@ -243,6 +265,25 @@ class _Ctx:
                 self.db, self.manager.id, _as_date(self.date),
                 wc_scope=codes, payload=None, group_scope=set(self.pairs))
         return self._dash
+
+    def code_totals(self, code: str) -> dict:
+        """The «Bajarish %» tile of ONE work centre, as the page states it for a
+        leader who owns a cell there — `_build_dashboard` scoped to that code.
+
+        Its totals are the work centre's whole (the page never cuts the totals
+        by group, see `_build_dashboard`), which is why this is keyed by the
+        CODE: two lettered cells of one work centre read one figure. A leader
+        with a single work centre already has it in `dashboard`, so they cost
+        no second computation and read byte for byte what they always did."""
+        codes = {c for c, _g in self.pairs}
+        if codes == {code}:
+            return self.dashboard.get("totals") or {}
+        if code not in self._by_code:
+            from app.routers.production import _build_dashboard
+            self._by_code[code] = _build_dashboard(
+                self.db, self.manager.id, _as_date(self.date),
+                wc_scope={code}, payload=None).get("totals") or {}
+        return self._by_code[code]
 
     @property
     def cells(self) -> list:
@@ -291,8 +332,27 @@ def _as_date(iso: str) -> _date:
     return datetime.strptime(str(iso)[:10], "%Y-%m-%d").date()
 
 
+def cell_label(c: Cell) -> str:
+    """How a cell is named in a verdict's facts — its verifix CODE (CLAUDE.md
+    «A cell is its CODE»), the work centre only for a cell that has none."""
+    return c.verifix_code or wc_group.label(c.sap_code, c.wc_group) or "?"
+
+
+def cell_planned(rows: list, c: Cell) -> bool:
+    """Does this cell carry a plan above 0 on its OWN positions — its group's
+    lines and the ungrouped lines of its work centre, the scope the page itself
+    cuts a leader's rows to (`wc_group.in_scope`)?"""
+    code = cell_lookup.norm_code(getattr(c, "sap_code", None))
+    if not code:
+        return False
+    pair = {(code, getattr(c, "wc_group", None) or None)}
+    return any(float(r.get("plan_qty") or 0) > 0
+               and wc_group.in_scope(pair, r.get("work_center"), r.get("wc_group"))
+               for r in rows)
+
+
 def _check_plan_staffing(ctx: _Ctx, target: float | None) -> Verdict:
-    """#1 «Kunlik plan» — a plan above 0 AND the people typed, for every cell."""
+    """#1 «Kunlik plan» — ONE cell with a plan above 0 AND its people typed."""
     if not ctx.pairs:
         # A leader whose cells carry no SAP code cannot be measured against the
         # production page at all. That is a REGISTER error and not the leader's
@@ -303,24 +363,30 @@ def _check_plan_staffing(ctx: _Ctx, target: float | None) -> Verdict:
     dash = ctx.dashboard
     rows = dash.get("rows") or []
     planned = [r for r in rows if float(r.get("plan_qty") or 0) > 0]
-    if not planned:
-        return Verdict(FAILED, "no_plan", {"lines": len(rows), "with_plan": 0})
 
     pins, day = ctx.pins, str(ctx.date)[:10]
-    missing = sorted(
-        (c.verifix_code or wc_group.label(c.sap_code, c.wc_group) or "?")
-        for c in ctx.cells
-        if (pins.get((c.id, day)) or (None,))[0] is None
-    )
+    untyped, filled = [], []
+    for c in ctx.cells:
+        if (pins.get((c.id, day)) or (None,))[0] is None:
+            untyped.append(cell_label(c))
+        elif cell_planned(rows, c):
+            filled.append(cell_label(c))
+    # `untyped` keeps naming every cell with no people — it is what the warning
+    # card lists as the work still to do, and the job is still every cell. What
+    # decides is `filled`: one cell with both halves is the pass.
     facts = {"lines": len(rows), "with_plan": len(planned),
-             "cells": len(ctx.cells), "untyped": missing}
-    if missing:
-        return Verdict(FAILED, "no_staffing", facts)
-    return Verdict(PASSED, "ok", facts)
+             "cells": len(ctx.cells), "untyped": sorted(untyped),
+             "filled": sorted(filled)}
+    if filled:
+        return Verdict(PASSED, "ok", facts)
+    if not planned:
+        return Verdict(FAILED, "no_plan", facts)
+    return Verdict(FAILED, "no_staffing", facts)
 
 
 def _check_plan_pct(ctx: _Ctx, target: float | None) -> Verdict:
-    """#9 — the «Bajarish %» tile at or above the target."""
+    """#9 — the «Bajarish %» of ANY one of the leader's work centres at or
+    above the target."""
     want = 30.0 if target is None else float(target)
     if not ctx.pairs:
         return Verdict(FAILED, "no_sap_code", {"target": want})
@@ -330,12 +396,35 @@ def _check_plan_pct(ctx: _Ctx, target: float | None) -> Verdict:
         # `completion` is 0.0 with no plan, which would read as «0% done» — a
         # verdict about work when the truth is that nothing was asked of them.
         return Verdict(FAILED, "no_plan", {"target": want, "plan_min": 0})
-    pct = round(float(totals.get("completion") or 0) * 100, 1)
-    facts = {"target": want, "pct": pct,
+    # The combined figure stays in the facts: it is what the warning card shows
+    # as the job, and what every verdict before 2026-09-22 was taken on.
+    facts = {"target": want,
+             "pct": round(float(totals.get("completion") or 0) * 100, 1),
              "plan_min": round(plan, 1),
              "fact_min": round(float(totals.get("total_actual_labor") or 0), 1)}
-    return Verdict(PASSED if pct >= want else FAILED,
-                   "ok" if pct >= want else "under_target", facts)
+    names: dict[str, list[str]] = {}
+    for c in ctx.cells:
+        code = cell_lookup.norm_code(c.sap_code)
+        if code:
+            names.setdefault(code, []).append(cell_label(c))
+    by_cell = []
+    for code in sorted({c for c, _g in ctx.pairs}):
+        t = ctx.code_totals(code)
+        p = float(t.get("total_plan_labor") or 0)
+        if p <= 0:
+            continue                    # nothing asked of this cell today
+        by_cell.append({"cell": ", ".join(sorted(names.get(code) or [code])),
+                        "pct": round(float(t.get("completion") or 0) * 100, 1),
+                        "plan_min": round(p, 1),
+                        "fact_min": round(float(t.get("total_actual_labor") or 0), 1)})
+    best = max(by_cell, key=lambda b: b["pct"]) if by_cell else None
+    if best is None or best["pct"] < want:
+        facts.update(by_cell=by_cell)
+        if best is not None:
+            facts.update(best=best["cell"], best_pct=best["pct"])
+        return Verdict(FAILED, "under_target", facts)
+    facts.update(by_cell=by_cell, best=best["cell"], best_pct=best["pct"])
+    return Verdict(PASSED, "ok", facts)
 
 
 def _check_concerns(ctx: _Ctx, target: float | None) -> Verdict:
@@ -574,9 +663,10 @@ def _tell(db: Session, prof, td, v: Verdict, hhmm: str, date: str,
     if notifications_suppressed():
         return
     nkey = "leader_auto_passed" if v.done else "leader_auto_failed"
-    # On a per-cell unit this fires once per CELL, and the verdicts genuinely
-    # differ — so the message has to say which cell it is about, or a leader of
-    # six cells gets six indistinguishable DMs for one task.
+    # A verdict is about the LEADER and goes out once per task, however many
+    # cell checklists it was written onto. The one cell-specific verdict —
+    # «started late», a single cell checklist opened after the hour — names its
+    # cell, or a leader of two cells cannot tell which checklist it was about.
     facts = _facts_line(v)
     if cell_id is not None:
         from app.services import cell_lookup as _cl
@@ -616,8 +706,12 @@ _WHY = {
 def _facts_line(v: Verdict) -> str:
     f = v.facts or {}
     if "pct" in f:
+        # Several work centres: the one that decided, named — the combined
+        # figure is not what a one-cell verdict was taken on.
+        if len(f.get("by_cell") or []) > 1 and f.get("best"):
+            return f"{f['best']}: {f.get('best_pct')}% / {f.get('target')}%"
         return f"{f['pct']}% / {f.get('target')}%"
-    if "untyped" in f and f["untyped"]:
+    if v.code == "no_staffing" and f.get("untyped"):
         return ", ".join(str(x) for x in f["untyped"][:6])
     if "found" in f:
         return f"{f['found']} ta"
@@ -727,15 +821,58 @@ def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None
                     db.commit()
             continue
 
+        # A per-cell unit judges the LEADER once (module doc): the first cell
+        # that takes a fresh verdict in this pass hands it to the rest. Cells
+        # whose checklist did not exist at the hour go LAST, so that one of
+        # them opened late copies the verdict its sibling took at the hour in
+        # this very pass rather than being recorded «started late».
+        if len(cells) > 1:
+            late = {cid for (cid,) in db.query(LeaderAutoCheck.cell_id).filter(
+                LeaderAutoCheck.leader_id == prof.id,
+                LeaderAutoCheck.date == date,
+                LeaderAutoCheck.task_id == tid,
+                LeaderAutoCheck.code == "no_day").all()}
+            cells = sorted(cells, key=lambda cid: cid in late)
+        shared = None
         for cid in cells:
-            if _settle(db, m, prof, date, cid, tid, td, check, target, due,
-                       hhmm, now, tally, leader_close):
+            wrote, fresh = _settle(db, m, prof, date, cid, tid, td, check,
+                                   target, due, hhmm, now, tally, leader_close,
+                                   shared=shared)
+            if shared is None and fresh is not None:
+                shared = fresh
+            if wrote:
                 db.commit()
 
 
+def _sibling_verdict(db: Session, leader_id: int, date: str, task_id: int,
+                     cell_id: int) -> Verdict | None:
+    """The verdict another of this leader's cell checklists took AT THE HOUR —
+    what a cell checklist opened after the check inherits on a per-cell unit,
+    because the check is about the leader and the leader had a checklist then.
+    A sibling that was itself «started late» carries nothing to inherit."""
+    row = (db.query(LeaderAutoCheck)
+           .filter(LeaderAutoCheck.leader_id == leader_id,
+                   LeaderAutoCheck.date == date,
+                   LeaderAutoCheck.task_id == task_id,
+                   LeaderAutoCheck.cell_id.isnot(None),
+                   LeaderAutoCheck.cell_id != cell_id,
+                   LeaderAutoCheck.outcome.in_((PASSED, FAILED)),
+                   LeaderAutoCheck.code != "started_late",
+                   LeaderAutoCheck.entry_id.isnot(None))
+           .order_by(LeaderAutoCheck.checked_at).first())
+    if row is None:
+        return None
+    return Verdict(row.outcome, row.code, dict(row.facts or {}))
+
+
 def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
-            now, tally, leader_close) -> bool:
-    """Decide ONE (leader, date, cell, task). True when anything was written."""
+            now, tally, leader_close, shared: Verdict | None = None
+            ) -> tuple[bool, Verdict | None]:
+    """Decide ONE (leader, date, cell, task).
+
+    Returns `(wrote, fresh)`: whether anything was written, and the verdict
+    when THIS call took one off the data — the one its siblings on a per-cell
+    unit are handed as `shared` instead of re-reading the page."""
     row = _row_for(db, prof=prof, manager=m, date=date, task_id=tid,
                    cell_id=cell_id, check=check, due=due)
     # TERMINAL means the task is CLOSED, never merely that an entry exists.
@@ -754,11 +891,11 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
                 .filter(LeaderTaskEntry.id == row.entry_id,
                         LeaderTaskEntry.closed_at.isnot(None)).first())
         if done is not None:
-            return False                  # settled for good
+            return False, None            # settled for good
     if row.code == "day_closed":
         # The day ended without this check; nothing can be written to it now
         # and nothing may keep re-stating that every five minutes.
-        return False
+        return False, None
 
     day = (db.query(LeaderTaskDay)
            .filter(LeaderTaskDay.leader_id == prof.id,
@@ -773,14 +910,14 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
         if row.outcome is None:
             row.checked_at, row.outcome, row.code = now, SKIPPED, "no_day"
             tally["skipped"] += 1
-            return True
-        return False
+            return True, None
+        return False, None
 
     if day.closed_at is not None:
         if row.code == "day_closed":
-            return False
+            return False, None
         row.checked_at, row.outcome, row.code = now, SKIPPED, "day_closed"
-        return True
+        return True, None
 
     entry = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=tid).first()
     if entry is not None:
@@ -802,35 +939,48 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
             leader_close.close_task(db, day=day, entry=entry, cfg=cfg,
                                     actor=f"avtomatik · {prof.name}")
         tally["skipped"] += 1
-        return True
+        return True, None
 
     # `no_day` is a CODE and «skipped» is the OUTCOME — testing the outcome
     # against it (as this did first) is never true, and the whole «started
     # after the check» rule silently became an ordinary late evaluation, which
     # passes a leader who entered the plan half an hour after the hour that
     # asked for it. Found by running it, 2026-09-20.
+    fresh, copied = None, False
     if row.code == "no_day" and row.checked_at is not None:
-        v = Verdict(FAILED, "started_late",
-                    {"checked_at": row.checked_at.astimezone(TASHKENT)
-                     .strftime("%d.%m %H:%M")})
+        # Started after the check. On a per-cell unit the leader may still have
+        # had a checklist AT the hour — another cell's — and the verdict it took
+        # there is theirs: the check is about the leader, not the cell.
+        sib = (_sibling_verdict(db, prof.id, date, tid, cell_id)
+               if cell_id is not None else None)
+        if sib is not None:
+            v, copied = sib, True
+        else:
+            v = Verdict(FAILED, "started_late",
+                        {"checked_at": row.checked_at.astimezone(TASHKENT)
+                         .strftime("%d.%m %H:%M")})
+    elif shared is not None:
+        v, copied = Verdict(shared.outcome, shared.code, dict(shared.facts)), True
     else:
-        v = evaluate(db, prof=prof, manager=m, shift=m.shift, date=date,
-                     cell=_cell(db, cell_id), check=check, target=target,
-                     due=due, now=now)
-        if v.outcome == SKIPPED:
-            if now < due + GIVE_UP:
-                # A data failure is NOT recorded as the leader's. Left
-                # unsettled so the next pass tries again; `entry_id` stays
-                # None, so nothing here is final and the day is not closed on a
-                # number nobody could read.
-                row.checked_at, row.outcome, row.code = now, SKIPPED, v.code
-                row.facts = v.facts
-                tally["skipped"] += 1
-                return True
-            # …but not forever. Past the window the entry is written as
-            # UNCHECKED so the task closes and its day can end: a day held open
-            # by a platform fault costs the leader every other task on it.
-            v = Verdict(FAILED, "not_checked", dict(v.facts, gave_up=True))
+        # Always over ALL of the leader's cells — `cell=None` — whether the
+        # unit files one checklist per leader or one per cell (module doc).
+        v = fresh = evaluate(db, prof=prof, manager=m, shift=m.shift,
+                             date=date, cell=None, check=check, target=target,
+                             due=due, now=now)
+    if v.outcome == SKIPPED:
+        if now < due + GIVE_UP:
+            # A data failure is NOT recorded as the leader's. Left unsettled
+            # so the next pass tries again; `entry_id` stays None, so nothing
+            # here is final and the day is not closed on a number nobody could
+            # read.
+            row.checked_at, row.outcome, row.code = now, SKIPPED, v.code
+            row.facts = v.facts
+            tally["skipped"] += 1
+            return True, fresh
+        # …but not forever. Past the window the entry is written as UNCHECKED
+        # so the task closes and its day can end: a day held open by a platform
+        # fault costs the leader every other task on it.
+        v = Verdict(FAILED, "not_checked", dict(v.facts, gave_up=True))
 
     late = max(0, int((now - due).total_seconds() // 60))
     if late > LATE_GRACE.total_seconds() // 60:
@@ -849,10 +999,15 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
                             actor=f"avtomatik · {prof.name}")
     tally["checked"] += 1
     tally[PASSED if v.done else FAILED] += 1
-    _tell(db, prof, td, v, hhmm, date, cell_id)
-    if v.code == "no_sap_code" and not _already_alerted(db, prof.id, date, tid):
-        _alert_admins(db, prof, m, td, date)
-    return True
+    if not copied:
+        # ONE message per task: a copy is a verdict the leader has already
+        # been told. Only «started late» is about one cell checklist, so only
+        # it names the cell.
+        _tell(db, prof, td, v, hhmm, date,
+              cell_id if v.code == "started_late" else None)
+        if v.code == "no_sap_code" and not _already_alerted(db, prof.id, date, tid):
+            _alert_admins(db, prof, m, td, date)
+    return True, fresh
 
 
 def _already_alerted(db: Session, leader_id: int, date: str,
@@ -871,10 +1026,6 @@ def _already_alerted(db: Session, leader_id: int, date: str,
         LeaderAutoCheck.date == date,
         LeaderAutoCheck.task_id != task_id,
         LeaderAutoCheck.code == "no_sap_code").first())
-
-
-def _cell(db: Session, cell_id: int | None) -> Cell | None:
-    return db.query(Cell).filter(Cell.id == cell_id).first() if cell_id else None
 
 
 def _alert_admins(db: Session, prof, m, td, date: str) -> None:

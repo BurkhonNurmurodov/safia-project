@@ -91,6 +91,7 @@ try:
         report_proof_archive,
         report_proof_review_sep19_20,
         report_auto_checks_sep20_21,
+        report_auto_check_restore,
         report_missed_day_reports,
         write_leader_task_examples,
         cleanup_rules_sep19,
@@ -413,6 +414,12 @@ try:
     # delivers once. Remove this line, `startup.report_auto_checks_sep20_21`
     # and `services/auto_check_report.py` once the files have landed.
     report_auto_checks_sep20_21()
+    # ⚠ TEMPORARY one-shot (2026-09-22) — the points «one cell is enough» gives
+    # back: every earlier auto-check failure of a multi-cell leader that the new
+    # rule passes, proven on time, as a list + ONE button in the operator's
+    # chat. Remove this line, `startup.report_auto_check_restore`, the `acr:`
+    # callback and `services/auto_check_restore.py` once the button is used.
+    report_auto_check_restore()
     # ⚠ TEMPORARY one-shot (2026-09-22) — every leader-day since 1 Sep: was its
     # day report sent, and if not, why (a day parked while still open and never
     # retried). Summary + .xlsx + .json in the operator's chat, flag-guarded —

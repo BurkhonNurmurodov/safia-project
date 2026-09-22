@@ -2640,9 +2640,10 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   on purpose (`leader_tasks` already reaches for `routers.leaders.WINDOW` the
   same way): re-deriving the plan here would give the check and the page two
   answers about one shift, and the check is the one nobody can argue with.
-- **The three rules, all the operator's** (agreed 14—18 Sep): `plan_staffing`
-  (#1, 10:00 / 23:00) — a plan above 0 on the leader's own work centres AND the
-  people TYPED for every cell they own, **asked through
+- **The three rules, all the operator's** (agreed 14—18 Sep; **ONE CELL IS
+  ENOUGH** from 2026-09-22, below): `plan_staffing`
+  (#1, 10:00 / 23:00) — a plan above 0 on ONE cell's own positions AND that same
+  cell's people TYPED, **asked through
   `zagruzka_source.cell_pins`, the platform's one pin split**, and never by
   testing whether the exact `(code, letter)` pair carries a pin: the two pin
   kinds are mutually exclusive by design, so that spelling fails a LETTERED cell
@@ -2654,12 +2655,43 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   the leader's alone, or a short list reads every other group's people as
   unclaimed. **A typed 0 passes**, because `people_overridden` and never the
   value is what tells typed from absent;
-  `plan_pct:30` (#9, 14:00 / 03:00) — the «Bajarish %» the leader's own
-  /production page states, at or above the target **carried in the setting**, so
+  `plan_pct:30` (#9, 14:00 / 03:00) — the «Bajarish %» of ANY ONE of the
+  leader's work centres, as /production states it for a leader of that cell, at
+  or above the target **carried in the setting**, so
   the threshold moves without a deploy; `concerns` (#8, 17:00 / 06:00) — one
   `leader_concerns` row created between 00:00 of the checklist day and the check,
-  written BY the leader or filed by a worker against one of their cells, tested on
+  written BY the leader or filed by a worker against any one of their cells, tested on
   `created_at` and never `level_since`, so passing an older concern up does not count.
+- **ONE CELL IS ENOUGH** (the operator's ruling, 2026-09-22). A leader who owns
+  several cells passes a task when any one cell meets it. Until then #1 demanded
+  EVERY cell, so one cell the leader could never type (no SAP code, a work centre
+  missing from the unit's catalog, or one with no plan that day and so not on
+  the «Odamlar soni» tab at all) cost the point every day. Plan and people must
+  sit on the SAME cell (`leader_auto.cell_planned` — the cell's group lines plus
+  its work centre's ungrouped ones, `wc_group.in_scope`). #9 reads each work
+  centre's own tile (`_Ctx.code_totals`, uncut by group exactly as the page's
+  totals are, so two lettered cells of one work centre read one figure). A
+  leader with one cell reads byte for byte what they read before. The facts
+  keep `untyped` and the leader's COMBINED % — the warning card shows them as
+  the JOB (every cell, 50%), and the pass mark is still never printed as the
+  instruction. **A per-cell unit judges the LEADER once**: the verdict is taken
+  over all their cells (`cell=None`) and written onto every cell checklist,
+  one verdict DM per task; a cell checklist opened after the hour inherits the
+  verdict a sibling took AT the hour (`_sibling_verdict`) and is «started late»
+  only when none of theirs existed then.
+- **The points the old reading cost were listed once and given back on one
+  tap** — `services/auto_check_restore.py`, the boot one-shot
+  `startup.report_auto_check_restore` (flag
+  `auto_check_restore_list_2026_09_22_v1`) and the `acr:` callback in
+  `telegram_bot.py`. The operator's rulings: multi-cell cases ONLY, PROVEN ON
+  TIME only (the check's own record at the hour, concern `created_at`, the
+  action register's saves replayed to the hour, rows untouched since — never a
+  number typed after), and a LIST FIRST: the operator's chat gets a summary, an
+  Excel («Restore» + «Not restored» with the reason) and ONE button, which
+  writes a `LeaderTaskOverride` (done, reversible) for exactly the stored list
+  (`AppSetting` `auto_check_restore_list_2026_09_22`) and re-sends each changed
+  day's corrected report. Temporary: delete the module, the startup pair, the
+  call in BOTH entrypoints and the callback once the button is used.
 - **Shift 2's hours are those same points of a NIGHT** — three, seven and ten
   hours after a 20:00 start — because a night asked at 10:00 would be asked five
   hours after its checklist has already closed. They are settings, not constants.
