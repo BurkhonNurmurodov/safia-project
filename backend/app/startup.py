@@ -6223,6 +6223,40 @@ def _auto_check_report_job() -> None:
                       auto_check_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: which leader-days never got their day report ───────────────────
+# A leader reported on 2026-09-22 that the final report never came after they
+# closed their last task, and that they could not object to the AI. Reading the
+# code found the cause (`leader_reports.send_for_uid` parks a day that is still
+# OPEN, and nothing retries it once the day closes without a fresh AI review);
+# `services/missed_report_audit.py` checks it on production data — every bot
+# leader-day from 1 Sep with its ledger row, park, closing timeline, reviews,
+# objections and the leader's bell — and DMs a summary, an .xlsx and the JSON.
+# It READS and writes nothing but its flag. Changing what it reports needs a
+# NEW flag key.
+MISSED_REPORTS_FLAG = "missed_day_reports_audit_2026_09_22_v1"
+_MISSED_REPORTS_DELAY_S = 90
+
+
+def report_missed_day_reports() -> None:
+    """Which leader-days never got their day report, DMed once. Never raises."""
+    try:
+        if not _report_pending(MISSED_REPORTS_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("missed-day-reports-audit",
+                    datetime.now(timezone.utc) + timedelta(seconds=_MISSED_REPORTS_DELAY_S),
+                    _missed_reports_job)
+    except Exception as exc:
+        print(f"[startup] missed day-report audit could not be scheduled: {exc}")
+
+
+def _missed_reports_job() -> None:
+    from app.services import missed_report_audit
+    _send_report_once(MISSED_REPORTS_FLAG, "missed day-report audit",
+                      missed_report_audit.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the

@@ -91,6 +91,7 @@ try:
         report_proof_archive,
         report_proof_review_sep19_20,
         report_auto_checks_sep20_21,
+        report_missed_day_reports,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -412,6 +413,12 @@ try:
     # delivers once. Remove this line, `startup.report_auto_checks_sep20_21`
     # and `services/auto_check_report.py` once the files have landed.
     report_auto_checks_sep20_21()
+    # ⚠ TEMPORARY one-shot (2026-09-22) — every leader-day since 1 Sep: was its
+    # day report sent, and if not, why (a day parked while still open and never
+    # retried). Summary + .xlsx + .json in the operator's chat, flag-guarded —
+    # delivers once. Remove this line, `startup.report_missed_day_reports` and
+    # `services/missed_report_audit.py` once the files have landed.
+    report_missed_day_reports()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's
