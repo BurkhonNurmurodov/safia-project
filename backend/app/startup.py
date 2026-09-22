@@ -6188,6 +6188,41 @@ def _proof_review_job() -> None:
                       proof_review_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: the AUTOMATIC checks of 20–21 September, explained ─────────────
+# The operator asked, on 2026-09-22, for a full report of the automatic checks'
+# first two days (tasks #1, #9, #8 — `services/leader_auto.py`), both shifts:
+# who failed, why, and whether a failure was the PLATFORM's doing rather than
+# the leader's. `services/auto_check_report.py` builds it — every owed verdict
+# with the ledger's facts, the same check re-run on today's data, the action-log
+# timeline of what was typed and uploaded when, and the leader's cell register
+# tested for cells nobody can type — and DMs a summary, an .xlsx and the full
+# JSON. It READS and writes nothing but its flag. Scheduled clear of the boot
+# /health waits on: it builds a production page per leader-day. Changing what
+# it reports needs a NEW flag key.
+AUTO_CHECK_REPORT_FLAG = "auto_check_report_sep20_21_2026_09_22_v1"
+_AUTO_CHECK_REPORT_DELAY_S = 120
+
+
+def report_auto_checks_sep20_21() -> None:
+    """The 20–21.09 automatic checks with their causes, DMed once. Never raises."""
+    try:
+        if not _report_pending(AUTO_CHECK_REPORT_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("auto-check-report-sep20-21",
+                    datetime.now(timezone.utc) + timedelta(seconds=_AUTO_CHECK_REPORT_DELAY_S),
+                    _auto_check_report_job)
+    except Exception as exc:
+        print(f"[startup] auto-check report 20-21.09 could not be scheduled: {exc}")
+
+
+def _auto_check_report_job() -> None:
+    from app.services import auto_check_report
+    _send_report_once(AUTO_CHECK_REPORT_FLAG, "auto-check report 20-21.09",
+                      auto_check_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the

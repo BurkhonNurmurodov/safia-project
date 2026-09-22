@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
         report_checklist_setup,
         report_proof_archive,
         report_proof_review_sep19_20,
+        report_auto_checks_sep20_21,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -446,6 +447,12 @@ async def lifespan(app: FastAPI):
     # `startup.report_proof_review_sep19_20` and
     # `services/proof_review_report.py` once the files have landed.
     report_proof_review_sep19_20()
+    # ⚠ TEMPORARY one-shot (2026-09-22) — the automatic checks of 20–21.09
+    # (#1, #9, #8), every verdict with its cause and whose fault it was, as a
+    # summary + .xlsx + .json in the operator's chat. Scheduled, flag-guarded —
+    # delivers once. Remove this line, `startup.report_auto_checks_sep20_21`
+    # and `services/auto_check_report.py` once the files have landed.
+    report_auto_checks_sep20_21()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's
