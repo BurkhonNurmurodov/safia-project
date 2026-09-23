@@ -1902,14 +1902,24 @@ def expired_through(shift: int | None = None, now: datetime | None = None) -> st
 MISSED_PREFIX = "__missed__|"
 
 
-def missed_reason(shift: int | None) -> str:
+def missed_reason(shift: int | None, hhmm: str | None = None) -> str:
     """Sentinel reason for a task the leader never answered before the window
     shut. Deliberately NOT a sentence: a leader-typed reason is free text in
     that leader's own language, so the column cannot also carry one fixed
     message for every viewer. The register expands `__missed__|HH:MM` per
     VIEWER instead, which is also what keeps the time out of AM/PM.
+
+    The hour must be the one that actually SHUT the task, because every reader
+    prints it as «did not submit this task before HH:MM». Left out, it is the
+    DAY's filing deadline — right for the day-level close, which fires on
+    exactly that hour. A per-task unit closes each task on its own clock
+    (`leader_close.task_deadline`) and passes it: stamped with the day's 23:59
+    instead, a task that shut at 08:30 told every reader the wrong hour while
+    the bot told the same leader 08:30 (2026-09-23). Anything that is not a
+    clock falls back to the day's, so the sentinel keeps the one shape the
+    client can expand — one it cannot is printed at an operator raw.
     """
-    return f"{MISSED_PREFIX}{deadline_hhmm(shift)}"
+    return f"{MISSED_PREFIX}{leader_ai.hhmm(hhmm) or deadline_hhmm(shift)}"
 
 
 AUTO_PREFIX = "__auto__|"

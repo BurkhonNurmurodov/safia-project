@@ -3666,7 +3666,13 @@ unit). Absent row = off, so nothing moves until an admin switches it.
     (answered, never submitted) is submitted with its answer and photos intact,
     because `force_answer` returns an existing entry rather than replacing it.
     Only a task with NO answer is recorded not-done with the missed-deadline
-    reason.
+    reason — **stamped with the TASK's own closing hour** (`task_deadline`, the
+    hour that fired: `__missed__|08:30`), never the day's filing deadline.
+    Every reader prints the sentinel as «did not submit this task before
+    HH:MM», so the day's 23:59 on a task that shut at 08:30 contradicted the
+    bot's late-proof screen (2026-09-23). The day-level close
+    (`close_expired_days`) still stamps the day's deadline, because that is the
+    hour it fires on. Rows written before the fix keep their 23:59 / 09:00.
   - **Enforcement is per-task units ONLY.** `autoclose_due` is bounded to
     `per_task_units` and the other two readers are per-task surfaces; outside
     them the field stays informational, per the 2026-08-15 ruling. The sweep

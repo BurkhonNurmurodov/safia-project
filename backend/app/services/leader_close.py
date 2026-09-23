@@ -518,7 +518,14 @@ def force_answer(db: Session, *, day: LeaderTaskDay, task_id: int,
     `min_media` is still evidence taken inside the window, so it goes to the AI
     and is judged as it stands rather than thrown away — but a task with NO
     answer at all has nothing to judge, and is recorded not-done with the
-    missed-deadline reason, exactly as the day-close has always done.
+    missed-deadline sentinel, as the day-close records one.
+
+    Stamped with THIS task's closing hour — `task_deadline`, i.e. the very
+    `closing_time` `autoclose_due` just fired on — never the day's filing
+    deadline, which is the day-close's hour and not this one. Every reader
+    prints the sentinel as «did not submit this task before HH:MM»: a task
+    shut at 08:30 and stamped with shift 1's 23:59 told the register one hour
+    while the bot's late-proof screen told the leader another (2026-09-23).
     """
     entry = db.query(LeaderTaskEntry).filter_by(
         day_id=day.id, task_id=task_id).first()
@@ -530,7 +537,8 @@ def force_answer(db: Session, *, day: LeaderTaskDay, task_id: int,
         if entry:
             return entry
     entry = LeaderTaskEntry(day_id=day.id, task_id=task_id, done=False,
-                            reason=leader_tasks.missed_reason(shift))
+                            reason=leader_tasks.missed_reason(
+                                shift, task_deadline(cfg_entry, shift)))
     db.add(entry)
     db.flush()
     return entry
