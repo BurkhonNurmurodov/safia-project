@@ -47,9 +47,9 @@ kept. A leader with one cell reads exactly what they read before.
 **A per-cell unit judges the LEADER once** (same ruling). Its leaders file one
 checklist per cell, but the three checks ask about the leader: the verdict is
 taken once, over all of their cells, and the same verdict is written onto every
-cell checklist — including a cell checklist opened after the hour, when another
-of their checklists existed at it (`_sibling_verdict`). One verdict DM per
-task, not one per cell.
+cell checklist — including a cell checklist opened after the hour, which is
+handed the verdict taken AT the hour (below). One verdict DM per task, not one
+per cell (`_already_told`).
 
 WHAT IS DELIBERATELY NOT DECIDED HERE
 --------------------------------------
@@ -81,10 +81,29 @@ the pass idempotent and, more importantly, answerable: a score moved by a
 machine has to be explainable months later, and the entry carries only a
 verdict. `facts` holds the numbers the verdict was taken on.
 
-It also carries a fact nothing else can: a row with `warned_at` set and outcome
-`no_day` says «at the check there was no checklist». A day that appears AFTER
-that is recorded `started_late` and scores 0 — the operator's rule, and the
-reason this module needs no `created_at` on `LeaderTaskDay`.
+It also carries a fact nothing else can: a row with code `no_day` says «at the
+check there was no checklist». A leader's bot checklist exists only from the
+first task they ANSWER (`telegram_bot._lt_save_entry`, or a camera shot), so
+this is the ordinary state of a leader who filled the page and simply had not
+touched the bot yet — which is why this module needs no `created_at` on
+`LeaderTaskDay`.
+
+MEASURED AT THE HOUR, WHETHER OR NOT A CHECKLIST EXISTS
+-------------------------------------------------------
+The operator's ruling of 2026-09-23: a check asks whether the leader did the
+job BY THE HOUR, never whether they had opened the bot by then. So at the hour
+the page is read for EVERY leader who owes the task; where no checklist exists
+yet the verdict is kept on the `no_day` row (`facts.at_hour`) and written onto
+the checklist the moment it appears — passed if the job was done at the hour,
+failed with the real reason if not. Nothing typed after the hour can pass,
+which is all the rule it replaced was ever for.
+
+That rule recorded a checklist that appeared after the hour as `started_late`
+and scored it 0 without reading the page at all, so a leader who filled
+everything at 09:00 and answered their first bot task at 11:00 lost the task's
+points (a leader's complaint, 23 Sep). `started_late` now survives only for a
+row written BEFORE this measurement existed, and only where the Jurnal cannot
+say what stood at the hour either (`_from_record`).
 """
 from __future__ import annotations
 
@@ -728,7 +747,8 @@ def run(db: Session, now: datetime | None = None) -> dict:
     open holds its whole day open behind it.
     """
     from app.services import leader_close
-    tally = {"warned": 0, "checked": 0, "passed": 0, "failed": 0, "skipped": 0}
+    tally = {"warned": 0, "checked": 0, "passed": 0, "failed": 0, "skipped": 0,
+             "measured": 0}
     if not any_auto(db):
         return tally
     now = (now or datetime.now(timezone.utc)).astimezone(TASHKENT)
@@ -822,10 +842,10 @@ def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None
             continue
 
         # A per-cell unit judges the LEADER once (module doc): the first cell
-        # that takes a fresh verdict in this pass hands it to the rest. Cells
+        # that takes a fresh verdict in this pass hands it to the rest — a cell
+        # with no checklist yet keeps it as its at-the-hour measurement. Cells
         # whose checklist did not exist at the hour go LAST, so that one of
-        # them opened late copies the verdict its sibling took at the hour in
-        # this very pass rather than being recorded «started late».
+        # them opened late never re-reads the page after the hour.
         if len(cells) > 1:
             late = {cid for (cid,) in db.query(LeaderAutoCheck.cell_id).filter(
                 LeaderAutoCheck.leader_id == prof.id,
@@ -863,6 +883,144 @@ def _sibling_verdict(db: Session, leader_id: int, date: str, task_id: int,
     if row is None:
         return None
     return Verdict(row.outcome, row.code, dict(row.facts or {}))
+
+
+def _at_hour(row: LeaderAutoCheck | None) -> Verdict | None:
+    """The verdict read off the page AT THE HOUR for a leader who had no
+    checklist then — kept on the `no_day` row until the checklist appears
+    (module doc, «MEASURED AT THE HOUR»). None when nothing was measured."""
+    at = (row.facts or {}).get("at_hour") if row is not None else None
+    if not isinstance(at, dict) or at.get("outcome") not in (PASSED, FAILED):
+        return None
+    return Verdict(at["outcome"], str(at.get("code") or ""),
+                   dict(at.get("facts") or {}))
+
+
+def measured(db: Session, leader_id: int, date: str, task_id: int,
+             cell_id: int | None) -> Verdict | None:
+    """What the check found at its hour for a leader whose checklist did not
+    exist yet — what the task's own screen in the bot shows until the next pass
+    writes it onto the checklist."""
+    return _at_hour(_ledger(db, leader_id, str(date)[:10], task_id, cell_id))
+
+
+def _already_told(db: Session, row: LeaderAutoCheck) -> bool:
+    """Has this leader already been sent this task's verdict for the day?
+
+    One verdict DM per task, however many cell checklists it lands on and in
+    whatever order they appear: on a per-cell unit the verdict may be measured
+    on a cell with no checklist yet and written first onto a sibling, or written
+    onto this cell hours after a sibling carried it. «Does another row of this
+    leader-day already carry a written verdict» answers both. A row the leader
+    answered themselves (`already_filed`, outcome «skipped») is not one.
+    """
+    return bool(db.query(LeaderAutoCheck.id).filter(
+        LeaderAutoCheck.leader_id == row.leader_id,
+        LeaderAutoCheck.date == row.date,
+        LeaderAutoCheck.task_id == row.task_id,
+        LeaderAutoCheck.id != row.id,
+        LeaderAutoCheck.entry_id.isnot(None),
+        LeaderAutoCheck.outcome.in_((PASSED, FAILED))).first())
+
+
+def _from_record(db: Session, *, prof, manager, date: str, check: str,
+                 target: float | None, due: datetime,
+                 now: datetime) -> Verdict | None:
+    """What stood at the hour, for a `no_day` row written BEFORE the page was
+    measured there — read off the record, never off the page as it is now,
+    which would pass work done after the deadline.
+
+    TRANSITIONAL. Such a row can only ever reach a checklist on its own day (a
+    checklist is created for the current day and no other), so this path goes
+    quiet once 23 Sep 2026 is over. The concerns check needs no record: its
+    window already ends at the hour. #1 replays the Jurnal's time-stamped saves
+    the way the 22 Sep restore list did (`auto_check_restore`, imported lazily,
+    so deleting that module can never break a boot — this then answers None).
+    None = the record cannot place it, and the rule in force at the hour stands.
+    """
+    if check == "concerns":
+        v = evaluate(db, prof=prof, manager=manager, shift=manager.shift,
+                     date=date, cell=None, check=check, target=target,
+                     due=due, now=now)
+        return None if v.outcome == SKIPPED else v
+    if check != "plan_staffing":
+        return None
+    try:
+        from app.services import auto_check_restore as acr
+        ctx = _Ctx(db, prof, manager, manager.shift, date, None, due, now)
+        if not ctx.pairs:
+            return Verdict(FAILED, "no_sap_code", {"cells": 0})
+        rows = ctx.dashboard.get("rows") or []
+        u = acr._Unit(db, manager, str(date)[:10])
+        # A replay that does not end on the pins stored now missed a write, and
+        # then nothing it says about the people at the hour can be trusted.
+        pins = u.pins_at(due) if u.replay_ok() else None
+        filled, untyped, maybe_plan, unsure = [], [], 0, False
+        for c in ctx.cells:
+            typed = None if pins is None else (u.cell_value(pins, c) is not None)
+            plan, _why = acr._plan_at_hour(u, rows, c, due)
+            maybe_plan += plan is not False
+            if typed is False:
+                untyped.append(cell_label(c))
+            if typed and plan:
+                filled.append(cell_label(c))
+            elif typed is not False and plan is not False:
+                unsure = True           # it may have been filled — not proven
+        facts = {"cells": len(ctx.cells), "untyped": sorted(untyped),
+                 "filled": sorted(filled), "from_record": True}
+        if filled:
+            return Verdict(PASSED, "ok", facts)
+        if unsure:
+            return None
+        return Verdict(FAILED, "no_staffing" if maybe_plan else "no_plan", facts)
+    except Exception:                               # noqa: BLE001 - see docstring
+        logger.exception("auto check: record replay failed for leader %s on %s",
+                         getattr(prof, "id", None), date)
+        return None
+
+
+def _measure_without_day(db, row, m, prof, date, check, target, due, now,
+                         tally, shared: Verdict | None
+                         ) -> tuple[bool, Verdict | None]:
+    """The hour has come and this leader has no checklist yet: read the page
+    NOW — at the hour — and keep the verdict on the row (module doc, «MEASURED
+    AT THE HOUR»). No score moves and nobody is told: there is no checklist to
+    write it on, and the verdict goes out with the entry once there is one.
+
+    Measured ONCE. A row carrying a measurement is left alone, and so is a
+    `no_day` row from before this existed (neither `at_hour` nor
+    `measure_error`): its hour went by unmeasured, and a reading taken now would
+    be a reading of the page after the deadline — `_from_record` answers for it
+    when its checklist appears."""
+    f = row.facts or {}
+    if "at_hour" in f:
+        return False, None
+    if row.outcome is not None and "measure_error" not in f:
+        return False, None
+    if shared is not None:
+        v, fresh = Verdict(shared.outcome, shared.code, dict(shared.facts)), None
+    else:
+        v = fresh = evaluate(db, prof=prof, manager=m, shift=m.shift, date=date,
+                             cell=None, check=check, target=target, due=due,
+                             now=now)
+    if v.outcome == SKIPPED:
+        if now < due + GIVE_UP:
+            # The data could not be read — not the leader's failure. Tried
+            # again on the next pass, exactly as with a checklist that exists.
+            row.checked_at, row.outcome, row.code = now, SKIPPED, "no_day"
+            row.facts = dict(v.facts, measure_error=v.code)
+            tally["skipped"] += 1
+            return True, fresh
+        v = Verdict(FAILED, "not_checked", dict(v.facts, gave_up=True))
+    facts = dict(v.facts)
+    late = max(0, int((now - due).total_seconds() // 60))
+    if late > LATE_GRACE.total_seconds() // 60:
+        facts["late_by_min"] = late
+    row.checked_at, row.outcome, row.code = now, SKIPPED, "no_day"
+    row.facts = {"at_hour": {"outcome": v.outcome, "code": v.code,
+                             "facts": facts}}
+    tally["measured"] += 1
+    return True, fresh
 
 
 def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
@@ -903,15 +1061,12 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
                    LeaderTaskDay.cell_id.is_(None) if cell_id is None
                    else LeaderTaskDay.cell_id == cell_id).first())
     if day is None:
-        # Nothing to judge, and nothing to record on. The row REMEMBERS that,
-        # and that memory is the whole mechanism behind «started after the
-        # check»: `LeaderTaskDay` carries no created_at, so this absence is the
-        # only evidence that the checklist did not exist at the hour.
-        if row.outcome is None:
-            row.checked_at, row.outcome, row.code = now, SKIPPED, "no_day"
-            tally["skipped"] += 1
-            return True, None
-        return False, None
+        # Nothing to write a verdict ON — but the hour is what the check asks
+        # about, so the page is read now all the same and the answer is kept
+        # on the row. `LeaderTaskDay` carries no created_at, so this row is
+        # also the only evidence that the checklist did not exist at the hour.
+        return _measure_without_day(db, row, m, prof, date, check, target,
+                                    due, now, tally, shared)
 
     if day.closed_at is not None:
         if row.code == "day_closed":
@@ -942,25 +1097,47 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
         return True, None
 
     # `no_day` is a CODE and «skipped» is the OUTCOME — testing the outcome
-    # against it (as this did first) is never true, and the whole «started
-    # after the check» rule silently became an ordinary late evaluation, which
-    # passes a leader who entered the plan half an hour after the hour that
-    # asked for it. Found by running it, 2026-09-20.
-    fresh, copied = None, False
+    # against it (as this did first) is never true, and the branch below then
+    # silently became an ordinary late evaluation, which passes a leader who
+    # entered the plan half an hour after the hour that asked for it. Found by
+    # running it, 2026-09-20.
+    #
+    # `stamp` is the instant the verdict was taken, `late_from` the one its
+    # lateness is counted from — None where the verdict is a statement about
+    # the hour itself and carries its own.
+    fresh, stamp, late_from = None, now, now
     if row.code == "no_day" and row.checked_at is not None:
-        # Started after the check. On a per-cell unit the leader may still have
-        # had a checklist AT the hour — another cell's — and the verdict it took
-        # there is theirs: the check is about the leader, not the cell.
-        sib = (_sibling_verdict(db, prof.id, date, tid, cell_id)
-               if cell_id is not None else None)
-        if sib is not None:
-            v, copied = sib, True
+        # The checklist appeared AFTER the hour. What counts is what stood on
+        # the page AT the hour (module doc, «MEASURED AT THE HOUR»).
+        v = _at_hour(row)
+        if v is not None:
+            stamp, late_from = row.checked_at, None
+        elif "measure_error" in (row.facts or {}):
+            # The page could not be read at the hour: this pass is simply the
+            # next try, as it is for a checklist that existed then.
+            v = fresh = evaluate(db, prof=prof, manager=m, shift=m.shift,
+                                 date=date, cell=None, check=check,
+                                 target=target, due=due, now=now)
         else:
-            v = Verdict(FAILED, "started_late",
-                        {"checked_at": row.checked_at.astimezone(TASHKENT)
-                         .strftime("%d.%m %H:%M")})
+            # Written before the hour was measured: another cell checklist's
+            # verdict at the hour, else the record, else the old rule.
+            v = (_sibling_verdict(db, prof.id, date, tid, cell_id)
+                 if cell_id is not None else None)
+            if v is None:
+                v = _from_record(db, prof=prof, manager=m, date=date,
+                                 check=check, target=target, due=due, now=now)
+            if v is not None:
+                late_from = None
+            else:
+                v = Verdict(FAILED, "started_late",
+                            {"checked_at": row.checked_at.astimezone(TASHKENT)
+                             .strftime("%d.%m %H:%M")})
+        # When the checklist turned up — the other half of «why did this
+        # verdict land hours after its hour», answerable months later.
+        v.facts = dict(v.facts, checklist_seen=now.astimezone(TASHKENT)
+                       .strftime("%d.%m %H:%M"))
     elif shared is not None:
-        v, copied = Verdict(shared.outcome, shared.code, dict(shared.facts)), True
+        v = Verdict(shared.outcome, shared.code, dict(shared.facts))
     else:
         # Always over ALL of the leader's cells — `cell=None` — whether the
         # unit files one checklist per leader or one per cell (module doc).
@@ -982,15 +1159,16 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
         # fault costs the leader every other task on it.
         v = Verdict(FAILED, "not_checked", dict(v.facts, gave_up=True))
 
-    late = max(0, int((now - due).total_seconds() // 60))
-    if late > LATE_GRACE.total_seconds() // 60:
-        v.facts = dict(v.facts, late_by_min=late)
+    if late_from is not None:
+        late = max(0, int((late_from - due).total_seconds() // 60))
+        if late > LATE_GRACE.total_seconds() // 60:
+            v.facts = dict(v.facts, late_by_min=late)
 
     entry = LeaderTaskEntry(day_id=day.id, task_id=tid, done=v.done,
                             reason=leader_tasks.auto_reason(hhmm, v.code))
     db.add(entry)
     db.flush()
-    row.checked_at, row.outcome, row.code = now, v.outcome, v.code
+    row.checked_at, row.outcome, row.code = stamp, v.outcome, v.code
     row.facts, row.entry_id = v.facts, entry.id
     db.commit()
 
@@ -999,10 +1177,10 @@ def _settle(db, m, prof, date, cell_id, tid, td, check, target, due, hhmm,
                             actor=f"avtomatik · {prof.name}")
     tally["checked"] += 1
     tally[PASSED if v.done else FAILED] += 1
-    if not copied:
-        # ONE message per task: a copy is a verdict the leader has already
-        # been told. Only «started late» is about one cell checklist, so only
-        # it names the cell.
+    # ONE message per task (`_already_told`) — a copy is a verdict the leader
+    # has already been sent. Only «started late» is about one cell checklist,
+    # so only it is always sent, and only it names the cell.
+    if v.code == "started_late" or not _already_told(db, row):
         _tell(db, prof, td, v, hhmm, date,
               cell_id if v.code == "started_late" else None)
         if v.code == "no_sap_code" and not _already_alerted(db, prof.id, date, tid):

@@ -1847,11 +1847,13 @@ class LeaderAutoCheck(Base):
     unique key, so a plain four-column constraint would accept two cell-less
     rows for one leader-day.
 
-    A row is written at the WARNING (30 minutes before), so `warned_at` alone
-    with `checked_at` NULL is «this leader was told, and at the check there was
-    no checklist to judge». That absence is load-bearing: it is how a day
-    started AFTER the check is recognised later and recorded as such, with no
-    `created_at` on the day itself.
+    A row is written at the WARNING (30 minutes before), so `warned_at` with
+    `checked_at` NULL is «told, not yet checked». Code `no_day` (outcome
+    «skipped», no entry) is «at the check there was no checklist to write on» —
+    and from 2026-09-23 such a row still carries the verdict the page gave AT
+    the hour, in `facts.at_hour`, which is written onto the checklist the moment
+    it appears (`leader_auto`, «MEASURED AT THE HOUR»). A `no_day` row without
+    it predates that: its hour went unmeasured.
     """
     __tablename__ = "leader_auto_checks"
 

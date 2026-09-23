@@ -1053,7 +1053,7 @@ def _sweep() -> None:
             # retried every pass and is otherwise completely silent, so a
             # structural failure would repeat for hours with nothing anywhere
             # saying it was happening.
-            if t.get("checked") or t.get("warned") or t.get("skipped"):
+            if any(t.get(k) for k in ("checked", "warned", "skipped", "measured")):
                 logger.info("auto checks: %s", t)
                 if t.get("checked"):
                     action_log.record_system(

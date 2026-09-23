@@ -2973,7 +2973,16 @@ def _lt_auto_view(db, tid: int, pid: int, lang: str, chat_id: int,
              .filter_by(day_id=day.id, task_id=task_id).first()
              if day is not None else None)
     parsed = leader_tasks.read_auto_reason(entry.reason if entry else None)
-    if entry is None:
+    # A leader whose checklist did not exist at the hour was still measured
+    # AT it (`leader_auto`, «MEASURED AT THE HOUR»); until the next pass writes
+    # that verdict onto the checklist, «not checked yet» would be untrue.
+    at = (leader_auto.measured(db, pid, day.date if day else effective_date(shift),
+                               task_id, cid)
+          if entry is None else None)
+    if at is not None:
+        text += _lt(lang, "auto_done" if at.done else "auto_fail").format(
+            why=_auto_why(lang, at.code or ("ok" if at.done else "no_data")))
+    elif entry is None:
         text += _lt(lang, "auto_wait")
     elif entry.done:
         text += _lt(lang, "auto_done").format(

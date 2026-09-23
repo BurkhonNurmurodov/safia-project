@@ -2737,9 +2737,9 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   the JOB (every cell, 50%), and the pass mark is still never printed as the
   instruction. **A per-cell unit judges the LEADER once**: the verdict is taken
   over all their cells (`cell=None`) and written onto every cell checklist,
-  one verdict DM per task; a cell checklist opened after the hour inherits the
-  verdict a sibling took AT the hour (`_sibling_verdict`) and is «started late»
-  only when none of theirs existed then.
+  one verdict DM per task (`_already_told`); a cell checklist opened after the
+  hour is handed the verdict taken AT the hour (see «The page is read AT THE
+  HOUR» below).
 - **The points the old reading cost were listed once and given back on one
   tap** — `services/auto_check_restore.py`, the boot one-shot
   `startup.report_auto_check_restore` (flag
@@ -2767,14 +2767,40 @@ the leader's `LeaderTaskEntry` itself and closes the task.
   for the same reason. It makes the pass idempotent and, more importantly,
   ANSWERABLE — a score moved by a machine has to be explainable months later, and
   the entry carries only a verdict; `facts` holds the numbers it was taken on.
-  It also carries a fact nothing else can: a row with `warned_at` set and code
-  `no_day` says «at the check there was no checklist», which is how a day that
-  appears AFTER the check is recognised and recorded `started_late`. That is why
-  no `created_at` was added to `LeaderTaskDay`. **`no_day` is a CODE and
-  «skipped» is the OUTCOME** — testing the outcome against it is never true, and
-  the whole «started after the check» rule silently degrades into an ordinary
-  late evaluation that passes a leader who entered the plan half an hour after
-  the hour that asked for it (found by running it, 2026-09-20).
+  It also carries a fact nothing else can: a row with code `no_day` says «at the
+  check there was no checklist» — and a bot checklist exists only from the
+  FIRST task a leader answers (`_lt_save_entry`, or a camera shot), never from
+  opening `/tasks`. That is why no `created_at` was added to `LeaderTaskDay`.
+  **`no_day` is a CODE and «skipped» is the OUTCOME** — testing the outcome
+  against it is never true (found by running it, 2026-09-20).
+- **The page is read AT THE HOUR for every leader who owes the task, checklist
+  or not** (the operator's ruling, 2026-09-23 — «check whether the leader
+  filled it before the deadline, then give or deduct points»). With no
+  checklist yet the verdict is kept on the `no_day` row as `facts.at_hour`
+  (`_measure_without_day`, measured ONCE, a data failure retried as for any
+  checklist) and written onto the checklist when it appears: PASSED if the job
+  was done at the hour, FAILED with the real reason (`no_plan`, `no_staffing`,
+  `under_target`, `no_concern`) if not; `facts.checklist_seen` says when. Only
+  then is the leader told — never at the hour, because «✅ bajarildi» sent to
+  a leader who has not opened the bot reads as «nothing left to do» while the
+  day still scores nothing without a checklist — and the task's bot screen shows
+  the stored verdict meanwhile (`leader_auto.measured`). Before the ruling a
+  checklist that appeared after the hour was `started_late` and scored 0
+  WITHOUT the page being read — a leader who filled everything at 09:00 and
+  answered their first bot task at 11:00 lost task #1's points (a leader's
+  complaint, 23 Sep). The ruling's own premise is what keeps it honest: nothing
+  typed after the hour can pass, which is all the old rule ever protected.
+  **`started_late` survives only for a `no_day` row written BEFORE the
+  measurement existed** (no `at_hour`, no `measure_error`), and only after two
+  fallbacks fail — a sibling cell's verdict at the hour, then `_from_record`,
+  which reads the hour off the Jurnal (concerns: exact, its window already ends
+  at the hour; #1: the 22 Sep restore replay, `auto_check_restore._Unit` +
+  `_plan_at_hour`, imported LAZILY so deleting that module cannot break a boot).
+  Such a row can only meet a checklist on its own day, so that path went quiet
+  after 23 Sep 2026 — delete `_from_record` together with `auto_check_restore`.
+  **Verdicts already written as `started_late` (20—23 Sep) were NOT re-judged**:
+  a past score moves only through the admin override or a list the operator
+  approves, the 22 Sep precedent.
 - **TERMINAL means the task is CLOSED, never merely that an entry exists.**
   `entry_id is not None` was the first spelling and it stranded whole days:
   nothing else writes `closed_at` for an auto task (`autoclose_due` skips them,
