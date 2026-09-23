@@ -206,8 +206,12 @@ def _deadline(r: dict) -> date | None:
     dd = r["deadline_days"]
     if dd is None:
         return None
+    # The page's rule (routers/concerns._due): counted from the day the
+    # receiver took the concern into work, or — for a deadline its creator
+    # typed on filing, before 2026-09-23 — from the filing day.
+    start = r.get("deadline_from") or r["entry"]
     try:
-        return r["entry"] + timedelta(days=int(dd))
+        return start + timedelta(days=int(dd))
     except OverflowError:
         # A deadline typed as «999999» days is a deadline that never comes —
         # it has one, so it is not «no deadline», and it can never be overdue.
@@ -216,7 +220,7 @@ def _deadline(r: dict) -> date | None:
 
 def _overdue_at(r: dict, end: date) -> bool:
     """Open at the end of `end` and past its deadline — the page's rule
-    (`entry + deadline < today`) read on the morning after `end`."""
+    (`due < today`) read on the morning after `end`."""
     dl = _deadline(r)
     return dl is not None and dl <= end and _open_at(r, end)
 

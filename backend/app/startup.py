@@ -2328,6 +2328,32 @@ def add_concern_worker_name() -> None:
         db.close()
 
 
+def add_concern_deadline_from() -> None:
+    """2026-09-23: a concern's deadline is set by its RECEIVER, not its creator.
+
+    `deadline_from` is the day the deadline's count starts — the day the person
+    holding the concern took it into work (status → doing) and said how many
+    days they need. Additive and deliberately un-backfilled: NULL is what every
+    deadline set before this means — one its CREATOR typed on filing, which
+    counted from `entry_date` and goes on counting from there
+    (routers/concerns._due reads both).
+
+    `create_all` never ALTERs an existing table, so a box that already has
+    leader_concerns needs this; IF NOT EXISTS makes it idempotent.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS deadline_from DATE"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern deadline_from migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_done_at() -> None:
     """Concerns "время выполнения" column: done_at is the exact moment a concern
     flipped to done (completion_date is only day-grained, so minutes need a real

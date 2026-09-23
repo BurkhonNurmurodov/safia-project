@@ -2704,6 +2704,13 @@ class LeaderConcern(Base):
     concern_text        = Column(Text, nullable=False)            # Хавотир
     status              = Column(String, nullable=False, server_default="todo")  # todo | doing | done
     deadline_days       = Column(Integer, nullable=True)          # Срок (days)
+    # The day the deadline's count STARTS. From 2026-09-23 a deadline is set by
+    # the concern's RECEIVER — whoever holds it, at the moment they take it into
+    # work (status → doing) — and never by its creator, so it counts from that
+    # day. NULL on every deadline set before: those were typed by the creator
+    # on filing and count from entry_date. routers/concerns._due is the one
+    # reader of the pair.
+    deadline_from       = Column(Date, nullable=True)
     entry_date          = Column(Date, nullable=False)            # Дата заполнения
     completion_date     = Column(Date, nullable=True)             # Дата завершения (set when done)
     # Exact moment the status flipped to done (cleared on reopen) — powers the

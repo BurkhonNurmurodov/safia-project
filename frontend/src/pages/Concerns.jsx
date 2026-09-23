@@ -376,12 +376,23 @@ const isoPlusDays = (iso, n) => isoMinusDays(iso, -n);
 // Whole days from b to a (positive when a is later) — deadline countdowns.
 const isoDiffDays = (a, b) =>
   Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
-// Overdue on the register = still open and past entry_date + deadline_days (the
-// due day itself is not yet overdue). ONE predicate for the deadline cell and
-// the Excel export, so the file can never mark a row the table does not.
+// Overdue on the register = still open and past its due day (the due day itself
+// is not yet overdue). `due_date` is resolved by the SERVER (routers/concerns
+// _due) because the count has two anchors: the day the receiver took the
+// concern into work, or — for a deadline its creator typed before 2026-09-23 —
+// the filing day. ONE predicate for the deadline cell, the charts, the mobile
+// card and the Excel export, so no view can mark a row another does not.
 const rowOverdue = (r) =>
-  r.status !== "done" && r.deadline_days != null && !!r.entry_date &&
-  isoDiffDays(isoPlusDays(r.entry_date, r.deadline_days), localTodayIso()) < 0;
+  r.status !== "done" && !!r.due_date && r.due_date < localTodayIso();
+// The receiver's deadline, in days — the same bounds the endpoint enforces
+// (concerns.MAX_DEADLINE_DAYS). "" while the box is empty.
+const MAX_DEADLINE_DAYS = 365;
+const clampDays = (v) => {
+  const s = String(v ?? "").trim();
+  if (s === "") return "";
+  const n = Math.floor(Number(s));
+  return Number.isFinite(n) ? String(Math.min(MAX_DEADLINE_DAYS, Math.max(0, n))) : "";
+};
 const emptyForm = () => ({
   id: null,
   leader_name: "",          // display-only, kept for legacy rows shown on edit
@@ -389,7 +400,15 @@ const emptyForm = () => ({
   category: "",             // department bucket (required)
   concern_text: "",
   status: "todo",
+  // The deadline belongs to the RECEIVER: it is never asked on create, and on
+  // edit only the holder (can_set_status) sees it, while the concern is in
+  // work. `was_status` is the status the row carried when the modal opened —
+  // the flip INTO doing is what demands one. `deadline_from` is the day an
+  // existing deadline counts from (see dueFrom below).
   deadline_days: "",
+  deadline_from: "",
+  orig_deadline: "",        // the row's own value, restored whenever the field hides
+  was_status: "todo",
   entry_date: todayIso(),
   completion_date: "",
   // The closing note, composed only when this save CLOSES the concern (it is
@@ -538,6 +557,12 @@ export default function Concerns() {
   const [resolveRow, setResolveRow] = useState(null);
   const [resolveNote, setResolveNote] = useState("");
   const [resolveError, setResolveError] = useState("");
+  // …and inline "doing" needs a DEADLINE first: taking a concern into work is
+  // the moment its receiver says how many days they need (the creator no
+  // longer sets one). Holds the row whose pill was flipped until it is given.
+  const [startRow, setStartRow] = useState(null);
+  const [startDays, setStartDays] = useState("");
+  const [startError, setStartError] = useState("");
 
   // A new concern is raised to the step above the creator; the holder at that
   // step is named on the form (supervisor/admin → a shift-manager, shift-manager
@@ -553,6 +578,27 @@ export default function Concerns() {
       : formLevel === "top-manager" ? !!form.top_manager_profile_id
       : true
   );
+  // The deadline field: the HOLDER's (can_set_status), and only while the
+  // concern is in work. Taking it into work — or giving it a first deadline —
+  // counts from today; moving one already running keeps its start, exactly as
+  // the endpoint stamps `deadline_from`. The hint names the resulting day, so
+  // the number is never left to be added up by hand.
+  const deadlineEditable = !!form.id && form.status === "doing" && form.can_set_status;
+  const formStarting = form.status === "doing" && form.was_status !== "doing";
+  const formDueFrom = formStarting || form.orig_deadline === ""
+    ? localTodayIso() : (form.deadline_from || form.entry_date);
+  const formDueHint = form.deadline_days === ""
+    ? t("concerns.deadlineAsk")
+    : formDueFrom === localTodayIso()
+      ? t("concerns.dueFromToday").replace("{date}", fmtDate(isoPlusDays(formDueFrom, Number(form.deadline_days)), lang))
+      : t("concerns.dueFromDay")
+          .replace("{from}", fmtDate(formDueFrom, lang))
+          .replace("{date}", fmtDate(isoPlusDays(formDueFrom, Number(form.deadline_days)), lang));
+  // The inline prompt always starts the count today.
+  const startDueHint = startDays === ""
+    ? t("concerns.deadlineAsk")
+    : t("concerns.dueFromToday").replace("{date}", fmtDate(isoPlusDays(localTodayIso(), Number(startDays)), lang));
+
   // Escalation up-steps that must name the receiving holder.
   const escLvl = escalate ? (escalate.row.level || "supervisor") : null;
   const needsSMPick = escalate?.direction === "up" && escLvl === "supervisor";       // → shift-manager
@@ -969,11 +1015,8 @@ export default function Concerns() {
   // brigadir / leader, status / owner / deadline, search) reshapes both charts.
   const charts = useMemo(() => {
     const today = localTodayIso();
-    // overdue = still open and older than its deadline_days (ISO string math,
-    // same convention as the period-filter helpers).
-    const isOverdue = (r) =>
-      r.status !== "done" && r.deadline_days != null && r.entry_date &&
-      r.entry_date < isoMinusDays(today, r.deadline_days);
+    // overdue = the register's own predicate (still open, past its due day).
+    const isOverdue = rowOverdue;
 
     // Donut buckets stay disjoint: an overdue row leaves its todo/doing bucket.
     // Buckets come from the selected period only — the padding below is chart-axis only.
@@ -1042,9 +1085,7 @@ export default function Concerns() {
   // every render and would bust the memo).
   const analytics = useMemo(() => {
     const today = localTodayIso();
-    const isOverdue = (r) =>
-      r.status !== "done" && r.deadline_days != null && r.entry_date &&
-      r.entry_date < isoMinusDays(today, r.deadline_days);
+    const isOverdue = rowOverdue;
     // Same four disjoint buckets as the donut — an overdue row leaves its
     // todo/doing bucket, so the stacks always add up to the row count.
     const bucketOf = (r) =>
@@ -1224,7 +1265,10 @@ export default function Concerns() {
     category: form.category || null,
     concern_text: form.concern_text.trim(),
     status: form.status,
-    deadline_days: form.deadline_days === "" ? null : Number(form.deadline_days),
+    // Never on create — the receiver sets it when they take the concern into
+    // work. On edit it round-trips the row's own value unless its holder moved
+    // it (the endpoint refuses a change from anybody else).
+    ...(form.id ? { deadline_days: form.deadline_days === "" ? null : Number(form.deadline_days) } : {}),
     entry_date: form.entry_date || null,
     completion_date: form.status === "done" ? form.completion_date || null : null,
     solution: form.solution.trim() || null,
@@ -1262,14 +1306,16 @@ export default function Concerns() {
   // requires the concern fields) with just the status swapped. Completion date is
   // left to the backend, which stamps today when a row flips to "done".
   const statusMutation = useMutation({
-    mutationFn: ({ row, status, solution }) =>
+    mutationFn: ({ row, status, solution, deadline }) =>
       api
         .put(`/api/concerns/${row.id}`, {
           cell_code: row.cell_code || null,
           category: row.category || null,
           concern_text: row.concern_text,
           status,
-          deadline_days: row.deadline_days ?? null,
+          // The receiver's deadline, sent only by the prompted "doing" flow;
+          // every other swap round-trips the row's own.
+          deadline_days: deadline ?? row.deadline_days ?? null,
           entry_date: row.entry_date || null,
           completion_date: status === "done" ? row.completion_date || null : null,
           // The CLOSING note, sent only by the note-prompted "done" flow — the
@@ -1282,18 +1328,33 @@ export default function Concerns() {
     onSuccess: () => {
       invalidate();
       setResolveRow(null);
+      setStartRow(null);
     },
-    onError: (e) => setResolveError(e?.response?.data?.detail || t("concerns.saveError")),
+    // The failure lands inside whichever prompt made the save — or, for a
+    // plain swap that opened none, in a toast, since there is nothing else on
+    // screen to carry it.
+    onError: (e, vars) => {
+      const msg = e?.response?.data?.detail || t("concerns.saveError");
+      if (vars?.solution) setResolveError(msg);
+      else if (vars?.deadline != null) setStartError(msg);
+      else toast.error(msg);
+    },
   });
 
   // Inline pill → "done" opens the note prompt; every other status applies
   // immediately. The box starts EMPTY — the note it composes is a new message
   // in the concern's thread, not an edit of something the row already carries.
+  // …and "doing" opens the deadline prompt, EMPTY for the same reason: the
+  // number is the receiver's promise, and a creator's old one is not theirs.
   function requestStatusChange(row, status) {
     if (status === "done") {
       setResolveRow(row);
       setResolveNote("");
       setResolveError("");
+    } else if (status === "doing" && row.status !== "doing") {
+      setStartRow(row);
+      setStartDays("");
+      setStartError("");
     } else {
       statusMutation.mutate({ row, status });
     }
@@ -1301,6 +1362,10 @@ export default function Concerns() {
   function submitResolve() {
     if (!resolveNote.trim()) return setResolveError(t("concerns.noteRequired"));
     statusMutation.mutate({ row: resolveRow, status: "done", solution: resolveNote.trim() });
+  }
+  function submitStart() {
+    if (startDays === "") return setStartError(t("concerns.deadlineRequired"));
+    statusMutation.mutate({ row: startRow, status: "doing", deadline: Number(startDays) });
   }
   const savingStatusId = statusMutation.isPending ? statusMutation.variables?.row?.id : null;
 
@@ -1391,6 +1456,9 @@ export default function Concerns() {
       concern_text: r.concern_text || "",
       status: r.status || "todo",
       deadline_days: r.deadline_days ?? "",
+      deadline_from: r.deadline_from || "",
+      orig_deadline: r.deadline_days ?? "",
+      was_status: r.status || "todo",
       entry_date: r.entry_date || todayIso(),
       completion_date: r.completion_date || "",
       was_done: r.status === "done",
@@ -1419,6 +1487,11 @@ export default function Concerns() {
     // its own, and it is in the thread.
     if (form.status === "done" && !form.was_done && !form.solution.trim())
       return setFormError(t("concerns.noteRequired"));
+    // The same for the flip INTO doing: it is where the deadline is set, at
+    // every door that makes it.
+    if (form.id && form.status === "doing" && form.deadline_days === ""
+        && (form.was_status !== "doing" || form.orig_deadline !== ""))
+      return setFormError(t("concerns.deadlineRequired"));
     saveMutation.mutate();
   }
 
@@ -2242,13 +2315,15 @@ export default function Concerns() {
             {shortOwner(r.responsible_name)}
           </td>
         );
-      // Overdue = still open and past entry_date + deadline_days (same
-      // convention as the mobile card and the charts).
+      // Overdue = still open and past its due day (rowOverdue — the same
+      // predicate as the mobile card and the charts). The cell keeps the
+      // number of days the receiver gave; the day it runs out is on hover.
       case "deadline": {
         const overdue = rowOverdue(r);
         return (
           <td key={key} className="px-3 py-2.5 text-center font-mono text-[11px]"
-              style={{ color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : undefined }}>
+              style={{ color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : undefined }}
+              title={r.due_date ? t("concerns.dueOn").replace("{date}", fmtDate(r.due_date, lang)) : undefined}>
             {r.deadline_days ?? "—"}
           </td>
         );
@@ -2301,12 +2376,10 @@ export default function Concerns() {
       )}
       {!isLoading && sorted.map((r) => {
         const expanded = expandedId === r.id;
-        // Deadline as a state, not arithmetic: days remaining until
-        // entry_date + deadline_days, negative = overdue (matches the charts'
-        // isOverdue convention — the due date itself is not yet overdue).
-        const dueIso = r.status !== "done" && r.deadline_days != null && r.entry_date
-          ? isoPlusDays(r.entry_date, r.deadline_days)
-          : null;
+        // Deadline as a state, not arithmetic: days remaining until the due
+        // day the server resolved, negative = overdue (rowOverdue's rule — the
+        // due day itself is not yet overdue).
+        const dueIso = r.status !== "done" ? r.due_date || null : null;
         const daysLeft = dueIso ? isoDiffDays(dueIso, localTodayIso()) : null;
         const overdue = daysLeft != null && daysLeft < 0;
         // Traffic-light edge strip — status at arm's length; overdue trumps.
@@ -3022,29 +3095,48 @@ export default function Concerns() {
               </Field>
 
               {/* Status (edit only — a new concern always opens at "To do", and
-                  only its responsible holder may change the status) + deadline */}
-              <div className={`grid gap-3 ${form.id ? "grid-cols-2" : "grid-cols-1"}`}>
-                {form.id && (
+                  only its responsible holder may change the status) + the
+                  deadline, which is the holder's too: asked when the concern is
+                  taken into work, movable while it is there, never on create —
+                  where the form says who will set it instead. */}
+              {form.id ? (
+                <div className={`grid gap-3 ${deadlineEditable ? "grid-cols-2" : "grid-cols-1"}`}>
                   <Field label={t("concerns.fieldStatus")}>
                     <StyledSelect
                       value={form.status}
                       disabled={!form.can_set_status}
-                      onChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                      onChange={(v) => setForm((f) => ({
+                        ...f,
+                        status: v,
+                        // Taken (back) into work: an empty box — the number is a
+                        // new promise. Anywhere else the field hides, so the
+                        // row's own value goes back into the payload untouched.
+                        deadline_days: v === "doing" && f.was_status !== "doing" ? "" : f.orig_deadline,
+                      }))}
                       options={STATUSES.map((s) => ({ value: s, label: statusLabel(s) }))}
                     />
                   </Field>
-                )}
-                <Field label={t("concerns.fieldDeadline")}>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.deadline_days}
-                    onChange={(e) => setForm((f) => ({ ...f, deadline_days: e.target.value }))}
-                    className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                  />
-                </Field>
-              </div>
+                  {deadlineEditable && (
+                    <Field label={t("concerns.fieldDeadline")} required={formStarting} hint={formDueHint}>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        max={MAX_DEADLINE_DAYS}
+                        value={form.deadline_days}
+                        onChange={(e) => setForm((f) => ({ ...f, deadline_days: clampDays(e.target.value) }))}
+                        className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                        style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                      />
+                    </Field>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-start gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                  <CalendarClock size={13} className="flex-shrink-0 mt-px" />
+                  <span>{t("concerns.deadlineByReceiver")}</span>
+                </div>
+              )}
 
               {/* Completion + the closing note — only relevant when done, and
                   the note only when this save is what closes it (an already
@@ -3197,6 +3289,48 @@ export default function Concerns() {
         </Modal>
       )}
 
+      {/* Take-into-work prompt — flipping a concern to "doing" from the inline
+          pill first asks its holder how many days they need. That is where a
+          concern's deadline is set: the creator no longer names one, because a
+          deadline is a promise and only the person making it can make it. */}
+      {startRow && (
+        <Modal
+          onClose={() => setStartRow(null)}
+          title={t("concerns.startTitle")}
+          subtitle={tx(startRow.concern_text || "").slice(0, 90)}
+          icon={<Clock size={16} />}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setStartRow(null)}>{t("concerns.cancel")}</Button>
+              <Button loading={statusMutation.isPending} onClick={submitStart}>
+                {t("concerns.status.doing")}
+              </Button>
+            </>
+          }
+        >
+          <Field label={t("concerns.fieldDeadline")} required hint={startDueHint}>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max={MAX_DEADLINE_DAYS}
+              autoFocus
+              value={startDays}
+              onChange={(e) => { setStartDays(clampDays(e.target.value)); setStartError(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter") submitStart(); }}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+            />
+          </Field>
+
+          {startError && (
+            <div className="flex items-center gap-1.5 text-xs text-red-400">
+              <AlertTriangle size={13} /> {startError}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {/* Read-only detail view — the table clamps the concern text and the
           solution to two lines, so this is where a row is read in full. Every
           viewer gets it, including those with no rights over the row. */}
@@ -3307,7 +3441,14 @@ export default function Concerns() {
               <MobField label={t("concerns.responsible")}>
                 {viewRow.responsible_name ? shortOwner(viewRow.responsible_name) : levelLabel(viewRow.level || "supervisor")}
               </MobField>
-              <MobField label={t("concerns.colDeadline")}>{viewRow.deadline_days ?? "—"}</MobField>
+              <MobField label={t("concerns.colDeadline")}>
+                {viewRow.deadline_days ?? "—"}
+                {viewRow.due_date && (
+                  <div className="text-[10px]" style={{ color: rowOverdue(viewRow) ? "#ef4444" : "var(--text-3)" }}>
+                    {t("concerns.dueOn").replace("{date}", fmtDate(viewRow.due_date, lang))}
+                  </div>
+                )}
+              </MobField>
               <MobField label={t("concerns.colResolution")}>
                 <span className="inline-flex items-center gap-1 tabular-nums">
                   <Timer size={12} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />

@@ -40,6 +40,13 @@ even when an admin or a shift-manager raises it straight to a level above them
 addressed as a profile, so the DM reaches every account holding it and an
 unclaimed profile inherits the bell row on registration; the author is never
 notified about their own action and no account is DMed twice.
+
+Deadline ("Срок"): set by the RECEIVER, never by the creator (2026-09-23, the
+operator's directive). A new concern carries none. Whoever holds it says how
+many days they need at the moment they take it into work (status → doing),
+the count starts that day (``deadline_from``), and while it is in work only
+they — or an admin — may move it. ``_due`` is the one answer to «when does it
+run out»; deadlines creators typed before this keep counting from entry_date.
 Access is gated by the ``concerns`` page in the access matrix.
 """
 import re
@@ -96,6 +103,11 @@ LEVEL_IDX = {l: i for i, l in enumerate(LEVELS)}
 
 # Roles that pick a leader when creating (everyone but the leader themself).
 PICKER_ROLES = ("admin", "shift-manager", "supervisor")
+
+# The longest deadline a receiver may give themselves. Wide enough for any real
+# job, and a bound that keeps `deadline_from + days` inside a date — the old
+# free field, typed by creators, accepted «999999».
+MAX_DEADLINE_DAYS = 365
 
 # Pages whose grant opens the ROW-LEVEL actions on one concern — edit/status,
 # escalate, history, delete and the comment thread. «Yacheyka havotirlari»
@@ -239,6 +251,27 @@ def _level(c: LeaderConcern) -> str:
     return c.level or "supervisor"
 
 
+def _due(c: LeaderConcern) -> Optional[date]:
+    """THE day a concern's deadline runs out — None while it has none.
+
+    Counted from ``deadline_from``, the day the RECEIVER took the concern into
+    work and set it, or — for a deadline its creator typed on filing, before
+    2026-09-23 — from ``entry_date``. The register, the cell page, its stats
+    and the weekly deck all read this one answer, so none of them re-spells
+    the anchor. Overdue is «still open and today is past this day»: the due
+    day itself is not yet overdue."""
+    if c.deadline_days is None:
+        return None
+    start = c.deadline_from or c.entry_date
+    if start is None:
+        return None
+    try:
+        return start + timedelta(days=int(c.deadline_days))
+    except OverflowError:
+        # A legacy «999999»: a deadline that never comes, so never overdue.
+        return None
+
+
 def _has_leader(c: LeaderConcern) -> bool:
     """There is a leader identity to hand this concern down to — the profile
     first (the canonical owner, claimed or not), the legacy role row as the
@@ -307,6 +340,7 @@ def _serialize(
     cell_id, cell_leader, cell_sup = (cell_leaders or {}).get(
         (c.cell_code or "").strip(), (None, None, None)
     )
+    due = _due(c)
     out = {
         "id": c.id,
         # The register number the «№» column prints: assigned in creation order,
@@ -344,6 +378,12 @@ def _serialize(
         "concern_text": c.concern_text,
         "status": c.status,
         "deadline_days": c.deadline_days,
+        # The day the count started (the receiver's «taken into work» day;
+        # null = a creator's deadline from before 2026-09-23, counted from
+        # entry_date) and the day it runs out — resolved HERE by _due, so no
+        # reader on the client re-derives the anchor.
+        "deadline_from": c.deadline_from.isoformat() if c.deadline_from else None,
+        "due_date": due.isoformat() if due else None,
         "entry_date": c.entry_date.isoformat() if c.entry_date else None,
         "completion_date": c.completion_date.isoformat() if c.completion_date else None,
         "solution": c.solution,
@@ -399,6 +439,9 @@ class ConcernIn(BaseModel):
     concern_owner: Optional[str] = None
     concern_text: str
     status: str = "todo"
+    # The RECEIVER's (see the module docstring): required on the save that
+    # takes the concern into work, movable by its holder while it is there,
+    # and ignored on create — a creator no longer sets one.
     deadline_days: Optional[int] = None
     entry_date: Optional[date] = None
     completion_date: Optional[date] = None
@@ -1200,7 +1243,9 @@ def _deck_inputs(db: Session, win: tuple[date, date], prev_win: tuple[date, date
             # stops here and reaches neither the file nor the model.
             "worker": bool(c.worker_name),
             "entry": c.entry_date, "status": c.status, "completion": c.completion_date,
-            "deadline_days": c.deadline_days,
+            # The pair _due reads: days, counted from the day the receiver took
+            # the concern into work (None = a creator's deadline, from entry).
+            "deadline_days": c.deadline_days, "deadline_from": c.deadline_from,
             "resolution": notes.get(c.id) or c.solution or "",
             "level_end": lvl_end, "holder_end": holder,
         })
@@ -1343,7 +1388,9 @@ def create_concern(
     next_seq = (db.query(func.max(LeaderConcern.seq)).scalar() or 0) + 1
 
     # A brand-new concern always opens at "todo": setting status is the
-    # responsible holder's call, and the creator isn't that person.
+    # responsible holder's call, and the creator isn't that person. It opens
+    # with NO deadline for the same reason — the receiver sets one when they
+    # take it into work — so a `deadline_days` a client still sends is ignored.
     c = LeaderConcern(
         seq=next_seq,
         cell_code=cell,
@@ -1353,7 +1400,8 @@ def create_concern(
         owner_profile_id=owner_profile_id,
         concern_text=body.concern_text.strip(),
         status="todo",
-        deadline_days=body.deadline_days,
+        deadline_days=None,
+        deadline_from=None,
         entry_date=entry,
         completion_date=None,
         done_at=None,
@@ -1373,8 +1421,6 @@ def create_concern(
         text = _snippet(c.concern_text)
         alert_details = [("cell", c.cell_code), ("category", c.category),
                          ("date", str(entry)), ("text", text)]
-        if c.deadline_days is not None:
-            alert_details.append(("deadline", c.deadline_days))
         alert_grant_use(db, payload, page_cap("concerns"), "concern.created",
                         details=alert_details, native=False)
 
@@ -1431,8 +1477,7 @@ def create_concern(
         day=entry,
         details=[("id", c.seq), ("cell", c.cell_code), ("category", c.category),
                  ("level", _level(c)), ("leader", c.leader_name),
-                 ("date", str(entry)), ("deadline", c.deadline_days),
-                 ("text", snippet)],
+                 ("date", str(entry)), ("text", snippet)],
     )
     return _serialize(c, _viewer_ctx(db, payload), sm_names=_sm_names(db),
                       owner_names=_owner_names(db, [c]), cell_leaders=_cell_leaders(db),
@@ -1451,9 +1496,10 @@ def update_concern(
         raise HTTPException(status_code=404, detail="Concern not found")
     _assert_can_edit(payload, c, db)
     _validate(body)
+    ctx = _viewer_ctx(db, payload)
     # Changing the status is the responsible holder's call (plus admin); everyone
     # else who may edit keeps the current status untouched.
-    if body.status != c.status and not _can_set_status(_viewer_ctx(db, payload), c):
+    if body.status != c.status and not _can_set_status(ctx, c):
         raise HTTPException(status_code=403, detail="Only the responsible person can change the status")
 
     # What the edit actually changed, captured before the mutation: the page
@@ -1463,9 +1509,35 @@ def update_concern(
     was_deadline = c.deadline_days
     # The register's own before-picture: the three fields above plus everything
     # else this handler may rewrite, so the log's diff is the whole save.
+    was_due = _due(c)
     was_row = {"cell": c.cell_code, "category": c.category, "status": c.status,
                "text": c.concern_text, "deadline": c.deadline_days,
+               "due": str(was_due) if was_due else None,
                "date": str(c.entry_date) if c.entry_date else None}
+
+    # The DEADLINE is the RECEIVER's promise (2026-09-23, the operator's
+    # directive): whoever holds the concern says how many days they need at the
+    # moment they take it into work, and the count starts that day. Nobody else
+    # sets it — not its creator (create_concern stores none), not a level above
+    # on edit — because only the person making a promise can make it. So:
+    #   * the flip INTO doing must carry one (the page asks for it at every door
+    #     that makes that flip; this is the same rule at the endpoint);
+    #   * while the concern is in work its holder may move it;
+    #   * any other change is refused. An UNCHANGED value passes untouched —
+    #     every inline status swap and every edit round-trips the row's own,
+    #     including a creator's deadline from before this rule.
+    starting = body.status == "doing" and was_status != "doing"
+    new_days = body.deadline_days
+    set_deadline = starting or new_days != c.deadline_days
+    if set_deadline:
+        if not starting and not _can_set_status(ctx, c):
+            raise HTTPException(status_code=403, detail="Only the person holding the concern sets its deadline")
+        if body.status != "doing":
+            raise HTTPException(status_code=400, detail="A deadline is set when the concern is taken into work")
+        if new_days is None:
+            raise HTTPException(status_code=400, detail="Set a deadline to take the concern into work")
+        if not 0 <= new_days <= MAX_DEADLINE_DAYS:
+            raise HTTPException(status_code=400, detail=f"The deadline must be 0–{MAX_DEADLINE_DAYS} days")
 
     # Closing a concern requires saying HOW it was closed. The note is not a
     # formality: it is the whole content of the DM the brigadir, the cell's
@@ -1498,7 +1570,14 @@ def update_concern(
         c.category = body.category
     c.concern_text = body.concern_text.strip()
     c.status = body.status
-    c.deadline_days = body.deadline_days
+    if set_deadline:
+        # Taken (back) into work, or given a first deadline: the count starts
+        # today, on the plant's clock. Moving one already running keeps its
+        # start, so the number goes on meaning «days from the day work began» —
+        # and a creator's legacy deadline goes on counting from its filing day.
+        if starting or c.deadline_days is None:
+            c.deadline_from = today_local()
+        c.deadline_days = new_days
     if body.entry_date:
         c.entry_date = body.entry_date
     c.completion_date = _apply_completion(body.status, body.completion_date, c.completion_date)
@@ -1542,17 +1621,31 @@ def update_concern(
 
     # Tell the parties tracking this concern what happened to it. A status flip
     # is the headline: when an edit rides along with one, it stays unmentioned
-    # rather than sending the same people two DMs about one save.
+    # rather than sending the same people two DMs about one save. Taking a
+    # concern into work is a flip of its own now, because it is where the
+    # deadline is born — until 2026-09-23 todo → doing said nothing.
+    due = _due(c)
     if c.status == "done" and was_status != "done":
         nkey = "concern_resolved"
     elif was_status == "done" and c.status != "done":
         nkey = "concern_reopened"
+    elif starting:
+        nkey = "concern_started"
     elif c.concern_text != was_text or c.deadline_days != was_deadline:
         nkey = "concern_edited"
     else:
         nkey = None
+    recipients = _interested(db, c) if nkey else []
+    if nkey == "concern_started":
+        # The creator no longer names a deadline, so the one they are now
+        # waiting on is news to them first of all — they hear it even where
+        # they hold no step of the chain (a shift-manager who raised it to the
+        # top, an admin). A worker's filing has no profile to address.
+        okey = _profile_key(c.owner_role, c.owner_profile_id)
+        if okey and okey not in {k for _, k in recipients if k}:
+            recipients.append((None, okey))
     if nkey and _notify_recipients(
-        db, _interested(db, c), nkey,
+        db, recipients, nkey,
         {
             "concern_no": _no(c),
             "actor_name": payload.get("full_name") or "",
@@ -1565,6 +1658,10 @@ def update_concern(
             # note comes from THIS request (it is a comment now, not a column);
             # `c.solution` answers for a legacy row being re-closed.
             "solution": _snippet(note or c.solution or ""),
+            # The day the deadline runs out, on the three notices that print
+            # it (started / reopened / edited) and only while the concern is in
+            # work — blank drops the row, the same courtesy as `solution`.
+            "due": due.isoformat() if due and c.status == "doing" else "",
         },
         int(payload["sub"]), set(),
     ):
@@ -1572,6 +1669,7 @@ def update_concern(
 
     now_row = {"cell": c.cell_code, "category": c.category, "status": c.status,
                "text": c.concern_text, "deadline": c.deadline_days,
+               "due": str(due) if due else None,
                "date": str(c.entry_date) if c.entry_date else None}
     action_log.enrich(
         target_kind="concern", target_id=c.id, target_name=_snippet(c.concern_text),

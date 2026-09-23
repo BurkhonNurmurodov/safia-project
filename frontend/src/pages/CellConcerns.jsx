@@ -57,8 +57,9 @@ const ST = {
   done:  { color: "#22c55e", icon: CheckCheck },
 };
 const STATUSES = ["todo", "doing", "done"];
-const DEADLINE_CHIPS = [1, 3, 7, 14];
-const MAX_DEADLINE_DAYS = 365;   // twin of cell_concerns.MAX_DEADLINE_DAYS
+// The worker no longer picks a deadline (2026-09-23): the LEADER sets one when
+// they take the concern into work, in the detail modal — the /concerns rule.
+const MAX_DEADLINE_DAYS = 365;   // twin of concerns.MAX_DEADLINE_DAYS
 const RESET_AFTER_MS = 15000;
 
 // Above this many cells the tile grid stops being an affordance and becomes an
@@ -88,9 +89,16 @@ const rgba = (hex, a) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
+// Still open and past its due day — `due_date` is resolved by the server
+// (routers/concerns._due), which knows the deadline counts from the day the
+// leader took the concern into work. The due day itself is not yet overdue.
 const isOverdue = (r) =>
-  r.status !== "done" && r.deadline_days && r.entry_date &&
-  new Date(r.entry_date).getTime() + r.deadline_days * 864e5 < Date.now();
+  r.status !== "done" && !!r.due_date && r.due_date < localISO(new Date());
+const plusDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return localISO(d);
+};
 
 const initials = (n) =>
   String(n || "").trim().split(/\s+/).slice(0, 2).map((p) => p[0] || "").join("").toUpperCase();
@@ -281,7 +289,6 @@ function WriteTab({ cells, t, onFiled, onError }) {
   const [name, setName] = useState("");
   const [cat, setCat] = useState("");
   const [text, setText] = useState("");
-  const [days, setDays] = useState(null);
   const [errs, setErrs] = useState({});
   const [done, setDone] = useState(null);
   const [left, setLeft] = useState(0);
@@ -291,7 +298,7 @@ function WriteTab({ cells, t, onFiled, onError }) {
 
   const reset = () => {
     setCell(cells.length === 1 ? cells[0].code : "");
-    setName(""); setCat(""); setText(""); setDays(null); setErrs({}); setDone(null);
+    setName(""); setCat(""); setText(""); setErrs({}); setDone(null);
     nameRef.current?.focus();
   };
 
@@ -322,7 +329,7 @@ function WriteTab({ cells, t, onFiled, onError }) {
     }
     file.mutate({
       cell_code: cell, worker_name: name.trim(), category: cat,
-      concern_text: text.trim(), deadline_days: days,
+      concern_text: text.trim(),
     });
   };
 
@@ -487,51 +494,6 @@ function WriteTab({ cells, t, onFiled, onError }) {
         {errs.text && <Err text={t("cellConcerns.err.text")} />}
       </Card>
 
-      <Card>
-        <Step n={cells.length > 1 ? 5 : 4} label={t("cellConcerns.step.deadline")} />
-        {/* The chips are QUICK PICKS over this field, not the whole answer —
-            1/3/7/14 cannot express "5 days", and a worker who needs that had no
-            way to say it. One value behind both: typing clears the pressed chip,
-            pressing a chip fills the field. */}
-        <input
-          type="number" inputMode="numeric" min={1} max={MAX_DEADLINE_DAYS}
-          value={days ?? ""}
-          onChange={(e) => {
-            const v = e.target.value.trim();
-            if (v === "") { setDays(null); return; }
-            const n = Math.floor(Number(v));
-            if (Number.isFinite(n)) setDays(Math.min(MAX_DEADLINE_DAYS, Math.max(1, n)));
-          }}
-          placeholder={t("cellConcerns.daysPh")}
-          className="w-full px-3.5 rounded-xl text-base outline-none mb-3"
-          style={{
-            height: 52, background: "var(--bg-inner)", color: "var(--text-1)",
-            border: "1px solid var(--border-md)",
-          }}
-        />
-        <div className="flex flex-wrap gap-2">
-          {DEADLINE_CHIPS.map((d) => (
-            <button
-              key={d} type="button" aria-pressed={days === d}
-              onClick={() => setDays(days === d ? null : d)}
-              className="px-4 rounded-xl text-sm tabular-nums transition-colors"
-              style={{
-                height: 44, minWidth: 62,
-                background: days === d ? "var(--brand-bg)" : "var(--bg-inner)",
-                border: `1px solid ${days === d ? "var(--brand)" : "var(--border-md)"}`,
-                color: days === d ? "var(--brand-text)" : "var(--text-2)",
-                fontWeight: days === d ? 600 : 400,
-              }}
-            >
-              {tp(t, "cellConcerns.days", { n: d })}
-            </button>
-          ))}
-        </div>
-        <div className="text-[11px] mt-3" style={{ color: "var(--text-3)" }}>
-          {t("cellConcerns.deadlineHint")}
-        </div>
-      </Card>
-
       <div className="flex items-center gap-4 flex-wrap pt-1">
         <Button type="submit" size="lg" loading={file.isPending} icon={Check}
                 className="!h-14 !px-7 !text-base">
@@ -676,19 +638,37 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
   const [status, setStatus] = useState(row.status);
   const [text, setText] = useState(row.concern_text);
   const [solution, setSolution] = useState("");
+  // The deadline is the leader's promise (they hold the concern here): asked
+  // when they take it into work, movable while it is there. It starts EMPTY on
+  // a row not yet in work — a number the worker once typed is not theirs.
+  const [days, setDays] = useState(row.status === "doing" && row.deadline_days != null ? String(row.deadline_days) : "");
   const [uplift, setUplift] = useState(false);
   const [reason, setReason] = useState("");
   const [del, setDel] = useState(false);
   const [err, setErr] = useState(null);
 
   const closing = status === "done" && row.status !== "done";
+  const starting = status === "doing" && row.status !== "doing";
+  // Taking it into work — or giving it a first deadline — counts from today;
+  // moving one already running keeps its start (the endpoint's own rule), so
+  // the preview names the day the server will store.
+  const dueFrom = starting || row.deadline_days == null
+    ? localISO(new Date()) : (row.deadline_from || row.entry_date);
+  const dueHint = days === ""
+    ? t("concerns.deadlineAsk")
+    : dueFrom === localISO(new Date())
+      ? t("concerns.dueFromToday").replace("{date}", plusDays(dueFrom, Number(days)))
+      : t("concerns.dueFromDay").replace("{from}", dueFrom).replace("{date}", plusDays(dueFrom, Number(days)));
   const fail = (e, fallback) => e?.response?.data?.detail || t(fallback);
 
   const save = useMutation({
     mutationFn: () => api.put(`/api/concerns/${row.id}`, {
       concern_text: text.trim(), status, solution: solution.trim() || undefined,
       cell_code: row.cell_code, category: row.category,
-      deadline_days: row.deadline_days, entry_date: row.entry_date,
+      // In work: the number in the box. Anywhere else the row's own, untouched —
+      // the endpoint refuses a deadline change outside work.
+      deadline_days: status === "doing" ? (days === "" ? null : Number(days)) : row.deadline_days,
+      entry_date: row.entry_date,
     }),
     onSuccess: () => onDone(tp(t, "cellConcerns.saved", { no: row.seq })),
     onError: (e) => onError(fail(e, "cellConcerns.saveFailed")),
@@ -711,6 +691,10 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
   const submit = () => {
     if (closing && !solution.trim()) {
       onError(t("cellConcerns.err.solution"));
+      return;
+    }
+    if (status === "doing" && days === "" && (starting || row.deadline_days != null)) {
+      onError(t("concerns.deadlineRequired"));
       return;
     }
     save.mutate();
@@ -753,6 +737,23 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
           />
         </Field>
 
+        {status === "doing" && (
+          <Field label={t("concerns.fieldDeadline")} required={starting} hint={dueHint}>
+            <input
+              type="number" inputMode="numeric" min={0} max={MAX_DEADLINE_DAYS}
+              value={days}
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                if (v === "") { setDays(""); return; }
+                const n = Math.floor(Number(v));
+                if (Number.isFinite(n)) setDays(String(Math.min(MAX_DEADLINE_DAYS, Math.max(0, n))));
+              }}
+              className="w-full px-3 py-2 rounded-xl text-sm outline-none"
+              style={{ background: "var(--bg-inner)", color: "var(--text-1)", border: "1px solid var(--border-md)" }}
+            />
+          </Field>
+        )}
+
         {closing && (
           <Field label={t("cellConcerns.solution")} required
                  hint={t("cellConcerns.solutionHint")}>
@@ -775,7 +776,9 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
 
         <div className="flex flex-wrap gap-6 pt-1">
           <Meta k={t("cellConcerns.deadlineWord")}
-                v={row.deadline_days ? tp(t, "cellConcerns.days", { n: row.deadline_days }) : "—"} />
+                v={row.due_date
+                  ? `${tp(t, "cellConcerns.days", { n: row.deadline_days })} · ${row.due_date}`
+                  : "—"} />
           <Meta k={t("cellConcerns.brigadir")} v={row.brigadir_name || "—"} />
           <Meta k={t("cellConcerns.col.comments")}
                 v={<Button size="sm" variant="ghost" onClick={onComments}>

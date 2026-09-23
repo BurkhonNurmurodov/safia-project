@@ -41,6 +41,10 @@ ruling) — it is the brigadir's now, and it is on /concerns, where the whole
 chain can see it. Rows are then narrowed by ``concerns._scope_query``, so a
 leader reads their own, a brigadir their unit's, an admin everything.
 
+NO DEADLINE ON FILING (2026-09-23): the worker used to pick one here. A
+deadline is now the RECEIVER's — the leader sets it when they take the concern
+into work, through the ordinary PUT, which is where that rule lives.
+
 WHO IS TOLD: only the LEADER (the operator's call). A worker filing is not the
 brigadir's business until somebody decides it is, and that decision is the
 uplift — which notifies them through the ordinary escalate. The ordinary
@@ -65,7 +69,7 @@ from app.permissions import require_page
 from app.services import action_log
 from app.routers.concerns import (
     CATEGORIES, _cell_leader_recipient, _cell_leaders, _cell_manager_id,
-    _comment_counts, _no, _notify_recipients, _owner_names, _scope_query,
+    _comment_counts, _due, _no, _notify_recipients, _owner_names, _scope_query,
     _serialize, _shift_unit_ids, _sm_names, _snippet, _viewer_ctx,
 )
 
@@ -77,8 +81,6 @@ PAGE = "cell-concerns"
 # a shift, short enough that a stuck key cannot fill the table.
 MAX_TEXT = 4000
 MAX_NAME = 120
-# The deadline chips the page offers, plus anything typed inside the same range.
-MAX_DEADLINE_DAYS = 365
 
 
 def _worker_rows(q):
@@ -176,7 +178,9 @@ class WorkerConcernIn(BaseModel):
     worker_name: str
     category: str
     concern_text: str
-    deadline_days: Optional[int] = None
+    # No deadline: the leader sets one when they take the concern into work. A
+    # tab still open on an older bundle sends `deadline_days`; pydantic drops
+    # the unknown field, so that filing still lands — without it.
 
 
 @router.post("")
@@ -208,9 +212,6 @@ def file_cell_concern(
         raise HTTPException(status_code=400, detail="Havotir matni juda uzun")
     if category not in CATEGORIES:
         raise HTTPException(status_code=400, detail="Bo'limni tanlang")
-    days = body.deadline_days
-    if days is not None and not (0 < days <= MAX_DEADLINE_DAYS):
-        raise HTTPException(status_code=400, detail="Muddat noto'g'ri")
 
     # The cell must be one this page may file for — the code arrives over the
     # wire and the endpoint is reachable without the UI, so a typed code must
@@ -247,7 +248,7 @@ def file_cell_concern(
         owner_profile_id=None,
         concern_text=text,
         status="todo",
-        deadline_days=days,
+        deadline_days=None,
         entry_date=today,
         # Opens at the LEADER step — the whole point. Nothing else in the
         # codebase creates a concern here.
@@ -286,7 +287,7 @@ def file_cell_concern(
         day=today,
         details=[("id", c.seq), ("cell", cell_code), ("category", category),
                  ("worker", worker), ("leader", leader_name),
-                 ("deadline", days), ("text", _snippet(text))],
+                 ("text", _snippet(text))],
     )
     return _serialize(c, _viewer_ctx(db, payload), sm_names=_sm_names(db),
                       owner_names=_owner_names(db, [c]), cell_leaders=_cell_leaders(db),
@@ -396,9 +397,11 @@ def cell_concern_stats(
         # so beside the list.
         w = (r.worker_name or "").strip() or "—"
         by_worker[w] = by_worker.get(w, 0) + 1
-        if st != "done" and r.deadline_days and r.entry_date:
-            if r.entry_date + timedelta(days=r.deadline_days) < today:
-                overdue += 1
+        # _due, the register's own answer: a receiver's deadline counts from
+        # the day they took the concern into work, not from filing.
+        due = _due(r)
+        if st != "done" and due is not None and due < today:
+            overdue += 1
         if st == "done" and r.completion_date and r.entry_date:
             res_days.append((r.completion_date - r.entry_date).days)
 

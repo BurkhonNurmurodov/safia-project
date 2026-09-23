@@ -1476,6 +1476,37 @@ causes, lay out the slides).
   (browser downloads, Telegram DMs), which is the old `deliver_xlsx`
   generalised over the MIME type — the WHERE decision stays in one place.
 
+## A concern's deadline is its RECEIVER's
+
+From **2026-09-23** (the operator's directive) the creator of a concern no
+longer sets a deadline — on `/concerns` or `/cell-concerns`. Whoever HOLDS it
+sets one when they take it into work (status → doing), because a deadline is a
+promise and only the person making it can make it.
+
+- **`routers/concerns.py` owns the rule, at the endpoint**: `create_concern`
+  and the worker filing store none (a `deadline_days` a client still sends is
+  ignored); the flip INTO doing must carry one (400 without); while the
+  concern is in work its holder (`_can_set_status`) — or an admin — may move
+  it; any other change is refused. An UNCHANGED value always passes, so every
+  round-trip save keeps working. Bounds 0–`MAX_DEADLINE_DAYS` (365).
+- **Still days, now with an anchor**: `leader_concerns.deadline_from` is the
+  day the count starts — stamped on the flip into doing (or on a first
+  deadline); moving one keeps it. NULL = a creator's deadline from before this
+  rule, which keeps counting from `entry_date`. Nothing was migrated or cleared.
+- **`_due(c)` is THE due day** and ships as `due_date` on every row. The
+  register, the mobile card, the charts, the Excel export, `/cell-concerns` and
+  its stats all read it (overdue = open and `due_date < today`); the weekly deck
+  reads the same pair through `concerns_deck._deadline`. Never re-derive
+  `entry_date + deadline_days` on a client.
+- **Every door that flips into doing asks for it**: the inline pill opens a
+  «take into work» prompt (empty — an old number was somebody else's), the
+  edit modal shows the field only to the holder while the concern is in work,
+  and the `/cell-concerns` detail modal does the same for the leader.
+- **`concern_started`** is the notice for that flip (holder's `_interested`
+  audience + the CREATOR, who no longer names the deadline and is waiting on
+  it), with the due day as a `⏳` row; `concern_reopened` / `concern_edited`
+  carry the same row while the concern is in work.
+
 ## The weekly Concerns deck (`/concerns` → «Haftalik hisobot»)
 
 From **2026-09-23** (the operator's rulings, asked and answered one by one)

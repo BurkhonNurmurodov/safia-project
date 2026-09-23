@@ -705,6 +705,16 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Опасение передано на уровень «{level_label}»", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Причина: {reason}\n✍️ Кто: {actor_name}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
         "en": ("A concern moved to {level_label}", "“{concern}”\n\n🔢 No: {concern_no}\n📝 Reason: {reason}\n✍️ By: {actor_name}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
+    # The concern's holder took it into work — and, since 2026-09-23, that is the
+    # moment its DEADLINE is set: the receiver says how many days they need, the
+    # creator no longer does. So the notice is about the deadline, printed as
+    # the day it runs out (`due`, formatted per viewer in _notif_values).
+    "concern_started": {
+        "uz": ("{actor_name} xavotirni ishga oldi", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Muddat: {due}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни ишга олди", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Муддат: {due}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} взял(а) опасение в работу", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Срок: {due}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} started work on a concern", "“{concern}”\n\n🔢 No: {concern_no}\n⏳ Deadline: {due}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
+    },
     # The resolution note leads the body for the same reason the move reason does
     # on concern_moved: "X closed it" without HOW is a line nobody can act on,
     # and the note is mandatory at every door that flips a concern to done.
@@ -715,17 +725,20 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{actor_name} закрыл(а) опасение", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Решение: {solution}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
         "en": ("{actor_name} resolved a concern", "“{concern}”\n\n🔢 No: {concern_no}\n📝 Solution: {solution}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
+    # Both carry the deadline row too — reopened straight into work, or its
+    # holder moving the deadline — and it drops out whenever `due` is blank,
+    # which it is for every notice stored before it existed.
     "concern_reopened": {
-        "uz": ("{actor_name} xavotirni qayta ochdi", "«{concern}»\n\n🔢 №: {concern_no}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни қайта очди", "«{concern}»\n\n🔢 №: {concern_no}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
-        "ru": ("{actor_name} переоткрыл(а) опасение", "«{concern}»\n\n🔢 №: {concern_no}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
-        "en": ("{actor_name} reopened a concern", "“{concern}”\n\n🔢 No: {concern_no}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
+        "uz": ("{actor_name} xavotirni qayta ochdi", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Muddat: {due}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни қайта очди", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Муддат: {due}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} переоткрыл(а) опасение", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Срок: {due}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} reopened a concern", "“{concern}”\n\n🔢 No: {concern_no}\n⏳ Deadline: {due}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_edited": {
-        "uz": ("{actor_name} xavotirni tahrirladi", "«{concern}»\n\n🔢 №: {concern_no}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни таҳрирлади", "«{concern}»\n\n🔢 №: {concern_no}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
-        "ru": ("{actor_name} изменил(а) опасение", "«{concern}»\n\n🔢 №: {concern_no}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
-        "en": ("{actor_name} edited a concern", "“{concern}”\n\n🔢 No: {concern_no}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
+        "uz": ("{actor_name} xavotirni tahrirladi", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Muddat: {due}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни таҳрирлади", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Муддат: {due}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} изменил(а) опасение", "«{concern}»\n\n🔢 №: {concern_no}\n⏳ Срок: {due}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} edited a concern", "“{concern}”\n\n🔢 No: {concern_no}\n⏳ Deadline: {due}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_escalated": {
         "uz": ("{actor_name} xavotirni sizga yo'naltirdi", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Sabab: {reason}\n📍 Daraja: {level_label}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
@@ -940,6 +953,11 @@ def _notif_values(params: dict, lang: str, *, escape: bool = False) -> dict:
         values["target"] = transliterate(params.get("target"), lang)
     if "date" in params:
         values["date"] = _fmt_date(params["date"], lang)
+    # A concern's deadline day (concern_started / _reopened / _edited). Blank is
+    # a real value there — «no deadline to print» — and must stay blank so
+    # _render_body drops the row instead of formatting nothing.
+    if params.get("due"):
+        values["due"] = _fmt_date(params["due"], lang)
     # Back-compat: call_forecast gained ``eff`` (Zagruzka %) then ``name``
     # (supervisor) fields after some notices were already stored; fall back so
     # those old rows still render at view time.
@@ -991,6 +1009,7 @@ _NOTIF_TG_ICON = {
     "concern_created": "🔔",
     "concern_assigned": "📌",
     "concern_moved": "🔀",
+    "concern_started": "⏳",
     "concern_resolved": "✅",
     "concern_reopened": "🔄",
     "concern_edited": "✏️",
