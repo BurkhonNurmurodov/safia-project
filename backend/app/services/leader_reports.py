@@ -29,8 +29,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import (
     LeaderAiDispute, LeaderAiReview, LeaderChecklist, LeaderDayReport,
-    LeaderTaskDef, LeaderTaskEntry, LeaderTaskLeaderSetting, LeaderTaskSetting,
-    Manager, RoleProfile,
+    LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry, LeaderTaskLeaderSetting,
+    LeaderTaskSetting, Manager, RoleProfile,
 )
 from app.services import (
     action_log, leader_ai, leader_bot, leader_cutoffs, leader_exclusions,
@@ -454,6 +454,23 @@ def maybe_send_report(db: Session, key: str) -> bool:
 PARKED = -1
 
 
+def _open_bot_day(db: Session, uid: str) -> bool:
+    """Is this a bot checklist day that exists and has not closed yet?
+
+    False for a sheet uid, a malformed one and a deleted day — those still
+    reach `build_report_row`, whose None for them is a real «no such report».
+    """
+    if not str(uid or "").startswith("bot-"):
+        return False
+    try:
+        day_id = int(uid[4:])
+    except ValueError:
+        return False
+    row = (db.query(LeaderTaskDay.closed_at)
+           .filter(LeaderTaskDay.id == day_id).first())
+    return row is not None and row[0] is None
+
+
 def _park(db: Session, key: str | None, uid: str, why: str) -> None:
     """Record that a finished day is deliberately NOT being reported.
 
@@ -473,6 +490,14 @@ def _park(db: Session, key: str | None, uid: str, why: str) -> None:
         return
     led = db.query(LeaderDayReport).filter_by(report_key=key).first()
     if led is not None:
+        # Parked again, for a reason that applies to the CLOSED day. A park
+        # written while the day was still open (before the 23 Sep fix) is what
+        # `leader_ai.sweep_unreported` retries; re-dating it past the close
+        # tells the sweep this one is now a considered decision, so it stops
+        # asking. A real send (`sends > 0`) is never touched.
+        if (led.sends or 0) == 0:
+            led.first_sent_at = datetime.now(timezone.utc)
+            db.commit()
         return
     db.add(LeaderDayReport(report_key=key, uid=uid, date="", score_sent=PARKED,
                            rejected_sent=0, tasks_total=0, sends=0))
@@ -509,6 +534,22 @@ def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     # the ledger would then be written under a key the sweep never looks up —
     # so the report would be re-sent on every pass, forever.
     key = key or key_of_uid(db, uid)
+
+    # A bot day still OPEN has no report YET — which is not the same as having
+    # none. Returns before anything is written and does NOT park, exactly like
+    # Ghost Mode above: the day closes later, and the report goes out then.
+    #
+    # Until 2026-09-23 this fell through to the park below as «report no
+    # longer exists». On a unit closing one task at a time the AI reviews a
+    # photo task minutes after it closes, so the drain tried the report while
+    # the day was still open, parked it, and never came back: when the day's
+    # LAST task closed with no AI review behind it — an automatic check (#8 at
+    # 17:00 / 06:00), a deadline, a «Yo'q» — no drain pass touched the key
+    # again, and `sweep_unreported` skips a key with a ledger row. The leader
+    # got no DM, and so no button onto the report page where objections are
+    # filed. `sweep_unreported` now sends a closed day's report instead.
+    if _open_bot_day(db, uid):
+        return False
 
     row = build_report_row(db, uid)
     if row is None:

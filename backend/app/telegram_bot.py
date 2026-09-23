@@ -5815,6 +5815,56 @@ def _acr_callback(call: types.CallbackQuery):
             logger.warning("auto-check restore: could not edit the card", exc_info=True)
 
 
+# ⚠ TEMPORARY (2026-09-23) — the two buttons under the missed day-report list
+# (services/missed_report_resend.py). Delete with that module.
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("mrr:"))
+def _mrr_callback(call: types.CallbackQuery):
+    """Send the missed day reports on the stored list — every one («all»), or
+    only the days carrying an AI-rejected task («rej»).
+
+    Admin-only, checked HERE and not by who was sent the message: callback data
+    is typeable and a message can be forwarded. Only STARTS the sending — a
+    background job DMs the result — because a few hundred DMs at one a second
+    would hold this update loop for minutes. The operator reads this card in
+    English, like the list it sits under, so its answers are not translated."""
+    tid = call.from_user.id
+    if tid not in _admin_ids():
+        bot.answer_callback_query(call.id, "Admins only.", show_alert=True)
+        return
+    parts = call.data.split(":")
+    mode = parts[1] if len(parts) > 1 else ""
+    lid = parts[2] if len(parts) > 2 else ""
+    name = (admin_profile_name(tid)
+            or " ".join(filter(None, (call.from_user.first_name,
+                                      call.from_user.last_name)))
+            or str(tid))
+    from app.services import missed_report_resend
+    try:
+        with SessionLocal() as db:
+            res = missed_report_resend.apply(
+                db, actor_tid=tid, actor_name=name, lid=lid, mode=mode,
+                chat_id=call.message.chat.id if call.message else None,
+                message_id=call.message.message_id if call.message else None)
+    except Exception:
+        logger.exception("missed-report resend: the button failed for %s", tid)
+        bot.answer_callback_query(call.id, "Failed — nothing was sent. "
+                                           "Tap again, or tell the developer.",
+                                  show_alert=True)
+        return
+    text = missed_report_resend.result_text(res)
+    bot.answer_callback_query(call.id, text[:190], show_alert=True)
+    if res.get("status") == "started" and call.message:
+        try:
+            # The buttons go while the run is on; the job puts back whatever
+            # is still worth offering when it is done.
+            bot.edit_message_reply_markup(call.message.chat.id,
+                                          call.message.message_id,
+                                          reply_markup=None)
+        except Exception:
+            logger.warning("missed-report resend: could not clear the buttons",
+                           exc_info=True)
+
+
 @bot.message_handler(func=lambda m: _awaiting_contact(m.from_user.id),
                      content_types=["text"])
 def _typed_instead_of_contact(message: types.Message):

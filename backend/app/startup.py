@@ -6290,6 +6290,40 @@ def _missed_reports_job() -> None:
                       missed_report_audit.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: day reports 16–22 Sep the leaders never got, sent on a tap ─────
+# ⚠ TEMPORARY (2026-09-23). Leaders reported no day report, and so no way to
+# object. The cause (a report tried while its day was still open was parked
+# and never retried) is fixed in `leader_reports.send_for_uid` and
+# `leader_ai.sweep_unreported`; this DMs the operator the confirmation for
+# 16 Sep → today — received or not, per leader-day, who missed which dates —
+# with two buttons that send the missed 16–22 Sep reports
+# (`services/missed_report_resend.py`, the `mrr:` callback in telegram_bot.py).
+# Nothing is sent to a leader until a button is tapped. Changing what it
+# reports needs a NEW flag key.
+MISSED_RESEND_FLAG = "missed_day_reports_resend_2026_09_23_v1"
+_MISSED_RESEND_DELAY_S = 120
+
+
+def report_missed_reports_resend() -> None:
+    """The missed-report list with its send buttons, DMed once. Never raises."""
+    try:
+        if not _report_pending(MISSED_RESEND_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("missed-day-reports-resend",
+                    datetime.now(timezone.utc) + timedelta(seconds=_MISSED_RESEND_DELAY_S),
+                    _missed_reports_resend_job)
+    except Exception as exc:
+        print(f"[startup] missed day-report resend list could not be scheduled: {exc}")
+
+
+def _missed_reports_resend_job() -> None:
+    from app.services import missed_report_resend
+    _send_report_once(MISSED_RESEND_FLAG, "missed day-report resend list",
+                      missed_report_resend.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: when did Normanov finish filling on 23 Sep ─────────────────────
 # The operator asked (2026-09-23) for the time Normanov Xurshidbek finished
 # filling his plan and people that day — his task #1 was recorded «started

@@ -2309,6 +2309,50 @@ def report_finished(db: Session, keys: set[str]) -> int:
 
 REPORT_SWEEP_CAP = 40
 
+# Days from this date on whose report was PARKED while the day was still open
+# are retried by `sweep_unreported` once the day has closed. That park was the
+# bug fixed on 2026-09-23 (`leader_reports.send_for_uid` no longer writes it),
+# so the rule only matters for days parked before the fix went out. The days
+# BEFORE this date were listed for the operator instead
+# (`services/missed_report_resend.py`) and go out only when they approve it —
+# which is why this is a floor and must never be moved earlier.
+OPEN_PARK_RETRY_FROM = "2026-09-23"
+
+
+def _utc(v: datetime | None) -> datetime | None:
+    if v is None:
+        return None
+    return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+
+
+def _still_open(key: str, days: dict) -> bool:
+    """A bot report key whose checklist day exists and has not closed yet."""
+    if not key.startswith("bot:") or not key[4:].isdigit():
+        return False
+    d = days.get(int(key[4:]))
+    return d is not None and d[0] is None
+
+
+def _parked_while_open(key: str, parked_at: datetime | None, days: dict) -> bool:
+    """Was this bot day's park written BEFORE the day closed — on a day dated
+    on or after `OPEN_PARK_RETRY_FROM`?
+
+    A park is written once and never overwritten, so its `first_sent_at` is the
+    moment it was parked. Every park reason but one needs the CLOSED day to be
+    decided at all; the one that does not is the pre-fix «report no longer
+    exists» written on a day that was simply still open. A closed day parked
+    again for a real reason gets its timestamp moved past the close
+    (`leader_reports._park`), so this answers False for it from then on.
+    """
+    if not key.startswith("bot:") or not key[4:].isdigit():
+        return False
+    closed_at, date = days.get(int(key[4:]), (None, None))
+    if closed_at is None or parked_at is None or not date:
+        return False
+    if str(date)[:10] < OPEN_PARK_RETRY_FROM:
+        return False
+    return _utc(parked_at) < _utc(closed_at)
+
 
 def sweep_unreported(db: Session, limit: int = REPORT_SWEEP_CAP) -> int:
     """Send the day reports that finished but never went out.
@@ -2352,11 +2396,29 @@ def sweep_unreported(db: Session, limit: int = REPORT_SWEEP_CAP) -> int:
     done_keys = all_keys - open_keys
     if not done_keys:
         return 0
-    known = {r[0] for r in db.query(LeaderDayReport.report_key)
-             .filter(LeaderDayReport.report_key.in_(done_keys)).all()}
+    # The bot days behind those keys. A day still OPEN has no report yet
+    # (`send_for_uid` answers False for it and writes nothing), so it is left
+    # out BEFORE the budget is applied — a shift's worth of open days would
+    # otherwise take every slot, pass after pass, while the closed days behind
+    # them waited.
+    day_ids = {int(k[4:]) for k in done_keys
+               if k.startswith("bot:") and k[4:].isdigit()}
+    days = ({d.id: (d.closed_at, d.date) for d in
+             db.query(LeaderTaskDay.id, LeaderTaskDay.closed_at, LeaderTaskDay.date)
+             .filter(LeaderTaskDay.id.in_(day_ids)).all()}
+            if day_ids else {})
+    known: set[str] = set()
+    for key, sends, parked_at in (
+            db.query(LeaderDayReport.report_key, LeaderDayReport.sends,
+                     LeaderDayReport.first_sent_at)
+            .filter(LeaderDayReport.report_key.in_(done_keys)).all()):
+        if (sends or 0) == 0 and _parked_while_open(key, parked_at, days):
+            continue            # the pre-fix park: not a decision, retried
+        known.add(key)
+    ready = [k for k in done_keys - known if not _still_open(k, days)]
     # Newest first: if the budget ever binds, the report someone is actually
     # waiting on is today's, not a fortnight-old one nobody asked about.
-    todo = sorted(done_keys - known, reverse=True)[:limit]
+    todo = sorted(ready, reverse=True)[:limit]
     sent = 0
     for key in todo:
         try:

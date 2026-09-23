@@ -2378,6 +2378,26 @@ number.
   forever, sort ahead of newer keys and eat the whole per-pass budget until the
   safety net silently stopped working. A park is not a send: if the day is
   later opened, the next pass sends its FIRST report, not a correction.
+- **…but a day still OPEN is never parked** (fixed 2026-09-23). A unit closing
+  tasks one at a time has each photo task reviewed minutes after it closes, so
+  the drain tried the report while the day was still open, `build_report_row`
+  answered None, and the key was parked as «report no longer exists». When the
+  day's LAST task then closed with no AI review behind it — an automatic check
+  (#8 at 17:00 / 06:00), a deadline, a «Yo'q» — no drain pass touched the key
+  again and the sweep skipped it for its ledger row: no DM, so no button onto
+  the report page, so no objection. Confirmed on the 11 Sep copy: 124 of 1,002
+  closed leader-days never sent, 78 of 101 leaders. `send_for_uid` now returns
+  False for an open bot day and writes nothing (`_open_bot_day`, the Ghost-Mode
+  shape), and `sweep_unreported` sends the report once the day has closed —
+  within one drain pass (≤ 20 min). The sweep drops OPEN days before applying
+  its budget, or a shift's worth of them would take every slot while closed
+  days waited. It also retries a park written BEFORE its day closed
+  (`first_sent_at < closed_at`), for days on or after
+  `leader_ai.OPEN_PARK_RETRY_FROM` (2026-09-23) only — the days before it were
+  listed for the operator and go out only on their tap
+  (`services/missed_report_resend.py`, TEMPORARY, the `mrr:` buttons); never
+  move that floor earlier. A closed day parked again for a real reason has its
+  park re-dated past the close (`_park`), so the retry stops asking about it.
 - **`components/leaders/verifyState.js` is THE verification vocabulary** —
   states, colours, icons and precedence for the register chip, the page and the
   filter. Never improvise a second set of words for these five facts. Every
