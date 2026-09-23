@@ -43,7 +43,7 @@ notified about their own action and no account is DMed twice.
 Access is gated by the ``concerns`` page in the access matrix.
 """
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -53,16 +53,18 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    Admin, Cell, ConcernEscalation, LeaderConcern, LeaderConcernComment,
+    Admin, Cell, ConcernEscalation, Factory, LeaderConcern, LeaderConcernComment,
     Manager, RoleProfile, TelegramUserRole,
 )
 from app.capabilities import page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
-from app.services import action_log, shift_scope
+from app.services import (action_log, concerns_deck, concerns_narrative, report_week,
+                          shift_scope)
 from app.services.concerns_export import build_concerns_workbook
 from app.services.factory_scope import factory_manager_ids, resolve_factory
-from app.xlsx_delivery import deliver_xlsx
+from app.services.ojidaniya_matrix import TZ as PLANT_TZ, today_local
+from app.xlsx_delivery import PPTX_MIME, deliver_file, deliver_xlsx
 # Reuse the shared notification helpers: notify_profile addresses a PERSON (one
 # bell row on the profile + a DM to every account holding it), _notify is the
 # single-account fallback for legacy rows that resolve to no profile.
@@ -1081,6 +1083,218 @@ def export_concerns(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+
+
+# ── the weekly deck («Haftalik hisobot») ─────────────────────────────────────
+# A FIXED weekly report about the whole register — both plants, both shifts,
+# every unit — so it reads rows the caller's scope was never asked about and
+# ignores the page's filters entirely. Admin only, and checked in both
+# endpoints rather than by hiding the button: they are reachable without the
+# UI. Everything it shows is computed by services/concerns_deck.py from what
+# `_deck_inputs` hands it; the rules are written out there.
+
+def _deck_plants(db: Session) -> list[str]:
+    """The plants the deck covers, by name — every live factory with a live
+    unit, in the register's own tab order. Named on the cover and in the
+    confirm, because «both plants» is a claim the file should be able to make
+    about itself."""
+    live = {fid for (fid,) in db.query(Manager.factory_id)
+            .filter(Manager.archived.is_(False), Manager.factory_id.isnot(None)).distinct()}
+    return [f.name_uz or f.code
+            for f in (db.query(Factory).filter(Factory.archived.is_(False))
+                      .order_by(Factory.sort_order, Factory.id).all())
+            if f.id in live]
+
+
+def _deck_window(body_from: Optional[str], body_to: Optional[str]) -> tuple[date, date]:
+    """The week the deck is about: the one `report_week` names on the plant's
+    own wall clock, or an earlier one an operator asked to re-run."""
+    if body_from and body_to:
+        try:
+            win = (date.fromisoformat(body_from), date.fromisoformat(body_to))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date")
+        if win[0] > win[1]:
+            raise HTTPException(status_code=400, detail="date_from is after date_to")
+        if (win[1] - win[0]).days > 31:
+            raise HTTPException(status_code=400, detail="Period longer than 31 days")
+        return win
+    # The Tashkent date, not the box's: on a UTC box a press between midnight
+    # and 05:00 on a Thursday would otherwise build the week before last.
+    return report_week.window(today_local())
+
+
+def _deck_inputs(db: Session, win: tuple[date, date], prev_win: tuple[date, date]) -> dict:
+    """Every concern the two windows need, flattened into plain rows for
+    `concerns_deck.collect` — which is where every figure is computed.
+
+    Loaded: anything filed by the window's end that was not already closed
+    before the comparison window began. That covers this week's and last
+    week's filings, both weeks' closings, and every concern open at either
+    week's end, however old.
+
+    Where a concern sat when the window ENDED is read off the escalation trail:
+    the first move after the end records, in its from_*, exactly who held it
+    then. A concern that has not moved since holds where it holds now.
+    """
+    a, b = win
+    pa, _pb = prev_win
+    start = datetime.combine(pa, time.min, tzinfo=PLANT_TZ)
+    end = datetime.combine(b + timedelta(days=1), time.min, tzinfo=PLANT_TZ)
+
+    concerns = (
+        db.query(LeaderConcern)
+        .filter(LeaderConcern.entry_date <= b,
+                or_(LeaderConcern.status != "done",
+                    LeaderConcern.completion_date.is_(None),
+                    LeaderConcern.completion_date >= pa,
+                    # the page closes such a row on its filing day instead
+                    LeaderConcern.completion_date < LeaderConcern.entry_date))
+        .all()
+    )
+    ids = [c.id for c in concerns]
+    moves: list = []
+    notes: dict = {}
+    if ids:
+        moves = (db.query(ConcernEscalation)
+                 .filter(ConcernEscalation.concern_id.in_(ids),
+                         ConcernEscalation.created_at >= start)
+                 .order_by(ConcernEscalation.created_at, ConcernEscalation.id).all())
+        # The closing note lives in the thread since 2026-08-24 (kind
+        # "resolution"); the newest one is the answer. `solution` is the
+        # legacy column for concerns closed before that.
+        for cid, text in (db.query(LeaderConcernComment.concern_id, LeaderConcernComment.text)
+                          .filter(LeaderConcernComment.concern_id.in_(ids),
+                                  LeaderConcernComment.kind == "resolution")
+                          .order_by(LeaderConcernComment.created_at, LeaderConcernComment.id)):
+            notes[cid] = text
+
+    first_after: dict = {}
+    for m in moves:
+        if m.created_at and m.created_at >= end and m.concern_id not in first_after:
+            first_after[m.concern_id] = m
+
+    fac_names = {f.id: (f.name_uz or f.code) for f in db.query(Factory).all()}
+    units = [{"id": mid, "name": name or "", "shift": shift,
+              "plant": fac_names.get(fid), "archived": bool(archived)}
+             for mid, name, shift, fid, archived in
+             db.query(Manager.id, Manager.name, Manager.shift, Manager.factory_id,
+                      Manager.archived).all()]
+    unit_name = {u["id"]: u["name"] for u in units}
+
+    sm_names = _sm_names(db)
+    owner_names = _owner_names(db, concerns)
+    rows = []
+    for c in concerns:
+        lvl = _level(c)
+        m = first_after.get(c.id)
+        lvl_end = (m.from_level or lvl) if m else lvl
+        holder = ((m.from_name if m else None)
+                  or _holder_name(c, lvl_end, sm_names, owner_names) or "")
+        rows.append({
+            "id": c.id, "no": _no(c), "text": c.concern_text or "",
+            "category": c.category, "cell": (c.cell_code or "").strip(),
+            "unit_id": c.brigadir_manager_id,
+            "unit": unit_name.get(c.brigadir_manager_id) or c.brigadir_name or "",
+            # WHETHER a worker filed it — the fact, never the name: the name
+            # stops here and reaches neither the file nor the model.
+            "worker": bool(c.worker_name),
+            "entry": c.entry_date, "status": c.status, "completion": c.completion_date,
+            "deadline_days": c.deadline_days,
+            "resolution": notes.get(c.id) or c.solution or "",
+            "level_end": lvl_end, "holder_end": holder,
+        })
+
+    by_id = {c.id: c for c in concerns}
+    mv = []
+    for m in moves:
+        if not m.created_at:
+            continue
+        local = m.created_at.astimezone(PLANT_TZ)
+        if local.date() > b:
+            continue          # after the window: only its from_* mattered, above
+        c = by_id.get(m.concern_id)
+        mv.append({
+            "concern_id": m.concern_id, "no": _no(c) if c else m.concern_id,
+            "cell": ((c.cell_code if c else "") or "").strip(),
+            "day": local.date(), "at": local.strftime("%H:%M"),
+            "from_level": m.from_level, "to_level": m.to_level,
+            "from_name": m.from_name or "", "target_name": m.target_name or "",
+            "reason": m.reason or "",
+        })
+
+    return concerns_deck.collect(rows=rows, moves=mv, units=units, win=win,
+                                 prev_win=prev_win, plants=_deck_plants(db))
+
+
+@router.get("/deck-window")
+def get_deck_window(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """Which week the deck button is about to build, and for which plants —
+    served rather than computed in the browser, because the window is a rule
+    (`services/report_week`) and a JavaScript copy of it would be a second
+    spelling that drifts: the confirm would name one week and the file carry
+    another. Admin-only like the export it describes."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
+    win = _deck_window(None, None)
+    return {
+        "date_from": win[0].isoformat(),
+        "date_to": win[1].isoformat(),
+        "label": report_week.label(win),
+        "days": (win[1] - win[0]).days + 1,
+        "plants": " · ".join(_deck_plants(db)),
+    }
+
+
+class ConcernsDeckBody(BaseModel):
+    """The deck takes no filters. The two dates exist only so an operator can
+    re-run an EARLIER week; left out, the week that just closed is built."""
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    # Off only to skip the wait when Gemini is down; the deck already survives
+    # a failure on its own.
+    narrative: bool = True
+
+
+@router.post("/export.pptx")
+def export_concerns_deck(
+    request: Request,
+    body: ConcernsDeckBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """The weekly Concerns report as a PowerPoint deck. Admin only — the file
+    carries every unit's concerns and their texts. A browser session downloads
+    it; inside Telegram it lands in the caller's chat."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
+
+    win = _deck_window(body.date_from, body.date_to)
+    prev_win = report_week.previous(win)
+    data = _deck_inputs(db, win, prev_win)
+    narrative = concerns_narrative.write(data) if body.narrative else None
+    deck = concerns_deck.build(data, narrative)
+    name = concerns_deck.filename(data)
+
+    action_log.enrich(
+        target_kind="report", target_id=name, target_name=data["plants"],
+        details=[("file", name), ("from_date", win[0].isoformat()),
+                 ("to_date", win[1].isoformat()), ("filed", data["filed"]),
+                 ("closed", data["closed"]), ("open", data["open_end"]),
+                 ("overdue", data["overdue_end"]),
+                 # whether the prose came out, so a thin deck can be told from
+                 # one Gemini simply did not answer for
+                 ("narrative", "yes" if narrative else "no"),
+                 ("size", len(deck))],
+    )
+    return deliver_file(
+        request, payload, name, deck, PPTX_MIME,
+        caption=(f"📊 Xavotirlar haftalik tahlili · {data['period']}\n"
+                 f"{data['plants']} · {concerns_deck.num(data['filed'])} yangi · "
+                 f"{concerns_deck.num(data['open_end'])} ochiq"))
 
 
 def _validate(body: ConcernIn):

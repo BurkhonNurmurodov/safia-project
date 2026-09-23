@@ -1476,6 +1476,57 @@ causes, lay out the slides).
   (browser downloads, Telegram DMs), which is the old `deliver_xlsx`
   generalised over the MIME type — the WHERE decision stays in one place.
 
+## The weekly Concerns deck (`/concerns` → «Haftalik hisobot»)
+
+From **2026-09-23** (the operator's rulings, asked and answered one by one)
+`/concerns` carries a PPTX beside «Excel» — `POST /api/concerns/export.pptx` →
+`services/concerns_deck.py`, prose by Gemini in `services/concerns_narrative.py`.
+It is the Ojidaniya deck's twin: same look, same `_text` / `deck_text` no-overlap
+rule (imported from `ojidaniya_deck`, never copied), same delivery, same shape.
+
+- **A fixed weekly report, never a view of the page.** The window is
+  `report_week` — last Wednesday back to the Wednesday before, 8 days, read on
+  the PLANT's clock (`ojidaniya_matrix.today_local`) — compared with the 8 days
+  before. **Both plants**, both shifts, every unit; the page's filters change
+  nothing, so the button never fires without a confirm naming the scope
+  (`GET /api/concerns/deck-window` serves it). **Admin only**, checked in both
+  endpoints. Button only — no scheduled send.
+- **Rows = this week's filings PLUS every older concern still open.** «Yangi»
+  counts by `entry_date` (the page's period field); «Yopildi» counts closings in
+  the window by `completion_date` (the page's flow-chart close day, entry date
+  when earlier), whenever the concern was filed. Days to close = close day −
+  entry date, the page's `resolution_days`.
+- **State is taken at the END of the window, never at the press.** «Ochiq» =
+  not closed by the last day's end; «muddati o'tgan» = the page's own rule read
+  the morning after (deadline day ≤ last day). Two presses on two days give one
+  file, and last week is computed the same way. Where a concern sat at the end
+  (level + holder) is read off the escalation trail: the first move AFTER the
+  window records it in `from_level` / `from_name`; an unmoved concern holds
+  where it holds now (`_deck_inputs` in `routers/concerns.py`).
+- **Worker-filed concerns (/cell-concerns) count EVERYWHERE, rankings
+  included** — the operator overrode, for this report, the 4 Sep reading that
+  the worker register «cannot be used to judge leaders». **A worker's NAME is
+  never printed and never reaches Gemini**: `_deck_inputs` hands the deck only
+  `worker: bool`; quotes carry № + cell code.
+- **Brigadirs are ranked by overdue**, then open, then filed; everything else is
+  a column. A unit's plant is tagged only when it is not the main plant.
+- **Concern texts, closing notes and move reasons are quoted EXACTLY as typed**
+  — Cyrillic moved to Latin script, nothing else (no case change: the shared
+  `_sentence` is deliberately NOT applied to quotes). The closing note is the
+  newest `kind="resolution"` comment, `solution` for legacy rows.
+- **The recurring problems are COUNTED here, not by the model.** Gemini names
+  each theme's concerns by NUMBER (`nums`); `_themes` keeps only numbers the
+  week holds and counts them. Every other figure comes from `collect`, and the
+  prompt forbids any other number. Gemini gets `BUDGET_S` (70 s) — the whole
+  request must beat Cloudflare's 100 s — and any failure ships the deck with
+  plain fallbacks. Always Uzbek Latin.
+- 12 slides: cover · summary (4 KPIs vs last week) · recurring problems ·
+  departments table · top-3 departments with quotes + closing notes · brigadirs
+  ranked · 10 oldest open · the chain (ups/downs, where the open pool sits, the
+  moves with reasons) · day by day · actions · conclusion · method + quality.
+- Logged as `export.concerns_deck`. A deadline typed as a huge number is a
+  deadline that never comes (`_deadline` catches the overflow).
+
 ## The Ojidaniya page as a workbook (`/downtime` → «Excel»)
 
 From **2026-09-03** the toolbar of `/downtime` carries an «Excel» button at its

@@ -7,7 +7,7 @@ import {
   Check, Eye, CalendarClock, UserRound, UserCheck, ShieldCheck, FileText,
   CircleDot, Clock, Hourglass, Gauge, TrendingUp, PieChart, Timer, Layers,
   ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
-  MessageSquare, Hash, FileSpreadsheet
+  MessageSquare, Hash, FileSpreadsheet, Presentation
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -1885,6 +1885,21 @@ export default function Concerns() {
   const toast = useToast();
   const [exporting, setExporting] = useState(false);
 
+  // «Haftalik hisobot» — the weekly PPTX deck. Admin only, and deliberately NOT
+  // driven by the filters on screen: it is a fixed report about both plants for
+  // the week that just closed, so the confirm writes its whole scope out before
+  // anything is built. The period comes from the server (GET /deck-window) —
+  // the window is a rule, and a browser copy of it would drift.
+  const [deckAsk, setDeckAsk] = useState(false);
+  const [deckBusy, setDeckBusy] = useState(false);
+  const [deckErr, setDeckErr] = useState("");
+  const { data: deckWin } = useQuery({
+    queryKey: ["concerns-deck-window"],
+    queryFn: () => api.get("/api/concerns/deck-window").then((r) => r.data),
+    enabled: isAdmin,
+    staleTime: 30 * 60 * 1000,
+  });
+
   // One register cell per column key — the export's twin of `listCell`. Where
   // the screen stacks two facts (date over time, code over leader, owner over
   // position) both travel and the file gives each its own column. Names go in
@@ -2051,6 +2066,28 @@ export default function Concerns() {
       toast.error(`${t("concerns.exportFailed")}: ${e?.response?.data?.detail || e?.message || ""}`);
     } finally {
       setExporting(false);
+    }
+  };
+
+  // The deck sends nothing but the press: the server owns the period, the
+  // plants and the scope. A Gemini failure does not fail it — the file arrives
+  // with plain sentences in the commentary slots — so a failure worth wording
+  // here is the server's own, and it stays INSIDE the dialog.
+  const onDeck = async () => {
+    setDeckBusy(true);
+    setDeckErr("");
+    try {
+      const where = await exportXlsx("/api/concerns/export.pptx", {
+        body: {},
+        fallbackName: "xavotirlar-haftalik-hisobot.pptx",
+      });
+      setDeckAsk(false);
+      toast.success(t(where === "download" ? "concerns.deck.downloaded" : "concerns.deck.sentToChat"));
+    } catch (e) {
+      const why = e?.response?.data?.detail;
+      setDeckErr(typeof why === "string" && why ? why : t("concerns.deck.failed"));
+    } finally {
+      setDeckBusy(false);
     }
   };
 
@@ -2454,6 +2491,23 @@ export default function Concerns() {
         >
           <span className="hidden sm:inline">{t("concerns.export")}</span>
         </Button>
+        {/* The weekly deck. Admin only — it covers every unit on both plants.
+            It is NOT filtered by the toolbar beside it, so it never fires
+            without its confirm: «Excel» and this button produce reports about
+            different periods and scopes, and only the dialog says so. */}
+        {isAdmin && (
+          <Button
+            size="lg"
+            variant="secondary"
+            loading={deckBusy}
+            icon={!deckBusy ? <Presentation size={14} /> : null}
+            onClick={() => { setDeckErr(""); setDeckAsk(true); }}
+            title={t("concerns.deck.btn")}
+            aria-label={t("concerns.deck.btn")}
+          >
+            <span className="hidden lg:inline">{t("concerns.deck.btn")}</span>
+          </Button>
+        )}
       </div>
 
       {/* KPIs — three headline insights (rich, colour-coded cards). Units are
@@ -3408,6 +3462,48 @@ export default function Concerns() {
             </div>
           )}
         </Modal>
+      )}
+
+      {/* The weekly deck's confirm. It exists because the button ignores the
+          toolbar it sits on: an admin who narrowed the page to one brigadir
+          and one day would otherwise get a two-plant file about a different
+          week with nothing having said so. */}
+      {deckAsk && (
+        <ConfirmDialog
+          open
+          tone="warning"
+          icon={<Presentation size={18} />}
+          title={t("concerns.deck.title")}
+          message={
+            <div className="space-y-2 text-sm">
+              <p style={{ color: "var(--text-2)" }}>{t("concerns.deck.intro")}</p>
+              <div
+                className="rounded-xl p-3 space-y-1.5"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+              >
+                {[
+                  [t("concerns.deck.rowPeriod"), deckWin?.label || "…"],
+                  [t("concerns.deck.rowFactory"), deckWin?.plants || "…"],
+                  [t("concerns.deck.rowShift"), t("concerns.deck.bothShifts")],
+                  [t("concerns.deck.rowRows"), t("concerns.deck.rowsValue")],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex items-baseline justify-between gap-3">
+                    <span className="text-[11px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>{k}</span>
+                    <span className="text-xs font-medium text-right" style={{ color: "var(--text-1)" }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("concerns.deck.ignoresFilters")}</p>
+              <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("concerns.deck.aiNote")}</p>
+            </div>
+          }
+          confirmLabel={t("concerns.deck.confirm")}
+          cancelLabel={t("concerns.cancel")}
+          loading={deckBusy}
+          error={deckErr || null}
+          onCancel={() => { if (!deckBusy) { setDeckAsk(false); setDeckErr(""); } }}
+          onConfirm={onDeck}
+        />
       )}
 
       {/* Delete confirm */}
