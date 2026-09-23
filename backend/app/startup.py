@@ -6290,6 +6290,37 @@ def _missed_reports_job() -> None:
                       missed_report_audit.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: when did Normanov finish filling on 23 Sep ─────────────────────
+# The operator asked (2026-09-23) for the time Normanov Xurshidbek finished
+# filling his plan and people that day — his task #1 was recorded «started
+# late» while he said the page was filled before 10:00. The Jurnal's saves, the
+# 10:00 picture and his checklist's first answer, DMed as text by
+# `services/filling_times_report.py`. It READS and writes nothing but its flag.
+# Changing what it reports needs a NEW flag key.
+FILLING_TIMES_FLAG = "filling_times_normanov_2026_09_23_v1"
+_FILLING_TIMES_DELAY_S = 60
+
+
+def report_filling_times() -> None:
+    """Normanov's 23 Sep filling times, DMed once. Never raises."""
+    try:
+        if not _report_pending(FILLING_TIMES_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("filling-times-normanov",
+                    datetime.now(timezone.utc) + timedelta(seconds=_FILLING_TIMES_DELAY_S),
+                    _filling_times_job)
+    except Exception as exc:
+        print(f"[startup] filling-times report could not be scheduled: {exc}")
+
+
+def _filling_times_job() -> None:
+    from app.services import filling_times_report
+    _send_report_once(FILLING_TIMES_FLAG, "filling-times report",
+                      filling_times_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the

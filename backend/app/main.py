@@ -90,6 +90,7 @@ async def lifespan(app: FastAPI):
         report_auto_checks_sep20_21,
         report_auto_check_restore,
         report_missed_day_reports,
+        report_filling_times,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -467,6 +468,11 @@ async def lifespan(app: FastAPI):
     # delivers once. Remove this line, `startup.report_missed_day_reports` and
     # `services/missed_report_audit.py` once the files have landed.
     report_missed_day_reports()
+    # ⚠ TEMPORARY one-shot (2026-09-23) — when Normanov finished filling his
+    # plan and people on 23 Sep, and what stood at 10:00, DMed once to the
+    # operator. Remove this line, `startup.report_filling_times` and
+    # `services/filling_times_report.py` once it has been sent.
+    report_filling_times()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's
