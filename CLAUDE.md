@@ -796,6 +796,16 @@ for byte**; only where three numbers come from changes.
   `cell_people`, `unit_labor`. Never re-spell the date comparison at a call
   site, and never split a range by hand: `sheet_end` is the exact inverse of
   `range_start`, which is what stops a day being counted twice or not at all.
+- **The «Plan Prognoz» page reads it too** (from 2026-09-23).
+  `production._load_plan_by_manager` is the one loader behind `/trudoyomkost`,
+  its Excel, the worker statistics, the forecast table, the call modal and the
+  automatic 19:00 / 06:00 call DM — and the 2 Sep switch missed it. Once
+  nothing else read «Минут», nobody filled it after 6 Sep, and all of those went
+  dark (the page read «0 brigadir», the DM averaged one early-September day). It
+  now splits at `range_start` / `sheet_end` like the загрузка; on 2–4 Sep, both
+  sources filled, they agreed within ~1% for all 21 units, so the seam moves no
+  level. A new reader of planned trudoyomkost reads `unit_labor` from the floor
+  — never `ProductionData`, which keeps syncing and feeds nobody.
 - **Odam soni is the TYPED number and nothing else.**
   `pp_work_center_daily.people` — the «Bugungi fakt» box on the «Odamlar soni»
   tab — summed over the unit's work centres. `people IS NULL` is what makes the

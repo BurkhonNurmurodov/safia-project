@@ -3242,11 +3242,12 @@ def admin_delete_catalog(prod_id: int,
 # --------------------------------------------------------------------------- #
 # Trudoyomkost analysis — cross-brigadir, by-weekday view + trend + Excel.
 #
-# Planned trudoyomkost is read straight from the synced *source* Google Sheet
-# (admin → "Manba"): production_data.prod_plan holds planned production minutes
-# per brigadir per day, for every brigadir in the sheet — not the SAP/ABC pilot.
-# We fold each date onto its weekday and aggregate. Returns minutes; the client
-# converts to norm-hours on the unit toggle.
+# Planned trudoyomkost per brigadir per day comes from wherever the загрузка
+# reads it for that day (`_load_plan_by_manager`): the synced *source* Google
+# Sheet (admin → "Manba", «Минут») before `zagruzka_source.ZAGRUZKA_FROM`, the
+# «Zagruzka fayli» page from it on. We fold each date onto its weekday and
+# aggregate. Returns minutes; the client converts to norm-hours on the unit
+# toggle.
 # --------------------------------------------------------------------------- #
 ANALYSIS_PAGE = "trudoyomkost"
 
@@ -3268,12 +3269,25 @@ def _date_strings(d_from: date, d_to: date) -> list[str]:
 
 
 def _load_plan_by_manager(db, manager_ids, shift, d_from, d_to) -> dict:
-    """Planned trudoyomkost from the synced *source* sheet (admin → "Manba").
+    """Planned (and actual) trudoyomkost per brigadir per day, from the source
+    the загрузка reads for that day. THE loader behind this page, its Excel,
+    the worker statistics, the forecast table, the call modal and the automatic
+    19:00 / 06:00 call DM — so they can never read two different sources.
 
-    production_data.prod_plan = planned production minutes per brigadir per day,
-    for every brigadir in the sheet. Rows are keyed back to Manager.id by an exact
-    name match, so non-brigadir rows (totals/categories) are dropped. An optional
-    shift / manager_ids filter narrows the brigadir set (same as other endpoints).
+    Before `zagruzka_source.ZAGRUZKA_FROM`: the synced *source* sheet (admin →
+    "Manba", «Минут») — production_data.prod_plan / prod_actual, rows keyed back
+    to Manager.id through `sheet_alias_map`, so non-brigadir rows
+    (totals/categories) are dropped.
+    From the floor on: `zagruzka_source.unit_labor`, the «Zagruzka fayli» page's
+    own figure and the загрузка's numerator. The 2 Sep switch moved the загрузка
+    and missed this loader; the «Минут» tab stopped being filled after 6 Sep once
+    nothing else read it, and every surface above went dark with it (found
+    2026-09-23). On 2–4 Sep, when both were filled, the two agreed within ~1% for
+    every unit, so the seam moves no level. A unit-day the catalog cannot answer
+    is absent, exactly as a sheet day nobody filled was.
+
+    An optional shift / manager_ids filter narrows the brigadir set (same as
+    other endpoints).
 
     Returns {manager_id: {"name": str, "days": {date: {"plan": m, "actual": m}}}}.
     """
@@ -3282,30 +3296,45 @@ def _load_plan_by_manager(db, manager_ids, shift, d_from, d_to) -> dict:
         managers = managers.filter(Manager.shift == shift)
     if manager_ids:
         managers = managers.filter(Manager.id.in_([int(x) for x in manager_ids]))
-    by_name = {m.name: m for m in managers.all()}
-    if not by_name:
+    managers = managers.all()
+    if not managers:
         return {}
 
-    # production_data spells brigadirs in either alphabet; accept every known
-    # spelling and resolve each row back to its canonical Manager.
-    alias = sheet_alias_map(db, by_name.keys())
-
-    rows = db.query(ProductionData).filter(
-        ProductionData.manager_name.in_(list(alias.keys())),
-        ProductionData.date.in_(_date_strings(d_from, d_to)),
-    ).all()
-
     out: dict = {}
-    for r in rows:
-        mgr = by_name.get(alias.get(r.manager_name))
-        if not mgr:
-            continue
-        try:
-            day = datetime.strptime(r.date, "%d.%m.%Y").date()
-        except ValueError:
-            continue
+
+    def put(mgr, day, plan, actual):
         e = out.setdefault(mgr.id, {"name": mgr.name, "days": {}})
-        e["days"][day] = {"plan": float(r.prod_plan or 0), "actual": float(r.prod_actual or 0)}
+        e["days"][day] = {"plan": float(plan or 0), "actual": float(actual or 0)}
+
+    # The old half — the sheet, for the days before the floor only.
+    s_end = zagruzka_source.sheet_end(d_to)
+    if d_from <= s_end:
+        by_name = {m.name: m for m in managers}
+        # production_data spells brigadirs in either alphabet; accept every known
+        # spelling and resolve each row back to its canonical Manager.
+        alias = sheet_alias_map(db, by_name.keys())
+        for r in db.query(ProductionData).filter(
+            ProductionData.manager_name.in_(list(alias.keys())),
+            ProductionData.date.in_(_date_strings(d_from, s_end)),
+        ).all():
+            mgr = by_name.get(alias.get(r.manager_name))
+            if not mgr:
+                continue
+            try:
+                day = datetime.strptime(r.date, "%d.%m.%Y").date()
+            except ValueError:
+                continue
+            put(mgr, day, r.prod_plan, r.prod_actual)
+
+    # The new half — the production page, from the floor on.
+    z_lo = zagruzka_source.range_start(d_from, d_to)
+    if z_lo is not None:
+        by_id = {m.id: m for m in managers}
+        for (mid, iso), (plan, actual) in zagruzka_source.unit_labor(
+                db, by_id.keys(), z_lo, d_to).items():
+            mgr = by_id.get(mid)
+            if mgr is not None:
+                put(mgr, date.fromisoformat(iso), plan, actual)
     return out
 
 
@@ -3497,7 +3526,7 @@ def trudoyomkost_export(
 # Trudoyomkost — worker prediction & statistics.
 #
 # Derives a *required worker count per brigadir per day* from the planned
-# trudoyomkost (production_data.prod_plan, minutes) and runs the full statistical
+# trudoyomkost (`_load_plan_by_manager`, minutes) and runs the full statistical
 # battery on it, folded onto weekday and month-phase, so a supervisor can predict
 # how many workers to call for an upcoming shift and how confident that prediction
 # is.
