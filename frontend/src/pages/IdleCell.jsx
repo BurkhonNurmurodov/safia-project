@@ -894,7 +894,7 @@ export default function IdleCell() {
         options={[
           { value: "ojidaniya", label: (<span className="inline-flex items-center gap-1.5"><ListTree size={13} />{t("idleCell.tabOjidaniya")}</span>), title: t("idleCell.tabOjidaniya") },
           { value: "timeline", label: (<span className="inline-flex items-center gap-1.5"><GanttChartSquare size={13} />{t("idleCell.tabTimeline")}</span>), title: t("idleCell.tabTimelineHint") },
-          { value: "peren", label: t("idleCell.tabPerenaladka"), title: t("idleCell.tabPerenaladka") },
+          { value: "peren", label: (<span className="inline-flex items-center gap-1.5"><Repeat2 size={13} />{t("idleCell.tabPerenaladka")}</span>), title: t("idleCell.tabPerenaladka") },
           ...(isAdmin ? [{
             value: "live",
             title: t("idleCell.tabLiveHint"),
@@ -961,7 +961,9 @@ export default function IdleCell() {
             // derived from its unit) — with one unit in scope it narrows
             // nothing, so for a locked viewer it is a control that cannot act.
             ...(locked ? [] : [{
-              key: "shift", icon: Layers, label: t("idleCell.shiftAll"),
+              // The trigger names the DIMENSION — a bare «Hammasi» on the bar
+              // said "all" of nothing in particular.
+              key: "shift", icon: Layers, label: t("idleCell.allShifts"),
               active: shiftTab !== "all",
               display: shiftTab !== "all" ? (shiftTab === 1 ? t("idleCell.shift1") : t("idleCell.shift2")) : "",
               onClear: () => onShift("all"),
@@ -981,7 +983,9 @@ export default function IdleCell() {
             // scope loaded with no brigadir chosen, and would otherwise offer
             // no way at all to find one leader among a hundred rows.
             ...(cells.length > 0 && leaderOptions.length > 2 ? [{
-              key: "leader", icon: UserRound, label: t("idleCell.searchLeader"),
+              // «Barcha liderlar», like «Barcha yacheykalar» beside it — the
+              // old «Lider qidirish…» read as a search box on a dropdown.
+              key: "leader", icon: UserRound, label: t("idleCell.allLeaders"),
               active: leaderId !== "",
               display: leaderId !== "" ? (leaderOptions.find((o) => o.value === leaderId)?.label || "") : "",
               onClear: () => { setLeaderId(""); setSelectedCellIds([]); },
@@ -1019,8 +1023,9 @@ export default function IdleCell() {
             eleven triggers per cell, each opening one definition — which is
             what made the letters look like the name of the thing. Reference
             material belongs beside the page's controls, not multiplied down
-            its content. */}
-        <Button
+            its content. Not on «Perenaladka»: a changeover has no category,
+            and a control that explains nothing on screen is only noise. */}
+        {!isPeren && <Button
           size="lg"
           variant="secondary"
           icon={<Info size={14} />}
@@ -1028,14 +1033,14 @@ export default function IdleCell() {
           title={t("idleCell.catGuideBtn")}
         >
           {t("idleCell.catGuideBtn")}
-        </Button>
+        </Button>}
       </div>
 
       {isPeren ? (
         // Standard is read-only here (it is the Setup-times «Standart» register,
         // which only an admin edits); Fakt and the optional note are typed in
-        // the row. No supervisor column — the bar above already names one, or
-        // says «all», and the leader still rides under the cell code.
+        // the row and save themselves. With «all brigadirs» the table groups
+        // the cells under each brigadir itself.
         <PerenaladkaFactTable
           icon={Repeat2}
           date={date}
@@ -1044,7 +1049,6 @@ export default function IdleCell() {
           isLoading={factLoading}
           sort={factSort}
           onSort={onFactSort}
-          showSupervisor={false}
         />
       ) : supFailed || cellsFailed ? (
         // A dead request is NOT an empty answer. Both of these used to fall
