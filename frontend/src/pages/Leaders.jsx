@@ -37,7 +37,7 @@ import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
-import { useTranslit } from "../utils/transliterate";
+import { useTranslit, transliterate } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { showReason as expandReason } from "../utils/leaderReason";
@@ -96,7 +96,7 @@ const TXT = {
     thPlace: "O'rin", thDays: "Yuborilgan kun", thTier: "Daraja",
     tierTop: "Chempion", tierGood: "A'lo", tierMid: "O'rta", tierBad: "Past",
     supSearchPh: "Brigadir qidirish…",
-    standInfo: "Reyting — davrning HAR BIR kuni uchun ball: hisobot yuborilmagan kun 0% hisoblanadi. Barqarorlik — o'sha kunlarning qanchasida umuman hisobot yuborilgani, foizda. Hisob oynasi — tanlangan davr to'liq, birinchi hisobotdan emas.\n\nBrigadir o'zi hisobot topshirmaydi, shuning uchun uning kuni — o'sha kuni chek-list topshirishi kerak bo'lgan HAR BIR lider bo'yicha o'rtacha ball: hisobot yubormagan lider 0 hisoblanadi. Kun barqarorlikka faqat ularning HAMMASI yuborgandagina qo'shiladi. Ya'ni bitta lider bitta kunni o'tkazib yuborsa — o'sha kun butun brigadaga hisoblanmaydi va kalendarda qizil bo'ladi. Shu sababli brigadirning reytingi barqarorligidan yuqori chiqishi mumkin; lider uchun bu ikki ustun hech qachon kesishmaydi.\n\nTanlangan ustun — asosiy reyting, ikkinchisi esa qo'shimcha reyting: teng natijalar aynan shu bo'yicha ajratiladi. O'rin faqat ikkala ko'rsatkich ham teng bo'lgandagina bo'lishiladi.\n\nTrend — O'RINNING o'zgarishi, foizning emas: avvalgi davrda 57-o'rin, hozir 47-o'rin bo'lsa — +10 (ko'tarilish yashil, tushish qizil, joyida qolish 0). Solishtirish xuddi shu uzunlikdagi avvalgi davr bilan va ro'yxat ayni paytda saralanayotgan ustun bo'yicha bo'ladi. Chiziq — o'sha o'rinning kunlar kesimidagi harakati (kamida 7 kun): har bir nuqta — davr o'sha kuni tugaganida chiqadigan o'rin, shuning uchun chiziqning oxiri qatordagi o'rinning o'zi. Avvalgi davrda umuman ma'lumot bo'lmasa — «Yangi».",
+    standInfo: "Reyting — davrning HAR BIR kuni uchun ball: hisobot yuborilmagan kun 0% hisoblanadi. Barqarorlik — o'sha kunlarning qanchasida umuman hisobot yuborilgani, foizda. Hisob oynasi — tanlangan davr to'liq, birinchi hisobotdan emas. Davr ichida birorta ham hisobot yubormagan lider ham ro'yxatda ko'rsatiladi — 0% bilan, kalendarda esa butunlay qizil.\n\nBrigadir o'zi hisobot topshirmaydi, shuning uchun uning kuni — o'sha kuni chek-list topshirishi kerak bo'lgan HAR BIR lider bo'yicha o'rtacha ball: hisobot yubormagan lider 0 hisoblanadi. Kun barqarorlikka faqat ularning HAMMASI yuborgandagina qo'shiladi. Ya'ni bitta lider bitta kunni o'tkazib yuborsa — o'sha kun butun brigadaga hisoblanmaydi va kalendarda qizil bo'ladi. Shu sababli brigadirning reytingi barqarorligidan yuqori chiqishi mumkin; lider uchun bu ikki ustun hech qachon kesishmaydi.\n\nTanlangan ustun — asosiy reyting, ikkinchisi esa qo'shimcha reyting: teng natijalar aynan shu bo'yicha ajratiladi. O'rin faqat ikkala ko'rsatkich ham teng bo'lgandagina bo'lishiladi.\n\nTrend — O'RINNING o'zgarishi, foizning emas: avvalgi davrda 57-o'rin, hozir 47-o'rin bo'lsa — +10 (ko'tarilish yashil, tushish qizil, joyida qolish 0). Solishtirish xuddi shu uzunlikdagi avvalgi davr bilan va ro'yxat ayni paytda saralanayotgan ustun bo'yicha bo'ladi. Chiziq — o'sha o'rinning kunlar kesimidagi harakati (kamida 7 kun): har bir nuqta — davr o'sha kuni tugaganida chiqadigan o'rin, shuning uchun chiziqning oxiri qatordagi o'rinning o'zi. Avvalgi davrda umuman ma'lumot bo'lmasa — «Yangi».",
     standPrimaryHint: "Asosiy reyting — ro'yxat shu ustun bo'yicha saralanadi",
     standSubHint: "Qo'shimcha reyting — asosiy ustun teng chiqqanda o'rinni shu ajratadi",
     thTrend: "Trend",
@@ -272,7 +272,7 @@ const TXT = {
     thPlace: "Ўрин", thDays: "Юборилган кун", thTier: "Даража",
     tierTop: "Чемпион", tierGood: "Аъло", tierMid: "Ўрта", tierBad: "Паст",
     supSearchPh: "Бригадир қидириш…",
-    standInfo: "Рейтинг — даврнинг ҲАР БИР куни учун балл: ҳисобот юборилмаган кун 0% ҳисобланади. Барқарорлик — ўша кунларнинг қанчасида умуман ҳисобот юборилгани, фоизда. Ҳисоб ойнаси — танланган давр тўлиқ, биринчи ҳисоботдан эмас.\n\nБригадир ўзи ҳисобот топширмайди, шунинг учун унинг куни — ўша куни чек-лист топшириши керак бўлган ҲАР БИР лидер бўйича ўртача балл: ҳисобот юбормаган лидер 0 ҳисобланади. Кун барқарорликка фақат уларнинг ҲАММАСИ юборгандагина қўшилади. Яъни битта лидер битта кунни ўтказиб юборса — ўша кун бутун бригадага ҳисобланмайди ва календарда қизил бўлади. Шу сабабли бригадирнинг рейтинги барқарорлигидан юқори чиқиши мумкин; лидер учун бу икки устун ҳеч қачон кесишмайди.\n\nТанланган устун — асосий рейтинг, иккинчиси эса қўшимча рейтинг: тенг натижалар айнан шу бўйича ажратилади. Ўрин фақат иккала кўрсаткич ҳам тенг бўлгандагина бўлишилади.\n\nТренд — ЎРИННИНГ ўзгариши, фоизнинг эмас: аввалги даврда 57-ўрин, ҳозир 47-ўрин бўлса — +10 (кўтарилиш яшил, тушиш қизил, жойида қолиш 0). Солиштириш худди шу узунликдаги аввалги давр билан ва рўйхат айни пайтда саралаётган устун бўйича бўлади. Чизиқ — ўша ўриннинг кунлар кесимидаги ҳаракати (камида 7 кун): ҳар бир нуқта — давр ўша куни тугаганида чиқадиган ўрин, шунинг учун чизиқнинг охири қатордаги ўриннинг ўзи. Аввалги даврда умуман маълумот бўлмаса — «Янги».",
+    standInfo: "Рейтинг — даврнинг ҲАР БИР куни учун балл: ҳисобот юборилмаган кун 0% ҳисобланади. Барқарорлик — ўша кунларнинг қанчасида умуман ҳисобот юборилгани, фоизда. Ҳисоб ойнаси — танланган давр тўлиқ, биринчи ҳисоботдан эмас. Давр ичида биронта ҳам ҳисобот юбормаган лидер ҳам рўйхатда кўрсатилади — 0% билан, календарда эса бутунлай қизил.\n\nБригадир ўзи ҳисобот топширмайди, шунинг учун унинг куни — ўша куни чек-лист топшириши керак бўлган ҲАР БИР лидер бўйича ўртача балл: ҳисобот юбормаган лидер 0 ҳисобланади. Кун барқарорликка фақат уларнинг ҲАММАСИ юборгандагина қўшилади. Яъни битта лидер битта кунни ўтказиб юборса — ўша кун бутун бригадага ҳисобланмайди ва календарда қизил бўлади. Шу сабабли бригадирнинг рейтинги барқарорлигидан юқори чиқиши мумкин; лидер учун бу икки устун ҳеч қачон кесишмайди.\n\nТанланган устун — асосий рейтинг, иккинчиси эса қўшимча рейтинг: тенг натижалар айнан шу бўйича ажратилади. Ўрин фақат иккала кўрсаткич ҳам тенг бўлгандагина бўлишилади.\n\nТренд — ЎРИННИНГ ўзгариши, фоизнинг эмас: аввалги даврда 57-ўрин, ҳозир 47-ўрин бўлса — +10 (кўтарилиш яшил, тушиш қизил, жойида қолиш 0). Солиштириш худди шу узунликдаги аввалги давр билан ва рўйхат айни пайтда саралаётган устун бўйича бўлади. Чизиқ — ўша ўриннинг кунлар кесимидаги ҳаракати (камида 7 кун): ҳар бир нуқта — давр ўша куни тугаганида чиқадиган ўрин, шунинг учун чизиқнинг охири қатордаги ўриннинг ўзи. Аввалги даврда умуман маълумот бўлмаса — «Янги».",
     standPrimaryHint: "Асосий рейтинг — рўйхат шу устун бўйича сараланади",
     standSubHint: "Қўшимча рейтинг — асосий устун тенг чиққанда ўринни шу ажратади",
     thTrend: "Тренд",
@@ -448,7 +448,7 @@ const TXT = {
     thPlace: "Место", thDays: "Сдано дней", thTier: "Уровень",
     tierTop: "Чемпион", tierGood: "Отлично", tierMid: "Средне", tierBad: "Низко",
     supSearchPh: "Поиск бригадира…",
-    standInfo: "Рейтинг — балл за КАЖДЫЙ день периода: день без отчёта считается за 0%. Стабильность — доля этих дней, за которые отчёт вообще сдан. Окно расчёта — весь выбранный период, а не с первого отчёта.\n\nБригадир сам отчёт не сдаёт, поэтому его день — это среднее по КАЖДОМУ лидеру, который в этот день должен был сдать чек-лист: лидер без отчёта считается за 0. В стабильность день попадает только тогда, когда сдали ВСЕ. То есть один пропустивший лидер стоит всей бригаде целого дня, и в календаре он красный. Поэтому рейтинг бригадира может оказаться выше его стабильности; у лидера эти две колонки не пересекаются никогда.\n\nВыбранная вкладка — основной рейтинг, вторая колонка — подрейтинг: именно она разводит равные результаты. Место делится только тогда, когда совпали оба показателя.\n\nТренд — изменение МЕСТА, а не процента: было 57-е место, стало 47-е — это +10 (подъём зелёный, падение красное, без движения — 0). Сравнение идёт с предыдущим периодом той же длины и по той колонке, по которой список отсортирован сейчас. Линия — движение этого места по дням (не меньше 7 дней): каждая точка — место, которое вышло бы, если бы период закончился в этот день, поэтому конец линии равен месту в строке. Если за предыдущий период данных нет вообще — «Новый».",
+    standInfo: "Рейтинг — балл за КАЖДЫЙ день периода: день без отчёта считается за 0%. Стабильность — доля этих дней, за которые отчёт вообще сдан. Окно расчёта — весь выбранный период, а не с первого отчёта. Лидер, не сдавший за период ни одного отчёта, тоже остаётся в списке — с 0%, а в календаре вся его строка красная.\n\nБригадир сам отчёт не сдаёт, поэтому его день — это среднее по КАЖДОМУ лидеру, который в этот день должен был сдать чек-лист: лидер без отчёта считается за 0. В стабильность день попадает только тогда, когда сдали ВСЕ. То есть один пропустивший лидер стоит всей бригаде целого дня, и в календаре он красный. Поэтому рейтинг бригадира может оказаться выше его стабильности; у лидера эти две колонки не пересекаются никогда.\n\nВыбранная вкладка — основной рейтинг, вторая колонка — подрейтинг: именно она разводит равные результаты. Место делится только тогда, когда совпали оба показателя.\n\nТренд — изменение МЕСТА, а не процента: было 57-е место, стало 47-е — это +10 (подъём зелёный, падение красное, без движения — 0). Сравнение идёт с предыдущим периодом той же длины и по той колонке, по которой список отсортирован сейчас. Линия — движение этого места по дням (не меньше 7 дней): каждая точка — место, которое вышло бы, если бы период закончился в этот день, поэтому конец линии равен месту в строке. Если за предыдущий период данных нет вообще — «Новый».",
     standPrimaryHint: "Основной рейтинг — список сортируется по этой колонке",
     standSubHint: "Подрейтинг — разводит места при равенстве в основной колонке",
     thTrend: "Тренд",
@@ -624,7 +624,7 @@ const TXT = {
     thPlace: "Place", thDays: "Days filed", thTier: "Tier",
     tierTop: "Champion", tierGood: "Excellent", tierMid: "Average", tierBad: "Low",
     supSearchPh: "Search supervisor…",
-    standInfo: "Rating — a score for EVERY day of the period: a day with no report counts as 0%. Consistency — the share of those days that carry a report at all. The scoring window is the whole picked period, not from the first report.\n\nA brigadir files nothing themselves, so their day is the mean over EVERY leader who owed a checklist that day — a leader who filed nothing counts as a 0 — and the day counts toward consistency only when every one of them filed. One leader missing one day therefore costs the whole unit that day, and turns its calendar cell red. A brigadir's rating can consequently sit above their consistency; for a leader the two columns can never cross.\n\nThe active tab is the primary ranking and the other column is its sub-rating: equal results are separated by it. A place is shared only when BOTH figures match.\n\nTrend — the change of PLACE, not of a percentage: 57th last period, 47th now, that is +10 (climbing green, dropping red, level 0). It compares against the previous period of the same length, ranked by whichever column the list is sorted by right now. The line is that place day by day (at least 7 days): each point is the place the board would print if the period ended on that day, so the end of the line is exactly the place in the row. Nothing at all in the previous period reads «New».",
+    standInfo: "Rating — a score for EVERY day of the period: a day with no report counts as 0%. Consistency — the share of those days that carry a report at all. The scoring window is the whole picked period, not from the first report. A leader who filed nothing at all in the period is still listed — at 0%, and red across the calendar.\n\nA brigadir files nothing themselves, so their day is the mean over EVERY leader who owed a checklist that day — a leader who filed nothing counts as a 0 — and the day counts toward consistency only when every one of them filed. One leader missing one day therefore costs the whole unit that day, and turns its calendar cell red. A brigadir's rating can consequently sit above their consistency; for a leader the two columns can never cross.\n\nThe active tab is the primary ranking and the other column is its sub-rating: equal results are separated by it. A place is shared only when BOTH figures match.\n\nTrend — the change of PLACE, not of a percentage: 57th last period, 47th now, that is +10 (climbing green, dropping red, level 0). It compares against the previous period of the same length, ranked by whichever column the list is sorted by right now. The line is that place day by day (at least 7 days): each point is the place the board would print if the period ended on that day, so the end of the line is exactly the place in the row. Nothing at all in the previous period reads «New».",
     standPrimaryHint: "Primary ranking — the list is sorted by this column",
     standSubHint: "Sub-rating — breaks the tie when the primary column is equal",
     thTrend: "Trend",
@@ -881,7 +881,21 @@ const effDone = (tk) => tk.admin_done ?? (!!tk.done && !tk.ai_rejected);
 // the rolling spark tests `off.has(d)` per day. Expanding downstream would fix
 // the ranking and leave those two on the old denominator — two answers to one
 // question, on one card.
-const slotsBy = (rows, keyFn, cuts, dates) => {
+//
+// `members` is the third source, and the only one that can name a person who
+// filed NOTHING. Grouping rows cannot list somebody who left no row at all, so
+// a leader who owed a checklist every day of the window and sent none was
+// simply absent — from the ranking, the calendar and the headline average —
+// while the unit ranking beside it already counted them as the 0 they scored
+// (`unitSlots`). The page hands its scoped ROSTER in here (`rosterLeaders`,
+// through `rosterFold`), and every name the rows did not produce gets an entry
+// with no days: a real
+// 0% over the window, which is exactly what a missing day already is. Their
+// stopped-owing days come off through `cuts` like anybody else's, which is why
+// the page folds the roster's own cutoff and no-cell floor into that map.
+// Marked `unfiled`, because the Trend chip must not read «Yangi» beside
+// somebody whose data has not begun — it has simply not arrived.
+const slotsBy = (rows, keyFn, cuts, dates, members) => {
   const map = new Map();
   for (const r of rows) {
     const key = keyFn(r);
@@ -913,6 +927,13 @@ const slotsBy = (rows, keyFn, cuts, dates) => {
     day.sum += r.completion; day.n++;
     e.days.set(d, day);
   }
+  // Everybody who owed and left no row. BEFORE the cut expansion, so a leader
+  // cut on the 15th is owed only the days before it, and one cut before the
+  // window opened leaves the board in `scoreSlots`, as a filer would.
+  if (members)
+    for (const key of members)
+      if (key && key !== "N/A" && !map.has(key))
+        map.set(key, { days: new Map(), off: new Set(), unfiled: true });
   // Every day of this window from the person's cutoff on: days they were never
   // expected to file, so days that belong in neither half of the average.
   if (cuts?.size && dates?.length) {
@@ -935,6 +956,37 @@ const slotsBy = (rows, keyFn, cuts, dates) => {
     for (const d of e.days.keys()) e.off.delete(d);
   return map;
 };
+
+// Who of `roster` may go on the board as having filed NOTHING in `rs` — the
+// `members` handed to `slotsBy`. Everybody, except a profile an UNMATCHED
+// sheet spelling in those rows may name. A handful of the spellings the form
+// collected never resolved to a profile (the matcher is scoped to the unit, so
+// a leader who moved units reads as a stranger — Turdimurodov Nodirjon filed
+// under Aripova Manzura until he became a brigadir himself), and a row filed
+// under one must not make its leader look absent: that profile is left off the
+// fold for the period, i.e. read exactly as it was before the roster joined
+// in. Surname + first name, folded to one script, because the sheet spells
+// people in either alphabet and in passport form. The bot keys every day by
+// profile, so from September on this set is empty and nobody is held back.
+const nameToks = (s) => transliterate(String(s || ""), "uz").toLowerCase()
+  .replace(/[ʻʼ'`‘’]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
+const rosterFold = (roster, rs) => {
+  if (!roster?.size) return roster;
+  const spelt = [];
+  for (const r of rs) {
+    if (r.leader_id || r.missing || !r.leader || r.leader === "N/A") continue;
+    const t = nameToks(r.leader);
+    if (t.length >= 2) spelt.push(t);
+  }
+  if (!spelt.length) return roster;
+  const out = new Set();
+  for (const name of roster) {
+    const own = new Set(nameToks(name));
+    if (!spelt.some((t) => own.has(t[0]) && own.has(t[1]))) out.add(name);
+  }
+  return out;
+};
+
 // How many days of the window this person is actually measured over. Excluded
 // days come off the top, so a leader with three excluded days in a seven-day
 // period is scored over four — that is what "counts neither for nor against"
@@ -945,7 +997,7 @@ const winFor = (winDays, off) => Math.max(0, winDays - (off ? off.size : 0));
 // …scored over that window: Reyting = Σ day means ÷ every day of it,
 // Barqarorlik = how many of those days carry a report at all.
 const scoreSlots = (map, winDays) =>
-  [...map.entries()].flatMap(([name, { days, off, filed }]) => {
+  [...map.entries()].flatMap(([name, { days, off, filed, unfiled }]) => {
     let sum = 0;
     for (const day of days.values()) sum += day.sum / day.n;
     const win = winFor(winDays, off);
@@ -974,6 +1026,8 @@ const scoreSlots = (map, winDays) =>
       excluded: off,
       // Which days those were, for the calendar grid under the register.
       days: done,
+      // On the board off the roster alone — nothing in the rows (`slotsBy`).
+      unfiled: !!unfiled,
     }];
   });
 
@@ -2268,9 +2322,43 @@ export default function Leaders() {
   // cut leader actually FILED; these carry the days nobody filed, which is most
   // of them and the only reason the denominator moves at all. Expanded over
   // whichever window each ranking happens to be scored over — see `slotsBy`.
+  //
+  // …plus the ROSTER's own answer, for the two cases that map cannot carry, and
+  // both matter now that the roster itself puts people on the board
+  // (`rosterLeaders`). `cutoffs` is built from the people the feed has ROWS for,
+  // so a leader cut before they ever filed is not in it; and it knows nothing of
+  // a unit filing per CELL, where a leader who owns no cell owes nothing from
+  // the switch on (`leader_cells.expected_days` answers `[]`). Without them
+  // either one would print as a red row of days nobody asked them for.
+  //
+  // A roster CUTOFF speaks only for a name the feed has no rows under: where it
+  // has rows, the backend's key-level answer already weighed everybody filing
+  // under that spelling and cut it only once all of them were cut, and the
+  // roster, which lists profiles alone, must not overrule that. Several profiles
+  // sharing one name stop owing only once EVERY one of them has, from the last
+  // of their dates — the backend's own rule for a shared key.
   const cutLeaders = useMemo(() => {
     const m = new Map();
     for (const [name, c] of Object.entries(data?.cutoffs ?? {})) m.set(name, c.from);
+    // An excluded day nobody filed (`missing`) is a decision, not a filing, so
+    // the backend's census never saw it either.
+    const filedUnder = new Set();
+    for (const r of data?.data ?? []) if (r.leader && !r.missing) filedUnder.add(r.leader);
+    const floors = new Map();                 // name → last floor, or null = someone still owes
+    for (const p of data?.roster ?? []) {
+      if (!p.name) continue;
+      const own = [];
+      if (p.cutoff && !filedUnder.has(p.name)) own.push(p.cutoff);
+      if (p.cell_from && !p.cells?.length) own.push(p.cell_from);
+      const f = own.length ? own.sort()[0] : null;
+      const had = floors.has(p.name), cur = floors.get(p.name);
+      floors.set(p.name, !had ? f : cur == null || f == null ? null : f > cur ? f : cur);
+    }
+    for (const [name, f] of floors) {
+      if (!f) continue;
+      const cur = m.get(name);
+      if (!cur || f < cur) m.set(name, f);
+    }
     return m;
   }, [data]);
   // The same for a whole unit, which the backend computes because the client
@@ -2290,8 +2378,12 @@ export default function Leaders() {
       if (r.leader && !m.has(r.leader)) m.set(r.leader, r.shift);
       if (r.supervisor && !m.has(r.supervisor)) m.set(r.supervisor, r.shift);
     }
+    // A leader who has never filed has no row to answer for them, and the
+    // roster puts them on the board anyway — their unit's shift still does.
+    for (const p of data?.roster ?? [])
+      if (p.name && p.shift != null && !m.has(p.name)) m.set(p.name, p.shift);
     return m;
-  }, [rows]);
+  }, [rows, data]);
   // Chips only where two shifts can actually meet: the Smena filter on «All»,
   // seen by a viewer whose scope spans shifts. A supervisor's unit and a
   // leader's own rows are single-shift by construction — the chip is noise.
@@ -2558,8 +2650,11 @@ export default function Leaders() {
     for (const r of rows)
       if (r.leader && r.leader !== "N/A" && r.supervisor && r.supervisor !== "N/A")
         m[r.leader] = r.supervisor;
+    // …and the roster for a leader on the board with no row at all.
+    for (const p of data?.roster ?? [])
+      if (p.name && p.supervisor && !m[p.name]) m[p.name] = p.supervisor;
     return m;
-  }, [rows]);
+  }, [rows, data]);
   // supervisor → shift (from the row the backend tags with Manager.shift), so a
   // shift filter can also narrow the supervisor picker. An unmatched supervisor
   // has no shift and drops out once a shift is chosen.
@@ -2625,9 +2720,30 @@ export default function Leaders() {
     if (!from || !days) return [];
     return Array.from({ length: days }, (_, i) => isoShift(from, i));
   }, [scoreWin]);
+  // Who OWED this page a checklist — the leader twin of `rosterUnits` below,
+  // narrowed by exactly the filters that narrow the rows, for the same reason: a
+  // roster wider than the rows on screen would put people on the board that the
+  // filters are deliberately hiding. It is what puts a leader who filed NOTHING
+  // in the period on the ranking and the calendar at all (`slotsBy`'s
+  // `members`); before it they were absent from both, so a unit whose calendar
+  // was solid green could still hold a leader who had not filed for weeks.
+  const rosterLeaders = useMemo(() => {
+    const s = new Set();
+    for (const p of data?.roster ?? []) {
+      if (!p.supervisor || !p.name) continue;
+      if (effShift != null && p.shift !== effShift) continue;
+      if (effSup !== "All" && p.supervisor !== effSup) continue;
+      if (effLeader !== "All" && p.name !== effLeader) continue;
+      s.add(p.name);
+    }
+    return s;
+  }, [data, effShift, effSup, effLeader]);
+  // …minus anybody an unmatched sheet spelling in the period may name. ONE set
+  // for the ranking and the task bars, which describe the same people.
+  const foldLeaders = useMemo(() => rosterFold(rosterLeaders, filtered), [rosterLeaders, filtered]);
   const leaderScores = useMemo(
-    () => scoreSlots(slotsBy(filtered, (r) => r.leader, cutLeaders, winDates), scoreWin.days),
-    [filtered, scoreWin.days, cutLeaders, winDates]);
+    () => scoreSlots(slotsBy(filtered, (r) => r.leader, cutLeaders, winDates, foldLeaders), scoreWin.days),
+    [filtered, scoreWin.days, cutLeaders, winDates, foldLeaders]);
   // Who a unit's leaders ARE, narrowed by exactly the filters that narrow its
   // rows. A roster wider than the rows on screen reports a miss for somebody
   // the page is deliberately not showing: filter to one leader and every unit
@@ -2754,6 +2870,12 @@ export default function Leaders() {
         s.tasks.set(id, a);
       }
     }
+    // Everybody the ranking puts on the board off the roster alone: they owed
+    // every question every day and answered none, so they belong in `nL`
+    // exactly as a leader who filed once does — or these bars describe a
+    // smaller set of people than the average above them. Added BEFORE the
+    // cutoff walk below, which takes their stopped-owing days back off.
+    for (const L of foldLeaders) leaders.add(L);
     // …and the same for a leader who STOPPED COUNTING mid-window. `leaders.add`
     // above fires before the excluded bail, so a leader cut off on the 21st is
     // still in `nL` and still inflates `nL * (winDays - t.first)` by every day
@@ -2804,7 +2926,7 @@ export default function Leaders() {
       const owed = t.asked + missed;
       return { id, asked: t.asked, rate: owed ? Math.round((t.done / owed) * 100) : null };
     });
-  }, [filtered, scoreWin, cutLeaders]);
+  }, [filtered, scoreWin, cutLeaders, foldLeaders]);
 
   // Every question on the form keeps its slot on the axis, but one nobody has
   // answered plots as null — an empty space under its label, not a 0% bar. A 0%
@@ -2842,7 +2964,10 @@ export default function Leaders() {
     const cutSpan = cutFrom && cutTo && cutTo >= cutFrom
       ? Array.from({ length: spanDays(cutFrom, cutTo) }, (_, i) => isoShift(cutFrom, i))
       : [];
-    const perLeader = slotsBy(trendRows, (r) => r.leader, cutLeaders, cutSpan);
+    // The roster rides in too: the line divides by everyone who owed, and a
+    // leader who filed nothing owed as much as anybody.
+    const perLeader = slotsBy(trendRows, (r) => r.leader, cutLeaders, cutSpan,
+      rosterFold(rosterLeaders, trendRows));
     const roster = perLeader.size;
     if (!roster) return empty;
     const dayScore = new Map();                          // date → Σ of that day's leader scores
@@ -2886,7 +3011,7 @@ export default function Leaders() {
       // weekly buckets get a full "start – end" range in the tooltip
       trendTips: keys.map((k) => (mode === "week" ? `${ddmm(k)} – ${ddmm(isoShift(k, 6))}` : label(k))),
     };
-  }, [trendRows, trendFrom, endDate, dataMax, cutLeaders]);
+  }, [trendRows, trendFrom, endDate, dataMax, cutLeaders, rosterLeaders]);
 
   const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
@@ -3003,6 +3128,14 @@ export default function Leaders() {
       const scored = scoreSlots(slotsFor(prevRows, prevDays), winDays);
       prevSeen = onRoster(scored, prevFrom);
       prev = new Map(rankPlaces(scored, standMetric).map((e) => [e.name, e.place]));
+      // «Yangi» is for somebody whose data BEGINS in this period, so their first
+      // one is not read as a climb from last place. A leader on the board off the
+      // roster alone has no data in this period either — nothing has begun — and
+      // «Yangi» beside a leader who has not filed for weeks says the opposite of
+      // what is true. They are compared like anybody else, against wherever the
+      // previous period put them — last place, if it had nothing from them
+      // either (the roster padding above).
+      for (const e of standings.list) if (e.unfiled) prevSeen.add(e.name);
     }
 
     const sparks = new Map();
