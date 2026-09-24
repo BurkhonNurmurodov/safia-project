@@ -5605,6 +5605,50 @@ def set_forecast_autocall_capacity() -> None:
         db.close()
 
 
+ZAGRUZKA_BANDS_FLAG = "zagruzka_table_bands_2026_09_24_v1"
+
+
+def split_zagruzka_bands() -> None:
+    """2026-09-24 (the operator's directive): every table on /zagruzka owns its
+    colour bands, edited from its own button instead of the admin panel.
+
+    Three tables — «Reja bajarilishi», «Samaradorlik» and «Soddalashtirilgan
+    hisob» — used to read the bands of the load heatmap / the full comparison
+    table and now have keys of their own (`routers.settings.ZAGRUZKA_BAND_SEEDS`).
+    Each is seeded ONCE with the value of the key it shared, so no table changed
+    colour on the day this shipped. Insert-only: a key that already holds a
+    value is never overwritten, and a source with no row seeds nothing — both
+    then answer the same default.
+
+    The FLAG is what makes it once. Without it a key left unseeded here would be
+    seeded on a LATER boot from whatever the load heatmap had been edited to by
+    then — a table re-coloured by somebody else's save, at a deploy. Changing
+    what this seeds needs a NEW flag key. Config only; nothing is recomputed.
+    """
+    from app.routers.settings import ZAGRUZKA_BAND_SEEDS
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=ZAGRUZKA_BANDS_FLAG).first():
+            return
+        seeded = []
+        for key, source in ZAGRUZKA_BAND_SEEDS.items():
+            if db.query(AppSetting).filter_by(key=key).first():
+                continue
+            src = db.query(AppSetting).filter_by(key=source).first()
+            if src:
+                db.add(AppSetting(key=key, value=src.value))
+                seeded.append(key)
+        db.add(AppSetting(key=ZAGRUZKA_BANDS_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] zagruzka table bands seeded: {', '.join(seeded) or 'none'}")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] zagruzka table bands not seeded: {exc}")
+    finally:
+        db.close()
+
+
 # ── one-shots: the «Narxlanmagan, daq» breakdown, DMed ───────────────────────
 # The operator asked, on 2026-09-09, for the 598 unpriced minutes of 2–8
 # September to be explained in their own chat — first as a table in the message
