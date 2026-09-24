@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload, CheckCircle2, XCircle, Factory, Save, BookOpen, AlertTriangle, Users,
-  Wand2, PencilLine, Layers,
+  Wand2, PencilLine, Layers, History,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -66,11 +66,15 @@ function WorkCenters({ managerId, managerName }) {
   const save = useMutation({
     mutationFn: ({ id, body }) => api.put(`/admin/production/work-centers/${id}`, body),
     onMutate: ({ id }) => setSavingId(id),
-    onSuccess: (_d, { id }) => {
+    onSuccess: (res, { id }) => {
       qc.invalidateQueries({ queryKey: ["pp-wc", managerId] });
       // Clear the row's draft so the input goes back to reflecting the server.
       setDraft((p) => { const n = { ...p }; delete n[id]; return n; });
-      toast.success(t("admin.prod.wcSaved"));
+      // A work centre's settings count from the shift in progress
+      // (services/pp_catalog.py) — the save says from which day.
+      const from = res?.data?.from;
+      toast.success(t("admin.prod.wcSaved")
+        + (from ? " · " + t("production.catalog.fromDay").replace("{d}", fmtDay(from)) : ""));
     },
     // A failed PUT used to leave the draft on screen looking exactly like a
     // saved value — the only confirmation the admin had was faith.
@@ -442,6 +446,19 @@ function CatalogImport({ managerId, managerName }) {
             <span className="leading-snug">
               {t(state.data.groups_from_sheet ? "admin.prod.catalogGroupsSheet" : "admin.prod.catalogGroupsCarried")
                 .replace("{n}", String(state.data.grouped_lines ?? 0))}
+            </span>
+          </div>
+        )}
+        {/* From which day the imported catalog counts (services/pp_catalog.py):
+            every earlier day keeps the catalog it had, unless this is the
+            brigadir's FIRST catalog, which has nothing older to keep. */}
+        {state.status === "ok" && "applies_from" in state.data && (
+          <div className="mt-2 flex items-start gap-2 text-xs" style={{ color: "var(--text-3)" }}>
+            <History size={13} className="flex-shrink-0 mt-0.5" />
+            <span className="leading-snug">
+              {state.data.applies_from
+                ? t("admin.prod.catalogFrom").replace("{d}", fmtDay(state.data.applies_from))
+                : t("admin.prod.catalogFirst")}
             </span>
           </div>
         )}

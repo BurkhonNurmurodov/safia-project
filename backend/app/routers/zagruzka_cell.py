@@ -131,12 +131,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (
     Attendance, Cell, CellAttendance, CellOjidaniya, CellOjidaniyaInterval,
-    Manager, PPDaily, PPLineDaily, PPDaySetting, PPProduct, PPWorkCenter, PPWorkCenterDaily,
+    Manager, PPDaily, PPLineDaily, PPDaySetting, PPWorkCenterDaily,
     RoleProfile,
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
-from app.services import wc_group, zagruzka_source
+from app.services import pp_catalog, wc_group, zagruzka_source
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services import idle_intervals
@@ -355,25 +355,40 @@ def cell_zagruzka(
     # own quantities too (models.PPLineDaily). Summing the labor first and
     # multiplying by one quantity — what this did before — cannot express that,
     # and would make this page disagree with the Positions table it mirrors.
-    all_products = db.query(PPProduct).filter(PPProduct.manager_id == mgr.id).all()
-    keys = line_keys(all_products)
-    lines_by_key: dict[tuple[str, str], list[tuple[int, float]]] = defaultdict(list)
-    products_missing_labor: set[str] = set()
-    # The lines the SAP upload does not answer for — `pp_calc.takes_sap`, the
-    # same gate the Positions table applies, so this page's reconciliation goes
-    # on comparing two computations of one number rather than two rules.
-    sap_off: set[tuple[str, str, str]] = set()
-    for p in all_products:
-        if not p.active or wc_code(p.work_center) not in wanted_wcs:
-            continue
-        if p.labor_time is None:
-            products_missing_labor.add(f"{p.work_center}/{p.sap_code or p.name}")
-            continue
-        qkey = daily_key(p.sap_code, p.name)
-        lines_by_key[(p.work_center, qkey)].append(
-            (keys.get(p.id, ""), float(p.labor_time)))
-        if not takes_sap(p.sap_code, p.auto_fill):
-            sap_off.add((p.work_center, qkey, keys.get(p.id, "")))
+    #
+    # Each run of days is priced with the catalog THOSE days had
+    # (services/pp_catalog.py — an edit counts from the shift it is made in),
+    # exactly as the Positions table and the fleet загрузка price it. The
+    # diagnostics below describe the catalog as it stands at the end of the
+    # range.
+    cat_spans = pp_catalog.spans(db, [mgr.id], date_from, date_to).get(mgr.id, [])
+    latest_cat = cat_spans[-1][0] if cat_spans else pp_catalog.current(db, mgr.id)
+    all_products = latest_cat.lines
+
+    def _span_lines(products):
+        """(lines_by_key, sap_off, missing labor) of one catalog."""
+        keys = line_keys(products)
+        by_key: dict[tuple[str, str], list[tuple[int, float]]] = defaultdict(list)
+        missing: set[str] = set()
+        # The lines the SAP upload does not answer for — `pp_calc.takes_sap`,
+        # the same gate the Positions table applies, so this page's
+        # reconciliation goes on comparing two computations of one number
+        # rather than two rules.
+        off: set[tuple[str, str, str]] = set()
+        for p in products:
+            if not p.active or wc_code(p.work_center) not in wanted_wcs:
+                continue
+            if p.labor_time is None:
+                missing.add(f"{p.work_center}/{p.sap_code or p.name}")
+                continue
+            qkey = daily_key(p.sap_code, p.name)
+            by_key[(p.work_center, qkey)].append(
+                (keys.get(p.id, ""), float(p.labor_time)))
+            if not takes_sap(p.sap_code, p.auto_fill):
+                off.add((p.work_center, qkey, keys.get(p.id, "")))
+        return by_key, off, missing
+
+    products_missing_labor: set[str] = _span_lines(all_products)[2]
 
     # The two quantity levels, read exactly as the Positions table reads them:
     # the line's own value wins, else the group's, else the SAP snapshot.
@@ -406,7 +421,43 @@ def cell_zagruzka(
             (float(lo.actual_override) if lo.actual_override is not None else None),
         )
 
-    _pm, _am = line_minutes(lines_by_key, shared, per_line, _SEC_PER_MIN, sap_off)
+    # One engine run per catalog span, each handed only its own dates (a unit
+    # with no dated edit in the range is one span and reads the same floats).
+    # The runs' dates are disjoint, so their results simply sit side by side.
+    _pm: dict = {}
+    _am: dict = {}
+    _pg: dict = {}
+    _ag: dict = {}
+    # The letters the ACTIVE catalog hands each work centre. A cell whose letter
+    # is here reads its own group's minutes even on a day they come to 0 — that
+    # is still its own figure, not a share of somebody else's.
+    # Read per LINE, as `group_of` is keyed (wc_group.line_groups): one SKU's
+    # operations may name different letters, so asking it per (wc, SKU) would
+    # miss every letter but the one the first operation happens to carry.
+    letters_on_lines: dict[str, set] = defaultdict(set)
+    for _cat, _lo, _hi in cat_spans:
+        lines_by_key, sap_off, _missing = _span_lines(_cat.lines)
+        if len(cat_spans) == 1:
+            _sh, _pl = shared, per_line
+        else:
+            _sh = {k: v for k, v in shared.items() if _lo <= k[2] <= _hi}
+            _pl = {k: v for k, v in per_line.items() if _lo <= k[2] <= _hi}
+        _spm, _sam = line_minutes(lines_by_key, _sh, _pl, _SEC_PER_MIN, sap_off)
+        _pm.update(_spm)
+        _am.update(_sam)
+        # …and the same minutes one level down, under the GROUP each line
+        # names. `line_minutes_by_group` is `line_minutes`' own loop returning
+        # its other half, so Σ over a work centre's groups is the figure above.
+        group_of = wc_group.line_groups(_cat.lines)
+        _spg, _sag = line_minutes_by_group(lines_by_key, _sh, _pl, _SEC_PER_MIN,
+                                           sap_off, group_of)
+        _pg.update(_spg)
+        _ag.update(_sag)
+        for (_w, _qkey), _lines in lines_by_key.items():
+            for _lkey, _labor in _lines:
+                _g = group_of.get((_w, _qkey, _lkey))
+                if _g:
+                    letters_on_lines[wc_code(_w)].add(_g)
     # Onto the normalised work centre. `line_minutes` joins a line to its
     # quantities under the spelling both were stored with; two spellings of one
     # work centre are then that work centre's minutes, SUMMED. A single spelling
@@ -418,32 +469,15 @@ def cell_zagruzka(
             _k = (wc_code(_w), _d)
             _dst[_k] = _dst[_k] + _v if _k in _dst else _v
 
-    # …and the same minutes one level down, under the GROUP each line names.
-    # `line_minutes_by_group` is `line_minutes`' own loop returning its other
-    # half, so Σ over a work centre's groups is the figure above. The per-work-
-    # centre figures stay: the pre-floor O. SONI suggestion and a cell's
-    # `wc_share` are statements about the whole work centre.
-    group_of = wc_group.line_groups(all_products)
-    _pg, _ag = line_minutes_by_group(lines_by_key, shared, per_line, _SEC_PER_MIN,
-                                     sap_off, group_of)
+    # The group minutes, folded the same way. The per-work-centre figures stay:
+    # the pre-floor O. SONI suggestion and a cell's `wc_share` are statements
+    # about the whole work centre.
     plan_grp: dict[tuple[str, date], dict] = defaultdict(dict)
     actual_grp: dict[tuple[str, date], dict] = defaultdict(dict)
     for _src, _dst in ((_pg, plan_grp), (_ag, actual_grp)):
         for (_w, _g, _d), _v in _src.items():
             _slot = _dst[(wc_code(_w), _d)]
             _slot[_g] = _slot[_g] + _v if _g in _slot else _v
-    # The letters the ACTIVE catalog hands each work centre. A cell whose letter
-    # is here reads its own group's minutes even on a day they come to 0 — that
-    # is still its own figure, not a share of somebody else's.
-    # Read per LINE, as `group_of` is keyed (wc_group.line_groups): one SKU's
-    # operations may name different letters, so asking it per (wc, SKU) would
-    # miss every letter but the one the first operation happens to carry.
-    letters_on_lines: dict[str, set] = defaultdict(set)
-    for (_w, _qkey), _lines in lines_by_key.items():
-        for _lkey, _labor in _lines:
-            _g = group_of.get((_w, _qkey, _lkey))
-            if _g:
-                letters_on_lines[wc_code(_w)].add(_g)
 
     _labor_cache: dict[tuple[str, date], tuple[list, list]] = {}
 
@@ -475,15 +509,27 @@ def cell_zagruzka(
     # wins outright; otherwise N = ROUND(W × Q ÷ S) where W is the (possibly
     # pinned) штатка, Q the day's plan minutes and S the WC's capacity — unless
     # the day pins an efficiency, then S = W × that rate for every cell.
-    wcs = db.query(PPWorkCenter).filter(
-        PPWorkCenter.manager_id == mgr.id, PPWorkCenter.active.is_(True)
-    ).all()
-    shtatka: dict[str, float] = {wc_code(w.code): float(w.shtatka or 0) for w in wcs}
-    capacity: dict[str, Optional[float]] = {
-        wc_code(w.code): (float(w.capacity) if w.capacity is not None else None)
-        for w in wcs
-    }
-    work_centers_without_cell = sorted({w.code for w in wcs
+    # W and S are read off the catalog each DAY had (services/pp_catalog.py);
+    # `shtatka` / `capacity` below are the end of the range, for the lists.
+    _, _global_pm = _pp_constants(db)
+
+    def _wc_conf(cat) -> tuple[dict, dict, float]:
+        wcs_ = cat.active_work_centers
+        return ({wc_code(w.code): float(w.shtatka or 0) for w in wcs_},
+                {wc_code(w.code): (float(w.capacity) if w.capacity is not None else None)
+                 for w in wcs_},
+                _unit_per_head(wcs_, _global_pm))
+
+    _conf_spans = [(_lo, _hi, _wc_conf(_cat)) for _cat, _lo, _hi in cat_spans]
+    shtatka, capacity, unit_pm = _wc_conf(latest_cat)
+
+    def conf_on(d: date) -> tuple[dict, dict, float]:
+        for _lo, _hi, _c in _conf_spans:
+            if _lo <= d <= _hi:
+                return _c
+        return shtatka, capacity, unit_pm
+
+    work_centers_without_cell = sorted({w.code for w in latest_cat.active_work_centers
                                         if wc_code(w.code) not in wanted_wcs})
 
     shtatka_pin: dict[tuple[str, date], float] = {}
@@ -520,17 +566,16 @@ def cell_zagruzka(
         if s.productive_min is not None:
             day_pm_pin[s.date] = float(s.productive_min)
 
-    _, _global_pm = _pp_constants(db)
-    unit_pm = _unit_per_head(wcs, _global_pm)
-
     def derived_o_soni(wc: str, d: date) -> float:
         """`ROUND(W × Q ÷ S)` for the WHOLE work centre — the pre-floor
-        suggestion, derived exactly as pp_calc derives it."""
-        w_eff = shtatka_pin.get((wc, d), shtatka.get(wc, 0.0))
+        suggestion, derived exactly as pp_calc derives it, off that day's
+        work-centre settings."""
+        d_shtatka, d_capacity, d_unit_pm = conf_on(d)
+        w_eff = shtatka_pin.get((wc, d), d_shtatka.get(wc, 0.0))
         pm_pin = day_pm_pin.get(d)
-        cap = capacity.get(wc)
+        cap = d_capacity.get(wc)
         use_cap = bool(cap and cap > 0) and pm_pin is None
-        s_eff = cap if use_cap else w_eff * (pm_pin if pm_pin else unit_pm)
+        s_eff = cap if use_cap else w_eff * (pm_pin if pm_pin else d_unit_pm)
         if s_eff > 0 and w_eff > 0:
             return float(_round_half_up(w_eff * plan_min.get((wc, d), 0.0) / s_eff))
         return 0.0
@@ -929,7 +974,7 @@ def cell_zagruzka(
                 "trud_actual": round(p_actual, 2),
                 "o_soni": hc,
                 "o_soni_pinned": hc_pinned,
-                "shtatka": shtatka_pin.get((wc, d), shtatka.get(wc, 0.0)) if wc else 0.0,
+                "shtatka": shtatka_pin.get((wc, d), conf_on(d)[0].get(wc, 0.0)) if wc else 0.0,
                 "shtatka_pinned": (wc, d) in shtatka_pin,
                 "verifix_labor": m.verifix_labor,
                 "verifix_hc": m.verifix_hc,

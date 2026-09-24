@@ -1103,6 +1103,32 @@ class PPProduct(Base):
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class PPCatalogVersion(Base):
+    """A unit's catalog AS IT STOOD over a closed run of days (2026-09-24, the
+    operator's directive): every catalog line and every work centre of one
+    brigadir, frozen the moment an edit made from «now» on replaced them.
+
+    `pp_products` / `pp_work_centers` stay THE catalog from the unit's latest
+    boundary on; a day before it reads the first version whose `valid_to` is on
+    or after that day. services/pp_catalog.py is the one reader and the one
+    writer — never query this table anywhere else. `valid_from` NULL = every day
+    before `valid_to` (the catalog as it stood when dating began). Nothing here
+    is ever edited: a past day is not something a catalog edit may reach."""
+    __tablename__ = "pp_catalog_versions"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id   = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    valid_from   = Column(Date, nullable=True)
+    valid_to     = Column(Date, nullable=False)          # inclusive
+    lines        = Column(JSONB, nullable=False, default=list)
+    work_centers = Column(JSONB, nullable=False, default=list)
+    reason       = Column(String, nullable=True)        # which write closed it
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("manager_id", "valid_to",
+                                       name="uq_pp_catalog_version_to"),)
+
+
 class PPWorkCenter(Base):
     """Per-brigadir work-center config.
 

@@ -57,6 +57,7 @@ from app.upload_guard import validate_spreadsheet
 from app.services import action_log
 from app.services import forecast_autocall
 from app.services import idle_lock
+from app.services import pp_catalog
 from app.services import shift_scope
 from app.services import wc_group
 from app.services import zagruzka_source
@@ -347,18 +348,12 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     """
     if group_scope is None and wc_scope is not None and payload is not None:
         group_scope = _leader_group_scope(db, payload)
-    products = (
-        db.query(PPProduct)
-        .filter(PPProduct.manager_id == manager_id, PPProduct.active.is_(True))
-        .order_by(PPProduct.sort_order, PPProduct.id)
-        .all()
-    )
-    wcs = (
-        db.query(PPWorkCenter)
-        .filter(PPWorkCenter.manager_id == manager_id, PPWorkCenter.active.is_(True))
-        .order_by(PPWorkCenter.sort_order, PPWorkCenter.id)
-        .all()
-    )
+    # The catalog AS IT STOOD ON THIS DAY (services/pp_catalog.py): an edit
+    # counts from the shift it is made in, so a past day keeps its own lines,
+    # labor times and work centres.
+    cat = pp_catalog.at(db, manager_id, day)
+    products = cat.active_lines
+    wcs = cat.active_work_centers
     daily = db.query(PPDaily).filter(PPDaily.manager_id == manager_id, PPDaily.date == day).all()
     wc_daily = db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == manager_id, PPWorkCenterDaily.date == day).all()
@@ -366,7 +361,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # pp_calc.line_numbers. Computing it over the scoped/active set instead would
     # re-point a stored per-line value the moment a line above it was unticked,
     # or give a leader a different rank for the same line than the writer used.
-    all_products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
+    all_products = cat.lines
     keys = line_keys(all_products)
     sizes = group_sizes(all_products)
     line_daily = db.query(PPLineDaily).filter(
@@ -561,6 +556,16 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     # which needs the numbers and not the lock, can go on calling this without
     # one; it only ever costs `can_reopen`, which is a question about a caller.
     result["day"] = idle_lock.day_info(db, manager_id, day, payload)
+    # Which catalog this day reads, and whether an edit made now would reach
+    # it. `from` is the first shift-day a catalog edit made at this moment
+    # counts on (pp_catalog.unit_effective_day); a day before it keeps the
+    # catalog it had, so the page offers no edit there.
+    eff = pp_catalog.unit_effective_day(db, manager_id)
+    result["catalog"] = {
+        "from": eff.isoformat(),
+        "editable": day >= eff,
+        "dated": cat.frozen,
+    }
 
     if wc_scope is not None:
         # Tell the client the page is pinned to the caller's own cells, and
@@ -1049,7 +1054,7 @@ def set_override(
         raise HTTPException(status_code=403, detail="This team is not one of your cells")
     # WHICH catalog line this write is aimed at — resolved before the group
     # check below, which is a question about that line.
-    line = _resolve_line(db, mid, body)
+    line = _resolve_line(db, mid, body, day)
     if scope is not None:
         # …and inside a shared work centre, their own GROUP only (services/
         # wc_group.py): the dashboard stopped showing a leader of 7421 (A2894 · A)
@@ -1060,8 +1065,7 @@ def set_override(
         # filters on the line's own letter. A line with no letter is the whole
         # work centre's and stays theirs.
         gscope = _leader_group_scope(db, payload)
-        groups = wc_group.line_groups(db.query(PPProduct).filter(
-            PPProduct.manager_id == mid).all())
+        groups = wc_group.line_groups(pp_catalog.at(db, mid, day).lines)
         at_key = {k: g for k, g in groups.items()
                   if k[0] == (body.work_center or "") and k[1] == body.sap_code}
         # No line named: an older bundle writing the whole group (`_set_whole_group`
@@ -1116,18 +1120,19 @@ def set_override(
     return _build_dashboard(db, mid, day, scope, payload)
 
 
-def _resolve_line(db, mid: int, body: "OverrideBody") -> Optional[str]:
+def _resolve_line(db, mid: int, body: "OverrideBody", day: date) -> Optional[str]:
     """Which catalog line this write is aimed at, or None for "the whole group".
 
     `line_key` is what a current bundle sends. `line_no` is the rank v4.31.1 sent
     for the few minutes that build was live; it is resolved through the catalog
-    here so such a tab goes on editing the line it is pointing at.
+    of the day being typed here so such a tab goes on editing the line it is
+    pointing at.
     """
     if body.line_key:
         return body.line_key
     if body.line_no is None:
         return None
-    prods = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+    prods = pp_catalog.at(db, mid, day).lines
     ranks, keys = line_numbers(prods), line_keys(prods)
     for p in prods:
         if (daily_key(p.sap_code, p.name) == body.sap_code
@@ -1138,14 +1143,15 @@ def _resolve_line(db, mid: int, body: "OverrideBody") -> Optional[str]:
                         detail="that line is not one of this position's catalog lines")
 
 
-def _group_lines(db, mid: int, key: str, wc: str) -> list:
-    """Every catalog line of one (qty_key, work centre) group, by durable key.
+def _group_lines(db, mid: int, key: str, wc: str, day: date) -> list:
+    """Every catalog line of one (qty_key, work centre) group, by durable key,
+    in the catalog the day being typed reads (services/pp_catalog.py).
 
     Read over ALL of the unit's lines, active or not — the identity must not
     depend on what is currently displayed, or unticking a line would change what
     its neighbours' stored values are attached to.
     """
-    prods = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+    prods = pp_catalog.at(db, mid, day).lines
     keys = line_keys(prods)
     return [keys[p.id] for p in prods
             if p.id in keys
@@ -1185,7 +1191,7 @@ def _set_whole_group(db, mid: int, day: date, key: str, wc: str, col: str, value
     exactly what it expects to see: one figure for this position. The legacy
     shared override is cleared with it, so one level answers.
     """
-    lines = _group_lines(db, mid, key, wc)
+    lines = _group_lines(db, mid, key, wc, day)
     shared = db.query(PPDaily).filter(
         PPDaily.manager_id == mid, PPDaily.date == day,
         PPDaily.sap_code == key, PPDaily.work_center == wc,
@@ -1238,7 +1244,7 @@ def _set_line_override(db, mid: int, day: date, key: str, wc: str, line: str,
     means every line keeps precisely the number it was already showing, and only
     the edited one moves.
     """
-    lines = _group_lines(db, mid, key, wc)
+    lines = _group_lines(db, mid, key, wc, day)
     if line not in lines:
         raise HTTPException(
             status_code=400,
@@ -1748,14 +1754,20 @@ def _upsert_upload(db, manager_id, day, file_type, columns, rows, filename):
     up.filename = filename
 
 
-def _unit_sap_scope(db, manager_id: int):
+def _unit_sap_scope(db, manager_id: int, day: date):
     """(products, own work centres, catalog SKUs) — the unit's half of the SAP
-    join. ONE spelling, read by the upload fan-out and by the targeted re-join
+    join for ONE day, read off the catalog that day had (services/pp_catalog.py):
+    re-uploading an old date's file is joined exactly as it would have been
+    then. ONE spelling, read by the upload fan-out and by the targeted re-join
     below: two would let a line be filled through one door and not the other,
     which is the whole class of bug `_rejoin_lines` exists to close."""
-    products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
-    own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
-        PPWorkCenter.manager_id == manager_id).all()} | {p.work_center for p in products}
+    return _sap_scope_of(pp_catalog.at(db, manager_id, day))
+
+
+def _sap_scope_of(cat) -> tuple:
+    """`_unit_sap_scope` for a catalog already in hand."""
+    products = cat.lines
+    own_wcs = {w.code for w in cat.work_centers} | {p.work_center for p in products}
     # Only CODED lines can match a SAP order; the escape hatch below is "this
     # brigadir has no catalog at all", not "no line of it carries a code".
     return products, own_wcs, {p.sap_code for p in products if p.sap_code}
@@ -1795,7 +1807,7 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     is written down onto it before that row is replaced. Its group's snapshot is
     still written, because the siblings that DO read it share that record."""
     # Scope to this brigadir: own work centers (config ∪ catalog) and catalog SKUs.
-    products, own_wcs, catalog_skus = _unit_sap_scope(db, manager_id)
+    products, own_wcs, catalog_skus = _unit_sap_scope(db, manager_id, day)
 
     # The lines this upload must not reach — auto-fill switched off, or no SAP
     # code at all (pp_calc.takes_sap). The pp_daily record is still written for
@@ -2020,11 +2032,16 @@ def _stored_slices(db, day: date, data: dict | None = None) -> tuple[list[dict],
     return ops, order_sku, order_deliv
 
 
-def _backfill_manager(db, manager_id: int) -> dict:
+def _backfill_manager(db, manager_id: int, since: Optional[date] = None) -> dict:
     """Ingest EVERY date whose raw SAP slices are already stored, for a brigadir
     who has just been given a catalog. Without this, a фаза/заголовок upload
     that predates the catalog import leaves the unit with no pp_daily rows and
     the files would have to be uploaded again.
+
+    `since` bounds it to the days the new catalog counts on (services/
+    pp_catalog.py): a day before it keeps the catalog it had AND every number
+    on it, typed ones included — the rebuild below clears them. None = every
+    stored date, which only a unit's FIRST catalog may ask for.
 
     A unit with auto-fill switched OFF is the second door the flag has to close:
     this writes exactly what the fan-out writes (mode 'both' — every stored date
@@ -2034,7 +2051,8 @@ def _backfill_manager(db, manager_id: int) -> dict:
     if manager_id in _autofill_off_ids(db):
         return {"days": 0, "rows": 0, "skipped": True}
     days = [d for (d,) in db.query(PPUpload.date).filter(
-        PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()]
+        PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()
+            if since is None or d >= since]
     slices = _all_slices(db, days)
     filled_days = filled_rows = 0
     for day in days:
@@ -2049,9 +2067,12 @@ def _backfill_manager(db, manager_id: int) -> dict:
     return {"days": filled_days, "rows": filled_rows, "skipped": False}
 
 
-def _rejoin_lines(db, manager_id: int, pairs: set) -> dict:
+def _rejoin_lines(db, manager_id: int, pairs: set, since: Optional[date] = None) -> dict:
     """Fill the SAP snapshot for exactly these (SAP code, work centre) pairs on
-    every stored date, for a unit whose catalog has just gained or moved a line.
+    every stored date from `since` on, for a unit whose catalog has just gained
+    or moved a line. A day before `since` read the catalog it had then
+    (services/pp_catalog.py), which never named the new pair — filling it there
+    would only put figures under a key nothing on that day reads.
 
     The join that produces ПЛАН/ФАКТ runs at UPLOAD time and nowhere else,
     against the catalog as it stood then — so a line added or re-pointed
@@ -2083,15 +2104,22 @@ def _rejoin_lines(db, manager_id: int, pairs: set) -> dict:
         return {"days": 0, "rows": 0, "skipped": False}
     if manager_id in _autofill_off_ids(db):
         return {"days": 0, "rows": 0, "skipped": True}
-    products, own_wcs, catalog_skus = _unit_sap_scope(db, manager_id)
     days = [d for (d,) in db.query(PPUpload.date).filter(
-        PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()]
+        PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()
+            if since is None or d >= since]
+    if not days:
+        return {"days": 0, "rows": 0, "skipped": False}
+    cats = pp_catalog.spans(db, [manager_id], days[0], days[-1]).get(manager_id, [])
     slices = _all_slices(db, days)
     filled_days = filled_rows = 0
     for day in days:
         faza_ops, order_sku, order_deliv = _stored_slices(db, day, slices)
         if not faza_ops:
             continue
+        cat = pp_catalog.catalog_for(cats, day)
+        if cat is None:
+            continue
+        products, own_wcs, catalog_skus = _sap_scope_of(cat)
         agg = faza_quantities(_scoped_faza(faza_ops, order_sku, order_deliv,
                                            products, own_wcs, catalog_skus))
         n = 0
@@ -2364,13 +2392,15 @@ def get_raw(
     if not unpinned and (is_global or scope is not None):
         # Scope the plant-wide file to this brigadir at read time — the same
         # filters legacy slices had baked in at upload time.
-        products = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+        # The catalog that day had (services/pp_catalog.py) — the file for an
+        # old date is cut the way the day itself was joined.
+        cat = pp_catalog.at(db, mid, day)
+        products = cat.lines
         if scope is not None:
             products = [p for p in products if _in_scope(scope, p.work_center)]
         if file_type == "faza":
             # faza row: [order, op, wc, sku, name, plan, status, date, conf]
-            own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
-                PPWorkCenter.manager_id == mid).all()} | {p.work_center for p in products}
+            own_wcs = {w.code for w in cat.work_centers} | {p.work_center for p in products}
             if scope is not None:
                 own_wcs = {c for c in own_wcs if _in_scope(scope, c)}
             # An empty set means "this caller owns nothing" once a scope is in
@@ -2442,6 +2472,13 @@ async def import_catalog(
                     f"«Группа» у позиции {pr.get('sap_code') or pr.get('name') or '?'} "
                     f"({pr.get('work_center') or '—'}): «{pr.get('wc_group')}» — "
                     f"нужна одна латинская буква A–Z"))
+    # The imported catalog counts from the shift in progress
+    # (services/pp_catalog.py): the days before it keep the catalog they had
+    # AND every number on them — the backfill below only rebuilds the days from
+    # the start on. A unit importing its FIRST catalog has nothing to keep, so
+    # that one import reaches every stored date, as the import always did.
+    first_catalog = pp_catalog.is_empty(db, manager_id)
+    eff = None if first_catalog else pp_catalog.freeze(db, manager_id, "import")
     # Hand-pinned фаза values live only here (the sheet has no such column), so
     # carry them across the wipe by the line's own key (daily_key + work centre),
     # which is the SAP code unless the line has none.
@@ -2500,7 +2537,7 @@ async def import_catalog(
             wc_added += 1
     db.commit()   # catalog must be visible to the scope queries in the backfill
 
-    filled = _backfill_manager(db, manager_id)
+    filled = _backfill_manager(db, manager_id, since=eff)
     db.commit()
     action_log.enrich(
         target_kind="catalog", target_id=manager_id, unit_id=manager_id,
@@ -2509,6 +2546,7 @@ async def import_catalog(
                  ("work_center", f"+{wc_added} / ~{wc_updated}"),
                  ("group", "sheet" if groups_from_sheet else "carried"),
                  ("grouped_lines", grouped_lines),
+                 ("from", eff.isoformat() if eff else "all"),
                  ("note", "auto-fill off — not backfilled" if filled["skipped"]
                           else f"backfilled {filled['days']} day(s), "
                                f"{filled['rows']} row(s)")],
@@ -2520,6 +2558,8 @@ async def import_catalog(
         "backfilled_days": filled["days"], "backfilled_rows": filled["rows"],
         "backfill_skipped": filled["skipped"],
         "groups_from_sheet": groups_from_sheet, "grouped_lines": grouped_lines,
+        # The day the catalog counts from; None = every day (a first catalog).
+        "applies_from": eff.isoformat() if eff else None,
     }
 
 
@@ -2625,6 +2665,11 @@ def admin_update_work_center(wc_id: int, body: WorkCenterBody,
     if not w:
         raise HTTPException(status_code=404, detail="work center not found")
     was = (w.shtatka, float(w.capacity) if w.capacity is not None else None)
+    # Counts from the shift in progress (services/pp_catalog.py): the days
+    # before it keep the штатка and capacity they had. Kept BEFORE the row is
+    # touched — the session does not autoflush, so a mutated row would be kept
+    # with its new values.
+    eff = pp_catalog.freeze(db, w.manager_id, "work_center")
     if body.shtatka is not None:
         w.shtatka = body.shtatka
     if body.capacity is not None:
@@ -2634,11 +2679,11 @@ def admin_update_work_center(wc_id: int, body: WorkCenterBody,
     action_log.enrich(
         target_kind="catalog", target_id=w.id, target_name=w.code,
         unit_id=w.manager_id,
-        details=[("work_center", w.code)],
+        details=[("work_center", w.code), ("from", eff.isoformat())],
         changes=[c for c in (("staffing", was[0], now[0]),
                              ("capacity", was[1], now[1])) if c[1] != c[2]],
     )
-    return {"ok": True}
+    return {"ok": True, "from": eff.isoformat()}
 
 
 @router.get("/admin/production/catalog")
@@ -2750,6 +2795,9 @@ def admin_create_catalog(body: CatalogCreateBody,
                             detail="auto-fill applies only to a line with a SAP code")
     grp_explicit = (body.wc_group or "").strip() != ""
     grp = _group_or_400(body.wc_group) if grp_explicit else None
+    # A new line counts from the shift in progress (services/pp_catalog.py):
+    # the days before it keep the catalog they had, without it.
+    eff = pp_catalog.freeze(db, body.manager_id, "create")
     max_sort = db.query(func.max(PPProduct.sort_order)).filter(
         PPProduct.manager_id == body.manager_id).scalar() or 0
     p = PPProduct(
@@ -2771,10 +2819,11 @@ def admin_create_catalog(body: CatalogCreateBody,
            "minutes": float(p.labor_time) if p.labor_time is not None else None,
            "unit": p.manager_id, "group": p.wc_group}
     # The SAP join runs at UPLOAD time against the catalog as it stood then, so a
-    # line added now would read 0 on every date already uploaded until somebody
+    # line added now would read 0 on the dates already uploaded until somebody
     # re-uploaded the file for each of them. Fill its snapshot from the фаза rows
-    # already stored instead — see _rejoin_lines for what it deliberately is not.
-    filled = _rejoin_lines(db, rec["unit"], _sap_pairs([p]))
+    # already stored instead — from the day it counts on, never before
+    # (services/pp_catalog.py) — see _rejoin_lines for what it deliberately is not.
+    filled = _rejoin_lines(db, rec["unit"], _sap_pairs([p]), since=eff)
     action_log.enrich(
         target_kind="catalog", target_id=rec["id"],
         target_name=rec["sap_code"] or rec["product"], unit_id=rec["unit"],
@@ -2783,11 +2832,12 @@ def admin_create_catalog(body: CatalogCreateBody,
                  ("auto_fill", rec["auto_fill"]), ("minutes", rec["minutes"]),
                  ("group", rec["group"]),
                  ("group_siblings", group_siblings or None),
+                 ("from", eff.isoformat()),
                  ("filled_days", filled["days"] or None),
                  ("filled_rows", filled["rows"] or None)],
     )
     return {"ok": True, "id": rec["id"], "filled": filled,
-            "group_siblings": group_siblings}
+            "group_siblings": group_siblings, "from": eff.isoformat()}
 
 
 def _catalog_snapshot(db, mid: int) -> list[dict]:
@@ -2818,7 +2868,7 @@ def _catalog_ids(prods: list[dict]) -> dict:
 
 
 def _carry_manual_quantities(db, mid: int, before: list[dict],
-                             after: list[dict]) -> int:
+                             after: list[dict], since: Optional[date] = None) -> int:
     """Carry every TYPED ПЛАН/ФАКТ onto the identity its catalog line now has.
 
     A line's quantities are keyed by its CONTENT — the group key (`daily_key`:
@@ -2856,6 +2906,11 @@ def _carry_manual_quantities(db, mid: int, before: list[dict],
     again later. A line moved to another Команда reads that Команда's figures,
     which is what the file actually says.
 
+    `since` is the day the edit counts from (services/pp_catalog.py): a value
+    typed for an earlier day stays exactly where it is, because that day goes on
+    reading the catalog it had — under the old identity. None = every date,
+    which only a one-shot rewrite of the register may ask for.
+
     Returns how many stored values were carried, for the action log.
     """
     old_ids, new_ids = _catalog_ids(before), _catalog_ids(after)
@@ -2872,12 +2927,15 @@ def _carry_manual_quantities(db, mid: int, before: list[dict],
     # destinations, never the unit's whole overlay. `moves` normally holds one
     # entry, so this reads a handful of rows however many dates the unit has.
     ends = list(moves) + list(moves.values())
-    rows = db.query(PPLineDaily).filter(
+    q_rows = db.query(PPLineDaily).filter(
         PPLineDaily.manager_id == mid,
         PPLineDaily.qty_key.in_({e[0] for e in ends}),
         PPLineDaily.work_center.in_({e[1] for e in ends}),
         PPLineDaily.line_key.in_({e[2] for e in ends}),
-    ).all()
+    )
+    if since is not None:
+        q_rows = q_rows.filter(PPLineDaily.date >= since)
+    rows = q_rows.all()
     have = {(r.qty_key, r.work_center or "", r.line_key, r.date): r for r in rows}
     moved_rows = [r for r in rows
                   if (r.qty_key, r.work_center or "", r.line_key) in moves]
@@ -2899,11 +2957,14 @@ def _carry_manual_quantities(db, mid: int, before: list[dict],
         if new and (new[0], new[1]) != (old[0], old[1]) and sizes.get(old[:2]) == 1:
             emptied[old[:2]] = new
     if emptied:
-        rows_d = db.query(PPDaily).filter(
+        q_d = db.query(PPDaily).filter(
             PPDaily.manager_id == mid,
             PPDaily.sap_code.in_({k for k, _w in emptied}),
             PPDaily.work_center.in_({w for _k, w in emptied}),
-        ).all()
+        )
+        if since is not None:
+            q_d = q_d.filter(PPDaily.date >= since)
+        rows_d = q_d.all()
         for d in rows_d:
             new = emptied.get((d.sap_code, d.work_center or ""))
             if new is None:
@@ -3054,6 +3115,9 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                             detail="every selected line must belong to one brigadir")
     mid = units.pop()
 
+    # The batch counts from the shift in progress (services/pp_catalog.py): the
+    # days before it keep the catalog they had. Kept before a row is touched.
+    eff = pp_catalog.freeze(db, mid, "bulk")
     # Both editable fields are part of what a line's quantities are keyed by, so
     # every batch that changes anything needs the snapshot and the carry.
     before = _catalog_snapshot(db, mid)
@@ -3074,7 +3138,7 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
     after = [({**d, "work_center": edited[d["id"]].work_center,
                "labor_time": edited[d["id"]].labor_time}
               if d["id"] in edited else d) for d in before]
-    carried = _carry_manual_quantities(db, mid, before, after)
+    carried = _carry_manual_quantities(db, mid, before, after, since=eff)
     # ONE group pass after every field is applied: a Команда change decides
     # whether a letter still names a cell, so only the finished shape answers.
     group_siblings = 0
@@ -3090,7 +3154,7 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
     moved = _sap_pairs(prods) if wc is not None else set()
     db.commit()
 
-    filled = _rejoin_lines(db, mid, moved)
+    filled = _rejoin_lines(db, mid, moved, since=eff)
     action_log.enrich(
         target_kind="catalog", target_id=f"{mid}:bulk:{len(prods)}",
         target_name=f"{len(prods)} × {wc or ''}".strip(), unit_id=mid,
@@ -3100,13 +3164,14 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
                  ("group", (grp or "—") if body.wc_group is not None else None),
                  ("group_siblings", group_siblings or None),
                  ("skipped_no_code", skipped_no_code or None),
+                 ("from", eff.isoformat()),
                  ("carried_values", carried or None),
                  ("filled_days", filled["days"] or None),
                  ("filled_rows", filled["rows"] or None)],
     )
     return {"ok": True, "updated": len(prods), "carried": carried,
             "skipped_no_code": skipped_no_code, "filled": filled,
-            "group_siblings": group_siblings}
+            "group_siblings": group_siblings, "from": eff.isoformat()}
 
 
 @router.put("/admin/production/catalog/{prod_id}")
@@ -3130,6 +3195,12 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
               if any(v is not None for v in (body.labor_time, body.name,
                                              body.sap_code, body.work_center))
               else None)
+    # The edit counts from the shift in progress (services/pp_catalog.py): the
+    # days before it keep the catalog they had — this line's old labor time,
+    # Команда, code and name included. Kept before a single field moves: the
+    # session does not autoflush, so a mutated row would be kept with its new
+    # values.
+    eff = pp_catalog.freeze(db, p.manager_id, "edit")
     if body.labor_time is not None:
         p.labor_time = body.labor_time
     if body.name is not None:
@@ -3174,7 +3245,7 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         after = [({**d, "sap_code": p.sap_code, "name": p.name,
                    "work_center": p.work_center, "labor_time": p.labor_time}
                   if d["id"] == p.id else d) for d in before]
-        carried = _carry_manual_quantities(db, p.manager_id, before, after)
+        carried = _carry_manual_quantities(db, p.manager_id, before, after, since=eff)
     # The group is this line's own: an explicit one is written here and nowhere
     # else, and a line moved to another Команда loses a letter that would name
     # no cell there (_settle_line_groups).
@@ -3196,12 +3267,14 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         db, mid,
         {(now["sap_code"].strip(), now["work_center"])}
         if (body.sap_code is not None or body.work_center is not None)
-        and (now["sap_code"] or "").strip() and now["work_center"] else set())
+        and (now["sap_code"] or "").strip() and now["work_center"] else set(),
+        since=eff)
     action_log.enrich(
         target_kind="catalog", target_id=pid,
         target_name=now["sap_code"] or now["product"], unit_id=mid,
         details=[("sap_code", now["sap_code"] or None),
                  ("work_center", now["work_center"]),
+                 ("from", eff.isoformat()),
                  ("carried_values", carried or None),
                  ("group_siblings", group_siblings or None),
                  ("filled_days", filled["days"] or None),
@@ -3209,19 +3282,22 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         changes=[(k, was[k], now[k]) for k in now if was[k] != now[k]],
     )
     return {"ok": True, "carried": carried, "filled": filled,
-            "group_siblings": group_siblings}
+            "group_siblings": group_siblings, "from": eff.isoformat()}
 
 
 @router.delete("/admin/production/catalog/{prod_id}")
 def admin_delete_catalog(prod_id: int,
                          _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
-    """Remove a single catalog line (SKU). The daily plan/fact rows join on the
-    SAP snapshot key (sap_code + work_center), not on this row's id, so deleting a
-    catalog line only drops it from the dashboard's SKU list — no daily data is
-    destroyed and nothing else references it (no FK), so a hard delete is safe."""
+    """Remove a single catalog line (SKU) FROM THE SHIFT IN PROGRESS ON
+    (services/pp_catalog.py): the days before it keep the catalog they had, this
+    line included. The daily plan/fact rows join on the SAP snapshot key
+    (sap_code + work_center), not on this row's id, so deleting a catalog line
+    only drops it from the dashboard's SKU list — no daily data is destroyed and
+    nothing else references it (no FK), so a hard delete is safe."""
     p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="product not found")
+    eff = pp_catalog.freeze(db, p.manager_id, "delete")
     # Snapshot before the delete — the row is unreadable after commit.
     gone = {"id": p.id, "unit": p.manager_id, "sap_code": p.sap_code,
             "product": p.name, "work_center": p.work_center, "phase": p.op,
@@ -3234,9 +3310,9 @@ def admin_delete_catalog(prod_id: int,
         details=[("sap_code", gone["sap_code"] or None),
                  ("product", gone["product"] or None),
                  ("work_center", gone["work_center"]), ("phase", gone["phase"]),
-                 ("minutes", gone["minutes"])],
+                 ("minutes", gone["minutes"]), ("from", eff.isoformat())],
     )
-    return {"ok": True}
+    return {"ok": True, "from": eff.isoformat()}
 
 
 # --------------------------------------------------------------------------- #

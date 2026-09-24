@@ -908,9 +908,10 @@ for byte**; only where three numbers come from changes.
   not just a blank загрузка — ΣN = 0 is no figure at all. Accepted by the
   operator. It is self-healing: nothing is stored, so typing the numbers later,
   for a past day too, starts the weighting immediately.
-- **Consequence to know: trudoyomkost is derived from the CURRENT catalog.**
-  Editing a `labor_time` or a quantity moves the загрузка of every past day
-  from the floor on — the property `idle_source` already has.
+- **Trudoyomkost is derived from the catalog EACH DAY HAD** (from 2026-09-24 —
+  see «A catalog edit counts FROM NOW ON»). Until then it was the CURRENT
+  catalog, so editing a `labor_time` moved the загрузка of every past day from
+  the floor on. A typed QUANTITY still moves its own day, and nothing else.
 - **Deliberately unchanged**: `labor_surplus` and `effective_hc` (the
   attendance correction still applies on top of the typed headcount — the
   operator's call), the early-arrival subtraction, the headcount-mismatch flag,
@@ -4573,6 +4574,74 @@ decision about somebody else:
   merged key, never wrongly cut one. The `n<folded name>` key exists and every
   reader tries it, so a writer for it is a UI question, not a model change.
 
+## A catalog edit counts FROM NOW ON (`services/pp_catalog.py`)
+
+From **2026-09-24** (the operator's directive, every point below asked and
+answered) a change to a unit's catalog on the «Zagruzka fayli» page takes
+effect from the shift in progress, and every earlier day keeps the catalog it
+had. Until then every reader took the catalog as it stood TODAY, so one edit
+re-priced the minutes, ЛЮДИ and загрузка of every past day at once — 35
+Трудоемкость and 90 Команда edits had done so by 11 Sep alone.
+
+- **What is dated: everything about a line and a work centre.** Трудоемкость,
+  Команда, group letter, SAP code, name, фаза pin, the SAP/hand switch, adding
+  and deleting a line (the row edit, the bulk bar, the create form, the delete),
+  a work centre's штатка and capacity (`PUT /admin/production/work-centers/{id}`)
+  and the ABC import. Not dated: the unit-wide auto-fill switch, per-day pins,
+  the cells register (a CELL's letter is not a catalog field).
+- **The grain is the whole UNIT, never one line.** `pp_catalog.freeze` copies
+  every line and every work centre of the unit into a `pp_catalog_versions` row
+  (JSONB, `valid_from` NULL = every day before `valid_to`) covering the days up
+  to the one the edit starts on; `pp_products` / `pp_work_centers` stay the
+  catalog from the latest boundary on. A line has no durable identity (an import
+  re-creates every row, `pp_calc.line_keys` is content), so «the catalog as it
+  stood» is only answerable whole. Versions are never edited: no door reaches a
+  past day.
+- **Every writer calls `freeze` BEFORE it touches a row.** The session does not
+  autoflush, so a row already mutated in memory is copied with its NEW values
+  and the past reads the edit after all. A second edit on the same shift-day
+  finds the boundary drawn and freezes nothing — within one day the last edit
+  wins. `uq_pp_catalog_version_to` (unit, valid_to) settles two writers racing
+  to draw one boundary.
+- **Every reader goes through `pp_catalog.at` (one day) or `spans` (a range cut
+  at the boundaries)**, never `db.query(PPProduct)` for a figure: the dashboard
+  (`_build_dashboard` — and so the export, leader auto checks and the override
+  path), `zagruzka_source` (fleet загрузка, Plan Prognoz, the forecast), the SAP
+  join (`_unit_sap_scope(db, mid, day)` — a re-upload of an old date is joined
+  with that day's catalog), the raw view, `/zagruzka-cell` (minutes AND W/S per
+  day) and `/live`. A unit with no version reads exactly what it always did, and
+  one span keeps the same floats. The gap reports (`zagruzka_gaps`,
+  `cell_input_gaps`) and the one-shot reports read the current register on
+  purpose: they are «fix it now» lists.
+- **WHEN an edit starts is `pp_catalog.effective_day`** — the shift running at
+  that moment, else the next one: shift 1 → today until 20:00, tomorrow after;
+  shift 2 (dated by the evening it opens) → yesterday's night until 08:00, today
+  after; no shift → the calendar date. FIXED 08:00 / 20:00, the operator's pick
+  over the «Smena vaqtlari» register, which stays a register. A day already
+  CLOSED on «Verifix to'g'irlash» but still in progress takes the edit too (the
+  operator's ruling) — the closing ladder plays no part here.
+- **Typed quantities follow the dating.** `_carry_manual_quantities(since=)`
+  moves a person's ПЛАН/ФАКТ onto the line's new identity only from the start
+  day; an earlier day keeps its value under the old identity, which its frozen
+  catalog still reads. `_rejoin_lines(since=)` and `_backfill_manager(since=)`
+  fill and rebuild only from the start day too.
+- **The ABC import is dated like an edit** — the days before keep their catalog
+  AND every number on them (the rebuild clears typed values only from the start
+  day). The ONE exception is a unit importing its FIRST catalog
+  (`pp_catalog.is_empty`: no line, no work centre, no version) — nothing older
+  exists, so that import reaches every stored date as imports always did. The
+  card says which (`applies_from`, null for a first catalog).
+- **Nothing was reconstructed.** No history of old values existed, so every day
+  before the first dated edit reads the catalog as it stood on release day (the
+  operator chose this over rebuilding from the Jurnal, which recorded no old
+  values for bulk edits or imports). Nothing moved when this shipped.
+- **The page**: on a day an edit made now cannot reach, the add / edit / delete
+  / bulk controls are GONE (`dashboard.catalog.editable`), with one line naming
+  the day edits count from and a button onto it. Each catalog form says it
+  before Save («counts from DD.MM»), and each save's toast names the day. No
+  «changed» mark on the table (the operator declined it — the Jurnal records
+  who changed what, each save logs `from`).
+
 ## A ПЛАН belongs to ONE catalog line (`pp_line_daily`)
 
 From **2026-09-03** a hand-typed ПЛАН or ФАКТ on `/production` belongs to the
@@ -4628,7 +4697,8 @@ so this was ~15% of the catalog, not an edge case.
     a shared number with siblings still under it is never moved, and a carried
     one lands a level BELOW what the destination's siblings read.
   - **The line's NEW key is re-joined from the stored file, so it never reads 0
-    waiting for a re-upload** — `production._rejoin_lines`, run by all three
+    waiting for a re-upload** (from the day the edit counts on only, since
+    2026-09-24 — see «A catalog edit counts FROM NOW ON») — `production._rejoin_lines`, run by all three
     catalog writers (create, single edit, bulk) whenever a line gains or moves a
     SAP key. The join that produces ПЛАН/ФАКТ used to run at UPLOAD time and
     nowhere else, against the catalog as it stood then, so a line added or
@@ -4899,7 +4969,8 @@ destination; an upload may still name its own targets for one file.
   Legacy single `manager_id` still wins over it.
 - **The catalog import is the SECOND door and it carries the same rule.**
   `_backfill_manager` writes exactly what the fan-out writes — every stored date
-  replaced, every override cleared — so honouring the flag on the upload and
+  from the day the import counts on (all of them for a unit's first catalog,
+  since 2026-09-24) replaced, every override cleared — so honouring the flag on the upload and
   ignoring it there would wipe a manual unit's figures the next time anybody
   re-imported its catalog. It returns `skipped`, `import_catalog` publishes
   `backfill_skipped`, and the card SAYS so: a silent absence of «N days

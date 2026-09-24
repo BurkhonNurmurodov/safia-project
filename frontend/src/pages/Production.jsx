@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronDown,
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
-  Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X,
+  Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X, History,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -1371,8 +1371,9 @@ export default function Production() {
   const noInScope = canPickManager && mgrData != null && managers.length > 0 && mgrOpts.length === 0;
 
   // Catalog fields (Сап код / Наименование / Труд. / Команда) are admin-editable
-  // only — supervisors keep the read-only cells and just edit Факт/ПЛАН.
-  const canEditCatalog = auth?.role === "admin";
+  // only — supervisors keep the read-only cells and just edit Факт/ПЛАН. Which
+  // DAYS may show the controls is decided below, off the dashboard.
+  const canEditCatalogRole = auth?.role === "admin";
   // Staffing-card pins (O.soni / штатка, per date) are admin-only as well.
   const canEditStaffingRole = auth?.role === "admin";
   // The «Odamlar soni» tab is the brigadir's own entry point for the same pins —
@@ -1418,11 +1419,23 @@ export default function Production() {
 
   const dayLock = data?.day ?? null;
   const dayOpen = dayLock ? dayLock.can_write !== false : true;
-  // Per-day editing is gated by ROLE **and** by the day. Catalog editing is not:
-  // a catalog is configuration for every date, not a fact about this one, so a
-  // closed day must not lock it (the backend doesn't either).
+  // Per-day editing is gated by ROLE **and** by the day's closing.
   const canEditStaffing = canEditStaffingRole && dayOpen;
   const canEditPeople = canEditPeopleRole && dayOpen;
+  // The catalog is DATED (services/pp_catalog.py, 2026-09-24): an edit counts
+  // from the shift in progress, and every day before it keeps the catalog it
+  // had. So the edit / add / delete / bulk controls exist only on a day an edit
+  // made NOW would reach — on an earlier one a save would change nothing on
+  // screen. The closing ladder plays no part: a closed day in progress still
+  // takes the edit (the operator's ruling). A missing block (an older backend)
+  // reads as editable, the behaviour the page always had.
+  const catalogInfo = data?.catalog ?? null;
+  const catalogEditable = catalogInfo ? catalogInfo.editable !== false : true;
+  const canEditCatalog = canEditCatalogRole && catalogEditable && !isPlaceholderData;
+  // …and each catalog form says so BEFORE it is saved.
+  const catalogFromHint = catalogInfo?.from
+    ? t("production.catalog.fromHint").replace("{d}", ddmmyyyy(catalogInfo.from))
+    : "";
 
   // Re-opening is the ONE way back, and it is the Staff page's own endpoint —
   // there is exactly one closing, so there must be exactly one re-opening.
@@ -1569,8 +1582,14 @@ export default function Production() {
   // A group is written on the line the operator picked and on NO other
   // (2026-09-18, services/wc_group.py), so a save has nothing extra to report —
   // the «siblings follow» count this used to print is gone with the rule.
+  // Every catalog write counts from the shift in progress
+  // (services/pp_catalog.py) and the save says from which day: after 20:00 a
+  // day-shift unit's edit starts TOMORROW, which the page on screen cannot show.
+  const fromText = (res) => (res?.data?.from
+    ? " · " + t("production.catalog.fromDay").replace("{d}", ddmmyyyy(res.data.from))
+    : "");
   const sapFilled = (res) => {
-    const s = fillText(res);
+    const s = fromText(res) + fillText(res);
     if (s) toast.success(s.slice(3));
   };
   const staffing = useMutation({
@@ -1613,11 +1632,12 @@ export default function Production() {
   // plan/fact rows join on the SAP key, not this row's id, so no daily data goes.
   const deleteCatalog = useMutation({
     mutationFn: (id) => api.delete(`/admin/production/catalog/${id}`),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["production", date] });
       qc.invalidateQueries({ queryKey: ["production-dates"] });
       setConfirmDel(null);
       setCatSel(null);
+      sapFilled(res);
     },
   });
 
@@ -1636,7 +1656,7 @@ export default function Production() {
       const skipped = res?.data?.skipped_no_code ?? 0;
       setBulkDraft(null);
       setCatPick([]);
-      const fill = fillText(res);
+      const fill = fromText(res) + fillText(res);
       if (skipped > 0) {
         toast.warning(`${t("production.bulk.done").replace("{n}", String(n))} · `
           + t("production.bulk.skippedNoCode").replace("{n}", String(skipped)) + fill);
@@ -2941,6 +2961,25 @@ export default function Production() {
                 {t("production.addRow")}
               </Button>
             )}
+            {/* A day an edit made now cannot reach: it keeps the catalog it
+                had, so the controls are gone — and the admin is told where
+                they are instead of wondering why. */}
+            {canEditCatalogRole && !catalogEditable && catalogInfo?.from && (
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <span className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ color: "var(--text-3)" }}>
+                  <History size={13} className="flex-shrink-0" />
+                  {t("production.catalog.pastDay").replace("{d}", ddmmyyyy(catalogInfo.from))}
+                </span>
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  className="whitespace-nowrap"
+                  onClick={() => setDate(catalogInfo.from)}
+                >
+                  {t("production.catalog.openFrom").replace("{d}", ddmmyyyy(catalogInfo.from))}
+                </Button>
+              </div>
+            )}
             <ColumnsPicker
               className="ml-auto"
               columns={COLS.filter((c) => hasGroups || c.key !== GROUP_COL)
@@ -3153,6 +3192,9 @@ export default function Production() {
           <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
             {t("production.bulk.hint")}
           </p>
+          {catalogFromHint && (
+            <p className="text-[11px] leading-relaxed mt-2" style={{ color: "var(--text-3)" }}>{catalogFromHint}</p>
+          )}
         </Modal>
       )}
 
@@ -3286,6 +3328,9 @@ export default function Production() {
           <CatalogFields draft={catDraft} setDraft={setCatField}
             groupOpts={groupOptsFor(catDraft.work_center,
               sameWc(catDraft.work_center, editRow.work_center) ? [editRow.wc_group] : [])} />
+          {catalogFromHint && (
+            <p className="text-[11px] leading-relaxed mt-3" style={{ color: "var(--text-3)" }}>{catalogFromHint}</p>
+          )}
         </Modal>
       )}
 
@@ -3305,6 +3350,9 @@ export default function Production() {
         >
           <CatalogFields draft={catDraft} setDraft={setCatField}
             groupOpts={groupOptsFor(catDraft.work_center)} />
+          {catalogFromHint && (
+            <p className="text-[11px] leading-relaxed mt-3" style={{ color: "var(--text-3)" }}>{catalogFromHint}</p>
+          )}
         </Modal>
       )}
 
@@ -3314,7 +3362,7 @@ export default function Production() {
         onCancel={() => setConfirmDel(null)}
         onConfirm={() => confirmDel && deleteCatalog.mutate(confirmDel.id)}
         title={t("production.deleteTitle")}
-        message={confirmDel ? `${confirmDel.sap_code}${confirmDel.name ? " — " + confirmDel.name : ""}. ${t("production.deleteConfirm")}` : ""}
+        message={confirmDel ? `${confirmDel.sap_code}${confirmDel.name ? " — " + confirmDel.name : ""}. ${t("production.deleteConfirm")}${catalogFromHint ? " " + catalogFromHint : ""}` : ""}
         confirmLabel={t("production.deleteRow")}
         cancelLabel={t("production.cancelEdit")}
         tone="danger"

@@ -53,9 +53,10 @@ from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import PPDaily, PPLineDaily, PPProduct, PPWorkCenterDaily
+from app.models import PPDaily, PPLineDaily, PPWorkCenterDaily
 from app.services.pp_calc import (daily_key, line_keys, line_minutes,
                                   line_minutes_by_group, takes_sap)
+from app.services import pp_catalog
 from app.services import wc_group
 
 # THE floor: from this day the загрузка's headcount and trudoyomkost come from
@@ -261,12 +262,11 @@ def wc_labor(db: Session, manager_ids: Iterable[int],
         return {}
 
     acc: dict[tuple[int, str, str], list] = {}
-    for mid, products in prods.items():
+    for mid, products, sh, pl in _per_span(prods, shared, per_line):
         lines_by_key, sap_off = _lines_of(products)
         if not lines_by_key:
             continue
-        pm, am = line_minutes(lines_by_key, shared.get(mid, {}),
-                              per_line.get(mid, {}), _SEC_PER_MIN, sap_off)
+        pm, am = line_minutes(lines_by_key, sh, pl, _SEC_PER_MIN, sap_off)
         for src, slot in ((pm, 0), (am, 1)):
             for (wc, d), v in src.items():
                 key = (mid, d.isoformat() if hasattr(d, "isoformat") else str(d), wc)
@@ -290,12 +290,11 @@ def wc_group_labor(db: Session, manager_ids: Iterable[int], date_from: date,
     Hand it to `cell_labor` for what each CELL carries."""
     prods, shared, per_line = _labor_inputs(db, manager_ids, date_from, date_to)
     acc: dict[tuple[int, str, str, Optional[str]], list] = {}
-    for mid, products in prods.items():
+    for mid, products, sh, pl in _per_span(prods, shared, per_line):
         lines_by_key, sap_off = _lines_of(products)
         if not lines_by_key:
             continue
-        pg, ag = line_minutes_by_group(lines_by_key, shared.get(mid, {}),
-                                       per_line.get(mid, {}), _SEC_PER_MIN, sap_off,
+        pg, ag = line_minutes_by_group(lines_by_key, sh, pl, _SEC_PER_MIN, sap_off,
                                        wc_group.line_groups(products))
         for src, slot in ((pg, 0), (ag, 1)):
             for (wc, g, d), v in src.items():
@@ -371,16 +370,18 @@ def _lines_of(products) -> tuple[dict, set]:
 
 
 def _labor_inputs(db: Session, manager_ids: Iterable[int], date_from: date, date_to: date):
-    """The three reads behind `wc_labor` / `wc_group_labor`: every catalog line
-    of the units, the `pp_daily` quantities and the per-line overrides, grouped
-    by unit. ``({}, {}, {})`` for an empty or inverted range."""
+    """The three reads behind `wc_labor` / `wc_group_labor`: each unit's catalog
+    CUT AT ITS BOUNDARIES (`pp_catalog.spans` — a day reads the catalog it had,
+    so a labor time edited today never re-prices yesterday), the `pp_daily`
+    quantities and the per-line overrides, grouped by unit.
+    ``({}, {}, {})`` for an empty or inverted range."""
     ids = sorted({int(m) for m in manager_ids})
     if not ids or date_from > date_to:
         return {}, {}, {}
 
-    prods: dict[int, list] = defaultdict(list)
-    for p in db.query(PPProduct).filter(PPProduct.manager_id.in_(ids)).all():
-        prods[int(p.manager_id)].append(p)
+    prods: dict[int, list] = {
+        m: sp for m, sp in pp_catalog.spans(db, ids, date_from, date_to).items()
+        if any(cat.lines for cat, _lo, _hi in sp)}
     if not prods:
         return {}, {}, {}
 
@@ -409,6 +410,23 @@ def _labor_inputs(db: Session, manager_ids: Iterable[int], date_from: date, date
             (float(lo.actual_override) if lo.actual_override is not None else None),
         )
     return prods, shared, per_line
+
+
+def _per_span(prods: dict, shared: dict, per_line: dict):
+    """(unit, catalog lines, its quantities, its per-line values) once per span
+    of `_labor_inputs` — each run of days handed only its own dates, so it is
+    priced with the catalog those days had. A unit with one span (no dated edit
+    in the range) gets its quantities untouched, which keeps its figures the
+    same floats they were before catalogs were dated."""
+    for mid, sp in prods.items():
+        sh_all, pl_all = shared.get(mid, {}), per_line.get(mid, {})
+        if len(sp) == 1:
+            yield mid, sp[0][0].lines, sh_all, pl_all
+            continue
+        for cat, lo, hi in sp:
+            yield (mid, cat.lines,
+                   {k: v for k, v in sh_all.items() if lo <= k[2] <= hi},
+                   {k: v for k, v in pl_all.items() if lo <= k[2] <= hi})
 
 
 def unit_labor(db: Session, manager_ids: Iterable[int],

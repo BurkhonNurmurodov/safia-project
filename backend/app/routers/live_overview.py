@@ -32,11 +32,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (
     Attendance, Cell, CellOjidaniyaInterval, Manager, PPDaily, PPLineDaily,
-    PPProduct, RoleProfile,
+    RoleProfile,
 )
 from app.permissions import require_page
-from app.services import (cell_hours, idle_source, live_overview, shift_scope,
-                          wc_group, zagruzka_source)
+from app.services import (cell_hours, idle_source, live_overview, pp_catalog,
+                          shift_scope, wc_group, zagruzka_source)
 from app.services.day_state import day_state
 from app.services.factory_scope import (
     empty_scope, resolve_factory, scoped_manager_ids, viewer_factory_id,
@@ -92,14 +92,14 @@ def _plan_inputs(db: Session, unit_ids: list, day: date, cells_rows: list):
     if not unit_ids:
         return plan_by_unit, cell_plan
     group_labor: dict = {}
-    prods = db.query(PPProduct).filter(PPProduct.manager_id.in_(unit_ids)).all()
+    # The catalog each unit had ON THIS DAY (services/pp_catalog.py) — an edit
+    # counts from the shift it is made in, so a finished shift keeps its own.
+    cats = pp_catalog.at_many(db, unit_ids, day)
     dailies = db.query(PPDaily).filter(
         PPDaily.manager_id.in_(unit_ids), PPDaily.date == day).all()
     lines = db.query(PPLineDaily).filter(
         PPLineDaily.manager_id.in_(unit_ids), PPLineDaily.date == day).all()
-    by_prod: dict = defaultdict(list)
-    for p in prods:
-        by_prod[int(p.manager_id)].append(p)
+    by_prod: dict = {uid: cats[uid].lines for uid in cats}
     by_daily: dict = defaultdict(list)
     for d in dailies:
         by_daily[int(d.manager_id)].append(d)
