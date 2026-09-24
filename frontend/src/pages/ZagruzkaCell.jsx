@@ -151,7 +151,7 @@ function HeatmapHeader({ payload, heatmapMode, setHeatmapMode, segments, fullscr
       {showGuide && (
         <ColorGuideModal
           title={t("zagruzka.colorGuide")}
-          subtitle={t("zagruzka.colorGuideSub")}
+          subtitle={t("zagruzka.colorGuideSub").replace("{page}", t("nav.zagruzka"))}
           sections={[{
             heading: t("zagruzka.guide.workloadSection"),
             segments: segments?.length ? segments : DEFAULT_SEGMENTS,

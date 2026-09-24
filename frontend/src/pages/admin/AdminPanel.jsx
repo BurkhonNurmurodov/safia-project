@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
-  Sliders, ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock, ShieldQuestion,
+  ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock, ShieldQuestion,
   ClipboardList, CircleSlash,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
@@ -31,7 +31,6 @@ import LeaderDayExclusions from "./LeaderDayExclusions";
 import LeaderCutoffs from "./LeaderCutoffs";
 import DbBackup from "./DbBackup";
 import DataSources from "./DataSources";
-import DisplaySettings from "./DisplaySettings";
 import ShiftTimes from "./ShiftTimes";
 import IdleSource from "./IdleSource";
 import IdleOwners from "./IdleOwners";
@@ -131,12 +130,8 @@ export const ADMIN_NAV = [
   // document's own date, or repeatedly approved/cancelled. Read-only.
   { id: "docaudit",     group: "tools",  Icon: FileClock,      labelKey: "admin.tabDocAudit",     descKey: "admin.desc.docaudit" },
   { id: "translations", group: "tools",  Icon: Languages,      labelKey: "admin.tabTranslations", descKey: "admin.desc.translations" },
-  // Split out of the old "data" tab, which was a junk drawer: a daily uploader
-  // and two chart-colour editors for two OTHER pages, invisible below the fold
-  // and unguessable from the tab name. `capKey` keeps it reachable by exactly
-  // the people who could reach it before — the backend grants "data", and
-  // splitting the UI must not quietly narrow anyone's access.
-  { id: "display",      group: "tools",  Icon: Sliders,        labelKey: "admin.tabDisplay",      descKey: "admin.desc.display", capKey: "data" },
+  // «Ko'rinish» — the chart-colour editors — is gone (2026-09-24): every table
+  // on /zagruzka now carries its own colour bands and its own admin button.
 
   { id: "cleanup",      group: "danger", Icon: Trash2,         labelKey: "admin.tabCleanup",      descKey: "admin.desc.cleanup", danger: true },
   { id: "dbdump",       group: "danger", Icon: DatabaseBackup, labelKey: "admin.tabDbDump",       descKey: "admin.desc.dbdump",  danger: true },
@@ -164,7 +159,6 @@ const VIEWS = {
   lostworkers:  LostWorkers,
   docaudit:     DocAudit,
   translations: TranslationsEditor,
-  display:      DisplaySettings,
   cleanup:      AttendanceCleanup,
   dbdump:       DbBackup,
 };

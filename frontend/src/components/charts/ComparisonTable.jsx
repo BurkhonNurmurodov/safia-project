@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Maximize2, Minimize2, Info, Calculator } from "lucide-react";
+import { Maximize2, Minimize2, Info, Calculator, SlidersHorizontal } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import useIsMobile from "../../hooks/useIsMobile";
 import { orderedSegments } from "../../utils/segments";
@@ -164,6 +164,10 @@ export default function ComparisonTable({
   // fullscreen instances stay in sync. Button hidden when the handler is absent.
   calcFactors = DEFAULT_CALC_FACTORS,
   onCalcFactorsChange = null,
+  // Opens this table's own colour-band editor (/zagruzka). ADMIN only, and
+  // only where a caller passes it: every other page keeps reading the bands
+  // it is handed and draws no button.
+  onEditBands = null,
   // Comments are keyed to a (manager, date). When the rows aren't managers —
   // the per-cell загрузка page passes cells — there is nothing to key them to,
   // so the value still opens its formula but the thread and its POST are gone.
@@ -658,6 +662,17 @@ export default function ComparisonTable({
               {calcModified && (
                 <span style={{ position: "absolute", top: 3, right: 3, width: 6, height: 6, borderRadius: "50%", background: "var(--brand)" }} />
               )}
+            </button>
+          )}
+          {isAdmin && onEditBands && (
+            <button
+              onClick={onEditBands}
+              aria-label={t("zagruzka.bands.open")}
+              title={t("zagruzka.bands.open")}
+              className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
+            >
+              <SlidersHorizontal size={16} />
             </button>
           )}
           {onToggleFullscreen && (
@@ -1424,7 +1439,7 @@ export default function ComparisonTable({
       {showGuide && (
         <ColorGuideModal
           title={t("zagruzka.colorGuide")}
-          subtitle={t("zagruzka.colorGuideSub")}
+          subtitle={t("zagruzka.colorGuideSub").replace("{page}", t("nav.zagruzka"))}
           sections={[
             { heading: t("zagruzka.guide.adSection"), segments: dsegs },
             { heading: t("zagruzka.guide.pSection"),  segments: psegs },

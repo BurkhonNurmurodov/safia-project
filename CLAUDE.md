@@ -82,7 +82,7 @@ never moves the frame.
 - Four groups, ordered by how often they are used and how much they can destroy:
   **Kunlik** (attendance · data · production · cellatt) → **Odamlar va ruxsat**
   (users · profiles · access · permissions · actions) → **Vositalar** (broadcast ·
-  ltasks · translations · display) → **Xavfli zona** (cleanup · dbdump). Danger
+  ltasks · translations) → **Xavfli zona** (cleanup · dbdump). Danger
   items are marked red and stay last; never put a data-destroying tool next to a
   daily one.
 - Navigation is a grouped sidebar on `lg+` and a grouped bottom sheet on phones.
@@ -1009,10 +1009,12 @@ quantity × Трудоемкость ÷ 60), the denominator person-minutes of C
   functions, so one unit-day can never be computed two ways.
 - **It is a PROP on the existing component, never a fork** —
   `ComparisonTable basis="simple"`, resolved once into `planOf` / `actOf` /
-  `pctOf`. Everything else about the two tables (the P·A·D toggle, the bands,
-  the sort, both summaries, the pending ⏳/👥 markers, the approval gate, the
-  comment threads, fullscreen) is identical, and a copy would be one duplicate
-  of all of it that stops being maintained the first time any of them changes.
+  `pctOf`. Everything else about the two tables (the P·A·D toggle, the sort,
+  both summaries, the pending ⏳/👥 markers, the approval gate, the comment
+  threads, fullscreen) is identical — only the colour BANDS are each table's
+  own (see «Every /zagruzka table owns its colour bands») — and a copy would be
+  one duplicate of all of it that stops being maintained the first time any of
+  them changes.
   `basis` defaults to `"full"`, so `/zagruzka-cell` and every other caller
   compute byte-for-byte what they always did.
 - **The ⚙ calculator is NOT offered on it**, and that is the one thing the
@@ -1025,11 +1027,11 @@ quantity × Трудоемкость ÷ 60), the denominator person-minutes of C
 - **The two tables show DIFFERENT numbers for the same unit-day, by design, and
   both are titled so neither is the unlabelled default** — «To'liq hisob» and
   «Soddalashtirilgan hisob», each printing its own formula under the subtitle.
-  Plan is the full table's P ÷ 0.9, so **every value reads 11.1% higher**, and
-  the shared colour bands (deliberately the SAME admin thresholds, so one edit
-  on the admin panel moves both tables at once) therefore paint this table
-  greener: a unit reading 77% next door reads 86% here, i.e. green. That is the
-  operator's call, not an oversight.
+  Plan is the full table's P ÷ 0.9, so **every value reads 11.1% higher**. The
+  two tables shared ONE set of bands until 2026-09-24, which therefore painted
+  this table greener: a unit reading 77% next door read 86% here, i.e. green.
+  From that date each owns its bands, seeded from the shared ones — so it goes
+  on painting greener until an admin moves this table's own edges.
 - **Both columns share one denominator**, so `A ÷ P = prod_actual ÷ prod_plan`
   = ВЫП%, and `D = P − A` is exactly the plan shortfall in загрузка points.
 - **A ZERO is treated as NO DATA.** `DailyMetrics` defaults both `prod_plan`
@@ -1053,9 +1055,10 @@ quantity × Трудоемкость ÷ 60), the denominator person-minutes of C
 
 From **2026-09-21** (the operator's directive) two single-metric heatmaps sit
 directly under the fleet heatmap («Карта нагрузки») and above the funnel —
-COPIES of it: same grid, same admin colour bands (`heatmap_segments`, so an
-edit on the admin panel moves all three), same pending markers, sort and
-AVG/MAX/MIN column. Each reads ONE number per unit-day:
+COPIES of it: same grid, same pending markers, sort and AVG/MAX/MIN column,
+and — from 2026-09-24 — colour bands of their OWN, seeded from the fleet
+heatmap's (see «Every /zagruzka table owns its colour bands»). Each reads ONE
+number per unit-day:
 
     Reja bajarilishi = TRUDOYOMKOST ÷ ISHLAB CHIQARISH PLANI      (prod_actual ÷ prod_plan)
     Samaradorlik     = TRUDOYOMKOST ÷ capacity
@@ -1117,6 +1120,40 @@ AVG/MAX/MIN column. Each reads ONE number per unit-day:
   flag had slipped past the Escape handler, which only knew the two originals.
 - Everything is derived per request from the existing `/api/heatmap` payload —
   no backend change, nothing stored.
+
+## Every /zagruzka table owns its colour bands
+
+From **2026-09-24** (the operator's directive) each of the five tables on
+`/zagruzka` — «To'liq hisob», «Soddalashtirilgan hisob», «Карта нагрузки»,
+«Reja bajarilishi», «Samaradorlik» — carries its OWN colour bands, edited from
+a sliders button in the table's own header (ADMIN only, inline and fullscreen).
+The admin panel's «Ko'rinish» tab, where two editors served all five, is gone.
+
+- **`routers/settings.ZAGRUZKA_BANDS` is THE registry** — table → field →
+  (setting key, default) — served on `GET /api/zagruzka-bands` together with
+  the keys a save writes and the `shared` tables.
+  `components/zagruzka/TableBandsModal.jsx` holds the editor (the old admin
+  `SegmentBar`, moved), `BAND_TABLES` (each table's bars and the readers that
+  size them) and `useZagruzkaBands`. The write is the ordinary
+  `PUT /admin/settings`, so it stays admin-only, action-logged and undoable.
+- **Two tables hold the PLATFORM-WIDE keys** and re-colour other pages when
+  saved: the load heatmap owns `heatmap_segments`, the full table the two
+  `comparison_*` keys — what `/heatmap-thresholds` / `/comparison-thresholds`
+  serve to Overview, Kunlik, Smena kunligi, Yacheyka zagruzkasi, the brigadir
+  profile and every funnel. Nothing else edits those keys any more, so moving
+  these two tables onto keys of their own would leave those pages with no
+  editor at all. Their modal names the pages BEFORE the save.
+- **The other three have keys of their own** (`heatmap_fulfil_segments`,
+  `heatmap_eff_segments`, `comparison_simple_p_segments` /
+  `comparison_simple_diff_segments`), seeded ONCE from the keys they used to
+  share by `startup.split_zagruzka_bands` (flag
+  `zagruzka_table_bands_2026_09_24_v1`, insert-only; changing what it seeds
+  needs a NEW key) — so no table changed colour when this shipped. A key with
+  no row reads the same default its source does.
+- The funnel on `/zagruzka` keeps the full table's D bands, as before.
+- A bar is sized off the SAVED bands and the period's own values (read through
+  the table's own functions), never off the draft — a bar that grew as an edge
+  was dragged toward its end would rescale under the pointer.
 
 ## Which ojidaniya categories the загрузка counts
 

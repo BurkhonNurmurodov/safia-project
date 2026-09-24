@@ -297,8 +297,16 @@ function SegmentBar({ segments, setSegments, rangeMin, rangeMax }) {
 const pct = (v) => (v != null && Number.isFinite(v) ? Math.round(v * 100) : null);
 const gap = (p, a) => (pct(p) != null && pct(a) != null ? pct(p) - pct(a) : null);
 
-const P_BAR = { field: "p_segments", kind: "load", headKey: "zagruzka.guide.pSection", hintKey: "admin.perCellUtil", min: 0, max: 130 };
-const D_BAR = { field: "diff_segments", kind: "diff", headKey: "zagruzka.guide.adSection", hintKey: "admin.positiveAhead", diff: true };
+// A comparison table's two bars are headed as its own colour guide heads them;
+// the D bands paint the A column as well as D.
+const P_BAR = {
+  field: "p_segments", kind: "load", min: 0, max: 130,
+  head: (t) => t("zagruzka.guide.pSection"), hint: (t) => t("admin.perCellUtil"),
+};
+const D_BAR = {
+  field: "diff_segments", kind: "diff", diff: true,
+  head: (t) => t("zagruzka.guide.adSection"), hint: (t) => `D = P−A · ${t("admin.positiveAhead")}`,
+};
 
 export const BAND_TABLES = {
   full: {
@@ -403,10 +411,12 @@ export default function TableBandsModal({ table, bands, keys, shared = [], data,
   const setBar = (i) => (next) => setDraft((d) => d.map((segs, j) => (
     j === i ? (typeof next === "function" ? next(segs) : next) : segs)));
 
+  // A platform-wide table names every page its save re-colours, BEFORE the
+  // save — the pages that read `/heatmap-thresholds` / `/comparison-thresholds`.
   const scope = shared.includes(table)
     ? t(table === "full" ? "zagruzka.bands.sharedFull" : "zagruzka.bands.sharedLoad").replace(
       "{pages}",
-      [t("nav.overview"), t("nav.daily"), t("nav.shiftDaily"), t("nav.zagruzkaCell"), t("profile.title")]
+      [t("nav.overview"), t("nav.daily"), t("nav.shiftDaily"), t("nav.zagruzkaCell")]
         .map((p) => `«${p}»`).join(", "),
     )
     : t("zagruzka.bands.own");
@@ -457,13 +467,15 @@ export default function TableBandsModal({ table, bands, keys, shared = [], data,
       {!draft ? (
         <SkeletonBlock className="h-24 rounded-lg" />
       ) : def.bars.map((bar, i) => {
-        const range = barRange(bar, draft[i], data);
+        // Sized off the SAVED bands, never the draft: a bar that grew as an
+        // edge was dragged toward its end would rescale under the pointer.
+        const range = barRange(bar, bands[table][bar.field], data);
         return (
           <div key={bar.field}>
-            {bar.headKey && (
+            {bar.head && (
               <div className="text-[11px] font-semibold mb-1 uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
-                {t(bar.headKey)}
-                <span className="ml-1.5 normal-case font-normal" style={{ color: "var(--text-3)" }}>{t(bar.hintKey)}</span>
+                {bar.head(t)}
+                <span className="ml-1.5 normal-case font-normal">{bar.hint(t)}</span>
               </div>
             )}
             <SegmentBar segments={draft[i]} setSegments={setBar(i)} rangeMin={range.min} rangeMax={range.max} />

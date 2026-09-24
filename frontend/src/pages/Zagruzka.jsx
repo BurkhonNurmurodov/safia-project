@@ -1,16 +1,18 @@
 import { createPortal } from "react-dom";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Maximize2, Minimize2, Info, Layers, UserRound } from "lucide-react";
+import { Maximize2, Minimize2, Info, Layers, UserRound, SlidersHorizontal } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import HeatmapChart, { DEFAULT_SEGMENTS } from "../components/charts/HeatmapChart";
-import ComparisonTable, { DEFAULT_DIFF_SEGMENTS, DEFAULT_CALC_FACTORS } from "../components/charts/ComparisonTable";
+import ComparisonTable, { DEFAULT_CALC_FACTORS } from "../components/charts/ComparisonTable";
 import DifferenceBreakdown from "../components/ui/DifferenceBreakdown";
 import CommentModal from "../components/ui/CommentModal";
 import ColorGuideModal from "../components/ui/ColorGuideModal";
+import TableBandsModal, { useZagruzkaBands } from "../components/zagruzka/TableBandsModal";
+import { useToast } from "../components/ui/Toast";
 import { segmentBands } from "../utils/segments";
 import { fulfilUtil, effUtil } from "../utils/formulas";
 import EmptyState from "../components/ui/EmptyState";
@@ -31,9 +33,12 @@ const HEATMAP_MODES = ["planned", "actual"];
 // pass a title, subtitle, formula note and guide heading of their own, and
 // `showMode={false}` — they read ONE number, so there is no Plan/Fact switch to
 // offer, and a toggle that changed nothing would be a control that lies.
+// `onEditBands` opens the card's own colour-band editor; the page passes it to
+// admins only.
 function HeatmapHeader({
   heatmap, heatmapMode, setHeatmapMode, segments, fullscreen, onToggleFullscreen, t,
   title = null, subtitle = null, note = null, showMode = true, guideHeading = null,
+  onEditBands = null,
 }) {
   const [showGuide, setShowGuide] = useState(false); // info icon → color meanings modal
   return (
@@ -75,6 +80,17 @@ function HeatmapHeader({
               options={HEATMAP_MODES.map((m) => [m, t(`zagruzka.mode.${m}`)])}
             />
           )}
+          {onEditBands && (
+            <button
+              onClick={onEditBands}
+              aria-label={t("zagruzka.bands.open")}
+              title={t("zagruzka.bands.open")}
+              className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
+            >
+              <SlidersHorizontal size={16} />
+            </button>
+          )}
           <button
             onClick={onToggleFullscreen}
             title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
@@ -89,7 +105,7 @@ function HeatmapHeader({
       {showGuide && (
         <ColorGuideModal
           title={t("zagruzka.colorGuide")}
-          subtitle={t("zagruzka.colorGuideSub")}
+          subtitle={t("zagruzka.colorGuideSub").replace("{page}", t("nav.zagruzka"))}
           sections={[
             {
               heading: guideHeading || t("zagruzka.guide.workloadSection"),
@@ -100,7 +116,7 @@ function HeatmapHeader({
         />
       )}
 
-      {/* Legend — derived live from the admin-panel thresholds */}
+      {/* Legend — derived live from this card's own bands */}
       <div className="flex flex-wrap items-center gap-3 text-[10px] mb-3" style={{ color: "var(--text-3)" }}>
         {segmentBands(segments?.length ? segments : DEFAULT_SEGMENTS).map(({ color, label }) => (
           <span key={label} className="flex items-center gap-1.5">
@@ -128,7 +144,7 @@ function HeatmapHeader({
 function MetricHeatmapCard({
   which, cellValue, title, note, heatmap, hmLoading, segments,
   managerIds, commentedCells, approvedCells, onCellClick, openFull, setOpenFull, t,
-  skDates, skRows,
+  skDates, skRows, onEditBands = null,
 }) {
   const full = openFull === which;
   const header = (isFull) => (
@@ -142,6 +158,7 @@ function MetricHeatmapCard({
       note={note}
       guideHeading={title}
       showMode={false}
+      onEditBands={onEditBands}
       t={t}
     />
   );
@@ -207,6 +224,12 @@ export default function Zagruzka() {
   // whichever it is — a flag per overlay let the simplified table's slip past
   // the Escape handler, which only knew the two original ones.
   const [openFull, setOpenFull] = useState(null);
+  // Whose colour bands are being edited: null | "full" | "simple" | "load" |
+  // "fulfil" | "eff" — one editor at a time, admins only.
+  const [bandsFor, setBandsFor] = useState(null);
+  const bandsOpen = useRef(false);
+  bandsOpen.current = bandsFor != null;
+  const toast = useToast();
   const [comment, setComment] = useState(null);
   // Admin-only comparison-table factor toggles — lifted here so the inline and
   // fullscreen table instances share one state. Resets to all-ON per visit.
@@ -224,10 +247,13 @@ export default function Zagruzka() {
     setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, basis, formulaOnly: false });
   };
 
-  // Close fullscreen on Escape key
+  // Escape closes the band editor first (it sits above any overlay, and the
+  // overlay under it must not vanish while it is open), else fullscreen.
   useEffect(() => {
     function onKey(e) {
-      if (e.key === "Escape") setOpenFull(null);
+      if (e.key !== "Escape") return;
+      if (bandsOpen.current) setBandsFor(null);
+      else setOpenFull(null);
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -249,25 +275,12 @@ export default function Zagruzka() {
     enabled: ready,
   });
 
-  const { data: thresholdData } = useQuery({
-    queryKey: ["heatmap-thresholds"],
-    queryFn: () => api.get("/api/heatmap-thresholds").then((r) => r.data),
-    staleTime: 60_000,
-  });
-  const segments = thresholdData?.segments ?? [
-    { from: 0,   color: "#ef4444" },
-    { from: 85,  color: "#22c55e" },
-    { from: 101, color: "#3b82f6" },
-  ];
-
-  const { data: compThresholdData } = useQuery({
-    queryKey: ["comparison-thresholds"],
-    queryFn: () => api.get("/api/comparison-thresholds").then((r) => r.data),
-    staleTime: 60_000,
-    retry: false,
-  });
-  const diffSegments = compThresholdData?.diff_segments ?? DEFAULT_DIFF_SEGMENTS;
-  const pSegments    = compThresholdData?.p_segments    ?? [];
+  // Every table on this page paints with its OWN bands (components/zagruzka/
+  // TableBandsModal.jsx) — five tables, five sets, one request.
+  const { bands, keys: bandKeys, shared: bandShared } = useZagruzkaBands();
+  const segments = bands.load.segments;
+  const pSegments = bands.full.p_segments;
+  const diffSegments = bands.full.diff_segments;
 
   const { data: brigadirs = [], isPending: brigLoading } = useQuery({
     queryKey: ["brigadirs", fparams],
@@ -306,6 +319,9 @@ export default function Zagruzka() {
   // unit, else the plant's units on the picked shift (the heatmap drops only
   // the ones with no data at all in the period).
   const { auth } = useAuth();
+  // The band editors are the admin's; nobody else is offered the button, and
+  // the write behind it (`PUT /admin/settings`) refuses anybody else anyway.
+  const editBands = (table) => (auth?.role === "admin" ? () => setBandsFor(table) : null);
   const skDates = useMemo(
     () => listChartDays(dateFrom, dateTo).map((iso) => iso.split("-").reverse().join(".")),
     [dateFrom, dateTo]);
@@ -412,6 +428,7 @@ export default function Zagruzka() {
             commentedCells={commentedCells}
             calcFactors={calcFactors}
             onCalcFactorsChange={setCalcFactors}
+            onEditBands={editBands("full")}
             columnSummary
             title={t("zagruzka.fullTable")}
             note={t("zagruzka.fullTableNote")}
@@ -421,9 +438,9 @@ export default function Zagruzka() {
       ) : null}
 
       {/* ── Comparison Table — «Soddalashtirilgan hisob» ──
-          The SAME grid, the SAME data, the SAME colour bands (so an admin
-          editing the thresholds moves both at once) and the same P·A·D toggle,
-          sort, summaries, pending markers and comment threads. One thing
+          The SAME grid, the SAME data and the same P·A·D toggle, sort,
+          summaries, pending markers and comment threads — with colour bands of
+          its OWN, set from its own button. One thing about the arithmetic
           differs, and it is the whole reason the table exists: both halves are
           divided by the unit's people × a productive shift —
             P = «Ishlab chiqarish plani» ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
@@ -438,12 +455,13 @@ export default function Zagruzka() {
             dates={heatmap?.dates ?? skDates}
             managers={heatmap?.managers ?? []}
             data={heatmap?.data ?? {}}
-            pSegments={pSegments}
-            diffSegments={diffSegments}
+            pSegments={bands.simple.p_segments}
+            diffSegments={bands.simple.diff_segments}
             managerIds={managerIds}
             approvedCells={approvedCells}
             commentedCells={commentedCells}
             basis="simple"
+            onEditBands={editBands("simple")}
             columnSummary
             title={t("zagruzka.simpleTable")}
             note={t("zagruzka.simpleTableNote")}
@@ -472,6 +490,7 @@ export default function Zagruzka() {
               commentedCells={commentedCells}
               calcFactors={calcFactors}
               onCalcFactorsChange={setCalcFactors}
+              onEditBands={editBands("full")}
               columnSummary
               title={t("zagruzka.fullTable")}
               note={t("zagruzka.fullTableNote")}
@@ -494,12 +513,13 @@ export default function Zagruzka() {
               dates={heatmap.dates}
               managers={heatmap.managers}
               data={heatmap.data}
-              pSegments={pSegments}
-              diffSegments={diffSegments}
+              pSegments={bands.simple.p_segments}
+              diffSegments={bands.simple.diff_segments}
               managerIds={managerIds}
               approvedCells={approvedCells}
               commentedCells={commentedCells}
               basis="simple"
+              onEditBands={editBands("simple")}
               columnSummary
               title={t("zagruzka.simpleTable")}
               note={t("zagruzka.simpleTableNote")}
@@ -520,6 +540,7 @@ export default function Zagruzka() {
           segments={segments}
           fullscreen={false}
           onToggleFullscreen={() => setOpenFull("heatmap")}
+          onEditBands={editBands("load")}
           t={t}
         />
         {hmLoading ? (
@@ -549,6 +570,7 @@ export default function Zagruzka() {
               segments={segments}
               fullscreen={true}
               onToggleFullscreen={() => setOpenFull(null)}
+              onEditBands={editBands("load")}
               t={t}
             />
           </div>
@@ -579,9 +601,9 @@ export default function Zagruzka() {
       )}
 
       {/* ── Two single-metric heatmaps: copies of the fleet heatmap above ──
-          Same grid, same admin colour bands (an edit on the admin panel moves
-          all three at once), same pending markers, sort and AVG/MAX/MIN —
-          each reading ONE number per unit-day through `cellValue`:
+          Same grid, same pending markers, sort and AVG/MAX/MIN, each with
+          colour bands of its OWN — and each reading ONE number per unit-day
+          through `cellValue`:
             Reja bajarilishi = TRUDOYOMKOST ÷ ISHLAB CHIQARISH PLANI
             Samaradorlik     = TRUDOYOMKOST ÷ (verifix min × 0.9
                                − XODIMLAR × (ojidaniya + early + 10))
@@ -591,7 +613,8 @@ export default function Zagruzka() {
         cellValue={fulfilUtil}
         title={t("zagruzka.fulfilTable")}
         note={t("zagruzka.fulfilNote")}
-        heatmap={heatmap} hmLoading={hmLoading} segments={segments}
+        heatmap={heatmap} hmLoading={hmLoading} segments={bands.fulfil.segments}
+        onEditBands={editBands("fulfil")}
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
         onCellClick={metricCellClick("fulfil")}
         openFull={openFull} setOpenFull={setOpenFull} t={t}
@@ -602,7 +625,8 @@ export default function Zagruzka() {
         cellValue={effUtil}
         title={t("zagruzka.effTable")}
         note={t("zagruzka.effNote")}
-        heatmap={heatmap} hmLoading={hmLoading} segments={segments}
+        heatmap={heatmap} hmLoading={hmLoading} segments={bands.eff.segments}
+        onEditBands={editBands("eff")}
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
         onCellClick={metricCellClick("eff")}
         openFull={openFull} setOpenFull={setOpenFull} t={t}
@@ -642,6 +666,24 @@ export default function Zagruzka() {
           zIndex={openFull ? 210 : undefined}
         />
       )}
+
+      {/* One editor for whichever table's button was pressed — above the
+          fullscreen overlays (z-[200]) whenever one is open, or the tap would
+          open it behind the table it came from. */}
+      {bandsFor && (
+        <TableBandsModal
+          key={bandsFor}
+          table={bandsFor}
+          bands={bands}
+          keys={bandKeys}
+          shared={bandShared}
+          data={heatmap?.data}
+          onClose={() => setBandsFor(null)}
+          onSaved={() => { setBandsFor(null); toast.success(t("admin.saved")); }}
+          zIndex={openFull ? 210 : undefined}
+        />
+      )}
+      {toast.node}
     </Layout>
   );
 }
