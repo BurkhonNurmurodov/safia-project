@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Archive, ArchiveRestore, ArrowLeft, Ban, BellOff, Camera, Check, Clock, Copy, Eye, EyeOff,
+  Archive, ArchiveRestore, ArrowLeft, Award, Ban, BellOff, Camera, Check, Clock, Copy, Eye, EyeOff,
   Factory as FactoryIcon, Flag, Globe, Hash, IdCard, KeyRound, Languages,
   LayoutGrid, Link2, LogIn, LogOut, Pencil, Plus, RotateCcw, Shield, Star, Trash2,
   UserCog, UserRound, Users, X, ShieldQuestion,
@@ -26,6 +26,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
+import { useExam } from "../context/ExamContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit, transliterate, convertFromUz } from "../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../config/pages";
@@ -481,6 +482,8 @@ function LastLogin({ web }) {
 
 function MyProfile() {
   const { auth } = useAuth();
+  // «Imtihon»: the dated badge for a passed exam, only while the admin switch is on.
+  const examBadge = useExam()?.me?.badge || null;
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const toast = useToast();
@@ -520,7 +523,19 @@ function MyProfile() {
         colorKey={canonical}
         profileKey={me?.profile_key}
         photoVer={me?.photo_ver}
-        chips={<RoleChip role={me?.role || auth?.role} />}
+        chips={(
+          <>
+            <RoleChip role={me?.role || auth?.role} />
+            {examBadge && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                    style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)" }}
+                    title={examBadge.date || ""}>
+                <Award size={11} />
+                {t("exam.badge")}{examBadge.date ? ` · ${examBadge.date}` : ""}
+              </span>
+            )}
+          </>
+        )}
         context={context}
       />
 

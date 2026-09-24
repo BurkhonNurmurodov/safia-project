@@ -56,6 +56,7 @@ export const PAGES = [
   { tier: "test", key: "live", route: "/live", labelKey: "nav.live" },
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
   { key: "education", route: "/education", labelKey: "nav.education" },
+  { key: "exam", route: "/exam", labelKey: "nav.exam" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -115,6 +116,8 @@ export const DEFAULT_PAGE_ACCESS = {
   // content — while gating it would let a lesson somebody was DMed a link for
   // open onto "no access". Publishing stays admin-only, checked server-side.
   education: ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
+  // «Imtihon» — the dashboard exam (backend twin: permissions.DEFAULT_PAGE_ACCESS).
+  exam: ["supervisor", "leader"],
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants

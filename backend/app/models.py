@@ -3923,3 +3923,114 @@ class IdleCategoryOwner(Base):
     # this is an audit stamp of an ACT, and the action register keys actors the
     # same way.
     assigned_by = Column(BigInteger, nullable=True)
+
+
+# ── The dashboard exam («Imtihon») — services/exam*.py, routers/exam*.py ──────
+#
+# Leaders take an exam ON the dashboard: fifty tasks that make them use the
+# real pages, checked by the platform itself. Nothing a leader does during an
+# exam may change real data (the operator's first ruling, 2026-09-18), so every
+# write an exam page makes lands in the ONE sandbox table below — keyed by the
+# attempt, wiped with it — and never in the resource's own table. The sandbox
+# router re-implements the leader-facing subset of each page over these rows.
+
+class ExamAssignment(Base):
+    """One admin act of assigning the exam to N leaders. Each leader gets an
+    ``ExamAttempt`` pointing back here, so a retake is simply a new
+    assignment (the operator's ruling: one attempt per assignment)."""
+    __tablename__ = "exam_assignments"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    created_by = Column(String, nullable=True)        # profile key of the admin
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    deadline   = Column(Date, nullable=False)
+    note       = Column(Text, nullable=True)
+
+
+class ExamAttempt(Base):
+    """A leader's exam (``kind="exam"``, assigned by an admin, scored) or their
+    open practice (``kind="practice"``, unlimited, unrecorded — same sandbox).
+
+    ``status``: assigned → running → submitted | expired | cancelled. Practice
+    is created running and only ever restarted. ``profile_key`` is the person
+    (app/identity.py), so every account holding the profile continues the same
+    attempt."""
+    __tablename__ = "exam_attempts"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    assignment_id = Column(Integer, ForeignKey("exam_assignments.id", ondelete="SET NULL"), nullable=True, index=True)
+    profile_key   = Column(String, nullable=False, index=True)
+    kind          = Column(String, nullable=False, default="exam")     # exam | practice
+    status        = Column(String, nullable=False, default="assigned")
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+    started_at    = Column(DateTime(timezone=True), nullable=True)
+    submitted_at  = Column(DateTime(timezone=True), nullable=True)
+    deadline      = Column(Date, nullable=True)
+    note          = Column(Text, nullable=True)
+    # Scoring, written once at submit/expiry and never re-derived.
+    pass_mark_pct = Column(Integer, nullable=True)
+    score_pct     = Column(Integer, nullable=True)
+    passed        = Column(Boolean, nullable=True)
+    task_count    = Column(Integer, nullable=False, default=0)
+    # The task the strip is showing, and since when — what feeds the per-task
+    # time record (the only proctoring the operator asked for).
+    current_task  = Column(String, nullable=True)
+    current_since = Column(DateTime(timezone=True), nullable=True)
+    seeded_at     = Column(DateTime(timezone=True), nullable=True)
+    last_active_at = Column(DateTime(timezone=True), nullable=True)
+    due_notified_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by  = Column(String, nullable=True)
+    purged_at     = Column(DateTime(timezone=True), nullable=True)
+
+
+class ExamTaskResult(Base):
+    """One row per task of an attempt. ``status``: open · passed · skipped ·
+    unavailable (``reason`` = page | no_data — the page the task needs is one
+    this leader cannot open, or its expected value cannot be computed for
+    them). ``opened_at`` is when the task first became the current one; a
+    sandbox check only counts evidence dated after it, so one concern cannot
+    pass two tasks."""
+    __tablename__ = "exam_task_results"
+    __table_args__ = (UniqueConstraint("attempt_id", "task_key", name="uq_exam_task_result"),)
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    attempt_id = Column(Integer, ForeignKey("exam_attempts.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_key   = Column(String, nullable=False)
+    status     = Column(String, nullable=False, default="open")
+    reason     = Column(String, nullable=True)
+    opened_at  = Column(DateTime(timezone=True), nullable=True)
+    passed_at  = Column(DateTime(timezone=True), nullable=True)
+    checks     = Column(Integer, nullable=False, default=0)
+    answer     = Column(Text, nullable=True)
+    seconds    = Column(Integer, nullable=False, default=0)
+
+
+class ExamEvent(Base):
+    """What the client observed while the mode was on: route visits, the
+    persisted UI state of the page (filters, view tabs, language, theme) and
+    mode transitions. The ui/visit checkers read these."""
+    __tablename__ = "exam_events"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    attempt_id = Column(Integer, ForeignKey("exam_attempts.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind       = Column(String, nullable=False)        # visit | ui | mode
+    path       = Column(String, nullable=True)
+    payload    = Column(JSONB, nullable=True)
+    at         = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExamSandboxRow(Base):
+    """THE test table. Every record an exam page reads or writes — a task, a
+    comment, a concern, a move, an ojidaniya interval, an objection, a bell
+    row, a ui-pref — is one row here: ``kind`` names the resource, ``data`` is
+    the record as JSON, ``id`` is the record's id on the wire. Keyed by the
+    attempt, so two leaders never see each other's sandbox and deleting an
+    attempt deletes its world."""
+    __tablename__ = "exam_sandbox_rows"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    attempt_id = Column(Integer, ForeignKey("exam_attempts.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind       = Column(String, nullable=False, index=True)
+    data       = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)

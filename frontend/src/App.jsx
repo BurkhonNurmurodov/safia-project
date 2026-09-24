@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FilterProvider } from "./context/FilterContext";
 import { FactoryProvider } from "./context/FactoryContext";
+import { ExamProvider } from "./context/ExamContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { GhostProvider } from "./context/GhostContext";
@@ -107,6 +108,7 @@ const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const LiveOverview = lazyWithReload(() => import("./pages/LiveOverview"));
 const Arc = lazyWithReload(() => import("./pages/Arc"));
 const Education = lazyWithReload(() => import("./pages/Education"));
+const Exam = lazyWithReload(() => import("./pages/Exam"));
 const EducationLesson = lazyWithReload(() => import("./pages/EducationLesson"));
 const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceivers"));
 const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
@@ -433,6 +435,10 @@ function AppWithLang() {
           <DocumentTitle />
           <LogoutOverlay />
           <FindInPage />
+          {/* «Imtihon» — the dashboard exam's client engine: the mode switch, the
+              current task and the bottom strip. Above the routes because Layout
+              remounts per navigation; inside the router because it watches it. */}
+          <ExamProvider>
           {/* Scoped ABOVE the routes and BELOW the shell: a page that throws
               is caught here, keeps the session alive, and clears itself the
               moment the user navigates somewhere else — no reload, nothing
@@ -511,6 +517,8 @@ function AppWithLang() {
                 can send a colleague the lesson they were both assigned. */}
             <Route path="/education" element={<AuthGate><RequirePage page="education"><Education /></RequirePage></AuthGate>} />
             <Route path="/education/:id" element={<AuthGate><RequirePage page="education"><EducationLesson /></RequirePage></AuthGate>} />
+            {/* «Imtihon» — the dashboard exam a leader sits; a supervisor reads their unit. */}
+            <Route path="/exam" element={<AuthGate><RequirePage page="exam"><Exam /></RequirePage></AuthGate>} />
             {/* Safia Honors — gamification design preview, admin-only demo (no page-access key). */}
             <Route path="/gamification" element={<AuthGate><RequireAdmin><Gamification /></RequireAdmin></AuthGate>} />
             {/* «Maqsadlar» — goal board test screen, admin-only (no page-access key); goals live per profile in ui-prefs. */}
@@ -558,6 +566,7 @@ function AppWithLang() {
           </Routes>
           </Suspense>
           </ScopedErrorBoundary>
+          </ExamProvider>
          </FactoryProvider>
         </FilterProvider>
       </BrowserRouter>

@@ -10,6 +10,7 @@ import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
 import UpdatePrompt from "./UpdatePrompt";
+import ExamBand from "../exam/ExamBand";
 import { usePwaInstall } from "../../hooks/usePwaInstall";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
@@ -629,6 +630,8 @@ export default function Layout({ children, title }) {
           {/* Only ever present in a tab an admin opened as somebody else. */}
           <ImpersonationBar />
         </header>
+        {/* «Imtihon»: while the exam mode is on, nothing on these pages is real. */}
+        <ExamBand />
 
         {/* Content viewport. Layout remounts on every route change, so the
             .page-enter wrapper replays its fade-up once per navigation — a

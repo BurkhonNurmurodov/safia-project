@@ -5,7 +5,7 @@ import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck, ScrollText,
   ChevronDown, X, AlertTriangle, Building2, Clock, GitBranch, UserX, UserMinus, FileClock, ShieldQuestion,
-  ClipboardList, CircleSlash,
+  ClipboardList, CircleSlash, GraduationCap,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
@@ -37,6 +37,7 @@ import IdleOwners from "./IdleOwners";
 import LostWorkers from "./LostWorkers";
 import DocAudit from "./DocAudit";
 import Logs from "./Logs";
+import ExamAdmin from "./ExamAdmin";
 
 /**
  * The admin panel shell.
@@ -109,6 +110,9 @@ export const ADMIN_NAV = [
   // exclusions because the two are read together and are constantly mistaken
   // for one another. No `capKey`, for the same reason as its neighbour.
   { id: "ltcutoff",     group: "tools",  Icon: UserMinus,      labelKey: "admin.tabLtCutoff",     descKey: "admin.desc.ltcutoff" },
+  // «Imtihon» — the dashboard exam: assign it, read the results, edit the
+  // bank. Grantable through `admin.exam.manage` (tab id = capability tab).
+  { id: "exam",         group: "tools",  Icon: GraduationCap,  labelKey: "admin.tabExam",         descKey: "admin.desc.exam" },
   // The cells' working start/end register — per-shift defaults a cell inherits,
   // its own pair overriding them. A register only: nothing scores off it yet.
   { id: "shifttimes",   group: "tools",  Icon: Clock,          labelKey: "admin.tabShiftTimes",   descKey: "admin.desc.shifttimes" },
@@ -153,6 +157,7 @@ const VIEWS = {
   ltdaily:      LeaderDailyTasks,
   ltexclude:    LeaderDayExclusions,
   ltcutoff:     LeaderCutoffs,
+  exam:         ExamAdmin,
   shifttimes:   ShiftTimes,
   idlesource:   IdleSource,
   idleowners:   IdleOwners,

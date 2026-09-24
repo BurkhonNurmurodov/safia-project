@@ -45,6 +45,8 @@ const TITLE_KEYS = {
   "/zagruzka-cell":    "nav.zagruzkaCell",
   "/live":             "nav.live",
   "/arc":              "nav.arc",
+  "/education":        "nav.education",
+  "/exam":             "nav.exam",
   "/login":            "login.title",
   "/broadcast-receivers": "admin.tabBroadcast",
   // Segment roots — "/brigadir/12", "/admin/upload" and friends land here.

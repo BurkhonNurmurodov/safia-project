@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -358,6 +358,10 @@ async def lifespan(app: FastAPI):
     # each for its own next shift-day (mirrored in passenger_wsgi.py).
     from app.services.forecast_autocall import register_jobs as register_autocall_jobs
     register_autocall_jobs()
+    # «Imtihon»: expire overdue attempts at 00:05, due-soon notices at 09:00
+    # (mirrored in passenger_wsgi.py).
+    from app.services.exam import register_jobs as register_exam_jobs
+    register_exam_jobs()
 
     # Say out loud which mutating routes the action register cannot classify.
     # They are still recorded (under «other»), so nothing is lost silently —
@@ -853,6 +857,11 @@ app.include_router(idle_source.router)
 app.include_router(live_overview.router)
 app.include_router(shift_report.router)
 app.include_router(education.router)
+# «Imtihon» — the dashboard exam: the leader/supervisor API, the sandbox the
+# exam pages are rewritten onto, and the admin destination.
+app.include_router(exam.router)
+app.include_router(exam_sandbox.router)
+app.include_router(exam.admin_router, dependencies=_admin_guard)
 # Lost-worker audit («Yo'qolgan xodimlar») — the READ-ONLY report of workers an
 # approved → supervisor exchange left on no roster after an upload wiped the
 # receiving unit's day. Under /api/*, so the global initData guard covers it;

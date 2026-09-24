@@ -68,6 +68,8 @@ const ALL_LINKS = [
   // group: training is neither production data nor a register, and the group is
   // where the rest of it (courses, tests) will land.
   { to: "/education", page: "education", key: "nav.education", icon: PlaySquare, group: "education" },
+  // «Imtihon» — the dashboard exam. Leaders sit it, supervisors read their unit.
+  { to: "/exam", page: "exam", key: "nav.exam", icon: GraduationCap, group: "education" },
 ];
 
 // Grouped sidebar. ALL_LINKS above stays THE register and order — `group`

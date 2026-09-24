@@ -130,6 +130,7 @@ CAP_CELLS_MANAGE      = "admin.cells.manage"
 CAP_CELL_HOURS_MANAGE = "admin.cell_hours.manage"
 CAP_IDLE_SOURCE_MANAGE = "admin.idle_source.manage"
 CAP_FACTORIES_MANAGE  = "admin.factories.manage"
+CAP_EXAM_MANAGE       = "admin.exam.manage"
 
 # Page-view grants: one per page key, ids built from the page so the catalog
 # never drifts from permissions.PAGE_KEYS.
@@ -199,6 +200,9 @@ CAPABILITIES = [
     # real weight: reassigning a supervisor's factory moves that unit's numbers
     # between tabs on all six factory-aware pages at once.
     {"key": CAP_FACTORIES_MANAGE,  "group": "identity",   "pages": [],                 "tab": "factories", "scoped": False, "page": None},
+    # The dashboard exam («Imtihon»): assign it, read every result, switch
+    # bank tasks on/off, set the pass mark. Plant-wide, no unit dimension.
+    {"key": CAP_EXAM_MANAGE,       "group": "identity",   "pages": [],                 "tab": "exam",      "scoped": False, "page": None},
 ] + [
     # Generated, in PAGE_KEYS order — the same order the nav and the "first
     # accessible page" fallback use, so the Permissions tab reads like the menu.

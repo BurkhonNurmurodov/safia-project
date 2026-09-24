@@ -89,6 +89,7 @@ CATEGORIES = (
     "sync_export",     # 11 external refreshes and Excel exports
     "config",          # 12 platform settings, translations, AI model/key
     "danger",          # 13 dump/restore, wipes, mass deletion
+    "training",        # 13b the dashboard exam: assignments, starts, results, the bank
     "other",           # 14 mutating route with no entry in ROUTES
 )
 
@@ -325,6 +326,15 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # ── communication ─────────────────────────────────────────────────────────
     # «Ta'lim» video lessons. Publishing DMs a chosen slice of the plant, so it
     # belongs beside the broadcast rows rather than under a content category.
+    # «Imtihon» — the dashboard exam (routers/exam.py).
+    (("POST",),   "/api/exam/attempts/{}/start",               "training", "exam.started"),
+    (("POST",),   "/api/exam/attempts/{}/submit",              "training", "exam.submitted"),
+    (("POST",),   "/api/exam/practice/start",                  "training", "exam.practice"),
+    (("POST",),   "/api/exam/practice/reset",                  "training", "exam.practice"),
+    (("POST",),   "/admin/exam/assign",                        "training", "exam.assigned"),
+    (("POST",),   "/admin/exam/attempts/{}/cancel",            "training", "exam.cancelled"),
+    (("PUT",),    "/admin/exam/tasks",                         "training", "exam.bank_changed"),
+    (("POST",),   "/admin/exam/results.xlsx",                  "sync_export", "export.exam"),
     (("POST",),   "/api/education/lessons",                    "comms", "education.lesson_created"),
     (("PUT",),    "/api/education/lessons/{}",                 "comms", "education.lesson_edited"),
     (("DELETE",), "/api/education/lessons/{}",                 "comms", "education.lesson_archived"),
@@ -405,6 +415,11 @@ _SKIP = (
     "/bot/webhook",
     # «Ta'lim»: a viewer opened a lesson. Telemetry, not an action.
     "/api/education/seen/",
+    # «Imtihon»: every write an exam page makes lands in the sandbox table
+    # and is recorded on the attempt, never as a change to a real resource;
+    # /live carries the strip's route visits, ui snapshots and checks.
+    "/api/exam/sandbox/",
+    "/api/exam/live/",
 )
 
 _PREFIXES = ("/api/", "/admin/")

@@ -6142,6 +6142,76 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   heatmap's silhouette so the wait states what is coming. Deliberately NOT built: KRU %, «Kiritish soni»,
   an export, a ColumnsPicker.
 
+## The dashboard exam («Imtihon», `/exam`)
+
+From **2026-09-24** (the operator's twelve rulings, 2026-09-18 — recorded in
+`docs/plan-dashboard-exam.md`) a leader can sit an EXAM on the dashboard:
+fifty tasks that make them use the real pages — mark a task done, file a
+concern, find where the checklist rules are written — checked by the platform
+itself. Page key `exam` (leader · supervisor), nav group «Ta'lim»; the admin
+destination is `/admin/upload?tab=exam` (capability `admin.exam.manage`).
+
+- **Nothing a leader does during an exam changes real data, and that is
+  STRUCTURAL.** While the mode is on, `utils/examMode.js` + the axios
+  interceptor rewrite every request to a sandboxed resource onto
+  `/api/exam/sandbox/…` (the prefixes are SERVER-owned:
+  `services/exam_sandbox.SANDBOX_PREFIXES`, published on `GET /api/exam/me`)
+  and send `X-Exam-Attempt`. `routers/exam_sandbox.py` re-implements the
+  LEADER-facing subset of /tasks, /concerns, /cell-concerns, /idle-cell, the
+  day report / objections / late proofs, the bell and ui-prefs over ONE table,
+  `exam_sandbox_rows` (JSONB, keyed by the attempt) — no real table, no DM,
+  no `action_log.enrich`. The real routers are untouched. A prefix matches on
+  a path boundary, so `/api/leaders` (Monitoring, real) stays real while
+  `/api/leaders/report/…` is rewritten; `/cell-concerns` writes go through
+  `/api/concerns/{id}` and are caught by the PATH, never the page.
+- **Rights mirror the real pages for a LEADER** (the contract maps the sandbox
+  was built from): no flame, no editing a brigadir's task, no deleting or
+  sending back a concern, the receiver's deadline on the flip into doing, a
+  resolution note on close, no editing a saved ojidaniya row, no ruling on an
+  objection. Refusals carry the real endpoints' own messages.
+- **The fictional unit is identical for everybody**: brigadir Imtihonov
+  Alisher, «Imtihon brigadasi», cells 9901/9902 (leader = the examinee).
+  Fixture rows keep RELATIVE dates (`entry_days`, rendered against the clock),
+  so «yesterday» and a board scoped to the last 7 days read right on every
+  sitting. C1/C2 are held at level `leader` (sent back by the brigadir) —
+  the only way a leader may close or re-status a concern on /concerns.
+- **The bank lives in code** (`services/exam_bank.py`, the 50 predicates;
+  texts in the bundle under `exam.t.<key>`, four languages, rendered in the
+  viewer's language). An admin only switches a task off (AppSetting
+  `exam_disabled_tasks`); the enabled set is SNAPSHOTTED at start. A task
+  never names the page or the control. Four checker kinds
+  (`services/exam_check.py`): `sandbox` (a predicate over the rows), `answer`
+  (compared with a value computed AT CHECK TIME — from the sandbox, from real
+  read-only data, or the app version), `ui` (the client's report of persisted
+  page state: `usePersistentState` keys, `lang`, `theme`, `notif_read_ids`,
+  polled every 2 s and posted only when changed) and `visit` (a route). Evidence
+  counts only after the task was OPENED, so one concern cannot pass two tasks.
+- **A task is UNAVAILABLE for a leader who cannot open its page** (`/leaders`,
+  `/idle-cell` are per-profile grants — 15 tasks) or whose expected value
+  cannot be computed (`no_data`); it is listed, marked, and out of the
+  denominator. Score = passed ÷ available, rounded; the pass mark
+  (`exam_pass_mark`, default 80) is read at SUBMIT and stored on the attempt;
+  `exam_badge` puts a dated chip on the leader's profile.
+- **One open attempt per (person, kind)**: `assigned` → `running` → `submitted`
+  | `expired` (the admin deadline, 00:05 daily) | `cancelled`. Practice
+  (`kind=practice`) is unlimited, unrecorded, restartable. Time per task is the
+  only proctoring (`exam_task_results.seconds`, capped at 20 min a sitting).
+  Notifications: `exam_assigned`, `exam_due_soon` (09:00, the day before),
+  `exam_result` (leader), `exam_unit_result` (the brigadir).
+- **Client engine**: `context/ExamContext.jsx` (mounted in App.jsx ABOVE the
+  routes — Layout remounts per navigation), `components/exam/ExamStrip.jsx`
+  (portaled, `--tg-safe-bottom`), `ExamBand.jsx` (Layout), `AnswerSheet.jsx`.
+  Entering the mode PARKS the pages' persisted filters (`parked_keys` from
+  `/me`, `localStorage` → `exam_parked`) and clears the react-query cache;
+  leaving restores them. `lang`/`theme` are never parked — two tasks switch
+  them and put them back. The noisy leader endpoints live under
+  `/api/exam/live/…` and are in `action_log._SKIP` with the sandbox;
+  start/submit/assign/cancel/bank are logged under the `training` category.
+- **Consequences to know**: the day report a leader opens from Monitoring in
+  exam mode is the FIXTURE (any uid answers it); exports on sandboxed pages
+  are refused; a sandbox never serves photo bytes (fixtures carry none).
+  Sandboxes of finished exams are purged after 90 days (`purge_old`).
+
 ## Workflow
 
 ### The standing rule for EVERY change (mandatory, in this order)

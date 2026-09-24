@@ -515,6 +515,9 @@ try:
     # each for its own next shift-day (mirrored in passenger_wsgi.py).
     from app.services.forecast_autocall import register_jobs as register_autocall_jobs
     register_autocall_jobs()
+    # «Imtihon»: the exam's two daily jobs (mirrors main.py).
+    from app.services.exam import register_jobs as register_exam_jobs
+    register_exam_jobs()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.

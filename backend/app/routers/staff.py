@@ -151,6 +151,48 @@ _MONTHS = {
 }
 
 _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
+    # «Imtihon» — the dashboard exam (services/exam.py). Addressed to the
+    # leader's PROFILE; the unit result goes to the brigadir's.
+    "exam_assigned": {
+        "uz": ("Sizga imtihon tayinlandi",
+               "🎓 Dashboard bo'yicha imtihon\n⏳ Muddat: {deadline}\n«{note}»"),
+        "uz_cyrl": ("Сизга имтиҳон тайинланди",
+                    "🎓 Дашборд бўйича имтиҳон\n⏳ Муддат: {deadline}\n«{note}»"),
+        "ru": ("Вам назначен экзамен",
+               "🎓 Экзамен по дашборду\n⏳ Срок: {deadline}\n«{note}»"),
+        "en": ("An exam has been assigned to you",
+               "🎓 The dashboard exam\n⏳ Deadline: {deadline}\n«{note}»"),
+    },
+    "exam_due_soon": {
+        "uz": ("Imtihon muddati ertaga tugaydi",
+               "🎓 Dashboard imtihoni\n⏳ Muddat: {deadline}\n📋 Qolgan vazifalar: {left}"),
+        "uz_cyrl": ("Имтиҳон муддати эртага тугайди",
+                    "🎓 Дашборд имтиҳони\n⏳ Муддат: {deadline}\n📋 Қолган вазифалар: {left}"),
+        "ru": ("Срок экзамена истекает завтра",
+               "🎓 Экзамен по дашборду\n⏳ Срок: {deadline}\n📋 Осталось задач: {left}"),
+        "en": ("Your exam is due tomorrow",
+               "🎓 The dashboard exam\n⏳ Deadline: {deadline}\n📋 Tasks left: {left}"),
+    },
+    "exam_result": {
+        "uz": ("Imtihon natijasi: {score}%",
+               "🎓 Dashboard imtihoni yakunlandi\n🎯 Natija: {score}% (o'tish balli {pass_mark}%)"),
+        "uz_cyrl": ("Имтиҳон натижаси: {score}%",
+                    "🎓 Дашборд имтиҳони якунланди\n🎯 Натижа: {score}% (ўтиш балли {pass_mark}%)"),
+        "ru": ("Результат экзамена: {score}%",
+               "🎓 Экзамен по дашборду завершён\n🎯 Результат: {score}% (проходной балл {pass_mark}%)"),
+        "en": ("Exam result: {score}%",
+               "🎓 The dashboard exam is finished\n🎯 Score: {score}% (pass mark {pass_mark}%)"),
+    },
+    "exam_unit_result": {
+        "uz": ("Lider imtihonni topshirdi: {score}%",
+               "🎓 {leader_name}\n🎯 Natija: {score}% (o'tish balli {pass_mark}%)"),
+        "uz_cyrl": ("Лидер имтиҳонни топширди: {score}%",
+                    "🎓 {leader_name}\n🎯 Натижа: {score}% (ўтиш балли {pass_mark}%)"),
+        "ru": ("Лидер сдал экзамен: {score}%",
+               "🎓 {leader_name}\n🎯 Результат: {score}% (проходной балл {pass_mark}%)"),
+        "en": ("A leader took the exam: {score}%",
+               "🎓 {leader_name}\n🎯 Score: {score}% (pass mark {pass_mark}%)"),
+    },
     # «Ta'lim» — a video lesson was published to this profile (routers/education.py).
     # Addressed to the PROFILE, so a lesson assigned to a post reaches whoever
     # holds it and waits in the bell for a post nobody has claimed yet.

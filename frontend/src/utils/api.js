@@ -1,4 +1,5 @@
 import axios from "axios";
+import { examAttemptId, rewriteExamUrl, noteExamMutation } from "./examMode";
 import { clearToken, getToken, isWebSession } from "./session";
 import { noteServerHeaders } from "./compat";
 
@@ -43,6 +44,9 @@ export function authHeaders() {
     headers["X-Telegram-Init-Data"] = window.Telegram?.WebApp?.initData || "__dev__";
   }
   if (sessionStorage.getItem("ghost_mode") === "1") headers["X-Ghost-Mode"] = "1";
+  // Exam mode (utils/examMode.js): the attempt the sandbox answers for.
+  const examId = examAttemptId();
+  if (examId) headers["X-Exam-Attempt"] = String(examId);
   return headers;
 }
 
@@ -66,6 +70,14 @@ api.interceptors.request.use((config) => {
   // Ghost Mode (admin header toggle): suppress change-notifications server-side.
   // sessionStorage (not localStorage) so closing the app always clears it.
   if (sessionStorage.getItem("ghost_mode") === "1") config.headers["X-Ghost-Mode"] = "1";
+  // Exam mode («Imtihon», utils/examMode.js): while a leader sits the exam,
+  // every sandboxed resource is rewritten onto /api/exam/sandbox/… and the
+  // attempt rides as a header, so the pages read and write test rows only.
+  const examId = examAttemptId();
+  if (examId) {
+    config.url = rewriteExamUrl(config.url);
+    config.headers["X-Exam-Attempt"] = String(examId);
+  }
   return config;
 });
 
@@ -161,6 +173,10 @@ function normalizeDetail(response) {
 api.interceptors.response.use(
   (response) => {
     noteServerHeaders(response.headers);
+    // A sandbox write the exam may be waiting on — the strip re-checks the task.
+    const m = String(response.config?.method || "get").toLowerCase();
+    if (m !== "get" && response.config?.headers?.["X-Exam-Attempt"]
+        && String(response.config?.url || "").startsWith("/api/exam/sandbox/")) noteExamMutation(response.config);
     return isWebShieldResponse(response)
       ? retryAfterWebShield(response.config, response)
       : response;
