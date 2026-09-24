@@ -265,6 +265,19 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, 
   );
 }
 
+// The same pill without its dropdown — for a surface that NAMES a status
+// rather than changing it (the from → to line of the take-into-work prompt).
+function StatusBadge({ status, label }) {
+  const color = STATUS_COLOR[status] || "var(--text-3)";
+  return (
+    <span className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap"
+          style={{ background: `${color}24`, color }}>
+      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
+
 // One side of a handover in the history timeline: the level step with the
 // PERSON who sat on it underneath. The name is the whole point of the trail —
 // a step reading "supervisor → shift-manager" answers "to whom?" for nobody.
@@ -3292,13 +3305,16 @@ export default function Concerns() {
       {/* Take-into-work prompt — flipping a concern to "doing" from the inline
           pill first asks its holder how many days they need. That is where a
           concern's deadline is set: the creator no longer names one, because a
-          deadline is a promise and only the person making it can make it. */}
+          deadline is a promise and only the person making it can make it.
+          It is titled and drawn as the STATUS change it is — the from → to
+          line in the table's own pills — so the deadline reads as what the
+          move needs, not as a separate act. */}
       {startRow && (
         <Modal
           onClose={() => setStartRow(null)}
           title={t("concerns.startTitle")}
           subtitle={tx(startRow.concern_text || "").slice(0, 90)}
-          icon={<Clock size={16} />}
+          icon={<CircleDot size={16} />}
           footer={
             <>
               <Button variant="secondary" onClick={() => setStartRow(null)}>{t("concerns.cancel")}</Button>
@@ -3308,6 +3324,14 @@ export default function Concerns() {
             </>
           }
         >
+          <Field label={t("concerns.colStatus")}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <StatusBadge status={startRow.status} label={statusLabel(startRow.status)} />
+              <ArrowRight size={14} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
+              <StatusBadge status="doing" label={statusLabel("doing")} />
+            </div>
+          </Field>
+
           <Field label={t("concerns.fieldDeadline")} required hint={startDueHint}>
             <input
               type="number"
