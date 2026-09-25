@@ -425,6 +425,12 @@ if [ "$MODE" = "provision" ]; then
   start_stack
   wait_for_api 120
   log "provisioned"
+
+  # Fix: The cloud container builder waits for all child processes to exit.
+  # We must stop the background servers we just started so the provisioning can finish.
+  pkill -f uvicorn >/dev/null 2>&1 || true
+  pkill -f "npm run dev" >/dev/null 2>&1 || true
+  pkill -f vite >/dev/null 2>&1 || true
 else
   start_stack
   log "api=:$API_PORT web=:$WEB_PORT db=$PGDB venv=$VENV logs=$LOGDIR"
