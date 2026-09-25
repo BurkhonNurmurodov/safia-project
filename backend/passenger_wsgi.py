@@ -101,6 +101,7 @@ try:
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
         register_leader_rules_sep19,
+        register_leader_rules_sep26,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         report_auto_schema,
@@ -465,6 +466,15 @@ try:
     # run. Remove this line, `startup.register_leader_rules_sep19` and
     # `services/leader_rules_sep19.py` once BOTH passes have landed.
     register_leader_rules_sep19()
+    # ⚠ TEMPORARY one-shot (2026-09-25) — the AI criteria revised from the
+    # operator's reasons for the 50 flags lifted on 19–20 Sep: tasks 3, 6, 7,
+    # 11, 13 + a leader-level «one-process cell» text for task 3. CRITERIA only
+    # (leader instructions untouched). Two flag-guarded passes, each in its own
+    # shift's gap, then the global baseline. Remove this line,
+    # `startup.register_leader_rules_sep26` and `services/leader_rules_sep26.py`
+    # once all three flags are set — and BEFORE removing leader_rules_sep19,
+    # whose texts the pass compares against.
+    register_leader_rules_sep26()
     # ⚠ TEMPORARY (20.09.2026): tasks 1, 8 and 9 become automatic checks.
     # Delete this line, `startup.register_leader_auto_sep20`,
     # `startup._leader_auto_job/_leader_auto_dm/_auto_run_at/_auto_first_check`

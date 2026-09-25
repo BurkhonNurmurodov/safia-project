@@ -2801,6 +2801,58 @@ arms it.
   behind imports a deleted module at boot, and a failed boot rolls the deploy
   back. Changing what either pass writes needs a NEW flag key.
 
+## The 25 September criteria revision (`leader_rules_sep26`)
+
+From **26 Sep 2026** (shift 1's 00:30 gap, shift 2's 16:30 gap) the AI criteria
+of tasks **3, 6, 7, 11 and 13** are the ones rewritten from the operator's
+reasons for the 50 AI flags admins lifted on 19–20 Sep (interview 22—25 Sep;
+the rulings are in memory `leader-criteria-rulings-sep19-20`).
+`services/leader_rules_sep26.py` holds the texts and the pass;
+`startup.register_leader_rules_sep26` arms it, in both entrypoints.
+
+- **CRITERIA ONLY — the operator's ruling («Do not edit description for the
+  leaders»).** The Uzbek instruction stays exactly as the 19 Sep pass wrote
+  it, so what a leader is TOLD and what the grader JUDGES now differ on these
+  five tasks (e.g. the KAIZEN sheet, yellow «запас», an empty rokla, Объём 0
+  are accepted by the grader and not mentioned to the leader). That is the
+  operator's call — do not «fix» it by writing descriptions.
+- **What changed, in one line each**: T3 — different products or separate
+  stations count as different processes, a sleeve down to the wrist / a bare
+  hand / a glove is fine (only a pushed-up sleeve with bare forearm fails), a
+  cloth lying on the table is still clutter, two photos of one product at one
+  table are still one process. T6 — any transport (vagonetka, rokla, cart),
+  loaded or empty; the worker need not look at the goods. T7 — ANY printed
+  control form that holds what is asked (code, name, date; per product
+  quantity, start, finish, fact) counts, extra columns and writing ignored;
+  code/name/date anywhere in the header; a «астаткада бор» row needs no times;
+  a struck-through row does not count. T11 — any green, yellow «запас» valid,
+  selection frames and legend cells ignored, a weekly/monthly grid judged on
+  the clock's day (or the next) only, and a grid with no such column FAILS.
+  T13 — Объём 0 is an empty row; empty rows at the bottom may be cut off.
+- **A LEADER-level task-3 text for one-process cells** on exactly the five the
+  operator named (Akramov, Omonov, Ro'ziyeva, Saidova, Tursunboyev —
+  `ONE_PROCESS_LEADERS`, profile id AND name). Criteria only, so they read their
+  unit's 19 Sep instruction (`_resolve_description` walks to the first
+  non-blank description). Adding a cell = one entry there under a NEW flag key,
+  or an admin edits that leader's criteria on «Chek-list sozlamalari».
+- **Compare-and-set, never blind.** A level is rewritten only while its
+  criteria is blank, still the 19 Sep text, or already the new one; a unit or
+  leader an admin edited since 19 Sep keeps its text and is NAMED in the DM.
+  Nothing else moves: no date rule, window, photo count, and `set_criteria`
+  never re-judges — the text reaches only proofs reviewed after it lands.
+- **Tested before it shipped**, blind: grader agents saw only the new text and
+  the real 19–20 Sep photos (approved cases + rejected and passed controls).
+  Measured on the 11 Sep production copy with the 19 Sep pass replayed first:
+  105 unit criteria written, 0 description cells and 0 of 540 resolved leader
+  instructions changed, 538 resolved criteria changed (the other 2 are one
+  leader's own overrides, named), a second run writes 0.
+- **TEMPORARY.** Delete `register_leader_rules_sep26` from both entrypoints,
+  `startup.register_leader_rules_sep26` / `_leader_rules26_job` /
+  `_leader_rules26_dm` and the module once all three flags
+  (`leader_rules_2026_09_26_shift1_v1` / `…_shift2_v1` / `…_global_v1`) are
+  set — and BEFORE deleting `leader_rules_sep19`, whose texts it compares
+  against.
+
 ## Tasks the PLATFORM answers (`leader_auto`, from 20 Sep 2026)
 
 Three of the thirteen checklist tasks ask about something this platform already

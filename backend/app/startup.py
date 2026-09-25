@@ -7096,8 +7096,11 @@ def _rules_in_shift(shift: int, now) -> bool:
     return 7 * 60 <= hm < 20 * 60
 
 
-def _rules_run_at(shift: int, now):
+def _rules_run_at(shift: int, now, due_table=None):
     """When this shift's pass should fire, given the clock at boot.
+
+    `due_table` is the shift → (y, m, d, H, M) map of the pass being armed;
+    None is the 19 Sep one, so its callers are unchanged.
 
     Three cases, and the middle one is the whole point. Before the agreed
     instant: at it. After it, with the shift NOT running: in a minute — a boot
@@ -7109,11 +7112,8 @@ def _rules_run_at(shift: int, now):
     gets the new texts. Late is the acceptable failure here; mid-shift is not.
     """
     from datetime import timedelta
-    due = now.replace(year=LEADER_RULES_DUE[shift][0],
-                      month=LEADER_RULES_DUE[shift][1],
-                      day=LEADER_RULES_DUE[shift][2],
-                      hour=LEADER_RULES_DUE[shift][3],
-                      minute=LEADER_RULES_DUE[shift][4],
+    y, mo, d, h, mi = (due_table or LEADER_RULES_DUE)[shift]
+    due = now.replace(year=y, month=mo, day=d, hour=h, minute=mi,
                       second=0, microsecond=0)
     if now < due:
         return due
@@ -7664,6 +7664,160 @@ def _leader_rules_dm(shift: int, out: dict, left: list[str],
         print("[startup] leader rules 19.09: summary reached NOBODY — the pass "
               "ran and its flag is set; read the Jurnal row for what it did")
     return sent
+
+# ── The 25 September criteria revision (`leader_rules_sep26`) ────────────────
+#
+# The operator's reasons for the 50 AI flags admins lifted on 19–20 Sep, turned
+# into revised AI criteria for tasks 3, 6, 7, 11 and 13 plus a leader-level
+# «one-process cell» text for task 3. CRITERIA ONLY — the leader's instruction
+# is not touched (the operator, 25 Sep). Same shape as the 19 Sep pass: one
+# pass per shift, each in its own shift's gap, the global baseline after both,
+# three flags, each written LAST. Changing what a pass writes needs a NEW key.
+LEADER_RULES26_FLAGS = {1: "leader_rules_2026_09_26_shift1_v1",
+                        2: "leader_rules_2026_09_26_shift2_v1"}
+LEADER_RULES26_GLOBAL_FLAG = "leader_rules_2026_09_26_global_v1"
+LEADER_RULES26_DUE = {1: (2026, 9, 26, 0, 30), 2: (2026, 9, 26, 16, 30)}
+
+
+def register_leader_rules_sep26() -> None:
+    """Arm both passes of the 25 Sep criteria revision. Called on EVERY boot
+    (the jobstore is in memory); only the flag stops a second run. Never raises.
+    """
+    try:
+        from app.scheduler import SCHEDULER_TZ, schedule_at
+        now = datetime.now(timezone.utc).astimezone(SCHEDULER_TZ)
+        db = SessionLocal()
+        try:
+            for shift, flag in sorted(LEADER_RULES26_FLAGS.items()):
+                if db.query(AppSetting).filter_by(key=flag).first():
+                    continue
+                run_at = _rules_run_at(shift, now, LEADER_RULES26_DUE)
+                schedule_at(f"leader-rules-sep26-s{shift}", run_at,
+                            lambda s=shift: _leader_rules26_job(s))
+                print(f"[startup] leader criteria 26.09: shift {shift} armed for "
+                      f"{run_at:%d.%m %H:%M} ({SCHEDULER_TZ})")
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[startup] leader criteria 26.09 could not be armed: {exc}")
+
+
+def _leader_rules26_job(shift: int) -> None:
+    """Write one shift's revised criteria, then flag, log and report."""
+    from app.services import action_log, leader_rules_sep26 as rules
+
+    flag = LEADER_RULES26_FLAGS[shift]
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=flag).first():
+            return
+        out = rules.apply(db, shift)
+        left = rules.leader_overrides_left(db, shift)
+        db.add(AppSetting(key=flag, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] leader criteria 26.09: shift {shift} — {out['units']} "
+              f"unit(s), {out['texts']} criteria written, {len(out['kept'])} kept "
+              f"(edited since 19.09), one-process on {len(out['one_process'])}")
+        try:
+            action_log.record_system(
+                "leader_config", "ltask.rules_applied",
+                target_kind="task", target_name="checklist",
+                details=[("level", "unit"), ("shift", shift),
+                         ("count", out["units"]), ("texts", out["texts"]),
+                         ("skipped", (len(out["kept"]) + len(left)) or None),
+                         ("note", "one-process: " + (", ".join(out["one_process"]) or "—"))],
+                reason=("Operator rulings 22–25.09.2026 on the 50 AI flags lifted on "
+                        "19–20.09: revised AI criteria for tasks 3, 6, 7, 11, 13 and a "
+                        "leader-level one-process text for task 3. Leader instructions "
+                        "(description) untouched, by the operator's call."),
+            )
+        except Exception:
+            pass
+        try:
+            if (not db.query(AppSetting)
+                      .filter_by(key=LEADER_RULES26_GLOBAL_FLAG).first()
+                    and all(db.query(AppSetting).filter_by(key=f).first()
+                            for f in LEADER_RULES26_FLAGS.values())):
+                g = rules.apply_global(db)
+                db.add(AppSetting(key=LEADER_RULES26_GLOBAL_FLAG,
+                                  value=datetime.now(timezone.utc).isoformat()))
+                db.commit()
+                out["global"] = g
+                print(f"[startup] leader criteria 26.09: global baseline — "
+                      f"written {g['tasks']}, kept {g['kept']}")
+        except Exception as exc:
+            db.rollback()
+            print(f"[startup] leader criteria 26.09: global baseline NOT written: {exc}")
+        _leader_rules26_dm(shift, out, left)
+    except Exception as exc:
+        # Idempotent and flagged LAST: a failure leaves the shift part-written
+        # and the next boot re-runs it whole. Say so where somebody will read it.
+        db.rollback()
+        print(f"[startup] leader criteria 26.09 shift {shift} FAILED (partly "
+              f"written; the next boot retries it whole): {exc}")
+        try:
+            import html as _html
+            from app.routers.boot import _recipients
+            from app.telegram_bot import bot
+            for chat_id in _recipients():
+                try:
+                    bot.send_message(
+                        chat_id,
+                        f"🛑 <b>AI kriteriyalari (26.09): {shift}-smena yozilmadi</b>\n"
+                        + _html.escape(str(exc)[:400], quote=False)
+                        + "\n\nQisman yozilgan bo'lishi mumkin — keyingi "
+                          "ishga tushishda qaytadan to'liq yoziladi.",
+                        parse_mode="HTML")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def _leader_rules26_dm(shift: int, out: dict, left: list[str]) -> int:
+    """Tell the admins what changed and what the pass deliberately left."""
+    sent = 0
+    try:
+        import html
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        body = [f"Smena {shift}: {out['units']} brigada, {out['texts']} ta AI kriteriyasi "
+                f"yangilandi (3, 6, 7, 11, 13-vazifalar)",
+                "Liderlar o'qiydigan tavsif o'zgarmadi",
+                "Bitta jarayonli yacheyka matni (3-vazifa): "
+                + (", ".join(out["one_process"]) or "—")]
+        g = out.get("global")
+        if g:
+            body.append(f"Umumiy standart: {len(g['tasks'])} ta vazifa yangilandi"
+                        + (f", {len(g['kept'])} tasi qo'lda o'zgartirilgan — tegilmadi"
+                           if g["kept"] else ""))
+        body.append("Oldingi xulosalar qayta hisoblanmaydi — yangi matn faqat "
+                    "bundan keyin tekshiriladigan isbotlarga tegishli")
+        kept = out["kept"] + out["one_process_skipped"]
+        if kept:
+            body.append(f"19.09 dan beri qo'lda o'zgartirilgani uchun tegilmadi: {len(kept)}")
+        if left:
+            body.append(f"O'z kriteriyasi bor liderlar (brigada matni ularga yetmaydi): {len(left)}")
+        esc = lambda v: html.escape(str(v), quote=False)
+        text = "📋 <b>AI kriteriyalari yangilandi (26.09)</b>\n" + esc("\n".join(body))
+        extra = kept + left
+        if extra:
+            text += "\n\n<pre>" + esc("\n".join(extra[:20])) + "</pre>"
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, text, parse_mode="HTML")
+                sent += 1
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] leader criteria 26.09 summary not delivered: {exc}")
+    if not sent:
+        print("[startup] leader criteria 26.09: summary reached NOBODY — the pass "
+              "ran and its flag is set; read the Jurnal row for what it did")
+    return sent
+
 
 def report_duplicate_users_oneshot() -> None:
     """⚠ TEMPORARY one-shot: send a report of duplicate users named 'Turdimurodov'."""
