@@ -43,6 +43,41 @@ function Section({ icon: Icon, title, children }) {
 // A value as the API would receive it — `true`, `"2000-01-01"`, `3650`.
 const showVal = (v) => (typeof v === "string" ? `"${v}"` : String(v));
 
+// A probe error arrives as «ARC 401 on /arc/openapi.json: {"detail":"…"}», and a
+// missing route's nginx page as raw HTML. The path already has its own column,
+// so one line carries the status and the API's own words; the full text is the
+// row's tooltip.
+const errText = (err) => {
+  const s = String(err || "—");
+  const m = s.match(/^ARC (\d{3}) on \S+?: ?([\s\S]*)$/);
+  if (!m) return s;
+  let body = m[2].trim();
+  try {
+    const d = JSON.parse(body)?.detail;
+    if (typeof d === "string") body = d;
+    else if (Array.isArray(d) && d[0]?.msg) body = d[0].msg;
+  } catch {
+    // The backend keeps 300 characters of a body, so JSON often arrives cut.
+    const msg = body.match(/"(?:msg|detail)"\s*:\s*"([^"]*)/)?.[1];
+    const title = body.match(/<title>([^<]*)<\/title>/i)?.[1];
+    body = (msg || title || body.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+  }
+  if (!body) return m[1];
+  return body.startsWith(m[1]) ? body : `${m[1]} · ${body}`;
+};
+
+// One «path → outcome» row. The path keeps its width (up to 60%) and the
+// outcome truncates: an unbounded answer beside a shrinkable path used to push
+// the path to nothing and the row off the panel's right edge.
+function PathRow({ path, text, full, tone }) {
+  return (
+    <div className="flex gap-2 min-w-0" title={full ? `${path} — ${full}` : path}>
+      <span className="flex-shrink-0 max-w-[60%] truncate" style={{ color: "var(--text-2)" }}>{path}</span>
+      <span className="min-w-0 truncate" style={{ color: tone }}>{text}</span>
+    </div>
+  );
+}
+
 export default function LegacyApiPanel({ open, onClose, sync, onProbed }) {
   const { t } = useLang();
   const qc = useQueryClient();
@@ -139,7 +174,11 @@ export default function LegacyApiPanel({ open, onClose, sync, onProbed }) {
           <Section icon={ListTree} title={t("arcl.api.params")}>
             {!data?.params?.length ? (
               <p className="text-xs" style={{ color: "var(--text-3)" }}>
-                {data?.spec_available ? t("arcl.api.noParams") : t("arcl.api.noSpec")}
+                {/* «not fetched yet» is only true before anybody asked; once the
+                    probe has tried and been refused, the reason section below
+                    is the answer and this line must not promise otherwise. */}
+                {data?.spec_available ? t("arcl.api.noParams")
+                  : report?.spec_attempts?.length ? t("arcl.api.specRefused") : t("arcl.api.noSpec")}
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -200,12 +239,9 @@ export default function LegacyApiPanel({ open, onClose, sync, onProbed }) {
             <Section icon={FileWarning} title={t("arcl.api.specWhy")}>
               <div className="text-[11px] font-mono space-y-0.5">
                 {report.spec_attempts.map((a) => (
-                  <div key={a.path} className="flex gap-2 min-w-0">
-                    <span className="truncate" style={{ color: "var(--text-2)" }}>{a.path}</span>
-                    <span className="flex-shrink-0" style={{ color: a.ok ? C_DONE : C_OVERDUE }}>
-                      {a.ok ? "ok" : (a.error || "—")}
-                    </span>
-                  </div>
+                  <PathRow key={a.path} path={a.path}
+                    text={a.ok ? "ok" : errText(a.error)} full={a.ok ? null : a.error}
+                    tone={a.ok ? C_DONE : C_OVERDUE} />
                 ))}
               </div>
             </Section>
@@ -259,12 +295,10 @@ export default function LegacyApiPanel({ open, onClose, sync, onProbed }) {
             <Section icon={Boxes} title={t("arcl.api.otherEndpoints")}>
               <div className="text-[11px] font-mono space-y-0.5 max-h-40 overflow-y-auto">
                 {Object.entries(report.extras).map(([path, r]) => (
-                  <div key={path} className="flex gap-2 min-w-0">
-                    <span className="truncate" style={{ color: "var(--text-2)" }}>{path}</span>
-                    <span className="flex-shrink-0" style={{ color: r?.ok ? C_DONE : C_GREY }}>
-                      {r?.ok ? `${r.kind}${r.total != null ? ` · ${num(r.total)}` : ""}` : (r?.error || "—")}
-                    </span>
-                  </div>
+                  <PathRow key={path} path={path}
+                    text={r?.ok ? `${r.kind}${r.total != null ? ` · ${num(r.total)}` : ""}` : errText(r?.error)}
+                    full={r?.ok ? null : r?.error}
+                    tone={r?.ok ? C_DONE : C_GREY} />
                 ))}
               </div>
             </Section>
