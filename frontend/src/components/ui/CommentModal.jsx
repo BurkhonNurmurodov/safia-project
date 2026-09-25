@@ -10,6 +10,7 @@ import {
   commentPlanFormula, commentActualFormula, commentEffectiveHcFormula, commentAvailMinFormula,
   commentSimplePlanFormula, commentSimpleActualFormula,
   commentFulfilFormula, commentEffFormula, commentCapacityFormula,
+  commentFull90ActualFormula, commentFull90EffectiveHcFormula,
 } from "../../utils/formulas";
 
 // Convert DD.MM.YYYY → YYYY-MM-DD for API calls
@@ -29,11 +30,12 @@ function withTitle(built, title) {
 
 // `basis` says WHICH arithmetic the "how it's calculated" block explains, and
 // it must be the same one the cell the reader tapped was computed with — the
-// thread is keyed to (manager, date) and is therefore reachable from BOTH
-// comparison tables on /zagruzka, so a fixed formula here would explain one
-// table's number with the other table's equation. "full" and "simple" explain a
-// P/A PAIR; "fulfil" and "eff" (the two single-metric heatmaps) explain ONE
-// number, so they render one formula row instead of two.
+// thread is keyed to (manager, date) and is therefore reachable from EVERY
+// comparison table on /zagruzka, so a fixed formula here would explain one
+// table's number with another table's equation. "full", "full90" (the full
+// formula with Verifix × 0.9) and "simple" explain a P/A PAIR; "fulfil" and
+// "eff" (the two single-metric heatmaps) explain ONE number, so they render
+// one formula row instead of two.
 // `zIndex` (default 50) must be raised when the modal is opened from INSIDE a
 // fullscreen overlay (z-[200]): pass 210, PendingInfoModal's value. At 50 the
 // thread mounted behind the overlay, the tap looked like a no-op, and on a
@@ -123,6 +125,10 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
         {/* Formula section — only when opened from a heatmap cell */}
         {rawCell && (() => {
           const simple = basis === "simple";
+          // The Verifix × 0.9 table IS the full formula: its P and its
+          // available minutes are the full table's own, and only the effective
+          // headcount — so the result — is read at 0.9.
+          const full90 = basis === "full90";
           const rows = basis === "fulfil"
             ? [{ label: t("zagruzka.fulfilTable"), built: commentFulfilFormula(rawCell, t),
                  fallback: "trudoyomkost ÷ prod_plan × 100%" }]
@@ -136,10 +142,14 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
                       ? "P = prod_plan ÷ (480 × 0.9 × headcount) × 100%"
                       : "P = prod_plan ÷ (480 × headcount) × 100%" },
                   { label: `${t("zagruzka.actual")} (A)`,
-                    built: simple ? commentSimpleActualFormula(rawCell, t) : commentActualFormula(rawCell, t),
+                    built: simple ? commentSimpleActualFormula(rawCell, t)
+                      : full90 ? commentFull90ActualFormula(rawCell, t)
+                      : commentActualFormula(rawCell, t),
                     fallback: simple
                       ? "A = trudoyomkost ÷ (480 × 0.9 × headcount) × 100%"
-                      : "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100%" },
+                      : full90
+                        ? "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100% · verifix × 60 × 0.9"
+                        : "A = prod_actual ÷ (effective_hc × adjusted_available_min) × 100%" },
                 ];
           // The two inputs of the Actual formula that are themselves COMPUTED —
           // a number the reader is asked to trust is a number the popup owes
@@ -149,7 +159,9 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
           const details = basis === "eff" ? {
             capacity: withTitle(commentCapacityFormula(rawCell, t), t("comment.capacityTitle")),
           } : (simple || basis === "fulfil") ? {} : {
-            effectiveHc: withTitle(commentEffectiveHcFormula(rawCell, t), t("comment.effectiveHcTitle")),
+            effectiveHc: withTitle(
+              full90 ? commentFull90EffectiveHcFormula(rawCell, t) : commentEffectiveHcFormula(rawCell, t),
+              t("comment.effectiveHcTitle")),
             availMin: withTitle(commentAvailMinFormula(rawCell, t), t("comment.availMinTitle")),
           };
           const Legend = ({ items }) => (

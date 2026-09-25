@@ -76,6 +76,7 @@ async def lifespan(app: FastAPI):
         seed_pp_autofill_default,
         set_forecast_autocall_capacity,
         split_zagruzka_bands,
+        seed_full90_bands,
         report_unpriced_ojidaniya,
         report_unpriced_ojidaniya_xlsx,
         report_zagruzka_gaps_xlsx,
@@ -201,6 +202,7 @@ async def lifespan(app: FastAPI):
     seed_pp_autofill_default()
     set_forecast_autocall_capacity()
     split_zagruzka_bands()
+    seed_full90_bands()
     add_pp_product_auto_fill()
     add_education_duration()
     migrate_pp_line_daily_key()

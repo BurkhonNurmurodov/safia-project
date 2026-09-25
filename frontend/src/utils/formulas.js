@@ -96,16 +96,12 @@ export function commentPlanFormula(cell, t) {
   };
 }
 
-export function commentActualFormula(cell, t) {
-  const pa = cell?.prod_actual;
-  const base = availMin(cell);
-  const ehc = effectiveHc(cell);
-  if (cell?.net_util == null || pa == null || base == null || ehc == null) return null;
-  const dt = cell.equip_downtime || 0;
-  const early = cell.avg_early_arrival || 0;
-  const pct = Math.round(cell.net_util * 100);
+// The Actual block, laid out ONCE for both tables that read the full formula —
+// «To'liq hisob» and its Verifix × 0.9 twin differ in the effective headcount
+// and the result, never in how the working is spelled.
+function actualComment(pa, ehc, base, dt, early, util, t) {
   return {
-    formula: `${num(pa, 0)} ÷ (${num(ehc, 2)} × (${num(base, 1)} − ${num(dt, 0)} − ${num(early, 1)} − ${KAIZEN_BUFFER})) × 100% = ${pct}%`,
+    formula: `${num(pa, 0)} ÷ (${num(ehc, 2)} × (${num(base, 1)} − ${num(dt, 0)} − ${num(early, 1)} − ${KAIZEN_BUFFER})) × 100% = ${Math.round(util * 100)}%`,
     legend: [
       { num: num(pa, 0), label: t("comment.legend.prodActual") },
       { num: num(ehc, 2), label: t("comment.legend.effectiveHc"), key: "effectiveHc" },
@@ -115,6 +111,14 @@ export function commentActualFormula(cell, t) {
       { num: String(KAIZEN_BUFFER), label: t("comment.legend.kaizen") },
     ],
   };
+}
+
+export function commentActualFormula(cell, t) {
+  const pa = cell?.prod_actual;
+  const base = availMin(cell);
+  const ehc = effectiveHc(cell);
+  if (cell?.net_util == null || pa == null || base == null || ehc == null) return null;
+  return actualComment(pa, ehc, base, cell.equip_downtime || 0, cell.avg_early_arrival || 0, cell.net_util, t);
 }
 
 // ── Effective headcount = official_hc + labor_surplus ─────────────────────────
@@ -128,6 +132,19 @@ export function commentActualFormula(cell, t) {
 // Both components are taken from the payload when it carries them and derived
 // otherwise (an older backend, a tab open across a deploy), since
 // effective_hc − official_hc is the surplus by definition.
+// `laborKey` names the Verifix minutes — the one legend row whose wording
+// differs between the two full-formula tables, because it states the factor.
+function effectiveHcComment(hc, labor, pa, base, ehc, surplus, laborKey, t) {
+  return {
+    formula: `${num(hc, 0)} + (${num(labor, 0)} − ${num(pa, 0)}) ÷ ${num(base, 1)} = ${num(ehc, 2)}`,
+    legend: [
+      { num: num(hc, 0), label: t("comment.legend.headcount") },
+      { num: num(labor, 0), label: t(laborKey) },
+      { num: signed(surplus, 2), label: t("comment.legend.laborSurplus") },
+    ],
+  };
+}
+
 export function commentEffectiveHcFormula(cell, t) {
   const ehc = effectiveHc(cell);
   const base = availMin(cell);
@@ -135,14 +152,7 @@ export function commentEffectiveHcFormula(cell, t) {
   if (ehc == null || !base || cell?.official_hc == null || pa == null) return null;
   const surplus = cell.labor_surplus != null ? cell.labor_surplus : ehc - cell.official_hc;
   const labor = cell.verifix_labor != null ? cell.verifix_labor : pa + surplus * base;
-  return {
-    formula: `${num(cell.official_hc, 0)} + (${num(labor, 0)} − ${num(pa, 0)}) ÷ ${num(base, 1)} = ${num(ehc, 2)}`,
-    legend: [
-      { num: num(cell.official_hc, 0), label: t("comment.legend.headcount") },
-      { num: num(labor, 0), label: t("comment.legend.verifixLabor") },
-      { num: signed(surplus, 2), label: t("comment.legend.laborSurplus") },
-    ],
-  };
+  return effectiveHcComment(cell.official_hc, labor, pa, base, ehc, surplus, "comment.legend.verifixLabor", t);
 }
 
 // ── Available minutes per person = 480 × (prod_actual ÷ prod_plan) ────────────
@@ -564,4 +574,72 @@ export function commentCapacityFormula(cell, t) {
       { num: String(KAIZEN_BUFFER), label: t("comment.legend.kaizen") },
     ],
   };
+}
+
+// ── «To'liq hisob · Verifix × 0.9» — the third comparison table on /zagruzka ──
+// The FULL formula (kpi_calculator.compute_metrics), term for term, with ONE
+// number changed: the recorded Verifix hours enter effective_hc at the
+// operator's productive share, 0.9 — the same PRODUCTIVE_SHARE the simplified
+// table and «Samaradorlik» already apply — instead of VERIFIX_EFFICIENCY, 0.85.
+//
+//   P = prod_plan ÷ (480 × official_hc)          — the full table's own P: it
+//                                                   carries no Verifix term
+//   A = prod_actual ÷ (effective_hc′ × (avail_min − ojidaniya − early − 10))
+//       effective_hc′  = official_hc + (verifix_labor′ − prod_actual) ÷ avail_min
+//       verifix_labor′ = recorded hours × 60 × 0.9
+//
+// More productive minutes per recorded hour is more effective people for the
+// same output, so A reads LOWER than the full table's on every day that
+// carries Verifix hours, and D = P − A higher by the same points.
+//
+// The hours are recovered as verifix_labor ÷ 0.85 — the payload ships only the
+// 0.85 figure, rounded to 2 decimals (the rule `verifixMinutes` documents) —
+// and a payload without that component (a tab open across a deploy) rebuilds
+// it from the surplus, exactly as the effective-HC popup does.
+//
+// Blanks are the full table's, by construction: no official net_util means the
+// full formula had no answer that day (no ФАКТ, no plan, nobody typed the
+// people, a pending day), and so this one has none either. The ⚙ factors do
+// not reach it: they are what-ifs on the official figure, and this table
+// already is one.
+function full90Parts(cell) {
+  if (cell?.net_util == null) return null;
+  const pa = fin(cell.prod_actual);
+  const hc = fin(cell.official_hc);
+  const base = availMin(cell);
+  if (!Number.isFinite(pa) || !Number.isFinite(hc) || !(base > 0)) return null;
+  let vl = fin(cell.verifix_labor);
+  if (!Number.isFinite(vl)) {
+    const ehc0 = effectiveHc(cell);
+    if (ehc0 == null) return null;
+    vl = pa + (ehc0 - hc) * base;
+  }
+  const labor = (vl / VERIFIX_EFFICIENCY) * PRODUCTIVE_SHARE;
+  const surplus = (labor - pa) / base;
+  const ehc = hc + surplus;
+  const idle  = fin(cell.equip_downtime)    || 0;
+  const early = fin(cell.avg_early_arrival) || 0;
+  return {
+    pa, hc, base, labor, surplus, ehc, idle, early,
+    den: ehc * (base - idle - early - KAIZEN_BUFFER),
+  };
+}
+
+export function full90ActualUtil(cell) {
+  const p = full90Parts(cell);
+  return p && p.den > 0 ? p.pa / p.den : null;
+}
+
+// ── CommentModal blocks — the full table's own layout, fed the 0.9 figures ──
+export function commentFull90ActualFormula(cell, t) {
+  const v = full90ActualUtil(cell);
+  if (v == null) return null;
+  const p = full90Parts(cell);
+  return actualComment(p.pa, p.ehc, p.base, p.idle, p.early, v, t);
+}
+
+export function commentFull90EffectiveHcFormula(cell, t) {
+  const p = full90Parts(cell);
+  if (!p) return null;
+  return effectiveHcComment(p.hc, p.labor, p.pa, p.base, p.ehc, p.surplus, "comment.legend.verifixLabor90", t);
 }

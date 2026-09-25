@@ -56,6 +56,10 @@ ZAGRUZKA_BANDS = {
     "eff":    {"segments": ("heatmap_eff_segments", DEFAULT_HEATMAP_SEGMENTS)},
     "full":   {"p_segments": (COMP_P_KEY, DEFAULT_P_SEGMENTS),
                "diff_segments": (COMP_DIFF_KEY, DEFAULT_DIFF_SEGMENTS)},
+    # «To'liq hisob · Verifix × 0.9» (2026-09-25): the full table with the
+    # Verifix hours credited at 0.9 — a table of its own, so keys of its own.
+    "full90": {"p_segments": ("comparison_full90_p_segments", DEFAULT_P_SEGMENTS),
+               "diff_segments": ("comparison_full90_diff_segments", DEFAULT_DIFF_SEGMENTS)},
     "simple": {"p_segments": ("comparison_simple_p_segments", DEFAULT_P_SEGMENTS),
                "diff_segments": ("comparison_simple_diff_segments", DEFAULT_DIFF_SEGMENTS)},
 }
@@ -66,6 +70,13 @@ ZAGRUZKA_BAND_SEEDS = {
     "heatmap_eff_segments": HEATMAP_KEY,
     "comparison_simple_p_segments": COMP_P_KEY,
     "comparison_simple_diff_segments": COMP_DIFF_KEY,
+}
+# The Verifix × 0.9 table's keys → the full table's, seeded under a flag of
+# their OWN (`startup.seed_full90_bands`): the 2026-09-24 split has already run
+# on every box that booted since, so listing them above would seed nothing.
+ZAGRUZKA_FULL90_SEEDS = {
+    "comparison_full90_p_segments": COMP_P_KEY,
+    "comparison_full90_diff_segments": COMP_DIFF_KEY,
 }
 
 

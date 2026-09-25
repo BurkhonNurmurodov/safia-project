@@ -9,7 +9,7 @@ import { DEFAULT_SEGMENTS } from "../charts/HeatmapChart";
 import { DEFAULT_P_SEGMENTS, DEFAULT_DIFF_SEGMENTS } from "../charts/ComparisonTable";
 import { useLang } from "../../context/LangContext";
 import { fillDescs } from "../../utils/segments";
-import { fulfilUtil, effUtil, simplePlanUtil, simpleActualUtil } from "../../utils/formulas";
+import { fulfilUtil, effUtil, simplePlanUtil, simpleActualUtil, full90ActualUtil } from "../../utils/formulas";
 import api from "../../utils/api";
 
 /**
@@ -316,6 +316,13 @@ export const BAND_TABLES = {
       { ...D_BAR, read: (c) => [gap(c?.baseline_util, c?.net_util)] },
     ],
   },
+  full90: {
+    titleKey: "zagruzka.full90Table",
+    bars: [
+      { ...P_BAR, read: (c) => [pct(c?.baseline_util)] },
+      { ...D_BAR, read: (c) => [gap(c?.baseline_util, full90ActualUtil(c))] },
+    ],
+  },
   simple: {
     titleKey: "zagruzka.simpleTable",
     bars: [
@@ -396,15 +403,19 @@ export default function TableBandsModal({ table, bands, keys, shared = [], data,
   const qc = useQueryClient();
   const def = BAND_TABLES[table];
   const seed = () => (def ? def.bars.map((bar) => fillDescs(bands[table][bar.field], bar.kind)) : []);
-  // Seeded once the server has answered, never from the fallback: a draft
-  // started from the defaults would save them over the table's real bands.
-  const [draft, setDraft] = useState(() => (keys ? seed() : null));
+  // Seeded once the server has answered FOR THIS TABLE, never from the
+  // fallback: a draft started from the defaults would save them over the
+  // table's real bands. Per table, because a backend older than the bundle
+  // (the seconds a deploy takes to restart) names no key for a table it has
+  // not heard of yet.
+  const tableKeys = keys?.[table];
+  const [draft, setDraft] = useState(() => (tableKeys ? seed() : null));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (keys && draft == null) setDraft(seed());
-  }, [keys]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (tableKeys && draft == null) setDraft(seed());
+  }, [tableKeys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!def) return null;
 
@@ -426,7 +437,7 @@ export default function TableBandsModal({ table, bands, keys, shared = [], data,
     setError(null);
     try {
       const body = {};
-      def.bars.forEach((bar, i) => { body[keys[table][bar.field]] = JSON.stringify(draft[i]); });
+      def.bars.forEach((bar, i) => { body[tableKeys[bar.field]] = JSON.stringify(draft[i]); });
       await api.put("/admin/settings", body);
       // The two platform-wide tables write keys every other page reads, so
       // those caches go stale with this one.
@@ -456,7 +467,7 @@ export default function TableBandsModal({ table, bands, keys, shared = [], data,
       footer={
         <>
           <Button variant="secondary" size="md" onClick={onClose} disabled={saving}>{t("common.cancel")}</Button>
-          <Button size="md" onClick={save} loading={saving} disabled={!draft || !keys}>{t("admin.save")}</Button>
+          <Button size="md" onClick={save} loading={saving} disabled={!draft || !tableKeys}>{t("admin.save")}</Button>
         </>
       }
     >

@@ -1058,6 +1058,48 @@ quantity × Трудоемкость ÷ 60), the denominator person-minutes of C
 - Everything is derived per request from the existing `/api/heatmap` payload —
   no backend change, nothing stored, so no migration and no re-sync.
 
+## «To'liq hisob · Verifix × 0.9» — the third comparison table (`/zagruzka`)
+
+From **2026-09-25** (the operator's request) a third comparison table sits
+directly under «To'liq hisob»: the FULL formula, term for term, with ONE number
+changed — the recorded Verifix hours enter the effective headcount at **0.9
+instead of 0.85**.
+
+    P = prod_plan ÷ (480 × official_hc)                     — the full table's own P
+    A = prod_actual ÷ (effective_hc′ × (avail_min − ojidaniya − early − 10))
+        effective_hc′  = official_hc + (verifix_labor′ − prod_actual) ÷ avail_min
+        verifix_labor′ = recorded hours × 60 × 0.9
+
+- **P is identical to the full table's by construction** — it has no Verifix
+  term. Only A moves, and always DOWN: more productive minutes per recorded hour
+  is more effective people for the same output. Abdukarimov Sanjar, 24.09.2026:
+  effective headcount 62.55 → 66.72, A 119% → 111%.
+- **`utils/formulas.js` is THE definition** — `full90ActualUtil` and the two
+  CommentModal builders (`commentFull90ActualFormula`,
+  `commentFull90EffectiveHcFormula`). The 0.9 IS `PRODUCTIVE_SHARE`, the same
+  number the simplified table and «Samaradorlik» apply, never a second
+  constant. The hours are recovered as `verifix_labor ÷ 0.85` (the rule
+  `verifixMinutes` documents); a payload without the component rebuilds it
+  from the surplus. The full table's popup builders now share their layout with
+  these (`actualComment`, `effectiveHcComment`) and print byte for byte what
+  they did.
+- **`ComparisonTable basis="full90"`**, a prop like `"simple"`, never a fork. Its
+  blanks are the full table's: no official `net_util` ⇒ no figure.
+- **The ⚙ factors are the official table's alone** (`factorsApply = basis ===
+  "full"`): they are what-ifs on THE загрузка, this table already is one, and
+  the switch that names «15%» would lie on it.
+- **The page renders all three comparison tables through ONE builder**
+  (`comparisonTable(which, isFull)` over `COMPARISON`, in page order), inline and
+  fullscreen, so the three can never drift apart; the table key IS the basis,
+  the band-table key and the `openFull` value.
+- **Its colour bands are its own** (`comparison_full90_p_segments` /
+  `comparison_full90_diff_segments`), seeded ONCE from the full table's by
+  `startup.seed_full90_bands` (flag `zagruzka_full90_bands_2026_09_25_v1` —
+  the 2026-09-24 split had already run everywhere, so it needed a flag of its
+  own), so it opens painted exactly like the table it is read against.
+- Everything is derived per request from the existing `/api/heatmap` payload;
+  nothing about the official загрузка, any KPI or `VERIFIX_EFFICIENCY` changed.
+
 ## Plan fulfilment and Efficiency heatmaps (`/zagruzka`)
 
 From **2026-09-21** (the operator's directive) two single-metric heatmaps sit
@@ -1121,8 +1163,8 @@ number per unit-day:
   overlay on data, so on an empty or still-loading period the button armed
   `openFull` and drew nothing, and the overlay then opened by ITSELF the moment
   data arrived.
-- **ONE fullscreen state** on the page (`openFull`: null | comp | simple |
-  heatmap | fulfil | eff) replaced a boolean per overlay: with five overlays at
+- **ONE fullscreen state** on the page (`openFull`: null | full | full90 |
+  simple | heatmap | fulfil | eff) replaced a boolean per overlay: with six overlays at
   one z-index, "one at a time" has to be structural, and the simplified table's
   flag had slipped past the Escape handler, which only knew the two originals.
 - Everything is derived per request from the existing `/api/heatmap` payload —
@@ -1157,7 +1199,9 @@ five, is gone.
   share by `startup.split_zagruzka_bands` (flag
   `zagruzka_table_bands_2026_09_24_v1`, insert-only; changing what it seeds
   needs a NEW key) — so no table changed colour when this shipped. A key with
-  no row reads the same default its source does.
+  no row reads the same default its source does. The sixth table, «To'liq
+  hisob · Verifix × 0.9» (2026-09-25), has its own pair too, seeded from the
+  full table's under a flag of its own — see its section.
 - The funnel on `/zagruzka` keeps the full table's D bands, as before.
 - A bar is sized off the SAVED bands and the period's own values (read through
   the table's own functions), never off the draft — a bar that grew as an edge

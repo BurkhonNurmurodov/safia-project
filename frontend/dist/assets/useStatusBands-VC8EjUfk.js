@@ -1,0 +1,1 @@
+import{t as r}from"./api-C5-C9_v_.js";import{r as e}from"./triangle-alert-BB4Y5L2_.js";import{a as n,n as o}from"./statusBands-DZtx3Y_a.js";function p(){const{data:t}=e({queryKey:["status-bands"],queryFn:()=>r.get("/api/status-bands").then(s=>{var a;return n((a=s.data)===null||a===void 0?void 0:a.bands)}),staleTime:3e5,refetchOnWindowFocus:!1});return t||o}export{p as t};

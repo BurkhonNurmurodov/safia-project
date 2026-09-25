@@ -28,6 +28,14 @@ import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
 
+// The comparison tables, in page order, keyed by their `basis` — which is also
+// their band-table key and their fullscreen key — with the words each prints.
+const COMPARISON = {
+  full:   { title: "zagruzka.fullTable",   note: "zagruzka.fullTableNote" },
+  full90: { title: "zagruzka.full90Table", note: "zagruzka.full90TableNote" },
+  simple: { title: "zagruzka.simpleTable", note: "zagruzka.simpleTableNote" },
+};
+
 // The header of every heatmap card on this page. The fleet heatmap passes only
 // the originals and renders exactly as before; the two single-metric heatmaps
 // pass a title, subtitle, formula note and guide heading of their own, and
@@ -219,13 +227,13 @@ export default function Zagruzka() {
   const { t } = useLang();
   const { tl, lang } = useTranslit();
   const [heatmapMode, setHeatmapMode] = usePersistentState("zagruzka_heatmap_mode", "actual");
-  // Which overlay is open: null | "comp" | "simple" | "heatmap" | "fulfil" | "eff".
-  // ONE value, so two overlays can never be open at once and Escape closes
-  // whichever it is — a flag per overlay let the simplified table's slip past
-  // the Escape handler, which only knew the two original ones.
+  // Which overlay is open: null | "full" | "full90" | "simple" | "heatmap" |
+  // "fulfil" | "eff". ONE value, so two overlays can never be open at once and
+  // Escape closes whichever it is — a flag per overlay let the simplified
+  // table's slip past the Escape handler, which only knew the two original ones.
   const [openFull, setOpenFull] = useState(null);
-  // Whose colour bands are being edited: null | "full" | "simple" | "load" |
-  // "fulfil" | "eff" — one editor at a time, admins only.
+  // Whose colour bands are being edited: null | "full" | "full90" | "simple" |
+  // "load" | "fulfil" | "eff" — one editor at a time, admins only.
   const [bandsFor, setBandsFor] = useState(null);
   const bandsOpen = useRef(false);
   bandsOpen.current = bandsFor != null;
@@ -276,11 +284,10 @@ export default function Zagruzka() {
   });
 
   // Every table on this page paints with its OWN bands (components/zagruzka/
-  // TableBandsModal.jsx) — five tables, five sets, one request.
+  // TableBandsModal.jsx) — six tables, six sets, one request.
   const { bands, keys: bandKeys, shared: bandShared } = useZagruzkaBands();
   const segments = bands.load.segments;
-  const pSegments = bands.full.p_segments;
-  const diffSegments = bands.full.diff_segments;
+  const diffSegments = bands.full.diff_segments;   // the funnel keeps the full table's D bands
 
   const { data: brigadirs = [], isPending: brigLoading } = useQuery({
     queryKey: ["brigadirs", fparams],
@@ -362,6 +369,33 @@ export default function Zagruzka() {
     net_util:         brigadirs.reduce((s, b) => s + (b.net_util         || 0), 0) / n,
   };
 
+  // One comparison table, inline or fullscreen. The tables differ only in the
+  // arithmetic they read (`basis`), the bands they paint with and their words,
+  // so one set of props serves all three and they cannot drift apart. The
+  // fullscreen copy is only mounted once the data is in, so it never loads.
+  const comparisonTable = (which, isFull) => (
+    <ComparisonTable
+      loading={!isFull && hmLoading}
+      loadingRows={skRows}
+      dates={heatmap?.dates ?? skDates}
+      managers={heatmap?.managers ?? []}
+      data={heatmap?.data ?? {}}
+      pSegments={bands[which].p_segments}
+      diffSegments={bands[which].diff_segments}
+      managerIds={managerIds}
+      approvedCells={approvedCells}
+      commentedCells={commentedCells}
+      basis={which}
+      {...(which === "full" ? { calcFactors, onCalcFactorsChange: setCalcFactors } : {})}
+      onEditBands={editBands(which)}
+      columnSummary
+      title={t(COMPARISON[which].title)}
+      note={t(COMPARISON[which].note)}
+      fullscreen={isFull}
+      onToggleFullscreen={() => setOpenFull(isFull ? null : which)}
+    />
+  );
+
   return (
     <Layout title={t("zagruzka.subtitle")}>
       {/* ONE-ROW filter bar: the period (the control people actually touch every
@@ -412,120 +446,37 @@ export default function Zagruzka() {
         />
       </div>
 
-      {/* ── Comparison Table ── */}
-      {hmLoading || heatmap?.managers?.length ? (
-        <div className="mb-6">
-          <ComparisonTable
-            loading={hmLoading}
-            loadingRows={skRows}
-            dates={heatmap?.dates ?? skDates}
-            managers={heatmap?.managers ?? []}
-            data={heatmap?.data ?? {}}
-            pSegments={pSegments}
-            diffSegments={diffSegments}
-            managerIds={managerIds}
-            approvedCells={approvedCells}
-            commentedCells={commentedCells}
-            calcFactors={calcFactors}
-            onCalcFactorsChange={setCalcFactors}
-            onEditBands={editBands("full")}
-            columnSummary
-            title={t("zagruzka.fullTable")}
-            note={t("zagruzka.fullTableNote")}
-            onToggleFullscreen={() => setOpenFull("comp")}
-          />
-        </div>
-      ) : null}
+      {/* ── The three comparison tables ──
+          ONE grid read three ways — `basis` IS the table key — each with
+          colour bands of its OWN, set from its own button, and the same P·A·D
+          toggle, sort, summaries, pending markers and comment threads:
+            full   «To'liq hisob» — the platform's official загрузка, and the
+                   only one carrying the ⚙ factors (admin what-ifs on it)
+            full90 «To'liq hisob · Verifix × 0.9» — the same formula with the
+                   Verifix hours credited at 0.9 instead of 0.85. Its P IS the
+                   full table's (no Verifix term); only A moves, downward
+            simple «Smena boshi va Smena oxiri Zagruzka» — both halves over the
+                   unit's people × a productive shift:
+                     P = «Ishlab chiqarish plani» ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
+                     A = «Trudoyomkost»           ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
+                   with none of the full formula's four corrections
+          The two twins are passed no calcFactors and draw no ⚙. ── */}
+      {hmLoading || heatmap?.managers?.length
+        ? Object.keys(COMPARISON).map((which) => (
+            <div key={which} className="mb-6">{comparisonTable(which, false)}</div>
+          ))
+        : null}
 
-      {/* ── Comparison Table — «Smena boshi va Smena oxiri Zagruzka» ──
-          The SAME grid, the SAME data and the same P·A·D toggle, sort,
-          summaries, pending markers and comment threads — with colour bands of
-          its OWN, set from its own button. One thing about the arithmetic
-          differs, and it is the whole reason the table exists: both halves are
-          divided by the unit's people × a productive shift —
-            P = «Ishlab chiqarish plani» ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
-            A = «Trudoyomkost»           ÷ (480 × 0.9 × «Hisobotdagi xodimlar»)
-          — with none of the full formula's four corrections, which is why it is
-          passed no calcFactors and draws no ⚙. ── */}
-      {hmLoading || heatmap?.managers?.length ? (
-        <div className="mb-6">
-          <ComparisonTable
-            loading={hmLoading}
-            loadingRows={skRows}
-            dates={heatmap?.dates ?? skDates}
-            managers={heatmap?.managers ?? []}
-            data={heatmap?.data ?? {}}
-            pSegments={bands.simple.p_segments}
-            diffSegments={bands.simple.diff_segments}
-            managerIds={managerIds}
-            approvedCells={approvedCells}
-            commentedCells={commentedCells}
-            basis="simple"
-            onEditBands={editBands("simple")}
-            columnSummary
-            title={t("zagruzka.simpleTable")}
-            note={t("zagruzka.simpleTableNote")}
-            onToggleFullscreen={() => setOpenFull("simple")}
-          />
-        </div>
-      ) : null}
-
-      {/* ── Comparison Table fullscreen overlay — portaled to <body> so its
+      {/* ── Comparison table fullscreen overlay — portaled to <body> so its
           `fixed inset-0` anchors to the viewport, not the .page-enter transform
           (see the DateRangePicker fix). ── */}
-      {openFull === "comp" && heatmap?.managers?.length ? createPortal(
+      {COMPARISON[openFull] && heatmap?.managers?.length ? createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
         >
           <div className="flex-1 overflow-auto p-4">
-            <ComparisonTable
-              dates={heatmap.dates}
-              managers={heatmap.managers}
-              data={heatmap.data}
-              pSegments={pSegments}
-              diffSegments={diffSegments}
-              managerIds={managerIds}
-              approvedCells={approvedCells}
-              commentedCells={commentedCells}
-              calcFactors={calcFactors}
-              onCalcFactorsChange={setCalcFactors}
-              onEditBands={editBands("full")}
-              columnSummary
-              title={t("zagruzka.fullTable")}
-              note={t("zagruzka.fullTableNote")}
-              fullscreen
-              onToggleFullscreen={() => setOpenFull(null)}
-            />
-          </div>
-        </div>,
-        document.body
-      ) : null}
-
-      {/* Simplified table fullscreen — portaled for the same reason. */}
-      {openFull === "simple" && heatmap?.managers?.length ? createPortal(
-        <div
-          className="fixed inset-0 z-[200] flex flex-col"
-          style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
-        >
-          <div className="flex-1 overflow-auto p-4">
-            <ComparisonTable
-              dates={heatmap.dates}
-              managers={heatmap.managers}
-              data={heatmap.data}
-              pSegments={bands.simple.p_segments}
-              diffSegments={bands.simple.diff_segments}
-              managerIds={managerIds}
-              approvedCells={approvedCells}
-              commentedCells={commentedCells}
-              basis="simple"
-              onEditBands={editBands("simple")}
-              columnSummary
-              title={t("zagruzka.simpleTable")}
-              note={t("zagruzka.simpleTableNote")}
-              fullscreen
-              onToggleFullscreen={() => setOpenFull(null)}
-            />
+            {comparisonTable(openFull, true)}
           </div>
         </div>,
         document.body

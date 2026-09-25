@@ -5627,26 +5627,54 @@ def split_zagruzka_bands() -> None:
     """
     from app.routers.settings import ZAGRUZKA_BAND_SEEDS
 
+    _seed_band_copies(ZAGRUZKA_BANDS_FLAG, ZAGRUZKA_BAND_SEEDS, "zagruzka table bands")
+
+
+def _seed_band_copies(flag: str, seeds: dict, what: str) -> None:
+    """Copy each source key's value onto its table-own key (`seeds`: own key →
+    source key), ONCE per `flag`. Insert-only: a key that already holds a value
+    is never overwritten, and a source with no row seeds nothing — both then
+    answer the same default. The flag is written either way."""
     db = SessionLocal()
     try:
-        if db.query(AppSetting).filter_by(key=ZAGRUZKA_BANDS_FLAG).first():
+        if db.query(AppSetting).filter_by(key=flag).first():
             return
         seeded = []
-        for key, source in ZAGRUZKA_BAND_SEEDS.items():
+        for key, source in seeds.items():
             if db.query(AppSetting).filter_by(key=key).first():
                 continue
             src = db.query(AppSetting).filter_by(key=source).first()
             if src:
                 db.add(AppSetting(key=key, value=src.value))
                 seeded.append(key)
-        db.add(AppSetting(key=ZAGRUZKA_BANDS_FLAG, value="1"))
+        db.add(AppSetting(key=flag, value="1"))
         db.commit()
-        print(f"[startup] zagruzka table bands seeded: {', '.join(seeded) or 'none'}")
+        print(f"[startup] {what} seeded: {', '.join(seeded) or 'none'}")
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
-        print(f"[startup] zagruzka table bands not seeded: {exc}")
+        print(f"[startup] {what} not seeded: {exc}")
     finally:
         db.close()
+
+
+ZAGRUZKA_FULL90_BANDS_FLAG = "zagruzka_full90_bands_2026_09_25_v1"
+
+
+def seed_full90_bands() -> None:
+    """2026-09-25: /zagruzka gains «To'liq hisob · Verifix × 0.9» — the full
+    table with the Verifix hours credited at 0.9 instead of 0.85 — and, like
+    every table there, it owns its colour bands
+    (`routers.settings.ZAGRUZKA_FULL90_SEEDS`). They are seeded ONCE from the
+    full table's, so on the day it ships the twin paints exactly as the table
+    it is read against: its P column holds the same values, and two colours for
+    one number would read as a difference in the data.
+
+    A flag of its own because the 2026-09-24 split has already run everywhere.
+    Changing what this seeds needs a NEW flag key. Config only.
+    """
+    from app.routers.settings import ZAGRUZKA_FULL90_SEEDS
+
+    _seed_band_copies(ZAGRUZKA_FULL90_BANDS_FLAG, ZAGRUZKA_FULL90_SEEDS, "full90 table bands")
 
 
 # ── one-shots: the «Narxlanmagan, daq» breakdown, DMed ───────────────────────

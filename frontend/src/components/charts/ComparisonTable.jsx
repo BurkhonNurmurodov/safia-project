@@ -17,6 +17,7 @@ import { SkeletonBlock, SKELETON_NAME_WIDTHS, skeletonWave } from "../ui/Skeleto
 import {
   pValueNumbers, pValueInputs, KAIZEN_BUFFER, VERIFIX_EFFICIENCY,
   simplePlanUtil, simpleActualUtil, simplePlanNumbers, simplePlanInputs,
+  full90ActualUtil,
 } from "../../utils/formulas";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -205,10 +206,13 @@ export default function ComparisonTable({
   // table on /zagruzka («Smena boshi va Smena oxiri Zagruzka»): BOTH halves
   // divided by the same person-minutes of productive capacity, 480 × 0.9 × the
   // reported headcount (services → utils/formulas.js, where the rule is
-  // documented).
+  // documented). "full90" is the third («To'liq hisob · Verifix × 0.9»): the
+  // full formula with the Verifix hours credited at 0.9 instead of 0.85 — its
+  // P IS the full table's (there is no Verifix term in it), its A is
+  // `full90ActualUtil`.
   //
   // It is a PROP and not a second component on purpose: everything else about
-  // the two tables — the P·A·D toggle, the colour bands, the sort, the pinned
+  // the tables — the P·A·D toggle, the colour bands, the sort, the pinned
   // and column summaries, the pending markers, the approval gate, the comment
   // threads — is identical, and a fork would be one copy of all of it that
   // stops being maintained the first time any of them changes.
@@ -247,16 +251,22 @@ export default function ComparisonTable({
   // both summaries, the unit row and the formula popups — goes through these,
   // so the grid and the numbers under it can never be computed two ways.
   const planOf = simple ? simplePlanUtil   : (cell) => (cell?.baseline_util ?? null);
-  const actOf  = simple ? simpleActualUtil : (cell) => actualUtil(cell, factors);
+  const actOf  = simple ? simpleActualUtil
+    : basis === "full90" ? full90ActualUtil
+    : (cell) => actualUtil(cell, factors);
   // Rounded exactly as the heatmap rounds — Math.round(util × 100) — and in ONE
   // place, so a cell and the average under it can never disagree by a point.
   const pctOf  = (v) => (v != null ? Math.round(v * 100) : null);
-  // The ⚙ factors are all terms of the FULL formula (ojidaniya, early arrival,
-  // the kaizen buffer, the 0.85 changeover allowance). None of them appears in
-  // the simplified arithmetic, so on that table the button is not offered and
-  // the "factors active" banner can never fire — a control that reports a
-  // change and moves no number is the one thing a duplicate must not copy.
-  const calcModified = !simple && !(factors.downtime && factors.early && factors.kaizen && factors.perenalatka);
+  // The ⚙ factors are what-ifs on the OFFICIAL formula (ojidaniya, early
+  // arrival, the kaizen buffer, the 0.85 changeover allowance), so only the
+  // "full" basis reads them. None of them appears in the simplified
+  // arithmetic, and the Verifix × 0.9 table is itself a what-if with the
+  // allowance fixed at 0.9 — the switch that names «15%» would lie there. On
+  // both the button is not offered and the "factors active" banner can never
+  // fire: a control that reports a change and moves no number is the one thing
+  // a duplicate must not copy.
+  const factorsApply = basis === "full";
+  const calcModified = factorsApply && !(factors.downtime && factors.early && factors.kaizen && factors.perenalatka);
   const excludedNames = CALC_FACTOR_DEFS
     .filter(f => !factors[f.key]).map(f => t(f.label)).join(", ");
   const [nameAsc, setNameAsc]     = useState(true);
@@ -653,7 +663,7 @@ export default function ComparisonTable({
             onChange={setMode}
             options={[["compare", t("zagruzka.modeCompare")], ["diff", t("zagruzka.modeDiff")]]}
           />
-          {isAdmin && !simple && onCalcFactorsChange && (
+          {isAdmin && factorsApply && onCalcFactorsChange && (
             <button
               onClick={() => setShowCalc(true)}
               title={t("zagruzka.calcTitle")}
