@@ -357,6 +357,11 @@ async def lifespan(app: FastAPI):
     # catch-up (mirrored in passenger_wsgi.py; skips without credentials).
     from app.services.arc_sync import register_boot_jobs as register_arc_jobs
     register_arc_jobs()
+    # The OLD login API's mirror (/arc-legacy): same cadence, its own tables and
+    # job ids, full walk at 03:45 (mirrored in passenger_wsgi.py; skips without
+    # the ARC_USERNAME/ARC_PASSWORD credential).
+    from app.services.arc_legacy_sync import register_boot_jobs as register_arc_legacy_jobs
+    register_arc_legacy_jobs()
     # The call forecast, sent by the clock: shift 1 at 19:00, shift 2 at 06:00,
     # each for its own next shift-day (mirrored in passenger_wsgi.py).
     from app.services.forecast_autocall import register_jobs as register_autocall_jobs

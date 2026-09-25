@@ -3407,6 +3407,96 @@ class ArcSyncMeta(Base):
     detail_done     = Column(Integer, default=0)        # cards fetched by the last pass
 
 
+class ArcLegacyRequest(Base):
+    """One service ticket mirrored from ARC's OLD login API («requests/factory»,
+    page /arc-legacy) — the shape /arc itself stored until 25 Aug 2026, in a
+    table of its own so the two mirrors never share a row.
+
+    ``remote_id`` is the API's uuid and the ONLY identity — the row is upserted
+    on it every sync, so the local copy always reads as the API's latest state
+    (the API carries no updated_at, so every page walk re-writes every row).
+    ``raw`` keeps the full item: a field the API adds later must not be lost
+    until someone adds a column for it.
+
+    ``missing_since`` is set ONLY by a full walk that finished for rows the API
+    stopped returning, and cleared the moment a row is seen again. A quick pass
+    never touches it — it cannot tell "gone" from "further down than I looked".
+    Missing rows stay in the table (never deleted) and are hidden by default."""
+    __tablename__ = "arc_legacy_requests"
+
+    id                      = Column(Integer, primary_key=True, autoincrement=True)
+    remote_id               = Column(String, unique=True, nullable=False)
+    request_num             = Column(Integer, index=True)
+    branch_id               = Column(String, nullable=True)
+    branch_name             = Column(String, index=True)
+    country_id              = Column(String, nullable=True)
+    description             = Column(Text, nullable=True)
+    category_id             = Column(String, nullable=True)
+    category_name           = Column(String, index=True)
+    category_is_urgent      = Column(Boolean, nullable=True)
+    category_deadline_hours = Column(Integer, nullable=True)
+    deadline                = Column(DateTime(timezone=True), nullable=True)
+    deadline_time           = Column(DateTime(timezone=True), nullable=True)
+    master_id               = Column(String, nullable=True)
+    master_name             = Column(String, index=True)
+    status                  = Column(Integer, nullable=True)
+    normalized_status       = Column(String, index=True)
+    status_color            = Column(String, nullable=True)
+    is_overdue              = Column(Boolean, nullable=True)
+    created_at              = Column(DateTime(timezone=True), index=True)
+    cancelled_at            = Column(DateTime(timezone=True), nullable=True)
+    finished_at             = Column(DateTime(timezone=True), nullable=True)
+    completed_at            = Column(DateTime(timezone=True), nullable=True)
+    extra_phone             = Column(String, nullable=True)
+    latitude                = Column(Float, nullable=True)
+    longitude               = Column(Float, nullable=True)
+    deny_reason             = Column(Text, nullable=True)
+    sended_to_sap           = Column(Boolean, nullable=True)
+    photo_report            = Column(Text, nullable=True)
+    comment_report          = Column(Text, nullable=True)
+    document_url            = Column(Text, nullable=True)
+    has_other_active        = Column(Boolean, nullable=True)
+    other_active_count      = Column(Integer, nullable=True)
+    client_name             = Column(String, nullable=True)
+    raw                     = Column(JSONB, nullable=True)         # the full API item
+    first_seen_at           = Column(DateTime(timezone=True), server_default=func.now())
+    synced_at               = Column(DateTime(timezone=True), nullable=True)   # every upsert
+    missing_since           = Column(DateTime(timezone=True), nullable=True)   # completed full walk only
+
+
+class ArcLegacySyncMeta(Base):
+    """Singleton row (id=1) tracking the /arc-legacy mirror: the claim that
+    keeps two passes from overlapping (``running`` + ``heartbeat``; a stale
+    heartbeat is a dead process's claim), the progress feed the page polls, and
+    the last outcome. ``status_catalog`` is the distinct (status,
+    normalized_status, status_color) triples with counts. ``spec`` is the API's
+    own openapi document, fetched best-effort. ``probe`` / ``filters`` are what
+    services/arc_legacy_discovery.py measured: the report, and the parameter
+    set the walk sends because it made the API hand over MORE than its defaults
+    did (NULL = defaults)."""
+    __tablename__ = "arc_legacy_sync_meta"
+
+    id              = Column(Integer, primary_key=True)
+    last_synced     = Column(DateTime(timezone=True), nullable=True)
+    ok              = Column(Boolean, default=True)
+    message         = Column(Text, nullable=True)
+    row_count       = Column(Integer, default=0)
+    remote_total    = Column(Integer, default=0)
+    running         = Column(Boolean, default=False, nullable=False)
+    started_at      = Column(DateTime(timezone=True), nullable=True)
+    heartbeat       = Column(DateTime(timezone=True), nullable=True)
+    progress_done   = Column(Integer, default=0)
+    progress_total  = Column(Integer, default=0)
+    last_full_at    = Column(DateTime(timezone=True), nullable=True)
+    mode            = Column(String, nullable=True)     # "full" | "quick"
+    status_catalog  = Column(JSONB, nullable=True)      # [{status, normalized_status, status_color, count}]
+    spec            = Column(JSONB, nullable=True)      # openapi doc, best-effort
+    spec_fetched_at = Column(DateTime(timezone=True), nullable=True)
+    probe           = Column(JSONB, nullable=True)
+    probe_at        = Column(DateTime(timezone=True), nullable=True)
+    filters         = Column(JSONB, nullable=True)
+
+
 class ActionLog(Base):
     """THE register of everything that happens on this platform.
 

@@ -71,13 +71,21 @@ class Settings(BaseSettings):
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
-    # IT's read-only internal API (page /arc). ONE key, no user login, GET only:
-    # the username+password ARC login it replaced is gone, and so are the
-    # USERNAME / PASSWORD / PASSAWORD names IT had written into prod's .env by
-    # SSH. Blank disables the integration — startup.ensure_internal_api_key
-    # seeds the key into backend/.env on boot, so a fresh box connects itself.
+    # IT's read-only internal API (page /arc). ONE key, no user login, GET only.
+    # Blank disables the integration — startup.ensure_internal_api_key seeds the
+    # key into backend/.env on boot, so a fresh box connects itself.
     internal_api_url: str = "https://api.service.safiabakery.uz"
     internal_api_key: str = Field("", validation_alias=AliasChoices("INTERNAL_API_KEY"))
+    # ARC's OLD login API (page /arc-legacy), the one /arc read until 25 Aug
+    # 2026 — revived beside the internal API on 25 Sep. Username + password →
+    # a JWT bearer. IT wrote the credential into prod's .env by SSH under the
+    # bare names USERNAME / PASSWORD (plus the misspelt PASSAWORD, kept because
+    # the file is the one thing this code cannot edit); ARC_USERNAME /
+    # ARC_PASSWORD are what deploy/sync-env.sh writes from the Gitea secrets.
+    # Blank disables the legacy mirror and nothing else.
+    arc_legacy_api_url: str = "https://api.dashboard.service.safiabakery.uz"
+    arc_legacy_username: str = Field("", validation_alias=AliasChoices("ARC_USERNAME", "USERNAME"))
+    arc_legacy_password: str = Field("", validation_alias=AliasChoices("ARC_PASSWORD", "PASSWORD", "PASSAWORD"))
 
     @field_validator("admin_telegram_id", mode="before")
     @classmethod

@@ -6009,6 +6009,37 @@ back on the first walk.
   ticket's own) — building that register is a separate decision, not a
   side-effect of this one.
 
+## The OLD ARC login API, revived (`/arc-legacy`)
+
+From **2026-09-25** (the operator: redo what Antigravity had started) the API
+`/arc` read until 25 Aug is mirrored AGAIN, on a page of its own —
+`api.dashboard.service.safiabakery.uz`, username + password → JWT
+(`POST /base/api/v1/v2/login`), tickets from `GET /arc/api/v1/requests/factory`.
+It is the August code restored line for line under legacy names; `/arc` is
+untouched.
+
+- **Nothing is shared with `/arc`**: `services/arc_legacy_{client,discovery,sync,export}.py`,
+  `routers/arc_legacy.py` on `/api/arc-legacy`, the tables
+  `arc_legacy_requests` / `arc_legacy_sync_meta`, job ids `arc-legacy-*` (quick
+  pass every 15 min, full walk at 03:45 — half an hour after `/arc`'s), and
+  `pages/ArcLegacy.jsx` with its own query keys (`arcl-*`), saved filters
+  (`arcl_*`), column prefs (`arcl.list.cols`) and strings (`arcl.*`), plus
+  `utils/arcStatusLegacy.js` and `components/arc/LegacyApiPanel.jsx`. Two
+  mirrors sharing a table, a claim or a key is how one overwrites, blocks or
+  marks the other's rows «missing».
+- **Page key `arc`** — whoever may open `/arc` may open this; no second grant.
+- **The credential** is `settings.arc_legacy_username/password`, read from
+  `ARC_USERNAME`/`ARC_PASSWORD` or the bare `USERNAME`/`PASSWORD`/`PASSAWORD`
+  IT wrote into prod's `.env` by SSH (nothing ever scrubbed them).
+  `deploy/sync-env.sh` writes `ARC_USERNAME`/`ARC_PASSWORD` from the Gitea
+  secrets again. Without it no sync job is registered and the page says «not
+  connected», with admin diagnostics naming which env NAMES the process finds —
+  never a value.
+- **The history deleted on 25 Aug is NOT restored**: the tables start empty and
+  the first full walk re-reads whatever the old API still returns.
+- Everything «ARC tickets» says is GONE (the prober, the «API» panel, `/probe`,
+  `/spec`) is gone from `/arc` only — here it is back, admin-only, as it was.
+
 ## Live shift monitor (`/live`, Laboratory)
 
 From **2026-09-04** the Laboratory carries a wall-screen page for shift
