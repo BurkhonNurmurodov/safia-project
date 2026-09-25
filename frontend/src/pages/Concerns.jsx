@@ -1971,17 +1971,15 @@ export default function Concerns() {
   const toast = useToast();
   const [exporting, setExporting] = useState(false);
 
-  // «Haftalik hisobot» — the weekly PPTX deck. Admin only, and deliberately NOT
-  // driven by the filters on screen: it is a fixed report about both plants for
-  // the week that just closed, so the confirm writes its whole scope out before
-  // anything is built. The period comes from the server (GET /deck-window) —
-  // the window is a rule, and a browser copy of it would drift.
+  // «Haftalik hisobot» — the weekly PPTX deck. Admin only, and respects
+  // the dates chosen on screen. It is a fixed report about both plants for
+  // the period, so the confirm writes its whole scope out before anything is built.
   const [deckAsk, setDeckAsk] = useState(false);
   const [deckBusy, setDeckBusy] = useState(false);
   const [deckErr, setDeckErr] = useState("");
   const { data: deckWin } = useQuery({
-    queryKey: ["concerns-deck-window"],
-    queryFn: () => api.get("/api/concerns/deck-window").then((r) => r.data),
+    queryKey: ["concerns-deck-window", startDate, endDate],
+    queryFn: () => api.get("/api/concerns/deck-window", { params: { date_from: startDate, date_to: endDate } }).then((r) => r.data),
     enabled: isAdmin,
     staleTime: 30 * 60 * 1000,
   });
@@ -2164,7 +2162,7 @@ export default function Concerns() {
     setDeckErr("");
     try {
       const where = await exportXlsx("/api/concerns/export.pptx", {
-        body: {},
+        body: { date_from: startDate, date_to: endDate },
         fallbackName: "xavotirlar-haftalik-hisobot.pptx",
       });
       setDeckAsk(false);
@@ -3658,7 +3656,6 @@ export default function Concerns() {
                   </div>
                 ))}
               </div>
-              <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("concerns.deck.ignoresFilters")}</p>
               <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("concerns.deck.aiNote")}</p>
             </div>
           }

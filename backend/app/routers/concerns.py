@@ -1274,6 +1274,8 @@ def _deck_inputs(db: Session, win: tuple[date, date], prev_win: tuple[date, date
 
 @router.get("/deck-window")
 def get_deck_window(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
@@ -1284,7 +1286,7 @@ def get_deck_window(
     another. Admin-only like the export it describes."""
     if payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
-    win = _deck_window(None, None)
+    win = _deck_window(date_from, date_to)
     return {
         "date_from": win[0].isoformat(),
         "date_to": win[1].isoformat(),
