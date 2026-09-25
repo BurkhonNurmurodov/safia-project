@@ -331,28 +331,32 @@ exit 0
 HOOK_EOF
   chmod +x "$REPO/.git/hooks/pre-push"
 
-  # The credential. Gitea over HTTPS needs a token, and there is no proxy
-  # holding it outside the VM the way the GitHub path has one — so it comes from
-  # the environment's variables panel and IS readable by anyone who can use that
-  # environment. Kept in a credential FILE, never in the remote URL: a URL
-  # carries the token into `git remote -v`, every log line and the transcript.
+  # The credential, one of two ways:
+  #   - an API CREDENTIAL on the environment (Pro/Max plans): Bearer, host
+  #     git.safiabakery.uz. Anthropic's agent proxy adds the header after the
+  #     request leaves the VM, so the token is in no variable, no file and no
+  #     transcript. Nothing to do here — and GITEA_TOKEN stays empty.
+  #   - GITEA_TOKEN in the variables panel, readable by anyone who can use the
+  #     environment. Kept in a credential FILE, never in the remote URL: a URL
+  #     carries the token into `git remote -v`, every log line and the transcript.
+  # The fetch below is the test for both: it answers, or it names what is missing.
+  local host
+  host="$(printf '%s' "$url" | sed -E 's#^https?://([^/]+)/.*#\1#')"
   if [ -n "${GITEA_TOKEN:-}" ]; then
-    local host
-    host="$(printf '%s' "$url" | sed -E 's#^https?://([^/]+)/.*#\1#')"
     printf 'https://%s:%s@%s\n' "${GITEA_USER:-claude-cloud}" "$GITEA_TOKEN" "$host" > "$HOME/.git-credentials"
     chmod 600 "$HOME/.git-credentials"
     git -C "$REPO" config credential.helper store
     log "gitea credential set for ${GITEA_USER:-claude-cloud}@$host"
   else
-    log "no GITEA_TOKEN — the checkout is offline: no fetch, no push, no way home but the web diff"
-    return 0
+    log "no GITEA_TOKEN — trying the environment's API credential for $host"
   fi
 
   # Fetch, then FAST-FORWARD ONLY — the same rule as .claude/hooks/auto-pull.sh,
   # and for the same reason: a merge or rebase nobody looked at is how you ship
-  # someone else's half-finished work to a factory floor.
-  if ! git -C "$REPO" fetch gitea >/dev/null 2>&1; then
-    log "cannot reach gitea (allowlist the host, check the token) — working from the clone as-is"
+  # someone else's half-finished work to a factory floor. GIT_TERMINAL_PROMPT=0:
+  # with no credential git would otherwise wait at a password prompt nobody sees.
+  if ! GIT_TERMINAL_PROMPT=0 git -C "$REPO" fetch gitea >/dev/null 2>&1; then
+    log "cannot reach gitea — allowlist $host and give the environment a token (an API credential or GITEA_TOKEN); offline: no pull, no deploy"
     return 0
   fi
   # The CURRENT branch, whatever it is called: a GitHub-started session sits on

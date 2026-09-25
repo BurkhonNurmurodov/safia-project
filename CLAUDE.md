@@ -6386,13 +6386,24 @@ claude.ai/code → the cloud icon above the message box → **Add cloud environm
   **Also include default list of common package managers** CHECKED — the
   provisioning needs npm, PyPI and `storage.googleapis.com` (headless Chrome).
   Plain `Trusted` cannot reach gitea; `None` cannot install anything.
-- **Environment variables**: `GITEA_TOKEN=<token>`, optionally
-  `GITEA_USER=<login>` (defaults to `claude-cloud`) and `GITEA_REMOTE_URL=`.
-  This panel is readable by anyone who can use the environment and there is no
-  secrets store, so use a token minted for a **dedicated Gitea account with
-  write access to this repo only**, never a personal one, and rotate it like any
-  other deployed credential. Nothing else belongs here: every integration on
-  this platform disables itself on a blank key.
+- **The Gitea token, preferably as an API CREDENTIAL** (Pro/Max plans, in the
+  EDIT dialog of an environment that already exists): type **Bearer**, allowed
+  website `git.safiabakery.uz`, header `Authorization`, prefix `Bearer`, value
+  the token. Anthropic's agent proxy adds it after the request leaves the VM,
+  so it is in no variable, no file and no transcript. Gitea 1.27 accepts a
+  Bearer token on git's smart-HTTP paths. `setup_git` no longer demands
+  `GITEA_TOKEN`: it simply fetches, and the fetch is the test.
+- **Environment variables** (`.env` format, one `KEY=value` per line):
+  `GITEA_USER=Burkhon`, `GIT_AUTHOR_NAME=Burkhon Nurmurodov`,
+  `GIT_AUTHOR_EMAIL=burkhon0207@gmail.com`, plus `GITEA_TOKEN=<token>` ONLY
+  where the credential above is unavailable, and `SAFIA_CLOUD_DEPLOY=0` only to
+  stop deploys. This panel is readable by anyone who can use the environment,
+  so a token here should belong to a **dedicated Gitea account with write
+  access to this repo only**, rotated like any deployed credential. Never put
+  the backend's keys here (`TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`,
+  `NOTION_TOKEN`, `INTERNAL_API_KEY`): `cloud-setup.sh` writes its own
+  `backend/.env` and reads none of them, and a real bot token in a second
+  backend would fight production for the webhook.
 - **Setup script**:
 
   ```bash

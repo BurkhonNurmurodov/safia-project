@@ -51,6 +51,10 @@ finish() {
 # already runs the local copy of this same script.
 [ "$MODE" = "cloud" ] && [ "${CLAUDE_CODE_REMOTE:-}" != "true" ] && finish
 
+# In the cloud a missing gitea credential must FAIL the push, never park it at
+# a password prompt nobody can see until the hook's timeout kills the turn.
+[ "$MODE" = "cloud" ] && export GIT_TERMINAL_PROMPT=0
+
 # The repo this script lives in. The laptop's hook names it by absolute path in
 # the main checkout and the cloud's by $CLAUDE_PROJECT_DIR — either way it is
 # the checkout the hook was registered for, never a worktree the session sits in.
