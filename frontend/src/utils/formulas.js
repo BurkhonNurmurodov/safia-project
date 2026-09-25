@@ -315,7 +315,9 @@ export function rangeDays(dateFrom, dateTo) {
   return days > 0 ? days : 1;
 }
 
-// ── «Soddalashtirilgan hisob» — the second comparison table on /zagruzka ──────
+// ── «Smena boshi va Smena oxiri Zagruzka» ───────────────────────────────────
+// The second comparison table on /zagruzka («Soddalashtirilgan hisob» until
+// 2026-09-25).
 // One denominator for BOTH columns: the unit's people × a PRODUCTIVE shift.
 //
 //   Plan   = prod_plan   ÷ (480 × 0.9 × official_hc)

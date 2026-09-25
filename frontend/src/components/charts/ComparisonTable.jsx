@@ -202,9 +202,10 @@ export default function ComparisonTable({
   // WHICH ARITHMETIC the grid reads. "full" (the default) is the platform's
   // official загрузка — baseline_util for P, net_util-with-factors for A — and
   // is byte-for-byte what this table has always shown. "simple" is the second
-  // table on /zagruzka («Soddalashtirilgan hisob»): BOTH halves divided by the
-  // same person-minutes of productive capacity, 480 × 0.9 × the reported
-  // headcount (services → utils/formulas.js, where the rule is documented).
+  // table on /zagruzka («Smena boshi va Smena oxiri Zagruzka»): BOTH halves
+  // divided by the same person-minutes of productive capacity, 480 × 0.9 × the
+  // reported headcount (services → utils/formulas.js, where the rule is
+  // documented).
   //
   // It is a PROP and not a second component on purpose: everything else about
   // the two tables — the P·A·D toggle, the colour bands, the sort, the pinned
@@ -612,11 +613,16 @@ export default function ComparisonTable({
             <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
               {title || t("zagruzka.comparisonTable")}
             </div>
-            <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-              {isDiff
-                ? t("zagruzka.diffSubtitle")
-                : t("zagruzka.compareSubtitle")}
-            </div>
+            {/* The simple table's compare view prints no «Plan (P) va Haqiqiy
+                (A) yonma-yon» line (the operator's call, 2026-09-25): its title
+                names the pair itself. Its diff view keeps the D = P − A line. */}
+            {(isDiff || !simple) && (
+              <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
+                {isDiff
+                  ? t("zagruzka.diffSubtitle")
+                  : t("zagruzka.compareSubtitle")}
+              </div>
+            )}
             {note && (
               <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
                 {note}

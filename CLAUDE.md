@@ -987,7 +987,7 @@ for byte**; only where three numbers come from changes.
   Permissions — widening the units it covers is not the same decision as
   widening who may open it.
 
-## TWO comparison tables on `/zagruzka` («Soddalashtirilgan hisob»)
+## TWO comparison tables on `/zagruzka` («Smena boshi va Smena oxiri Zagruzka»)
 
 From **2026-09-20** (the operator's directive) `/zagruzka` carries a SECOND
 comparison table directly under the first. Same grid, same data, same colour
@@ -1025,9 +1025,15 @@ quantity × Трудоемкость ÷ 60), the denominator person-minutes of C
   flipping one could not move a number. A control that reports a change and
   changes nothing is worse than an absent one. The page therefore passes it no
   `calcFactors` either, so the "factors active" banner can never fire.
+- **Its title is «Smena boshi va Smena oxiri Zagruzka»** (the operator's call,
+  2026-09-25 — it shipped as «Soddalashtirilgan hisob»; the key is still
+  `zagruzka.simpleTable`), and its COMPARE view prints no «Plan (P) va Haqiqiy
+  (A) yonma-yon» subtitle — the title names the pair itself. The full table
+  keeps that line, and both keep the diff view's «D = P − A» one.
 - **The two tables show DIFFERENT numbers for the same unit-day, by design, and
   both are titled so neither is the unlabelled default** — «To'liq hisob» and
-  «Soddalashtirilgan hisob», each printing its own formula under the subtitle.
+  «Smena boshi va Smena oxiri Zagruzka», each printing its own formula under
+  its title.
   Plan is the full table's P ÷ 0.9, so **every value reads 11.1% higher**. The
   two tables shared ONE set of bands until 2026-09-24, which therefore painted
   this table greener: a unit reading 77% next door read 86% here, i.e. green.
@@ -1125,10 +1131,11 @@ number per unit-day:
 ## Every /zagruzka table owns its colour bands
 
 From **2026-09-24** (the operator's directive) each of the five tables on
-`/zagruzka` — «To'liq hisob», «Soddalashtirilgan hisob», «Карта нагрузки»,
-«Reja bajarilishi», «Samaradorlik» — carries its OWN colour bands, edited from
-a sliders button in the table's own header (ADMIN only, inline and fullscreen).
-The admin panel's «Ko'rinish» tab, where two editors served all five, is gone.
+`/zagruzka` — «To'liq hisob», «Smena boshi va Smena oxiri Zagruzka», «Карта
+нагрузки», «Reja bajarilishi», «Samaradorlik» — carries its OWN colour bands,
+edited from a sliders button in the table's own header (ADMIN only, inline and
+fullscreen). The admin panel's «Ko'rinish» tab, where two editors served all
+five, is gone.
 
 - **`routers/settings.ZAGRUZKA_BANDS` is THE registry** — table → field →
   (setting key, default) — served on `GET /api/zagruzka-bands` together with

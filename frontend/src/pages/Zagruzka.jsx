@@ -437,7 +437,7 @@ export default function Zagruzka() {
         </div>
       ) : null}
 
-      {/* ── Comparison Table — «Soddalashtirilgan hisob» ──
+      {/* ── Comparison Table — «Smena boshi va Smena oxiri Zagruzka» ──
           The SAME grid, the SAME data and the same P·A·D toggle, sort,
           summaries, pending markers and comment threads — with colour bands of
           its OWN, set from its own button. One thing about the arithmetic
