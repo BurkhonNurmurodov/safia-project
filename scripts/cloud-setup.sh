@@ -429,8 +429,10 @@ if [ "$MODE" = "provision" ]; then
   # Fix: The cloud container builder waits for all child processes to exit.
   # We must stop the background servers we just started so the provisioning can finish.
   pkill -f uvicorn >/dev/null 2>&1 || true
-  pkill -f "npm run dev" >/dev/null 2>&1 || true
+  pkill -f npm >/dev/null 2>&1 || true
+  pkill -f node >/dev/null 2>&1 || true
   pkill -f vite >/dev/null 2>&1 || true
+  run_root service postgresql stop >/dev/null 2>&1 || run_root pg_ctlcluster 16 main stop >/dev/null 2>&1 || true
 else
   start_stack
   log "api=:$API_PORT web=:$WEB_PORT db=$PGDB venv=$VENV logs=$LOGDIR"
