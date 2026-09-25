@@ -107,6 +107,7 @@ const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
 const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const LiveOverview = lazyWithReload(() => import("./pages/LiveOverview"));
 const Arc = lazyWithReload(() => import("./pages/Arc"));
+const ArcLegacy = lazyWithReload(() => import("./pages/ArcLegacy"));
 const Education = lazyWithReload(() => import("./pages/Education"));
 const Exam = lazyWithReload(() => import("./pages/Exam"));
 const EducationLesson = lazyWithReload(() => import("./pages/EducationLesson"));
@@ -512,6 +513,7 @@ function AppWithLang() {
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             <Route path="/live" element={<AuthGate><RequirePage page="live"><LiveOverview /></RequirePage></AuthGate>} />
             <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />
+            <Route path="/arc-legacy" element={<AuthGate><RequirePage page="arc"><ArcLegacy /></RequirePage></AuthGate>} />
             {/* «Ta'lim». The watch page is its own route rather than a modal so the
                 lesson DM can link straight at it, the back button works, and a leader
                 can send a colleague the lesson they were both assigned. */}

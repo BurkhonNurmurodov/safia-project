@@ -7637,3 +7637,39 @@ def _leader_rules_dm(shift: int, out: dict, left: list[str],
               "ran and its flag is set; read the Jurnal row for what it did")
     return sent
 
+def report_duplicate_users_oneshot() -> None:
+    """⚠ TEMPORARY one-shot: send a report of duplicate users named 'Turdimurodov'."""
+    from sqlalchemy import text
+    from app.database import SessionLocal
+    from app.models import AppSetting
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key="duplicate_users_report_sent_v1").first():
+            return
+        
+        rows = db.execute(text(
+            "SELECT id, full_name, telegram_id, tg_name, last_seen, is_active FROM telegram_users "
+            "WHERE full_name ILIKE '%Turdimurodov%Nodirjon%'"
+        )).fetchall()
+        
+        if not rows:
+            text_msg = "No duplicate users found for Turdimurodov Nodirjon."
+        else:
+            text_msg = "<b>Duplicate Users Report (Turdimurodov Nodirjon)</b>\n\n"
+            for r in rows:
+                text_msg += f"<b>ID:</b> {r.id}\n<b>Name:</b> {r.full_name}\n<b>TG Name:</b> {r.tg_name}\n<b>TG ID:</b> {r.telegram_id}\n<b>Active:</b> {r.is_active}\n<b>Last seen:</b> {r.last_seen}\n\n"
+        
+        from app.telegram_bot import bot
+        try:
+            bot.send_message(6302307151, text_msg, parse_mode="HTML")
+            db.add(AppSetting(key="duplicate_users_report_sent_v1", value="1"))
+            db.commit()
+            print("[startup] Duplicate users report sent successfully.")
+        except Exception as e:
+            print(f"[startup] Failed to send duplicate users report to telegram: {e}")
+            
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] Duplicate users report failed: {exc}")
+    finally:
+        db.close()
