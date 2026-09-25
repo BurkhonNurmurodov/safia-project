@@ -25,6 +25,11 @@
 #                (env vars reach the session, not the Setup script), so the git
 #                wiring can only live here.
 #
+# The END of a cloud turn is the other half and lives in
+# .claude/hooks/auto-commit.sh (`cloud`): bump, build, commit, push HEAD:main to
+# gitea — the production deploy, exactly as a laptop turn — and the session
+# branch to the GitHub mirror.
+#
 # It is a NO-OP outside a cloud session unless called with `provision`, so
 # committing the hook cannot touch a laptop: the guard is CLAUDE_CODE_REMOTE,
 # which the session VM sets to "true" and nothing local ever does — and
@@ -37,6 +42,12 @@
 set -uo pipefail
 
 MODE="${1:-session}"
+
+# The Stop hook writes its commit message with a nested `claude -p`, which fires
+# every SessionStart hook — this one included — BETWEEN its `git add -A` and its
+# `git commit`. A fetch + fast-forward there would move the tree under a commit
+# in flight. Same guard, same variable, as .claude/hooks/auto-pull.sh.
+[ -n "${SAFIA_AUTOCOMMIT_RUNNING:-}" ] && exit 0
 
 # /opt, not the repo: the repo is re-cloned per session, /opt is what the
 # snapshot keeps. 0777 because provision runs as root and the session does not.
@@ -255,7 +266,8 @@ LAUNCH_EOF
 # other non-GitHub repositories can be sent to cloud sessions as a local bundle,
 # but the session can't push results back to the remote" — so working against
 # gitea is something the session has to wire for itself: name the remote, hold a
-# credential, fetch, and refuse to push the one branch that deploys.
+# credential, fetch, fast-forward onto what production runs, and guard main
+# against the two pushes that can never be undone (a rewrite and a delete).
 GITEA_DEFAULT_URL="https://git.safiabakery.uz/Safia-Outsource/production.git"
 
 setup_git() {
@@ -271,25 +283,49 @@ setup_git() {
     log "added remote gitea -> $url"
   fi
 
-  git -C "$REPO" config user.name  "${GIT_AUTHOR_NAME:-Claude (cloud session)}"
-  git -C "$REPO" config user.email "${GIT_AUTHOR_EMAIL:-claude-cloud@safiabakery.uz}"
+  # Keep an identity the platform already set (a GitHub-started session commits
+  # as its GitHub user); name one only where none exists.
+  git -C "$REPO" config user.name  >/dev/null 2>&1 \
+    || git -C "$REPO" config user.name  "${GIT_AUTHOR_NAME:-Claude (cloud session)}"
+  git -C "$REPO" config user.email >/dev/null 2>&1 \
+    || git -C "$REPO" config user.email "${GIT_AUTHOR_EMAIL:-claude-cloud@safiabakery.uz}"
 
   # THE guard. A push to gitea/main runs .gitea/workflows/deploy.yaml on the
-  # production box: no staging step, no review window. "Look at the diff first"
-  # is not a control; a refusal is. It lives in .git/hooks, which is never
-  # cloned, so it is re-installed per session and can never reach a laptop.
+  # production box — and from 2026-09-25 (the operator's call) a cloud turn
+  # deploys exactly as a laptop turn does, through the Stop hook. What stays
+  # refused is what no deploy needs and no rollback can repair: DELETING main,
+  # and REWRITING it (a push that is not a fast-forward, i.e. --force). With
+  # SAFIA_CLOUD_DEPLOY=0 on the environment, main is refused outright again.
+  # It lives in .git/hooks, which is never cloned, so it is re-installed per
+  # session and can never reach a laptop.
   mkdir -p "$REPO/.git/hooks"
   cat > "$REPO/.git/hooks/pre-push" <<'HOOK_EOF'
 #!/bin/sh
 # Installed by scripts/cloud-setup.sh in cloud sessions only.
-while read -r _local_ref _local_sha remote_ref _remote_sha; do
+while read -r _local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
-    refs/heads/main|refs/heads/master)
-      echo "pre-push REFUSED: $remote_ref" >&2
-      echo "  Pushing main to gitea deploys production.safiacorporate.uz on the spot." >&2
-      echo "  Push a branch instead and merge it in Gitea, where a human sees it first." >&2
-      exit 1 ;;
+    refs/heads/main|refs/heads/master) ;;
+    *) continue ;;
   esac
+  if [ "${SAFIA_CLOUD_DEPLOY:-1}" = "0" ]; then
+    echo "pre-push REFUSED: $remote_ref — SAFIA_CLOUD_DEPLOY=0 on this environment." >&2
+    echo "  Pushing main to gitea deploys production; push a branch instead." >&2
+    exit 1
+  fi
+  case "$local_sha" in
+    *[!0]*) ;;
+    *) echo "pre-push REFUSED: deleting $remote_ref" >&2; exit 1 ;;
+  esac
+  case "$remote_sha" in
+    *[!0]*) ;;
+    *) continue ;;
+  esac
+  if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+    echo "pre-push REFUSED: $remote_ref would be REWRITTEN (not a fast-forward)." >&2
+    echo "  Production's history is never force-pushed. Fetch, fast-forward or" >&2
+    echo "  rebase your commits onto it, and push again." >&2
+    exit 1
+  fi
 done
 exit 0
 HOOK_EOF
@@ -319,21 +355,26 @@ HOOK_EOF
     log "cannot reach gitea (allowlist the host, check the token) — working from the clone as-is"
     return 0
   fi
-  local branch local_sha up base
+  # The CURRENT branch, whatever it is called: a GitHub-started session sits on
+  # a `claude/...` branch cut from the mirror's main, which may lag gitea. As
+  # long as it holds nothing of its own, moving it onto gitea/main is a plain
+  # fast-forward and loses nothing.
+  local branch local_sha up
   branch="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-  if [ "$branch" != "main" ]; then log "fetched gitea; on '$branch', nothing merged"; return 0; fi
   local_sha="$(git -C "$REPO" rev-parse HEAD)"
   up="$(git -C "$REPO" rev-parse gitea/main 2>/dev/null)"
-  base="$(git -C "$REPO" merge-base HEAD gitea/main 2>/dev/null)"
-  if [ "$local_sha" = "$up" ]; then log "level with gitea/main"; return 0; fi
-  if [ "$base" != "$local_sha" ]; then
-    log "main DIVERGED from gitea/main — not merged, tree untouched"
-    return 0
-  fi
-  if git -C "$REPO" merge --ff-only gitea/main >/dev/null 2>&1; then
-    log "fast-forwarded to gitea/main ($(git -C "$REPO" rev-parse --short HEAD))"
+  if [ -z "$up" ]; then log "gitea has no main?"; return 0; fi
+  if [ "$local_sha" = "$up" ]; then log "'$branch' is level with gitea/main"; return 0; fi
+  if git -C "$REPO" merge-base --is-ancestor HEAD gitea/main 2>/dev/null; then
+    if git -C "$REPO" merge --ff-only gitea/main >/dev/null 2>&1; then
+      log "fast-forwarded '$branch' to gitea/main ($(git -C "$REPO" rev-parse --short HEAD))"
+    else
+      log "'$branch' is behind gitea/main but the fast-forward failed — tree untouched"
+    fi
+  elif git -C "$REPO" merge-base --is-ancestor gitea/main HEAD 2>/dev/null; then
+    log "'$branch' is $(git -C "$REPO" rev-list --count gitea/main..HEAD) commit(s) ahead of gitea/main — they deploy at the end of the next turn"
   else
-    log "behind gitea/main but the fast-forward failed — tree untouched"
+    log "'$branch' has DIVERGED from gitea/main — not merged, tree untouched; the deploy push will be refused until it is rebased"
   fi
 }
 

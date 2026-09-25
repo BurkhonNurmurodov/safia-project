@@ -12,6 +12,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto-commit.sh cloud",
+            "timeout": 420,
+            "statusMessage": "Building, committing and deploying..."
+          }
+        ]
+      }
     ]
   }
 }

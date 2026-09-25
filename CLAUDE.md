@@ -6317,12 +6317,15 @@ are registered in `.claude/settings.local.json`.** Having
 `.claude/hooks/*.sh` on disk is not the same as having them wired: the scripts
 are committed, the registration is gitignored, so a fresh checkout has the files
 and none of the automation. **Check for a `hooks` block before assuming the loop
-ran** — when it is absent (a cloud session, a fresh clone, a hook that did not
-fire), perform all six steps by hand. The rule is the ORDER, not the mechanism.
+ran** — when it is absent (a fresh clone, a hook that did not fire), perform all
+six steps by hand. The rule is the ORDER, not the mechanism. **A claude.ai/code
+cloud session is the exception**: the committed `.claude/settings.json` wires
+the same loop there (`cloud-setup.sh` pulls, `auto-commit.sh cloud` ships) — see
+«A cloud turn deploys, exactly like a laptop turn».
 
 - **gitea is THE remote** — `git.safiabakery.uz/Safia-Outsource/production` (private). `main` tracks it, so a bare `git pull` / `git push` means gitea. **Its local NAME varies by checkout** — it is `gitea` where a GitHub mirror is also configured and `origin` where it is the only remote (this checkout), so read `git remote -v` instead of hard-coding a name. Where a GitHub mirror exists it is a mirror ONLY: pushed last, best-effort, never gated on.
 - **Pushing to `main` deploys to production.** `.gitea/workflows/deploy.yaml` runs `deploy/deploy.sh` on the VPS on every push — see the Deployment section below.
-- **The whole loop is automated by two hooks in `.claude/settings.local.json`: pull → edit → build → commit → push.**
+- **The whole loop is automated by two hooks in `.claude/settings.local.json`: pull → edit → build → commit → push.** A cloud session runs the SAME `auto-commit.sh` from the committed `.claude/settings.json` (as `auto-commit.sh cloud`, a no-op on a laptop) and pulls through `scripts/cloud-setup.sh` — see «Cloud sessions».
   - `SessionStart` → `.claude/hooks/auto-pull.sh` fetches gitea and **fast-forwards `main`** before anything is edited. It never merges or rebases: on a diverged branch, or when uncommitted work blocks the fast-forward, it reports and leaves the tree untouched. Log: `.claude/auto-pull.log`.
   - `Stop` → `.claude/hooks/auto-commit.sh` bumps `VERSION` (patch, unless the turn already set it — see Versioning), runs the Vite build, commits everything with a generated message, then pushes **gitea first** (that is the deploy) and the GitHub mirror after. A failed build aborts the commit; a failed mirror push is cosmetic and says so; a failed *gitea* push says `NOT deployed`. Log: `.claude/auto-commit.log`.
   - Net effect: **one turn = one commit = one production deploy**, with no staging step and no review window. Verify a doubtful build by hand with `cd frontend && npx vite build`.
@@ -6362,10 +6365,12 @@ Two ways to start a session; both end up working against gitea:
    `git add` them first; the bundle must stay under 100 MB). There is no
    terminal here to type that in, so **ask this session to run it**.
 2. **The web picker, with the mirror as a delivery van.** Start from the GitHub
-   mirror at claude.ai/code and let `setup_git` fast-forward the checkout off
-   gitea. Only sound while the mirror is current — the Stop hook pushes it
-   best-effort and never gates on it. **Never open the PR on GitHub**: nobody
-   reads that repo. The PR belongs in Gitea.
+   mirror at claude.ai/code. The session sits on a `claude/...` branch cut from
+   the mirror's main, and `setup_git` fast-forwards THAT branch onto
+   `gitea/main` whenever it holds nothing of its own, so a lagging mirror costs
+   nothing. The branch the platform pushes to GitHub is its own copy of the
+   work; **never open or merge a PR on GitHub**. Nobody reads that repo, and the
+   deploy has already happened on gitea.
 
 **Without a `GITEA_TOKEN` the checkout is offline** — the stack still runs, but
 there is no fetch, no push, and no way home except the session's own diff view.
@@ -6422,31 +6427,64 @@ files, never processes — and the repo itself is a fresh clone each session.
   `node_modules` symlink and the pre-push guard, start `uvicorn :8000` and
   `vite :5173`. A hard no-op unless `CLAUDE_CODE_REMOTE=true`, and it refuses to
   run on anything but Linux, so it cannot touch a laptop.
+- **`.claude/settings.json` Stop hook → `auto-commit.sh cloud`**, every turn:
+  the laptop's own loop (see below).
 - **`.claude/settings.json` is committed on purpose** — a cloud session gets only
   what the repo carries — which needed a `!` line against the blanket `*.json`
   ignore. `.claude/settings.local.json` and `.claude/launch.json` stay ignored.
+- **The recursion guard reaches the setup script too.** The Stop hook writes its
+  message with a nested `claude -p`, which fires every SessionStart hook between
+  its `git add -A` and its `git commit`; `cloud-setup.sh` exits on
+  `SAFIA_AUTOCOMMIT_RUNNING`, like `auto-pull.sh`, or its fetch and fast-forward
+  would move the tree under a commit that is half made.
 - **The backend is :8000 there, not :8001.** A fresh clone has no
   `frontend/.env.development.local`, so the UI goes through the vite `/api`
   proxy, whose target is 8000. `driver.mjs doctor` still prints the answer.
 
-### main is refused, by construction
+### A cloud turn deploys, exactly like a laptop turn
 
-A push to `gitea/main` runs `.gitea/workflows/deploy.yaml` on the production box
-— no staging step, no review window — so a cloud session must not be able to
-make one. Three separate things keep it that way, and none of them is "remember
-not to":
+From **2026-09-25** (the operator's call, reversing the earlier "main is
+refused" rule) a cloud session runs the six-step loop a laptop runs: pull from
+gitea at the start, then at the end of every turn bump `VERSION`, build, commit,
+push to gitea `main` (**the production deploy**) first and to the GitHub mirror
+after. ONE script does it for both, `.claude/hooks/auto-commit.sh`, so the two
+loops cannot drift. The laptop calls it with no argument from
+`settings.local.json`. The cloud calls it as `auto-commit.sh cloud` from the
+committed `settings.json`, which is a no-op unless `CLAUDE_CODE_REMOTE=true`, so
+a laptop never runs it twice. **Local behaviour is byte-for-byte unchanged.**
 
-- The hook installs a `.git/hooks/pre-push` that refuses `refs/heads/main`. It
-  lives in `.git/hooks`, which is never cloned, so it is per-session and can
-  never leak to a laptop.
-- **`.claude/settings.local.json` stays gitignored**, so the Stop hook — build,
-  commit, push to gitea, *which is the deploy* — does not exist in a cloud
-  session at all. Never commit that file to make the cloud "just like local".
-  The automatic `VERSION` bump lives in that same hook, so a cloud branch bumps
-  `VERSION` in the turn, by hand, sized per the table below.
-- **Protect `main` in Gitea** (require a pull request) so the refusal is not the
-  only line of defence. The hook stops the honest mistake; it is inside the
-  sandbox, so it is not a security boundary.
+The platform forces three differences, and the cloud mode handles each:
+
+- **Where each remote gets the turn.** The GitHub proxy accepts pushes to the
+  session's OWN branch only ("`git push` works only against the session's
+  current working branch"). So gitea gets `HEAD:main` and GitHub gets the
+  `claude/...` branch. GitHub's `main` catches up the next time a laptop pushes.
+- **What "ships" is measured against `gitea/main`, never `HEAD`.** Claude often
+  commits by itself mid-turn in the cloud. The hook fetches gitea first, and a
+  clean tree that is AHEAD of `gitea/main` still deploys. The patch bump fires
+  when `VERSION` equals production's, so a MINOR or MAJOR Claude committed
+  itself is left alone. The commit message describes the whole deploy since
+  `gitea/main`. The frontend is **always rebuilt**, so the bundle carries the
+  `VERSION` it ships with even when Claude committed everything itself.
+- **Nothing that cannot be undone.** The per-session `.git/hooks/pre-push`
+  allows a fast-forward of `main` and refuses **deleting** it or **rewriting** it
+  (any non-fast-forward, i.e. `--force`). If another deploy moved `gitea/main`
+  during the turn, the push is refused and the turn says `GITEA PUSH FAILED —
+  NOT deployed`, the same as on a laptop. And the hook unstages any **symlink**
+  before committing: the cloud symlinks `frontend/node_modules` in from `/opt`,
+  and `.gitignore` said `node_modules/`, which matches directories only. Without
+  that, the link would have shipped to production. `.gitignore` now says
+  `node_modules`, and the unstage step is the second line of defence.
+
+**The kill switch is `SAFIA_CLOUD_DEPLOY=0`** in the environment's variables
+panel. The Stop hook then pushes the session branch to gitea (`cloud-session`
+when that branch is `main`) and never `main`, and the pre-push guard refuses
+`main` outright. No deploy needed: variables are read at every push.
+
+**Consequence to know:** there is no review window. The first a person sees of a
+cloud turn is production, exactly as with a laptop turn. Gitea branch protection
+on `main` does not break this unless it blocks the token's account; to require
+review, set the kill switch rather than protecting the branch.
 
 A merge that carries no rebuilt `frontend/dist` still deploys correctly —
 `deploy/deploy.sh` rebuilds on the box when frontend sources move without it.

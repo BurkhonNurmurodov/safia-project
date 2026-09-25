@@ -14,7 +14,10 @@ env/
 *.pyc
 
 # ── Node / Frontend ─────────────────────────────────────
-node_modules/
+# No trailing slash: a cloud session SYMLINKS frontend/node_modules in from
+# /opt, a symlink is a file to git, and `node_modules/` matches directories only
+# — so the old spelling let `git add -A` commit the link and ship it to prod.
+node_modules
 frontend/dist-ssr/
 frontend/build/
 *.local
@@ -45,13 +48,14 @@ cPanel*
 # and the update prompt goes permanently silent. Exact path, not a glob.
 !frontend/dist/build.json
 
-# The cloud-session SessionStart hook. Committed ON PURPOSE: a cloud session
-# gets only what the repo carries, so an ignored settings.json means the hook
-# that provisions the VM never runs there. .claude/settings.local.json stays
-# ignored — its Stop hook builds, commits and PUSHES TO GITEA, which IS the
-# production deploy, and no cloud VM should ever be able to do that.
-# .claude/launch.json stays ignored too: it names an absolute per-machine
-# python, and scripts/cloud-setup.sh writes the cloud's own copy.
+# The cloud-session hooks. Committed ON PURPOSE: a cloud session gets only what
+# the repo carries, so an ignored settings.json means neither the hook that
+# provisions the VM nor the Stop hook that commits, builds and deploys (the
+# laptop's loop, `auto-commit.sh cloud`) ever runs there. Both are no-ops
+# unless CLAUDE_CODE_REMOTE=true. .claude/settings.local.json stays ignored —
+# it is the laptop's own copy of that loop. .claude/launch.json stays ignored
+# too: it names an absolute per-machine python, and scripts/cloud-setup.sh
+# writes the cloud's own copy.
 !.claude/settings.json
 # Defence in depth: these stay ignored even if *.json is ever relaxed.
 safia-project-*.json
