@@ -53,6 +53,7 @@ const ALL_LINKS = [
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
   // ARC service-ticket register — synced from the ARC API, admin-only by default.
   { to: "/arc", page: "arc", key: "nav.arc", icon: ClipboardList, group: "quality" },
+  { to: "/arc-legacy", page: "arc", key: "nav.arcLegacy", icon: ClipboardList, group: "quality" },
   // THE task board — both tiers (smena menejeri → brigadir, brigadir → lider)
   // on one page since 2026-09-04; the level is a column, not a second page.
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },

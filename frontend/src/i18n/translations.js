@@ -694,6 +694,7 @@ const t = {
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     // ── ARC — «АРС Фабрика» register mirrored from IT's internal API ──
     "nav.arc":                  "ARC",
+    "nav.arcLegacy":            "ARC Legacy",
     "arc.title":                "ARC — xizmat so'rovlari",
     "arc.subtitle":             "«АРС Фабрика» so'rovlari — IT ichki API'sidan sinxronlanadi",
     "arc.tabAll":               "Barcha so'rovlar",
@@ -6278,6 +6279,7 @@ const t = {
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     // ── ARC — «АРС Фабрика» register mirrored from IT's internal API ──
     "nav.arc":                  "ARC",
+    "nav.arcLegacy":            "ARC Legacy",
     "arc.title":                "ARC — хизмат сўровлари",
     "arc.subtitle":             "«АРС Фабрика» сўровлари — IT ички API'сидан синхронланади",
     "arc.tabAll":               "Барча сўровлар",
@@ -11859,6 +11861,7 @@ const t = {
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     // ── ARC — «АРС Фабрика» register mirrored from IT's internal API ──
     "nav.arc":                  "ARC",
+    "nav.arcLegacy":            "ARC Legacy",
     "arc.title":                "ARC — сервисные заявки",
     "arc.subtitle":             "Заявки «АРС Фабрика» — зеркало внутреннего API",
     "arc.tabAll":               "Все заявки",
@@ -17440,6 +17443,7 @@ const t = {
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     // ── ARC — «АРС Фабрика» register mirrored from IT's internal API ──
     "nav.arc":                  "ARC",
+    "nav.arcLegacy":            "ARC Legacy",
     "arc.title":                "ARC — service requests",
     "arc.subtitle":             "«АРС Фабрика» tickets — mirrored from IT's internal API",
     "arc.tabAll":               "All requests",
