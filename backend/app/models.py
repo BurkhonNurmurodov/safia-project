@@ -2537,6 +2537,81 @@ class LeaderLateProofShot(Base):
     )
 
 
+class LeaderAppealMessage(Base):
+    """One entry in the conversation around an objection or a late proof.
+
+    From 2026-09-26 both appeal flows are argued as a CHAT (the operator's
+    directive): the leader's filing, every free message from the leader, their
+    brigadir or an admin, and every ruling are rows here, in order. `thread`
+    says which flow ("dispute" → `leader_ai_disputes.id`, "late" →
+    `leader_late_proofs.id`); `services/leader_appeal_chat.py` is THE
+    definition of what may be written and by whom.
+
+    `kind` is what the entry IS. "message" is free chat — the only kind its
+    author may edit or delete. Everything else is the record of a step in the
+    chain ("filed", "sup_rejected", "uplifted", "approved", "rejected",
+    "undone") and is permanent: the ruling columns on the appeal row say where
+    it stands NOW, these rows say how it got there — which is the only place
+    that history survives once an undo reopens a ruling.
+    """
+    __tablename__ = "leader_appeal_messages"
+
+    id        = Column(Integer, primary_key=True, autoincrement=True)
+    thread    = Column(String(8), nullable=False)
+    thread_id = Column(Integer, nullable=False)
+    kind      = Column(String(16), nullable=False, default="message")
+    text      = Column(Text, nullable=True)
+    author_profile  = Column(String, nullable=True)       # "leader:34"
+    author_name     = Column(String(160), nullable=True)
+    author_role     = Column(String(20), nullable=True)
+    author_telegram = Column(BigInteger, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    edited_at  = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_appeal_msg_thread", "thread", "thread_id", "id"),
+    )
+
+
+class LeaderAppealFile(Base):
+    """A file attached to one chat message — the ARCHIVE-CHANNEL copy, like
+    every proof on this platform. Any type, up to 20 MB (the most the bot API
+    will hand back), streamed through `/files/{id}` with its own name and
+    type. The pixels never live in this database."""
+    __tablename__ = "leader_appeal_files"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, ForeignKey("leader_appeal_messages.id",
+                                            ondelete="CASCADE"),
+                        nullable=False, index=True)
+    name       = Column(String(255), nullable=False)
+    mime       = Column(String(160), nullable=True)
+    size       = Column(Integer, nullable=True)
+    file_id    = Column(String, nullable=False)
+    tg_message_id = Column(BigInteger, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LeaderAppealRead(Base):
+    """How far one PERSON (profile) has read one appeal chat — what the unread
+    badge on a card counts from. Keyed by profile, never by account: a message
+    read by one holder of a profile is read for the person."""
+    __tablename__ = "leader_appeal_reads"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    thread      = Column(String(8), nullable=False)
+    thread_id   = Column(Integer, nullable=False)
+    profile_key = Column(String, nullable=False)
+    last_read_id = Column(Integer, nullable=False, default=0)
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(),
+                         onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("thread", "thread_id", "profile_key",
+                         name="uq_appeal_read"),
+    )
+
+
 class LeaderTaskOverride(Base):
     """An admin's manual ruling on ONE task of ONE report — done or not done,
     regardless of what the leader answered or what the AI thought.

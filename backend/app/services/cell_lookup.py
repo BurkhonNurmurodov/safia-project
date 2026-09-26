@@ -203,6 +203,26 @@ def sap_groups_for_leader(db: Session, leader_id: int) -> set[tuple[str, str | N
     return {(n, g or None) for (code, g) in rows if (n := _norm(code))}
 
 
+def cells_unit_for_leader(db: Session, leader_id: int | None) -> int | None:
+    """The ONE unit a leader's cells stand in — None when they own no cell, or
+    own cells in more than one unit.
+
+    Normally that is the leader's own unit: moving a leader drags their cells.
+    The exception is a leader COUNTED under one brigadir while their cell's
+    загрузка is kept in a unit of its own — Turdimurodov Nodirjon from
+    2026-09-26: Aripova Manzura's leader, his cell 0811 in the unit made to
+    measure its load. A leader's PRODUCTION readers — their /production page and
+    the automatic checks #1 and #9 — read this unit, because the cell's catalog,
+    plan and typed people are stored there and nowhere else; read in the
+    leader's own unit they find nothing and fail every day."""
+    if not leader_id:
+        return None
+    units = {m for (m,) in db.query(Cell.manager_id)
+             .filter(Cell.leader_id == leader_id, Cell.manager_id.isnot(None))
+             .distinct().all()}
+    return units.pop() if len(units) == 1 else None
+
+
 def resolve_verifix(table: dict[str, dict], code) -> dict | None:
     """Look a verifix-family code up in a by_verifix() table (raw then zero-stripped)."""
     n = _norm(code)

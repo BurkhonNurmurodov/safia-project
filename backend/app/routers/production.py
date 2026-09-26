@@ -67,7 +67,7 @@ from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, li
                                    ops_for_day, by_due_day,
                                    DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import (by_sap, resolve_sap, norm_code, sap_codes_for_leader,
-                                      sap_groups_for_leader)
+                                      sap_groups_for_leader, cells_unit_for_leader)
 from app.services.latin_code import latin_code
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
@@ -193,9 +193,12 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     """Resolve the single brigadir unit a request targets, enforcing role scope:
 
         supervisor    → pinned to their own unit (JWT role_id); ?manager_id= ignored.
-        leader        → pinned to their own unit too (a leader's JWT role_id is
-                        that unit), and narrowed to the cells they own by
-                        _leader_wc_scope on top of this.
+        leader        → pinned to the unit their cells stand in — their own unit
+                        (a leader's JWT role_id) unless every cell they own sits
+                        in one OTHER unit (`cells_unit_for_leader`: a leader
+                        counted under one brigadir while the cell's load is kept
+                        in a unit of its own) — and narrowed to the cells they
+                        own by _leader_wc_scope on top of this.
         shift-manager → any unit *in their own shift* (?manager_id= required).
         top-manager   → any unit (?manager_id= required).
         admin         → any unit (?manager_id= required).
@@ -212,6 +215,10 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     sees_all = page_scope_is_all(db, payload, "production")
     if role in ("supervisor", "leader") and not (sees_all and requested):
         mid = payload.get("role_id")
+        if role == "leader":
+            # Their cells' unit is the only place a leader's page has anything
+            # to show: the cells are all it is narrowed to.
+            mid = cells_unit_for_leader(db, viewer_leader_profile_id(db, payload)) or mid
         if not mid:
             raise HTTPException(status_code=403, detail="No unit assigned to this profile")
         return int(mid)

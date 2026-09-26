@@ -356,6 +356,10 @@ def create(db: Session, *, day: LeaderTaskDay, task_id: int,
         ))
         db.delete(sh)
     db.flush()
+    from app.services import leader_appeal_chat as chat
+    chat.add(db, chat.LATE, row.id, kind=chat.FILED, text=row.reason,
+             author_profile=f"leader:{prof.id}", author_name=prof.name,
+             author_role="leader", author_telegram=actor_telegram)
     cam = sum(1 for sh in shots if sh.source == "camera")
     action_log.record_bot(
         db, actor_telegram, "leader_review", "checklist.late_proof_filed",
@@ -439,19 +443,26 @@ class Refused(Exception):
 
 def decide_supervisor(db: Session, row: LeaderLateProof, *, action: str,
                       note: str | None, actor_name: str,
-                      actor_telegram: int | None = None) -> None:
-    """Stage 1. `action` is "rejected" (final) or "uplifted" (to the admins).
+                      actor_telegram: int | None = None,
+                      actor_profile: str | None = None,
+                      actor_role: str | None = None) -> None:
+    """Stage 1. `action` is "rejected" (final for the brigadir) or "uplifted"
+    (to the admins).
 
-    A reject is FINAL and costs nothing extra: the task already scores 0, so
-    refusing simply lets that stand and closes the row so nobody re-reads it.
-    An uplift REQUIRES the brigadir's own case for it — an admin ruling on a
-    reason they have no context for is a coin toss, and the person who does
-    have that context is exactly the one passing it up.
+    BOTH require the brigadir's own comment (the operator's ruling, 2026-09-26
+    — until then only an uplift did). A refusal costs nothing extra — the task
+    already scores 0 — but the leader who explained themselves is owed the
+    reason it was not enough; an uplift needs the case because an admin ruling
+    on a reason they have no context for is a coin toss. Either way the comment
+    is the ruling's entry in the chat.
     """
+    from app.services import leader_appeal_chat as chat
     if row.status != SUPERVISOR:
         raise Refused(row.status)
+    if action not in ("rejected", "uplifted"):
+        raise Refused("bad action")
     note = (note or "").strip()
-    if action == "uplifted" and not note:
+    if not note:
         raise Refused("note required")
     row.sup_action = action
     row.sup_note = note[:1000] or None
@@ -459,6 +470,11 @@ def decide_supervisor(db: Session, row: LeaderLateProof, *, action: str,
     row.sup_by_telegram = actor_telegram
     row.sup_at = datetime.now(timezone.utc)
     row.status = ADMIN if action == "uplifted" else REJECTED
+    chat.ruling(db, chat.LATE, row.id,
+                chat.UPLIFTED if action == "uplifted" else chat.SUP_REJECTED,
+                note=note, actor_name=actor_name, actor_telegram=actor_telegram,
+                actor_profile=actor_profile, actor_role=actor_role,
+                fallback_role="supervisor")
     db.flush()
     action_log.record_bot(
         db, actor_telegram, "leader_review", "checklist.late_proof_supervisor",
@@ -472,7 +488,9 @@ def decide_supervisor(db: Session, row: LeaderLateProof, *, action: str,
 
 def decide_admin(db: Session, row: LeaderLateProof, *, action: str,
                  note: str | None, actor_name: str,
-                 actor_telegram: int | None = None) -> None:
+                 actor_telegram: int | None = None,
+                 actor_profile: str | None = None,
+                 actor_role: str | None = None) -> None:
     """Stage 2 — the only place points can come back.
 
     Approval writes the `LeaderTaskOverride`, which is what actually moves the
@@ -486,8 +504,8 @@ def decide_admin(db: Session, row: LeaderLateProof, *, action: str,
     chain: the leader did the work, filed it late, explained themselves to two
     people and has no route left — so «rejected» with nothing beside it is the
     platform declining to say why, on the one decision it cannot be argued
-    with. Approving needs none: the outcome IS the answer. Stage 1 is
-    deliberately untouched — the twin rule in `leader_dispute.decide_admin`.
+    with. Approving may carry a comment and needs none: the outcome IS the
+    answer — the twin rule in `leader_dispute.decide_admin`.
     """
     if row.status != ADMIN:
         raise Refused(row.status)
@@ -504,6 +522,12 @@ def decide_admin(db: Session, row: LeaderLateProof, *, action: str,
     row.status = action
     if action == APPROVED:
         _grant(db, row, actor_name)
+    from app.services import leader_appeal_chat as chat
+    chat.ruling(db, chat.LATE, row.id,
+                chat.APPROVED if action == APPROVED else chat.REJECTED,
+                note=note, actor_name=actor_name, actor_telegram=actor_telegram,
+                actor_profile=actor_profile, actor_role=actor_role,
+                fallback_role="admin")
     db.flush()
     action_log.record_bot(
         db, actor_telegram, "leader_review", "checklist.late_proof_admin",
@@ -554,6 +578,59 @@ def revoke(db: Session, row: LeaderLateProof) -> None:
 
 # ── who is answerable for one ────────────────────────────────────────────────
 
+def reopen_stage(row: LeaderLateProof) -> str | None:
+    """The stage an undo sends this row back to — None when no ruling is in
+    force. An ADMIN ruling (`adm_action`) goes back to the admins; a brigadir's
+    refusal back to the brigadir."""
+    if row.status == APPROVED:
+        return ADMIN
+    if row.status == REJECTED:
+        return ADMIN if row.adm_action else SUPERVISOR
+    return None
+
+
+def undo(db: Session, row: LeaderLateProof, *, actor_name: str | None,
+         actor_telegram: int | None = None,
+         actor_profile: str | None = None) -> str:
+    """Take a ruling back and REOPEN the late proof at the stage it was made at
+    (2026-09-26, the operator's ruling — the twin of `leader_dispute.undo`).
+    The same chat opens again with that stage's buttons; an approval's point is
+    taken back (`revoke`) until somebody rules again. Returns what the ruling
+    was."""
+    from app.services import leader_appeal_chat as chat
+    back = reopen_stage(row)
+    if back is None:
+        raise Refused(row.status)
+    was = row.status
+    if back == ADMIN:
+        if row.status == APPROVED:
+            revoke(db, row)
+        row.adm_action = None
+        row.adm_note = None
+        row.adm_by_name = None
+        row.adm_by_telegram = None
+        row.adm_at = None
+    else:
+        row.sup_action = None
+        row.sup_note = None
+        row.sup_by_name = None
+        row.sup_by_telegram = None
+        row.sup_at = None
+    row.status = back
+    chat.ruling(db, chat.LATE, row.id, chat.UNDONE, note=None,
+                actor_name=actor_name, actor_telegram=actor_telegram,
+                actor_profile=actor_profile, actor_role="admin")
+    db.flush()
+    action_log.record_bot(
+        db, actor_telegram, "leader_review", "checklist.late_proof_undone",
+        actor_name=actor_name, target_kind="task", target_id=row.id,
+        target_name=row.leader_name, unit_id=row.manager_id, day=row.date,
+        details=[("leader", row.leader_name), ("task_id", row.task_id),
+                 ("was", was), ("reopened_at", back)],
+    )
+    return was
+
+
 def supervisor_of(db: Session, row: LeaderLateProof) -> Manager | None:
     if not row.manager_id:
         return None
@@ -572,16 +649,40 @@ def task_name(db: Session, row: LeaderLateProof, lang: str) -> str:
 
 # ── telling people ───────────────────────────────────────────────────────────
 
-def notify_decided(db: Session, row: LeaderLateProof, *, stage: str) -> None:
-    """Tell the leader what happened to their late proof.
+def _params(db: Session, row: LeaderLateProof) -> dict:
+    return {"date": row.date, "task": task_name(db, row, "uz"),
+            "leader": row.leader_name or "\u2014"}
 
-    Always, and at every terminal stage — including a rejection. A leader who
-    filed a reason and heard nothing back learns that filing one is pointless,
-    which is the one outcome that makes the whole flow worthless.
+
+def notify_filed(db: Session, row: LeaderLateProof, *,
+                 skip_dm: set[int] | None = None) -> None:
+    """Tell everybody in the chat that it has opened — the brigadir, whose turn
+    it is, and every admin (the operator's ruling: all three parties hear about
+    every message, the first one included). `skip_dm` are the accounts that
+    already got the card with the photos."""
+    from app.services import leader_appeal_chat as chat
+    params = {**_params(db, row), "deadline": row.deadline or "\u2014",
+              "reason": chat.notice_text(row.reason)}
+    try:
+        chat.fanout(db, chat.LATE, row, "late_proof_filed", params,
+                    author_profile=f"leader:{row.leader_id}", tone="warning",
+                    skip_dm=skip_dm)
+    except Exception:
+        logger.warning("late-proof filing notice failed", exc_info=True)
+
+
+def notify_decided(db: Session, row: LeaderLateProof, *, stage: str,
+                   actor_profile: str | None = None,
+                   actor_telegram: int | None = None,
+                   skip_dm: set[int] | None = None) -> None:
+    """Tell all three parties about a ruling — the leader, the brigadir and
+    every admin — except whoever made it, each with the button onto the chat.
+
+    Always, and at every step — including a rejection. A leader who filed a
+    reason and heard nothing back learns that filing one is pointless, which is
+    the one outcome that makes the whole flow worthless.
     """
-    from app.identity import profile_key
-    from app.routers.staff import notify_profile
-
+    from app.services import leader_appeal_chat as chat
     nkey = {
         REJECTED: "late_proof_rejected",
         APPROVED: "late_proof_approved",
@@ -591,22 +692,43 @@ def notify_decided(db: Session, row: LeaderLateProof, *, stage: str) -> None:
         return
     by = row.adm_by_name if stage == "admin" else row.sup_by_name
     note = row.adm_note if stage == "admin" else row.sup_note
-    # BLANK and never «—»: the note is on its own line in every ruling
-    # template, and `_render_body` drops a line whose single placeholder is
-    # empty — so an approval nobody commented on has no comment line at all,
-    # instead of one reading «Izoh: —».
-    params = {
-        "date": row.date,
-        "task": task_name(db, row, "uz"),
-        "by": by or "—",
-        "note": (note or "").strip(),
-    }
+    params = {**_params(db, row), "by": by or "\u2014",
+              "note": (note or "").strip()}
+    actor_tid = actor_telegram or (row.adm_by_telegram if stage == "admin"
+                                   else row.sup_by_telegram)
     try:
-        notify_profile(db, profile_key("leader", int(row.leader_id)),
-                       nkey, params,
-                       type="success" if row.status == APPROVED else "info")
+        chat.fanout(db, chat.LATE, row, nkey, params,
+                    author_profile=actor_profile, author_telegram=actor_tid,
+                    tone="success" if row.status == APPROVED else "info",
+                    skip_dm=skip_dm)
     except Exception:
-        logger.warning("late-proof leader notice failed", exc_info=True)
+        logger.warning("late-proof decision notice failed", exc_info=True)
+
+
+def notify_undone(db: Session, row: LeaderLateProof, *, actor_name: str | None,
+                  actor_profile: str | None, actor_telegram: int | None) -> None:
+    from app.services import leader_appeal_chat as chat
+    params = {**_params(db, row), "undoer": actor_name or "\u2014"}
+    nkey = ("late_proof_undone" if row.status == ADMIN
+            else "late_proof_undone_sup")
+    try:
+        chat.fanout(db, chat.LATE, row, nkey, params,
+                    author_profile=actor_profile, author_telegram=actor_telegram)
+    except Exception:
+        logger.warning("late-proof undo notice failed", exc_info=True)
+
+
+def notify_message(db: Session, row: LeaderLateProof, m, nfiles: int) -> None:
+    from app.services import leader_appeal_chat as chat
+    params = {**_params(db, row), "author": m.author_name or "\u2014",
+              "text": chat.notice_text(m.text),
+              "files": str(nfiles) if nfiles else ""}
+    try:
+        chat.fanout(db, chat.LATE, row, "late_proof_message", params,
+                    author_profile=m.author_profile,
+                    author_telegram=m.author_telegram)
+    except Exception:
+        logger.warning("late-proof message notice failed", exc_info=True)
 
 
 def rescore(db: Session, row: LeaderLateProof) -> None:

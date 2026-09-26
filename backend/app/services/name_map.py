@@ -279,12 +279,13 @@ def unit_display_names(sup_match: dict[str, dict],
 #
 # A pin is also the one way to reach a profile in ANOTHER unit than the one the
 # form filed the leader under. «TURDIMURODOV NODIRJON» filled the form with
-# Aripova Manzura as his brigadir (1 Apr – 25 Aug 2026), while his leader
-# profile sits in the unit he runs himself, «Turdimurodov Nodirjon» — so the
-# unit pool could never reach it, and his history stood beside his bot days as
-# a second person in every leader picker (reported 25 Sep 2026). The one day he
-# filed through both doors (25 Aug) is settled by `leader_day_sources` — see
-# `services/leader_unit_fix_sep26.py`.
+# Aripova Manzura as his brigadir (1 Apr – 25 Aug 2026) while his leader
+# profile sat in the unit made to measure his cell's load, so the unit pool
+# could not reach it and his history stood beside his bot days as a second
+# person in every leader picker (reported 25 Sep 2026). His profile is back in
+# Aripova's unit since 26 Sep (`services/leader_unit_fix_sep26.py`); the pin
+# keeps the Form spelling his wherever the profile sits. The one day he filed
+# through both doors (25 Aug) is settled by `leader_day_sources`.
 _LEADER_PINS = {
     _norm(sheet): _norm(profile)
     for sheet, profile in {

@@ -139,6 +139,35 @@ modal title, a tooltip, a notification or an export column.
 - The stored names are untouched — nothing was migrated or deleted, so lifting
   this rule anywhere is a rendering change and nothing more.
 
+## A leader's cell may stand in ANOTHER unit (`cells_unit_for_leader`)
+
+From **2026-09-26** (the operator's ruling) a leader can be COUNTED under one
+brigadir while their cell's загрузка is read in a unit of its own. The case:
+Turdimurodov Nodirjon is Aripova Manzura's leader; the unit «Turdimurodov
+Nodirjon» exists only to measure his cell 0811's load. His leader profile sits
+in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
+0811 stays in his unit (catalog, plan, typed people, attendance, ojidaniya).
+
+- **What a leader is MEASURED by follows the CELL.**
+  `cell_lookup.cells_unit_for_leader` (the one unit all their cells stand in,
+  else None) is read by the automatic checks (`leader_auto._Ctx.unit_id` — #1
+  and #9 read that unit's dashboard and pins) and by a leader's /production page
+  (`production._resolve_manager_id`). Read in the leader's own unit they find a
+  catalog that never carried the cell and fail every day — which is what
+  Umarova Mapura's checks did (profile in Raximova Kamola's unit, cell 8611 in
+  Mirmaxmudova Munira's) until this landed.
+- **What a leader FILES follows the PROFILE** — a bot day still takes
+  `prof.manager_id`, unchanged.
+- **A save that does not move the leader moves no cell.** `_set_leader_cells`
+  drags kept cells only when the profile edit changes the unit
+  (`follow_unit`), and the /cells form applies the leader's unit only to a NEW
+  owner. Before, a rename re-synced the cells and quietly carried 0811 — and
+  its load — into Aripova's unit.
+- Moving an existing leader's days is a data fix, not a feature:
+  `services/leader_unit_fix_sep26.py` (TEMPORARY one-shot) moved his profile,
+  role rows and every checklist day to Aripova without touching the cell, and
+  marked her already-sent digests as including them so nothing was re-sent.
+
 ## Supervisors read `/cells` — their own unit, read-only
 
 From **2026-09-14** (the operator's directive) the cells register opens to the

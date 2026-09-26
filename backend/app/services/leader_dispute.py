@@ -26,18 +26,25 @@ anything:
     leader     files the objection with their own note, off the day report
                they were sent.
     supervisor the unit's own brigadir reads that note and either REJECTS it
-               (final — the AI ruling stands and the task keeps its 0) or
-               UPLIFTS it, which REQUIRES their own written case for why it
-               should be pointed. They cannot restore the weight themselves.
+               (the AI ruling stands and the task keeps its 0) or UPLIFTS it
+               — and from 2026-09-26 BOTH require their own written comment.
+               They cannot restore the weight themselves.
     admin      reads BOTH notes and decides whether it counts. Approving is
-               the only thing that gives the task its weight back.
+               the only thing that gives the task its weight back; refusing
+               requires the admin's reason.
+
+From 2026-09-26 the whole chain is argued as ONE chat the three parties share
+(`leader_appeal_chat`): the filing is its first entry, every ruling is an entry,
+and between them anybody in it may ask and answer. An admin's undo REOPENS the
+row at the stage the ruling was made at instead of ending it.
 
 The asymmetry is the design, not an omission. The person closest to the leader
 knows best whether the excuse is true, and is the worst possible choice for the
 only person who decides that it counts.
 
 `status` is the stage AND the outcome, one column — "supervisor" → "admin" →
-"approved" | "rejected", plus "cancelled" for a ruling taken back. A separate
+"approved" | "rejected", plus "cancelled" — what the pre-chat undo left behind,
+still on old rows (an undo now reopens instead). A separate
 stage column would be a second thing to keep in step, and every reader would
 consult both to answer one question.
 
@@ -186,12 +193,19 @@ def _write_verdict(db: Session, d: LeaderAiDispute, resolution: str | None,
 def create(db: Session, *, ref: str, review_id: int | None, report: dict,
            task_id: int, reason: str, role: str | None,
            profile: str | None, actor_name: str | None,
-           actor_telegram: int | None) -> LeaderAiDispute:
+           actor_telegram: int | None,
+           files: list[dict] | tuple = ()) -> LeaderAiDispute:
     """File one objection, at the stage its filer's role puts it.
 
     Replaces every earlier row for the same verdict, so one rejection never
     carries two live objections — a refused objection may be filed again with
-    a better account of the day, exactly as before.
+    a better account of the day, exactly as before. The earlier row's CHAT is
+    carried onto the new one (`leader_appeal_chat.carry`): the second filing
+    answers the first conversation, and one verdict keeps one thread.
+
+    The filer's text is the thread's first entry (`filed`), with whatever files
+    they attached to it — the objection is written as the opening message of
+    the chat it starts (2026-09-26).
 
     A SUPERVISOR's filing is recorded as their uplift — `sup_action` says an
     uplift is what happened and `sup_by_name` says who made it — but the TEXT
@@ -201,7 +215,10 @@ def create(db: Session, *, ref: str, review_id: int | None, report: dict,
     `requested_by_profile` exists to prevent. `echoes_reason` is the guard for
     the rows already written that way, this module's own first cut included.
     """
+    from app.services import leader_appeal_chat as chat
+    old_ids = []
     for old in db.query(LeaderAiDispute).filter_by(ref=ref).all():
+        old_ids.append(old.id)
         db.delete(old)
     db.flush()
 
@@ -224,6 +241,10 @@ def create(db: Session, *, ref: str, review_id: int | None, report: dict,
         d.sup_at = datetime.now(timezone.utc)
     db.add(d)
     db.flush()
+    chat.carry(db, chat.DISPUTE, old_ids, d.id)
+    chat.add(db, chat.DISPUTE, d.id, kind=chat.FILED, text=text,
+             author_profile=profile, author_name=actor_name,
+             author_role=role, author_telegram=actor_telegram, files=files)
     return d
 
 
@@ -253,23 +274,26 @@ def sup_case(d: LeaderAiDispute) -> str | None:
 
 def decide_supervisor(db: Session, d: LeaderAiDispute, *, action: str,
                       note: str | None, actor_name: str | None,
-                      actor_telegram: int | None = None) -> None:
-    """`action` is "rejected" (final) or "uplifted" (to the admins).
+                      actor_telegram: int | None = None,
+                      actor_profile: str | None = None,
+                      actor_role: str | None = None) -> None:
+    """`action` is "rejected" (final for the brigadir) or "uplifted" (to the
+    admins).
 
-    An uplift REQUIRES the brigadir's own case for it. That is the whole reason
-    this stage exists: an admin ruling on an account of a shift they were not
-    on is a coin toss, and the one person who was there is exactly the one
-    passing it up. A rejection needs no note — the AI ruling simply stands and
-    the task keeps the 0 it already has — but the leader is told either way, so
-    a brigadir who explains themselves is doing the leader a kindness the flow
-    does not force.
+    BOTH require the brigadir's own comment (the operator's ruling, 2026-09-26
+    — until then only an uplift did). An uplift needs it because an admin
+    ruling on an account of a shift they were not on is a coin toss, and the one
+    person who was there is exactly the one passing it up; a refusal needs it
+    because the leader explained themselves and is owed the reason it was not
+    enough. Either way the comment is the ruling's entry in the chat.
     """
+    from app.services import leader_appeal_chat as chat
     if d.status != SUPERVISOR:
         raise Refused(d.status)
     if action not in SUP_ACTIONS:
         raise Refused("bad action")
     note = (note or "").strip()
-    if action == "uplifted" and not note:
+    if not note:
         raise Refused("note required")
     d.sup_action = action
     d.sup_note = note[:REASON_MAX] or None
@@ -281,6 +305,11 @@ def decide_supervisor(db: Session, d: LeaderAiDispute, *, action: str,
     # settles this ROW and leaves the score exactly where it already was, which
     # is the whole difference between the two stages. The twin flow does the
     # same: `leader_late_proof.decide_supervisor` touches no scoring column.
+    chat.ruling(db, chat.DISPUTE, d.id,
+                chat.UPLIFTED if action == "uplifted" else chat.SUP_REJECTED,
+                note=note, actor_name=actor_name, actor_telegram=actor_telegram,
+                actor_profile=actor_profile, actor_role=actor_role,
+                fallback_role="supervisor")
     db.flush()
 
 
@@ -288,7 +317,9 @@ def decide_supervisor(db: Session, d: LeaderAiDispute, *, action: str,
 
 def decide_admin(db: Session, d: LeaderAiDispute, *, action: str,
                  note: str | None, actor_name: str | None,
-                 actor_telegram: int | None = None) -> None:
+                 actor_telegram: int | None = None,
+                 actor_profile: str | None = None,
+                 actor_role: str | None = None) -> None:
     """Approve (the task gets its weight back) or refuse (the AI ruling stands).
 
     Approving writes `resolution="approved"` on the verdict, which is what
@@ -297,14 +328,10 @@ def decide_admin(db: Session, d: LeaderAiDispute, *, action: str,
     alike. This row stays the paper trail.
 
     A REFUSAL REQUIRES the admin's own reason, and it travels to the leader in
-    the notice (`leader_dispute_rejected` prints `{note}`). This is the end of
-    the chain: a leader refused here has explained their shift to two people,
-    lost the point for good, and had no route left — so «rejected» with nothing
-    beside it is the platform declining to say why, on the one decision it
-    cannot be argued with. Approving needs none: the outcome IS the answer.
-    Stage 1 is deliberately untouched — a brigadir's refusal is not final for
-    the platform (an admin's undo reaches it) and the objection can be re-filed.
+    the notice (`leader_dispute_rejected` prints `{note}`) and into the chat.
+    Approving may carry one and needs none: the outcome IS the answer.
     """
+    from app.services import leader_appeal_chat as chat
     if d.status != ADMIN:
         raise Refused(d.status)
     if action not in ADM_ACTIONS:
@@ -319,39 +346,75 @@ def decide_admin(db: Session, d: LeaderAiDispute, *, action: str,
     d.decided_at = datetime.now(timezone.utc)
     _write_verdict(db, d, action, actor_name,
                    f"dispute #{d.id}: {note or d.reason}")
+    chat.ruling(db, chat.DISPUTE, d.id,
+                chat.APPROVED if action == APPROVED else chat.REJECTED,
+                note=note, actor_name=actor_name, actor_telegram=actor_telegram,
+                actor_profile=actor_profile, actor_role=actor_role,
+                fallback_role="admin")
     db.flush()
 
 
-def undo(db: Session, d: LeaderAiDispute, *, actor_name: str | None,
-         actor_telegram: int | None = None) -> str:
-    """Take a settled ruling back. Returns what it was.
+def reopen_stage(d: LeaderAiDispute) -> str | None:
+    """The stage an undo sends this row back to — None when there is no ruling
+    in force to take back.
 
-    Reverses exactly the two writes the ruling made: the verdict goes back to
-    `open` — nobody has ruled, which in the automatic regime means the flag
-    costs its weight again, the state the day was in before anyone touched it —
-    and this row becomes `cancelled` rather than being deleted, because a score
-    that moved twice has to stay explainable afterwards, and because only a
-    LIVE row blocks a re-filing: a cancelled one lets the leader object again.
-
-    It reaches a stage-1 refusal too. A brigadir's rejection is final for the
-    brigadir, not for the platform — they are one tap from ending an objection
-    they have not finished reading, and an admin is who fixes that.
+    An ADMIN ruling (`decided_at` is written by `decide_admin` and cleared by
+    a reopen) goes back to the admins; a brigadir's refusal (a `rejected` row
+    whose only ruling is `sup_action`) goes back to the brigadir.
     """
-    if d.status not in (APPROVED, REJECTED):
+    if d.status == APPROVED:
+        return ADMIN
+    if d.status == REJECTED:
+        return ADMIN if d.decided_at is not None else SUPERVISOR
+    return None
+
+
+def undo(db: Session, d: LeaderAiDispute, *, actor_name: str | None,
+         actor_telegram: int | None = None,
+         actor_profile: str | None = None) -> str:
+    """Take a ruling back and REOPEN the objection. Returns what the ruling was.
+
+    From 2026-09-26 (the operator's ruling) an undo no longer ends the row as
+    `cancelled`: it puts the objection back at the stage the ruling was made at
+    — an admin's approval or refusal back to the admins, a brigadir's refusal
+    back to the brigadir — so the SAME chat opens again with that stage's
+    buttons. The chat keeps the ruling and its undo as entries, which is what
+    keeps a score that moved twice explainable now that the columns are
+    cleared.
+
+    Reverses exactly the writes the ruling made: the verdict goes back to
+    `open` when this objection is what wrote it (an admin ruling) — nobody has
+    ruled, which in the automatic regime means the flag costs its weight again
+    — and the ruling columns are emptied so every reader sees an objection
+    waiting on a decision, which is what it is again. `cancelled` rows written
+    by the old undo stay as they are.
+    """
+    from app.services import leader_appeal_chat as chat
+    back = reopen_stage(d)
+    if back is None:
         raise Refused(d.status)
     was = d.status
-    # Clear the verdict ONLY when this objection is what wrote it — i.e. an
-    # ADMIN settled it at stage 2 (`decided_at`). A stage-1 refusal writes no
-    # resolution at all, so whatever is on the verdict now was put there by
-    # somebody else (an admin's triage ruling, most likely) and blanking it
-    # here would silently reverse THEIR decision under cover of undoing this
-    # one — the same clobber, in the opposite direction.
-    if d.decided_at is not None:
+    if back == ADMIN:
+        # Clear the verdict ONLY when this objection is what wrote it — i.e.
+        # an ADMIN settled it at stage 2. A stage-1 refusal writes no
+        # resolution at all, so whatever is on the verdict then was put there
+        # by somebody else (an admin's triage ruling, most likely) and
+        # blanking it would silently reverse THEIR decision.
         _write_verdict(db, d, None, None, None)
-    d.status = CANCELLED
-    d.decided_by_name = (actor_name or "")[:160] or d.decided_by_name
-    d.decided_by_telegram = actor_telegram
-    d.decided_at = datetime.now(timezone.utc)
+        d.decided_by_name = None
+        d.decided_by_telegram = None
+        d.decided_at = None
+        d.decision_note = None
+    else:
+        d.sup_action = None
+        d.sup_note = None
+        d.sup_by_name = None
+        d.sup_by_telegram = None
+        d.sup_at = None
+    d.status = back
+    chat.ruling(db, chat.DISPUTE, d.id, chat.UNDONE, note=None,
+                actor_name=actor_name, actor_telegram=actor_telegram,
+                actor_profile=actor_profile, actor_role="admin")
     db.flush()
     return was
 
@@ -395,43 +458,47 @@ def task_label(db: Session, d: LeaderAiDispute) -> str:
     return leader_ai.task_label(db, d.task_id, d.manager_id, d.leader_id)
 
 
-def notify_filed(db: Session, d: LeaderAiDispute) -> None:
-    """Tell the unit's brigadir that one of their leaders has objected.
+def _params(db: Session, d: LeaderAiDispute) -> dict:
+    return {"date": d.date, "task": task_label(db, d),
+            "leader": d.leader_name or "\u2014"}
 
-    Only at stage 1 — an objection a supervisor filed themselves needs no
-    message telling them they filed it.
-    """
-    if d.status != SUPERVISOR or not d.manager_id:
-        return
-    from app.identity import profile_key
-    from app.routers.staff import notify_profile
+
+def notify_filed(db: Session, d: LeaderAiDispute, *,
+                 skip_dm: set[int] | None = None) -> None:
+    """Tell everybody in the chat that it has opened — the brigadir, whose turn
+    it is, and every admin (the operator's ruling: all three parties hear about
+    every message, the first one included). The filer is told nothing about
+    their own words. `skip_dm` are the accounts that already got the card."""
+    from app.services import leader_appeal_chat as chat
+    params = {**_params(db, d),
+              "reason": chat.notice_text(d.reason)}
     try:
-        notify_profile(db, profile_key("supervisor", int(d.manager_id)),
-                       "leader_dispute_filed", {
-                           "date": d.date, "task": task_label(db, d),
-                           "leader": d.leader_name or "—",
-                           "reason": (d.reason or "—")[:400],
-                       }, type="warning")
+        chat.fanout(db, chat.DISPUTE, d, "leader_dispute_filed", params,
+                    author_profile=d.requested_by_profile,
+                    author_telegram=d.requested_by_telegram,
+                    tone="warning", skip_dm=skip_dm)
     except Exception:
-        logger.warning("leader-dispute: supervisor notice failed", exc_info=True)
+        logger.warning("leader-dispute: filing notice failed", exc_info=True)
 
 
-def notify_decided(db: Session, d: LeaderAiDispute, *, stage: str) -> None:
-    """Tell the leader — and, once it is out of their hands, the brigadir too.
+def notify_decided(db: Session, d: LeaderAiDispute, *, stage: str,
+                   actor_profile: str | None = None,
+                   actor_telegram: int | None = None,
+                   skip_dm: set[int] | None = None) -> None:
+    """Tell all three parties about a ruling — the leader, the brigadir and
+    every admin — except the one who made it, each with the button onto the
+    chat.
 
-    At EVERY terminal stage, refusal included. A leader who explained themselves
-    and heard nothing back learns that explaining is pointless, which is the one
+    At EVERY step, refusal included. A leader who explained themselves and
+    heard nothing back learns that explaining is pointless, which is the one
     outcome that makes the whole flow worthless.
     """
-    from app.identity import profile_key
-    from app.routers.staff import notify_profile
-
+    from app.services import leader_appeal_chat as chat
     nkey = {
         ADMIN: "leader_dispute_uplifted",
         APPROVED: "leader_dispute_approved",
         REJECTED: ("leader_dispute_sup_rejected" if stage == "supervisor"
                    else "leader_dispute_rejected"),
-        CANCELLED: "leader_dispute_undone",
     }.get(d.status)
     if not nkey:
         return
@@ -441,21 +508,44 @@ def notify_decided(db: Session, d: LeaderAiDispute, *, stage: str) -> None:
     # template, and `_render_body` drops a line whose single placeholder is
     # empty — so an approval nobody commented on has no comment line at all,
     # instead of one reading «Izoh: —».
-    params = {
-        "date": d.date, "task": task_label(db, d),
-        "by": by or "—", "note": (note or "").strip(),
-    }
-    tone = "success" if d.status == APPROVED else "info"
+    params = {**_params(db, d), "by": by or "\u2014",
+              "note": (note or "").strip()}
+    actor_tid = actor_telegram or (d.sup_by_telegram if stage == "supervisor"
+                                   else d.decided_by_telegram)
     try:
-        dmed = set()
-        if d.leader_id:
-            dmed = notify_profile(db, profile_key("leader", int(d.leader_id)),
-                                  nkey, params, type=tone) or set()
-        # The brigadir hears about the two rulings they did not make — the
-        # admin's, and an undo. Telling them about their OWN stage-1 decision
-        # is a message that says what they just pressed.
-        if d.manager_id and stage != "supervisor":
-            notify_profile(db, profile_key("supervisor", int(d.manager_id)),
-                           nkey, params, type=tone, skip_accounts=dmed)
+        chat.fanout(db, chat.DISPUTE, d, nkey, params,
+                    author_profile=actor_profile, author_telegram=actor_tid,
+                    tone="success" if d.status == APPROVED else "info",
+                    skip_dm=skip_dm)
     except Exception:
         logger.warning("leader-dispute: decision notice failed", exc_info=True)
+
+
+def notify_undone(db: Session, d: LeaderAiDispute, *, actor_name: str | None,
+                  actor_profile: str | None, actor_telegram: int | None) -> None:
+    """The ruling was taken back and the objection is open again — everybody
+    who was told the outcome is told it no longer stands, and whose turn it is
+    now."""
+    from app.services import leader_appeal_chat as chat
+    params = {**_params(db, d), "undoer": actor_name or "\u2014"}
+    nkey = ("leader_dispute_undone" if d.status == ADMIN
+            else "leader_dispute_undone_sup")
+    try:
+        chat.fanout(db, chat.DISPUTE, d, nkey, params,
+                    author_profile=actor_profile, author_telegram=actor_telegram)
+    except Exception:
+        logger.warning("leader-dispute: undo notice failed", exc_info=True)
+
+
+def notify_message(db: Session, d: LeaderAiDispute, m, nfiles: int) -> None:
+    """One free chat message, to the other two parties."""
+    from app.services import leader_appeal_chat as chat
+    params = {**_params(db, d), "author": m.author_name or "\u2014",
+              "text": chat.notice_text(m.text),
+              "files": str(nfiles) if nfiles else ""}
+    try:
+        chat.fanout(db, chat.DISPUTE, d, "leader_dispute_message", params,
+                    author_profile=m.author_profile,
+                    author_telegram=m.author_telegram)
+    except Exception:
+        logger.warning("leader-dispute: message notice failed", exc_info=True)

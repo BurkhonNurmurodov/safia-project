@@ -7866,18 +7866,19 @@ def _leader_rules26_dm(shift: int, out: dict, left: list[str]) -> int:
     return sent
 
 
-# ── one-shot: Turdimurodov Nodirjon's days back in his own unit (26 Sep) ─────
+# ── one-shot: Turdimurodov Nodirjon counted under Aripova Manzura (26 Sep) ────
 # See `services/leader_unit_fix_sep26.py`. Inline and flag-guarded, like the
 # other checklist fixes here. A REFUSAL (the names did not resolve as expected)
 # writes nothing, is DMed once and is re-checked quietly on every later boot, so
 # an admin correcting the register lets it land without another deploy.
-# Replaced a duplicate-users report added 25 Sep that selected a column
-# `telegram_users` does not have, so it failed on every boot and never sent.
-NODIRJON_FIX_FLAG = "leader_nodirjon_unit_fix_2026_09_26_v1"
+# v2: the operator's ruling that he is Aripova's leader, his own unit existing
+# only for his cell's загрузка — v1 (the same morning) moved the other way and
+# is superseded, hence the new key.
+NODIRJON_FIX_FLAG = "leader_nodirjon_to_aripova_2026_09_26_v2"
 
 
 def fix_nodirjon_leader_unit() -> None:
-    """Move Nodirjon's stray checklist days to his own unit, once. Never raises."""
+    """Count Nodirjon's checklist under Aripova Manzura, once. Never raises."""
     db = SessionLocal()
     try:
         row = db.query(AppSetting).filter_by(key=NODIRJON_FIX_FLAG).first()
@@ -7925,21 +7926,27 @@ def fix_nodirjon_leader_unit() -> None:
             return
 
         mark(f"done:{len(out['moved'])}")
-        print(f"[startup] Nodirjon unit fix: {len(out['moved'])} day(s) moved "
-              f"{out['moved']} {out['side']}; form-counted {out['sheet_days']}")
+        print(f"[startup] Nodirjon unit fix: profile moved={out['profile_moved']}, "
+              f"{len(out['moved'])} day(s) to {out['to']} {out['side']}; "
+              f"digests {out['digests']}; form-counted {out['sheet_days']}")
         from app.services import action_log
         action_log.record_system(
-            "leader_review", "checklist.days_moved",
+            "leader_review", "checklist.leader_moved",
             target_kind="profile", target_name=out["profile"],
-            unit_name=out["own"],
-            details=[("days", ", ".join(out["moved"]) or None),
-                     ("from", out["wrong"]),
+            unit_name=out["to"],
+            details=[("cell_unit", out["cell_unit"]),
+                     ("profile_moved", out["profile_moved"] or None),
+                     ("holders", out["holders"] or None),
+                     ("days", len(out["moved"]) or None),
+                     ("from", out["moved"][0] if out["moved"] else None),
+                     ("to", out["moved"][-1] if out["moved"] else None),
                      *[(k, v) for k, v in out["side"].items()],
+                     ("digests", out["digests"] or None),
                      ("form_counted", ", ".join(d for d, *_ in out["sheet_days"])
                       or None)],
-            reason=("A bot day keeps the unit its leader profile had when the day "
-                    "started; days started while the profile sat in another unit "
-                    "were moved to the unit the leader and his cell belong to"),
+            reason=("Operator: he is Aripova Manzura's leader — his checklist "
+                    "counts in her unit; his own unit exists only for his cell's "
+                    "загрузка, which stays there"),
         )
         _nodirjon_fix_dm(fx.message(out))
     except Exception as exc:  # pragma: no cover — never block startup

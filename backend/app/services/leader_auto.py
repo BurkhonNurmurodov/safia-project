@@ -248,14 +248,29 @@ class _Ctx:
     """Everything one verdict is taken from, resolved once per leader-day."""
 
     __slots__ = ("db", "prof", "manager", "shift", "date", "cell", "due",
-                 "now", "_dash", "_pins", "_pairs", "_cells", "_by_code")
+                 "now", "_dash", "_pins", "_pairs", "_cells", "_by_code", "_unit")
 
     def __init__(self, db, prof, manager, shift, date, cell, due, now):
         self.db, self.prof, self.manager = db, prof, manager
         self.shift, self.date, self.cell = shift, date, cell
         self.due, self.now = due, now
-        self._dash = self._pins = self._pairs = self._cells = None
+        self._dash = self._pins = self._pairs = self._cells = self._unit = None
         self._by_code = {}
+
+    @property
+    def unit_id(self) -> int:
+        """The unit whose PRODUCTION the leader's cells stand in — where their
+        catalog, plan and typed people are stored. The leader's own unit for
+        everybody whose cells sit there; the cells' unit for a leader counted
+        under another brigadir (`cell_lookup.cells_unit_for_leader`), who would
+        otherwise be measured against a catalog that has never carried their
+        cell. `manager` stays the leader's unit for everything else a check
+        asks — its hour, its shift, whose checklist the verdict lands on."""
+        if self._unit is None:
+            owner = (getattr(self.cell, "manager_id", None) if self.cell is not None
+                     else cell_lookup.cells_unit_for_leader(self.db, self.prof.id))
+            self._unit = int(owner) if owner else self.manager.id
+        return self._unit
 
     # The leader's (work centre, group letter) pairs — their cells, and the one
     # definition of «what is mine» the /production page itself applies.
@@ -281,7 +296,7 @@ class _Ctx:
             from app.routers.production import _build_dashboard
             codes = {c for c, _g in self.pairs}
             self._dash = _build_dashboard(
-                self.db, self.manager.id, _as_date(self.date),
+                self.db, self.unit_id, _as_date(self.date),
                 wc_scope=codes, payload=None, group_scope=set(self.pairs))
         return self._dash
 
@@ -300,7 +315,7 @@ class _Ctx:
         if code not in self._by_code:
             from app.routers.production import _build_dashboard
             self._by_code[code] = _build_dashboard(
-                self.db, self.manager.id, _as_date(self.date),
+                self.db, self.unit_id, _as_date(self.date),
                 wc_scope={code}, payload=None).get("totals") or {}
         return self._by_code[code]
 
@@ -340,9 +355,9 @@ class _Ctx:
         """
         if self._pins is None:
             d = _as_date(self.date)
-            raw = zagruzka_source.typed_pins(self.db, [self.manager.id], d, d)
+            raw = zagruzka_source.typed_pins(self.db, [self.unit_id], d, d)
             unit_cells = (self.db.query(Cell)
-                          .filter(Cell.manager_id == self.manager.id).all())
+                          .filter(Cell.manager_id == self.unit_id).all())
             self._pins = zagruzka_source.cell_pins(unit_cells, raw)
         return self._pins
 

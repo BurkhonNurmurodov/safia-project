@@ -299,7 +299,8 @@ def _user_info(db: Session) -> dict[int, dict]:
     }
 
 
-def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
+def _set_leader_cells(db: Session, leader_id: int, codes: list[str],
+                      follow_unit: bool = True) -> None:
     """Reconcile a leader's owned cells to exactly `codes`: release rows no
     longer listed (leader_id → NULL — cells are first-class rows now, their
     sap_code/workshop names survive reassignment), claim or create the rest.
@@ -307,7 +308,13 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
     from its current owner first. EVERY cell the leader ends up owning — claimed,
     created or simply kept — inherits the leader's supervisor unit; released rows
     keep their supervisor (a cell belongs to a supervisor with or without a
-    leader)."""
+    leader).
+
+    `follow_unit=False` leaves KEPT cells where they stand — the profile edit
+    passes it for a save that does not MOVE the leader. A leader can be counted
+    under one brigadir while their cell's load is kept in another unit
+    (`cell_lookup.cells_unit_for_leader`), and re-sending the same cell list with
+    a rename must not quietly carry that cell — and its загрузка — away."""
     leader = db.query(RoleProfile).filter_by(id=leader_id).first()
     mgr_id = leader.manager_id if leader else None
     want: list[str] = []
@@ -320,7 +327,7 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
     for row in existing:
         if row.verifix_code not in want:
             row.leader_id = None
-        elif mgr_id and row.manager_id != mgr_id:
+        elif follow_unit and mgr_id and row.manager_id != mgr_id:
             # A KEPT cell follows its leader's unit as well. Only claimed and
             # created rows were stamped before, so moving a leader to another
             # brigadir left every cell they kept naming the OLD one: the leader
@@ -816,10 +823,15 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
             p = db.query(RoleProfile).filter_by(id=payload.leader_id, role="leader").first()
             if not p:
                 raise HTTPException(status_code=400, detail="Leader profile not found")
+            new_owner = row.leader_id != payload.leader_id
             row.leader_id = payload.leader_id
-            # A cell inherits its owning leader's supervisor — the leader is
-            # authoritative, overriding any manager_id in the same payload.
-            if p.manager_id:
+            # A cell inherits a NEW owning leader's supervisor — the leader is
+            # authoritative, overriding any manager_id in the same payload. The
+            # SAME leader re-sent with the rest of the form moves nothing: the
+            # form's own unit stands, so a cell whose load is kept apart from its
+            # leader's unit (`cell_lookup.cells_unit_for_leader`) survives an edit
+            # of its workshop name.
+            if p.manager_id and new_owner:
                 row.manager_id = p.manager_id
         else:
             row.leader_id = None
@@ -1556,7 +1568,9 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
             r.role_id = payload.manager_id
         p.manager_id = payload.manager_id
     if ptype == "leader" and payload.cells is not None:
-        _set_leader_cells(db, pid, payload.cells)
+        # Kept cells follow the leader only when this save MOVES the leader.
+        _set_leader_cells(db, pid, payload.cells,
+                          follow_unit=p.manager_id != old["manager_id"])
     if payload.overrides:
         _apply_overrides(db, p.name, payload.overrides)
     new_vals = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id}
