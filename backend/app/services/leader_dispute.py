@@ -445,6 +445,11 @@ def supersede(db: Session, ref: str, resolution: str | None,
         if by:
             d.decided_by_name = by[:160]
         d.decided_at = datetime.now(timezone.utc)
+        # The chat must say why it went quiet: a later ruling on the verdict
+        # itself overrode this objection's outcome.
+        from app.services import leader_appeal_chat as chat
+        chat.ruling(db, chat.DISPUTE, d.id, chat.UNDONE, note=None,
+                    actor_name=by, actor_telegram=None, actor_role="admin")
         hit = True
         logger.info("leader-dispute: %s superseded by a %s ruling on %s",
                     d.id, resolution or "open", ref)

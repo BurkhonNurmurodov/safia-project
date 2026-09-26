@@ -183,10 +183,12 @@ def delete(db: Session, m: LeaderAppealMessage) -> None:
 # ── reading ──────────────────────────────────────────────────────────────────
 
 def messages(db: Session, thread: str, thread_id: int) -> list[LeaderAppealMessage]:
+    """The thread in the order things HAPPENED. By time, then id: an entry a
+    backfill wrote carries its original instant but a later id."""
     return (db.query(LeaderAppealMessage)
             .filter(LeaderAppealMessage.thread == thread,
                     LeaderAppealMessage.thread_id == int(thread_id))
-            .order_by(LeaderAppealMessage.id).all())
+            .order_by(LeaderAppealMessage.created_at, LeaderAppealMessage.id).all())
 
 
 def files_of(db: Session, message_ids: list[int]) -> dict[int, list[LeaderAppealFile]]:
@@ -207,23 +209,20 @@ def file_wire(f: LeaderAppealFile) -> dict:
 
 def summaries(db: Session, thread: str, ids: list[int]) -> dict[int, dict]:
     """Per appeal: how many entries its thread holds and the newest one — what
-    a card previews. Two queries for the whole page, never one per card."""
+    a card previews. Newest by TIME (a backfilled entry has a late id and an
+    early instant). Two queries for the whole page, never one per card."""
     ids = [int(i) for i in ids]
     if not ids:
         return {}
-    counts = dict(
-        db.query(LeaderAppealMessage.thread_id, func.count(LeaderAppealMessage.id))
-        .filter(LeaderAppealMessage.thread == thread,
-                LeaderAppealMessage.thread_id.in_(ids))
-        .group_by(LeaderAppealMessage.thread_id).all())
-    last_ids = [r[0] for r in (
-        db.query(func.max(LeaderAppealMessage.id))
-        .filter(LeaderAppealMessage.thread == thread,
-                LeaderAppealMessage.thread_id.in_(ids))
-        .group_by(LeaderAppealMessage.thread_id).all()) if r[0]]
-    lasts = {m.thread_id: m for m in (
-        db.query(LeaderAppealMessage)
-        .filter(LeaderAppealMessage.id.in_(last_ids)).all())} if last_ids else {}
+    rows = (db.query(LeaderAppealMessage)
+            .filter(LeaderAppealMessage.thread == thread,
+                    LeaderAppealMessage.thread_id.in_(ids)).all())
+    by: dict[int, list] = {}
+    for m in rows:
+        by.setdefault(m.thread_id, []).append(m)
+    lasts = {tid: max(ms, key=lambda m: (m.created_at or datetime.min.replace(tzinfo=timezone.utc), m.id))
+             for tid, ms in by.items()}
+    last_ids = [m.id for m in lasts.values()]
     nfiles = dict(
         db.query(LeaderAppealFile.message_id, func.count(LeaderAppealFile.id))
         .filter(LeaderAppealFile.message_id.in_(last_ids))
@@ -232,7 +231,7 @@ def summaries(db: Session, thread: str, ids: list[int]) -> dict[int, dict]:
     for i in ids:
         m = lasts.get(i)
         out[i] = {
-            "count": int(counts.get(i, 0)),
+            "count": len(by.get(i, [])),
             "last": ({
                 "kind": m.kind, "author": m.author_name,
                 "role": m.author_role, "text": (m.text or "")[:200],

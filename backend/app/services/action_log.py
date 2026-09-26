@@ -267,6 +267,8 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/leaders/late-proofs/{}/messages",     "leader_review", "late_proof.message"),
     (("PUT",),    "/api/leaders/late-proofs/{}/messages/{}",  "leader_review", "late_proof.message_edited"),
     (("DELETE",), "/api/leaders/late-proofs/{}/messages/{}",  "leader_review", "late_proof.message_deleted"),
+    (("POST",),   "/api/leaders/disputes/{}/files/{}/send",   "leader_review", "dispute.file_sent"),
+    (("POST",),   "/api/leaders/late-proofs/{}/files/{}/send", "leader_review", "late_proof.file_sent"),
     (("POST",),   "/api/leader-proof/late-photo",              "leader_review", "late_proof.photo_added"),
     (("DELETE",), "/api/leader-proof/late-photo/{}",           "leader_review", "late_proof.photo_removed"),
     (("POST",),   "/api/leaders/late/{}/decide",               "leader_review", "lateday.decided"),

@@ -37,7 +37,7 @@ export async function exportXlsx(url, { method = "post", body, params, fallbackN
 
 /** Prefer the server's own filename — these are Cyrillic and Uzbek names the
  *  client has no reliable way to reconstruct. */
-function filenameFrom(response) {
+export function filenameFrom(response) {
   const header = response?.headers?.["content-disposition"] || "";
   const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
   if (utf8) { try { return decodeURIComponent(utf8[1].trim()); } catch { /* fall through */ } }
@@ -46,7 +46,7 @@ function filenameFrom(response) {
   return "";
 }
 
-function saveBlob(blob, filename) {
+export function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

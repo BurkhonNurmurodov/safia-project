@@ -93,6 +93,7 @@ const Trudoyomkost = lazyWithReload(() => import("./pages/Trudoyomkost"));
 const Leaders = lazyWithReload(() => import("./pages/Leaders"));
 const LeaderDayReport = lazyWithReload(() => import("./pages/LeaderDayReport"));
 const LeaderUnitReport = lazyWithReload(() => import("./pages/LeaderUnitReport"));
+const LeaderAppeal = lazyWithReload(() => import("./pages/LeaderAppeal"));
 const Cells = lazyWithReload(() => import("./pages/Cells"));
 const CellDetails = lazyWithReload(() => import("./pages/CellDetails"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
@@ -478,6 +479,11 @@ function AppWithLang() {
                 Where the brigadir's day digest DM lands, so AUTH-ONLY for the
                 same reason; the backend scopes the unit itself. */}
             <Route path="/leaders/unit-report/:mid/:date" element={<AuthGate><LeaderUnitReport /></AuthGate>} />
+            {/* One objection's or late proof's CHAT (2026-09-26) — the ruling
+                buttons, the evidence, then the conversation. Where the Telegram
+                «Open chat» button lands, so AUTH-ONLY for the same reason as the
+                day report; the backend scopes the row and its parties itself. */}
+            <Route path="/leaders/appeal/:kind/:id" element={<AuthGate><LeaderAppeal /></AuthGate>} />
             {/* The retired per-shift admin copies and the bot-only page they
                 replaced — old bookmarks and Telegram buttons land on the one
                 merged page, whose Smena filter does the narrowing now. */}

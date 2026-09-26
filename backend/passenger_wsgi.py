@@ -66,7 +66,7 @@ try:
         add_late_proof_provenance,
         add_late_proof_timing,
         migrate_dispute_stages, purge_pre_september_appeals,
-        backfill_appeal_threads,
+        backfill_appeal_threads, repair_appeal_threads,
         merge_brigadir_tasks_page,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
@@ -199,6 +199,7 @@ try:
     purge_pre_september_appeals()
     # After the purge, so appeals it deletes never get a thread written.
     backfill_appeal_threads()
+    repair_appeal_threads()
     letter_shared_cells()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()

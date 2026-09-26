@@ -381,3 +381,45 @@ def dispute_file(rid: int, fid: int, db: Session = Depends(get_db),
 def late_file(rid: int, fid: int, db: Session = Depends(get_db),
               payload: dict = Depends(require_auth)):
     return _file(db, payload, chat.LATE, rid, fid)
+
+
+def _send_file(db: Session, payload: dict, thread: str, rid: int, fid: int) -> dict:
+    """Put one attachment into the CALLER's own Telegram chat.
+
+    A mini-app WebView has no downloads folder worth the name — the platform
+    already DMs an Excel export instead of downloading it there — and the file
+    is already in the archive channel, so the bot re-sends it by its file_id in
+    one call, with the name it was attached under. A browser session downloads
+    through `/files/{id}` instead.
+    """
+    _readable(db, payload, thread, rid)
+    f = (db.query(LeaderAppealFile)
+         .join(LeaderAppealMessage, LeaderAppealMessage.id == LeaderAppealFile.message_id)
+         .filter(LeaderAppealFile.id == fid,
+                 LeaderAppealMessage.thread == thread,
+                 LeaderAppealMessage.thread_id == rid).first())
+    if f is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    if not tid:
+        raise HTTPException(status_code=400, detail="No Telegram chat to send to")
+    try:
+        from app.telegram_bot import bot
+        bot.send_document(tid, f.file_id, visible_file_name=f.name)
+    except Exception:
+        logger.warning("appeal file %s to %s failed", fid, tid, exc_info=True)
+        raise HTTPException(status_code=502,
+                            detail="Telegram did not accept the file — open the bot and try again")
+    return {"ok": True}
+
+
+@router.post("/leaders/disputes/{rid}/files/{fid}/send")
+def dispute_file_send(rid: int, fid: int, db: Session = Depends(get_db),
+                      payload: dict = Depends(require_auth)):
+    return _send_file(db, payload, chat.DISPUTE, rid, fid)
+
+
+@router.post("/leaders/late-proofs/{rid}/files/{fid}/send")
+def late_file_send(rid: int, fid: int, db: Session = Depends(get_db),
+                   payload: dict = Depends(require_auth)):
+    return _send_file(db, payload, chat.LATE, rid, fid)

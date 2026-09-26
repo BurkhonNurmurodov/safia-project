@@ -890,6 +890,8 @@ def sb_appeal_delete(request: Request, rid: int, mid: int, g=Depends(_gate),
 
 @router.get("/leaders/disputes/{rid}/files/{fid}")
 @router.get("/leaders/late-proofs/{rid}/files/{fid}")
+@router.post("/leaders/disputes/{rid}/files/{fid}/send")
+@router.post("/leaders/late-proofs/{rid}/files/{fid}/send")
 def sb_appeal_file(rid: int, fid: int, g=Depends(_gate)):
     raise HTTPException(status_code=404, detail="Not found")
 

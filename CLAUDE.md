@@ -17,8 +17,9 @@ or copy-paste its markup into a page.
 | Modal footer buttons | `Button.jsx` inside `Modal footer` | Order: cancel (`variant="secondary"`) on the LEFT, primary action on the RIGHT. |
 | Confirm ("are you sure") dialog | `ConfirmDialog.jsx` | `tone="danger"` for deletions (red chip + red confirm), default warning (amber chip + brand confirm). Sits above form modals (z 100). Carries `role=dialog`, a focus trap, Escape-to-cancel and initial focus on the SAFE button. `error` renders the failure INSIDE the dialog — a mutation that fails must leave the dialog standing with the reason on it, never close and fire `alert()`. `challenge` (+ `challengeLabel`) demands the operator retype a string before confirm enables: use it for anything no undo can reach (full-DB restore → `RESTORE`, whole-day attendance wipe → the date). `cancelLabel` defaults to `common.cancel`. |
 | Transient action feedback (saved / sent / failed) | `Toast.jsx` | `<Toast>` controlled, or `useToast()` for the state+timer. Tones `success/error/warning/info`; errors persist until dismissed (you cannot re-read a toast that vanished). Portals to `document.body`, offsets by `--tg-safe-top`/`--tg-safe-bottom`, carries `role=status`. `position="bottom"` for dense editing surfaces. **NEVER `window.alert/confirm/prompt` — Telegram's iOS WebView silently suppresses them, so a failure becomes invisible on the primary device.** Never paste a fixed green `<div>`; never morph a Save button into its own status message. |
-| Comment thread on a record | `CommentsModal.jsx` (`CommentsModal` + `CommentsButton`) | THE chat thread. Point it at a resource exposing the four standard endpoints — `GET/POST {endpoint}`, `PUT/DELETE {endpoint}/{id}` — via `endpoint` + `queryKey` + `refreshKeys` (the list keys whose `comment_count` badge must re-count); `title`/`subtitle` name the record. Ownership is NEVER re-derived on the client: the backend serves `is_own` per message, because a message belongs to the authoring PROFILE and one account may hold several. `CommentsButton` is the table-cell trigger (count badge, gold once non-empty) — a Comments column on the table for `sm+`, the same button on the mobile card's footer row. A failed write raises an error toast; the thread scrolls to the newest message. A message may carry a server-set `kind`: `"resolution"` marks the mandatory note a record was CLOSED with (the concerns register writes one into the thread when a concern is resolved) — green ✓ header, no delete button, because the backend refuses to delete it. Used by `/tasks` and `/concerns`. |
+| Comment thread on a record | `CommentsModal.jsx` (`CommentsModal` + `CommentsButton`) | THE chat thread. Point it at a resource exposing the four standard endpoints — `GET/POST {endpoint}`, `PUT/DELETE {endpoint}/{id}` — via `endpoint` + `queryKey` + `refreshKeys` (the list keys whose `comment_count` badge must re-count); `title`/`subtitle` name the record. Ownership is NEVER re-derived on the client: the backend serves `is_own` per message, because a message belongs to the authoring PROFILE and one account may hold several. `CommentsButton` is the table-cell trigger (count badge, gold once non-empty) — a Comments column on the table for `sm+`, the same button on the mobile card's footer row. A failed write raises an error toast; the thread scrolls to the newest message. A message may carry a server-set `kind`: `"resolution"` marks the mandatory note a record was CLOSED with (the concerns register writes one into the thread when a concern is resolved) — green ✓ header, no delete button, because the backend refuses to delete it. Used by `/tasks` and `/concerns`. **`CommentsThread`** (same file) is the thread WITHOUT the dialog, for a page that shows a record above its conversation — the appeal chat (`layout="page"`: the page scrolls, the composer sticks to the bottom edge). Props, all optional, so tasks/concerns are unchanged: `attachments` + `filesEndpoint` (any file type, ≤10 per message, ≤20 MB each, dropped anywhere on the thread or picked with the clip; a refused file stays as a red tile; images the server proved to be images render as thumbnails → `Lightbox`, everything else as a `FileTile`; opening a file downloads it in a browser and asks the bot to DM it inside Telegram), `kinds` ({kind: {label, color, Icon, system}} — a `system` kind with no text is a centred line, not a bubble), `roleLabel`, `can_edit` per message (the server's whole answer to pencil/bin), `closedText`, `pollMs`, and the first-message mode (`listEnabled=false`, `postEndpoint`, `postFields`, `textField`, `requireText`, `minText`, `onPosted`) used to FILE an objection as its chat's opening message. |
 | Camera proof capture | `pages/ProofCamera.jsx` | THE in-app camera, for checklist tasks whose `proof_kind` is `camera`. Never add a file-picker fallback to it — the whole point is that no file the leader produced is accepted. See the camera-proof section below. |
+| Attached file (icon · name · size) | `FileIcon.jsx` (`FileIcon` + `FileTile` + `fileKind` + `humanSize`) | THE way an attached file is shown. Every file wears its EXTENSION's icon, tinted by one fixed `CATEGORY_COLORS` hue per type (PDF red, sheets green, documents blue, slides orange, images purple, video pink, audio teal, archives yellow, code indigo; unknown = slate `FOLD_COLOR` + plain file icon, never blank), with the extension printed on it. A file type is a category, never a status. `FileTile` is the row a chat message and a composer both use. |
 | File upload | `UploadDropzone.jsx` (`UploadDropzone` + `FileStateList` + `useFileStates`) | One drag-drop model for every upload surface. Rejected files always render (a silent rejection reads as success); rows are keyed by generated id, not filename; result detail wraps on its own line; the bar carries progressbar ARIA; 100% flips to "processing" because parsing happens after transfer. `renderExtra(state)` is the seam for per-endpoint result detail — use it instead of forking the row markup. |
 | Button | `Button.jsx` | Variants `primary/secondary/danger/ghost/success`, sizes `sm/md/lg`; `loading` shows the spinner. `tint` gives the soft-tinted form (12% bg + coloured border/label) — **THE form for table-row actions**. Never hand-roll a chip with inline rgba + `onMouseEnter/onMouseLeave`: mouse events never fire on touch, so a destructive action stays stuck in its neutral rest state on a phone. Forwards refs. |
 | Segmented toggle + page view-tabs (min/hrs, P·A·P−A, view/mode switch, theme, Production/Staff tabs) | `SegmentedToggle.jsx` | Recessed-track pill: a `bg-inner` track (`rounded-xl`, `p-[3px]` inset, subtle `border`, no dividers) holding segments — the selected one is a brand-gold (`--brand`) pill with a white label, the rest transparent with muted `text-3`. This is ALSO the page-level "view tabs" template (Production view switch, Staff Workers/Requests) — same component, don't hand-roll a padded tab group. Outer height stays `size="md"` (default, 38px = `Button` lg / toolbar baseline) or `"sm"` (30px = `Button` md) so it aligns in toolbars. `options` = `[value,label]` tuples or `{value,label,title}` objects (label may be a node/icon). **THE template for EVERY toggle on the platform — any set of 2+ mutually-exclusive options (mode / view / period / type / status / tab / shift / theme switch), current and future. Never hand-roll a button group or padded tab bar; extend this with a prop if it lacks something.** **The track can never overflow its container, and that is the template's job, not the call site's.** Labels are `whitespace-nowrap`, so an option set wider than the box it sits in used to run straight out of it — a `fill` toggle's segments are `flex-1`, but a flex item's automatic minimum size is its CONTENT width, so they refuse to shrink and push the track past the edge; a shrink-wrapped toolbar toggle had no width cap at all. Either way the last label was clipped by whatever ancestor was `overflow-hidden` and the surface around it grew a stray horizontal scrollbar («Ҳаммаси · Смена 1 · Смена 2» in a 240px filter dropdown). So the track is ALWAYS capped at its container and scrolls: it shrink-wraps exactly as before while the options fit, and once they do not it scrolls, scrolls the SELECTED segment into view and fades whichever edge still has content off-screen. This used to be the opt-in `scrollable` prop — **that prop is GONE**, because 105 of the 123 call sites had not opted in, the ones inside a narrow dropdown or a phone toolbar least of all, and an invariant every caller has to remember is one the template does not hold. Never wrap it in your own `overflow-x-auto` div either: a bare wrapper hides the scrollbar without replacing the affordance and leaves the selected segment off-screen, at which point nothing looks selected and the user cannot tell where they are. `className` lands on the OUTER box (widths / shrink / margins only) — never the track's own skin. `asTabs` adds tablist/tab roles, `aria-selected` and arrow-key navigation when the toggle switches VIEWS. |
@@ -2407,7 +2408,9 @@ number.
   (`approvals.py` kind `leader_dispute` / code `ld`). Approving writes
   `resolution="approved"` on the verdict — that is what restores the weight —
   and the corrected score re-DMs itself. Not grantable at either stage.
-- **The «Norozliklar» tab is where all three read it** (`GET /leaders/disputes`
+- (SUPERSEDED 2026-09-26: cards are summaries that open the appeal chat, where
+  the verdict, the photos and every note are — «The appeal CHAT».)
+  **The «Norozliklar» tab is where all three read it** (`GET /leaders/disputes`
   → `components/leaders/Disputes.jsx`, beside «Kechikkan isbotlar» on
   `/leaders`, `?tab=disputes` deep-links). Until it existed the ruling was reachable from
   exactly two places — an inline Telegram card that scrolls out of the chat,
@@ -2464,7 +2467,8 @@ number.
   four other approval kinds, so the pause lives in `handle_approval_callback`'s
   `ld` branch, never in the keyboard.
   **APPROVING still needs none** — the outcome IS the answer — and **stage 1 is
-  deliberately untouched**: a brigadir's refusal is not the last word (an
+  deliberately untouched** (SUPERSEDED 2026-09-26: a brigadir's refusal now
+  requires a comment too — see «The appeal CHAT»): a brigadir's refusal is not the last word (an
   admin's undo reaches it, and the leader may file again), so forcing words
   there would be a rule with no consequence behind it. Same rule, same shape,
   in `leader_late_proof.decide_admin`.
@@ -2487,11 +2491,14 @@ number.
   «Izoh: —». That fixed the same wart on `leader_dispute_approved`, which had
   carried an optional `{note}` inline since it was written. Stored bell rows
   keep whatever they were written with, so nothing already sent re-renders.
+  (SUPERSEDED 2026-09-26: Telegram rules nothing any more — «The appeal CHAT».)
   **Telegram approves on the TAP and offers no box** — an optional field in a
   chat means either holding a ruling for text that may never arrive, or ruling
   first and appending after the DM has gone. An admin who wants to comment
   rules from the dashboard.
-- **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
+- (SUPERSEDED 2026-09-26: an undo now REOPENS the row at the stage the ruling
+  was made at and its chat with it — «The appeal CHAT».)
+  **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
   the «Qarorni bekor qilish» button under the objection box on the report page).
   Deciding is one tap and an ADMIN's own filing IS the approval, so the wrong
   outcome is one mis-tap away, while `decide` refuses anything already settled.
@@ -3961,7 +3968,8 @@ say about it.
   form, and the Telegram card pauses on `lp:ar` for an `lp_arej` capture rather
   than ruling on the tap. Approving needs none — but it OFFERS the same box
   (`late_proof_approved` gained a `{note}` line of its own for it); the
-  brigadir's stage-1 refusal still needs none.
+  brigadir's stage-1 refusal still needs none (SUPERSEDED 2026-09-26: it
+  needs one — «The appeal CHAT»).
 - **Nothing expires it.** An undecided row waits in both queues with a badge
   until a person acts. The default is already 0 points, so a silent auto-reject
   would only take the decision away from the two people the flow exists to put
@@ -4049,7 +4057,8 @@ say about it.
 - Bot: the same two facts are on the Telegram card (`{sent}` on all eight
   `lp_card_*` templates, built once in `_lp_card`), because a brigadir deciding
   in a workshop will not open the dashboard first.
-- Dashboard: `/leaders?tab=lateproof`
+- (SUPERSEDED 2026-09-26 — cards open the appeal chat; «The appeal CHAT».)
+  Dashboard: `/leaders?tab=lateproof`
   (`components/leaders/LateProofs.jsx`). Split by stage and badged exactly like
   «Norozliklar» next door — one rule, two queues; see that section. Photos are
   ON the card — unlike
@@ -4082,6 +4091,95 @@ those rejections directly above them.
   `telegram_bot.py` and `approvals.py` still link `?tab=late`; `tabOk` refuses
   it exactly as it refuses a tab the viewer's role cannot open, and the saved
   tab stands. Fix the two links only if the queue never comes back.
+
+## The appeal CHAT — objections and late proofs (`/leaders/appeal/:kind/:id`)
+
+From **2026-09-26** (the operator's directive, every point asked and answered)
+both appeal flows — an objection to an AI rejection and a proof filed after its
+deadline — are argued as a CHAT between the three people the chain is made of:
+the leader, the unit's brigadir and the admins. The chain itself (leader →
+brigadir → admin) did not change; WHERE and HOW each step is taken did.
+`services/leader_appeal_chat.py` is THE definition of the conversation,
+`routers/leader_appeals.py` its HTTP surface, `pages/LeaderAppeal.jsx` the page.
+Where this section and the two below disagree, THIS section is current.
+
+- **The page reads top to bottom in the order a ruling needs**: the ruling
+  buttons of whoever may rule at this stage (the server's `canSupervise` /
+  `canDecide` / `canUndo`, never a role guess) → the evidence (the proof photos
+  and the AI's reason; a late proof has no AI verdict — the AI never reviews one
+  — so its photos and deadline / filed / late-by stand there) → the chat.
+  Auth-only and row-scoped like `/leaders/report/:uid` (it is where the Telegram
+  button lands). New objections: `/leaders/appeal/dispute/new?uid=&task=` — the
+  objection is WRITTEN as the chat's opening message (the day report's
+  «Norozilik bildirish» opens it); once filed the page opens the thread.
+- **Required comments**: the leader's filing (as before); the brigadir's
+  REFUSAL and UPLIFT both (refusal was optional until this day — enforced in
+  `decide_supervisor` of both services and at both endpoints, 400); an admin's
+  refusal (as before); an admin's approval optional. Every ruling's comment is
+  its entry in the chat.
+- **Free chat, three parties.** The leader, the unit's brigadir and any admin
+  may write while a ruling is still to be made (`_party` + `_open`); shift and
+  top managers and a «see all» grant READ. Writing stops once a ruling is final
+  (409) — the reason that ended it is the last word.
+  **An undo REOPENS**: `leader_dispute.undo` / `leader_late_proof.undo` (new,
+  `POST /leaders/late-proofs/{id}/undo`) send the row back to the stage the
+  ruling was made at (`reopen_stage`) — admin ruling → admin, brigadir's refusal
+  → brigadir — clear that stage's ruling columns (and the verdict / the
+  override grant it wrote) and the SAME chat opens with that stage's buttons.
+  The old `cancelled` end state is written only by `supersede` now; rows the
+  old undo left stay as they are.
+- **The thread is `leader_appeal_messages`** (`thread` "dispute"|"late" +
+  `thread_id`), files in `leader_appeal_files`, per-PROFILE read marks in
+  `leader_appeal_reads`. Kinds: `message` (free — the only kind its author may
+  edit or delete) and the permanent step records `filed`, `sup_rejected`,
+  `uplifted`, `approved`, `rejected`, `undone`. **Step records are written INSIDE
+  the service cores** (`create`, `decide_supervisor`, `decide_admin`, `undo`,
+  `supersede`), so every door that rules — the page, a Telegram capture still in
+  flight — writes one. The ruling columns still say where an appeal stands NOW
+  (every other reader keeps reading them); the rows say how it got there, which
+  after a reopen is the only place that history survives. A re-filed objection
+  CARRIES the earlier row's chat onto the new row (`chat.carry`).
+  `startup.backfill_appeal_threads` (flag `appeal_chat_backfill_2026_09_26_v1`)
+  wrote every pre-chat appeal's steps from its columns, with original times and
+  authors; a pre-chat undo overwrote the ruling it took back, so it is one
+  «undone» entry.
+- **Files: any type, ≤20 MB each, ≤10 per message** (the operator's call — 20 MB
+  is the most the bot API hands back). Relayed to the ARCHIVE CHANNEL as
+  documents (`relay_file`, content-type detection off), never stored in the DB.
+  `upload_guard.validate_chat_attachment` is the validator: no extension
+  whitelist BY DESIGN; only a file whose leading BYTES prove JPEG/PNG/GIF/WEBP is
+  typed as an image and served inline — everything else, a name that merely
+  claims `.png` included, is served as an ATTACHMENT behind `nosniff`
+  (`_stream_tg_file(name=, mime=, download=)`, RFC 5987 file names). Inside
+  Telegram a file is DMed to the reader by the bot
+  (`POST …/files/{id}/send`); a browser downloads it.
+- **Everybody hears about everything** (`chat.fanout`): leader profile, brigadir
+  profile and EVERY admin (the operator's ruling — all 6, every message, every
+  stage), each with ONE «Chatni ochish» web_app button; the author is told
+  nothing about their own words; accounts that just got a card keep the bell row
+  and are spared a second DM. Keys: `leader_dispute_filed` (neutral now),
+  `leader_dispute_message`, `late_proof_filed`, `late_proof_message`, the
+  existing ruling keys, and `*_undone` / `*_undone_sup` (reopened).
+- **Telegram carries ONLY «Open chat»** (the operator's ruling): the brigadir's
+  and admins' cards (`_ad_kb`, `_lp_kb`, the approvals `leader_dispute` card via
+  `_broadcast(kb_fn=)`) have no ruling buttons. A button on a card minted before
+  this still works as a POINTER — `_appeal_redirect` swaps the card's keyboard
+  for the chat button and says so — and never rules, because a one-tap refusal
+  would break the required-comment rule. The `ad_note` / `ad_arej` / `lp_note` /
+  `lp_arej` captures survive only for a capture already in flight.
+- **The two queue tabs are ONE component** (`components/leaders/AppealQueue.jsx`;
+  `Disputes.jsx` / `LateProofs.jsx` are thin wrappers). A card is a summary —
+  whose, which task, the AI's flags or how late, its state, the newest chat
+  entry, the reader's unread count and a «your turn» mark — and opens the chat.
+  A LEADER sees their own appeals without the stage split (it hid their rows
+  behind the tab they did not open); a brigadir lands on «Brigadirlarda».
+- **The day report rules nothing now**: its inline refuse/uplift/approve and
+  undo are gone; an objection carries «Chatni ochish» (marked when it is the
+  reader's turn).
+- **Exam sandbox**: every new path sits under `/api/leaders/disputes` or
+  `/api/leaders/late-proofs`, which the exam rewrites; `routers/exam_sandbox.py`
+  answers them over fixture items (synthesised entries, negative ids) and
+  `appeal_msg` rows, text only.
 
 ## Objecting to an AI rejection (the three-stage chain)
 
@@ -4179,7 +4277,9 @@ So:
   themselves and heard nothing back learns that explaining is pointless, which
   is the one outcome that makes the whole chain worthless. The brigadir hears
   about the two rulings they did not make, never their own.
-- **Two Telegram cards, one per stage.** Stage 1 is `_ad_*` in
+- (SUPERSEDED 2026-09-26: both cards carry only «Open chat»; old buttons point
+  into the chat — «The appeal CHAT».)
+  **Two Telegram cards, one per stage.** Stage 1 is `_ad_*` in
   `telegram_bot.py` (`ad:sr` refuse / `ad:su` uplift, which opens an `ad_note`
   text capture — the uplift is not made until the case arrives); stage 2 is the
   `leader_dispute` card `approvals.py` has served since before this chain

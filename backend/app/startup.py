@@ -1196,6 +1196,103 @@ def backfill_appeal_threads() -> None:
         db.close()
 
 
+APPEAL_CHAT_REPAIR_FLAG = "appeal_chat_repair_2026_09_26_v1"
+
+
+def repair_appeal_threads() -> None:
+    """Fill the steps an appeal thread is MISSING, by kind — the follow-up to
+    `backfill_appeal_threads`.
+
+    The backfill skipped every thread that already held an entry, and on
+    2026-09-26 the chat's service code reached production about twenty minutes
+    before the backfill did: a ruling made in that window wrote its own entry,
+    so its thread was skipped and has no opening message. This walks every
+    appeal and adds, at their original instants, only the step entries its
+    thread lacks — `filed`, the brigadir's ruling, the admin's ruling, a
+    pre-chat undo — never a second copy of one it has. Threads the backfill
+    wrote completely gain nothing. Flag-guarded; a change needs a NEW key.
+    """
+    from app.models import LeaderAiDispute, LeaderAppealMessage, LeaderLateProof
+    from app.services import leader_appeal_chat as chat
+    from app.services import leader_dispute
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=APPEAL_CHAT_REPAIR_FLAG).first():
+            return
+        admin_tids = {a.telegram_id for a in db.query(Admin).all() if a.telegram_id}
+
+        def role_of(tid, fallback):
+            return "admin" if tid and int(tid) in admin_tids else fallback
+
+        def kinds(thread, tid):
+            return {k for (k,) in db.query(LeaderAppealMessage.kind).filter_by(
+                thread=thread, thread_id=tid).all()}
+
+        added = 0
+        for d in db.query(LeaderAiDispute).order_by(LeaderAiDispute.id).all():
+            have = kinds(chat.DISPUTE, d.id)
+            filer_role = (str(d.requested_by_profile or "").split(":")[0]
+                          or "supervisor")
+            if chat.FILED not in have:
+                chat.add(db, chat.DISPUTE, d.id, kind=chat.FILED, text=d.reason,
+                         author_profile=d.requested_by_profile,
+                         author_name=d.requested_by_name, author_role=filer_role,
+                         author_telegram=d.requested_by_telegram, at=d.requested_at)
+                added += 1
+            own_filing_uplift = (d.sup_action == "uplifted" and filer_role != "leader"
+                                 and leader_dispute.sup_case(d) is None)
+            if (d.sup_action and not own_filing_uplift
+                    and not have & {chat.UPLIFTED, chat.SUP_REJECTED}):
+                chat.add(db, chat.DISPUTE, d.id,
+                         kind=(chat.UPLIFTED if d.sup_action == "uplifted"
+                               else chat.SUP_REJECTED),
+                         text=leader_dispute.sup_case(d), author_name=d.sup_by_name,
+                         author_role=role_of(d.sup_by_telegram, "supervisor"),
+                         author_telegram=d.sup_by_telegram, at=d.sup_at)
+                added += 1
+            if (d.status in ("approved", "rejected") and d.decided_at is not None
+                    and d.status not in have):
+                chat.add(db, chat.DISPUTE, d.id, kind=d.status, text=d.decision_note,
+                         author_name=d.decided_by_name, author_role="admin",
+                         author_telegram=d.decided_by_telegram, at=d.decided_at)
+                added += 1
+            if d.status == "cancelled" and chat.UNDONE not in have:
+                chat.add(db, chat.DISPUTE, d.id, kind=chat.UNDONE, text=None,
+                         author_name=d.decided_by_name, author_role="admin",
+                         author_telegram=d.decided_by_telegram,
+                         at=d.decided_at or d.requested_at)
+                added += 1
+        for r in db.query(LeaderLateProof).order_by(LeaderLateProof.id).all():
+            have = kinds(chat.LATE, r.id)
+            if chat.FILED not in have:
+                chat.add(db, chat.LATE, r.id, kind=chat.FILED, text=r.reason,
+                         author_profile=f"leader:{r.leader_id}" if r.leader_id else None,
+                         author_name=r.leader_name, author_role="leader",
+                         at=r.created_at)
+                added += 1
+            if r.sup_action and not have & {chat.UPLIFTED, chat.SUP_REJECTED}:
+                chat.add(db, chat.LATE, r.id,
+                         kind=(chat.UPLIFTED if r.sup_action == "uplifted"
+                               else chat.SUP_REJECTED),
+                         text=r.sup_note, author_name=r.sup_by_name,
+                         author_role=role_of(r.sup_by_telegram, "supervisor"),
+                         author_telegram=r.sup_by_telegram, at=r.sup_at)
+                added += 1
+            if r.adm_action and r.adm_action not in have:
+                chat.add(db, chat.LATE, r.id, kind=r.adm_action, text=r.adm_note,
+                         author_name=r.adm_by_name, author_role="admin",
+                         author_telegram=r.adm_by_telegram, at=r.adm_at)
+                added += 1
+        db.add(AppSetting(key=APPEAL_CHAT_REPAIR_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] appeal chat repair: {added} missing step entr(ies) written")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] appeal chat repair skipped: {exc}")
+    finally:
+        db.close()
+
+
 PRE_SEP_APPEALS_FLAG = "pre_sep_appeals_purge_2026_09_21_v1"
 
 

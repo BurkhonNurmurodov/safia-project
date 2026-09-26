@@ -1,19 +1,14 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, CalendarDays, User, Users, Sparkles, Clock, CalendarCheck,
-  CheckCircle2, XCircle, MessageSquareWarning, Camera, ChevronDown, RotateCcw,
-  ArrowUpCircle,
+  MessageSquareWarning, MessagesSquare, Camera, ChevronDown,
 } from "lucide-react";
 import Button from "../ui/Button";
-import Modal from "../ui/Modal";
-import ConfirmDialog from "../ui/ConfirmDialog";
 import Lightbox from "../ui/Lightbox";
-import FormField from "../ui/FormField";
 import ErrorScreen from "../ui/ErrorScreen";
 import { SkeletonBlock } from "../ui/Skeleton";
-import { useToast } from "../ui/Toast";
 import { useLang } from "../../context/LangContext";
 import { ReportPhoto, BotPhoto } from "./ProofPhoto";
 import { VERIFY, GROUP_ORDER, groupOf, taskState, disputeOpen } from "./verifyState";
@@ -76,6 +71,7 @@ const T_ALL = {
     errNote: "Bu rasmni yuklab bo'lmadi. Bu texnik nosozlik — baho pasaytirilmadi.",
     adminRuled: "Admin qarori: {v}", ruledDone: "bajarilgan", ruledNot: "bajarilmagan",
     dispute: "Norozilik bildirish", disputeTitle: "AI qaroriga norozilik",
+    chatOpen: "Chatni ochish", chatYourTurn: "Sizning navbatingiz — chatda hal qiling",
     disputeIntro: "Nima uchun bu vazifa noto'g'ri rad etilgan? Izohingizni brigadiringiz o'qiydi: u rad etadi yoki adminlarga yuboradi, va ball adminlar qaroridan keyin qaytadi.",
     disputeReason: "Sabab", disputePh: "Masalan: rasmda soat ko'rinib turibdi, lekin AI o'qiy olmagan",
     disputeSend: "Yuborish", cancel: "Bekor qilish",
@@ -144,6 +140,7 @@ const T_ALL = {
     errNote: "Бу расмни юклаб бўлмади. Бу техник носозлик — баҳо пасайтирилмади.",
     adminRuled: "Админ қарори: {v}", ruledDone: "бажарилган", ruledNot: "бажарилмаган",
     dispute: "Норозилик билдириш", disputeTitle: "AI қарорига норозилик",
+    chatOpen: "Чатни очиш", chatYourTurn: "Сизнинг навбатингиз — чатда ҳал қилинг",
     disputeIntro: "Нима учун бу вазифа нотўғри рад этилган? Изоҳингизни бригадирингиз ўқийди: у рад этади ёки админларга юборади, ва балл админлар қароридан кейин қайтади.",
     disputeReason: "Сабаб", disputePh: "Масалан: расмда соат кўриниб турибди, лекин AI ўқий олмаган",
     disputeSend: "Юбориш", cancel: "Бекор қилиш",
@@ -212,6 +209,7 @@ const T_ALL = {
     errNote: "Это фото не удалось загрузить. Это техническая ошибка — оценка не снижена.",
     adminRuled: "Решение админа: {v}", ruledDone: "выполнено", ruledNot: "не выполнено",
     dispute: "Возразить", disputeTitle: "Возражение на решение ИИ",
+    chatOpen: "Открыть чат", chatYourTurn: "Ваша очередь — решите в чате",
     disputeIntro: "Почему эта задача отклонена неверно? Ваш комментарий прочитает бригадир: он отклонит возражение или передаст его администраторам, и балл вернётся только по их решению.",
     disputeReason: "Причина", disputePh: "Например: часы на фото видны, но ИИ их не прочитал",
     disputeSend: "Отправить", cancel: "Отмена",
@@ -280,6 +278,7 @@ const T_ALL = {
     errNote: "This photo could not be fetched. That is a technical failure — nothing was deducted.",
     adminRuled: "Admin ruling: {v}", ruledDone: "done", ruledNot: "not done",
     dispute: "Object", disputeTitle: "Object to the AI ruling",
+    chatOpen: "Open the chat", chatYourTurn: "Your turn — decide in the chat",
     disputeIntro: "Why was this task rejected wrongly? Your brigadir reads your note first — they refuse it or pass it to the admins, and the point comes back only on an admin's decision.",
     disputeReason: "Reason", disputePh: "e.g. the clock is visible on the photo but the AI misread it",
     disputeSend: "Send", cancel: "Cancel",
@@ -368,7 +367,7 @@ function clockOf(iso) {
  * phone, and burying the three that failed under ten that did not is how the
  * page stops answering its own question. */
 function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDispute,
-                    canDecide, onUndo }) {
+                    onChat }) {
   // Both open stages count as live: neither has produced a ruling, so neither
   // may be objected to a second time.
   const dOpen = disputeOpen(t.dispute);
@@ -591,20 +590,22 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
             </div>
           )}
 
-          {/* The way back out of a ruling, sitting under the ruling it takes
-              back — an undo detached from what it undoes is a button nobody
-              can check before pressing. Same authority as deciding, and only
-              on a ruling still in force: a cancelled row has nothing to undo. */}
-          {canDecide && ["approved", "rejected"].includes(t.dispute?.status) && (
-            <Button size="md" variant="secondary" tint onClick={onUndo} className="w-full">
-              <RotateCcw size={13} /> {T.undo}
+          {/* The objection is argued in its CHAT (2026-09-26): the rulings,
+              their required comments, the questions and the undo all live
+              there, so this report carries one door onto it — marked when the
+              ruling is THIS reader's to make. */}
+          {t.dispute?.id && (
+            <Button size="md" variant={t.dispute.canAct ? "primary" : "secondary"} tint
+              onClick={onChat} className="w-full">
+              <MessagesSquare size={13} /> {t.dispute.canAct ? T.chatYourTurn : T.chatOpen}
             </Button>
           )}
 
           {/* Never show a problem without a path to act on it. The LEADER who
               receives the DM is the person the verdict judged, so the door is
               theirs first — and it stays open to their brigadir, who is the
-              only route for a leader whose name resolves to no profile. */}
+              only route for a leader whose name resolves to no profile. The
+              objection is WRITTEN as the first message of its chat. */}
           {canDispute && t.ai_rejected && !dOpen && (
             <Button size="md" variant="secondary" tint onClick={onDispute}
               className="w-full">
@@ -620,115 +621,16 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
 export default function DayReportView({ uid, embedded = false }) {
   const nav = useNavigate();
   const { lang } = useLang();
-  const qc = useQueryClient();
   const T = T_ALL[lang] || T_ALL.ru;
-  const { show, node: toastNode } = useToast({ position: "bottom" });
 
   const [openIds, setOpenIds] = useState(null);   // null = "use the default"
   const [zoom, setZoom] = useState("");
-  const [disputeTask, setDisputeTask] = useState(null);
-  const [reason, setReason] = useState("");
-  // The task whose objection is being ruled on, and the note that goes with
-  // it. Every ruling that carries text is the SAME form — `noteFor.kind` is
-  // which — and two questions are kept apart inside it: whether a comment is
-  // OFFERED, and whether it is DEMANDED.
-  //
-  // All three admin-stage rulings offer one, because a refusal and an approval
-  // alike land in the leader's notice. Uplifting offers one too. Only
-  // uplifting and an ADMIN's refusal DEMAND it: the first because an admin
-  // ruling on a shift they were not on is a coin toss without the brigadir's
-  // case, the second because it is the end of the chain — the leader loses the
-  // point for good and has no route left. UPHOLDING demands nothing (the
-  // outcome is its own answer), and a BRIGADIR's refusal stays one tap: they
-  // are not the last word.
-  const [noteFor, setNoteFor] = useState(null);  // { t, kind: uplift|refuse|approve }
-  const [supNote, setSupNote] = useState("");
-  const [supErr, setSupErr] = useState(null);
-  const noteTask = noteFor?.t || null;
-  const refusing = noteFor?.kind === "refuse";
-  const approving = noteFor?.kind === "approve";
-  const noteRequired = !approving;
-  const askNote = (t, kind) => { setSupNote(""); setSupErr(null); setNoteFor({ t, kind }); };
-  const closeNote = () => { setNoteFor(null); setSupErr(null); };
-  // The task whose SETTLED dispute is being taken back, and the failure that
-  // has to stay on the dialog rather than vanish with it.
-  const [undoTask, setUndoTask] = useState(null);
-  const [undoErr, setUndoErr] = useState(null);
-
   const { data, isLoading, error } = useQuery({
     queryKey: ["leaderDayReport", uid],
     queryFn: () => api.get(`/api/leaders/report/${encodeURIComponent(uid)}`).then((r) => r.data),
     retry: false,
   });
 
-  // This report, and the unit-day page that lists it as one row — a ruling made
-  // in here moves that row's score and state too.
-  const invalidateReport = () => {
-    qc.invalidateQueries({ queryKey: ["leaderDayReport", uid] });
-    qc.invalidateQueries({ queryKey: ["leaderUnitReport"] });
-  };
-
-  const fileDispute = useMutation({
-    mutationFn: (body) =>
-      api.post(`/api/leaders/report/${encodeURIComponent(uid)}/dispute`, body).then((r) => r.data),
-    onSuccess: () => {
-      invalidateReport();
-      // The «Norozliklar» queue and the /leaders tab badge both read this key —
-      // a filing that does not invalidate it leaves the queue one objection
-      // behind and the badge under-counting whoever now has to rule.
-      qc.invalidateQueries({ queryKey: ["leader-disputes"] });
-      setDisputeTask(null); setReason("");
-      show(T.sent, "success");
-    },
-    onError: (e) => show(e?.response?.data?.detail || T.failed, "error"),
-  });
-
-  // ONE endpoint for both stages — which ruling it applies is a property of the
-  // row, so the page never names the stage and cannot name the wrong one.
-  const decide = useMutation({
-    mutationFn: ({ id, action, note }) =>
-      api.post(`/api/leaders/disputes/${id}/decide`,
-               { action, note: note || "" }).then((r) => r.data),
-    onSuccess: (_r, v) => {
-      invalidateReport();
-      qc.invalidateQueries({ queryKey: ["leaders"] });
-      qc.invalidateQueries({ queryKey: ["leader-disputes"] });
-      setNoteFor(null); setSupNote(""); setSupErr(null);
-      show(v.action === "uplifted" ? T.okUplift : T.decided, "success");
-    },
-    // A failure on a ruling made FROM THE FORM has to stay on the form: the
-    // words are in it, and a toast beside a standing modal is a message the
-    // reader has to hunt for. Keyed on the form being open rather than on the
-    // verb or on `v.note` — the refusal form sends the same "rejected" a
-    // one-tap brigadir refusal does, and an approval may legitimately send an
-    // empty note, so neither of those can tell the two doors apart.
-    onError: (e) => {
-      const msg = e?.response?.data?.detail || T.failed;
-      if (noteFor) setSupErr(msg); else show(msg, "error");
-    },
-  });
-
-  // Taking a ruling back. Deciding is one tap and an admin's own filing IS the
-  // approval, so the wrong outcome is one mis-tap away; without this the only
-  // way back was the AI triage tab, which cleared the verdict and left the
-  // «objection upheld» box standing over a task that had lost its weight again.
-  const undoRuling = useMutation({
-    mutationFn: ({ id }) => api.post(`/api/leaders/disputes/${id}/undo`).then((r) => r.data),
-    onSuccess: () => {
-      invalidateReport();
-      // The register and the leaderboard print this score too — and the
-      // objections queue still shows an Undo button for a ruling that is gone.
-      qc.invalidateQueries({ queryKey: ["leaders"] });
-      qc.invalidateQueries({ queryKey: ["leader-disputes"] });
-      setUndoTask(null); setUndoErr(null);
-      show(T.undone, "success");
-    },
-    onError: (e) => setUndoErr(e?.response?.data?.detail || T.failed),
-  });
-
-  // Failures open, passes closed — the default the page exists for. Held as
-  // null until the user touches something so a refetch never slams open cards
-  // shut under the reader's finger.
   const groups = useMemo(() => {
     const by = {};
     for (const t of data?.tasks || []) (by[groupOf(t)] ||= []).push(t);
@@ -924,44 +826,8 @@ export default function DayReportView({ uid, embedded = false }) {
               <div key={t.id}>
                 <TaskCard t={t} T={T} lang={lang} uid={data.uid} open={isOpen(t)} onToggle={() => toggle(t)}
                   onPhoto={setZoom} canDispute={data.canDispute}
-                  onDispute={() => { setDisputeTask(t); setReason(""); }}
-                  canDecide={data.canDecide}
-                  onUndo={() => { setUndoErr(null); setUndoTask(t); }} />
-                {/* The two buttons THIS stage has — and only those. A brigadir
-                    cannot restore the weight and an admin does not pass it on,
-                    so the asymmetry is expressed by which buttons exist rather
-                    than by a 403 after somebody has pressed one. `canAct` is
-                    the server's per-row answer to «is it your turn». */}
-                {t.dispute?.canAct && t.dispute.status === "supervisor" && (
-                  <div className="flex gap-2 mt-1.5 px-1">
-                    <Button size="md" variant="primary" tint className="flex-1"
-                      onClick={() => askNote(t, "uplift")}>
-                      <ArrowUpCircle size={13} /> {T.uplift}
-                    </Button>
-                    {/* A brigadir's refusal stays one tap: it is not the last
-                        word — an admin's undo reaches it and the leader may
-                        file again — so nothing here is unanswerable. */}
-                    <Button size="md" variant="danger" tint className="flex-1"
-                      loading={decide.isPending}
-                      onClick={() => decide.mutate({ id: t.dispute.id, action: "rejected" })}>
-                      <XCircle size={13} /> {T.refuse}
-                    </Button>
-                  </div>
-                )}
-                {t.dispute?.canAct && t.dispute.status === "admin" && (
-                  <div className="flex gap-2 mt-1.5 px-1">
-                    <Button size="md" variant="success" tint className="flex-1"
-                      onClick={() => askNote(t, "approve")}>
-                      <CheckCircle2 size={13} /> {T.approve}
-                    </Button>
-                    {/* …but an ADMIN's does not. It ends the chain, so it
-                        collects the reason and the leader is told it. */}
-                    <Button size="md" variant="danger" tint className="flex-1"
-                      onClick={() => askNote(t, "refuse")}>
-                      <XCircle size={13} /> {T.refuse}
-                    </Button>
-                  </div>
-                )}
+                  onDispute={() => nav(`/leaders/appeal/dispute/new?uid=${encodeURIComponent(data.uid)}&task=${t.id}`)}
+                  onChat={() => nav(`/leaders/appeal/dispute/${t.dispute.id}`)} />
               </div>
             ))}
           </div>
@@ -970,118 +836,6 @@ export default function DayReportView({ uid, embedded = false }) {
 
       <Lightbox src={zoom} onClose={() => setZoom("")} />
 
-      <Modal open={!!disputeTask} onClose={() => setDisputeTask(null)}
-        title={T.disputeTitle} subtitle={disputeTask ? pick(disputeTask.name, lang) : ""}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setDisputeTask(null)}>{T.cancel}</Button>
-            <Button variant="primary" loading={fileDispute.isPending}
-              disabled={reason.trim().length < 3}
-              onClick={() => fileDispute.mutate({ task_id: disputeTask.id, reason: reason.trim() })}>
-              {T.disputeSend}
-            </Button>
-          </>
-        }>
-        <p className="text-[12px] leading-snug mb-3" style={{ color: "var(--text-3)" }}>
-          {T.disputeIntro}
-        </p>
-        <FormField label={T.disputeReason} required>
-          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={4}
-            maxLength={1000} placeholder={T.disputePh} autoFocus
-            className="w-full rounded-lg px-3 py-2 text-sm resize-y"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
-                     color: "var(--text-1)" }} />
-        </FormField>
-      </Modal>
-
-      {/* Every ruling that CARRIES a comment shares this one form — the Modal
-          template, not a confirm carrying a field it was never built to hold.
-          Passing it up needs the brigadir's case for the point; an admin's
-          refusal needs the reason the leader will be told, because nothing
-          comes after it; an approval merely offers the box. */}
-      <Modal open={!!noteTask} onClose={closeNote}
-        title={refusing ? T.refuseTitle : approving ? T.approveTitle : T.upliftTitle}
-        subtitle={noteTask ? pick(noteTask.name, lang) : ""}
-        footer={
-          <>
-            <Button variant="secondary" onClick={closeNote}>{T.cancel}</Button>
-            <Button variant={refusing ? "danger" : approving ? "success" : "primary"}
-              loading={decide.isPending}
-              // An approval is never blocked on the box — that is what
-              // "optional" means, and the ruling it makes is the commonest one
-              // on this screen.
-              disabled={noteRequired && supNote.trim().length < 3}
-              onClick={() => decide.mutate({
-                id: noteTask.dispute.id,
-                action: approving ? "approved" : refusing ? "rejected" : "uplifted",
-                note: supNote.trim(),
-              })}>
-              {refusing ? <><XCircle size={14} /> {T.refuse}</>
-                : approving ? <><CheckCircle2 size={14} /> {T.approve}</>
-                  : <><ArrowUpCircle size={14} /> {T.uplift}</>}
-            </Button>
-          </>
-        }>
-        {/* The leader's own words stay in front of whoever is ruling while they
-            write: a reply typed without the claim on screen answers whatever
-            the writer remembers of it. */}
-        {noteTask?.dispute?.reason && (
-          <div className="rounded-lg px-3 py-2 mb-3 text-[12px] leading-snug"
-            style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
-            <span className="text-[11px] uppercase tracking-wide"
-              style={{ color: "var(--text-4)" }}>{T.noteLead}</span>
-            <br />“{noteTask.dispute.reason}”
-          </div>
-        )}
-        {/* …and so does the brigadir's case, on either of the ADMIN's rulings:
-            the middle note is the one an admin came here to weigh. `sup.note` is
-            the server's `sup_case`, already None when it merely echoes the text
-            above it, so one sentence is never printed twice here. */}
-        {(refusing || approving) && noteTask?.dispute?.sup?.note && (
-          <div className="rounded-lg px-3 py-2 mb-3 text-[12px] leading-snug"
-            style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
-            <span className="text-[11px] uppercase tracking-wide"
-              style={{ color: "var(--text-4)" }}>{T.noteSup}</span>
-            <br />“{noteTask.dispute.sup.note}”
-          </div>
-        )}
-        {/* An optional field says so ON THE LABEL, where the eye lands before
-            the box; a required one says it with `FormField`'s red star. */}
-        <FormField
-          label={approving ? `${T.noteAdm} · ${T.noteOpt}`
-            : refusing ? T.noteAdm : T.noteSup}
-          required={noteRequired}
-          hint={refusing ? T.refuseIntro : approving ? T.approveIntro : T.upliftIntro}
-          error={supErr || undefined}>
-          <textarea value={supNote}
-            onChange={(e) => { setSupNote(e.target.value); setSupErr(null); }}
-            rows={4} maxLength={1000}
-            placeholder={refusing ? T.refusePh : approving ? T.approvePh : T.upliftPh} autoFocus
-            className="w-full rounded-lg px-3 py-2 text-sm resize-y"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
-                     color: "var(--text-1)" }} />
-        </FormField>
-      </Modal>
-
-      {/* Consequential enough to confirm: it takes points back off a leader
-          and re-DMs the corrected report to two people. */}
-      {undoTask && (
-        <ConfirmDialog
-          icon={<RotateCcw />}
-          title={T.undoTitle}
-          message={fill(T.undoBody, {
-            v: undoTask.dispute?.status === "approved" ? T.dispApproved : T.dispRejected,
-          })}
-          confirmLabel={T.undo}
-          cancelLabel={T.cancel}
-          loading={undoRuling.isPending}
-          error={undoErr}
-          onCancel={() => { setUndoTask(null); setUndoErr(null); }}
-          onConfirm={() => undoRuling.mutate({ id: undoTask.dispute.id })}
-        />
-      )}
-
-      {toastNode}
     </>
   );
 }
