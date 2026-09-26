@@ -2125,7 +2125,7 @@ _LT_MESSAGES = {
         "late_confirm": ("\u23F1 {task}\n\n\U0001F4F8 {k} ta rasm\n"
                          "\U0001F4DD Sabab: {reason}\n\nYuboraymi?"),
         "late_sent": ("\u2705 Kechikkan isbot yuborildi.\n\n"
-                      "Brigadiringiz ko'rib chiqadi. Javobni shu yerda olasiz."),
+                      "Brigadiringiz ko'rib chiqadi. Savol-javob va qaror chatda bo'ladi."),
         "late_need_photo": "Kamida bitta rasm yuboring.",
         "late_gone_alert": "Bu vazifa uchun endi topshirib bo'lmaydi.",
         "late_state_supervisor": "\n\n\u23F3 Kechikkan isbot brigadirda ko'rib chiqilmoqda.",
@@ -2134,13 +2134,14 @@ _LT_MESSAGES = {
         "late_state_rejected": "\n\n\u274C Kechikkan isbot rad etildi \u00B7 0/{w} ball",
         "lp_card_sup": ("\u23F1 KECHIKKAN ISBOT\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
                         "\U0001F4C5 {date} \u00B7 muddat {t}\n{sent}\n\n\U0001F4DD Sabab:\n{reason}\n\n"
-                        "Rad etsangiz \u2014 ball berilmaydi. Adminlarga yuborsangiz, "
-                        "nega tasdiqlash kerakligini yozishingiz so'raladi."),
+                        "Chatda ko'rib chiqing: savol bering, so'ng rad eting yoki adminlarga "
+                        "yuboring \u2014 ikkalasi ham izoh talab qiladi."),
         "lp_card_adm": ("\u23F1 KECHIKKAN ISBOT \u00B7 brigadir yubordi\n\n\U0001F464 {leader}\n"
                         "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 muddat {t}\n{sent}\n\n"
                         "\U0001F4DD Lider sababi:\n{reason}\n\n"
                         "\U0001F464 Brigadir ({by}) izohi:\n{note}\n\n"
-                        "Tasdiqlasangiz \u2014 vazifa to'liq ball oladi."),
+                        "Chatda hal qiling: tasdiqlasangiz \u2014 vazifa to'liq ball oladi, "
+                        "rad etish uchun sabab yozish shart."),
         "lp_sent": "\U0001F4E4 Yuborildi: {when}",
         "lp_sent_late": "\U0001F4E4 Yuborildi: {when} \u00B7 {dur} kech",
         "dur_d": "kun", "dur_h": "soat", "dur_m": "daq",
@@ -2157,10 +2158,12 @@ _LT_MESSAGES = {
         "lp_done_approved": "\u2705 Tasdiqlandi \u00B7 ball berildi",
         "lp_gone": "Bu ariza allaqachon hal qilingan.",
         "lp_not_yours": "Bu ariza sizga tegishli emas.",
+        "btn_open_chat": "\U0001F4AC Chatni ochish",
+        "appeal_in_chat": "Bu endi chatda hal qilinadi \u2014 \u00abChatni ochish\u00bb tugmasini bosing.",
         "ad_card_sup": ("⚖️ AI QARORIGA NOROZILIK\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI xulosasi:\n{verdict}\n\n📝 Lider izohi:\n{reason}\n\n"
-                        "Rad etsangiz — AI qarori kuchida qoladi. Adminlarga yuborsangiz, "
-                        "nega ball berilishi kerakligini yozishingiz so'raladi."),
+                        "Chatda ko'rib chiqing: savol bering, so'ng rad eting yoki adminlarga "
+                        "yuboring — ikkalasi ham izoh talab qiladi."),
         "btn_ad_reject": "❌ Rad etish",
         "btn_ad_uplift": "⬆️ Adminlarga yuborish",
         "ad_ask_note": ("📝 Nega bu vazifaga ball berilishi kerak?\n\n"
@@ -2274,7 +2277,7 @@ _LT_MESSAGES = {
         "late_confirm": ("\u23F1 {task}\n\n\U0001F4F8 {k} та расм\n"
                          "\U0001F4DD Сабаб: {reason}\n\nЮборайми?"),
         "late_sent": ("\u2705 Кечиккан исбот юборилди.\n\n"
-                      "Бригадирингиз кўриб чиқади. Жавобни шу ерда оласиз."),
+                      "Бригадирингиз кўриб чиқади. Савол-жавоб ва қарор чатда бўлади."),
         "late_need_photo": "Камида битта расм юборинг.",
         "late_gone_alert": "Бу вазифа учун энди топшириб бўлмайди.",
         "late_state_supervisor": "\n\n\u23F3 Кечиккан исбот бригадирда кўриб чиқилмоқда.",
@@ -2283,13 +2286,14 @@ _LT_MESSAGES = {
         "late_state_rejected": "\n\n\u274C Кечиккан исбот рад этилди \u00B7 0/{w} балл",
         "lp_card_sup": ("\u23F1 КЕЧИККАН ИСБОТ\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
                         "\U0001F4C5 {date} \u00B7 муддат {t}\n{sent}\n\n\U0001F4DD Сабаб:\n{reason}\n\n"
-                        "Рад этсангиз \u2014 балл берилмайди. Админларга юборсангиз, "
-                        "нега тасдиқлаш кераклигини ёзишингиз сўралади."),
+                        "Чатда кўриб чиқинг: савол беринг, сўнг рад этинг ёки админларга "
+                        "юборинг \u2014 иккаласи ҳам изоҳ талаб қилади."),
         "lp_card_adm": ("\u23F1 КЕЧИККАН ИСБОТ \u00B7 бригадир юборди\n\n\U0001F464 {leader}\n"
                         "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 муддат {t}\n{sent}\n\n"
                         "\U0001F4DD Лидер сабаби:\n{reason}\n\n"
                         "\U0001F464 Бригадир ({by}) изоҳи:\n{note}\n\n"
-                        "Тасдиқласангиз \u2014 вазифа тўлиқ балл олади."),
+                        "Чатда ҳал қилинг: тасдиқласангиз \u2014 вазифа тўлиқ балл олади, "
+                        "рад этиш учун сабаб ёзиш шарт."),
         "lp_sent": "\U0001F4E4 Юборилди: {when}",
         "lp_sent_late": "\U0001F4E4 Юборилди: {when} \u00B7 {dur} кеч",
         "dur_d": "кун", "dur_h": "соат", "dur_m": "дақ",
@@ -2306,10 +2310,12 @@ _LT_MESSAGES = {
         "lp_done_approved": "\u2705 Тасдиқланди \u00B7 балл берилди",
         "lp_gone": "Бу ариза аллақачон ҳал қилинган.",
         "lp_not_yours": "Бу ариза сизга тегишли эмас.",
+        "btn_open_chat": "\U0001F4AC Чатни очиш",
+        "appeal_in_chat": "Бу энди чатда ҳал қилинади \u2014 \u00abЧатни очиш\u00bb тугмасини босинг.",
         "ad_card_sup": ("⚖️ AI ҚАРОРИГА НОРОЗИЛИК\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI хулосаси:\n{verdict}\n\n📝 Лидер изоҳи:\n{reason}\n\n"
-                        "Рад этсангиз — AI қарори кучида қолади. Админларга юборсангиз, "
-                        "нега балл берилиши кераклигини ёзишингиз сўралади."),
+                        "Чатда кўриб чиқинг: савол беринг, сўнг рад этинг ёки админларга "
+                        "юборинг — иккаласи ҳам изоҳ талаб қилади."),
         "btn_ad_reject": "❌ Рад этиш",
         "btn_ad_uplift": "⬆️ Админларга юбориш",
         "ad_ask_note": ("📝 Нега бу вазифага балл берилиши керак?\n\n"
@@ -2423,7 +2429,7 @@ _LT_MESSAGES = {
         "late_confirm": ("\u23F1 {task}\n\n\U0001F4F8 Фото: {k}\n"
                          "\U0001F4DD Причина: {reason}\n\nОтправить?"),
         "late_sent": ("\u2705 Позднее подтверждение отправлено.\n\n"
-                      "Бригадир его рассмотрит. Ответ придёт сюда."),
+                      "Бригадир его рассмотрит. Вопросы, ответы и решение — в чате."),
         "late_need_photo": "Пришлите хотя бы одно фото.",
         "late_gone_alert": "По этой задаче сдать уже нельзя.",
         "late_state_supervisor": "\n\n\u23F3 Позднее подтверждение на рассмотрении у бригадира.",
@@ -2432,13 +2438,14 @@ _LT_MESSAGES = {
         "late_state_rejected": "\n\n\u274C Позднее подтверждение отклонено \u00B7 0/{w} баллов",
         "lp_card_sup": ("\u23F1 ПОЗДНЕЕ ПОДТВЕРЖДЕНИЕ\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
                         "\U0001F4C5 {date} \u00B7 срок {t}\n{sent}\n\n\U0001F4DD Причина:\n{reason}\n\n"
-                        "Если отклоните \u2014 балл не начислят. Если передадите админам, "
-                        "нужно будет написать, почему это стоит принять."),
+                        "Рассмотрите в чате: задайте вопросы, затем отклоните или передайте "
+                        "администраторам \u2014 в обоих случаях нужен комментарий."),
         "lp_card_adm": ("\u23F1 ПОЗДНЕЕ ПОДТВЕРЖДЕНИЕ \u00B7 передал бригадир\n\n\U0001F464 {leader}\n"
                         "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 срок {t}\n{sent}\n\n"
                         "\U0001F4DD Причина лидера:\n{reason}\n\n"
                         "\U0001F464 Комментарий бригадира ({by}):\n{note}\n\n"
-                        "Если примете \u2014 задача получит полный балл."),
+                        "Решите в чате: если примете \u2014 задача получит полный балл; "
+                        "для отказа нужна причина."),
         "lp_sent": "\U0001F4E4 Отправлено: {when}",
         "lp_sent_late": "\U0001F4E4 Отправлено: {when} \u00B7 опоздание {dur}",
         "dur_d": "д", "dur_h": "ч", "dur_m": "мин",
@@ -2455,10 +2462,12 @@ _LT_MESSAGES = {
         "lp_done_approved": "\u2705 Принято \u00B7 балл начислен",
         "lp_gone": "Эта заявка уже рассмотрена.",
         "lp_not_yours": "Эта заявка не для вас.",
+        "btn_open_chat": "\U0001F4AC Открыть чат",
+        "appeal_in_chat": "Теперь это решается в чате \u2014 нажмите \u00abОткрыть чат\u00bb.",
         "ad_card_sup": ("⚖️ ВОЗРАЖЕНИЕ НА РЕШЕНИЕ ИИ\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 Заключение ИИ:\n{verdict}\n\n📝 Комментарий лидера:\n{reason}\n\n"
-                        "Если отклоните — решение ИИ останется в силе. Если передадите "
-                        "администраторам, нужно будет объяснить, почему балл должен быть начислен."),
+                        "Рассмотрите в чате: задайте вопросы, затем отклоните или передайте "
+                        "администраторам — в обоих случаях нужен комментарий."),
         "btn_ad_reject": "❌ Отклонить",
         "btn_ad_uplift": "⬆️ Передать администраторам",
         "ad_ask_note": ("📝 Почему за эту задачу нужно начислить балл?\n\n"
@@ -2572,7 +2581,7 @@ _LT_MESSAGES = {
         "late_confirm": ("\u23F1 {task}\n\n\U0001F4F8 {k} photo(s)\n"
                          "\U0001F4DD Reason: {reason}\n\nSend it?"),
         "late_sent": ("\u2705 Late proof sent.\n\n"
-                      "Your brigadir will review it. The answer arrives here."),
+                      "Your brigadir will review it. Questions, answers and the ruling happen in the chat."),
         "late_need_photo": "Send at least one photo.",
         "late_gone_alert": "This task can no longer be submitted.",
         "late_state_supervisor": "\n\n\u23F3 Late proof is with your brigadir.",
@@ -2581,13 +2590,14 @@ _LT_MESSAGES = {
         "late_state_rejected": "\n\n\u274C Late proof rejected \u00B7 0/{w} points",
         "lp_card_sup": ("\u23F1 LATE PROOF\n\n\U0001F464 {leader}\n\U0001F4CC {task}\n"
                         "\U0001F4C5 {date} \u00B7 due {t}\n{sent}\n\n\U0001F4DD Reason:\n{reason}\n\n"
-                        "Reject and no point is given. Pass it to the admins and you will be "
-                        "asked why it should be accepted."),
+                        "Review it in the chat: ask what you need, then refuse it or pass it to "
+                        "the admins \u2014 both need your comment."),
         "lp_card_adm": ("\u23F1 LATE PROOF \u00B7 passed up by the brigadir\n\n\U0001F464 {leader}\n"
                         "\U0001F4CC {task}\n\U0001F4C5 {date} \u00B7 due {t}\n{sent}\n\n"
                         "\U0001F4DD Leader's reason:\n{reason}\n\n"
                         "\U0001F464 Brigadir ({by}) says:\n{note}\n\n"
-                        "Approve and the task gets its full weight."),
+                        "Decide in the chat: approving gives the task its full weight; "
+                        "refusing needs a reason."),
         "lp_sent": "\U0001F4E4 Filed: {when}",
         "lp_sent_late": "\U0001F4E4 Filed: {when} \u00B7 {dur} late",
         "dur_d": "d", "dur_h": "h", "dur_m": "m",
@@ -2604,10 +2614,12 @@ _LT_MESSAGES = {
         "lp_done_approved": "\u2705 Approved \u00B7 point given",
         "lp_gone": "This request has already been decided.",
         "lp_not_yours": "This request is not yours to decide.",
+        "btn_open_chat": "\U0001F4AC Open chat",
+        "appeal_in_chat": "This is decided in the chat now \u2014 tap \u201cOpen chat\u201d.",
         "ad_card_sup": ("⚖️ OBJECTION TO AN AI RULING\n\n👤 {leader}\n📌 {task}\n📅 {date}\n\n"
                         "🤖 AI verdict:\n{verdict}\n\n📝 The leader's note:\n{reason}\n\n"
-                        "Refuse it and the AI ruling stands. Pass it to the admins and "
-                        "you will be asked to write why the task should be pointed."),
+                        "Review it in the chat: ask what you need, then refuse it or pass it to "
+                        "the admins — both need your comment."),
         "btn_ad_reject": "❌ Refuse",
         "btn_ad_uplift": "⬆️ Pass to the admins",
         "ad_ask_note": ("📝 Why should this task be pointed?\n\n"
@@ -3752,12 +3764,20 @@ def _lt_callback(call: types.CallbackQuery):
             if cap:
                 db.delete(cap)
             db.commit()
-            _lp_send_to_supervisor(db, row)
+            carded = _lp_send_to_supervisor(db, row) or set()
+            # The chat opened with the leader's reason as its first entry: the
+            # admins hear about it too (the operator's ruling — all three
+            # parties, every message), the brigadir who got the card keeps
+            # the bell row alone.
+            leader_late_proof.notify_filed(db, row, skip_dm=carded)
+            from app.services.leader_appeal_chat import LATE, open_chat_markup
             try:
                 bot.edit_message_text(_lt(lang, "late_sent"), chat_id=chat_id,
-                                      message_id=msg_id)
+                                      message_id=msg_id,
+                                      reply_markup=open_chat_markup(LATE, row.id, lang))
             except Exception:
-                bot.send_message(chat_id, _lt(lang, "late_sent"))
+                bot.send_message(chat_id, _lt(lang, "late_sent"),
+                                 reply_markup=open_chat_markup(LATE, row.id, lang))
             bot.answer_callback_query(call.id)
             _lt_menu(db, tid, pid, lang, chat_id, None, cid)
             return
@@ -4359,25 +4379,12 @@ def _lp_media(db, row) -> list:
 
 
 def _lp_kb(lang: str, row, stage: str):
-    """The two buttons for one stage — and only ever the two that stage has.
-
-    The supervisor cannot approve and the admin cannot uplift: the asymmetry is
-    the whole design, so it is expressed by the keyboard rather than by a check
-    that fires after somebody has already pressed something.
-    """
-    kb = types.InlineKeyboardMarkup(row_width=1)
-    if stage == "sup":
-        kb.row(_lt_btn(_lt(lang, "btn_lp_reject"), f"lp:sr:{row.id}"),
-               _lt_btn(_lt(lang, "btn_lp_uplift"), f"lp:su:{row.id}"))
-    else:
-        kb.row(_lt_btn(_lt(lang, "btn_lp_reject"), f"lp:ar:{row.id}"),
-               _lt_btn(_lt(lang, "btn_lp_approve"), f"lp:aa:{row.id}"))
-    kb.add(types.InlineKeyboardButton(
-        _lt(lang, "btn_open_panel") if _lt(lang, "btn_open_panel") != "btn_open_panel"
-        else "\U0001F4CB /leaders",
-        web_app=types.WebAppInfo(
-            url=f"{settings.webapp_url.rstrip('/')}/leaders?tab=late")))
-    return kb
+    """ONE button, onto the late proof's chat (the operator's ruling,
+    2026-09-26). The ruling is made in the chat, where the required comment is
+    and where the brigadir and the admins can ask the leader first; a card that
+    ruled on a tap would bypass both. `stage` is kept for the callers."""
+    from app.services.leader_appeal_chat import LATE, open_chat_markup
+    return open_chat_markup(LATE, row.id, lang)
 
 
 def _lp_dur(lang: str, mins: int) -> str:
@@ -4426,7 +4433,7 @@ def _lp_card(db, row, lang: str, stage: str) -> str:
     )
 
 
-def _lp_deliver(db, row, recipients: set[int], stage: str) -> None:
+def _lp_deliver(db, row, recipients: set[int], stage: str) -> set[int]:
     """Send one late-proof card, with its photos, to a set of accounts.
 
     The photos travel WITH the card rather than behind a link: a brigadir
@@ -4441,9 +4448,10 @@ def _lp_deliver(db, row, recipients: set[int], stage: str) -> None:
     """
     from app.notify_ctx import notifications_suppressed
     if notifications_suppressed():
-        return
+        return set()
     kind = f"leader_lateproof_{stage}"
     media = _lp_media(db, row)
+    got: set[int] = set()
     for rid in sorted(recipients):
         lang = _get_lang(rid)
         if media:
@@ -4460,7 +4468,9 @@ def _lp_deliver(db, row, recipients: set[int], stage: str) -> None:
             continue
         db.add(ApprovalNotice(kind=kind, ref=str(row.id), admin_telegram_id=rid,
                               message_id=sent.message_id, text=text))
+        got.add(rid)
     db.commit()
+    return got
 
 
 def _lp_retire(db, row, stage: str, outcome_key: str) -> None:
@@ -4499,7 +4509,7 @@ def _lp_supervisor_ids(db, row) -> set[int]:
         return set()
 
 
-def _lp_send_to_supervisor(db, row) -> None:
+def _lp_send_to_supervisor(db, row) -> set[int]:
     ids = _lp_supervisor_ids(db, row)
     if not ids:
         # No claimed brigadir account — an ordinary state, not an error. The
@@ -4512,14 +4522,13 @@ def _lp_send_to_supervisor(db, row) -> None:
         # buttons that answered «this is already decided» to the only people
         # who had been told about it, and left those cards live-looking
         # forever. Admins outrank stage 1 (`_lp_can_supervise`), so reject and
-        # pass-up both work for them.
-        _lp_deliver(db, row, set(_admin_ids()), "sup")
-        return
-    _lp_deliver(db, row, ids, "sup")
+        # pass-up both work for them. Returns who got the card.
+        return _lp_deliver(db, row, set(_admin_ids()), "sup")
+    return _lp_deliver(db, row, ids, "sup")
 
 
-def _lp_send_to_admins(db, row) -> None:
-    _lp_deliver(db, row, set(_admin_ids()), "adm")
+def _lp_send_to_admins(db, row) -> set[int]:
+    return _lp_deliver(db, row, set(_admin_ids()), "adm")
 
 
 def _lp_can_supervise(db, tid: int, row) -> bool:
@@ -4821,9 +4830,9 @@ def _lp_note(message: types.Message):
             actor_telegram=tid)
         db.commit()
         _lp_retire(db, row, "sup", "lp_done_uplifted")
-        _lp_send_to_admins(db, row)
-        leader_late_proof.notify_decided(db, row, stage="supervisor")
-        db.commit()
+        carded = _lp_send_to_admins(db, row) or set()
+        leader_late_proof.notify_decided(db, row, stage="supervisor",
+                                         skip_dm=carded)
         bot.send_message(message.chat.id, _lt(lang, "lp_done_uplifted"))
 
 
@@ -4886,130 +4895,44 @@ def _display_name_for(db, tid: int) -> str:
     return str(tid)
 
 
+def _appeal_redirect(call: types.CallbackQuery, thread: str, rid: int) -> None:
+    """A tap on a ruling button minted before 2026-09-26.
+
+    Rulings are made in the appeal's chat now (the operator's ruling): that is
+    where the required comment is written, and where the brigadir and the
+    admins can ask the leader first. A Telegram callback button never expires,
+    so the cards already sitting in people's chats still carry the old buttons
+    — this answers every one of them by pointing into the chat and swapping the
+    card's keyboard for the chat button, never by ruling on the tap (a
+    brigadir's one-tap refusal would now break the required-comment rule).
+    """
+    from app.services.leader_appeal_chat import open_chat_markup
+    lang = _get_lang(call.from_user.id)
+    try:
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id,
+                                      reply_markup=open_chat_markup(thread, rid, lang))
+    except Exception:
+        pass
+    bot.answer_callback_query(call.id, _lt(lang, "appeal_in_chat"), show_alert=True)
+
+
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("lp:"))
 def _lp_callback(call: types.CallbackQuery):
-    """The two rulings, from the card in the chat.
-
-    Authority is checked HERE and not merely by which card somebody was sent: a
-    callback payload is typeable, and the whole value of the flow is that the
-    point can only come back through an admin.
-    """
-    tid = call.from_user.id
-    lang = _get_lang(tid)
+    """The old late-proof card buttons — every one now opens the chat."""
     parts = call.data.split(":")
-    act = parts[1] if len(parts) > 1 else ""
     try:
         late_id = int(parts[2])
     except (IndexError, ValueError):
         bot.answer_callback_query(call.id)
         return
-
-    with SessionLocal() as db:
-        row = db.query(LeaderLateProof).filter_by(id=late_id).first()
-        if row is None:
-            bot.answer_callback_query(call.id, _lt(lang, "lp_gone"), show_alert=True)
-            return
-
-        # ── stage 1: the brigadir ────────────────────────────────────────────
-        if act in ("sr", "su"):
-            if row.status != leader_late_proof.SUPERVISOR:
-                bot.answer_callback_query(call.id, _lt(lang, "lp_gone"), show_alert=True)
-                return
-            if not _lp_can_supervise(db, tid, row):
-                bot.answer_callback_query(call.id, _lt(lang, "lp_not_yours"),
-                                          show_alert=True)
-                return
-            if act == "su":
-                # Uplift needs the case for it, so the ruling is not made until
-                # the text arrives — the capture is the pause, not a draft.
-                _lt_clear(tid)
-                sent = bot.send_message(call.message.chat.id, _lt(lang, "lp_ask_note"))
-                db.add(LeaderTaskCapture(
-                    telegram_id=tid, stage="lp_note", leader_id=int(row.leader_id),
-                    task_id=row.id, chat_id=call.message.chat.id,
-                    message_id=sent.message_id, min_media=0, media=[]))
-                db.commit()
-                bot.answer_callback_query(call.id)
-                return
-            leader_late_proof.decide_supervisor(
-                db, row, action="rejected", note=None,
-                actor_name=_display_name_for(db, tid), actor_telegram=tid)
-            db.commit()
-            _lp_retire(db, row, "sup", "lp_done_rejected")
-            leader_late_proof.notify_decided(db, row, stage="supervisor")
-            db.commit()
-            bot.answer_callback_query(call.id, _lt(lang, "lp_done_rejected"))
-            return
-
-        # ── stage 2: the admins ──────────────────────────────────────────────
-        if act in ("aa", "ar"):
-            if tid not in _admin_ids():
-                bot.answer_callback_query(call.id, _lt(lang, "lp_not_yours"),
-                                          show_alert=True)
-                return
-            if row.status != leader_late_proof.ADMIN:
-                bot.answer_callback_query(call.id, _lt(lang, "lp_gone"), show_alert=True)
-                return
-            if act == "ar":
-                # A refusal is the END of this chain — the leader did the work,
-                # filed it late, explained themselves to two people and has no
-                # route left — and the reason is stated to them in the notice.
-                # So the ruling is not made until the text arrives: the capture
-                # is the pause, not a draft. Approving needs no words, because
-                # the outcome IS the answer.
-                _lt_clear(tid)
-                sent = bot.send_message(call.message.chat.id,
-                                        _lt(lang, "lp_ask_reject"))
-                db.add(LeaderTaskCapture(
-                    telegram_id=tid, stage="lp_arej", leader_id=int(row.leader_id),
-                    task_id=row.id, chat_id=call.message.chat.id,
-                    message_id=sent.message_id, min_media=0, media=[]))
-                db.commit()
-                bot.answer_callback_query(call.id)
-                return
-            leader_late_proof.decide_admin(
-                db, row, action=leader_late_proof.APPROVED, note=None,
-                actor_name=_display_name_for(db, tid), actor_telegram=tid)
-            db.commit()
-            done = _lt(lang, "lp_done_approved")
-            _lp_retire(db, row, "adm", "lp_done_approved")
-            leader_late_proof.notify_decided(db, row, stage="admin")
-            db.commit()
-            # The score moved, so the day's report says so — the same door a
-            # re-review or an upheld dispute uses.
-            leader_late_proof.rescore(db, row)
-            bot.answer_callback_query(call.id, done)
-            return
-
-    bot.answer_callback_query(call.id)
-
-
-# ── AI objections: stage 1, in the brigadir's own chat ────────────────────────
-# The middle stage of services/leader_dispute.py. A leader who was refused by
-# the machine files their account of the shift on their day report; it lands
-# HERE, with the verdict beside it, because the person who can say whether that
-# account is true is a brigadir standing in a workshop and not somebody who was
-# going to open a dashboard. They refuse it, or they make the case for it and it
-# goes up — the admin card is `approvals.send_leader_dispute_to_admins`, which
-# has served that stage since before this chain existed and still does, so a
-# card already sitting in an admin's chat goes on working.
+    _appeal_redirect(call, "late", late_id)
 
 
 def _ad_kb(lang: str, d):
-    """The two buttons stage 1 has — and only those two.
-
-    A brigadir cannot restore the weight and an admin cannot uplift: the
-    asymmetry is the whole design, so it is expressed by the keyboard rather
-    than by a check that fires after somebody has already pressed something.
-    """
-    kb = types.InlineKeyboardMarkup(row_width=1)
-    kb.row(_lt_btn(_lt(lang, "btn_ad_reject"), f"ad:sr:{d.id}"),
-           _lt_btn(_lt(lang, "btn_ad_uplift"), f"ad:su:{d.id}"))
-    kb.add(types.InlineKeyboardButton(
-        "\U0001F4CB /leaders",
-        web_app=types.WebAppInfo(
-            url=f"{settings.webapp_url.rstrip('/')}/leaders?tab=disputes")))
-    return kb
+    """ONE button, onto the objection's chat (the operator's ruling,
+    2026-09-26) — the ruling, with its required comment, is made there."""
+    from app.services.leader_appeal_chat import DISPUTE, open_chat_markup
+    return open_chat_markup(DISPUTE, d.id, lang)
 
 
 def _ad_card(db, d, lang: str) -> str:
@@ -5052,7 +4975,7 @@ def _ad_supervisor_ids(db, d) -> set:
         return set()
 
 
-def _ad_send_to_supervisor(db, d) -> None:
+def _ad_send_to_supervisor(db, d) -> set[int]:
     """Put a leader's objection in front of the brigadir who has to read it.
 
     With no claimed brigadir account it goes to the admins instead — an
@@ -5064,8 +4987,9 @@ def _ad_send_to_supervisor(db, d) -> None:
     """
     from app.notify_ctx import notifications_suppressed
     if notifications_suppressed():
-        return
+        return set()
     ids = _ad_supervisor_ids(db, d) or set(_admin_ids())
+    got: set[int] = set()
     for rid in sorted(ids):
         lang = _get_lang(rid)
         text = _ad_card(db, d, lang)
@@ -5077,7 +5001,9 @@ def _ad_send_to_supervisor(db, d) -> None:
         db.add(ApprovalNotice(kind="leader_dispute_sup", ref=str(d.id),
                               admin_telegram_id=rid,
                               message_id=sent.message_id, text=text))
+        got.add(rid)
     db.commit()
+    return got
 
 
 def _ad_send_to_admins(db, d) -> None:
@@ -5148,17 +5074,15 @@ def _ad_settled(db, d, *, stage: str, uplifted: bool) -> None:
     missing message. Each side effect therefore stands on its own.
     """
     from app.services import leader_dispute
+    carded: set[int] = set()
     try:
         _ad_retire(db, d, "ad_done_uplifted" if uplifted else "ad_done_rejected")
         if uplifted:
             _ad_send_to_admins(db, d)
+            carded = set(_admin_ids())
     except Exception:
         logger.warning("dispute card retire/forward failed", exc_info=True)
-    try:
-        leader_dispute.notify_decided(db, d, stage=stage)
-        db.commit()
-    except Exception:
-        logger.warning("dispute leader notice failed", exc_info=True)
+    leader_dispute.notify_decided(db, d, stage=stage, skip_dm=carded)
     if not uplifted:
         # A refusal leaves the score where it already was, so nothing re-sends;
         # the day report still re-reads, which the leader's own notice points at.
@@ -5304,59 +5228,14 @@ def _ad_admin_reject(message: types.Message):
 
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("ad:"))
 def _ad_callback(call: types.CallbackQuery):
-    """Stage 1, from the card in the chat.
-
-    Authority is checked HERE and not merely by which card somebody was sent: a
-    callback payload is typeable, and the whole value of the chain is that the
-    point can only come back through an admin.
-    """
-    from app.models import LeaderAiDispute
-    from app.services import leader_dispute
-
-    tid = call.from_user.id
-    lang = _get_lang(tid)
+    """The old objection card buttons — every one now opens the chat."""
     parts = call.data.split(":")
-    act = parts[1] if len(parts) > 1 else ""
     try:
         d_id = int(parts[2])
     except (IndexError, ValueError):
         bot.answer_callback_query(call.id)
         return
-    if act not in ("sr", "su"):
-        bot.answer_callback_query(call.id)
-        return
-
-    with SessionLocal() as db:
-        d = db.query(LeaderAiDispute).filter_by(id=d_id).first()
-        if d is None or d.status != leader_dispute.SUPERVISOR:
-            bot.answer_callback_query(call.id, _lt(lang, "ad_gone"), show_alert=True)
-            return
-        if not _ad_can_supervise(db, tid, d):
-            bot.answer_callback_query(call.id, _lt(lang, "ad_not_yours"),
-                                      show_alert=True)
-            return
-        if act == "su":
-            # An uplift needs the case for it, so the ruling is not made until
-            # the text arrives — the capture is the pause, not a draft.
-            _lt_clear(tid)
-            sent = bot.send_message(call.message.chat.id, _lt(lang, "ad_ask_note"))
-            db.add(LeaderTaskCapture(
-                telegram_id=tid, stage="ad_note",
-                leader_id=int(d.leader_id or 0), task_id=d.id,
-                chat_id=call.message.chat.id, message_id=sent.message_id,
-                min_media=0, media=[]))
-            db.commit()
-            bot.answer_callback_query(call.id)
-            return
-        who = _display_name_for(db, tid)
-        leader_dispute.decide_supervisor(
-            db, d, action="rejected", note=None,
-            actor_name=who, actor_telegram=tid)
-        db.commit()
-        _ad_log(db, d, tid, who, action="rejected", note=None,
-                was=leader_dispute.SUPERVISOR)
-        _ad_settled(db, d, stage="supervisor", uplifted=False)
-        bot.answer_callback_query(call.id, _lt(lang, "ad_done_rejected"))
+    _appeal_redirect(call, "dispute", d_id)
 
 
 # ── Media → file_id echo (admins only) ────────────────────────────────────────

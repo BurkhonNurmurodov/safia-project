@@ -442,17 +442,54 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Позднее подтверждение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Балл за эту задачу не начислен.\nПричина: {note}"),
         "en": ("Late proof rejected", "Date: {date} | Task: {task} | Decided by: {by} | No point is given for this task.\nReason: {note}"),
     },
+    # A late proof was filed — its chat opened. To the brigadir (who also got
+    # the card with the photos) and every admin.
+    "late_proof_filed": {
+        "uz": ("{leader} kechikkan isbot yubordi", "Sana: {date} | Vazifa: {task} | Muddat: {deadline}\n«{reason}»"),
+        "uz_cyrl": ("{leader} кечиккан исбот юборди", "Сана: {date} | Вазифа: {task} | Муддат: {deadline}\n«{reason}»"),
+        "ru": ("{leader} прислал(а) позднее подтверждение", "Дата: {date} | Задача: {task} | Срок: {deadline}\n«{reason}»"),
+        "en": ("{leader} filed a late proof", "Date: {date} | Task: {task} | Due: {deadline}\n«{reason}»"),
+    },
+    "late_proof_message": {
+        "uz": ("{author}: kechikkan isbot chatida yangi xabar", "Lider: {leader} | Sana: {date} | Vazifa: {task}\n«{text}»\n\U0001F4CE Fayllar: {files}"),
+        "uz_cyrl": ("{author}: кечиккан исбот чатида янги хабар", "Лидер: {leader} | Сана: {date} | Вазифа: {task}\n«{text}»\n\U0001F4CE Файллар: {files}"),
+        "ru": ("{author}: новое сообщение в чате позднего подтверждения", "Лидер: {leader} | Дата: {date} | Задача: {task}\n«{text}»\n\U0001F4CE Файлы: {files}"),
+        "en": ("{author}: new message in a late-proof chat", "Leader: {leader} | Date: {date} | Task: {task}\n«{text}»\n\U0001F4CE Files: {files}"),
+    },
+    "late_proof_undone": {
+        "uz": ("Kechikkan isbot bo'yicha qaror bekor qilindi", "Sana: {date} | Vazifa: {task} | Bekor qildi: {by} | Yana adminlar qarorini kutmoqda, chat qayta ochildi."),
+        "uz_cyrl": ("Кечиккан исбот бўйича қарор бекор қилинди", "Сана: {date} | Вазифа: {task} | Бекор қилди: {by} | Яна админлар қарорини кутмоқда, чат қайта очилди."),
+        "ru": ("Решение по позднему подтверждению отменено", "Дата: {date} | Задача: {task} | Отменил(а): {by} | Снова ждёт решения администраторов, чат открыт заново."),
+        "en": ("The ruling on a late proof was undone", "Date: {date} | Task: {task} | Undone by: {by} | It is waiting on the admins again and its chat is open."),
+    },
+    "late_proof_undone_sup": {
+        "uz": ("Kechikkan isbot bo'yicha qaror bekor qilindi", "Sana: {date} | Vazifa: {task} | Bekor qildi: {by} | Yana brigadir ko'rib chiqishini kutmoqda, chat qayta ochildi."),
+        "uz_cyrl": ("Кечиккан исбот бўйича қарор бекор қилинди", "Сана: {date} | Вазифа: {task} | Бекор қилди: {by} | Яна бригадир кўриб чиқишини кутмоқда, чат қайта очилди."),
+        "ru": ("Решение по позднему подтверждению отменено", "Дата: {date} | Задача: {task} | Отменил(а): {by} | Снова у бригадира, чат открыт заново."),
+        "en": ("The ruling on a late proof was undone", "Date: {date} | Task: {task} | Undone by: {by} | It is back with the brigadir and its chat is open."),
+    },
     # ── objections to an AI rejection: the three-stage chain ────────────────
     # A leader files their account of the shift, their brigadir refuses it or
     # makes the case for it, an admin rules. Everybody is told at every stage
     # that takes the decision out of their hands — somebody who explained
     # themselves and heard nothing back learns that explaining is pointless,
     # which is the one outcome that makes the whole chain worthless.
+    # From 2026-09-26 the filing opens a CHAT and every party hears about it —
+    # the brigadir whose turn it is, every admin, the leader when their
+    # brigadir filed it — so the body names no reader's job. The button onto
+    # the chat rides on the DM.
     "leader_dispute_filed": {
-        "uz": ("{leader} AI qaroriga norozilik bildirdi", "Sana: {date} | Vazifa: {task} | Izoh: {reason} | Siz ko'rib chiqasiz: rad etasiz yoki adminlarga yuborasiz."),
-        "uz_cyrl": ("{leader} AI қарорига норозилик билдирди", "Сана: {date} | Вазифа: {task} | Изоҳ: {reason} | Сиз кўриб чиқасиз: рад этасиз ёки админларга юборасиз."),
-        "ru": ("{leader} возражает против решения ИИ", "Дата: {date} | Задача: {task} | Комментарий: {reason} | Решение за вами: отклонить или передать администраторам."),
-        "en": ("{leader} objects to an AI ruling", "Date: {date} | Task: {task} | Note: {reason} | It is yours to read: refuse it, or pass it to the admins."),
+        "uz": ("{leader} AI qaroriga norozilik bildirdi", "Sana: {date} | Vazifa: {task}\n«{reason}»"),
+        "uz_cyrl": ("{leader} AI қарорига норозилик билдирди", "Сана: {date} | Вазифа: {task}\n«{reason}»"),
+        "ru": ("{leader} возражает против решения ИИ", "Дата: {date} | Задача: {task}\n«{reason}»"),
+        "en": ("{leader} objects to an AI ruling", "Date: {date} | Task: {task}\n«{reason}»"),
+    },
+    # One free message in an appeal's chat, to the other two parties.
+    "leader_dispute_message": {
+        "uz": ("{author}: norozilik chatida yangi xabar", "Lider: {leader} | Sana: {date} | Vazifa: {task}\n«{text}»\n\U0001F4CE Fayllar: {files}"),
+        "uz_cyrl": ("{author}: норозилик чатида янги хабар", "Лидер: {leader} | Сана: {date} | Вазифа: {task}\n«{text}»\n\U0001F4CE Файллар: {files}"),
+        "ru": ("{author}: новое сообщение в чате возражения", "Лидер: {leader} | Дата: {date} | Задача: {task}\n«{text}»\n\U0001F4CE Файлы: {files}"),
+        "en": ("{author}: new message in an objection chat", "Leader: {leader} | Date: {date} | Task: {task}\n«{text}»\n\U0001F4CE Files: {files}"),
     },
     "leader_dispute_uplifted": {
         "uz": ("Norozilik adminlarga yuborildi", "Sana: {date} | Vazifa: {task} | Brigadir: {by}\nIzoh: {note}"),
@@ -606,12 +643,20 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Возражение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача остаётся незачтённой.\nПричина: {note}"),
         "en": ("Objection refused", "Date: {date} | Task: {task} | Decided by: {by} | The task stays not done.\nReason: {note}"),
     },
-    # The ruling above taken back — the task returns to the AI's verdict.
+    # The ruling above taken back. From 2026-09-26 an undo REOPENS the
+    # objection at the stage the ruling was made at, and its chat with it —
+    # `_sup` when it goes back to the brigadir. `{by}` is who took it back.
     "leader_dispute_undone": {
-        "uz": ("Norozilik bo'yicha qaror bekor qilindi", "Sana: {date} | Vazifa: {task} | Bekor qildi: {by} | Vazifa yana AI xulosasi bo'yicha hisoblanadi."),
-        "uz_cyrl": ("Норозилик бўйича қарор бекор қилинди", "Сана: {date} | Вазифа: {task} | Бекор қилди: {by} | Вазифа яна AI хулосаси бўйича ҳисобланади."),
-        "ru": ("Решение по возражению отменено", "Дата: {date} | Задача: {task} | Отменил(а): {by} | Задача снова считается по решению ИИ."),
-        "en": ("The ruling on the objection was undone", "Date: {date} | Task: {task} | Undone by: {by} | The task counts by the AI verdict again."),
+        "uz": ("Norozilik bo'yicha qaror bekor qilindi", "Sana: {date} | Vazifa: {task} | Bekor qildi: {by} | Norozilik yana adminlar qarorini kutmoqda, chat qayta ochildi."),
+        "uz_cyrl": ("Норозилик бўйича қарор бекор қилинди", "Сана: {date} | Вазифа: {task} | Бекор қилди: {by} | Норозилик яна админлар қарорини кутмоқда, чат қайта очилди."),
+        "ru": ("Решение по возражению отменено", "Дата: {date} | Задача: {task} | Отменил(а): {by} | Возражение снова ждёт решения администраторов, чат открыт заново."),
+        "en": ("The ruling on the objection was undone", "Date: {date} | Task: {task} | Undone by: {by} | The objection is waiting on the admins again and its chat is open."),
+    },
+    "leader_dispute_undone_sup": {
+        "uz": ("Norozilik bo'yicha qaror bekor qilindi", "Sana: {date} | Vazifa: {task} | Bekor qildi: {by} | Norozilik yana brigadir ko'rib chiqishini kutmoqda, chat qayta ochildi."),
+        "uz_cyrl": ("Норозилик бўйича қарор бекор қилинди", "Сана: {date} | Вазифа: {task} | Бекор қилди: {by} | Норозилик яна бригадир кўриб чиқишини кутмоқда, чат қайта очилди."),
+        "ru": ("Решение по возражению отменено", "Дата: {date} | Задача: {task} | Отменил(а): {by} | Возражение снова у бригадира, чат открыт заново."),
+        "en": ("The ruling on the objection was undone", "Date: {date} | Task: {task} | Undone by: {by} | The objection is back with the brigadir and its chat is open."),
     },
     "leader_proof_requeried": {
         "uz": ("Dalil rasmini qayta yuboring", "Sana: {date} | Vazifa: {task} | So'radi: {by} | Hozircha baho o'zgargani yo'q — yangi rasm yuklang."),

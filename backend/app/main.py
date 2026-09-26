@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, shift_report, exam, exam_sandbox
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI):
         add_late_proof_provenance,
         add_late_proof_timing,
         migrate_dispute_stages, purge_pre_september_appeals,
+        backfill_appeal_threads,
         merge_brigadir_tasks_page,
         create_action_log, report_unclassified_routes,
         report_leader_deadline_rules,
@@ -193,6 +194,8 @@ async def lifespan(app: FastAPI):
     # After the dispute stage columns and the action register it reports
     # into. One-shot: pre-September objections + late proofs, deleted.
     purge_pre_september_appeals()
+    # After the purge, so appeals it deletes never get a thread written.
+    backfill_appeal_threads()
     letter_shared_cells()
     migrate_cell_ojidaniya_percat()
     migrate_cell_perenaladka()
@@ -848,6 +851,11 @@ app.include_router(leader_proof.router)
 # AI proof review for the leader checklist. Every route self-gates with
 # verify_admin (pilot), and lives under /api so the global dep covers it.
 app.include_router(leader_ai.router)
+# The appeal chat (objections + late proofs, 2026-09-26). Every route is
+# row-scoped by require_auth + its own party/scope checks, under /api so the
+# global initData guard covers it; the paths sit under the two queues' own
+# prefixes so the exam sandbox rewrites them like the queues themselves.
+app.include_router(leader_appeals.router)
 # Manual per-cell idle-time (ojidaniya) TEST entry — self-gates via
 # require_page("idle-cell"), so no admin guard here (grantable to
 # leaders/supervisors later).

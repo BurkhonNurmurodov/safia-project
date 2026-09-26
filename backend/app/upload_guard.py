@@ -181,5 +181,9 @@ def validate_chat_attachment(filename: str | None, content: bytes) -> tuple[str,
             return mime, "image"
     if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
         return "image/webp", "image"
-    guessed = mimetypes.guess_type(filename or "")[0]
-    return (guessed or "application/octet-stream"), "file"
+    guessed = mimetypes.guess_type(filename or "")[0] or "application/octet-stream"
+    # A name that CLAIMS a raster image its bytes do not prove must not carry
+    # that type: the type is what later decides inline vs download.
+    if guessed in {m for _, m in _CHAT_IMAGE_MAGIC} | {"image/webp"}:
+        guessed = "application/octet-stream"
+    return guessed, "file"

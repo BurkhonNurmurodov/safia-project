@@ -60,7 +60,7 @@ _LABELS = {
         "hdr_dispute":   "⚖️ AI qaroriga norozilik",
         "task":          "Vazifa",
         "ai_verdict":    "AI xulosasi",
-        "dispute_note":  "Tasdiqlansa, vazifa yana bajarilgan deb hisoblanadi va kun bahosi qayta hisoblanadi. Rad etsangiz, nega rad etayotganingizni yozishingiz so'raladi \u2014 sabab liderga yuboriladi.",
+        "dispute_note":  "Chatda hal qiling: tasdiqlansa, vazifa yana bajarilgan deb hisoblanadi va kun bahosi qayta hisoblanadi; rad etish uchun sabab yozish shart \u2014 u liderga yuboriladi. Avval lider va brigadirdan so'rashingiz mumkin.",
         "leader":        "Lider",
         "filed_at":      "Yuborilgan",
         "score":         "Natija",
@@ -105,7 +105,7 @@ _LABELS = {
         "hdr_dispute":   "⚖️ Возражение на решение ИИ",
         "task":          "Задача",
         "ai_verdict":    "Заключение ИИ",
-        "dispute_note":  "При одобрении задача снова засчитывается и оценка дня пересчитывается. При отклонении нужно будет написать причину \u2014 её отправят лидеру.",
+        "dispute_note":  "Решите в чате: при одобрении задача снова засчитывается и оценка дня пересчитывается; для отказа нужна причина \u2014 её отправят лидеру. Сначала можно задать вопросы лидеру и бригадиру.",
         "leader":        "Лидер",
         "filed_at":      "Отправлено",
         "score":         "Результат",
@@ -150,7 +150,7 @@ _LABELS = {
         "hdr_dispute":   "⚖️ Objection to an AI ruling",
         "task":          "Task",
         "ai_verdict":    "AI verdict",
-        "dispute_note":  "Approving counts the task as done again and re-scores the day. Refusing asks you for a reason first \u2014 the leader is told it.",
+        "dispute_note":  "Decide in the chat: approving counts the task as done again and re-scores the day; refusing needs a reason \u2014 the leader is told it. You can ask the leader and the brigadir first.",
         "leader":        "Leader",
         "filed_at":      "Filed",
         "score":         "Score",
@@ -406,7 +406,7 @@ def _approve_reject_kb(code: str, ref, lang: str, panel: str = "/staff"):
 
 def _broadcast(db, kind: str, ref, data: dict, render_fn,
                extra_recipients: set[int] | None = None,
-               panel: str = "/staff") -> None:
+               panel: str = "/staff", kb_fn=None) -> None:
     # Ghost Mode (admin header toggle): an admin testing functions must not blast
     # approve/reject button-messages at every other admin. The record is still
     # created; nobody is pinged. See app.notify_ctx.
@@ -424,8 +424,9 @@ def _broadcast(db, kind: str, ref, data: dict, render_fn,
         lang = _get_lang(recipient_id)
         text = render_fn(data, lang)
         try:
-            sent = bot.send_message(recipient_id, text,
-                                    reply_markup=_approve_reject_kb(code, ref, lang, panel))
+            kb = (kb_fn(lang) if kb_fn is not None
+                  else _approve_reject_kb(code, ref, lang, panel))
+            sent = bot.send_message(recipient_id, text, reply_markup=kb)
         except Exception:
             logger.exception("Failed to send %s notice to %s (ref=%s)", kind, recipient_id, ref)
             continue
@@ -581,9 +582,12 @@ def send_leader_dispute_to_admins(db, d) -> None:
     same rule as opening a late day: the person who wants the deduction undone
     is not the person who undoes it. The panel button lands on the day report
     itself, which is where the photo and the verdict sit side by side."""
+    from app.services.leader_appeal_chat import DISPUTE, open_chat_markup
     data = _leader_dispute_data(db, d)
-    panel = f"/leaders/report/{data['uid']}" if data.get("uid") else "/leaders"
-    _broadcast(db, "leader_dispute", d.id, data, _render_leader_dispute, panel=panel)
+    # ONE button, onto the objection's chat — the ruling and its reason are
+    # made there (2026-09-26); the day report is one tap away inside it.
+    _broadcast(db, "leader_dispute", d.id, data, _render_leader_dispute,
+               kb_fn=lambda lang: open_chat_markup(DISPUTE, d.id, lang))
 
 
 def send_leader_late_to_admins(db, req) -> None:
@@ -879,16 +883,15 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
         elif code == "ll":
             _decide_leader_late(int(ref), status, call)
         elif code == "ld":
-            # A refusal is the end of the objection chain and its reason is
-            # stated to the leader, so it cannot be made on a bare tap. The
-            # generic ap: keyboard is shared with every other approval kind, so
-            # the pause lives HERE — one branch, for one code — rather than in
-            # a keyboard four other flows depend on.
-            if status == "rejected":
-                from app.telegram_bot import _ad_ask_admin_reason
-                if _ad_ask_admin_reason(call, int(ref)):
-                    return
-            _decide_leader_dispute(int(ref), status, call)
+            # From 2026-09-26 objections are ruled on in their CHAT (the
+            # operator's ruling), where the reason is written and the leader
+            # and brigadir can be asked first. The admin card carries only the
+            # chat button now; a card minted before that still shows approve /
+            # reject, and a tap on either is pointed into the chat — never
+            # ruled on — so no door can skip the conversation.
+            from app.telegram_bot import _appeal_redirect
+            _appeal_redirect(call, "dispute", int(ref))
+            return
         else:
             bot.answer_callback_query(call.id)
             return

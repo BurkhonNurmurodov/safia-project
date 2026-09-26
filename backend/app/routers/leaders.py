@@ -7,8 +7,9 @@ from decimal import Decimal
 from time import monotonic
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from sqlalchemy import Text, cast
 from sqlalchemy.orm import Session
 
@@ -1330,10 +1331,84 @@ def _dispute_stage_rights(payload: dict, d: LeaderAiDispute) -> tuple[bool, bool
     return is_sup, False
 
 
+async def appeal_body(request: Request) -> dict:
+    """The body of an appeal write, whichever shape it came in.
+
+    The chat composer posts multipart (its text plus any files); a tab still
+    open on an older bundle posts JSON. Parsed HERE, in an async dependency, so
+    the endpoints themselves stay sync — they send Telegram messages and relay
+    files, and on the single uvicorn worker a blocking call inside an `async
+    def` would stall every other request for as long as it took.
+
+    Files are returned as the UploadFile objects themselves (spooled to disk by
+    Starlette past 1 MB), never read into memory here: `relay_uploads` reads
+    them one at a time, so ten 20 MB files never sit in RAM at once.
+    """
+    ct = (request.headers.get("content-type") or "").lower()
+    if ct.startswith("multipart/form-data"):
+        form = await request.form(max_files=leader_appeal_chat.MAX_FILES + 5,
+                                  max_fields=50)
+        fields: dict = {}
+        files: list = []
+        for k, v in form.multi_items():
+            if isinstance(v, StarletteUploadFile):
+                if v.filename:
+                    files.append(v)
+            else:
+                fields[k] = v
+        return {"fields": fields, "files": files}
+    if ct.startswith("application/json"):
+        try:
+            data = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        return {"fields": data if isinstance(data, dict) else {}, "files": []}
+    return {"fields": {}, "files": []}
+
+
+def relay_uploads(uploads: list) -> list[dict]:
+    """Validate and store a message's files in the archive channel, in order.
+
+    EVERY file's size is checked before ANY is relayed, so one file over 20 MB
+    refuses the whole message instead of posting it half-attached. A relay
+    Telegram refuses fails the message too (502) — a message that went out
+    without the file its text refers to is worse than asking to send it again.
+    """
+    from app.upload_guard import CHAT_FILE_MAX, validate_chat_attachment
+    if len(uploads) > leader_appeal_chat.MAX_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {leader_appeal_chat.MAX_FILES} files per message")
+    for up in uploads:
+        size = getattr(up, "size", None)
+        if size is None:
+            up.file.seek(0, 2)
+            size = up.file.tell()
+            up.file.seek(0)
+        if size > CHAT_FILE_MAX:
+            raise HTTPException(
+                status_code=413,
+                detail=f"'{leader_appeal_chat.safe_name(up.filename)}' is larger than 20 MB")
+    out = []
+    for up in uploads:
+        name = leader_appeal_chat.safe_name(up.filename)
+        up.file.seek(0)
+        data = up.file.read(CHAT_FILE_MAX + 1)
+        mime, _kind = validate_chat_attachment(name, data)
+        got = leader_appeal_chat.relay_file(data, name)
+        if not got:
+            raise HTTPException(
+                status_code=502,
+                detail=f"'{name}' could not be stored — please send it again")
+        out.append({"name": name, "mime": mime, "size": len(data),
+                    "file_id": got[0], "message_id": got[1]})
+    return out
+
+
 @router.post("/leaders/report/{uid}/dispute")
 def file_dispute(
     uid: str,
-    body: dict = Body(...),
+    parsed: dict = Depends(appeal_body),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
 ):
@@ -1347,7 +1422,13 @@ def file_dispute(
 
     The task is re-derived from the report the caller can actually read, so
     "is this yours" and "does this rejection exist" are one check.
+
+    From 2026-09-26 the objection is the OPENING MESSAGE of its chat: the text
+    is required, files may ride with it (multipart), and the response carries
+    the new row's `id` so the page can open the conversation it started.
     """
+    body = parsed.get("fields") or {}
+    uploads = parsed.get("files") or []
     reason = str(body.get("reason") or "").strip()
     if len(reason) < 3:
         raise HTTPException(status_code=400, detail="A reason is required")
@@ -1388,19 +1469,23 @@ def file_dispute(
     role = payload.get("role")
     who = payload.get("full_name") or ""
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    prof_key = identity.viewer_profile_key(db, payload)
+    stored = relay_uploads(uploads)
     d = leader_dispute.create(
         db, ref=ref, review_id=rev.id, report=report, task_id=task_id,
-        reason=reason, role=role,
-        profile=identity.viewer_profile_key(db, payload),
-        actor_name=who, actor_telegram=tid)
+        reason=reason, role=role, profile=prof_key,
+        actor_name=who, actor_telegram=tid, files=stored)
     db.commit()
 
     if role == "admin":
         # An admin asking themselves for permission is not a flow. Filing IS
         # the decision — the same rule as opening a late day.
         leader_dispute.decide_admin(db, d, action="approved", note=None,
-                                    actor_name=who, actor_telegram=tid)
+                                    actor_name=who, actor_telegram=tid,
+                                    actor_profile=prof_key, actor_role="admin")
         db.commit()
+        leader_dispute.notify_decided(db, d, stage="admin",
+                                      actor_profile=prof_key, actor_telegram=tid)
         _report_after_ruling(db, d)
     else:
         _dispute_announce(db, d)
@@ -1414,7 +1499,7 @@ def file_dispute(
         details=[("leader", d.leader_name), ("task", task_id),
                  ("filed_by", role), ("status", d.status), ("report", uid)],
     )
-    return {"ok": True, "status": d.status,
+    return {"ok": True, "status": d.status, "id": d.id,
             "report": _stamp_report_rights(db, payload,
                                            leader_reports.day_report(db, uid))}
 
@@ -1426,17 +1511,22 @@ def _dispute_announce(db: Session, d: LeaderAiDispute) -> None:
     already told went through, and re-pressing would then be refused as a live
     objection while nobody had ever been told about the first one.
     """
+    carded: set[int] = set()
     try:
         if d.status == leader_dispute.SUPERVISOR:
             from app.telegram_bot import _ad_send_to_supervisor
-            _ad_send_to_supervisor(db, d)
-            leader_dispute.notify_filed(db, d)
-            db.commit()
+            carded = _ad_send_to_supervisor(db, d) or set()
         else:
             from app.approvals import send_leader_dispute_to_admins
+            from app.telegram_bot import _admin_ids
             send_leader_dispute_to_admins(db, d)
+            carded = set(_admin_ids())
     except Exception:
         logger.exception("leader-dispute: card failed for %s", d.id)
+    # Everybody else in the chat hears about it too — the leader when their
+    # brigadir filed it, every admin at every stage (the operator's ruling).
+    # Whoever already got the card keeps the bell row and is spared a 2nd DM.
+    leader_dispute.notify_filed(db, d, skip_dm=carded)
 
 
 def _settle_dispute(db: Session, d: LeaderAiDispute, status: str,
@@ -1484,6 +1574,8 @@ def decide_dispute(
     sup_ok, adm_ok = _dispute_stage_rights(payload, d)
     who = payload.get("full_name") or "—"
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    prof_key = identity.viewer_profile_key(db, payload)
+    role = payload.get("role")
     was = d.status
 
     if d.status == leader_dispute.SUPERVISOR:
@@ -1492,13 +1584,17 @@ def decide_dispute(
         if action not in leader_dispute.SUP_ACTIONS:
             raise HTTPException(status_code=400,
                                 detail="action must be rejected or uplifted")
-        if action == "uplifted" and not note:
-            raise HTTPException(status_code=400,
-                                detail="A comment is required to pass this up")
+        # BOTH stage-1 rulings need the brigadir's own words (2026-09-26).
+        if not note:
+            raise HTTPException(
+                status_code=400,
+                detail=("A comment is required to pass this up"
+                        if action == "uplifted" else
+                        "A comment is required to refuse this — the leader is told why"))
         try:
             leader_dispute.decide_supervisor(
                 db, d, action=action, note=note, actor_name=who,
-                actor_telegram=tid)
+                actor_telegram=tid, actor_profile=prof_key, actor_role=role)
         except leader_dispute.Refused as e:
             raise HTTPException(status_code=409, detail=str(e))
         db.commit()
@@ -1520,7 +1616,7 @@ def decide_dispute(
         try:
             leader_dispute.decide_admin(
                 db, d, action=action, note=note or None, actor_name=who,
-                actor_telegram=tid)
+                actor_telegram=tid, actor_profile=prof_key, actor_role=role)
         except leader_dispute.Refused as e:
             raise HTTPException(status_code=409, detail=str(e))
         db.commit()
@@ -1537,40 +1633,40 @@ def decide_dispute(
         changes=[("status", was, d.status)],
     )
     _dispute_after(db, d, stage=stage,
-                   uplifted=(action == "uplifted"))
+                   uplifted=(action == "uplifted"),
+                   actor_profile=prof_key, actor_telegram=tid)
     return {"ok": True, "status": d.status,
             "reported": _report_after_ruling(db, d)}
 
 
 def _dispute_after(db: Session, d: LeaderAiDispute, *, stage: str,
-                   uplifted: bool) -> None:
+                   uplifted: bool, actor_profile: str | None = None,
+                   actor_telegram: int | None = None) -> None:
     """Everything a ruling owes the outside world, and none of it fatal.
 
     A DM that will not send must never roll back a decision somebody already
     made — re-pressing would then find the row already decided and tell nobody
     at all, which is strictly worse than a missing message.
+
+    The cards the ruling ends are retired; an uplift puts the admins' card out;
+    then ALL three parties hear about the ruling (`notify_decided`), the admins
+    who just got the card with the bell row alone.
     """
+    carded: set[int] = set()
     try:
         from app.approvals import edit_admin_notices
-        from app.telegram_bot import _ad_retire, _ad_send_to_admins
+        from app.telegram_bot import _ad_retire, _ad_send_to_admins, _admin_ids
         if stage == "supervisor":
-            # The KEY, never a rendered string: the card sits in several chats
-            # and each reader has their own language. `d.status` is a storage
-            # word ("admin") — an uplift reads as «passed up» to a person.
             _ad_retire(db, d, "ad_done_uplifted" if uplifted else "ad_done_rejected")
             if uplifted:
                 _ad_send_to_admins(db, d)
+                carded = set(_admin_ids())
         else:
-            # Retire the inline cards sitting in every admin's DM, so a decided
-            # objection cannot be decided a second time from a stale message.
             edit_admin_notices("leader_dispute", d.id, d.status, d.decided_by_name)
     except Exception:
         logger.warning("leader-dispute: card retire/forward failed", exc_info=True)
-    try:
-        leader_dispute.notify_decided(db, d, stage=stage)
-        db.commit()
-    except Exception:
-        logger.warning("leader-dispute: decision notice failed", exc_info=True)
+    leader_dispute.notify_decided(db, d, stage=stage, actor_profile=actor_profile,
+                                  actor_telegram=actor_telegram, skip_dm=carded)
 
 
 @router.post("/leaders/disputes/{dispute_id}/undo")
@@ -1579,26 +1675,18 @@ def undo_dispute(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_auth),
 ):
-    """Take a ruling back — the way out of a decision made in error.
+    """Take a ruling back and REOPEN the objection — the way out of a decision
+    made in error.
 
-    Deciding is one tap, an ADMIN's own filing IS its approval (see
-    `file_dispute`), and `decide` refuses anything already settled, so the
-    wrong outcome is one mis-tap away with no route back. It reaches a
-    brigadir's stage-1 refusal too: that is final for the brigadir, not for the
-    platform, and an admin is who fixes a leader's account of the shift being
-    ended before it was read.
+    From 2026-09-26 (the operator's ruling) the row goes back to the stage the
+    ruling was made at and the SAME chat opens again with that stage's buttons;
+    it no longer ends as `cancelled`. It reaches a brigadir's stage-1 refusal
+    too: that is final for the brigadir, not for the platform.
 
-    The undo reverses exactly the two writes the ruling made. The verdict goes
-    back to `open` — nobody has ruled, which in the automatic regime means the
-    flag costs its weight again, the state the day was in before anyone touched
-    it. The row is `cancelled` rather than deleted, because a score that moved
-    twice has to stay explainable, and because only a LIVE row blocks a
-    re-filing: a cancelled one lets the leader object again with a better
-    account.
-
-    The day re-scores and re-DMs itself through the same `resend_if_changed`
-    every other correction uses, and whoever was told the outcome is told it
-    was reversed.
+    The verdict goes back to `open` when this objection is what wrote it, so in
+    the automatic regime the flag costs its weight again until somebody rules;
+    the day re-scores and re-DMs itself through `resend_if_changed`, and all
+    three parties are told the ruling no longer stands.
     """
     if not _may_decide(payload):
         raise HTTPException(status_code=403, detail="Admins only")
@@ -1612,27 +1700,24 @@ def undo_dispute(
 
     who = payload.get("full_name") or ""
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    prof_key = identity.viewer_profile_key(db, payload)
     try:
-        was = leader_dispute.undo(db, d, actor_name=who, actor_telegram=tid)
+        was = leader_dispute.undo(db, d, actor_name=who, actor_telegram=tid,
+                                  actor_profile=prof_key)
     except leader_dispute.Refused as e:
         raise HTTPException(status_code=409, detail=str(e))
     db.commit()
 
-    # The score moved twice, so both moves stay on the record: WHAT the ruling
-    # was is the whole content of an undo.
     action_log.enrich(
         target_kind="dispute", target_id=d.id, target_name=d.leader_name,
         unit_id=d.manager_id, day=d.date, reason=d.reason,
         details=[("leader", d.leader_name), ("task", d.task_id)],
-        changes=[("status", was, "cancelled"), ("verdict", was, "open")],
+        changes=[("status", was, d.status)],
     )
-    try:
-        leader_dispute.notify_decided(db, d, stage="admin")
-        db.commit()
-    except Exception:
-        logger.warning("leader-dispute: undo notice failed", exc_info=True)
-    logger.info("leader-dispute: %s undone (was %s) by %s on %s task %s",
-                d.id, was, who, d.date, d.task_id)
+    leader_dispute.notify_undone(db, d, actor_name=who, actor_profile=prof_key,
+                                 actor_telegram=tid)
+    logger.info("leader-dispute: %s undone (was %s, reopened at %s) by %s on %s task %s",
+                d.id, was, d.status, who, d.date, d.task_id)
     return {"ok": True, "status": d.status, "was": was,
             "reported": _report_after_ruling(db, d)}
 
@@ -2788,9 +2873,11 @@ def list_late_proofs(
                       or (r.status == leader_late_proof.ADMIN and adm_ok))
         if acts[r.id]:
             todo += 1
+    items = [_lp_item(db, r, names, mgr_names, acts.get(r.id, False))
+             for r in rows]
+    _attach_chat(db, payload, leader_appeal_chat.LATE, items)
     return {
-        "items": [_lp_item(db, r, names, mgr_names, acts.get(r.id, False))
-                  for r in rows],
+        "items": items,
         "canSupervise": is_admin or role == "supervisor",
         "canApprove": is_admin,
         "todo": todo,
@@ -2821,6 +2908,8 @@ def decide_late_proof(
     # `decide_dispute` uses, so one person is named one way in the register.
     who = payload.get("full_name") or "—"
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    prof_key = identity.viewer_profile_key(db, payload)
+    role = payload.get("role")
 
     if row.status == leader_late_proof.SUPERVISOR:
         if not sup_ok:
@@ -2828,13 +2917,17 @@ def decide_late_proof(
         if action not in ("rejected", "uplifted"):
             raise HTTPException(status_code=400,
                                 detail="action must be rejected or uplifted")
-        if action == "uplifted" and not note:
-            raise HTTPException(status_code=400,
-                                detail="A comment is required to pass this up")
+        # BOTH stage-1 rulings need the brigadir's own words (2026-09-26).
+        if not note:
+            raise HTTPException(
+                status_code=400,
+                detail=("A comment is required to pass this up"
+                        if action == "uplifted" else
+                        "A comment is required to refuse this — the leader is told why"))
         try:
             leader_late_proof.decide_supervisor(
                 db, row, action=action, note=note, actor_name=who,
-                actor_telegram=tid)
+                actor_telegram=tid, actor_profile=prof_key, actor_role=role)
         except leader_late_proof.Refused as e:
             raise HTTPException(status_code=409, detail=str(e))
         db.commit()
@@ -2844,7 +2937,8 @@ def decide_late_proof(
             details=[("leader", row.leader_name), ("task_id", row.task_id)],
             changes=[("status", leader_late_proof.SUPERVISOR, row.status)],
         )
-        _lp_after(db, row, stage="supervisor", uplifted=(action == "uplifted"))
+        _lp_after(db, row, stage="supervisor", uplifted=(action == "uplifted"),
+                  actor_profile=prof_key, actor_telegram=tid)
         return {"ok": True, "status": row.status}
 
     if row.status == leader_late_proof.ADMIN:
@@ -2862,7 +2956,7 @@ def decide_late_proof(
         try:
             leader_late_proof.decide_admin(
                 db, row, action=action, note=note or None, actor_name=who,
-                actor_telegram=tid)
+                actor_telegram=tid, actor_profile=prof_key, actor_role=role)
         except leader_late_proof.Refused as e:
             raise HTTPException(status_code=409, detail=str(e))
         db.commit()
@@ -2872,38 +2966,80 @@ def decide_late_proof(
             details=[("leader", row.leader_name), ("task_id", row.task_id)],
             changes=[("status", leader_late_proof.ADMIN, row.status)],
         )
-        _lp_after(db, row, stage="admin", uplifted=False)
+        _lp_after(db, row, stage="admin", uplifted=False,
+                  actor_profile=prof_key, actor_telegram=tid)
         return {"ok": True, "status": row.status}
 
     raise HTTPException(status_code=409, detail="Already decided")
 
 
-def _lp_after(db: Session, row, *, stage: str, uplifted: bool) -> None:
+def _lp_after(db: Session, row, *, stage: str, uplifted: bool,
+              actor_profile: str | None = None,
+              actor_telegram: int | None = None) -> None:
     """Everything a ruling owes the outside world, and none of it fatal.
 
     A DM that will not send must never roll back a decision somebody already
     made — re-pressing would then find the row already decided and tell nobody
-    at all, which is strictly worse than a missing message.
+    at all, which is strictly worse than a missing message. The ended cards are
+    retired, an uplift puts the admins' card out, and ALL three parties hear
+    about the ruling — the admins who just got the card with the bell alone.
     """
+    carded: set[int] = set()
     try:
-        from app.telegram_bot import _lp_retire, _lp_send_to_admins
-        # The KEY, never a rendered string — the card sits in several chats and
-        # each reader has their own language. `row.status` is a storage word
-        # ("admin"), not a sentence: an uplift reads as «uplifted» to a person.
+        from app.telegram_bot import _admin_ids, _lp_retire, _lp_send_to_admins
         key = ("lp_done_uplifted" if uplifted
                else f"lp_done_{row.status}")
         _lp_retire(db, row, "sup" if stage == "supervisor" else "adm", key)
         if uplifted:
             _lp_send_to_admins(db, row)
+            carded = set(_admin_ids())
     except Exception:
         logger.warning("late-proof card retire/forward failed", exc_info=True)
-    try:
-        leader_late_proof.notify_decided(db, row, stage=stage)
-        db.commit()
-    except Exception:
-        logger.warning("late-proof leader notice failed", exc_info=True)
+    leader_late_proof.notify_decided(db, row, stage=stage,
+                                     actor_profile=actor_profile,
+                                     actor_telegram=actor_telegram,
+                                     skip_dm=carded)
     if row.status == leader_late_proof.APPROVED:
         leader_late_proof.rescore(db, row)
+
+
+@router.post("/leaders/late-proofs/{late_id}/undo")
+def undo_late_proof(
+    late_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """Take a ruling on a late proof back and REOPEN it at the stage it was
+    made at (2026-09-26 — the twin of `undo_dispute`). The same chat opens
+    again with that stage's buttons; an approval's point is taken back until
+    somebody rules again, and the day re-scores."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+    row = db.query(LeaderLateProof).filter_by(id=late_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    if row.status in leader_late_proof.OPEN_STATES:
+        raise HTTPException(status_code=409, detail="Not decided yet")
+    who = payload.get("full_name") or ""
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    prof_key = identity.viewer_profile_key(db, payload)
+    try:
+        was = leader_late_proof.undo(db, row, actor_name=who, actor_telegram=tid,
+                                     actor_profile=prof_key)
+    except leader_late_proof.Refused as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    db.commit()
+    action_log.enrich(
+        target_kind="task", target_id=row.id, target_name=row.leader_name,
+        unit_id=row.manager_id, day=row.date, reason=row.reason,
+        details=[("leader", row.leader_name), ("task_id", row.task_id)],
+        changes=[("status", was, row.status)],
+    )
+    leader_late_proof.notify_undone(db, row, actor_name=who,
+                                    actor_profile=prof_key, actor_telegram=tid)
+    if was == leader_late_proof.APPROVED:
+        leader_late_proof.rescore(db, row)
+    return {"ok": True, "status": row.status, "was": was}
 
 
 @router.get("/leaders/late-proofs/{late_id}/photo/{media_id}")

@@ -29,6 +29,9 @@ from app.models import ExamAttempt
 from app.security import require_auth
 from app.services import exam, exam_sandbox as sb
 from app.services.ojidaniya_matrix import today_local
+# The appeal writes' body parser (JSON or multipart) — ONE parser for the real
+# endpoints and their sandbox twins, so the composer's request reads the same.
+from app.routers.leaders import appeal_body
 
 router = APIRouter(prefix="/api/exam/sandbox", tags=["exam-sandbox"])
 
@@ -666,8 +669,15 @@ def leaders_report(uid: str, g=Depends(_gate), db: Session = Depends(get_db)):
 
 
 @router.post("/leaders/report/{uid}/dispute")
-def leaders_dispute(uid: str, body: dict = Body(...), g=Depends(_gate), db: Session = Depends(get_db)):
+def leaders_dispute(uid: str, parsed: dict = Depends(appeal_body), g=Depends(_gate),
+                    db: Session = Depends(get_db)):
+    """The objection is the opening message of its chat (2026-09-26): JSON from
+    an older bundle, multipart from the chat composer. Files are not kept in
+    the exam — the sandbox stores no bytes."""
     at, ctx = g
+    body = parsed.get("fields") or {}
+    if parsed.get("files"):
+        raise HTTPException(status_code=400, detail="Files cannot be attached during the exam")
     reason = str(body.get("reason") or "").strip()
     tid = body.get("task_id")
     if not isinstance(tid, int):
@@ -686,13 +696,13 @@ def leaders_dispute(uid: str, body: dict = Body(...), g=Depends(_gate), db: Sess
     if any(r.data.get("task_id") == tid and r.data.get("status") in ("supervisor", "admin")
            for r in sb.leader_dispute_rows(db, at.id)):
         raise HTTPException(status_code=409, detail="Already awaiting a decision")
-    sb.add(db, at.id, "dispute", {
+    row = sb.add(db, at.id, "dispute", {
         "task_id": tid, "status": "supervisor", "reason": reason, "byRole": "leader",
         "created_at": _now().isoformat(), "date_days": 1, "sup": None,
         "decidedBy": None, "decidedAt": None, "note": "",
     })
     _touch(db, at)
-    return {"ok": True, "status": "supervisor", "report": sb.day_report(ctx, db)}
+    return {"ok": True, "status": "supervisor", "id": row.id, "report": sb.day_report(ctx, db)}
 
 
 @router.get("/leaders/disputes")
@@ -714,8 +724,174 @@ def leaders_late_proofs(g=Depends(_gate), db: Session = Depends(get_db)):
 
 
 @router.post("/leaders/late-proofs/{lid}/decide")
+@router.post("/leaders/late-proofs/{lid}/undo")
 def leaders_late_proof_rule(lid: int, g=Depends(_gate)):
     raise HTTPException(status_code=403, detail="Not yours to decide")
+
+
+# ── the appeal chat (2026-09-26) ─────────────────────────────────────────────
+# The fixture objections and the fixture late proof open into a chat exactly as
+# the real ones do. Their filing and rulings are entries synthesised from the
+# fixture's own fields (negative ids — never a stored row); what the examinee
+# writes is an `appeal_msg` row of this attempt. A leader is a party, so they
+# may write while the item is still with somebody; nobody else is here to
+# answer, and no file is ever stored.
+
+_OPEN = ("supervisor", "admin")
+
+
+def _appeal_item(ctx, db: Session, thread: str, rid: int) -> dict:
+    items = (sb.disputes_payload(ctx, db) if thread == "dispute"
+             else sb.late_proofs_payload(ctx, db))["items"]
+    it = next((i for i in items if int(i.get("id") or 0) == int(rid)), None)
+    if it is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return it
+
+
+def _appeal_rows(db: Session, at, thread: str, rid: int):
+    return [r for r in sb.rows(db, at.id, "appeal_msg")
+            if r.data.get("thread") == thread and int(r.data.get("thread_id") or 0) == int(rid)]
+
+
+def _appeal_wire(r, ctx, writable: bool) -> dict:
+    d = r.data
+    return {"id": r.id, "kind": "message", "text": d.get("text") or "",
+            "author_name": ctx.leader_name, "author_role": "leader",
+            "created_at": sb.iso(sb.rel_dt(d, "created_at")),
+            "edited_at": d.get("edited_at"), "is_own": True,
+            "can_edit": writable, "files": []}
+
+
+def _appeal_synth(it: dict, ctx, thread: str) -> list[dict]:
+    out = [{"id": -1, "kind": "filed", "text": it.get("reason") or "",
+            "author_name": ctx.leader_name, "author_role": "leader",
+            "created_at": it.get("at"), "edited_at": None, "is_own": True,
+            "can_edit": False, "files": []}]
+    sup = it.get("sup")
+    if sup and sup.get("action"):
+        out.append({"id": -2, "kind": "uplifted" if sup["action"] == "uplifted" else "sup_rejected",
+                    "text": sup.get("note") or "", "author_name": sup.get("by") or sb.BRIGADIR,
+                    "author_role": "supervisor", "created_at": sup.get("at"),
+                    "edited_at": None, "is_own": False, "can_edit": False, "files": []})
+    if thread == "dispute" and it.get("status") in ("approved", "rejected") and it.get("decidedBy"):
+        out.append({"id": -3, "kind": it["status"], "text": it.get("note") or "",
+                    "author_name": it.get("decidedBy"), "author_role": "admin",
+                    "created_at": it.get("decidedAt"), "edited_at": None,
+                    "is_own": False, "can_edit": False, "files": []})
+    return out
+
+
+def _appeal_thread(thread: str, rid: int, g, db: Session):
+    at, ctx = g
+    it = _appeal_item(ctx, db, thread, rid)
+    if thread == "dispute":
+        it = {**it, "photos": []}
+    n = len(_appeal_rows(db, at, thread, rid))
+    it["chat"] = {"count": n + len(_appeal_synth(it, ctx, thread)), "last": None, "unread": 0}
+    return {"thread": thread, "item": it, "canWrite": it.get("status") in _OPEN,
+            "canSupervise": False, "canDecide": False, "canUndo": False,
+            "open": it.get("status") in _OPEN}
+
+
+def _appeal_list(thread: str, rid: int, g, db: Session):
+    at, ctx = g
+    it = _appeal_item(ctx, db, thread, rid)
+    writable = it.get("status") in _OPEN
+    return (_appeal_synth(it, ctx, thread)
+            + [_appeal_wire(r, ctx, writable) for r in _appeal_rows(db, at, thread, rid)])
+
+
+def _appeal_post(thread: str, rid: int, parsed: dict, g, db: Session):
+    at, ctx = g
+    it = _appeal_item(ctx, db, thread, rid)
+    if it.get("status") not in _OPEN:
+        raise HTTPException(status_code=409, detail="This conversation is closed — the ruling is final")
+    if parsed.get("files"):
+        raise HTTPException(status_code=400, detail="Files cannot be attached during the exam")
+    text = str((parsed.get("fields") or {}).get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Write a message or attach a file")
+    if len(text) > 2000:
+        raise HTTPException(status_code=400, detail="The message is too long")
+    r = sb.add(db, at.id, "appeal_msg", {"thread": thread, "thread_id": int(rid), "text": text,
+                                          "created_at": _now().isoformat()})
+    _touch(db, at)
+    return _appeal_wire(r, ctx, True)
+
+
+def _appeal_own(thread: str, rid: int, mid: int, g, db: Session):
+    at, ctx = g
+    it = _appeal_item(ctx, db, thread, rid)
+    r = next((x for x in _appeal_rows(db, at, thread, rid) if x.id == mid), None)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    if it.get("status") not in _OPEN:
+        raise HTTPException(status_code=409, detail="This conversation is closed — the ruling is final")
+    return at, ctx, r
+
+
+@router.get("/leaders/disputes/{rid}/thread")
+def sb_dispute_thread(rid: int, g=Depends(_gate), db: Session = Depends(get_db)):
+    return _appeal_thread("dispute", rid, g, db)
+
+
+@router.get("/leaders/late-proofs/{rid}/thread")
+def sb_late_thread(rid: int, g=Depends(_gate), db: Session = Depends(get_db)):
+    return _appeal_thread("late", rid, g, db)
+
+
+@router.get("/leaders/disputes/{rid}/messages")
+def sb_dispute_messages(rid: int, g=Depends(_gate), db: Session = Depends(get_db)):
+    return _appeal_list("dispute", rid, g, db)
+
+
+@router.get("/leaders/late-proofs/{rid}/messages")
+def sb_late_messages(rid: int, g=Depends(_gate), db: Session = Depends(get_db)):
+    return _appeal_list("late", rid, g, db)
+
+
+@router.post("/leaders/disputes/{rid}/messages")
+def sb_dispute_post(rid: int, parsed: dict = Depends(appeal_body), g=Depends(_gate),
+                    db: Session = Depends(get_db)):
+    return _appeal_post("dispute", rid, parsed, g, db)
+
+
+@router.post("/leaders/late-proofs/{rid}/messages")
+def sb_late_post(rid: int, parsed: dict = Depends(appeal_body), g=Depends(_gate),
+                 db: Session = Depends(get_db)):
+    return _appeal_post("late", rid, parsed, g, db)
+
+
+@router.put("/leaders/disputes/{rid}/messages/{mid}")
+@router.put("/leaders/late-proofs/{rid}/messages/{mid}")
+def sb_appeal_put(request: Request, rid: int, mid: int, body: dict = Body(...), g=Depends(_gate),
+                  db: Session = Depends(get_db)):
+    thread = "dispute" if "/disputes/" in request.url.path else "late"
+    at, ctx, r = _appeal_own(thread, rid, mid, g, db)
+    text = str(body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=409, detail="A message cannot be empty")
+    sb.put(r, text=text[:2000], edited_at=_now().isoformat())
+    _touch(db, at)
+    return _appeal_wire(r, ctx, True)
+
+
+@router.delete("/leaders/disputes/{rid}/messages/{mid}")
+@router.delete("/leaders/late-proofs/{rid}/messages/{mid}")
+def sb_appeal_delete(request: Request, rid: int, mid: int, g=Depends(_gate),
+                     db: Session = Depends(get_db)):
+    thread = "dispute" if "/disputes/" in request.url.path else "late"
+    at, ctx, r = _appeal_own(thread, rid, mid, g, db)
+    db.delete(r)
+    _touch(db, at)
+    return {"ok": True}
+
+
+@router.get("/leaders/disputes/{rid}/files/{fid}")
+@router.get("/leaders/late-proofs/{rid}/files/{fid}")
+def sb_appeal_file(rid: int, fid: int, g=Depends(_gate)):
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 # ── the bell ──────────────────────────────────────────────────────────────────

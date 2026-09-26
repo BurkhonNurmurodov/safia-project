@@ -708,7 +708,7 @@ def notify_decided(db: Session, row: LeaderLateProof, *, stage: str,
 def notify_undone(db: Session, row: LeaderLateProof, *, actor_name: str | None,
                   actor_profile: str | None, actor_telegram: int | None) -> None:
     from app.services import leader_appeal_chat as chat
-    params = {**_params(db, row), "undoer": actor_name or "\u2014"}
+    params = {**_params(db, row), "by": actor_name or "\u2014"}
     nkey = ("late_proof_undone" if row.status == ADMIN
             else "late_proof_undone_sup")
     try:

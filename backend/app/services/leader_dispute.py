@@ -527,7 +527,7 @@ def notify_undone(db: Session, d: LeaderAiDispute, *, actor_name: str | None,
     who was told the outcome is told it no longer stands, and whose turn it is
     now."""
     from app.services import leader_appeal_chat as chat
-    params = {**_params(db, d), "undoer": actor_name or "\u2014"}
+    params = {**_params(db, d), "by": actor_name or "\u2014"}
     nkey = ("leader_dispute_undone" if d.status == ADMIN
             else "leader_dispute_undone_sup")
     try:
