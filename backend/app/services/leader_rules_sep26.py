@@ -28,7 +28,8 @@ shipped (the approved cases, plus rejected and passed controls).
 TEMPORARY one-shot, like `leader_rules_sep19` — and it reads that module's
 texts, so delete this one FIRST (with `startup.register_leader_rules_sep26` and
 its call in both entrypoints) once all four flags are set — the fourth,
-`leader_rules_2026_09_26_t3_sleeve_v1`, is the 26 Sep sleeve amendment below.
+`leader_rules_2026_09_26_t3_sleeve_5cm_v1`, is the 26 Sep sleeve amendment
+below (its first key, `…_t3_sleeve_v1`, wrote a hand-width wording and is spent).
 """
 
 from __future__ import annotations
@@ -79,15 +80,17 @@ CRITERIA_BY_SHIFT = {
 ONE_PROCESS_CRITERIA = "The proof for this task is a set of photos taken during the day of the process in this leader's cell: the workplace is clean and any worker visible is in standard work clothing. This leader's cell performs only one process, so all the photos may show that same process.\n\nPASSES if all of the following hold:\n- There are at least 3 photos and they are 3 separate photos of the production work, not the same shot sent twice. They may all show the same process, the same product and the same station. The process may be in the leader's own cell or in a neighbouring one.\n- In every photo the workplace is clean: nothing unrelated to the work on the table (phone, personal belongings, tea or water cup, bottle, towel, rag, loose paper), and no waste on the table or the floor. Things the process itself needs — flour, dough, product, trays, tools — do not count as clutter.\n- Every worker visible in a photo is in work clothing (uniform).\n- No visible worker has bare forearms: sleeves are down, or, if rolled up, the forearm is fully covered by an inner sleeve or an arm cover.\n\nFAILS if:\n- There are fewer than 3 photos, or the same shot is sent twice to make up the 3.\n- In at least one photo there is clutter or waste on the table, or waste on the floor.\n- At least one visible worker is without work clothing or has bare forearms.\n\nIMPORTANT:\n- This leader's cell performs only one process (for example making pancakes (crepes), cream-coating cakes, packing into boxes, slicing sponge, or boxing). Do not fail the proof because the photos show the same process, the same product or the same station.\n- Two photos are the same shot only when they show exactly the same picture. Photos of the same work taken at different moments are separate photos, even if they look alike.\n- A cleaning cloth, rag or towel lying on the work table is clutter, even if it is used to wipe the table or the scale. It is not a tool of the process. A cloth is soft, matte fabric with a woven or towel-like surface. It counts even when only part of it is in the photo — for example cut off by the bottom edge of the photo or partly hidden under the date and time stamp — so look along the edges of every photo too. A cloth hanging down over the side of the table, below the table top, is not on the table and is not judged.\n- Supplies for the work and their packaging are not clutter: piping bags and plastic film, also used or crumpled ones lying by the worker; gloves; and a bag, box, crate or container that holds product, ingredients or supplies, also when it is open or crumpled. Thin, shiny, partly see-through plastic is not a cloth. A recipe, technology card or work sheet used for this work is not loose paper either. Loose paper means scrap paper, or papers that have nothing to do with the work.\n- A bare forearm is bare skin on the part of the arm between the wrist and the elbow, because the sleeve is rolled up, pushed up or too short and no inner sleeve or arm cover covers that skin. Bare hands, gloved hands and a sleeve that reaches down to the wrist are NOT bare forearms. A hand and wrist seen without their sleeve, because the sleeve is outside the frame, are not a bare forearm either.\n- A sleeve pushed or rolled up toward the elbow, with the forearm bare below it, is a bare forearm, also when the hand wears a glove: a glove covers only the hand, not the skin between the glove and the sleeve. A sleeve that ends at the wrist or a little above it, leaving only a short strip of skin above the hand, is fine.\n- Check the arms of every worker in every photo, also workers in the background and at the edges of the photo.\n- A photo may show no worker at all — that is not a fault: such a photo is judged only on the process and the cleanliness of the workplace.\n- For a worker only partly in frame, judge only the visible part.\n- If there are more than 3 photos, the cleanliness and clothing rules apply to all of them.\n\nNOT JUDGED: the time between photos; who the workers are; the apron, head covering and gloves; which cell a process belongs to; whether the photos show different processes."
 
 # ── 26 Sep amendment: a little bare wrist is not a rolled-up sleeve ─────────
-# The operator, 26 Sep, on a Pro verdict that failed a cuff sitting a little
-# above the wrist as «sleeves rolled up»: a little open wrist and a rolled-up
-# sleeve are different things. The first text already said so in one clause and
-# the grader still failed the strip, so the line is now drawn on something the
-# model can measure in the same photo — the worker's own hand — and an arm it
-# cannot read passes. Only the two sleeve bullets of BOTH task-3 texts change;
-# every other word of either text is untouched. The texts as first shipped stay
-# below as `*_V1`: they are what `apply_sleeve` upgrades, and every pass here
-# still accepts them as its own.
+# The operator, 26 Sep, on Gemini Pro verdicts that failed a cuff sitting a
+# little above the wrist as «sleeves rolled up»: a little open wrist and a
+# rolled-up sleeve are different things, and the line between them is 5 cm.
+# The first text already spared «a short strip» and the grader failed the strip
+# anyway, so the line is now a number, with a scale the model can read in the
+# same photo, and an arm it cannot read passes. Only the two sleeve bullets of
+# BOTH task-3 texts change; every other word of either text is untouched.
+# The earlier versions stay below — `*_V1` as first shipped, `_SLEEVE_V2` the
+# hand-width wording that was live for about an hour before the operator named
+# 5 cm — because `apply_sleeve` upgrades whatever still holds one, and every
+# pass here accepts them as its own.
 _SLEEVE_V1 = (
     "- A bare forearm is bare skin on the part of the arm between the wrist and "
     "the elbow, because the sleeve is rolled up, pushed up or too short and no "
@@ -101,7 +104,7 @@ _SLEEVE_V1 = (
     "sleeve that ends at the wrist or a little above it, leaving only a short "
     "strip of skin above the hand, is fine."
 )
-_SLEEVE = (
+_SLEEVE_V2 = (
     "- A bare forearm is bare skin reaching well up the forearm — the bare "
     "stretch above the wrist is longer than the worker's hand is wide (compare "
     "it with the worker's own hand in the photo) — because the sleeve is rolled "
@@ -121,23 +124,45 @@ _SLEEVE = (
     "wide. If the arm is too small, blurred, turned away or partly hidden to "
     "tell, do not fail the photo for it."
 )
+_SLEEVE = (
+    "- A bare forearm is more than 5 cm of bare skin above the wrist, because "
+    "the sleeve is rolled up, pushed up or too short and no inner sleeve or arm "
+    "cover covers that skin. 5 cm is about the width of three fingers held "
+    "together, or a little more than half the width of the worker's hand across "
+    "the palm — compare with the worker's own hand in the photo. Bare hands, "
+    "gloved hands and a sleeve that reaches down to the wrist are NOT bare "
+    "forearms. A hand and wrist seen without their sleeve, because the sleeve is "
+    "outside the frame, are not a bare forearm either.\n"
+    "- A little bare wrist is NOT a bare forearm and never fails a photo: a "
+    "sleeve that ends at the wrist or up to 5 cm above it is a sleeve that is "
+    "down — also when the cuff has slid up because the worker is reaching "
+    "forward or lifting something. Only a sleeve rolled or pushed up further, "
+    "so that more than 5 cm of the forearm is bare, fails — also when the hand "
+    "wears a glove: a glove covers only the hand, not the forearm.\n"
+    "- Fail a photo for a bare forearm only when you can clearly see where that "
+    "sleeve ends and that more than 5 cm of the forearm above the wrist is bare. "
+    "If the arm is too small, blurred, turned away or partly hidden to tell, do "
+    "not fail the photo for it."
+)
 
 
-def _sleeve(text: str) -> str:
+def _sleeve(text: str, bullets: str = _SLEEVE) -> str:
     # A text that no longer carries the bullets would ship unamended without a
     # word; failing the import is what makes that impossible to miss.
     if text.count(_SLEEVE_V1) != 1:
         raise RuntimeError("leader_rules_sep26: task-3 sleeve bullets not found")
-    return text.replace(_SLEEVE_V1, _SLEEVE)
+    return text.replace(_SLEEVE_V1, bullets)
 
 
 CRITERIA_3_V1 = CRITERIA[3]
 ONE_PROCESS_CRITERIA_V1 = ONE_PROCESS_CRITERIA
 CRITERIA[3] = _sleeve(CRITERIA_3_V1)
 ONE_PROCESS_CRITERIA = _sleeve(ONE_PROCESS_CRITERIA_V1)
-#: As first shipped → as amended.
-SLEEVE_UPGRADE = {CRITERIA_3_V1.strip(): CRITERIA[3],
-                  ONE_PROCESS_CRITERIA_V1.strip(): ONE_PROCESS_CRITERIA}
+#: Every earlier task-3 text → the current one.
+SLEEVE_UPGRADE = {old.strip(): new
+                  for v1, new in ((CRITERIA_3_V1, CRITERIA[3]),
+                                  (ONE_PROCESS_CRITERIA_V1, ONE_PROCESS_CRITERIA))
+                  for old in (v1, _sleeve(v1, _SLEEVE_V2))}
 
 
 # ── the pass ─────────────────────────────────────────────────────────────────
@@ -247,9 +272,9 @@ def apply_global(db: Session) -> dict:
 
 
 def apply_sleeve(db: Session) -> dict:
-    """The 26 Sep amendment: every level still holding a task-3 text as first
-    shipped gets the amended one — global, unit or leader, either shift, exact
-    matches only. A level on its 19 Sep text belongs to a per-unit pass that has
+    """The 26 Sep amendment: every level still holding an earlier task-3 text
+    (as first shipped, or the hand-width wording) gets the 5 cm one — global,
+    unit or leader, either shift, exact matches only. A level on its 19 Sep text belongs to a per-unit pass that has
     not run yet, which now writes the amended text itself; a level an admin
     wrote is left, and named. `set_criteria` never re-judges, so a verdict
     already written stays as it is."""

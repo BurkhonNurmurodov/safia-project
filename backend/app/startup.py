@@ -7930,10 +7930,13 @@ LEADER_RULES26_FLAGS = {1: "leader_rules_2026_09_26_shift1_v1",
 LEADER_RULES26_GLOBAL_FLAG = "leader_rules_2026_09_26_global_v1"
 LEADER_RULES26_DUE = {1: (2026, 9, 26, 0, 30), 2: (2026, 9, 26, 16, 30)}
 # The 26 Sep sleeve amendment (`leader_rules_sep26.apply_sleeve`): a little
-# bare wrist is not a rolled-up sleeve. Runs a minute after boot rather than in
-# a shift gap — it only stops a false failure, so a leader judged by it can
-# gain a point and never lose one, and `set_criteria` never re-judges.
-LEADER_RULES26_SLEEVE_FLAG = "leader_rules_2026_09_26_t3_sleeve_v1"
+# bare wrist is not a rolled-up sleeve, and the line is 5 cm (the operator).
+# The first key, `…_t3_sleeve_v1`, wrote a hand-width wording an hour earlier
+# and is spent — changing what the pass writes needs a NEW key. Runs a minute
+# after boot rather than in a shift gap: it is the operator's own standard,
+# asked for while they were lifting false sleeve fails by hand, and
+# `set_criteria` never re-judges.
+LEADER_RULES26_SLEEVE_FLAG = "leader_rules_2026_09_26_t3_sleeve_5cm_v1"
 
 
 def register_leader_rules_sep26() -> None:
@@ -8114,9 +8117,9 @@ def _leader_rules26_sleeve_job() -> None:
                           + (1 if out["global"] else 0)),
                          ("skipped", len(out["kept"]) or None)],
                 reason=("Operator, 26.09.2026: a little bare wrist is not a rolled-up "
-                        "sleeve. Task-3 AI criteria: bare forearm = a bare stretch "
-                        "longer than the worker's hand is wide; an arm too unclear "
-                        "to tell does not fail. Earlier verdicts not re-judged."),
+                        "sleeve — the line is 5 cm. Task-3 AI criteria: bare forearm "
+                        "= more than 5 cm of bare skin above the wrist; an arm too "
+                        "unclear to tell does not fail. Earlier verdicts not re-judged."),
             )
         except Exception:
             pass
@@ -8133,7 +8136,7 @@ def _leader_rules26_sleeve_job() -> None:
                 try:
                     bot.send_message(
                         chat_id,
-                        "🛑 <b>3-vazifa yeng qoidasi (26.09) yozilmadi</b>\n"
+                        "🛑 <b>3-vazifa yeng qoidasi (5 sm, 26.09) yozilmadi</b>\n"
                         + _html.escape(str(exc)[:400], quote=False)
                         + "\n\nKeyingi ishga tushishda qaytadan yoziladi.",
                         parse_mode="HTML")
@@ -8152,9 +8155,9 @@ def _leader_rules26_sleeve_dm(out: dict) -> int:
         import html
         from app.routers.boot import _recipients
         from app.telegram_bot import bot
-        body = ["Bilakda ozgina ochiq teri — qoidabuzarlik emas. Faqat tirsakka "
-                "tomon shimarilgan yeng rad etiladi: ochiq qismi ishchining kafti "
-                "enidan uzun bo'lsa. Aniq ko'rinmagan qo'l uchun rad etilmaydi",
+        body = ["Bilakdan 5 sm gacha ochiq teri — qoidabuzarlik emas. Yeng "
+                "shimarilib, bilak 5 sm dan ko'proq ochilsa — rad etiladi. Aniq "
+                "ko'rinmagan qo'l uchun rad etilmaydi",
                 f"Yangilandi: {len(out['units'])} brigada, "
                 f"{len(out['leaders'])} lider"
                 + (", umumiy standart" if out["global"] else "")]
@@ -8166,7 +8169,7 @@ def _leader_rules26_sleeve_dm(out: dict) -> int:
         if out["kept"]:
             body.append(f"O'z 3-vazifa matni bor, tegilmadi: {len(out['kept'])}")
         esc = lambda v: html.escape(str(v), quote=False)
-        text = ("📋 <b>3-vazifa: yeng qoidasi aniqlashtirildi (26.09)</b>\n"
+        text = ("📋 <b>3-vazifa: yeng qoidasi — 5 sm (26.09)</b>\n"
                 + esc("\n".join(body)))
         if out["kept"]:
             text += "\n\n<pre>" + esc("\n".join(out["kept"][:20])) + "</pre>"
