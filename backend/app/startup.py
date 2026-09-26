@@ -511,6 +511,24 @@ def add_broadcast_failures_column() -> None:
         db.close()
 
 
+def add_broadcast_pin_columns() -> None:
+    """Pinned broadcasts (idempotent). `pin` asks the sender to pin each DM in
+    the recipient's chat with the bot; `pin_failures` records the recipients
+    who got the message but whose pin did not stick, apart from failed_count,
+    because a delivered message must never be retried. Every row sent before
+    this reads unpinned, which is what it was."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS pin BOOLEAN NOT NULL DEFAULT FALSE"))
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS pin_failures JSONB"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] broadcasts pin columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_action_log_undo_column() -> None:
     """`action_logs.undo_of` — the row a reversal takes back (idempotent).
 

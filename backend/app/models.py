@@ -3035,6 +3035,13 @@ class Broadcast(Base):
     # survive a deploy. app/scheduler.py holds the timer, this column is the
     # truth that timer is rebuilt from at every boot.
     scheduled_at       = Column(DateTime(timezone=True), nullable=True)
+    # Pin the message at the top of each recipient's chat with the bot once it
+    # lands (pinChatMessage). A PIN IS NOT DELIVERY: a recipient whose DM went
+    # out and whose pin did not HAS the message — counting them failed would
+    # make a retry send it to them twice — so the misses live apart,
+    # [[telegram_id, name, reason], …], and never enter failed_count.
+    pin                = Column(Boolean, nullable=False, default=False, server_default="false")
+    pin_failures       = Column(JSONB, nullable=True)
 
 
 class BroadcastDraft(Base):

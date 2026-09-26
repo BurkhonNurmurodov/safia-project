@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone, Users, History, Send, Paperclip, X, Image as ImageIcon, Video,
   FileText, CheckCircle, Loader2, Type, Sparkles, RotateCcw, CalendarClock,
-  Clock, Ban, AlertTriangle, Trash2, Inbox, MessageSquare, UserCheck,
+  Clock, Ban, AlertTriangle, Trash2, Inbox, MessageSquare, UserCheck, Pin, PinOff,
+  SlidersHorizontal,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -12,6 +13,7 @@ import { useAdminDirty } from "./AdminPanel";
 import Button from "../../components/ui/Button";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import SearchInput from "../../components/ui/SearchInput";
+import FormField from "../../components/ui/FormField";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import RichTextEditor from "../../components/ui/RichTextEditor";
 import CheckboxTree, { collectLeafKeys, filterGroups } from "../../components/ui/CheckboxTree";
@@ -200,6 +202,11 @@ function MessageCell({ row, t }) {
           <MessageSquare size={9} /> {t("admin.broadcast.modeCopy")}
         </span>
       )}
+      {row.pin && (
+        <span className="flex-shrink-0 inline-flex" title={t("admin.broadcast.pinnedTag")}>
+          <Pin size={12} style={{ color: "var(--brand-text)" }} aria-label={t("admin.broadcast.pinnedTag")} />
+        </span>
+      )}
       {A && <A size={12} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />}
       {media > 0 && (
         <span className="flex-shrink-0 inline-flex items-center gap-0.5" style={{ color: "var(--brand-text)" }}>
@@ -242,6 +249,10 @@ export default function Broadcast() {
   const [schedMode, setSchedMode] = useState("now");
   const [schedDate, setSchedDate] = useState("");
   const [schedTime, setSchedTime] = useState("09:00");
+  // Pin each DM at the top of the recipient's chat. It travels WITH the message
+  // (draft restore, duplicate) because it is part of how this message is
+  // delivered; the send time does not, because a time goes stale.
+  const [pin, setPin] = useState(false);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelError, setCancelError] = useState("");
   const [draftOffer, setDraftOffer] = useState(() => readDraft());
@@ -350,26 +361,27 @@ export default function Broadcast() {
   // composed message and a 300-person selection vanish with one mistap.
   useAdminDirty(hasMessage || selected.length > 0);
 
-  // Autosave (debounced). Text + selection + mode only — never the schedule.
+  // Autosave (debounced). Text + selection + mode + pin — never the schedule.
   useEffect(() => {
     if (!hasMessage && !selected.length) return undefined;
     const id = setTimeout(() => {
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify({
-          html: msg.html, text: msg.text, mode, selected,
+          html: msg.html, text: msg.text, mode, selected, pin,
           hadMedia: msg.media.length > 0 || !!attachment,
           savedAt: Date.now(),
         }));
       } catch { /* private mode / quota — the draft is a convenience */ }
     }, 800);
     return () => clearTimeout(id);
-  }, [msg.html, msg.text, msg.media.length, mode, selected, attachment, hasMessage]);
+  }, [msg.html, msg.text, msg.media.length, mode, selected, pin, attachment, hasMessage]);
 
   // Duplicate: /broadcast/:id sends the old message and its targets here.
   useEffect(() => {
     const dup = location.state?.duplicate;
     if (!dup) return;
     setMode(dup.mode === "rich" ? "rich" : "normal");
+    setPin(!!dup.pin);
     setSeedHtml(dup.html || "");
     setEditorKey((k) => k + 1);
     setPendingTargets((dup.targets || []).map(String));
@@ -401,6 +413,7 @@ export default function Broadcast() {
     setSelected([]);
     setSchedMode("now");
     setSchedDate("");
+    setPin(false);
     setDupNote("");
     dropDraft();
   };
@@ -409,6 +422,7 @@ export default function Broadcast() {
     const form = new FormData();
     form.append("text", msg.html);
     form.append("mode", mode);
+    form.append("pin", pin ? "true" : "false");
     if (withTargets) form.append("targets", JSON.stringify(selected.map(Number)));
     if (rich) {
       form.append("media_meta", JSON.stringify(msg.media.map(({ id, kind }) => ({ id, kind }))));
@@ -448,8 +462,11 @@ export default function Broadcast() {
   const testMut = useMutation({
     mutationFn: () => api.post("/api/broadcast/test", buildForm(false)).then((r) => r.data),
     onSuccess: (d) => {
-      if (d?.degraded) toast.warning(t("admin.broadcast.testDegraded"));
-      else toast.success(t("admin.broadcast.testSent"));
+      // A pin that did not stick is named before anything else: the message
+      // arrived, but the thing being rehearsed did not happen.
+      if (d?.pin_error) toast.warning(t("admin.broadcast.testPinFailed").replace("{err}", d.pin_error));
+      else if (d?.degraded) toast.warning(t("admin.broadcast.testDegraded"));
+      else toast.success(t(d?.pinned ? "admin.broadcast.testSentPinned" : "admin.broadcast.testSent"));
     },
     onError: (e) => toast.error(
       t("admin.broadcast.testFailed").replace("{err}", e?.response?.data?.detail || "")),
@@ -496,6 +513,7 @@ export default function Broadcast() {
     const d = draftOffer;
     if (!d) return;
     setMode(d.mode === "rich" ? "rich" : "normal");
+    setPin(!!d.pin);
     setSeedHtml(d.html || "");
     setEditorKey((k) => k + 1);
     setSelected(d.selected || []);
@@ -745,73 +763,101 @@ export default function Broadcast() {
           )}
         </Card>
 
-        {/* 3 · Delivery */}
+        {/* 3 · Delivery — WHEN it goes out, and whether it stays pinned at
+            the top of each chat. Each control carries its own label: the card
+            title can no longer name both. */}
         <Card
-          icon={CalendarClock}
-          title={t("admin.broadcast.secDelivery")}
+          icon={SlidersHorizontal}
+          title={t("admin.broadcast.secSending")}
           right={
-            <Summary active={later}>
-              {later ? (schedAt && !schedPast ? fmtDT(schedAt) : t("admin.broadcast.sendLater"))
-                     : t("admin.broadcast.summaryNow")}
+            <Summary active={later || pin}>
+              <span className="inline-flex items-center gap-1">
+                {later ? (schedAt && !schedPast ? fmtDT(schedAt) : t("admin.broadcast.sendLater"))
+                       : t("admin.broadcast.summaryNow")}
+                {pin && <Pin size={10} aria-label={t("admin.broadcast.summaryPinned")} />}
+              </span>
             </Summary>
           }
           className="lg:col-start-1 lg:row-start-2 min-w-0"
         >
-          <div className="p-4 space-y-2">
-            <SegmentedToggle
-              size="sm"
-              value={schedMode}
-              onChange={setSchedMode}
-              ariaLabel={t("admin.broadcast.secDelivery")}
-              options={[
-                { value: "now", label: <span className="inline-flex items-center gap-1.5"><Send size={13} /> {t("admin.broadcast.sendNow")}</span> },
-                { value: "later", label: <span className="inline-flex items-center gap-1.5"><CalendarClock size={13} /> {t("admin.broadcast.sendLater")}</span> },
-              ]}
-            />
-            {later && (
-              <>
-                {presets.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    {presets.map((p) => (
-                      <Button
-                        key={p.key}
-                        size="sm"
-                        variant={schedDate === p.date && schedTime === p.time ? "primary" : "secondary"}
-                        tint={schedDate === p.date && schedTime === p.time}
-                        onClick={() => { setSchedDate(p.date); setSchedTime(p.time); }}
-                      >
-                        {p.label}
-                      </Button>
-                    ))}
+          <div className="p-4 space-y-4">
+            <div className="space-y-2">
+              <FormField label={t("admin.broadcast.secDelivery")}>
+                <SegmentedToggle
+                  size="sm"
+                  className="self-start"
+                  value={schedMode}
+                  onChange={setSchedMode}
+                  ariaLabel={t("admin.broadcast.secDelivery")}
+                  options={[
+                    { value: "now", label: <span className="inline-flex items-center gap-1.5"><Send size={13} /> {t("admin.broadcast.sendNow")}</span> },
+                    { value: "later", label: <span className="inline-flex items-center gap-1.5"><CalendarClock size={13} /> {t("admin.broadcast.sendLater")}</span> },
+                  ]}
+                />
+              </FormField>
+              {later && (
+                <>
+                  {presets.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {presets.map((p) => (
+                        <Button
+                          key={p.key}
+                          size="sm"
+                          variant={schedDate === p.date && schedTime === p.time ? "primary" : "secondary"}
+                          tint={schedDate === p.date && schedTime === p.time}
+                          onClick={() => { setSchedDate(p.date); setSchedTime(p.time); }}
+                        >
+                          {p.label}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <DateRangePicker
+                      single
+                      dateFrom={schedDate}
+                      dateTo={schedDate}
+                      setDateFrom={setSchedDate}
+                      setDateTo={setSchedDate}
+                      triggerClassName="px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="time"
+                      value={schedTime}
+                      onChange={(e) => setSchedTime(e.target.value)}
+                      aria-label={t("admin.broadcast.sendLater")}
+                      className="rounded-xl px-3 py-2 text-sm tabular-nums outline-none"
+                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+                    />
                   </div>
-                )}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <DateRangePicker
-                    single
-                    dateFrom={schedDate}
-                    dateTo={schedDate}
-                    setDateFrom={setSchedDate}
-                    setDateTo={setSchedDate}
-                    triggerClassName="px-3 py-2 text-sm"
-                  />
-                  <input
-                    type="time"
-                    value={schedTime}
-                    onChange={(e) => setSchedTime(e.target.value)}
-                    aria-label={t("admin.broadcast.sendLater")}
-                    className="rounded-xl px-3 py-2 text-sm tabular-nums outline-none"
-                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
-                  />
-                </div>
-                {/* Consequential, so it sits under the control at --text-3,
-                    not at --text-4 where the eye skips it. */}
-                <div className="text-[11px]" style={{ color: schedPast ? "#ef4444" : "var(--text-3)" }}>
-                  {!schedDate ? t("admin.broadcast.schedPick")
-                    : schedPast ? t("admin.broadcast.schedPast")
-                    : t("admin.broadcast.schedHint")}
-                </div>
-              </>
-            )}
+                  {/* Consequential, so it sits under the control at --text-3,
+                      not at --text-4 where the eye skips it. */}
+                  <div className="text-[11px]" style={{ color: schedPast ? "#ef4444" : "var(--text-3)" }}>
+                    {!schedDate ? t("admin.broadcast.schedPick")
+                      : schedPast ? t("admin.broadcast.schedPast")
+                      : t("admin.broadcast.schedHint")}
+                  </div>
+                </>
+              )}
+            </div>
+            {/* The hint shows only when ON: that is when it has a consequence
+                the operator should read — every recipient's chat changes. */}
+            <FormField
+              label={t("admin.broadcast.pinLabel")}
+              hint={pin ? t("admin.broadcast.pinHint") : null}
+            >
+              <SegmentedToggle
+                size="sm"
+                className="self-start"
+                value={pin}
+                onChange={setPin}
+                ariaLabel={t("admin.broadcast.pinLabel")}
+                options={[
+                  { value: false, label: <span className="inline-flex items-center gap-1.5"><PinOff size={13} /> {t("admin.broadcast.pinOff")}</span> },
+                  { value: true, label: <span className="inline-flex items-center gap-1.5"><Pin size={13} /> {t("admin.broadcast.pinOn")}</span> },
+                ]}
+              />
+            </FormField>
           </div>
         </Card>
       </div>
@@ -848,6 +894,14 @@ export default function Broadcast() {
             <span className="text-xs" style={{ color: "var(--text-2)" }}>
               {rich ? t("admin.broadcast.modeRich") : t("admin.broadcast.modeNormal")}
             </span>
+            {pin && (
+              <>
+                <span className="text-xs" style={{ color: "var(--text-4)" }}>·</span>
+                <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: "var(--text-2)" }}>
+                  <Pin size={13} /> {t("admin.broadcast.summaryPinned")}
+                </span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <Button
@@ -1136,6 +1190,12 @@ export default function Broadcast() {
               </p>
             )}
             <p className="mb-2">{t("admin.broadcast.confirmMsg").replace("{n}", selected.length)}</p>
+            {/* A pin changes every recipient's chat, so the readback names it. */}
+            {pin && (
+              <p className="mb-2 inline-flex items-center gap-1.5 font-medium" style={{ color: "var(--text-1)" }}>
+                <Pin size={13} style={{ color: "var(--brand-text)" }} /> {t("admin.broadcast.confirmPin")}
+              </p>
+            )}
             {groupBreakdown.length > 0 && (
               <>
                 <ul className="mb-1 space-y-0.5">

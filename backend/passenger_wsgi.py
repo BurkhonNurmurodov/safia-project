@@ -132,7 +132,7 @@ try:
         add_leader_submission_columns, add_broadcast_rich_columns,
         add_broadcast_resume_columns, add_broadcast_schedule_column,
         add_action_log_undo_column,
-        add_broadcast_failures_column, add_pp_product_op,
+        add_broadcast_failures_column, add_broadcast_pin_columns, add_pp_product_op,
         add_downtime_ns_columns,
         add_attendance_supervisor_column, backfill_supervisor_attendance,
         add_attendance_split_columns, purge_cell_exchange_sandbox,
@@ -243,6 +243,7 @@ try:
     add_broadcast_schedule_column()
     add_action_log_undo_column()
     add_broadcast_failures_column()
+    add_broadcast_pin_columns()
     add_pp_product_op()
     add_downtime_ns_columns()
     add_attendance_supervisor_column()

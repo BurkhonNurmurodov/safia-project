@@ -445,6 +445,42 @@ def _send_once(send):
         return send()
 
 
+def _sent_message_id(result) -> int | None:
+    """The message a send produced, as the id to pin. One send answers with one
+    Message, but an album (copyMessages) — and possibly a rich message — answers
+    with a list, and the FIRST of those is pinned, which is what a Telegram
+    client pins for an album too. Takes a telebot Message or a raw Bot API dict
+    (sendRichMessage, copyMessage's bare MessageId) alike."""
+    if isinstance(result, list):
+        result = result[0] if result else None
+    mid = result.get("message_id") if isinstance(result, dict) else getattr(result, "message_id", None)
+    return mid if isinstance(mid, int) else None
+
+
+def _pin_sent(chat_id: int, result) -> None:
+    """Pin a just-delivered broadcast at the top of the recipient's chat with the
+    bot. Raises on failure so the caller can record WHY; a flood-wait is waited
+    out once, like a send. A private chat notifies nobody about a pin, so there
+    is no disable_notification to decide."""
+    mid = _sent_message_id(result)
+    if mid is None:
+        raise RuntimeError("Telegram did not return the sent message's id")
+    from app.telegram_bot import bot
+    _send_once(lambda: bot.pin_chat_message(chat_id, mid))
+
+
+def _pin_or_note(where, tid: int, name: str, result, pin_failures: list) -> None:
+    """Pin one DELIVERED broadcast, noting a miss in `pin_failures` instead of
+    raising. The recipient has the message either way, so a pin that did not
+    stick must never be counted as a failed delivery — a retry would send them
+    the message a second time."""
+    try:
+        _pin_sent(tid, result)
+    except Exception as e:
+        pin_failures.append([tid, name, _failure_reason(e)])
+        logger.warning("Broadcast %s → %s (%s) delivered but not pinned: %s", where, tid, name, e)
+
+
 class _BroadcastIO:
     """DB side of one sender run. Every flush writes ABSOLUTE values, so a
     failed commit loses nothing: the session is rebuilt and the next flush
@@ -546,6 +582,8 @@ def _run_broadcast_rich(bid: int, media_items: list[dict] | None = None,
         failed = row.failed_count or 0
         failed_names = list(row.failed_names or [])
         failures = list(row.failures or [])
+        pin = bool(row.pin)
+        pin_failures = list(row.pin_failures or [])
         i = row.send_cursor or 0
         total = len(recipients)
 
@@ -555,6 +593,8 @@ def _run_broadcast_rich(bid: int, media_items: list[dict] | None = None,
                  "send_cursor": i}
             if reusable:
                 f["media_specs"] = reusable
+            if pin:
+                f["pin_failures"] = list(pin_failures)
             return f
 
         if needs_media and reusable is None and media_items is None and i < total:
@@ -609,6 +649,9 @@ def _run_broadcast_rich(bid: int, media_items: list[dict] | None = None,
                 failed_names.append(name)
                 failures.append([tid, name, _failure_reason(e)])
                 logger.warning("Rich broadcast %s → %s (%s) failed: %s", bid, tid, name, e)
+            else:
+                if pin:
+                    _pin_or_note(bid, tid, name, result, pin_failures)
             i += 1
             if not io.flush(_fields()):
                 return  # DB unreachable — a later process resumes from the cursor
@@ -755,15 +798,15 @@ def _deliverable(blocks: list[dict]) -> set[int]:
 def _tg_copy(chat_id: int, from_chat_id: int, message_ids: list[int]):
     """Copy the admin's original message(s) to one recipient — copyMessages for
     an album (>1 id), copyMessage for a single message. A clean copy (no
-    'forwarded from' header), preserving text/media/entities exactly."""
+    'forwarded from' header), preserving text/media/entities exactly. Returns
+    the new MessageId(s), which is what a pin needs."""
     if len(message_ids) == 1:
-        _tg_api("copyMessage",
-                {"chat_id": chat_id, "from_chat_id": from_chat_id, "message_id": message_ids[0]})
-    else:
-        # copyMessages requires the ids in strictly increasing order.
-        _tg_api("copyMessages",
-                {"chat_id": chat_id, "from_chat_id": from_chat_id,
-                 "message_ids": json.dumps(sorted(set(message_ids)))})
+        return _tg_api("copyMessage",
+                       {"chat_id": chat_id, "from_chat_id": from_chat_id, "message_id": message_ids[0]})
+    # copyMessages requires the ids in strictly increasing order.
+    return _tg_api("copyMessages",
+                   {"chat_id": chat_id, "from_chat_id": from_chat_id,
+                    "message_ids": json.dumps(sorted(set(message_ids)))})
 
 
 # ── Background sender ─────────────────────────────────────────────────────────
@@ -792,6 +835,8 @@ def _run_broadcast(bid: int, data: bytes | None = None, filename: str | None = N
         failed = row.failed_count or 0
         failed_names = list(row.failed_names or [])
         failures = list(row.failures or [])
+        pin = bool(row.pin)
+        pin_failures = list(row.pin_failures or [])
         i = row.send_cursor or 0
         total = len(recipients)
 
@@ -801,6 +846,8 @@ def _run_broadcast(bid: int, data: bytes | None = None, filename: str | None = N
                  "send_cursor": i}
             if file_id:
                 f["attachment_file_id"] = file_id
+            if pin:
+                f["pin_failures"] = list(pin_failures)
             return f
 
         if kind and data is None and not file_id and i < total:
@@ -834,17 +881,18 @@ def _run_broadcast(bid: int, data: bytes | None = None, filename: str | None = N
                                             caption=h, parse_mode="HTML")
                     file_id = file_id or msg.document.file_id
                 else:
-                    bot.send_message(tid, h, parse_mode="HTML")
+                    msg = bot.send_message(tid, h, parse_mode="HTML")
+                return msg
 
             try:
                 try:
-                    _send_once(lambda: _send(cur_html))
+                    msg = _send_once(lambda: _send(cur_html))
                 except Exception:
                     # Premium emoji rejected (bot lacks a Fragment username) →
                     # retry degraded to fallback chars and latch it for the rest.
                     if cur_html == stripped_html:
                         raise
-                    _send_once(lambda: _send(stripped_html))
+                    msg = _send_once(lambda: _send(stripped_html))
                     cur_html = stripped_html
                 sent += 1
             except Exception as e:
@@ -852,6 +900,9 @@ def _run_broadcast(bid: int, data: bytes | None = None, filename: str | None = N
                 failed_names.append(name)
                 failures.append([tid, name, _failure_reason(e)])
                 logger.warning("Broadcast %s → %s (%s) failed: %s", bid, tid, name, e)
+            else:
+                if pin:
+                    _pin_or_note(bid, tid, name, msg, pin_failures)
             i += 1
             if not io.flush(_fields()):
                 return  # DB unreachable — a later process resumes from the cursor
@@ -1096,6 +1147,9 @@ async def send_broadcast(
     mode: str = Form("normal"),
     media_meta: str = Form("[]"),
     scheduled_at: str = Form(""),
+    # Pin each DM in the recipient's chat once it lands. Absent = unpinned,
+    # which is what every caller that predates it means.
+    pin: bool = Form(False),
     file: UploadFile | None = File(None),
     media_files: list[UploadFile] | None = File(None),
     payload: dict = Depends(verify_admin),
@@ -1177,6 +1231,8 @@ async def send_broadcast(
         claimed_at=None if when else datetime.now(timezone.utc),
         attachment_file_id=pre_file_id,
         media_specs=pre_specs,
+        pin=pin,
+        pin_failures=[] if pin else None,
     )
     db.add(row)
     db.commit()
@@ -1188,7 +1244,7 @@ async def send_broadcast(
         ("mode", mode),
         ("text", plain[:300]),
         ("files", (1 if kind else 0) + len(media_items)),
-    ]
+    ] + ([("pin", "yes")] if pin else [])
 
     if when:
         # The row is already the durable record; the timer is a convenience
@@ -1297,6 +1353,7 @@ async def test_broadcast(
     text: str = Form(...),
     mode: str = Form("normal"),
     media_meta: str = Form("[]"),
+    pin: bool = Form(False),
     file: UploadFile | None = File(None),
     media_files: list[UploadFile] | None = File(None),
     payload: dict = Depends(verify_admin),
@@ -1312,7 +1369,8 @@ async def test_broadcast(
     Writes NO Broadcast row: a rehearsal is not a broadcast, and putting one in
     the history would make the register lie about what was sent to whom.
     ``degraded`` reports that premium emoji had to fall back, which is one of
-    the things being rehearsed.
+    the things being rehearsed; so is the pin, which lands in the composer's own
+    chat exactly as it would in a recipient's (``pinned`` / ``pin_error``).
     """
     if mode not in ("normal", "rich"):
         raise HTTPException(status_code=422, detail="mode must be normal or rich")
@@ -1334,41 +1392,51 @@ async def test_broadcast(
             rich: dict = {"html": h, "is_rtl": False}
             if specs:
                 rich["media"] = specs
-            _tg_api("sendRichMessage",
-                    {"chat_id": sender_tid, "rich_message": json.dumps(rich)}, files or None)
-        elif kind == "photo":
-            bot.send_photo(sender_tid, data, caption=h, parse_mode="HTML")
-        elif kind == "video":
-            bot.send_video(sender_tid, data, caption=h, parse_mode="HTML")
-        elif kind == "document":
-            bot.send_document(sender_tid, document=(filename, data), caption=h, parse_mode="HTML")
-        else:
-            bot.send_message(sender_tid, h, parse_mode="HTML")
+            return _tg_api("sendRichMessage",
+                           {"chat_id": sender_tid, "rich_message": json.dumps(rich)}, files or None)
+        if kind == "photo":
+            return bot.send_photo(sender_tid, data, caption=h, parse_mode="HTML")
+        if kind == "video":
+            return bot.send_video(sender_tid, data, caption=h, parse_mode="HTML")
+        if kind == "document":
+            return bot.send_document(sender_tid, document=(filename, data), caption=h, parse_mode="HTML")
+        return bot.send_message(sender_tid, h, parse_mode="HTML")
 
     degraded = False
     try:
         try:
-            _send_once(lambda: _deliver(html))
+            result = _send_once(lambda: _deliver(html))
         except Exception:
             # Same degradation ladder as the real fan-out: premium emoji
             # rejected → retry with fallback characters, and SAY so.
             if html == stripped:
                 raise
-            _send_once(lambda: _deliver(stripped))
+            result = _send_once(lambda: _deliver(stripped))
             degraded = True
     except Exception as exc:
         logger.warning("Broadcast test send to %s failed: %s", sender_tid, exc)
         raise HTTPException(status_code=502, detail=_failure_reason(exc)) from exc
 
-    logger.info("BROADCAST test sent to %s (mode=%s, degraded=%s)", sender_tid, mode, degraded)
+    # The message arrived either way, so a pin that did not stick is REPORTED,
+    # never raised — a 502 here would read as "the test did not send".
+    pin_error = None
+    if pin:
+        misses: list = []
+        _pin_or_note("test", sender_tid, "self", result, misses)
+        pin_error = misses[0][2] if misses else None
+
+    logger.info("BROADCAST test sent to %s (mode=%s, degraded=%s, pin=%s)",
+                sender_tid, mode, degraded, "failed" if pin_error else pin)
     action_log.enrich(
         target_kind="broadcast", target_id=f"test:{sender_tid}",
         details=[("audience", "self"), ("count", 1), ("mode", mode),
                  ("text", _plain[:300]),
                  ("files", (1 if kind else 0) + len(media_items)),
-                 ("state", "degraded" if degraded else "ok")],
+                 ("state", "degraded" if degraded else "ok")]
+                + ([("pin", "failed" if pin_error else "yes")] if pin else []),
     )
-    return {"ok": True, "degraded": degraded}
+    return {"ok": True, "degraded": degraded,
+            "pinned": pin and not pin_error, "pin_error": pin_error}
 
 
 def _retryable(r: Broadcast) -> bool:
@@ -1533,6 +1601,9 @@ def _row_summary(r: Broadcast) -> dict:
         "can_retry": _retryable(r),
         "scheduled_at": r.scheduled_at.isoformat() if r.scheduled_at else None,
         "can_cancel": r.status == "scheduled",
+        "pin": bool(r.pin),
+        # Delivered, but the pin did not stick — never part of failed_count.
+        "pin_failed": len(r.pin_failures or []),
     }
 
 
@@ -1574,6 +1645,7 @@ def broadcast_recipients(db: Session = Depends(get_db),
 def send_draft(
     token: str = Form(...),
     targets: str = Form(...),
+    pin: bool = Form(False),
     payload: dict = Depends(verify_broadcast_admin),
     db: Session = Depends(get_db),
 ):
@@ -1581,7 +1653,9 @@ def send_draft(
     selected telegram_id. Runs synchronously (recipient counts are tens) and
     returns final {sent, failed, total, failed_names} so the mini-app can show
     an accurate result modal. Also logs a history row and edits the bot's
-    picker message into a 'sent X/Y' summary."""
+    picker message into a 'sent X/Y' summary. With `pin`, each delivered copy
+    is pinned in the recipient's chat (an album by its first message), and
+    `pin_failed` counts the ones delivered whose pin did not stick."""
     admin_tid = int(payload.get("sub", 0) or 0)
     draft = db.query(BroadcastDraft).filter_by(token=token).first()
     if not draft or draft.admin_telegram_id != admin_tid:
@@ -1610,14 +1684,18 @@ def send_draft(
     sent = 0
     failed_names: list[str] = []
     failures: list[list] = []
+    pin_failures: list[list] = []
     for tid, name in recipients.items():
         try:
-            _tg_copy(tid, from_chat_id, message_ids)
+            copied = _tg_copy(tid, from_chat_id, message_ids)
             sent += 1
         except Exception as e:
             failed_names.append(name)
             failures.append([tid, name, _failure_reason(e)])
             logger.warning("Draft broadcast %s → %s (%s) failed: %s", draft.id, tid, name, e)
+        else:
+            if pin:
+                _pin_or_note(f"draft {draft.id}", tid, name, copied, pin_failures)
         time.sleep(0.05)  # stay under Telegram's ~30 msg/s ceiling
 
     total = len(recipients)
@@ -1641,6 +1719,8 @@ def send_draft(
         recipients=[[tid, name] for tid, name in recipients.items()],
         send_cursor=total,
         status="done", finished_at=datetime.now(timezone.utc),
+        pin=pin,
+        pin_failures=pin_failures if pin else None,
     )
     db.add(row)
     draft.status = "sent"
@@ -1649,7 +1729,8 @@ def send_draft(
     # Edit the bot's picker message into a final summary (best-effort).
     if draft.warn_message_id:
         try:
-            notify_broadcast_result(admin_tid, draft.warn_message_id, sent, total, failed)
+            notify_broadcast_result(admin_tid, draft.warn_message_id, sent, total, failed,
+                                    pinned=(sent - len(pin_failures)) if pin else None)
         except Exception:
             logger.warning("Broadcast result edit failed for admin %s", admin_tid, exc_info=True)
 
@@ -1658,9 +1739,11 @@ def send_draft(
         details=[("audience", _audience(list(recipients.values()))),
                  ("count", total), ("mode", "copy"),
                  ("sent", sent), ("failed", failed),
-                 ("text", (draft.preview_text or "")[:300])],
+                 ("text", (draft.preview_text or "")[:300])]
+                + ([("pin", f"{sent - len(pin_failures)}/{sent}")] if pin else []),
     )
-    return {"sent": sent, "failed": failed, "total": total, "failed_names": failed_names}
+    return {"sent": sent, "failed": failed, "total": total, "failed_names": failed_names,
+            "pin": pin, "pin_failed": len(pin_failures)}
 
 
 # ── Custom (premium) emoji palette ────────────────────────────────────────────
@@ -1774,6 +1857,16 @@ def broadcast_record(bid: int, db: Session = Depends(get_db),
                 continue
     legacy = None if reasons else Counter(r.failed_names or [])
 
+    # Delivered, not pinned — a note on a DELIVERED row, never a status of its
+    # own: the recipient has the message.
+    pin_misses: dict[int, str | None] = {}
+    for f in (r.pin_failures or []):
+        if isinstance(f, (list, tuple)) and len(f) >= 2:
+            try:
+                pin_misses[int(f[0])] = (f[2] if len(f) > 2 else None)
+            except (TypeError, ValueError):
+                continue
+
     # Nothing was attempted for these: 'scheduled' has not fired, 'canceled'
     # never will. Both must read differently from "delivered", and from each
     # other — a canceled row saying "pending" promises a send that is not coming.
@@ -1788,7 +1881,7 @@ def broadcast_record(bid: int, db: Session = Depends(get_db),
         if unattempted or i >= cursor:
             people.append({"telegram_id": tid, "name": name,
                            "status": "canceled" if r.status == "canceled" else "pending",
-                           "error": None})
+                           "error": None, "pin_error": None})
             continue
         failed, reason = False, None
         if reasons:
@@ -1800,9 +1893,15 @@ def broadcast_record(bid: int, db: Session = Depends(get_db),
         elif legacy and legacy.get(name):
             legacy[name] -= 1
             failed = True
+        try:
+            unpinned = not failed and int(tid) in pin_misses
+        except (TypeError, ValueError):
+            unpinned = False
         people.append({"telegram_id": tid, "name": name,
                        "status": "failed" if failed else "delivered",
-                       "error": reason})
+                       "error": reason,
+                       # A pin miss with no stored reason still says so.
+                       "pin_error": (pin_misses.get(int(tid)) or "—") if unpinned else None})
 
     out = _row_summary(r)
     out.update({

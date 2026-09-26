@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Users, Send, CheckCircle, AlertTriangle } from "lucide-react";
+import { Users, Send, CheckCircle, AlertTriangle, Pin, PinOff } from "lucide-react";
 import api from "../utils/api";
 import Button from "../components/ui/Button";
 import SearchInput from "../components/ui/SearchInput";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
+import FormField from "../components/ui/FormField";
 import Modal from "../components/ui/Modal";
+import { useToast } from "../components/ui/Toast";
 import CheckboxTree, { collectLeafKeys } from "../components/ui/CheckboxTree";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useLang } from "../context/LangContext";
@@ -31,8 +34,10 @@ export default function BroadcastReceivers() {
 
   const [selected, setSelected] = useState([]);
   const [treeFilter, setTreeFilter] = useState("");
-  const [result, setResult] = useState(null); // { sent, failed, total }
+  const [pin, setPin] = useState(false);
+  const [result, setResult] = useState(null); // { sent, failed, total, pin, pin_failed }
   const [countdown, setCountdown] = useState(CLOSE_SEC);
+  const toast = useToast();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["broadcast-recipients"],
@@ -50,10 +55,13 @@ export default function BroadcastReceivers() {
       const form = new FormData();
       form.append("token", token);
       form.append("targets", JSON.stringify(selected.map(Number)));
+      form.append("pin", pin ? "true" : "false");
       return api.post("/api/broadcast/send-draft", form).then((r) => r.data);
     },
     onSuccess: (res) => setResult(res),
-    onError: (e) => alert(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
+    // Never window.alert here: this page lives inside Telegram, whose iOS
+    // WebView swallows it, so a failed send would look like nothing happened.
+    onError: (e) => toast.error(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
   });
 
   // Result-modal countdown → close the mini-app.
@@ -123,6 +131,26 @@ export default function BroadcastReceivers() {
           </div>
         </div>
 
+        {/* Pin — right above Send, because it is decided at the same moment. */}
+        <div className="pt-3 flex-shrink-0">
+          <FormField
+            label={t("admin.broadcast.pinLabel")}
+            hint={pin ? t("admin.broadcast.pinHint") : null}
+          >
+            <SegmentedToggle
+              size="sm"
+              className="self-start"
+              value={pin}
+              onChange={setPin}
+              ariaLabel={t("admin.broadcast.pinLabel")}
+              options={[
+                { value: false, label: <span className="inline-flex items-center gap-1.5"><PinOff size={13} /> {t("admin.broadcast.pinOff")}</span> },
+                { value: true, label: <span className="inline-flex items-center gap-1.5"><Pin size={13} /> {t("admin.broadcast.pinOn")}</span> },
+              ]}
+            />
+          </FormField>
+        </div>
+
         {/* Send */}
         <div className="flex items-center gap-3 pt-3 flex-shrink-0">
           <span className="text-xs" style={{ color: selected.length ? "var(--text-3)" : "var(--text-4)" }}>
@@ -160,6 +188,15 @@ export default function BroadcastReceivers() {
             <div className="text-xs mt-1" style={{ color: "#22c55e" }}>
               {t("broadcast.recv.delivered")}
             </div>
+            {result.pin && result.sent > 0 && (
+              <div className="text-xs mt-1 inline-flex items-center gap-1"
+                   style={{ color: result.pin_failed ? "#a16207" : "var(--text-2)" }}>
+                <Pin size={11} />
+                {t("admin.broadcast.pinnedCount")
+                  .replace("{n}", String(result.sent - (result.pin_failed || 0)))
+                  .replace("{total}", String(result.sent))}
+              </div>
+            )}
             {result.failed > 0 && (
               <div className="text-xs mt-1" style={{ color: "#ef4444" }}>
                 {t("admin.broadcast.failedN").replace("{n}", result.failed)}
@@ -171,6 +208,8 @@ export default function BroadcastReceivers() {
           </div>
         </Modal>
       )}
+
+      {toast.node}
     </div>
   );
 }

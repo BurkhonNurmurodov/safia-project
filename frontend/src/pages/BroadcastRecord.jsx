@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Users, CheckCircle, XCircle, Ban, RotateCcw, Copy,
   CalendarClock, Loader2, Paperclip, SearchX, AlertTriangle, MessageSquare,
-  Sparkles, Clock, ListChecks,
+  Sparkles, Clock, ListChecks, Pin, PinOff,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
@@ -83,6 +83,17 @@ function StateTag({ status, t }) {
        own word, so the table reads the same for a colour-blind operator. */
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px]" style={{ color: c }}>
       <Icon size={12} /> {t(k)}
+    </span>
+  );
+}
+
+// Delivered, but not pinned. A NOTE on a delivered row, never a state of its
+// own: the person has the message, which is what the result column answers.
+function PinMiss({ error, t }) {
+  return (
+    <span className="inline-flex items-start gap-1 text-[12px] break-words" style={{ color: "#a16207" }}>
+      <PinOff size={12} className="flex-shrink-0 mt-[2px]" />
+      <span>{t("admin.broadcast.notPinned")}{error && error !== "—" ? `: ${error}` : ""}</span>
     </span>
   );
 }
@@ -221,6 +232,7 @@ export default function BroadcastRecord() {
         mode: data.mode === "rich" ? "rich" : "normal",
         targets: data.target_keys || [],
         hadMedia: !!data.has_media,
+        pin: !!data.pin,
       },
     },
   });
@@ -252,6 +264,12 @@ export default function BroadcastRecord() {
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full"
                       style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
                   <MessageSquare size={11} /> {t("admin.broadcast.modeCopy")}
+                </span>
+              )}
+              {data.pin && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full"
+                      style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}>
+                  <Pin size={11} /> {t("admin.broadcast.pinnedTag")}
                 </span>
               )}
               <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
@@ -339,6 +357,18 @@ export default function BroadcastRecord() {
                   color={data.failed_count > 0 ? RED : undefined} value={data.failed_count} />
           </div>
 
+          {/* A pin that did not stick is not a failed delivery — those people
+              HAVE the message — so it is said here, beside the numbers, and
+              never folded into «Yetkazilmadi». Counted over the whole send,
+              so it stays true when a retry has shortened the table below. */}
+          {data.pin && data.pin_failed > 0 && (
+            <div className="flex items-start gap-2 rounded-xl px-3 py-2 text-[11px]"
+                 style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.25)", color: "#a16207" }}>
+              <PinOff size={13} className="flex-shrink-0 mt-px" />
+              <span>{t("admin.broadcast.pinFailedNote").replace("{n}", String(data.pin_failed))}</span>
+            </div>
+          )}
+
           {/* Per-recipient list */}
           <div className="space-y-2">
             {data.partial_list && (
@@ -424,7 +454,9 @@ export default function BroadcastRecord() {
                           <td className="px-3 py-2 max-w-[360px]">
                             {p.error
                               ? <span className="text-[12px] break-words" style={{ color: "var(--text-2)" }}>{p.error}</span>
-                              : <span style={{ color: "var(--text-4)" }}>—</span>}
+                              : p.pin_error
+                                ? <PinMiss error={p.pin_error} t={t} />
+                                : <span style={{ color: "var(--text-4)" }}>—</span>}
                           </td>
                         </tr>
                       ))}
@@ -456,6 +488,9 @@ export default function BroadcastRecord() {
                         <div className="mt-1 text-[11px] break-words" style={{ color: "var(--text-3)" }}>
                           {p.error}
                         </div>
+                      )}
+                      {!p.error && p.pin_error && (
+                        <div className="mt-1"><PinMiss error={p.pin_error} t={t} /></div>
                       )}
                     </div>
                   ))}

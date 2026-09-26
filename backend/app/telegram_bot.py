@@ -158,6 +158,7 @@ _MESSAGES = {
         "bc_empty":          "Avval xabar yuboring.",
         "bc_result":         "✅ Xabar yuborildi: {sent}/{total}",
         "bc_result_failed":  "❌ {failed} ta qabul qiluvchiga yetkazilmadi.",
+        "bc_result_pinned":  "📌 Chatda qadaldi: {pinned}/{sent}",
         "bc_rich_unsupported": (
             "⚠️ Kengaytirilgan (jadval/sarlavhali) xabarlarni bot orqali "
             "tarqatib bo'lmaydi. Buning uchun web-paneldagi «Broadcast» "
@@ -247,6 +248,7 @@ _MESSAGES = {
         "bc_empty":          "Аввал хабар юборинг.",
         "bc_result":         "✅ Хабар юборилди: {sent}/{total}",
         "bc_result_failed":  "❌ {failed} та қабул қилувчига етказилмади.",
+        "bc_result_pinned":  "📌 Чатда қадалди: {pinned}/{sent}",
         "bc_rich_unsupported": (
             "⚠️ Кенгайтирилган (жадвал/сарлавҳали) хабарларни бот орқали "
             "тарқатиб бўлмайди. Бунинг учун веб-панелдаги «Broadcast» "
@@ -336,6 +338,7 @@ _MESSAGES = {
         "bc_empty":          "Сначала отправьте сообщение.",
         "bc_result":         "✅ Сообщение отправлено: {sent}/{total}",
         "bc_result_failed":  "❌ Не доставлено получателям: {failed}.",
+        "bc_result_pinned":  "📌 Закреплено в чате: {pinned}/{sent}",
         "bc_rich_unsupported": (
             "⚠️ Расширенные сообщения (с таблицами/заголовками) нельзя "
             "рассылать через бота. Для этого используйте режим «Расширенный» "
@@ -425,6 +428,7 @@ _MESSAGES = {
         "bc_empty":          "Send a message first.",
         "bc_result":         "✅ Message sent: {sent}/{total}",
         "bc_result_failed":  "❌ Not delivered to {failed} recipient(s).",
+        "bc_result_pinned":  "📌 Pinned in chat: {pinned}/{sent}",
         "bc_rich_unsupported": (
             "⚠️ Rich messages (tables/headings) can't be broadcast via the bot. "
             "Use the web panel's Broadcast → Rich mode for that.\n\n"
@@ -1766,11 +1770,15 @@ _BC_CONTENT = ["text", "photo", "video", "document", "audio", "voice",
                "animation", "video_note"]
 
 
-def notify_broadcast_result(admin_tid: int, message_id: int, sent: int, total: int, failed: int):
+def notify_broadcast_result(admin_tid: int, message_id: int, sent: int, total: int, failed: int,
+                            pinned: int | None = None):
     """Edit the /broadcast picker message into a final 'sent X/Y' summary —
-    called from routers/broadcast.py once a draft send finishes."""
+    called from routers/broadcast.py once a draft send finishes. `pinned` is
+    how many delivered copies were pinned, None when no pin was asked for."""
     lang = _get_lang(admin_tid)
     txt = _msg(lang, "bc_result").format(sent=sent, total=total)
+    if pinned is not None and sent:
+        txt += "\n" + _msg(lang, "bc_result_pinned").format(pinned=pinned, sent=sent)
     if failed:
         txt += "\n" + _msg(lang, "bc_result_failed").format(failed=failed)
     try:
