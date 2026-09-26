@@ -48,8 +48,9 @@ export default function PaceMap({ rows, t, onOpen, dueText }) {
 
   // Direct labels: urgent goals first, each on the first side (right, left,
   // above, below) that stays in the plot and clear of every dot and label.
-  const labels = (() => {
-    if (!width) return new Map();
+  const planAngle = (-Math.atan2(Y(0) - Y(1), X(1) - X(0)) * 180) / Math.PI;
+  const { labels, planAt } = (() => {
+    if (!width) return { labels: new Map(), planAt: null };
     const placed = [];
     const out = new Map();
     const hitsDot = (b) => pts.some((p) => p.x + 7 > b.x && p.x - 7 < b.x + b.w && p.y + 7 > b.y && p.y - 7 < b.y + b.h);
@@ -78,12 +79,27 @@ export default function PaceMap({ rows, t, onOpen, dueText }) {
         out.set(p.r.g.id, { text, x: ok.a === "start" ? ok.x : ok.a === "end" ? ok.x + w : ok.x + w / 2, y: ok.y + 10, a: ok.a });
       }
     });
-    return out;
+
+    // The «Plan» word rides the diagonal wherever it is clear of every dot and
+    // name — placed LAST, because a goal's name matters more than the word
+    // explaining a line the legend also names. No clear spot: no word.
+    const planText = t("targets.chart.pace.plan");
+    const pw2 = textPx(planText, 10) / 2;
+    const ph2 = 10;
+    const rad = (planAngle * Math.PI) / 180;
+    const corners = [[-pw2, 0], [pw2, 0], [-pw2, -ph2], [pw2, -ph2]];
+    const at = [0.62, 0.46, 0.76, 0.32, 0.88, 0.2].find((v) => {
+      const ax = X(v), ay = Y(v) - 6;
+      const xs = corners.map(([cx, cy]) => ax + cx * Math.cos(rad) - cy * Math.sin(rad));
+      const ys = corners.map(([cx, cy]) => ay + cx * Math.sin(rad) + cy * Math.cos(rad));
+      const b = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+      return inside(b) && !hitsLabel(b) && !hitsDot(b);
+    });
+    return { labels: out, planAt: at ?? null };
   })();
 
   const poly = (list) => list.map(([x, y]) => `${X(x).toFixed(1)},${Y(y).toFixed(1)}`).join(" ");
   const ticks = [0, 0.25, 0.5, 0.75, 1];
-  const planAngle = (-Math.atan2(Y(0) - Y(1), X(1) - X(0)) * 180) / Math.PI;
   const act = active && pts.find((p) => p.r.g.id === active.id);
   const openOrShow = (p, touch) => {
     if (!touch) { onOpen(p.r.g.id); return; }
@@ -142,12 +158,14 @@ export default function PaceMap({ rows, t, onOpen, dueText }) {
 
             {/* the plan */}
             <line x1={X(0)} y1={Y(0)} x2={X(1)} y2={Y(1)} strokeWidth="1.5" strokeDasharray="5 4" style={{ stroke: "var(--text-2)" }} />
-            <text
-              x={X(0.6)} y={Y(0.6) - 6} fontSize="10" fontWeight="600" textAnchor="middle"
-              transform={`rotate(${planAngle} ${X(0.6)} ${Y(0.6) - 6})`} style={{ fill: "var(--text-2)", ...HALO }}
-            >
-              {t("targets.chart.pace.plan")}
-            </text>
+            {planAt !== null && (
+              <text
+                x={X(planAt)} y={Y(planAt) - 6} fontSize="10" fontWeight="600" textAnchor="middle"
+                transform={`rotate(${planAngle} ${X(planAt)} ${Y(planAt) - 6})`} style={{ fill: "var(--text-2)", ...HALO }}
+              >
+                {t("targets.chart.pace.plan")}
+              </text>
+            )}
 
             {/* the goals */}
             {pts.map((p) => {
