@@ -1,1 +1,0 @@
-var i=/^__missed__\|(\d{2}:\d{2})$/,a=/^__auto__\|(\d{2}:\d{2})\|([a-z_]*)$/;function h(r,c,e){const n=r||"",_=i.exec(n);if(_)return String(c||"").replace("{time}",_[1]);const t=a.exec(n);if(t){const s=e&&e.why&&e.why(t[2])||t[2];return String(e&&e.template||"{time} · {why}").replace("{time}",t[1]).replace("{why}",s)}return r}export{h as t};

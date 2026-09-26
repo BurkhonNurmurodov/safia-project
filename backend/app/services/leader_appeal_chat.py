@@ -266,6 +266,31 @@ def unread(db: Session, thread: str, ids: list[int],
     return out
 
 
+def seen_upto(db: Session, thread: str, thread_id: int, row,
+              reader: str | None) -> int:
+    """How far the OTHER parties of one chat have read — the highest message id
+    any of them has opened, which is what a sender's ✓✓ is drawn from.
+
+    Parties only — the appeal's leader, its unit's brigadir, any admin: a shift
+    or top manager reading along is not somebody who can answer, so their read
+    must not tell the sender they have been heard. `reader` (the person asking,
+    whose own messages carry the ticks) is never counted.
+    """
+    from app.identity import profile_key
+    party = {k for k in (
+        profile_key("leader", int(row.leader_id)) if getattr(row, "leader_id", None) else None,
+        profile_key("supervisor", int(row.manager_id)) if getattr(row, "manager_id", None) else None,
+    ) if k}
+    best = 0
+    for key, upto in (db.query(LeaderAppealRead.profile_key, LeaderAppealRead.last_read_id)
+                      .filter_by(thread=thread, thread_id=int(thread_id)).all()):
+        if not key or key == reader:
+            continue
+        if key in party or key.startswith("admin:"):
+            best = max(best, int(upto or 0))
+    return best
+
+
 def mark_read(db: Session, thread: str, thread_id: int, profile: str | None,
               upto: int | None) -> None:
     if not profile or not upto:

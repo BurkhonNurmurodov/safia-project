@@ -20,14 +20,23 @@ import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 
 // Uppercase card/section header — icon + title (optional lowercase subtitle
 // under it) on the left, free slot on the right.
-export function SectionHead({ icon: Icon, title, subtitle, right }) {
+// `size="lg"` titles a whole card rather than labelling a table — a sentence-
+// case title with the subtitle under it (the chat card on the appeal page, the
+// «Muhokama» design). The default is the small uppercase label every table has.
+export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm" }) {
+  const lg = size === "lg";
   return (
-    <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 min-w-0">
-        {Icon && <Icon size={14} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />}
+    <div className={`flex items-center justify-between gap-2 flex-wrap ${lg ? "px-3 sm:px-6 py-3.5 sm:py-4" : "px-4 py-2.5"}`}
+      style={{ borderBottom: "1px solid var(--border)" }}>
+      <div className={`flex items-center min-w-0 ${lg ? "gap-3" : "gap-2"}`}>
+        {Icon && <Icon size={lg ? 22 : 14} strokeWidth={lg ? 1.8 : 2} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />}
         <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{title}</div>
-          {subtitle && <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{subtitle}</div>}
+          <div className={lg ? "text-[15px] font-semibold leading-tight" : "text-xs font-semibold uppercase tracking-wider"}
+            style={{ color: lg ? "var(--text-1)" : "var(--text-3)" }}>{title}</div>
+          {subtitle && (
+            <div className={lg ? "text-xs mt-0.5" : "text-[11px] mt-0.5"}
+              style={{ color: lg ? "var(--text-2)" : "var(--text-4)" }}>{subtitle}</div>
+          )}
         </div>
       </div>
       {right}

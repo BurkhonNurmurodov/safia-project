@@ -35,10 +35,17 @@ export function nameInitials(name = "") {
   return name.slice(0, 2).toUpperCase();
 }
 
-export function nameToColor(name = "") {
+/** The hue a person's initials are painted on (0–359), from their canonical
+ *  name. Exported so a surface drawing that person in COLOUR elsewhere — the
+ *  chat thread's name above a bubble — uses the same hue as their avatar. */
+export function nameHue(name = "") {
   let hash = 0;
   for (const c of name) hash = c.charCodeAt(0) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360}, 50%, 42%)`;
+  return Math.abs(hash) % 360;
+}
+
+export function nameToColor(name = "") {
+  return `hsl(${nameHue(name)}, 50%, 42%)`;
 }
 
 export default function ProfileAvatar({

@@ -194,11 +194,17 @@ def late_thread(rid: int, db: Session = Depends(get_db),
 # ── the messages ─────────────────────────────────────────────────────────────
 
 def _wire(m: LeaderAppealMessage, files: list[LeaderAppealFile],
-          viewer: str | None, tid: int | None, writable: bool) -> dict:
+          viewer: str | None, tid: int | None, writable: bool,
+          seen_upto: int = 0, photos: dict | None = None) -> dict:
     """One entry in the shape `CommentsThread` reads. Ownership is decided
     HERE, by PROFILE — a message belongs to the person, and one account can
     hold several profiles — with the account as the floor for the few entries
-    a door wrote without one."""
+    a door wrote without one.
+
+    `author_key` + `author_photo` let the bubble's avatar show the author's
+    photo (`ProfileAvatar`); `seen` rides only on the reader's OWN messages —
+    has any other party opened the chat since (`chat.seen_upto`) — and is the
+    whole of what the ✓ / ✓✓ beside the clock says."""
     if m.author_profile and viewer:
         own = m.author_profile == viewer
     else:
@@ -206,9 +212,12 @@ def _wire(m: LeaderAppealMessage, files: list[LeaderAppealFile],
     return {
         "id": m.id, "kind": m.kind, "text": m.text or "",
         "author_name": m.author_name or "—", "author_role": m.author_role,
+        "author_key": m.author_profile,
+        "author_photo": (photos or {}).get(m.author_profile) if m.author_profile else None,
         "created_at": m.created_at.isoformat() if m.created_at else None,
         "edited_at": m.edited_at.isoformat() if m.edited_at else None,
         "is_own": bool(own),
+        "seen": (m.id <= seen_upto) if own else None,
         "can_edit": bool(own and writable and m.kind == chat.MESSAGE),
         "files": [chat.file_wire(f) for f in files],
     }
@@ -222,7 +231,10 @@ def _list(db: Session, payload: dict, thread: str, rid: int) -> list[dict]:
     files = chat.files_of(db, [m.id for m in msgs])
     if msgs:
         chat.mark_read(db, thread, rid, viewer, msgs[-1].id)
-    return [_wire(m, files.get(m.id, []), viewer, tid, writable) for m in msgs]
+    upto = chat.seen_upto(db, thread, rid, row, viewer)
+    photos = identity.photo_versions(db, [m.author_profile for m in msgs])
+    return [_wire(m, files.get(m.id, []), viewer, tid, writable, upto, photos)
+            for m in msgs]
 
 
 @router.get("/leaders/disputes/{rid}/messages")

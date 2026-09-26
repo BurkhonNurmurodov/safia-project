@@ -3,7 +3,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Ban, ArrowUpCircle, ShieldCheck, RotateCcw, ExternalLink,
-  MessageSquareWarning, MessagesSquare, Clock, Hourglass, UserCheck, CircleSlash,
+  MessageSquareWarning, MessageCircle, Clock, Hourglass, UserCheck, CircleSlash,
   Sparkles, CalendarCheck, Camera, ImageUp, Timer, Images,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -80,7 +80,7 @@ const TXT = {
     onPhoto: "Rasmda", deadline: "Muddat", filed: "Yuborildi", lateBy: "Kechikish",
     lateNone: "o'lchab bo'lmaydi", unitD: "kun", unitH: "soat", unitM: "daq",
     srcCam: "Ilovada olingan", srcUpload: "Yuklangan",
-    chat: "Muhokama", chatHint: "Savol bering, javob oling, fayl biriktiring — lider, brigadir va adminlar ko'radi va xabar oladi.",
+    chat: "Muhokama", chatHint: "Lider, brigadir va adminlar ko'radi va xabar oladi",
     placeholder: "Xabar yozing…", closed: "Qaror yakuniy — chat yopilgan. Admin qarorni bekor qilsa, chat qayta ochiladi.",
     readOnly: "Bu chatda faqat lider, brigadir va adminlar yozadi.",
     empty: "Hozircha xabar yo'q",
@@ -124,7 +124,7 @@ const TXT = {
     onPhoto: "Расмда", deadline: "Муддат", filed: "Юборилди", lateBy: "Кечикиш",
     lateNone: "ўлчаб бўлмайди", unitD: "кун", unitH: "соат", unitM: "дақ",
     srcCam: "Иловада олинган", srcUpload: "Юкланган",
-    chat: "Муҳокама", chatHint: "Савол беринг, жавоб олинг, файл бириктиринг — лидер, бригадир ва админлар кўради ва хабар олади.",
+    chat: "Муҳокама", chatHint: "Лидер, бригадир ва админлар кўради ва хабар олади",
     placeholder: "Хабар ёзинг…", closed: "Қарор якуний — чат ёпилган. Админ қарорни бекор қилса, чат қайта очилади.",
     readOnly: "Бу чатда фақат лидер, бригадир ва админлар ёзади.",
     empty: "Ҳозирча хабар йўқ",
@@ -168,7 +168,7 @@ const TXT = {
     onPhoto: "На фото", deadline: "Срок", filed: "Отправлено", lateBy: "Опоздание",
     lateNone: "не измерить", unitD: "д", unitH: "ч", unitM: "мин",
     srcCam: "Снято в приложении", srcUpload: "Загружено",
-    chat: "Обсуждение", chatHint: "Задавайте вопросы, отвечайте, прикрепляйте файлы — лидер, бригадир и администраторы видят всё и получают уведомления.",
+    chat: "Обсуждение", chatHint: "Лидер, бригадир и администраторы видят всё и получают уведомления",
     placeholder: "Напишите сообщение…", closed: "Решение окончательное — чат закрыт. Если администратор отменит решение, чат откроется снова.",
     readOnly: "В этом чате пишут только лидер, бригадир и администраторы.",
     empty: "Сообщений пока нет",
@@ -212,7 +212,7 @@ const TXT = {
     onPhoto: "On the photo", deadline: "Deadline", filed: "Filed", lateBy: "Late by",
     lateNone: "not measurable", unitD: "d", unitH: "h", unitM: "min",
     srcCam: "Shot in the app", srcUpload: "Uploaded",
-    chat: "Discussion", chatHint: "Ask, answer and attach files — the leader, the brigadir and the admins see everything and are notified.",
+    chat: "Discussion", chatHint: "The leader, the brigadir and the admins see everything and are notified",
     placeholder: "Write a message…", closed: "The ruling is final — the chat is closed. If an admin undoes the ruling, it opens again.",
     readOnly: "Only the leader, the brigadir and the admins write in this chat.",
     empty: "No messages yet",
@@ -261,10 +261,14 @@ function StateChip({ status, late, T }) {
   );
 }
 
+// `overflow: clip`, not hidden: it rounds the corners the same way, but a
+// hidden box is a scroll container, and the chat's composer — `sticky bottom-0`
+// inside this card — can only stick to the viewport through a card that is not
+// one. A browser without `clip` ignores the inline value and keeps the class.
 function Card({ children }) {
   return (
     <div className="rounded-2xl overflow-hidden"
-      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)", overflow: "clip" }}>
       {children}
     </div>
   );
@@ -594,7 +598,7 @@ function AppealView({ thread, path, id }) {
 
       {/* 3 · The chat. */}
       <Card>
-        <SectionHead icon={MessagesSquare} title={T.chat} subtitle={T.chatHint}
+        <SectionHead size="lg" icon={MessageCircle} title={T.chat} subtitle={T.chatHint}
           right={late && item.lateMin != null ? (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold"
               style={{ background: hexA(C_WAIT, 0.12), color: C_WAIT }}>
@@ -741,7 +745,7 @@ function NewObjection({ uid, taskId }) {
         </div>
       </Card>
       <Card>
-        <SectionHead icon={MessagesSquare} title={T.chat} subtitle={allowed ? T.newIntro : T.newNot} />
+        <SectionHead size="lg" icon={MessageCircle} title={T.chat} subtitle={allowed ? T.newIntro : T.newNot} />
         {allowed && (
           <CommentsThread
             layout="page"
