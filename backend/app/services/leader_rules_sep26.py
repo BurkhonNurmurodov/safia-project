@@ -27,7 +27,8 @@ shipped (the approved cases, plus rejected and passed controls).
 
 TEMPORARY one-shot, like `leader_rules_sep19` — and it reads that module's
 texts, so delete this one FIRST (with `startup.register_leader_rules_sep26` and
-its call in both entrypoints) once all three flags are set.
+its call in both entrypoints) once all four flags are set — the fourth,
+`leader_rules_2026_09_26_t3_sleeve_v1`, is the 26 Sep sleeve amendment below.
 """
 
 from __future__ import annotations
@@ -77,6 +78,67 @@ CRITERIA_BY_SHIFT = {
 #: Task 3 on the ONE_PROCESS_LEADERS only.
 ONE_PROCESS_CRITERIA = "The proof for this task is a set of photos taken during the day of the process in this leader's cell: the workplace is clean and any worker visible is in standard work clothing. This leader's cell performs only one process, so all the photos may show that same process.\n\nPASSES if all of the following hold:\n- There are at least 3 photos and they are 3 separate photos of the production work, not the same shot sent twice. They may all show the same process, the same product and the same station. The process may be in the leader's own cell or in a neighbouring one.\n- In every photo the workplace is clean: nothing unrelated to the work on the table (phone, personal belongings, tea or water cup, bottle, towel, rag, loose paper), and no waste on the table or the floor. Things the process itself needs — flour, dough, product, trays, tools — do not count as clutter.\n- Every worker visible in a photo is in work clothing (uniform).\n- No visible worker has bare forearms: sleeves are down, or, if rolled up, the forearm is fully covered by an inner sleeve or an arm cover.\n\nFAILS if:\n- There are fewer than 3 photos, or the same shot is sent twice to make up the 3.\n- In at least one photo there is clutter or waste on the table, or waste on the floor.\n- At least one visible worker is without work clothing or has bare forearms.\n\nIMPORTANT:\n- This leader's cell performs only one process (for example making pancakes (crepes), cream-coating cakes, packing into boxes, slicing sponge, or boxing). Do not fail the proof because the photos show the same process, the same product or the same station.\n- Two photos are the same shot only when they show exactly the same picture. Photos of the same work taken at different moments are separate photos, even if they look alike.\n- A cleaning cloth, rag or towel lying on the work table is clutter, even if it is used to wipe the table or the scale. It is not a tool of the process. A cloth is soft, matte fabric with a woven or towel-like surface. It counts even when only part of it is in the photo — for example cut off by the bottom edge of the photo or partly hidden under the date and time stamp — so look along the edges of every photo too. A cloth hanging down over the side of the table, below the table top, is not on the table and is not judged.\n- Supplies for the work and their packaging are not clutter: piping bags and plastic film, also used or crumpled ones lying by the worker; gloves; and a bag, box, crate or container that holds product, ingredients or supplies, also when it is open or crumpled. Thin, shiny, partly see-through plastic is not a cloth. A recipe, technology card or work sheet used for this work is not loose paper either. Loose paper means scrap paper, or papers that have nothing to do with the work.\n- A bare forearm is bare skin on the part of the arm between the wrist and the elbow, because the sleeve is rolled up, pushed up or too short and no inner sleeve or arm cover covers that skin. Bare hands, gloved hands and a sleeve that reaches down to the wrist are NOT bare forearms. A hand and wrist seen without their sleeve, because the sleeve is outside the frame, are not a bare forearm either.\n- A sleeve pushed or rolled up toward the elbow, with the forearm bare below it, is a bare forearm, also when the hand wears a glove: a glove covers only the hand, not the skin between the glove and the sleeve. A sleeve that ends at the wrist or a little above it, leaving only a short strip of skin above the hand, is fine.\n- Check the arms of every worker in every photo, also workers in the background and at the edges of the photo.\n- A photo may show no worker at all — that is not a fault: such a photo is judged only on the process and the cleanliness of the workplace.\n- For a worker only partly in frame, judge only the visible part.\n- If there are more than 3 photos, the cleanliness and clothing rules apply to all of them.\n\nNOT JUDGED: the time between photos; who the workers are; the apron, head covering and gloves; which cell a process belongs to; whether the photos show different processes."
 
+# ── 26 Sep amendment: a little bare wrist is not a rolled-up sleeve ─────────
+# The operator, 26 Sep, on a Pro verdict that failed a cuff sitting a little
+# above the wrist as «sleeves rolled up»: a little open wrist and a rolled-up
+# sleeve are different things. The first text already said so in one clause and
+# the grader still failed the strip, so the line is now drawn on something the
+# model can measure in the same photo — the worker's own hand — and an arm it
+# cannot read passes. Only the two sleeve bullets of BOTH task-3 texts change;
+# every other word of either text is untouched. The texts as first shipped stay
+# below as `*_V1`: they are what `apply_sleeve` upgrades, and every pass here
+# still accepts them as its own.
+_SLEEVE_V1 = (
+    "- A bare forearm is bare skin on the part of the arm between the wrist and "
+    "the elbow, because the sleeve is rolled up, pushed up or too short and no "
+    "inner sleeve or arm cover covers that skin. Bare hands, gloved hands and a "
+    "sleeve that reaches down to the wrist are NOT bare forearms. A hand and "
+    "wrist seen without their sleeve, because the sleeve is outside the frame, "
+    "are not a bare forearm either.\n"
+    "- A sleeve pushed or rolled up toward the elbow, with the forearm bare "
+    "below it, is a bare forearm, also when the hand wears a glove: a glove "
+    "covers only the hand, not the skin between the glove and the sleeve. A "
+    "sleeve that ends at the wrist or a little above it, leaving only a short "
+    "strip of skin above the hand, is fine."
+)
+_SLEEVE = (
+    "- A bare forearm is bare skin reaching well up the forearm — the bare "
+    "stretch above the wrist is longer than the worker's hand is wide (compare "
+    "it with the worker's own hand in the photo) — because the sleeve is rolled "
+    "up, pushed up or too short and no inner sleeve or arm cover covers that "
+    "skin. Bare hands, gloved hands and a sleeve that reaches down to the wrist "
+    "are NOT bare forearms. A hand and wrist seen without their sleeve, because "
+    "the sleeve is outside the frame, are not a bare forearm either.\n"
+    "- A little bare wrist is NOT a bare forearm and never fails a photo: a "
+    "sleeve that ends at the wrist or a little above it, leaving a strip of "
+    "skin shorter than the worker's hand is wide, is a sleeve that is down — "
+    "also when the cuff has slid up because the worker is reaching forward or "
+    "lifting something. Only a sleeve rolled or pushed up toward the elbow, "
+    "with the forearm bare below it, fails — also when the hand wears a glove: "
+    "a glove covers only the hand, not the forearm.\n"
+    "- Fail a photo for a bare forearm only when you can clearly see where that "
+    "sleeve ends and that the bare stretch is longer than the worker's hand is "
+    "wide. If the arm is too small, blurred, turned away or partly hidden to "
+    "tell, do not fail the photo for it."
+)
+
+
+def _sleeve(text: str) -> str:
+    # A text that no longer carries the bullets would ship unamended without a
+    # word; failing the import is what makes that impossible to miss.
+    if text.count(_SLEEVE_V1) != 1:
+        raise RuntimeError("leader_rules_sep26: task-3 sleeve bullets not found")
+    return text.replace(_SLEEVE_V1, _SLEEVE)
+
+
+CRITERIA_3_V1 = CRITERIA[3]
+ONE_PROCESS_CRITERIA_V1 = ONE_PROCESS_CRITERIA
+CRITERIA[3] = _sleeve(CRITERIA_3_V1)
+ONE_PROCESS_CRITERIA = _sleeve(ONE_PROCESS_CRITERIA_V1)
+#: As first shipped → as amended.
+SLEEVE_UPGRADE = {CRITERIA_3_V1.strip(): CRITERIA[3],
+                  ONE_PROCESS_CRITERIA_V1.strip(): ONE_PROCESS_CRITERIA}
+
 
 # ── the pass ─────────────────────────────────────────────────────────────────
 
@@ -101,7 +163,8 @@ def _was(tid: int, shift: int | None) -> str:
 
 
 def _replaceable(cur, was: str, new: str) -> bool:
-    return not (cur or "").strip() or _same(cur, was) or _same(cur, new)
+    return (not (cur or "").strip() or _same(cur, was) or _same(cur, new)
+            or (cur or "").strip() in SLEEVE_UPGRADE)
 
 
 def units(db: Session, shift: int):
@@ -151,7 +214,8 @@ def apply(db: Session, shift: int) -> dict:
         cur = row.criteria if row else None
         # A leader's own criteria is a deliberate admin edit: only a blank one,
         # or this very text, is ever written over.
-        if (cur or "").strip() and not _same(cur, ONE_PROCESS_CRITERIA):
+        if ((cur or "").strip() and not _same(cur, ONE_PROCESS_CRITERIA)
+                and not _same(cur, ONE_PROCESS_CRITERIA_V1)):
             out["one_process_skipped"].append(f"{prof.name}: o'z kriteriyasi bor")
             continue
         if not _same(cur, ONE_PROCESS_CRITERIA):
@@ -179,6 +243,54 @@ def apply_global(db: Session) -> dict:
                 continue
             leader_tasks.set_criteria(db, task_id=tid, criteria=new)
         out["tasks"].append(tid)
+    return out
+
+
+def apply_sleeve(db: Session) -> dict:
+    """The 26 Sep amendment: every level still holding a task-3 text as first
+    shipped gets the amended one — global, unit or leader, either shift, exact
+    matches only. A level on its 19 Sep text belongs to a per-unit pass that has
+    not run yet, which now writes the amended text itself; a level an admin
+    wrote is left, and named. `set_criteria` never re-judges, so a verdict
+    already written stays as it is."""
+    from app.services import leader_rules_sep19 as sep19
+
+    tid = ONE_PROCESS_TASK
+    ours = set(SLEEVE_UPGRADE) | {CRITERIA[tid].strip(),
+                                  ONE_PROCESS_CRITERIA.strip(),
+                                  (sep19.CRITERIA.get(tid) or "").strip()}
+    out = {"global": False, "units": [], "leaders": [], "kept": []}
+
+    td = db.query(LeaderTaskDef).filter_by(id=tid).first()
+    if td and (td.criteria or "").strip() in SLEEVE_UPGRADE:
+        leader_tasks.set_criteria(db, task_id=tid,
+                                  criteria=SLEEVE_UPGRADE[td.criteria.strip()])
+        out["global"] = True
+
+    # Values are read before any write: every setter commits, and a commit
+    # expires the rows this loop would otherwise go on reading.
+    live = {m.id: m.name for s in (1, 2) for m in units(db, s)}
+    for mid, cur in [(r.manager_id, (r.criteria or "").strip()) for r in
+                     db.query(LeaderTaskSetting).filter_by(task_id=tid).all()]:
+        if cur in SLEEVE_UPGRADE:
+            leader_tasks.set_criteria(db, task_id=tid,
+                                      criteria=SLEEVE_UPGRADE[cur], manager_id=mid)
+            out["units"].append(live.get(mid) or f"#{mid}")
+        elif cur and cur not in ours and mid in live:
+            out["kept"].append(f"{live[mid]} · 3-vazifa")
+
+    rows = (db.query(LeaderTaskLeaderSetting, RoleProfile)
+            .join(RoleProfile, RoleProfile.id == LeaderTaskLeaderSetting.leader_id)
+            .filter(LeaderTaskLeaderSetting.task_id == tid).all())
+    for lid, name, mid, cur in [(p.id, p.name, p.manager_id,
+                                 (r.criteria or "").strip()) for r, p in rows]:
+        if cur in SLEEVE_UPGRADE:
+            leader_tasks.set_criteria(db, task_id=tid,
+                                      criteria=SLEEVE_UPGRADE[cur], leader_id=lid)
+            out["leaders"].append(name)
+        elif cur and cur not in ours and mid in live:
+            out["kept"].append(f"{name} · 3-vazifa (lider)")
+    out["kept"].sort()
     return out
 
 

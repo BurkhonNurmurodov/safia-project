@@ -7929,6 +7929,11 @@ LEADER_RULES26_FLAGS = {1: "leader_rules_2026_09_26_shift1_v1",
                         2: "leader_rules_2026_09_26_shift2_v1"}
 LEADER_RULES26_GLOBAL_FLAG = "leader_rules_2026_09_26_global_v1"
 LEADER_RULES26_DUE = {1: (2026, 9, 26, 0, 30), 2: (2026, 9, 26, 16, 30)}
+# The 26 Sep sleeve amendment (`leader_rules_sep26.apply_sleeve`): a little
+# bare wrist is not a rolled-up sleeve. Runs a minute after boot rather than in
+# a shift gap — it only stops a false failure, so a leader judged by it can
+# gain a point and never lose one, and `set_criteria` never re-judges.
+LEADER_RULES26_SLEEVE_FLAG = "leader_rules_2026_09_26_t3_sleeve_v1"
 
 
 def register_leader_rules_sep26() -> None:
@@ -7936,6 +7941,7 @@ def register_leader_rules_sep26() -> None:
     (the jobstore is in memory); only the flag stops a second run. Never raises.
     """
     try:
+        from datetime import timedelta
         from app.scheduler import SCHEDULER_TZ, schedule_at
         now = datetime.now(timezone.utc).astimezone(SCHEDULER_TZ)
         db = SessionLocal()
@@ -7948,6 +7954,13 @@ def register_leader_rules_sep26() -> None:
                             lambda s=shift: _leader_rules26_job(s))
                 print(f"[startup] leader criteria 26.09: shift {shift} armed for "
                       f"{run_at:%d.%m %H:%M} ({SCHEDULER_TZ})")
+            if not db.query(AppSetting).filter_by(
+                    key=LEADER_RULES26_SLEEVE_FLAG).first():
+                run_at = now + timedelta(minutes=1)
+                schedule_at("leader-rules-sep26-sleeve", run_at,
+                            _leader_rules26_sleeve_job)
+                print(f"[startup] leader criteria 26.09: task-3 sleeve amendment "
+                      f"armed for {run_at:%d.%m %H:%M} ({SCHEDULER_TZ})")
         finally:
             db.close()
     except Exception as exc:
@@ -8068,6 +8081,103 @@ def _leader_rules26_dm(shift: int, out: dict, left: list[str]) -> int:
     if not sent:
         print("[startup] leader criteria 26.09: summary reached NOBODY — the pass "
               "ran and its flag is set; read the Jurnal row for what it did")
+    return sent
+
+
+def _leader_rules26_sleeve_job() -> None:
+    """Upgrade every task-3 text still as first shipped, then flag, log and
+    report. Exact matches only, idempotent, flagged LAST — a failure is simply
+    re-run whole by the next boot."""
+    from app.services import action_log, leader_rules_sep26 as rules
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_RULES26_SLEEVE_FLAG).first():
+            return
+        out = rules.apply_sleeve(db)
+        out["shift2_pending"] = not db.query(AppSetting).filter_by(
+            key=LEADER_RULES26_FLAGS[2]).first()
+        db.add(AppSetting(key=LEADER_RULES26_SLEEVE_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] leader criteria 26.09: task-3 sleeve amendment — "
+              f"{len(out['units'])} unit(s), {len(out['leaders'])} leader(s), "
+              f"global {'yes' if out['global'] else 'no'}, "
+              f"{len(out['kept'])} kept (own text)")
+        try:
+            action_log.record_system(
+                "leader_config", "ltask.rules_applied",
+                target_kind="task", target_name="checklist",
+                details=[("level", "all"), ("task", 3),
+                         ("count", len(out["units"])),
+                         ("texts", len(out["units"]) + len(out["leaders"])
+                          + (1 if out["global"] else 0)),
+                         ("skipped", len(out["kept"]) or None)],
+                reason=("Operator, 26.09.2026: a little bare wrist is not a rolled-up "
+                        "sleeve. Task-3 AI criteria: bare forearm = a bare stretch "
+                        "longer than the worker's hand is wide; an arm too unclear "
+                        "to tell does not fail. Earlier verdicts not re-judged."),
+            )
+        except Exception:
+            pass
+        _leader_rules26_sleeve_dm(out)
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader criteria 26.09: task-3 sleeve amendment FAILED "
+              f"(the next boot retries it whole): {exc}")
+        try:
+            import html as _html
+            from app.routers.boot import _recipients
+            from app.telegram_bot import bot
+            for chat_id in _recipients():
+                try:
+                    bot.send_message(
+                        chat_id,
+                        "🛑 <b>3-vazifa yeng qoidasi (26.09) yozilmadi</b>\n"
+                        + _html.escape(str(exc)[:400], quote=False)
+                        + "\n\nKeyingi ishga tushishda qaytadan yoziladi.",
+                        parse_mode="HTML")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def _leader_rules26_sleeve_dm(out: dict) -> int:
+    """Tell the admins what the sleeve amendment changed and what it left."""
+    sent = 0
+    try:
+        import html
+        from app.routers.boot import _recipients
+        from app.telegram_bot import bot
+        body = ["Bilakda ozgina ochiq teri — qoidabuzarlik emas. Faqat tirsakka "
+                "tomon shimarilgan yeng rad etiladi: ochiq qismi ishchining kafti "
+                "enidan uzun bo'lsa. Aniq ko'rinmagan qo'l uchun rad etilmaydi",
+                f"Yangilandi: {len(out['units'])} brigada, "
+                f"{len(out['leaders'])} lider"
+                + (", umumiy standart" if out["global"] else "")]
+        if out.get("shift2_pending"):
+            body.append("2-smena brigadalari 16:30 dagi yangilanishda yangi matnni "
+                        "to'g'ridan-to'g'ri oladi")
+        body.append("Oldingi xulosalar qayta hisoblanmaydi — kerak bo'lsa "
+                    "«Qayta tekshirish»")
+        if out["kept"]:
+            body.append(f"O'z 3-vazifa matni bor, tegilmadi: {len(out['kept'])}")
+        esc = lambda v: html.escape(str(v), quote=False)
+        text = ("📋 <b>3-vazifa: yeng qoidasi aniqlashtirildi (26.09)</b>\n"
+                + esc("\n".join(body)))
+        if out["kept"]:
+            text += "\n\n<pre>" + esc("\n".join(out["kept"][:20])) + "</pre>"
+        for chat_id in _recipients():
+            try:
+                bot.send_message(chat_id, text, parse_mode="HTML")
+                sent += 1
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[startup] leader criteria 26.09 sleeve summary not delivered: {exc}")
     return sent
 
 

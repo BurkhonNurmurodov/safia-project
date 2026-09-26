@@ -2882,12 +2882,26 @@ the rulings are in memory `leader-criteria-rulings-sep19-20`).
   105 unit criteria written, 0 description cells and 0 of 540 resolved leader
   instructions changed, 538 resolved criteria changed (the other 2 are one
   leader's own overrides, named), a second run writes 0.
+- **A little bare wrist is not a rolled-up sleeve** (the operator, 26 Sep, on
+  a Gemini Pro verdict that failed a cuff sitting a little above the wrist as
+  «yenglari shimarilgan»). The T3 text already said a short strip is fine, and
+  the grader failed it anyway, so the two sleeve bullets of BOTH task-3 texts
+  were replaced IN PLACE (`_sleeve`, which fails the import if the bullets
+  ever go missing): a bare forearm is now a bare stretch LONGER THAN THE
+  WORKER'S HAND IS WIDE — a scale the model can read in the same photo — and an
+  arm too small, blurred or hidden to tell does not fail. The texts as first
+  shipped stay as `CRITERIA_3_V1` / `ONE_PROCESS_CRITERIA_V1`; every pass here
+  accepts them as its own, and `apply_sleeve` upgrades whatever still holds
+  one (exact matches, any level, either shift), naming a level an admin wrote.
+  Flag `leader_rules_2026_09_26_t3_sleeve_v1`, run a MINUTE after boot, not in
+  a shift gap: it only stops a false failure, so nobody can lose a point by it.
+  Verdicts already written are not re-judged («Qayta tekshirish» is the way).
 - **TEMPORARY.** Delete `register_leader_rules_sep26` from both entrypoints,
   `startup.register_leader_rules_sep26` / `_leader_rules26_job` /
-  `_leader_rules26_dm` and the module once all three flags
-  (`leader_rules_2026_09_26_shift1_v1` / `…_shift2_v1` / `…_global_v1`) are
-  set — and BEFORE deleting `leader_rules_sep19`, whose texts it compares
-  against.
+  `_leader_rules26_dm` / `_leader_rules26_sleeve_job` / `_leader_rules26_sleeve_dm`
+  and the module once all four flags (`leader_rules_2026_09_26_shift1_v1` /
+  `…_shift2_v1` / `…_global_v1` / `…_t3_sleeve_v1`) are set — and BEFORE
+  deleting `leader_rules_sep19`, whose texts it compares against.
 
 ## Tasks the PLATFORM answers (`leader_auto`, from 20 Sep 2026)
 
