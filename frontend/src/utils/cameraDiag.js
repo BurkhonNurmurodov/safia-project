@@ -167,6 +167,58 @@ export async function cameraList(openId) {
   }
 }
 
+/** What the page can say about camera ACCESS without ever asking for it.
+ *
+ *  Neither `permissions.query` nor `enumerateDevices` raises the «Allow
+ *  camera?» sheet, and between them they answer the one question an open that
+ *  never returns cannot: has this page been granted the camera at all.
+ *  Chromium hands a page with NO grant one unnamed videoinput per kind, so a
+ *  list whose entries carry no label is the signature of a grant that never
+ *  arrived — which is a different failure from a camera that will not open. */
+export async function accessState() {
+  const out = {};
+  try {
+    const p = await within(navigator.permissions?.query?.({ name: "camera" }), 1000);
+    if (p && p !== TIMEOUT) out.perm = p.state;
+  } catch { /* "camera" is not a permission name everywhere */ }
+  try {
+    const all = await within(navigator.mediaDevices?.enumerateDevices?.(), 1500);
+    if (all === TIMEOUT) out.list = "timeout";
+    else {
+      const v = (all || []).filter((d) => d.kind === "videoinput");
+      out.cams = v.length;
+      out.named = v.filter((d) => d.label).length;
+    }
+  } catch (e) { out.list = e?.name || "error"; }
+  return out;
+}
+
+/** The above as one line for the flight recorder. */
+export function accessLine(a) {
+  const s = [];
+  if (a?.perm) s.push(`permission ${a.perm}`);
+  if (a?.list) s.push(`device list ${a.list}`);
+  else if (a?.cams != null) s.push(`${a.cams} cameras, ${a.named} named`);
+  return s.join(" · ") || "nothing readable";
+}
+
+/** Say so whenever the camera permission itself changes state — the moment a
+ *  leader taps «Allow», or the moment a grant is revoked under the page. The
+ *  query is free of prompts; a WebView without it simply never calls back. */
+export function watchPermission(onChange) {
+  let p = null;
+  const fire = () => { try { onChange(p?.state); } catch { /* never the failure */ } };
+  (async () => {
+    try {
+      const q = await within(navigator.permissions?.query?.({ name: "camera" }), 2000);
+      if (!q || q === TIMEOUT) return;
+      p = q;
+      p.addEventListener?.("change", fire);
+    } catch { /* optional everywhere */ }
+  })();
+  return () => { try { p?.removeEventListener?.("change", fire); } catch { /* optional */ } };
+}
+
 /* ── probes ───────────────────────────────────────────────────────────────── */
 
 /** One frame read straight off the stream, bypassing the <video> element.

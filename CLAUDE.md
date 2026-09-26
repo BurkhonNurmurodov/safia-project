@@ -3571,6 +3571,27 @@ SERVER's; the phone never authors it.
     same Telegram, asked over a BroadcastChannel and read from a localStorage
     ledger (a MINIMIZED camera page still holding the camera). The DM leads with
     a «Likely cause» and prints every fact it was drawn from under it.
+  - **Every step of an open names itself BEFORE it waits** (2026-09-26, after
+    three reports of the same failure that no reader could settle). A request
+    that never settles writes no result line, so the timeline of a hung open
+    named no step at all: `ask` (per `getUserMedia` path) and `list` (the
+    device enumeration) are written ahead of their awaits, and at
+    `OPEN_SLOW_MS` the page reads what it can WITHOUT asking — `accessState`,
+    permission state plus how many listed cameras carry a label, since
+    Chromium hands an ungranted page one unnamed videoinput per kind, so an
+    unnamed list IS «no grant yet». **FOCUS is the prompt signal**: Telegram's
+    «Allow camera?» sheet leaves the page VISIBLE and merely takes focus, so a
+    `focus` baseline at every open plus window blur/focus rows (and `perm`
+    transitions from `watchPermission`) are the only way to tell a prompt
+    nobody answered from a prompt that never appeared. `camera_report._stalled_step`
+    turns those rows into the verdict's second sentence and falls back to the
+    old both-possibilities wording for a bundle that carries none of them.
+  - **`_last_open` tests for a START positively** (`" · "`, i.e. «why · which
+    lens» — the one row `startCamera` writes) rather than excluding a list of
+    endings. It used to answer with the «slow» row on every report that
+    reached the 45 s screen, which silently narrowed `_hidden_during_last_open`
+    to the rows after the ninth second: a page that went to the background
+    before that read as one that never left the screen.
   - **The probes never ask and never hold.** No getUserMedia is called, so no
     «Allow camera?» sheet; the clone's release is parked on `probeHoldRef` and
     `startCamera` calls it FIRST, because a clone left running keeps the dead

@@ -14,6 +14,7 @@ import { enqueue, flush, newKey, pending } from "../utils/proofQueue";
 import {
   announceNeed, answerPresence, askOthers, beatHolder, cameraList, createRecorder, deviceEnv, otherHolders,
   probeSmaller, readTrackFrame, sendCameraReport, shortId, trackSnap, videoSnap,
+  accessLine, accessState, watchPermission,
 } from "../utils/cameraDiag";
 
 /**
@@ -726,6 +727,12 @@ export default function ProofCamera() {
     openHiddenRef.current = false;
     opensRef.current.total += 1;
     note("open", `${why} · ${want}`);
+    // Whether anything is in front of the page, at the moment of asking. A
+    // native «Allow camera?» sheet takes the window's focus, so this line and
+    // the focus rows after it are what tell a prompt nobody answered from a
+    // prompt that never appeared — the two halves of an open that never
+    // returns, indistinguishable in every report until now.
+    note("focus", document.hasFocus() ? "on the page" : "not on the page");
     const t0 = performance.now();
     setCamErr(null);
     setCamBusy(true);
@@ -735,8 +742,15 @@ export default function ProofCamera() {
     // rectangle backs out and re-opens the task from the bot — which leaves one
     // more page holding the camera and makes the next open slower still. The
     // one thing that breaks that loop is telling them it is still working.
-    const slow = setTimeout(() => { if (mine()) { setCamSlow(true); note("open", "slow"); } },
-      OPEN_SLOW_MS);
+    const slow = setTimeout(() => {
+      if (!mine()) return;
+      setCamSlow(true);
+      note("open", "slow");
+      // Read, never ask: an open still waiting with no grant behind it is
+      // stuck at the permission step, and that is a fact about Telegram
+      // rather than about the camera.
+      accessState().then((a) => { if (mine()) note("access", accessLine(a)); }).catch(() => {});
+    }, OPEN_SLOW_MS);
     slowRef.current = slow;
     const deadline = setTimeout(() => {
       if (!mine()) return;
@@ -756,6 +770,10 @@ export default function ProofCamera() {
     // failure report.
     const gum = async (path, video) => {
       const g0 = performance.now();
+      // Before the await, not after it: a request that never settles writes no
+      // result line, so without this the timeline of a hung open named no step
+      // at all and could not say whether the camera was even asked for.
+      note("ask", path);
       try {
         const s = await navigator.mediaDevices.getUserMedia({ video, audio: false });
         const st = s.getVideoTracks()[0]?.getSettings?.() || {};
@@ -792,8 +810,10 @@ export default function ProofCamera() {
       // was revoked) would prompt and then fail, i.e. two sheets to end up
       // where the plain path starts. `enumerateDevices` itself never prompts.
       const lenses = async () => {
+        note("list", "asking the device");
         const list = (await navigator.mediaDevices.enumerateDevices())
           .filter((d) => d.kind === "videoinput");
+        note("list", `${list.length} cameras`);
         setDevices(list);          // the flip button reads this count
         // Kept on the open record too: whether the device has ANY camera is
         // what tells a broken camera apart from a computer, and the failure
@@ -1103,16 +1123,27 @@ export default function ProofCamera() {
   useEffect(() => {
     const vis = () => note("page", document.visibilityState);
     const hide = () => note("page", "pagehide");
+    // Focus, not visibility: Telegram's permission sheet leaves the page
+    // VISIBLE and merely takes focus from it, so this is the only signal the
+    // page has that the leader was asked anything at all.
+    const lost = () => note("focus", "lost — something is in front of the page");
+    const back = () => note("focus", "back on the page");
     const tg = tgApp();
     const on = () => note("telegram", "activated");
     const off = () => note("telegram", "deactivated");
     document.addEventListener("visibilitychange", vis);
     window.addEventListener("pagehide", hide);
+    window.addEventListener("blur", lost);
+    window.addEventListener("focus", back);
+    const unwatch = watchPermission((state) => note("perm", state || "?"));
     tg?.onEvent?.("activated", on);
     tg?.onEvent?.("deactivated", off);
     return () => {
+      unwatch();
       document.removeEventListener("visibilitychange", vis);
       window.removeEventListener("pagehide", hide);
+      window.removeEventListener("blur", lost);
+      window.removeEventListener("focus", back);
       tg?.offEvent?.("activated", on);
       tg?.offEvent?.("deactivated", off);
     };

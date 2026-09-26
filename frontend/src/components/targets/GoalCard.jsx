@@ -3,18 +3,21 @@
 // which opens the quick update dialog. Every figure comes from utils/targets —
 // the card computes nothing of its own.
 //
-// Colour means STATUS and nothing else: the chip, the big percent and the bar
-// fill. The area is an icon and a word, never a colour.
+// Colour means STATUS and nothing else: the chip, the bar fill, the little
+// trend beside each result. Figures stay in text ink. The area is not on the
+// card at all — it is a filter, and it is on the goal's page.
 import { Link } from "react-router-dom";
-import { RefreshCw, UserRound, CalendarDays } from "lucide-react";
+import { RefreshCw, UserRound, CalendarDays, History } from "lucide-react";
 import Button from "../ui/Button";
-import { StatusChip, AreaTag, PaceBar, PlanTick, KrValue } from "./bits";
-import { paceCaption } from "./targetsUi";
+import { StatusChip, AreaTag, PaceBar, KrValue } from "./bits";
+import Sparkline from "./Sparkline";
+import SegmentBar from "./charts/SegmentBar";
+import { MARK_COLOR } from "./charts/chartKit";
 import { useLang } from "../../context/LangContext";
 import { AMBER, RED } from "../../utils/statusBands";
 import { shortPerson } from "../../utils/personName";
 import {
-  goalProgress, goalStatus, elapsed, daysLeft, targetProgress, targetStatus,
+  goalProgress, goalStatus, elapsed, daysLeft, targetStatus, series, lastActivity, dayDiff, isNumeric,
   fmtPct, fmtDate, fill, STATUS_COLOR,
 } from "../../utils/targets";
 
@@ -33,13 +36,13 @@ export function DaysLeft({ left, t, className = "" }) {
 
 // Area · owner · due date. Each fact carries its own icon, so the line can wrap
 // anywhere on a phone without leaving a dangling separator.
-export function GoalMeta({ goal, st, today, t, full = false, className = "" }) {
+export function GoalMeta({ goal, st, today, t, full = false, area = true, className = "" }) {
   const left = daysLeft(goal, today);
   const owner = goal.owner?.trim();
   const icon = { color: "var(--text-3)" };
   return (
     <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${className}`} style={{ color: "var(--text-2)" }}>
-      <AreaTag category={goal.category} t={t} iconStyle={icon} />
+      {area && <AreaTag category={goal.category} t={t} iconStyle={icon} />}
       {(owner || full) && (
         <span className="inline-flex items-center gap-1.5 min-w-0" title={owner || undefined}>
           <UserRound size={13} strokeWidth={2.2} className="flex-shrink-0" style={icon} aria-hidden />
@@ -70,47 +73,65 @@ export function GoalMeta({ goal, st, today, t, full = false, className = "" }) {
   );
 }
 
-// The goal's headline row: the percent done (status colour), the pace bar and
-// the caption. `big` is the goal page's larger cut of the same row.
+// The goal's headline: the percent done and a bullet bar — the fill is the
+// work done, the upright tick is where the plan says the goal should be today,
+// and that plan is written right under the tick, so the mark explains itself.
+// `big` is the goal page's larger cut of the same row.
 export function PaceRow({ p, e, st, t, big = false, ring }) {
-  const color = STATUS_COLOR[st];
-  const cap = paceCaption({ st, p, e, t });
-  const aria = e === null
-    ? fill(t("targets.pace.ariaDone"), { p: fmtPct(p) })
-    : fill(t("targets.pace.aria"), { p: fmtPct(p), e: fmtPct(e) });
+  const showPlan = e !== null && st !== "achieved";
+  const ep = showPlan ? Math.round(e * 100) : 0;
+  const aria = showPlan
+    ? fill(t("targets.pace.aria"), { p: fmtPct(p), e: fmtPct(e) })
+    : fill(t("targets.pace.ariaDone"), { p: fmtPct(p) });
   return (
-    <div>
-      <div className="flex items-center gap-3">
-        <span
-          className={`font-bold tabular-nums leading-none flex-shrink-0 ${big ? "text-3xl w-[5.5rem]" : "text-2xl w-[4.25rem]"}`}
-          style={{ color }}
-        >
-          {fmtPct(p)}
-        </span>
-        <PaceBar
-          progress={p} expected={st === "achieved" ? null : e} color={color} height={big ? 10 : 8}
-          label={aria} ring={ring} className="flex-1 min-w-0"
-        />
-      </div>
-      {/* Full width in a narrow box, so it stays one line; under the bar once
-          the box is wide enough (the parent is a @container). */}
-      <div
-        className={`mt-2 flex items-start gap-2 ${big ? "text-xs @md:text-sm @md:pl-[6.25rem]" : "text-xs @md:pl-[5rem]"}`}
-        style={{ color: "var(--text-2)" }}
+    <div className="flex items-start gap-3">
+      <span
+        className={`font-bold leading-none flex-shrink-0 ${big ? "text-3xl w-[5.5rem]" : "text-2xl w-[4.25rem]"}`}
+        style={{ color: "var(--text-1)" }}
       >
-        {cap.plan ? (
-          <>
-            <PlanTick className={big ? "mt-[2.5px] @md:mt-[4.5px]" : "mt-[2.5px]"} />
-            <span className="min-w-0">
-              {cap.plan}
-              <span className="font-medium" style={{ color: "var(--text-1)" }}> · {cap.tail}</span>
+        {fmtPct(p)}
+      </span>
+      <div className={`flex-1 min-w-0 ${big ? "pt-[7px]" : "pt-[5px]"}`}>
+        <PaceBar
+          progress={p} expected={showPlan ? e : null} color={STATUS_COLOR[st]} height={big ? 10 : 8}
+          label={aria} ring={ring}
+        />
+        {showPlan && (
+          <div className="relative h-4 mt-0.5" aria-hidden>
+            <span
+              className="absolute top-0 text-[11px] font-medium whitespace-nowrap"
+              style={{ left: `${ep}%`, transform: `translateX(${ep < 12 ? "-2px" : ep > 88 ? "calc(-100% + 2px)" : "-50%"})`, color: "var(--text-2)" }}
+            >
+              {fill(t("targets.planShort"), { e: `${ep}%` })}
             </span>
-          </>
-        ) : (
-          <span>{cap.text}</span>
+          </div>
         )}
       </div>
     </div>
+  );
+}
+
+// The small picture beside a result: a number's recent path, a task list's
+// items as blocks. A yes/no result needs none — its value already says it.
+function ResultMicro({ tg, goal, today }) {
+  const color = MARK_COLOR[targetStatus(tg, goal, today)];
+  if (isNumeric(tg.type)) return <Sparkline points={series(tg, goal)} target={null} width={56} height={18} color={color} />;
+  if (tg.type === "tasks") return <SegmentBar items={tg.items} color={color} height={6} className="w-14" />;
+  return null;
+}
+
+// «updated 3 days ago» — a goal nobody has touched for a week is the one
+// most likely to be wrong, so the clock turns amber then.
+function LastUpdate({ goal, today, t }) {
+  const last = lastActivity(goal);
+  const n = last ? Math.max(0, dayDiff(last, today)) : null;
+  const text = last === null ? t("targets.lastUpdateNever") : n === 0 ? t("targets.lastUpdateToday") : fill(t("targets.lastUpdate"), { n });
+  const stale = last === null || n >= 7;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs min-w-0" style={{ color: "var(--text-2)" }}>
+      <History size={13} strokeWidth={2.2} className="flex-shrink-0" style={{ color: stale ? AMBER : "var(--text-3)" }} aria-hidden />
+      <span className="truncate">{text}</span>
+    </span>
   );
 }
 
@@ -120,7 +141,6 @@ export default function GoalCard({ goal, today, onUpdate }) {
   const st = goalStatus(goal, today);
   const e = elapsed(goal, today);
   const targets = goal.targets ?? [];
-  const done = targets.filter((tg) => targetProgress(tg) >= 1).length;
   const rows = targets.slice(0, MAX_ROWS);
 
   return (
@@ -145,26 +165,32 @@ export default function GoalCard({ goal, today, onUpdate }) {
           </h3>
           <StatusChip status={st} t={t} />
         </div>
-        <GoalMeta goal={goal} st={st} today={today} t={t} />
+        <GoalMeta goal={goal} st={st} today={today} t={t} area={false} />
       </div>
 
       <PaceRow p={p} e={e} st={st} t={t} />
 
       {rows.length > 0 && (
-        <ul className="pt-3 space-y-2" style={{ borderTop: "1px solid var(--border)" }}>
+        <ul className="pt-3 space-y-2.5" style={{ borderTop: "1px solid var(--border)" }}>
+          {/* A wide card reads each result on ONE line: name · trend · value.
+              A narrow one (a phone, or two columns on a tablet) gives the name
+              its own line and puts the value under it, the trend beside both —
+              on one line the value took the width and the name was cut to
+              «Oylik k…», which names nothing. */}
           {rows.map((tg) => (
-            <li key={tg.id} className="flex items-center gap-2 text-[13px] min-w-0">
-              <span
-                aria-hidden
-                className="w-2 h-2 rounded-full flex-shrink-0"
-                style={{ background: STATUS_COLOR[targetStatus(tg, goal, today)] }}
-              />
-              <span className="truncate flex-1 min-w-0" style={{ color: "var(--text-2)" }} title={tg.title}>{tg.title}</span>
-              <KrValue tg={tg} t={t} className="flex-shrink-0" />
+            <li
+              key={tg.id}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-[13px] @md:grid-cols-[minmax(0,1fr)_3.5rem_auto]"
+            >
+              <span className="col-start-1 row-start-1 truncate" style={{ color: "var(--text-2)" }} title={tg.title}>{tg.title}</span>
+              <span className="col-start-2 row-start-1 row-span-2 @md:row-span-1 flex items-center justify-center" aria-hidden>
+                <ResultMicro tg={tg} goal={goal} today={today} />
+              </span>
+              <KrValue tg={tg} t={t} className="col-start-1 row-start-2 @md:col-start-3 @md:row-start-1 @md:text-right" />
             </li>
           ))}
           {targets.length > MAX_ROWS && (
-            <li className="text-xs pl-4" style={{ color: "var(--text-2)" }}>
+            <li className="text-xs" style={{ color: "var(--text-2)" }}>
               {fill(t("targets.moreResults"), { n: targets.length - MAX_ROWS })}
             </li>
           )}
@@ -172,9 +198,7 @@ export default function GoalCard({ goal, today, onUpdate }) {
       )}
 
       <div className="mt-auto flex items-center justify-between gap-2">
-        <span className="text-xs" style={{ color: "var(--text-2)" }}>
-          {fill(t("targets.resultsDone"), { done, total: targets.length })}
-        </span>
+        <LastUpdate goal={goal} today={today} t={t} />
         {/* Above the stretched link, so it is its own tap. */}
         <Button
           size="lg" variant="secondary" icon={<RefreshCw size={14} />}

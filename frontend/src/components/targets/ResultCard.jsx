@@ -1,19 +1,22 @@
 // One key result on a goal's page: where it stands and the controls that move
-// it. A number gets «Enter a value» (the update dialog, narrowed to it) and its
-// history; a yes/no result is a switch; a task list is ticked in place.
-// Every write goes up through `onChange` as a whole new result.
+// it, each type drawn the way its data is shaped — a number as its values over
+// time against the plan and the target (plus «Enter a value» and its history),
+// a task list as blocks and ticks, a yes/no result as a switch. Every write
+// goes up through `onChange` as a whole new result.
 import { useState } from "react";
 import { Plus, X, Square, SquareCheckBig, Trash2 } from "lucide-react";
 import Button from "../ui/Button";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import ConfirmDialog from "../ui/ConfirmDialog";
-import Sparkline from "./Sparkline";
-import { StatusChip, TypeIcon, DirIcon, MiniBar } from "./bits";
+import ResultTrendChart from "./charts/ResultTrendChart";
+import SegmentBar from "./charts/SegmentBar";
+import { MARK_COLOR } from "./charts/chartKit";
+import { StatusChip, TypeIcon, DirIcon } from "./bits";
 import { INPUT_CLS, INPUT_STYLE } from "./targetsUi";
 import { GREEN, RED } from "../../utils/statusBands";
 import {
-  targetProgress, targetStatus, remaining, neededPerDay, lastCheckin, series, removeCheckin,
-  fmtValue, fmtNumber, fmtPct, fmtDate, fill, hexA, isNumeric, num, uid, STATUS_COLOR,
+  targetProgress, targetStatus, remaining, neededPerDay, removeCheckin,
+  fmtValue, fmtNumber, fmtPct, fmtDate, fill, hexA, isNumeric, num, uid, markDone, STATUS_COLOR,
 } from "../../utils/targets";
 
 const HISTORY_ROWS = 3;
@@ -38,44 +41,36 @@ export default function ResultCard({ tg, goal, today, t, onChange, onCheckin }) 
             <h3 className="self-stretch @md:flex-1 min-w-0 text-[15px] font-semibold leading-snug break-words" style={{ color: "var(--text-1)" }}>
               {tg.title}
             </h3>
-            <StatusChip status={st} t={t} />
+            <span className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-sm font-bold" style={{ color: "var(--text-1)" }}>{fmtPct(p)}</span>
+              <StatusChip status={st} t={t} />
+            </span>
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs" style={{ color: "var(--text-2)" }}>
-            <span>{t(`targets.type.${tg.type}`)}</span>
-            {numeric && (
-              <>
-                <span aria-hidden style={{ color: "var(--text-4)" }}>·</span>
+          {(numeric || weight > 1) && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs" style={{ color: "var(--text-2)" }}>
+              {numeric && (
                 <span className="inline-flex items-center gap-1">
                   <DirIcon direction={tg.direction} />{t(`targets.dir.${tg.direction}`)}
                 </span>
-              </>
-            )}
-            {weight > 1 && (
-              <>
-                <span aria-hidden style={{ color: "var(--text-4)" }}>·</span>
-                <span>{fill(t("targets.weightTimes"), { w: weight })}</span>
-              </>
-            )}
-          </div>
+              )}
+              {numeric && weight > 1 && <span aria-hidden style={{ color: "var(--text-4)" }}>·</span>}
+              {weight > 1 && <span>{fill(t("targets.weightTimes"), { w: weight })}</span>}
+            </div>
+          )}
         </div>
       </header>
 
-      <div className="flex items-center gap-2.5">
-        <MiniBar value={p} color={color} height={6} className="flex-1" />
-        <span className="text-sm font-semibold tabular-nums w-11 text-right" style={{ color }}>{fmtPct(p)}</span>
-      </div>
-
-      {numeric && <NumericBody tg={tg} goal={goal} today={today} t={t} color={color} onChange={onChange} onCheckin={onCheckin} />}
+      {numeric && <NumericBody tg={tg} goal={goal} today={today} t={t} color={MARK_COLOR[st]} onChange={onChange} onCheckin={onCheckin} />}
       {tg.type === "boolean" && (
         <SegmentedToggle
           fill
           value={tg.done ? "yes" : "no"}
-          onChange={(v) => onChange((cur) => ({ ...cur, done: v === "yes" }))}
+          onChange={(v) => onChange((cur) => ({ ...cur, ...markDone(v === "yes", today) }))}
           options={[["no", t("targets.markUndone")], ["yes", t("targets.markDone")]]}
           ariaLabel={tg.title}
         />
       )}
-      {tg.type === "tasks" && <TasksBody tg={tg} t={t} onChange={onChange} />}
+      {tg.type === "tasks" && <TasksBody tg={tg} t={t} today={today} color={MARK_COLOR[st]} onChange={onChange} />}
     </article>
   );
 }
@@ -85,27 +80,31 @@ function NumericBody({ tg, goal, today, t, color, onChange, onCheckin }) {
   const [dropping, setDropping] = useState(null); // the check-in awaiting confirm
   const rem = remaining(tg);
   const perDay = neededPerDay(tg, goal, today);
-  const last = lastCheckin(tg);
   const checkins = tg.checkins ?? [];
   const newestFirst = [...checkins].reverse();
   const shown = showAll ? newestFirst : newestFirst.slice(0, HISTORY_ROWS);
   const facts = [
     rem !== null && rem > 0 ? fill(t("targets.remaining"), { v: fmtValue(rem, tg) }) : null,
     perDay !== null ? fill(t("targets.neededPerDay"), { v: fmtValue(perDay, tg) }) : null,
-    last ? fill(t("targets.lastCheckin"), { date: fmtDate(last.at, t, today) }) : null,
   ].filter(Boolean);
 
   return (
     <>
-      <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-3)" }}>{t("targets.current")}</div>
-          <div className="text-2xl font-bold tabular-nums leading-tight" style={{ color }}>{fmtValue(tg.current, tg)}</div>
-          <div className="mt-0.5 text-xs tabular-nums" style={{ color: "var(--text-2)" }}>
-            {fill(t("targets.startToTarget"), { s: fmtValue(tg.start, tg), g: fmtValue(tg.target, tg) })}
-          </div>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <div className="text-2xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{fmtValue(tg.current, tg)}</div>
+        <div className="text-xs tabular-nums" style={{ color: "var(--text-2)" }}>
+          {fill(t("targets.startToTarget"), { s: fmtValue(tg.start, tg), g: fmtValue(tg.target, tg) })}
         </div>
-        <Sparkline points={series(tg, goal)} target={num(tg.target)} color={color} width={120} height={40} />
+      </div>
+
+      <div>
+        <ResultTrendChart tg={tg} goal={goal} today={today} t={t} />
+        <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: "var(--text-2)" }}>
+          <li className="inline-flex items-center gap-1.5"><span className="w-4" style={{ borderTop: `2px solid ${color}` }} aria-hidden />{t("targets.chart.kr.value")}</li>
+          {goal.start && goal.due && (
+            <li className="inline-flex items-center gap-1.5"><span className="w-4" style={{ borderTop: "2px dashed var(--text-3)" }} aria-hidden />{t("targets.chart.kr.path")}</li>
+          )}
+        </ul>
       </div>
 
       {facts.length > 0 && (
@@ -183,7 +182,7 @@ function NumericBody({ tg, goal, today, t, color, onChange, onCheckin }) {
   );
 }
 
-function TasksBody({ tg, t, onChange }) {
+function TasksBody({ tg, t, today, color, onChange }) {
   const [text, setText] = useState("");
   const items = tg.items ?? [];
   const add = (ev) => {
@@ -193,15 +192,24 @@ function TasksBody({ tg, t, onChange }) {
     onChange((cur) => ({ ...cur, items: [...(cur.items ?? []), { id: uid(), text: v, done: false }] }));
     setText("");
   };
+  const done = items.filter((i) => i.done).length;
   return (
     <div className="space-y-2">
+      {items.length > 0 && (
+        <div className="flex items-center gap-3">
+          <SegmentBar items={items} color={color} height={10} className="flex-1" label={fill(t("targets.tasksDone"), { done, total: items.length })} />
+          <span className="text-xs font-semibold tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>
+            {done}<span style={{ color: "var(--text-3)" }}> / {items.length}</span>
+          </span>
+        </div>
+      )}
       {items.length > 0 && (
         <ul className="-mx-1 space-y-0.5">
           {items.map((it) => (
             <li key={it.id} className="flex items-start gap-1">
               <button
                 type="button" role="checkbox" aria-checked={it.done}
-                onClick={() => onChange((cur) => ({ ...cur, items: cur.items.map((x) => (x.id === it.id ? { ...x, done: !x.done } : x)) }))}
+                onClick={() => onChange((cur) => ({ ...cur, items: cur.items.map((x) => (x.id === it.id ? { ...x, ...markDone(!x.done, today) } : x)) }))}
                 className="flex-1 min-w-0 flex items-start gap-2.5 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]"
               >
                 {it.done

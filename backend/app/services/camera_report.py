@@ -154,15 +154,25 @@ def _last(c: dict, ev: str) -> str:
     return ""
 
 
-# The recorder's "open" rows that are an OUTCOME, not the start of an open.
-_OPEN_OUTCOMES = ("no answer", "failed", "superseded", "put off")
+# An "open" row that is NOT the start of an open. Exactly one row IS the start,
+# and it carries «why · which lens»; every other open row is a step along the
+# way or an ending. Reading one of those as the start is how this function came
+# to answer with the «slow» row on every report that reached the 45 s screen —
+# which silently narrowed `_hidden_during_last_open` to the rows after the
+# ninth second, so a page that went to the background before that read as one
+# that never left the screen.
+_OPEN_NOT_START = ("no answer", "failed", "superseded", "put off", "slow", "no camera")
+
+
+def _is_open_start(detail: str) -> bool:
+    return " · " in detail and not detail.startswith(_OPEN_NOT_START)
 
 
 def _last_open(c: dict):
     """(index, detail) of the last open that STARTED, or (None, "")."""
     rows = _rows(c)
     for i in range(len(rows) - 1, -1, -1):
-        if rows[i][1] == "open" and not str(rows[i][2]).startswith(_OPEN_OUTCOMES):
+        if rows[i][1] == "open" and _is_open_start(str(rows[i][2])):
             return i, str(rows[i][2])
     return None, ""
 
@@ -173,6 +183,59 @@ def _hidden_during_last_open(c: dict) -> bool:
         return False
     return any((r[1] == "page" and r[2] == "hidden") or (r[1] == "telegram" and r[2] == "deactivated")
                for r in _rows(c)[i + 1:])
+
+
+def _after_open(c: dict, ev: str) -> list:
+    """Every row of one kind recorded AFTER the last open started."""
+    i, _ = _last_open(c)
+    if i is None:
+        return []
+    return [str(r[2] or "") for r in _rows(c)[i + 1:] if r[1] == ev]
+
+
+def _stalled_step(c: dict) -> str:
+    """Which step of an open was still waiting when the page gave up, and whose
+    answer it was waiting for.
+
+    Every step now writes its line BEFORE it waits, so the last one names where
+    the open stopped; and the page's own FOCUS says whether Telegram's «Allow
+    camera?» sheet was ever in front of the leader — the one thing that tells a
+    prompt nobody answered from a prompt that never appeared. Three reports of
+    this failure carried neither fact, so all three could only be read as «one
+    of two things happened». A bundle older than this writes none of these
+    rows, and then the sentence is the old one, which names both.
+    """
+    asked = _after_open(c, "ask")
+    listed = _after_open(c, "list")
+    focus = _after_open(c, "focus")
+    access = _after_open(c, "access")
+    lost = any(f.startswith("lost") for f in focus)
+    back = lost and focus[-1].startswith("back")
+
+    if asked:
+        step = (f"The page asked Android for the camera ({_t(asked[-1], 40)}) and no answer ever came.")
+    elif listed:
+        step = ("The page never got as far as asking for the camera — it was still waiting for the "
+                "device list.")
+    else:
+        return ("The page stayed on screen, so either «Allow camera?» was left unanswered or Android "
+                "never answered the request.")
+
+    if lost and not back:
+        who = ("Telegram's «Allow camera?» sheet came up and was never answered: the page lost focus while "
+               "the camera was opening and never got it back.")
+    elif lost:
+        who = ("Telegram's «Allow camera?» sheet came up and was answered, and the camera still never "
+               "opened — so the request stalled below Telegram, in Android.")
+    elif focus:
+        who = ("Nothing ever came up in front of the page — it never lost focus — so «Allow camera?» was "
+               "never shown and nothing answered the request either.")
+    else:
+        who = ""
+    if any(", 0 named" in a or "permission prompt" in a or "permission denied" in a for a in access):
+        who = (who + " " if who else "") + ("The page still held no camera permission while it waited, "
+                                            "which is the step it stopped at.")
+    return " ".join(x for x in (step, who) if x)
 
 
 def _last_stream(c: dict) -> str:
@@ -290,8 +353,7 @@ def verdict(cam) -> str:
             parts.append("The page went to the background while the camera was opening, which can leave the "
                          "open hanging.")
         else:
-            parts.append("The page stayed on screen, so either «Allow camera?» was left unanswered or Android "
-                         "never answered the request.")
+            parts.append(_stalled_step(c))
         worked = _worked_before(c)
         if worked:
             parts.append(worked)

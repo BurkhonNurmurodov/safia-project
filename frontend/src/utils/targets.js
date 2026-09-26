@@ -163,8 +163,14 @@ export function normalizeTarget(raw) {
   t.unit = String(t.unit ?? "");
   t.weight = Math.max(1, Math.min(3, Math.round(num(t.weight, 1)) || 1));
   t.done = !!t.done;
+  // WHEN a yes/no result or a list item was marked done — what lets a goal's
+  // progress be redrawn over time. Absent on rows saved before it existed.
+  t.doneAt = t.done && isISO(t.doneAt) ? t.doneAt : null;
   t.items = Array.isArray(t.items)
-    ? t.items.map((i) => ({ id: i?.id || uid(), text: String(i?.text ?? ""), done: !!i?.done }))
+    ? t.items.map((i) => ({
+        id: i?.id || uid(), text: String(i?.text ?? ""), done: !!i?.done,
+        doneAt: i?.done && isISO(i?.doneAt) ? i.doneAt : null,
+      }))
     : [];
   t.checkins = Array.isArray(t.checkins)
     ? t.checkins
@@ -313,6 +319,72 @@ export function series(tg, goal) {
   (tg.checkins ?? []).forEach((c) => pts.push({ x: Math.max(0, dayDiff(origin, c.at)), y: c.value, at: c.at }));
   return pts;
 }
+
+// ─── progress over time ──────────────────────────────────────────────────────
+// A result's progress AS OF a past day, rebuilt from what the blob records: a
+// number's check-ins, and the day a yes/no or a list item was ticked. A tick
+// with no recorded day (saved before `doneAt` existed) counts only from
+// `today` — the one day we KNOW it was done — never back-dated to the start.
+export function targetProgressAt(tg, day, today = todayISO()) {
+  const doneBy = (flag, at) => !!flag && (at ? at <= day : day >= today);
+  if (tg.type === "boolean") return doneBy(tg.done, tg.doneAt) ? 1 : 0;
+  if (tg.type === "tasks") {
+    const items = tg.items ?? [];
+    if (!items.length) return 0;
+    return items.filter((i) => doneBy(i.done, i.doneAt)).length / items.length;
+  }
+  const cs = (tg.checkins ?? []).filter((c) => c.at <= day);
+  let value;
+  if (cs.length) value = cs[cs.length - 1].value;
+  // A current value typed in the form, with no check-in behind it, is only
+  // known as of today.
+  else value = day >= today ? num(tg.current, num(tg.start)) : num(tg.start);
+  return targetProgress({ ...tg, current: value });
+}
+
+export function goalProgressAt(goal, day, today = todayISO()) {
+  const tgs = goal.targets ?? [];
+  if (!tgs.length) return 0;
+  let sw = 0, sp = 0;
+  tgs.forEach((tg) => { const w = targetWeight(tg); sw += w; sp += w * targetProgressAt(tg, day, today); });
+  return sw ? clamp01(sp / sw) : 0;
+}
+
+// Every day something moved, from the goal's start to today: the points of
+// its progress line. Sorted, unique, clipped to [start, today].
+export function goalEventDays(goal, today = todayISO()) {
+  const days = new Set();
+  if (goal.start && goal.start <= today) days.add(goal.start);
+  (goal.targets ?? []).forEach((tg) => {
+    (tg.checkins ?? []).forEach((c) => days.add(c.at));
+    if (tg.doneAt) days.add(tg.doneAt);
+    (tg.items ?? []).forEach((i) => { if (i.doneAt) days.add(i.doneAt); });
+  });
+  days.add(today);
+  return [...days]
+    .filter((d) => (!goal.start || d >= goal.start) && d <= today)
+    .sort();
+}
+
+export function goalHistory(goal, today = todayISO()) {
+  return goalEventDays(goal, today).map((d) => ({ at: d, p: goalProgressAt(goal, d, today) }));
+}
+
+// The last day anybody recorded something on the goal — null when nothing
+// ever was. What «updated 3 days ago» on a card reads.
+export function lastActivity(goal) {
+  let last = null;
+  const see = (d) => { if (d && (!last || d > last)) last = d; };
+  (goal.targets ?? []).forEach((tg) => {
+    (tg.checkins ?? []).forEach((c) => see(c.at));
+    see(tg.doneAt);
+    (tg.items ?? []).forEach((i) => see(i.doneAt));
+  });
+  return last;
+}
+
+// Ticking a result or an item stamps the day; unticking clears it.
+export const markDone = (on, day) => (on ? { done: true, doneAt: day } : { done: false, doneAt: null });
 
 // ─── the KPI strip ───────────────────────────────────────────────────────────
 export function summarize(goals, today = todayISO()) {

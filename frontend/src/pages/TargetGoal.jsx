@@ -4,7 +4,9 @@
 // (components/targets/useGoals), so Back always lands on the list as it now is.
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, RefreshCw, SearchX, Target as TargetIcon, Rocket } from "lucide-react";
+import {
+  ArrowLeft, Pencil, Trash2, RefreshCw, SearchX, Target as TargetIcon, Rocket, ChartLine, ChartBarStacked,
+} from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import ErrorScreen from "../components/ui/ErrorScreen";
@@ -14,6 +16,9 @@ import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { GoalMeta, PaceRow } from "../components/targets/GoalCard";
 import { StatusChip } from "../components/targets/bits";
+import { ChartCard } from "../components/ui/AnalysisBoard";
+import GoalProgressChart from "../components/targets/charts/GoalProgressChart";
+import ContributionBar from "../components/targets/charts/ContributionBar";
 import ResultCard from "../components/targets/ResultCard";
 import GoalFormModal from "../components/targets/GoalFormModal";
 import UpdateProgressModal from "../components/targets/UpdateProgressModal";
@@ -21,7 +26,7 @@ import SaveState from "../components/targets/SaveState";
 import { useGoals, useSaveState } from "../components/targets/useGoals";
 import { useLang } from "../context/LangContext";
 import {
-  todayISO, goalProgress, goalStatus, elapsed, daysLeft, projection, targetProgress, fmtDate, fill,
+  todayISO, goalProgress, goalStatus, elapsed, daysLeft, projection, targetProgress, fmtDate, fmtPct, fill,
 } from "../utils/targets";
 
 // What the pace so far says, as one whole sentence per case. Above 100% the
@@ -153,22 +158,43 @@ export default function TargetGoal() {
           )}
           <GoalMeta goal={goal} st={st} today={today} t={t} full className="text-[13px]" />
 
-          <div className="@container rounded-xl p-3 sm:p-4 space-y-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-            <PaceRow p={p} e={e} st={st} t={t} big ring="var(--bg-inner)" />
-            {forecast && (
-              <p className="flex items-start gap-2 text-sm" style={{ color: "var(--text-2)" }}>
-                <Rocket size={15} className="flex-shrink-0 mt-0.5" style={{ color: "var(--text-3)" }} aria-hidden />
-                <span><span className="font-medium" style={{ color: "var(--text-1)" }}>{t("targets.projection")}:</span> {forecast}</span>
-              </p>
-            )}
+          <div
+            className="@container rounded-xl p-3 sm:p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+          >
+            <div className="flex-1 min-w-0"><PaceRow p={p} e={e} st={st} t={t} big ring="var(--bg-inner)" /></div>
             <Button
               size="lg" variant="primary" icon={<RefreshCw size={15} />}
-              onClick={() => setUpdate({ only: null })} className="w-full sm:w-auto"
+              onClick={() => setUpdate({ only: null })} className="w-full sm:w-auto flex-shrink-0"
             >
               {t("targets.updateTitle")}
             </Button>
           </div>
         </section>
+
+        {/* ── the goal over time · what its percent is made of ── */}
+        <div className={`grid grid-cols-1 gap-3 ${targets.length > 1 ? "lg:grid-cols-3" : ""}`}>
+          <ChartCard icon={ChartLine} title={t("targets.chart.burn.title")} className={targets.length > 1 ? "lg:col-span-2" : ""}>
+            {goal.start && goal.due ? (
+              <>
+                <GoalProgressChart goal={goal} today={today} t={t} />
+                {forecast && (
+                  <p className="px-4 pb-4 -mt-1 flex items-start gap-2 text-sm" style={{ color: "var(--text-2)" }}>
+                    <Rocket size={15} className="flex-shrink-0 mt-0.5" style={{ color: "var(--text-3)" }} aria-hidden />
+                    <span><span className="font-medium" style={{ color: "var(--text-1)" }}>{t("targets.projection")}:</span> {forecast}</span>
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="px-4 py-6 text-sm" style={{ color: "var(--text-3)" }}>{t("targets.noDates")}</p>
+            )}
+          </ChartCard>
+          {targets.length > 1 && (
+            <ChartCard icon={ChartBarStacked} title={fill(t("targets.chart.contrib.title"), { p: fmtPct(p) })}>
+              <ContributionBar goal={goal} today={today} t={t} />
+            </ChartCard>
+          )}
+        </div>
 
         {/* ── its key results ── */}
         <section aria-labelledby="goal-results">

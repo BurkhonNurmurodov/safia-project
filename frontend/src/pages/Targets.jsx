@@ -14,7 +14,9 @@
 // people. Making this a shared register is a separate decision.
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Target as TargetIcon, Plus, Sparkles, FlaskConical, ChevronDown, Shapes } from "lucide-react";
+import {
+  Target as TargetIcon, Plus, Sparkles, FlaskConical, ChevronDown, Shapes, ChartPie, ChartScatter, ChartGantt,
+} from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import SearchInput from "../components/ui/SearchInput";
@@ -26,14 +28,21 @@ import { useToast } from "../components/ui/Toast";
 import GoalCard from "../components/targets/GoalCard";
 import GoalFormModal from "../components/targets/GoalFormModal";
 import UpdateProgressModal from "../components/targets/UpdateProgressModal";
-import StatusOverview from "../components/targets/StatusOverview";
 import SaveState from "../components/targets/SaveState";
-import { AREA_ICON, GROUP_ICON, groupColor } from "../components/targets/targetsUi";
+import { ChartCard } from "../components/ui/AnalysisBoard";
+import StatusDonut from "../components/targets/charts/StatusDonut";
+import PaceMap from "../components/targets/charts/PaceMap";
+import DeadlineTimeline from "../components/targets/charts/DeadlineTimeline";
+import { MARK_COLOR } from "../components/targets/charts/chartKit";
+import { AREA_ICON, GROUP_ICON, groupColor, daysLeftText } from "../components/targets/targetsUi";
 import { buildDemoGoals } from "../components/targets/demoGoals";
 import { useGoals, useSaveState } from "../components/targets/useGoals";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
-import { CATEGORIES, GROUPS, STATUS_RANK, todayISO, goalProgress, goalStatus, fill } from "../utils/targets";
+import {
+  CATEGORIES, GROUPS, STATUS_RANK, GREY, todayISO, goalProgress, goalStatus, elapsed, daysLeft, fmtDate, fill,
+} from "../utils/targets";
+import { GREEN } from "../utils/statusBands";
 
 const matches = (g, q) => {
   if (!q) return true;
@@ -66,7 +75,7 @@ function GoalGroup({ group, rows, counts, open, onToggle, collapsible, t, today,
     </>
   );
   return (
-    <section aria-label={label}>
+    <section id={`grp-${group.key}`} aria-label={label} className="scroll-mt-4">
       {collapsible ? (
         <button
           type="button" onClick={onToggle} aria-expanded={open}
@@ -114,7 +123,7 @@ export default function Targets() {
   const [confirmDemo, setConfirmDemo] = useState(false);
 
   const rows = useMemo(
-    () => (goals ?? []).map((g) => ({ g, p: goalProgress(g), st: goalStatus(g, today) })),
+    () => (goals ?? []).map((g) => ({ g, p: goalProgress(g), st: goalStatus(g, today), e: elapsed(g, today) })),
     [goals, today],
   );
   const needle = q.trim().toLowerCase();
@@ -133,6 +142,28 @@ export default function Targets() {
   );
   const anyFilter = !!needle || !!cat;
   const clearFilters = () => { setQ(""); setCat(""); };
+
+  const openGoal = (id) => navigate(`/targets/${encodeURIComponent(id)}`);
+  // The donut's order puts grey between the two greens and never lets the deep
+  // «achieved» green touch red (the pair protanopia cannot tell apart).
+  const DONUT_ORDER = ["attention", "on_track", "achieved", "not_started"];
+  const DONUT_COLOR = { on_track: GREEN, achieved: MARK_COLOR.achieved, not_started: GREY };
+  const donutGroups = DONUT_ORDER.map((key) => {
+    const gr = GROUPS.find((x) => x.key === key);
+    return {
+      key,
+      label: t(`targets.group.${key}`),
+      count: gr.statuses.reduce((n, st) => n + (counts[st] ?? 0), 0),
+      color: key === "attention" ? groupColor(key, counts) : DONUT_COLOR[key],
+      Icon: GROUP_ICON[key],
+    };
+  });
+  // A slice or a legend row brings its group of cards into view.
+  const jumpTo = (key) => {
+    if (key === "achieved") setDoneOpen(true);
+    requestAnimationFrame(() => document.getElementById(`grp-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+  const dueText = (g) => (g.due ? `${fmtDate(g.due, t, today)} · ${daysLeftText(daysLeft(g, today), t)}` : t("targets.noDates"));
 
   // ── the area filter — THE filter zone, a FilterPanel section ──────────────
   const areaCount = (c) => searched.filter((r) => r.g.category === c).length;
@@ -235,7 +266,29 @@ export default function Targets() {
           </div>
         ) : (
           <>
-            <StatusOverview rows={shown} total={rows.length} t={t} saveSlot={<SaveState t={t} />} />
+            {/* ── the picture: how many in each state · who is ahead or behind · what is due when ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+              <ChartCard
+                icon={ChartPie} className="lg:col-span-2"
+                title={t("targets.chart.status.title")}
+                subtitle={shown.length === rows.length ? null : fill(t("targets.overview.countOf"), { n: shown.length, total: rows.length })}
+                right={<SaveState t={t} />}
+              >
+                <div className="px-4 py-4 flex-1 flex flex-col justify-center">
+                  <StatusDonut
+                    groups={donutGroups} total={shown.length} centerLabel={t("targets.chart.status.center")}
+                    onPick={jumpTo}
+                    ariaLabel={fill(t("targets.chart.status.aria"), { list: donutGroups.map((d) => `${d.label} ${d.count}`).join(", ") })}
+                  />
+                </div>
+              </ChartCard>
+              <ChartCard icon={ChartScatter} className="lg:col-span-3" title={t("targets.chart.pace.title")} subtitle={t("targets.chart.pace.subtitle")}>
+                <PaceMap rows={shown} t={t} onOpen={openGoal} dueText={dueText} />
+              </ChartCard>
+            </div>
+            <ChartCard icon={ChartGantt} title={t("targets.chart.timeline.title")} subtitle={t("targets.chart.timeline.subtitle")}>
+              <DeadlineTimeline rows={shown} today={today} t={t} onOpen={openGoal} />
+            </ChartCard>
             <div className="space-y-6">
               {groups.map(({ gr, rows: gRows }) => {
                 const collapsible = gr.key === "achieved" && groups.length > 1 && !needle;

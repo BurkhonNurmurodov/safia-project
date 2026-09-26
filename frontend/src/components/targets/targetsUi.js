@@ -67,3 +67,11 @@ export function paceCaption({ st, p, e, t }) {
       : t("targets.pace.onPlan");
   return { plan, tail };
 }
+
+// «12 kun qoldi» / «Bugun oxirgi kun» / «3 kun kechikdi» — the words of a
+// days-left count, for places that need them as text (a tooltip).
+export function daysLeftText(left, t) {
+  if (left === null || left === undefined) return "";
+  if (left < 0) return fill(t("targets.daysOver"), { n: -left });
+  return left === 0 ? t("targets.dueToday") : fill(t("targets.daysLeft"), { n: left });
+}

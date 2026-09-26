@@ -19,7 +19,7 @@ import { INPUT_CLS, INPUT_STYLE, krParts } from "./targetsUi";
 import { useLang } from "../../context/LangContext";
 import { GREEN, RED } from "../../utils/statusBands";
 import {
-  isNumeric, parseNum, num, fmtInput, fmtNumber, applyCheckin, direction, fill,
+  isNumeric, parseNum, num, fmtInput, fmtNumber, applyCheckin, direction, fill, markDone,
 } from "../../utils/targets";
 
 const FORM_ID = "targets-update-form";
@@ -91,9 +91,19 @@ export default function UpdateProgressModal({ goal, only = null, today, onClose,
           const moved = v !== num(tg.current, num(tg.start));
           return moved || single ? applyCheckin(tg, { value: v, at, note }) : tg;
         }
-        if (tg.type === "boolean") return { ...tg, done: !!flags[tg.id] };
+        // A flipped flag or tick is dated with the dialog's date, like a check-in.
+        if (tg.type === "boolean") {
+          const on = !!flags[tg.id];
+          return on === !!tg.done ? tg : { ...tg, ...markDone(on, at) };
+        }
         if (tg.type === "tasks") {
-          return { ...tg, items: (tg.items ?? []).map((i) => ({ ...i, done: ticks[tg.id]?.[i.id] ?? i.done })) };
+          return {
+            ...tg,
+            items: (tg.items ?? []).map((i) => {
+              const on = ticks[tg.id]?.[i.id] ?? i.done;
+              return on === !!i.done ? i : { ...i, ...markDone(on, at) };
+            }),
+          };
         }
         return tg;
       }),

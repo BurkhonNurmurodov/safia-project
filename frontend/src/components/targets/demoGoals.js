@@ -30,7 +30,7 @@ export function buildDemoGoals(today = todayISO()) {
         },
         {
           id: "demo-1-3", title: "Har bir toifaga mas'ul biriktirish", type: "boolean", direction: "up",
-          start: 0, current: 0, target: 1, unit: "", weight: 1, done: true, items: [], checkins: [],
+          start: 0, current: 0, target: 1, unit: "", weight: 1, done: true, doneAt: d(-12), items: [], checkins: [],
         },
       ],
     },
@@ -62,8 +62,8 @@ export function buildDemoGoals(today = todayISO()) {
           id: "demo-3-1", title: "O'tish bosqichlari", type: "tasks", direction: "up",
           start: 0, current: 0, target: 1, unit: "", weight: 2, done: false, checkins: [],
           items: [
-            { id: uid(), text: "Kamera tasklarini sozlash (13 ta)", done: true },
-            { id: uid(), text: "Liderlar uchun 20 daqiqalik o'qitish", done: true },
+            { id: uid(), text: "Kamera tasklarini sozlash (13 ta)", done: true, doneAt: d(-8) },
+            { id: uid(), text: "Liderlar uchun 20 daqiqalik o'qitish", done: true, doneAt: d(-4) },
             { id: uid(), text: "Sinov kuni (bot_from) ni belgilash", done: false },
             { id: uid(), text: "Birinchi haftaning natijasini tahlil qilish", done: false },
             { id: uid(), text: "2-smenaga kengaytirish qarori", done: false },
