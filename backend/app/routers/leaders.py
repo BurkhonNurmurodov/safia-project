@@ -24,9 +24,9 @@ from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
 from app.services import (
-    action_log, leader_ai, leader_bot, leader_cells, leader_cutoffs,
-    leader_dispute, leader_exclusions, leader_late_proof, leader_reports,
-    leader_unit_report)
+    action_log, leader_ai, leader_appeal_chat, leader_bot, leader_cells,
+    leader_cutoffs, leader_dispute, leader_exclusions, leader_late_proof,
+    leader_reports, leader_unit_report)
 from app.services.name_map import (
     _name_tokens,
     leader_is,
