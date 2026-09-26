@@ -7866,39 +7866,94 @@ def _leader_rules26_dm(shift: int, out: dict, left: list[str]) -> int:
     return sent
 
 
-def report_duplicate_users_oneshot() -> None:
-    """⚠ TEMPORARY one-shot: send a report of duplicate users named 'Turdimurodov'."""
-    from sqlalchemy import text
-    from app.database import SessionLocal
-    from app.models import AppSetting
+# ── one-shot: Turdimurodov Nodirjon's days back in his own unit (26 Sep) ─────
+# See `services/leader_unit_fix_sep26.py`. Inline and flag-guarded, like the
+# other checklist fixes here. A REFUSAL (the names did not resolve as expected)
+# writes nothing, is DMed once and is re-checked quietly on every later boot, so
+# an admin correcting the register lets it land without another deploy.
+# Replaced a duplicate-users report added 25 Sep that selected a column
+# `telegram_users` does not have, so it failed on every boot and never sent.
+NODIRJON_FIX_FLAG = "leader_nodirjon_unit_fix_2026_09_26_v1"
+
+
+def fix_nodirjon_leader_unit() -> None:
+    """Move Nodirjon's stray checklist days to his own unit, once. Never raises."""
     db = SessionLocal()
     try:
-        if db.query(AppSetting).filter_by(key="duplicate_users_report_sent_v1").first():
+        row = db.query(AppSetting).filter_by(key=NODIRJON_FIX_FLAG).first()
+        val = (row.value or "") if row else ""
+        if val.startswith("done"):
             return
-        
-        rows = db.execute(text(
-            "SELECT id, full_name, telegram_id, tg_name, last_seen, is_active FROM telegram_users "
-            "WHERE full_name ILIKE '%Turdimurodov%Nodirjon%'"
-        )).fetchall()
-        
-        if not rows:
-            text_msg = "No duplicate users found for Turdimurodov Nodirjon."
-        else:
-            text_msg = "<b>Duplicate Users Report (Turdimurodov Nodirjon)</b>\n\n"
-            for r in rows:
-                text_msg += f"<b>ID:</b> {r.id}\n<b>Name:</b> {r.full_name}\n<b>TG Name:</b> {r.tg_name}\n<b>TG ID:</b> {r.telegram_id}\n<b>Active:</b> {r.is_active}\n<b>Last seen:</b> {r.last_seen}\n\n"
-        
-        from app.telegram_bot import bot
-        try:
-            bot.send_message(6302307151, text_msg, parse_mode="HTML")
-            db.add(AppSetting(key="duplicate_users_report_sent_v1", value="1"))
+        tries = 0
+        if val.startswith("failed:"):
+            try:
+                tries = int(val.split(":")[-1])
+            except ValueError:
+                tries = _UNPRICED_DM_TRIES
+        if tries >= _UNPRICED_DM_TRIES:
+            return
+
+        from app.services import leader_unit_fix_sep26 as fx
+
+        def mark(value: str) -> None:
+            # Commits whatever `apply` staged in the SAME transaction as the
+            # flag, so the fix and its "done" can never disagree.
+            nonlocal row
+            if row is None:
+                row = AppSetting(key=NODIRJON_FIX_FLAG, value=value)
+                db.add(row)
+            else:
+                row.value = value
             db.commit()
-            print("[startup] Duplicate users report sent successfully.")
-        except Exception as e:
-            print(f"[startup] Failed to send duplicate users report to telegram: {e}")
-            
-    except Exception as exc:
+
+        try:
+            out = fx.apply(db)
+        except Exception as exc:
+            db.rollback()
+            mark(f"failed:{tries + 1}")
+            print(f"[startup] Nodirjon unit fix failed "
+                  f"(attempt {tries + 1}/{_UNPRICED_DM_TRIES}): {exc}")
+            return
+
+        if out["problems"]:
+            db.rollback()
+            print("[startup] Nodirjon unit fix refused: "
+                  + "; ".join(out["problems"]))
+            if not val.startswith("blocked"):
+                mark("blocked")
+                _nodirjon_fix_dm(fx.message(out))
+            return
+
+        mark(f"done:{len(out['moved'])}")
+        print(f"[startup] Nodirjon unit fix: {len(out['moved'])} day(s) moved "
+              f"{out['moved']} {out['side']}; form-counted {out['sheet_days']}")
+        from app.services import action_log
+        action_log.record_system(
+            "leader_review", "checklist.days_moved",
+            target_kind="profile", target_name=out["profile"],
+            unit_name=out["own"],
+            details=[("days", ", ".join(out["moved"]) or None),
+                     ("from", out["wrong"]),
+                     *[(k, v) for k, v in out["side"].items()],
+                     ("form_counted", ", ".join(d for d, *_ in out["sheet_days"])
+                      or None)],
+            reason=("A bot day keeps the unit its leader profile had when the day "
+                    "started; days started while the profile sat in another unit "
+                    "were moved to the unit the leader and his cell belong to"),
+        )
+        _nodirjon_fix_dm(fx.message(out))
+    except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
-        print(f"[startup] Duplicate users report failed: {exc}")
+        print(f"[startup] Nodirjon unit fix skipped: {exc}")
     finally:
         db.close()
+
+
+def _nodirjon_fix_dm(text: str) -> None:
+    try:
+        import requests
+        requests.post(
+            f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
+            data={"chat_id": UNPRICED_DM_CHAT, "text": text[:4000]}, timeout=20)
+    except Exception as exc:
+        print(f"[startup] Nodirjon unit fix DM failed: {exc}")
