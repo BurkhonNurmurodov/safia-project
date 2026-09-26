@@ -2585,14 +2585,25 @@ def reopen_submitted_task(
     return {**lifted, "emptied": emptied}
 
 
-def _stream_tg_file(file_id: str) -> StreamingResponse:
+def _stream_tg_file(file_id: str, *, name: str | None = None,
+                    mime: str | None = None,
+                    download: bool = False) -> StreamingResponse:
     """Pipe one archive-channel file back to the browser.
 
-    THE streamer, shared by the two doors that serve a proof photo — the
-    register's media proxy and the admin roll reader below. They differ only in
-    WHO may ask; how the bytes travel is one answer, and duplicating it is how
-    one of them ends up without the no-store header or the close-on-finish.
+    THE streamer, shared by every door that serves an archive file — the
+    register's media proxy, the admin roll reader below, and the appeal chat's
+    attachments. They differ only in WHO may ask; how the bytes travel is one
+    answer, and duplicating it is how one of them ends up without the no-store
+    header or the close-on-finish.
+
+    `name` / `mime` override what Telegram's file path suggests (a chat
+    attachment keeps the name its sender gave it), and `download` serves it as
+    an attachment behind `nosniff` — the way anything a user attached must be
+    served, so an uploaded HTML or SVG file can never run in our own origin.
+    The name travels RFC 5987-encoded: a Cyrillic file name in a plain header
+    is a latin-1 encode error, not a download.
     """
+    from urllib.parse import quote
     meta = _tg_file_meta(file_id)
     url = f"{_TG_API}/file/bot{settings.telegram_bot_token}/{meta['file_path']}"
     try:
@@ -2609,11 +2620,18 @@ def _stream_tg_file(file_id: str) -> StreamingResponse:
         finally:
             upstream.close()
 
-    headers = {"Content-Disposition": f'inline; filename="{meta["file_name"]}"',
-               "Cache-Control": "no-store"}
+    fname = name or meta["file_name"] or "file"
+    ascii_name = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_"
+                         for c in fname) or "file"
+    disp = "attachment" if download else "inline"
+    headers = {"Content-Disposition": (f'{disp}; filename="{ascii_name}"; '
+                                       f"filename*=UTF-8''{quote(fname)}"),
+               "Cache-Control": "no-store",
+               "X-Content-Type-Options": "nosniff"}
     if meta["file_size"]:
         headers["Content-Length"] = str(meta["file_size"])
-    return StreamingResponse(_chunks(), media_type=meta["mime_type"], headers=headers)
+    return StreamingResponse(_chunks(), media_type=mime or meta["mime_type"],
+                             headers=headers)
 
 
 # ── Viewer: proof-photo streaming for the /leaders detail modal ───────────────

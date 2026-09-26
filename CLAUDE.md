@@ -153,9 +153,9 @@ in Aripova's unit (checklist, /leaders, digests, reports, objections all hers),
   else None) is read by the automatic checks (`leader_auto._Ctx.unit_id` — #1
   and #9 read that unit's dashboard and pins) and by a leader's /production page
   (`production._resolve_manager_id`). Read in the leader's own unit they find a
-  catalog that never carried the cell and fail every day — which is what
-  Umarova Mapura's checks did (profile in Raximova Kamola's unit, cell 8611 in
-  Mirmaxmudova Munira's) until this landed.
+  catalog that never carried the cell and fail every day — the state Umarova
+  Mapura was in on the 11 Sep copy (profile in Raximova Kamola's unit, cell
+  8611 in Mirmaxmudova Munira's), so her #1/#9 move with this too.
 - **What a leader FILES follows the PROFILE** — a bot day still takes
   `prof.manager_id`, unchanged.
 - **A save that does not move the leader moves no cell.** `_set_leader_cells`

@@ -143,3 +143,43 @@ def validate_avatar(file: UploadFile, content: bytes) -> None:
     through Pillow, which is what actually neutralises a crafted payload."""
     check_extension(file.filename, AVATAR_EXTS)
     check_magic(content, _IMAGE_MAGIC)
+
+
+# Appeal-chat attachments (objections and late proofs, 2026-09-26). ANY type,
+# by the operator's ruling — a leader answering "show me the register" may need
+# to send a spreadsheet, a PDF or a video — so there is deliberately no
+# extension whitelist here. What makes that safe is how the file comes BACK:
+# it is forwarded to the archive channel, never run or parsed locally, and it
+# is served as a DOWNLOAD behind `nosniff` unless its own leading bytes prove
+# it is one of four raster image formats. The type a client CLAIMS is never
+# what decides that — a page renamed `.png` still downloads.
+CHAT_FILE_MAX = 20 * 1024 * 1024        # the most the bot API hands back
+_CHAT_IMAGE_MAGIC = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def validate_chat_attachment(filename: str | None, content: bytes) -> tuple[str, str]:
+    """(mime, kind) for one chat attachment, or 400 when it cannot be carried.
+
+    `kind` is "image" only when the bytes prove a JPEG/PNG/GIF/WEBP — the one
+    case the file is later served inline. Everything else is "file", with a
+    mime guessed from the extension for the download's Content-Type alone.
+    """
+    import mimetypes
+    if not content:
+        raise HTTPException(status_code=400, detail=f"'{filename or 'file'}' is empty")
+    if len(content) > CHAT_FILE_MAX:
+        raise HTTPException(
+            status_code=413,
+            detail=f"'{filename or 'file'}' is larger than 20 MB")
+    for sig, mime in _CHAT_IMAGE_MAGIC:
+        if content.startswith(sig):
+            return mime, "image"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp", "image"
+    guessed = mimetypes.guess_type(filename or "")[0]
+    return (guessed or "application/octet-stream"), "file"

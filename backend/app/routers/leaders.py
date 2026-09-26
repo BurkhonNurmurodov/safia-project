@@ -1659,6 +1659,118 @@ def _report_after_ruling(db: Session, d: LeaderAiDispute) -> bool:
 DISPUTE_CAP = 300
 
 
+def _dispute_items(db: Session, payload: dict,
+                   rows: list[LeaderAiDispute]) -> list[dict]:
+    """The card for each objection — what the queue lists and what the chat
+    page leads with. ONE builder for both, so the card a reader tapped and the
+    page it opened can never state two different verdicts or two different
+    names for one row.
+
+    Every fact comes off the SAME helpers the day report reads, never
+    re-derived here: the AI's flags, its prose and the window it measured
+    against. Names are the REGISTER's names (`_project`), so the page's
+    supervisor and leader filters reach these rows exactly as they reach the
+    dashboard's. `chat` carries the conversation's size, its newest entry and
+    how much of it THIS viewer has not read.
+    """
+    if not rows:
+        return []
+    uids = leader_reports.uids_of_refs(db, [r.ref for r in rows])
+
+    # The verdict under objection. Local import: routers/leader_ai imports this
+    # module back for `supersede_dispute`.
+    from app.routers.leader_ai import (
+        _as_verdict, _date_check, _date_plus, _day_check, _project, _task_cfg, _time_check,
+        _window,
+    )
+    revs = (db.query(LeaderAiReview)
+            .filter(LeaderAiReview.ref.in_({d.ref for d in rows})).all()) if rows else []
+    # Loaded off `rows`, not off `revs`: a verdict «stop and clear» deleted
+    # leaves its dispute standing, and that card still has to name its task.
+    cfg = _task_cfg(db, revs) if rows else None
+    verdicts = {r.ref: _as_verdict(r, _window(cfg, r), _date_check(cfg, r),
+                                   _time_check(cfg, r), _date_plus(cfg, r),
+                                   _day_check(cfg, r))
+                for r in revs}
+    shifts = {r.ref: r.shift for r in revs}
+    proj = _project(db, revs)
+
+    # Task names in all four languages — the card is read by the same people in
+    # the same four languages as the report behind it, and a unit that renamed
+    # a task must not read its old wording here.
+    names = leader_reports.names_for_pairs(
+        db, {(d.manager_id, d.leader_id) for d in rows}, (cfg[0] if cfg else {}))
+    mgr_shift = ({m.id: m.shift for m in db.query(Manager).all()} if rows else {})
+
+    # `_project` fills an unresolvable name with an em dash rather than a null,
+    # so read it as blank here — otherwise the placeholder wins over the name
+    # the dispute row stamped when it was filed.
+    def _named(v):
+        v = (v or "").strip()
+        return v if v and v != "\u2014" else None
+
+    items = []
+    for d in rows:
+        who = proj.get(d.ref) or {}
+        sup_ok, adm_ok = _dispute_stage_rights(payload, d)
+        # Whether THIS caller may rule on THIS row, by the same predicate the
+        # write re-checks. Deriving it from page-level flags is a different
+        # question: a supervisor holding the page at scope «all» is served
+        # every unit's rows, and every foreign card would grow buttons that
+        # answer 403.
+        can_act = ((d.status == leader_dispute.SUPERVISOR and sup_ok)
+                   or (d.status == leader_dispute.ADMIN and adm_ok))
+        items.append({
+            "id": d.id, "status": d.status, "date": d.date,
+            "canAct": bool(can_act),
+            "taskId": d.task_id,
+            "taskName": (names.get((d.manager_id, d.leader_id)) or {}).get(d.task_id),
+            # The register's spelling first; the row's own stamp is the floor
+            # for a verdict whose source row has since been deleted.
+            "leader": _named(who.get("leader")) or d.leader_name,
+            "leaderId": d.leader_id,
+            "supervisor": _named(who.get("supervisor")),
+            "managerId": d.manager_id,
+            "shift": shifts.get(d.ref) or mgr_shift.get(d.manager_id),
+            "reason": d.reason,
+            "by": d.requested_by_name,
+            # WHOSE words the first note is. A row filed by a brigadir — the
+            # only route open to a leader who resolves to no profile — must not
+            # be printed as the leader's own account of their shift.
+            "byRole": (str(d.requested_by_profile or "").split(":")[0] or None),
+            "at": d.requested_at.isoformat() if d.requested_at else None,
+            # None when the note merely echoes the text the row was FILED with
+            # — see `leader_dispute.sup_case`. One sentence must never appear
+            # twice as two different people's accounts.
+            "sup": {
+                "action": d.sup_action, "note": leader_dispute.sup_case(d),
+                "by": d.sup_by_name,
+                "at": d.sup_at.isoformat() if d.sup_at else None,
+            } if d.sup_action else None,
+            "decidedBy": d.decided_by_name,
+            "decidedAt": d.decided_at.isoformat() if d.decided_at else None,
+            "note": d.decision_note,
+            "uid": uids.get(d.ref),
+            "verdict": verdicts.get(d.ref),
+        })
+    _attach_chat(db, payload, leader_appeal_chat.DISPUTE, items)
+    return items
+
+
+def _attach_chat(db: Session, payload: dict, thread: str, items: list[dict]) -> None:
+    """Hang each card's chat summary on it — count, newest entry, unread for
+    this PERSON — in three queries for the whole list, never one per card."""
+    if not items:
+        return
+    ids = [it["id"] for it in items]
+    summ = leader_appeal_chat.summaries(db, thread, ids)
+    unread = leader_appeal_chat.unread(db, thread, ids,
+                                       identity.viewer_profile_key(db, payload))
+    for it in items:
+        s = summ.get(it["id"]) or {"count": 0, "last": None}
+        it["chat"] = {**s, "unread": int(unread.get(it["id"], 0))}
+
+
 @router.get("/leaders/disputes")
 def list_disputes(
     status: str | None = Query(None),
@@ -1706,86 +1818,8 @@ def list_disputes(
         else:
             return empty
     rows = q.order_by(LeaderAiDispute.id.desc()).limit(DISPUTE_CAP).all()
-    uids = leader_reports.uids_of_refs(db, [r.ref for r in rows])
-
-    # The verdict under objection. Local import: routers/leader_ai imports this
-    # module back for `supersede_dispute`.
-    from app.routers.leader_ai import (
-        _as_verdict, _date_check, _date_plus, _day_check, _project, _task_cfg, _time_check,
-        _window,
-    )
-    revs = (db.query(LeaderAiReview)
-            .filter(LeaderAiReview.ref.in_({d.ref for d in rows})).all()) if rows else []
-    # Loaded off `rows`, not off `revs`: a verdict «stop and clear» deleted
-    # leaves its dispute standing, and that card still has to name its task.
-    cfg = _task_cfg(db, revs) if rows else None
-    verdicts = {r.ref: _as_verdict(r, _window(cfg, r), _date_check(cfg, r),
-                                   _time_check(cfg, r), _date_plus(cfg, r),
-                                   _day_check(cfg, r))
-                for r in revs}
-    shifts = {r.ref: r.shift for r in revs}
-    proj = _project(db, revs)
-
-    # Task names in all four languages — the card is read by the same people in
-    # the same four languages as the report behind it, and a unit that renamed
-    # a task must not read its old wording here.
-    names = leader_reports.names_for_pairs(
-        db, {(d.manager_id, d.leader_id) for d in rows}, (cfg[0] if cfg else {}))
-    mgr_shift = ({m.id: m.shift for m in db.query(Manager).all()} if rows else {})
-
-    # `_project` fills an unresolvable name with an em dash rather than a null,
-    # so read it as blank here — otherwise the placeholder wins over the name
-    # the dispute row stamped when it was filed.
-    def _named(v):
-        v = (v or "").strip()
-        return v if v and v != "\u2014" else None
-
-    items = []
-    todo = 0
-    for d in rows:
-        who = proj.get(d.ref) or {}
-        sup_ok, adm_ok = _dispute_stage_rights(payload, d)
-        # Whether THIS caller may rule on THIS row, by the same predicate the
-        # write re-checks. Deriving it from page-level flags is a different
-        # question: a supervisor holding the page at scope «all» is served
-        # every unit's rows, and every foreign card would grow buttons that
-        # answer 403.
-        can_act = ((d.status == leader_dispute.SUPERVISOR and sup_ok)
-                   or (d.status == leader_dispute.ADMIN and adm_ok))
-        todo += 1 if can_act else 0
-        items.append({
-            "id": d.id, "status": d.status, "date": d.date,
-            "canAct": bool(can_act),
-            "taskId": d.task_id,
-            "taskName": (names.get((d.manager_id, d.leader_id)) or {}).get(d.task_id),
-            # The register's spelling first; the row's own stamp is the floor
-            # for a verdict whose source row has since been deleted.
-            "leader": _named(who.get("leader")) or d.leader_name,
-            "leaderId": d.leader_id,
-            "supervisor": _named(who.get("supervisor")),
-            "managerId": d.manager_id,
-            "shift": shifts.get(d.ref) or mgr_shift.get(d.manager_id),
-            "reason": d.reason,
-            "by": d.requested_by_name,
-            # WHOSE words the first note is. A row filed by a brigadir — the
-            # only route open to a leader who resolves to no profile — must not
-            # be printed as the leader's own account of their shift.
-            "byRole": (str(d.requested_by_profile or "").split(":")[0] or None),
-            "at": d.requested_at.isoformat() if d.requested_at else None,
-            # None when the note merely echoes the text the row was FILED with
-            # — see `leader_dispute.sup_case`. One sentence must never appear
-            # twice as two different people's accounts.
-            "sup": {
-                "action": d.sup_action, "note": leader_dispute.sup_case(d),
-                "by": d.sup_by_name,
-                "at": d.sup_at.isoformat() if d.sup_at else None,
-            } if d.sup_action else None,
-            "decidedBy": d.decided_by_name,
-            "decidedAt": d.decided_at.isoformat() if d.decided_at else None,
-            "note": d.decision_note,
-            "uid": uids.get(d.ref),
-            "verdict": verdicts.get(d.ref),
-        })
+    items = _dispute_items(db, payload, rows)
+    todo = sum(1 for it in items if it["canAct"])
     return {
         "canDecide": can_decide,
         # What the two stages look like to this caller at all — the row's own
