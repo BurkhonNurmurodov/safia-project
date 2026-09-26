@@ -163,7 +163,7 @@ async def lifespan(app: FastAPI):
         purge_leader_ai_history,
         drop_paused_shift_reviews,
         queue_shift2_backlog,
-        report_duplicate_users_oneshot,
+        fix_nodirjon_leader_unit,
     )
     # ⚠ TEMPORARY one-shot — remove this import with its module in the NEXT
     # version. Its own file, so removal is a delete rather than surgery here.
@@ -544,10 +544,12 @@ async def lifespan(app: FastAPI):
     # Remove with them.
     preview_leader_rules_sep19()
     patch_task10_description_sep19()
-    
-    # Send duplicate users report for Turdimurodov
-    report_duplicate_users_oneshot()
-    
+    # ⚠ TEMPORARY one-shot (2026-09-26) — Turdimurodov Nodirjon's checklist
+    # days stamped with Aripova Manzura's unit go back to his own unit. Inline
+    # and flag-guarded. Remove this line, `startup.fix_nodirjon_leader_unit`
+    # and `services/leader_unit_fix_sep26.py` once its flag reads «done».
+    fix_nodirjon_leader_unit()
+
     yield
     shutdown_scheduler()
 

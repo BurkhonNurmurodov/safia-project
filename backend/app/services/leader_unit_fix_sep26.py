@@ -178,6 +178,11 @@ def apply(db: Session) -> dict:
     return out
 
 
+_SIDE_UZ = {"verdicts": "AI xulosalari", "objections": "norozliklar",
+            "reports": "hisobotlar", "late_proofs": "kechikkan isbotlar",
+            "auto_checks": "avto tekshiruvlar", "exclusions": "istisnolar"}
+
+
 def message(out: dict) -> str:
     """The operator's DM, in Uzbek Latin like every other boot report."""
     def dm(d: str) -> str:
@@ -193,7 +198,8 @@ def message(out: dict) -> str:
             code + ("" if here else " (boshqa bo'linmada!)")
             for code, here in out["cells"]))
     if out["moved"]:
-        side = ", ".join(f"{k}: {v}" for k, v in out["side"].items())
+        side = ", ".join(f"{_SIDE_UZ.get(k, k)}: {v}"
+                         for k, v in out["side"].items())
         lines.append(
             f"«{out['wrong']}» bo'linmasi yozilgan {len(out['moved'])} kuni o'z "
             f"bo'linmasiga ko'chirildi: " + ", ".join(dm(d) for d in out["moved"])

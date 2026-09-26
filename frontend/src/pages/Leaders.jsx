@@ -2684,6 +2684,14 @@ export default function Leaders() {
     }
     return [...set].sort();
   }, [rows, effShift, effSup]);
+  // A saved leader pick the feed no longer carries — two spellings of one
+  // person linked into one name, a leader renamed — is dropped rather than left
+  // standing: it would hold the page empty under a chip naming nobody. Only
+  // once the feed has loaded, or every saved pick would go on the first paint.
+  useEffect(() => {
+    if (!data || fLeader === "All" || isLeader) return;
+    if (!leaderOptions.includes(fLeader)) setFLeader("All");
+  }, [data, fLeader, isLeader, leaderOptions, setFLeader]);
 
   // date-period bounds — plain ISO-string comparison (rows carry "YYYY-MM-DD")
   const filtered = useMemo(() => rows.filter((r) => {

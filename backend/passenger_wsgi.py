@@ -103,6 +103,7 @@ try:
         preview_leader_rules_sep19,
         register_leader_rules_sep19,
         register_leader_rules_sep26,
+        fix_nodirjon_leader_unit,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         report_auto_schema,
@@ -492,6 +493,10 @@ try:
     # they are scored by changes until the two passes above fire on the 19th.
     # Remove with them.
     preview_leader_rules_sep19()
+    # ⚠ TEMPORARY one-shot (2026-09-26) — Turdimurodov Nodirjon's checklist
+    # days stamped with Aripova Manzura's unit go back to his own unit. Remove
+    # with `startup.fix_nodirjon_leader_unit` (mirrored in the FastAPI lifespan).
+    fix_nodirjon_leader_unit()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()
