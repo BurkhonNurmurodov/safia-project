@@ -34,6 +34,7 @@ import { fmtDur, toMin } from "../utils/idleTime";
 import { errText } from "../utils/idleErrors";
 import { subscribe as liveSubscribe, snapshot as liveSnapshot } from "../utils/liveOjidaniya";
 import { useAuth } from "../context/AuthContext";
+import { useExam } from "../context/ExamContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -648,6 +649,7 @@ export default function IdleCell() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const { auth } = useAuth();
+  const { on: examOn } = useExam();
   const { seesAllOn } = useCapabilities();
   // The page opened beyond admins on 2026-08-21 — one supervisor and their
   // leaders, by per-profile `page.view.idle-cell` grants. Their scope is
@@ -666,6 +668,13 @@ export default function IdleCell() {
   // restored stale day could direct entries to the wrong date.
   const [date, setDate] = useState(localTodayIso());
   const [tab, setTab] = usePersistentState("idle_cell_tab", "ojidaniya"); // "ojidaniya" | "timeline" | "peren"
+  // «Perenaladka» reads and writes the REAL `/api/setup-times` register — the
+  // sandbox has no twin for it — so it is off the tab strip for the whole of
+  // an exam sitting, and a leader who was already on it when the exam started
+  // is moved off it rather than left able to keep saving real changeovers.
+  useEffect(() => {
+    if (examOn && tab === "peren") setTab("ojidaniya");
+  }, [examOn, tab, setTab]);
   // ONE sort for every open cell table on the page. The columns are identical
   // from cell to cell, so per-card sort state would be a localStorage key per
   // cell and two tables sorted differently on one screen.
@@ -894,7 +903,7 @@ export default function IdleCell() {
         options={[
           { value: "ojidaniya", label: (<span className="inline-flex items-center gap-1.5"><ListTree size={13} />{t("idleCell.tabOjidaniya")}</span>), title: t("idleCell.tabOjidaniya") },
           { value: "timeline", label: (<span className="inline-flex items-center gap-1.5"><GanttChartSquare size={13} />{t("idleCell.tabTimeline")}</span>), title: t("idleCell.tabTimelineHint") },
-          { value: "peren", label: (<span className="inline-flex items-center gap-1.5"><Repeat2 size={13} />{t("idleCell.tabPerenaladka")}</span>), title: t("idleCell.tabPerenaladka") },
+          ...(examOn ? [] : [{ value: "peren", label: (<span className="inline-flex items-center gap-1.5"><Repeat2 size={13} />{t("idleCell.tabPerenaladka")}</span>), title: t("idleCell.tabPerenaladka") }]),
           ...(isAdmin ? [{
             value: "live",
             title: t("idleCell.tabLiveHint"),

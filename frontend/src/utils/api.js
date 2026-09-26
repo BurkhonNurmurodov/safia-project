@@ -1,5 +1,5 @@
 import axios from "axios";
-import { examAttemptId, rewriteExamUrl, noteExamMutation } from "./examMode";
+import { examAttemptId, rewriteExamUrl, noteExamMutation, examWriteAllowed } from "./examMode";
 import { clearToken, getToken, isWebSession } from "./session";
 import { noteServerHeaders } from "./compat";
 
@@ -77,9 +77,41 @@ api.interceptors.request.use((config) => {
   if (examId) {
     config.url = rewriteExamUrl(config.url);
     config.headers["X-Exam-Attempt"] = String(examId);
+    // The write-guard: a non-GET call that is still a REAL `/api/` or
+    // `/admin/` endpoint after the rewrite above (the sandbox has no prefix
+    // for it, and it is not one of the few real doors an exam sitting cannot
+    // avoid — signing in, the heartbeat, a crash report…) is refused here,
+    // before it ever reaches the network. BOTH prefixes, because the backend
+    // mounts real mutating endpoints under either — the Leaders page's
+    // Refresh button posts to `/admin/refresh-sheet/leaders`, which a
+    // `/api/`-only guard let straight through to the real sheet sync in a
+    // browser test. The server carries the same rule as a backstop
+    // (ExamWriteGuardMiddleware) for whatever gets past this one.
+    const method = (config.method || "get").toLowerCase();
+    const url = config.url;
+    if (method !== "get" && method !== "head" && typeof url === "string" &&
+        (url.startsWith("/api/") || url.startsWith("/admin/")) &&
+        !examWriteAllowed(url)) {
+      return Promise.reject(examBlockError(config));
+    }
   }
   return config;
 });
+
+function examBlockError(config) {
+  const lang = (() => { try { return localStorage.getItem("lang"); } catch { return null; } })() || "uz";
+  const msg = {
+    uz: "Imtihon paytida haqiqiy ma'lumot o'zgartirilmaydi",
+    uz_cyrl: "Имтиҳон пайтида ҳақиқий маълумот ўзгартирилмайди",
+    ru: "Во время экзамена реальные данные не меняются",
+    en: "Real data cannot change during the exam",
+  }[lang] || "Imtihon paytida haqiqiy ma'lumot o'zgartirilmaydi";
+  const err = new Error(msg);
+  err.config = config;
+  err.isExamBlock = true;
+  err.response = { status: 403, data: { detail: msg } };
+  return err;
+}
 
 // Imunify360 WebShield (ahost's anti-bot layer) can intercept /api calls
 // mid-session and answer with its challenge page (HTML, or a bare 415 from

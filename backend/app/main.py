@@ -612,6 +612,14 @@ app.add_middleware(GhostModeMiddleware)
 from app.services.action_log import ActionLogMiddleware  # noqa: E402
 app.add_middleware(ActionLogMiddleware)
 
+# The dashboard exam's write-guard backstop: added AFTER ActionLogMiddleware,
+# so it wraps it and refuses a real-table write before that write is even
+# logged. The client already refuses to send these (utils/api.js); this is
+# what makes "nothing during an exam changes real data" true even when a page
+# the sandbox has not covered tries anyway. See app/services/exam_sandbox.py.
+from app.services.exam_sandbox import ExamWriteGuardMiddleware  # noqa: E402
+app.add_middleware(ExamWriteGuardMiddleware)
+
 
 class NoStoreAPIMiddleware:
     """Mark every API/auth response as non-cacheable.

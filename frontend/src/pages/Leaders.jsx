@@ -35,6 +35,7 @@ import { ReportPhoto, BotPhoto } from "../components/leaders/ProofPhoto";
 import { expectedLabel, reportState } from "../components/leaders/verifyState";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
+import { useExam } from "../context/ExamContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit, transliterate } from "../utils/transliterate";
@@ -2120,6 +2121,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
 // closed one there and from the sheet otherwise, scoped per role server-side.
 export default function Leaders() {
   const { auth } = useAuth();
+  const { on: examOn } = useExam();
   const { seesAllOn } = useCapabilities();
   const { lang } = useLang();
   const { tl } = useTranslit();
@@ -2145,7 +2147,11 @@ export default function Leaders() {
   // backend allows the "leaders" sheet re-sync for anyone with page access, and
   // each still only reads their own scoped rows afterwards. The sheet is still
   // the history behind both shifts, so both locked pages keep it.
-  const canRefresh = true;
+  // Hidden mid-exam: it re-syncs the REAL leaders sheet (`POST
+  // /admin/refresh-sheet/leaders`), which the sandbox has no twin for — the
+  // write guard would refuse the call anyway, but a button that visibly does
+  // nothing is worse than no button.
+  const canRefresh = !examOn;
   const pageTitle = T.title;
 
   // Filters persist across visits under the pre-split "leaders" prefix; the

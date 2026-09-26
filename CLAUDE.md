@@ -6518,8 +6518,15 @@ destination is `/admin/upload?tab=exam` (capability `admin.exam.manage`).
   (compared with a value computed AT CHECK TIME — from the sandbox, from real
   read-only data, or the app version), `ui` (the client's report of persisted
   page state: `usePersistentState` keys, `lang`, `theme`, `notif_read_ids`,
-  polled every 2 s and posted only when changed) and `visit` (a route). Evidence
-  counts only after the task was OPENED, so one concern cannot pass two tasks.
+  polled every 2 s and posted only when changed) and `visit` (a route).
+  **A `sandbox` check counts from the ATTEMPT's `seeded_at`, not from when the
+  task was opened** — every sandbox predicate names its own fixture (T1, C2,
+  W3…) or a signature no other task shares, so one record can never pass two
+  tasks, while a leader who reads ahead on `/exam` and acts on a fixture
+  before opening its task (or a closed, read-only concern acted on early)
+  must still be able to pass it. `ui` and `visit` checks still gate on
+  `opened_at`, since those ask about a CHOICE made for this task, not a
+  record that already exists.
 - **A task is UNAVAILABLE for a leader who cannot open its page** (`/leaders`,
   `/idle-cell` are per-profile grants — 15 tasks) or whose expected value
   cannot be computed (`no_data`); it is listed, marked, and out of the
@@ -6545,6 +6552,52 @@ destination is `/admin/upload?tab=exam` (capability `admin.exam.manage`).
   exam mode is the FIXTURE (any uid answers it); exports on sandboxed pages
   are refused; a sandbox never serves photo bytes (fixtures carry none).
   Sandboxes of finished exams are purged after 90 days (`purge_old`).
+- **Monitoring (`/leaders`) is sandboxed too, from 2026-09-26** —
+  `GET /api/leaders` → `sb.register_payload`, `GET /api/leader-ai/report` →
+  `sb.ai_report`, both under the plain `/api/leaders` prefix (it also covers
+  `/report/`, `/disputes`, `/late-proofs` beneath it, a path-boundary match).
+  The fixture is SIX checklist days (`REPORT_DAYS`, keyed by `days_ago`), one
+  history so the register row, its detail modal and the day-report page can
+  never print two different scores for one day: a rejected + missed day
+  (day 1, the leader's own), a clean day, an already-approved objection
+  (day 4, `fx="D1"`), a late-proof day (day 3) and a not-done day (day 6).
+  `report_uid` mints `exam-{id}` for day 1 and `exam-{id}-{k}` otherwise;
+  `report_days_ago` is the inverse. **`REPORT_DAYS[2]` and `[5]` are `{}` — a
+  genuinely CLEAN day, not a missing one** — so every reader of the map must
+  test membership (`k in REPORT_DAYS`), never truthiness: `day_report` once
+  read `REPORT_DAYS.get(k) or REPORT_DAYS[1]`, and `{} or REPORT_DAYS[1]`
+  falls through to day 1's rejected+missed spec because an empty dict is
+  falsy — so two clean days scored 100% (`_day_scores` indexed the map
+  directly and got it right) while their task list and register row still
+  named two tasks as failed. Fixed to `REPORT_DAYS[k] if k in REPORT_DAYS
+  else REPORT_DAYS[1]`.
+- **The write-guard is TWO locks, and both must cover `/admin/` as well as
+  `/api/`** (2026-09-26). `utils/api.js`'s interceptor refuses a non-GET call
+  that is still a REAL endpoint after `rewriteExamUrl` (not covered by
+  `SANDBOX_PREFIXES` and not in the small allowlist —
+  `services/exam_sandbox.EXAM_WRITE_ALLOW` / `examWriteAllowed` in
+  `examMode.js`: `/api/auth/`, `/api/activity/`, `/api/crash-report`,
+  `/api/boot`, `/api/education/progress`), and `ExamWriteGuardMiddleware`
+  backstops it server-side for whatever gets past the client. **This backend
+  mounts real mutating endpoints under `/admin/...` as well as `/api/...`**
+  (`routers/admin.py`, `routers/exam.py`'s own admin router) — a guard
+  written for `/api/` alone let the Leaders page's Refresh button
+  (`POST /admin/refresh-sheet/leaders`) straight through to the real sheet
+  sync in a browser test, on BOTH ends, because the client and server guards
+  shared the same blind spot. `canRefresh` on that page is also `!examOn`
+  now, and «Perenaladka» drops off `/idle-cell`'s tab strip during an exam
+  (real `/api/setup-times`, no sandbox twin) — belt and braces: the button
+  disappears, and the door behind it is shut either way.
+- **A tab closed WHILE sitting an exam must not strand the real filters it
+  parked** (2026-09-26). `sessionStorage` (the mode flag) does not survive
+  that, but `localStorage`'s `exam_parked` blob does — so `examMode.js` now
+  restores it the moment a fresh load finds no exam mode claiming it, and
+  `park()` restores-then-reparks rather than overwriting a `PARK_KEY` that is
+  already sitting there from a session that never called `leaveExamMode`.
+  The blob carries its OWN prefix list now (`{prefixes, values}`), so a
+  restore never depends on which list the CURRENT bundle happens to be
+  carrying — a leftover park from an older, shorter list is unparked by the
+  list it was parked with.
 
 ## Workflow
 

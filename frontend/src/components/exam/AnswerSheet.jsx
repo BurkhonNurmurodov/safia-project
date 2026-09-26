@@ -35,6 +35,19 @@ export default function AnswerSheet({ task }) {
     gcTime: 0,
   });
   const options = q.data?.options || null;
+  // An option is either a raw fixture string (transliterated, `tx`) or a
+  // `{value, labelKey, code}` object whose words live in the client bundle —
+  // a raw status key like «approved» or a bare category code like «Cat A»
+  // is not a word any real page shows, so the check's own labels ride here
+  // instead (backend/app/services/exam_check.py `_opt`).
+  const optValue = (o) => (o && typeof o === "object" ? String(o.value) : String(o));
+  const optLabel = (o) => {
+    if (o && typeof o === "object") {
+      const base = o.labelKey ? t(o.labelKey) : String(o.value);
+      return o.code ? `${o.code} · ${base}` : base;
+    }
+    return tx(String(o));
+  };
 
   // «not yet» — the context bumps `wrong` on a refused answer.
   const [seenWrong, setSeenWrong] = useState(exam.wrong);
@@ -57,7 +70,7 @@ export default function AnswerSheet({ task }) {
         <StyledSelect
           value={value}
           onChange={setValue}
-          options={(options || []).map((o) => ({ value: String(o), label: tx(String(o)) }))}
+          options={(options || []).map((o) => ({ value: optValue(o), label: optLabel(o) }))}
           placeholder={t("exam.sheet.pick")}
           searchable={(options || []).length > 8}
           className="w-full"
@@ -67,7 +80,7 @@ export default function AnswerSheet({ task }) {
     if (type === "multi") {
       const groups = [{
         key: "all", label: t("exam.sheet.pickMany"),
-        children: (options || []).map((o) => ({ key: String(o), label: tx(String(o)) })),
+        children: (options || []).map((o) => ({ key: optValue(o), label: optLabel(o) })),
       }];
       return <CheckboxTree groups={groups} selected={value} onChange={setValue} />;
     }

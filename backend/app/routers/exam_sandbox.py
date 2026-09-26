@@ -660,12 +660,24 @@ def idle_delete_legacy(eid: int, g=Depends(_gate)):
     raise HTTPException(status_code=403, detail="Only the unit's brigadir may retire a legacy row")
 
 
-# ── /leaders — report · objections · late proofs ─────────────────────────────
+# ── /leaders — the register, verdicts, report · objections · late proofs ────
+
+@router.get("/leaders")
+def leaders_register(g=Depends(_gate), db: Session = Depends(get_db)):
+    at, ctx = g
+    return sb.register_payload(ctx, db)
+
+
+@router.get("/leader-ai/report")
+def leaders_ai_report(uid: str = Query(...), g=Depends(_gate), db: Session = Depends(get_db)):
+    at, ctx = g
+    return sb.ai_report(ctx, db, uid)
+
 
 @router.get("/leaders/report/{uid}")
 def leaders_report(uid: str, g=Depends(_gate), db: Session = Depends(get_db)):
     at, ctx = g
-    return sb.day_report(ctx, db)
+    return sb.day_report(ctx, db, sb.report_days_ago(uid))
 
 
 @router.post("/leaders/report/{uid}/dispute")

@@ -37,9 +37,8 @@ SANDBOX_PREFIXES = [
     "/api/concerns",
     "/api/cell-concerns",
     "/api/idle-cell",
-    "/api/leaders/report/",
-    "/api/leaders/disputes",
-    "/api/leaders/late-proofs",
+    "/api/leaders",             # Monitoring's register AND /report /disputes /late-proofs under it
+    "/api/leader-ai/report",
     "/api/notifications",
     "/api/ui-prefs",
 ]
@@ -51,6 +50,30 @@ PARKED_KEYS = [
     "tasks_", "concerns_", "cellConcerns.", "idle_cell_", "leaders_",
     "zagruzka_heatmap_mode", "notif_read_ids", "education_",
 ]
+
+# The write-guard backstop (both ends — see ExamWriteGuardMiddleware below and
+# `frontend/src/utils/api.js`'s interceptor, which is the same list). While a
+# request carries X-Exam-Attempt, every non-GET call under /api/ must either
+# land under /api/exam/ (the sandbox, or the exam engine itself) or be one of
+# these — real doors an exam sitting cannot avoid touching that write nothing
+# a leader's exam could corrupt: signing in, the language switch, the
+# heartbeat, a lesson's watch progress, and the client's own crash report.
+# Everything else is refused rather than reaching a real table, because
+# "nothing a leader does during an exam may change real data" is structural,
+# not a promise every page's wiring has to keep correctly on its own.
+EXAM_WRITE_ALLOW = (
+    "/api/auth/",
+    "/api/activity/",
+    "/api/crash-report",
+    "/api/boot",
+    "/api/education/progress",
+)
+
+
+def exam_write_allowed(path: str) -> bool:
+    if path.startswith("/api/exam/"):
+        return True
+    return any(path.startswith(p) for p in EXAM_WRITE_ALLOW)
 
 UNIT_ID = 999901
 UNIT_NAME = "Imtihon brigadasi"
@@ -206,7 +229,7 @@ def seed(db: Session, ctx: Ctx) -> None:
         ("T2", "SOP bo'yicha smena topshirish",              1,    "todo",  0,  1.5, None),
         ("T3", "Xamir aralashtirgichni tozalash",            None, "todo",  3,  3.0, None),
         ("T4", "Sovutgich haroratini yozib borish",          None, "todo", -2,  5.0, None),
-        ("T5", "Yangi ishchiga yo'riqnoma o'tkazish",        None, "done", -1,  4.0, 1.0),
+        ("T5", "Yangi ishchiga yo'riqnoma o'tkazish",        None, "done",  2,  4.0, 1.0),
         ("T6", "Ombor bilan qadoq materialini kelishish",    None, "todo",  5,  2.5, None),
     ]
     for fx, text, prio, status, due_days, created_days, completed_days in tasks:
@@ -235,9 +258,13 @@ def seed(db: Session, ctx: Ctx) -> None:
         ("W3", "Tarozi noto'g'ri ko'rsatmoqda",      "doing", "leader",     "ars",       "9901", WORKERS[2], 2, 2, 1, None),
         ("W4", "Ish kiyimi berilmadi",               "done",  "leader",     "hr",        "9901", WORKERS[0], 4, 1, 3, 2),
     ]
-    seq = 0
+    # The № a concern carries is its place in FILING order, exactly as on the
+    # real register — oldest first. Numbered in list order it said C1 came
+    # first while the dates (and the t16 answer) said C3 did.
+    order = sorted(range(len(concerns)), key=lambda i: (-concerns[i][7], i))
+    seq_of = {concerns[i][0]: n + 1 for n, i in enumerate(order)}
     for (fx, text, status, level, cat, cell, worker, entry_days, dl, dl_from, comp) in concerns:
-        seq += 1
+        seq = seq_of[fx]
         data = {
             "fx": fx, "seq": seq, "concern_text": text, "status": status, "level": level,
             "category": cat, "cell_code": cell, "worker_name": worker,
@@ -285,17 +312,21 @@ def seed(db: Session, ctx: Ctx) -> None:
         "byRole": "leader",
     })
     # The bell: three rows, negative ids on the wire.
+    t1 = tasks[0][1]
+    c4 = next(c for c in concerns if c[0] == "C4")
+    c4_line = f"№{seq_of['C4']} · {c4[1]}"
+    ask = "Nechta odamga kerak?"
     bell = [
         ({"uz": "Yangi vazifa", "uz_cyrl": "Янги вазифа", "ru": "Новая задача", "en": "New task"},
-         {"uz": f"📌 Vazifa: Pech zichlagichlarini tekshirish\n👤 Berdi: {BRIGADIR}",
-          "uz_cyrl": f"📌 Вазифа: Печ зичлагичларини текшириш\n👤 Берди: {BRIGADIR}",
-          "ru": f"📌 Задача: Проверить уплотнители печи\n👤 Поставил: {BRIGADIR}",
-          "en": f"📌 Task: Check the oven seals\n👤 Set by: {BRIGADIR}"}, "info", 2.0),
-        ({"uz": "Xavotirga javob", "uz_cyrl": "Хавотирга жавоб", "ru": "Ответ на замечание", "en": "Reply to your concern"},
-         {"uz": f"№4 · Ishchilarga qo'lqop yetishmaydi\n💬 {BRIGADIR}: «Nechta odamga kerak?»",
-          "uz_cyrl": f"№4 · Ишчиларга қўлқоп етишмайди\n💬 {BRIGADIR}: «Нечта одамга керак?»",
-          "ru": f"№4 · Рабочим не хватает перчаток\n💬 {BRIGADIR}: «На сколько человек нужно?»",
-          "en": f"№4 · Workers lack gloves\n💬 {BRIGADIR}: «For how many people?»"}, "info", 0.6),
+         {"uz": f"📌 Vazifa: {t1}\n👤 Berdi: {BRIGADIR}",
+          "uz_cyrl": f"📌 Вазифа: {t1}\n👤 Берди: {BRIGADIR}",
+          "ru": f"📌 Задача: {t1}\n👤 Поставил: {BRIGADIR}",
+          "en": f"📌 Task: {t1}\n👤 Set by: {BRIGADIR}"}, "info", 2.0),
+        ({"uz": "Xavotirga izoh", "uz_cyrl": "Хавотирга изоҳ", "ru": "Комментарий к обеспокоенности", "en": "A comment on your concern"},
+         {"uz": f"{c4_line}\n💬 {BRIGADIR}: «{ask}»",
+          "uz_cyrl": f"{c4_line}\n💬 {BRIGADIR}: «{ask}»",
+          "ru": f"{c4_line}\n💬 {BRIGADIR}: «{ask}»",
+          "en": f"{c4_line}\n💬 {BRIGADIR}: «{ask}»"}, "info", 0.6),
         ({"uz": "Kun tasdiqlandi — 62%", "uz_cyrl": "Кун тасдиқланди — 62%", "ru": "День подтверждён — 62%", "en": "Day verified — 62%"},
          {"uz": "Kechagi hisobotingiz tekshirildi: topshirilgan 85% → tasdiqlangan 62%",
           "uz_cyrl": "Кечаги ҳисоботингиз текширилди: топширилган 85% → тасдиқланган 62%",
@@ -330,7 +361,15 @@ def task_row(ctx: Ctx, r: ExamSandboxRow, comment_count: int) -> dict:
     d = r.data
     created = rel_dt(d, "created_at")
     completed = rel_dt(d, "completed_at")
-    due = rel_date(d, "due") if "due_days" in d or "due" in d else None
+    # `due_days` counts days AHEAD (negative = past), the opposite of every
+    # other `*_days` key, which counts days ago — so it cannot go through
+    # rel_date. Read through rel_date it put the three future tasks in the past
+    # and the one overdue task two days ahead, contradicting t04.
+    due = None
+    if d.get("due"):
+        due = rel_date(d, "due")
+    elif d.get("due_days") is not None:
+        due = today_local() + timedelta(days=int(d["due_days"]))
     return {
         "id": r.id, "assignee_kind": "leader", "assignee_name": ctx.leader_name,
         "leader_profile_id": ctx.leader_profile_id, "leader_name": ctx.leader_name,
@@ -586,8 +625,39 @@ OK_REASON = {"uz": "Isbot talabga mos", "uz_cyrl": "Исбот талабга м
 NODATE_REASON = {"uz": "Rasmda sana ko'rinmaydi", "uz_cyrl": "Расмда сана кўринмайди", "ru": "На фото не видно даты", "en": "No date is visible on the photo"}
 
 
-def report_uid(ctx: Ctx) -> str:
-    return f"exam-{ctx.attempt_id}"
+# The fictional leader's last six checklist days, as the register and every day
+# report tell them — ONE history, so «yesterday's report» reads the same on the
+# Monitoring row, in its detail modal and on the report page. Day 1 is the
+# report the leaders tasks ask about; day 3 holds the late proof, day 4 the
+# objection upheld three days ago.
+REPORT_DAYS = {
+    1: {"rejected": {REPORT_REJECTED_TASK}, "missed": {REPORT_MISSED_TASK: "18:00"}},
+    2: {},
+    3: {"missed": {LATE_PROOF_TASK: "12:00"}},
+    4: {"approved": {DISPUTE_FX_TASK}},
+    5: {},
+    6: {"notdone": {12: "Uskuna ta'mirda edi"}},
+}
+
+
+def report_uid(ctx: Ctx, days_ago: int = 1) -> str:
+    return f"exam-{ctx.attempt_id}" if days_ago == 1 else f"exam-{ctx.attempt_id}-{days_ago}"
+
+
+def report_days_ago(uid: str) -> int:
+    """Which fixture day a report uid names. Anything else — a real uid from a
+    link opened before the mode was on — reads as yesterday's."""
+    m = re.fullmatch(r"exam-\d+-(\d+)", uid or "")
+    k = int(m.group(1)) if m else 1
+    return k if k in REPORT_DAYS else 1
+
+
+def _day_scores(days_ago: int) -> tuple[int, int]:
+    """(submitted, verified) for one fixture day, off the same weights."""
+    spec = REPORT_DAYS[days_ago]
+    off = set(spec.get("missed", {})) | set(spec.get("notdone", {}))
+    raw = sum(w for i, w in REPORT_WEIGHTS.items() if i not in off)
+    return raw, raw - sum(REPORT_WEIGHTS[i] for i in spec.get("rejected", ()))
 
 
 def leader_dispute_rows(db: Session, attempt_id: int) -> list[ExamSandboxRow]:
@@ -610,41 +680,102 @@ def dispute_out(ctx: Ctx, r: ExamSandboxRow) -> dict:
     }
 
 
-def day_report(ctx: Ctx, db: Session) -> dict:
-    yday = today_local() - timedelta(days=1)
+def day_report(ctx: Ctx, db: Session, days_ago: int = 1) -> dict:
+    # `REPORT_DAYS[2]` and `[5]` are `{}` — a genuinely CLEAN day, not a
+    # missing one — so this must test membership, never truthiness: `{} or
+    # REPORT_DAYS[1]` falls through to day 1's rejected+missed spec because an
+    # empty dict is falsy, which marked two clean days' tasks as failed in the
+    # register while `_day_scores` (indexed the same way but directly) still
+    # scored them 100% — a score and a task list disagreeing about one day.
+    spec = REPORT_DAYS[days_ago] if days_ago in REPORT_DAYS else REPORT_DAYS[1]
+    day = today_local() - timedelta(days=days_ago)
     names = checklist_names(db)
-    disputes = {r.data.get("task_id"): r for r in leader_dispute_rows(db, ctx.attempt_id)}
+    mine = {r.data.get("task_id"): r for r in leader_dispute_rows(db, ctx.attempt_id)} if days_ago == 1 else {}
+    fx_dispute = fx_row(db, ctx.attempt_id, "dispute", "D1") if spec.get("approved") else None
     tasks = []
     for i in range(1, 14):
-        w = REPORT_WEIGHTS[i]
         t = {
-            "id": i, "name": names[i], "note": {l: "" for l in LANGS}, "weight": w,
+            "id": i, "name": names[i], "note": {l: "" for l in LANGS}, "weight": REPORT_WEIGHTS[i],
             "answered": True, "done": True, "reason": "", "photo": "", "media": [],
             "ai_rejected": False, "admin_done": None, "admin_by": None, "admin_at": None,
             "auto": False, "queued": False, "dispute": None, "review": None,
         }
-        if i == REPORT_MISSED_TASK:
-            t.update({"done": False, "reason": "__missed__|18:00"})
-        elif i == REPORT_REJECTED_TASK:
+        if i in spec.get("missed", {}):
+            t.update({"done": False, "reason": f"__missed__|{spec['missed'][i]}"})
+        elif i in spec.get("notdone", {}):
+            t.update({"done": False, "reason": spec["notdone"][i]})
+        elif i in spec.get("rejected", ()):
             t.update({"ai_rejected": True,
-                      "review": _verdict("flagged", ["not_proven"], REJECT_REASON, yday)})
-            if i in disputes:
-                t["dispute"] = dispute_out(ctx, disputes[i])
+                      "review": _verdict("flagged", ["not_proven"], REJECT_REASON, day)})
+            if i in mine:
+                t["dispute"] = dispute_out(ctx, mine[i])
+        elif i in spec.get("approved", ()):
+            t["review"] = _verdict("flagged", ["no_date"], NODATE_REASON, day, resolution="approved")
+            if fx_dispute is not None:
+                t["dispute"] = dispute_out(ctx, fx_dispute)
         else:
-            t["review"] = _verdict("ok", [], OK_REASON, yday)
+            t["review"] = _verdict("ok", [], OK_REASON, day)
         tasks.append(t)
+    raw, score = _day_scores(days_ago if days_ago in REPORT_DAYS else 1)
+    reviewed = sum(1 for t in tasks if t["review"])
     return {
-        "uid": report_uid(ctx), "date": yday.isoformat(), "cell": CELLS[0]["code"], "cellId": None,
+        "uid": report_uid(ctx, days_ago), "date": day.isoformat(), "cell": CELLS[0]["code"], "cellId": None,
         "shift": ctx.shift, "source": "bot",
-        "submittedAt": iso(datetime.combine(yday, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=14)),
+        "submittedAt": iso(datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=14)),
         "leader": ctx.leader_name, "leaderId": ctx.leader_profile_id,
         "supervisor": BRIGADIR, "managerId": UNIT_ID,
         "voided": False, "excluded": None, "lateState": None, "lateBy": None, "lateReason": None,
         "auto": True, "autoFrom": "2026-08-13",
-        "score": REPORT_SCORE, "completion": float(REPORT_SCORE), "rawScore": REPORT_RAW,
-        "counts": {"total": 13, "checked": 12, "rejected": 1, "errors": 0, "pending": 0},
-        "canDispute": True, "canSupervise": False, "canDecide": False, "viewerRole": "leader",
+        "score": score, "completion": float(score), "rawScore": raw,
+        "counts": {"total": 13, "checked": reviewed, "rejected": len(spec.get("rejected", ())),
+                   "errors": 0, "pending": 0},
+        "canDispute": days_ago == 1, "canSupervise": False, "canDecide": False, "viewerRole": "leader",
         "tasks": tasks,
+    }
+
+
+def ai_report(ctx: Ctx, db: Session, uid: str) -> dict:
+    """GET /api/leader-ai/report for a fixture day — the verdicts its report
+    carries, keyed by task id, the shape the Monitoring detail modal reads."""
+    rep = day_report(ctx, db, report_days_ago(uid))
+    return {"enabled": True, "tasks": {str(t["id"]): t["review"] for t in rep["tasks"] if t["review"]}}
+
+
+def register_payload(ctx: Ctx, db: Session) -> dict:
+    """GET /api/leaders (Monitoring) for the fictional leader: their last six
+    checklist days, each one a report the sandbox also answers, so the
+    register, its detail modal and the report page state one history. Served
+    to the leader alone — the fictional unit has no other leader to rank."""
+    rows = []
+    open_disputes = sum(1 for r in leader_dispute_rows(db, ctx.attempt_id)
+                        if r.data.get("status") in ("supervisor", "admin"))
+    for k in sorted(REPORT_DAYS):
+        rep = day_report(ctx, db, k)
+        flagged = sum(1 for t in rep["tasks"] if t["review"] and t["review"]["status"] == "flagged")
+        open_ = sum(1 for t in rep["tasks"] if t["review"] and t["review"]["status"] == "flagged"
+                    and not t["review"]["resolution"])
+        rows.append({
+            "uid": rep["uid"], "source": "bot", "date": rep["date"], "submitted_at": rep["submittedAt"],
+            "supervisor": BRIGADIR, "shift": ctx.shift,
+            "leader_id": ctx.leader_profile_id, "leader": ctx.leader_name,
+            "cell_id": None, "cell": None,
+            "completion": float(rep["score"]),
+            "rejected": False, "late_state": None, "excluded": None,
+            "tasks": [{"id": t["id"], "done": t["done"], "answered": True, "reason": t["reason"],
+                       "media": [], "cam": [], "photos": 0,
+                       **({"ai_rejected": True} if t["ai_rejected"] else {})}
+                      for t in rep["tasks"]],
+            "ai": {"checked": rep["counts"]["checked"], "flagged": flagged, "open": open_,
+                   "pending": 0, "error": 0, "disputed": open_disputes if k == 1 else 0},
+        })
+    return {
+        "role": "leader", "last_synced": None, "data": rows,
+        "roster": [{
+            "id": ctx.leader_profile_id, "name": ctx.leader_name, "manager_id": UNIT_ID,
+            "supervisor": BRIGADIR, "shift": ctx.shift, "cell_from": None,
+            "cells": [{"id": None, "code": c["code"]} for c in CELLS], "cutoff": None,
+        }],
+        "cutoffs": {}, "cutUnits": {}, "can_request_late": False, "can_decide_late": False,
     }
 
 
@@ -661,7 +792,8 @@ def disputes_payload(ctx: Ctx, db: Session) -> dict:
         items.append({
             **base, "date": day.isoformat(), "taskId": tid, "taskName": names.get(tid, names[1]),
             "leader": ctx.leader_name, "leaderId": ctx.leader_profile_id,
-            "supervisor": BRIGADIR, "shift": ctx.shift, "uid": report_uid(ctx), "verdict": verdict,
+            "supervisor": BRIGADIR, "shift": ctx.shift,
+            "uid": report_uid(ctx, 4 if d.get("fx") else 1), "verdict": verdict,
         })
     return {"canDecide": False, "canSupervise": False, "canApprove": False, "todo": 0, "items": items}
 
@@ -680,7 +812,7 @@ def late_proofs_payload(ctx: Ctx, db: Session) -> dict:
             "taskName": names[LATE_PROOF_TASK], "leader": ctx.leader_name,
             "leaderId": ctx.leader_profile_id, "supervisor": BRIGADIR, "managerId": UNIT_ID,
             "deadline": "12:00", "reason": "Telefon o'chib qoldi, rasmni keyin yubordim",
-            "uid": report_uid(ctx), "at": at.isoformat(), "dueAt": due.isoformat(), "lateMin": 47,
+            "uid": report_uid(ctx, 3), "at": at.isoformat(), "dueAt": due.isoformat(), "lateMin": 47,
             "photos": [], "sup": None, "adm": None,
         }],
     }
@@ -699,3 +831,41 @@ def notification_json(r: ExamSandboxRow, lang: str) -> dict:
         "body": pick(d.get("body") or {}, lang), "type": d.get("type") or "info",
         "created_at": iso(rel_dt(d, "created_at")),
     }
+
+
+# ── the write-guard backstop (server end) ────────────────────────────────────
+
+class ExamWriteGuardMiddleware:
+    """Refuses any non-GET `/api/` OR `/admin/` request carrying
+    `X-Exam-Attempt` unless it is one of the doors `exam_write_allowed` names.
+    Both prefixes, because this backend mounts real mutating endpoints under
+    EITHER — `routers/admin.py` and `routers/exam.py`'s own admin router live
+    at `/admin/...`, not `/api/admin/...` (the Leaders page's Refresh button
+    posts to `/admin/refresh-sheet/leaders`, found reaching the real sheet
+    sync in a browser test before this middleware covered it). The client-side
+    interceptor (utils/api.js) is the same rule and is what actually stops
+    these requests from being sent in the ordinary case; this is the backstop
+    for a page the sandbox has not (yet) covered, a stale bundle, or a client
+    bypassed some other way — a leader's exam must never be able to touch a
+    real table, and that has to hold even when one side of the pair is wrong.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            return await self.app(scope, receive, send)
+        method = scope.get("method", "GET").upper()
+        path = scope.get("path", "")
+        guarded = path.startswith("/api/") or path.startswith("/admin/")
+        if method not in ("GET", "HEAD", "OPTIONS") and guarded:
+            headers = dict(scope.get("headers") or [])
+            if headers.get(b"x-exam-attempt") and not exam_write_allowed(path):
+                from starlette.responses import JSONResponse
+                resp = JSONResponse(
+                    {"detail": "Nothing during an exam may write to a real resource"},
+                    status_code=403,
+                )
+                return await resp(scope, receive, send)
+        return await self.app(scope, receive, send)

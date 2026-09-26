@@ -71,7 +71,7 @@ TASKS = [
     _t(22, "cell_concerns", 2, "sandbox", "cell-concerns", check={"op": "concern_created", "level": "leader"}),
     # ── D · Ojidaniya (/idle-cell) ─────────────────────────────────────────
     _t(23, "idle", 1, "sandbox", "idle-cell", check={"op": "idle_entry", "cell": "9901", "start": "11:00", "end": "11:25", "cats": ["Cat D3"]}),
-    _t(24, "idle", 2, "sandbox", "idle-cell", check={"op": "idle_entry", "cell": "9901", "start": "14:05", "end": "14:20", "cats": ["Cat E", "Cat D"]}),
+    _t(24, "idle", 2, "sandbox", "idle-cell", check={"op": "idle_entry", "cell": "9901", "start": "14:05", "end": "14:20", "cats": ["Cat E"]}),
     _t(25, "idle", 2, "sandbox", "idle-cell", check={"op": "idle_entry", "cell": "9901", "start": "09:30", "end": "09:38", "cats": ["Cat I"]}),
     _t(26, "idle", 1, "answer",  "idle-cell", {"type": "number"}, {"op": "idle_union_today", "cell": "9901"}),
     _t(27, "idle", 2, "sandbox", "idle-cell", check={"op": "idle_entry", "cell": "9902", "start": "16:10", "end": "16:22", "note": ["ombor", "омбор"]}),
@@ -81,7 +81,7 @@ TASKS = [
     _t(30, "leaders", 2, "answer", "leaders", {"type": "number"}, {"op": "req_min_media", "task_id": 3}),
     _t(31, "leaders", 2, "answer", "leaders", {"type": "time"},   {"op": "req_closes", "task_id": 13}),
     _t(32, "leaders", 1, "answer", "leaders", {"type": "choice"}, {"op": "fx_report_rejected"}),
-    _t(33, "leaders", 2, "sandbox", "leaders", check={"op": "dispute_filed", "task_id": 5, "min_len": 10}),
+    _t(33, "leaders", 2, "sandbox", "leaders", check={"op": "dispute_filed", "task_id": 5, "min_len": 3}),
     _t(34, "leaders", 2, "answer", "leaders", {"type": "choice"}, {"op": "fx_dispute_outcome"}),
     _t(35, "leaders", 1, "answer", "leaders", {"type": "number"}, {"op": "const_number", "value": 62}),
     _t(36, "leaders", 2, "answer", "leaders", {"type": "choice"}, {"op": "fx_late_proof_holder"}),

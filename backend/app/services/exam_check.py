@@ -110,6 +110,20 @@ def availability(db: Session, payload: dict, attempt: ExamAttempt, task: dict,
 
 # ── expected values ───────────────────────────────────────────────────────────
 
+def _opt(value: str, label_key: str, code: Optional[str] = None) -> dict:
+    """A choice whose words live in the client bundle: the VALUE is what the
+    check compares, the label key what the sheet prints (AnswerSheet.jsx). A
+    raw status key («approved», «supervisor») is not a word any page shows."""
+    out = {"value": value, "labelKey": label_key}
+    if code:
+        out["code"] = code
+    return out
+
+
+def _cat_code(cat: str) -> str:
+    return re.sub(r"^Cat\s*", "", cat or "")
+
+
 def expected(db: Session, attempt: ExamAttempt, task: dict, app_version: str = "",
              lang: str = "uz") -> Expected:
     chk = task.get("check") or {}
@@ -144,7 +158,12 @@ def _fx_concern_text(db, attempt, ctx, chk, *_):
 
 
 def _concerns_open_count(db, attempt, ctx, chk, *_):
-    n = sum(1 for r in sb.rows(db, attempt.id, "concern") if r.data.get("status") != "done")
+    # The leader's OWN concerns (C1–C4 plus any they file), not the worker rows
+    # the register also lists: «your concerns» read as «the ones you wrote» —
+    # the wording t16 uses — and counting the workers' too made the answer
+    # depend on a reading nobody could guess.
+    n = sum(1 for r in sb.rows(db, attempt.id, "concern")
+            if not r.data.get("worker_name") and r.data.get("status") != "done")
     return Expected(value=n)
 
 
@@ -168,7 +187,10 @@ def _idle_top_category_today(db, attempt, ctx, chk, *_):
     if best <= 0:
         raise NoData("nothing stopped")
     winners = [c for c, v in by.items() if v.get("union_min", 0) == best]
-    return Expected(value=winners, options=list(sb.IDLE_CATEGORIES))
+    # Labelled by the page's own words («D3 · Otdellardan mahsulot kutish»):
+    # the register never prints «Cat D3», and a leader is asked for a CAUSE.
+    return Expected(value=winners, options=[_opt(c, f"downtime.cat.{_cat_code(c)}.label", _cat_code(c))
+                                            for c in sb.IDLE_CATEGORIES])
 
 
 def _fx_report_rejected(db, attempt, ctx, chk, app_version, lang):
@@ -178,11 +200,13 @@ def _fx_report_rejected(db, attempt, ctx, chk, app_version, lang):
 
 
 def _fx_dispute_outcome(db, attempt, ctx, chk, *_):
-    return Expected(value="approved", options=["supervisor", "admin", "approved", "rejected", "cancelled"])
+    return Expected(value="approved", options=[
+        _opt(v, f"exam.opt.dispute.{v}") for v in ("supervisor", "admin", "approved", "rejected", "cancelled")])
 
 
 def _fx_late_proof_holder(db, attempt, ctx, chk, *_):
-    return Expected(value="supervisor", options=["supervisor", "admin", "leader", "nobody"])
+    return Expected(value="supervisor", options=[
+        _opt(v, f"exam.opt.holder.{v}") for v in ("supervisor", "admin", "leader", "nobody")])
 
 
 def _requirements(db, attempt):
@@ -431,7 +455,17 @@ def evaluate(db: Session, attempt: ExamAttempt, task: dict, result: ExamTaskResu
     op = chk.get("op")
     opened = result.opened_at
     if kind == "sandbox":
-        return _SANDBOX[op](db, attempt, chk, opened), op
+        # A sandbox record counts from the moment the sandbox was SEEDED, not
+        # from when this task was opened. Every sandbox predicate names its own
+        # fixture (T1, C2, W3…) or a signature no other task shares (a cell +
+        # clock pair, a leader-level vs a brigadir-level concern), so one record
+        # can never pass two tasks — while the leader CAN read every task on
+        # /exam and do three of them in one visit to a page. Gated on
+        # opened_at, a concern closed or lifted early could never be redone
+        # (a closed concern is read-only) and the task stayed «not yet» for the
+        # rest of the attempt.
+        since = attempt.seeded_at or attempt.started_at or opened
+        return _SANDBOX[op](db, attempt, chk, since), op
     if kind == "ui":
         return _UI[op](db, attempt, chk, opened), op
     if kind == "visit":
@@ -558,6 +592,11 @@ _SANDBOX = {
 # ui / visit predicates ------------------------------------------------------
 
 def _same(a, b) -> bool:
+    # A multi-pick filter is a SET: OptsFilter stores the picks in click
+    # order, so ["todo"] reached through ["doing","todo"] must not depend on it.
+    if isinstance(a, list) and isinstance(b, list):
+        return sorted(json.dumps(x, sort_keys=True) for x in a) == \
+            sorted(json.dumps(x, sort_keys=True) for x in b)
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 

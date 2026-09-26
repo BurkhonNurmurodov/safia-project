@@ -77,9 +77,36 @@ function isParked(key, prefixes) {
   return (prefixes || []).some((p) => key === p || key.startsWith(p));
 }
 
-function park(prefixes) {
-  const parked = {};
+// PARK_KEY carries its OWN prefix list alongside the parked values, so
+// restoring never needs a live prefix list from the caller — a leftover park
+// from an older bundle (a shorter list) is unparked by the list it was PARKED
+// with, never by whatever list a newer bundle happens to be carrying now.
+function restoreStored() {
   try {
+    const raw = localStorage.getItem(PARK_KEY);
+    if (!raw) return;
+    const stored = JSON.parse(raw);
+    const prefixes = stored && stored.prefixes;
+    const values = (stored && stored.values) || {};
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i += 1) keys.push(localStorage.key(i));
+    // Whatever the sandbox pages wrote goes first, so nothing of the exam
+    // leaks into real work; then what was set aside comes back.
+    for (const k of keys) if (isParked(k, prefixes)) localStorage.removeItem(k);
+    for (const [k, v] of Object.entries(values)) if (v != null) localStorage.setItem(k, v);
+    localStorage.removeItem(PARK_KEY);
+  } catch { /* ignore */ }
+}
+
+function park(prefixes) {
+  try {
+    // A PARK_KEY already on disk means an earlier exam was parked and never
+    // unparked — the tab was closed instead of leaving exam mode normally, so
+    // `leaveExamMode`'s `restore()` never ran. Overwriting that slot here
+    // would bury the real filters underneath it for good; restoring it first
+    // puts them back before this park starts a fresh one.
+    if (localStorage.getItem(PARK_KEY) != null) restoreStored();
+    const parked = {};
     const keys = [];
     for (let i = 0; i < localStorage.length; i += 1) keys.push(localStorage.key(i));
     for (const k of keys) {
@@ -88,22 +115,21 @@ function park(prefixes) {
         localStorage.removeItem(k);
       }
     }
-    localStorage.setItem(PARK_KEY, JSON.stringify(parked));
+    localStorage.setItem(PARK_KEY, JSON.stringify({ prefixes, values: parked }));
   } catch { /* ignore */ }
 }
 
-function restore(prefixes) {
-  try {
-    const keys = [];
-    for (let i = 0; i < localStorage.length; i += 1) keys.push(localStorage.key(i));
-    // Whatever the sandbox pages wrote goes first, so nothing of the exam leaks
-    // into real work; then what was set aside comes back.
-    for (const k of keys) if (isParked(k, prefixes)) localStorage.removeItem(k);
-    const parked = JSON.parse(localStorage.getItem(PARK_KEY) || "{}");
-    for (const [k, v] of Object.entries(parked)) if (v != null) localStorage.setItem(k, v);
-    localStorage.removeItem(PARK_KEY);
-  } catch { /* ignore */ }
-}
+// eslint-disable-next-line no-unused-vars -- kept for call-site compatibility; the stored prefixes decide, not this argument
+function restore(_prefixes) { restoreStored(); }
+
+// A tab that was IN exam mode when it was closed loses `state`
+// (sessionStorage does not survive that), but the real filters it parked are
+// still sitting in localStorage under PARK_KEY — nothing calls `leaveExamMode`
+// to give them back. Restore them the moment a fresh load finds no exam mode
+// claiming them, or every later real session on this device carries that
+// exam's parked-away filters (and never sees its own) until someone happens
+// to re-enter and leave exam mode again.
+if (!read()) restoreStored();
 
 export function enterExamMode({ attemptId, kind, prefixes, parkedKeys }) {
   if (state && state.attemptId === attemptId) return;
@@ -124,6 +150,22 @@ export function leaveExamMode() {
  *  current task. */
 export function onExamMutation(fn) { mutationHook = fn; return () => { if (mutationHook === fn) mutationHook = null; }; }
 export function noteExamMutation(config) { if (mutationHook) { try { mutationHook(config); } catch { /* ignore */ } } }
+
+/** The write-guard's allowlist (utils/api.js calls this): real doors that must
+ *  stay reachable even mid-exam — signing in, the language switch, the
+ *  heartbeat, a lesson's watch progress, the client's own crash report.
+ *  Kept in step with `EXAM_WRITE_ALLOW` in
+ *  backend/app/services/exam_sandbox.py, which enforces the same rule
+ *  server-side; a mismatch here only ever costs a refused request the server
+ *  would have allowed, never the reverse, since the server is the one that
+ *  actually holds the real tables. */
+const WRITE_ALLOW = ["/api/auth/", "/api/activity/", "/api/crash-report", "/api/boot", "/api/education/progress"];
+
+export function examWriteAllowed(url) {
+  if (typeof url !== "string") return false;
+  if (url.startsWith("/api/exam/")) return true;
+  return WRITE_ALLOW.some((p) => url.startsWith(p));
+}
 
 /** What the ui checkers read: the persisted page state a task may ask about.
  *  `usePersistentState` JSON-encodes, `lang`/`theme` are bare strings. */
