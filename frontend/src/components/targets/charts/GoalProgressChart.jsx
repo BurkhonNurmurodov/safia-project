@@ -66,7 +66,7 @@ export default function GoalProgressChart({ goal, today, t, height = 220 }) {
           <>
             {iso <= today && <TipRow color={color} value={fmtPct(goalProgressAt(goal, iso, today))} label={t("targets.chart.burn.actual")} />}
             <TipRow color="var(--text-3)" dashed value={fmtPct(planAt(iso))} label={t("targets.chart.pace.plan")} />
-            {fcAt(iso) !== null && iso > today && <TipRow color={color} dashed value={`${Math.round(fcAt(iso))}%`} label={t("targets.projection")} />}
+            {fcAt(iso) !== null && iso > today && <TipRow color={color} dotted value={`${Math.round(fcAt(iso))}%`} label={t("targets.projection")} />}
           </>
         )}
       />

@@ -23,15 +23,16 @@ export default function ChartTip({ x, y, boxW, boxH, width = 220, interactive = 
   );
 }
 
-// One readout row: a short line-key in the series colour, the value first,
-// the series name after it.
-export function TipRow({ color, dashed = false, value, label }) {
+// One readout row: a short line-key drawn exactly like the chart's own line
+// (solid · dashed · dotted) and the legend's key, the value first, the series
+// name after it.
+export function TipRow({ color, dashed = false, dotted = false, value, label }) {
   return (
     <div className="flex items-center gap-2 mt-1 first:mt-0">
       <span
         aria-hidden
-        className="w-3 flex-shrink-0"
-        style={{ borderTop: `2px ${dashed ? "dashed" : "solid"} ${color}` }}
+        className="w-4 flex-shrink-0"
+        style={{ borderTop: `2px ${dotted ? "dotted" : dashed ? "dashed" : "solid"} ${color}` }}
       />
       <span className="font-semibold tabular-nums">{value}</span>
       <span className="truncate" style={{ color: "var(--text-2)" }}>{label}</span>
