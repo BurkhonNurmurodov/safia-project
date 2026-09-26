@@ -1106,6 +1106,8 @@ def requirements_for(db: Session, *, prof=None, manager=None,
         cfg = effective_leader_config(db, prof, shift, day=day)
         level = "leader"
     else:
+        # Lazily: leader_auto imports this module at load time.
+        from app.services import leader_auto
         cfg = {}
         sup_rows = {
             s.task_id: s
@@ -1123,6 +1125,20 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                     crit = level_row.criteria.strip()
                     break
             desc = _resolve_description((s, td), crit)
+            proof_kind = resolve_proof_kind(s, td)
+            # The GLOBAL catalog names an automatic task by its CHECK. Which
+            # check decides it is global (`auto_check`), but the switch that
+            # puts a unit on it is written per UNIT, beside that unit's own
+            # check hour (one global hour cannot serve both shifts) — so the
+            # global floor still reads "screenshot" on these tasks while every
+            # unit reads "auto". Resolved as stored, «Umumiy standart», which is
+            # what an admin opens with nothing picked, printed «Foto hisobot ·
+            # kamida 1 ta rasm» on tasks no leader may send a photo for. Only the
+            # global view moves, and only the tab reads it: a unit or a leader
+            # resolves exactly as before, so a unit switched back to photos is
+            # an exception its own view still states.
+            if manager is None and leader_auto.parse_check(td.auto_check):
+                proof_kind = "auto"
             cfg[td.id] = {
                 "enabled": s.enabled if s else def_enabled(td),
                 "min_media": s.min_media if s else def_min_media(td),
@@ -1135,7 +1151,7 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                 "criteria": crit,
                 "description": desc,
                 "deadline": resolve_deadline(s, td),
-                "proof_kind": resolve_proof_kind(s, td),
+                "proof_kind": proof_kind,
                 # WHICH automatic check decides this task, or None for the
                 # ordinary case. Global-only (see `LeaderTaskDef.auto_check`), so it
                 # is read straight off the def rather than resolved down the chain —
