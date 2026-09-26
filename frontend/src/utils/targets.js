@@ -13,7 +13,6 @@
 // Nothing here is a data source. The page keeps the goals as a JSON blob per
 // profile (`/api/ui-prefs/targets_lab`) — this is a laboratory page and not a
 // register yet, and the blob is what lets the screen be tried without a table.
-import { CATEGORY_COLORS } from "./chartPalette";
 import { GREEN, AMBER, RED } from "./statusBands";
 
 export const TYPES = ["number", "percent", "currency", "boolean", "tasks"];
@@ -22,10 +21,10 @@ export const isNumeric = (type) => NUMERIC.has(type);
 
 export const DIRECTIONS = ["up", "down"];
 
-// A goal's AREA is a category, so its colour comes from the shared categorical
-// palette in order (generic hues first) — never brand gold, which is an accent.
+// A goal's AREA. Shown as an icon and a word (components/targets/targetsUi
+// AREA_ICON), never as a colour: on this board colour means STATUS, and the
+// categorical palette opens on red, green and yellow.
 export const CATEGORIES = ["production", "quality", "people", "cost", "safety", "other"];
-export const categoryColor = (c) => CATEGORY_COLORS[Math.max(0, CATEGORIES.indexOf(c))];
 
 // Status is the traffic light — green / yellow / red — and «not started» is
 // the platform's grey. Two greens on purpose: «achieved» and «on track» are
@@ -38,6 +37,17 @@ export const STATUS_COLOR = {
 // What needs attention first.
 export const STATUS_RANK = { overdue: 0, behind: 1, at_risk: 2, on_track: 3, not_started: 4, achieved: 5 };
 export const RISK_STATUSES = new Set(["at_risk", "behind", "overdue"]);
+
+// The board is read in FOUR groups, most urgent first. «Needs attention» holds
+// the three statuses that each want somebody to act; every card still wears
+// its own chip, so the group never hides which of the three it is.
+export const GROUPS = [
+  { key: "attention", statuses: ["overdue", "behind", "at_risk"] },
+  { key: "on_track", statuses: ["on_track"] },
+  { key: "not_started", statuses: ["not_started"] },
+  { key: "achieved", statuses: ["achieved"] },
+];
+export const groupOf = (st) => GROUPS.find((g) => g.statuses.includes(st))?.key ?? "on_track";
 
 // Pace tolerance, in fractions of the whole goal: this far below the linear
 // expectation is still «on track»; up to `risk` below it is «at risk»; more is
@@ -76,11 +86,32 @@ export function fmtDate(iso, t, today = todayISO()) {
 
 // ─── numbers ─────────────────────────────────────────────────────────────────
 export const clamp01 = (v) => Math.min(1, Math.max(0, v));
+
+// A number the way a person types one: «43 200 000», «47,5», «−5». NaN when
+// the text is not a number — never a silent 0, which is a real value here.
+export function parseNum(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : NaN;
+  const s = String(v ?? "")
+    .replace(/[\s\u00a0\u202f]/g, "")
+    .replace(/\u2212/g, "-")
+    .replace(",", ".");
+  if (s === "" || s === "-" || s === ".") return NaN;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
 export const num = (v, fallback = 0) => {
   if (v === "" || v === null || v === undefined) return fallback;
-  const n = Number(v);
+  const n = parseNum(v);
   return Number.isFinite(n) ? n : fallback;
 };
+// The value an input box starts with: grouped like «43 200 000», a decimal
+// comma — the shape the reader types it back in, so nothing reflows on focus.
+export function fmtInput(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+  const [i, f] = String(Math.abs(n)).split(".");
+  return (n < 0 ? "-" : "") + i.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + (f ? `,${f}` : "");
+}
 
 const group = (s) => s.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 // «1 250» · «12,5» · «3 200 000» — thousands by a space, one decimal at most,

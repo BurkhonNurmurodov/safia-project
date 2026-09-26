@@ -116,6 +116,7 @@ const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceive
 const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Targets = lazyWithReload(() => import("./pages/Targets"));
+const TargetGoal = lazyWithReload(() => import("./pages/TargetGoal"));
 const ProofCamera = lazyWithReload(() => import("./pages/ProofCamera"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
@@ -531,6 +532,7 @@ function AppWithLang() {
             <Route path="/gamification" element={<AuthGate><RequireAdmin><Gamification /></RequireAdmin></AuthGate>} />
             {/* «Maqsadlar» — goal board test screen, admin-only (no page-access key); goals live per profile in ui-prefs. */}
             <Route path="/targets" element={<AuthGate><RequireAdmin><Targets /></RequireAdmin></AuthGate>} />
+            <Route path="/targets/:id" element={<AuthGate><RequireAdmin><TargetGoal /></RequireAdmin></AuthGate>} />
             {/* Own profile — every approved role has one, so no page-access
                 gate: it is identity, not a data page. */}
             <Route path="/profile" element={<AuthGate><Profile /></AuthGate>} />

@@ -6294,6 +6294,45 @@ says; a supervisor or leader would see their own unit only).
   touch TV must not navigate away from the monitor. The alert feed and the
   unit rows carry the links instead.
 
+## The goal board («Maqsadlar», `/targets`, Laboratory)
+
+Redesigned **2026-09-26** on the operator's three rulings (asked with mockups
+and answered): a goal opens on **its own page** (`/targets/:id`,
+`pages/TargetGoal.jsx`), the board is **one list grouped by status**, and each
+goal carries a **quick «Yangilash»** dialog for all of its results. Still an
+admin-only test screen: the goals are one JSON blob per profile in
+`/api/ui-prefs/targets_lab`.
+
+- **`components/targets/useGoals.js` is THE data door** — the react-query
+  cache (`["targets","goals"]`) is the one copy both routes read and write, and
+  the debounced save lives at MODULE level so moving between the board and a
+  goal never cancels it; the last page to unmount flushes. Sample goals (for a
+  profile that never saved) are served from the query, never written back
+  until something changes, and carry FIXED ids (`demo-3`, `demo-3-1`) so a
+  reloaded or shared `/targets/demo-3` still resolves.
+- **Groups replace the status filter, the sort menu and the table view** (all
+  three removed on purpose — do not bring them back without asking): «Diqqat
+  talab» (overdue · behind · at risk, worst first) → «Reja bo'yicha» →
+  «Boshlanmagan» → «Erishilgan» (collapsed, remembered). `utils/targets.js`
+  `GROUPS` is the one definition; the summary card above counts the goals the
+  search and the area filter left, and names that count.
+- **Colour means STATUS only.** A goal's area is an icon + a word
+  (`targetsUi.AREA_ICON`), never a colour — the categorical palette opens on
+  red/green/yellow, and an on-track goal used to wear a red stripe.
+- **Pace is said in words under the bar** («Bugungi reja 80% · 28% orqada»),
+  with the plan drawn as an upright tick on the bar and repeated in front of
+  the caption; the forecast on a goal's page is one whole sentence per case
+  (`targets.forecast.*`).
+- A numeric result reads «now → target» («27 → 10 ta»), because «27 / 10» read
+  as «27 of 10» for a result that must shrink.
+- Cards and result cards lay out by THEIR OWN width (Tailwind `@container` /
+  `@md:`), not the screen's: two columns on a tablet make phone-width cards.
+- Number boxes are text with a decimal keypad and parse «47,5» and
+  «43 200 000» (`parseNum`); inputs are 16px on a phone so iOS does not zoom.
+- The quick dialog writes a check-in only for a numeric result whose value
+  moved; opened for ONE result («Qiymat kiritish») it always writes one.
+  Deleting a history entry asks first.
+
 ## The shift report («Smena hisoboti»), on the shift dashboard
 
 From **2026-09-15** (the operator's directive) a status board for the shift
