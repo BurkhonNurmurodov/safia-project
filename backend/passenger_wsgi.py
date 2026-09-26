@@ -80,6 +80,7 @@ try:
         set_forecast_autocall_capacity,
         split_zagruzka_bands,
         seed_full90_bands,
+        set_gemini_model_pro,
         report_unpriced_ojidaniya,
         report_unpriced_ojidaniya_xlsx,
         report_zagruzka_gaps_xlsx,
@@ -206,6 +207,7 @@ try:
     set_forecast_autocall_capacity()
     split_zagruzka_bands()
     seed_full90_bands()
+    set_gemini_model_pro()
     add_pp_product_auto_fill()
     add_education_duration()
     migrate_pp_line_daily_key()

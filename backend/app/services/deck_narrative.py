@@ -24,6 +24,7 @@ on any failure — no key, a quota wall, a malformed answer — and the renderer
 prints a plain "AI izohi mavjud emas" line in the slot. The numbers, tables and
 charts are the report; the prose is the commentary on it.
 """
+import concurrent.futures
 import json
 import logging
 
@@ -31,6 +32,14 @@ from app.services import gemini
 from app.translit import transliterate
 
 log = logging.getLogger(__name__)
+
+# How long the deck waits for the model — the Concerns deck's rule, adopted on
+# 2026-09-26 when the platform moved to the PRO model, which thinks for longer
+# before it writes. The WHOLE request has to come back inside Cloudflare's
+# 100-second limit, or the browser gets an error and no file at all — so past
+# this the deck ships with its plain fallbacks instead, which is the outcome
+# `write()` already promises for any other failure.
+BUDGET_S = 70
 
 # Every prose slot the deck has, in one schema, so one call fills the whole
 # file. Slot by slot would be nine calls, nine failure modes and nine chances
@@ -246,11 +255,22 @@ def write(data: dict) -> dict | None:
     if not gemini.available():
         log.warning("DECK narrative skipped — no Gemini key configured")
         return None
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    # The prompt is built INSIDE the job, so a failure there surfaces through
+    # `result()` and is caught below like any other — `write()` never raises.
+    job = pool.submit(lambda: gemini.generate_json(_prompt(data), [], _SCHEMA))
     try:
-        out = gemini.generate_json(_prompt(data), [], _SCHEMA)
+        out = job.result(timeout=BUDGET_S)
+    except concurrent.futures.TimeoutError:
+        log.warning("DECK narrative took over %ss — shipped without it", BUDGET_S)
+        return None
     except Exception as exc:                        # quota, network, bad JSON
         log.warning("DECK narrative failed: %s", exc)
         return None
+    finally:
+        # Never wait for a call that overran: it ends on its own at the
+        # client's timeout, and the deck has already moved on.
+        pool.shutdown(wait=False)
     if not isinstance(out, dict) or not out.get("summary_headline"):
         log.warning("DECK narrative returned nothing usable: %s",
                     json.dumps(out, ensure_ascii=False)[:300])

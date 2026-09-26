@@ -5677,6 +5677,53 @@ def seed_full90_bands() -> None:
     _seed_band_copies(ZAGRUZKA_FULL90_BANDS_FLAG, ZAGRUZKA_FULL90_SEEDS, "full90 table bands")
 
 
+GEMINI_PRO_FLAG = "gemini_model_pro_2026_09_26_v1"
+GEMINI_PRO_MODEL = "gemini-pro-latest"
+
+
+def set_gemini_model_pro() -> None:
+    """2026-09-26 (the operator's call): every Gemini call on the platform —
+    the proof-photo reviewer and both weekly decks' prose — runs on the PRO
+    alias.
+
+    ``config.gemini_model`` already answers pro — but the admin picker on the
+    AI card writes ``app_settings["gemini_model"]`` the moment anybody touches
+    it, and a stored pick beats config (``gemini.active_model``). So on a box
+    where somebody ever chose Flash, the default alone would change nothing,
+    silently. This platform has no shell, so the value is written from here.
+
+    It states an END STATE rather than declining when a row exists: the pick
+    being answered is exactly the one this replaces. The FLAG is what protects
+    every LATER pick — from the next boot on the model is entirely the admin's
+    again (Flash and Flash Lite stay on the picker for the day the quota
+    binds), and switching the platform again from here needs a NEW flag key.
+
+    Config only: no verdict is re-judged. A proof reviewed from now on is read
+    by pro; one already judged keeps the verdict it has.
+    """
+    from app.services import gemini
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=GEMINI_PRO_FLAG).first():
+            return
+        row = db.query(AppSetting).filter_by(key=gemini.MODEL_SETTING).first()
+        was = (row.value or "(blank)") if row else "(absent)"
+        if row:
+            row.value = GEMINI_PRO_MODEL
+        else:
+            db.add(AppSetting(key=gemini.MODEL_SETTING, value=GEMINI_PRO_MODEL))
+        db.add(AppSetting(key=GEMINI_PRO_FLAG, value="1"))
+        db.commit()
+        gemini.invalidate_model_cache()
+        print(f"[startup] gemini model set to {GEMINI_PRO_MODEL} (was {was})")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] gemini model not set: {exc}")
+    finally:
+        db.close()
+
+
 # ── one-shots: the «Narxlanmagan, daq» breakdown, DMed ───────────────────────
 # The operator asked, on 2026-09-09, for the 598 unpriced minutes of 2–8
 # September to be explained in their own chat — first as a table in the message

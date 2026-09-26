@@ -61,7 +61,10 @@ class Settings(BaseSettings):
     # comparison against the task's own description; lite (today
     # gemini-3.5-flash-lite) answers that noticeably worse than flash (today
     # gemini-3.6-flash) for a handful of thinking tokens a photo.
-    gemini_model: str = "gemini-flash-latest"
+    # From 2026-09-26 (the operator's call) the PRO alias: the best judge on
+    # offer, slower and dearer per call. Flash and Flash Lite stay on the
+    # admin picker (services/gemini.MODELS) for the day the quota binds.
+    gemini_model: str = "gemini-pro-latest"
     # Reviews attempted per drain. The free tier caps requests per minute AND
     # per day, so a full backfill drains in slices rather than failing at once.
     gemini_batch_size: int = 40

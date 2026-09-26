@@ -1137,7 +1137,7 @@ def set_model(body: ModelIn, db: Session = Depends(get_db),
 
     Restricted to the curated aliases. A free-text field here is a way to type
     a retired model id and get a 404 on every row until somebody notices, and
-    the two on offer are the two that are known to resolve.
+    the three on offer (pro · flash · flash-lite) are the ones known to resolve.
     """
     name = (body.model or "").strip()
     if name not in gemini.MODELS:

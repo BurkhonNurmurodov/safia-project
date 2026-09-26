@@ -136,13 +136,16 @@ def available() -> bool:
 # appears in ListModels but generateContent 404s it for keys created after it
 # was retired, and the same will happen to every pinned id eventually.
 #
-# Two, because they answer two different constraints and the binding one
-# changes: `flash` judges the "is this photo even about this task" question
-# better, `flash-lite` goes much further per day, which is what matters the
+# Three, because they answer different constraints and the binding one
+# changes: `pro` judges best (the platform's model from 2026-09-26, the
+# operator's call) but is the slowest and the dearest per call, `flash` judges
+# the "is this photo even about this task" question well at a fraction of the
+# cost, `flash-lite` goes much further per day, which is what matters the
 # moment the account is on the free tier or near a spend cap. That is a
 # decision the person paying makes, on a day we cannot predict — so it is a
-# stored setting, not a constant they have to ask someone to push.
-MODELS = ("gemini-flash-latest", "gemini-flash-lite-latest")
+# stored setting, not a constant they have to ask someone to push. The first
+# entry is the fallback when neither the setting nor config names one.
+MODELS = ("gemini-pro-latest", "gemini-flash-latest", "gemini-flash-lite-latest")
 
 MODEL_SETTING = "gemini_model"
 

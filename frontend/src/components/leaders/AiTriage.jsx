@@ -841,7 +841,8 @@ function KeySetup({ T, qc, embedded = false }) {
 
   const modelOpts = (st?.models || []).map((m) => ({
     value: m,
-    label: m.includes("lite") ? T.aiModelLite : T.aiModelFlash,
+    label: m.includes("lite") ? T.aiModelLite
+      : m.includes("pro") ? T.aiModelPro : T.aiModelFlash,
     title: m,
   }));
 
