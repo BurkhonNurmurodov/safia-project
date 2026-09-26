@@ -327,6 +327,29 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   position: relative;
 }
 
+/* ── Grid hover — the row + column highlight of HeatmapChart / ComparisonTable
+   The marks are attributes set by hooks/useGridHover.js outside React, so the
+   pointer never re-renders a grid: `data-hl` on everything in the hovered row
+   and column, `data-hot` on the cell under the pointer. A row/column selection
+   puts `data-sel` on the grid and switches it all off. The cells carry no
+   inline filter/transform/z-index, or those would win over these rules; the
+   row name's background is inline, hence the !important. */
+[data-grid]:not([data-sel]) .hm-live[data-hl] { filter: brightness(1.12); }
+[data-grid]:not([data-sel]) .hm-live[data-hot] {
+  filter: brightness(1.25);
+  transform: scale(1.06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+  z-index: 3;
+}
+[data-grid]:not([data-sel]) .ct-cell[data-hl] { filter: brightness(1.12); }
+[data-grid]:not([data-sel]) .ct-cell[data-hot] {
+  filter: brightness(1.25);
+  transform: scale(1.04);
+  z-index: 2;
+}
+[data-grid]:not([data-sel]) .ct-colhead[data-hl] { filter: brightness(1.3); }
+[data-grid]:not([data-sel]) .ct-rowhead[data-hl] { background: var(--bg-inner) !important; }
+
 /* ── Ojidaniya «Brigadir × kun» matrix — row hover ───────────────────────────
    A row is pressable (it opens that unit's waiting, date by date), so the whole
    row lifts under the pointer rather than one cell: the target is the ROW, and

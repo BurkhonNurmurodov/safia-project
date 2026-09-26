@@ -162,17 +162,27 @@ def build_metrics_list(
         allowed = _closed_pairs(db, date_from, date_to, mgr_ids)
     else:
         allowed = None
+    has_days = None if allowed is None else {mid for mid, _d in allowed}
 
     results = []
     for mgr in managers:
+        if has_days is not None and mgr.id not in has_days:
+            continue
+        # The unit's attendance for the whole period in ONE read, grouped by
+        # day here. It was one query per unit per DAY — ~300 for a fortnight
+        # on /zagruzka, every one of them a scan of the whole table.
+        att_by_day: dict = {}
+        for r in db.query(Attendance).filter(
+            Attendance.manager_id == mgr.id,
+            Attendance.date >= date_from,
+            Attendance.date <= date_to,
+        ):
+            att_by_day.setdefault(r.date, []).append(r)
         for d_str in all_dates:
             d_obj = datetime.strptime(d_str, "%d.%m.%Y").date()
             if allowed is not None and (mgr.id, d_obj) not in allowed:
                 continue
-            att_rows = db.query(Attendance).filter(
-                Attendance.manager_id == mgr.id,
-                Attendance.date == d_obj,
-            ).all()
+            att_rows = att_by_day.get(d_obj)
             if not att_rows:
                 continue
 
@@ -247,7 +257,14 @@ def list_brigadirs(
         return []
 
     metrics = build_metrics_list(db, date_from, date_to, shift, scoped)
+    return aggregate_units(metrics)
 
+
+def aggregate_units(metrics) -> list[dict]:
+    """One row per unit over the period — what /api/brigadirs returns. Its own
+    function so /api/heatmap can build the same rows out of the metrics it has
+    already computed (`?units=1`, /zagruzka's funnel) instead of the page
+    asking for the whole загрузка a second time."""
     agg: dict = {}
     for m in metrics:
         if m.manager_id not in agg:

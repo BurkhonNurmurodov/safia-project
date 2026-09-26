@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, Minimize2, Info, Layers, UserRound, SlidersHorizontal } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -27,6 +27,11 @@ import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
+
+// Stand-ins while the payload is in flight — module constants, so the memoised
+// grids are not handed a new empty array/object on every render.
+const NO_ROWS = [];
+const NO_DATA = {};
 
 // The comparison tables, in page order, keyed by their `basis` — which is also
 // their band-table key and their fullscreen key — with the words each prints.
@@ -149,12 +154,11 @@ function HeatmapHeader({
 // construction: the inline card (header + grid) and its fullscreen overlay,
 // portaled to <body> for the reason every overlay on this page is — the
 // .page-enter transform would otherwise contain a `position: fixed`.
-function MetricHeatmapCard({
+const MetricHeatmapCard = memo(function MetricHeatmapCard({
   which, cellValue, title, note, heatmap, hmLoading, segments,
-  managerIds, commentedCells, approvedCells, onCellClick, openFull, setOpenFull, t,
+  managerIds, commentedCells, approvedCells, onCellClick, full, setOpenFull, t,
   skDates, skRows, onEditBands = null,
 }) {
-  const full = openFull === which;
   const header = (isFull) => (
     <HeatmapHeader
       heatmap={heatmap ?? { dates: skDates }}
@@ -220,7 +224,7 @@ function MetricHeatmapCard({
       ) : null}
     </>
   );
-}
+});
 
 export default function Zagruzka() {
   const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
@@ -242,18 +246,6 @@ export default function Zagruzka() {
   // Admin-only comparison-table factor toggles — lifted here so the inline and
   // fullscreen table instances share one state. Resets to all-ON per visit.
   const [calcFactors, setCalcFactors] = useState(DEFAULT_CALC_FACTORS);
-
-  function handleCellClick(name, d, _v, cell) {
-    setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: heatmapMode });
-  }
-
-  // The two single-metric heatmaps open the (brigadir, date) comment THREAD
-  // with their own formula above it (the operator's choice) — unlike the fleet
-  // heatmap, which opens its formula alone. `basis` is what makes the «how it's
-  // calculated» block explain THIS table's number and not the fleet's.
-  const metricCellClick = (basis) => (name, d, _v, cell) => {
-    setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, basis, formulaOnly: false });
-  };
 
   // Escape closes the band editor first (it sits above any overlay, and the
   // overlay under it must not vanish while it is open), else fullscreen.
@@ -277,9 +269,12 @@ export default function Zagruzka() {
 
   // `isPending`, not `isLoading`: before the filters are `ready` the query is
   // disabled, isLoading reads false and the page flashed «no data» first.
+  // `units=1` also returns the per-unit rows /api/brigadirs serves (the funnel,
+  // the name → id map), built from the SAME computation: asking /api/brigadirs
+  // as well ran the whole загрузка a second time for the same period.
   const { data: heatmap, isPending: hmLoading } = useQuery({
-    queryKey: ["heatmap", fparams],
-    queryFn: () => api.get("/api/heatmap", { params: fparams }).then((r) => r.data),
+    queryKey: ["heatmap", fparams, "units"],
+    queryFn: () => api.get("/api/heatmap", { params: { ...fparams, units: 1 } }).then((r) => r.data),
     enabled: ready,
   });
 
@@ -289,11 +284,17 @@ export default function Zagruzka() {
   const segments = bands.load.segments;
   const diffSegments = bands.full.diff_segments;   // the funnel keeps the full table's D bands
 
-  const { data: brigadirs = [], isPending: brigLoading } = useQuery({
+  // A backend older than this bundle answers without `units` — the seconds of
+  // a deploy between the new files landing and the restart. Read them the old
+  // way then, rather than draw an empty funnel.
+  const legacyUnits = ready && !!heatmap && !Array.isArray(heatmap.units);
+  const { data: oldUnits, isPending: oldUnitsLoading } = useQuery({
     queryKey: ["brigadirs", fparams],
     queryFn: () => api.get("/api/brigadirs", { params: fparams }).then((r) => r.data),
-    enabled: ready,
+    enabled: legacyUnits,
   });
+  const brigadirs = useMemo(() => heatmap?.units ?? oldUnits ?? NO_ROWS, [heatmap, oldUnits]);
+  const brigLoading = hmLoading || (legacyUnits && oldUnitsLoading);
 
   // Full (period-independent) supervisor list for the inline picker — shares the
   // cache with the header Filters drawer so it's effectively free.
@@ -316,7 +317,32 @@ export default function Zagruzka() {
   // one id, "All" clears it. A multi-select made in the drawer shows as "All".
   const supValue = brigadirIds.length === 1 ? String(brigadirIds[0]) : "All";
 
-  const managerIds = Object.fromEntries(brigadirs.map((b) => [b.name, b.manager_id]));
+  // Everything the six grids are handed is held stable from here down: they
+  // are memoised, and a new object or function on every render would redraw
+  // all of them on any state change on the page (a popup opening, a toggle).
+  const managerIds = useMemo(
+    () => Object.fromEntries(brigadirs.map((b) => [b.name, b.manager_id])), [brigadirs]);
+
+  const handleCellClick = useCallback((name, d, _v, cell) => {
+    setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: heatmapMode });
+  }, [managerIds, heatmapMode]);
+
+  // The two single-metric heatmaps open the (brigadir, date) comment THREAD
+  // with their own formula above it (the operator's choice) — unlike the fleet
+  // heatmap, which opens its formula alone. `basis` is what makes the «how it's
+  // calculated» block explain THIS table's number and not the fleet's.
+  const metricCellClick = useMemo(() => {
+    const open = (basis) => (name, d, _v, cell) => {
+      setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, basis, formulaOnly: false });
+    };
+    return { fulfil: open("fulfil"), eff: open("eff") };
+  }, [managerIds]);
+
+  // One stable opener per overlay, and one closer.
+  const fullToggle = useMemo(() => ({
+    open: Object.fromEntries([...Object.keys(COMPARISON), "heatmap"].map((k) => [k, () => setOpenFull(k)])),
+    close: () => setOpenFull(null),
+  }), []);
 
   // ── The loading frame ──
   // Every grid on this page keeps its real shape while /api/heatmap is in
@@ -328,7 +354,12 @@ export default function Zagruzka() {
   const { auth } = useAuth();
   // The band editors are the admin's; nobody else is offered the button, and
   // the write behind it (`PUT /admin/settings`) refuses anybody else anyway.
-  const editBands = (table) => (auth?.role === "admin" ? () => setBandsFor(table) : null);
+  const isAdmin = auth?.role === "admin";
+  const bandEditors = useMemo(() => (isAdmin
+    ? Object.fromEntries(["full", "full90", "simple", "load", "fulfil", "eff"]
+        .map((k) => [k, () => setBandsFor(k)]))
+    : NO_DATA), [isAdmin]);
+  const editBands = (table) => bandEditors[table] ?? null;
   const skDates = useMemo(
     () => listChartDays(dateFrom, dateTo).map((iso) => iso.split("-").reverse().join(".")),
     [dateFrom, dateTo]);
@@ -339,13 +370,15 @@ export default function Zagruzka() {
       : Math.min(scopedSupervisors.filter((s) => shift == null || s.shift === shift).length, 40) || 8;
 
   // Fetch all comments for the visible date range to mark cells
-  const { data: rangeComments = [] } = useQuery({
+  const { data: rangeComments } = useQuery({
     queryKey: ["comments-range", params],
     queryFn: () => api.get("/api/comments", { params: { date_from: params.date_from, date_to: params.date_to } }).then(r => r.data),
     enabled: ready && !!params.date_from,
   });
   // Set of "managerId_isoDate" for O(1) lookup
-  const commentedCells = new Set(rangeComments.map(c => `${c.manager_id}_${c.date}`));
+  const commentedCells = useMemo(
+    () => new Set((rangeComments ?? NO_ROWS).map(c => `${c.manager_id}_${c.date}`)),
+    [rangeComments]);
 
   // Approved (manager, date) cells — gates what's shown on the heatmap/comparison.
   // null until loaded so nothing is muted prematurely.
@@ -356,18 +389,20 @@ export default function Zagruzka() {
     }).then(r => r.data),
     enabled: ready && !!params.date_from,
   });
-  const approvedCells = approvedData
-    ? new Set(approvedData.cells.map(c => `${c.manager_id}_${c.date}`))
-    : null;
+  const approvedCells = useMemo(
+    () => (approvedData ? new Set(approvedData.cells.map(c => `${c.manager_id}_${c.date}`)) : null),
+    [approvedData]);
 
-  const n = brigadirs.filter(b => b.net_util !== null).length || 1;
-  const fleetFunnel = {
-    baseline_util:    brigadirs.reduce((s, b) => s + (b.baseline_util    || 0), 0) / n,
-    adjusted_util:    brigadirs.reduce((s, b) => s + (b.adjusted_util    || 0), 0) / n,
-    after_idle_util:  brigadirs.reduce((s, b) => s + (b.after_idle_util  || 0), 0) / n,
-    after_early_util: brigadirs.reduce((s, b) => s + (b.after_early_util || 0), 0) / n,
-    net_util:         brigadirs.reduce((s, b) => s + (b.net_util         || 0), 0) / n,
-  };
+  const fleetFunnel = useMemo(() => {
+    const n = brigadirs.filter(b => b.net_util !== null).length || 1;
+    return {
+      baseline_util:    brigadirs.reduce((s, b) => s + (b.baseline_util    || 0), 0) / n,
+      adjusted_util:    brigadirs.reduce((s, b) => s + (b.adjusted_util    || 0), 0) / n,
+      after_idle_util:  brigadirs.reduce((s, b) => s + (b.after_idle_util  || 0), 0) / n,
+      after_early_util: brigadirs.reduce((s, b) => s + (b.after_early_util || 0), 0) / n,
+      net_util:         brigadirs.reduce((s, b) => s + (b.net_util         || 0), 0) / n,
+    };
+  }, [brigadirs]);
 
   // One comparison table, inline or fullscreen. The tables differ only in the
   // arithmetic they read (`basis`), the bands they paint with and their words,
@@ -378,8 +413,8 @@ export default function Zagruzka() {
       loading={!isFull && hmLoading}
       loadingRows={skRows}
       dates={heatmap?.dates ?? skDates}
-      managers={heatmap?.managers ?? []}
-      data={heatmap?.data ?? {}}
+      managers={heatmap?.managers ?? NO_ROWS}
+      data={heatmap?.data ?? NO_DATA}
       pSegments={bands[which].p_segments}
       diffSegments={bands[which].diff_segments}
       managerIds={managerIds}
@@ -392,7 +427,7 @@ export default function Zagruzka() {
       title={t(COMPARISON[which].title)}
       note={t(COMPARISON[which].note)}
       fullscreen={isFull}
-      onToggleFullscreen={() => setOpenFull(isFull ? null : which)}
+      onToggleFullscreen={isFull ? fullToggle.close : fullToggle.open[which]}
     />
   );
 
@@ -567,8 +602,8 @@ export default function Zagruzka() {
         heatmap={heatmap} hmLoading={hmLoading} segments={bands.fulfil.segments}
         onEditBands={editBands("fulfil")}
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
-        onCellClick={metricCellClick("fulfil")}
-        openFull={openFull} setOpenFull={setOpenFull} t={t}
+        onCellClick={metricCellClick.fulfil}
+        full={openFull === "fulfil"} setOpenFull={setOpenFull} t={t}
         skDates={skDates} skRows={skRows}
       />
       <MetricHeatmapCard
@@ -579,8 +614,8 @@ export default function Zagruzka() {
         heatmap={heatmap} hmLoading={hmLoading} segments={bands.eff.segments}
         onEditBands={editBands("eff")}
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
-        onCellClick={metricCellClick("eff")}
-        openFull={openFull} setOpenFull={setOpenFull} t={t}
+        onCellClick={metricCellClick.eff}
+        full={openFull === "eff"} setOpenFull={setOpenFull} t={t}
         skDates={skDates} skRows={skRows}
       />
 

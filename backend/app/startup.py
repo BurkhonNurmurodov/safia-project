@@ -2214,11 +2214,20 @@ def migrate_attendance_batches() -> None:
     path) and `cells.att_included` (the permanent form of the tab's per-cell
     checkbox; NULL means "derive it from whether the cell has a supervisor").
     The three `attendance_batch*` tables come from `Base.metadata.create_all`,
-    which both entrypoints already run. Idempotent."""
+    which both entrypoints already run. Idempotent.
+
+    2026-09-26: `ix_attendance_manager_date` — attendance had no index on the
+    (unit, day) every reader filters by, so each lookup scanned the whole
+    table. /api/heatmap made ~300 of those per call (2.7 s on the 10 Sep copy,
+    0.7 s with the index)."""
     db = SessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS verifix_code VARCHAR"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_attendance_manager_date "
+            "ON attendance (manager_id, date)"
         ))
         db.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_attendance_verifix_code "

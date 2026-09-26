@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Manager, Attendance, DayApproval, EditRequest
 from app.permissions import require_page
-from app.routers.brigadirs import build_metrics_list
+from app.routers.brigadirs import aggregate_units, build_metrics_list
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 
 router = APIRouter(prefix="/api", tags=["heatmap"])
@@ -26,6 +26,10 @@ def get_heatmap(
     # Which plant. Omitted / null = «All factories»; supervisors and leaders are
     # pinned to their own by the server (services/factory_scope).
     factory: Optional[int] = Query(default=None),
+    # units=1 (/zagruzka): also return the per-unit rows /api/brigadirs serves,
+    # built from THESE metrics — the page read them from a second request that
+    # ran the whole загрузка again for the same period.
+    units: bool = Query(default=False),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("overview", "zagruzka")),
 ):
@@ -145,7 +149,7 @@ def get_heatmap(
         cur += timedelta(days=1)
 
     managers = sorted(data.keys())
-    return {
+    out = {
         "dates": dates,
         "managers": managers,
         "data": {
@@ -156,3 +160,6 @@ def get_heatmap(
             for name in managers
         },
     }
+    if units:
+        out["units"] = aggregate_units(metrics)
+    return out

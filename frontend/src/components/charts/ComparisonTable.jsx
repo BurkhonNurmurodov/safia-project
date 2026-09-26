@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useImperativeHandle, useMemo, memo } from "react";
 import { Maximize2, Minimize2, Info, Calculator, SlidersHorizontal } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import useIsMobile from "../../hooks/useIsMobile";
+import useGridHover from "../../hooks/useGridHover";
 import { orderedSegments } from "../../utils/segments";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
@@ -150,15 +151,121 @@ const SUMMARY_CYCLE = { avg: "min", min: "max", max: "avg" };
 // mounts invisibly behind it. Inline, the popups keep their own defaults.
 const ABOVE_OVERLAY = 210;
 
+// Defaults shared across renders, so a caller that omits a prop does not hand
+// the memoised table a new object every time (see the memo at the bottom).
+const NO_ARR = [];
+const NO_OBJ = {};
+const NO_SET = new Set();
+
+// ─── The table's popups ───────────────────────────────────────────────────────
+// A component of their own, opened through `control` (a ref the table holds):
+// kept as the table's own state, opening a formula or a comment thread redrew
+// every cell of the grid underneath it.
+function TablePopups({ control, fullscreen, basis, allowComments, psegs, dsegs, factors, onCalcFactorsChange }) {
+  const { t } = useLang();
+  const [formulaModal, setFormulaModal] = useState(null);
+  const [comment, setComment]     = useState(null);
+  const [pendingInfo, setPendingInfo] = useState(null); // { name, date, reason }
+  const [showGuide, setShowGuide] = useState(false); // info icon → color meanings modal
+  const [showCalc, setShowCalc]   = useState(false); // calculator icon → factors modal
+  useImperativeHandle(control, () => ({
+    formula: setFormulaModal,
+    comment: setComment,
+    pending: setPendingInfo,
+    guide: () => setShowGuide(true),
+    calc: () => setShowCalc(true),
+  }), []);
+
+  return (
+    <>
+      {formulaModal && (
+        <FormulaModal
+          title={formulaModal.title}
+          value={formulaModal.value}
+          formula={formulaModal.formula}
+          inputs={formulaModal.inputs}
+          onClose={() => setFormulaModal(null)}
+          zIndex={fullscreen ? ABOVE_OVERLAY : undefined}
+        />
+      )}
+
+      {comment && (
+        <CommentModal
+          managerId={comment.managerId}
+          managerName={comment.managerName}
+          date={comment.date}
+          rawCell={comment.rawCell}
+          mode={comment.mode}
+          basis={basis}
+          onClose={() => setComment(null)}
+          formulaOnly={comment.formulaOnly ?? !allowComments}
+          formulaCollapsible
+          zIndex={fullscreen ? ABOVE_OVERLAY : undefined}
+        />
+      )}
+
+      {pendingInfo && (
+        <PendingInfoModal
+          managerName={pendingInfo.name}
+          date={pendingInfo.date}
+          reason={pendingInfo.reason}
+          onClose={() => setPendingInfo(null)}
+        />
+      )}
+
+      {showGuide && (
+        <ColorGuideModal
+          title={t("zagruzka.colorGuide")}
+          subtitle={t("zagruzka.colorGuideSub").replace("{page}", t("nav.zagruzka"))}
+          sections={[
+            { heading: t("zagruzka.guide.adSection"), segments: dsegs },
+            { heading: t("zagruzka.guide.pSection"),  segments: psegs },
+          ]}
+          onClose={() => setShowGuide(false)}
+        />
+      )}
+
+      {showCalc && (
+        <Modal
+          title={t("zagruzka.calcTitle")}
+          subtitle={t("zagruzka.calcSubtitle")}
+          icon={<Calculator size={18} style={{ color: "var(--brand)" }} />}
+          onClose={() => setShowCalc(false)}
+          maxWidth="max-w-sm"
+          footer={<Button onClick={() => setShowCalc(false)}>{t("zagruzka.calcDone")}</Button>}
+        >
+          {CALC_FACTOR_DEFS.map(f => (
+            <div key={f.key} className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{t(f.label)}</div>
+                <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{t(f.sub)}</div>
+              </div>
+              <SegmentedToggle
+                size="sm"
+                value={!!factors[f.key]}
+                onChange={(v) => onCalcFactorsChange?.({ ...factors, [f.key]: v })}
+                options={[[true, t("zagruzka.calcOn")], [false, t("zagruzka.calcOff")]]}
+              />
+            </div>
+          ))}
+          <div className="text-[11px] pt-2" style={{ color: "var(--text-4)", borderTop: "1px dashed var(--border)" }}>
+            {t("zagruzka.calcHint")}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ComparisonTable({
-  dates = [], managers = [], data = {},
-  pSegments    = [],
-  diffSegments = [],
-  managerIds   = {},
+function ComparisonTable({
+  dates = NO_ARR, managers = NO_ARR, data = NO_OBJ,
+  pSegments    = NO_ARR,
+  diffSegments = NO_ARR,
+  managerIds   = NO_OBJ,
   approvedCells = null,
-  commentedCells = new Set(),
+  commentedCells = NO_SET,
   fullscreen = false,
   onToggleFullscreen,
   // Admin-only factor toggles — lifted to the page so the inline and
@@ -238,11 +345,16 @@ export default function ComparisonTable({
   const { tl } = useTranslit();
   const [mode, setMode]           = useState("compare"); // "compare" | "diff"
   const [summaryMode, setSummaryMode] = useState("avg"); // "avg" | "min" | "max"
-  const [formulaModal, setFormulaModal] = useState(null);
-  const [comment, setComment]     = useState(null);
-  const [pendingInfo, setPendingInfo] = useState(null); // { name, date, reason }
-  const [showGuide, setShowGuide] = useState(false); // info icon → color meanings modal
-  const [showCalc, setShowCalc]   = useState(false); // calculator icon → factors modal
+  const popups = useRef(null); // TablePopups' handle
+  // What the grid's buttons call: the handle is read on the click, never while
+  // rendering.
+  const open = useMemo(() => ({
+    formula: (m) => popups.current?.formula(m),
+    comment: (c) => popups.current?.comment(c),
+    pending: (p) => popups.current?.pending(p),
+    guide:   () => popups.current?.guide(),
+    calc:    () => popups.current?.calc(),
+  }), []);
 
   const isAdmin = auth?.role === "admin";
   const factors = calcFactors || DEFAULT_CALC_FACTORS;
@@ -270,11 +382,8 @@ export default function ComparisonTable({
   const excludedNames = CALC_FACTOR_DEFS
     .filter(f => !factors[f.key]).map(f => t(f.label)).join(", ");
   const [nameAsc, setNameAsc]     = useState(true);
-  const [hoveredRow, setHoveredRow] = useState(null);
-  const [hoveredCol, setHoveredCol] = useState(null);
+  const hover = useGridHover();
   const [selection, setSelection] = useState(null); // { type:"manager"|"date", value } | null
-
-  const noSel = !selection;
 
   function toggleSel(type, value) {
     setSelection(prev =>
@@ -514,7 +623,7 @@ export default function ComparisonTable({
           {v.p !== null
             ? (d
                 ? <button
-                    onClick={() => setFormulaModal({
+                    onClick={() => open.formula({
                       title: `${t("zagruzka.planned")} (P) — ${shortDate(d)}`,
                       value: `${v.p}%`,
                       formula: planFormula(v.cell),
@@ -535,7 +644,7 @@ export default function ComparisonTable({
           {(isDiff ? v.d : v.a) !== null
             ? (d
                 ? <button
-                    onClick={() => setComment({
+                    onClick={() => open.comment({
                       managerName: pinnedRow.label, date: d, rawCell: v.cell,
                       mode: "actual", formulaOnly: true,
                     })}
@@ -646,7 +755,7 @@ export default function ComparisonTable({
           </div>
           {/* Info icon right after title */}
           <button
-            onClick={() => setShowGuide(true)}
+            onClick={open.guide}
             aria-label={t("zagruzka.colorGuide")}
             title={t("zagruzka.colorGuide")}
             className="flex-shrink-0 p-1.5 rounded-lg transition-colors hover:bg-white/10"
@@ -665,7 +774,7 @@ export default function ComparisonTable({
           />
           {isAdmin && factorsApply && onCalcFactorsChange && (
             <button
-              onClick={() => setShowCalc(true)}
+              onClick={open.calc}
               title={t("zagruzka.calcTitle")}
               className="relative flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
               style={{
@@ -723,7 +832,15 @@ export default function ComparisonTable({
       </div>
 
       {/* Table */}
-      <div ref={scrollRef} style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }} onClick={() => clearSel()}>
+      <div
+        ref={scrollRef}
+        style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}
+        data-grid=""
+        data-sel={selection ? "" : undefined}
+        onMouseOver={hover.onMouseOver}
+        onMouseLeave={hover.onMouseLeave}
+        onClick={() => clearSel()}
+      >
         <table style={{
           borderCollapse: "collapse", borderSpacing: 0,
           tableLayout: "fixed",
@@ -773,6 +890,8 @@ export default function ComparisonTable({
                 const thisDGray = dateSel && selection.value !== d;
                 return (
                   <th key={d} colSpan={2}
+                    className="ct-colhead"
+                    data-gc={i}
                     onClick={e => { e.stopPropagation(); toggleSel("date", d); }}
                     style={{
                       ...thBase,
@@ -781,7 +900,6 @@ export default function ComparisonTable({
                       border: "1px solid var(--border)",
                       borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
                       opacity: thisDGray ? 0.45 : 1,
-                      filter: noSel && hoveredCol === d ? "brightness(1.3)" : "none",
                       transition: "filter .08s, opacity .1s",
                       cursor: "pointer", userSelect: "none",
                     }}
@@ -907,7 +1025,7 @@ export default function ComparisonTable({
           </thead>
 
           <tbody>
-            {loading ? skRows : displayManagers.map(name => {
+            {loading ? skRows : displayManagers.map((name, ri) => {
               // Un-approved days are excluded from the visible summaries.
               const pVals = dates.map(d => {
                 const cell = data[name]?.[d];
@@ -944,10 +1062,12 @@ export default function ComparisonTable({
                 <tr key={name}>
                   {/* Name — sticky */}
                   <td
+                    className="ct-rowhead"
+                    data-gr={ri}
                     onClick={e => { e.stopPropagation(); toggleSel("manager", name); }}
                     style={{
                       position: "sticky", left: 0, zIndex: 3,
-                      background: noSel && hoveredRow === name ? "var(--bg-inner)" : "var(--bg-card)",
+                      background: "var(--bg-card)",
                       borderRight: "2px solid var(--border-md)",
                       textAlign: "left", paddingLeft: 12, paddingRight: 8,
                       fontSize: 12,
@@ -1006,10 +1126,11 @@ export default function ComparisonTable({
                           onClick={e => {
                             e.stopPropagation();
                             if (selection) clearSel();
-                            else setPendingInfo({ name, date: d, reason: pendingReason });
+                            else open.pending({ name, date: d, reason: pendingReason });
                           }}
-                          onMouseEnter={() => { if (noSel) { setHoveredRow(name); setHoveredCol(d); } }}
-                          onMouseLeave={() => { if (noSel) { setHoveredRow(null); setHoveredCol(null); } }}
+                          data-gt=""
+                          data-gr={ri}
+                          data-gc={i}
                           style={{
                             padding: 0,
                             border: "1px solid var(--border)",
@@ -1026,31 +1147,24 @@ export default function ComparisonTable({
                       );
                     }
 
-                    const isHoveredCell = noSel && hoveredRow === name && hoveredCol === d;
-                    const isHoveredLine = noSel && (hoveredRow === name || hoveredCol === d);
                     const grayed = cellGrayed(name, d);
-                    const cellFilter = grayed ? "none"
-                      : isHoveredCell
-                        ? "brightness(1.25)"
-                        : isHoveredLine
-                          ? "brightness(1.12)"
-                          : "none";
 
+                    // No inline filter / transform / z-index: the hover lift is
+                    // index.css's («Grid hover»), and an inline value would win.
                     return (
                       <td
                         key={`${name}-${d}`} colSpan={2}
+                        className="ct-cell"
+                        data-gt=""
+                        data-gr={ri}
+                        data-gc={i}
                         onClick={e => e.stopPropagation()}
-                        onMouseEnter={() => { if (noSel) { setHoveredRow(name); setHoveredCol(d); } }}
-                        onMouseLeave={() => { if (noSel) { setHoveredRow(null); setHoveredCol(null); } }}
                         style={{
                           padding: 0, position: "relative",
                           border: "1px solid var(--border)",
                           borderRight: (!isLast || padCount > 0) ? GROUP_BORDER : undefined,
                           height: 34, verticalAlign: "middle",
                           opacity: grayed ? 0.18 : 1,
-                          filter: cellFilter,
-                          transform: isHoveredCell ? "scale(1.04)" : "none",
-                          zIndex: isHoveredCell ? 2 : "auto",
                           transition: "filter .08s, transform .07s, opacity .1s",
                         }}
                       >
@@ -1067,7 +1181,7 @@ export default function ComparisonTable({
                         }}>
                           {pv !== null
                             ? <button
-                                onClick={() => setFormulaModal({
+                                onClick={() => open.formula({
                                   title: `${t("zagruzka.planned")} (P) — ${shortDate(d)}`,
                                   value: `${pv}%`,
                                   formula: planFormula(cell),
@@ -1094,7 +1208,7 @@ export default function ComparisonTable({
                             ? dv !== null
                               ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
                                   <button
-                                    onClick={() => setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
+                                    onClick={() => open.comment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
                                     style={{ fontSize: 11, fontWeight: 700, color: dColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
                                   >
                                     {dv > 0 ? "+" : ""}{dv}%
@@ -1107,7 +1221,7 @@ export default function ComparisonTable({
                             : av !== null
                               ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
                                   <button
-                                    onClick={() => setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
+                                    onClick={() => open.comment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
                                     style={{ fontSize: 11, fontWeight: 700, color: aColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
                                   >
                                     {av}%
@@ -1156,7 +1270,7 @@ export default function ComparisonTable({
                     }}>
                       {pSummary !== null
                         ? <button
-                            onClick={() => setFormulaModal({
+                            onClick={() => open.formula({
                               title: `${summaryMode.toUpperCase()} ${t("comparison.plannedP")}`,
                               value: `${pSummary}%`,
                               formula: summaryMode === "avg"
@@ -1185,7 +1299,7 @@ export default function ComparisonTable({
                       {isDiff
                         ? dSummary !== null
                           ? <button
-                              onClick={() => setFormulaModal({
+                              onClick={() => open.formula({
                                 title: `${summaryMode.toUpperCase()} ${t("comparison.differenceD")}`,
                                 value: `${dSummary > 0 ? "+" : ""}${dSummary}%`,
                                 formula: summaryMode === "avg"
@@ -1205,7 +1319,7 @@ export default function ComparisonTable({
                           : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
                         : aSummary !== null
                           ? <button
-                              onClick={() => setFormulaModal({
+                              onClick={() => open.formula({
                                 title: `${summaryMode.toUpperCase()} ${t("comparison.actualA")}`,
                                 value: `${aSummary}%`,
                                 formula: summaryMode === "avg"
@@ -1417,81 +1531,20 @@ export default function ComparisonTable({
         {t("zagruzka.tapComment")}
       </div>
 
-      {formulaModal && (
-        <FormulaModal
-          title={formulaModal.title}
-          value={formulaModal.value}
-          formula={formulaModal.formula}
-          inputs={formulaModal.inputs}
-          onClose={() => setFormulaModal(null)}
-          zIndex={fullscreen ? ABOVE_OVERLAY : undefined}
-        />
-      )}
-
-      {comment && (
-        <CommentModal
-          managerId={comment.managerId}
-          managerName={comment.managerName}
-          date={comment.date}
-          rawCell={comment.rawCell}
-          mode={comment.mode}
-          basis={basis}
-          onClose={() => setComment(null)}
-          formulaOnly={comment.formulaOnly ?? !allowComments}
-          formulaCollapsible
-          zIndex={fullscreen ? ABOVE_OVERLAY : undefined}
-        />
-      )}
-
-      {pendingInfo && (
-        <PendingInfoModal
-          managerName={pendingInfo.name}
-          date={pendingInfo.date}
-          reason={pendingInfo.reason}
-          onClose={() => setPendingInfo(null)}
-        />
-      )}
-
-      {showGuide && (
-        <ColorGuideModal
-          title={t("zagruzka.colorGuide")}
-          subtitle={t("zagruzka.colorGuideSub").replace("{page}", t("nav.zagruzka"))}
-          sections={[
-            { heading: t("zagruzka.guide.adSection"), segments: dsegs },
-            { heading: t("zagruzka.guide.pSection"),  segments: psegs },
-          ]}
-          onClose={() => setShowGuide(false)}
-        />
-      )}
-
-      {showCalc && (
-        <Modal
-          title={t("zagruzka.calcTitle")}
-          subtitle={t("zagruzka.calcSubtitle")}
-          icon={<Calculator size={18} style={{ color: "var(--brand)" }} />}
-          onClose={() => setShowCalc(false)}
-          maxWidth="max-w-sm"
-          footer={<Button onClick={() => setShowCalc(false)}>{t("zagruzka.calcDone")}</Button>}
-        >
-          {CALC_FACTOR_DEFS.map(f => (
-            <div key={f.key} className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{t(f.label)}</div>
-                <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{t(f.sub)}</div>
-              </div>
-              <SegmentedToggle
-                size="sm"
-                value={!!factors[f.key]}
-                onChange={(v) => onCalcFactorsChange?.({ ...factors, [f.key]: v })}
-                options={[[true, t("zagruzka.calcOn")], [false, t("zagruzka.calcOff")]]}
-              />
-            </div>
-          ))}
-          <div className="text-[11px] pt-2" style={{ color: "var(--text-4)", borderTop: "1px dashed var(--border)" }}>
-            {t("zagruzka.calcHint")}
-          </div>
-        </Modal>
-      )}
+      <TablePopups
+        control={popups}
+        fullscreen={fullscreen}
+        basis={basis}
+        allowComments={allowComments}
+        psegs={psegs}
+        dsegs={dsegs}
+        factors={factors}
+        onCalcFactorsChange={onCalcFactorsChange}
+      />
     </div>
   );
 }
+
+// Memoised: the grid is thousands of cells, and a page re-rendering for an
+// unrelated reason (a popup opening, a toggle elsewhere) must not redraw it.
+export default memo(ComparisonTable);

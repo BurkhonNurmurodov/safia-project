@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import useIsMobile from "../../hooks/useIsMobile";
+import useGridHover from "../../hooks/useGridHover";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import PendingInfoModal, { PENDING_ICONS, PENDING_MSG_KEYS } from "../ui/PendingInfoModal";
@@ -46,6 +47,14 @@ function getSegmentColor(v, segs) {
 }
 
 function shortDate(d) { return d.slice(0, 5); }
+function isoOf(ddmmyyyy) { const [d, m, y] = ddmmyyyy.split("."); return `${y}-${m}-${d}`; }
+
+// Defaults shared across renders, so a caller that omits a prop does not hand
+// the memoised grid a new object every time (see the memo at the bottom).
+const NO_IDS  = {};
+const NO_SEGS = [];
+const NO_SET  = new Set();
+const NOOP    = () => {};
 
 // Compute row statistic (only over approved days). `read` is the grid's one
 // value reader, so the pinned AVG/MAX/MIN reads exactly what the cells do.
@@ -66,23 +75,10 @@ function rowStat(managerName, read, data, dates, statMode, isApproved) {
 
 // ─── Cell style builder ───────────────────────────────────────────────────────
 
-function buildCellStyle({ color, grayed, rowHovered, colHovered, cellHovered, width }) {
-  let filter    = "none";
-  let transform = "none";
-  let boxShadow = "none";
-  let zIndex    = "auto";
-
-  if (!grayed && !color.noData) {
-    if (cellHovered) {
-      filter    = "brightness(1.25)";
-      transform = "scale(1.06)";
-      boxShadow = "0 4px 12px rgba(0,0,0,.25)";
-      zIndex    = 3;
-    } else if (rowHovered || colHovered) {
-      filter = "brightness(1.12)";
-    }
-  }
-
+// No filter / transform / shadow / z-index here: the hover lift is index.css's
+// («Grid hover», driven by hooks/useGridHover.js), and an inline value would
+// win over it.
+function buildCellStyle({ color, grayed, width }) {
   return {
     background:    color.noData ? "transparent" : color.bg,
     color:         color.fg,
@@ -94,10 +90,6 @@ function buildCellStyle({ color, grayed, rowHovered, colHovered, cellHovered, wi
     height:        34,
     border:        "1px solid var(--border)",
     opacity:       grayed ? 0.18 : 1,
-    filter,
-    transform,
-    boxShadow,
-    zIndex,
     verticalAlign: "middle",
     transition:    "filter .08s, transform .07s, box-shadow .07s",
     width:         width,
@@ -111,7 +103,7 @@ const AVG_CYCLE = ["avg", "max", "min"];
 
 // ─── Single-mode grid ─────────────────────────────────────────────────────────
 
-function SingleGrid({
+const SingleGrid = memo(function SingleGrid({
   dates, managers, data, mode, labelColor,
   onCellClick, onPendingClick, segs, selection, toggleSel, clearSel,
   managerIds, commentedCells, isoOf, approvedCells,
@@ -130,10 +122,8 @@ function SingleGrid({
   // it. Without `cellValue` it is the fleet heatmap's own Plan/Fact switch,
   // byte-for-byte what this grid has always read.
   const read = cellValue || ((cell) => (mode === "planned" ? cell?.baseline_util : cell?.net_util));
-  const [hoveredRow,  setHoveredRow]  = useState(null);
-  const [hoveredCol,  setHoveredCol]  = useState(null);
-  const [hoveredCell, setHoveredCell] = useState(null);
   const [nameAsc,     setNameAsc]     = useState(true);
+  const hover = useGridHover();
 
   const displayManagers = nameAsc !== null
     ? [...managers].sort((a, b) => nameAsc
@@ -143,7 +133,6 @@ function SingleGrid({
   // Display spelling of a row key. Rows sort by the KEY (the cell code on the
   // per-cell загрузка), so a leader's name appended here never reorders them.
   const shown = (name, full = false) => (labelFor ? labelFor(name, full) : tl(name));
-  const noSel = !selection;
 
   // A (manager, date) cell is gated until its day is approved. When
   // approvedCells is null the gate is OFF (e.g. still loading) → show all.
@@ -261,7 +250,10 @@ function SingleGrid({
     <div
       ref={scrollRef}
       style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}
-      onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); setHoveredCell(null); }}
+      data-grid=""
+      data-sel={selection ? "" : undefined}
+      onMouseOver={hover.onMouseOver}
+      onMouseLeave={hover.onMouseLeave}
       onClick={() => clearSel()}
     >
       <table style={{
@@ -364,7 +356,7 @@ function SingleGrid({
         </thead>
 
         <tbody>
-          {loading ? skRows : displayManagers.map(name => {
+          {loading ? skRows : displayManagers.map((name, ri) => {
             const mgrSel   = selection?.type === "manager";
             const thisSel  = mgrSel && selection.value === name;
             const thisGray = mgrSel && selection.value !== name;
@@ -405,7 +397,7 @@ function SingleGrid({
                 </td>
 
                 {/* Data cells */}
-                {dates.map(d => {
+                {dates.map((d, ci) => {
                   const cell   = data[name]?.[d];
                   const val    = read(cell);
                   const v      = val != null ? Math.round(val * 100) : -1;
@@ -419,15 +411,14 @@ function SingleGrid({
                   const pending = pendingReason !== null;
                   const color  = pending ? { bg: "transparent", fg: "var(--text-4)", accent: "var(--text-4)", noData: true } : getSegmentColor(v, segs);
                   const grayed = cellGrayed(name, d);
-                  const rowH   = noSel && hoveredRow === name;
-                  const colH   = noSel && hoveredCol === d;
-                  const cHov   = noSel && hoveredCell?.row === name && hoveredCell?.col === d;
 
                   return (
                     <td
                       key={d}
-                      onMouseEnter={() => { if (noSel) { setHoveredRow(name); setHoveredCol(d); setHoveredCell({ row: name, col: d }); } }}
-                      onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); setHoveredCell(null); }}
+                      className={color.noData ? undefined : "hm-live"}
+                      data-gt=""
+                      data-gr={ri}
+                      data-gc={ci}
                       onClick={e => {
                         e.stopPropagation();
                         if (selection) clearSel();
@@ -438,11 +429,7 @@ function SingleGrid({
                         ? t(PENDING_MSG_KEYS[pendingReason] || "zagruzka.pendingNotClosed")
                         : cellTitle?.(cell, name, d)}
                       style={{
-                        ...buildCellStyle({
-                          color, grayed,
-                          rowHovered: rowH, colHovered: colH, cellHovered: cHov,
-                          width: cellW,
-                        }),
+                        ...buildCellStyle({ color, grayed, width: cellW }),
                         ...(pending ? {
                           background: "repeating-linear-gradient(45deg, var(--bg-inner), var(--bg-inner) 5px, transparent 5px, transparent 10px)",
                           cursor: "pointer",
@@ -470,14 +457,7 @@ function SingleGrid({
                 {/* AVG / MAX / MIN cell — pinned right (hidden on phones) */}
                 {!isMobile && (
                   <td style={{
-                    ...buildCellStyle({
-                      color:      statColor,
-                      grayed:     thisGray,
-                      rowHovered: false,
-                      colHovered: false,
-                      cellHovered: false,
-                      width: AVG_W,
-                    }),
+                    ...buildCellStyle({ color: statColor, grayed: thisGray, width: AVG_W }),
                     ...stickyAvg,
                     zIndex:       4,
                     minWidth:     AVG_W,
@@ -534,17 +514,17 @@ function SingleGrid({
                 )}
               </td>
 
-              {dates.map(d => {
+              {dates.map((d, ci) => {
                 const cell = pinnedRow.data[d];
                 const val  = read(cell);
                 const v    = val != null ? Math.round(val * 100) : -1;
                 const color = getSegmentColor(v, segs);
-                const colH  = noSel && hoveredCol === d;
                 return (
                   <td
                     key={`unit-${d}`}
-                    onMouseEnter={() => { if (noSel) setHoveredCol(d); }}
-                    onMouseLeave={() => { if (noSel) setHoveredCol(null); }}
+                    className={color.noData ? undefined : "hm-live"}
+                    data-gt=""
+                    data-gc={ci}
                     onClick={e => {
                       e.stopPropagation();
                       if (selection) clearSel();
@@ -552,11 +532,7 @@ function SingleGrid({
                     }}
                     title={cellTitle?.(cell, pinnedRow.label, d)}
                     style={{
-                      ...buildCellStyle({
-                        color, grayed: false,
-                        rowHovered: false, colHovered: colH, cellHovered: false,
-                        width: cellW,
-                      }),
+                      ...buildCellStyle({ color, grayed: false, width: cellW }),
                       borderTop: "2px solid var(--border-md)",
                     }}
                   >
@@ -584,11 +560,7 @@ function SingleGrid({
                 const statColor = getSegmentColor(stat, segs);
                 return (
                   <td style={{
-                    ...buildCellStyle({
-                      color: statColor, grayed: false,
-                      rowHovered: false, colHovered: false, cellHovered: false,
-                      width: AVG_W,
-                    }),
+                    ...buildCellStyle({ color: statColor, grayed: false, width: AVG_W }),
                     ...stickyAvg,
                     zIndex:     4,
                     minWidth:   AVG_W,
@@ -608,18 +580,21 @@ function SingleGrid({
       </table>
     </div>
   );
-}
+});
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export default function HeatmapChart({
+// Memoised, with every callback it hands the grid held stable: the grid is
+// thousands of cells, and a page re-rendering for an unrelated reason (a popup
+// opening, a toggle elsewhere) must not redraw it.
+export default memo(function HeatmapChart({
   dates, managers, data,
   mode = "actual",
-  managerIds = {},
-  segments = [],
-  commentedCells = new Set(),
+  managerIds = NO_IDS,
+  segments = NO_SEGS,
+  commentedCells = NO_SET,
   approvedCells = null,
-  onCellClick = () => {},
+  onCellClick = NOOP,
   // Hover text for a cell that HAS a value: (cell, rowName, date) → string.
   // The percentage alone rarely says enough — the attendance grid uses this to
   // spell out the counts behind it ("on the list 85 · came 70 · absent 15").
@@ -675,28 +650,25 @@ export default function HeatmapChart({
 
   const segs = segments.length ? segments : DEFAULT_SEGMENTS;
 
-  function toggleSel(type, value) {
+  const toggleSel = useCallback((type, value) => {
     setSelection(prev =>
       prev?.type === type && prev?.value === value ? null : { type, value }
     );
-  }
-  function clearSel() { setSelection(null); }
-  function cycleAvg() {
+  }, []);
+  const clearSel = useCallback(() => setSelection(null), []);
+  const cycleAvg = useCallback(() => {
     setAvgMode(m => {
       const idx = AVG_CYCLE.indexOf(m);
       return AVG_CYCLE[(idx + 1) % AVG_CYCLE.length];
     });
-  }
-
-  const isoOf = (ddmmyyyy) => {
-    const [d, m, y] = ddmmyyyy.split(".");
-    return `${y}-${m}-${d}`;
-  };
+  }, []);
+  const onPendingClick = useCallback(
+    (name, date, reason) => setPendingInfo({ name, date, reason }), []);
 
   const gridProps = {
     dates, managers, data, labelColor,
     onCellClick,
-    onPendingClick: (name, date, reason) => setPendingInfo({ name, date, reason }),
+    onPendingClick,
     segs, selection, toggleSel, clearSel,
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
     avgMode, onCycleAvg: cycleAvg, cellTitle,
@@ -720,4 +692,4 @@ export default function HeatmapChart({
       )}
     </div>
   );
-}
+});
