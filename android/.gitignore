@@ -1,0 +1,18 @@
+# Machine-local and generated — never shipped.
+.gradle/
+.kotlin/
+local.properties
+build/
+.idea/
+*.iml
+captures/
+
+# The release signing key lives in ~/.safia-android/signing/, never in git
+# (CLAUDE.md, «The Android app»). These lines are the second line of defence
+# if a key, its passwords or a built package is ever copied in here: the Stop
+# hook runs `git add -A` and a push to main is a production deploy.
+*.jks
+*.keystore
+keystore.properties
+*.apk
+*.aab

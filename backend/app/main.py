@@ -968,6 +968,31 @@ def api_version():
     }
 
 
+# The Android app (android/) is a Trusted Web Activity: Chrome shows this site
+# inside it full-screen, with no address bar, only while this statement names
+# the app's package and the SHA-256 of the key it is signed with — and Android
+# reads the same file before it opens production links in the app. Mismatch is
+# silent: the app still works, but looks like a browser. The fingerprint is
+# PUBLIC (every copy of the APK carries it); the key itself lives only on the
+# Mac that builds the app. Publishing through Google Play with Play App Signing
+# re-signs the app with Google's key, whose fingerprint must then be ADDED here.
+ANDROID_ASSET_LINKS = [{
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+        "namespace": "android_app",
+        "package_name": "uz.safiacorporate.ims",
+        "sha256_cert_fingerprints": [
+            "4D:09:E1:1C:59:D8:21:BD:F4:BE:19:50:B7:56:D1:C3:DE:D0:10:57:A6:A1:71:BA:8C:01:7E:28:A5:2F:FE:9E",
+        ],
+    },
+}]
+
+
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+def android_asset_links():
+    return JSONResponse(ANDROID_ASSET_LINKS, headers={"Cache-Control": "public, max-age=3600"})
+
+
 # Serve React build — must come AFTER all API routes
 possible_dirs = [
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")),

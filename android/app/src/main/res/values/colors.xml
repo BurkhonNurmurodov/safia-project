@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The site's dark base background, the web manifest's theme_color. -->
+    <color name="systemBar">#0F1117</color>
+    <color name="splashBackground">#0F1117</color>
+    <!-- The logo disc's own gold (scripts/render-icons.py), behind the adaptive icon. -->
+    <color name="iconBackground">#D5B26F</color>
+</resources>

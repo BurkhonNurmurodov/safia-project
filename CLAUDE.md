@@ -5998,6 +5998,77 @@ no event; the route is the share sheet).
   `vite-plugin-pwa` would have added a peer-dependency risk to a pipeline whose
   `npm ci` is a deploy.
 
+## The Android app (`android/`)
+
+From **2026-09-28** (the operator's go-ahead) the platform ships an Android app
+— «Safia IMS», package **`uz.safiacorporate.ims`** — built as a **Trusted Web
+Activity (TWA)**: a launcher that hands the LIVE site to Chrome, which draws it
+full-screen with no address bar. The APK holds no screen of its own and no web
+code, and asks for no permissions.
+
+- **Why a TWA, not a WebView shell or Capacitor.** The app has to follow the
+  platform's update model — a push to main deploys and every tab picks it up.
+  A bundled frontend (Capacitor's normal mode) freezes the web code at the
+  APK's build; Capacitor's live-URL mode is documented as not for production
+  and proxies the HTML, dropping the site's own headers (CSP, no-store). A TWA
+  IS Chrome: every deploy reaches the app the moment it reaches the browser,
+  and Excel downloads, file uploads, the proof camera, the service worker and
+  the login work exactly as in Chrome, with no app-only code path on the site.
+  `inTelegram()` is false there, so the app is the BROWSER door — people sign
+  in with their «Sayt logini».
+- **What makes it an app and not a browser tab is `/.well-known/assetlinks.json`**
+  (`ANDROID_ASSET_LINKS` in `backend/app/main.py`, public, before the SPA
+  catch-all): it names the package and the SHA-256 of the release key, while
+  the APK's `asset_statements` names the site. Chrome hides the address bar
+  only while both halves agree, and Android reads the same file before opening
+  `https://production.safiacorporate.uz/…` links tapped in other apps in the
+  app (`autoVerify`). **A mismatch is SILENT** — the app still works, but looks
+  like a browser — so the fingerprint `build-release.sh` prints must equal the
+  one served.
+- **The signing key lives on the Mac that builds, never in git** —
+  `~/.safia-android/signing/safia-ims-release.jks` + `keystore.properties`
+  (random password). `android/app/build.gradle` reads it from there (or from
+  `SAFIA_KEYSTORE_PROPERTIES`) and REFUSES to build a release without it: an
+  unsigned or debug-signed APK can neither update an installed copy nor pass
+  the asset-link check. `android/.gitignore` also blocks `*.jks`, `*.keystore`,
+  `keystore.properties`, `*.apk` and `*.aab`, because the Stop hook runs
+  `git add -A` and a push is a deploy. **Losing the key means no installed copy
+  can ever be updated** (every phone uninstalls and reinstalls), so it must be
+  backed up. Its fingerprint is public; every APK carries it.
+- **Building**: `bash android/build-release.sh` → the signed APK (sideloading)
+  and AAB (Google Play) in `~/.safia-android/releases/`, never in the repo,
+  with the signer's SHA-256 printed. Toolchain: JDK 21 in
+  `~/.safia-android/jdk-21`, Android SDK (platform 36, build-tools 36.0.0) in
+  `~/Library/Android/sdk`, AGP 8.13.2 + Gradle 8.14.5 (the wrapper pins the
+  distribution's checksum), `com.google.androidbrowserhelper:androidbrowserhelper:2.7.3`.
+  Its manifest keys are that library's own (`trusted.LauncherActivityMetadata`)
+  — a misspelt key is ignored without a word. Nothing here touches the deploy:
+  `deploy/deploy.sh` reacts to backend/, bot/ and frontend/ only.
+- **The APK changes rarely** — only when the shell does (icon, colours, the
+  library, the target SDK). **Raise `versionCode` on every release**, or phones
+  refuse the update. The site's `VERSION` is independent of it: the app shows
+  whatever is deployed.
+- **Icons**: `scripts/render-android-icons.py` renders the launcher icons
+  (legacy 48 dp + the adaptive foreground over the logo's gold, at the PWA
+  maskable icon's proportion) and the 160 dp splash from
+  `frontend/public/logo.png`. Never hand-edit the PNGs.
+- **It needs a TWA-capable browser** (Chrome; Samsung Internet and others
+  qualify). Without one the app opens the site in a Custom Tab
+  (`FALLBACK_STRATEGY` customtabs, with an address bar) rather than a bare
+  WebView, where downloads and uploads would break. Storage and site
+  permissions (the camera) are the browser's, shared with its own tabs of the
+  site: signing out in Chrome signs out the app.
+- **Distribution is by hand**: the APK is sent in Telegram; Android asks once to
+  allow installs from that app, and Play Protect may warn about an unknown
+  developer. Google Play needs a developer account, and Play App Signing
+  re-signs with Google's key — ADD its fingerprint to `ANDROID_ASSET_LINKS`
+  before that release goes out.
+- Deliberately not built (yet): a leader checklist screen of the app's own —
+  the proof camera is reachable only from the bot's buttons today, and those
+  open in Telegram, so the camera wins an app could bring (asked once, one
+  window) wait on that screen; push notifications (Telegram stays the channel);
+  an emulator run (the build Mac has no room for one — test on a phone).
+
 ## ARC tickets (`/arc`, page key `arc`)
 
 A mirror of «АРС Фабрика» from IT's **internal read-only API**

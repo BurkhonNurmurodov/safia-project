@@ -1,0 +1,68 @@
+plugins {
+    id "com.android.application"
+}
+
+// The release key NEVER lives in the repo. It sits beside the toolchain in
+// ~/.safia-android/signing/ on the Mac that builds the app (or wherever
+// SAFIA_KEYSTORE_PROPERTIES points). Losing it means no installed copy can be
+// updated again — each phone would have to uninstall and reinstall — and the
+// site's /.well-known/assetlinks.json vouches for exactly this key's SHA-256.
+def signingProps = new Properties()
+def signingFile = file(System.getenv("SAFIA_KEYSTORE_PROPERTIES")
+        ?: "${System.getProperty("user.home")}/.safia-android/signing/keystore.properties")
+if (signingFile.isFile()) {
+    signingFile.withInputStream { signingProps.load(it) }
+}
+
+android {
+    namespace "uz.safiacorporate.ims"
+    compileSdk 36
+    buildToolsVersion "36.0.0"
+
+    defaultConfig {
+        // PERMANENT: Android identifies the app by it, and assetlinks.json
+        // names it. Changing it makes a different app.
+        applicationId "uz.safiacorporate.ims"
+        minSdk 23
+        targetSdk 36
+        // Raise versionCode on EVERY release, or phones refuse the update.
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    signingConfigs {
+        release {
+            if (signingFile.isFile()) {
+                storeFile file(signingProps["storeFile"])
+                storePassword signingProps["storePassword"]
+                keyAlias signingProps["keyAlias"]
+                keyPassword signingProps["keyPassword"]
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// An unsigned or debug-signed package is worse than none: it cannot update an
+// installed copy, and Chrome would not recognise it as ours (assetlinks.json
+// names the release key), so the app would open with an address bar.
+gradle.taskGraph.whenReady { graph ->
+    if (!signingFile.isFile() && graph.allTasks.any { it.name.toLowerCase().contains("release") }) {
+        throw new GradleException("Release signing key not found: ${signingFile}. See CLAUDE.md «The Android app».")
+    }
+}
+
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.7.3"
+}
