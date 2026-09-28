@@ -548,11 +548,13 @@ export default function AiProgress({ showIdle = false }) {
             most wanted, so the finished banner is a door too. */}
         <OpenDetails onClick={() => setDetails(true)} title={T.details}>
           <CheckCircle2 size={15} color={GOOD} className="flex-shrink-0" />
-          <span className="text-[13px] font-semibold group-hover:underline underline-offset-2"
-            style={{ color: GOOD }}>{T.done}</span>
-          <span className="text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
-            {fmt(T.doneN, p.done ?? 0)}
-          </span>
+          <TitleCount>
+            <span className="text-[13px] font-semibold leading-snug group-hover:underline underline-offset-2"
+              style={{ color: GOOD }}>{T.done}</span>
+            <span className="text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
+              {fmt(T.doneN, p.done ?? 0)}
+            </span>
+          </TitleCount>
         </OpenDetails>
         <Button size="sm" variant="ghost" className="max-sm:h-9" onClick={() => setDismissed(true)}>{T.hide}</Button>
       </div>
