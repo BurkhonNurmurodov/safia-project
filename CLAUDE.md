@@ -6287,6 +6287,24 @@ untouched.
   mapped fields no ticket sends any more. It replaced the probe's
   `unknown_fields` on the panel, which read ONE item's top-level keys. A new
   attribute is stored in `raw` already — showing it is a column, not a re-sync.
+- **What the API carries (read off production, 2026-09-28):** the list gained
+  three fields since August, all about outsourcing and all empty so far —
+  `is_outsource` (always false), `deadline_outsource`, `comment_outsource`.
+  A SINGLE-TICKET endpoint exists, `GET /arc/api/v1/requests/factory/{id}`
+  (`/arc/api/v1/requests/{id}` answers 404 «Origin not found»), and carries 15
+  fields the list does not: `logs` (status history: user_name, status,
+  created_at), `files` (`file_path` «misc/YYYY/MM/DD/<uuid>.jpeg»),
+  `work_sessions` + `total_worked_seconds`, `paused_at` / `paused_by` /
+  `pause_comment`, `delayed_at`, `expense`, `request_sum`, `updated_at`,
+  `client_phone`, `werks` (SAP plant, null), `category_id`,
+  `other_active_branch_requests`. The mirror does not call it yet — one call
+  per ticket, like the internal API's card. The openapi document is refused
+  (401 even with the bearer). **No field names a cell**: the whole factory is
+  ONE branch, «Учтепа»; where the work is lives only in the free-text
+  description (block, floor, room, workshop, rarely a cell code), and the
+  requester (`client_name`) is a leader owning exactly one cell on ~27% of
+  Uchtepa tickets. A cancelled ticket was seen with `status` 7 while
+  `normalized_status` still read «in_progress».
 - Everything «ARC tickets» says is GONE (the prober, the «API» panel, `/probe`,
   `/spec`) is gone from `/arc` only — here it is back, admin-only, as it was.
 
