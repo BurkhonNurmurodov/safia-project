@@ -407,6 +407,10 @@ function Group({ group, tasks, T, now, onOpen, rights, perTask, collapsible, def
 
 export default function Checklist({
   leaderId, date, needLeader, waiting, isLeader, nm, onMeta, openTask, onOpened,
+  // The page's leader picker, handed down so the empty state can carry it: on
+  // a phone the «Lider» filter lives inside the filter sheet, and «pick a
+  // leader in the filter above» pointed at a control nobody could see.
+  leaderPicker = null,
 }) {
   const T = useClT();
   const qc = useQueryClient();
@@ -506,7 +510,11 @@ export default function Checklist({
   if (needLeader) {
     return (
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <EmptyState icon={UserSearch} title={T.pickT} message={T.pickM} showUploadLink={false} height="h-56" />
+        <EmptyState icon={UserSearch} title={T.pickT} message={leaderPicker ? T.pickHere : T.pickM}
+          showUploadLink={false} height={leaderPicker ? "pt-8 pb-4 px-4" : "h-56"} />
+        {leaderPicker && (
+          <div className="px-4 pb-4 w-full max-w-sm mx-auto">{leaderPicker}</div>
+        )}
       </div>
     );
   }

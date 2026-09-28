@@ -176,7 +176,7 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
     <label key={o}
       {...dragRow(o)}
       title={label(o)}
-      className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs"
+      className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs max-sm:py-2.5 max-sm:text-[13px]"
       style={{ color: "var(--text-2)" }}
       onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
@@ -199,7 +199,7 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
         <input
           value={q} onChange={e => setQ(e.target.value)}
           placeholder={t("common.search")} autoFocus={autoFocusOk()}
-          className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none"
+          className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none max-sm:text-sm max-sm:py-2.5"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
         />
       )}
@@ -301,7 +301,7 @@ export function PickFilter({ opts, value, onChange, searchable = false, close, n
         <input
           value={q} onChange={e => setQ(e.target.value)}
           placeholder={t("common.search")} autoFocus={autoFocusOk()}
-          className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none"
+          className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none max-sm:text-sm max-sm:py-2.5"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
         />
       )}
@@ -320,7 +320,9 @@ export function PickFilter({ opts, value, onChange, searchable = false, close, n
             <button
               key={String(o.value)} title={label(o)}
               onClick={() => { onChange(o.value); close && close(); }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-left"
+              // Thumb-sized below sm (≈40px): at 28px the rows of a filter
+              // sheet were the smallest targets on a phone page.
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-left max-sm:py-2.5 max-sm:text-[13px]"
               style={{
                 background: sel ? "var(--brand-bg)" : "transparent",
                 color: sel ? "var(--brand-text)" : "var(--text-2)",

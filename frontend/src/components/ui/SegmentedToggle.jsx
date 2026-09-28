@@ -108,7 +108,7 @@ export default function SegmentedToggle({
   useLayoutEffect(() => {
     revealActive();
     syncEdges();
-  }, [value, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [value, items.length]);
 
   useEffect(() => {
     syncEdges();
@@ -138,7 +138,7 @@ export default function SegmentedToggle({
       window.removeEventListener("resize", onScroll);
       ro?.disconnect();
     };
-  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [items.length]);
 
   const enabledIdx = items.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
 

@@ -1370,7 +1370,7 @@ function ExclChip({ row, T }) {
   );
 }
 
-function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent, fit, loading }) {
+function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent, fit, loading, className = "" }) {
   // `fit` cards hold a person's name: soften the casing, then auto-shrink it to
   // the card width (abbreviating to "Surname G." only if it still won't fit).
   const fitFull = fit ? titleCaseShout(value) : value;
@@ -1382,7 +1382,7 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
   // in one grid row stretch to one height, and their numbers line up even when
   // one label runs to a second line on a phone and the other does not.
   return (
-    <div className="relative rounded-2xl p-3.5 sm:p-4 overflow-hidden h-full flex flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div className={`relative rounded-2xl p-3.5 sm:p-4 overflow-hidden h-full flex flex-col ${className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       {accent && <div className="absolute inset-x-0 top-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />}
       <div className="flex items-start justify-between gap-2 mb-3">
         {/* Two lines, never an ellipsis: at half a phone's width «O'RTACHA
@@ -1409,7 +1409,7 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
         // as two different kinds of figure. One size, up to two lines, whole.
         <div className="mt-auto flex flex-col items-start gap-1.5 sm:flex-row sm:items-end sm:justify-between sm:gap-2 min-w-0">
           <span className="sm:hidden text-base font-bold leading-snug line-clamp-2 break-words w-full"
-            style={{ color: valueColor || "var(--text-1)" }}>{fitFull}</span>
+            title={fitFull} style={{ color: valueColor || "var(--text-1)" }}>{twoWords(fitFull)}</span>
           <FitText full={fitFull} short={abbrevName(fitFull)} className="hidden sm:block sm:flex-1"
             style={{ color: valueColor || "var(--text-1)" }} />
           {pill}
@@ -1884,7 +1884,10 @@ function StandCard({ e, worst, metric, T, name, sup, cuts, trend, shift }) {
             <div className="mt-0.5 flex items-center gap-1 min-w-0 text-[10.5px] leading-tight"
               title={`${T.supervisor}: ${sup}`} style={{ color: "var(--text-3)" }}>
               <ShieldCheck size={11} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
-              <span className="truncate">{initialSurname(sup)}</span>
+              {/* The spelling of the register right below: «N. Nurbek» beside
+                  the desktop table, «Nurliboyev Nurbek» beside the phone list. */}
+              <span className="truncate hidden sm:inline">{initialSurname(sup)}</span>
+              <span className="truncate sm:hidden">{twoWords(sup)}</span>
             </div>
           )}
         </div>
@@ -3455,7 +3458,7 @@ export default function Leaders() {
   // a thumb that meant to move the page gets caught moving a list. A new
   // search, band or filter starts from the top again.
   const REP_STEP = 20;
-  const [repShown, setRepShown] = useState(REP_STEP);
+  const [repMore, setRepMore] = useState({ key: "", n: REP_STEP });
 
   // table rows: search + score-band filter, then sortable columns
   const displayRows = useMemo(() => {
@@ -3510,12 +3513,13 @@ export default function Leaders() {
     });
     return arr;
   }, [regRows, tSearch, tBand, effVerify, tSort, tl, isLeader]);
-  // A different question starts the phone list from its top again. Keyed on
-  // the INPUTS rather than on `displayRows`, which a background refetch
-  // re-creates too — that would snap an operator twenty cards deep back to
-  // the first page every time they came back to the tab.
-  useEffect(() => { setRepShown(REP_STEP); },
-    [tSearch, tBand, effVerify, tSort, startDate, endDate, effShift, effSup, effLeader]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A different question starts the phone list from its top again: the count
+  // is remembered against the question it was grown under, and any other
+  // question reads REP_STEP. Keyed on the INPUTS rather than on `displayRows`,
+  // which a background refetch re-creates too — that would snap an operator
+  // twenty cards deep back to the first page every time they returned.
+  const repKey = JSON.stringify([tSearch, tBand, effVerify, tSort, startDate, endDate, effShift, effSup, effLeader]);
+  const repShown = repMore.key === repKey ? repMore.n : REP_STEP;
 
   // What the rows ON SCREEN contain — the register's summary strip.
   //
@@ -3688,6 +3692,25 @@ export default function Leaders() {
     setFLeader("All");
   }, [setStartDate, setEndDate, setFShift, setFSup, setFLeader]);
 
+  // The «Chek-list» leader picker — ONE element, drawn in two places: the
+  // filter panel's pinned section, and the tab's own empty state, where a phone
+  // has no other visible way to it (the section lives in the filter sheet).
+  const clLeaderPicker = (close) => (
+    <PickFilter searchable close={close}
+      opts={clLeaders.map((p) => ({
+        value: p.id, label: nm(p.name),
+        title: p.supervisor ? `${nm(p.name)} · ${nm(p.supervisor)}` : nm(p.name),
+      }))}
+      value={clLeader?.id ?? null}
+      onChange={(id) => {
+        setClLeaderPick(id);
+        // Keep the rest of the page on the same person where the
+        // register knows them by this name.
+        const p = clLeaders.find((x) => x.id === id);
+        if (p && leaderOptions.includes(p.name)) setFLeader(p.name);
+      }} />
+  );
+
   // ONE-ROW scope bar: period inline; shift / supervisor / leader live in the
   // consolidated panel (role-scoped) and surface as chips when active. It sits
   // ABOVE the tab strip because it belongs to the page, not to a view — a
@@ -3751,21 +3774,7 @@ export default function Leaders() {
               active: !!clLeader,
               display: clLeader ? nm(clLeader.name) : "",
               onClear: () => setClLeaderPick(null),
-              render: ({ close } = {}) => (
-                <PickFilter searchable close={close}
-                  opts={clLeaders.map((p) => ({
-                    value: p.id, label: nm(p.name),
-                    title: p.supervisor ? `${nm(p.name)} · ${nm(p.supervisor)}` : nm(p.name),
-                  }))}
-                  value={clLeader?.id ?? null}
-                  onChange={(id) => {
-                    setClLeaderPick(id);
-                    // Keep the rest of the page on the same person where the
-                    // register knows them by this name.
-                    const p = clLeaders.find((x) => x.id === id);
-                    if (p && leaderOptions.includes(p.name)) setFLeader(p.name);
-                  }} />
-              ),
+              render: ({ close } = {}) => clLeaderPicker(close),
             } : {
               key: "leader", icon: User, label: T.leader,
               active: fLeader !== "All",
@@ -3913,7 +3922,8 @@ export default function Leaders() {
           nm={nm}
           onMeta={setClMeta}
           openTask={clOpen}
-          onOpened={() => setClOpen(null)} />
+          onOpened={() => setClOpen(null)}
+          leaderPicker={!isLeader && clLeaders.length > 0 ? clLeaderPicker() : null} />
       </Layout>
     );
   }
@@ -4024,7 +4034,10 @@ export default function Leaders() {
 
         {/* Lowest-performing leader — hidden for a leader (it's just themselves) */}
         {!isLeader && (
+          // A brigadir sees three cards; on a two-column phone grid the third
+          // stood alone beside a hole, so it takes the whole row there.
           <StatCard label={T.lowLeader} icon={User} tip={T.tipLowLeader} fit loading={showLoading}
+            className={isSupervisor ? "col-span-2 lg:col-span-1" : ""}
             value={hasData && insights.lowLeader ? nm(insights.lowLeader.name) : "—"}
             badge={hasData && insights.lowLeader ? `${insights.lowLeader.val}%` : null}
             badgeColor={hasData && insights.lowLeader ? scoreColor(insights.lowLeader.val) : "var(--text-4)"} />
@@ -4566,7 +4579,7 @@ export default function Leaders() {
                 );
               })}
               {displayRows.length > repShown && (
-                <button type="button" onClick={() => setRepShown((n) => n + REP_STEP)}
+                <button type="button" onClick={() => setRepMore({ key: repKey, n: repShown + REP_STEP })}
                   className="w-full min-h-[48px] px-3 py-3 flex items-center justify-center gap-2 text-[13px] font-semibold transition-colors hover:bg-[var(--bg-inner)]"
                   style={{ borderTop: "1px solid var(--border)", color: "var(--brand-text)" }}>
                   <ChevronDown size={15} />
