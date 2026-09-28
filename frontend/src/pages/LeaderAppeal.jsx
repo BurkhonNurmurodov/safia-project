@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Ban, ArrowUpCircle, ShieldCheck, RotateCcw, ExternalLink,
+  Ban, ArrowUpCircle, ShieldCheck, RotateCcw, ChevronLeft, ChevronRight, ChevronDown,
   MessageSquareWarning, MessageCircle, Clock, Hourglass, UserCheck, CircleSlash,
-  Camera, ImageUp, Timer, Images,
+  Camera, ImageUp, Timer, Images, Gavel, FileText, Maximize2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
@@ -32,19 +32,34 @@ import api from "../utils/api";
  * proofs filed after their deadline are argued as a conversation between the
  * three people the chain is made of — the leader, their brigadir, the admins —
  * and this page is where it happens. It reads top to bottom in the order a
- * ruling needs:
+ * ruling is MADE — read, then decide (2026-09-28, reworked for phones):
  *
- *   1. the RULING buttons, for whoever may rule at this stage and nobody else
- *      (the server's `canSupervise` / `canDecide`, never a role guess): the
- *      brigadir refuses or passes up — both need their comment; an admin
- *      refuses (reason required) or upholds (comment optional); an admin can
- *      take a ruling back, which REOPENS the chat at that stage;
- *   2. the EVIDENCE — the proof photos and the AI's reason for the rejection;
- *      a late proof has no AI verdict (the AI never reviews one), so its
- *      photos and how late it came stand there instead;
+ *   1. the CASE — whose appeal, which task, which day, where it stands; for the
+ *      one person whose turn it is, a «your ruling is waiting» row that jumps
+ *      straight to the ruling (so nobody has to hunt for it);
+ *   2. the EVIDENCE — the proof photos, drawn large (a lone photo takes the
+ *      card's width: it IS the thing being judged), and the AI's reason for the
+ *      rejection; a late proof has no AI verdict (the AI never reviews one), so
+ *      its photos and how late it came stand there instead;
  *   3. the CHAT — the filing, every question and answer, every ruling, with
  *      files of any type attached. All three parties read everything and are
- *      told about every message; writing stops once a ruling is final.
+ *      told about every message; writing stops once a ruling is final;
+ *   4. the RULING, at the end of the conversation and right above the
+ *      composer, for whoever may rule at this stage and nobody else (the
+ *      server's `canSupervise` / `canDecide`, never a role guess): the brigadir
+ *      refuses or passes up — both need their comment; an admin refuses
+ *      (reason required) or upholds (comment optional); an admin can take a
+ *      ruling back, which REOPENS the chat at that stage.
+ *
+ * The ruling used to open the page. On a phone it had scrolled under the
+ * header before the photo and the discussion — what it depends on — were even
+ * read, so a ruler read down and then scrolled back up to act, and the page's
+ * first move invited deciding before reading. At the end of the discussion it
+ * is where the reader arrives, and the first screen still says whose turn it
+ * is and takes them there in one tap.
+ *
+ * Once the case scrolls away the app header names it (leader · task · day), so
+ * a reader deep in a long thread never loses whose appeal they are in.
  *
  * Auth-only and row-scoped, like `/leaders/report/:uid`: it is where the
  * Telegram «Open chat» button lands, and the leader or brigadir tapping it is
@@ -63,6 +78,11 @@ const day = (iso) => {
 };
 const stamp = (ts) => (ts ? `${day(ts)} ${String(ts).slice(11, 16)}` : "");
 const pick = (o, lang) => o?.[lang] || o?.ru || o?.en || o?.uz || "";
+// «Surname Given» — what the app header has room for («Akramov Dilshodbek»).
+const twoWords = (s) => String(s || "").trim().split(/\s+/).filter(Boolean).slice(0, 2).join(" ");
+const hhmm = (ts) => (ts ? String(ts).slice(11, 16) : "");
+const reduceMotion = () =>
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 const TXT = {
   uz: {
@@ -108,6 +128,8 @@ const TXT = {
     f_off_topic: "Rasm vazifaga mos emas", f_not_proven: "Bajarilgani ko'rinmayapti",
     f_unreadable: "Rasm o'qilmadi",
     photoFailed: "Rasm yuklanmadi", retry: "Qayta urinish",
+    turnShort: "Qaror sizdan kutilmoqda", toRuling: "Qarorga o'tish", rulingTitle: "Sizning qaroringiz",
+    zoom: "Kattalashtirish", photosOne: "{n} ta rasm", photosMany: "{n} ta rasm",
   },
   uz_cyrl: {
     titleDispute: "AI қарорига норозилик", titleLate: "Кечиккан исбот", titleNew: "Янги норозилик",
@@ -152,6 +174,8 @@ const TXT = {
     f_off_topic: "Расм вазифага мос эмас", f_not_proven: "Бажарилгани кўринмаяпти",
     f_unreadable: "Расм ўқилмади",
     photoFailed: "Расм юкланмади", retry: "Қайта уриниш",
+    turnShort: "Қарор сиздан кутилмоқда", toRuling: "Қарорга ўтиш", rulingTitle: "Сизнинг қарорингиз",
+    zoom: "Катталаштириш", photosOne: "{n} та расм", photosMany: "{n} та расм",
   },
   ru: {
     titleDispute: "Возражение на решение ИИ", titleLate: "Позднее подтверждение", titleNew: "Новое возражение",
@@ -196,6 +220,8 @@ const TXT = {
     f_off_topic: "Фото не по задаче", f_not_proven: "Выполнение не видно",
     f_unreadable: "Фото не прочиталось",
     photoFailed: "Фото не загрузилось", retry: "Повторить",
+    turnShort: "Ждёт вашего решения", toRuling: "Перейти к решению", rulingTitle: "Ваше решение",
+    zoom: "Увеличить", photosOne: "{n} фото", photosMany: "{n} фото",
   },
   en: {
     titleDispute: "Objection to an AI ruling", titleLate: "Late proof", titleNew: "New objection",
@@ -240,6 +266,8 @@ const TXT = {
     f_off_topic: "Photo is off-topic", f_not_proven: "Completion not visible",
     f_unreadable: "Photo unreadable",
     photoFailed: "Photo failed to load", retry: "Retry",
+    turnShort: "Waiting for your ruling", toRuling: "Go to the ruling", rulingTitle: "Your ruling",
+    zoom: "Enlarge", photosOne: "{n} photo", photosMany: "{n} photos",
   },
 };
 
@@ -275,66 +303,99 @@ function Card({ children }) {
   );
 }
 
-/** The photos the AI refused — the day report's own archive copies (with the
- *  in-app stamp where there is one) or the Form links, through the report's
- *  photo doors, which the `uid` authorises. */
-function DisputePhotos({ photos, uid, T, onZoom }) {
-  if (!photos?.length) {
-    return <p className="text-[11px]" style={{ color: "var(--text-4)" }}>{T.noPhotos}</p>;
+/** One proof photo. The image is fetched with the session's auth (ProxyPhoto);
+ *  over it sits a real, labelled button — a tap on a phone, a keyboard stop on a
+ *  desktop — that opens it full-screen. A LONE photo is drawn at the card's
+ *  width with its whole frame (`contain`): it is the evidence the ruling is
+ *  about, and at the old 88px a document photo was a grey square nobody could
+ *  read. Several share a grid of squares and open the same way. */
+function ProofTile({ render, caption, big, T, onZoom }) {
+  const [src, setSrc] = useState("");
+  return (
+    <figure className="min-w-0 m-0">
+      <div className={`relative rounded-lg overflow-hidden ${big ? "" : "aspect-square"}`}
+        style={{ background: "var(--bg-inner)" }}>
+        {render({ big, onReady: setSrc, onClick: onZoom })}
+        {src && (
+          <button type="button" onClick={() => onZoom(src)} aria-label={T.zoom} title={T.zoom}
+            className="group absolute inset-0 w-full h-full rounded-lg focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--brand)]">
+            <span className={`absolute right-2 bottom-2 grid place-items-center rounded-full text-white transition-transform group-hover:scale-110 ${big ? "w-9 h-9" : "w-7 h-7"}`}
+              style={{ background: "rgba(0,0,0,.55)" }}>
+              <Maximize2 size={big ? 16 : 13} />
+            </span>
+          </button>
+        )}
+      </div>
+      {caption && (
+        <figcaption className={`mt-1.5 flex items-center gap-1.5 min-w-0 ${big ? "text-[12px]" : "text-[11px]"}`}
+          style={{ color: "var(--text-2)" }}>
+          <caption.Icon size={big ? 13 : 12} className="flex-shrink-0" style={{ color: caption.tone }} />
+          <span className="truncate">{caption.text}</span>
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+function Gallery({ items, T, onZoom }) {
+  if (!items.length) {
+    return <p className="text-[13px]" style={{ color: "var(--text-3)" }}>{T.noPhotos}</p>;
+  }
+  if (items.length === 1) {
+    const [only] = items;
+    return <ProofTile big render={only.render} caption={only.caption} T={T} onZoom={onZoom} />;
   }
   return (
-    <div className="flex flex-wrap gap-2">
-      {photos.map((p, i) => (
-        <div key={p.id ?? p.url ?? i} className="flex flex-col gap-1" style={{ width: 88 }}>
-          <div style={{ width: 88, height: 88 }}>
-            {p.kind === "bot"
-              ? <BotPhoto id={p.id} uid={uid} T={T} thumb className="" onClick={onZoom} />
-              : <ReportPhoto src={p.url} uid={uid} T={T} thumb className="" onClick={onZoom} />}
-          </div>
-          {p.cam && (
-            <span className="inline-flex items-center gap-1 text-[9px]" style={{ color: C_OK }}>
-              <Camera size={9} />{T.srcCam}
-            </span>
-          )}
-        </div>
+    <div className={`grid gap-2 ${items.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+      {items.map((it) => (
+        <ProofTile key={it.key} render={it.render} caption={it.caption} T={T} onZoom={onZoom} />
       ))}
     </div>
   );
 }
 
+// How big a lone photo may be drawn — most of a phone's screen, never more.
+const BIG_MAX = "min(62vh, 520px)";
+const photoProps = (big) => (big ? { fit: "contain", maxHeight: BIG_MAX } : { thumb: true });
+// Where a proof came from: shot in the app (the server stamped its time) or a
+// picked file. Green camera = the time on it is the platform's own.
+const camCaption = (T, at) => ({ Icon: Camera, tone: C_OK, text: at ? `${T.srcCam} · ${at}` : T.srcCam });
+const uploadCaption = (T, at) => ({ Icon: ImageUp, tone: "var(--text-4)", text: at ? `${T.srcUpload} · ${at}` : T.srcUpload });
+
+/** The photos the AI refused — the day report's own archive copies (with the
+ *  in-app stamp where there is one) or the Form links, through the report's
+ *  photo doors, which the `uid` authorises. */
+function DisputePhotos({ photos, uid, T, onZoom }) {
+  const items = (photos || []).map((p, i) => ({
+    key: p.id ?? p.url ?? i,
+    render: ({ big, onReady, onClick }) => (p.kind === "bot"
+      ? <BotPhoto id={p.id} uid={uid} T={T} className="" {...photoProps(big)} onReady={onReady} onClick={onClick} />
+      : <ReportPhoto src={p.url} uid={uid} T={T} className="" {...photoProps(big)} onReady={onReady} onClick={onClick} />),
+    caption: p.cam ? camCaption(T, hhmm(p.cam?.at)) : uploadCaption(T, ""),
+  }));
+  return <Gallery items={items} T={T} onZoom={onZoom} />;
+}
+
 function LatePhotos({ item, T, onZoom }) {
-  if (!item.photos?.length) {
-    return <p className="text-[11px]" style={{ color: "var(--text-4)" }}>{T.noPhotos}</p>;
-  }
-  return (
-    <div className="flex flex-wrap gap-2">
-      {item.photos.map((p) => {
-        const cam = p.source === "camera";
-        const when = cam ? (p.stamp?.slice(-8) || String(p.at || "").slice(11, 16))
-          : String(p.got || "").slice(11, 16);
-        return (
-          <div key={p.id} className="flex flex-col gap-1" style={{ width: 88 }}>
-            <div style={{ width: 88, height: 88 }}>
-              <LateProofPhoto lateId={item.id} id={p.id} T={T} thumb className="" onClick={onZoom} />
-            </div>
-            <span className="inline-flex items-center gap-1 text-[9px] leading-tight"
-              title={cam ? T.srcCam : T.srcUpload}
-              style={{ color: cam ? C_OK : "var(--text-4)" }}>
-              {cam ? <Camera size={9} /> : <ImageUp size={9} />}
-              <span className="truncate">{when || (cam ? T.srcCam : T.srcUpload)}</span>
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
+  const items = (item.photos || []).map((p) => {
+    const cam = p.source === "camera";
+    const when = cam ? (p.stamp?.slice(-8, -3) || hhmm(p.at)) : hhmm(p.got);
+    return {
+      key: p.id,
+      render: ({ big, onReady, onClick }) => (
+        <LateProofPhoto lateId={item.id} id={p.id} T={T} className="" {...photoProps(big)}
+          onReady={onReady} onClick={onClick} />),
+      caption: cam ? camCaption(T, when) : uploadCaption(T, when),
+    };
+  });
+  return <Gallery items={items} T={T} onZoom={onZoom} />;
 }
 
 function Fact({ label, value, tone }) {
   return (
     <div className="min-w-0">
-      <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-4)" }}>{label}</div>
-      <div className="text-[13px] font-semibold tabular-nums" style={{ color: tone || "var(--text-1)" }}>{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="mt-0.5 text-[14px] font-semibold tabular-nums" style={{ color: tone || "var(--text-1)" }}>{value}</div>
     </div>
   );
 }
@@ -354,43 +415,91 @@ function useKinds(T, late) {
 const roleLabelFor = (T) => (role) =>
   ({ leader: T.rLeader, supervisor: T.rSupervisor, admin: T.rAdmin })[role] || "";
 
-/** Header: whose appeal, about which task, where it stands. */
-function Header({ T, title, item, late, onBack, lang, tl }) {
+/** The case: whose appeal, about which task, where it stands — and, for the
+ *  one person whose turn it is, a row that takes them to the ruling. The page
+ *  title («AI qaroriga norozilik») is the app header's; this card leads with
+ *  the PERSON, which is what a reader scanning several appeals tells apart.
+ *  `idRef` marks the name block: once it scrolls away, the app header takes
+ *  over naming the case (see AppealView). */
+function Header({ T, item, late, onBack, lang, tl, idRef, turn, onToRuling, report }) {
+  const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]";
   return (
     <Card>
-      <div className="px-4 py-3.5">
+      <div className="px-3 sm:px-6 pt-2 pb-4">
         <button type="button" onClick={onBack}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold mb-2"
-          style={{ color: "var(--text-4)" }}>
-          <ArrowLeft size={13} /> {T.back}
+          className={`-ml-1.5 mb-1 inline-flex items-center gap-0.5 h-9 pl-0.5 pr-2.5 rounded-lg text-[13px] font-semibold transition-colors hover:bg-[var(--hover-bg)] ${focus}`}
+          style={{ color: "var(--text-2)" }}>
+          <ChevronLeft size={18} />{T.back}
         </button>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-[11px] font-bold uppercase tracking-wider"
-              style={{ color: "var(--text-4)" }}>{title}</div>
-            <div className="text-base font-semibold leading-tight mt-0.5" style={{ color: "var(--text-1)" }}>
-              {tl(item.leader) || "—"}
-            </div>
-            <div className="text-xs mt-0.5" style={{ color: "var(--text-4)" }}>
-              {tl(item.supervisor) || "—"} · <span className="tabular-nums">{day(item.date)}</span>
-              {item.shift ? ` · ${T[`shift${item.shift}`] || ""}` : ""}
-            </div>
-          </div>
-          {item.status && <StateChip status={item.status} late={late} T={T} />}
+        <div ref={idRef}>
+          <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
+            {tl(item.leader) || "—"}
+          </h2>
+          <p className="mt-0.5 text-[13px] leading-snug" style={{ color: "var(--text-3)" }}>
+            {tl(item.supervisor) || "—"} · <span className="tabular-nums">{day(item.date)}</span>
+            {item.shift ? ` · ${T[`shift${item.shift}`] || ""}` : ""}
+          </p>
         </div>
-        <div className="mt-2.5 flex items-start gap-2 text-[13px]">
-          <span className="text-[11px] font-bold tabular-nums flex-shrink-0 mt-0.5"
-            style={{ color: "var(--text-4)" }}>№{item.taskId}</span>
-          <span className="font-semibold leading-snug" style={{ color: "var(--text-2)" }}>
+        {item.status && (
+          <div className="mt-2.5"><StateChip status={item.status} late={late} T={T} /></div>
+        )}
+        <div className="mt-3 flex items-start gap-2.5 rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
+          <span className="text-[12px] font-bold tabular-nums flex-shrink-0 mt-[2px]" style={{ color: "var(--text-3)" }}>
+            №{item.taskId}
+          </span>
+          <span className="text-[14px] font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
             {pick(item.taskName, lang) || T.task}
           </span>
         </div>
+        {turn && (
+          <button type="button" onClick={onToRuling}
+            className={`mt-3 w-full flex items-center gap-3 rounded-xl px-3 py-2.5 min-h-[52px] text-left transition-[filter] hover:brightness-110 ${focus}`}
+            style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
+            <Gavel size={18} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
+                {T.turnShort}
+              </span>
+              <span className="block text-[12px] leading-snug" style={{ color: "var(--brand-text)" }}>{T.toRuling}</span>
+            </span>
+            <ChevronDown size={18} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
+          </button>
+        )}
+        {report && (
+          <div className="mt-3 -mb-2 pt-1" style={{ borderTop: "1px solid var(--border)" }}>
+            <button type="button" onClick={report.onClick}
+              className={`-mx-2 w-[calc(100%+1rem)] flex items-center gap-2.5 min-h-[44px] px-2 rounded-lg text-left text-[14px] font-medium transition-colors hover:bg-[var(--hover-bg)] ${focus}`}
+              style={{ color: "var(--text-1)" }}>
+              <FileText size={17} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
+              <span className="flex-1 min-w-0">{report.label}</span>
+              <ChevronRight size={17} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+            </button>
+          </div>
+        )}
       </div>
     </Card>
   );
 }
 
-function AppealView({ thread, path, id }) {
+/** The case, named in the app header while its own card is scrolled away. */
+function useCompactTitle(ref, compact, onCompact, ready) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!onCompact || !ready || !el || typeof IntersectionObserver === "undefined") return undefined;
+    const io = new IntersectionObserver(([e]) => {
+      // Out of view AND in the upper half: scrolled PAST, not yet to come.
+      const past = !e.isIntersecting && e.boundingClientRect.top < window.innerHeight / 2;
+      onCompact(past ? compact : null);
+    });
+    io.observe(el);
+    return () => { io.disconnect(); onCompact(null); };
+    // `compact` is keyed by its text, so a refetch returning the same case
+    // does not re-arm the observer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, compact?.title, compact?.subtitle, onCompact]);
+}
+
+function AppealView({ thread, path, id, onCompact }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
   const T = TXT[lang] || TXT.uz;
@@ -405,6 +514,9 @@ function AppealView({ thread, path, id }) {
   const [noteErr, setNoteErr] = useState("");
   const [undoOpen, setUndoOpen] = useState(false);
   const [undoErr, setUndoErr] = useState("");
+  const idRef = useRef(null);
+  const rulingRef = useRef(null);
+  const [rulingFlash, setRulingFlash] = useState(false);
 
   const threadKey = ["appeal-thread", thread, String(id)];
   const msgsKey = ["appeal-msgs", thread, String(id)];
@@ -443,12 +555,32 @@ function AppealView({ thread, path, id }) {
     onError: (e) => setUndoErr(e?.response?.data?.detail || T.fail),
   });
 
+  const it = data?.item;
+  const compact = useMemo(() => (it ? {
+    title: twoWords(tl(it.leader)) || T.titleDispute,
+    subtitle: [`№${it.taskId}`, pick(it.taskName, lang), day(it.date).slice(0, 5)].filter(Boolean).join(" · "),
+  } : null), [it, tl, lang, T]);
+  useCompactTitle(idRef, compact, onCompact, !!it);
+
+  // The «your turn» row's jump: the ruling sits at the end of the discussion,
+  // brought to mid-screen (the docked composer owns the bottom edge) and ringed
+  // for a moment so the eye lands on it, not merely somewhere near it.
+  useEffect(() => {
+    if (!rulingFlash) return undefined;
+    const tm = window.setTimeout(() => setRulingFlash(false), 1400);
+    return () => window.clearTimeout(tm);
+  }, [rulingFlash]);
+  const toRuling = () => {
+    rulingRef.current?.scrollIntoView({ block: "center", behavior: reduceMotion() ? "auto" : "smooth" });
+    setRulingFlash(true);
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-3 mx-auto" style={{ maxWidth: 760 }}>
-        <SkeletonBlock className="w-full" style={{ height: 110 }} />
-        <SkeletonBlock className="w-full" style={{ height: 150 }} />
-        <SkeletonBlock className="w-full" style={{ height: 220 }} />
+        <SkeletonBlock className="w-full rounded-2xl" style={{ height: 196 }} />
+        <SkeletonBlock className="w-full rounded-2xl" style={{ height: 360 }} />
+        <SkeletonBlock className="w-full rounded-2xl" style={{ height: 220 }} />
       </div>
     );
   }
@@ -476,68 +608,79 @@ function AppealView({ thread, path, id }) {
   const lateText = (m) => (m === null || m === undefined)
     ? T.lateNone : fmtDuration(m, { day: T.unitD, hour: T.unitH, min: T.unitM });
 
+  const canRule = !!(data.canSupervise || data.canDecide);
+  const nPhotos = item.photos?.length || 0;
+  const photoCount = (nPhotos === 1 ? T.photosOne : T.photosMany).replace("{n}", nPhotos);
+  // A day still being filed has no report yet — an objection may be raised the
+  // moment a submitted task is judged — so its reader is sent to that day's
+  // checklist instead. Navigation, so it is a row with a chevron, not a
+  // button competing with the ruling.
+  const report = !late && item.uid ? {
+    label: item.dayOpen ? T.openChecklist : T.openReport,
+    onClick: () => nav(item.dayOpen
+      ? `/leaders?tab=checklist&leader=${item.leaderId || ""}&date=${item.date || ""}`
+      : `/leaders/report/${encodeURIComponent(item.uid)}`),
+  } : null;
+
+  // The choices THIS reader has at THIS stage. Two short ones share a row on
+  // every width; «Adminlarga yuborish» — and three choices — do not fit half a
+  // phone, so they stack there.
+  const rulingButtons = [
+    { key: "reject", variant: "danger", Icon: Ban, label: T.reject },
+    ...(data.canSupervise ? [{ key: "uplift", variant: "primary", Icon: ArrowUpCircle, label: T.uplift }] : []),
+    ...(data.canDecide ? [{ key: "approve", variant: "success", Icon: ShieldCheck, label: late ? T.approveLate : T.approve }] : []),
+  ];
+  const rulingCols = rulingButtons.length === 3 ? "grid-cols-1 sm:grid-cols-3"
+    : data.canSupervise ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2";
+  const rulingPanel = canRule ? (
+    <div ref={rulingRef} className="px-3 sm:px-6 pb-4">
+      <section aria-labelledby={`ruling-${thread}-${id}`}
+        className="rounded-2xl p-3.5 sm:p-4 transition-shadow duration-300"
+        style={{
+          background: "var(--bg-inner)", border: "1px solid var(--brand-border)",
+          boxShadow: rulingFlash ? "0 0 0 1px var(--brand), 0 0 0 5px var(--brand-bg)" : "none",
+        }}>
+        <h3 id={`ruling-${thread}-${id}`} className="flex items-center gap-2 text-[15px] font-semibold leading-snug"
+          style={{ color: "var(--text-1)" }}>
+          <Gavel size={17} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
+          {T.rulingTitle}
+        </h3>
+        <p className="mt-1 text-[13px] leading-snug" style={{ color: "var(--text-3)" }}>
+          {data.canSupervise ? T.turnSup : T.turnAdm}
+        </p>
+        <div className={`mt-3 grid gap-2 ${rulingCols}`}>
+          {rulingButtons.map((b) => (
+            <Button key={b.key} size="lg" tint variant={b.variant} className="w-full h-11"
+              onClick={() => open(b.key)}>
+              <b.Icon size={16} />{b.label}
+            </Button>
+          ))}
+        </div>
+      </section>
+    </div>
+  ) : data.canUndo ? (
+    <div className="px-3 sm:px-6 pb-4">
+      <Button size="lg" tint variant="secondary" className="w-full h-11"
+        onClick={() => { setUndoErr(""); undo.reset(); setUndoOpen(true); }}>
+        <RotateCcw size={15} />{T.undo}
+      </Button>
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-3 mx-auto" style={{ maxWidth: 760 }}>
-      <Header T={T} title={`${late ? T.titleLate : T.titleDispute} · №${item.id}`}
-        item={item} late={late} onBack={back} lang={lang} tl={tl} />
-
-      {/* 1 · The ruling — only the buttons THIS reader has at THIS stage. */}
-      {(data.canSupervise || data.canDecide || data.canUndo || (!late && item.uid)) && (
-        <Card>
-          <div className="px-4 py-3 space-y-2.5">
-            {(data.canSupervise || data.canDecide) && (
-              <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
-                {data.canSupervise ? T.turnSup : T.turnAdm}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {(data.canSupervise || data.canDecide) && (
-                <Button size="lg" tint variant="danger" onClick={() => open("reject")}>
-                  <Ban size={14} />{T.reject}
-                </Button>
-              )}
-              {data.canSupervise && (
-                <Button size="lg" tint variant="primary" onClick={() => open("uplift")}>
-                  <ArrowUpCircle size={14} />{T.uplift}
-                </Button>
-              )}
-              {data.canDecide && (
-                <Button size="lg" tint variant="success" onClick={() => open("approve")}>
-                  <ShieldCheck size={14} />{late ? T.approveLate : T.approve}
-                </Button>
-              )}
-              {data.canUndo && (
-                <Button size="lg" tint variant="secondary"
-                  onClick={() => { setUndoErr(""); undo.reset(); setUndoOpen(true); }}>
-                  <RotateCcw size={14} />{T.undo}
-                </Button>
-              )}
-              {/* A day still being filed has no report yet — an objection may be
-                  raised the moment a submitted task is judged — so its reader
-                  is sent to that day's checklist instead. */}
-              {!late && item.uid && (
-                <Button size="lg" tint variant="ghost" className="ml-auto"
-                  onClick={() => nav(item.dayOpen
-                    ? `/leaders?tab=checklist&leader=${item.leaderId || ""}&date=${item.date || ""}`
-                    : `/leaders/report/${encodeURIComponent(item.uid)}`)}>
-                  <ExternalLink size={14} />{item.dayOpen ? T.openChecklist : T.openReport}
-                </Button>
-              )}
-            </div>
-          </div>
-        </Card>
-      )}
+      {/* 1 · The case. */}
+      <Header T={T} item={item} late={late} onBack={back} lang={lang} tl={tl}
+        idRef={idRef} turn={canRule} onToRuling={toRuling} report={report} />
 
       {/* 2 · The evidence. */}
       <Card>
-        <SectionHead icon={Images} title={T.photos}
-          right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-            {item.photos?.length || 0}</span>} />
-        <div className="px-4 py-3 space-y-3">
+        <SectionHead size="lg" icon={Images} title={T.photos} subtitle={photoCount} />
+        <div className="px-3 sm:px-6 py-4 space-y-4">
           {late ? (
             <>
               <LatePhotos item={item} T={T} onZoom={setZoom} />
-              <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl px-3 py-2"
+              <div className="grid grid-cols-3 gap-3 rounded-xl px-3 py-2.5"
                 style={{ background: "var(--bg-inner)" }}>
                 <Fact label={T.deadline} value={item.dueAt ? stamp(item.dueAt) : (item.deadline || "—")} />
                 <Fact label={T.filed} value={stamp(item.at) || "—"} />
@@ -557,11 +700,13 @@ function AppealView({ thread, path, id }) {
         </div>
       </Card>
 
-      {/* 3 · The chat. */}
+      {/* 3 · The chat — and 4 · the ruling, at its end, above the composer. */}
       <Card>
         <SectionHead size="lg" icon={MessageCircle} title={T.chat} subtitle={T.chatHint}
+          // Beside the title from sm; on a phone the facts right above already
+          // say how late it was, and this chip only wrapped under the title.
           right={late && item.lateMin != null ? (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold"
+            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold"
               style={{ background: hexA(C_WAIT, 0.12), color: C_WAIT }}>
               <Timer size={11} />{lateText(item.lateMin)}
             </span>
@@ -580,6 +725,7 @@ function AppealView({ thread, path, id }) {
           placeholder={T.placeholder}
           emptyText={T.empty}
           pollMs={20000}
+          beforeComposer={rulingPanel}
         />
       </Card>
 
@@ -643,7 +789,7 @@ function AppealView({ thread, path, id }) {
  *  top, and the chat's composer — whose first message IS the objection. The
  *  day report is the one read that knows the task; once filed, the page opens
  *  the conversation it started. */
-function NewObjection({ uid, taskId }) {
+function NewObjection({ uid, taskId, onCompact }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
   const T = TXT[lang] || TXT.uz;
@@ -651,6 +797,7 @@ function NewObjection({ uid, taskId }) {
   const qc = useQueryClient();
   const kinds = useKinds(T, false);
   const [zoom, setZoom] = useState("");
+  const idRef = useRef(null);
 
   const { data: rep, isLoading, error } = useQuery({
     queryKey: ["leaderDayReport", uid],
@@ -664,15 +811,21 @@ function NewObjection({ uid, taskId }) {
     else nav(`/leaders/report/${encodeURIComponent(uid || "")}`);
   };
 
+  const task = (rep?.tasks || []).find((t) => Number(t.id) === Number(taskId));
+  const compact = useMemo(() => (rep && task ? {
+    title: twoWords(tl(rep.leader)) || T.titleNew,
+    subtitle: [`№${task.id}`, pick(task.name, lang), day(rep.date).slice(0, 5)].filter(Boolean).join(" · "),
+  } : null), [rep, task, tl, lang, T]);
+  useCompactTitle(idRef, compact, onCompact, !!(rep && task));
+
   if (isLoading) {
     return (
       <div className="space-y-3 mx-auto" style={{ maxWidth: 760 }}>
-        <SkeletonBlock className="w-full" style={{ height: 110 }} />
-        <SkeletonBlock className="w-full" style={{ height: 150 }} />
+        <SkeletonBlock className="w-full rounded-2xl" style={{ height: 160 }} />
+        <SkeletonBlock className="w-full rounded-2xl" style={{ height: 360 }} />
       </div>
     );
   }
-  const task = (rep?.tasks || []).find((t) => Number(t.id) === Number(taskId));
   if (error || !rep || !task) {
     return (
       <ErrorScreen inline tone="neutral" code="404" title={T.nfT} message={T.nfM}
@@ -699,11 +852,11 @@ function NewObjection({ uid, taskId }) {
 
   return (
     <div className="space-y-3 mx-auto" style={{ maxWidth: 760 }}>
-      <Header T={T} title={T.titleNew} item={item} late={false} onBack={back} lang={lang} tl={tl} />
+      <Header T={T} item={item} late={false} onBack={back} lang={lang} tl={tl} idRef={idRef} />
       <Card>
-        <SectionHead icon={Images} title={T.photos}
-          right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>{photos.length}</span>} />
-        <div className="px-4 py-3 space-y-3">
+        <SectionHead size="lg" icon={Images} title={T.photos}
+          subtitle={(photos.length === 1 ? T.photosOne : T.photosMany).replace("{n}", photos.length)} />
+        <div className="px-3 sm:px-6 py-4 space-y-4">
           <DisputePhotos photos={photos} uid={rep.uid} T={T} onZoom={setZoom} />
           <VerdictBlock rev={task.review} autoReason={task.auto ? task.reason : null}
             title={T.aiTitle} />
@@ -745,13 +898,17 @@ export default function LeaderAppeal() {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.uz;
   const late = kind === "late";
-  const title = late ? T.titleLate : T.titleDispute;
+  const fresh = !late && id === "new";
+  const title = late ? T.titleLate : fresh ? T.titleNew : T.titleDispute;
+  // While the case card is scrolled away the app header names the case —
+  // leader · task · day — instead of the page's kind (see useCompactTitle).
+  const [compact, setCompact] = useState(null);
   return (
-    <Layout title={title}>
-      {!late && id === "new"
-        ? <NewObjection uid={sp.get("uid")} taskId={sp.get("task")} />
+    <Layout title={compact?.title || title} subtitle={compact?.subtitle}>
+      {fresh
+        ? <NewObjection uid={sp.get("uid")} taskId={sp.get("task")} onCompact={setCompact} />
         : <AppealView key={`${kind}-${id}`} thread={late ? "late" : "dispute"}
-            path={late ? "late-proofs" : "disputes"} id={id} />}
+            path={late ? "late-proofs" : "disputes"} id={id} onCompact={setCompact} />}
     </Layout>
   );
 }

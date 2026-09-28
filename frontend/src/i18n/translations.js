@@ -1912,6 +1912,10 @@ const t = {
     "ghost.label":         "Sokin",
     "ghost.tooltipOn":     "Sokin rejim yoniq — o'zgarishlaringiz hech kimga bildirishnoma yubormaydi. O'chirish uchun bosing.",
     "ghost.tooltipOff":    "Sokin rejim o'chiq — o'zgarishlaringiz jamoaga bildiriladi. Ovozsiz qilish uchun bosing.",
+    "ghost.mode":          "Sokin rejim",
+    "ghost.on":            "Yoniq",
+    "ghost.off":           "O'chiq",
+    "ghost.hint":          "Yoniq bo'lsa, o'zgarishlaringiz hech kimga bildirilmaydi.",
     "roles.pending":       "Kutilmoqda",
     "roles.admin":         "Admin",
     "roles.top-manager":   "Top-menejer",
@@ -4946,6 +4950,8 @@ const t = {
     // ── Theme ─────────────────────────────────────────────────────────────────
     "theme.dark":  "Qorong'u rejim",
     "theme.light": "Yorug' rejim",
+    "theme.optLight": "Yorug'",
+    "theme.optDark":  "Qorong'u",
 
     // ── Auth status ───────────────────────────────────────────────────────────
     "auth.pendingTitle":        "So'rovingiz ko'rib chiqilmoqda",
@@ -7815,6 +7821,10 @@ const t = {
     "ghost.label":         "Сокин",
     "ghost.tooltipOn":     "Сокин режим ёниқ — ўзгаришларингиз ҳеч кимга билдиришнома юбормайди. Ўчириш учун босинг.",
     "ghost.tooltipOff":    "Сокин режим ўчиқ — ўзгаришларингиз жамоага билдирилади. Овозсиз қилиш учун босинг.",
+    "ghost.mode":          "Сокин режим",
+    "ghost.on":            "Ёниқ",
+    "ghost.off":           "Ўчиқ",
+    "ghost.hint":          "Ёниқ бўлса, ўзгаришларингиз ҳеч кимга билдирилмайди.",
     "roles.pending":       "Кутилмоқда",
     "roles.admin":         "Админ",
     "roles.top-manager":   "Топ-менежер",
@@ -10848,6 +10858,8 @@ const t = {
     // ── Theme ─────────────────────────────────────────────────────────────────
     "theme.dark":  "Қоронғу режим",
     "theme.light": "Ёруғ режим",
+    "theme.optLight": "Ёруғ",
+    "theme.optDark":  "Қоронғу",
 
     // ── Auth status ───────────────────────────────────────────────────────────
     "auth.pendingTitle":        "Сўровингиз кўриб чиқилмоқда",
@@ -13717,6 +13729,10 @@ const t = {
     "ghost.label":         "Тихий",
     "ghost.tooltipOn":     "Тихий режим включён — ваши изменения никого не уведомляют. Нажмите, чтобы выключить.",
     "ghost.tooltipOff":    "Тихий режим выключен — ваши изменения уведомляют команду. Нажмите, чтобы отключить уведомления.",
+    "ghost.mode":          "Тихий режим",
+    "ghost.on":            "Вкл",
+    "ghost.off":           "Выкл",
+    "ghost.hint":          "Когда включён, ваши изменения никого не уведомляют.",
     "roles.pending":       "Ожидает",
     "roles.admin":         "Администратор",
     "roles.top-manager":   "Топ-менеджер",
@@ -16750,6 +16766,8 @@ const t = {
     // ── Theme ─────────────────────────────────────────────────────────────────
     "theme.dark":  "Тёмная тема",
     "theme.light": "Светлая тема",
+    "theme.optLight": "Светлая",
+    "theme.optDark":  "Тёмная",
 
     // ── Auth status ───────────────────────────────────────────────────────────
     "auth.pendingTitle":  "Заявка рассматривается",
@@ -19619,6 +19637,10 @@ const t = {
     "ghost.label":         "Ghost",
     "ghost.tooltipOn":     "Ghost mode ON — your changes won't notify anyone. Click to turn off.",
     "ghost.tooltipOff":    "Ghost mode OFF — your changes notify the team. Click to silence them.",
+    "ghost.mode":          "Ghost mode",
+    "ghost.on":            "On",
+    "ghost.off":           "Off",
+    "ghost.hint":          "While on, your changes notify nobody.",
     "roles.pending":       "Pending",
     "roles.admin":         "Admin",
     "roles.top-manager":   "Top Manager",
@@ -22650,8 +22672,10 @@ const t = {
     "admin.users.selectTargetFirst": "Please select a unit / slot",
 
     // ── Theme ─────────────────────────────────────────────────────────────────
-    "theme.dark":  "Switch to light mode",
-    "theme.light": "Switch to dark mode",
+    "theme.dark":  "Dark mode",
+    "theme.light": "Light mode",
+    "theme.optLight": "Light",
+    "theme.optDark":  "Dark",
 
     // ── Auth status ───────────────────────────────────────────────────────────
     "auth.pendingTitle":  "Request under review",

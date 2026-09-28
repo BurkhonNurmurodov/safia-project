@@ -1,4 +1,4 @@
-import { Sparkles, Clock, CalendarCheck, Settings2 } from "lucide-react";
+import { Sparkles, Clock, CalendarCheck, Settings2, XCircle } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { showReason } from "../../utils/leaderReason";
 import { hexA, pick } from "./DayReportView";
@@ -129,19 +129,23 @@ export default function VerdictBlock({ rev, autoReason, autoFacts, title }) {
   const { lang } = useLang();
   const T = T_ALL[lang] || T_ALL.ru;
 
+  // Body text is the verdict's WHOLE argument — the one paragraph a person
+  // reads before ruling on somebody's score — so it is set as reading text
+  // (15px, 1.55), not as a caption. It was 12px, which on a phone is exactly
+  // where a reader squints and rules on the chip alone.
   if (!rev && autoReason) {
     const facts = autoFactLines(autoFacts, T);
     return (
-      <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
-        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider mb-1.5"
-          style={{ color: "var(--text-4)" }}>
-          <Settings2 size={11} />{T.auto}
+      <div className="rounded-xl px-3.5 py-3" style={{ background: "var(--bg-inner)" }}>
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"
+          style={{ color: "var(--text-3)" }}>
+          <Settings2 size={12} />{T.auto}
         </div>
-        <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
+        <p className="text-[15px] leading-[1.55]" style={{ color: "var(--text-1)" }}>
           {showReason(autoReason, "", { template: T.autoLine, why: (c) => T.why[c] })}
         </p>
         {facts.map((line) => (
-          <p key={line} className="text-[11px] tabular-nums mt-1" style={{ color: "var(--text-3)" }}>
+          <p key={line} className="text-[13px] tabular-nums mt-1.5" style={{ color: "var(--text-2)" }}>
             {line}
           </p>
         ))}
@@ -152,34 +156,35 @@ export default function VerdictBlock({ rev, autoReason, autoFacts, title }) {
   const flags = rev.flags || [];
   const dated = flags.some((f) => f === "no_date" || f === "date_mismatch");
   return (
-    <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
-      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider mb-1.5"
-        style={{ color: "var(--text-4)" }}>
-        <Sparkles size={11} />{title || T.ai}
+    <div className="rounded-xl px-3.5 py-3" style={{ background: "var(--bg-inner)" }}>
+      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"
+        style={{ color: "var(--text-3)" }}>
+        <Sparkles size={12} />{title || T.ai}
       </div>
       {!!flags.length && (
-        <div className="flex flex-wrap gap-1 mb-1.5">
+        <div className="flex flex-wrap gap-1.5 mb-2">
           {flags.map((f) => (
-            <span key={f} className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+            <span key={f} className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-lg"
               style={{ background: hexA(C_BAD, 0.14), color: C_BAD }}>
+              <XCircle size={13} className="flex-shrink-0" />
               {T[`f_${f}`] || f}
             </span>
           ))}
         </div>
       )}
       {pick(rev.reason, lang) && (
-        <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
+        <p className="text-[15px] leading-[1.55]" style={{ color: "var(--text-1)" }}>
           {pick(rev.reason, lang)}
         </p>
       )}
       {dated && pick(rev.dateReason, lang) && (
-        <p className="text-[12px] leading-snug mt-1" style={{ color: "var(--text-2)" }}>
+        <p className="text-[15px] leading-[1.55] mt-1.5" style={{ color: "var(--text-1)" }}>
           {pick(rev.dateReason, lang)}
         </p>
       )}
       {dated && rev.expected && (
-        <p className="text-[11px] tabular-nums mt-1.5 flex items-center gap-1 flex-wrap"
-          style={{ color: "var(--text-4)" }}>
+        <p className="text-[12px] tabular-nums mt-2 flex items-center gap-1 flex-wrap"
+          style={{ color: "var(--text-3)" }}>
           {rev.dayCheck === false
             ? <><Clock size={11} />{T.needTime}: {rev.expected}</>
             : rev.timeCheck === false

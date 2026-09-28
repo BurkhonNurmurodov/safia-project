@@ -98,6 +98,10 @@ import { useTranslit } from "../../utils/transliterate";
  *   kinds, roleLabel    – how server kinds and author roles are named
  *   placeholder, emptyText
  *   pollMs              – re-read the thread on this interval (a live chat)
+ *   beforeComposer      – a node drawn after the newest message and before the
+ *                         composer: the action the conversation is waiting on
+ *                         (the appeal chat's ruling), where the reader arrives
+ *                         once they have read the thread
  *   Composing the FIRST message of a record that does not exist yet (filing
  *   an objection IS the opening message of its chat):
  *   listEnabled=false   – nothing to read yet
@@ -217,6 +221,7 @@ export function CommentsThread({
   requireText = false,
   minText = 1,
   onPosted,
+  beforeComposer = null,
 }) {
   const { auth } = useAuth();
   const { t, lang } = useLang();
@@ -247,7 +252,7 @@ export function CommentsThread({
     fileFailed: t("ui.comments.fileFailed"),
   };
 
-  const { data: comments = [], isLoading } = useQuery({
+  const { data: comments = [], isLoading, dataUpdatedAt } = useQuery({
     queryKey,
     queryFn: () => api.get(endpoint).then((r) => r.data),
     enabled: listEnabled,
@@ -552,7 +557,16 @@ export function CommentsThread({
     );
   };
 
-  // The feed: a day divider before the first message of every calendar day.
+  // The feed: a day divider before the first message of every calendar day —
+  // «Bugun» / «Kecha» for the two days a reader thinks of by name, the date
+  // without its year inside the current year, the full date before it.
+  // «Now» is when the thread was last read — a value React already holds, so
+  // the render stays pure, and a polled thread re-labels itself past midnight.
+  const today = localDay(new Date(dataUpdatedAt || 0).toISOString());
+  const yesterday = localDay(new Date((dataUpdatedAt || 0) - 864e5).toISOString());
+  const dayLabel = (d) => (d === today ? t("filter.today")
+    : d === yesterday ? t("filter.yesterday")
+      : fmtDate(d, lang, d.slice(0, 4) !== today.slice(0, 4)));
   const feed = [];
   let lastDay = "";
   for (const c of comments) {
@@ -561,7 +575,7 @@ export function CommentsThread({
       feed.push(
         <div key={`day-${d}`} className="self-center my-1 px-2.5 py-[3px] rounded-full text-xs"
           style={{ background: "var(--hover-bg)", color: "var(--text-2)" }}>
-          {fmtDate(d, lang)}
+          {dayLabel(d)}
         </div>,
       );
       lastDay = d;
@@ -596,12 +610,17 @@ export function CommentsThread({
     </div>
   );
 
+  // On a page the composer docks FLUSH with the screen's bottom edge. A sticky
+  // box stops at its scroll container's padding edge, so `bottom: 0` parked it
+  // 16px above the screen with the thread scrolling visibly underneath it; the
+  // negative offset reaches exactly past that padding (Layout's `--main-pad`).
   const composer = canComment ? (
-    <div className={`${padX} pt-3 flex-shrink-0 ${page ? "sticky bottom-0 z-10" : ""}`}
+    <div className={`${padX} pt-3 flex-shrink-0 ${page ? "sticky z-10" : ""}`}
       style={{
         borderTop: "1px solid var(--border)",
         background: "var(--bg-card)",
         paddingBottom: page ? "calc(1rem + var(--tg-safe-bottom, 0px))" : "1rem",
+        ...(page ? { bottom: "calc(var(--main-pad, 0px) * -1)" } : {}),
       }}>
       {!!pending.length && (
         <div className="mb-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
@@ -688,6 +707,7 @@ export function CommentsThread({
           {list}
         </div>
       )}
+      {beforeComposer}
       {composer}
       <Lightbox src={shot} onClose={() => setShot(null)} />
       <ConfirmDialog
@@ -741,13 +761,13 @@ const MONTHS = {
   uz_cyrl: ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"],
 };
 
-const fmtDate = (iso, lang) => {
+const fmtDate = (iso, lang, withYear = true) => {
   if (!iso) return "";
   const [y, m, d] = String(iso).split(/[T ]/)[0].split("-").map(Number);
   if (!y || !m || !d) return iso;
   const mn = (MONTHS[lang] || MONTHS.uz)[m - 1];
-  if (lang === "en" || lang === "ru") return `${d} ${mn} ${y}`;
-  return `${d}-${mn}, ${y}`;
+  if (lang === "en" || lang === "ru") return withYear ? `${d} ${mn} ${y}` : `${d} ${mn}`;
+  return withYear ? `${d}-${mn}, ${y}` : `${d}-${mn}`;
 };
 
 // The reader's calendar day of an instant, "YYYY-MM-DD" — what a day divider

@@ -5,6 +5,7 @@ import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
 import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2, UserRoundCog, Download, Share } from "lucide-react";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
@@ -32,8 +33,10 @@ const iconBtnStyle = (active) => ({
 
 // ─── UserProfile ──────────────────────────────────────────────────────────────
 // Avatar in the header that opens a popover: my profile, role switch, add
-// profile, sign out. (Language, theme and ghost sit directly on the header
-// bar now — the Settings modal is gone.)
+// profile, sign out. From md up, language, theme and ghost sit directly on the
+// header bar (the Settings modal is gone); on a PHONE they live here instead —
+// see PhonePrefs — because three utility icons beside the bell left the page
+// title a hundred pixels and cut it to «AI qaroriga nor…», on every page.
 
 function UserProfile() {
   const { auth, switchRole, leaveRole, logout, webSession, botUsername,
@@ -105,6 +108,9 @@ function UserProfile() {
             border: "1px solid var(--border)",
             boxShadow: "0 8px 24px rgba(0,0,0,.15)",
             minWidth: 220,
+            // Room for the phone preferences' toggles (PhonePrefs), capped at
+            // the screen so the popover never runs off its left edge.
+            width: "min(288px, calc(100vw - 24px))",
             // An account may hold many profiles, and the popover is anchored in a
             // header the page cannot scroll: past ~4 rows the tail (sign out
             // included) fell off the bottom of a phone screen unreachable.
@@ -271,6 +277,8 @@ function UserProfile() {
             </div>
           )}
 
+          <PhonePrefs />
+
           {/* Sign out.
               In Telegram this is an UNREGISTER: it drops the profile binding
               and the person has to /start again. In a browser it must only
@@ -356,10 +364,52 @@ function UserProfile() {
   );
 }
 
+// ─── Phone preferences (inside the profile popover, below md) ─────────────────
+// The same three settings the header carries from md up, as labelled
+// SegmentedToggles — one tap each once the menu is open. Rare settings are
+// what a menu is for; the header's width belongs to the page's title.
+function PhonePrefs() {
+  const { auth } = useAuth();
+  const { lang, setLang, t, languages } = useLang();
+  const { theme, toggle } = useTheme();
+  const { ghost, toggleGhost } = useGhost();
+  const row = (Icon, label, control, hint) => (
+    <div>
+      <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold uppercase tracking-wider"
+        style={{ color: "var(--text-3)" }}>
+        <Icon size={12} className="flex-shrink-0" />{label}
+      </div>
+      {control}
+      {hint && <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>{hint}</p>}
+    </div>
+  );
+  return (
+    <div className="md:hidden px-4 py-3 space-y-3" style={{ borderBottom: "1px solid var(--border)" }}>
+      {row(Globe, t("filter.language") || "Language",
+        <SegmentedToggle fill size="sm" value={lang} onChange={setLang}
+          ariaLabel={t("filter.language") || "Language"}
+          options={languages.map(({ code }) => ({ value: code, label: langLabel(code), title: LANG_NAMES[code] || code }))} />)}
+      {row(theme === "dark" ? Moon : Sun, t("menu.theme"),
+        <SegmentedToggle fill size="sm" value={theme} onChange={(v) => { if (v !== theme) toggle(); }}
+          ariaLabel={t("menu.theme")}
+          options={[
+            { value: "light", label: <><Sun size={13} />{t("theme.optLight")}</> },
+            { value: "dark", label: <><Moon size={13} />{t("theme.optDark")}</> },
+          ]} />)}
+      {auth?.role === "admin" && row(Ghost, t("ghost.mode"),
+        <SegmentedToggle fill size="sm" value={ghost} onChange={(v) => { if (v !== ghost) toggleGhost(); }}
+          ariaLabel={t("ghost.mode")}
+          options={[{ value: false, label: t("ghost.off") }, { value: true, label: t("ghost.on") }]} />,
+        t("ghost.hint"))}
+    </div>
+  );
+}
+
 // ─── Header controls: language · theme · ghost ────────────────────────────────
 // These lived inside the old Settings modal; they are one-tap toggles, so they
 // earn header cells of their own instead of a modal between the person and a
 // theme switch. Sized to match the notifications bell (p-1.5, 15px glyph).
+// md and up only — a phone reaches them through PhonePrefs.
 
 function LangSwitcher() {
   const { lang, setLang, t, languages } = useLang();
@@ -441,10 +491,13 @@ function GhostButton() {
   const { ghost, toggleGhost } = useGhost();
   const { t } = useLang();
   if (auth?.role !== "admin") return null;
+  // On a phone the switch lives in the profile menu, but while it is ON it
+  // stays on the bar too: a mode that silences every notification to the team
+  // is a state an admin must be able to see without opening anything.
   return (
     <button
       onClick={toggleGhost}
-      className="flex items-center justify-center p-1.5 rounded-lg transition-colors flex-shrink-0"
+      className={`${ghost ? "flex" : "hidden md:flex"} items-center justify-center p-1.5 rounded-lg transition-colors flex-shrink-0`}
       style={ghost
         ? { background: "#7c3aed", border: "1px solid #7c3aed", color: "#fff" }
         : iconBtnStyle(false)}
@@ -516,7 +569,7 @@ function ImpersonationBar() {
   );
 }
 
-export default function Layout({ children, title }) {
+export default function Layout({ children, title, subtitle }) {
   const notif = useNotifications();
   useActivityPing(); // heartbeat for the Users-Activity dashboard
   const { pathname } = useLocation();
@@ -607,9 +660,20 @@ export default function Layout({ children, title }) {
               >
                 <Menu size={16} />
               </button>
-              <h1 className="text-sm md:text-base font-semibold truncate" style={{ color: "var(--text-1)" }}>
-                {title}
-              </h1>
+              {/* `subtitle`: a page may name WHAT is on screen once its own
+                  heading has scrolled away (the appeal chat puts the case —
+                  leader, task, day — here), the iOS large-title → bar-title
+                  hand-off. Keyed, so a change fades in rather than jumping. */}
+              <div key={`${title}|${subtitle || ""}`} className="min-w-0 brk-in">
+                <h1 className="text-sm md:text-base font-semibold truncate leading-tight" style={{ color: "var(--text-1)" }}>
+                  {title}
+                </h1>
+                {subtitle && (
+                  <p className="text-[11px] leading-tight truncate mt-0.5" style={{ color: "var(--text-3)" }}>
+                    {subtitle}
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Right: bell · language · theme · ghost(admin) · account */}
@@ -617,9 +681,12 @@ export default function Layout({ children, title }) {
               {/* Notifications — standalone bell in the header */}
               <NotificationsBell {...notif} />
 
-              {/* Language · theme · ghost — former Settings-modal controls */}
-              <LangSwitcher />
-              <ThemeButton />
+              {/* Language · theme · ghost — former Settings-modal controls.
+                  md and up; a phone reaches them in the profile menu. */}
+              <div className="hidden md:contents">
+                <LangSwitcher />
+                <ThemeButton />
+              </div>
               <GhostButton />
 
               {/* User profile */}
@@ -640,7 +707,11 @@ export default function Layout({ children, title }) {
           <main
             ref={mainRef}
             onScroll={(e) => rememberScroll(pathname, e.currentTarget.scrollTop)}
-            className="h-full overflow-y-auto overflow-x-hidden p-4 md:p-6"
+            // `--main-pad` IS the padding, named once so a page's sticky
+            // element can reach past it: a sticky box stops at the scroll
+            // container's padding edge, which left the appeal chat's composer
+            // floating 16px above the screen with the thread showing beneath.
+            className="h-full overflow-y-auto overflow-x-hidden [--main-pad:1rem] md:[--main-pad:1.5rem] p-[var(--main-pad)]"
           >
             {/* The column is bounded and centred so that on a wide desktop
                 monitor the content does not smear edge to edge — a table whose
