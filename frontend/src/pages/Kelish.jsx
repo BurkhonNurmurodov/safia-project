@@ -89,26 +89,50 @@ function patchRow(old, key, patch) {
   return { ...old, rows, counts: { yes, no, none: rows.length - yes - no, total: rows.length } };
 }
 
-function Chip({ color, icon, children }) {
+// NOTHING above the table may change size because of a tap: a row that moves
+// under the thumb gets the next tap meant for its neighbour. So each chip has a
+// FIXED width on a phone — the number alone (the words stay for screen readers,
+// and show from lg up, where the header has room to spare) — and the third
+// chip is as wide as its «complete» form, so marking the last worker cannot
+// re-wrap the header either.
+const CHIP_W = "min-w-[3.25rem]";
+const CHIP_W3 = "min-w-[4.75rem]";
+
+function Chip({ color, icon, n, word, wide = false }) {
   const style = color
     ? { background: `${color}1f`, color, border: `1px solid ${color}59` }
     : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" };
   return (
-    <span className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-xs font-semibold tabular-nums whitespace-nowrap" style={style}>
-      {icon}{children}
+    <span
+      title={word}
+      className={`inline-flex items-center justify-center gap-1 h-7 px-2 rounded-lg text-xs font-semibold tabular-nums whitespace-nowrap ${wide ? CHIP_W3 : CHIP_W}`}
+      style={style}
+    >
+      {icon}
+      <span aria-hidden="true" className="lg:hidden">{n}</span>
+      <span className="sr-only lg:not-sr-only">{word}</span>
     </span>
   );
 }
 
 function Counts({ c, t }) {
-  if (!c || !c.total) return null;
+  if (!c) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <SkeletonBlock className={`h-7 rounded-lg ${CHIP_W}`} />
+        <SkeletonBlock className={`h-7 rounded-lg ${CHIP_W}`} />
+        <SkeletonBlock className={`h-7 rounded-lg ${CHIP_W3}`} />
+      </div>
+    );
+  }
+  const done = c.total > 0 && c.none === 0;
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <Chip color={GREEN} icon={<Check size={12} strokeWidth={3} />}>{fill(t("kelish.countYes"), { n: c.yes })}</Chip>
-      <Chip color={RED} icon={<X size={12} strokeWidth={3} />}>{fill(t("kelish.countNo"), { n: c.no })}</Chip>
-      {c.none > 0
-        ? <Chip>{fill(t("kelish.countNone"), { n: c.none })}</Chip>
-        : <Chip color={GREEN} icon={<CheckCircle2 size={12} />}>{t("kelish.complete")}</Chip>}
+    <div className="flex items-center gap-1.5">
+      <Chip color={GREEN} icon={<Check size={12} strokeWidth={3} />} n={c.yes} word={fill(t("kelish.countYes"), { n: c.yes })} />
+      <Chip color={RED} icon={<X size={12} strokeWidth={3} />} n={c.no} word={fill(t("kelish.countNo"), { n: c.no })} />
+      {done
+        ? <Chip wide color={GREEN} icon={<CheckCircle2 size={12} />} n={t("kelish.complete")} word={t("kelish.complete")} />
+        : <Chip wide icon={<Minus size={12} strokeWidth={3} />} n={c.none} word={fill(t("kelish.countNone"), { n: c.none })} />}
     </div>
   );
 }
@@ -261,7 +285,10 @@ export default function Kelish() {
     const key = listKey;
     const v = (ver.current.get(row.key) || 0) + 1;
     ver.current.set(row.key, v);
-    qc.setQueryData(key, (old) => patchRow(old, row.key, { mark: next, by: null, by_other: false }));
+    // Only a CLEAR drops «belgiladi: …» at once; a colour change keeps it until
+    // the server says who set the mark, so the line does not blink per tap.
+    qc.setQueryData(key, (old) => patchRow(old, row.key,
+      next ? { mark: next } : { mark: null, by: null, by_other: false }));
     window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
     pending.current += 1;
     const body = { cell_id: data.cell.id, date: data.date, key: row.key, status: next };
@@ -394,6 +421,8 @@ export default function Kelish() {
   };
   const cellTitle = cell ? cellLabel(cell.code, cell.leader ? leaderShort(cell.leader) : "") : "";
   const locked = data && (data.when?.kind === "past" || !data.can_edit);
+  // A skeleton of the same line while the list loads, so the header does not
+  // grow a line (and push the table down) the moment the data arrives.
   const subtitle = data ? (
     <span className="inline-flex items-center gap-1 flex-wrap">
       {locked && <Lock size={11} aria-hidden="true" />}
@@ -401,10 +430,11 @@ export default function Kelish() {
         data.cell.shift ? fill(t("kelish.shiftN"), { n: data.cell.shift }) : null,
         !data.can_edit ? t("kelish.readOnly") : null].filter(Boolean).join(" · ")}
     </span>
-  ) : null;
+  ) : (
+    <SkeletonBlock className="inline-block align-middle h-3 w-44" />
+  );
 
   const marked = data ? data.counts.yes + data.counts.no : 0;
-  const showHint = editable && data.counts.total > 0 && marked === 0 && !selecting;
   const colCount = selecting ? 3 : 2;
 
   const subLine = (r) => {
@@ -431,12 +461,22 @@ export default function Kelish() {
     </>
   ) : (
     <>
-      <div className="min-w-0 text-[11px] leading-snug" style={{ color: "var(--text-3)" }} title={t("kelish.sourceHint")}>
-        <div>{fill(t("kelish.source"), { from: dm(data.source.from), to: dm(data.source.last_upload || data.source.to) })}</div>
+      {/* The how-to lives UNDER the table and is there for the whole day: a
+          hint above it that came and went with the marks moved every row. */}
+      <div className="min-w-0 flex-1 space-y-1 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+        {editable && (
+          <div className="flex items-start gap-1.5">
+            <Info size={13} className="flex-shrink-0 mt-px" aria-hidden="true" />
+            <span>{t("kelish.hint")}</span>
+          </div>
+        )}
+        <div title={t("kelish.sourceHint")}>
+          {fill(t("kelish.source"), { from: dm(data.source.from), to: dm(data.source.last_upload || data.source.to) })}
+        </div>
         {data.when?.kind === "past" && marked === 0 && data.counts.total > 0 && <div>{t("kelish.pastNoMarks")}</div>}
       </div>
       {editable && (
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 self-center">
           <Button variant="secondary" size="lg" icon={<Plus size={17} />} aria-label={t("kelish.add")} title={t("kelish.add")} onClick={openAdd} />
           <Button
             variant="secondary" size="lg" icon={<Minus size={17} />}
@@ -489,7 +529,7 @@ export default function Kelish() {
       <TableCard
         icon={UserCheck} headSize="lg"
         title={cellTitle} subtitle={subtitle}
-        right={data ? <Counts c={data.counts} t={t} /> : null}
+        right={<Counts c={data?.counts} t={t} />}
         fixed footer={footer}
       >
         <thead>
@@ -515,12 +555,12 @@ export default function Kelish() {
         <tbody>
           {!data && Array.from({ length: 6 }).map((_, i) => (
             <tr key={`sk${i}`}>
-              {selecting && <td className="px-3 py-3" />}
-              <td className="px-3 py-3">
+              {selecting && <td className="px-3 py-2" />}
+              <td className="px-3 py-2">
                 <SkeletonBlock className={`h-3.5 ${["w-2/3", "w-1/2", "w-3/5"][i % 3]}`} />
                 <SkeletonBlock className="h-2.5 w-1/3 mt-2" />
               </td>
-              <td className="px-3 py-3"><SkeletonBlock className="h-10 w-full" /></td>
+              <td className="px-3 py-2"><SkeletonBlock className="h-10 w-full" /></td>
             </tr>
           ))}
           {data && view.length === 0 && (
@@ -550,15 +590,16 @@ export default function Kelish() {
                 )}
                 <td className="px-3 py-2 align-middle">
                   <div className="text-sm font-medium truncate" title={r.full}>{r.display}</div>
-                  {bits.length > 0 && (
-                    <div className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
-                      {bits.map((b, i) => (
-                        <span key={i} style={b.warn ? { color: "var(--status-warn)" } : undefined}>
-                          {i > 0 && " · "}{b.text}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {/* Always one line, even empty: «belgiladi: …» arriving with
+                      a tap must not make the row taller and push the rows
+                      under it. */}
+                  <div className="text-[11px] leading-4 mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
+                    {bits.length > 0 ? bits.map((b, i) => (
+                      <span key={i} style={b.warn ? { color: "var(--status-warn)" } : undefined}>
+                        {i > 0 && " · "}{b.text}
+                      </span>
+                    )) : " "}
+                  </div>
                 </td>
                 <td className="px-3 py-2 align-middle">
                   <MarkButton mark={r.mark} editable={editable && !selecting} onClick={() => tap(r)} name={r.display} t={t} />
@@ -583,13 +624,6 @@ export default function Kelish() {
 
         {cellsShown.length > 1 && cell && (
           <SegmentedToggle value={cell.id} onChange={pickCell} options={cellOptions} ariaLabel={t("kelish.cell")} />
-        )}
-
-        {showHint && (
-          <p className="flex items-start gap-1.5 text-xs leading-snug" style={{ color: "var(--text-3)" }}>
-            <Info size={14} className="flex-shrink-0 mt-px" aria-hidden="true" />
-            {t("kelish.hint")}
-          </p>
         )}
 
         {body}
