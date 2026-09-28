@@ -54,7 +54,7 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
   const [incompatible, setIncompatible] = useState(isOutdated);
   useEffect(() => subscribeCompat(setIncompatible), []);
 
-  const { data } = useQuery({
+  const { data, refetch } = useQuery({
     queryKey: ["build-info"],
     queryFn: async () => {
       // Busted on both sides: `no-store` covers the browser, the changing query
@@ -76,6 +76,17 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
     retry: false,
     staleTime: 60_000,
   });
+
+  // The Android app downloads a newly deployed build in the background and
+  // fires this the moment it has all of it (android/…/PageUpdates.java), so the
+  // prompt does not wait for the next poll. Nothing else fires it.
+  useEffect(() => {
+    const check = () => {
+      if (BUILD_TIME) refetch();
+    };
+    window.addEventListener("safia-build-check", check);
+    return () => window.removeEventListener("safia-build-check", check);
+  }, [refetch]);
 
   const deployed = typeof data?.buildTime === "string" ? data.buildTime : "";
   const updateReady = Boolean(deployed && BUILD_TIME && deployed !== BUILD_TIME);

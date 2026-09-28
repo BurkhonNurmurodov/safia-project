@@ -7,8 +7,10 @@
 # and the release key in ~/.safia-android/signing/ — the build refuses to run
 # without it. The site's pages go inside the APK from the committed
 # frontend/dist, and the build refuses a dist production is not serving: run
-# it right after a deploy has landed. The APK (sideloading) and the AAB
-# (Google Play) are copied to ~/.safia-android/releases/, never into the repo.
+# it right after a deploy has landed. Once installed, the app follows every
+# later deploy by itself (PageUpdates.java) — a new APK is needed only when
+# android/ changes. The APK (sideloading) and the AAB (Google Play) are
+# copied to ~/.safia-android/releases/, never into the repo.
 set -euo pipefail
 cd "$(dirname "$0")"
 

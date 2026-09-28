@@ -47,6 +47,9 @@ cPanel*
 # RUNTIME by the running app to detect a newer build. Ignored, it never ships
 # and the update prompt goes permanently silent. Exact path, not a glob.
 !frontend/dist/build.json
+# The build's file list with every file's SHA-256 — how the Android app
+# downloads a newly deployed build. Ignored, the app never updates its pages.
+!frontend/dist/build-files.json
 
 # The cloud-session hooks. Committed ON PURPOSE: a cloud session gets only what
 # the repo carries, so an ignored settings.json means neither the hook that

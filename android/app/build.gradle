@@ -31,8 +31,8 @@ android {
         minSdk 24
         targetSdk 36
         // Raise versionCode on EVERY release, or phones refuse the update.
-        versionCode 3
-        versionName "1.1.0"
+        versionCode 4
+        versionName "1.2.0"
     }
 
     signingConfigs {
@@ -71,17 +71,19 @@ gradle.taskGraph.whenReady { graph ->
 /**
  * The site's pages go INSIDE the APK (the operator's choice, 2026-09-28): the
  * committed frontend/dist is copied to assets/web, where WebBundle.java serves
- * it at the production address. Two checks keep the frozen copy honest:
+ * it at the production address until PageUpdates.java has downloaded a build
+ * the site deployed since. Three checks keep the built-in copy honest:
  *
  *  - the copy must BE the build production is serving right now — the pages
  *    talk to that server's API, so a copy of anything else (an undeployed
  *    local build, a checkout behind main) is refused, unless
  *    SAFIA_ALLOW_UNDEPLOYED=1 says so on purpose;
+ *  - it must carry build-files.json for that same build — every file's
+ *    SHA-256, by which a newly deployed build downloads only what changed;
  *  - the server's own Content-Security-Policy is read from the live site and
  *    frozen with the pages it was written for.
  *
- * sw.js stays out: a service worker would fill its cache from the server and
- * replace the bundled pages with whatever production serves later.
+ * sw.js stays out: the app never runs a service worker.
  */
 abstract class BundleWebTask extends DefaultTask {
     @InputDirectory
@@ -104,6 +106,11 @@ abstract class BundleWebTask extends DefaultTask {
             exclude "sw.js"
         }
         def local = new JsonSlurper().parse(new File(dist, "build.json"))
+        File listFile = new File(dist, "build-files.json")
+        if (!listFile.isFile() || new JsonSlurper().parse(listFile).buildTime != local.buildTime) {
+            throw new GradleException("frontend/dist has no build-files.json for its own build: build the " +
+                    "frontend again (cd frontend && npx vite build).")
+        }
         def live = new JsonSlurper().parse(new URL("https://production.safiacorporate.uz/build.json"))
         if (local.buildTime != live.buildTime && System.getenv("SAFIA_ALLOW_UNDEPLOYED") != "1") {
             throw new GradleException("frontend/dist is ${local.version} (${local.buildTime}) but production serves " +
@@ -114,7 +121,6 @@ abstract class BundleWebTask extends DefaultTask {
                 .getHeaderField("Content-Security-Policy")
         if (!csp) throw new GradleException("Could not read the live site's Content-Security-Policy.")
         new File(out, "csp.txt").text = csp
-        new File(out, "web-version.txt").text = String.valueOf(local.version)
         logger.lifecycle("Bundled pages ${local.version} (${local.buildTime}) with the live CSP.")
     }
 }

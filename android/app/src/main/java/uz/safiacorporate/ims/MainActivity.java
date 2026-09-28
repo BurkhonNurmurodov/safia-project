@@ -58,8 +58,10 @@ import java.util.concurrent.Executors;
  * Safia IMS for Android: the site's pages in the app's own web view — no
  * Chrome, no "Running in Chrome" (CLAUDE.md, «The Android app»).
  *
- * The pages come from the APK (WebBundle), the data from the server. What a
- * browser gives a page for free and a web view does not is supplied here:
+ * The pages come from the phone (WebBundle) — the copy built into the APK, then
+ * each build the site deploys, downloaded by PageUpdates — and the data from
+ * the server. What a browser gives a page for free and a web view does not is
+ * supplied here:
  * downloads (app-bridge.js + FileHandoff), the file picker, the camera, new
  * tabs and links to other apps, the back button, and room for the status bar
  * and the keyboard.
@@ -75,6 +77,8 @@ public class MainActivity extends ComponentActivity {
     private FrameLayout root;
     private WebView web;
     private WebBundle bundle;
+    private PageUpdates updates;
+    private final Runnable pagesReady = this::announcePages;
     private String bridgeScript;
     private boolean bridgeAtDocumentStart;
     private OnBackPressedCallback back;
@@ -100,7 +104,9 @@ public class MainActivity extends ComponentActivity {
         // Edge to edge (Android 15+ insists): the page gets the space between the
         // bars and above the keyboard as padding, and the bars show the page's colour.
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        bundle = new WebBundle(this);
+        bundle = WebBundle.get(this);
+        updates = PageUpdates.get(this);
+        updates.setOnReady(pagesReady);
         bridgeScript = WebBundle.readAsset(this, "app-bridge.js");
 
         root = new FrameLayout(this);
@@ -139,13 +145,22 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        // On screen: follow the site's deploys (PageUpdates).
+        updates.resume();
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
+        updates.pause();
         CookieManager.getInstance().flush();
     }
 
     @Override
     protected void onDestroy() {
+        updates.clearOnReady(pagesReady);
         if (pendingFiles != null) pendingFiles.onReceiveValue(null);
         if (pendingCamera != null) pendingCamera.deny();
         if (web != null) {
@@ -247,9 +262,20 @@ public class MainActivity extends ComponentActivity {
     }
 
     /**
-     * No service worker, ever: the pages come from the APK, and a worker would
-     * fill its cache from the SERVER and serve that build instead — two builds in
-     * one app. app-bridge.js refuses the registration; this refuses the fetch.
+     * A newly deployed build is whole on the phone: the site's own update
+     * prompt (hooks/useAppUpdate.js) asks now rather than at its next poll.
+     */
+    private void announcePages() {
+        runOnUiThread(() -> {
+            if (web != null) web.evaluateJavascript("window.dispatchEvent(new Event('safia-build-check'))", null);
+        });
+    }
+
+    /**
+     * No service worker, ever: the app keeps its own pages (WebBundle,
+     * PageUpdates), and a worker would fill its cache from the SERVER and serve
+     * that instead — two builds in one app. app-bridge.js refuses the
+     * registration; this refuses the fetch.
      */
     private void blockServiceWorkers() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)

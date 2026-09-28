@@ -1,5 +1,6 @@
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -100,6 +101,55 @@ function emitServiceWorker() {
   }
 }
 
+// Every file of the build with its SHA-256 — what the Android app downloads
+// when the site is deployed (android/…/PageUpdates.java). It fetches only the
+// files it does not already hold, checks each one against this list, and
+// starts using the new build only once all of them have arrived, so a phone is
+// never left with half of one build and half of another. Written in
+// closeBundle, after every other file is on disk (build.json and sw.js are
+// written in writeBundle, public/ is copied at renderStart), and served
+// no-store by serve_spa for the reason build.json is.
+const FILE_LIST = 'build-files.json'
+function emitFileList() {
+  let root = process.cwd()
+  let outDir = 'dist'
+  return {
+    name: 'emit-file-list',
+    apply: 'build',
+    configResolved(config) {
+      root = config.root
+      outDir = config.build.outDir
+    },
+    closeBundle: {
+      order: 'post',
+      handler() {
+        const dist = resolve(root, outDir)
+        // No deploy marker = the build never reached writeBundle (it failed).
+        if (!existsSync(resolve(dist, 'build.json'))) return
+        const files = {}
+        const walk = (dir) => {
+          for (const name of readdirSync(dir).sort()) {
+            const full = resolve(dir, name)
+            if (statSync(full).isDirectory()) {
+              walk(full)
+              continue
+            }
+            const rel = relative(dist, full).split(sep).join('/')
+            if (rel === FILE_LIST) continue
+            const data = readFileSync(full)
+            files[rel] = { sha256: createHash('sha256').update(data).digest('hex'), size: data.length }
+          }
+        }
+        walk(dist)
+        writeFileSync(
+          resolve(dist, FILE_LIST),
+          JSON.stringify({ version: APP_VERSION, buildTime: BUILD_TIME, files }) + '\n',
+        )
+      },
+    },
+  }
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
@@ -110,6 +160,7 @@ export default defineConfig({
     tailwindcss(),
     emitBuildInfo(),
     emitServiceWorker(),
+    emitFileList(),
   ],
   build: {
     minify: 'esbuild',

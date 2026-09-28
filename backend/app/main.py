@@ -1041,6 +1041,11 @@ if STATIC_DIR:
             # no-store treatment for exactly the same reason.
             if clean_path == "build.json":
                 return FileResponse(file_path, headers=NO_STORE)
+            # build-files.json lists every file of the build with its SHA-256;
+            # the Android app downloads a new build by it. A cached copy
+            # describes the previous build, so the same treatment again.
+            if clean_path == "build-files.json":
+                return FileResponse(file_path, headers=NO_STORE)
             # sw.js is the service worker (browser installs only — see
             # frontend/src/sw.js). A deploy is a new worker carrying the new
             # build's precache list, and Cloudflare caches .js by extension: a

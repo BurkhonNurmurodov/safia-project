@@ -115,9 +115,8 @@ final class FailureReport {
     private static String describe(Context app) {
         StringBuilder s = new StringBuilder("Safia IMS ");
         PackageManager pm = app.getPackageManager();
-        String pages = WebBundle.readAsset(app, "web-version.txt");
         s.append(version(pm, app.getPackageName()))
-                .append(" (pages ").append(pages == null ? "?" : pages.trim()).append(')')
+                .append(" (pages ").append(WebBundle.pagesInUse(app)).append(')')
                 .append(" · ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
                 .append(" · Android ").append(Build.VERSION.RELEASE)
                 .append(" (API ").append(Build.VERSION.SDK_INT).append(')')
