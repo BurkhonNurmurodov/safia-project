@@ -101,6 +101,7 @@ try:
         report_filling_times,
         report_t11_proofs,
         report_arc_new_app_attrs,
+        report_dispute_queue,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -469,6 +470,12 @@ try:
     # text + JSON. Remove this line, `startup.report_arc_new_app_attrs` and
     # `services/arc_attrs_report.py` once it has been sent.
     report_arc_new_app_attrs()
+    # ⚠ TEMPORARY one-shot (2026-09-28) — September's objections to AI
+    # rejections still waiting on a brigadir, in total and per brigadir,
+    # DMed once to the operator as text. Remove this line,
+    # `startup.report_dispute_queue` and `services/dispute_queue_report.py`
+    # once it has been sent.
+    report_dispute_queue()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's

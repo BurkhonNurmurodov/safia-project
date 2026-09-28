@@ -6803,6 +6803,36 @@ def _arc_attrs_job() -> None:
                       arc_attrs_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: September's AI objections still waiting on a brigadir ──────────
+# The operator asked on 2026-09-28 how many objections to AI rejections filed
+# for September days are still unhandled at the brigadir's stage, and how many
+# each brigadir holds. `services/dispute_queue_report.py` DMs the counts as
+# text. It READS and writes nothing but its flag. Changing what it reports
+# needs a NEW flag key.
+DISPUTE_QUEUE_FLAG = "ai_objections_sep_brigadir_queue_2026_09_28_v1"
+_DISPUTE_QUEUE_DELAY_S = 60
+
+
+def report_dispute_queue() -> None:
+    """September's objections waiting on each brigadir, DMed once. Never raises."""
+    try:
+        if not _report_pending(DISPUTE_QUEUE_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("ai-objections-sep-queue",
+                    datetime.now(timezone.utc) + timedelta(seconds=_DISPUTE_QUEUE_DELAY_S),
+                    _dispute_queue_job)
+    except Exception as exc:
+        print(f"[startup] AI objection queue report could not be scheduled: {exc}")
+
+
+def _dispute_queue_job() -> None:
+    from app.services import dispute_queue_report
+    _send_report_once(DISPUTE_QUEUE_FLAG, "AI objection queue report",
+                      dispute_queue_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the
