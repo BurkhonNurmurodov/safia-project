@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
@@ -25,6 +26,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Keeps the app on the pages production serves (CLAUDE.md «The Android app»).
@@ -61,6 +64,9 @@ final class PageUpdates {
     private static final long MAX_FILE = 50L << 20;
     private static final long MAX_DOWNLOAD = 300L << 20;
     private static final int MAX_JSON = 4 << 20;
+    /** Cloudflare Web Analytics' beacon, as it inserts it before </body>. */
+    private static final Pattern CLOUDFLARE_BEACON =
+            Pattern.compile("<script[^>]*static\\.cloudflareinsights\\.com.*?</script>\\n?");
 
     private static volatile PageUpdates instance;
 
@@ -256,6 +262,10 @@ final class PageUpdates {
             String csp = c.getHeaderField("Content-Security-Policy");
             if (!keep) return csp;
             pages.blobs.mkdirs();
+            if (rel.equals("index.html")) {
+                storeIndex(pages, c, sha, size);
+                return csp;
+            }
             File part = new File(pages.blobs, sha + ".part");
             MessageDigest md = sha256();
             long got = 0;
@@ -287,6 +297,47 @@ final class PageUpdates {
         }
     }
 
+    /**
+     * index.html, the build's one HTML file, and the one Cloudflare may rewrite:
+     * its Web Analytics inserts a beacon <script> before </body> for some
+     * clients. That tag is not part of the build, so it is taken out again and
+     * the file stored is byte for byte the one the build listed — anything else
+     * that differs is still refused.
+     */
+    private static void storeIndex(WebBundle pages, HttpURLConnection c, String sha, long size)
+            throws IOException, Refused {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        try (InputStream in = c.getInputStream()) {
+            byte[] chunk = new byte[16 * 1024];
+            int n;
+            while ((n = in.read(chunk)) > 0) {
+                buf.write(chunk, 0, n);
+                if (buf.size() > size + 16 * 1024) throw new Refused("index.html is larger than build-files.json says");
+            }
+        }
+        byte[] html = buf.toByteArray();
+        if (!sha.equals(hex(sha256().digest(html)))) {
+            String s = new String(html, StandardCharsets.UTF_8);
+            Matcher m = CLOUDFLARE_BEACON.matcher(s);
+            byte[] clean = m.find() ? (s.substring(0, m.start()) + s.substring(m.end())).getBytes(StandardCharsets.UTF_8) : null;
+            if (clean == null || !sha.equals(hex(sha256().digest(clean)))) {
+                throw new Refused("index.html does not match build-files.json");
+            }
+            html = clean;
+        }
+        File part = new File(pages.blobs, sha + ".part");
+        try (OutputStream out = new FileOutputStream(part)) {
+            out.write(html);
+        } catch (IOException e) {
+            part.delete();
+            throw e;
+        }
+        if (!part.renameTo(new File(pages.blobs, sha))) {
+            part.delete();
+            throw new IOException("could not store index.html");
+        }
+    }
+
     private void failed(String stamp, String why) {
         if (!stamp.equals(failing)) {
             failing = stamp;
@@ -311,6 +362,9 @@ final class PageUpdates {
         c.setUseCaches(false);
         c.setRequestProperty("User-Agent", userAgent);
         c.setRequestProperty("Cache-Control", "no-cache");
+        // Without an Accept header Cloudflare treats the request as a browser's
+        // and inserts its analytics beacon into index.html (see storeIndex).
+        c.setRequestProperty("Accept", "*/*");
         return c;
     }
 

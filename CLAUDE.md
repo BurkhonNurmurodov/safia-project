@@ -6005,14 +6005,17 @@ From **2026-09-28** (the operator's go-ahead) the platform ships an Android app
 PAGES INSIDE THE APK and shows them in its OWN web view. Only the data comes
 from the server. No Chrome anywhere: the operator rejected the first design (a
 Trusted Web Activity, 1.0.x) because it runs visibly "in Chrome", and then
-chose, over a live-loading web view, **today's pages built into the APK**, with
-its consequence spelled out to them: **every change to the platform's pages
-reaches the app only through a new APK installed on every phone.**
+chose, over a live-loading web view, **today's pages built into the APK**. From
+**1.2.0** (the same day, the operator's pick: "we make a lot of small changes
+daily") **the app downloads every build the site deploys by itself** — see
+«The pages follow every deploy» below. A new APK is needed only when
+`android/` changes.
 
 - **One origin, and the site does not change.** `MainActivity` points its web
   view at `https://production.safiacorporate.uz` and `WebBundle` answers that
-  origin's page requests from `assets/web` — every file of the committed
-  `frontend/dist` — while every SERVER path goes over the network:
+  origin's page requests from the phone — the copy built into the APK
+  (`assets/web`, every file of the committed `frontend/dist`) or a build
+  downloaded since — while every SERVER path goes over the network:
   `/api`, `/bot/`, `/.well-known/`, `/health`, `/docs`, `/openapi.json`, and
   `/admin/…` except the SPA's own `/admin/upload` (`WebBundle.isServerPath`,
   the twin of `SPA_ADMIN` in `src/sw.js` — **move them together**). Any other
@@ -6027,21 +6030,65 @@ reaches the app only through a new APK installed on every phone.**
   server's API, so a copy of anything else (an undeployed local build, a
   checkout behind main) would be a combination nobody has run.
   `SAFIA_ALLOW_UNDEPLOYED=1` overrides it on purpose only. **So an APK is
-  built right AFTER a deploy lands.** The same task reads the live
-  Content-Security-Policy header into `assets/csp.txt`, and `WebBundle` sends
-  it with `index.html` — the policy frozen with the pages it was written for.
+  built right AFTER a deploy lands** (or right after pushing the commit being
+  deployed, with the override, when no CSP change rides with it). It also
+  refuses a dist without `build-files.json` for its own build. The same task
+  reads the live Content-Security-Policy header into `assets/csp.txt`, and
+  `WebBundle` sends it with the built-in `index.html` — the policy frozen with
+  the pages it was written for.
 - **No service worker, ever** — `app-bridge.js` refuses the registration and
   `MainActivity.blockServiceWorkers` 404s every worker fetch. A worker fills
-  its cache from the SERVER and would serve that build in place of the bundled
-  one: two builds in one app, silently.
-- **Updates**: `/build.json` comes from the bundle, so `UpdatePrompt` never
-  offers a reload (a reload would only show the same pages again). Old pages
-  keep working for as long as the platform's own contract says an open tab
-  does — the whole MAJOR line (see Versioning). When a MAJOR ships, the
-  bundled pages fall below `MIN_CLIENT` and show the un-dismissible "no longer
-  served" warning, whose reload cannot help here: that is the signal to build
-  and hand out a new APK. **A new APK is also the only way any page change,
-  however small, reaches app users.**
+  its cache from the SERVER and would serve that in place of the app's own
+  pages: two builds in one app, silently.
+- **The pages follow every deploy** (`PageUpdates.java`, 1.2.0).
+  - **The build publishes its files**: `emitFileList` in `vite.config.js`
+    writes `dist/build-files.json` in `closeBundle` (after build.json, sw.js
+    and public/ are on disk) — every file with its SHA-256 and size. Served
+    no-store by `serve_spa` like `build.json`, kept in git by a `!` line in
+    `.gitignore`. Ignored or stale, no phone updates.
+  - **The download**: while the app is ON SCREEN, `PageUpdates` asks
+    `/build.json` 3 s after it opens, on every return to it (≥ 60 s apart) and
+    every 5 min. A build the phone does not hold → `/build-files.json` (it must
+    name the same stamp, or the site was deployed again mid-way), then ONLY
+    the files whose SHA-256 the phone lacks — built-in and earlier downloads
+    are reused — into `files/web/blobs/<sha>`, each one hash-checked.
+    `index.html` is always fetched from `/`, whose answer carries the new
+    build's CSP. A path that is not content-hashed gets `?b=<sha>`: Cloudflare
+    caches those by extension under fixed names. **Cloudflare Web Analytics
+    inserts a beacon `<script>` before `</body>` of HTML answered to a request
+    with no `Accept` header** (found 2026-09-28): the app sends `Accept: */*`,
+    and `storeIndex` still takes that one tag back out before checking, so the
+    stored `index.html` is the build's exact bytes and any OTHER difference is
+    refused. A build is stored
+    (`files/web/builds/<stamp>.json`) and handed on only WHOLE; anything less
+    leaves the pages as they were, and a download that broke off resumes from
+    the files that arrived.
+  - **The switch**: `WebBundle` has one ACTIVE build, which answers the page on
+    screen, and at most one READY. It switches ONLY on a main-frame request —
+    a reload, or the next start, which opens the newest downloaded build at
+    once (the `boot` pref) — so a running page never mixes two builds. A file
+    the old page still asks for after a switch is found in the previous build.
+    `/build.json` is answered from the ready build, so the site's own
+    `UpdatePrompt` offers the reload; the app fires `safia-build-check` when a
+    build is ready, which `useAppUpdate` answers with an immediate refetch
+    instead of waiting for its 5-minute poll. It follows the LIVE stamp, not
+    "the newest": a rollback is followed too.
+  - **Cost**: every deploy renames ~207 of the 211 asset files today (the
+    build stamp in `utils/version.js` is imported by nearly every chunk), so a
+    new build is ~1.6 MB over the wire — only while the app is open, and only
+    the latest build, never each one in between. Taking the stamp out of the
+    chunk graph would shrink this (and the PWA's precache); not done.
+  - **Failures**: a file that does not match the list, a list that is not
+    one, a missing CSP or a lasting 4xx on `/build.json` is retried after 30 s
+    and REPORTED (`/api/boot-report`, «page update failed») after three
+    attempts at one build — a phone that silently stopped following the site
+    is what nobody would notice. Being offline is not a failure. Only the
+    active, ready and previous builds' files are kept; a new APK wipes every
+    download (its versionCode is remembered in the `pages` prefs) and starts
+    from its own copy.
+  - The pages keep up with the site, so the `MIN_CLIENT` "no longer served"
+    warning appears only while a download keeps failing — its reload then
+    switches as soon as one succeeds.
 - **What a browser gives a page and a web view does not** is supplied by the
   app: `app-bridge.js` (injected at document start, this origin only) hands
   in-memory files to Android through `window.SafiaAndroid` (a
@@ -6064,7 +6111,8 @@ reaches the app only through a new APK installed on every phone.**
   and `FailureReport` posts it (and a dead page engine,
   `onRenderProcessGone`, after which the screen starts over) to the site's
   unauthenticated `POST /api/boot-report`, which DMs the support chat with
-  app and pages version, phone, Android and WebView version first. A report
+  app and pages version (built in / downloaded), phone, Android and WebView
+  version first — and a page update that keeps failing, above. A report
   is saved before it is sent and retried on the next start. Born of 1.0.0,
   which crashed on its first launch with no message at all.
 - **The signing key lives on the Mac that builds, never in git** —
@@ -6082,7 +6130,7 @@ reaches the app only through a new APK installed on every phone.**
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.1.0, versionCode 3).
+  **Raise `versionCode` on every release** (current: 1.2.0, versionCode 4).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
@@ -6096,7 +6144,8 @@ reaches the app only through a new APK installed on every phone.**
 - Deliberately not built (yet): a leader checklist screen of the app's own
   (the proof camera is reachable only from the bot's buttons, which open in
   Telegram), push notifications (Telegram stays the channel), an in-app "a
-  new version of the app exists" notice, and the Fullscreen API on `/live`.
+  new APK exists" notice (the pages update themselves; the APK changes
+  rarely and is still handed out by hand), and the Fullscreen API on `/live`.
 
 ## ARC tickets (`/arc`, page key `arc`)
 
