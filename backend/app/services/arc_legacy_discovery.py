@@ -28,11 +28,13 @@ actually try?».
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
+from sqlalchemy import text
 
 from app.database import SessionLocal
 from app.models import ArcLegacySyncMeta
@@ -360,3 +362,186 @@ def active_filters(db) -> dict:
     meta = db.query(ArcLegacySyncMeta).filter_by(id=1).first()
     f = getattr(meta, "filters", None) if meta is not None else None
     return dict(f) if isinstance(f, dict) else {}
+
+
+# ── the attribute census ────────────────────────────────────────────────────
+# «Is the API sending anything new?» is a question about COLUMNS, and the
+# probe's `unknown_fields` cannot answer it: it reads the top-level keys of ONE
+# item, so a key missing from that ticket, one only newer tickets carry, or one
+# added inside `category` is invisible to it. Every row keeps the whole item in
+# ``raw`` and every sync rewrites it, so the stored payloads ARE the API's
+# current shape as of each row's last sync — read all of them, one level deep.
+
+# Keys normalize_item() reads INSIDE an object-valued field.
+_KNOWN_NESTED = {"category": {"id", "name", "is_urgent", "deadline_hours"}}
+
+# Safety nets that should never bind: a payload that suddenly carries hundreds
+# of attributes is itself the finding, and `truncated` says so.
+_CENSUS_CAP = 400
+_SAMPLE_MAX = 30
+_SAMPLE_LEN = 160
+# The census scans every stored payload. On a box where that stalls, the panel
+# gets an answer saying so instead of a request that never returns.
+_CENSUS_TIMEOUT_MS = 20_000
+
+_JSON_TYPES = ("string", "number", "boolean", "object", "array", "null")
+
+
+def _filled(v: str) -> str:
+    """SQL: the JSON value ``v`` carries something — not null, not a blank
+    string, not [] or {}. The same test normalize_item's ``_s`` applies."""
+    return (f"(jsonb_typeof({v}) <> 'null' AND {v} NOT IN ('[]'::jsonb, '{{}}'::jsonb) "
+            f"AND NOT (jsonb_typeof({v}) = 'string' AND btrim({v} #>> '{{}}') = ''))")
+
+
+def _census_sql() -> str:
+    """One pass over every live row: each top-level key, each key inside an
+    object value (``category.id``) and each key inside an array of objects
+    (``files[].url``), with how many tickets carry it, how many fill it, the
+    creation dates of the tickets that fill it, and the JSON types seen.
+
+    Counts are TICKETS, never array elements (``items`` folds a ticket's
+    elements first). Types are six bool_or's rather than a DISTINCT aggregate,
+    so the ~1M key rows hash-aggregate instead of sorting. jsonb_each and
+    jsonb_array_elements raise on the wrong JSON type, hence every CASE."""
+    types = ",\n       ".join(f"bool_or(strpos(types, '{t}') > 0) AS t_{t}" for t in _JSON_TYPES)
+    return f"""
+WITH r AS (
+    SELECT id AS rid, raw, created_at
+    FROM arc_legacy_requests
+    WHERE missing_since IS NULL AND jsonb_typeof(raw) = 'object'
+),
+top AS (
+    SELECT r.rid, r.created_at, e.key AS name, e.value AS v
+    FROM r CROSS JOIN LATERAL jsonb_each(r.raw) AS e(key, value)
+),
+kids AS (
+    SELECT t.created_at, t.name AS parent, c.key AS name, c.value AS v
+    FROM top t CROSS JOIN LATERAL jsonb_each(
+        CASE WHEN jsonb_typeof(t.v) = 'object' THEN t.v ELSE '{{}}'::jsonb END) AS c(key, value)
+),
+items AS (
+    SELECT t.created_at, t.name AS parent, c.key AS name,
+           bool_or({_filled('c.value')}) AS filled,
+           string_agg(DISTINCT jsonb_typeof(c.value), ',') AS types
+    FROM top t
+    CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(t.v) = 'array' THEN t.v ELSE '[]'::jsonb END) AS el(x)
+    CROSS JOIN LATERAL jsonb_each(
+        CASE WHEN jsonb_typeof(el.x) = 'object' THEN el.x ELSE '{{}}'::jsonb END) AS c(key, value)
+    GROUP BY t.rid, t.created_at, t.name, c.key
+),
+flat AS (
+    SELECT NULL::text AS parent, ''::text AS sep, name, created_at,
+           {_filled('v')} AS filled, jsonb_typeof(v) AS types FROM top
+    UNION ALL
+    SELECT parent, '.', name, created_at, {_filled('v')}, jsonb_typeof(v) FROM kids
+    UNION ALL
+    SELECT parent, '[].', name, created_at, filled, types FROM items
+)
+SELECT parent, sep, name,
+       count(*) AS carried,
+       count(*) FILTER (WHERE filled) AS filled,
+       min(created_at) FILTER (WHERE filled) AS first_at,
+       max(created_at) FILTER (WHERE filled) AS last_at,
+       {types}
+FROM flat
+GROUP BY parent, sep, name
+ORDER BY parent NULLS FIRST, sep, name
+LIMIT :cap
+"""
+
+
+def _sample(db, parent: Optional[str], sep: str, name: str) -> Optional[str]:
+    """The value the NEWEST ticket filling this attribute carries, short —
+    enough for a reader to tell what the attribute is."""
+    params: dict[str, Any] = {"n": name}
+    src = "arc_legacy_requests r"
+    if parent is None:
+        expr = "(r.raw -> :n)"
+    elif sep == ".":
+        expr, params["p"] = "(r.raw -> :p -> :n)", parent
+    else:
+        expr, params["p"] = "(el.x -> :n)", parent
+        src += (" CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r.raw -> :p) = 'array' "
+                "THEN r.raw -> :p ELSE '[]'::jsonb END) AS el(x)")
+    v = db.execute(text(
+        f"SELECT {expr} AS v FROM {src} WHERE r.missing_since IS NULL AND {_filled(expr)} "
+        "ORDER BY r.created_at DESC NULLS LAST LIMIT 1"), params).scalar()
+    if v is None:
+        return None
+    s = " ".join((v if isinstance(v, str) else json.dumps(v, ensure_ascii=False, default=str)).split())
+    return s if len(s) <= _SAMPLE_LEN else s[:_SAMPLE_LEN - 1] + "…"
+
+
+def _iso(dt) -> Optional[str]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+def field_census(db) -> dict:
+    """Every attribute the API sends, over every ticket it still returns, and
+    which of them the page does NOT use (``mapped`` False).
+
+    An unmapped key inside an unmapped object (``under_new``) is listed under
+    its parent and not counted again — a new object with three keys is one new
+    attribute, not four. ``gone`` names the mapped attributes no stored ticket
+    carries any more: the same question asked the other way round."""
+    db.execute(text(f"SET LOCAL statement_timeout = {_CENSUS_TIMEOUT_MS}"))
+    tickets, missing, last_synced = db.execute(text(
+        "SELECT count(*) FILTER (WHERE missing_since IS NULL), "
+        "count(*) FILTER (WHERE missing_since IS NOT NULL), "
+        "max(synced_at) FILTER (WHERE missing_since IS NULL) "
+        "FROM arc_legacy_requests")).one()
+    tickets, missing = int(tickets or 0), int(missing or 0)
+
+    rows = (db.execute(text(_census_sql()), {"cap": _CENSUS_CAP + 1}).mappings().all()
+            if tickets else [])
+    truncated = len(rows) > _CENSUS_CAP
+    fields: list[dict] = []
+    for r in rows[:_CENSUS_CAP]:
+        parent, sep, name = r["parent"], r["sep"] or "", r["name"]
+        if parent is None:
+            mapped, under_new = name in _KNOWN_FIELDS, False
+        else:
+            mapped = sep == "." and name in _KNOWN_NESTED.get(parent, ())
+            under_new = parent not in _KNOWN_FIELDS
+        types = [t for t in _JSON_TYPES if r[f"t_{t}"]]
+        fields.append({
+            "path": name if parent is None else f"{parent}{sep}{name}",
+            "parent": parent, "sep": sep, "name": name,
+            "mapped": mapped, "under_new": under_new,
+            "carried": int(r["carried"] or 0), "filled": int(r["filled"] or 0),
+            # «null» next to a real type only says «sometimes empty»; alone it
+            # is the answer.
+            "types": [t for t in types if t != "null"] or types,
+            "first_at": _iso(r["first_at"]), "last_at": _iso(r["last_at"]),
+            "sample": None,
+        })
+
+    extra = [f for f in fields if not f["mapped"] and not f["under_new"]]
+    for f in [f for f in extra if f["filled"]][:_SAMPLE_MAX]:
+        f["sample"] = _sample(db, f["parent"], f["sep"], f["name"])
+
+    gone: list[str] = []
+    if tickets and not truncated:
+        top = {f["name"] for f in fields if f["parent"] is None}
+        gone = sorted(k for k in _KNOWN_FIELDS if k not in top)
+        for parent, keys in _KNOWN_NESTED.items():
+            if parent in top:
+                inner = {f["name"] for f in fields if f["parent"] == parent and f["sep"] == "."}
+                gone += sorted(f"{parent}.{k}" for k in keys if k not in inner)
+
+    return {
+        "tickets": tickets,
+        "missing": missing,
+        "last_synced": _iso(last_synced),
+        "known": len(_KNOWN_FIELDS),
+        "unmapped": len(extra),
+        "gone": gone,
+        "truncated": truncated,
+        "fields": fields,
+    }

@@ -1,5 +1,5 @@
 // What ARC's OLD login API (page /arc-legacy) says it will give us, and under
-// which parameters.
+// which parameters — and which ATTRIBUTES it sends.
 //
 // IT's answer to «we see too few tickets» was that we filter wrongly. This
 // panel is how that claim gets settled without a terminal: the backend probes
@@ -7,15 +7,20 @@
 // every parameter the API declares, what each one did to the reported total,
 // which combination the sync now sends, and how our own row count compares.
 //
+// The attribute section answers the other question — «is the API sending
+// anything new?» — off EVERY stored ticket's full payload (GET /fields), not
+// one sample item.
+//
 // Admin-only, like the endpoints behind it.
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Radar, RefreshCw, ArrowDownUp, ListTree, SlidersHorizontal, KeyRound, FileWarning, Boxes } from "lucide-react";
+import { Radar, RefreshCw, ArrowDownUp, ListTree, SlidersHorizontal, KeyRound, FileWarning, Boxes, Braces, CheckCircle2, ChevronDown } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import { SkeletonBlock } from "../ui/Skeleton";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
-import { hexA, C_DONE, C_OVERDUE, C_GREY } from "../../utils/arcStatusLegacy";
+import { hexA, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../../utils/arcStatusLegacy";
 
 const num = (v) => (v == null ? "—" : Number(v).toLocaleString("ru-RU"));
 const tplStr = (s, vars) => String(s || "").replace(/\{(\w+)\}/g, (m, k) => (vars[k] ?? m));
@@ -78,6 +83,118 @@ function PathRow({ path, text, full, tone }) {
   );
 }
 
+const day = (iso) => (iso ? new Date(iso).toLocaleDateString("ru-RU") : "—");
+
+// One attribute the page does not use: what it is called, how many tickets
+// fill it, on tickets created when, and what the newest one holds. The dates
+// are the «is it new» half — an attribute IT added last week is filled only on
+// last week's tickets.
+function ExtraField({ f, kids, tickets, t }) {
+  return (
+    <div className="rounded-lg px-2.5 py-1.5 space-y-0.5 min-w-0"
+      style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+      <div className="flex items-baseline justify-between gap-2 min-w-0">
+        <span className="font-mono text-xs font-semibold truncate" style={{ color: "var(--text-1)" }} title={f.path}>{f.path}</span>
+        <span className="font-mono text-[10px] flex-shrink-0" style={{ color: "var(--text-4)" }}>{f.types.join(" · ")}</span>
+      </div>
+      <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
+        {f.filled
+          ? `${tplStr(t("arcl.api.fieldsFilled"), { f: num(f.filled), c: num(tickets) })} · ${tplStr(t("arcl.api.fieldsSpan"), { from: day(f.first_at), to: day(f.last_at) })}`
+          : t("arcl.api.fieldsNever")}
+      </div>
+      {f.sample && (
+        <div className="font-mono text-[11px] truncate" style={{ color: "var(--text-2)" }} title={f.sample}>{f.sample}</div>
+      )}
+      {kids.length > 0 && (
+        <div className="pl-3 pt-0.5 space-y-0.5" style={{ borderLeft: "2px solid var(--border)" }}>
+          {kids.map((k) => (
+            <div key={k.path} className="flex justify-between gap-2 text-[11px] min-w-0" title={k.path}>
+              <span className="font-mono truncate" style={{ color: "var(--text-2)" }}>{k.path}</span>
+              <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>{num(k.filled)} / {num(tickets)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FieldCensus({ q, t }) {
+  const [showKnown, setShowKnown] = useState(false);
+  if (q.isLoading) return <SkeletonBlock className="h-20 w-full" />;
+  if (q.isError) {
+    return (
+      <div className="rounded-xl px-3 py-2 text-xs" style={{ background: hexA(C_OVERDUE, 0.1), color: C_OVERDUE, border: `1px solid ${hexA(C_OVERDUE, 0.33)}` }}>
+        {q.error?.response?.data?.detail || q.error?.message}
+      </div>
+    );
+  }
+  const d = q.data;
+  if (!d?.tickets) return <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("arcl.api.fieldsEmpty")}</p>;
+
+  const fields = d.fields || [];
+  const extra = fields.filter((f) => !f.mapped && !f.under_new);
+  const kidsOf = (f) => (f.parent == null ? fields.filter((k) => k.under_new && k.parent === f.name) : []);
+  const known = fields.filter((f) => f.mapped);
+  const pct = (f) => Math.round((f.filled / d.tickets) * 100);
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px]" style={{ color: "var(--text-3)" }}>
+        {tplStr(t("arcl.api.fieldsScope"), {
+          n: num(d.tickets),
+          at: d.last_synced ? new Date(d.last_synced).toLocaleString("ru-RU") : "—",
+        })}
+      </p>
+
+      {extra.length === 0 ? (
+        <div className="flex items-start gap-1.5 text-xs" style={{ color: C_DONE }}>
+          <CheckCircle2 size={14} className="flex-shrink-0 mt-px" />
+          <span>{tplStr(t("arcl.api.fieldsNone"), { k: d.known })}</span>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs font-semibold" style={{ color: C_DOING }}>
+            {tplStr(t("arcl.api.fieldsNew"), { n: extra.length })}
+          </p>
+          <div className="space-y-1.5">
+            {extra.map((f) => <ExtraField key={f.path} f={f} kids={kidsOf(f)} tickets={d.tickets} t={t} />)}
+          </div>
+        </>
+      )}
+
+      {d.gone?.length > 0 && (
+        <p className="text-[11px]" style={{ color: C_OVERDUE }}>
+          {t("arcl.api.fieldsGone")}: <span className="font-mono">{d.gone.join(", ")}</span>
+        </p>
+      )}
+      {d.truncated && (
+        <p className="text-[11px]" style={{ color: "var(--text-3)" }}>{tplStr(t("arcl.api.fieldsCut"), { n: fields.length })}</p>
+      )}
+
+      {known.length > 0 && (
+        <div>
+          <Button variant="ghost" size="sm" onClick={() => setShowKnown((v) => !v)}
+            icon={<ChevronDown size={12} className={`transition-transform ${showKnown ? "rotate-180" : ""}`} />}>
+            {tplStr(t("arcl.api.fieldsKnown"), { n: known.length })}
+          </Button>
+          {showKnown && (
+            <div className="grid sm:grid-cols-2 gap-x-4 gap-y-0.5 mt-1 px-1">
+              {known.map((f) => (
+                <div key={f.path} className="flex justify-between gap-2 text-[11px] min-w-0"
+                  title={`${num(f.filled)} / ${num(d.tickets)}`}>
+                  <span className="font-mono truncate" style={{ color: "var(--text-2)" }}>{f.path}</span>
+                  <span className="tabular-nums flex-shrink-0" style={{ color: f.filled ? "var(--text-3)" : C_GREY }}>{pct(f)}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LegacyApiPanel({ open, onClose, sync, onProbed }) {
   const { t } = useLang();
   const qc = useQueryClient();
@@ -89,6 +206,13 @@ export default function LegacyApiPanel({ open, onClose, sync, onProbed }) {
   });
   const data = probeQ.data;
   const report = data?.report;
+
+  const fieldsQ = useQuery({
+    queryKey: ["arcl-fields"],
+    queryFn: () => api.get("/api/arc-legacy/fields").then((r) => r.data),
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const probeMut = useMutation({
     mutationFn: () => api.post("/api/arc-legacy/probe").then((r) => r.data),
@@ -153,6 +277,11 @@ export default function LegacyApiPanel({ open, onClose, sync, onProbed }) {
                 ` · ${t("arcl.api.defaults")}: ${num(report.baseline_total)} → ${num(report.combined_total)}`}
             </p>
           )}
+
+          {/* every attribute the API sends — over every stored ticket */}
+          <Section icon={Braces} title={t("arcl.api.fields")}>
+            <FieldCensus q={fieldsQ} t={t} />
+          </Section>
 
           {/* what the walk sends now */}
           <Section icon={SlidersHorizontal} title={t("arcl.api.activeFilters")}>
@@ -278,15 +407,6 @@ export default function LegacyApiPanel({ open, onClose, sync, onProbed }) {
                   </span>
                 ))}
               </div>
-            </Section>
-          )}
-
-          {/* fields the API sends that we throw away */}
-          {report?.unknown_fields?.length > 0 && (
-            <Section icon={Boxes} title={t("arcl.api.unknownFields")}>
-              <p className="text-[11px] font-mono" style={{ color: "var(--text-2)" }}>
-                {report.unknown_fields.join(", ")}
-              </p>
             </Section>
           )}
 

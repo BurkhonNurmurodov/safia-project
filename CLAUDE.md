@@ -6269,6 +6269,16 @@ untouched.
   never a value.
 - **The history deleted on 25 Aug is NOT restored**: the tables start empty and
   the first full walk re-reads whatever the old API still returns.
+- **«Is the API sending anything new?» is answered on the API panel**
+  (2026-09-28): «API yuborayotgan atributlar», `GET /api/arc-legacy/fields`
+  (admin-only) → `arc_legacy_discovery.field_census`. It reads EVERY live row's
+  `raw` (each sync rewrites it, so it is the API's current shape), one level
+  deep — `category.x`, `files[].url` — and lists what `normalize_item` does not
+  map (`_KNOWN_FIELDS` + `_KNOWN_NESTED`): tickets filling it, the creation
+  dates of those tickets (the «is it new» half), the newest value. `gone` names
+  mapped fields no ticket sends any more. It replaced the probe's
+  `unknown_fields` on the panel, which read ONE item's top-level keys. A new
+  attribute is stored in `raw` already — showing it is a column, not a re-sync.
 - Everything «ARC tickets» says is GONE (the prober, the «API» panel, `/probe`,
   `/spec`) is gone from `/arc` only — here it is back, admin-only, as it was.
 

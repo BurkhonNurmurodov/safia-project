@@ -23,6 +23,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import Float, Text, and_, case, cast, func, not_, or_
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -630,6 +631,26 @@ def get_probe(
         "paths": arc_legacy_discovery.describe_paths(getattr(meta, "spec", None)),
         "spec_available": bool(getattr(meta, "spec", None)),
     }
+
+
+@router.get("/fields")
+def get_fields(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Every attribute the API sends, counted over EVERY stored ticket's full
+    payload, and which of them the page does not use — «is the API sending
+    anything new?» (services/arc_legacy_discovery.field_census). ADMIN-ONLY,
+    like the rest of the API panel: it shows sample values of fields nobody
+    has reviewed."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    try:
+        return arc_legacy_discovery.field_census(db)
+    except OperationalError:
+        # statement_timeout: the scan is bounded so the panel gets an answer.
+        db.rollback()
+        raise HTTPException(status_code=503, detail="The attribute check took too long — try again later.")
 
 
 @router.get("/diag")
