@@ -6243,6 +6243,14 @@ back on the first walk.
 
 ## The OLD ARC login API, revived (`/arc-legacy`)
 
+**The names are the wrong way round, and that is history, not a mistake to
+fix** (the operator, 2026-09-28): the «old/legacy» login API is IT's NEW
+request app, and the internal API `/arc` reads is the OLD app. The factory went
+on filing in the old app after the new one launched — which is why the login
+API showed almost no factory tickets and `/arc` moved to the internal API on 25
+Aug — and moved to the new app whole around 25 Sep, which is why this page was
+revived. New factory tickets land HERE now.
+
 From **2026-09-25** (the operator: redo what Antigravity had started) the API
 `/arc` read until 25 Aug is mirrored AGAIN, on a page of its own —
 `api.dashboard.service.safiabakery.uz`, username + password → JWT

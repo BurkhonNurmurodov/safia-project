@@ -97,6 +97,7 @@ async def lifespan(app: FastAPI):
         report_missed_reports_resend,
         report_filling_times,
         report_t11_proofs,
+        report_arc_new_app_attrs,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -512,6 +513,12 @@ async def lifespan(app: FastAPI):
     # line, `startup.report_t11_proofs` and `services/t11_proof_report.py`
     # once the files have landed.
     report_t11_proofs()
+    # ⚠ TEMPORARY one-shot (2026-09-28) — which attributes the NEW ARC app's
+    # API (/arc-legacy) sends now that the August map does not know, and
+    # whether an Uchtepa ticket names its cell, DMed once to the operator as a
+    # text + JSON. Remove this line, `startup.report_arc_new_app_attrs` and
+    # `services/arc_attrs_report.py` once it has been sent.
+    report_arc_new_app_attrs()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's

@@ -6764,6 +6764,45 @@ def _t11_proofs_job() -> None:
                       t11_proof_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: what the NEW ARC app's API sends now, and Uchtepa's cells ──────
+# The operator explained on 2026-09-28 that the API /arc-legacy reads belongs
+# to IT's NEW request app, which the factory moved to around 25 Sep, and asked
+# whether it now carries attributes it did not carry in August — and whether an
+# Uchtepa ticket can be tied to its cell. Production is not readable from the
+# machine that wrote this, so `services/arc_attrs_report.py` DMs the answer: a
+# text plus a JSON. It READS (stored payloads + a few GETs with the sync's own
+# login) and writes nothing but its flag. Scheduled after the arc-legacy boot
+# catch-up (90 s) so a fresh pass has had time to land. Changing what it
+# reports needs a NEW flag key.
+ARC_ATTRS_FLAG = "arc_new_app_attrs_2026_09_28_v1"
+_ARC_ATTRS_DELAY_S = 240
+
+
+def report_arc_new_app_attrs() -> None:
+    """The new ARC app's attributes and the Uchtepa cell check, DMed once.
+
+    Flag-guarded like every other errand here: delivered on the first boot
+    after its own deploy and never again; a failed delivery is retried on the
+    next boot and then abandoned. Never raises.
+    """
+    try:
+        if not _report_pending(ARC_ATTRS_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("arc-new-app-attrs",
+                    datetime.now(timezone.utc) + timedelta(seconds=_ARC_ATTRS_DELAY_S),
+                    _arc_attrs_job)
+    except Exception as exc:
+        print(f"[startup] ARC new-app attribute report could not be scheduled: {exc}")
+
+
+def _arc_attrs_job() -> None:
+    from app.services import arc_attrs_report
+    _send_report_once(ARC_ATTRS_FLAG, "ARC new-app attribute report",
+                      arc_attrs_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the
