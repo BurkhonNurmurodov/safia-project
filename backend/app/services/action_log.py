@@ -270,6 +270,15 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/leaders/disputes/{}/files/{}/send",   "leader_review", "dispute.file_sent"),
     (("POST",),   "/api/leaders/late-proofs/{}/files/{}/send", "leader_review", "late_proof.file_sent"),
     (("POST",),   "/api/leader-proof/late-photo",              "leader_review", "late_proof.photo_added"),
+    # The «Chek-list» tab — the web door into filing the same checklist the bot
+    # files, under the bot's own action keys so one Jurnal row means one act
+    # whichever door it came through (`details.door` says which).
+    (("POST",),   "/api/leader-checklist/answer",              "leader_review", "checklist.task_answered"),
+    (("POST",),   "/api/leader-checklist/submit",              "leader_review", "checklist.task_closed"),
+    (("POST",),   "/api/leader-checklist/reset",               "leader_review", "checklist.task_reset"),
+    (("POST",),   "/api/leader-checklist/close-day",           "leader_review", "checklist.day_closed"),
+    (("POST",),   "/api/leader-checklist/late/start",          "leader_review", "checklist.late_started"),
+    (("POST",),   "/api/leader-checklist/late",                "leader_review", "checklist.late_proof_filed"),
     (("DELETE",), "/api/leader-proof/late-photo/{}",           "leader_review", "late_proof.photo_removed"),
     (("POST",),   "/api/leaders/late/{}/decide",               "leader_review", "lateday.decided"),
     (("DELETE",), "/api/leaders/late/{}",                      "leader_review", "lateday.cancelled"),

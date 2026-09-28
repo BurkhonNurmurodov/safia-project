@@ -4,13 +4,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Ban, ArrowUpCircle, ShieldCheck, RotateCcw, ExternalLink,
   MessageSquareWarning, MessageCircle, Clock, Hourglass, UserCheck, CircleSlash,
-  Sparkles, CalendarCheck, Camera, ImageUp, Timer, Images,
+  Camera, ImageUp, Timer, Images,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import FormField from "../components/ui/FormField";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
+import VerdictBlock from "../components/leaders/VerdictBlock";
 import ErrorScreen from "../components/ui/ErrorScreen";
 import Lightbox from "../components/ui/Lightbox";
 import { SectionHead } from "../components/ui/DataTable";
@@ -71,7 +72,7 @@ const TXT = {
     stApproved: "Qabul qilindi", stApprovedLate: "Tasdiqlandi", stRejected: "Rad etildi",
     stCancelled: "Qaror bekor qilingan",
     reject: "Rad etish", uplift: "Adminlarga yuborish", approve: "Qabul qilish",
-    approveLate: "Tasdiqlash", undo: "Qarorni bekor qilish", openReport: "Kun hisobotini ochish",
+    approveLate: "Tasdiqlash", undo: "Qarorni bekor qilish", openReport: "Kun hisobotini ochish", openChecklist: "Chek-listni ochish",
     cancel: "Bekor qilish",
     turnSup: "Sizning navbatingiz: savollaringizni chatda bering, so'ng rad eting yoki adminlarga yuboring — ikkalasi ham izoh talab qiladi.",
     turnAdm: "Sizning navbatingiz: chatda lider va brigadirdan so'rashingiz mumkin. Rad etish uchun sabab shart, qabul qilishda izoh ixtiyoriy.",
@@ -115,7 +116,7 @@ const TXT = {
     stApproved: "Қабул қилинди", stApprovedLate: "Тасдиқланди", stRejected: "Рад этилди",
     stCancelled: "Қарор бекор қилинган",
     reject: "Рад этиш", uplift: "Админларга юбориш", approve: "Қабул қилиш",
-    approveLate: "Тасдиқлаш", undo: "Қарорни бекор қилиш", openReport: "Кун ҳисоботини очиш",
+    approveLate: "Тасдиқлаш", undo: "Қарорни бекор қилиш", openReport: "Кун ҳисоботини очиш", openChecklist: "Чек-листни очиш",
     cancel: "Бекор қилиш",
     turnSup: "Сизнинг навбатингиз: саволларингизни чатда беринг, сўнг рад этинг ёки админларга юборинг — иккаласи ҳам изоҳ талаб қилади.",
     turnAdm: "Сизнинг навбатингиз: чатда лидер ва бригадирдан сўрашингиз мумкин. Рад этиш учун сабаб шарт, қабул қилишда изоҳ ихтиёрий.",
@@ -159,7 +160,7 @@ const TXT = {
     stApproved: "Принято", stApprovedLate: "Принято", stRejected: "Отклонено",
     stCancelled: "Решение отменено",
     reject: "Отклонить", uplift: "Передать администраторам", approve: "Принять",
-    approveLate: "Принять", undo: "Отменить решение", openReport: "Открыть отчёт за день",
+    approveLate: "Принять", undo: "Отменить решение", openReport: "Открыть отчёт за день", openChecklist: "Открыть чек-лист",
     cancel: "Отмена",
     turnSup: "Ваша очередь: задайте вопросы в чате, затем отклоните или передайте администраторам — в обоих случаях нужен комментарий.",
     turnAdm: "Ваша очередь: в чате можно спросить лидера и бригадира. Для отказа нужна причина, при принятии комментарий необязателен.",
@@ -203,7 +204,7 @@ const TXT = {
     stApproved: "Upheld", stApprovedLate: "Approved", stRejected: "Refused",
     stCancelled: "Ruling undone",
     reject: "Refuse", uplift: "Pass to the admins", approve: "Uphold",
-    approveLate: "Approve", undo: "Undo the ruling", openReport: "Open the day report",
+    approveLate: "Approve", undo: "Undo the ruling", openReport: "Open the day report", openChecklist: "Open the checklist",
     cancel: "Cancel",
     turnSup: "Your turn: ask what you need in the chat, then refuse it or pass it to the admins — both need your comment.",
     turnAdm: "Your turn: you can ask the leader and the brigadir in the chat. Refusing needs a reason; a comment on approval is optional.",
@@ -270,54 +271,6 @@ function Card({ children }) {
     <div className="rounded-2xl overflow-hidden"
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)", overflow: "clip" }}>
       {children}
-    </div>
-  );
-}
-
-/** The AI's verdict being argued against — flags, its own prose, and the rule
- *  it was measured by (the window when hours were the rule, the day when only
- *  the day was, the bare clock when only the hour was). */
-function Verdict({ rev, T, lang }) {
-  if (!rev) return null;
-  const flags = rev.flags || [];
-  const dated = flags.some((f) => f === "no_date" || f === "date_mismatch");
-  return (
-    <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
-      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider mb-1.5"
-        style={{ color: "var(--text-4)" }}>
-        <Sparkles size={11} />{T.aiTitle}
-      </div>
-      {!!flags.length && (
-        <div className="flex flex-wrap gap-1 mb-1.5">
-          {flags.map((f) => (
-            <span key={f} className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-              style={{ background: hexA(C_BAD, 0.14), color: C_BAD }}>
-              {T[`f_${f}`] || f}
-            </span>
-          ))}
-        </div>
-      )}
-      {pick(rev.reason, lang) && (
-        <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
-          {pick(rev.reason, lang)}
-        </p>
-      )}
-      {dated && pick(rev.dateReason, lang) && (
-        <p className="text-[12px] leading-snug mt-1" style={{ color: "var(--text-2)" }}>
-          {pick(rev.dateReason, lang)}
-        </p>
-      )}
-      {dated && rev.expected && (
-        <p className="text-[11px] tabular-nums mt-1.5 flex items-center gap-1 flex-wrap"
-          style={{ color: "var(--text-4)" }}>
-          {rev.dayCheck === false
-            ? <><Clock size={11} />{T.needTime}: {rev.expected}</>
-            : rev.timeCheck === false
-              ? <><CalendarCheck size={11} />{T.needDate}: {rev.expected}</>
-              : <><Clock size={11} />{T.window}: {rev.expected}</>}
-          {rev.imageDate && <> · {T.onPhoto}: {rev.imageDate}</>}
-        </p>
-      )}
     </div>
   );
 }
@@ -559,10 +512,15 @@ function AppealView({ thread, path, id }) {
                   <RotateCcw size={14} />{T.undo}
                 </Button>
               )}
+              {/* A day still being filed has no report yet — an objection may be
+                  raised the moment a submitted task is judged — so its reader
+                  is sent to that day's checklist instead. */}
               {!late && item.uid && (
                 <Button size="lg" tint variant="ghost" className="ml-auto"
-                  onClick={() => nav(`/leaders/report/${encodeURIComponent(item.uid)}`)}>
-                  <ExternalLink size={14} />{T.openReport}
+                  onClick={() => nav(item.dayOpen
+                    ? `/leaders?tab=checklist&leader=${item.leaderId || ""}&date=${item.date || ""}`
+                    : `/leaders/report/${encodeURIComponent(item.uid)}`)}>
+                  <ExternalLink size={14} />{item.dayOpen ? T.openChecklist : T.openReport}
                 </Button>
               )}
             </div>
@@ -590,7 +548,10 @@ function AppealView({ thread, path, id }) {
           ) : (
             <>
               <DisputePhotos photos={item.photos} uid={item.uid} T={T} onZoom={setZoom} />
-              <Verdict rev={item.verdict} T={T} lang={lang} />
+              {/* An objection to an AUTOMATIC check carries no AI verdict —
+                  what it argues with is the check's own sentinel. */}
+              <VerdictBlock rev={item.verdict} autoReason={item.auto?.reason}
+                title={T.aiTitle} />
             </>
           )}
         </div>
@@ -723,7 +684,10 @@ function NewObjection({ uid, taskId }) {
     // Already argued — the conversation exists; go there instead of a second.
     return <Navigate to={`/leaders/appeal/dispute/${task.dispute.id}`} replace />;
   }
-  const allowed = rep.canDispute && task.ai_rejected;
+  // A failed AUTOMATIC check can be argued too (2026-09-28) — the report says
+  // which tasks may be, and an older backend that does not say is read as
+  // «only an AI rejection», exactly as before.
+  const allowed = rep.canDispute && (task.objectable ?? task.ai_rejected);
   const photos = task.media?.length
     ? task.media.map((mid, i) => ({ kind: "bot", id: mid, cam: task.cam?.[i] || null }))
     : String(task.photo || "").split(",").map((u) => u.trim()).filter((u) => u.includes("http"))
@@ -741,7 +705,8 @@ function NewObjection({ uid, taskId }) {
           right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>{photos.length}</span>} />
         <div className="px-4 py-3 space-y-3">
           <DisputePhotos photos={photos} uid={rep.uid} T={T} onZoom={setZoom} />
-          <Verdict rev={task.review} T={T} lang={lang} />
+          <VerdictBlock rev={task.review} autoReason={task.auto ? task.reason : null}
+            title={T.aiTitle} />
         </div>
       </Card>
       <Card>

@@ -4145,11 +4145,13 @@ say about it.
 
 ## What is ON the `/leaders` tab strip
 
-From **2026-09-02** (the operator's call) the strip is exactly five tabs, in
-this order: **Monitoring · Vazifalar · AI tekshiruvi · Norozliklar · Kechikkan
-isbotlar**. The two review queues sit last and together — they are the two ways
-a task that scored 0 gets its weight back — with the AI queue that produced
-those rejections directly above them.
+From **2026-09-02** (the operator's call) the strip was five tabs; from
+**2026-09-28** it is six, in this order: **Monitoring · Chek-list · Vazifalar ·
+AI tekshiruvi · Norozliklar · Kechikkan isbotlar**. «Chek-list» sits SECOND (the
+operator's call) — after the page's overview, the one tab a leader works in; see
+its own section below. The two review queues sit last and together — they are
+the two ways a task that scored 0 gets its weight back — with the AI queue that
+produced those rejections directly above them.
 
 - **«Kechikkanlar» and «Ma'lumotlarni tozalash» are GONE from it.** The
   shift-1 late-day queue is ruled on from the Telegram card the request arrives
@@ -4163,6 +4165,81 @@ those rejections directly above them.
   `telegram_bot.py` and `approvals.py` still link `?tab=late`; `tabOk` refuses
   it exactly as it refuses a tab the viewer's role cannot open, and the saved
   tab stands. Fix the two links only if the queue never comes back.
+
+## The «Chek-list» tab (`/leaders`, second on the strip)
+
+From **2026-09-28** (the operator's rulings, asked one by one with mockups) a
+leader files, reads and argues their checklist on the web, one day at a time —
+`components/leaders/Checklist.jsx` + `ChecklistTaskSheet.jsx` over
+`routers/leader_checklist.py`, writes through `services/leader_checklist.py`.
+
+- **Both doors stay (the operator's call).** The bot's `/tasks` works exactly as
+  it did; the tab writes the SAME `LeaderTaskDay` / `LeaderTaskEntry` rows
+  through the SAME cores, so a task started in one shows in the other.
+  `leader_checklist.save_answer` and `close_day` are the bodies lifted out of
+  `telegram_bot._lt_save_entry` and «KUNNI YOPISH» (now thin calls into them);
+  submitting one task is `leader_close.close_task`, as it always was. Never
+  write a third spelling of any of them.
+- **One date, one leader.** On this tab the page's range becomes a
+  `DayStepper` with its own day (`clDate`, not persisted — the tab opens on
+  today) — null asks the server for the leader's current SHIFT day. A leader
+  reads their own; everybody else must pick one in the page's `FilterPanel`
+  (a `pinned`, REQUIRED leader section built from `/api/leaders`' `roster`,
+  keyed by PROFILE id in `leaders_cl_leader`, synced with the name-keyed
+  `fLeader` wherever a name is one person) — until then «Pick a leader». The
+  verify filter is not offered here. A leader lands on the tab ONCE
+  (`leaders_cl_landed`) and keeps whatever they pick after. Hidden during an
+  exam: it files real rows.
+- **Grouped by what is left (the operator's pick over catalog order):** to do
+  (drafts first, then nearest deadline) → rejected → not done → being checked
+  → accepted (collapsed on today while anything is above it). `GROUP_OF` in
+  `checklistShared.js` is the one mapping the list and the summary bar read.
+- **Nothing is computed here.** A closed day's number is `day_report`'s; an
+  open one's is `leader_close.score_line` (the bot menu's); each state is
+  `task_state` with the register's human rulings folded in (`_ruled_state`: an
+  admin override wins, a flag in the manual regime is not a rejection). A
+  closed day lists exactly the tasks it RECORDED — the config is not versioned.
+  Past days before the bot era read the Google-Form row through the register's
+  own matchers (`_sheet_uid`); `leader_bot.merges` decides which layer counts.
+- **Filing is ONE step behind a confirm** on a per-task unit (`/answer` with
+  `submit`): images picked or pasted (Ctrl+V), shrunk on the device to 2560 px
+  JPEG, re-encoded server-side (`normalize_image`, Pillow, EXIF-upright),
+  relayed to the archive channel before anything is written. A day-mode unit
+  saves and closes with «Kunni yopish» (`/close-day`). A camera task is NEVER
+  uploaded: it opens `/proof/camera?…&back=`, which from 2026-09-28 returns to
+  the given in-app path instead of closing the mini app (`exit` in
+  ProofCamera; only a same-app path is honoured) and reopens the task
+  (`?tab=checklist&open=<id>`). Past its own hour a task takes only a LATE
+  proof (`/answer` answers 409 `time_up`; a task an admin reopened is on the
+  day's deadline and exempt): `/late/start` materialises the day (the camera's
+  late door needs it) and `/late` files uploads + camera drafts + the required
+  reason, then cards the brigadir exactly as the bot's `lsend` does.
+- **Verdicts arrive live:** the tab polls every 8 s while a task is being
+  checked and every 60 s otherwise (today only), and a verdict landing raises a
+  toast (+ Telegram haptic); a rejection's toast persists.
+- **Objections happen in place**, as the first message of the appeal chat
+  (`CommentsThread` first-message mode) — including on TODAY's open day:
+  `build_report_row(allow_open=True)` / `day_report(allow_open=True)` serve an
+  unfinished bot day to exactly three readers (the objection endpoint, the
+  appeal chat's evidence and the photo scope). The report page, the DMs, the
+  digests and the register never pass it. The chat's «open the report» button
+  opens the checklist instead while the day is open (`dayOpen`).
+- **A failed AUTOMATIC check can be objected to** (the operator's ruling) —
+  same table, chain, chat and notices (`leader_dispute.auto_entry`: the ref is
+  the entry's `bot:<id>`, no review row). An admin's approval grants the task
+  through `LeaderTaskOverride` (`_write_auto`) and its undo takes that grant
+  back; the notices, the brigadir's and admins' cards and the queue say
+  «automatic check», never «AI» (`leader_dispute_filed_auto`,
+  `leader_dispute_sup_rejected_auto`). `day_report`'s `objectable` is THE test
+  for either kind; `VerdictBlock.jsx` draws either verdict (the tab, the chat,
+  the new-objection page).
+- **Brigadir, shift manager, admin: read-only**, except the admin's
+  reopen/empty (the existing `/admin/leader-tasks/task/reopen`). Rights ride on
+  the payload (`rights.file` = the session HOLDS the leader profile, the
+  camera's `_own_leader` rule; `rights.object` = `canDispute`), never derived
+  from a role on the client. Reads are page-gated on `leaders` and row-scoped
+  like the day report; auto-check live figures (`/auto-live`,
+  `leader_auto_rich.snapshot`) are fetched only when a sheet opens.
 
 ## The appeal CHAT — objections and late proofs (`/leaders/appeal/:kind/:id`)
 

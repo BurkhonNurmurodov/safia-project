@@ -606,7 +606,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
               theirs first — and it stays open to their brigadir, who is the
               only route for a leader whose name resolves to no profile. The
               objection is WRITTEN as the first message of its chat. */}
-          {canDispute && t.ai_rejected && !dOpen && (
+          {canDispute && (t.objectable ?? t.ai_rejected) && !dOpen && (
             <Button size="md" variant="secondary" tint onClick={onDispute}
               className="w-full">
               <MessageSquareWarning size={13} /> {T.dispute}

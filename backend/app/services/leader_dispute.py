@@ -181,11 +181,83 @@ def _write_verdict(db: Session, d: LeaderAiDispute, resolution: str | None,
     """
     rev = _review(db, d)
     if rev is None:
+        # An objection to an AUTOMATIC check has no review row to write on —
+        # no photo was ever taken, so nothing ever queued one. Its weight moves
+        # through the admin override instead (`_write_auto`).
+        e = auto_entry(db, d)
+        if e is not None:
+            _write_auto(db, d, e, resolution, by_name)
         return
     rev.resolution = resolution
     rev.resolved_by = (by_name or "")[:160] or None if resolution else None
     rev.resolved_at = datetime.now(timezone.utc) if resolution else None
     rev.resolution_note = (note or "")[:2000] or None if resolution else None
+
+
+# ── an objection to an AUTOMATIC check ───────────────────────────────────────
+#
+# From 2026-09-28 (the operator's ruling) a failed automatic check — #1, #8 and
+# #9 (`services/leader_auto.py`) — can be argued exactly as an AI rejection is:
+# same table, same three stages, same chat, same notices. «The platform judged
+# this task wrong» is one question whichever judge it was, and a second chain
+# for it would be a second set of queues, cards and rulings for three people to
+# learn. The row is keyed by the verdict's ENTRY (`bot:<entry_id>`, the ref
+# every task of a bot day already carries), with no review row behind it.
+#
+# The ONE thing that differs is what an admin's approval writes. An AI verdict
+# carries a review row whose `resolution` the overlay reads; an automatic check
+# carries none, so its weight comes back through `LeaderTaskOverride` — the very
+# overlay an admin's manual «done» ruling and an approved late proof already
+# use, which `routers.leaders._apply_overlays` scores for the register, the day
+# report and the report DM alike. Nothing downstream learns a new rule.
+
+
+def auto_entry(db: Session, d: LeaderAiDispute):
+    """The AUTOMATIC-check entry this objection argues with, or None when it is
+    an ordinary AI rejection. Read off the entry's own reason sentinel rather
+    than the config: an objection is read months later, and the config may
+    have moved since."""
+    from app.models import LeaderTaskEntry
+    from app.services import leader_tasks
+    ref = str(d.ref or "")
+    if not ref.startswith("bot:"):
+        return None
+    try:
+        eid = int(ref[4:])
+    except ValueError:
+        return None
+    e = db.query(LeaderTaskEntry).filter_by(id=eid).first()
+    if e is None or not str(e.reason or "").startswith(leader_tasks.AUTO_PREFIX):
+        return None
+    return e
+
+
+def _write_auto(db: Session, d: LeaderAiDispute, entry, resolution: str | None,
+                by_name: str | None) -> None:
+    """The weight of an automatic check, moved by an ADMIN ruling.
+
+    `approved` grants the task its full weight through the override overlay.
+    `rejected` writes nothing — the check's own verdict already stands. `None`
+    (an undo) takes a grant back, and ONLY one this objection made: the caller
+    still holds the ruled status, so an undone refusal — which granted
+    nothing — can never delete an override somebody else set.
+    """
+    from app.models import LeaderTaskOverride
+    from app.services import leader_bot
+    uid = leader_bot.day_uid(entry.day_id)
+    ov = (db.query(LeaderTaskOverride)
+          .filter_by(uid=uid, task_id=d.task_id).first())
+    if resolution == APPROVED:
+        if ov is None:
+            ov = LeaderTaskOverride(uid=uid, task_id=d.task_id, date=d.date,
+                                    leader=(d.leader_name or "")[:160] or None)
+            db.add(ov)
+        ov.done = True
+        ov.set_by = (by_name or "")[:160] or None
+        ov.set_at = datetime.now(timezone.utc)
+    elif resolution is None and d.status == APPROVED and ov is not None:
+        db.delete(ov)
+    db.flush()
 
 
 # ── filing ───────────────────────────────────────────────────────────────────
@@ -477,8 +549,12 @@ def notify_filed(db: Session, d: LeaderAiDispute, *,
     from app.services import leader_appeal_chat as chat
     params = {**_params(db, d),
               "reason": chat.notice_text(d.reason)}
+    # An objection to an automatic check must not be announced as one to the
+    # AI — the reader decides differently about the two.
+    nkey = ("leader_dispute_filed_auto" if auto_entry(db, d) is not None
+            else "leader_dispute_filed")
     try:
-        chat.fanout(db, chat.DISPUTE, d, "leader_dispute_filed", params,
+        chat.fanout(db, chat.DISPUTE, d, nkey, params,
                     author_profile=d.requested_by_profile,
                     author_telegram=d.requested_by_telegram,
                     tone="warning", skip_dm=skip_dm)
@@ -502,8 +578,10 @@ def notify_decided(db: Session, d: LeaderAiDispute, *, stage: str,
     nkey = {
         ADMIN: "leader_dispute_uplifted",
         APPROVED: "leader_dispute_approved",
-        REJECTED: ("leader_dispute_sup_rejected" if stage == "supervisor"
-                   else "leader_dispute_rejected"),
+        REJECTED: (("leader_dispute_sup_rejected_auto"
+                    if auto_entry(db, d) is not None
+                    else "leader_dispute_sup_rejected")
+                   if stage == "supervisor" else "leader_dispute_rejected"),
     }.get(d.status)
     if not nkey:
         return

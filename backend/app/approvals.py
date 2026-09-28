@@ -58,6 +58,8 @@ _LABELS = {
         "hdr_exchange":  "🔄 Xodim almashinuvi hujjati",
         "hdr_late":      "⏰ Kechikkan hisobotni ochish so'rovi",
         "hdr_dispute":   "⚖️ AI qaroriga norozilik",
+        "hdr_dispute_auto": "⚖️ Avtomatik tekshiruv natijasiga norozilik",
+        "auto_verdict":  "Avtomatik tekshiruv",
         "task":          "Vazifa",
         "ai_verdict":    "AI xulosasi",
         "dispute_note":  "Chatda hal qiling: tasdiqlansa, vazifa yana bajarilgan deb hisoblanadi va kun bahosi qayta hisoblanadi; rad etish uchun sabab yozish shart \u2014 u liderga yuboriladi. Avval lider va brigadirdan so'rashingiz mumkin.",
@@ -103,6 +105,8 @@ _LABELS = {
         "hdr_exchange":  "🔄 Документ обмена сотрудниками",
         "hdr_late":      "⏰ Запрос на открытие опоздавшего отчёта",
         "hdr_dispute":   "⚖️ Возражение на решение ИИ",
+        "hdr_dispute_auto": "⚖️ Возражение на результат автоматической проверки",
+        "auto_verdict":  "Автоматическая проверка",
         "task":          "Задача",
         "ai_verdict":    "Заключение ИИ",
         "dispute_note":  "Решите в чате: при одобрении задача снова засчитывается и оценка дня пересчитывается; для отказа нужна причина \u2014 её отправят лидеру. Сначала можно задать вопросы лидеру и бригадиру.",
@@ -148,6 +152,8 @@ _LABELS = {
         "hdr_exchange":  "🔄 Worker exchange document",
         "hdr_late":      "⏰ Request to open a late report",
         "hdr_dispute":   "⚖️ Objection to an AI ruling",
+        "hdr_dispute_auto": "⚖️ Objection to an automatic check",
+        "auto_verdict":  "Automatic check",
         "task":          "Task",
         "ai_verdict":    "AI verdict",
         "dispute_note":  "Decide in the chat: approving counts the task as done again and re-scores the day; refusing needs a reason \u2014 the leader is told it. You can ask the leader and the brigadir first.",
@@ -520,11 +526,23 @@ def _leader_dispute_data(db, d) -> dict:
     rev = (db.query(LeaderAiReview).filter_by(id=d.review_id).first()
            or db.query(LeaderAiReview).filter_by(ref=d.ref).first())
     verdict = ""
+    auto = False
     if rev is not None:
         flags = ", ".join(rev.flags or []) or "—"
         prose = (rev.reason_ru or rev.reason_uz or rev.reason_en or "").strip()
         verdict = f"[{flags}] {prose}".strip()
+    else:
+        # An objection to an AUTOMATIC check (#1, #8, #9) has no AI verdict at
+        # all: what the admin must read is what the check found, and when.
+        from app.services import leader_auto, leader_tasks
+        e = leader_dispute.auto_entry(db, d)
+        got = leader_tasks.read_auto_reason(e.reason) if e is not None else None
+        if got:
+            auto = True
+            hhmm, code = got
+            verdict = f"{hhmm} — {leader_auto._WHY.get(code, code)}"
     return {
+        "auto":       auto,
         "unit":       mgr.name if mgr else "—",
         "date":       d.date,
         "leader":     d.leader_name or "—",
@@ -559,13 +577,17 @@ def _render_leader_dispute(data, lang) -> str:
     reason for believing it. A card showing one of them asks for a ruling on
     half the evidence, which is the flow this chain replaced.
     """
-    lines = [_L(lang, "hdr_dispute"), ""]
+    auto = bool(data.get("auto"))
+    lines = [_L(lang, "hdr_dispute_auto" if auto else "hdr_dispute"), ""]
     lines.append(f"🏭 {_L(lang, 'unit')}: {_v(data['unit'])}")
     lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
     lines.append(f"👤 {_L(lang, 'leader')}: {_v(data['leader'])}")
     lines.append(f"📋 {_L(lang, 'task')}: {_v(data['task'])}")
     lines.append("")
-    lines.append(f"🤖 {_L(lang, 'ai_verdict')}: {_v(data['verdict'])}")
+    if auto:
+        lines.append(f"⚙️ {_L(lang, 'auto_verdict')}: {_v(data['verdict'])}")
+    else:
+        lines.append(f"🤖 {_L(lang, 'ai_verdict')}: {_v(data['verdict'])}")
     lines.append(f"✍️ {_L(lang, 'creator')}: {_v(data.get('author'))}")
     lines.append(f"💬 {_L(lang, 'reason')}: {_v(data['reason'])}")
     if data.get("supervisor"):

@@ -25,8 +25,8 @@ from app.models import (
 )
 from app.reg_token import make_reg_token
 from app.services import (
-    action_log, leader_ai, leader_auto, leader_cells, leader_close,
-    leader_late_proof, leader_proof, leader_tasks,
+    action_log, leader_ai, leader_auto, leader_cells, leader_checklist,
+    leader_close, leader_late_proof, leader_proof, leader_tasks,
 )
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
@@ -3505,40 +3505,17 @@ def _lt_relay_photo(db, message: types.Message) -> tuple[str, int] | None:
 def _lt_save_entry(db, pid: int, task_id: int, done: bool,
                    reason: str | None, media: list[tuple[str, int]],
                    cid: int | None = None) -> bool:
-    """Persist one task's answer. False when the day is already closed."""
+    """Persist one task's answer. False when the day is already closed.
+
+    A thin call into `leader_checklist.save_answer`, THE writer: the «Chek-list»
+    tab on /leaders files through the same function, so an answer means one
+    thing whichever door the leader used (2026-09-28).
+    """
     prof = db.query(RoleProfile).filter_by(id=pid).first()
     if not prof:
         return False
-    shift = _lt_shift(db, prof)
-    date = effective_date(shift)
-    promote_due(db, shift, date)  # apply staged config due at this boundary
-    day = _lt_day(db, pid, date, cid)
-    if day and day.closed_at:
-        return False
-    if not day:
-        day = LeaderTaskDay(leader_id=pid, manager_id=prof.manager_id, date=date,
-                            cell_id=cid)
-        db.add(day)
-        db.flush()
-    old = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
-    if leader_close.locked(old, day):
-        return False          # submitted on a per-task unit — nothing may edit it
-    if old:
-        db.query(LeaderTaskMedia).filter_by(entry_id=old.id).delete()
-        db.delete(old)
-        db.flush()
-    if not done:
-        # «Yo'q» retires whatever the camera collected for this task: the answer
-        # is now "not done", and a roll left behind would show up as progress on
-        # a task recorded as failed the next time the menu counted it.
-        leader_proof.clear_roll(db, day.id, task_id)
-    entry = LeaderTaskEntry(day_id=day.id, task_id=task_id, done=done, reason=reason)
-    db.add(entry)
-    db.flush()
-    for i, (fid, mid) in enumerate(media):
-        db.add(LeaderTaskMedia(entry_id=entry.id, file_id=fid, message_id=mid, pos=i))
-    db.commit()
-    return True
+    return leader_checklist.save_answer(
+        db, prof, task_id, done, reason, media, cid) is not None
 
 
 def _lt_reset_task(db, day: LeaderTaskDay | None, task_id: int) -> None:
@@ -4197,13 +4174,12 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(
                     call.id, _lt(lang, "incomplete").format(n=len(missing) or 1), show_alert=True)
                 return
-            # The third door that closes a day, beside `maybe_close_day` and
-            # `close_expired_days`. The late door shuts with the day, so a
-            # draft still staged could never be submitted by anybody again.
-            leader_late_proof.drop_drafts(db, day.id)
-            day.closed_at = datetime.now(timezone.utc)
-            day.completion = compute_completion(cfg, list(entries.values()))
-            db.commit()
+            # THE day-close core, shared with the «Chek-list» tab on /leaders:
+            # it drops the late drafts (the late door shuts with the day),
+            # stamps the completion, queues THIS day's photos for review and
+            # kicks the drain on a daemon thread — the leader is holding an open
+            # callback. An AI hiccup never leaves the day looking unclosed.
+            leader_checklist.close_day(db, day, cfg, prof.name)
             # The single most consequential thing a leader does in Telegram:
             # the day is now the record, and nothing reopens it.
             _lt_log(db, tid, prof, date, "checklist.day_closed",
@@ -4212,42 +4188,6 @@ def _lt_callback(call: types.CallbackQuery):
                              ("tasks", len(entries)),
                              ("score", round(float(day.completion or 0)))],
                     changes=[("status", "open", "closed")])
-            # ── the bot's automatic review door ───────────────────────────────
-            # PAUSED FOR SHIFT 2 (user, 2026-08-14). This is where a bot-filed
-            # day used to become reviewable — there is no sheet Refresh behind
-            # these proofs and nothing else in the system marks the submission —
-            # and shift 2 is what files through the bot, so in practice this was
-            # the whole of shift 2's AI review. `queue_report` now returns 0 for
-            # a paused shift (`leader_ai.REVIEW_PAUSED_SHIFTS`), so the close
-            # writes no queue rows and spends no quota; `n` is 0 and nothing
-            # below fires. The call is left in place deliberately: un-pausing is
-            # one tuple in leader_ai.py, not a hunt for the doors.
-            #
-            # THIS day is queued directly rather than through a full discovery
-            # pass: `queue_report` matches one report (and honours the review
-            # floor), where `discover()` walks every report ever filed. The
-            # leader is holding an open callback, and the difference is a scan
-            # of the corpus against a handful of inserts.
-            #
-            # Wrapped: an AI hiccup must never leave the day looking unclosed to
-            # the person who just closed it. The 20-minute drain picks up
-            # anything this misses.
-            try:
-                n = leader_ai.queue_report(db, day=day)
-                if n:
-                    # Same record the re-check modal writes, so the admin page
-                    # shows this hand-off with a bar, an ETA and the detail
-                    # view instead of a queue that silently grew. Named after
-                    # the leader — «started by Aripova M.» is what a shift-2
-                    # close looks like from the page.
-                    leader_ai.note_auto_run(db, n, prof.name)
-            except Exception:
-                logger.exception("leader-tasks: could not queue day %s for AI review",
-                                 day.id)
-                db.rollback()
-            # Daemon thread: the leader is waiting on this callback, and a
-            # review round-trip is seconds per photo.
-            leader_ai.run_async(discover_first=False)
             bot.answer_callback_query(call.id, _lt(lang, "closed_done").format(
                 score=round(float(day.completion))))
             _lt_menu(db, tid, pid, lang, chat_id, msg_id, cid)
@@ -4964,6 +4904,13 @@ def _ad_card(db, d, lang: str) -> str:
         prose = (getattr(rev, f"reason_{lang}", None) or rev.reason_ru
                  or rev.reason_uz or rev.reason_en or "").strip()
         verdict = f"[{flags}] {prose}".strip()[:600]
+    else:
+        # An objection to an AUTOMATIC check carries no AI verdict: the card
+        # says what the check found and at what hour instead (`auto_entry`).
+        e = leader_dispute.auto_entry(db, d)
+        got = leader_tasks.read_auto_reason(e.reason) if e is not None else None
+        if got:
+            verdict = f"⚙️ {got[0]} — {leader_auto._WHY.get(got[1], got[1])}"
     return _lt(lang, "ad_card_sup").format(
         leader=d.leader_name or "—",
         task=leader_dispute.task_label(db, d),

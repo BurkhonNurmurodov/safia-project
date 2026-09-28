@@ -484,6 +484,15 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{leader} возражает против решения ИИ", "Дата: {date} | Задача: {task}\n«{reason}»"),
         "en": ("{leader} objects to an AI ruling", "Date: {date} | Task: {task}\n«{reason}»"),
     },
+    # The same filing when the verdict argued with was an AUTOMATIC check
+    # (#1, #8, #9 — services/leader_auto.py), never the AI. One chain for both
+    # (leader_dispute.auto_entry); only the words have to tell them apart.
+    "leader_dispute_filed_auto": {
+        "uz": ("{leader} avtomatik tekshiruv natijasiga norozilik bildirdi", "Sana: {date} | Vazifa: {task}\n«{reason}»"),
+        "uz_cyrl": ("{leader} автоматик текширув натижасига норозилик билдирди", "Сана: {date} | Вазифа: {task}\n«{reason}»"),
+        "ru": ("{leader} возражает против результата автоматической проверки", "Дата: {date} | Задача: {task}\n«{reason}»"),
+        "en": ("{leader} objects to an automatic check result", "Date: {date} | Task: {task}\n«{reason}»"),
+    },
     # One free message in an appeal's chat, to the other two parties.
     "leader_dispute_message": {
         "uz": ("{author}: norozilik chatida yangi xabar", "Lider: {leader} | Sana: {date} | Vazifa: {task}\n«{text}»\n\U0001F4CE Fayllar: {files}"),
@@ -504,6 +513,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "uz_cyrl": ("Норозиликни бригадир рад этди", "Сана: {date} | Вазифа: {task} | Рад этди: {by} | AI қарори кучида қолади.\nИзоҳ: {note}"),
         "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Решение ИИ остаётся в силе.\nКомментарий: {note}"),
         "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | The AI ruling stands.\nComment: {note}"),
+    },
+    "leader_dispute_sup_rejected_auto": {
+        "uz": ("Norozilikni brigadir rad etdi", "Sana: {date} | Vazifa: {task} | Rad etdi: {by} | Avtomatik tekshiruv natijasi kuchida qoladi.\nIzoh: {note}"),
+        "uz_cyrl": ("Норозиликни бригадир рад этди", "Сана: {date} | Вазифа: {task} | Рад этди: {by} | Автоматик текширув натижаси кучида қолади.\nИзоҳ: {note}"),
+        "ru": ("Возражение отклонил бригадир", "Дата: {date} | Задача: {task} | Отклонил(а): {by} | Результат автоматической проверки остаётся в силе.\nКомментарий: {note}"),
+        "en": ("The brigadir refused the objection", "Date: {date} | Task: {task} | Refused by: {by} | The automatic check result stands.\nComment: {note}"),
     },
     # ── automatic checklist tasks (services/leader_auto.py) ──────────────────
     # Three messages, and the two result ones go out on a PASS as well as a

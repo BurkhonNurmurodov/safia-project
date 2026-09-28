@@ -139,7 +139,9 @@ def _dispute_photos(db: Session, uid: str | None, task_id: int) -> list[dict]:
     if not uid:
         return []
     try:
-        rep = leader_reports.day_report(db, uid)
+        # An OPEN day too: an objection can be raised on a task the moment it
+        # is judged, before its day closes (the «Chek-list» tab).
+        rep = leader_reports.day_report(db, uid, allow_open=True)
     except Exception:
         logger.warning("appeal: day report %s unreadable", uid, exc_info=True)
         return []

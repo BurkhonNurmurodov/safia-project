@@ -1,0 +1,193 @@
+import { Sparkles, Clock, CalendarCheck, Settings2 } from "lucide-react";
+import { useLang } from "../../context/LangContext";
+import { showReason } from "../../utils/leaderReason";
+import { hexA, pick } from "./DayReportView";
+
+/**
+ * What judged a task, and what it said — the verdict an objection argues with.
+ *
+ * TWO judges, one block (2026-09-28). A proof photo is judged by the AI: its
+ * flags, its own prose and the rule it measured the photo by (the window when
+ * hours were the rule, the day when only the day was, the bare clock when only
+ * the hour was). An AUTOMATIC task (#1, #8, #9) is judged by the platform
+ * reading its own data at a fixed hour: the hour, why it went as it did, and —
+ * where the check stored them — the numbers it was taken on. Both can now be
+ * objected to through the same chain, so both are drawn by the same block:
+ * the «Chek-list» tab, the objection chat and the new-objection page all read
+ * this one, and none of them can describe one verdict two ways.
+ *
+ *   rev        — the AI verdict (`review` on the report / `verdict` on a card)
+ *   autoReason — the `__auto__|HH:MM|code` sentinel of an automatic task
+ *   autoFacts  — the check's stored facts at the hour, when the caller has them
+ *   title      — overrides the AI heading (the chat says "why it was rejected")
+ */
+
+const C_BAD = "#ef4444";
+
+const T_ALL = {
+  uz: {
+    ai: "AI xulosasi", auto: "Avtomatik tekshiruv",
+    window: "Ruxsat etilgan vaqt", needDate: "Kerakli sana",
+    needTime: "Ruxsat etilgan soat", onPhoto: "Rasmda",
+    autoLine: "Tizim soat {time} da tekshirdi — {why}.",
+    why: {
+      ok: "hammasi joyida", no_plan: "bugunga reja kiritilmagan",
+      no_staffing: "odamlar soni kiritilmagan", no_concern: "xavotir yozilmagan",
+      under_target: "reja foizi yetmadi", no_sap_code: "yacheykada SAP kodi yo'q",
+      started_late: "chek-list tekshiruvdan keyin boshlangan",
+      not_checked: "tekshiruv o'tkazilmadi", no_data: "ma'lumot o'qilmadi",
+    },
+    fPlan: "Reja kiritilgan pozitsiyalar: {a} / {b}",
+    fUntyped: "Odamlar soni kiritilmagan: {codes}",
+    fPct: "Bajarilishi: {pct}% (kerak: {target}%)",
+    fConcerns: "Yozilgan xavotirlar: {n} ta",
+    f_date_mismatch: "Sana mos emas", f_no_date: "Rasmda sana yo'q",
+    f_off_topic: "Rasm vazifaga mos emas", f_not_proven: "Bajarilgani ko'rinmayapti",
+    f_unreadable: "Rasm o'qilmadi",
+  },
+  uz_cyrl: {
+    ai: "AI хулосаси", auto: "Автоматик текширув",
+    window: "Рухсат этилган вақт", needDate: "Керакли сана",
+    needTime: "Рухсат этилган соат", onPhoto: "Расмда",
+    autoLine: "Тизим соат {time} да текширди — {why}.",
+    why: {
+      ok: "ҳаммаси жойида", no_plan: "бугунга режа киритилмаган",
+      no_staffing: "одамлар сони киритилмаган", no_concern: "хавотир ёзилмаган",
+      under_target: "режа фоизи етмади", no_sap_code: "ячейкада SAP коди йўқ",
+      started_late: "чек-лист текширувдан кейин бошланган",
+      not_checked: "текширув ўтказилмади", no_data: "маълумот ўқилмади",
+    },
+    fPlan: "Режа киритилган позициялар: {a} / {b}",
+    fUntyped: "Одамлар сони киритилмаган: {codes}",
+    fPct: "Бажарилиши: {pct}% (керак: {target}%)",
+    fConcerns: "Ёзилган хавотирлар: {n} та",
+    f_date_mismatch: "Сана мос эмас", f_no_date: "Расмда сана йўқ",
+    f_off_topic: "Расм вазифага мос эмас", f_not_proven: "Бажарилгани кўринмаяпти",
+    f_unreadable: "Расм ўқилмади",
+  },
+  ru: {
+    ai: "Заключение ИИ", auto: "Автоматическая проверка",
+    window: "Допустимое время", needDate: "Нужная дата",
+    needTime: "Допустимый час съёмки", onPhoto: "На фото",
+    autoLine: "Система проверила в {time} — {why}.",
+    why: {
+      ok: "всё на месте", no_plan: "план на сегодня не внесён",
+      no_staffing: "количество людей не внесено", no_concern: "обеспокоенность не записана",
+      under_target: "процент плана не достигнут", no_sap_code: "у ячейки нет кода SAP",
+      started_late: "чек-лист начат после проверки",
+      not_checked: "проверка не проводилась", no_data: "данные не прочитаны",
+    },
+    fPlan: "Позиции с планом: {a} / {b}",
+    fUntyped: "Не внесено количество людей: {codes}",
+    fPct: "Выполнение: {pct}% (нужно: {target}%)",
+    fConcerns: "Записано обеспокоенностей: {n}",
+    f_date_mismatch: "Дата не совпадает", f_no_date: "На фото нет даты",
+    f_off_topic: "Фото не по задаче", f_not_proven: "Выполнение не видно",
+    f_unreadable: "Фото не прочиталось",
+  },
+  en: {
+    ai: "AI verdict", auto: "Automatic check",
+    window: "Allowed window", needDate: "Required date",
+    needTime: "Allowed clock time", onPhoto: "On the photo",
+    autoLine: "The platform checked at {time} — {why}.",
+    why: {
+      ok: "everything in place", no_plan: "no plan entered for today",
+      no_staffing: "headcount not entered", no_concern: "no concern written",
+      under_target: "plan percentage not reached", no_sap_code: "the cell has no SAP code",
+      started_late: "the checklist began after the check",
+      not_checked: "the check did not run", no_data: "the data could not be read",
+    },
+    fPlan: "Positions with a plan: {a} / {b}",
+    fUntyped: "Headcount missing: {codes}",
+    fPct: "Fulfilment: {pct}% (needed: {target}%)",
+    fConcerns: "Concerns written: {n}",
+    f_date_mismatch: "Date mismatch", f_no_date: "No date on the photo",
+    f_off_topic: "Photo is off-topic", f_not_proven: "Completion not visible",
+    f_unreadable: "Photo unreadable",
+  },
+};
+
+const put = (s, p) => Object.entries(p).reduce((a, [k, v]) => a.replaceAll(`{${k}}`, v), s);
+
+/** The numbers an automatic check was taken on, as plain lines. Only what the
+ *  check stored — never a figure recomputed on the client. */
+function autoFactLines(facts, T) {
+  const f = facts || {};
+  const out = [];
+  if (f.lines != null || f.with_plan != null) {
+    out.push(put(T.fPlan, { a: f.with_plan ?? 0, b: f.lines ?? 0 }));
+  }
+  if (Array.isArray(f.untyped) && f.untyped.length) {
+    out.push(put(T.fUntyped, { codes: f.untyped.slice(0, 8).join(", ") }));
+  }
+  if (f.pct != null) out.push(put(T.fPct, { pct: f.pct, target: f.target ?? "—" }));
+  if (f.found != null) out.push(put(T.fConcerns, { n: f.found }));
+  return out;
+}
+
+export default function VerdictBlock({ rev, autoReason, autoFacts, title }) {
+  const { lang } = useLang();
+  const T = T_ALL[lang] || T_ALL.ru;
+
+  if (!rev && autoReason) {
+    const facts = autoFactLines(autoFacts, T);
+    return (
+      <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider mb-1.5"
+          style={{ color: "var(--text-4)" }}>
+          <Settings2 size={11} />{T.auto}
+        </div>
+        <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
+          {showReason(autoReason, "", { template: T.autoLine, why: (c) => T.why[c] })}
+        </p>
+        {facts.map((line) => (
+          <p key={line} className="text-[11px] tabular-nums mt-1" style={{ color: "var(--text-3)" }}>
+            {line}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  if (!rev) return null;
+  const flags = rev.flags || [];
+  const dated = flags.some((f) => f === "no_date" || f === "date_mismatch");
+  return (
+    <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider mb-1.5"
+        style={{ color: "var(--text-4)" }}>
+        <Sparkles size={11} />{title || T.ai}
+      </div>
+      {!!flags.length && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {flags.map((f) => (
+            <span key={f} className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+              style={{ background: hexA(C_BAD, 0.14), color: C_BAD }}>
+              {T[`f_${f}`] || f}
+            </span>
+          ))}
+        </div>
+      )}
+      {pick(rev.reason, lang) && (
+        <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
+          {pick(rev.reason, lang)}
+        </p>
+      )}
+      {dated && pick(rev.dateReason, lang) && (
+        <p className="text-[12px] leading-snug mt-1" style={{ color: "var(--text-2)" }}>
+          {pick(rev.dateReason, lang)}
+        </p>
+      )}
+      {dated && rev.expected && (
+        <p className="text-[11px] tabular-nums mt-1.5 flex items-center gap-1 flex-wrap"
+          style={{ color: "var(--text-4)" }}>
+          {rev.dayCheck === false
+            ? <><Clock size={11} />{T.needTime}: {rev.expected}</>
+            : rev.timeCheck === false
+              ? <><CalendarCheck size={11} />{T.needDate}: {rev.expected}</>
+              : <><Clock size={11} />{T.window}: {rev.expected}</>}
+          {rev.imageDate && <> · {T.onPhoto}: {rev.imageDate}</>}
+        </p>
+      )}
+    </div>
+  );
+}

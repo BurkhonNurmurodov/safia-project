@@ -1033,10 +1033,21 @@ def _apply_overlays(db: Session, data: list[dict]) -> None:
             row["completion"] = min(100.0, max(0.0, row["completion"] + delta / total * 100))
 
 
-def build_report_row(db: Session, uid: str) -> dict | None:
+def build_report_row(db: Session, uid: str, *,
+                     allow_open: bool = False) -> dict | None:
     """ONE report, shaped exactly as `/api/leaders` ships it — same matchers,
     same window verdict, same overlays, same keys. None when the uid names
     nothing (a deleted bot day, a sheet row the register no longer carries).
+
+    `allow_open` serves a bot day that has NOT closed yet — which is otherwise
+    None, because an open day is a leader mid-checklist and not a submission.
+    Only three readers pass it, all for one reason: on a unit that submits task
+    by task, a task is reviewed minutes after it is submitted while its DAY runs
+    on until evening, and from 2026-09-28 the leader may object to that verdict
+    right away (the «Chek-list» tab). The objection endpoint, the appeal chat's
+    evidence and the photo scope behind it must therefore be able to read the
+    day the objection is about. The report PAGE, the DMs, the digests and the
+    register never pass it: an unfinished day has no score to print.
 
     The day-report page and the report DM both read the day through this, so a
     score can never differ between the register, the page and the message. The
@@ -1058,7 +1069,7 @@ def build_report_row(db: Session, uid: str) -> dict | None:
         except ValueError:
             return None
         day = db.query(LeaderTaskDay).filter_by(id=day_id).first()
-        if day is None or day.closed_at is None:
+        if day is None or (day.closed_at is None and not allow_open):
             return None
         rows = leader_bot.dashboard_rows(db, [day])
         if not rows:
@@ -1439,7 +1450,11 @@ def file_dispute(
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="task_id must be an integer")
 
-    report = leader_reports.day_report(db, uid)
+    # An OPEN day as well (2026-09-28): on a unit that submits task by task a
+    # task is judged minutes after it is submitted, and the leader may argue the
+    # verdict right there — from the «Chek-list» tab — rather than wait for a
+    # day that ends in the evening to become a report first.
+    report = leader_reports.day_report(db, uid, allow_open=True)
     if report is None or not report_scope_ok(db, payload, {
         "manager_id": report["managerId"], "leader_id": report["leaderId"],
         "leader": report["leader"],
@@ -1455,7 +1470,11 @@ def file_dispute(
     task = next((t for t in report["tasks"] if t["id"] == task_id), None)
     if task is None:
         raise HTTPException(status_code=404, detail="No such task on this report")
-    if not task["ai_rejected"]:
+    # Two kinds of verdict can be argued (`day_report`'s `objectable`): a proof
+    # the AI refused, and a failed AUTOMATIC check — which has no review row at
+    # all, since no photo was ever taken. The chain, the chat and the rulings
+    # are the same; only what an approval writes differs (`leader_dispute`).
+    if not task.get("objectable"):
         raise HTTPException(status_code=409, detail="This task was not rejected")
     live = task.get("dispute")
     if live and live["status"] in leader_dispute.OPEN_STATES:
@@ -1463,7 +1482,7 @@ def file_dispute(
 
     ref = leader_reports.ref_of_task(db, uid, task_id)
     rev = db.query(LeaderAiReview).filter_by(ref=ref).first() if ref else None
-    if rev is None:
+    if rev is None and not (task.get("auto") and ref):
         raise HTTPException(status_code=404, detail="No verdict to dispute")
 
     role = payload.get("role")
@@ -1472,7 +1491,8 @@ def file_dispute(
     prof_key = identity.viewer_profile_key(db, payload)
     stored = relay_uploads(uploads)
     d = leader_dispute.create(
-        db, ref=ref, review_id=rev.id, report=report, task_id=task_id,
+        db, ref=ref, review_id=rev.id if rev is not None else None,
+        report=report, task_id=task_id,
         reason=reason, role=role, profile=prof_key,
         actor_name=who, actor_telegram=tid, files=stored)
     db.commit()
@@ -1499,9 +1519,9 @@ def file_dispute(
         details=[("leader", d.leader_name), ("task", task_id),
                  ("filed_by", role), ("status", d.status), ("report", uid)],
     )
+    fresh = leader_reports.day_report(db, uid, allow_open=True)
     return {"ok": True, "status": d.status, "id": d.id,
-            "report": _stamp_report_rights(db, payload,
-                                           leader_reports.day_report(db, uid))}
+            "report": _stamp_report_rights(db, payload, fresh) if fresh else None}
 
 
 def _dispute_announce(db: Session, d: LeaderAiDispute) -> None:
@@ -1785,7 +1805,34 @@ def _dispute_items(db: Session, payload: dict,
     # a task must not read its old wording here.
     names = leader_reports.names_for_pairs(
         db, {(d.manager_id, d.leader_id) for d in rows}, (cfg[0] if cfg else {}))
-    mgr_shift = ({m.id: m.shift for m in db.query(Manager).all()} if rows else {})
+    mgrs_all = db.query(Manager).all() if rows else []
+    mgr_shift = {m.id: m.shift for m in mgrs_all}
+    mgr_name = {m.id: m.name for m in mgrs_all}
+
+    # An objection to an AUTOMATIC check (#1, #8, #9) has no review row, so
+    # `verdicts` has nothing for it: what it argues with is the check's own
+    # sentinel on the entry — the hour it was taken and why it went as it did
+    # (`leader_dispute.auto_entry`). One query for the whole list.
+    from app.models import LeaderTaskEntry
+    from app.services import leader_tasks as _lt
+    bot_ids = {int(d.ref[4:]) for d in rows
+               if str(d.ref).startswith("bot:") and str(d.ref)[4:].isdigit()}
+    autos: dict[str, dict] = {}
+    # Whether the DAY behind each objection is still being filed. An objection
+    # may be raised the moment a submitted task is judged (the «Chek-list» tab),
+    # hours before its day closes and becomes a report — so the chat must send
+    # its reader to the checklist, not to a report page that does not exist yet.
+    open_ref: set[str] = set()
+    if bot_ids:
+        for e, closed in (db.query(LeaderTaskEntry, LeaderTaskDay.closed_at)
+                          .join(LeaderTaskDay, LeaderTaskDay.id == LeaderTaskEntry.day_id)
+                          .filter(LeaderTaskEntry.id.in_(bot_ids)).all()):
+            ref = leader_ai.bot_ref(e.id)
+            if closed is None:
+                open_ref.add(ref)
+            got = _lt.read_auto_reason(e.reason) if ref not in verdicts else None
+            if got:
+                autos[ref] = {"reason": e.reason, "time": got[0], "code": got[1]}
 
     # `_project` fills an unresolvable name with an em dash rather than a null,
     # so read it as blank here — otherwise the placeholder wins over the name
@@ -1814,7 +1861,10 @@ def _dispute_items(db: Session, payload: dict,
             # for a verdict whose source row has since been deleted.
             "leader": _named(who.get("leader")) or d.leader_name,
             "leaderId": d.leader_id,
-            "supervisor": _named(who.get("supervisor")),
+            # The unit's own name is the floor: an objection to an automatic
+            # check has no verdict row for `_project` to read a name off.
+            "supervisor": (_named(who.get("supervisor"))
+                           or mgr_name.get(d.manager_id)),
             "managerId": d.manager_id,
             "shift": shifts.get(d.ref) or mgr_shift.get(d.manager_id),
             "reason": d.reason,
@@ -1837,6 +1887,11 @@ def _dispute_items(db: Session, payload: dict,
             "note": d.decision_note,
             "uid": uids.get(d.ref),
             "verdict": verdicts.get(d.ref),
+            # Set only for an objection to an AUTOMATIC check, and then instead
+            # of `verdict`: the raw sentinel (every page expands it with
+            # `showReason`) plus its two halves.
+            "auto": autos.get(d.ref),
+            "dayOpen": d.ref in open_ref,
         })
     _attach_chat(db, payload, leader_appeal_chat.DISPUTE, items)
     return items
@@ -2429,7 +2484,10 @@ def photo_scope_ok(db: Session, payload: dict, uid: str | None,
     """
     if not uid:
         return False
-    row = build_report_row(db, uid)
+    # An OPEN day too: a task submitted this morning can be objected to before
+    # its day closes (`build_report_row`), and the appeal chat then shows its
+    # photos through this very door.
+    row = build_report_row(db, uid, allow_open=True)
     if row is None or not report_scope_ok(db, payload, row):
         return False
     return bool(in_report(row))

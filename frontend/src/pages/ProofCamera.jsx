@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowRight, Camera, Check, Clock, ImageOff, Info, Loader2, Lock, RefreshCw,
   RotateCcw, SwitchCamera, Trash2, WifiOff, X,
@@ -484,6 +485,19 @@ export default function ProofCamera() {
   // could talk itself into late mode would send shots to the draft roll for a
   // task the leader could still file normally, costing them the point.
   const lateAsked = params.get("late") === "1";
+  // Where every «close» goes. Opened from the bot, this page IS the whole mini
+  // app, so closing it hands the leader back to the chat they came from.
+  // Opened from the «Chek-list» tab on /leaders (2026-09-28) it is one step
+  // INSIDE the app, and closing the mini app there would throw the leader out
+  // of the checklist they were filling — so the tab passes `?back=` and every
+  // exit returns there instead. Only an in-app PATH is honoured (one leading
+  // slash): the parameter is typeable, and it must never send anybody off-site.
+  const nav = useNavigate();
+  const backTo = (() => {
+    const b = params.get("back") || "";
+    return /^\/(?![\/\\])/.test(b) ? b : "";
+  })();
+  const exit = () => (backTo ? nav(backTo, { replace: true }) : tgApp()?.close?.());
 
   const videoRef = useRef(null);
   const frameRef = useRef(null);
@@ -1562,7 +1576,7 @@ export default function ProofCamera() {
   if (!leaderId || !taskId) {
     return <ErrorScreen code="400" tone="neutral" title={t("proof.gate.badLink")}
       message={t("proof.gate.badLinkMsg")}
-      action={{ label: t("proof.gate.close"), onClick: () => tgApp()?.close?.() }} />;
+      action={{ label: t("proof.gate.close"), onClick: exit }} />;
   }
   if (isLoading) {
     return (
@@ -1577,7 +1591,7 @@ export default function ProofCamera() {
       title={tf(`proof.gate.${detail}`, t("proof.gate.unavailable"))}
       message={tf(`proof.gate.${detail}Msg`, t("proof.gate.unavailableMsg"))}
       action={{ label: t("proof.gate.retry"), onClick: () => refetch() }}
-      secondary={{ label: t("proof.gate.close"), onClick: () => tgApp()?.close?.() }} />;
+      secondary={{ label: t("proof.gate.close"), onClick: exit }} />;
   }
   // A task the leader submitted is as shut as a closed day — and the page must
   // say WHICH, because «kun yopilgan» on a task they closed themselves an hour
@@ -1585,12 +1599,12 @@ export default function ProofCamera() {
   if (data?.task_closed) {
     return <ErrorScreen icon={Lock} tone="neutral" title={t("proof.gate.taskClosed")}
       message={t("proof.gate.taskClosedMsg")}
-      action={{ label: t("proof.gate.close"), onClick: () => tgApp()?.close?.() }} />;
+      action={{ label: t("proof.gate.close"), onClick: exit }} />;
   }
   if (dayClosed) {
     return <ErrorScreen icon={Lock} tone="neutral" title={t("proof.gate.dayClosed")}
       message={t("proof.gate.dayClosedMsg")}
-      action={{ label: t("proof.gate.close"), onClick: () => tgApp()?.close?.() }} />;
+      action={{ label: t("proof.gate.close"), onClick: exit }} />;
   }
 
   // The next camera task that still needs shots. `siblings` arrives ordered by
@@ -1638,7 +1652,7 @@ export default function ProofCamera() {
           make that nobody would notice until the score came out. */}
       <header className="flex items-center gap-3 px-3 h-14 shrink-0"
         style={{ borderBottom: "1px solid rgba(255,255,255,0.10)" }}>
-        <button type="button" onClick={() => tgApp()?.close?.()}
+        <button type="button" onClick={exit}
           aria-label={t("proof.gate.close")}
           className="grid place-items-center rounded-full shrink-0"
           style={{ width: 36, height: 36, background: "rgba(255,255,255,0.10)" }}>
@@ -1751,7 +1765,7 @@ export default function ProofCamera() {
                   just plugged in. */}
               {noCamera ? (
                 <div className="space-y-2">
-                  <Button size="lg" className="w-full" onClick={() => tgApp()?.close?.()}>
+                  <Button size="lg" className="w-full" onClick={exit}>
                     <X size={16} /> {t("proof.gate.close")}
                   </Button>
                   <Button size="md" variant="ghost" className="w-full"
@@ -1854,7 +1868,7 @@ export default function ProofCamera() {
                       hop either — leaving now with the reason unwritten would
                       strand the shots. */}
                   <Button size="lg" variant="success" className="w-full"
-                    onClick={() => tgApp()?.close?.()}>
+                    onClick={exit}>
                     <Check size={17} /> {t("proof.late.finish")}
                   </Button>
                 </div>
@@ -1876,7 +1890,7 @@ export default function ProofCamera() {
                   </Button>
                 ) : null}
                 <Button size="lg" variant="success" className="w-full"
-                  onClick={() => tgApp()?.close?.()}>
+                  onClick={exit}>
                   <Check size={17} /> {t("proof.finish")}
                 </Button>
               </div>

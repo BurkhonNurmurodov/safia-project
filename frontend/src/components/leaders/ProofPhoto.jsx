@@ -131,6 +131,20 @@ export const ExamplePhoto = ({ id, T, className, ...rest }) => (
 // no LeaderTaskEntry and the register's media proxy cannot reach it. Addressed
 // by (late proof, media) because the endpoint checks BOTH: a readable queue
 // must not become a fetcher for any late-proof photo on the platform.
+/* The leader's OWN shots, for the «Chek-list» tab: a camera roll still short of
+ * its minimum (it hangs off no entry yet, so the register's media proxy cannot
+ * reach it) and the draft roll of a late proof. Both doors answer only for a
+ * leader profile the caller holds — which is exactly who files on that tab. */
+export const OwnRollPhoto = ({ id, T, className, ...rest }) => (
+  <ProxyPhoto T={T} className={className} deps={[id]} {...rest}
+    load={() => api.get(`/api/leader-proof/photo/${id}`, { responseType: "blob" })} />
+);
+
+export const LateDraftPhoto = ({ id, T, className, ...rest }) => (
+  <ProxyPhoto T={T} className={className} deps={[id]} {...rest}
+    load={() => api.get(`/api/leader-proof/late-photo/${id}`, { responseType: "blob" })} />
+);
+
 export const LateProofPhoto = ({ lateId, id, T, className, ...rest }) => (
   <ProxyPhoto T={T} className={className} deps={[lateId, id]} {...rest}
     load={() => api.get(`/api/leaders/late-proofs/${lateId}/photo/${id}`,

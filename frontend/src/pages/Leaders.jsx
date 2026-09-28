@@ -27,6 +27,8 @@ import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import Disputes from "../components/leaders/Disputes";
 import LateProofs from "../components/leaders/LateProofs";
 import TaskRequirements from "../components/leaders/TaskRequirements";
+import Checklist from "../components/leaders/Checklist";
+import DayStepper from "../components/ui/DayStepper";
 import AiTriage, { AiCalibration } from "../components/leaders/AiTriage";
 import AiRecheck from "../components/leaders/AiRecheck";
 import AiProgress from "../components/leaders/AiProgress";
@@ -83,7 +85,7 @@ const tipHTML = (label, val, color, wrap = false) => `
 const TXT = {
   uz: {
     title: "Lider nazorati", shift1: "1-smena", shift2: "2-smena",
-    tabMonitor: "Monitoring", tabTasks: "Vazifalar", srcBot: "Bot orqali",
+    tabMonitor: "Monitoring", tabTasks: "Vazifalar", srcBot: "Bot orqali", tabChecklist: "Chek-list",
     tabDisputes: "Norozliklar",
     tabLateProofs: "Kechikkan isbotlar", reasonLbl: "Sabab",
     pendChip: "So'rov yuborilgan", pendTitle: "Kunni ochish so'ralgan — admin qarori kutilmoqda",
@@ -260,7 +262,7 @@ const TXT = {
   },
   uz_cyrl: {
     title: "Лидер назорати", shift1: "1-смена", shift2: "2-смена",
-    tabMonitor: "Мониторинг", tabTasks: "Вазифалар", srcBot: "Бот орқали",
+    tabMonitor: "Мониторинг", tabTasks: "Вазифалар", srcBot: "Бот орқали", tabChecklist: "Чек-лист",
     tabDisputes: "Норозликлар",
     tabLateProofs: "Кечиккан исботлар", reasonLbl: "Сабаб",
     pendChip: "Сўров юборилган", pendTitle: "Кунни очиш сўралган — админ қарори кутилмоқда",
@@ -437,7 +439,7 @@ const TXT = {
   },
   ru: {
     title: "Контроль лидеров", shift1: "Смена 1", shift2: "Смена 2",
-    tabMonitor: "Мониторинг", tabTasks: "Задачи", srcBot: "Из бота",
+    tabMonitor: "Мониторинг", tabTasks: "Задачи", srcBot: "Из бота", tabChecklist: "Чек-лист",
     tabDisputes: "Возражения",
     tabLateProofs: "Поздние подтв.", reasonLbl: "Причина",
     pendChip: "Запрос отправлен", pendTitle: "Запрошено открытие дня — ждём решения администратора",
@@ -614,7 +616,7 @@ const TXT = {
   },
   en: {
     title: "Leader Monitoring", shift1: "Shift 1", shift2: "Shift 2",
-    tabMonitor: "Monitoring", tabTasks: "Tasks", srcBot: "Filed in bot",
+    tabMonitor: "Monitoring", tabTasks: "Tasks", srcBot: "Filed in bot", tabChecklist: "Checklist",
     tabDisputes: "Objections",
     tabLateProofs: "Late proofs", reasonLbl: "Reason",
     pendChip: "Request sent", pendTitle: "Opening this day was requested — awaiting an admin decision",
@@ -2258,9 +2260,43 @@ export default function Leaders() {
   // «Vazifalar» is reference material for every viewer of the page — a leader
   // reads their own chain, a supervisor their unit's, everyone else follows
   // the filters — so it is never role-gated.
-  const tabOk = { monitor: true, tasks: true, ai: isAdmin,
+  // «Chek-list» (2026-09-28) files REAL checklist rows, so it leaves the strip
+  // for the length of an exam — the rule the sandbox exists to keep: nothing a
+  // leader does during an exam changes real data.
+  const tabOk = { monitor: true, checklist: !examOn, tasks: true, ai: isAdmin,
                   disputes: showDisputesTab, lateproof: showLateProofsTab };
   const tab = tabOk[tabSaved] ? tabSaved : "monitor";
+
+  // ── the «Chek-list» tab ──────────────────────────────────────────────────
+  // ONE leader and ONE day. The leader is a PROFILE id, not the register's
+  // name-keyed filter: filing and reading a checklist is about one person, and
+  // two people can share a spelling. It is kept apart from `fLeader` — which a
+  // leader with no rows in the period would be dropped from — and the two are
+  // synced wherever a name resolves to exactly one person.
+  const [clLeaderPick, setClLeaderPick] = usePersistentState(`${prefix}_cl_leader`, null);
+  // The day: null means "the leader's current SHIFT day", which only the server
+  // can say (a night shift keeps its evening's date past midnight). Not
+  // persisted — the tab opens on today every visit.
+  const [clDate, setClDate] = useState(null);
+  const [clMeta, setClMeta] = useState(null);          // {date, today} off the payload
+  const [clOpen, setClOpen] = useState(null);          // a task to open once it loads
+
+  // A leader lands on their own checklist ONCE — it is the part of this page
+  // that is theirs to do — and keeps whatever tab they choose after that.
+  // Defined before the deep-link effect below, so a link naming a tab still
+  // wins on that same first visit.
+  const landed = useRef(false);
+  useEffect(() => {
+    if (landed.current || !isLeader || examOn) return;
+    landed.current = true;
+    try {
+      if (localStorage.getItem("leaders_cl_landed")) return;
+      localStorage.setItem("leaders_cl_landed", "1");
+    } catch {
+      return;
+    }
+    setTab("checklist");
+  }, [isLeader, examOn, setTab]);
 
   // The objections queue: the tab badge needs the count before the tab is ever
   // opened, and Disputes reads the SAME query key, so the two share one
@@ -2305,8 +2341,32 @@ export default function Leaders() {
   useEffect(() => {
     if (deepLinked.current) return;
     deepLinked.current = true;
-    const want = new URLSearchParams(window.location.search).get("tab");
+    const sp = new URLSearchParams(window.location.search);
+    const want = sp.get("tab");
     if (want && tabOk[want]) setTab(want);
+    // The checklist can be linked to one leader, one day and one task — the
+    // objection chat does it for a day still being filed, and the in-app
+    // camera comes back here with the task it was shooting for. The task is
+    // consumed from the URL, or a reload would open its sheet again.
+    if (want === "checklist") {
+      const lid = Number(sp.get("leader")) || null;
+      if (lid && !isLeader) {
+        // A link naming a leader must land ON them, not behind a shift or
+        // brigadir filter that happens to be standing from an earlier visit.
+        setClLeaderPick(lid);
+        if (!isSupervisor) { setFShift(null); setFSup("All"); }
+      }
+      const d = sp.get("date");
+      if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) setClDate(d);
+      const op = Number(sp.get("open")) || null;
+      if (op) {
+        setClOpen({ id: op, focus: sp.get("focus") || null });
+        sp.delete("open");
+        sp.delete("focus");
+        const qs = sp.toString();
+        window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2698,6 +2758,27 @@ export default function Leaders() {
     if (!data || fLeader === "All" || isLeader) return;
     if (!leaderOptions.includes(fLeader)) setFLeader("All");
   }, [data, fLeader, isLeader, leaderOptions, setFLeader]);
+
+  // The «Chek-list» tab's leader list is the ROSTER — every leader profile in
+  // the viewer's scope, whether or not they filed anything in the period —
+  // because the day you want to open may be one nobody has filed yet. Narrowed
+  // by the same shift and brigadir filters as everything else on the page.
+  const clSups = useMemo(() => [...new Set((data?.roster ?? [])
+    .filter((p) => p.supervisor && (effShift == null || p.shift === effShift))
+    .map((p) => p.supervisor))].sort(), [data, effShift]);
+  const clLeaders = useMemo(() => (data?.roster ?? [])
+    .filter((p) => p.id && p.name
+      && (effShift == null || p.shift === effShift)
+      && (effSup === "All" || p.supervisor === effSup))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name))), [data, effShift, effSup]);
+  const clLeader = useMemo(
+    () => clLeaders.find((p) => p.id === clLeaderPick) || null, [clLeaders, clLeaderPick]);
+  // Monitoring's leader pick carries over when its name is exactly one person.
+  useEffect(() => {
+    if (isLeader || fLeader === "All") return;
+    const hits = (data?.roster ?? []).filter((p) => p.name === fLeader);
+    if (hits.length === 1) setClLeaderPick(hits[0].id);
+  }, [fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // date-period bounds — plain ISO-string comparison (rows carry "YYYY-MM-DD")
   const filtered = useMemo(() => rows.filter((r) => {
@@ -3540,14 +3621,23 @@ export default function Leaders() {
   // step below it is what says «page → scope | these are its views».
   const scopeBar = (
     <div className="flex items-center gap-2 mb-4 flex-wrap">
-      <DateRangePicker
-        dateFrom={startDate}
-        dateTo={endDate}
-        setDateFrom={setStartDate}
-        setDateTo={setEndDate}
-        compactLabel
-        triggerClassName="px-3 py-2 text-sm"
-      />
+      {/* ONE day on the «Chek-list» tab — a checklist is filed and judged a
+          day at a time — and the page's range everywhere else. The tab keeps
+          its own day, so switching views never rewrites the range the other
+          tabs were read at. */}
+      {tab === "checklist" ? (
+        <DayStepper value={clDate || clMeta?.date || todayISO()}
+          max={clMeta?.today || todayISO()} onChange={setClDate} />
+      ) : (
+        <DateRangePicker
+          dateFrom={startDate}
+          dateTo={endDate}
+          setDateFrom={setStartDate}
+          setDateTo={setEndDate}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+      )}
       {(!isLeader) && (
         <FilterPanel
           sections={[
@@ -3571,12 +3661,35 @@ export default function Leaders() {
               onClear: () => { setFSup("All"); setFLeader("All"); },
               render: ({ close } = {}) => (
                 <PickFilter searchable close={close}
-                  opts={[{ value: "All", label: T.allSups }, ...supervisors.map((s) => ({ value: s, label: nm(s), title: nm(s) }))]}
+                  opts={[{ value: "All", label: T.allSups }, ...(tab === "checklist" ? clSups : supervisors).map((s) => ({ value: s, label: nm(s), title: nm(s) }))]}
                   value={fSup}
                   onChange={(v) => { setFSup(v); setFLeader("All"); }} />
               ),
             }] : []),
-            {
+            tab === "checklist" ? {
+              // REQUIRED here, and pinned so it stays a visible dropdown on a
+              // desktop toolbar: the tab shows ONE leader's day, and until one
+              // is picked it has nothing to show. Offered from the roster.
+              key: "leader", icon: User, label: T.leader, pinned: true,
+              active: !!clLeader,
+              display: clLeader ? nm(clLeader.name) : "",
+              onClear: () => setClLeaderPick(null),
+              render: ({ close } = {}) => (
+                <PickFilter searchable close={close}
+                  opts={clLeaders.map((p) => ({
+                    value: p.id, label: nm(p.name),
+                    title: p.supervisor ? `${nm(p.name)} · ${nm(p.supervisor)}` : nm(p.name),
+                  }))}
+                  value={clLeader?.id ?? null}
+                  onChange={(id) => {
+                    setClLeaderPick(id);
+                    // Keep the rest of the page on the same person where the
+                    // register knows them by this name.
+                    const p = clLeaders.find((x) => x.id === id);
+                    if (p && leaderOptions.includes(p.name)) setFLeader(p.name);
+                  }} />
+              ),
+            } : {
               key: "leader", icon: User, label: T.leader,
               active: fLeader !== "All",
               display: fLeader !== "All" ? nm(fLeader) : "",
@@ -3592,7 +3705,7 @@ export default function Leaders() {
             // the automatic regime, a rejection moves the score of the brigadir
             // and the leader reading this, so "show me the days that lost
             // points" is their question too, not only an admin's triage one.
-            {
+            ...(tab === "checklist" ? [] : [{
               key: "verify", icon: ShieldAlert, label: T.fVerify,
               active: fVerify !== "all",
               display: fVerify !== "all" ? (T[`fVerify${fVerify[0].toUpperCase()}${fVerify.slice(1)}`] || fVerify) : "",
@@ -3607,7 +3720,7 @@ export default function Leaders() {
                     { value: "clean", label: T.fVerifyClean },
                   ]} />
               ),
-            },
+            }]),
           ]}
         />
       )}
@@ -3626,6 +3739,9 @@ export default function Leaders() {
       <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
         options={[
           ["monitor", T.tabMonitor],
+          // Second on the strip (the operator's call): after the page's
+          // overview, the one tab a leader WORKS in.
+          ...(tabOk.checklist ? [["checklist", T.tabChecklist]] : []),
           ["tasks", T.tabTasks],
           // The badge is what is left to decide, so an admin who works the
           // queue watches it reach zero.
@@ -3704,6 +3820,26 @@ export default function Leaders() {
       <AiProgress showIdle />
     </>
   ) : null;
+
+  if (tab === "checklist") {
+    return (
+      <Layout title={pageTitle}>
+        {headerBar}
+        {pageChrome}
+        <Checklist
+          key={isLeader ? "me" : (clLeader?.id ?? "none")}
+          leaderId={isLeader ? null : (clLeader?.id ?? null)}
+          date={clDate}
+          waiting={!isLeader && isLoading}
+          needLeader={!isLeader && !isLoading && !clLeader}
+          isLeader={isLeader}
+          nm={nm}
+          onMeta={setClMeta}
+          openTask={clOpen}
+          onOpened={() => setClOpen(null)} />
+      </Layout>
+    );
+  }
 
   if (tab === "tasks") {
     return (

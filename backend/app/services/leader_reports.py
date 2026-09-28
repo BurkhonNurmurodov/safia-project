@@ -131,20 +131,25 @@ def _day_of(db: Session, refs: list[str]) -> dict[int, int]:
 
 # ── the page payload ─────────────────────────────────────────────────────────
 
-def day_report(db: Session, uid: str) -> dict | None:
+def day_report(db: Session, uid: str, *, allow_open: bool = False) -> dict | None:
     """Everything the day-report page shows, in one read.
 
     One request on purpose: the page is opened from a Telegram DM, on a phone,
     by someone who wants to know why a number moved. A payload assembled from
     four round-trips renders in four steps, and the first three of them show a
     half-built answer to a question about fairness.
+
+    `allow_open` reads a bot day that has not closed yet — see
+    `build_report_row`. Its `score` is then meaningless (nothing is written
+    until the day closes) and `open` says so; the only readers that pass it
+    are the objection endpoint, the appeal chat and the «Chek-list» tab.
     """
     from app.routers.leaders import build_report_row
     from app.routers.leader_ai import (
         _as_verdict, _date_check, _day_check, _refs_for_uid, _task_cfg,
         _time_check, _window)
 
-    row = build_report_row(db, uid)
+    row = build_report_row(db, uid, allow_open=allow_open)
     if row is None:
         return None
 
@@ -179,6 +184,7 @@ def day_report(db: Session, uid: str) -> dict | None:
         td = defs.get(tid)
         rev = by_task.get(tid)
         d = disputes.get(tid)
+        is_auto = str(tk.get("reason") or "").startswith(leader_tasks.AUTO_PREFIX)
         tasks.append({
             "id": tid,
             "name": names.get(tid) or {l: f"#{tid}" for l in leader_ai.LANGS},
@@ -190,6 +196,9 @@ def day_report(db: Session, uid: str) -> dict | None:
             "reason": tk.get("reason") or "",
             "photo": tk.get("photo") or "",
             "media": tk.get("media") or [],
+            # The in-app capture record of each photo, positionally aligned with
+            # `media` — what lets the page say a proof was SHOT in the app.
+            "cam": tk.get("cam") or [],
             # What the overlays did to this task, already computed by the same
             # code the register runs — never re-derived here.
             "ai_rejected": bool(tk.get("ai_rejected")),
@@ -200,15 +209,24 @@ def day_report(db: Session, uid: str) -> dict | None:
             # Decided by the PLATFORM, not by a person and not by Gemini. Read
             # off the reason sentinel rather than the config, because a report
             # is read months later and the config may have moved since.
-            "auto": str(tk.get("reason") or "").startswith(
-                leader_tasks.AUTO_PREFIX),
+            "auto": is_auto,
             "queued": bool(rev and rev.status == "pending"),
             "dispute": _dispute_out(d) if d is not None else None,
+            # May this verdict be ARGUED? Two kinds, one chain (2026-09-28, the
+            # operator's ruling): a proof the AI refused, and an automatic check
+            # that failed — «the platform judged this task wrong» is one
+            # question whichever judge it was. Not once an admin has already
+            # ruled the task done: there is nothing left to give back.
+            "objectable": bool(
+                tk.get("ai_rejected")
+                or (is_auto and not tk.get("done") and tk.get("admin_done") is None)),
         })
 
     total, checked, rejected, errored, pending = _tally(tasks)
     return {
         "uid": row["uid"],
+        # A bot day still being filed — only ever True for an `allow_open` read.
+        "open": row.get("source") == "bot" and not row.get("submitted_at"),
         "date": row["date"],
         # The cell this checklist was filed FOR — its verifix CODE, never the
         # workshop name. Absent on a day filed before the unit was switched,
