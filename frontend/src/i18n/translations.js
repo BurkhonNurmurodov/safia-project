@@ -5738,7 +5738,7 @@ const t = {
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Jonli monitoring",
     "nav.kelish": "Kelish ro'yxati",
-    "kelish.hint": "Har bir xodimning belgisini bosing: bir marta — keladi, yana bir marta — kelmaydi.",
+    "kelish.hint": "Har bir xodimning belgisini bosing: bir marta — keladi, ikki marta — kelmaydi, uch marta — belgi olib tashlanadi.",
     "kelish.yes": "Keladi",
     "kelish.no": "Kelmaydi",
     "kelish.none": "Belgilanmagan",
@@ -11640,7 +11640,7 @@ const t = {
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Жонли мониторинг",
     "nav.kelish": "Келиш рўйхати",
-    "kelish.hint": "Ҳар бир ходимнинг белгисини босинг: бир марта — келади, яна бир марта — келмайди.",
+    "kelish.hint": "Ҳар бир ходимнинг белгисини босинг: бир марта — келади, икки марта — келмайди, уч марта — белги олиб ташланади.",
     "kelish.yes": "Келади",
     "kelish.no": "Келмайди",
     "kelish.none": "Белгиланмаган",
@@ -17542,7 +17542,7 @@ const t = {
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Живой мониторинг",
     "nav.kelish": "Список выхода",
-    "kelish.hint": "Нажмите на отметку у каждого сотрудника: один раз — выйдет, ещё раз — не выйдет.",
+    "kelish.hint": "Нажмите на отметку у каждого сотрудника: один раз — выйдет, второй — не выйдет, третий — отметка снимается.",
     "kelish.yes": "Выйдет",
     "kelish.no": "Не выйдет",
     "kelish.none": "Не отмечен",
@@ -23444,7 +23444,7 @@ const t = {
     // ── Live shift monitor (/live, Laboratory) ─────────────────────────
     "nav.live": "Live monitor",
     "nav.kelish": "Attendance plan",
-    "kelish.hint": "Tap each worker's mark: once for coming, again for not coming.",
+    "kelish.hint": "Tap each worker's mark: once for coming, twice for not coming, a third time to clear it.",
     "kelish.yes": "Coming",
     "kelish.no": "Not coming",
     "kelish.none": "Not marked",

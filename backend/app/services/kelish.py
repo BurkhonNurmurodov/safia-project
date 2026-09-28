@@ -25,7 +25,9 @@ THE rules, all the operator's (2026-09-28):
   * Only TODAY and TOMORROW — the unit's shift-day frame, the rule `/live` and
     «Smena hisoboti» run on — are editable. Earlier days are read-only; later
     ones are not offered.
-  * A mark cycles yes ↔ no. An unmarked worker is the absence of a row.
+  * A tap cycles empty → yes → no → empty (the third tap CLEARS — the
+    operator's call, 2026-09-28). An unmarked worker is the absence of a row,
+    so clearing deletes it.
 
 Identity is the folded NAME (`worker_key`): the file carries no employee id,
 and its spelling of a person is stable from day to day. «Same person» when a
@@ -335,6 +337,17 @@ def set_mark(db: Session, cell_id: int, day: date, row: dict, status: str,
             if attempt == 2:
                 raise
     return m
+
+
+def clear_mark(db: Session, cell_id: int, day: date, row: dict) -> int:
+    """The third tap: the worker goes back to «not filled yet», which is the
+    absence of a row — under the row's own key and any hand-typed alias."""
+    n = (db.query(KelishMark)
+         .filter(KelishMark.cell_id == cell_id, KelishMark.day == day,
+                 KelishMark.worker_key.in_([row["key"], *row["aliases"]]))
+         .delete(synchronize_session=False))
+    db.commit()
+    return n
 
 
 def add_event(db: Session, cell_id: int, key: str, name: str, job: str,

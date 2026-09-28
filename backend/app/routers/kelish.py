@@ -1,6 +1,7 @@
 """
 `/api/kelish` — the «Kelish ro'yxati» page (`/kelish`): the T11 staff list,
-one list per cell per shift-day, each worker marked coming or not.
+one list per cell per shift-day, each worker marked coming or not (a tap
+cycles empty → yes → no → empty).
 
 `services/kelish.py` computes; this module decides who may see and change what.
 
@@ -270,19 +271,23 @@ class MarkIn(BaseModel):
     cell_id: int
     date: str
     key: str
-    status: str
+    # "yes" | "no" | null — null (or "") CLEARS the mark: the third tap of the
+    # empty → yes → no → empty cycle. A tab on 4.173.0 only ever sends a word.
+    status: Optional[str] = None
 
 
 @router.put("/mark")
 def put_mark(body: MarkIn, db: Session = Depends(get_db),
              payload: dict = Depends(require_page(PAGE))):
-    """Mark one worker coming (`yes`) or not (`no`) — today or tomorrow only."""
+    """Mark one worker coming (`yes`), not (`no`), or clear the mark (null) —
+    today or tomorrow only."""
     x = _editable(db, payload, body.cell_id)
     d = _day(body.date, x["tomorrow"])
     if d not in (x["today"], x["tomorrow"]):
         _refuse(409, "day_locked", today=x["today"].isoformat(),
                 tomorrow=x["tomorrow"].isoformat())
-    if body.status not in kelish.STATUSES:
+    status = body.status or None
+    if status is not None and status not in kelish.STATUSES:
         _refuse(400, "bad_status")
 
     c = x["c"]
@@ -295,14 +300,20 @@ def put_mark(body: MarkIn, db: Session = Depends(get_db),
         _refuse(404, "not_on_list")
 
     before = row["mark"]
-    by_key, by_name = _actor(db, payload)
-    m = kelish.set_mark(db, c.id, d, row, body.status, by_key, by_name)
-    action_log.enrich(
+    enrich = dict(
         target_kind="cell", target_id=c.id, target_name=c.verifix_code,
         unit_id=c.manager_id, day=d,
         details=[("cell", c.verifix_code), ("worker", row["name"])],
-        changes=[("status", before or "—", body.status)],
+        changes=[("status", before or "—", status or "—")],
     )
+    if status is None:
+        kelish.clear_mark(db, c.id, d, row)
+        action_log.enrich(**enrich)
+        return {"key": row["key"], "mark": None, "by": None, "by_other": False, "at": None}
+
+    by_key, by_name = _actor(db, payload)
+    m = kelish.set_mark(db, c.id, d, row, status, by_key, by_name)
+    action_log.enrich(**enrich)
     return {"key": row["key"], "mark": m.status, "by": m.set_by_name,
             "by_other": bool(m.set_by_key)
                         and m.set_by_key != identity.profile_key("leader", c.leader_id),

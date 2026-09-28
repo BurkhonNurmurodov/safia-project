@@ -6654,9 +6654,10 @@ the task still wants its screenshot. Both switches are the operator's to throw.
   at HH:MM · starts tomorrow at HH:MM · past), because a night unit's
   «tomorrow» at 15:00 opens TONIGHT — a bare «Ertaga» would send a leader to the
   wrong shift.
-- **A tap cycles — → green → red → green.** An unmarked worker is the absence of
-  a `kelish_marks` row, never a third status; a mark never goes back to empty.
-  Each tap saves itself (per-worker request chain, optimistic, a version guard
+- **A tap cycles — → green → red → — (the operator's call, 2026-09-28): the
+  THIRD tap clears the mark.** An unmarked worker is the absence of a
+  `kelish_marks` row, never a third status, so clearing DELETES it (`status`
+  null on `PUT /mark`; a 4.173.0 tab only ever sent a word). Each tap saves itself (per-worker request chain, optimistic, a version guard
   so an older answer never repaints a newer tap). A mark set by anybody but the
   cell's leader says who set it («belgiladi: …»).
 - **«+» / «−» at the table's foot** (TableCard's `footer`). «+» puts a name on

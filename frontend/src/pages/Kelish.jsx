@@ -4,7 +4,8 @@
  * One list per CELL per shift-day: every worker the ORIGINAL Verifix upload
  * filed under the cell in the last 30 days, and beside each name whether they
  * are coming. A tap marks «Keladi» (green), the next «Kelmaydi» (red), the
- * next green again — an unmarked worker is simply not filled yet. «+» and «−»
+ * third clears it again (empty → green → red → empty, the operator's call) —
+ * an unmarked worker is simply not filled yet. «+» and «−»
  * at the table's foot change who is on the list, permanently, from today on.
  *
  * Only today and tomorrow (the unit's shift-day frame) are editable; earlier
@@ -255,7 +256,8 @@ export default function Kelish() {
   // ── a tap ─────────────────────────────────────────────────────────────────
   const tap = (row) => {
     if (!editable || selecting || !data) return;
-    const next = row.mark === "yes" ? "no" : "yes";
+    // empty → yes → no → empty; null CLEARS the mark server-side.
+    const next = row.mark === "yes" ? "no" : row.mark === "no" ? null : "yes";
     const key = listKey;
     const v = (ver.current.get(row.key) || 0) + 1;
     ver.current.set(row.key, v);
