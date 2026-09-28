@@ -1626,6 +1626,38 @@ promise and only the person making it can make it.
   it), with the due day as a `⏳` row; `concern_reopened` / `concern_edited`
   carry the same row while the concern is in work.
 
+## A concern is DATED by when its current holder got it
+
+From **2026-09-28** (shift-managers' report, confirmed on the 11 Sep copy: 70
+of the 93 concerns sitting with shift-managers printed a day other than the one
+they arrived — 4 days earlier on average, up to 23) the «Sana» of a `/concerns`
+row is the day it reached whoever holds it NOW, not the day it was filed.
+
+- **`received_at` on the payload is THE moment**, set by `_serialize` only once
+  the concern has MOVED: `level_since > created_at`. A new concern stamps both in
+  one INSERT (one `now()`), every step stamps `level_since` later — on the 11
+  Sep copy the split matched the escalation trail row for row (2,452 equal /
+  189 later). A never-moved row answers null and keeps its filing day
+  (`entry_date`, which a creator may backdate — 270 rows do, so it must NOT be
+  replaced by `created_at`). The exam sandbox reads its own step count instead:
+  it stamps the two clocks with two reads. `/cell-concerns` ignores the field.
+- **`rowDay` / `rowStamp` / `inPeriod` in `Concerns.jsx` are the one reading**:
+  the date column (a moved row adds «Yaratilgan: …» under it), the phone card
+  (+ a «Yaratilgan vaqt» fact), the detail view, the sort AND the default order
+  (newest date first — the server still lists by filing day), the peak-date card
+  and the export (a third «Yaratilgan sana» column, filled on every row).
+- **The period takes a concern FILED or RECEIVED in it** — either. Keyed on the
+  filing day alone, a concern escalated to a shift-manager this week but filed
+  earlier never appeared in their default 7-day view; the union only ADDS rows,
+  so nothing a period showed before leaves it. The trend's axis stays on the
+  window: a row filed before it opens the open-pool line instead of stretching
+  the chart back. «Opened» bars, the age buckets, «longest open» and «slowest
+  brigadir» still count whole-life from `entry_date`.
+- **The three MOVE notices carry both days** (`concern_escalated` / `_returned`
+  / `_moved`): «📅 Sana» = the move (`moved_on`), «🗓 Yaratilgan» = the filing
+  day. A notice stored before this has no `moved_on`; its «Sana» row drops out
+  and the filing day shows under its true name.
+
 ## The weekly Concerns deck (`/concerns` → «Haftalik hisobot»)
 
 From **2026-09-23** (the operator's rulings, asked and answered one by one)
@@ -1642,7 +1674,8 @@ rule (imported from `ojidaniya_deck`, never copied), same delivery, same shape.
   (`GET /api/concerns/deck-window` serves it). **Admin only**, checked in both
   endpoints. Button only — no scheduled send.
 - **Rows = this week's filings PLUS every older concern still open.** «Yangi»
-  counts by `entry_date` (the page's period field); «Yopildi» counts closings in
+  counts by `entry_date` (the filing day — the page's period also takes a
+  concern RECEIVED in it, so the two can differ); «Yopildi» counts closings in
   the window by `completion_date` (the page's flow-chart close day, entry date
   when earlier), whenever the concern was filed. Days to close = close day −
   entry date, the page's `resolution_days`.

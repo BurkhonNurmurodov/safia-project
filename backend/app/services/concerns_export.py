@@ -536,7 +536,11 @@ def _analysis(wb: Workbook, p: dict) -> None:
 # register.labels — the second half of a cell the screen stacks.
 _REG: dict[str, tuple[tuple[str, Optional[str], float, str], ...]] = {
     "num":         (("num", None, 8.0, "int"),),
-    "date":        (("d", None, 12.5, "date"), ("time", "time", 8.5, "time")),
+    # The row's date is the day it reached whoever holds it now (the filing day
+    # for a concern that never moved), so the day it was CREATED rides beside
+    # it, filled on every row — the screen prints it under a moved one only.
+    "date":        (("d", None, 12.5, "date"), ("time", "time", 8.5, "time"),
+                    ("filed", "created", 12.5, "date")),
     "cell":        (("cell", None, 10.0, "code"), ("cellLeader", "leader", 24.0, "text")),
     "category":    (("category", None, 17.0, "chip"),),
     "owner":       (("owner", None, 26.0, "text"), ("ownerRole", "role", 16.0, "muted")),
@@ -548,6 +552,8 @@ _REG: dict[str, tuple[tuple[str, Optional[str], float, str], ...]] = {
     "resolution":  (("minutes", "duration", 14.0, "duration"),),
     "comments":    (("comments", None, 10.0, "int"),),
 }
+# Physical columns younger than the screen that fills them (see _register).
+_REG_LATER = frozenset({"filed"})
 
 
 def _reg_cell(ws: Worksheet, row: int, col: int, kind: str, field: str, r: dict, bg) -> None:
@@ -607,14 +613,19 @@ def _register(wb: Workbook, p: dict) -> None:
     lbl = p.get("labels") or {}
     reg = p.get("register") or {}
     heads = reg.get("labels") or {}
+    rows = reg.get("rows") or []
     cols = []
     for c in reg.get("columns") or []:
         for field, head, width, kind in _REG.get(str(c.get("key")), ()):
+            # A column added after a bundle shipped is written only when the
+            # sending tab knows it: a tab still open on the older screen names no
+            # such field on any row, and would get a second «Sana» of dashes.
+            if field in _REG_LATER and rows and not any(field in r for r in rows):
+                continue
             label = (heads.get(head) if head else None) or c.get("label") or field
             cols.append((field, label, width, kind))
     if not cols:
         return
-    rows = reg.get("rows") or []
     CR1 = 2
     CR2 = CR1 + len(cols) - 1
     edge = max(CR2, CR1 + 5)

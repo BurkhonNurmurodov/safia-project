@@ -439,6 +439,12 @@ def concern_row(ctx: Ctx, r: ExamSandboxRow, comment_count: int, with_rights: bo
     completion = rel_date(d, "completion_date")
     created = rel_dt(d, "created_at")
     level_since = rel_dt(d, "level_since") or created
+    # The real payload's `received_at` (routers/concerns._serialize): the moment
+    # the concern reached its current holder, only once it has moved. Read off
+    # the step count here — a sandbox row stamps created_at and level_since with
+    # two separate clock reads, so «later than created_at» would call a brand-new
+    # row moved.
+    received = level_since if int(d.get("escalation_count") or 0) > 0 else None
     done_at = rel_dt(d, "done_at")
     worker = d.get("worker_name")
     level = d.get("level") or "supervisor"
@@ -468,7 +474,8 @@ def concern_row(ctx: Ctx, r: ExamSandboxRow, comment_count: int, with_rights: bo
         "level": level, "top_manager_profile_id": None, "top_manager_name": None,
         "shift_manager_profile_id": None, "shift_manager_name": None,
         "responsible_name": ctx.leader_name if level == "leader" else BRIGADIR,
-        "level_since": iso(level_since), "escalation_count": int(d.get("escalation_count") or 0),
+        "level_since": iso(level_since), "received_at": iso(received),
+        "escalation_count": int(d.get("escalation_count") or 0),
         "comment_count": comment_count, "created_at": iso(created),
     }
     if with_rights:

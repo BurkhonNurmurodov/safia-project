@@ -98,14 +98,15 @@ const MONTHS = {
   uz:      ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"],
   uz_cyrl: ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"],
 };
-const fmtDate = (iso, lang) => {
+// `withYear = false` drops the year — for a second date under a first one that
+// already carries it.
+const fmtDate = (iso, lang, withYear = true) => {
   if (!iso) return "";
   const [y, m, d] = String(iso).split(/[T ]/)[0].split("-").map(Number);
   if (!y || !m || !d) return iso;
   const mn = (MONTHS[lang] || MONTHS.uz)[m - 1];
-  if (lang === "en") return `${d} ${mn} ${y}`;               // 2 July 2026
-  if (lang === "ru") return `${d} ${mn} ${y}`;               // 2 июля 2026
-  return `${d}-${mn}, ${y}`;                                 // 2-iyul, 2026 / 2-июл, 2026
+  if (lang === "en" || lang === "ru") return withYear ? `${d} ${mn} ${y}` : `${d} ${mn}`;  // 2 July 2026 / 2 июля 2026
+  return withYear ? `${d}-${mn}, ${y}` : `${d}-${mn}`;       // 2-iyul, 2026 / 2-июл, 2026
 };
 
 // The concern's register number — assigned by the backend in creation order and
@@ -123,12 +124,14 @@ const COLS = [
   // order) — a property of the concern, not of the view: it survives every sort,
   // filter and period, so a row can be named to somebody looking at a different
   // screen. It therefore SORTS (that ordering is "oldest raised first", which
-  // nothing else on the table offers — the date sort reads entry_date, the day
-  // somebody filled the form in), and a filtered register shows gaps. It used to
+  // nothing else on the table offers — the date sort reads the day a concern
+  // reached its current holder), and a filtered register shows gaps. It used to
   // be the row's position in the current view, which made the newest concern
   // "1" under the default date-desc sort and renumbered everything on a filter.
   { key: "num",        labelKey: "concerns.colNum",        icon: Hash,          align: "center", hintKey: "concerns.colNumHint" },
-  { key: "date",       labelKey: "concerns.colDate",       icon: CalendarClock },
+  // The day the concern reached whoever holds it now (see rowDay) — the header
+  // says so, because the same column printed the filing day until 2026-09-28.
+  { key: "date",       labelKey: "concerns.colDate",       icon: CalendarClock, hintKey: "concerns.colDateHint" },
   { key: "cell",       labelKey: "concerns.colCell",       icon: LayoutGrid },
   { key: "category",   labelKey: "concerns.colCategory",   icon: Tag },
   { key: "owner",      labelKey: "concerns.colOwner",      icon: UserRound },
@@ -389,6 +392,43 @@ const isoPlusDays = (iso, n) => isoMinusDays(iso, -n);
 // Whole days from b to a (positive when a is later) — deadline countdowns.
 const isoDiffDays = (a, b) =>
   Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
+// The viewer's own calendar day / clock of an ISO instant — the same clock
+// fmtDateTime prints with. Module-level, so the sort memo can read them.
+const isoDayOf = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? null : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const isoClockOf = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+// A concern's DATE is the day it reached whoever holds it NOW: a concern handed
+// to a shift-manager on the 25th is the 25th's to them, whenever a leader first
+// filed it (it used to print the filing day on every row, and shift-managers
+// read a concern two weeks old as one they had been sitting on for two weeks).
+// The server publishes that moment (`received_at`) only once the concern has
+// MOVED; until then it IS the filing, and the date stays the filing day
+// (`entry_date`, which its creator may have picked). ONE definition — the date
+// column, its sort, the peak-date card and the export all read it.
+const rowDay = (r) => isoDayOf(r.received_at) || r.entry_date || null;
+// …and the clock printed under it: the move, or the minute it was raised.
+const rowStamp = (r) => r.received_at || r.created_at || null;
+// What the register orders a row by: that date, then that clock.
+const dateSortKey = (r) => `${rowDay(r) || ""} ${isoClockOf(rowStamp(r))}`;
+// In the period when the concern was FILED inside it or REACHED ITS CURRENT
+// HOLDER inside it. The second half is what a shift-manager was missing: keyed
+// on the filing day alone, a concern escalated to them this week but filed the
+// week before never appeared in their default 7-day view at all. The first half
+// keeps every row a period showed before — a concern does not leave the week it
+// was filed in for having been handed on since.
+const inPeriod = (r, from, to) => {
+  if (!from && !to) return true;
+  const hit = (d) => !!d && (!from || d >= from) && (!to || d <= to);
+  return hit(r.entry_date) || hit(isoDayOf(r.received_at));
+};
 // Overdue on the register = still open and past its due day (the due day itself
 // is not yet overdue). `due_date` is resolved by the SERVER (routers/concerns
 // _due) because the count has two anchors: the day the receiver took the
@@ -853,12 +893,10 @@ export default function Concerns() {
   }, [isLoading, view]);
 
   // Period + the org chain (shift → brigadir → cell), client-side over the rows.
+  // A row is in the period when it was filed OR reached its holder in it
+  // (inPeriod — one rule for the register, the KPIs and the charts).
   const scoped = useMemo(() => {
-    return rows.filter((r) => {
-      if (startDate && !(r.entry_date && r.entry_date >= startDate)) return false;
-      if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
-      return chainPred(r);
-    });
+    return rows.filter((r) => inPeriod(r, startDate, endDate) && chainPred(r));
   }, [rows, startDate, endDate, chainPred]);
 
   // Trend-chart scope: same filter, but the period start is pulled back so the
@@ -867,11 +905,7 @@ export default function Concerns() {
   const chartStart = padChartFrom(startDate, endDate);
   const chartScoped = useMemo(() => {
     if (chartStart === startDate) return scoped;
-    return rows.filter((r) => {
-      if (chartStart && !(r.entry_date && r.entry_date >= chartStart)) return false;
-      if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
-      return chainPred(r);
-    });
+    return rows.filter((r) => inPeriod(r, chartStart, endDate) && chainPred(r));
   }, [rows, scoped, chartStart, startDate, endDate, chainPred]);
 
   // ── analytics (the three headline KPIs) ─────────────────────────────────────
@@ -916,11 +950,14 @@ export default function Concerns() {
     }
     if (slowest) slowest.avg = Math.round(slowest.avg * 10) / 10;
 
-    // 3 ─ the entry date that carries the most still-open concerns (ties → oldest).
+    // 3 ─ the date that carries the most still-open concerns (ties → oldest) —
+    //     the rows' own DATE (rowDay), the one the register prints, so the card
+    //     never names a day the table has no row under.
     const byDate = new Map();
     for (const r of open) {
-      if (!r.entry_date) continue;
-      byDate.set(r.entry_date, (byDate.get(r.entry_date) || 0) + 1);
+      const day = rowDay(r);
+      if (!day) continue;
+      byDate.set(day, (byDate.get(day) || 0) + 1);
     }
     let peak = null;
     for (const [date, count] of byDate) {
@@ -1059,20 +1096,26 @@ export default function Concerns() {
     }
 
     // Running end-of-day open count over a continuous day axis, from the chart
-    // window's start (or first entry, if earlier) through today while anything
-    // is still open — never ending before the selected period does — so quiet
-    // days plot as a flat line instead of gaps.
+    // window's start (the first entry when there is no window) through today
+    // while anything is still open — never ending before the selected period
+    // does — so quiet days plot as a flat line instead of gaps.
     const dayKeys = [...opened.keys(), ...closed.keys()].sort();
     const trend = [];
     let maxOpen = 0, maxFlow = 0;
     if (dayKeys.length) {
-      let firstIso = dayKeys[0];
-      if (chartStart && chartStart < firstIso) firstIso = chartStart;
+      // The axis opens at the chart window's start. A row the window holds that
+      // was FILED before it (it reached its current holder inside the period)
+      // is part of the pool the axis opens with — never a bar ahead of the
+      // window, which would stretch a week's chart back to its filing day.
+      const firstIso = chartStart || dayKeys[0];
+      let run = 0;
+      for (const [iso, n] of opened) if (iso < firstIso) run += n;
+      for (const [iso, n] of closed) if (iso < firstIso) run -= n;
       let lastIso = dayKeys[dayKeys.length - 1];
+      if (lastIso < firstIso) lastIso = firstIso;
       if (trendOpen > 0 && lastIso < today) lastIso = today;
       if (endDate && endDate > lastIso) lastIso = endDate;
       const end = new Date(lastIso + "T00:00:00");
-      let run = 0;
       for (const d = new Date(firstIso + "T00:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
         const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
         // Per-day inflow/outflow rides along on the trend rows — the analytics
@@ -1181,11 +1224,14 @@ export default function Concerns() {
       : { key: null, dir: "asc" });
 
   const sorted = useMemo(() => {
-    if (!sort.key) return filtered;
+    // No column picked: newest DATE first — the date each row prints, so a
+    // concern handed on today sits at the top instead of under the day it was
+    // filed (the server lists by filing day). Stable, so ties keep its order.
+    if (!sort.key) return [...filtered].sort((a, b) => dateSortKey(b).localeCompare(dateSortKey(a)));
     const val = (r) => {
       switch (sort.key) {
         case "num":      return concernNo(r);
-        case "date":     return r.entry_date || "";
+        case "date":     return dateSortKey(r);
         case "cell":     return (r.cell_code || "").toLowerCase();
         case "category": return categoryLabel(r.category || "");
         case "owner":    return tl(r.owner_name || "");
@@ -1427,14 +1473,27 @@ export default function Concerns() {
     const localIso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     return `${fmtDate(localIso, lang)}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   };
-  // Clock alone — the register shows the entry DATE, and the exact minute a
-  // concern was raised belongs under it rather than in a tooltip nobody on a
-  // phone can open.
+  // Clock alone — the register shows a row's DATE, and the exact minute behind
+  // it (the move, or the raising) belongs under it rather than in a tooltip
+  // nobody on a phone can open.
   const fmtTime = (iso) => {
     if (!iso) return "";
     const d = new Date(iso);
     return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   };
+  // "Created: 12-sentabr" — the second date on a concern that has moved (its
+  // row is dated by the move). No year while it is the year printed above it.
+  const createdOnText = (r) => {
+    const sameYear = (rowDay(r) || "").slice(0, 4) === (r.entry_date || "").slice(0, 4);
+    return t("concerns.createdOn").replace("{date}", fmtDate(r.entry_date, lang, !sameYear));
+  };
+  // Hover text on a row's date: the moment it reached its current holder (once
+  // it has moved — the same moment the elapsed timer counts from) and the
+  // moment it was raised.
+  const dateTitle = (r) => [
+    r.received_at ? `${t("concerns.heldSince")}: ${fmtDateTime(r.received_at)}` : null,
+    r.created_at ? `${t("concerns.createdAt")}: ${fmtDateTime(r.created_at)}` : null,
+  ].filter(Boolean).join("\n") || undefined;
 
   // ── history timeline ──────────────────────────────────────────────────────
   // One vocabulary for the trail's event kinds — icon, colour and title
@@ -1991,7 +2050,7 @@ export default function Concerns() {
   // filtered by name, and there no two people may share a label.
   const exportCell = {
     num:         (r) => ({ num: concernNo(r) }),
-    date:        (r) => ({ d: r.entry_date || null, time: r.created_at ? fmtTime(r.created_at) : null }),
+    date:        (r) => ({ d: rowDay(r), time: rowStamp(r) ? fmtTime(rowStamp(r)) : null, filed: r.entry_date || null }),
     cell:        (r) => ({ cell: r.cell_code || null, cellLeader: r.cell_leader_name ? tl(r.cell_leader_name) : null }),
     category:    (r) => ({ category: r.category ? categoryLabel(r.category) : null, categoryColor: CATEGORY_COLOR[r.category] || null }),
     owner:       (r) => ({ owner: r.owner_name ? tl(r.owner_name) : null, ownerRole: r.owner_role ? roleLabel(r.owner_role) : null }),
@@ -2129,7 +2188,8 @@ export default function Concerns() {
         countLabel: count,
         columns: visibleCols.map((c) => ({ key: c.key, label: t(c.labelKey) })),
         labels: {
-          time: t("concerns.xTime"), leader: t("concerns.colLeader"), role: t("concerns.xRole"),
+          time: t("concerns.xTime"), created: t("concerns.createdDate"),
+          leader: t("concerns.colLeader"), role: t("concerns.xRole"),
           duration: `${t("concerns.colResolution")} (${t("general.unitHour")}:${t("general.unitMin")})`,
         },
         rows: sorted.map((r) => Object.assign({}, ...visibleCols.map((c) => exportCell[c.key]?.(r) || {}))),
@@ -2214,17 +2274,25 @@ export default function Concerns() {
             {concernNo(r)}
           </td>
         );
+      // The day the concern reached whoever holds it now (rowDay) over the clock
+      // of that moment — for a concern that never moved, its filing day and
+      // the minute it was raised. A concern that HAS moved names the day it was
+      // created under both: "when was this created?" is asked of every row
+      // that has been handed around, and a tooltip is unreachable on the phone
+      // this runs on.
       case "date":
         return (
           <td key={key} className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}
-              title={r.created_at ? `${t("concerns.createdAt")}: ${fmtDateTime(r.created_at)}` : undefined}>
-            {fmtDate(r.entry_date, lang)}
-            {/* The minute it was raised, under the filing day: "when was this
-                created?" is asked of every row that has been handed around,
-                and a tooltip is unreachable on the phone this runs on. */}
-            {r.created_at && (
+              title={dateTitle(r)}>
+            {fmtDate(rowDay(r), lang)}
+            {rowStamp(r) && (
               <div className="text-[10px] tabular-nums mt-0.5" style={{ color: "var(--text-4)" }}>
-                {fmtTime(r.created_at)}
+                {fmtTime(rowStamp(r))}
+              </div>
+            )}
+            {r.received_at && r.entry_date && (
+              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }}>
+                {createdOnText(r)}
               </div>
             )}
           </td>
@@ -2416,9 +2484,10 @@ export default function Concerns() {
                   {concernNo(r)}.
                 </span>
                 <span className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>
-                  {fmtDate(r.entry_date, lang)}
-                  {/* …and the minute it was raised, same as the table's date column. */}
-                  {r.created_at && <span className="tabular-nums">, {fmtTime(r.created_at)}</span>}
+                  {fmtDate(rowDay(r), lang)}
+                  {/* …and its clock, same as the table's date column: the move,
+                      or the minute it was raised. */}
+                  {rowStamp(r) && <span className="tabular-nums">, {fmtTime(rowStamp(r))}</span>}
                 </span>
               </span>
               <span className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -2506,6 +2575,16 @@ export default function Concerns() {
                         title={heldSince(r) ? `${t("concerns.heldSince")}: ${fmtDateTime(heldSince(r))}` : undefined}>
                     <Timer size={12} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
                     {fmtResolution(resolutionMinutes(r))}
+                  </span>
+                </MobField>
+              )}
+              {/* A concern that has moved is dated by the move (the line at the
+                  top); the day it was raised is a fact of its own here, as it
+                  is under the table's date. */}
+              {r.received_at && r.entry_date && (
+                <MobField label={t("concerns.createdAt")}>
+                  <span className="tabular-nums">
+                    {fmtDate(r.entry_date, lang)}{r.created_at ? `, ${fmtTime(r.created_at)}` : ""}
                   </span>
                 </MobField>
               )}
@@ -3360,7 +3439,7 @@ export default function Concerns() {
         <Modal
           onClose={() => setViewRow(null)}
           title={t("concerns.viewTitle")}
-          subtitle={`${t("concerns.colNum")}${concernNo(viewRow)} · ${fmtDate(viewRow.entry_date, lang)}${viewRow.cell_code ? ` · ${viewRow.cell_code}` : ""}`}
+          subtitle={`${t("concerns.colNum")}${concernNo(viewRow)} · ${fmtDate(rowDay(viewRow), lang)}${viewRow.cell_code ? ` · ${viewRow.cell_code}` : ""}`}
           icon={<Eye size={16} />}
           footer={
             <>
@@ -3406,9 +3485,10 @@ export default function Concerns() {
             <div className="grid grid-cols-2 gap-x-3 gap-y-3 rounded-lg p-3"
                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
               <MobField label={t("concerns.colDate")}>
-                {fmtDate(viewRow.entry_date, lang)}
-                {/* Raised at — the whole-life stamp, beside the filing day the
-                    deadline counts from. */}
+                {fmtDate(rowDay(viewRow), lang)}
+                {/* Raised at — the whole-life stamp, under the row's date: the
+                    filing day, or the day a concern that moved reached its
+                    current holder (the elapsed field names that moment). */}
                 {viewRow.created_at && (
                   <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }}>
                     {t("concerns.createdAt")}: {fmtDateTime(viewRow.created_at)}

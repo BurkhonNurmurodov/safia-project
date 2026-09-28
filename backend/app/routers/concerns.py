@@ -323,6 +323,21 @@ def _serialize(
     # and no level is charged for time it did not hold the row. A concern that
     # never moved has no stamp — created_at IS that instant.
     held_since = c.level_since or c.created_at
+    # When the concern reached whoever holds it NOW, published only once it has
+    # MOVED (an up or down step). It is the date a holder reads the row by: a
+    # concern handed to a shift-manager on the 25th is the 25th's to them,
+    # whenever it was first filed. Until a step happens that moment IS the
+    # filing, and the row keeps its filing day (`entry_date`, which a creator
+    # may have picked), so a never-moved row answers None. A new concern stamps
+    # level_since in the INSERT that writes created_at (one now()) and every
+    # step stamps it in a later transaction, so «later than created_at» is
+    # exactly «has moved» — and no caller can forget to pass a count for it.
+    received_at = (
+        c.level_since
+        if c.level_since is not None and c.created_at is not None
+        and c.level_since > c.created_at
+        else None
+    )
     # Minute-grained "время выполнения": held_since → done_at. NULL done_at
     # (still open, or done before the column existed) renders as "—".
     resolution_minutes = None
@@ -398,6 +413,10 @@ def _serialize(
         # When the CURRENT level took the concern — what the elapsed timer of an
         # open row counts from, and the elapsed cell's tooltip.
         "level_since": held_since.isoformat() if held_since else None,
+        # …and the same moment as the row's DATE, but only for a concern that
+        # has moved (null otherwise — see received_at above). The register's
+        # date column, its sort, its period and its export all read this.
+        "received_at": received_at.isoformat() if received_at else None,
         "escalation_count": (esc_counts or {}).get(c.id, 0),
         # Size of the discussion thread — the badge on the Comments column.
         "comment_count": (comment_counts or {}).get(c.id, 0),
@@ -1927,6 +1946,13 @@ def escalate_concern(
         "concern_no": _no(c),
         "actor_name": payload.get("full_name") or "",
         "leader_name": c.leader_name or _cell_leader_name(db, c.cell_code),
+        # A move notice carries TWO days, named: the day of the move (the
+        # notice's «Sana», the date the register now files the row under) and
+        # the day the concern was filed («Yaratilgan»). With only the filing day
+        # under a bare «Sana», a shift-manager handed a two-week-old concern read
+        # that as the day it reached them.
+        "moved_on": (c.level_since.astimezone(PLANT_TZ).date()
+                     if c.level_since else today_local()),
         "date": c.entry_date,
         "reason": _snippet(reason),
         "concern": _snippet(c.concern_text),

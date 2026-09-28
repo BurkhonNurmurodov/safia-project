@@ -787,10 +787,10 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # loop instead of watching it vanish upwards. The receiving handler gets
     # concern_escalated / concern_returned ("… to you") instead.
     "concern_moved": {
-        "uz": ("Xavotir {level_label} darajasiga o'tdi", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Sabab: {reason}\n✍️ Kim: {actor_name}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
-        "uz_cyrl": ("Хавотир {level_label} даражасига ўтди", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Сабаб: {reason}\n✍️ Ким: {actor_name}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
-        "ru": ("Опасение передано на уровень «{level_label}»", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Причина: {reason}\n✍️ Кто: {actor_name}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
-        "en": ("A concern moved to {level_label}", "“{concern}”\n\n🔢 No: {concern_no}\n📝 Reason: {reason}\n✍️ By: {actor_name}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
+        "uz": ("Xavotir {level_label} darajasiga o'tdi", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Sabab: {reason}\n✍️ Kim: {actor_name}\n👤 Lider: {leader_name}\n📅 Sana: {moved_on}\n🗓 Yaratilgan: {date}"),
+        "uz_cyrl": ("Хавотир {level_label} даражасига ўтди", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Сабаб: {reason}\n✍️ Ким: {actor_name}\n👤 Лидер: {leader_name}\n📅 Сана: {moved_on}\n🗓 Яратилган: {date}"),
+        "ru": ("Опасение передано на уровень «{level_label}»", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Причина: {reason}\n✍️ Кто: {actor_name}\n👤 Лидер: {leader_name}\n📅 Дата: {moved_on}\n🗓 Создано: {date}"),
+        "en": ("A concern moved to {level_label}", "“{concern}”\n\n🔢 No: {concern_no}\n📝 Reason: {reason}\n✍️ By: {actor_name}\n👤 Leader: {leader_name}\n📅 Date: {moved_on}\n🗓 Created: {date}"),
     },
     # The concern's holder took it into work — and, since 2026-09-23, that is the
     # moment its DEADLINE is set: the receiver says how many days they need, the
@@ -828,16 +828,16 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("{actor_name} edited a concern", "“{concern}”\n\n🔢 No: {concern_no}\n⏳ Deadline: {due}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_escalated": {
-        "uz": ("{actor_name} xavotirni sizga yo'naltirdi", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Sabab: {reason}\n📍 Daraja: {level_label}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни сизга йўналтирди", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Сабаб: {reason}\n📍 Даража: {level_label}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
-        "ru": ("{actor_name} передал(а) вам опасение", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Причина: {reason}\n📍 Уровень: {level_label}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
-        "en": ("{actor_name} escalated a concern to you", "“{concern}”\n\n🔢 No: {concern_no}\n📝 Reason: {reason}\n📍 Level: {level_label}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
+        "uz": ("{actor_name} xavotirni sizga yo'naltirdi", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Sabab: {reason}\n📍 Daraja: {level_label}\n👤 Lider: {leader_name}\n📅 Sana: {moved_on}\n🗓 Yaratilgan: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни сизга йўналтирди", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Сабаб: {reason}\n📍 Даража: {level_label}\n👤 Лидер: {leader_name}\n📅 Сана: {moved_on}\n🗓 Яратилган: {date}"),
+        "ru": ("{actor_name} передал(а) вам опасение", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Причина: {reason}\n📍 Уровень: {level_label}\n👤 Лидер: {leader_name}\n📅 Дата: {moved_on}\n🗓 Создано: {date}"),
+        "en": ("{actor_name} escalated a concern to you", "“{concern}”\n\n🔢 No: {concern_no}\n📝 Reason: {reason}\n📍 Level: {level_label}\n👤 Leader: {leader_name}\n📅 Date: {moved_on}\n🗓 Created: {date}"),
     },
     "concern_returned": {
-        "uz": ("{actor_name} xavotirni sizga qaytardi", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Sabab: {reason}\n📍 Daraja: {level_label}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни сизга қайтарди", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Сабаб: {reason}\n📍 Даража: {level_label}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
-        "ru": ("{actor_name} вернул(а) вам опасение", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Причина: {reason}\n📍 Уровень: {level_label}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
-        "en": ("{actor_name} returned a concern to you", "“{concern}”\n\n🔢 No: {concern_no}\n📝 Reason: {reason}\n📍 Level: {level_label}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
+        "uz": ("{actor_name} xavotirni sizga qaytardi", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Sabab: {reason}\n📍 Daraja: {level_label}\n👤 Lider: {leader_name}\n📅 Sana: {moved_on}\n🗓 Yaratilgan: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни сизга қайтарди", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Сабаб: {reason}\n📍 Даража: {level_label}\n👤 Лидер: {leader_name}\n📅 Сана: {moved_on}\n🗓 Яратилган: {date}"),
+        "ru": ("{actor_name} вернул(а) вам опасение", "«{concern}»\n\n🔢 №: {concern_no}\n📝 Причина: {reason}\n📍 Уровень: {level_label}\n👤 Лидер: {leader_name}\n📅 Дата: {moved_on}\n🗓 Создано: {date}"),
+        "en": ("{actor_name} returned a concern to you", "“{concern}”\n\n🔢 No: {concern_no}\n📝 Reason: {reason}\n📍 Level: {level_label}\n👤 Leader: {leader_name}\n📅 Date: {moved_on}\n🗓 Created: {date}"),
     },
     "concern_comment": {
         "uz": ("{author_name} xavotirga izoh qoldirdi", "«{comment}»\n\n🔢 №: {concern_no}\n📄 Xavotir: {concern}"),
@@ -1040,6 +1040,11 @@ def _notif_values(params: dict, lang: str, *, escape: bool = False) -> dict:
         values["target"] = transliterate(params.get("target"), lang)
     if "date" in params:
         values["date"] = _fmt_date(params["date"], lang)
+    # The day a concern MOVED (concern_escalated / _returned / _moved). Absent on
+    # every move notice stored before it existed, whose «Sana» row then drops
+    # out and leaves the «Yaratilgan» one — the filing day those always carried.
+    if params.get("moved_on"):
+        values["moved_on"] = _fmt_date(params["moved_on"], lang)
     # A concern's deadline day (concern_started / _reopened / _edited). Blank is
     # a real value there — «no deadline to print» — and must stay blank so
     # _render_body drops the row instead of formatting nothing.
