@@ -2986,7 +2986,8 @@ def _lt_auto_view(db, tid: int, pid: int, lang: str, chat_id: int,
     text = _lt(lang, "auto_head").format(
         task=name,
         t=leader_auto.check_hour(db, day.manager_id if day else None, shift,
-                                 task_id, entry_cfg))
+                                 task_id, entry_cfg, leader_id=pid,
+                                 date=str(day.date) if day else None))
     if desc := (entry_cfg.get("description") or "").strip():
         text += "\n" + desc[:600] + "\n"
     entry = (db.query(LeaderTaskEntry)

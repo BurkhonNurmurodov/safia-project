@@ -2941,6 +2941,49 @@ the rulings are in memory `leader-criteria-rulings-sep19-20`).
   `…_shift2_v1` / `…_global_v1` / `…_t3_sleeve_5cm_v1`) are set — and BEFORE
   deleting `leader_rules_sep19`, whose texts it compares against.
 
+## Temporary task hours (`leader_temp_hours`, from 28 Sep 2026)
+
+From **2026-09-28** (the operator's request) a cell whose shift is moved for a
+few nights moves its leader's checklist hours with it, on those nights only.
+The first request: 4321 · 4322 · 4323 · 4325 · 4326 · 4121 · 4122 · 4123 · 4124
+work 20:00–05:00 (+3h) and 4521 · 4221 19:00–04:00 (+2h) instead of 17:00–02:00,
+nights 28.09 → 01.10 inclusive (shift 1 not freeing the floor before the
+1 October holiday). `services/leader_temp_hours.py` is THE definition.
+
+- **A dated rule, never a config edit — that is the whole point.** A window edit
+  re-judges EVERY stored verdict of the task (`sync_date_flags` has no date
+  bound), so writing the moved hours onto the chain for four nights would
+  re-score every earlier night against them, and undoing it would re-score these
+  four against the old hours. Here the move is a function of the NIGHT.
+- **What moves, by the cell's own offset**: every task's photo window (and so,
+  on these per-task units, when each task closes), a task's own `deadline`
+  where one is set, and the hour of each AUTOMATIC check — per LEADER, by the
+  operator's explicit call, although that hour is otherwise a unit decision
+  (`_unit_due`). Hours move inside the shift and stop at its close (09:00): the
+  3 Sep leader overrides for 6821/6822 follow the same cut. Tasks 1/9/8 on shift
+  2: 02:00/06:00/09:00 at +3h, 01:00/05:00/08:00 at +2h.
+- **The first night accepts both** (`accept_old`): on 28.09 each window runs from
+  its OLD start to its NEW end — the leaders learned of the change that evening.
+  Tasks the platform had already closed before the moved leaders arrived stay
+  closed; the route back is «Kechikkan isbot» (the operator's call).
+- **The request names CELLS; the mapping to LEADERS is frozen once** (`freeze`,
+  one `AppSetting` row per request, written inline at boot by
+  `startup.register_leader_temp_hours`, in both entrypoints) — a later
+  reassignment can neither move these nights onto somebody else nor take them
+  away from whoever worked them. A cell with no leader is only named.
+- **Readers**: `effective_leader_config` (bot, camera, web checklist,
+  «Vazifalar», every closing sweep), `date_rule_for(date=…)` (the reviewer),
+  `sync_date_flags` and `routers/leader_ai._window` (every verdict card),
+  `leader_auto._run_leader` + `check_hour(leader_id=, date=)`. Unit-level views
+  (the admin sheet, `requirements_for` without a leader) show the unit's hours.
+- **NEVER delete a request, nor its frozen row, once its nights have passed** —
+  every boot re-derives every verdict, and without the entry those nights would
+  be judged against the ordinary hours. This is history, not a one-shot.
+- The moved leaders (`leader_temp_hours`) and both brigadirs
+  (`leader_temp_hours_unit`) were DMed once, a minute after the freeze, behind
+  their own flag (`<key>_dm`); the admins got the summary. A new request is one
+  more `Request` in `REQUESTS` with a NEW key.
+
 ## Tasks the PLATFORM answers (`leader_auto`, from 20 Sep 2026)
 
 Three of the thirteen checklist tasks ask about something this platform already

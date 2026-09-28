@@ -462,8 +462,14 @@ def _levels(cfg, rev):
 def _window(cfg, rev) -> tuple[str, str]:
     """The task's effective photo window, off the same preloaded chain. Same
     resolution as services/leader_ai.date_rule_for, which is the per-row form —
-    the triage queue would otherwise pay three queries a card for it."""
-    return leader_ai.resolve_window(rev.shift, *_levels(cfg, rev))
+    the triage queue would otherwise pay three queries a card for it.
+
+    A night whose hours were moved (services/leader_temp_hours) is shown by the
+    hours it was judged against — the same move `date_rule_for` applies."""
+    from app.services import leader_temp_hours
+    return leader_temp_hours.window_on(
+        None, rev.leader_id, rev.date, rev.shift,
+        leader_ai.resolve_window(rev.shift, *_levels(cfg, rev)))
 
 
 def _date_check(cfg, rev) -> bool:
@@ -959,7 +965,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
     rule = leader_ai.date_rule_for(
-        db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
+        db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift, date=rev.date)
     if rev.status in ("ok", "flagged") and not body.force:
         # No call was made and no quota spent — the register says so, or the row
         # reads as a review that produced the same answer twice.

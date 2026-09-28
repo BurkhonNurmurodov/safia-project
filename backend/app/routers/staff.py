@@ -407,6 +407,21 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{leader}: результаты снова учитываются", "Ограничение с {date} снято — дни вернулись со своими оценками. Кто: {by}"),
         "en": ("{leader}: results count again", "The cutoff from {date} was lifted — the days are back at the scores they always had. By: {by}"),
     },
+    # A cell's shift moved for a few nights (services/leader_temp_hours): the
+    # leader's checklist hours moved with it. The DM carries the per-task hours
+    # (`html_fn`); the bell row only what stays true for the whole period.
+    "leader_temp_hours": {
+        "uz": ("Ish vaqtingiz vaqtincha o'zgardi", "Yacheyka: {cell} | Kechalar: {first} – {last} | Ish vaqti: {start} – {end} | Chek-list vazifalari va avtomatik tekshiruvlar vaqti ham {hours} soatga surildi. {first} kechasi eski vaqtda yuborilgan isbot ham hisoblanadi. {back} kechasidan boshlab vaqtlar odatdagidek."),
+        "uz_cyrl": ("Иш вақтингиз вақтинча ўзгарди", "Ячейка: {cell} | Кечалар: {first} – {last} | Иш вақти: {start} – {end} | Чек-лист вазифалари ва автоматик текширувлар вақти ҳам {hours} соатга сурилди. {first} кечаси эски вақтда юборилган исбот ҳам ҳисобланади. {back} кечасидан бошлаб вақтлар одатдагидек."),
+        "ru": ("Ваше рабочее время временно изменено", "Ячейка: {cell} | Ночи: {first} – {last} | Рабочее время: {start} – {end} | Время задач чек-листа и автоматических проверок тоже сдвинуто на {hours} ч. В ночь {first} засчитывается и подтверждение, отправленное в прежнее время. С ночи {back} время снова обычное."),
+        "en": ("Your working hours have changed for a few nights", "Cell: {cell} | Nights: {first} – {last} | Working hours: {start} – {end} | Checklist task hours and automatic checks moved {hours} hours later too. On the night of {first}, a proof sent at the old time counts as well. From the night of {back} the hours are back to normal."),
+    },
+    "leader_temp_hours_unit": {
+        "uz": ("Liderlar ish vaqti vaqtincha o'zgardi", "Kechalar: {first} – {last} | {lines} | Shu liderlarning chek-list vazifalari va avtomatik tekshiruvlari vaqti surildi. Qolgan liderlar odatdagi vaqtda."),
+        "uz_cyrl": ("Лидерлар иш вақти вақтинча ўзгарди", "Кечалар: {first} – {last} | {lines} | Шу лидерларнинг чек-лист вазифалари ва автоматик текширувлари вақти сурилди. Қолган лидерлар одатдаги вақтда."),
+        "ru": ("Рабочее время лидеров временно изменено", "Ночи: {first} – {last} | {lines} | Время задач чек-листа и автоматических проверок этих лидеров сдвинуто. Остальные лидеры — в обычное время."),
+        "en": ("Leaders' working hours changed for a few nights", "Nights: {first} – {last} | {lines} | These leaders' checklist task hours and automatic checks moved. Your other leaders keep their usual hours."),
+    },
     "leader_cutoff_lifted": {
         "uz": ("Natijalaringiz yana hisoblanadi", "Sana: {date} dan boshlangan cheklov bekor qilindi — kunlaringiz o'z bahosi bilan qaytarildi. Kim: {by}"),
         "uz_cyrl": ("Натижаларингиз яна ҳисобланади", "Сана: {date} дан бошланган чеклов бекор қилинди — кунларингиз ўз баҳоси билан қайтарилди. Ким: {by}"),

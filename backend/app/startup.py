@@ -8274,6 +8274,87 @@ def _leader_rules26_sleeve_dm(out: dict) -> int:
     return sent
 
 
+# ── temporary task hours: cells working later for a few nights (28 Sep) ──────
+# See `services/leader_temp_hours.py`. The FREEZE (cell → leader, once) runs
+# INLINE at boot, because the rule reads it and must exist before the first
+# request; the DMs go out a minute later, once, behind a flag of their own —
+# two deliveries, two keys. NOT temporary: the frozen rows and REQUESTS stay
+# for good, or every boot's verdict re-derive re-judges those nights against
+# the ordinary hours.
+
+def register_leader_temp_hours() -> None:
+    """Freeze every request not yet frozen and arm its DMs. Never raises."""
+    try:
+        from datetime import timedelta
+        from app.scheduler import SCHEDULER_TZ, schedule_at
+        from app.services import action_log, leader_temp_hours as th
+        db = SessionLocal()
+        try:
+            for f in th.freeze(db):
+                moved = f.get("leaders") or {}
+                print(f"[startup] temporary task hours {f['key']}: "
+                      f"{len(moved)} leader(s) moved {f['first']} → {f['last']}; "
+                      f"no leader: {', '.join(f.get('no_leader') or []) or '—'}; "
+                      f"not in the register: {', '.join(f.get('missing') or []) or '—'}")
+                try:
+                    action_log.record_system(
+                        "leader_config", "ltask.temp_hours_set",
+                        target_kind="task", target_name="checklist",
+                        details=[("from", f["first"]), ("to", f["last"]),
+                                 ("count", len(moved)),
+                                 ("cells", ", ".join(sorted(
+                                     c for spec in moved.values()
+                                     for c in spec.get("cells") or [])))],
+                        reason=next((r.reason for r in th.REQUESTS
+                                     if r.key == f["key"]), None))
+                except Exception:
+                    pass
+            pending = [r.key for r in th.REQUESTS
+                       if db.query(AppSetting).filter_by(key=r.key).first()
+                       and not db.query(AppSetting).filter_by(
+                           key=r.key + "_dm").first()]
+        finally:
+            db.close()
+        if pending:
+            run_at = datetime.now(timezone.utc).astimezone(SCHEDULER_TZ) + timedelta(minutes=1)
+            schedule_at("leader-temp-hours-dm", run_at, _leader_temp_hours_dm_job)
+            print(f"[startup] temporary task hours: DMs armed for {run_at:%d.%m %H:%M}")
+    except Exception as exc:
+        print(f"[startup] temporary task hours could not be armed: {exc}")
+
+
+def _leader_temp_hours_dm_job() -> None:
+    """Tell each moved leader their hours, each brigadir who moved, and the
+    admins what was frozen. Once per request; a request whose nights are all
+    over tells nobody."""
+    from app.services import leader_tasks, leader_temp_hours as th
+    db = SessionLocal()
+    try:
+        tonight = leader_tasks.effective_date(2)
+        for req in th.REQUESTS:
+            flag = req.key + "_dm"
+            if db.query(AppSetting).filter_by(key=flag).first():
+                continue
+            row = db.query(AppSetting).filter_by(key=req.key).first()
+            if row is None:
+                continue
+            sent = {"leaders": [], "units": [], "failed": []}
+            if tonight <= req.last:
+                sent = th.notify(db, req)
+            db.add(AppSetting(key=flag, value=datetime.now(timezone.utc).isoformat()))
+            db.commit()
+            print(f"[startup] temporary task hours {req.key}: told "
+                  f"{len(sent['leaders'])} leader(s), {len(sent['units'])} brigadir(s); "
+                  f"failed: {', '.join(map(str, sent['failed'])) or '—'}")
+            if tonight <= req.last:
+                _dm_admins_plain(th.admin_summary(th._parse(row.value), req, sent))
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] temporary task hours: DMs FAILED (next boot retries): {exc}")
+    finally:
+        db.close()
+
+
 # ── one-shot: Turdimurodov Nodirjon counted under Aripova Manzura (26 Sep) ────
 # See `services/leader_unit_fix_sep26.py`. Inline and flag-guarded, like the
 # other checklist fixes here. A REFUSAL (the names did not resolve as expected)

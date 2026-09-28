@@ -584,7 +584,8 @@ def _unit_due(db: Session, manager: Manager, defs: dict[int, LeaderTaskDef],
 
 
 def check_hour(db: Session, manager_id: int | None, shift: int | None,
-               task_id: int, cfg_entry: dict | None) -> str:
+               task_id: int, cfg_entry: dict | None, *,
+               leader_id: int | None = None, date: str | None = None) -> str:
     """The clock this task's check fires at, "HH:MM" — the UNIT's answer.
 
     What a leader is SHOWN has to be what actually fires. `_unit_due` reads the
@@ -592,15 +593,24 @@ def check_hour(db: Session, manager_id: int | None, shift: int | None,
     `deadline` or window would otherwise make the task screen and the warning
     DM name one hour while the check took another. Falls back to the resolved
     entry when the unit cannot be read, which is still better than nothing.
+
+    Pass the leader and the night and a night whose hours were moved
+    (services/leader_temp_hours) is answered with the moved hour — the one
+    `_run_leader` checks at. The fallback needs no move: the resolved entry
+    already carries it.
     """
-    from app.services import leader_close
+    from app.services import leader_close, leader_temp_hours
     if manager_id is not None:
         m = db.query(Manager).filter(Manager.id == manager_id).first()
         td = db.query(LeaderTaskDef).filter(LeaderTaskDef.id == task_id).first()
         if m is not None and td is not None:
-            got = _unit_due(db, m, {task_id: td},
-                            leader_tasks.effective_date(m.shift))
+            night = date or leader_tasks.effective_date(m.shift)
+            got = _unit_due(db, m, {task_id: td}, night)
             if task_id in got:
+                moved = leader_temp_hours.for_leader(db, leader_id, night)
+                if moved:
+                    return leader_temp_hours.move_clock(
+                        m.shift, got[task_id][1], moved.minutes)
                 return got[task_id][1]
     return leader_close.task_deadline(cfg_entry or {}, shift)
 
@@ -809,6 +819,13 @@ def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None
     # or an exclusion says this leader-day costs nobody anything.
     if leader_exclusions.excluded(db, prof.id, date, leader_name=prof.name):
         return
+    # A night whose hours were moved for this leader (services/leader_temp_hours)
+    # is checked — and warned about — at the moved hour. The operator's call for
+    # those nights, against `_unit_due`'s one-hour-per-unit rule: the unit's
+    # clock only says the task has become LIVE; this leader's own clock says
+    # when it is due.
+    from app.services import leader_temp_hours
+    moved = leader_temp_hours.for_leader(db, prof.id, date)
     cfg = cells = None
     for tid, (due, hhmm) in live.items():
         td = defs.get(tid)
@@ -816,6 +833,11 @@ def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None
         if parsed is None:
             continue
         check, target = parsed
+        if moved:
+            hhmm = leader_temp_hours.move_clock(m.shift, hhmm, moved.minutes)
+            due = leader_close.due_at({"deadline": hhmm}, m.shift, date) or due
+            if now < due - WARN_BEFORE:
+                continue
         if cfg is None:
             cfg = leader_tasks.effective_leader_config(
                 db, prof, m.shift, day=date)

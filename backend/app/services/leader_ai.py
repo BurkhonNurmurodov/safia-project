@@ -553,7 +553,8 @@ class DateRule(NamedTuple):
 
 
 def date_rule_for(db: Session, task_id: int, manager_id: int | None,
-                  leader_id: int | None, shift: int | None) -> DateRule:
+                  leader_id: int | None, shift: int | None,
+                  date: str | None = None) -> DateRule:
     """The whole date rule for one row — window, and the three questions that
     say what is compared to it — in ONE chain walk, resolved leader →
     supervisor → global → shift default.
@@ -577,7 +578,14 @@ def date_rule_for(db: Session, task_id: int, manager_id: int | None,
         sup = db.query(LeaderTaskSetting).filter_by(
             manager_id=manager_id, task_id=task_id).first()
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
-    return DateRule(resolve_window(shift, own, sup, td),
+    win = resolve_window(shift, own, sup, td)
+    if date:
+        # A night whose hours were moved is judged by the hours it was worked
+        # in (services/leader_temp_hours). Callers that name no date read the
+        # configured window, exactly as before.
+        from app.services import leader_temp_hours
+        win = leader_temp_hours.window_on(db, leader_id, date, shift, win)
+    return DateRule(win,
                     resolve_date_check(own, sup, td),
                     resolve_day_check(own, sup, td),
                     resolve_time_check(own, sup, td),
@@ -1757,7 +1765,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     # came back. One walk, one answer, no chance of asking one question and
     # grading another.
     win, checked, dayed, timed, plus = date_rule_for(
-        db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
+        db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift, date=rev.date)
     prompt = _prompt(
         task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id),
         note=task_note(db, rev.task_id),
@@ -3285,12 +3293,20 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     own_cfg = {(o.leader_id, o.task_id): o for o in db.query(LeaderTaskLeaderSetting)
                .filter(LeaderTaskLeaderSetting.leader_id.in_(lead_ids)).all()} if lead_ids else {}
 
+    # Nights whose hours were moved (services/leader_temp_hours) are re-derived
+    # against the hours they were worked in — read once for the whole pass.
+    from app.services import leader_temp_hours
+    temp = leader_temp_hours.load(db)
+
     changed = 0
     for rev in rows:
         levels = (own_cfg.get((rev.leader_id, rev.task_id)),
                   sup_cfg.get((rev.manager_id, rev.task_id)),
                   defs.get(rev.task_id))
         win = resolve_window(rev.shift, *levels)
+        if rev.leader_id in temp:
+            win = leader_temp_hours.window_on(db, rev.leader_id, rev.date,
+                                              rev.shift, win)
         # Repair BEFORE deriving. A clock whose day/month never made it out of
         # the model is not a row with a different answer — it is a row whose
         # stored reading is incomplete next to the `raw` string that holds the

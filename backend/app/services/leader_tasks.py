@@ -1069,6 +1069,12 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
             # other cannot tell an auto task from a misconfigured one.
             "auto_check": (td.auto_check or None),
         }
+    # A cell whose shift is moved for a few nights moves its leader's windows
+    # and deadlines on THOSE nights only (services/leader_temp_hours) — applied
+    # here because this is the one door the bot, the camera, the web checklist,
+    # «Vazifalar» and every closing sweep read a checklist through.
+    from app.services import leader_temp_hours
+    leader_temp_hours.apply_to_config(db, prof, shift, day, out)
     return out
 
 

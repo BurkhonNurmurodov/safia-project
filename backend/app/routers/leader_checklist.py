@@ -225,7 +225,8 @@ def _auto_wire(db: Session, prof: RoleProfile, date: str, tid: int,
     check = parsed[0]
     out = {
         "check": check,
-        "hour": leader_auto.check_hour(db, prof.manager_id, shift, tid, c),
+        "hour": leader_auto.check_hour(db, prof.manager_id, shift, tid, c,
+                                       leader_id=prof.id, date=date),
         "page": leader_auto_rich.PAGE.get(check or ""),
         "facts": None,
         "measured": None,
@@ -547,7 +548,8 @@ def auto_live(
     mgr = db.query(Manager).filter_by(id=prof.manager_id).first()
     if mgr is None:
         raise HTTPException(status_code=404, detail="no_unit")
-    hour = leader_auto.check_hour(db, prof.manager_id, shift, task, c)
+    hour = leader_auto.check_hour(db, prof.manager_id, shift, task, c,
+                                  leader_id=prof.id, date=date)
     due = leader_close.due_at({"deadline": hour}, shift, date) or datetime.now(timezone.utc)
     cell_obj = None
     if cell and leader_cells.is_per_cell(db, prof.manager_id, date):

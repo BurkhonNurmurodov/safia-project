@@ -104,6 +104,7 @@ async def lifespan(app: FastAPI):
         patch_task10_description_sep19,
         register_leader_rules_sep19,
         register_leader_rules_sep26,
+        register_leader_temp_hours,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         report_auto_schema,
@@ -549,6 +550,11 @@ async def lifespan(app: FastAPI):
     # once all three flags are set — and BEFORE removing leader_rules_sep19,
     # whose texts the pass compares against.
     register_leader_rules_sep26()
+    # Temporary task hours (2026-09-28): cells working later for a few nights
+    # move their leaders' checklist hours on those nights only — see
+    # `services/leader_temp_hours.py`. NOT a one-shot to delete: the frozen
+    # rows are history the verdict re-derive reads on every boot.
+    register_leader_temp_hours()
     # ⚠ TEMPORARY (20.09.2026): tasks 1, 8 and 9 become automatic checks.
     # Delete this line, `startup.register_leader_auto_sep20`,
     # `startup._leader_auto_job/_leader_auto_dm/_auto_run_at/_auto_first_check`
