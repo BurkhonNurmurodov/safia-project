@@ -1,12 +1,12 @@
 package uz.safiacorporate.ims;
 
 import android.content.Context;
-import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
-import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
+
+import androidx.webkit.WebViewCompat;
 
 import org.json.JSONObject;
 
@@ -111,31 +111,26 @@ final class FailureReport {
         }
     }
 
-    /** Which app build, which phone, which browser — most of the diagnosis. */
+    /** Which app build and pages, which phone, which web engine — most of the diagnosis. */
     private static String describe(Context app) {
         StringBuilder s = new StringBuilder("Safia IMS ");
         PackageManager pm = app.getPackageManager();
+        String pages = WebBundle.readAsset(app, "web-version.txt");
         s.append(version(pm, app.getPackageName()))
+                .append(" (pages ").append(pages == null ? "?" : pages.trim()).append(')')
                 .append(" · ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
                 .append(" · Android ").append(Build.VERSION.RELEASE)
-                .append(" (API ").append(Build.VERSION.SDK_INT).append(')');
-        String browser = defaultBrowser(pm);
-        s.append(" · default browser ").append(browser == null ? "none" : browser + " " + version(pm, browser));
-        if (!"com.android.chrome".equals(browser)) {
-            s.append(" · Chrome ").append(version(pm, "com.android.chrome"));
-        }
+                .append(" (API ").append(Build.VERSION.SDK_INT).append(')')
+                .append(" · WebView ").append(webView(app));
         return s.toString();
     }
 
-    private static String defaultBrowser(PackageManager pm) {
+    private static String webView(Context app) {
         try {
-            ResolveInfo r = pm.resolveActivity(
-                    new Intent(Intent.ACTION_VIEW, Uri.parse("https://production.safiacorporate.uz/"))
-                            .addCategory(Intent.CATEGORY_BROWSABLE),
-                    PackageManager.MATCH_DEFAULT_ONLY);
-            return r == null || r.activityInfo == null ? null : r.activityInfo.packageName;
+            PackageInfo p = WebViewCompat.getCurrentWebViewPackage(app);
+            return p == null ? "none" : p.packageName + " " + p.versionName;
         } catch (Throwable e) {
-            return null;
+            return "unknown";
         }
     }
 

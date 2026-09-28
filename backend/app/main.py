@@ -968,14 +968,15 @@ def api_version():
     }
 
 
-# The Android app (android/) is a Trusted Web Activity: Chrome shows this site
-# inside it full-screen, with no address bar, only while this statement names
-# the app's package and the SHA-256 of the key it is signed with — and Android
-# reads the same file before it opens production links in the app. Mismatch is
-# silent: the app still works, but looks like a browser. The fingerprint is
-# PUBLIC (every copy of the APK carries it); the key itself lives only on the
-# Mac that builds the app. Publishing through Google Play with Play App Signing
-# re-signs the app with Google's key, whose fingerprint must then be ADDED here.
+# The Android app (android/, CLAUDE.md «The Android app») carries the site's
+# pages in its own web view. Android reads this statement — the app's package
+# and the SHA-256 of the key it is signed with — before it opens production
+# links tapped in other apps inside the app (the manifest's autoVerify filter).
+# A mismatch is silent: such links simply open in the browser. The fingerprint
+# is PUBLIC (every copy of the APK carries it); the key itself lives only on
+# the Mac that builds the app. Publishing through Google Play with Play App
+# Signing re-signs the app with Google's key, whose fingerprint must then be
+# ADDED here.
 ANDROID_ASSET_LINKS = [{
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {

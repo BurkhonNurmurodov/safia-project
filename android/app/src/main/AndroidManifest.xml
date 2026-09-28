@@ -1,29 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Safia IMS for Android: a Trusted Web Activity (CLAUDE.md, «The Android app»).
-
-    The launcher hands the live site (production.safiacorporate.uz) to Chrome,
-    which draws it full-screen with no address bar for as long as the site's
-    /.well-known/assetlinks.json vouches for this app's signing key. Every
-    deploy therefore reaches the app the moment it reaches the browser, and
-    downloads, uploads and the camera behave exactly as they do in Chrome.
-
-    The metadata keys below are android-browser-helper's own
-    (trusted.LauncherActivityMetadata). A misspelt key is ignored silently.
-    A component the library USES but this file does not declare is worse:
-    1.0.0 left out ManageDataLauncherActivity, the library switches it on or
-    off on every launch, and the app crashed before drawing anything.
+    Safia IMS for Android (CLAUDE.md, «The Android app»): the site's pages,
+    built into the APK, in the app's own web view — no Chrome. MainActivity
+    serves the pages from assets/web (WebBundle) at the production address,
+    and only the data (/api and the other server paths) goes over the network.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Only for FailureReport: the browser does all of the site's own traffic. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The proof camera (getUserMedia on /proof/camera). Asked for only when a
+         page of the site asks for the camera, never at install or launch. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
-    <!-- Android 11+ package visibility: the launcher has to see which installed
-         browsers can host a Trusted Web Activity. -->
+    <!-- Android 11+ package visibility: which app is the phone's browser — the
+         one place a page of ours must open outside the app, and the failure
+         report's device line. -->
     <queries>
         <intent>
-            <action android:name="android.support.customtabs.action.CustomTabsService" />
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
         </intent>
     </queries>
 
@@ -32,84 +31,32 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/appName"
-        android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Translucent.NoTitleBar">
+        android:theme="@style/Theme.Safia">
 
-        <!-- The app's half of the handshake; the site's half is assetlinks.json. -->
         <meta-data
             android:name="asset_statements"
             android:resource="@string/assetStatements" />
 
-        <!-- REQUIRED, not optional: LauncherActivity.launchTwa() calls
-             ManageDataLauncherActivity.addSiteSettingsShortcut(), which enables or
-             disables this component on every launch, and Android throws for a
-             component the manifest does not declare. Declared exactly as the
-             official Bubblewrap template does. -->
+        <!-- singleTask: the launcher icon returns to the page where the person
+             was, and a production link from another app opens in this same one.
+             configChanges: rotating or folding the phone must not reload the page. -->
         <activity
-            android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
-            android:enabled="true"
-            android:excludeFromRecents="true"
-            android:exported="false">
-            <meta-data
-                android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
-                android:value="@string/launchUrl" />
-            <intent-filter>
-                <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <!-- Our subclass of the library's launcher (LauncherActivity.java): never
-             closes without showing anything, never crashes on purpose. -->
-        <activity
-            android:name=".LauncherActivity"
-            android:alwaysRetainTaskState="true"
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|layoutDirection|locale"
             android:exported="true"
-            android:label="@string/launcherName">
-
-            <meta-data
-                android:name="android.support.customtabs.trusted.DEFAULT_URL"
-                android:value="@string/launchUrl" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
-                android:resource="@color/systemBar" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK"
-                android:resource="@color/systemBar" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
-                android:resource="@color/systemBar" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK"
-                android:resource="@color/systemBar" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
-                android:resource="@drawable/splash" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR"
-                android:resource="@color/splashBackground" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
-                android:value="300" />
-            <meta-data
-                android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
-                android:value="@string/providerAuthority" />
-            <!-- No TWA-capable browser on the phone: open the site in a Custom
-                 Tab (a full browser engine, with an address bar) rather than a
-                 bare WebView, where downloads and uploads would not work. -->
-            <meta-data
-                android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
-                android:value="customtabs" />
+            android:label="@string/launcherName"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- A link to the site tapped in another app opens here once Android
-                 has verified the same assetlinks.json. -->
+            <!-- A production link tapped in another app opens here, once Android
+                 has checked /.well-known/assetlinks.json (backend/app/main.py). -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -120,17 +67,16 @@
             </intent-filter>
         </activity>
 
-        <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
-
-        <!-- Hands the splash image to the browser while the site loads. -->
+        <!-- Files FileHandoff hands to other apps (an opened photo, a download on
+             Android 7–9). -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="@string/providerAuthority"
+            android:authorities="${applicationId}.files"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/filepaths" />
+                android:resource="@xml/file_paths" />
         </provider>
     </application>
 </manifest>

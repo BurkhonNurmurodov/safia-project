@@ -2,7 +2,5 @@
 <resources>
     <string name="appName">Safia IMS</string>
     <string name="launcherName">Safia IMS</string>
-    <string name="launchUrl" translatable="false">https://production.safiacorporate.uz/</string>
-    <string name="providerAuthority" translatable="false">uz.safiacorporate.ims.fileprovider</string>
     <string name="assetStatements" translatable="false">[{\"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": {\"namespace\": \"web\", \"site\": \"https://production.safiacorporate.uz\"}}]</string>
 </resources>

@@ -8,8 +8,8 @@ android/app/src/main/res — never hand-edit its PNGs (CLAUDE.md, «The Android
 app»). Three images per screen density:
 
   mipmap-*/ic_launcher.png, ic_launcher_round.png
-      48 dp, the round logo as it is — what Android 6–7 launchers show
-      (the app supports Android 6+, adaptive icons exist from Android 8).
+      48 dp, the round logo as it is — what Android 7 launchers show
+      (the app supports Android 7+, adaptive icons exist from Android 8).
   mipmap-*/ic_launcher_foreground.png
       the adaptive icon's front layer, 108 dp. A launcher shows only its middle
       72 dp, through whatever mask it likes; the logo fills 80 % of that, the

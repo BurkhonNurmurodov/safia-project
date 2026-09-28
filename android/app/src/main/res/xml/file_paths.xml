@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What FileHandoff hands to other apps: a photo shown from memory (cache),
+     and a download on Android 7–9, which has no shared Downloads to write to. -->
+<paths>
+    <cache-path
+        name="shared"
+        path="shared/" />
+    <external-files-path
+        name="downloads"
+        path="Download/" />
+</paths>

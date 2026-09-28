@@ -6001,102 +6001,102 @@ no event; the route is the share sheet).
 ## The Android app (`android/`)
 
 From **2026-09-28** (the operator's go-ahead) the platform ships an Android app
-— «Safia IMS», package **`uz.safiacorporate.ims`** — built as a **Trusted Web
-Activity (TWA)**: a launcher that hands the LIVE site to Chrome, which draws it
-full-screen with no address bar. The APK holds no web code; its only code is a
-thin launcher and a failure reporter (below), and its one permission is
-INTERNET, for that reporter.
+— «Safia IMS», package **`uz.safiacorporate.ims`** — that carries the site's
+PAGES INSIDE THE APK and shows them in its OWN web view. Only the data comes
+from the server. No Chrome anywhere: the operator rejected the first design (a
+Trusted Web Activity, 1.0.x) because it runs visibly "in Chrome", and then
+chose, over a live-loading web view, **today's pages built into the APK**, with
+its consequence spelled out to them: **every change to the platform's pages
+reaches the app only through a new APK installed on every phone.**
 
-- **1.0.0 closed without a word on the first phone it met (a Samsung) — declare
-  EVERY component the library uses.** android-browser-helper's
-  `LauncherActivity.launchTwa()` calls
-  `ManageDataLauncherActivity.addSiteSettingsShortcut()` on every launch, which
-  enables or disables that activity through `setComponentEnabledSetting`, and
-  Android THROWS for a component the manifest does not declare. 1.0.0 left it
-  out as optional; the app crashed inside its first screen before drawing
-  anything, and Android shows no dialog for an app's first crash. The manifest
-  now declares it exactly as Google's Bubblewrap template does (plus
-  `android:manageSpaceActivity`), and says why beside it. **Mirror the official
-  template, never trim it by reading which parts look optional**: the other
-  two library screens (`WebViewFallbackActivity`,
-  `NotificationPermissionRequestActivity`) are reached only by the WebView
-  fallback and notification delegation, which this app does not enable.
-- **The app may never fail silently again, by construction** (1.0.1):
-  `SafiaApplication` installs an uncaught-exception handler, and
-  `FailureReport` posts every failure to the site's own unauthenticated
-  `POST /api/boot-report` (routers/boot.py — the "app never started" door),
-  which DMs the support chat with the device, Android version and browser
-  first. A report is saved to disk before it is sent, so one the network
-  refused goes out on the next start. `uz.safiacorporate.ims.LauncherActivity`
-  subclasses the library's launcher: an exception in the launch, or a splash
-  still standing after 12 s with the browser never showing the site, opens the
-  site in a normal browser tab (address bar, but the site) and is reported;
-  and the library's `QualityEnforcer` — which CRASHES the app on purpose when
-  the browser reports a quality problem (an error page, offline, or the
-  asset-link check) — is replaced by a callback that reports instead.
-
-- **Why a TWA, not a WebView shell or Capacitor.** The app has to follow the
-  platform's update model — a push to main deploys and every tab picks it up.
-  A bundled frontend (Capacitor's normal mode) freezes the web code at the
-  APK's build; Capacitor's live-URL mode is documented as not for production
-  and proxies the HTML, dropping the site's own headers (CSP, no-store). A TWA
-  IS Chrome: every deploy reaches the app the moment it reaches the browser,
-  and Excel downloads, file uploads, the proof camera, the service worker and
-  the login work exactly as in Chrome, with no app-only code path on the site.
-  `inTelegram()` is false there, so the app is the BROWSER door — people sign
-  in with their «Sayt logini».
-- **What makes it an app and not a browser tab is `/.well-known/assetlinks.json`**
-  (`ANDROID_ASSET_LINKS` in `backend/app/main.py`, public, before the SPA
-  catch-all): it names the package and the SHA-256 of the release key, while
-  the APK's `asset_statements` names the site. Chrome hides the address bar
-  only while both halves agree, and Android reads the same file before opening
-  `https://production.safiacorporate.uz/…` links tapped in other apps in the
-  app (`autoVerify`). **A mismatch is SILENT** — the app still works, but looks
-  like a browser — so the fingerprint `build-release.sh` prints must equal the
-  one served.
+- **One origin, and the site does not change.** `MainActivity` points its web
+  view at `https://production.safiacorporate.uz` and `WebBundle` answers that
+  origin's page requests from `assets/web` — every file of the committed
+  `frontend/dist` — while every SERVER path goes over the network:
+  `/api`, `/bot/`, `/.well-known/`, `/health`, `/docs`, `/openapi.json`, and
+  `/admin/…` except the SPA's own `/admin/upload` (`WebBundle.isServerPath`,
+  the twin of `SPA_ADMIN` in `src/sw.js` — **move them together**). Any other
+  page address serves `index.html`. So relative URLs, `localStorage`, the JWT
+  and the session work exactly as in a browser, no CORS rule exists or is
+  needed, and `inTelegram()` is false: the app is the BROWSER door — people
+  sign in with their «Sayt logini».
+- **The bundle must BE what production serves.** `app/build.gradle`'s
+  `bundleWeb<Variant>` copies `frontend/dist` (minus `sw.js`) and REFUSES to
+  build unless its `build.json` stamp equals the live
+  `https://production.safiacorporate.uz/build.json` — the pages talk to that
+  server's API, so a copy of anything else (an undeployed local build, a
+  checkout behind main) would be a combination nobody has run.
+  `SAFIA_ALLOW_UNDEPLOYED=1` overrides it on purpose only. **So an APK is
+  built right AFTER a deploy lands.** The same task reads the live
+  Content-Security-Policy header into `assets/csp.txt`, and `WebBundle` sends
+  it with `index.html` — the policy frozen with the pages it was written for.
+- **No service worker, ever** — `app-bridge.js` refuses the registration and
+  `MainActivity.blockServiceWorkers` 404s every worker fetch. A worker fills
+  its cache from the SERVER and would serve that build in place of the bundled
+  one: two builds in one app, silently.
+- **Updates**: `/build.json` comes from the bundle, so `UpdatePrompt` never
+  offers a reload (a reload would only show the same pages again). Old pages
+  keep working for as long as the platform's own contract says an open tab
+  does — the whole MAJOR line (see Versioning). When a MAJOR ships, the
+  bundled pages fall below `MIN_CLIENT` and show the un-dismissible "no longer
+  served" warning, whose reload cannot help here: that is the signal to build
+  and hand out a new APK. **A new APK is also the only way any page change,
+  however small, reaches app users.**
+- **What a browser gives a page and a web view does not** is supplied by the
+  app: `app-bridge.js` (injected at document start, this origin only) hands
+  in-memory files to Android through `window.SafiaAndroid` (a
+  WebMessageListener limited to this origin) — `saveBlob`'s
+  `<a download href="blob:…">` becomes a file in Downloads (MediaStore, or
+  the app's own folder on Android 7–9) that then opens in the phone's app for
+  it, and `window.open("blob:…")` (a proof photo) opens without saving;
+  `<input type=file>` gets the system picker, with the accept list's
+  extensions translated to MIME types (one it cannot translate lifts the
+  filter rather than hide the file); the camera (`/proof/camera`) is granted to
+  THIS origin only, after Android's own permission; a new tab of ours opens in
+  the same view (the admin's «open as this profile», `?as=`, goes to the
+  browser, pinned so the app link cannot bring it back); anything else opens
+  in the phone's app for it (Telegram for `t.me`, …); the back button walks
+  the page history; the bars take the page's colour from
+  `<meta name="theme-color">`; the keyboard and bars are padding (Android 15+
+  forces edge to edge). The app's own toasts speak the language picked on the
+  site (`localStorage.lang`, sent with every bridge message — `Texts.java`).
+- **It reports its own failures** — `SafiaApplication` catches every crash
+  and `FailureReport` posts it (and a dead page engine,
+  `onRenderProcessGone`, after which the screen starts over) to the site's
+  unauthenticated `POST /api/boot-report`, which DMs the support chat with
+  app and pages version, phone, Android and WebView version first. A report
+  is saved before it is sent and retried on the next start. Born of 1.0.0,
+  which crashed on its first launch with no message at all.
 - **The signing key lives on the Mac that builds, never in git** —
-  `~/.safia-android/signing/safia-ims-release.jks` + `keystore.properties`
-  (random password). `android/app/build.gradle` reads it from there (or from
-  `SAFIA_KEYSTORE_PROPERTIES`) and REFUSES to build a release without it: an
-  unsigned or debug-signed APK can neither update an installed copy nor pass
-  the asset-link check. `android/.gitignore` also blocks `*.jks`, `*.keystore`,
-  `keystore.properties`, `*.apk` and `*.aab`, because the Stop hook runs
-  `git add -A` and a push is a deploy. **Losing the key means no installed copy
-  can ever be updated** (every phone uninstalls and reinstalls), so it must be
-  backed up. Its fingerprint is public; every APK carries it.
-- **Building**: `bash android/build-release.sh` → the signed APK (sideloading)
-  and AAB (Google Play) in `~/.safia-android/releases/`, never in the repo,
-  with the signer's SHA-256 printed. Toolchain: JDK 21 in
-  `~/.safia-android/jdk-21`, Android SDK (platform 36, build-tools 36.0.0) in
-  `~/Library/Android/sdk`, AGP 8.13.2 + Gradle 8.14.5 (the wrapper pins the
-  distribution's checksum), `com.google.androidbrowserhelper:androidbrowserhelper:2.7.3`.
-  Its manifest keys are that library's own (`trusted.LauncherActivityMetadata`)
-  — a misspelt key is ignored without a word. Nothing here touches the deploy:
-  `deploy/deploy.sh` reacts to backend/, bot/ and frontend/ only.
-- **The APK changes rarely** — only when the shell does (icon, colours, the
-  library, the target SDK). **Raise `versionCode` on every release**, or phones
-  refuse the update (current: 1.0.1, versionCode 2). The site's `VERSION` is
-  independent of it: the app shows whatever is deployed.
-- **Icons**: `scripts/render-android-icons.py` renders the launcher icons
-  (legacy 48 dp + the adaptive foreground over the logo's gold, at the PWA
-  maskable icon's proportion) and the 160 dp splash from
-  `frontend/public/logo.png`. Never hand-edit the PNGs.
-- **It needs a TWA-capable browser** (Chrome; Samsung Internet and others
-  qualify). Without one the app opens the site in a Custom Tab
-  (`FALLBACK_STRATEGY` customtabs, with an address bar) rather than a bare
-  WebView, where downloads and uploads would break. Storage and site
-  permissions (the camera) are the browser's, shared with its own tabs of the
-  site: signing out in Chrome signs out the app.
-- **Distribution is by hand**: the APK is sent in Telegram; Android asks once to
-  allow installs from that app, and Play Protect may warn about an unknown
+  `~/.safia-android/signing/safia-ims-release.jks` + `keystore.properties`.
+  The build REFUSES a release without it, and `android/.gitignore` blocks
+  keys, APKs and AABs as a second line of defence (the Stop hook runs
+  `git add -A`). **Losing the key means no installed copy can ever be
+  updated** — every phone uninstalls and reinstalls. Its SHA-256 is served in
+  `/.well-known/assetlinks.json` (`ANDROID_ASSET_LINKS` in
+  `backend/app/main.py`), which is what lets Android open production links
+  tapped in other apps in the app (`autoVerify`).
+- **Building**: `bash android/build-release.sh` → the signed APK
+  (sideloading) and AAB (Google Play) in `~/.safia-android/releases/`, never
+  in the repo. Toolchain: JDK 21 in `~/.safia-android/jdk-21`, Android SDK
+  (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
+  Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
+  compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
+  **Raise `versionCode` on every release** (current: 1.1.0, versionCode 3).
+  Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
+  touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
+  frontend/ only.
+- **Testing** is on the operator's Galaxy A16 over USB (`adb`), when it is
+  plugged in with USB debugging on; the build Mac has no room for an
+  emulator. Never type the operator's password into it.
+- **Distribution is by hand**: the APK is sent in Telegram; Android asks once
+  to allow installs from that app, and Play Protect may warn about an unknown
   developer. Google Play needs a developer account, and Play App Signing
-  re-signs with Google's key — ADD its fingerprint to `ANDROID_ASSET_LINKS`
-  before that release goes out.
-- Deliberately not built (yet): a leader checklist screen of the app's own —
-  the proof camera is reachable only from the bot's buttons today, and those
-  open in Telegram, so the camera wins an app could bring (asked once, one
-  window) wait on that screen; push notifications (Telegram stays the channel);
-  an emulator run (the build Mac has no room for one — test on a phone).
+  re-signs with Google's key — ADD its fingerprint to `ANDROID_ASSET_LINKS`.
+- Deliberately not built (yet): a leader checklist screen of the app's own
+  (the proof camera is reachable only from the bot's buttons, which open in
+  Telegram), push notifications (Telegram stays the channel), an in-app "a
+  new version of the app exists" notice, and the Fullscreen API on `/live`.
 
 ## ARC tickets (`/arc`, page key `arc`)
 

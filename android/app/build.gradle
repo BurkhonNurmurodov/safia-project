@@ -1,3 +1,7 @@
+import groovy.json.JsonSlurper
+
+import javax.inject.Inject
+
 plugins {
     id "com.android.application"
 }
@@ -23,11 +27,12 @@ android {
         // PERMANENT: Android identifies the app by it, and assetlinks.json
         // names it. Changing it makes a different app.
         applicationId "uz.safiacorporate.ims"
-        minSdk 23
+        // 24: androidx.webkit needs Android 7.
+        minSdk 24
         targetSdk 36
         // Raise versionCode on EVERY release, or phones refuse the update.
-        versionCode 2
-        versionName "1.0.1"
+        versionCode 3
+        versionName "1.1.0"
     }
 
     signingConfigs {
@@ -55,16 +60,80 @@ android {
 }
 
 // An unsigned or debug-signed package is worse than none: it cannot update an
-// installed copy, and Chrome would not recognise it as ours (assetlinks.json
-// names the release key), so the app would open with an address bar.
+// installed copy, and the production app link (assetlinks.json names the
+// release key) would not verify.
 gradle.taskGraph.whenReady { graph ->
     if (!signingFile.isFile() && graph.allTasks.any { it.name.toLowerCase().contains("release") }) {
         throw new GradleException("Release signing key not found: ${signingFile}. See CLAUDE.md «The Android app».")
     }
 }
 
+/**
+ * The site's pages go INSIDE the APK (the operator's choice, 2026-09-28): the
+ * committed frontend/dist is copied to assets/web, where WebBundle.java serves
+ * it at the production address. Two checks keep the frozen copy honest:
+ *
+ *  - the copy must BE the build production is serving right now — the pages
+ *    talk to that server's API, so a copy of anything else (an undeployed
+ *    local build, a checkout behind main) is refused, unless
+ *    SAFIA_ALLOW_UNDEPLOYED=1 says so on purpose;
+ *  - the server's own Content-Security-Policy is read from the live site and
+ *    frozen with the pages it was written for.
+ *
+ * sw.js stays out: a service worker would fill its cache from the server and
+ * replace the bundled pages with whatever production serves later.
+ */
+abstract class BundleWebTask extends DefaultTask {
+    @InputDirectory
+    abstract DirectoryProperty getDist()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @Inject
+    abstract FileSystemOperations getFs()
+
+    @TaskAction
+    void bundle() {
+        File dist = getDist().get().asFile
+        File out = getOutputDir().get().asFile
+        fs.delete { delete out }
+        fs.copy {
+            from dist
+            into new File(out, "web")
+            exclude "sw.js"
+        }
+        def local = new JsonSlurper().parse(new File(dist, "build.json"))
+        def live = new JsonSlurper().parse(new URL("https://production.safiacorporate.uz/build.json"))
+        if (local.buildTime != live.buildTime && System.getenv("SAFIA_ALLOW_UNDEPLOYED") != "1") {
+            throw new GradleException("frontend/dist is ${local.version} (${local.buildTime}) but production serves " +
+                    "${live.version} (${live.buildTime}). The app must carry the deployed pages: pull, let the deploy " +
+                    "finish, and build again.")
+        }
+        String csp = new URL("https://production.safiacorporate.uz/").openConnection()
+                .getHeaderField("Content-Security-Policy")
+        if (!csp) throw new GradleException("Could not read the live site's Content-Security-Policy.")
+        new File(out, "csp.txt").text = csp
+        new File(out, "web-version.txt").text = String.valueOf(local.version)
+        logger.lifecycle("Bundled pages ${local.version} (${local.buildTime}) with the live CSP.")
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def bundleWeb = project.tasks.register("bundleWeb${variant.name.capitalize()}", BundleWebTask) {
+            dist.set(rootProject.file("../frontend/dist"))
+            // It asks the live server every time: that check is the point.
+            outputs.upToDateWhen { false }
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(bundleWeb, { it.outputDir })
+    }
+}
+
 dependencies {
-    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.7.3"
-    // LauncherActivity.java compiles against it; the helper declares it runtime-only.
-    implementation "androidx.browser:browser:1.10.0"
+    // Pinned where the next release needs a newer toolchain than AGP 8.13 /
+    // compileSdk 36: core 1.19 wants compileSdk 37 and AGP 9.1.
+    implementation "androidx.activity:activity:1.13.0"
+    implementation "androidx.core:core:1.18.0"
+    implementation "androidx.webkit:webkit:1.17.1"
 }
