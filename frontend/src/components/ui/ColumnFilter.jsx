@@ -427,7 +427,7 @@ function PanelField({ icon: Icon, label, active, display, renderContent }) {
 // Active-filter chip for the collapsed surfaces. The body opens the panel; the
 // ✕ resets just this filter (`onClear`). `static` sections (a locked viewer's
 // plant) render inert: readable scope, no implied choice.
-function FilterChip({ s, onOpen, className = "" }) {
+function FilterChip({ s, onOpen, className = "", wide = false }) {
   const { t } = useLang();
   const Icon = s.icon;
   const inert = !!s.static;
@@ -452,7 +452,10 @@ function FilterChip({ s, onOpen, className = "" }) {
         aria-label={typeof s.label === "string" ? s.label : undefined}
       >
         {Icon && <Icon size={12} style={{ flexShrink: 0, opacity: 0.85 }} />}
-        <span className="truncate max-w-[130px] whitespace-nowrap">{text}</span>
+        {/* `wide`: the chip sits on a line of its own below md (see
+            `chipsWrap`), so a person's name gets room to be read rather than
+            the 130px a chip squeezed beside the trigger can spare. */}
+        <span className={`truncate whitespace-nowrap ${wide ? "max-w-[130px] max-md:max-w-[240px]" : "max-w-[130px]"}`}>{text}</span>
       </button>
       {clearable && (
         <button
@@ -635,7 +638,7 @@ function ClearAllBtn({ onClick, title }) {
   );
 }
 
-export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forceGroup = false }) {
+export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forceGroup = false, chipsWrap = false }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);        // grouped dropdown
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -895,16 +898,25 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
       {/* Collapsed surfaces: the filter state as chips — always readable, each
           resettable in place. flex-1 so the strip doubles as the row's spacer;
           hidden while the md+ row is unfolded (the real controls are visible). */}
+      {/* `chipsWrap` (below md only): the strip takes its CONTENT width as its
+          basis instead of 0, so a set of chips that does not fit beside the
+          period control and the trigger wraps onto a line of its own — and
+          wraps inside it — instead of being clipped at the screen edge. A
+          horizontal scroller with no scrollbar and no fade is invisible on a
+          phone: the active filter the reader most needs to see was the part
+          cut off. Opt-in because it needs a `flex-wrap` parent row to wrap
+          into; md+ is untouched either way. */}
       {hasChips && (
         <div
-          className={`${collapsed ? "flex" : "flex md:hidden"} items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center`}
+          className={`${collapsed ? "flex" : "flex md:hidden"} items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center${
+            chipsWrap ? " max-md:flex-auto max-md:flex-wrap max-md:overflow-visible" : ""}`}
         >
-          {statics.map(s => <FilterChip key={s.key} s={s} />)}
+          {statics.map(s => <FilterChip key={s.key} s={s} wide={chipsWrap} />)}
           {/* A pinned section carries its state in its own trigger from md+ —
               its chip would be the same fact twice. It stays below md, where
               the filter itself lives in the sheet. */}
           {chips.map(s => (
-            <FilterChip key={s.key} s={s} onOpen={openPanel} className={s.pinned ? "md:hidden" : ""} />
+            <FilterChip key={s.key} s={s} onOpen={openPanel} className={s.pinned ? "md:hidden" : ""} wide={chipsWrap} />
           ))}
         </div>
       )}

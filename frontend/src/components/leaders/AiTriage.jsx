@@ -578,8 +578,11 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
           title={T.aiSettings} onClick={() => setCfgOpen(true)} />
         {/* Shortcut chrome only exists where a keyboard does — on a phone this
             button answered a question nobody there can act on. */}
+        {/* `max-lg:hidden`, never `hidden lg:inline-flex`: Button carries its
+            own `inline-flex`, which outranks a plain `hidden` in the generated
+            CSS, so the old spelling left this button on every phone. */}
         <Button size="lg" variant="ghost" icon={<Keyboard size={15} />}
-          className="hidden lg:inline-flex" title={T.aiKeys}
+          className="max-lg:hidden" title={T.aiKeys}
           onClick={() => setKeysOpen((o) => !o)} />
       </div>
 

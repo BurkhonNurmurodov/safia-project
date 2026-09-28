@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import DateRangePicker from "./DateRangePicker";
+import { useLang } from "../../context/LangContext";
 
 /**
  * Canonical single-day stepper — THE template for "‹ [date] ›" day
@@ -23,16 +24,24 @@ function addDaysISO(iso, n) {
 }
 
 export default function DayStepper({ value, onChange, max = toISO(new Date()) }) {
+  const { t } = useLang();
   const atMax = max != null && value >= max;
+  // Square 38px chevrons: the toolbar baseline every control beside them sits
+  // on (the date trigger, FilterPanel, SearchInput), and a thumb-sized target —
+  // `p-2` around a 15px icon was a 33px button a notch lower than its row.
+  const btn = "grid place-items-center w-[38px] h-[38px] rounded-xl flex-shrink-0 transition-colors hover:bg-[var(--bg-inner)] disabled:hover:bg-[var(--bg-card)] disabled:cursor-default";
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 min-w-0">
       <button
+        type="button"
         onClick={() => onChange(addDaysISO(value, -1))}
-        className="p-2 rounded-lg"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
+        aria-label={t("ui.dayStepper.prev")}
+        title={t("ui.dayStepper.prev")}
+        className={btn}
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
       >
-        <ChevronLeft size={15} />
+        <ChevronLeft size={16} />
       </button>
       <DateRangePicker
         single
@@ -45,12 +54,15 @@ export default function DayStepper({ value, onChange, max = toISO(new Date()) })
         triggerClassName="px-3 py-2 text-sm"
       />
       <button
+        type="button"
         onClick={() => onChange(addDaysISO(value, 1))}
         disabled={atMax}
-        className="p-2 rounded-lg"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)", opacity: atMax ? 0.4 : 1 }}
+        aria-label={t("ui.dayStepper.next")}
+        title={t("ui.dayStepper.next")}
+        className={btn}
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)", opacity: atMax ? 0.4 : 1 }}
       >
-        <ChevronRight size={15} />
+        <ChevronRight size={16} />
       </button>
     </div>
   );

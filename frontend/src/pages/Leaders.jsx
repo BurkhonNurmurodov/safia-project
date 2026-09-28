@@ -8,7 +8,8 @@ import {
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
-  ShieldCheck, Hourglass, Layers, X, FileText, CircleSlash,
+  ShieldCheck, Hourglass, Layers, X, FileText, CircleSlash, CalendarCheck,
+  ChevronRight, ChevronDown,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -239,6 +240,7 @@ const TXT = {
     regGlobalN: "Butun platforma bo'yicha {n} ta dalil navbatda",
     notAsked: "So'ralmagan", submittedAt: "Yuborilgan",
     details: "Batafsil", missed: "ta vazifa bajarilmadi", modalTitle: "Hisobot tafsilotlari",
+    showMoreN: "Yana {n} tasini ko'rsatish", showMoreLeft: "{n} ta qoldi",
     noIssues: "Muammo aniqlanmadi.", noReason: "Xatolik sababi ko'rsatilmagan.",
     fltIssues: "Muammolar", sumDone: "bajarildi", sumFailed: "bajarilmadi",
     ovTitle: "Admin bahosi", ovDone: "Bajarildi", ovFail: "Bajarilmadi",
@@ -416,6 +418,7 @@ const TXT = {
     regGlobalN: "Бутун платформа бўйича {n} та далил навбатда",
     notAsked: "Сўралмаган", submittedAt: "Юборилган",
     details: "Батафсил", missed: "та вазифа бажарилмади", modalTitle: "Ҳисобот тафсилотлари",
+    showMoreN: "Яна {n} тасини кўрсатиш", showMoreLeft: "{n} та қолди",
     noIssues: "Муаммо аниқланмади.", noReason: "Хатолик сабаби кўрсатилмаган.",
     fltIssues: "Муаммолар", sumDone: "бажарилди", sumFailed: "бажарилмади",
     ovTitle: "Админ баҳоси", ovDone: "Бажарилди", ovFail: "Бажарилмади",
@@ -593,6 +596,7 @@ const TXT = {
     regGlobalN: "По всей платформе в очереди {n} подтверждений",
     notAsked: "Не задавалась", submittedAt: "Отправлено",
     details: "Детали", missed: "задач пропущено", modalTitle: "Детали отчёта",
+    showMoreN: "Показать ещё {n}", showMoreLeft: "осталось {n}",
     noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
     fltIssues: "Проблемы", sumDone: "выполнено", sumFailed: "не выполнено",
     ovTitle: "Оценка админа", ovDone: "Выполнено", ovFail: "Не выполнено",
@@ -770,6 +774,7 @@ const TXT = {
     regGlobalN: "{n} proofs queued platform-wide",
     notAsked: "Not asked", submittedAt: "Submitted",
     details: "Details", missed: "tasks missed", modalTitle: "Submission Details",
+    showMoreN: "Show {n} more", showMoreLeft: "{n} left",
     noIssues: "No issues reported.", noReason: "No reason provided for failure.",
     fltIssues: "Issues", sumDone: "done", sumFailed: "failed",
     ovTitle: "Admin ruling", ovDone: "Done", ovFail: "Not done",
@@ -1222,6 +1227,19 @@ const initialSurname = (s) => {
   return `${parts[0][0].toUpperCase()}. ${parts.slice(1).join(" ")}`;
 };
 
+// «Surname Given» — the first two words, the patronymic dropped. What a phone
+// row has room for and still identifies a person by: «Ortiqova Mohlaroyim»,
+// where «O. Mohlaroyim Ziodullo Qizi» spends its width on the least useful half
+// and «Ortiqova M. Z. Q.» on initials. The full name stays on the tooltip.
+// «Ortiqova Mohlaroyim Ziodullo Qizi» → «Ortiqova M.»: the day calendar's name
+// column on a phone, where the surname is what tells two rows apart.
+const surnameInitial = (s) => {
+  const parts = String(s ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || String(s ?? "");
+  return `${parts[0]} ${parts[1][0].toUpperCase()}.`;
+};
+const twoWords = (s) => String(s ?? "").trim().split(/\s+/).filter(Boolean).slice(0, 2).join(" ");
+
 // Shrinks a single-line label to fit its container between `max` and `min` px.
 // If even `min` overflows, it swaps in the shorter `short` text and re-fits — so
 // the full name shows whenever it can, and only the worst cases get abbreviated.
@@ -1356,32 +1374,52 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
   // `fit` cards hold a person's name: soften the casing, then auto-shrink it to
   // the card width (abbreviating to "Surname G." only if it still won't fit).
   const fitFull = fit ? titleCaseShout(value) : value;
+  const pill = !loading && badge != null && (
+    <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded-md flex-shrink-0 leading-none"
+      style={{ background: hexA(badgeColor, 0.15), color: badgeColor }}>{badge}</span>
+  );
+  // A column, so the value can sit on the card's FLOOR (`mt-auto`): two cards
+  // in one grid row stretch to one height, and their numbers line up even when
+  // one label runs to a second line on a phone and the other does not.
   return (
-    <div className="relative rounded-2xl p-4 overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div className="relative rounded-2xl p-3.5 sm:p-4 overflow-hidden h-full flex flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       {accent && <div className="absolute inset-x-0 top-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />}
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <span className="text-[10px] uppercase tracking-wider font-semibold truncate" style={{ color: "var(--text-3)" }}>{label}</span>
+      <div className="flex items-start justify-between gap-2 mb-3">
+        {/* Two lines, never an ellipsis: at half a phone's width «O'RTACHA
+            MUVAFFAQIYAT» read «O'RTACHA MUVA…», which names nothing. */}
+        <span className="text-[10px] uppercase tracking-wider font-semibold leading-[1.3] line-clamp-2 min-w-0 pt-1" style={{ color: "var(--text-3)" }}>{label}</span>
         <span title={tip} className="grid place-items-center w-6 h-6 rounded-lg flex-shrink-0 cursor-help"
           style={{ background: accent ? hexA(accent, 0.14) : "var(--bg-inner)", color: accent || "var(--brand-text)" }}>
           {Icon && <Icon size={13} />}
         </span>
       </div>
-      <div className="flex items-end justify-between gap-2 min-w-0">
-        {loading ? (
-          // While the fetch is in flight the value is unknown, not missing — a
-          // pulsing block says "coming", where a static "—" says "nothing here".
-          <SkeletonBlock className="h-6 w-20" />
-        ) : fit ? (
-          <FitText full={fitFull} short={abbrevName(fitFull)} className="flex-1"
+      {loading ? (
+        // While the fetch is in flight the value is unknown, not missing — a
+        // pulsing block says "coming", where a static "—" says "nothing here".
+        <SkeletonBlock className="h-6 w-20 mt-auto" />
+      ) : fit ? (
+        // A NAME and its score. Side by side the name had half a phone card
+        // left to it, FitText bottomed out at its 13px floor and the name ran
+        // on under the badge («Akramov D. A. O.» printed through «48%»).
+        // Below sm the badge takes its own line; from sm the card is wide
+        // enough for the two to share one.
+        //
+        // And on a phone the name is not SHRUNK to fit either: two cards side by
+        // side came out at two different sizes (22px beside 16px), which reads
+        // as two different kinds of figure. One size, up to two lines, whole.
+        <div className="mt-auto flex flex-col items-start gap-1.5 sm:flex-row sm:items-end sm:justify-between sm:gap-2 min-w-0">
+          <span className="sm:hidden text-base font-bold leading-snug line-clamp-2 break-words w-full"
+            style={{ color: valueColor || "var(--text-1)" }}>{fitFull}</span>
+          <FitText full={fitFull} short={abbrevName(fitFull)} className="hidden sm:block sm:flex-1"
             style={{ color: valueColor || "var(--text-1)" }} />
-        ) : (
+          {pill}
+        </div>
+      ) : (
+        <div className="mt-auto flex items-end justify-between gap-2 min-w-0">
           <span className="text-2xl font-bold tabular-nums leading-none truncate" style={{ color: valueColor || "var(--text-1)" }}>{value}</span>
-        )}
-        {!loading && badge != null && (
-          <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded-md flex-shrink-0 leading-none"
-            style={{ background: hexA(badgeColor, 0.15), color: badgeColor }}>{badge}</span>
-        )}
-      </div>
+          {pill}
+        </div>
+      )}
     </div>
   );
 }
@@ -1902,7 +1940,8 @@ function StandCard({ e, worst, metric, T, name, sup, cuts, trend, shift }) {
 const HM_BASIS_DAYS = 14;   // columns that fill the width before it scrolls
 const HM_CELL_W     = 42;   // fleet CELL_W — the floor on narrow screens
 const HM_LABEL_W    = 152;  // sized for "12  N. Nurbek" — no avatar, no surname
-const HM_LABEL_W_SM = 104;  // narrow containers give the grid back some room
+const HM_LABEL_W_SM = 124;  // narrow containers: «Ortiqova M.» must still fit
+const HM_CELL_W_SM  = 26;   // a phone's floor — seven days fit beside the names
 const HM_ROW_H      = 28;
 const HM_ROWS_OPEN  = 15;   // rows per page — the grid pages instead of scrolling
 const HM_HEAD_H     = 30;
@@ -1951,7 +1990,7 @@ function HmLegend({ T, hasVoid, hasExcl }) {
  * page around the grid would walk all of them. */
 const HmRow = memo(function HmRow({
   rowKey, name, place, days, excluded, dates, dataMax, cellW, labelW, padCount,
-  sel, dim, selDate, hoverRow, hoverDate, onEnter, onLeave, onPick, T,
+  sel, dim, selDate, hoverRow, hoverDate, onEnter, onLeave, onPick, T, narrow,
 }) {
   const live = !sel && !dim && selDate == null;   // hover only reads when nothing is isolated
   return (
@@ -1968,14 +2007,18 @@ const HmRow = memo(function HmRow({
           opacity: dim ? 0.35 : 1, cursor: "pointer", userSelect: "none",
           transition: "opacity .1s",
         }}>
-        <span className="flex items-center gap-2.5 pl-3 pr-2 min-w-0" title={name}>
+        <span className={`flex items-center min-w-0 ${narrow ? "gap-1.5 pl-2 pr-1.5" : "gap-2.5 pl-3 pr-2"}`} title={name}>
           <span className="text-[11px] tabular-nums flex-shrink-0 w-[20px] text-right"
             style={{ color: "var(--text-4)" }}>{place}</span>
+          {/* A phone's name column holds ~75px of text: «O. Mohlaroyim
+              Ziodullo Qizi» came out «O. Moh…», which identifies nobody. The
+              SURNAME and an initial do — the ranking right above leads with
+              the surname too. */}
           <span className="truncate text-[12.5px]"
             style={{
               color: sel || hoverRow ? "var(--text-1)" : "var(--text-2)",
               fontWeight: sel ? 700 : 500,
-            }}>{initialSurname(name)}</span>
+            }}>{narrow ? surnameInitial(name) : initialSurname(name)}</span>
         </span>
       </td>
 
@@ -2044,16 +2087,35 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
     return () => ro.disconnect();
   }, []);
 
-  const labelW = containerW && containerW < 560 ? HM_LABEL_W_SM : HM_LABEL_W;
+  const narrow = containerW > 0 && containerW < 560;
+  // On a phone the name column takes whatever the days leave it at a 28px
+  // cell (within 124–170px): a week is ~154px of names, enough for
+  // «Abdumalikova Z.», where a fixed 124px cut it to «Abdumaliko…».
+  const labelW = narrow
+    ? Math.max(HM_LABEL_W_SM, Math.min(170, containerW - dates.length * 28))
+    : HM_LABEL_W;
   // Fleet sizing: the column width follows the container and BASIS_DAYS alone,
   // never the number of days picked, so cells keep their size as you change the
   // range — a fortnight fills the card, a week fills it with seven blanks on the
   // end, a month runs past the edge and scrolls.
+  //
+  // A PHONE is the exception. Fourteen 42px columns beside the names is 740px
+  // of grid in a 350px card: a week showed four of its days and then a sideways
+  // scroll into seven blank padding columns. There the basis is the days
+  // themselves (or as many 42px columns as fit, whichever is more), so a week
+  // fills the card exactly and only a longer window scrolls — at 26px cells,
+  // where a finger can still land on one.
+  const basis = narrow
+    ? Math.max(dates.length, Math.floor((containerW - labelW) / HM_CELL_W))
+    : HM_BASIS_DAYS;
   const cellW = containerW > 0
-    ? Math.max(HM_CELL_W, Math.floor((containerW - labelW) / HM_BASIS_DAYS))
+    ? Math.max(narrow ? HM_CELL_W_SM : HM_CELL_W, Math.floor((containerW - labelW) / basis))
     : HM_CELL_W;
-  const padCount = Math.max(0, HM_BASIS_DAYS - dates.length);
-  const tableWidth = labelW + Math.max(HM_BASIS_DAYS, dates.length) * cellW;
+  const padCount = Math.max(0, basis - dates.length);
+  const tableWidth = labelW + Math.max(basis, dates.length) * cellW;
+  // «05/09» needs ~38px of header; narrower columns print the day alone — the
+  // card's subtitle already names the month span.
+  const dayOnly = cellW < 40;
 
   const selDate = selection?.type === "date" ? selection.value : null;
 
@@ -2067,7 +2129,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
             <th style={{
               ...HM_TH, left: 0, zIndex: 7,
               width: labelW, minWidth: labelW,
-              height: HM_HEAD_H, textAlign: "left", paddingLeft: 12,
+              height: HM_HEAD_H, textAlign: "left", paddingLeft: narrow ? 8 : 12,
               borderRight: "2px solid var(--border-md)",
             }}>{nameHead}</th>
 
@@ -2084,7 +2146,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
                     opacity: selDate != null && !isSel ? 0.45 : 1,
                     transition: "opacity .1s",
                   }}>
-                  <span className="tabular-nums">{ddmm(d)}</span>
+                  <span className="tabular-nums">{dayOnly ? d.slice(8, 10) : ddmm(d)}</span>
                   {isSel && <span style={{ display: "block", height: 2, borderRadius: 1, background: "#fff", marginTop: 3 }} />}
                 </th>
               );
@@ -2106,7 +2168,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
                 dim={rowSel && selection.value !== e.name}
                 selDate={selDate}
                 hoverRow={hover?.name === e.name} hoverDate={hover?.date ?? null}
-                onEnter={onEnter} onLeave={onLeave} onPick={onPick} T={T} />
+                onEnter={onEnter} onLeave={onLeave} onPick={onPick} T={T} narrow={narrow} />
             );
           })}
         </tbody>
@@ -3388,6 +3450,13 @@ export default function Leaders() {
   // (an exclusion must stay visible; a non-submission has nothing to show).
   const regRows = useMemo(() => filtered.filter((r) => !r.missing), [filtered]);
 
+  // Phone register: cards are revealed REP_STEP at a time instead of living
+  // in a 480px inner scroller — a scroll box inside a scrolling page is where
+  // a thumb that meant to move the page gets caught moving a list. A new
+  // search, band or filter starts from the top again.
+  const REP_STEP = 20;
+  const [repShown, setRepShown] = useState(REP_STEP);
+
   // table rows: search + score-band filter, then sortable columns
   const displayRows = useMemo(() => {
     const q = tSearch.trim().toLowerCase();
@@ -3439,6 +3508,12 @@ export default function Leaders() {
     });
     return arr;
   }, [regRows, tSearch, tBand, effVerify, tSort, tl]);
+  // A different question starts the phone list from its top again. Keyed on
+  // the INPUTS rather than on `displayRows`, which a background refetch
+  // re-creates too — that would snap an operator twenty cards deep back to
+  // the first page every time they came back to the tab.
+  useEffect(() => { setRepShown(REP_STEP); },
+    [tSearch, tBand, effVerify, tSort, startDate, endDate, effShift, effSup, effLeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What the rows ON SCREEN contain — the register's summary strip.
   //
@@ -3569,7 +3644,7 @@ export default function Leaders() {
           {canRefresh && tab === "monitor" && (
             <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
               aria-label={T.refresh} title={T.refresh}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 h-[38px] min-w-[38px] px-3 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
               style={justSynced
                 ? { background: hexA(C_GOOD, 0.15), border: `1px solid ${hexA(C_GOOD, 0.35)}`, color: C_GOOD }
                 : { background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: refreshMut.isPending ? 0.6 : 1 }}>
@@ -3639,7 +3714,7 @@ export default function Leaders() {
         />
       )}
       {(!isLeader) && (
-        <FilterPanel
+        <FilterPanel chipsWrap
           sections={[
             // Shift — hidden for supervisors (locked to their unit/shift).
             ...(!isSupervisor ? [{
@@ -4006,7 +4081,7 @@ export default function Leaders() {
           </div>
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={BarChart3} title={T.taskTitle}
-              right={<button onClick={() => setTab("tasks")} className="p-1 rounded transition-colors hover:bg-white/10" title={T.taskInfoTitle} aria-label={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={15} /></button>} />
+              right={<button onClick={() => setTab("tasks")} className="-my-2 w-9 h-9 grid place-items-center rounded-lg transition-colors hover:bg-white/10" title={T.taskInfoTitle} aria-label={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={16} /></button>} />
             <div className="px-3 pb-3 pt-1 apx-bare-tip"><ReactApexChart type="bar" series={[{ name: "%", data: chartTasks.map((t) => t.rate) }]} options={taskOptions} height={260} /></div>
           </div>
         </div>
@@ -4030,14 +4105,15 @@ export default function Leaders() {
           <div className="flex flex-wrap items-center gap-2 px-3 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
             <SegmentedToggle value={standMetric} onChange={setStandMetric}
               options={[["rating", T.standRating], ["consist", T.standConsist]]} />
-            <button onClick={() => setStandInfo(true)} title={T.standInfo}
-              className="p-1 rounded transition-colors hover:bg-white/10" style={{ color: "var(--brand-text)" }}>
-              <Info size={15} />
+            {/* 36px targets: these were 23px glyph buttons, a miss on a phone. */}
+            <button onClick={() => setStandInfo(true)} title={T.standInfo} aria-label={T.standInfo}
+              className="w-9 h-9 grid place-items-center rounded-lg transition-colors hover:bg-white/10" style={{ color: "var(--brand-text)" }}>
+              <Info size={16} />
             </button>
             {canEditTiers && (
-              <button onClick={() => setTierEdit(tierCuts)} title={T.tierEdit}
-                className="p-1 rounded transition-colors hover:bg-white/10" style={{ color: "var(--text-3)" }}>
-                <SlidersHorizontal size={15} />
+              <button onClick={() => setTierEdit(tierCuts)} title={T.tierEdit} aria-label={T.tierEdit}
+                className="w-9 h-9 grid place-items-center rounded-lg transition-colors hover:bg-white/10" style={{ color: "var(--text-3)" }}>
+                <SlidersHorizontal size={16} />
               </button>
             )}
             {standings.winFrom && (
@@ -4060,7 +4136,70 @@ export default function Leaders() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
+          {/* ── phone: a ranked LIST ─────────────────────────────────────────
+              The table is eight columns, and at 384px it showed three of them:
+              place, a name wrapped over three lines, a brigadir over two — and
+              the SCORE the list is ranked by sat off-screen behind a sideways
+              scroll. A row here leads with the person and that score, then the
+              facts that qualify it on one wrapping line. Same rows, same order,
+              same pager as the table. */}
+          <ol className="sm:hidden divide-y divide-[var(--border)]" aria-label={effStandMode === "leader" ? T.standing : T.supStanding}>
+            {standPageRows.map((e) => {
+              const ranked = standMetric === "consist" ? e.consist : e.rating;
+              const other = standMetric === "consist" ? e.rating : e.consist;
+              const sup = effStandMode === "leader" && !isSupervisor && leaderSup[e.name] ? nm(leaderSup[e.name]) : null;
+              return (
+                <li key={e.name} className="px-3 py-2.5 flex items-start gap-2.5">
+                  <span className="w-6 flex-shrink-0 text-right text-[13px] font-semibold tabular-nums pt-[5px]"
+                    style={{ color: "var(--text-3)" }}>{e.place}</span>
+                  <Avatar name={nm(e.name)} size={30} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[14px] font-semibold leading-snug truncate"
+                            style={{ color: "var(--text-1)" }} title={nm(e.name)}>{twoWords(nm(e.name))}</span>
+                          {showShiftChips && <ShiftChip shift={shiftOf.get(e.name)} T={T} />}
+                        </div>
+                        {sup && (
+                          <div className="mt-0.5 flex items-center gap-1 min-w-0 text-[12px] leading-tight"
+                            title={`${T.supervisor}: ${sup}`} style={{ color: "var(--text-3)" }}>
+                            <ShieldCheck size={11} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+                            <span className="truncate">{twoWords(sup)}</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* The ranked figure and the grade cut from it, stacked:
+                          the pair the row is ordered by, read in one glance. */}
+                      <div className="flex-shrink-0 flex flex-col items-end gap-1"
+                        title={standMetric === "consist" ? T.standConsist : T.standRating}>
+                        <span className="text-[16px] font-bold tabular-nums leading-none" style={{ color: scoreColor(ranked) }}>
+                          {ranked}%
+                        </span>
+                        <TierChip value={ranked} T={T} cuts={tierCuts} place={e.place} />
+                      </div>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[11.5px]" style={{ color: "var(--text-3)" }}>
+                      <DeltaChip trend={standTrend} e={e} T={T} />
+                      <span className="inline-flex items-center gap-1 tabular-nums"
+                        title={`${T.daysSent}: ${e.sent} · ${T.daysMissed}: ${e.missed}`}>
+                        <CalendarCheck size={12} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+                        <span><b style={{ color: "var(--text-1)" }}>{e.sent}</b>/{daysTotal(e)}</span>
+                      </span>
+                      <span className="tabular-nums">
+                        {standMetric === "consist" ? T.standRating : T.standConsist} <b style={{ color: "var(--text-1)" }}>{other}%</b>
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+            {!standRows.length && (
+              <li className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>{T.noMatch}</li>
+            )}
+          </ol>
+
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -4360,49 +4499,77 @@ export default function Leaders() {
               </table>
             </div>
 
-            {/* mobile: stacked cards */}
-            <div className="sm:hidden overflow-y-auto" style={{ maxHeight: 480 }}>
-              {displayRows.map((r, i) => (
-                <div key={r.uid} className="p-3 flex flex-col gap-2" style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
-                      {nm(r.leader)}
-                      {" "}<ExclChip row={r} T={T} />
-                      {" "}<VerifyChip row={r} T={T} />
-                      {aiOn && r.ai?.open ? <> <AiChip n={r.ai.open} T={T} /></> : null}
-                    </span>
-                    <span title={r.missing ? T.exclNone : undefined}
-                      className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0"
-                      style={{ background: r.excluded || r.rejected ? C_FLAT : scoreColor(r.completion) }}>
-                      {r.missing ? "—" : `${Math.round(r.completion)}%`}
-                    </span>
-                  </div>
-                  {supName(r.supervisor) && (
-                    <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
-                      <ShieldCheck size={11} />
-                      <span>{nm(r.supervisor)}</span>
+            {/* mobile: stacked cards — each one the door into its report */}
+            <div className="sm:hidden">
+              {displayRows.slice(0, repShown).map((r, i) => {
+                const body = (
+                  <>
+                    <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
+                          {nm(r.leader)}
+                          {" "}<ExclChip row={r} T={T} />
+                          {" "}<VerifyChip row={r} T={T} />
+                          {aiOn && r.ai?.open ? <> <AiChip n={r.ai.open} T={T} /></> : null}
+                        </span>
+                        <span title={r.missing ? T.exclNone : undefined}
+                          className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0"
+                          style={{ background: r.excluded || r.rejected ? C_FLAT : scoreColor(r.completion) }}>
+                          {r.missing ? "—" : `${Math.round(r.completion)}%`}
+                        </span>
+                      </div>
+                      {supName(r.supervisor) && (
+                        <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
+                          <ShieldCheck size={11} className="flex-shrink-0" />
+                          <span className="truncate">{nm(r.supervisor)}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between gap-x-3 gap-y-1 flex-wrap text-xs">
+                        <span className="inline-flex items-center flex-wrap gap-1.5" style={{ color: "var(--text-4)" }}>
+                          <span>{fmtDate(r.date, lang)}</span>
+                          {(r.submitted_at || r.late_state) && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <Clock size={11} />
+                              <span className="tabular-nums">{r.submitted_at ? hhmm(r.submitted_at) : "—"}</span>
+                              {r._late > 0 && <LateChip days={r._late} T={T} />}
+                              <DayFlag row={r} T={T} />
+                            </>
+                          )}
+                        </span>
+                        <span style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</span>
+                      </div>
                     </div>
-                  )}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</span>
-                    <span className="text-xs" style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</span>
-                  </div>
-                  {(r.submitted_at || r.late_state) && (
-                    <div className="flex items-center flex-wrap gap-1.5 text-xs" style={{ color: "var(--text-4)" }}>
-                      <Clock size={11} />
-                      <span className="tabular-nums">{r.submitted_at ? hhmm(r.submitted_at) : "—"}</span>
-                      {r._late > 0 && <LateChip days={r._late} T={T} />}
-                      <DayFlag row={r} T={T} />
-                    </div>
-                  )}
-                  {!r.missing && (
-                    <button onClick={() => openDetail(r)} className="w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-                      style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
-                      {T.details}
-                    </button>
-                  )}
-                </div>
-              ))}
+                    {!r.missing && (
+                      <ChevronRight size={16} className="flex-shrink-0 self-center" style={{ color: "var(--text-4)" }} />
+                    )}
+                  </>
+                );
+                const edge = i ? { borderTop: "1px solid var(--border)" } : undefined;
+                // Nothing was filed, so there is no report to open — and a
+                // card that looks like a door and 404s is worse than no door.
+                return r.missing ? (
+                  <div key={r.uid} className="p-3 flex gap-2" style={edge}>{body}</div>
+                ) : (
+                  <button key={r.uid} type="button" onClick={() => openDetail(r)}
+                    aria-label={`${T.details}: ${nm(r.leader)} · ${fmtDate(r.date, lang)}`}
+                    className="w-full text-left p-3 flex gap-2 transition-colors hover:bg-[var(--bg-inner)] active:bg-[var(--bg-inner)] focus-visible:outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--brand-ring)]"
+                    style={edge}>
+                    {body}
+                  </button>
+                );
+              })}
+              {displayRows.length > repShown && (
+                <button type="button" onClick={() => setRepShown((n) => n + REP_STEP)}
+                  className="w-full min-h-[48px] px-3 py-3 flex items-center justify-center gap-2 text-[13px] font-semibold transition-colors hover:bg-[var(--bg-inner)]"
+                  style={{ borderTop: "1px solid var(--border)", color: "var(--brand-text)" }}>
+                  <ChevronDown size={15} />
+                  {T.showMoreN.replace("{n}", Math.min(REP_STEP, displayRows.length - repShown))}
+                  <span className="font-normal" style={{ color: "var(--text-4)" }}>
+                    · {T.showMoreLeft.replace("{n}", (displayRows.length - repShown).toLocaleString())}
+                  </span>
+                </button>
+              )}
             </div>
           </>)}
         </div>

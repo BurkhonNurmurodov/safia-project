@@ -36,9 +36,12 @@ export default function Pagination({ page, pageCount, total, pageSize, onPage })
       <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
         {from}–{to} {t("pager.of")} {total.toLocaleString("ru-RU")}
       </span>
-      <div className="flex items-center gap-1">
+      {/* Below sm every button is a 36px square: the 26px desktop buttons
+          were the smallest targets on a phone page, and a pager is pressed
+          with a thumb, several times in a row. */}
+      <div className="flex items-center gap-1 max-sm:gap-1.5">
         <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => onPage(page - 1)}
-          aria-label={t("pager.prev")}>
+          aria-label={t("pager.prev")} className="max-sm:h-9 max-sm:min-w-9">
           <ChevronLeft size={14} />
         </Button>
         {nums.map((n, i) =>
@@ -46,13 +49,14 @@ export default function Pagination({ page, pageCount, total, pageSize, onPage })
             <span key={`gap-${i}`} className="px-1 text-[11px]" style={{ color: "var(--text-4)" }}>…</span>
           ) : (
             <Button key={n} size="sm" variant={n === page ? "primary" : "ghost"} onClick={() => onPage(n)}
-              className="tabular-nums min-w-[30px] justify-center">
+              aria-current={n === page ? "page" : undefined}
+              className="tabular-nums min-w-[30px] justify-center max-sm:h-9 max-sm:min-w-9">
               {n}
             </Button>
           )
         )}
         <Button size="sm" variant="ghost" disabled={page >= pageCount} onClick={() => onPage(page + 1)}
-          aria-label={t("pager.next")}>
+          aria-label={t("pager.next")} className="max-sm:h-9 max-sm:min-w-9">
           <ChevronRight size={14} />
         </Button>
       </div>

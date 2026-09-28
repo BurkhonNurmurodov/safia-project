@@ -89,19 +89,26 @@ export default function SegmentedToggle({
   // Keep the selected segment visible. Deliberately manual scrollLeft rather
   // than scrollIntoView: the latter also scrolls ANCESTORS, so on mount it
   // yanks the whole page down to the toggle.
-  useLayoutEffect(() => {
+  //
+  // Clear of the FADE, not merely of the edge: the fades below are 32px wide,
+  // so a segment parked 12px from the edge sat half under one and read as
+  // clipped — the state the scroller exists to prevent.
+  const revealActive = () => {
     const track = trackRef.current;
     const btn = activeRef.current;
-    if (!track || !btn) return;
-    const pad = 12;
+    if (!track || !btn || track.scrollWidth <= track.clientWidth) return;
+    const pad = 36;
     const bLeft = btn.offsetLeft;
     const bRight = bLeft + btn.offsetWidth;
     const vLeft = track.scrollLeft;
     const vRight = vLeft + track.clientWidth;
     if (bLeft < vLeft + pad) track.scrollLeft = Math.max(0, bLeft - pad);
     else if (bRight > vRight - pad) track.scrollLeft = bRight - track.clientWidth + pad;
+  };
+  useLayoutEffect(() => {
+    revealActive();
     syncEdges();
-  }, [value, items.length]);
+  }, [value, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     syncEdges();
@@ -114,17 +121,24 @@ export default function SegmentedToggle({
     // a filter dropdown opening, a card resizing, a modal switching tabs — and
     // the fades have to follow, or an overflowing track shows no hint that it
     // scrolls until the next resize.
+    //
+    // The SEGMENTS are watched too. Labels grow after mount — a count badge
+    // arriving with its query («AI tekshiruvi 5571»), the web font swapping
+    // in — and every segment before the selected one pushes it further right
+    // with nothing re-running the reveal above, so a tab opened from a saved
+    // state landed half off-screen behind the fade.
     let ro;
     if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(onScroll);
+      ro = new ResizeObserver(() => { revealActive(); syncEdges(); });
       ro.observe(el);
+      for (const b of btnRefs.current) if (b) ro.observe(b);
     }
     return () => {
       el.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
       ro?.disconnect();
     };
-  }, [items.length]);
+  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enabledIdx = items.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
 

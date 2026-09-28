@@ -175,16 +175,22 @@ function Fact({ icon: Icon, children, tone = "neutral", title }) {
   );
 }
 
-function Tile({ icon: Icon, label, value, sub }) {
+// Labels and values WRAP instead of ending in «…»: on a phone the three tiles
+// read «VAZIFA… · JAMI O… · HISOBO… 17:00 – …», which answered none of the
+// three questions they exist for. The grid below also gives the filing window
+// a full row there (see the tile grid in TaskRequirements).
+function Tile({ icon: Icon, label, value, sub, className = "" }) {
   return (
-    <div className="rounded-xl px-3 py-2 min-w-0"
+    <div className={`rounded-xl px-3 py-2 min-w-0 flex flex-col ${className}`}
       style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold"
+      <div className="flex items-start gap-1.5 text-[11px] uppercase tracking-wide font-semibold leading-tight"
         style={{ color: "var(--text-3)" }}>
-        <Icon size={12} className="flex-shrink-0" /> <span className="truncate">{label}</span>
+        <Icon size={12} className="flex-shrink-0 mt-px" /> <span className="min-w-0 break-words">{label}</span>
       </div>
-      <div className="mt-0.5 text-sm font-semibold tabular-nums truncate" style={{ color: "var(--text-1)" }}>{value}</div>
-      {sub && <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>{sub}</div>}
+      <div className="mt-auto pt-1 text-sm font-semibold tabular-nums leading-snug break-words" style={{ color: "var(--text-1)" }}>
+        {value}
+        {sub && <span className="ml-1.5 text-[11px] font-normal" style={{ color: "var(--text-3)" }}>{sub}</span>}
+      </div>
     </div>
   );
 }
@@ -236,10 +242,13 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>{name}</h3>
-          <div className="mt-0.5 flex items-center gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
-            {isAuto ? <Cog size={12} className="flex-shrink-0" />
-              : <Camera size={12} className="flex-shrink-0" />}
-            <span className="truncate">
+          <div className="mt-0.5 flex items-start gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
+            {isAuto ? <Cog size={12} className="flex-shrink-0 mt-[2px]" />
+              : <Camera size={12} className="flex-shrink-0 mt-[2px]" />}
+            {/* Wraps rather than truncating: the proof note and the photo
+                minimum are the two facts a leader needs, and on a phone the
+                ellipsis landed exactly on «kamida 3 ta rasm». */}
+            <span className="min-w-0 break-words leading-snug">
               {/* An AUTOMATIC task has no photos and no photo minimum, so it
                   must not print one: `min_media` is still resolved down the
                   chain for it and still reads 1 or 3, which would tell a leader
@@ -252,29 +261,32 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
               )}
             </span>
           </div>
-          {/* WHERE this task is answered. Stated first, and as a sentence
-              rather than a chip in the row of facts below: a leader who expects
-              to send a file to the chat and finds the bot refusing it has been
-              left to guess, and that is a support call, not a misunderstanding
-              they can resolve alone. */}
-          {isAuto && (
-            <div className="mt-1.5 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[11px] leading-snug"
-              style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",
-                       border: "1px solid rgba(200,151,63,0.30)" }}>
-              <Cog size={12} className="flex-shrink-0 mt-px" style={{ color: "var(--brand)" }} />
-              <span>{T.inAuto}</span>
-            </div>
-          )}
-          {task.proof_kind === "camera" && (
-            <div className="mt-1.5 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[11px] leading-snug"
-              style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",
-                       border: "1px solid rgba(200,151,63,0.30)" }}>
-              <Camera size={12} className="flex-shrink-0 mt-px" style={{ color: "var(--brand)" }} />
-              <span>{T.inApp}</span>
-            </div>
-          )}
         </div>
       </header>
+
+      {/* WHERE this task is answered. Stated first, and as a sentence
+          rather than a chip in the row of facts below: a leader who expects
+          to send a file to the chat and finds the bot refusing it has been
+          left to guess, and that is a support call, not a misunderstanding
+          they can resolve alone. Full card width, not tucked under the title
+          beside the «T2» chip — on a phone that column was 60px narrower and
+          stretched a three-line sentence to six. */}
+      {isAuto && (
+        <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-snug"
+          style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",
+                   border: "1px solid rgba(200,151,63,0.30)" }}>
+          <Cog size={13} className="flex-shrink-0 mt-px" style={{ color: "var(--brand)" }} />
+          <span>{T.inAuto}</span>
+        </div>
+      )}
+      {task.proof_kind === "camera" && (
+        <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-snug"
+          style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",
+                   border: "1px solid rgba(200,151,63,0.30)" }}>
+          <Camera size={13} className="flex-shrink-0 mt-px" style={{ color: "var(--brand)" }} />
+          <span>{T.inApp}</span>
+        </div>
+      )}
 
       {description && (
         <div>
@@ -413,8 +425,8 @@ export default function TaskRequirements({
           {isLoading ? (
             <>
               <SkeletonBlock className="h-4 w-2/3" />
-              <div className="grid grid-cols-3 gap-2">
-                <SkeletonBlock className="h-14 rounded-xl" /><SkeletonBlock className="h-14 rounded-xl" /><SkeletonBlock className="h-14 rounded-xl" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <SkeletonBlock className="h-14 rounded-xl" /><SkeletonBlock className="h-14 rounded-xl" /><SkeletonBlock className="h-14 rounded-xl col-span-2 sm:col-span-1" />
               </div>
             </>
           ) : isError ? (
@@ -427,12 +439,15 @@ export default function TaskRequirements({
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2 text-sm font-medium min-w-0" style={{ color: "var(--text-1)" }}>
+              <div className="flex items-start gap-2 text-sm font-medium min-w-0" style={{ color: "var(--text-1)" }}>
                 <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0"
                   style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}>
                   <SubjectIcon size={14} />
                 </span>
-                <span className="truncate">{subject}</span>
+                {/* Wraps: «Akramov Dilshodbek Asliddin O'gli · Ka…» cut the
+                    brigada and the shift — the two facts that say whose rules
+                    these are. */}
+                <span className="min-w-0 break-words leading-snug pt-1">{subject}</span>
               </div>
               {(leaderUnresolved || (canPick && data?.level === "global")) && (
                 <p className="text-xs flex items-start gap-1.5" style={{ color: "var(--text-3)" }}>
@@ -440,10 +455,13 @@ export default function TaskRequirements({
                   <span>{leaderUnresolved ? T.leaderUnresolved : T.pickHint}</span>
                 </p>
               )}
-              <div className="grid grid-cols-3 gap-2">
+              {/* Two and one on a phone: a third of 350px cannot hold «HISOBOT
+                  TOPSHIRISH 17:00 – 09:00 ertalab», and the filing window is
+                  the tile a leader reads the clock off. */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <Tile icon={ListChecks} label={T.tileTasks} value={tasks.length} />
                 <Tile icon={Scale} label={T.tileWeight} value={fill(T.pts, { n: total })} />
-                <Tile icon={AlarmClock} label={T.tileFiling}
+                <Tile icon={AlarmClock} label={T.tileFiling} className="col-span-2 sm:col-span-1"
                   value={fill(T.filingRange, { from: filing.from || "—", to: filingTo || "—" })}
                   sub={filing.overnight ? T.nextMorning : null} />
               </div>

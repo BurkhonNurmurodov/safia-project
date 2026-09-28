@@ -173,9 +173,6 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
                     / {running.outOf}
                   </span>
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: "var(--text-4)" }}>
-                  {put(T.runningNote, { total: running.total })}
-                </p>
               </div>
             ) : (
               <div>
@@ -191,6 +188,15 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
               {put(T.submittedOf, { n: submitted, total: view.tasks.length })}
             </span>
           </div>
+          {/* Under the row, not inside the score block: at full width the
+              note made that block as wide as the card, which pushed «3 / 13
+              topshirildi» onto a line of its own on every phone and severed it
+              from the number it qualifies. */}
+          {running && (
+            <p className="text-[11px] mt-1.5" style={{ color: "var(--text-4)" }}>
+              {put(T.runningNote, { total: running.total })}
+            </p>
+          )}
 
           {/* One bar, four parts, in the groups' own colours — the page's
               answer to «how is the day going» before anybody reads a row. */}
@@ -214,22 +220,30 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
 
       {next && (
         <button type="button" onClick={() => onOpen(next.id)}
-          className="mt-3 w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-[var(--hover-bg)]"
+          className="mt-3 w-full flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-[var(--hover-bg)]"
           style={{ background: "var(--bg-inner)" }}>
-          <Timer size={16} style={{ color: urgency(next, now).color }} className="flex-shrink-0" />
+          <Timer size={16} style={{ color: urgency(next, now).color }} className="flex-shrink-0 mt-0.5" />
           <span className="min-w-0 flex-1">
-            <span className="block text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-              {T.nextLbl}
-            </span>
-            <span className="block text-[13px] font-semibold truncate" style={{ color: "var(--text-1)" }}>
-              {put(T.nextLine, { id: next.id, time: next.closesAt })}
-              <span className="font-normal" style={{ color: "var(--text-3)" }}>
-                {" · "}{pick(next.name, lang)}
+            {/* The time left rides the label's line, so the task's name below
+                gets the card's whole width instead of what a right-hand
+                countdown leaves of it. */}
+            <span className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+                {T.nextLbl}
+              </span>
+              <span className="text-[12px] font-semibold tabular-nums flex-shrink-0" style={{ color: urgency(next, now).color }}>
+                {leftText(Date.parse(next.dueAt) - now, T)}
               </span>
             </span>
-          </span>
-          <span className="text-[12px] font-semibold tabular-nums flex-shrink-0" style={{ color: urgency(next, now).color }}>
-            {leftText(Date.parse(next.dueAt) - now, T)}
+            <span className="block text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>
+              {put(T.nextLine, { id: next.id, time: next.closesAt })}
+            </span>
+            {/* The task's name on a line of its own: sharing one truncated line
+                with the number and the hour left a phone «№9 · 22:00 · Smen…»,
+                i.e. the one word that says WHICH task cut to four letters. */}
+            <span className="block text-[12px] leading-snug truncate" style={{ color: "var(--text-3)" }}>
+              {pick(next.name, lang)}
+            </span>
           </span>
         </button>
       )}
@@ -494,7 +508,7 @@ export default function Checklist({
   }
   if (waiting || isLoading) {
     return (
-      <div className="grid gap-3 lg:grid-cols-[minmax(280px,340px)_1fr] items-start">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(280px,340px)_1fr] items-start">
         <SkeletonBlock className="w-full rounded-2xl" style={{ height: 196 }} />
         <div className="space-y-3">
           {[0, 1, 2].map((i) => <SkeletonBlock key={i} className="w-full rounded-2xl" style={{ height: 120 }} />)}
@@ -552,7 +566,13 @@ export default function Checklist({
             showUploadLink={false} height="h-56" />
         </div>
       ) : (
-        <div className="grid gap-3 lg:gap-4 lg:grid-cols-[minmax(280px,340px)_1fr] items-start">
+        // `grid-cols-1` below lg is load-bearing: an implicit grid track is
+        // sized `auto`, and `auto` grows to the min-content of whatever sits in
+        // it — the «next deadline» line and the leader's name are nowrap
+        // `truncate` text, so the column took their FULL width and ran off the
+        // right edge of a phone, cutting the score, the counts and every row's
+        // chevron. `minmax(0, 1fr)` caps it at the screen.
+        <div className="grid grid-cols-1 gap-3 lg:gap-4 lg:grid-cols-[minmax(280px,340px)_1fr] items-start">
           <div className="space-y-3 lg:sticky lg:top-3">
             <Summary view={view} counts={counts} T={T} isLeader={isLeader} nm={nm} now={now}
               onOpen={(id) => setSheet({ id, focus: null })} />
