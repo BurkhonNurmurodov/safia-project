@@ -42,10 +42,10 @@ const COMPARISON = {
 };
 
 // The header of every heatmap card on this page. The fleet heatmap passes only
-// the originals and renders exactly as before; the two single-metric heatmaps
-// pass a title, subtitle, formula note and guide heading of their own, and
-// `showMode={false}` — they read ONE number, so there is no Plan/Fact switch to
-// offer, and a toggle that changed nothing would be a control that lies.
+// the originals; the two single-metric heatmaps pass a title, formula note and
+// guide heading of their own, and `showMode={false}` — they read ONE number, so
+// there is no Plan/Fact switch to offer, and a toggle that changed nothing would
+// be a control that lies. All three print the same period line under the title.
 // `onEditBands` opens the card's own colour-band editor; the page passes it to
 // admins only.
 function HeatmapHeader({
@@ -64,7 +64,7 @@ function HeatmapHeader({
               {title || t("zagruzka.fleetHeatmap")}
             </div>
             <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-              {(subtitle || t("zagruzka.finalDays")).replace("{n}", heatmap?.dates?.length ?? 0)}
+              {(subtitle || t("zagruzka.periodDays")).replace("{n}", heatmap?.dates?.length ?? 0)}
             </div>
             {note && (
               <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
@@ -166,7 +166,6 @@ const MetricHeatmapCard = memo(function MetricHeatmapCard({
       fullscreen={isFull}
       onToggleFullscreen={() => setOpenFull(isFull ? null : which)}
       title={title}
-      subtitle={t("zagruzka.periodDays")}
       note={note}
       guideHeading={title}
       showMode={false}
