@@ -309,6 +309,9 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/idle-cell/intervals/{}",               "shopfloor", "idle.interval_edited"),
     (("DELETE",), "/api/idle-cell/intervals/{}",               "shopfloor", "idle.interval_deleted"),
     (("DELETE",), "/api/idle-cell/{}",                         "shopfloor", "idle.entry_deleted"),
+    (("PUT",),    "/api/kelish/mark",                          "attendance", "kelish.mark_set"),
+    (("POST",),   "/api/kelish/workers/remove",                "attendance", "kelish.workers_removed"),
+    (("POST",),   "/api/kelish/workers",                       "attendance", "kelish.worker_added"),
 
     # ── concerns, tasks & comments ────────────────────────────────────────────
     (("POST",),   "/api/concerns/{}/escalate",                 "collab", "concern.escalated"),

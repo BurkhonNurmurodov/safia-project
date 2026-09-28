@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "education", "exam"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "cell-concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "kelish", "education", "exam"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -146,6 +146,11 @@ DEFAULT_PAGE_ACCESS = {
     # (the intended roles are shift-manager first); a shift-manager is locked
     # to their own shift ∩ plant server-side whatever the query string says.
     "live": [],
+    # «Kelish ro'yxati» — the T11 staff list (routers/kelish.py): per cell, who is
+    # coming today and tomorrow. Admin-only until the operator opens it; the
+    # reach for leader (own cells), supervisor (own unit, fills too) and
+    # shift-manager (reads their shift) is already enforced server-side.
+    "kelish": [],
     # «Ta'lim» video lessons (routers/education.py). Open to every role by
     # default, and that is deliberate rather than permissive: the page shows a
     # viewer exactly the lessons an admin ADDRESSED to their profile and nothing

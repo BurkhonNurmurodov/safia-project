@@ -54,6 +54,7 @@ export const PAGES = [
   { tier: "test", key: "idle-cell", route: "/idle-cell", labelKey: "nav.idleCell" },
   { tier: "test", key: "zagruzka-cell", route: "/zagruzka-cell", labelKey: "nav.zagruzkaCell" },
   { tier: "test", key: "live", route: "/live", labelKey: "nav.live" },
+  { key: "kelish", route: "/kelish", labelKey: "nav.kelish" },
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
   { key: "education", route: "/education", labelKey: "nav.education" },
   { key: "exam", route: "/exam", labelKey: "nav.exam" },
@@ -108,6 +109,10 @@ export const DEFAULT_PAGE_ACCESS = {
   // Live shift monitor — the wall screen for shift managers (idle time and
   // plan pace right now). Laboratory, admin-only until the operator opens it.
   live: [],
+  // «Kelish ro'yxati» — the T11 staff list: per cell, who is coming today and
+  // tomorrow. Admin-only until the operator opens it; the reach for leaders,
+  // supervisors and shift-managers is enforced server-side (routers/kelish.py).
+  kelish: [],
   // ARC service-ticket register (synced from the ARC API) — admin-only until
   // a role is enabled from the Access tab.
   arc: [],

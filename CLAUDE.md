@@ -27,7 +27,7 @@ or copy-paste its markup into a page.
 | Text field that exists in all 4 languages | `LangTextInput.jsx` | Never stack one input per language. A `SegmentedToggle` of language tabs (uz · uz_cyrl · ru · en, **ru open by default**) over ONE input for the selected tab. Every language is optional; a blank tab shows the Russian text as its PLACEHOLDER (previewed, never saved) plus the `ui.langInput.ruFallback` hint, because Russian is what the UI falls back to. Tabs stay plain — no filled/empty markers. `placeholderFn(lang)` previews something computed (e.g. a transliteration) instead of the Russian text; `action` puts a per-tab button beside the input — use these to ADOPT the template rather than forking it into stacked inputs. |
 | Time of day (HH:MM) | `TimeField.jsx` | THE clock field. A native `<input type="time">` in the house control skin (`bg-inner`, border, `rounded-xl`, `px-3 py-2 text-sm`) plus a ghost ✕ that clears to `""`. **Blank means INHERIT or UNSET — never midnight**, so a blank field with an `inherit` string renders `ui.timeField.inherits` under it at 11px/`--text-3`: a blank native time input paints "--:--" and states nothing about the value actually in force, which is precisely the value the reader needs. `value`/`onChange` are plain "HH:MM" strings (the handler gets the string, not the event). Pairs of these follow the platform clock convention — Tashkent wall clock, `end <= start` ⇒ the window crosses midnight. Never hand-roll another `<input type="time">`; `TimeWheelPicker.jsx` stays the separate, window-BOUNDED picker (needs `lo`/`hi`, cannot express blank) for entering an event's clock inside a known range. |
 | Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
-| Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
+| Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. `footer` holds actions over the whole list (add / remove rows, a selection's bulk bar) outside the scroll cap, so it stays in view; `headSize="lg"` when the card IS the page's subject and its subtitle must be read. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
 | Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. `size="lg"` titles a whole card rather than labelling a table — a sentence-case 15px title with its `subtitle` under it and a 22px icon (the appeal chat card). |
 | Table pager | `Pagination.jsx` | For registers too long to dump into the DOM (thousands of rows). Sits directly under the `TableCard`: "x–y of N" left, windowed page buttons right, built from `Button`. Renders nothing for a single page. |
 | Column show/hide + reorder | `ColumnsPicker.jsx` | 38px `Columns3` icon trigger on the toolbar's RIGHT edge (`className="ml-auto"`, hidden-count badge) + portaled panel listing every column IN TABLE ORDER — hidden ones stay dimmed in place (eye-off), never regrouped to the bottom. Hide all/Show all links; drag-to-reorder only arms via the panel's reorder button. Controlled: `columns [{key,label,locked}]`, `order`, `hidden`, `onChange({order,hidden})`. Persist via `/api/ui-prefs/{key}` (per-profile JSON blobs, `UiPref` model); reconcile saved keys against the current column catalog and keep identity columns `locked`. `t("cols.*")` keys exist in all 4 langs. Excel exports of a picker-equipped table must mirror it exactly — send the visible keys in on-screen order (`columns`) with the row-id `order`, backend formats keyed per column. (Exception: the Позиции export deliberately emits the fixed brigadir «ABC форма» formula workbook instead of a picker mirror — don't revert it. It reproduces the manual form cell-for-cell: totals row 1, headers row 2, positions row 3+, team block M:O, indicators P:Q; only Трудоемкость/Команда/Факт/ПЛАН, «Группа» (column L, the former spacer, from 2026-09-14) and O. SONI are values, everything else is a live formula so the brigadir's edits recalculate. A work centre whose cells carry GROUP letters also gets an X:Y block («Команда · буква» = «A2894 · A», its O. SONI a yellow value): a grouped line's ЛЮДИ is `VLOOKUP(D&" · "&L,$X:$Y,2,0)`, the team's N becomes `=SUMIFS($Y:$Y,$X:$X,M&" · *")` when the block holds every cell of it and adds up to the page's N (else the page's value), and its Загруженность divides by N. A LEADER's file writes only their own groups' rows, so the minutes of the lines their cut hides ride as constants beside I1, F1 and the team's SUMIFS — the leader's load, bandlik and Парето then equal their page's and the brigadir's file. The block sits clear of every column `pp_parser` reads and its header names no group, so the round trip still finds «Группа» at L; an ungrouped unit's file differs only by the «Группа» header in L2 and L's width — the X:Y block is written only where cells carry letters. Trimmed hard on the operator's call (2026-08-31): the indicator block went from NINE rows to three — «Nechta odam keldi» = `=SUM(N…)`, the people assigned to the cells that day; «Hozirgi odam bilan o`rtacha bandlik(smena boshida)» = `=I1/(keldi×shift_min)`, the same arithmetic as `pp_calc`'s `avg_load` so the file and the page answer with one number; and «Общ.трудаёмкост» = `=I1` — with the other six indicators, the whole «Сколько должна на штатке» block (Z:AA) and the team block's P:W half (Команда · минут · real load · capacity · kerak · Штатка) gone. Everything removed was derived from hand-entered counts nobody fills in, so it printed 0 / 100% on every file. **From 2026-09-16 the block is FIVE rows**: the operator asked for the two of those six that need no hand-entered count back, and they sit under «keldi» in the manual form's own order — «Nechta odam kerak» = `=ROUND(I1/productive_min,0)` and «Bo`sh odam/kerakli odam» = `=keldi−kerak`, which prints RED when negative (short-handed), the one figure in the file carrying a verdict. **kerak divides by the unit's own `pp_productive_min`, NEVER a hard-coded 0.85**: that constant is `pp_calc`'s S per person, the divisor the «Odamlar soni» suggestion `N = ROUND(W×Q/S)` already uses, so the file and the page size a shift by one rule — and its default, 408, IS the manual form's own 0.85 × 480, so an unconfigured unit's file still reproduces the form cell for cell. «bo`sh» divides nothing and so carries no IFERROR: on a day nobody typed O. SONI it reads −kerak, which is what an unfilled form should say. Still out: «kelishi kerak edi» (the штатка row itself) and «% абсетеизм», which divides by it; «% обеспеч» and «Kerakli odam bilan o`rtacha bandlik» were simply not asked for and are computable now that kerak is back, so wanting either is one more entry in that list, not new arithmetic. Consequence: O. SONI (N) loses the `=ROUND(U,0)` chain that fed it and is written as a VALUE — the block's one input, and what ЛЮДИ/Минут/Парето/Загруженность still recalculate off via the M:N VLOOKUP. The page itself (its reconciliation card, its Штатка/capacity columns) is untouched — only the export dropped them. Superseded the older «загрузка» two-shift layout.) See the Production «Позиции» table for the reference wiring (cells rendered by a per-key switch so hide/reorder is free). |
@@ -6625,6 +6625,65 @@ says; a supervisor or leader would see their own unit only).
 - **Grid tiles are deliberately INERT** (no `CellLink`): a dense grid on a
   touch TV must not navigate away from the monitor. The alert feed and the
   unit rows carry the links instead.
+
+## «Kelish ro'yxati» — the T11 staff list (`/kelish`)
+
+From **2026-09-28** (the operator's rulings, asked one by one) checklist task
+#11's staff list — until now an Excel / Google Sheets file screenshotted into
+the bot — lives on the platform: one list per CELL per shift-day, each worker
+marked «Keladi» (green) or «Kelmaydi» (red). `services/kelish.py` computes,
+`routers/kelish.py` decides reach, `pages/Kelish.jsx` draws it. Page key
+`kelish`, in the «Liderlar» nav group, **admin-only until the operator says to
+open it**, and **task #11 is untouched** — nothing here scores anything, and
+the task still wants its screenshot. Both switches are the operator's to throw.
+
+- **WHO is on a list is the ORIGINAL upload** — `attendance_batch_rows`, the
+  Verifix file as uploaded, never `attendance` (which exchanges rewrite): every
+  worker the file filed under the cell in the 30 days before the day shown.
+- **One worker, one list: the cell of their MOST RECENT row.** Verifix itself
+  re-files people — on the 11 Sep copy 105 of 1,487 workers carried two cell
+  codes within 30 days, every row an untouched file row, 86 of them moved once
+  and stayed — and the latest row is the only reading on which nobody stands on
+  two lists. Identity is the folded NAME (`worker_key` over
+  `name_map._name_tokens`): the file carries no employee id.
+- **Only TODAY and TOMORROW are editable**, on the unit's shift-day frame
+  (`live_overview.shift_frame` over `cell_hours.defaults` — the rule `/live`
+  and «Smena hisoboti» run on, so a night that opened at 20:00 is still today at
+  02:00). Earlier days are read-only; later ones are refused (`future`). The
+  server says what the day on screen IS (`when`: running · ended · starts today
+  at HH:MM · starts tomorrow at HH:MM · past), because a night unit's
+  «tomorrow» at 15:00 opens TONIGHT — a bare «Ertaga» would send a leader to the
+  wrong shift.
+- **A tap cycles — → green → red → green.** An unmarked worker is the absence of
+  a `kelish_marks` row, never a third status; a mark never goes back to empty.
+  Each tap saves itself (per-worker request chain, optimistic, a version guard
+  so an older answer never repaints a newer tap). A mark set by anybody but the
+  cell's leader says who set it («belgiladi: …»).
+- **«+» / «−» at the table's foot** (TableCard's `footer`). «+» puts a name on
+  the list and «−» (checkboxes, then «O'chirish» bottom-left, a danger confirm)
+  takes names off — each PERMANENTLY until the other undoes it, both from the
+  cell's CURRENT shift-day. `kelish_roster_events` is append-only and the state
+  on day D is the last event with `effective_from` ≤ D, so a past day is never
+  rewritten. A removal drops that worker's today/tomorrow marks; a removed
+  worker stays removed even while Verifix keeps listing them; «+» suggests the
+  cell's removed workers and a typed name that is one of them (surname + first
+  name, the platform's strict sameness rule) brings THAT worker back rather than
+  adding a second row. A typed name already on the list is refused (`exists`).
+- **Reach** (already enforced for the roles it will be opened to): a leader
+  their own cells (`viewer_leader_profile_ids`); a supervisor every cell of
+  their unit — reads AND fills; a shift-manager their shift ∩ plant, read-only;
+  a top-manager everything, read-only; an admin everything, and fills — so the
+  page can be tried before it is opened. `page.view.kelish` at "all" widens
+  reading, never filling.
+- **The page reads nothing off the viewer's role or the browser's clock** —
+  `editable`, `can_edit`, `when` and the day bounds all come from the server.
+  A leader with two cells switches with a `SegmentedToggle` whose labels carry
+  each cell's «marked/total»; admins and shift-managers pick the brigadir in the
+  `FilterPanel` (plant → shift → brigadir). A worker idle 7+ days, or never in
+  the 30, carries a quiet hint so the leader knows whom «−» is for.
+- **Consequence to know:** every tap is an action-register row
+  (`kelish.mark_set`) — cheap while the page is admin-only; opened to ~100
+  leaders it roughly triples the register's daily volume.
 
 ## The goal board («Maqsadlar», `/targets`, Laboratory)
 

@@ -107,6 +107,7 @@ const SetupTimes = lazyWithReload(() => import("./pages/SetupTimes"));
 const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
 const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const LiveOverview = lazyWithReload(() => import("./pages/LiveOverview"));
+const Kelish = lazyWithReload(() => import("./pages/Kelish"));
 const Arc = lazyWithReload(() => import("./pages/Arc"));
 const ArcLegacy = lazyWithReload(() => import("./pages/ArcLegacy"));
 const Education = lazyWithReload(() => import("./pages/Education"));
@@ -519,6 +520,7 @@ function AppWithLang() {
             <Route path="/idle-owner" element={<Navigate to="/downtime" replace />} />
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             <Route path="/live" element={<AuthGate><RequirePage page="live"><LiveOverview /></RequirePage></AuthGate>} />
+            <Route path="/kelish" element={<AuthGate><RequirePage page="kelish"><Kelish /></RequirePage></AuthGate>} />
             <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />
             <Route path="/arc-legacy" element={<AuthGate><RequirePage page="arc"><ArcLegacy /></RequirePage></AuthGate>} />
             {/* «Ta'lim». The watch page is its own route rather than a modal so the

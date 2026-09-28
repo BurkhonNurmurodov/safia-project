@@ -4232,3 +4232,59 @@ class ExamSandboxRow(Base):
     data       = Column(JSONB, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class KelishMark(Base):
+    """ONE answer on the «Kelish ro'yxati» (the T11 staff list, from 2026-09-28):
+    is this worker coming on this shift-day — `yes` or `no`.
+
+    A row exists only once somebody tapped. An unmarked worker has NO row, so
+    «not filled yet» is the absence of a record, never a third status every
+    reader would have to spell out.
+
+    Keyed by (cell, day, worker_key). The Verifix file carries no employee id,
+    so the key is the folded NAME (`services/kelish.worker_key`) — the file's
+    spelling of a person is stable from day to day, and a hand-added name folds
+    by the same rule.
+
+    `set_by_key` is the PROFILE that set the mark (identity.profile_key) and
+    `set_by_name` its snapshot: the list says who marked a worker whenever that
+    was not the cell's own leader — a brigadir filling in for them.
+    """
+    __tablename__ = "kelish_marks"
+    __table_args__ = (UniqueConstraint("cell_id", "day", "worker_key", name="uq_kelish_mark"),)
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id     = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    day         = Column(Date, nullable=False, index=True)
+    worker_key  = Column(String, nullable=False)
+    worker_name = Column(String, nullable=False)
+    status      = Column(String, nullable=False)          # "yes" | "no"
+    set_by_key  = Column(String, nullable=True)
+    set_by_name = Column(String, nullable=True)
+    set_at      = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+
+
+class KelishRosterEvent(Base):
+    """A person changing the list the Verifix file gives a cell: «+» puts a name
+    on it, «−» takes one off — each until the other undoes it.
+
+    The file decides who is on a cell's list; these rows are the only way a
+    person overrides it. They are APPEND-ONLY, so a past day's list can always
+    be rebuilt exactly as it stood: the state of (cell, worker) on day D is the
+    LAST event whose `effective_from` ≤ D, and no event at all means «as the
+    file says». Every event is stamped with the cell's CURRENT shift-day, so
+    nothing done today can reach a day that has already passed.
+    """
+    __tablename__ = "kelish_roster_events"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id        = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    worker_key     = Column(String, nullable=False, index=True)
+    worker_name    = Column(String, nullable=False)
+    job_title      = Column(String, nullable=True)
+    action         = Column(String, nullable=False)       # "add" | "remove"
+    effective_from = Column(Date, nullable=False)
+    by_key         = Column(String, nullable=True)
+    by_name        = Column(String, nullable=True)
+    created_at     = Column(DateTime(timezone=True), server_default=func.now())

@@ -89,6 +89,9 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
 /**
  * Card + header + toolbar + scrollable canonical table.
  *   icon / title / right – SectionHead (omitted when no title)
+ *   headSize  – SectionHead size: "sm" (default, the uppercase table label) or
+ *               "lg" when the card IS the page's subject and its subtitle
+ *               carries something the reader must see (15px title, 12px line)
  *   toolbar   – row under the header (search + filters), px-4 py-3, bordered
  *   maxHeight – scroll container cap (default "70vh")
  *   wrap      – allow cell text to wrap (default false = whitespace-nowrap)
@@ -108,6 +111,9 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *               standalone cards (each child styles itself as a card); the
  *               card keeps only the header/toolbar on phones and the stack
  *               scrolls with the page instead of an inner scroll cap
+ *   footer    – bordered row UNDER the table for actions over the whole list
+ *               (add / remove rows, a selection's bulk bar). It sits outside
+ *               the scroll cap, so it stays in view however long the list is.
  *   children  – <thead> + <tbody>
  */
 export default function TableCard({
@@ -123,13 +129,15 @@ export default function TableCard({
   hover = true,
   mobile,
   mobileCards = false,
+  footer,
+  headSize = "sm",
   className = "",
   children,
 }) {
   const detached = mobile != null && mobileCards;
   const card = (
     <div className={`rounded-2xl overflow-hidden ${detached ? "" : className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      {title != null && <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} />}
+      {title != null && <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} size={headSize} />}
       {toolbar && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
           {toolbar}
@@ -146,6 +154,11 @@ export default function TableCard({
       {mobile != null && !mobileCards && (
         <div className="sm:hidden overflow-y-auto" style={{ maxHeight }}>
           {mobile}
+        </div>
+      )}
+      {footer && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
+          {footer}
         </div>
       )}
     </div>

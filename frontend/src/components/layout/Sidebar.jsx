@@ -58,6 +58,7 @@ const ALL_LINKS = [
   // on one page since 2026-09-04; the level is a column, not a second page.
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },
   { to: "/cell-concerns", page: "cell-concerns", key: "nav.cellConcerns", icon: MessageSquarePlus, group: "leaders" },
+  { to: "/kelish", page: "kelish", key: "nav.kelish", icon: UserCheck, group: "leaders" },
   { to: "/worker-concerns", page: "worker-concerns", key: "nav.workerConcerns", icon: Megaphone, group: "leaders" },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
