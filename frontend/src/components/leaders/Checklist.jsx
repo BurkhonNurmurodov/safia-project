@@ -295,13 +295,13 @@ function TaskRow({ task, T, now, onOpen, rights, perTask }) {
   let action = null;
   if (task.objectable) {
     action = (
-      <Button size="sm" variant="primary" tint onClick={() => onOpen(task.id, "object")}>
+      <Button size="sm" variant="primary" tint className="max-sm:h-9" onClick={() => onOpen(task.id, "object")}>
         <ShieldQuestion size={12} /> {T.object}
       </Button>
     );
   } else if (task.late?.eligible && !task.late?.proof && rights.file) {
     action = (
-      <Button size="sm" variant="secondary" tint onClick={() => onOpen(task.id, "late")}>
+      <Button size="sm" variant="secondary" tint className="max-sm:h-9" onClick={() => onOpen(task.id, "late")}>
         <Timer size={12} /> {T.late}
       </Button>
     );
@@ -325,15 +325,21 @@ function TaskRow({ task, T, now, onOpen, rights, perTask }) {
               {pick(task.name, lang) || `№${task.id}`}
             </span>
           </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[12px] leading-snug" style={{ color: meta.color }}>
-            <KindIcon size={12} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+          <span className="mt-0.5 flex items-start gap-1.5 text-[12px] leading-snug" style={{ color: meta.color }}>
+            <KindIcon size={12} className="flex-shrink-0 mt-[2px]" style={{ color: "var(--text-4)" }} />
             {meta.Icon && meta.Icon !== PencilLine && (
-              <meta.Icon size={12} className={`flex-shrink-0 ${meta.spin ? "animate-spin" : ""}`} />
+              <meta.Icon size={12} className={`flex-shrink-0 mt-[2px] ${meta.spin ? "animate-spin" : ""}`} />
             )}
-            <span className="min-w-0 break-words">{meta.text}</span>
-            {task.weight > 0 && (
-              <span className="flex-shrink-0 tabular-nums" style={{ color: "var(--text-4)" }}>· {task.weight}%</span>
-            )}
+            {/* The weight rides the END of the text rather than being a flex
+                item of its own: once the status wraps on a phone («02:00
+                gacha · 5 soat 24 daq qoldi»), a separate item floated at the
+                far right of the first line, detached from what it belongs to. */}
+            <span className="min-w-0 break-words">
+              {meta.text}
+              {task.weight > 0 && (
+                <span className="tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}> · {task.weight}%</span>
+              )}
+            </span>
           </span>
           {(dc || lc) && (
             <span className="mt-1.5 flex flex-wrap gap-1.5">
@@ -345,16 +351,18 @@ function TaskRow({ task, T, now, onOpen, rights, perTask }) {
         </span>
         <ChevronRight size={16} className="flex-shrink-0 mt-2" style={{ color: "var(--text-4)" }} />
       </button>
+      {/* Row actions are 36px on a phone: an objection or a late proof is the
+          one thing a leader does from this list, and 26px missed. */}
       {(action || (task.dispute?.id) || (task.late?.proof?.id)) && (
         <div className="flex flex-wrap gap-2 pb-3 -mt-1 pl-[58px] sm:pl-[60px] pr-4">
           {action}
           {task.dispute?.id && (
-            <Button size="sm" variant="ghost" tint onClick={() => nav(`/leaders/appeal/dispute/${task.dispute.id}`)}>
+            <Button size="sm" variant="ghost" tint className="max-sm:h-9" onClick={() => nav(`/leaders/appeal/dispute/${task.dispute.id}`)}>
               <MessagesSquare size={12} /> {T.openChat}
             </Button>
           )}
           {task.late?.proof?.id && (
-            <Button size="sm" variant="ghost" tint onClick={() => nav(`/leaders/appeal/late/${task.late.proof.id}`)}>
+            <Button size="sm" variant="ghost" tint className="max-sm:h-9" onClick={() => nav(`/leaders/appeal/late/${task.late.proof.id}`)}>
               <MessagesSquare size={12} /> {T.openChat}
             </Button>
           )}
