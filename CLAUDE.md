@@ -6003,8 +6003,37 @@ no event; the route is the share sheet).
 From **2026-09-28** (the operator's go-ahead) the platform ships an Android app
 — «Safia IMS», package **`uz.safiacorporate.ims`** — built as a **Trusted Web
 Activity (TWA)**: a launcher that hands the LIVE site to Chrome, which draws it
-full-screen with no address bar. The APK holds no screen of its own and no web
-code, and asks for no permissions.
+full-screen with no address bar. The APK holds no web code; its only code is a
+thin launcher and a failure reporter (below), and its one permission is
+INTERNET, for that reporter.
+
+- **1.0.0 closed without a word on the first phone it met (a Samsung) — declare
+  EVERY component the library uses.** android-browser-helper's
+  `LauncherActivity.launchTwa()` calls
+  `ManageDataLauncherActivity.addSiteSettingsShortcut()` on every launch, which
+  enables or disables that activity through `setComponentEnabledSetting`, and
+  Android THROWS for a component the manifest does not declare. 1.0.0 left it
+  out as optional; the app crashed inside its first screen before drawing
+  anything, and Android shows no dialog for an app's first crash. The manifest
+  now declares it exactly as Google's Bubblewrap template does (plus
+  `android:manageSpaceActivity`), and says why beside it. **Mirror the official
+  template, never trim it by reading which parts look optional**: the other
+  two library screens (`WebViewFallbackActivity`,
+  `NotificationPermissionRequestActivity`) are reached only by the WebView
+  fallback and notification delegation, which this app does not enable.
+- **The app may never fail silently again, by construction** (1.0.1):
+  `SafiaApplication` installs an uncaught-exception handler, and
+  `FailureReport` posts every failure to the site's own unauthenticated
+  `POST /api/boot-report` (routers/boot.py — the "app never started" door),
+  which DMs the support chat with the device, Android version and browser
+  first. A report is saved to disk before it is sent, so one the network
+  refused goes out on the next start. `uz.safiacorporate.ims.LauncherActivity`
+  subclasses the library's launcher: an exception in the launch, or a splash
+  still standing after 12 s with the browser never showing the site, opens the
+  site in a normal browser tab (address bar, but the site) and is reported;
+  and the library's `QualityEnforcer` — which CRASHES the app on purpose when
+  the browser reports a quality problem (an error page, offline, or the
+  asset-link check) — is replaced by a callback that reports instead.
 
 - **Why a TWA, not a WebView shell or Capacitor.** The app has to follow the
   platform's update model — a push to main deploys and every tab picks it up.
@@ -6046,8 +6075,8 @@ code, and asks for no permissions.
   `deploy/deploy.sh` reacts to backend/, bot/ and frontend/ only.
 - **The APK changes rarely** — only when the shell does (icon, colours, the
   library, the target SDK). **Raise `versionCode` on every release**, or phones
-  refuse the update. The site's `VERSION` is independent of it: the app shows
-  whatever is deployed.
+  refuse the update (current: 1.0.1, versionCode 2). The site's `VERSION` is
+  independent of it: the app shows whatever is deployed.
 - **Icons**: `scripts/render-android-icons.py` renders the launcher icons
   (legacy 48 dp + the adaptive foreground over the logo's gold, at the PWA
   maskable icon's proportion) and the 160 dp splash from

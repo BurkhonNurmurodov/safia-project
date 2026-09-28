@@ -1,18 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Safia IMS for Android — a Trusted Web Activity (CLAUDE.md, «The Android app»).
+    Safia IMS for Android: a Trusted Web Activity (CLAUDE.md, «The Android app»).
 
-    There is no screen of our own in here. The launcher hands the live site
-    (production.safiacorporate.uz) to Chrome, which draws it full-screen with
-    no address bar for as long as the site's /.well-known/assetlinks.json
-    vouches for this app's signing key. Every deploy therefore reaches the app
-    the moment it reaches the browser, and downloads, uploads and the camera
-    behave exactly as they do in Chrome.
+    The launcher hands the live site (production.safiacorporate.uz) to Chrome,
+    which draws it full-screen with no address bar for as long as the site's
+    /.well-known/assetlinks.json vouches for this app's signing key. Every
+    deploy therefore reaches the app the moment it reaches the browser, and
+    downloads, uploads and the camera behave exactly as they do in Chrome.
 
     The metadata keys below are android-browser-helper's own
-    (trusted.LauncherActivityMetadata) — a misspelt key is ignored silently.
+    (trusted.LauncherActivityMetadata). A misspelt key is ignored silently.
+    A component the library USES but this file does not declare is worse:
+    1.0.0 left out ManageDataLauncherActivity, the library switches it on or
+    off on every launch, and the app crashed before drawing anything.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Only for FailureReport: the browser does all of the site's own traffic. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Android 11+ package visibility: the launcher has to see which installed
          browsers can host a Trusted Web Activity. -->
@@ -23,9 +28,11 @@
     </queries>
 
     <application
+        android:name=".SafiaApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/appName"
+        android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Translucent.NoTitleBar">
@@ -35,8 +42,29 @@
             android:name="asset_statements"
             android:resource="@string/assetStatements" />
 
+        <!-- REQUIRED, not optional: LauncherActivity.launchTwa() calls
+             ManageDataLauncherActivity.addSiteSettingsShortcut(), which enables or
+             disables this component on every launch, and Android throws for a
+             component the manifest does not declare. Declared exactly as the
+             official Bubblewrap template does. -->
         <activity
-            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+            android:enabled="true"
+            android:excludeFromRecents="true"
+            android:exported="false">
+            <meta-data
+                android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
+                android:value="@string/launchUrl" />
+            <intent-filter>
+                <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Our subclass of the library's launcher (LauncherActivity.java): never
+             closes without showing anything, never crashes on purpose. -->
+        <activity
+            android:name=".LauncherActivity"
             android:alwaysRetainTaskState="true"
             android:exported="true"
             android:label="@string/launcherName">
