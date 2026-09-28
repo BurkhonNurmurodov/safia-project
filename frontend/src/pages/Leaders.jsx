@@ -3459,7 +3459,9 @@ export default function Leaders() {
 
   // table rows: search + score-band filter, then sortable columns
   const displayRows = useMemo(() => {
-    const q = tSearch.trim().toLowerCase();
+    // A leader is shown no search box (their register is one name), so a value
+    // another session left in the shared storage must not narrow it unseen.
+    const q = (isLeader ? "" : tSearch).trim().toLowerCase();
     let arr = regRows.map((r) => ({
       ...r,
       // an unasked question is not a missed one
@@ -3507,7 +3509,7 @@ export default function Leaders() {
       return (a.completion - b.completion) * dir;          // score
     });
     return arr;
-  }, [regRows, tSearch, tBand, effVerify, tSort, tl]);
+  }, [regRows, tSearch, tBand, effVerify, tSort, tl, isLeader]);
   // A different question starts the phone list from its top again. Keyed on
   // the INPUTS rather than on `displayRows`, which a background refetch
   // re-creates too — that would snap an operator twenty cards deep back to
@@ -4317,12 +4319,16 @@ export default function Leaders() {
 
           {/* table-level filters: leader search + score-band chips */}
           <div className="flex flex-wrap items-center gap-2 px-3 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
-            <SearchInput
-              value={tSearch}
-              onChange={setTSearch}
-              placeholder={T.searchPh}
-              className="flex-1 min-w-[150px]"
-            />
+            {/* A leader's register holds their own days only — a «search
+                leaders» box there searches a list of one name. */}
+            {!isLeader && (
+              <SearchInput
+                value={tSearch}
+                onChange={setTSearch}
+                placeholder={T.searchPh}
+                className="flex-1 min-w-[150px]"
+              />
+            )}
             <SegmentedToggle
               value={tBand}
               onChange={setTBand}

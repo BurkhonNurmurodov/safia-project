@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   MessageSquareWarning, Hourglass, ShieldCheck, Ban, UserCheck, CircleSlash,
-  Clock, Timer, MessagesSquare, ChevronRight, Paperclip, Hand, Settings2,
+  Clock, Timer, MessagesSquare, ChevronRight, ChevronDown, Paperclip, Hand, Settings2,
 } from "lucide-react";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import SearchInput from "../ui/SearchInput";
@@ -61,6 +61,7 @@ const pick = (o, lang) => o?.[lang] || o?.ru || o?.en || o?.uz || "";
 const TXT = {
   uz: {
     titleDispute: "Norozliklar", titleLate: "Kechikkan isbotlar",
+    introMore: "Batafsil", introLess: "Yig'ish",
     ruleDispute: "AI rad etgan vazifa o'z og'irligini darhol yo'qotadi. Lider norozilik yozadi, brigadir savol berib rad etadi yoki adminlarga yuboradi, ball faqat admin qaroridan keyin qaytadi.",
     ruleLate: "Vazifa vaqti tugagach yuborilgan isbot uchun ball avtomatik berilmaydi: avval brigadir ko'rib chiqadi, so'ng adminlar hal qiladi.",
     ruleAdmin: "Kartani oching: tepada qaror tugmalari, keyin rasmlar va sabab, pastda chat — lider va brigadirdan so'rab, so'ng qaror qiling.",
@@ -87,6 +88,7 @@ const TXT = {
   },
   uz_cyrl: {
     titleDispute: "Норозликлар", titleLate: "Кечиккан исботлар",
+    introMore: "Батафсил", introLess: "Йиғиш",
     ruleDispute: "AI рад этган вазифа ўз оғирлигини дарҳол йўқотади. Лидер норозилик ёзади, бригадир савол бериб рад этади ёки админларга юборади, балл фақат админ қароридан кейин қайтади.",
     ruleLate: "Вазифа вақти тугагач юборилган исбот учун балл автоматик берилмайди: аввал бригадир кўриб чиқади, сўнг админлар ҳал қилади.",
     ruleAdmin: "Картани очинг: тепада қарор тугмалари, кейин расмлар ва сабаб, пастда чат — лидер ва бригадирдан сўраб, сўнг қарор қилинг.",
@@ -113,6 +115,7 @@ const TXT = {
   },
   ru: {
     titleDispute: "Возражения", titleLate: "Поздние подтверждения",
+    introMore: "Подробнее", introLess: "Свернуть",
     ruleDispute: "Задача, отклонённая ИИ, сразу теряет вес. Лидер пишет возражение, бригадир задаёт вопросы и отклоняет его или передаёт администраторам, а балл возвращается только по решению администратора.",
     ruleLate: "За подтверждение, отправленное после срока, балл сам не начисляется: сначала смотрит бригадир, затем решают администраторы.",
     ruleAdmin: "Откройте карточку: вверху кнопки решения, затем фото и причина, ниже чат — спросите лидера и бригадира и решите.",
@@ -139,6 +142,7 @@ const TXT = {
   },
   en: {
     titleDispute: "Objections", titleLate: "Late proofs",
+    introMore: "More", introLess: "Less",
     ruleDispute: "A task the AI rejects loses its weight at once. The leader writes an objection, the brigadir asks what they need and refuses it or passes it to the admins, and the point comes back only on an admin's decision.",
     ruleLate: "A proof sent after its deadline earns no point by itself: the brigadir looks first, then the admins decide.",
     ruleAdmin: "Open a card: the ruling buttons on top, then the photos and the reason, the chat below — ask the leader and the brigadir, then decide.",
@@ -236,6 +240,7 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
   const split = role !== "leader";
   const [stage, setStage] = useState(role === "supervisor" ? "sup" : "adm");
   const [seg, setSeg] = useState("all");
+  const [introOpen, setIntroOpen] = useState(false);
   const [q, setQ] = useState("");
 
   const qKey = late ? ["leader-late-proofs"] : ["leader-disputes"];
@@ -318,18 +323,31 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
 
   return (
     <>
-      <div className="rounded-2xl p-4 mb-3 flex items-start gap-3"
+      {/* The rule of the queue, for whoever has not read it yet. Two lines
+          and a «Batafsil» on a phone: in full it was a seven-line card, a
+          third of the first screen, standing between a regular and the queue
+          they open this tab to work. */}
+      <div className="rounded-2xl p-3.5 sm:p-4 mb-3 flex items-start gap-3"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <span className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
           style={{ background: hexA(C_WAIT, 0.12), color: C_WAIT }}>
           {late ? <Clock size={16} /> : <MessageSquareWarning size={16} />}
         </span>
-        <div className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
+        <div className="min-w-0 text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
           <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>
             {late ? T.titleLate : T.titleDispute}
           </div>
-          {late ? T.ruleLate : T.ruleDispute}{" "}
-          {canApprove ? T.ruleAdmin : canSupervise ? T.ruleSup : T.ruleRead}
+          <p id={`appeal-rule-${thread}`} className={introOpen ? "" : "max-sm:line-clamp-2"}>
+            {late ? T.ruleLate : T.ruleDispute}{" "}
+            {canApprove ? T.ruleAdmin : canSupervise ? T.ruleSup : T.ruleRead}
+          </p>
+          <button type="button" onClick={() => setIntroOpen((o) => !o)}
+            aria-expanded={introOpen} aria-controls={`appeal-rule-${thread}`}
+            className="sm:hidden mt-1 -ml-1 px-1 py-1 inline-flex items-center gap-1 rounded-md text-[12px] font-semibold"
+            style={{ color: "var(--brand-text)" }}>
+            {introOpen ? T.introLess : T.introMore}
+            <ChevronDown size={13} className="transition-transform" style={{ transform: introOpen ? "rotate(180deg)" : "none" }} />
+          </button>
         </div>
       </div>
 

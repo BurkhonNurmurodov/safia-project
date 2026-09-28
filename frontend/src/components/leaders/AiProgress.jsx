@@ -337,7 +337,7 @@ function DrainLine({ p, T, kick }) {
         <span style={{ color: "var(--text-4)" }}>{fmt(T.dNext, dur(d.nextInS, T))}</span></>
       )}
       {!live && (
-        <Button size="sm" variant="secondary" tint className="ml-auto"
+        <Button size="sm" variant="secondary" tint className="ml-auto max-sm:h-9"
           icon={<Play size={12} />} loading={kick.isPending} onClick={() => kick.mutate()}>
           {T.dNow}
         </Button>
@@ -367,6 +367,15 @@ const OpenDetails = ({ onClick, title, children }) => (
     <ChevronRight size={14} className="flex-shrink-0 transition-transform group-hover:translate-x-0.5"
       style={{ color: "var(--text-4)" }} aria-hidden="true" />
   </button>
+);
+
+// The strip's title and its count. Side by side from sm; STACKED on a phone,
+// where the Stop button beside them left ~200px and the two ran together into
+// a six-line column («AI / tekshiruvi / ketmoqda · 1 tadan / 0 tasi / …»).
+const TitleCount = ({ children }) => (
+  <span className="min-w-0 flex-1 flex flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-2.5">
+    {children}
+  </span>
 );
 
 /** `showIdle` — also render the standing "how much is checked" bar when no run
@@ -469,23 +478,25 @@ export default function AiProgress({ showIdle = false }) {
         <div className="flex items-center gap-2.5 flex-wrap mb-2">
           <OpenDetails onClick={() => setDetails(true)} title={T.details}>
             <Sparkles size={15} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
-            <span className="text-[13px] font-semibold group-hover:underline underline-offset-2"
-              style={{ color: "var(--text-2)" }}>
-              {T.coverage}
-            </span>
-            <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
-              {fill(T.count, {
-                d: <b style={{ color: "var(--text-1)" }}>{cov.judged.toLocaleString()}</b>,
-                n: cov.known.toLocaleString(),
-              })}
-            </span>
+            <TitleCount>
+              <span className="text-[13px] font-semibold leading-snug group-hover:underline underline-offset-2"
+                style={{ color: "var(--text-2)" }}>
+                {T.coverage}
+              </span>
+              <span className="text-xs tabular-nums sm:ml-auto" style={{ color: "var(--text-3)" }}>
+                {fill(T.count, {
+                  d: <b style={{ color: "var(--text-1)" }}>{cov.judged.toLocaleString()}</b>,
+                  n: cov.known.toLocaleString(),
+                })}
+              </span>
+            </TitleCount>
           </OpenDetails>
           {/* Queued work exists with no run behind it — the timer drain and a
               sheet Refresh both queue rows nobody started from this page. "Stop
               it" has to reach that too, or the only clearable queue is the one
               you happened to launch yourself. */}
           {(p.pending > 0 || cov.skipped > 0) && (
-            <Button size="sm" variant="secondary" tint icon={<Trash2 size={13} />}
+            <Button size="sm" variant="secondary" tint icon={<Trash2 size={13} />} className="max-sm:h-9"
               loading={stop.isPending} onClick={() => setConfirm(true)}>
               {T.clear}
             </Button>
@@ -543,7 +554,7 @@ export default function AiProgress({ showIdle = false }) {
             {fmt(T.doneN, p.done ?? 0)}
           </span>
         </OpenDetails>
-        <Button size="sm" variant="ghost" onClick={() => setDismissed(true)}>{T.hide}</Button>
+        <Button size="sm" variant="ghost" className="max-sm:h-9" onClick={() => setDismissed(true)}>{T.hide}</Button>
       </div>
       <AiActivity open={details} onClose={() => setDetails(false)} progress={p} />
       </>
@@ -560,21 +571,23 @@ export default function AiProgress({ showIdle = false }) {
         <div className="flex items-center gap-2.5 flex-wrap mb-2">
           <OpenDetails onClick={() => setDetails(true)} title={T.details}>
             <Sparkles size={15} color={BRAND} className="flex-shrink-0" />
-            <span className="text-[13px] font-semibold group-hover:underline underline-offset-2"
-              style={{ color: "var(--text-1)" }}>
-              {T.title}
-            </span>
-            {/* Numbers first, percentage second: "1 129 of 1 174" answers "how
-                much is left to pay for", which is the question quota makes you
-                ask. The percentage alone never does. */}
-            <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
-              {fill(T.count, {
-                d: <b style={{ color: "var(--text-1)" }}>{p.done.toLocaleString()}</b>,
-                n: p.total.toLocaleString(),
-              })}
-            </span>
+            <TitleCount>
+              <span className="text-[13px] font-semibold leading-snug group-hover:underline underline-offset-2"
+                style={{ color: "var(--text-1)" }}>
+                {T.title}
+              </span>
+              {/* Numbers first, percentage second: "1 129 of 1 174" answers "how
+                  much is left to pay for", which is the question quota makes you
+                  ask. The percentage alone never does. */}
+              <span className="text-xs tabular-nums sm:ml-auto" style={{ color: "var(--text-3)" }}>
+                {fill(T.count, {
+                  d: <b style={{ color: "var(--text-1)" }}>{p.done.toLocaleString()}</b>,
+                  n: p.total.toLocaleString(),
+                })}
+              </span>
+            </TitleCount>
           </OpenDetails>
-          <Button size="sm" variant="secondary" tint icon={<XCircle size={13} />}
+          <Button size="sm" variant="secondary" tint icon={<XCircle size={13} />} className="max-sm:h-9"
             loading={stop.isPending} onClick={() => setConfirm(true)}>
             {T.stop}
           </Button>

@@ -79,13 +79,21 @@ export function ColFilter({ label, active, children }) {
   );
 }
 
+// A filter's search box takes focus on a desktop, where the dropdown holds ONE
+// filter and typing is the next thing anyone does. Never on a touch screen: the
+// phone sheet mounts every section at once, the LAST search box on the sheet
+// won the focus, and the keyboard rose over the sheet before the reader had
+// chosen anything — to type into a list they had not asked to search.
+const autoFocusOk = () =>
+  typeof window === "undefined" || !window.matchMedia?.("(pointer: coarse)").matches;
+
 export function TxtFilter({ value, onChange, placeholder }) {
   const { t } = useLang();
   return (
     <div className="relative">
       <input
         value={value} onChange={e => onChange(e.target.value)}
-        placeholder={placeholder || t("staff.filter")} autoFocus
+        placeholder={placeholder || t("staff.filter")} autoFocus={autoFocusOk()}
         className="w-full text-xs pl-2.5 py-1.5 pr-6 rounded-lg outline-none"
         style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
       />
@@ -190,7 +198,7 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
       {searchable && (
         <input
           value={q} onChange={e => setQ(e.target.value)}
-          placeholder={t("common.search")} autoFocus
+          placeholder={t("common.search")} autoFocus={autoFocusOk()}
           className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
         />
@@ -292,7 +300,7 @@ export function PickFilter({ opts, value, onChange, searchable = false, close, n
       {searchable && (
         <input
           value={q} onChange={e => setQ(e.target.value)}
-          placeholder={t("common.search")} autoFocus
+          placeholder={t("common.search")} autoFocus={autoFocusOk()}
           className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
         />

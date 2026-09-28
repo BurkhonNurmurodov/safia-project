@@ -123,13 +123,17 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
           <p className="text-[15px] font-bold leading-tight truncate" style={{ color: "var(--text-1)" }}>
             {isLeader ? T.mine : nm(view.leader?.name || "")}
           </p>
+          {/* Separators BETWEEN parts, never before the first: a leader
+              reading their own day has no unit shown, and the line opened on a
+              stray «· S1». */}
           <p className="text-[12px] mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
             style={{ color: "var(--text-3)" }}>
-            {!isLeader && view.unit?.name && <span className="truncate">{nm(view.unit.name)}</span>}
-            {view.shift != null && <span>· S{view.shift}</span>}
-            {view.cell && view.cells?.length > 0 && (
-              <span className="tabular-nums">· {view.cells.find((c) => c.id === view.cell)?.code}</span>
-            )}
+            {[
+              !isLeader && view.unit?.name ? <span key="u" className="truncate">{nm(view.unit.name)}</span> : null,
+              view.shift != null ? <span key="s">S{view.shift}</span> : null,
+              view.cell && view.cells?.length > 0
+                ? <span key="c" className="tabular-nums">{view.cells.find((c) => c.id === view.cell)?.code}</span> : null,
+            ].filter(Boolean).flatMap((el, i) => (i ? [<span key={`d${i}`} aria-hidden>·</span>, el] : [el]))}
           </p>
         </div>
       </div>

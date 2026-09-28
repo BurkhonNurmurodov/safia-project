@@ -574,8 +574,12 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
             was no way to rotate it, clear it or see which one was in use —
             and swapping to a different billing account is exactly the errand
             an operator has when a spend cap stops the queue. */}
+        {/* Named on a phone: there the button wraps onto a row of its own,
+            and a lone unlabelled glyph under the actions reads as debris. */}
         <Button size="lg" variant="ghost" icon={<Settings2 size={15} />}
-          title={T.aiSettings} onClick={() => setCfgOpen(true)} />
+          title={T.aiSettings} aria-label={T.aiSettings} onClick={() => setCfgOpen(true)}>
+          <span className="sm:hidden">{T.aiSettings}</span>
+        </Button>
         {/* Shortcut chrome only exists where a keyboard does — on a phone this
             button answered a question nobody there can act on. */}
         {/* `max-lg:hidden`, never `hidden lg:inline-flex`: Button carries its
@@ -725,14 +729,18 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
                    and on desktop it is the mouse twin of J/K. The bare counter
                    this replaces sat in the toolbar, a full pane away from the
                    card it counted. */
-                <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                /* 36px on a phone, where this pair IS the queue's navigation
+                   and was two 24px-tall targets. */
+                <span className="inline-flex items-center gap-0.5 max-sm:gap-1 flex-shrink-0">
                   <Button size="sm" variant="ghost" icon={<ChevronLeft size={15} />}
-                    title={T.aiPrev} onClick={() => move(-1)} />
-                  <span className="text-[11px] tabular-nums px-1" style={{ color: "var(--text-4)" }}>
+                    className="max-sm:h-9 max-sm:w-10"
+                    title={T.aiPrev} aria-label={T.aiPrev} onClick={() => move(-1)} />
+                  <span className="text-[11px] max-sm:text-xs tabular-nums px-1" style={{ color: "var(--text-4)" }}>
                     {ix + 1} / {items.length}
                   </span>
                   <Button size="sm" variant="ghost" icon={<ChevronRight size={15} />}
-                    title={T.aiNext} onClick={() => move(1)} />
+                    className="max-sm:h-9 max-sm:w-10"
+                    title={T.aiNext} aria-label={T.aiNext} onClick={() => move(1)} />
                 </span>
               } />
             <div className="p-3 flex flex-col items-center gap-3">
@@ -767,11 +775,13 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
                   {/* Stepped off the CLAMPED index, so the counter can never
                       read "3 / 1" on a card that carries one photo. */}
                   <Button size="sm" variant="ghost" icon={<ChevronLeft size={14} />}
+                    className="max-sm:h-9 max-sm:w-10" aria-label={T.aiPrev}
                     onClick={() => setPhotoIx((pIx - 1 + cur.photos.length) % cur.photos.length)} />
                   <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
                     {pIx + 1} / {cur.photos.length}
                   </span>
                   <Button size="sm" variant="ghost" icon={<ChevronRight size={14} />}
+                    className="max-sm:h-9 max-sm:w-10" aria-label={T.aiNext}
                     onClick={() => setPhotoIx((pIx + 1) % cur.photos.length)} />
                 </div>
               )}
