@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
         report_missed_day_reports,
         report_missed_reports_resend,
         report_filling_times,
+        report_t11_proofs,
         write_leader_task_examples,
         cleanup_rules_sep19,
         preview_leader_rules_sep19,
@@ -503,6 +504,14 @@ async def lifespan(app: FastAPI):
     # operator. Remove this line, `startup.report_filling_times` and
     # `services/filling_times_report.py` once it has been sent.
     report_filling_times()
+    # ⚠ TEMPORARY one-shot (2026-09-28) — every task-11 proof of 21–27.09
+    # with its AI verdict, the reason for a rejection and who approved it
+    # (the operator or another admin, by Telegram id), as a zipped folder
+    # in the operator's chat (t11-proofs.json in each part). Scheduled,
+    # flag-guarded, resumes after a restart — delivers once. Remove this
+    # line, `startup.report_t11_proofs` and `services/t11_proof_report.py`
+    # once the files have landed.
+    report_t11_proofs()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
     # against the new criteria, written at the GLOBAL level of nine tasks and
     # REPLACING what was there. Inline, not scheduled: it is config today's

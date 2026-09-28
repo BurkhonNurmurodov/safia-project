@@ -6723,6 +6723,47 @@ def _filling_times_job() -> None:
                       filling_times_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: task 11's proofs of 21–27 September, with the AI's verdicts ────
+# The operator asked, on 2026-09-28, for the last seven days of AI proofs of
+# checklist task 11 (the staff schedule screenshot) as a zipped folder, with a
+# JSON inside saying for each proof whose it is, when it was taken, whether the
+# AI rejected it and why, and whether the operator approved it — attributed by
+# Telegram id, not by name. The seven COMPLETE days, 21.09 → 27.09, both shifts.
+# It READS and writes nothing but its flag and its own progress row;
+# `services/t11_proof_report.py` builds the manifest and the parts (~630 photos,
+# three or four parts), and a restart mid-run RESUMES rather than re-sending.
+# Scheduled well clear of the boot /health waits on, like every photo errand
+# here. Changing what it sends needs a NEW flag key.
+T11_PROOFS_FLAG = "t11_proofs_sep21_27_2026_09_28_v1"
+_T11_PROOFS_DELAY_S = 150
+
+
+def report_t11_proofs() -> None:
+    """Every 21–27.09 task-11 proof with its AI verdict, DMed once as ZIP parts.
+
+    Flag-guarded like every other errand here: delivered on the first boot
+    after its own deploy and never again; a run that fails is retried on the
+    next boot and then abandoned, and a run a deploy kills resumes where it
+    stopped. Never raises.
+    """
+    try:
+        if not _report_pending(T11_PROOFS_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("t11-proofs-sep21-27",
+                    datetime.now(timezone.utc) + timedelta(seconds=_T11_PROOFS_DELAY_S),
+                    _t11_proofs_job)
+    except Exception as exc:
+        print(f"[startup] t11 proofs 21-27.09 could not be scheduled: {exc}")
+
+
+def _t11_proofs_job() -> None:
+    from app.services import t11_proof_report
+    _send_report_once(T11_PROOFS_FLAG, "t11 proofs 21-27.09",
+                      t11_proof_report.send, UNPRICED_DM_CHAT)
+
+
 # ── one-shot: cells that HAD PEOPLE and were never answered on the page ──────
 # The operator asked, on 2026-09-10, for the cells where the verifix attendance
 # upload put people in but nobody wrote a PLAN or an «Odam soni» on the
