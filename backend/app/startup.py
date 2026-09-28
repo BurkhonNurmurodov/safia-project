@@ -6768,9 +6768,10 @@ def _t11_proofs_job() -> None:
 # The operator asked on 2026-09-28 how many objections to AI rejections filed
 # for September days are still unhandled at the brigadir's stage, and how many
 # each brigadir holds. `services/dispute_queue_report.py` DMs the counts as
-# text. It READS and writes nothing but its flag. Changing what it reports
-# needs a NEW flag key.
-DISPUTE_QUEUE_FLAG = "ai_objections_sep_brigadir_queue_2026_09_28_v1"
+# ONE Uzbek rich message written to the brigadirs, for the operator to forward
+# to their group. It READS and writes nothing but its flag. Changing what it
+# reports needs a NEW flag key — v1 was the English text version.
+DISPUTE_QUEUE_FLAG = "ai_objections_sep_brigadir_queue_2026_09_28_v2"
 _DISPUTE_QUEUE_DELAY_S = 60
 
 
