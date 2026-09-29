@@ -27,8 +27,8 @@ import api from "../../utils/api";
 // a percentage is better HIGH (green is a floor), a backlog better LOW (green
 // is a ceiling). Both store the same two keys, so nothing downstream branches.
 const FIGURES = [
-  { key: "load", labelKey: "production.kpiAvgLoad", dir: "high", unit: "%" },
-  { key: "compl", labelKey: "production.kpiVyp", dir: "high", unit: "%" },
+  { key: "load", labelKey: "overview.sr.colLoad", dir: "high", unit: "%" },
+  { key: "compl", labelKey: "overview.sr.colCompl", dir: "high", unit: "%" },
   { key: "quality", labelKey: "overview.sr.colQuality", dir: "high", unit: "%" },
   { key: "concerns", labelKey: "overview.sr.colConcerns", dir: "low", unit: "" },
 ];

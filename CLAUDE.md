@@ -6879,9 +6879,13 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   done ÷ actionable, where `shift_report.ACTIONABLE` is the twin of
   `Quality.jsx`'s `ACTIONABLE` and the two must stay one list. «Ochiq
   xavotirlar» counts `leader_concerns` at level `supervisor` with status
-  todo/doing, per unit. The headers reuse the owning pages' own words
-  (`production.kpiAvgLoad`, `production.kpiVyp`, the Quality page's «Bartaraf
-  etilgan»).
+  todo/doing, per unit. The headers carry the board's OWN names (the
+  operator's call, 2026-09-29): «Smena boshi Zagruzka», «Plan bajarish %»,
+  «Sifat nazorati %» — keys `overview.sr.colLoad` / `colCompl` / `colQuality`,
+  which the bands modal reads too. The column hints still name the source
+  figure by the owning page's word («O'rtacha yuklanish», «Bajarish %»), so
+  `production.kpi*` stays the Production page's and must not be renamed for
+  this board.
 - **«Today» is the SHIFT FRAME, not the calendar** (`shift_report.report_days` →
   `live_overview.shift_frame` over `cell_hours.defaults`): the most recent shift
   start names the day — the rule `/live` runs on and the date a night's leaders

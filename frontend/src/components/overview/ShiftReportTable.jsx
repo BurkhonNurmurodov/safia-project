@@ -418,8 +418,8 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
   // The legend wears the table's own tints, so a band and the cells it judges
   // are read in one vocabulary.
   const bandRows = [
-    { key: "load", full: t("production.kpiAvgLoad"), short: t("overview.sr.colLoadShort"), bands: pctBand(bands.load) },
-    { key: "compl", full: t("production.kpiVyp"), short: t("overview.sr.colComplShort"), bands: pctBand(bands.compl) },
+    { key: "load", full: t("overview.sr.colLoad"), short: t("overview.sr.colLoadShort"), bands: pctBand(bands.load) },
+    { key: "compl", full: t("overview.sr.colCompl"), short: t("overview.sr.colComplShort"), bands: pctBand(bands.compl) },
     { key: "quality", full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"), bands: pctBand(bands.quality) },
     { key: "concerns", full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"), bands: countBand(bands.concerns) },
   ];
@@ -444,11 +444,11 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
             />
             {[
               ["load", t("overview.sr.hintLoad"), {
-                full: t("production.kpiAvgLoad"), short: t("overview.sr.colLoadShort"),
+                full: t("overview.sr.colLoad"), short: t("overview.sr.colLoadShort"),
                 cap: dated("overview.sr.today", single?.today),
               }],
               ["compl", t("overview.sr.hintCompl"), {
-                full: t("production.kpiVyp"), short: t("overview.sr.colComplShort"),
+                full: t("overview.sr.colCompl"), short: t("overview.sr.colComplShort"),
                 cap: dated("overview.sr.yesterday", single?.yesterday),
               }],
               ["quality", t("overview.sr.hintQuality"), {
