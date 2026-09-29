@@ -4,7 +4,8 @@
  * the page's own scripts, on https://production.safiacorporate.uz only.
  *
  * A web view has no download manager and no tabs, so three things the site
- * does in a browser would silently do nothing — or worse — here:
+ * does in a browser would silently do nothing — or worse — here (and a fourth,
+ * window.close(), is handed to the app below):
  *   - saveBlob() in utils/exportXlsx.js "clicks" an <a download href="blob:…">;
  *   - a proof photo is opened with window.open("blob:…");
  *   - the service worker would fetch the SERVER's build into a cache and serve
@@ -92,6 +93,13 @@
       return null;
     }
     return windowOpen.apply(window, arguments);
+  };
+
+  // window.close(): a web view cannot close itself, so the app does it — and
+  // only for a screen holding a second session (SessionActivity, the admin's
+  // «open as this profile»), whose «exit» and «close tab» call this.
+  window.close = function () {
+    post({ type: "close" });
   };
 
   // The status bar follows the page: ThemeContext keeps <meta name="theme-color">

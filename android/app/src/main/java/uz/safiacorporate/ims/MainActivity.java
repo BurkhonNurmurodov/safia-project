@@ -64,7 +64,8 @@ import java.util.concurrent.Executors;
  * supplied here:
  * downloads (app-bridge.js + FileHandoff), the file picker, the camera, new
  * tabs and links to other apps, the back button, and room for the status bar
- * and the keyboard.
+ * and the keyboard. A second SESSION — the admin's «open as this profile» —
+ * is a screen of its own on top of this one (SessionActivity).
  */
 public class MainActivity extends ComponentActivity {
     static final String HOST = "production.safiacorporate.uz";
@@ -106,7 +107,13 @@ public class MainActivity extends ComponentActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         bundle = WebBundle.get(this);
         updates = PageUpdates.get(this);
-        updates.setOnReady(pagesReady);
+        // A session screen rebuilt by Android (the process was killed, or a
+        // setting no configChanges covers) lost what it was: the impersonated
+        // session lived in its web view's sessionStorage, and its link is spent.
+        if (isSession() && savedInstanceState != null) {
+            finish();
+            return;
+        }
         bridgeScript = WebBundle.readAsset(this, "app-bridge.js");
 
         root = new FrameLayout(this);
@@ -133,7 +140,17 @@ public class MainActivity extends ComponentActivity {
 
         blockServiceWorkers();
         configure(web);
-        web.loadUrl(startUrl(getIntent()));
+        Uri data = getIntent() == null ? null : getIntent().getData();
+        if (!isSession() && isSessionLink(data)) {
+            // «Open as this profile» arrived as a link: this screen keeps the
+            // person's own session and the other one opens on top of it. Consumed,
+            // so a rebuilt screen does not spend the (already spent) code again.
+            web.loadUrl(ORIGIN + "/");
+            getIntent().setData(null);
+            openSession(data);
+        } else {
+            web.loadUrl(startUrl(getIntent()));
+        }
     }
 
     @Override
@@ -141,13 +158,19 @@ public class MainActivity extends ComponentActivity {
         super.onNewIntent(intent);
         // A production link tapped in another app (the verified app link). A tap on
         // the launcher icon carries none and leaves the page where it was.
-        if (web != null && isOurs(intent.getData())) web.loadUrl(intent.getData().toString());
+        Uri u = intent.getData();
+        if (web == null || !isOurs(u)) return;
+        if (isSessionLink(u)) openSession(u);
+        else web.loadUrl(u.toString());
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        // On screen: follow the site's deploys (PageUpdates).
+        // On screen: follow the site's deploys (PageUpdates), and be the page
+        // told when one is whole — the slot holds ONE page, and a session screen
+        // that was on top of this one took it.
+        updates.setOnReady(pagesReady);
         updates.resume();
     }
 
@@ -170,6 +193,34 @@ public class MainActivity extends ComponentActivity {
         }
         io.shutdown();
         super.onDestroy();
+    }
+
+    /**
+     * True on the screen that holds a second session (SessionActivity): it is
+     * closed by the page (window.close, app-bridge.js) and never rebuilt.
+     */
+    protected boolean isSession() {
+        return false;
+    }
+
+    /** The admin's «open as this profile» (Profile.jsx): a one-time code in "?as=". */
+    static boolean isSessionLink(Uri u) {
+        return isOurs(u) && u.getQueryParameter("as") != null;
+    }
+
+    /**
+     * A second session, in the app: a screen of its own on top of this one,
+     * with a web view of its own — so the session the page starts there lives
+     * in THAT web view's sessionStorage (utils/session.js, `tab: true`) and
+     * this one's is never touched. Back, or the page's own exit, returns here.
+     */
+    private void openSession(Uri u) {
+        try {
+            startActivity(new Intent(this, SessionActivity.class).setData(u));
+        } catch (Exception e) {
+            Log.w(TAG, "could not open the second session", e);
+            FileHandoff.toast(this, Texts.get(siteLang(), Texts.NO_APP));
+        }
     }
 
     private static String startUrl(Intent intent) {
@@ -247,6 +298,12 @@ public class MainActivity extends ComponentActivity {
                     case "theme":
                         String color = m.optString("color");
                         runOnUiThread(() -> applyTheme(color));
+                        break;
+                    case "close":
+                        // window.close(): a web view cannot close itself. Only a
+                        // session screen is ever closed by its page; the app's
+                        // own screen stays whatever the page asks.
+                        if (isSession()) runOnUiThread(this::finish);
                         break;
                     case "failed":
                         Log.w(TAG, "the page could not hand over a file: " + m.optString("message"));
@@ -332,7 +389,10 @@ public class MainActivity extends ComponentActivity {
                 root.removeView(web);
                 web.destroy();
                 web = null;
-                recreate();
+                // A session screen cannot be rebuilt: its session died with the
+                // web view, and its link is spent. It closes instead.
+                if (isSession()) finish();
+                else recreate();
             }
             return true;
         }
@@ -394,7 +454,8 @@ public class MainActivity extends ComponentActivity {
      * Where a new tab goes: a page of ours opens here, in the same session;
      * anything else opens in the app the phone has for it. One exception — the
      * admin's «open as this profile» (Profile.jsx, "?as=") exists to start a
-     * SEPARATE session, so it goes to the browser rather than replace this one.
+     * SEPARATE session, so it opens as a screen of its own on top of this one
+     * (SessionActivity) rather than replace this one.
      */
     private final class PopupClient extends WebViewClient {
         private boolean routed;
@@ -403,7 +464,7 @@ public class MainActivity extends ComponentActivity {
             if (routed || u == null || "about".equalsIgnoreCase(u.getScheme())) return false;
             routed = true;
             if (isOurs(u)) {
-                if (u.getQueryParameter("as") != null) openInBrowser(u);
+                if (isSessionLink(u)) openSession(u);
                 else if (web != null) web.loadUrl(u.toString());
             } else {
                 openOutside(u);

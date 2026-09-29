@@ -6269,13 +6269,41 @@ daily") **the app downloads every build the site deploys by itself** — see
   extensions translated to MIME types (one it cannot translate lifts the
   filter rather than hide the file); the camera (`/proof/camera`) is granted to
   THIS origin only, after Android's own permission; a new tab of ours opens in
-  the same view (the admin's «open as this profile», `?as=`, goes to the
-  browser, pinned so the app link cannot bring it back); anything else opens
+  the same view (the admin's «open as this profile», `?as=`, is the exception —
+  see the next bullet); anything else opens
   in the phone's app for it (Telegram for `t.me`, …); the back button walks
   the page history; the bars take the page's colour from
   `<meta name="theme-color">`; the keyboard and bars are padding (Android 15+
   forces edge to edge). The app's own toasts speak the language picked on the
   site (`localStorage.lang`, sent with every bridge message — `Texts.java`).
+- **«Open as this profile» opens IN THE APP, as a screen of its own**
+  (1.3.0, 2026-09-29 — the operator: it opening in the phone's browser was
+  «the problem»). `SessionActivity` (a `MainActivity` whose `isSession()` is
+  true; standard launch, not exported) stacks on top of the admin's screen
+  with a web view of its own, so the impersonated session lives in THAT web
+  view's sessionStorage (`utils/session.js` `tab: true`) and the admin's own
+  session underneath is never touched — the phone's version of the browser
+  tab a computer opens. Every road to a `?as=` link leads there
+  (`isSessionLink`): the popup, a link from another app (`onNewIntent`) and a
+  cold start, which loads «/» for the admin first. It is left the way a tab
+  is: back once the page has no history, or the page's own exit (the
+  impersonation bar's «Chiqish» → `AuthContext.logout` calls `window.close()`
+  when `inAndroidApp()`) and the dead-link screen's «Oynani yopish» —
+  `app-bridge.js` turns `window.close()` into a `close` message and only a
+  session screen finishes on it. It is never rebuilt (a dead page engine or
+  an Android rebuild finishes it): the session died with its web view and the
+  link is spent. The PageUpdates «ready» slot is taken in `onResume`, so the
+  screen underneath gets it back.
+- **The website offers «Open in the app»** (2026-09-29): on a phone's browser
+  where the app is installed, `components/layout/OpenInAppPrompt.jsx` — a
+  closeable `Toast` at the top right (a close is remembered for a week) whose
+  button is an `intent://` link for the same page pinned to the package. The
+  browser answers «installed» itself: `navigator.getInstalledRelatedApps()`
+  matches `related_applications` in `public/manifest.webmanifest` and counts
+  the package only while its `asset_statements` (`res/values/strings.xml`)
+  name this site — so every installed APK already qualifies. Chrome on
+  Android only; nothing where the browser cannot answer, never in Telegram,
+  never inside the app (`inAndroidApp()`, the user-agent suffix).
 - **It reports its own failures** — `SafiaApplication` catches every crash
   and `FailureReport` posts it (and a dead page engine,
   `onRenderProcessGone`, after which the screen starts over) to the site's
@@ -6299,7 +6327,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.2.0, versionCode 4).
+  **Raise `versionCode` on every release** (current: 1.3.0, versionCode 5).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.

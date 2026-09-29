@@ -131,6 +131,7 @@ import {
   UserRoundCog,
 } from "lucide-react";
 import FindInPage from "./components/FindInPage";
+import OpenInAppPrompt from "./components/layout/OpenInAppPrompt";
 import DocumentTitle from "./components/DocumentTitle";
 import { usePageAccess } from "./hooks/usePageAccess";
 import { useCapabilities } from "./hooks/useCapabilities";
@@ -439,6 +440,10 @@ function AppWithLang() {
           <DocumentTitle />
           <LogoutOverlay />
           <FindInPage />
+          {/* «Open in the app» — the website in a phone's browser, on a phone
+              that has the Android app. Above the routes, so the login screen
+              offers it too. */}
+          <OpenInAppPrompt />
           {/* «Imtihon» — the dashboard exam's client engine: the mode switch, the
               current task and the bottom strip. Above the routes because Layout
               remounts per navigation; inside the router because it watches it. */}

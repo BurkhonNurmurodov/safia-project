@@ -184,3 +184,13 @@ export function inTelegram() {
   const platform = window.Telegram?.WebApp?.platform;
   return Boolean(platform) && platform !== "unknown";
 }
+
+/**
+ * Running inside the Safia IMS Android app (android/). Its web view names itself
+ * in the user agent (MainActivity: "SafiaIMS-Android/<version>"); nothing else
+ * does. To the site the app is a BROWSER — inTelegram() is false there — so this
+ * is only for the few places the app behaves differently from a browser tab.
+ */
+export function inAndroidApp() {
+  return /SafiaIMS-Android\//.test(navigator.userAgent || "");
+}

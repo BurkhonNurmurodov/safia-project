@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../utils/api";
-import { clearToken, getToken, inTelegram, isRemembered, isTabSession, isWebSession, setToken } from "../utils/session";
+import {
+  clearToken, getToken, inAndroidApp, inTelegram, isRemembered, isTabSession, isWebSession, setToken,
+} from "../utils/session";
 import { findProfile, listProfiles, removeProfile, saveProfile } from "../utils/profileWallet";
 
 const AuthContext = createContext(null);
@@ -214,6 +216,14 @@ export function AuthProvider({ children }) {
     // to whatever the admin's own tabs are signed in as, in this tab alone.
     if (auth?.impersonated) {
       clearToken();
+      // In the Android app the impersonated session is a SCREEN of its own on
+      // top of the admin's (SessionActivity): leaving it is closing it, which
+      // the app does on window.close() (app-bridge.js). Landing on "/" there
+      // would open a second copy of the admin's own session instead.
+      if (inAndroidApp()) {
+        window.close();
+        return;
+      }
       window.location.assign("/");
       return;
     }

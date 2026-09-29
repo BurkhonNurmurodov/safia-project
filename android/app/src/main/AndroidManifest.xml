@@ -67,6 +67,16 @@
             </intent-filter>
         </activity>
 
+        <!-- The admin's «open as this profile»: a second session on a screen of
+             its own, on top of the first (SessionActivity). Standard launch, so
+             it stacks in this task and back returns to the admin's own screen;
+             never started from outside the app. -->
+        <activity
+            android:name=".SessionActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|layoutDirection|locale"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Files FileHandoff hands to other apps (an opened photo, a download on
              Android 7–9). -->
         <provider

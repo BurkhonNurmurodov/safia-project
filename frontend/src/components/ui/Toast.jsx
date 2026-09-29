@@ -34,6 +34,8 @@ import { CheckCircle2, XCircle, AlertTriangle, Info, X } from "lucide-react";
  *               toolbar the operator is working in. Both insets respect the
  *               Telegram safe area.
  *   zIndex    – default 9999 (above modals; a toast reports on what they did)
+ *   icon      – a lucide icon in place of the tone's own, for a notice whose
+ *               subject says more than its tone does (OpenInAppPrompt's phone)
  */
 
 const TONES = {
@@ -53,8 +55,10 @@ export default function Toast({
   closable,
   position = "top",
   zIndex = 9999,
+  icon,
 }) {
-  const { bg, fg, Icon, live } = TONES[tone] ?? TONES.success;
+  const { bg, fg, Icon: ToneIcon, live } = TONES[tone] ?? TONES.success;
+  const Icon = icon || ToneIcon;
   // Errors persist by default; everything else self-dismisses.
   const ms = duration === undefined ? (tone === "error" ? 0 : 4000) : duration;
   const showClose = closable ?? !!onClose;
