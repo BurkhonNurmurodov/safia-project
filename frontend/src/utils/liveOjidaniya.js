@@ -138,7 +138,7 @@ const uid = () =>
  * runs from 23:50 to 00:20 therefore stays on the day it began, which is
  * exactly what the register's midnight rule (end <= start ⇒ next day) expects.
  */
-export function startRun({ atMs, cellId, cellCode, date, category, stopped, note }) {
+export function startRun({ atMs, cellId, cellCode, date, category, stopped, note, cleaners = null }) {
   const at = tashkentAt(atMs);
   const rec = {
     id: uid(),
@@ -147,6 +147,10 @@ export function startRun({ atMs, cellId, cellCode, date, category, stopped, note
     date,
     category,
     stopped: !!stopped,
+    // «Tozalovchilar» — asked at ▶ with the category on a Tozalash, null on
+    // every other cause. The KEY is always written: a record without it was
+    // born before the count existed (see `payloadOf`).
+    cleaners: Number.isInteger(cleaners) ? cleaners : null,
     start: at.hhmm,
     startedAtMs: atMs,
     end: null,
@@ -182,13 +186,16 @@ export function finishRun(id, atMs = Date.now()) {
 }
 
 /** The reason arrived (and the times may have been corrected) — it can go. */
-export function queueRun(id, { note, start, end, stopped }) {
+export function queueRun(id, { note, start, end, stopped, cleaners }) {
   return update(id, (r) => ({
     ...r,
     note: (note ?? r.note).trim(),
     start: start ?? r.start,
     end: end ?? r.end,
     stopped: stopped ?? r.stopped,
+    // Only a caller that ASKED the question writes the answer; a record from
+    // before the count existed keeps having no key (see `payloadOf`).
+    ...(cleaners !== undefined ? { cleaners } : {}),
     state: "queued",
     error: "",
   }));
@@ -253,6 +260,12 @@ export const payloadOf = (r) => ({
   end: r.end,
   stopped: r.stopped,
   note: r.note,
+  // «Tozalovchilar». Sent whenever the record carries the key — null on every
+  // other cause. A record with NO key was started on a bundle from before the
+  // count existed; leaving the key out is how the server knows, and it files
+  // that one as the whole cell rather than refusing a stop nobody could have
+  // counted.
+  ...("cleaners" in r ? { cleaners: r.cleaners } : {}),
   // The id the record was born with, sent on EVERY attempt: the server answers
   // a replay with the row it already wrote instead of filing a second one.
   client_key: r.id,

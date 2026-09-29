@@ -1638,6 +1638,29 @@ def add_idle_interval_client_key() -> None:
         db.close()
 
 
+def add_idle_interval_cleaners() -> None:
+    """2026-09-29: ``cell_ojidaniya_intervals`` gains ``cleaners`` — the
+    «Tozalovchilar» count a Tozalash (Cat H) entry must now carry: how many
+    people cleaned, so the cleaning is counted for them and not for the whole
+    cell (`services/idle_intervals.people_pieces`).
+
+    Nullable with no default, deliberately: NULL is «the whole cell», which is
+    exactly how every existing row — Tozalash included — has always been read,
+    so nothing moves when this runs (the operator's call: old entries stay whole
+    cell). Pure DDL and idempotent, so it needs no one-shot flag."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE cell_ojidaniya_intervals "
+            "ADD COLUMN IF NOT EXISTS cleaners INTEGER"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] idle interval cleaners migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 DEFAULT_FACTORY_SETTING = "default_factory_id"
 FACTORY_ALL_TAB_SETTING = "factory_all_tab_enabled"
 

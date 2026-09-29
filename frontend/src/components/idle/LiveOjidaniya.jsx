@@ -4,7 +4,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Play, Square, Radio, WifiOff, CloudUpload, AlertTriangle, Timer, TimerOff,
-  Trash2, RotateCw, Check, Clock, Info,
+  Trash2, RotateCw, Check, Clock, Info, Pencil, Users,
 } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
@@ -12,6 +12,7 @@ import FormField from "../ui/FormField";
 import TimeField from "../ui/TimeField";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import ConfirmDialog from "../ui/ConfirmDialog";
+import CountStepper from "../ui/CountStepper";
 import api from "../../utils/api";
 import { errText, isRetryable } from "../../utils/idleErrors";
 import { fmtDur } from "../../utils/idleTime";
@@ -82,6 +83,49 @@ const catName = (name, t) => {
     : `${t("idleCell.category")} ${c.code}`;
 };
 
+/* ------------------------------------------------------ the cleaners count */
+
+// «Tozalovchilar» — how many people a Tozalash takes (2026-09-29). ONE field for
+// both sheets, so ▶ and ■ ask it the same way the form beside them does. The cap
+// is the server's (`cell.cleaners_max`, the cell's people that day); null while
+// nobody typed that number, where only a typo above 200 is refused.
+const CREW_TYPO_MAX = 200;
+const crewValid = (n, max) => Number.isInteger(n) && n >= 1 && n <= (max ?? CREW_TYPO_MAX);
+
+function CrewField({ value, onChange, cell, t }) {
+  const max = Number.isInteger(cell?.cleaners_max) ? cell.cleaners_max : null;
+  const over = value != null && max != null && value > max;
+  const people = cell?.people;
+  return (
+    <FormField
+      label={t("idleCell.cleaners")}
+      required
+      hint={over ? undefined
+        : people != null
+          ? t("idleCell.cleanersHintPeople")
+              .replace("{n}", Number.isInteger(people) ? String(people) : Number(people).toFixed(1))
+              .replace("{max}", String(max))
+          : t("idleCell.cleanersHintNoPeople")}
+      error={over ? t("idleCell.cleanersAboveErr").replace("{max}", String(max)) : undefined}
+    >
+      <CountStepper value={value} onChange={onChange} min={1} max={max ?? CREW_TYPO_MAX}
+                    invalid={over} aria-label={t("idleCell.cleaners")} />
+    </FormField>
+  );
+}
+
+/** «2 kishi» beside a Tozalash on a row — the crew the figures will count. */
+function CrewChip({ n, t }) {
+  if (!Number.isInteger(n)) return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums"
+          style={{ background: "rgba(148,163,184,0.16)", color: "var(--text-2)" }}
+          title={t("idleCell.cleaners")}>
+      <Users size={10} />{t("idleCell.cleanersN").replace("{n}", String(n))}
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------- start sheet */
 
 // The clock is stamped by the PRESS that opened this sheet, not by the confirm:
@@ -91,6 +135,7 @@ function StartSheet({ atMs, cell, date, t, onCancel, onStart }) {
   const [category, setCategory] = useState("");
   const [wants, setWants] = useState(true);
   const [note, setNote] = useState("");
+  const [crew, setCrew] = useState(null);
   const now = useNow(true);
 
   // Cat H has no not-stopped half anywhere in the system, so the answer is
@@ -99,6 +144,10 @@ function StartSheet({ atMs, cell, date, t, onCancel, onStart }) {
   const cat = catByName(category);
   const locked = !!cat?.alwaysStopped;
   const stopped = locked ? true : wants;
+  // Asked at ▶ with the category (the operator's call): who is cleaning is
+  // known when the cleaning starts. Correctable at ■.
+  const needsCrew = !!cat?.cleaners;
+  const crewOk = !needsCrew || crewValid(crew, cell?.cleaners_max);
 
   const at = tashkentAt(atMs);
 
@@ -115,8 +164,8 @@ function StartSheet({ atMs, cell, date, t, onCancel, onStart }) {
           <Button
             variant="primary"
             icon={<Play size={15} />}
-            disabled={!category || !note.trim()}
-            onClick={() => onStart({ category, stopped, note })}
+            disabled={!category || !note.trim() || !crewOk}
+            onClick={() => onStart({ category, stopped, note, cleaners: needsCrew ? crew : null })}
           >
             {t("idleCell.liveStart")}
           </Button>
@@ -166,6 +215,8 @@ function StartSheet({ atMs, cell, date, t, onCancel, onStart }) {
           })}
         </div>
       </FormField>
+
+      {needsCrew && <CrewField value={crew} onChange={setCrew} cell={cell} t={t} />}
 
       <FormField
         label={t("idleCell.colStatus")}
@@ -218,10 +269,15 @@ function FinishSheet({ rec, cell, t, onClose, onSave, onResume, onDiscard }) {
   const [note, setNote] = useState(rec.note || "");
   const [start, setStart] = useState(rec.start || "");
   const [end, setEnd] = useState(rec.end || "");
+  const [crew, setCrew] = useState(Number.isInteger(rec.cleaners) ? rec.cleaners : null);
   const [askDrop, setAskDrop] = useState(false);
 
   const mins = elapsedMin({ ...rec, state: "pending", start, end });
-  const valid = note.trim().length > 0 && !!start && !!end && start !== end;
+  // The count given at ▶ is shown here to be corrected — and ASKED here for a
+  // record started before the count existed, or one the server refused.
+  const needsCrew = !!catByName(rec.category)?.cleaners;
+  const valid = note.trim().length > 0 && !!start && !!end && start !== end
+    && (!needsCrew || crewValid(crew, cell?.cleaners_max));
 
   return (
     <>
@@ -246,7 +302,7 @@ function FinishSheet({ rec, cell, t, onClose, onSave, onResume, onDiscard }) {
                 already past the point where the platform goes on counting it,
                 so resuming would re-cap it on the next tick and the button
                 would appear to do nothing. There the fix is the end field. */}
-            {!rec.capped && (
+            {!rec.capped && rec.state === "pending" && (
               <Button
                 variant="secondary" tint icon={<Play size={15} />}
                 onClick={() => onResume({ note })}
@@ -256,7 +312,8 @@ function FinishSheet({ rec, cell, t, onClose, onSave, onResume, onDiscard }) {
             )}
             <Button
               variant="primary" icon={<Check size={15} />}
-              disabled={!valid} onClick={() => onSave({ note, start, end })}
+              disabled={!valid}
+              onClick={() => onSave({ note, start, end, ...(needsCrew ? { cleaners: crew } : {}) })}
             >
               {t("idleCell.liveSave")}
             </Button>
@@ -301,6 +358,18 @@ function FinishSheet({ rec, cell, t, onClose, onSave, onResume, onDiscard }) {
             <TimeField value={end} onChange={setEnd} clearable={false} />
           </FormField>
         </div>
+
+        {needsCrew && <CrewField value={crew} onChange={setCrew} cell={cell} t={t} />}
+
+        {rec.state === "failed" && rec.error && (
+          // Why the server refused it, where it can be fixed — a record that can
+          // only be re-sent unchanged or thrown away loses the stop it records.
+          <div className="flex items-start gap-2 px-3 py-2 rounded-xl text-[11px] leading-snug"
+               style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.35)", color: "var(--text-2)" }}>
+            <AlertTriangle size={14} style={{ color: "#ef4444", flexShrink: 0 }} />
+            <span>{rec.error}</span>
+          </div>
+        )}
 
         <FormField
           label={t("idleCell.colNote")}
@@ -383,6 +452,7 @@ function RunningRow({ rec, now, t, onFinish }) {
         style={{ width: 8, height: 8, borderRadius: 999, background: near ? "#eab308" : "#ef4444" }}
       />
       <CatChip name={rec.category} t={t} />
+      <CrewChip n={rec.cleaners} t={t} />
       <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{rec.start}</span>
       {!rec.stopped && (
         <span className="text-[10px] px-1.5 py-0.5 rounded"
@@ -424,6 +494,7 @@ function RecordRow({ rec, t, onOpen, onRetry, onDiscard }) {
     >
       <Icon size={14} style={{ color: tone.fg, flexShrink: 0 }} />
       <CatChip name={rec.category} t={t} />
+      <CrewChip n={rec.cleaners} t={t} />
       <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>
         {rec.start} – {rec.end}
       </span>
@@ -448,6 +519,9 @@ function RecordRow({ rec, t, onOpen, onRetry, onDiscard }) {
       )}
       {rec.state === "failed" && (
         <>
+          <Button size="sm" variant="primary" tint icon={<Pencil size={13} />} onClick={onOpen}>
+            {t("idleCell.liveFix")}
+          </Button>
           <Button size="sm" variant="secondary" tint icon={<RotateCw size={13} />} onClick={onRetry}>
             {t("idleCell.liveRetry")}
           </Button>
@@ -662,7 +736,7 @@ export default function LiveOjidaniya({ cells, date, day, t, tl, toast, onToday 
         date={date}
         t={t}
         onCancel={() => setStarting(null)}
-        onStart={({ category, stopped, note }) => {
+        onStart={({ category, stopped, note, cleaners }) => {
           startRun({
             atMs: starting.atMs,
             cellId: starting.cell.cell_id,
@@ -671,6 +745,7 @@ export default function LiveOjidaniya({ cells, date, day, t, tl, toast, onToday 
             category,
             stopped,
             note,
+            cleaners,
           });
           setStarting(null);
         }}
@@ -682,8 +757,8 @@ export default function LiveOjidaniya({ cells, date, day, t, tl, toast, onToday 
         cell={cells.find((c) => c.cell_id === finishRec?.cellId)}
         t={t}
         onClose={() => setFinishing(null)}
-        onSave={({ note, start, end }) => {
-          queueRun(finishRec.id, { note, start, end });
+        onSave={({ note, start, end, cleaners }) => {
+          queueRun(finishRec.id, { note, start, end, cleaners });
           setFinishing(null);
           toast?.success?.(t("idleCell.liveQueuedToast"));
           send();

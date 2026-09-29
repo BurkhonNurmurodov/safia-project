@@ -64,7 +64,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Iterable, Optional
 
 from app.services import idle_intervals
-from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
+from app.services.sheets_reader import CLEANERS_CATS, OJIDANIYA_ONLY_CATS
 
 TZ = timezone(timedelta(hours=5))       # Tashkent, the platform's wall clock
 DAY = 1440
@@ -189,12 +189,18 @@ def cell_idle(rows: Iterable[dict], frame: dict) -> dict:
     загрузка's categories only, then everything), what is running right now,
     and the per-category split for the tooltip.
 
-    ``rows`` are ``{category, start, end, stopped, note}`` — approved intervals
-    of this cell on the frame's day."""
+    A running TOZALASH is not a stopped cell (the operator's call,
+    2026-09-29): only its «Tozalovchilar» are cleaning, so it never sets
+    ``stopped_now`` or raises the red alarm — it is ``cleaning_now``, with
+    the crew, and the tile says «tozalanmoqda · N kishi».
+
+    ``rows`` are ``{category, start, end, stopped, note, cleaners}`` —
+    approved intervals of this cell on the frame's day."""
     win_lo, win_hi, now_rel = frame["win_lo"], frame["win_hi"], frame["now_rel"]
     live = frame["state"] == "running"
     counted, everything = [], []
     ongoing = []
+    cleaning = []
     by_cat: dict = defaultdict(int)
     ns_min = 0
     events = 0
@@ -217,7 +223,10 @@ def cell_idle(rows: Iterable[dict], frame: dict) -> dict:
         if last_end is None or sp[1] > last_end:
             last_end = sp[1]
         if live and sp[0] <= now_rel < sp[1]:
-            ongoing.append((sp, cat, r.get("note") or ""))
+            if cat in CLEANERS_CATS:
+                cleaning.append((sp, r.get("cleaners")))
+            else:
+                ongoing.append((sp, cat, r.get("note") or ""))
     out = {
         "idle_min": idle_intervals.union_minutes(counted),
         "idle_all": idle_intervals.union_minutes(everything),
@@ -226,6 +235,8 @@ def cell_idle(rows: Iterable[dict], frame: dict) -> dict:
         "by_cat": dict(sorted(by_cat.items(), key=lambda kv: -kv[1])),
         "stopped_now": bool(ongoing),
         "since": None, "now_min": None, "now_cats": [], "now_note": None,
+        "cleaning_now": bool(cleaning),
+        "cleaning_since": None, "cleaning_min": None, "cleaners": None,
         "last_end": idle_intervals.fmt_min(int(last_end)) if last_end is not None else None,
         "last_end_ago": (_r(now_rel - last_end, 0) if last_end is not None and now_rel >= last_end else None),
     }
@@ -233,6 +244,14 @@ def cell_idle(rows: Iterable[dict], frame: dict) -> dict:
         lo = min(o[0][0] for o in ongoing)
         out["since"] = idle_intervals.fmt_min(int(lo))
         out["now_min"] = _r(now_rel - lo, 0)
+    if cleaning:
+        lo = min(c[0][0] for c in cleaning)
+        out["cleaning_since"] = idle_intervals.fmt_min(int(lo))
+        out["cleaning_min"] = _r(now_rel - lo, 0)
+        # Two groups cleaning at once add up; an entry with no count (filed
+        # before the count existed) leaves the crew unstated rather than guessed.
+        crews = [c[1] for c in cleaning]
+        out["cleaners"] = None if any(v is None for v in crews) else sum(crews)
         cats = []
         for _sp, cat, _n in ongoing:
             if cat not in cats:

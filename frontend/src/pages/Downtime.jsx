@@ -843,7 +843,7 @@ export default function Downtime() {
             source: t("downtime.dt.colSource"), srcCells: t("downtime.dt.srcCells"), srcSheet: t("downtime.dt.srcSheet"),
             events: t("downtime.xl.events"), noEvents: t("downtime.xl.noEvents"),
             cell: t("downtime.dt.colCell"), leader: t("idleCell.leader"),
-            hc: t("downtime.dt.cellHc"), start: t("idleCell.startTime"),
+            hc: t("downtime.dt.cellHc"), cleaners: t("idleCell.cleaners"), start: t("idleCell.startTime"),
             end: t("idleCell.endTime"), status: t("idleCell.colStatus"),
             stoppedYes: t("idleCell.stopped"), stoppedNo: t("idleCell.notStopped"), note: t("idleCell.colNote"),
             legendTitle: t("downtime.catGuide"), legendSub: t("downtime.catGuideSub"),

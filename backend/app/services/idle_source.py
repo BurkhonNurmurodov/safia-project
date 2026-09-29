@@ -52,7 +52,15 @@ actually typed rather than counting one work centre several times over.
 
 ``Tᵢ`` is the UNION of the cell's stopped ranges, and every piece of that
 arithmetic lives in ``services/idle_intervals`` — this module only decides
-WHICH rows go in and how the cells are weighed together. The Ojidaniya-only
+WHICH rows go in and how the cells are weighed together.
+
+**Nᵢ·Tᵢ is really the cell's PERSON-MINUTES** (2026-09-29). A Tozalash entry
+names how many people cleaned («Tozalovchilar», ``cleaners``), and a minute only
+cleaning covers counts those people rather than the whole cell — 2 of 10
+cleaning for 20 minutes is 40, not 200. A minute another cause covers still
+counts the whole cell once. ``idle_intervals.people_pieces`` is THE rule; with
+no count on a day it is exactly ``Nᵢ·Tᵢ``, and every entry filed before the
+count existed is read as the whole cell, so no history moved. The Ojidaniya-only
 categories (`OJIDANIYA_ONLY_CATS` — today Cat H alone; Cat I joined the
 загрузка on 2026-08-22) are dropped BEFORE the union for the KPI figure,
 never subtracted after it (they may overlap a counted category, and
@@ -298,6 +306,9 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
                 # per-cell AVERAGE the «Toifalar bo\'yicha» matrix asks for
                 # (Σ T ÷ cells that had people), and the two must never be
                 # mixed up: they answer different questions about one day.
+                # A Tozalash minute enters it as its SHARE of the cell's
+                # people (2 cleaners of 10 → 0.2 of a minute), so the matrix
+                # still reads «minutes of the cell's time» for every cause.
                 "p_cat": defaultdict(float), "p_cat_ns": defaultdict(float),
                 "n_sum": 0.0, "cells_with_att": 0, "cells_with_idle": 0,
             }
@@ -310,22 +321,33 @@ def unit_downtime(db: Session, manager_ids: Iterable[int],
         a["cells_with_idle"] += 1
         rows = [
             {"id": iv.id, "category": iv.category, "start": iv.start,
-             "end": iv.end, "stopped": bool(iv.stopped)}
+             "end": iv.end, "stopped": bool(iv.stopped),
+             "cleaners": iv.cleaners}
             for iv in ivs
         ]
         # The Ojidaniya-only categories are dropped BEFORE the union (never
         # subtracted after it) for the KPI figure; the all-categories union is
         # what /idle-cell itself prints.
         counted = [r for r in rows if r["category"] not in OJIDANIYA_ONLY_CATS]
-        s_kpi = idle_intervals.summarize(counted) if counted else None
         s_all = idle_intervals.summarize(rows)
 
-        a["w_total"] += n * float(s_kpi["stopped_union_min"] if s_kpi else 0)
-        a["w_total_all"] += n * float(s_all["stopped_union_min"])
+        # Person-minutes, not N × minutes: a Tozalash entry names how many
+        # people cleaned, and a minute only cleaning covers is theirs alone
+        # (`idle_intervals.people_pieces`, 2026-09-29). With no count on the
+        # day this is exactly N × the union, the figure it always was.
+        if counted:
+            a["w_total"] += idle_intervals.person_minutes(
+                idle_intervals.people_pieces(counted, n))
+        a["w_total_all"] += idle_intervals.person_minutes(
+            idle_intervals.people_pieces(rows, n))
         for cat, c in s_all["by_category"].items():
             if c["union_min"]:
-                a["w_cat"][cat] += n * float(c["union_min"])
-                a["p_cat"][cat] += float(c["union_min"])
+                pieces = idle_intervals.people_pieces(
+                    [r for r in rows if r["category"] == cat], n)
+                a["w_cat"][cat] += idle_intervals.person_minutes(pieces)
+                # The matrix's numerator: minutes of the WHOLE cell's time, so
+                # 20 minutes cleaned by 2 of 10 people read as 4.
+                a["p_cat"][cat] += idle_intervals.cell_share_minutes(pieces, n)
         # Not-stopped: plain sum of spans per category — they never entered a
         # union, so there is nothing to merge.
         for r in rows:

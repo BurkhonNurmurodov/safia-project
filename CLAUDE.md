@@ -26,6 +26,7 @@ or copy-paste its markup into a page.
 | Form label + control | `FormField.jsx` | Uppercase 11px label, red `*` when `required`. `hint` puts consequential copy ("this resets manual edits", "re-uploading replaces the day") UNDER the control at 11px/`--text-3` — never at `--text-4`, where the eye skips exactly the text that matters most. `error` attaches a validation message to the field that caused it instead of dumping one paragraph below every field. |
 | Text field that exists in all 4 languages | `LangTextInput.jsx` | Never stack one input per language. A `SegmentedToggle` of language tabs (uz · uz_cyrl · ru · en, **ru open by default**) over ONE input for the selected tab. Every language is optional; a blank tab shows the Russian text as its PLACEHOLDER (previewed, never saved) plus the `ui.langInput.ruFallback` hint, because Russian is what the UI falls back to. Tabs stay plain — no filled/empty markers. `placeholderFn(lang)` previews something computed (e.g. a transliteration) instead of the Russian text; `action` puts a per-tab button beside the input — use these to ADOPT the template rather than forking it into stacked inputs. |
 | Time of day (HH:MM) | `TimeField.jsx` | THE clock field. A native `<input type="time">` in the house control skin (`bg-inner`, border, `rounded-xl`, `px-3 py-2 text-sm`) plus a ghost ✕ that clears to `""`. **Blank means INHERIT or UNSET — never midnight**, so a blank field with an `inherit` string renders `ui.timeField.inherits` under it at 11px/`--text-3`: a blank native time input paints "--:--" and states nothing about the value actually in force, which is precisely the value the reader needs. `value`/`onChange` are plain "HH:MM" strings (the handler gets the string, not the event). Pairs of these follow the platform clock convention — Tashkent wall clock, `end <= start` ⇒ the window crosses midnight. Never hand-roll another `<input type="time">`; `TimeWheelPicker.jsx` stays the separate, window-BOUNDED picker (needs `lo`/`hi`, cannot express blank) for entering an event's clock inside a known range. |
+| Whole-number count (how many people / pieces) | `CountStepper.jsx` | THE count field: − · number · + in the house control skin at the 38px baseline, 16px text below md so iOS never zooms. `value`/`onChange` are a whole number or `null` (the handler gets the NUMBER) — blank means «not answered yet», never 0. The ± buttons stop AT `min`/`max` (a − from a number typed above `max` lands on it); a TYPED number above `max` is kept as typed and left to the caller's `FormField` `error` + `invalid` — silently clamping somebody's number is a guess. First callers: the «Tozalovchilar» count on the /idle-cell form and in the «Jonli» recorder. Never hand-roll another numeric input for a count. |
 | Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
 | Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. `footer` holds actions over the whole list (add / remove rows, a selection's bulk bar) outside the scroll cap, so it stays in view; `headSize="lg"` when the card IS the page's subject and its subtitle must be read. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
 | Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. `size="lg"` titles a whole card rather than labelling a table — a sentence-case 15px title with its `subtitle` under it and a 22px icon (the appeal chat card). |
@@ -1268,6 +1269,76 @@ fleet page and the Daily donut start disagreeing about the same minutes.
   `/zagruzka-cell`'s «Cat H: N daq hisobga olinmadi» note names the remaining
   category, and its reconciliation delta shrinks accordingly.
 
+## Tozalash counts its CLEANERS («Tozalovchilar»)
+
+From **2026-09-29** (the operator's rulings, asked one by one) a Tozalash (Cat H)
+ojidaniya must say HOW MANY PEOPLE cleaned, and every figure counts those people
+— not the whole cell — for the minutes cleaning alone covered. Not everybody in a
+cell cleans: 2 of 10 cleaning for 20 minutes is 40 person-minutes, and the
+whole-cell reading billed 200. Leaders were already typing the count into the
+reason by hand (65 of 96 Tozalash entries on the 11 Sep copy: «2 ta odam
+tozaladi»), and the old shift sheet asked it beside Cat H («Нечта одам
+тозалади?») and never read it.
+
+- **`sheets_reader.CLEANERS_CATS` is THE list** of categories that carry a count
+  (today `{"Cat H"}`), beside `OJIDANIYA_ONLY_CATS`; the client twin is the
+  `cleaners` flag in `components/idle/categories.js`. Tozalash stays OUT of the
+  загрузка — this changes who a cleaning minute is counted for, not whether it
+  counts there.
+- **The count is `cell_ojidaniya_intervals.cleaners`** (nullable int,
+  `startup.add_idle_interval_cleaners`, both entrypoints). **NULL is the whole
+  cell** — every other cause, and every Tozalash filed before the count existed
+  (the operator's call: old entries stay whole cell, so no history moved).
+- **`idle_intervals.people_pieces` is THE arithmetic** — the union split by how
+  many people stood in each minute. A minute any whole-cell row covers counts the
+  whole cell ONCE (a cleaning inside another cause's stop adds nothing); a minute
+  only Tozalash rows cover counts the Σ of their counts (two groups cleaning at
+  once), never above the cell's people — which is also what a count left above
+  a number the brigadir LOWERED later is read as. With no count on a day it is
+  exactly N × the union, the figure every reader had before. `person_minutes` and
+  `cell_share_minutes` fold it; never re-spell the per-minute rule.
+- **Where it moves a number**: `idle_source.unit_downtime` (the weighted mean —
+  «Barchasi» on /downtime, its bar modal, the Ojidaniya workbook, /live's
+  waiting, and the weekly svodka — every all-categories view; a `kpi_only`
+  reader such as the Daily donut never had Cat H in it);
+  «Toifalar bo'yicha» (a Tozalash minute is its SHARE of the cell's people — 20
+  minutes by 2 of 10 read 4, so the row stays comparable with causes that stop
+  everybody); «Xarajat» (priced at the crew — and priced even where the cell's
+  own number was never typed, because the crew is on the entry; a row folding
+  whole-cell and crew minutes prints their minute-weighted `hc` with `*`).
+  Unchanged: the загрузка and everything on it, the weekly deck (no Cat H),
+  /zagruzka-cell.
+- **The entry rule is `routers/idle_cell._cleaners_for`**: required on every
+  Tozalash save (create AND edit — an old entry is asked for its count the first
+  time somebody edits it), a whole number from 1 to the cell's people that day
+  (`idle_source.cell_headcount` over EVERY cell of the unit, rounded UP so an
+  even work-centre share never blocks a whole person), and up to 200 (a typo
+  guard) while the brigadir has not typed that number. Refusals are structured
+  (`cleaners_required` / `cleaners_above_people` + `max` / `cleaners_invalid`)
+  and `utils/idleErrors.errText` words them. **A body with NO `cleaners` key is a
+  tab from before the count existed** and is never refused over it (the
+  `wc_group` precedent): a new entry is read as the whole cell, an edit keeps the
+  row's count. The current bundle always sends the key. On create the rule runs
+  AFTER the live recorder's replay answer, never before — a record already
+  stored is not refused because the cell's people changed since.
+- **Both doors ask it with ONE control** — `ui/CountStepper.jsx`: the form, right
+  under the category, with the cell's people and the cap as its hint
+  (`cells[].people` / `cleaners_max` on `GET /api/idle-cell/cells`); «Jonli» at ▶
+  with the category (the operator's call), correctable at ■. A record started
+  before the count existed carries no key and is sent without one; **a record the
+  server refuses now opens for correction** («Tuzatish» on the failed row → the
+  finish sheet, showing the refusal) instead of offering only a blind retry or a
+  delete that loses the stop.
+- **It is shown wherever an entry is listed**: the /idle-cell register (a chip;
+  AMBER with the reason on hover when the count now stands above the cell's
+  people — `over_people`, the server's answer — because the figures then count
+  the cell's people), the bar modal, the «Xarajat» entries (its `hc`), both
+  workbooks' event sheets («Tozalovchilar» column), and the brigadir's
+  new-entry DM card + bell text (a line `_render_body` drops when blank).
+- **/live: a running Tozalash is NOT a stopped cell** — `cleaning_now` with the
+  crew («tozalanmoqda · 2 kishi»), no pulse, no red alarm; `stopped_now` and its
+  alerts are the other causes only.
+
 ## Ojidaniya comes from the CELLS (`/admin/upload?tab=idlesource`)
 
 From **2026-08-27** — `idle_source.CELLS_FROM`, the user's directive — **every**
@@ -1810,6 +1881,10 @@ brigadirs), the days of a MONTH across.
   the same `with_avg` flag as the averages, so every other caller's payload is
   byte-identical; with no such key the matrix falls back to the units its rows
   name. `hidden` is gone from the payload, both renderers and all four locales.
+- **A Tozalash minute enters as its SHARE of the cell's people** (from
+  2026-09-29): 20 minutes cleaned by 2 of 10 read 4 — `idle_source`'s
+  `by_category_sum` is `idle_intervals.cell_share_minutes`. See «Tozalash counts
+  its CLEANERS».
 - **Blank means ZERO, «·» means NO DIVISOR, and a HATCHED column is a day that
   has not happened yet.** Keeping the zeros blank is what lets the non-zero
   values read across 31 columns; all three are named in the legend under the
@@ -1871,6 +1946,9 @@ From **2026-09-09** `/downtime` carries a third view, «Xarajat», which prices
 stopped waiting in wages:
 
     xarajat(yacheyka, kun) = union_minutes ÷ 60 × odam soni × w(kun)
+
+(From 2026-09-29 the minutes only a Tozalash covers are priced at its
+«Tozalovchilar», not the whole cell — see «Tozalash counts its CLEANERS».)
 
 `services/ojidaniya_cost.py` is THE computation and `services/wage_rate.py` owns
 the last term. Nothing here is a new measurement — the minutes are

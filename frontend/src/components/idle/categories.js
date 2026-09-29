@@ -9,6 +9,12 @@ import { CATEGORY_COLORS } from "../../utils/chartPalette";
 // what the backend stores. Cat H is ALWAYS a real stop — it never had a
 // To'xtamaganda half (its second source column is a headcount), so the
 // stopped/not-stopped question is not asked of it on either side.
+//
+// `cleaners` marks the category whose entry must say HOW MANY PEOPLE it took —
+// «Tozalovchilar» (2026-09-29): not everybody in a cell cleans, and the
+// figures count only those who did. Mirrors the backend's
+// `sheets_reader.CLEANERS_CATS`; the form and the live recorder both ask it
+// off this flag, never off the category's name.
 export const CATS = [
   { code: "A",  name: "Cat A" },
   { code: "A2", name: "Cat A2" },
@@ -20,7 +26,7 @@ export const CATS = [
   { code: "E",  name: "Cat E" },
   { code: "F",  name: "Cat F" },
   { code: "G",  name: "Cat G" },
-  { code: "H",  name: "Cat H", alwaysStopped: true },
+  { code: "H",  name: "Cat H", alwaysStopped: true, cleaners: true },
   { code: "I",  name: "Cat I" },
 ];
 

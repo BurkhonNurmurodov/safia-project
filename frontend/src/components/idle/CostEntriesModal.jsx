@@ -119,7 +119,10 @@ export default function CostEntriesModal({ open, onClose, ctx, from, to, money }
                   </td>
                   <td className={`${td} text-right tabular-nums`} style={{ borderColor: "var(--border)" }}>{num(r.minutes)}</td>
                   <td className={`${td} text-right tabular-nums`} style={{ borderColor: "var(--border)", color: "var(--text-2)" }}>{num(r.hours, 1)}</td>
-                  <td className={`${td} text-right tabular-nums`} style={{ borderColor: "var(--border)", color: "var(--text-2)" }}>
+                  {/* On a Tozalash this is its «Tozalovchilar» — the crew it is
+                      priced at, never above the cell's people — and says so. */}
+                  <td className={`${td} text-right tabular-nums`} style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
+                      title={r.cleaners != null ? t("idleCell.cleaners") : undefined}>
                     {r.hc == null ? <span style={{ color: "var(--text-4)" }}>—</span> : num(r.hc, 1)}
                   </td>
                   <td className={`${td} text-right tabular-nums font-semibold`} style={{ borderColor: "var(--border)" }}>

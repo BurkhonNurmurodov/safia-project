@@ -16,6 +16,16 @@ export function errText(e, t) {
   const d = e?.response?.data?.detail;
   const code = raw && typeof raw === "object" ? raw.code : null;
   if (code === "day_closed") return t("idleCell.dayClosedErr");
+  // The «Tozalovchilar» count (2026-09-29): missing, or more people than stood
+  // in the cell that day. The limit rides on the refusal, because the cell's
+  // number can have been typed after the form opened.
+  if (code === "cleaners_required") return t("idleCell.cleanersRequiredErr");
+  if (code === "cleaners_above_people") {
+    return t("idleCell.cleanersAboveErr").replace("{max}", String(raw.max ?? ""));
+  }
+  if (code === "cleaners_invalid") {
+    return t("idleCell.cleanersInvalidErr").replace("{max}", String(raw.max ?? ""));
+  }
   if (typeof d === "string" && d) return d;
   return t("idleCell.saveError");
 }

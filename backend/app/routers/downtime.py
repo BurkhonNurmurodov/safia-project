@@ -579,6 +579,10 @@ def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
             "end": e.end,
             "minutes": idle_intervals.duration(e.start, e.end),
             "stopped": bool(e.stopped),
+            # «Tozalovchilar» — how many people a Tozalash took; NULL = the
+            # whole cell (every other cause, and every entry filed before the
+            # count existed).
+            "cleaners": e.cleaners,
             "note": e.note or "",
         })
 
@@ -639,6 +643,9 @@ _DT_COLS = [
     # and a 0 there would read as a cell that ran empty.
     ("hc",       "Odam soni",   12, "num"),
     ("category", "Kategoriya",  14, "text"),
+    # How many people a Tozalash took — blank on every other row: those count
+    # the whole cell, and «Odam soni» beside it already says how many that is.
+    ("cleaners", "Tozalovchilar", 13, "num"),
     ("start",    "Boshlandi",   11, "text"),
     ("end",      "Tugadi",      11, "text"),
     ("minutes",  "Daqiqa",      10, "num"),
@@ -714,7 +721,8 @@ def export_downtime_cell_detail(
                 rows.append({
                     "date": d, "cell": c["code"], "leader": c["leader"] or "",
                     "hc": c["hc"],
-                    "category": iv["category"], "start": iv["start"], "end": iv["end"],
+                    "category": iv["category"], "cleaners": iv.get("cleaners"),
+                    "start": iv["start"], "end": iv["end"],
                     "minutes": iv["minutes"], "stopped": yes if iv["stopped"] else no,
                     "note": iv["note"], "source": src_cells,
                 })
@@ -742,7 +750,7 @@ def export_downtime_cell_detail(
                     continue
                 rows.append({
                     "date": stamps[r.date], "cell": "", "leader": "", "hc": None,
-                    "category": cat,
+                    "category": cat, "cleaners": None,
                     "start": "", "end": "", "minutes": round(float(val), 1),
                     "stopped": yes if body.stopped else no, "note": "", "source": src_sheet,
                 })
@@ -955,7 +963,7 @@ def export_downtime(
                     events.append({
                         "date": d, "name": s["name"], "cell": c["code"] or "",
                         "leader": c["leader"] or "", "hc": c["hc"],
-                        "category": iv["category"],
+                        "category": iv["category"], "cleaners": iv.get("cleaners"),
                         "start": iv["start"], "end": iv["end"], "minutes": iv["minutes"],
                         "stopped": bool(iv["stopped"]), "note": iv["note"], "source": "cells",
                     })

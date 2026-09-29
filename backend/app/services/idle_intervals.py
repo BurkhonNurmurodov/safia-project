@@ -30,6 +30,12 @@ into the next day (+1440) and every span is a real forward interval. That makes
 shift 2 (17:00 -> 09:00) ordinary arithmetic rather than a branch, and it is
 what bounds a range to 1..1439 minutes: a start equal to its end is rejected at
 the door rather than silently becoming 24 hours.
+
+**A minute is not always the whole cell** (2026-09-29). A Tozalash entry names
+how many people cleaned («Tozalovchilar»), and a minute only cleaning covers is
+theirs alone — `people_pieces` is the one place that turns the union into
+person-minutes, so the mean, the matrix and the cost cannot count one cleaning
+three ways. The union itself — the answer to «how long» — is untouched by it.
 """
 from typing import Iterable, Optional
 
@@ -120,6 +126,82 @@ def merged_spans(rows: Iterable[dict], stopped_only: bool = True) -> list[dict]:
     how a bar and the total printed above it start disagreeing."""
     return [{"start": fmt_min(s), "end": fmt_min(e), "minutes": e - s}
             for s, e in merge(_spans_of(rows, stopped_only=stopped_only))]
+
+
+def people_pieces(rows: Iterable[dict], people: Optional[float],
+                  stopped_only: bool = True) -> dict:
+    """The rows' union split by HOW MANY PEOPLE stood in each minute —
+    ``{people: minutes}``. THE rule for turning a cell's waiting into
+    person-minutes; every figure that multiplies minutes by a headcount (the
+    unit's weighted mean, the «Toifalar bo'yicha» share, «Xarajat») reads it.
+
+    A row counts the WHOLE CELL (``people``) unless it names its own crew in
+    ``cleaners`` — the «Tozalovchilar» of a Tozalash entry (2026-09-29, the
+    operator's rulings), because not everybody in a cell cleans. Minute by
+    minute:
+
+    * a minute ANY whole-cell row covers counts the whole cell, once — a cell
+      stopped for another cause is already all stopped, so a cleaning inside it
+      adds nothing;
+    * a minute only counted rows cover counts the Σ of their counts — two groups
+      cleaning at once — never above the cell's people. The same cap keeps a
+      count typed before the brigadir LOWERED the cell's people honest.
+
+    ``people`` unknown (nobody typed the cell's number) is still an answer for
+    the counted minutes — the crew is stated on the entry itself — so they keep
+    their uncapped count, while a minute that needs the whole cell lands under
+    the key ``None``. Σ of the values is always ``union_minutes`` of the same
+    rows: this splits the union, it never re-measures it, so a day with no count
+    anywhere is exactly ``{people: union}``, the figure every reader had before.
+    """
+    items: list[tuple[int, int, Optional[int]]] = []
+    for r in rows:
+        if stopped_only and not r.get("stopped", True):
+            continue
+        sp = span(r.get("start"), r.get("end"))
+        if not sp:
+            continue
+        c = r.get("cleaners")
+        items.append((sp[0], sp[1], None if c is None else max(0, int(c))))
+    out: dict = {}
+    if not items:
+        return out
+    whole = None if people is None else float(people)
+    cuts = sorted({s for s, _, _ in items} | {e for _, e, _ in items})
+    for a, b in zip(cuts, cuts[1:]):
+        covered, full, crew = False, False, 0
+        for s, e, c in items:
+            if s <= a and b <= e:
+                covered = True
+                if c is None:
+                    full = True
+                    break
+                crew += c
+        if not covered:
+            continue
+        if full:
+            key = whole
+        else:
+            key = float(crew) if whole is None else min(whole, float(crew))
+        out[key] = out.get(key, 0) + (b - a)
+    return out
+
+
+def person_minutes(pieces: dict) -> float:
+    """Σ people × minutes over `people_pieces` — what the waiting cost in
+    people's time. A piece whose headcount is unknown (key ``None``) adds
+    nothing: it is the caller's to report as unpriced, never to guess."""
+    return sum(float(k) * m for k, m in pieces.items() if k is not None)
+
+
+def cell_share_minutes(pieces: dict, people: float) -> float:
+    """Minutes of the WHOLE CELL's time — each piece scaled by its share of the
+    cell's people. A whole-cell minute is one minute; 20 minutes cleaned by 2 of
+    10 people are 4. «Toifalar bo'yicha» reads this (the operator's call), so a
+    Tozalash row there stays comparable with the causes that stop everybody.
+    Only defined for a cell with people; the caller guarantees ``people > 0``."""
+    p = float(people)
+    return sum(m * (float(k) / p) for k, m in pieces.items() if k is not None)
 
 
 def overlap_ids(rows: Iterable[dict]) -> list:

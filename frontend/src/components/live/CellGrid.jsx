@@ -1,4 +1,4 @@
-import { Grid3x3, Siren } from "lucide-react";
+import { Grid3x3, Siren, Sparkles } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import EmptyState from "../ui/EmptyState";
@@ -58,7 +58,21 @@ function Tile({ c, t }) {
           ))}
         </div>
       )}
-      {!stopped && idle.by_cat && Object.keys(idle.by_cat).length > 0 && (
+      {/* A running Tozalash is NOT a stopped cell (2026-09-29): only its
+          «Tozalovchilar» are cleaning, so it says so in the category's own hue,
+          with no pulse and no alarm. */}
+      {!stopped && idle.cleaning_now && (
+        <div className="flex items-center gap-1 flex-wrap text-[10px] font-bold" style={{ color: catColor("Cat H") }}>
+          <Sparkles size={11} />
+          <span>
+            {idle.cleaners != null
+              ? tp(t, "live.cleaningNowN", { n: fmtInt(idle.cleaners) })
+              : t("live.cleaningNow")}
+          </span>
+          {idle.cleaning_min != null && <span>· {fmtInt(idle.cleaning_min)} {t("live.min")}</span>}
+        </div>
+      )}
+      {!stopped && !idle.cleaning_now && idle.by_cat && Object.keys(idle.by_cat).length > 0 && (
         <div className="flex items-center gap-1 flex-wrap">
           {Object.keys(idle.by_cat).slice(0, 3).map((k) => (
             <span key={k} className="text-[9px] font-bold px-1 rounded" style={{ background: hexA(catColor(k), 0.16), color: catColor(k) }}

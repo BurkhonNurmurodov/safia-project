@@ -84,6 +84,18 @@ _MARK_STOPPED = ("тухтаганда", "to'xtaganda", "toxtaganda")
 # does, not a stoppage it suffered.
 OJIDANIYA_ONLY_CATS = {"Cat H"}
 
+# Categories whose entry names HOW MANY PEOPLE it took — «Tozalovchilar»
+# (2026-09-29, the operator's directive). Not everybody in a cell cleans: 2 of
+# 10 cleaning for 20 minutes is 40 person-minutes, not the 200 a whole-cell
+# reading bills. The entry must carry the count (`cell_ojidaniya_intervals.
+# cleaners`, refused above the cell's people) and every figure counts only
+# those people for the minutes Tozalash alone covers —
+# `services/idle_intervals.people_pieces` is THE rule. It is the question the
+# old shift sheet asked beside Cat H («Нечта одам тозалади?») and never read.
+# ONE list, like the set above: the entry doors, the readers and /live all ask
+# it, so a category starts carrying a count everywhere at once.
+CLEANERS_CATS = {"Cat H"}
+
 
 def get_client() -> gspread.Client:
     global _gc

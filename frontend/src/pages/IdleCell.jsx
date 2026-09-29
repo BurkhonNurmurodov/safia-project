@@ -4,7 +4,7 @@ import {
   Info, ChevronDown, Flag, Repeat2, Plus, Trash2, Layers, UserRound, Boxes,
   Layers2, Archive, Play, Square, Pencil, Sunrise,
   GanttChartSquare, ListTree, Clock, Timer, MessageSquareText,
-  Lock, Unlock, Radio,
+  Lock, Unlock, Radio, Users, AlertTriangle,
 } from "lucide-react";
 import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 import CategoryLegendModal from "../components/ui/CategoryLegendModal";
@@ -174,7 +174,31 @@ function StatusCell({ r, t }) {
       {!r.stopped && <span>· {t("idleCell.notCounted")}</span>}
     </span>
     {r.live && <LiveChip r={r} t={t} />}
+    {r.cleaners != null && <CrewChip r={r} t={t} />}
     </>
+  );
+}
+
+// How many people a Tozalash took — the figures count them, not the whole cell,
+// for the minutes cleaning alone covered. Amber, with the reason on hover, when
+// the count now stands above the cell's people: the brigadir typed (or lowered)
+// that number after the entry was saved, and the figures count the cell's
+// people instead. Nothing on an entry filed before the count existed — that one
+// is the whole cell, as it always was.
+function CrewChip({ r, t }) {
+  const people = r.cellPeople;
+  const shown = people == null ? "" : (Number.isInteger(people) ? String(people) : Number(people).toFixed(1));
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ml-1 tabular-nums"
+      style={r.overPeople
+        ? { background: "rgba(234,179,8,0.16)", color: "#eab308", border: "1px solid rgba(234,179,8,0.4)" }
+        : { background: "rgba(148,163,184,0.14)", color: "var(--text-2)", border: "1px solid rgba(148,163,184,0.35)" }}
+      title={r.overPeople ? t("idleCell.cleanersOverHint").split("{n}").join(shown) : t("idleCell.cleaners")}
+    >
+      {r.overPeople ? <AlertTriangle size={9} /> : <Users size={9} />}
+      {t("idleCell.cleanersN").replace("{n}", String(r.cleaners))}
+    </span>
   );
 }
 
@@ -287,6 +311,16 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
         enteredBy: iv.entered_by_name || "",
         nextDay: !!iv.next_day,
         overlapping: overlapIds.has(iv.id),
+        // The recorder's two facts `LiveChip` reads — they never reached the row
+        // before, so the chip had nothing to draw.
+        live: !!iv.live,
+        created_at: iv.created_at || null,
+        // «Tozalovchilar» (2026-09-29): the crew a Tozalash counts, and whether
+        // it now stands above the cell's people (typed or lowered after it was
+        // saved) — the server's answer, never re-derived here.
+        cleaners: Number.isInteger(iv.cleaners) ? iv.cleaners : null,
+        overPeople: !!iv.over_people,
+        cellPeople: cell.people ?? null,
       })),
       ...legacy.map((e) => ({
         kind: "legacy", key: `l${e.id}`, src: e,
@@ -316,7 +350,7 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
       minutes: r.minutes, note: r.note,
     }[sort.key]);
     return [...out].sort(sortCmp(sort, val));
-  }, [intervals, requests, legacy, overlapIds, sort]);
+  }, [intervals, requests, legacy, overlapIds, sort, cell.people]);
 
   // Everything the cell HOLDS — the header states the day's totals over it.
   const entryCount = intervals.length + requests.length + legacy.length;

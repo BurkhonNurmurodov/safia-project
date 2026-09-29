@@ -609,6 +609,12 @@ class CellOjidaniyaInterval(Base):
     start              = Column(String(5), nullable=False)               # "HH:MM"
     end                = Column(String(5), nullable=False)               # "HH:MM" (<= start ⇒ next day)
     stopped            = Column(Boolean, nullable=False, default=True)   # did the cell stop for this one
+    # «Tozalovchilar» (2026-09-29): how many people CLEANED — required on a
+    # Tozalash (Cat H, `sheets_reader.CLEANERS_CATS`) entry and NULL on every
+    # other one. NULL means THE WHOLE CELL, which is also what every Tozalash
+    # entry filed before this column existed goes on meaning: history is read
+    # exactly as it was. `services/idle_intervals.people_pieces` is THE reader.
+    cleaners           = Column(Integer, nullable=True)
     note               = Column(Text, nullable=False)                    # REQUIRED reason
     # Set ONLY by the live start/finish recorder (/idle-cell «Jonli»): the id
     # the device minted when the stop was FINISHED, sent with every retry. A

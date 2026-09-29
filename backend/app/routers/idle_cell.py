@@ -49,6 +49,7 @@ on every write, so the frontend's role-adaptive toolbar is a DISPLAY decision
 only: it removes controls whose every option the server would answer the same
 way, and can never widen what a caller reaches."""
 import logging
+import math
 from collections import defaultdict
 from datetime import date as date_t, datetime, timedelta, timezone
 from html import escape
@@ -68,6 +69,7 @@ from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.security import require_auth
 from app.services import action_log, idle_intervals, idle_lock, idle_scope
+from app.services.sheets_reader import CLEANERS_CATS
 from app import identity
 
 router = APIRouter(prefix="/api/idle-cell", tags=["idle-cell"])
@@ -270,7 +272,7 @@ def _names_for(db: Session, keys) -> dict:
 
 
 def _interval_json(e: CellOjidaniyaInterval, names: Optional[dict] = None,
-                   perm: Optional[dict] = None) -> dict:
+                   perm: Optional[dict] = None, people: Optional[float] = None) -> dict:
     """One ojidaniya event. ``minutes`` and ``next_day`` are DERIVED here rather
     than on the client so the midnight rule (end <= start ⇒ next day) has one
     definition; a range the client measured differently would show a duration
@@ -282,6 +284,14 @@ def _interval_json(e: CellOjidaniyaInterval, names: Optional[dict] = None,
         "end": e.end,
         "stopped": bool(e.stopped),
         "note": e.note or "",
+        # «Tozalovchilar» — NULL = the whole cell (every non-Tozalash entry,
+        # and every Tozalash one filed before the count existed).
+        "cleaners": e.cleaners,
+        # The count is above the cell's people as they stand NOW — typed or
+        # lowered after the entry was saved. The figures count the cell's
+        # people for it (`idle_intervals.people_pieces`); this says so.
+        "over_people": bool(e.cleaners is not None and people is not None
+                            and e.cleaners > _crew_cap(people)),
         "minutes": idle_intervals.duration(e.start, e.end),
         "next_day": idle_intervals.to_min(e.end) <= idle_intervals.to_min(e.start),
         # HOW the clock got here. A live row's start/end were stamped on the
@@ -327,7 +337,7 @@ def _legacy_json(e: CellOjidaniya, names: Optional[dict] = None,
 
 def _cell_json(c: Cell, intervals: list, requests: list, legacy: list,
                leader: Optional[str] = None, can_manage: bool = False,
-               can_add: bool = False) -> dict:
+               can_add: bool = False, people: Optional[float] = None) -> dict:
     return {
         "cell_id": c.id,
         "verifix_code": c.verifix_code,
@@ -354,6 +364,10 @@ def _cell_json(c: Cell, intervals: list, requests: list, legacy: list,
         # May this caller edit/delete entries on the cell (any author's).
         "can_manage": can_manage,
         "can_add": can_add,
+        # How many people stood in the cell that day, and the most a Tozalash
+        # may state (`_crew_cap`) — both null while nobody typed it.
+        "people": None if people is None else round(float(people), 2),
+        "cleaners_max": _crew_cap(people),
         # The whole ledger for this cell-day, computed in ONE place.
         "summary": idle_intervals.summarize(intervals),
     }
@@ -425,12 +439,14 @@ def list_cells(
     day_open = day["can_write"]
     ctx = _decider(db, payload)
     by_id = {c.id: c for c in cells}
+    people = _people_on(db, supervisor_id, date)
 
     approved_by_cell: dict = defaultdict(list)
     requests_by_cell: dict = defaultdict(list)
     for e in ivs:
         decide = _may_decide(ctx, by_id.get(e.cell_id))
-        row = _interval_json(e, names, _row_perm(e, decide, day_open))
+        row = _interval_json(e, names, _row_perm(e, decide, day_open),
+                             people.get(e.cell_id))
         # Anything not approved goes to the second list. After the 2026-08-22
         # one-shot that is only ever `rejected`; routing by "not approved"
         # rather than by "rejected" means a stray row can never vanish from
@@ -460,7 +476,8 @@ def list_cells(
         _cell_json(c, approved_by_cell.get(c.id, []), requests_by_cell.get(c.id, []),
                    legacy_by_cell.get(c.id, []), leaders.get(c.leader_id),
                    can_manage=_may_decide(ctx, c),
-                   can_add=day_open and lock is None)
+                   can_add=day_open and lock is None,
+                   people=people.get(c.id))
         for c in cells
     ]
     return {
@@ -526,6 +543,9 @@ class IntervalIn(BaseModel):
     end: str
     stopped: bool = True
     note: str
+    # «Tozalovchilar» — how many people cleaned. REQUIRED on a Tozalash entry
+    # (`CLEANERS_CATS`) and ignored on every other one; see `_cleaners_for`.
+    cleaners: Optional[int] = None
     # The live recorder's idempotency handle (see CellOjidaniyaInterval). Absent
     # for every hand-typed entry, which is what makes it the marker for "this
     # clock was stamped by a press, not picked on a wheel".
@@ -561,6 +581,80 @@ def _validate(body: IntervalIn, db: Session, payload: dict) -> tuple[str, bool, 
     # cannot answer the question from carrying a meaningless answer.
     stopped = True if body.category in _ALWAYS_STOPPED else bool(body.stopped)
     return note, stopped, idle_intervals.duration(body.start, body.end)
+
+
+# The ceiling on a Tozalash count where the cell's own number is not typed yet —
+# a typo guard, not a rule about people.
+_CLEANERS_MAX = 200
+
+
+def _people_on(db: Session, manager_id: Optional[int], day: str) -> dict[int, float]:
+    """``{cell_id: people}`` — how many people stood in each of the unit's cells
+    on ``day``, i.e. `idle_source.cell_headcount`, the very weight the unit's
+    ojidaniya is averaged by, never a second count of its own.
+
+    Handed EVERY cell of the unit, because `cell_people` splits a work centre
+    over the cells it is given: a one-cell list would read every other group's
+    people as this cell's own. A cell nobody typed is absent."""
+    if not manager_id:
+        return {}
+    try:
+        d = date_t.fromisoformat(day)
+    except (TypeError, ValueError):
+        return {}
+    from app.services import idle_source
+    cells = db.query(Cell).filter(Cell.manager_id == manager_id).all()
+    if not cells:
+        return {}
+    return {cid: n for (cid, dd), n in
+            idle_source.cell_headcount(db, cells, d, d).items() if dd == day}
+
+
+def _crew_cap(people: Optional[float]) -> Optional[int]:
+    """The most cleaners a cell may state — its people, rounded UP so a
+    work centre shared evenly (2.5 each) never blocks a whole person. None
+    while the cell's number is not typed."""
+    if people is None:
+        return None
+    return math.ceil(round(float(people), 4))
+
+
+def _cleaners_for(body: "IntervalIn", db: Session, cell: Optional[Cell], day: str,
+                  current: Optional[int] = None) -> Optional[int]:
+    """The «Tozalovchilar» count this save stores — THE entry rule
+    (2026-09-29, the operator's rulings).
+
+    Only a Tozalash entry carries one; every other category stores NULL, which
+    reads as the whole cell. On a Tozalash it is REQUIRED — a whole number of
+    people, never more than the cell's people that day
+    (`idle_source.cell_headcount`, rounded up), and anything up to
+    ``_CLEANERS_MAX`` while the brigadir has not typed that number yet.
+
+    A body that carries NO ``cleaners`` key at all comes from a tab still open
+    on a bundle from before the count existed. It cannot see the field, so it
+    is never refused over it — the `wc_group` precedent: a new entry is read as
+    the whole cell, as every entry was until now, and an edit keeps whatever
+    count the row carries. A live record queued on such a tab would otherwise
+    be refused for good and its stop lost."""
+    if body.category not in CLEANERS_CATS:
+        return None
+    if "cleaners" not in body.model_fields_set:
+        return current
+    n = body.cleaners
+    if n is None:
+        raise HTTPException(status_code=400, detail={
+            "code": "cleaners_required",
+            "message": "Enter how many people cleaned"})
+    cap = _crew_cap(_people_on(db, getattr(cell, "manager_id", None), day)
+                    .get(getattr(cell, "id", None)))
+    limit = cap if cap is not None else _CLEANERS_MAX
+    if n < 1 or n > limit:
+        raise HTTPException(status_code=400, detail={
+            "code": "cleaners_above_people" if cap is not None and n > cap
+                    else "cleaners_invalid",
+            "max": limit,
+            "message": f"The number of people who cleaned must be 1–{limit}"})
+    return int(n)
 
 
 def _alert(db: Session, payload: dict, cell_id: int, date: str, key: str, changes: list):
@@ -627,7 +721,7 @@ _RICH_L = {
         "intro": "{who} <b>{cell}</b> yacheykasiga yangi kutish kiritdi. Yozuv hisobga olindi — kunni yopishdan oldin ko'rib chiqing.",
         "th_field": "Maydon", "th_value": "Qiymat",
         "cell": "Yacheyka", "leader": "Lider", "unit": "Brigada", "date": "Sana",
-        "category": "Kategoriya", "time": "Vaqt", "duration": "Davomiyligi",
+        "category": "Kategoriya", "time": "Vaqt", "duration": "Davomiyligi", "cleaners": "Tozalovchilar",
         "state": "Holat", "load": "Zagruzkada",
         "stopped": "🔴 Yacheyka to'xtagan", "not_stopped": "🟡 Yacheyka to'xtamagan",
         "load_yes": "✅ Hisobga olinadi",
@@ -643,7 +737,7 @@ _RICH_L = {
         "intro": "{who} <b>{cell}</b> ячейкасига янги кутиш киритди. Ёзув ҳисобга олинди — кунни ёпишдан олдин кўриб чиқинг.",
         "th_field": "Майдон", "th_value": "Қиймат",
         "cell": "Ячейка", "leader": "Лидер", "unit": "Бригада", "date": "Сана",
-        "category": "Категория", "time": "Вақт", "duration": "Давомийлиги",
+        "category": "Категория", "time": "Вақт", "duration": "Давомийлиги", "cleaners": "Тозаловчилар",
         "state": "Ҳолат", "load": "Загрузкада",
         "stopped": "🔴 Ячейка тўхтаган", "not_stopped": "🟡 Ячейка тўхтамаган",
         "load_yes": "✅ Ҳисобга олинади",
@@ -659,7 +753,7 @@ _RICH_L = {
         "intro": "{who} внёс(ла) новое ожидание по ячейке <b>{cell}</b>. Запись уже учтена — проверьте её до закрытия дня.",
         "th_field": "Поле", "th_value": "Значение",
         "cell": "Ячейка", "leader": "Лидер", "unit": "Бригада", "date": "Дата",
-        "category": "Категория", "time": "Время", "duration": "Длительность",
+        "category": "Категория", "time": "Время", "duration": "Длительность", "cleaners": "Убирали (чел.)",
         "state": "Состояние", "load": "В загрузке",
         "stopped": "🔴 Ячейка стояла", "not_stopped": "🟡 Ячейка не останавливалась",
         "load_yes": "✅ Учитывается",
@@ -675,7 +769,7 @@ _RICH_L = {
         "intro": "{who} entered a new idle interval for cell <b>{cell}</b>. It already counts — review it before closing the day.",
         "th_field": "Field", "th_value": "Value",
         "cell": "Cell", "leader": "Leader", "unit": "Unit", "date": "Date",
-        "category": "Category", "time": "Time", "duration": "Duration",
+        "category": "Category", "time": "Time", "duration": "Duration", "cleaners": "Cleaners",
         "state": "State", "load": "In the load",
         "stopped": "🔴 Cell was stopped", "not_stopped": "🟡 Cell kept running",
         "load_yes": "✅ Counted",
@@ -753,6 +847,10 @@ def _new_entry_card(db: Session, e: CellOjidaniyaInterval, cell: Optional[Cell],
             row("category", f"<b>{escape(cat_label)}</b> <i>({escape(e.category)})</i>"),
             row("time", f"<b>{escape(e.start)} – {escape(e.end)}</b>"),
             row("duration", f"<b>{minutes} {escape(t['min'])}</b>"),
+        ]
+        if e.cleaners is not None:
+            trs.append(row("cleaners", f"<b>{int(e.cleaners)}</b>"))
+        trs += [
             row("state", t["stopped"] if e.stopped else t["not_stopped"]),
             row("load", load),
         ]
@@ -837,6 +935,9 @@ def create_interval(
 
     cell = _cell_of(db, body.cell_id)
     idle_lock.require_open(db, getattr(cell, "manager_id", None), body.date)
+    # After the replay answer above, never before it: a record already stored
+    # must not be refused because the cell's people changed since it was sent.
+    cleaners = _cleaners_for(body, db, cell, body.date)
 
     ctx = _decider(db, payload)
     decides = _may_decide(ctx, cell)
@@ -852,6 +953,7 @@ def create_interval(
     e = CellOjidaniyaInterval(
         cell_id=body.cell_id, date=body.date, category=body.category,
         start=body.start, end=body.end, stopped=stopped, note=note,
+        cleaners=cleaners,
         entered_by_profile=viewer,
         status="approved",
         client_key=key,
@@ -877,7 +979,8 @@ def create_interval(
     db.refresh(e)
     _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_added",
            [("category", None, e.category), ("time", None, f"{e.start}–{e.end}"),
-            ("note", None, e.note)])
+            ("note", None, e.note)]
+           + ([("cleaners", None, e.cleaners)] if e.cleaners is not None else []))
     action_log.enrich(
         target_kind="interval", target_id=e.id,
         target_name=getattr(cell, "verifix_code", None),
@@ -886,7 +989,8 @@ def create_interval(
                  ("date", e.date), ("category", e.category),
                  ("start", e.start), ("end", e.end),
                  ("minutes", idle_intervals.duration(e.start, e.end)),
-                 ("state", "stopped" if e.stopped else "not_stopped")],
+                 ("state", "stopped" if e.stopped else "not_stopped")]
+                + ([("cleaners", e.cleaners)] if e.cleaners is not None else []),
         reason=e.note,
     )
 
@@ -898,7 +1002,7 @@ def create_interval(
         rich_fn, markup_fn = _new_entry_card(db, e, cell, who)
         _tell(db, identity.profile_key("supervisor", cell.manager_id),
               "idle_request_new",
-              {**_row_facts(e, cell), "leader_name": who},
+              {**_row_facts(e, cell), "leader_name": who, "cleaners": e.cleaners},
               markup_fn=markup_fn, rich_fn=rich_fn)
 
     return _interval_json(e, _names_for(db, [e.entered_by_profile]),
@@ -935,16 +1039,18 @@ def update_interval(
         # An entry belongs to the register, not to whoever filed it: its author
         # may read it, and the unit's brigadir is who corrects it.
         raise HTTPException(status_code=403, detail="Only the unit's brigadir may edit this entry")
+    # Read against the ROW's own cell and day — the ones the edit keeps.
+    cleaners = _cleaners_for(body, db, cell, e.date, current=e.cleaners)
 
-    old = (e.category, f"{e.start}–{e.end}", bool(e.stopped), e.note or "")
+    old = (e.category, f"{e.start}–{e.end}", bool(e.stopped), e.note or "", e.cleaners)
     e.category, e.start, e.end = body.category, body.start, body.end
-    e.stopped, e.note = stopped, note
+    e.stopped, e.note, e.cleaners = stopped, note, cleaners
     db.commit()
     db.refresh(e)
 
-    new = (e.category, f"{e.start}–{e.end}", bool(e.stopped), e.note or "")
+    new = (e.category, f"{e.start}–{e.end}", bool(e.stopped), e.note or "", e.cleaners)
     diff = [(k, o, n) for k, o, n in
-            zip(("category", "time", "stopped", "note"), old, new) if o != n]
+            zip(("category", "time", "stopped", "note", "cleaners"), old, new) if o != n]
     if diff:
         _alert(db, payload, e.cell_id, e.date, "idle_cell.interval_edited", diff)
     action_log.enrich(
@@ -983,6 +1089,8 @@ def delete_interval(
     gone_id, gone_note = e.id, e.note or ""
     changes = [("category", e.category, None), ("time", f"{e.start}–{e.end}", None),
                ("note", e.note or "", None)]
+    if e.cleaners is not None:
+        changes.append(("cleaners", e.cleaners, None))
     db.delete(e)
     db.commit()
     _alert(db, payload, cell_id, date, "idle_cell.interval_deleted", changes)

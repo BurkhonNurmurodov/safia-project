@@ -235,11 +235,14 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # brigadir is TOLD of each one so the register is reviewed before the day
     # is closed. The old approved/rejected/batch-approved templates went with
     # the queue — nothing sends them.
+    # The «Tozalovchilar» line is its own row so `_render_body` drops it on
+    # every entry that carries no count (every cause but Tozalash, and every
+    # bell row stored before the count existed).
     "idle_request_new": {
-        "uz": ("Yangi kutish kiritildi", "{cell} · {category} · {time} | Sana: {date} | Kiritdi: {leader_name}"),
-        "uz_cyrl": ("Янги кутиш киритилди", "{cell} · {category} · {time} | Сана: {date} | Киритди: {leader_name}"),
-        "ru": ("Новое ожидание внесено", "{cell} · {category} · {time} | Дата: {date} | Внёс(ла): {leader_name}"),
-        "en": ("New idle time entered", "{cell} · {category} · {time} | Date: {date} | Entered by: {leader_name}"),
+        "uz": ("Yangi kutish kiritildi", "{cell} · {category} · {time} | Sana: {date} | Kiritdi: {leader_name}\nTozalovchilar: {cleaners}"),
+        "uz_cyrl": ("Янги кутиш киритилди", "{cell} · {category} · {time} | Сана: {date} | Киритди: {leader_name}\nТозаловчилар: {cleaners}"),
+        "ru": ("Новое ожидание внесено", "{cell} · {category} · {time} | Дата: {date} | Внёс(ла): {leader_name}\nУбирали (чел.): {cleaners}"),
+        "en": ("New idle time entered", "{cell} · {category} · {time} | Date: {date} | Entered by: {leader_name}\nCleaners: {cleaners}"),
     },
     "verifix_uploaded": {
         "uz": ("Verifix ma'lumotlari yuklandi", "Sana: {date}. O'zgartirishlarni kiriting (xodim almashtirish, lavozim o'zgartirish, o'chirish) va kunni yoping."),

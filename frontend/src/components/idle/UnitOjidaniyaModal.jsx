@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Boxes, CalendarDays, Info } from "lucide-react";
+import { ChevronDown, ChevronRight, Boxes, CalendarDays, Info, Users } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
@@ -417,6 +417,17 @@ function CellBlock({ cell, t, tl, fmt }) {
                   >
                     {iv.stopped ? t("idleCell.stopped") : t("idleCell.notStopped")}
                   </span>
+                  {/* «Tozalovchilar» — a Tozalash counts these people, not the
+                      whole cell, in the figure the bar was built from. */}
+                  {Number.isInteger(iv.cleaners) && (
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ml-1 tabular-nums"
+                      style={{ background: "rgba(148,163,184,0.14)", color: "var(--text-2)", border: "1px solid rgba(148,163,184,0.35)" }}
+                      title={t("idleCell.cleaners")}
+                    >
+                      <Users size={9} />{t("idleCell.cleanersN").replace("{n}", String(iv.cleaners))}
+                    </span>
+                  )}
                 </td>
                 <td
                   className="px-3 py-2 align-top"

@@ -30,6 +30,14 @@ paying the same wages as a cell stopped for a broken mixer, so
 read higher than /downtime's headline, which drops Cat H under «Zagruzkada
 hisoblanadi». The category filter is how a reader takes one out.
 
+**A cleaning is paid for its CLEANERS** (2026-09-29). A Tozalash entry names
+how many people cleaned («Tozalovchilar»), so a minute only cleaning covers is
+priced at that crew, not at the whole cell — and priced even where the cell's
+own number was never typed, because the crew is stated on the entry itself. A
+minute another cause also covers is the whole cell's, once. Every term comes
+from ``idle_intervals.people_pieces``; `hc` on a row that folds both kinds of
+minute is their minute-weighted mean and says so (`hc_varies`).
+
 **Each minute is paid ONCE.** A cell stopped at 10:00–10:40 for two causes filed
 two events; the cell's figure is the UNION, so the 40 minutes are billed once.
 A CATEGORY row unions within its own category — two overlapping events of one
@@ -183,8 +191,20 @@ def _events(db: Session, cells, days: list[str]) -> list:
 
 
 def _row(rows) -> list[dict]:
-    """Interval ORM rows → the dict shape ``idle_intervals`` consumes."""
-    return [{"start": r.start, "end": r.end, "stopped": True} for r in rows]
+    """Interval ORM rows → the dict shape ``idle_intervals`` consumes —
+    ``cleaners`` included, so a Tozalash crew reaches `people_pieces`."""
+    return [{"start": r.start, "end": r.end, "stopped": True,
+             "cleaners": r.cleaners} for r in rows]
+
+
+def _price(acc: "_Acc", rows, n: Optional[float], rate: Optional[float]) -> int:
+    """Add ONE (cell, date)'s rows to `acc`, piece by piece of the union — each
+    stretch at the headcount that actually stood in it (the whole cell, or a
+    cleaning crew). Returns the union's minutes."""
+    pieces = idle_intervals.people_pieces(_row(rows), n)
+    for k, m in pieces.items():
+        acc.add(m, k, rate)
+    return sum(pieces.values())
 
 
 def _union(rows) -> int:
@@ -394,14 +414,12 @@ def build(db: Session, manager_ids: list[int], date_from: date, date_to: date,
     for (cid, d), rows in per_day.items():
         n = hc.get((cid, d))
         rate = rate_for(date.fromisoformat(d))
-        cell_acc[cid].add(_union(rows), n, rate)
+        _price(cell_acc[cid], rows, n, rate)
 
     for (cid, d, cat), rows in per_cat.items():
         n = hc.get((cid, d))
         rate = rate_for(date.fromisoformat(d))
-        m = _union(rows)
-        cat_acc[(cid, cat)].add(m, n, rate)
-        cat_sum[cid] += m
+        cat_sum[cid] += _price(cat_acc[(cid, cat)], rows, n, rate)
 
     # Every per-cell day is at or after the floor now, so the headcount behind
     # a CELL row is always the typed «Bugungi fakt». Earlier days never reach a
@@ -621,9 +639,13 @@ def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
     out = []
     for r in rows:
         d = date.fromisoformat(r.date)
-        n = hc.get((cell.id, r.date))
         rate = rate_for(d)
         m = idle_intervals.duration(r.start, r.end)
+        # The headcount THIS event counts — the whole cell, or a Tozalash crew
+        # (never above the cell's people) — through the same rule the tree
+        # prices with. One row, so one piece.
+        pieces = idle_intervals.people_pieces(_row([r]), hc.get((cell.id, r.date)))
+        n = next(iter(pieces), None)
         out.append({
             "id": r.id,
             "date": r.date,
@@ -632,6 +654,7 @@ def entries(db: Session, manager_id: int, cell_id: int, category: Optional[str],
             "minutes": m,
             "hours": round(m / 60.0, 2),
             "hc": None if n is None else round(n, 2),
+            "cleaners": r.cleaners,
             "rate": rate,
             "cost": None if (n is None or rate is None) else round(m / 60.0 * n * rate),
             "category": r.category,

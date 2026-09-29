@@ -237,6 +237,7 @@ def get_live_overview(
             intervals_by_cell[iv.cell_id].append({
                 "category": iv.category, "start": iv.start, "end": iv.end,
                 "stopped": bool(iv.stopped), "note": iv.note,
+                "cleaners": iv.cleaners,
             })
 
     # ── Who is standing where today ──────────────────────────────────────

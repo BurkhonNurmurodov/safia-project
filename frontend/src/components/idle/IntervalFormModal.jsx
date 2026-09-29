@@ -7,7 +7,9 @@ import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import TimeWheelPicker from "../ui/TimeWheelPicker";
+import CountStepper from "../ui/CountStepper";
 import api from "../../utils/api";
+import { errText } from "../../utils/idleErrors";
 import { CATS, iconFor, catByName, catColor } from "./categories";
 import { DAY, toMin, fmtDur, durationOf, crossesMidnight } from "../../utils/idleTime";
 import { useLang } from "../../context/LangContext";
@@ -25,7 +27,12 @@ import { useLang } from "../../context/LangContext";
 //   • moving the start onto the existing end clears the end rather than
 //     silently leaving a 24-hour stop behind;
 //   • Cat H's stopped/not-stopped toggle is locked, since that category has no
-//     not-stopped half anywhere in the system.
+//     not-stopped half anywhere in the system;
+//   • a Tozalash (`cleaners` category) must say how many people cleaned —
+//     «Tozalovchilar», 1 up to the cell's people that day (`cell.cleaners_max`,
+//     the server's own cap), because the figures count those people and not
+//     the whole cell. Every save sends the key, so an old entry being edited is
+//     asked for its count too.
 // A duration longer than 8h is the one mistake that stays possible (a real
 // range can be that long), so it WARNS instead of blocking — and it warns
 // before Save, not after.
@@ -33,6 +40,10 @@ import { useLang } from "../../context/LangContext";
 // Overlapping an existing ojidaniya is deliberately NOT prevented: a cell can
 // genuinely wait on two causes at once. The union arithmetic on the server is
 // what stops those shared minutes being counted twice.
+// A cell's people can be a share of a work centre (2.5) — print it the way the
+// register does, never with float noise.
+const fmtPeople = (n) => (Number.isInteger(n) ? String(n) : Number(n).toFixed(1));
+
 export default function IntervalFormModal({
   open, onClose, cell, date, interval = null, initialCategory = "", onSaved,
 }) {
@@ -44,6 +55,7 @@ export default function IntervalFormModal({
   const [end, setEnd] = useState("");
   const [stopped, setStopped] = useState(true);
   const [note, setNote] = useState("");
+  const [cleaners, setCleaners] = useState(null);
   const [picker, setPicker] = useState(null);   // "start" | "end" | null
   const [err, setErr] = useState("");
 
@@ -58,6 +70,7 @@ export default function IntervalFormModal({
     setEnd(interval?.end || "");
     setStopped(interval ? !!interval.stopped : true);
     setNote(interval?.note || "");
+    setCleaners(Number.isInteger(interval?.cleaners) ? interval.cleaners : null);
     setErr("");
     setPicker(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,6 +78,13 @@ export default function IntervalFormModal({
 
   const cat = catByName(category);
   const lockedStopped = !!cat?.alwaysStopped;
+  // «Tozalovchilar». The cap is the server's (`cleaners_max` = the cell's
+  // people that day, rounded up); null while nobody typed that number, where
+  // the server only refuses a typo above 200.
+  const needsCrew = !!cat?.cleaners;
+  const crewMax = Number.isInteger(cell?.cleaners_max) ? cell.cleaners_max : null;
+  const crewOver = needsCrew && cleaners != null && crewMax != null && cleaners > crewMax;
+  const crewOk = !needsCrew || (cleaners != null && cleaners >= 1 && cleaners <= (crewMax ?? 200));
   // Keep the answer honest when the category changes under it.
   useEffect(() => { if (lockedStopped) setStopped(true); }, [lockedStopped]);
 
@@ -96,11 +116,17 @@ export default function IntervalFormModal({
     [t],
   );
 
-  const valid = !!category && !!start && !!end && note.trim().length > 0;
+  const valid = !!category && !!start && !!end && note.trim().length > 0 && crewOk;
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { cell_id: cell.cell_id, date, category, start, end, stopped, note: note.trim() };
+      // `cleaners` ALWAYS rides the body — null on every other cause — because
+      // a body without the key is how the server recognises a tab from before
+      // the count existed, and lets it through.
+      const body = {
+        cell_id: cell.cell_id, date, category, start, end, stopped, note: note.trim(),
+        cleaners: needsCrew ? cleaners : null,
+      };
       return editing
         ? api.put(`/api/idle-cell/intervals/${interval.id}`, body).then((r) => r.data)
         : api.post("/api/idle-cell/intervals", body).then((r) => r.data);
@@ -112,7 +138,7 @@ export default function IntervalFormModal({
     // The failure stays ON the dialog: a modal that closes on error takes the
     // reason with it, and the operator is left guessing whether it saved.
     onError: (e) => {
-      setErr(String(e?.response?.data?.detail || t("idleCell.saveError")));
+      setErr(errText(e, t));
     },
   });
 
@@ -177,6 +203,27 @@ export default function IntervalFormModal({
           <p className="text-[11px] leading-snug -mt-1" style={{ color: "var(--text-3)" }}>
             {t(`downtime.cat.${cat.code}.note`)}
           </p>
+        )}
+
+        {needsCrew && (
+          <FormField
+            label={t("idleCell.cleaners")}
+            required
+            hint={crewOver ? undefined
+              : cell?.people != null
+                ? t("idleCell.cleanersHintPeople").replace("{n}", fmtPeople(cell.people)).replace("{max}", String(crewMax))
+                : t("idleCell.cleanersHintNoPeople")}
+            error={crewOver ? t("idleCell.cleanersAboveErr").replace("{max}", String(crewMax)) : undefined}
+          >
+            <CountStepper
+              value={cleaners}
+              onChange={setCleaners}
+              min={1}
+              max={crewMax ?? 200}
+              invalid={crewOver}
+              aria-label={t("idleCell.cleaners")}
+            />
+          </FormField>
         )}
 
         <div className="grid grid-cols-2 gap-3">
