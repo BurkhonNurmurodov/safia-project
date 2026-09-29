@@ -25,6 +25,10 @@ THE rules, all the operator's (2026-09-28):
   * Only TODAY and TOMORROW — the unit's shift-day frame, the rule `/live` and
     «Smena hisoboti» run on — are editable. Earlier days are read-only; later
     ones are not offered.
+  * The page reads a whole calendar WEEK at once (from 2026-09-29, `week`):
+    each day's list exactly as a single day would be built, laid side by side
+    as one row per worker. The file is read ONCE for the whole run of days
+    (`file_workers_days`) — one window query per day cost ~0.3 s apiece.
   * A tap cycles empty → yes → no → empty (the third tap CLEARS — the
     operator's call, 2026-09-28). An unmarked worker is the absence of a row,
     so clearing deletes it.
@@ -39,6 +43,7 @@ This module computes; `routers/kelish.py` decides who may see and change what.
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Optional
 
@@ -123,23 +128,21 @@ def when(day: date, today: date, frame: Optional[dict], now: datetime) -> dict:
 
 # ── the file ──────────────────────────────────────────────────────────────────
 
-_FILE_SQL = text("""
-    SELECT n, code, job, d, came FROM (
-        SELECT upper(trim(r.worker_name))                             AS n,
-               r.verifix_code                                         AS code,
-               r.job_title                                            AS job,
-               b.date                                                 AS d,
-               row_number() OVER (PARTITION BY upper(trim(r.worker_name))
-                                  ORDER BY b.date DESC, r.id DESC)    AS rn,
-               max(b.date) FILTER (WHERE r.status = 'worked' OR r.status LIKE '%:%')
-                          OVER (PARTITION BY upper(trim(r.worker_name))) AS came
-          FROM attendance_batch_rows r
-          JOIN attendance_batches b ON b.id = r.batch_id
-         WHERE b.date BETWEEN :lo AND :hi
-           AND r.worker_name IS NOT NULL AND trim(r.worker_name) <> ''
-           AND r.verifix_code IS NOT NULL AND trim(r.verifix_code) <> ''
-    ) t WHERE rn = 1
+_ROWS_SQL = text("""
+    SELECT upper(trim(r.worker_name))                   AS n,
+           r.verifix_code                               AS code,
+           r.job_title                                  AS job,
+           b.date                                       AS d,
+           r.id                                         AS rid,
+           (r.status = 'worked' OR r.status LIKE '%:%') AS worked
+      FROM attendance_batch_rows r
+      JOIN attendance_batches b ON b.id = r.batch_id
+     WHERE b.date BETWEEN :lo AND :hi
+       AND r.worker_name IS NOT NULL AND trim(r.worker_name) <> ''
+       AND r.verifix_code IS NOT NULL AND trim(r.verifix_code) <> ''
 """)
+_UPLOADS_SQL = text(
+    "SELECT DISTINCT date FROM attendance_batches WHERE date BETWEEN :lo AND :hi")
 
 
 def window(day: date) -> tuple[date, date]:
@@ -147,35 +150,70 @@ def window(day: date) -> tuple[date, date]:
     return day - timedelta(days=WINDOW_DAYS), day - timedelta(days=1)
 
 
-def file_workers(db: Session, day: date) -> tuple[dict, Optional[date]]:
-    """Every worker the original upload filed in the window before `day`, keyed
-    by `worker_key`, each on the cell of their MOST RECENT row:
+def file_workers_days(db: Session, days: Iterable[date]) -> dict:
+    """THE file reader: for each of `days`, every worker the original upload
+    filed in that day's window, keyed by `worker_key`, each on the cell of their
+    MOST RECENT row:
 
-        {key: {"key", "name", "code", "job", "seen", "came"}}
+        {day: ({key: {"key", "name", "code", "job", "seen", "came"}}, last_upload)}
 
     `came` is the last day they actually came (a clocked row), None when every
-    row in the window is an absence marker. Fleet-wide on purpose: «the latest
-    row» is a question about every cell at once. Returns the map and the newest
-    file day in the window."""
-    lo, hi = window(day)
+    row in the window is an absence marker; `last_upload` is the newest file
+    day in the window. Fleet-wide on purpose: «the latest row» is a question
+    about every cell at once.
+
+    The file is read ONCE for the whole run of days and each day's window is
+    cut from it in memory — a week of lists used to be seven window queries.
+    Per raw spelling the latest row is the greatest (date, row id), as the
+    window query's `ORDER BY date DESC, id DESC` had it; spellings folding to
+    one key are then merged exactly as before (the later row places the
+    worker, the later of the two «came» days stands), walked in name order so
+    a tie always resolves the same way."""
+    want = sorted(set(days))
+    if not want:
+        return {}
+    lo, hi = window(want[0])[0], window(want[-1])[1]
+    raw: dict[str, list] = {}
+    for n, code, job, d, rid, worked in db.execute(_ROWS_SQL, {"lo": lo, "hi": hi}):
+        raw.setdefault(n, []).append((d, rid, code, job, bool(worked)))
+    uploads = sorted(r[0] for r in db.execute(_UPLOADS_SQL, {"lo": lo, "hi": hi}))
+
+    people = []
+    for n in sorted(raw):
+        rows = sorted(raw[n], key=lambda r: (r[0], r[1]))
+        people.append((worker_key(n), clean_name(n), rows, [r[0] for r in rows],
+                       sorted({r[0] for r in rows if r[4]})))
+
     out: dict = {}
-    for n, code, job, d, came in db.execute(_FILE_SQL, {"lo": lo, "hi": hi}):
-        k = worker_key(n)
-        prev = out.get(k)
-        if prev is not None:
-            # Two raw spellings of one person: the later row places them, and
-            # the later of the two «came» days stands.
-            best_came = max([c for c in (prev["came"], came) if c], default=None)
-            if d <= prev["seen"]:
-                prev["came"] = best_came
+    for day in want:
+        wlo, whi = window(day)
+        fw: dict = {}
+        for k, name, rows, dates, came_days in people:
+            i = bisect_right(dates, whi) - 1
+            if i < 0 or dates[i] < wlo:
                 continue
-            came = best_came
-        out[k] = {"key": k, "name": clean_name(n), "code": norm_code(code),
-                  "job": (job or "").strip(), "seen": d, "came": came}
-    last = db.execute(text(
-        "SELECT max(date) FROM attendance_batches WHERE date BETWEEN :lo AND :hi"),
-        {"lo": lo, "hi": hi}).scalar()
-    return out, last
+            d, _rid, code, job, _w = rows[i]
+            j = bisect_right(came_days, whi) - 1
+            came = came_days[j] if j >= 0 and came_days[j] >= wlo else None
+            prev = fw.get(k)
+            if prev is not None:
+                # Two raw spellings of one person: the later row places them,
+                # and the later of the two «came» days stands.
+                best_came = max([c for c in (prev["came"], came) if c], default=None)
+                if d <= prev["seen"]:
+                    prev["came"] = best_came
+                    continue
+                came = best_came
+            fw[k] = {"key": k, "name": name, "code": norm_code(code),
+                     "job": (job or "").strip(), "seen": d, "came": came}
+        u = bisect_right(uploads, whi) - 1
+        out[day] = (fw, uploads[u] if u >= 0 and uploads[u] >= wlo else None)
+    return out
+
+
+def file_workers(db: Session, day: date) -> tuple[dict, Optional[date]]:
+    """`file_workers_days` for one day — the map and the newest file day."""
+    return file_workers_days(db, [day])[day]
 
 
 # ── overrides and marks ───────────────────────────────────────────────────────
@@ -193,16 +231,23 @@ def load_events(db: Session, cell_ids: Iterable[int]) -> dict[int, list]:
     return out
 
 
-def load_marks(db: Session, cell_ids: Iterable[int], day: date) -> dict[int, dict]:
-    """{cell_id: {worker_key: KelishMark}} for one day."""
-    ids = list(set(cell_ids))
+def load_marks_days(db: Session, cell_ids: Iterable[int],
+                    days: Iterable[date]) -> dict[int, dict]:
+    """{cell_id: {day: {worker_key: KelishMark}}} for a run of days."""
+    ids, ds = list(set(cell_ids)), list(set(days))
     out: dict[int, dict] = {}
-    if not ids:
+    if not ids or not ds:
         return out
     for m in (db.query(KelishMark)
-              .filter(KelishMark.cell_id.in_(ids), KelishMark.day == day)):
-        out.setdefault(m.cell_id, {})[m.worker_key] = m
+              .filter(KelishMark.cell_id.in_(ids), KelishMark.day.in_(ds))):
+        out.setdefault(m.cell_id, {}).setdefault(m.day, {})[m.worker_key] = m
     return out
+
+
+def load_marks(db: Session, cell_ids: Iterable[int], day: date) -> dict[int, dict]:
+    """{cell_id: {worker_key: KelishMark}} for one day."""
+    return {cid: by_day.get(day, {})
+            for cid, by_day in load_marks_days(db, cell_ids, [day]).items()}
 
 
 def _state(events: list, day: Optional[date] = None) -> dict:
@@ -300,6 +345,64 @@ def counts(rows: list[dict]) -> dict:
 def find(rows: list[dict], key: str) -> Optional[dict]:
     """The row a key names — its own key or a hand-typed alias of it."""
     return next((r for r in rows if r["key"] == key or key in r["aliases"]), None)
+
+
+# ── the week ──────────────────────────────────────────────────────────────────
+
+def week_of(day: date) -> list[date]:
+    """The calendar week `day` falls in, Monday → Sunday."""
+    mon = day - timedelta(days=day.weekday())
+    return [mon + timedelta(days=i) for i in range(7)]
+
+
+def week(code: str, days: list[date], files: dict, events: list, marks: dict,
+         leader_key: Optional[str]) -> tuple[list[dict], list[Optional[dict]]]:
+    """One cell's lists over a run of days, laid side by side: ONE row per
+    worker, a slot per day.
+
+    Each day's list is `roster` for that day, byte for byte what a single day
+    shows — so a square the week draws is a square the mark endpoint accepts.
+    `files` is `file_workers_days` for the days that HAVE a list (none after
+    tomorrow); a day missing from it is not open yet. A worker is one row
+    across days by their key and the hand-typed aliases it carries, and each
+    slot keeps the key that day's list uses (`k`), which is what a tap sends.
+
+    `current` is «on the list of the last day that has one»: the rows the
+    reader is filling. The rest — taken off, or out of the file's window
+    during the week — sort after them.
+
+    Returns (rows, per-day counts; None for a day with no list)."""
+    n = len(days)
+    rows: dict[str, dict] = {}
+    canon: dict[str, str] = {}
+    per_day: list[Optional[dict]] = [None] * n
+    last_i = None
+    for i, d in enumerate(days):
+        if d not in files:
+            continue
+        last_i = i
+        fw, last = files[d]
+        lst = roster(code, d, fw, last, events, marks.get(d, {}), by_code(fw))
+        per_day[i] = counts(lst)
+        for r in lst:
+            ids = [r["key"], *r["aliases"]]
+            ck = next((canon[k] for k in ids if k in canon), None)
+            if ck is None:
+                ck = r["key"]
+                rows[ck] = {"key": ck, "job": "", "days": [None] * n}
+            u = rows[ck]
+            for k in ids:
+                canon[k] = ck
+            # Walked in date order, so the latest day's facts are the ones shown.
+            u.update(name=r["name"], job=r["job"] or u["job"], source=r["source"],
+                     came=r["came"], quiet=r["quiet"], never=r["never"])
+            u["days"][i] = {"k": r["key"], "mark": r["mark"], "by": r["by"],
+                            "by_other": bool(r["by_key"]) and r["by_key"] != leader_key,
+                            "at": r["at"]}
+    for u in rows.values():
+        u["current"] = last_i is not None and u["days"][last_i] is not None
+    out = sorted(rows.values(), key=lambda u: (not u["current"], u["name"].casefold()))
+    return out, per_day
 
 
 # ── writes ────────────────────────────────────────────────────────────────────

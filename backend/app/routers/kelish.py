@@ -1,7 +1,9 @@
 """
 `/api/kelish` — the «Kelish ro'yxati» page (`/kelish`): the T11 staff list,
 one list per cell per shift-day, each worker marked coming or not (a tap
-cycles empty → yes → no → empty).
+cycles empty → yes → no → empty). The page reads a calendar WEEK of those
+lists at once (`GET /week`, from 2026-09-29); `GET /list` — one day — stays
+for a tab still open on an older bundle.
 
 `services/kelish.py` computes; this module decides who may see and change what.
 
@@ -124,9 +126,10 @@ def _lists(db: Session, x: dict, events: list) -> tuple[list, list]:
     """Today's and tomorrow's lists for one cell, unmarked — what a «+» or a
     «−» is checked against."""
     code = x["c"].verifix_code
+    files = kelish.file_workers_days(db, [x["today"], x["tomorrow"]])
     out = []
     for d in (x["today"], x["tomorrow"]):
-        fw, last = kelish.file_workers(db, d)
+        fw, last = files[d]
         out.append(kelish.roster(code, d, fw, last, events, {}))
     return out[0], out[1]
 
@@ -147,13 +150,18 @@ def list_cells(
     day unit's tomorrow is already the next calendar day) has no progress for
     it: that day is not offered for that cell."""
     ctx = _viewer(db, payload)
+    now = live_overview.now_local()
+    # The week the page opens on — the plant's calendar week, never the
+    # browser's, so a night unit at 02:00 on a Monday still opens on Monday's.
+    this_week = kelish.week_of(now.date())[0].isoformat()
     q = db.query(Cell.id, Cell.verifix_code, Cell.manager_id, Cell.leader_id)
     fac = None
     if ctx["read_all"] or ctx["edit_all"]:
         fac = resolve_factory(db, payload, factory)
         mids = scoped_manager_ids(db, payload, factory, None)
         if empty_scope(mids):
-            return {"scope": {"kind": "all", "factory": fac}, "units": [], "cells": []}
+            return {"scope": {"kind": "all", "factory": fac}, "units": [], "cells": [],
+                    "this_week": this_week}
         if mids is not None:
             q = q.filter(Cell.manager_id.in_(mids))
         kind = "all"
@@ -164,7 +172,8 @@ def list_cells(
         if ctx["units"]:
             conds.append(Cell.manager_id.in_(ctx["units"]))
         if not conds:
-            return {"scope": {"kind": ctx["role"]}, "units": [], "cells": []}
+            return {"scope": {"kind": ctx["role"]}, "units": [], "cells": [],
+                    "this_week": this_week}
         q = q.filter(or_(*conds))
         kind = "leader" if ctx["role"] == "leader" else "unit"
     cells = q.all()
@@ -178,7 +187,6 @@ def list_cells(
                    .filter(RoleProfile.id.in_(lids)).all()) if lids else {}
 
     want = _day(day, None) if day else None
-    now = live_overview.now_local()
     windows = cell_hours.defaults(db)
     events = kelish.load_events(db, [c.id for c in cells])
 
@@ -199,13 +207,15 @@ def list_cells(
         if d is not None:
             by_day.setdefault(d, []).append(rows[-1])
 
+    files = kelish.file_workers_days(db, by_day.keys())
+    marks = kelish.load_marks_days(
+        db, [r["id"] for items in by_day.values() for r in items], by_day.keys())
     for d, items in by_day.items():
-        fw, last = kelish.file_workers(db, d)
+        fw, last = files[d]
         bucket = kelish.by_code(fw)
-        marks = kelish.load_marks(db, [r["id"] for r in items], d)
         for r in items:
             lst = kelish.roster(r["code"], d, fw, last, events.get(r["id"], []),
-                                marks.get(r["id"], {}), bucket)
+                                marks.get(r["id"], {}).get(d, {}), bucket)
             r["progress"] = {"day": d.isoformat(), **kelish.counts(lst)}
     for r in rows:
         r.pop("_day", None)
@@ -216,6 +226,72 @@ def list_cells(
         "scope": {"kind": kind, "factory": fac},
         "units": sorted(units, key=lambda u: (u["name"] or "").casefold()),
         "cells": sorted(rows, key=lambda r: r["code"] or ""),
+        "this_week": this_week,
+    }
+
+
+@router.get("/week")
+def get_week(
+    cell_id: int,
+    day: Optional[str] = Query(None, alias="date"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """One cell's lists for the calendar week `date` falls in (Monday →
+    Sunday; default: the plant's current week), one row per worker.
+
+    Each day is exactly the list `GET /list` would build for it. A day after
+    the cell's tomorrow has no list yet (`state: "future"`); a week that begins
+    after it is answered with the week tomorrow falls in, never refused — the
+    page steps by weeks and a stale step must not blank it. Only today and
+    tomorrow are `editable`, and only for a viewer who may fill this cell."""
+    x = _cell(db, payload, cell_id)
+    c, today, tomorrow, now = x["c"], x["today"], x["tomorrow"], x["now"]
+    days = kelish.week_of(_day(day, now.date()))
+    if days[0] > tomorrow:
+        days = kelish.week_of(tomorrow)
+    listed = [d for d in days if d <= tomorrow]
+
+    files = kelish.file_workers_days(db, listed)
+    events = kelish.load_events(db, [c.id]).get(c.id, [])
+    marks = kelish.load_marks_days(db, [c.id], listed).get(c.id, {})
+    rows, per_day = kelish.week(c.verifix_code, days, files, events, marks,
+                                identity.profile_key("leader", c.leader_id))
+
+    out_days = []
+    for d, cnt in zip(days, per_day):
+        state = ("future" if d > tomorrow else "tomorrow" if d == tomorrow
+                 else "today" if d == today else "past")
+        live = state in ("today", "tomorrow")
+        out_days.append({
+            "date": d.isoformat(), "state": state,
+            "editable": x["can_edit"] and live,
+            "when": kelish.when(d, today, x["frame"], now) if live else None,
+            "counts": cnt,
+        })
+    open_any = any(d["editable"] for d in out_days)
+    src = listed[-1]
+    lo, hi = kelish.window(src)
+    last = files[src][1]
+    return {
+        "cell": {"id": c.id, "code": c.verifix_code, "leader_id": c.leader_id,
+                 "leader": x["leader"],
+                 "manager_id": c.manager_id,
+                 "supervisor": x["mgr"].name if x["mgr"] else None,
+                 "shift": x["mgr"].shift if x["mgr"] else None},
+        "from": days[0].isoformat(),
+        "to": days[-1].isoformat(),
+        "this_week": kelish.week_of(now.date())[0].isoformat(),
+        "today": today.isoformat(),
+        "tomorrow": tomorrow.isoformat(),
+        "can_edit": x["can_edit"],
+        "days": out_days,
+        "rows": rows,
+        "removed": kelish.removed(events) if open_any else [],
+        "source": {"from": lo.isoformat(), "to": hi.isoformat(),
+                   "last_upload": last.isoformat() if last else None},
+        "quiet_days": kelish.QUIET_DAYS,
+        "window_days": kelish.WINDOW_DAYS,
     }
 
 

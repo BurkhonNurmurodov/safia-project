@@ -663,6 +663,32 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   .live-bar, .live-marker { transition: none !important; }
 }
 
+/* ── «Kelish ro'yxati» week register (/kelish) ────────────────────────────
+   A square is the answer; a tap must land where the thumb is and SAY it
+   landed. The whole cell is the button (.kelish-hit), the square inside it
+   presses in while held, and a square whose answer just changed pops once.
+   An open day's unanswered square is a dashed slot that lights brand-gold
+   under the pointer. All of it is decoration on top of a state already
+   painted, so reduced motion simply switches it off. */
+.kelish-hit { -webkit-tap-highlight-color: transparent; }
+.kelish-hit:focus-visible { outline: none; }
+.kelish-hit:focus-visible .kelish-sq { outline: 2px solid var(--brand); outline-offset: 2px; }
+.kelish-sq { transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .12s var(--ease-out); }
+.kelish-hit:active .kelish-sq { transform: scale(.88); }
+.kelish-empty { border: 1.5px dashed var(--border-md); background: var(--bg-card); }
+.kelish-hit:hover .kelish-empty { border-color: var(--brand); background: rgba(var(--brand-rgb), .12); }
+@keyframes kelishPop {
+  0%   { transform: scale(.7); }
+  55%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+.kelish-pop { animation: kelishPop .26s var(--ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .kelish-pop { animation: none !important; }
+  .kelish-sq { transition: none !important; }
+  .kelish-hit:active .kelish-sq { transform: none; }
+}
+
 /* ── «Ta'lim» (/education) ──────────────────────────────────────────────────
    A YouTube-shaped grid in this platform's own skin. Everything here is a
    card affordance: the still, the play mark, the two-line title clamp and the
