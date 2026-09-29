@@ -146,6 +146,14 @@ function findExtremeIdx(dVals, pVals, mode) {
 
 const SUMMARY_CYCLE = { avg: "min", min: "max", max: "avg" };
 
+// A phone's row name: a touch screen has no tooltip to read a clipped name
+// from, so a name too long for its line («Abdurakhmonova G.») takes a second
+// one inside the same 34px row instead of losing its tail to an ellipsis.
+const PHONE_NAME = {
+  display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2,
+  overflow: "hidden", lineHeight: "14px",
+};
+
 // A popup opened from this table while it is FULLSCREEN sits inside the page's
 // z-[200] overlay, so it must be raised above it (PendingInfoModal's 210) or it
 // mounts invisibly behind it. Inline, the popups keep their own defaults.
@@ -285,7 +293,9 @@ function ComparisonTable({
   // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
   rowLabel = "Brigadir",
   labelWidth = LABEL_W,
-  // How a row KEY is spelled on screen: `(key, full) => string`. Keys stay the
+  // How a row KEY is spelled on screen: `(key, full, tl) => string` — `tl` is
+  // the grid's own name transliterator, so a module-level speller stays a
+  // stable reference for the memoised grid. Keys stay the
   // keys — `data`, `inputs`, sorting and the selection all go on using them —
   // so this only ever changes what the reader sees. It is called twice per row:
   // once for the CELL, which is clipped to `labelWidth`, and once with
@@ -337,9 +347,19 @@ function ComparisonTable({
   // hundreds of pixels tall and shoved everything under it down.
   loading = false,
   loadingRows = 6,
+  // On a phone (below sm) the grid fits the SCREEN instead of the desktop's
+  // calibrated 14-day width: no blank pad columns (pure dead scroll on a
+  // phone), the dates stretch when they all fit, the grid bleeds to the card's
+  // edges and opens scrolled to the LATEST day (what a phone reader checks
+  // first), a whole half-cell is the tap target instead of its digits, and
+  // the D legend sits under the grid rather than holding an empty band above
+  // it in the P·A view. Opt-in, so every other page reads exactly as before;
+  // from sm up it changes nothing at all.
+  phoneFit = false,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
+  const fit = phoneFit && isMobile;
   const { auth } = useAuth();
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -407,7 +427,7 @@ function ComparisonTable({
 
   // Display spelling of a row key. Rows sort by the KEY (the cell code), so a
   // leader's name appended here never reorders the grid.
-  const shown = (name, full = false) => (labelFor ? labelFor(name, full) : tl(name));
+  const shown = (name, full = false) => (labelFor ? labelFor(name, full, tl) : tl(name));
 
   // The P half opens a FormulaModal; which arithmetic it spells out follows the
   // basis, or the simplified table would explain itself with the full formula.
@@ -443,15 +463,50 @@ function ComparisonTable({
   // Pad up to BASIS_DAYS with blank columns so the table width stays constant
   // for ≤14 days; >14 days overflows and scrolls horizontally. Each date is a
   // pair (P + A) of two equal sub-columns; the summary is one more pair.
-  const padCount   = Math.max(0, BASIS_DAYS - dates.length);
-  const effDays    = Math.max(BASIS_DAYS, dates.length);
+  // `fit` (a phone, opted in): no pads, and the real dates alone share the
+  // width — stretched when they all fit, scrolled when they do not.
+  const padCount   = fit ? 0 : Math.max(0, BASIS_DAYS - dates.length);
+  const effDays    = fit ? dates.length : Math.max(BASIS_DAYS, dates.length);
   const sumPairs   = isMobile ? 0 : 1;  // summary pair is dropped on phones
-  const pairW      = containerW > 0
+  let labelW = labelWidth;
+  let pairW = containerW > 0
     ? Math.max(CELL_W * 2, 2 * Math.floor((containerW - labelWidth) / (2 * (BASIS_DAYS + sumPairs))))
     : CELL_W * 2;
+  if (fit && containerW > 0) {
+    // On a phone the pairs SNAP to the screen: as many whole days as fit
+    // beside the names (all of them, stretched, when they all fit), and the
+    // name column takes the remainder — so the grid never opens on a sliver
+    // of a day peeking out from under the names.
+    const room = containerW - labelWidth;
+    const n = Math.max(1, Math.min(dates.length || 1, Math.floor(room / (CELL_W * 2))));
+    pairW = 2 * Math.floor(room / (2 * n));
+    labelW = containerW - n * pairW;
+  }
   const colW       = pairW / 2;   // width of one P or A sub-column (integer)
-  const tableWidth = labelWidth + (effDays + sumPairs) * pairW;
+  const tableWidth = labelW + (effDays + sumPairs) * pairW;
   const pads       = Array.from({ length: padCount });
+
+  // A phone opens the grid on the LATEST days — the ones a reader checks first
+  // — and slides left into the older ones. Re-aimed when the period changes,
+  // never on a P·A/D switch or a data refresh, so a reader's own scroll stays.
+  const measured  = containerW > 0;
+  const firstDate = dates[0];
+  const lastDate  = dates[dates.length - 1];
+  useEffect(() => {
+    if (!fit || !measured) return;
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [fit, measured, dates.length, firstDate, lastDate]);
+
+  // Phone-only measures. The name column's text lines up with the card title
+  // (16px) once the grid bleeds to the card's edges; icon buttons meet the
+  // 38px toggle beside them; small print never drops under 11px.
+  const namePadL   = fit ? 16 : 12;
+  const namePadR   = fit ? 6 : 8;
+  const iconBtn    = fit ? "h-[38px] w-[38px]" : "h-[32px] w-[32px]";
+  // A value's button fills its half-cell on a phone, so a finger landing
+  // anywhere on the colour reaches it — not only on the digits.
+  const fillBtn    = fit ? { width: "100%", height: "100%" } : null;
 
   // Summary column pinned to the right; data scrolls underneath it.
   const stickySum = {
@@ -461,7 +516,7 @@ function ComparisonTable({
 
   // ── Shared header style ──────────────────────────────────────────────────────
   const thBase = {
-    fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
+    fontSize: fit ? 11 : 10, fontWeight: 700, letterSpacing: ".07em",
     textTransform: "uppercase", color: "#fff",
     paddingBottom: 6, paddingTop: 4, whiteSpace: "nowrap",
     background: HDR_BG,
@@ -603,6 +658,7 @@ function ComparisonTable({
     const btn = (color) => ({
       fontSize: 11, fontWeight: 700, color, whiteSpace: "nowrap",
       background: "none", border: "none", padding: 0, cursor: d ? "pointer" : "default",
+      width: fit ? "100%" : undefined, height: fit ? "100%" : undefined,
     });
     return (
       <td key={key} colSpan={2} style={{
@@ -695,9 +751,9 @@ function ComparisonTable({
         position: "sticky", left: 0, zIndex: 3,
         background: "var(--bg-card)",
         borderRight: "2px solid var(--border-md)",
-        paddingLeft: 12, paddingRight: 8,
+        paddingLeft: namePadL, paddingRight: namePadR,
         verticalAlign: "middle", height: 34,
-        width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
+        width: labelW, minWidth: labelW, maxWidth: labelW,
       }}>
         <SkeletonBlock
           className={`h-3 ${SKELETON_NAME_WIDTHS[r % SKELETON_NAME_WIDTHS.length]}`}
@@ -719,6 +775,74 @@ function ComparisonTable({
       })}
     </tr>
   )) : null;
+
+  // The D bands' legend: above the grid on a desktop (holding its space in the
+  // P·A view, so a switch never moves the rows), under it on a phone.
+  const diffLegend = (visible, className) => (
+    <div
+      className={`flex flex-wrap items-center gap-3 ${fit ? "gap-y-1.5 text-[11px]" : "text-[10px]"} ${className}`}
+      style={{ color: "var(--text-3)", visibility: visible ? "visible" : "hidden" }}
+    >
+      <span className="font-semibold uppercase tracking-wider" style={{ color: fit ? "var(--text-3)" : "var(--text-4)" }}>D = P−A:</span>
+      {diffLegendBands(dsegs, t).map(({ color, label }, i) => (
+        <span key={`${color}-${i}`} className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: color }} />
+          <span>{label}</span>
+        </span>
+      ))}
+    </div>
+  );
+
+  // The header's icon buttons — the calculator and the band editor are the
+  // admin's, fullscreen everyone's.
+  const iconButtons = (
+    <>
+      {isAdmin && factorsApply && onCalcFactorsChange && (
+        <button
+          onClick={open.calc}
+          title={t("zagruzka.calcTitle")}
+          aria-label={t("zagruzka.calcTitle")}
+          className={`relative flex-shrink-0 ${iconBtn} flex items-center justify-center rounded-lg transition-colors`}
+          style={{
+            background: "var(--bg-inner)",
+            border: `1px solid ${calcModified ? "var(--brand)" : "var(--border-md)"}`,
+            color: calcModified ? "var(--brand)" : "var(--text-3)",
+          }}
+        >
+          <Calculator size={16} />
+          {calcModified && (
+            <span style={{ position: "absolute", top: 3, right: 3, width: 6, height: 6, borderRadius: "50%", background: "var(--brand)" }} />
+          )}
+        </button>
+      )}
+      {isAdmin && onEditBands && (
+        <button
+          onClick={onEditBands}
+          aria-label={t("zagruzka.bands.open")}
+          title={t("zagruzka.bands.open")}
+          className={`flex-shrink-0 ${iconBtn} flex items-center justify-center rounded-lg transition-colors`}
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
+        >
+          <SlidersHorizontal size={16} />
+        </button>
+      )}
+      {onToggleFullscreen && (
+        // Held in place but inert while loading: there is no grid yet to
+        // blow up, and dropping the button would shift the toggle beside it
+        // sideways the moment the data lands.
+        <button
+          onClick={onToggleFullscreen}
+          disabled={loading}
+          title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
+          aria-label={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
+          className={`flex-shrink-0 ${iconBtn} flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:cursor-default`}
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
+        >
+          {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
+      )}
+    </>
+  );
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -743,12 +867,12 @@ function ComparisonTable({
               </div>
             )}
             {note && (
-              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
+              <div className={`${fit ? "text-[11px]" : "text-[10px]"} mt-0.5`} style={{ color: "var(--text-3)" }}>
                 {note}
               </div>
             )}
             {calcModified && (
-              <div className="text-[10px] mt-0.5 font-medium" style={{ color: "var(--brand)" }}>
+              <div className={`${fit ? "text-[11px]" : "text-[10px]"} mt-0.5 font-medium`} style={{ color: "var(--brand)" }}>
                 {t("zagruzka.calcActive").replace("{list}", excludedNames)}
               </div>
             )}
@@ -758,83 +882,48 @@ function ComparisonTable({
             onClick={open.guide}
             aria-label={t("zagruzka.colorGuide")}
             title={t("zagruzka.colorGuide")}
-            className="flex-shrink-0 p-1.5 rounded-lg transition-colors hover:bg-white/10"
+            className={fit
+              ? `flex-shrink-0 ${iconBtn} flex items-center justify-center rounded-lg transition-colors hover:bg-white/10`
+              : "flex-shrink-0 p-1.5 rounded-lg transition-colors hover:bg-white/10"}
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
           >
-            <Info size={14} />
+            <Info size={fit ? 16 : 14} />
           </button>
         </div>
 
-        {/* Mode toggle + calculator + fullscreen — 2nd row on mobile */}
-        <div className="flex items-center gap-2">
+        {/* Mode toggle + calculator + fullscreen — 2nd row on mobile. On a
+            phone the row may wrap: the toggle stretches over whatever the
+            icons leave and never shrinks under its labels, and the icons move
+            to a line of their own, as one group, before either runs off the
+            card (an admin's three icons on a 320px screen). */}
+        <div className={fit ? "flex flex-wrap items-center gap-2 w-full" : "flex items-center gap-2"}>
           <SegmentedToggle
             value={mode}
             onChange={setMode}
             options={[["compare", t("zagruzka.modeCompare")], ["diff", t("zagruzka.modeDiff")]]}
+            fill={fit}
+            className={fit ? "flex-1 min-w-fit" : ""}
           />
-          {isAdmin && factorsApply && onCalcFactorsChange && (
-            <button
-              onClick={open.calc}
-              title={t("zagruzka.calcTitle")}
-              className="relative flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
-              style={{
-                background: "var(--bg-inner)",
-                border: `1px solid ${calcModified ? "var(--brand)" : "var(--border-md)"}`,
-                color: calcModified ? "var(--brand)" : "var(--text-3)",
-              }}
-            >
-              <Calculator size={16} />
-              {calcModified && (
-                <span style={{ position: "absolute", top: 3, right: 3, width: 6, height: 6, borderRadius: "50%", background: "var(--brand)" }} />
-              )}
-            </button>
-          )}
-          {isAdmin && onEditBands && (
-            <button
-              onClick={onEditBands}
-              aria-label={t("zagruzka.bands.open")}
-              title={t("zagruzka.bands.open")}
-              className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
-            >
-              <SlidersHorizontal size={16} />
-            </button>
-          )}
-          {onToggleFullscreen && (
-            // Held in place but inert while loading: there is no grid yet to
-            // blow up, and dropping the button would shift the toggle beside it
-            // sideways the moment the data lands.
-            <button
-              onClick={onToggleFullscreen}
-              disabled={loading}
-              title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
-              className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:cursor-default"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
-            >
-              {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-          )}
+          {fit ? <div className="flex items-center gap-2 ml-auto">{iconButtons}</div> : iconButtons}
         </div>
       </div>
 
-      {/* Diff legend — always rendered to hold space; invisible in compare mode */}
-      <div
-        className="flex flex-wrap items-center gap-3 text-[10px] mb-3"
-        style={{ color: "var(--text-3)", visibility: isDiff ? "visible" : "hidden" }}
-      >
-        <span className="font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>D = P−A:</span>
-        {diffLegendBands(dsegs, t).map(({ color, label }, i) => (
-          <span key={`${color}-${i}`} className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: color }} />
-            <span>{label}</span>
-          </span>
-        ))}
-      </div>
+      {/* Diff legend — always rendered to hold space; invisible in compare mode.
+          On a phone the band it holds wraps to three lines of nothing above
+          every table, so there it moves UNDER the grid (below) and exists only
+          in the D view: appearing there moves no row the reader is looking at. */}
+      {!fit && diffLegend(isDiff, "mb-3")}
 
-      {/* Table */}
+      {/* Table — on a phone it bleeds to the card's edges (the card's p-4),
+          giving the dates the 32px the padding held. */}
       <div
         ref={scrollRef}
-        style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}
+        style={{
+          overflowX: "auto", WebkitOverflowScrolling: "touch",
+          // A phone's swipe comes to rest on a whole day, never half of one
+          // tucked under the names (the padding is the sticky name column).
+          ...(fit ? { marginLeft: -16, marginRight: -16, scrollSnapType: "x mandatory", scrollPaddingLeft: labelW } : null),
+        }}
         data-grid=""
         data-sel={selection ? "" : undefined}
         onMouseOver={hover.onMouseOver}
@@ -848,7 +937,7 @@ function ComparisonTable({
         }}>
           {/* colgroup defines the real column grid (2 cols per date, each colW) */}
           <colgroup>
-            <col style={{ width: labelWidth }} />
+            <col style={{ width: labelW }} />
             {dates.flatMap((_, i) => [
               <col key={`cg-${i}-1`} style={{ width: colW }} />,
               <col key={`cg-${i}-2`} style={{ width: colW }} />,
@@ -870,7 +959,7 @@ function ComparisonTable({
                   ...thBase,
                   position: "sticky", left: 0, zIndex: 4,
                   borderRight: "2px solid var(--border-md)",
-                  width: labelWidth, textAlign: "left", paddingLeft: 12,
+                  width: labelW, textAlign: "left", paddingLeft: namePadL,
                   cursor: "pointer", userSelect: "none",
                 }}
               >
@@ -902,6 +991,7 @@ function ComparisonTable({
                       opacity: thisDGray ? 0.45 : 1,
                       transition: "filter .08s, opacity .1s",
                       cursor: "pointer", userSelect: "none",
+                      ...(fit ? { scrollSnapAlign: "start" } : null),
                     }}
                   >
                     {shortDate(d)}
@@ -1069,7 +1159,7 @@ function ComparisonTable({
                       position: "sticky", left: 0, zIndex: 3,
                       background: "var(--bg-card)",
                       borderRight: "2px solid var(--border-md)",
-                      textAlign: "left", paddingLeft: 12, paddingRight: 8,
+                      textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
                       fontSize: 12,
                       fontWeight: thisMgrSel ? 700 : 500,
                       color: thisMgrGray ? "var(--text-4)" : thisMgrSel ? "var(--text-1)" : labelColor,
@@ -1079,17 +1169,17 @@ function ComparisonTable({
                       // tooltip. Names wider than the column are normal now that
                       // the rows can be cells («4311 · Участок …»), not just
                       // supervisors, whose names happened to fit.
-                      whiteSpace: "nowrap",
+                      whiteSpace: fit ? "normal" : "nowrap",
                       overflow: "hidden", textOverflow: "ellipsis",
-                      maxWidth: labelWidth,
+                      maxWidth: labelW,
                       verticalAlign: "middle", height: 34,
-                      width: labelWidth, minWidth: labelWidth,
+                      width: labelW, minWidth: labelW,
                       transition: "background .08s, opacity .1s, color .1s",
                       cursor: "pointer", userSelect: "none",
                     }}
                     title={shown(name, true)}
                   >
-                    {shown(name)}
+                    {fit ? <span style={PHONE_NAME}>{shown(name)}</span> : shown(name)}
                   </td>
 
                   {/* Per-date cell — colSpan=2, animated P and A/D inside */}
@@ -1187,7 +1277,7 @@ function ComparisonTable({
                                   formula: planFormula(cell),
                                   inputs: planInputs(cell),
                                 })}
-                                style={{ fontSize: 11, fontWeight: 700, color: pColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                                style={{ fontSize: 11, fontWeight: 700, color: pColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
                               >
                                 {pv}%
                               </button>
@@ -1206,28 +1296,28 @@ function ComparisonTable({
                         }}>
                           {isDiff
                             ? dv !== null
-                              ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                              ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center", ...fillBtn }}>
                                   <button
                                     onClick={() => open.comment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
-                                    style={{ fontSize: 11, fontWeight: 700, color: dColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                                    style={{ fontSize: 11, fontWeight: 700, color: dColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
                                   >
                                     {dv > 0 ? "+" : ""}{dv}%
                                   </button>
                                   {commentedCells.has(`${managerIds[name]}_${isoOf(d)}`) && (
-                                    <span style={{ position: "absolute", top: -3, right: -5, width: 5, height: 5, borderRadius: "50%", background: "#fff", opacity: 0.9, display: "block" }} />
+                                    <span style={{ position: "absolute", top: fit ? 4 : -3, right: fit ? 4 : -5, width: 5, height: 5, borderRadius: "50%", background: "#fff", opacity: 0.9, display: "block", pointerEvents: "none" }} />
                                   )}
                                 </div>
                               : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
                             : av !== null
-                              ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                              ? <div style={{ position: "relative", display: "inline-flex", alignItems: "center", ...fillBtn }}>
                                   <button
                                     onClick={() => open.comment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: "actual" })}
-                                    style={{ fontSize: 11, fontWeight: 700, color: aColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                                    style={{ fontSize: 11, fontWeight: 700, color: aColor.fg, whiteSpace: "nowrap", background: "none", border: "none", padding: 0, cursor: "pointer", ...fillBtn }}
                                   >
                                     {av}%
                                   </button>
                                   {commentedCells.has(`${managerIds[name]}_${isoOf(d)}`) && (
-                                    <span style={{ position: "absolute", top: -3, right: -5, width: 5, height: 5, borderRadius: "50%", background: "#fff", opacity: 0.9, display: "block" }} />
+                                    <span style={{ position: "absolute", top: fit ? 4 : -3, right: fit ? 4 : -5, width: 5, height: 5, borderRadius: "50%", background: "#fff", opacity: 0.9, display: "block", pointerEvents: "none" }} />
                                   )}
                                 </div>
                               : <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>
@@ -1379,11 +1469,11 @@ function ComparisonTable({
                     background: "var(--bg-inner)",
                     borderRight: "2px solid var(--border-md)",
                     borderTop: "2px solid var(--border-md)",
-                    textAlign: "left", paddingLeft: 12, paddingRight: 8,
+                    textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
                     fontSize: 12, fontWeight: 700, color: "var(--text-1)",
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     verticalAlign: "middle", height: 34,
-                    width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
+                    width: labelW, minWidth: labelW, maxWidth: labelW,
                   }}
                 >
                   {tl(pinnedRow.label)}
@@ -1435,12 +1525,12 @@ function ComparisonTable({
                     background: "var(--bg-card)",
                     borderRight: "2px solid var(--border-md)",
                     borderTop: "2px solid var(--border-md)",
-                    textAlign: "left", paddingLeft: 12, paddingRight: 8,
+                    textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
                     fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
                     textTransform: "uppercase", color: "var(--text-3)",
                     whiteSpace: "nowrap",
                     verticalAlign: "middle", height: 30,
-                    width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
+                    width: labelW, minWidth: labelW, maxWidth: labelW,
                     cursor: "pointer", userSelect: "none",
                   }}
                 >
@@ -1486,12 +1576,12 @@ function ComparisonTable({
                   background: "var(--bg-card)",
                   borderRight: "2px solid var(--border-md)",
                   borderTop: "2px solid var(--border-md)",
-                  textAlign: "left", paddingLeft: 12, paddingRight: 8,
+                  textAlign: "left", paddingLeft: namePadL, paddingRight: namePadR,
                   fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
                   textTransform: "uppercase", color: "var(--text-3)",
                   whiteSpace: "nowrap",
                   verticalAlign: "middle", height: 30,
-                  width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
+                  width: labelW, minWidth: labelW, maxWidth: labelW,
                 }}>
                   {summaryMode.toUpperCase()}
                   <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
@@ -1527,7 +1617,12 @@ function ComparisonTable({
         </table>
       </div>
 
-      <div className="text-[10px] mt-2 text-center" style={{ color: "var(--text-4)" }}>
+      {fit && isDiff && diffLegend(true, "mt-3")}
+
+      <div
+        className={`${fit ? "text-[11px] mt-3" : "text-[10px] mt-2"} text-center`}
+        style={{ color: fit ? "var(--text-3)" : "var(--text-4)" }}
+      >
         {t("zagruzka.tapComment")}
       </div>
 

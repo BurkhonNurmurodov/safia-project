@@ -24,6 +24,8 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useTranslit } from "../utils/transliterate";
+import { surnameInitial } from "../utils/personName";
+import useIsMobile from "../hooks/useIsMobile";
 import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
@@ -32,6 +34,19 @@ const HEATMAP_MODES = ["planned", "actual"];
 // grids are not handed a new empty array/object on every render.
 const NO_ROWS = [];
 const NO_DATA = {};
+
+// ── On a phone ──
+// A row names its brigadir «Surname I.» in a 120px column: the desktop's full
+// name in 172px took over half the screen and left under two days of a grid in
+// view. The full name stays on the tooltip. Module-level, so the memoised
+// grids are handed one stable speller (`tl` is the grid's own).
+const PHONE_LABEL_W = 120;
+const phoneName = (key, full, tl) => (full ? tl(key) : surnameInitial(tl(key)));
+const PHONE_GRID = { labelWidth: PHONE_LABEL_W, labelFor: phoneName };
+// A heatmap card's grid bleeds to the card's edges on a phone (its p-4), so the
+// days get the 32px the padding held — the comparison tables do the same
+// inside their own card.
+const bleed = (phone, node) => (phone ? <div className="-mx-4">{node}</div> : node);
 
 // The comparison tables, in page order, keyed by their `basis` — which is also
 // their band-table key and their fullscreen key — with the words each prints.
@@ -51,14 +66,49 @@ const COMPARISON = {
 function HeatmapHeader({
   heatmap, heatmapMode, setHeatmapMode, segments, fullscreen, onToggleFullscreen, t,
   title = null, subtitle = null, note = null, showMode = true, guideHeading = null,
-  onEditBands = null,
+  onEditBands = null, phone = false,
 }) {
   const [showGuide, setShowGuide] = useState(false); // info icon → color meanings modal
+  // On a phone the icon buttons meet the 38px toggle beside them and small
+  // print never drops under 11px; desktop keeps its measures exactly.
+  const iconBtn = phone ? "h-[38px] w-[38px]" : "h-[32px] w-[32px]";
+  const small = phone ? "text-[11px]" : "text-[10px]";
+  // The card's icon buttons — the band editor is the admin's, fullscreen
+  // everyone's.
+  const icons = (
+    <>
+      {onEditBands && (
+        <button
+          onClick={onEditBands}
+          aria-label={t("zagruzka.bands.open")}
+          title={t("zagruzka.bands.open")}
+          className={`flex-shrink-0 ${iconBtn} flex items-center justify-center rounded-lg transition-colors`}
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
+        >
+          <SlidersHorizontal size={16} />
+        </button>
+      )}
+      <button
+        onClick={onToggleFullscreen}
+        title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
+        aria-label={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
+        className={`flex-shrink-0 ${iconBtn} flex items-center justify-center rounded-lg transition-colors`}
+        style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
+      >
+        {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+      </button>
+    </>
+  );
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        {/* Title + info icon — full width on mobile so buttons wrap to row 2 */}
-        <div className="flex items-center gap-1.5 w-full sm:flex-1 sm:w-auto min-w-0">
+        {/* Title + info icon — full width on mobile so buttons wrap to row 2.
+            A phone card with no mode toggle keeps its icons on the title's own
+            line instead, as a desktop does: a row holding one or two icons is
+            height the grid could have had. */}
+        <div className={phone && !showMode
+          ? "flex items-center gap-1.5 flex-1 min-w-0"
+          : "flex items-center gap-1.5 w-full sm:flex-1 sm:w-auto min-w-0"}>
           <div className="min-w-0">
             <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
               {title || t("zagruzka.fleetHeatmap")}
@@ -67,7 +117,7 @@ function HeatmapHeader({
               {(subtitle || t("zagruzka.periodDays")).replace("{n}", heatmap?.dates?.length ?? 0)}
             </div>
             {note && (
-              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
+              <div className={`${small} mt-0.5`} style={{ color: "var(--text-3)" }}>
                 {note}
               </div>
             )}
@@ -77,41 +127,30 @@ function HeatmapHeader({
             onClick={() => setShowGuide(true)}
             aria-label={t("zagruzka.colorGuide")}
             title={t("zagruzka.colorGuide")}
-            className="p-1.5 rounded-lg flex-shrink-0 transition-colors hover:bg-white/10"
+            className={phone
+              ? `${iconBtn} flex items-center justify-center rounded-lg flex-shrink-0 transition-colors hover:bg-white/10`
+              : "p-1.5 rounded-lg flex-shrink-0 transition-colors hover:bg-white/10"}
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
           >
-            <Info size={14} />
+            <Info size={phone ? 16 : 14} />
           </button>
         </div>
 
-        {/* Mode switcher + fullscreen — 2nd row on mobile */}
-        <div className="flex items-center gap-2">
+        {/* Mode switcher + fullscreen — 2nd row on mobile. On a phone the
+            toggle stretches over whatever the icons leave and never shrinks
+            under its labels; the icons wrap to a line of their own, as one
+            group, before anything runs off the card. */}
+        <div className={phone && showMode ? "flex flex-wrap items-center gap-2 w-full" : "flex items-center gap-2"}>
           {showMode && (
             <SegmentedToggle
               value={heatmapMode}
               onChange={setHeatmapMode}
               options={HEATMAP_MODES.map((m) => [m, t(`zagruzka.mode.${m}`)])}
+              fill={phone}
+              className={phone ? "flex-1 min-w-fit" : ""}
             />
           )}
-          {onEditBands && (
-            <button
-              onClick={onEditBands}
-              aria-label={t("zagruzka.bands.open")}
-              title={t("zagruzka.bands.open")}
-              className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
-            >
-              <SlidersHorizontal size={16} />
-            </button>
-          )}
-          <button
-            onClick={onToggleFullscreen}
-            title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
-            className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
-          >
-            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
+          {phone && showMode ? <div className="flex items-center gap-2 ml-auto">{icons}</div> : icons}
         </div>
       </div>
 
@@ -130,7 +169,7 @@ function HeatmapHeader({
       )}
 
       {/* Legend — derived live from this card's own bands */}
-      <div className="flex flex-wrap items-center gap-3 text-[10px] mb-3" style={{ color: "var(--text-3)" }}>
+      <div className={`flex flex-wrap items-center gap-3 ${small} mb-3`} style={{ color: "var(--text-3)" }}>
         {segmentBands(segments?.length ? segments : DEFAULT_SEGMENTS).map(({ color, label }) => (
           <span key={label} className="flex items-center gap-1.5">
             <span
@@ -140,7 +179,8 @@ function HeatmapHeader({
             <span style={{ color: "var(--text-3)" }}>{label}</span>
           </span>
         ))}
-        {fullscreen && (
+        {/* A phone has no Esc key to press. */}
+        {fullscreen && !phone && (
           <span className="ml-auto text-[10px]" style={{ color: "var(--text-4)" }}>
             Press <kbd className="px-1 py-0.5 rounded text-[9px]" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>Esc</kbd> to exit
           </span>
@@ -157,8 +197,9 @@ function HeatmapHeader({
 const MetricHeatmapCard = memo(function MetricHeatmapCard({
   which, cellValue, title, note, heatmap, hmLoading, segments,
   managerIds, commentedCells, approvedCells, onCellClick, full, setOpenFull, t,
-  skDates, skRows, onEditBands = null,
+  skDates, skRows, onEditBands = null, phone = false,
 }) {
+  const phoneGrid = phone ? PHONE_GRID : NO_DATA;
   const header = (isFull) => (
     <HeatmapHeader
       heatmap={heatmap ?? { dates: skDates }}
@@ -170,6 +211,7 @@ const MetricHeatmapCard = memo(function MetricHeatmapCard({
       guideHeading={title}
       showMode={false}
       onEditBands={onEditBands}
+      phone={phone}
       t={t}
     />
   );
@@ -179,6 +221,7 @@ const MetricHeatmapCard = memo(function MetricHeatmapCard({
       dates={skDates} managers={[]} data={{}}
       segments={segments}
       fullscreen={isFull}
+      phoneFit {...phoneGrid}
     />
   ) : heatmap?.managers?.length ? grid(isFull) : (
     <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
@@ -195,13 +238,14 @@ const MetricHeatmapCard = memo(function MetricHeatmapCard({
       approvedCells={approvedCells}
       onCellClick={onCellClick}
       fullscreen={isFull}
+      phoneFit {...phoneGrid}
     />
   );
   return (
     <>
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
         {header(false)}
-        {body(false)}
+        {bleed(phone && (hmLoading || !!heatmap?.managers?.length), body(false))}
       </div>
 
       {full ? createPortal(
@@ -229,6 +273,10 @@ export default function Zagruzka() {
   const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t } = useLang();
   const { tl, lang } = useTranslit();
+  // Below sm the grids fit the phone (see PHONE_GRID and `phoneFit`); from sm
+  // up every measure on this page is exactly the desktop's.
+  const isMobile = useIsMobile();
+  const phoneGrid = isMobile ? PHONE_GRID : NO_DATA;
   const [heatmapMode, setHeatmapMode] = usePersistentState("zagruzka_heatmap_mode", "actual");
   // Which overlay is open: null | "full" | "full90" | "simple" | "heatmap" |
   // "fulfil" | "eff". ONE value, so two overlays can never be open at once and
@@ -427,6 +475,7 @@ export default function Zagruzka() {
       note={t(COMPARISON[which].note)}
       fullscreen={isFull}
       onToggleFullscreen={isFull ? fullToggle.close : fullToggle.open[which]}
+      phoneFit {...phoneGrid}
     />
   );
 
@@ -477,6 +526,9 @@ export default function Zagruzka() {
               ),
             },
           ]}
+          // Below md the active filters' chips wrap onto a line of their own
+          // instead of running off the screen edge in an invisible scroller.
+          chipsWrap
         />
       </div>
 
@@ -526,12 +578,13 @@ export default function Zagruzka() {
           fullscreen={false}
           onToggleFullscreen={() => setOpenFull("heatmap")}
           onEditBands={editBands("load")}
+          phone={isMobile}
           t={t}
         />
-        {hmLoading ? (
-          <HeatmapChart loading loadingRows={skRows} dates={skDates} managers={[]} data={{}} segments={segments} />
-        ) : heatmap?.managers?.length ? (
-          <HeatmapChart dates={heatmap.dates} managers={heatmap.managers} data={heatmap.data} mode={heatmapMode} managerIds={managerIds} segments={segments} commentedCells={commentedCells} approvedCells={approvedCells} onCellClick={handleCellClick} />
+        {hmLoading ? bleed(isMobile,
+          <HeatmapChart loading loadingRows={skRows} dates={skDates} managers={[]} data={{}} segments={segments} phoneFit {...phoneGrid} />,
+        ) : heatmap?.managers?.length ? bleed(isMobile,
+          <HeatmapChart dates={heatmap.dates} managers={heatmap.managers} data={heatmap.data} mode={heatmapMode} managerIds={managerIds} segments={segments} commentedCells={commentedCells} approvedCells={approvedCells} onCellClick={handleCellClick} phoneFit {...phoneGrid} />,
         ) : (
           <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
         )}
@@ -556,6 +609,7 @@ export default function Zagruzka() {
               fullscreen={true}
               onToggleFullscreen={() => setOpenFull(null)}
               onEditBands={editBands("load")}
+              phone={isMobile}
               t={t}
             />
           </div>
@@ -563,7 +617,7 @@ export default function Zagruzka() {
           {/* Scrollable table — no padding, fills remaining height */}
           <div className="flex-1 overflow-hidden" style={{ height: 0 }}>
             {hmLoading ? (
-              <HeatmapChart loading loadingRows={skRows} dates={skDates} managers={[]} data={{}} segments={segments} fullscreen />
+              <HeatmapChart loading loadingRows={skRows} dates={skDates} managers={[]} data={{}} segments={segments} fullscreen phoneFit {...phoneGrid} />
             ) : heatmap?.managers?.length ? (
               <HeatmapChart
                 dates={heatmap.dates}
@@ -576,6 +630,7 @@ export default function Zagruzka() {
                 approvedCells={approvedCells}
                 onCellClick={handleCellClick}
                 fullscreen
+                phoneFit {...phoneGrid}
               />
             ) : (
               <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
@@ -602,7 +657,7 @@ export default function Zagruzka() {
         onEditBands={editBands("fulfil")}
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
         onCellClick={metricCellClick.fulfil}
-        full={openFull === "fulfil"} setOpenFull={setOpenFull} t={t}
+        full={openFull === "fulfil"} setOpenFull={setOpenFull} t={t} phone={isMobile}
         skDates={skDates} skRows={skRows}
       />
       <MetricHeatmapCard
@@ -614,7 +669,7 @@ export default function Zagruzka() {
         onEditBands={editBands("eff")}
         managerIds={managerIds} commentedCells={commentedCells} approvedCells={approvedCells}
         onCellClick={metricCellClick.eff}
-        full={openFull === "eff"} setOpenFull={setOpenFull} t={t}
+        full={openFull === "eff"} setOpenFull={setOpenFull} t={t} phone={isMobile}
         skDates={skDates} skRows={skRows}
       />
 
@@ -623,7 +678,7 @@ export default function Zagruzka() {
         <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider mb-1">
           {t("zagruzka.funnelTitle")}
         </div>
-        <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
+        <div className={`${isMobile ? "text-[11px]" : "text-[10px]"} mb-3`} style={{ color: isMobile ? "var(--text-3)" : "var(--text-4)" }}>
           {t("zagruzka.funnelSub")}
         </div>
         {brigLoading ? (

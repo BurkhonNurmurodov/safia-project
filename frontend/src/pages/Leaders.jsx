@@ -45,6 +45,7 @@ import { useTranslit, transliterate } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { showReason as expandReason } from "../utils/leaderReason";
+import { surnameInitial } from "../utils/personName";
 
 // ── score colours (tuned for the dark dashboard — softer emerald/amber/rose,
 //    deliberately desaturated so they glow rather than glare against charcoal) ──
@@ -1231,13 +1232,9 @@ const initialSurname = (s) => {
 // row has room for and still identifies a person by: «Ortiqova Mohlaroyim»,
 // where «O. Mohlaroyim Ziodullo Qizi» spends its width on the least useful half
 // and «Ortiqova M. Z. Q.» on initials. The full name stays on the tooltip.
-// «Ortiqova Mohlaroyim Ziodullo Qizi» → «Ortiqova M.»: the day calendar's name
-// column on a phone, where the surname is what tells two rows apart.
-const surnameInitial = (s) => {
-  const parts = String(s ?? "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length <= 1) return parts[0] || String(s ?? "");
-  return `${parts[0]} ${parts[1][0].toUpperCase()}.`;
-};
+// «Ortiqova Mohlaroyim Ziodullo Qizi» → «Ortiqova M.» (`surnameInitial`, from
+// utils/personName.js): the day calendar's name column on a phone, where the
+// surname is what tells two rows apart.
 const twoWords = (s) => String(s ?? "").trim().split(/\s+/).filter(Boolean).slice(0, 2).join(" ");
 
 // Shrinks a single-line label to fit its container between `max` and `min` px.

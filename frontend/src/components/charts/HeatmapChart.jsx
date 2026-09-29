@@ -101,6 +101,14 @@ function buildCellStyle({ color, grayed, width }) {
 
 const AVG_CYCLE = ["avg", "max", "min"];
 
+// A phone's row name: a touch screen has no tooltip to read a clipped name
+// from, so a name too long for its line («Abdurakhmonova G.») takes a second
+// one inside the same 34px row instead of losing its tail to an ellipsis.
+const PHONE_NAME = {
+  display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2,
+  overflow: "hidden", lineHeight: "14px",
+};
+
 // ─── Single-mode grid ─────────────────────────────────────────────────────────
 
 const SingleGrid = memo(function SingleGrid({
@@ -114,10 +122,13 @@ const SingleGrid = memo(function SingleGrid({
   cellValue = null,
   loading = false,
   loadingRows = 6,
+  phoneFit = false,
+  fullscreen = false,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MAX/MIN column
+  const fit = phoneFit && isMobile;
   // THE value reader — every cell, the unit row and both summaries go through
   // it. Without `cellValue` it is the fleet heatmap's own Plan/Fact switch,
   // byte-for-byte what this grid has always read.
@@ -132,7 +143,7 @@ const SingleGrid = memo(function SingleGrid({
     : managers;
   // Display spelling of a row key. Rows sort by the KEY (the cell code on the
   // per-cell загрузка), so a leader's name appended here never reorders them.
-  const shown = (name, full = false) => (labelFor ? labelFor(name, full) : tl(name));
+  const shown = (name, full = false) => (labelFor ? labelFor(name, full, tl) : tl(name));
 
   // A (manager, date) cell is gated until its day is approved. When
   // approvedCells is null the gate is OFF (e.g. still loading) → show all.
@@ -157,14 +168,48 @@ const SingleGrid = memo(function SingleGrid({
   // Pad up to BASIS_DAYS with blank cells so the table keeps a constant width;
   // more than BASIS_DAYS overflows and scrolls. Day-columns stretch so exactly
   // BASIS_DAYS fill the container (clamped to a CELL_W minimum on narrow views).
-  const padCount   = Math.max(0, BASIS_DAYS - dates.length);
-  const effDays    = Math.max(BASIS_DAYS, dates.length);
+  // `fit` (a phone, opted in): no pads, and the real days alone share the
+  // width — stretched when they all fit, scrolled when they do not.
+  const padCount   = fit ? 0 : Math.max(0, BASIS_DAYS - dates.length);
+  const effDays    = fit ? dates.length : Math.max(BASIS_DAYS, dates.length);
   const avgW       = isMobile ? 0 : AVG_W;  // summary column is dropped on phones
-  const cellW      = containerW > 0
+  let labelW = labelWidth;
+  let cellW = containerW > 0
     ? Math.max(CELL_W, Math.floor((containerW - labelWidth - avgW) / BASIS_DAYS))
     : CELL_W;
-  const tableWidth = labelWidth + effDays * cellW + avgW;
+  if (fit && containerW > 0) {
+    // On a phone the columns SNAP to the screen: as many whole days as fit
+    // beside the names (all of them, stretched, when they all fit), and the
+    // name column takes the remainder — so the grid never opens on a sliver
+    // of a day peeking out from under the names.
+    const room = containerW - labelWidth;
+    const n = Math.max(1, Math.min(dates.length || 1, Math.floor(room / CELL_W)));
+    cellW = Math.floor(room / n);
+    labelW = containerW - n * cellW;
+  }
+  const tableWidth = labelW + effDays * cellW + avgW;
   const pads       = Array.from({ length: padCount });
+
+  // A phone opens the grid on the LATEST days — the ones a reader checks first
+  // — and slides left into the older ones. Re-aimed when the period changes,
+  // never on a mode switch or a data refresh, so a reader's own scroll stays.
+  const measured  = containerW > 0;
+  const firstDate = dates[0];
+  const lastDate  = dates[dates.length - 1];
+  useEffect(() => {
+    if (!fit || !measured) return;
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [fit, measured, dates.length, firstDate, lastDate]);
+
+  // The name column's text lines up with the card title (16px) once the grid
+  // bleeds to the card's edges on a phone.
+  const namePadL = fit ? 16 : 12;
+  const namePadR = fit ? 6 : 8;
+  // Fullscreen on a phone: the grid fills the overlay and scrolls BOTH ways,
+  // its date row pinned on top. Left to its content height it ran past the
+  // screen's bottom edge, and the rows down there could not be reached at all.
+  const pinTop = fit && fullscreen;
 
   // Summary column is pinned to the right edge; data scrolls underneath it.
   const stickyAvg = {
@@ -186,7 +231,7 @@ const SingleGrid = memo(function SingleGrid({
   };
 
   const thBase = {
-    fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
+    fontSize: fit ? 11 : 10, fontWeight: 700, letterSpacing: ".07em",
     textTransform: "uppercase", color: "#fff",
     paddingBottom: 6, paddingTop: 4,
     whiteSpace: "nowrap",
@@ -206,8 +251,8 @@ const SingleGrid = memo(function SingleGrid({
     <tr key={`sk-${r}`} aria-hidden="true">
       <td style={{
         ...stickyNameBase,
-        paddingLeft: 12, paddingRight: 8,
-        width: labelWidth, maxWidth: labelWidth,
+        paddingLeft: namePadL, paddingRight: namePadR,
+        width: labelW, maxWidth: labelW,
         verticalAlign: "middle", height: 34,
       }}>
         <SkeletonBlock
@@ -249,7 +294,13 @@ const SingleGrid = memo(function SingleGrid({
   return (
     <div
       ref={scrollRef}
-      style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}
+      style={{
+        overflowX: "auto", WebkitOverflowScrolling: "touch",
+        // A phone's swipe comes to rest on a whole day, never half of one
+        // tucked under the names (the padding is the sticky name column).
+        ...(fit ? { scrollSnapType: "x mandatory", scrollPaddingLeft: labelW } : null),
+        ...(pinTop ? { height: "100%" } : null),
+      }}
       data-grid=""
       data-sel={selection ? "" : undefined}
       onMouseOver={hover.onMouseOver}
@@ -269,10 +320,11 @@ const SingleGrid = memo(function SingleGrid({
               style={{
                 ...stickyNameBase,
                 ...thBase,
-                width: labelWidth,
+                width: labelW,
                 zIndex: 4,
+                ...(pinTop ? { top: 0, zIndex: 6 } : null),
                 textAlign: "left",
-                paddingLeft: 12,
+                paddingLeft: namePadL,
                 cursor: "pointer",
                 userSelect: "none",
               }}
@@ -308,6 +360,8 @@ const SingleGrid = memo(function SingleGrid({
                     width:      cellW,
                     minWidth:   cellW,
                     border:     "1px solid var(--border)",
+                    ...(fit ? { scrollSnapAlign: "start" } : null),
+                    ...(pinTop ? { position: "sticky", top: 0, zIndex: 4 } : null),
                   }}
                 >
                   {shortDate(d)}
@@ -371,19 +425,19 @@ const SingleGrid = memo(function SingleGrid({
                   style={{
                     ...stickyNameBase,
                     textAlign:     "left",
-                    paddingLeft:   12,
-                    paddingRight:  8,
+                    paddingLeft:   namePadL,
+                    paddingRight:  namePadR,
                     fontSize:      12,
                     fontWeight:    thisSel ? 700 : 500,
                     color:         thisGray ? "var(--text-4)" : thisSel ? "var(--text-1)" : labelColor,
                     // nowrap alone let a long row name widen the column past
-                    // labelWidth (which tableWidth was computed from) or spill
+                    // labelW (which tableWidth was computed from) or spill
                     // over the date cells. Clip it; the tooltip keeps the rest.
-                    whiteSpace:    "nowrap",
+                    whiteSpace:    fit ? "normal" : "nowrap",
                     overflow:      "hidden",
                     textOverflow:  "ellipsis",
-                    width:         labelWidth,
-                    maxWidth:      labelWidth,
+                    width:         labelW,
+                    maxWidth:      labelW,
                     verticalAlign: "middle",
                     cursor:        "pointer",
                     opacity:       thisGray ? 0.35 : 1,
@@ -393,7 +447,7 @@ const SingleGrid = memo(function SingleGrid({
                   }}
                   title={shown(name, true)}
                 >
-                  {shown(name)}
+                  {fit ? <span style={PHONE_NAME}>{shown(name)}</span> : shown(name)}
                 </td>
 
                 {/* Data cells */}
@@ -489,16 +543,16 @@ const SingleGrid = memo(function SingleGrid({
                   background:    "var(--bg-inner)",
                   borderTop:     "2px solid var(--border-md)",
                   textAlign:     "left",
-                  paddingLeft:   12,
-                  paddingRight:  8,
+                  paddingLeft:   namePadL,
+                  paddingRight:  namePadR,
                   fontSize:      12,
                   fontWeight:    700,
                   color:         "var(--text-1)",
                   whiteSpace:    "nowrap",
                   overflow:      "hidden",
                   textOverflow:  "ellipsis",
-                  width:         labelWidth,
-                  maxWidth:      labelWidth,
+                  width:         labelW,
+                  maxWidth:      labelW,
                   verticalAlign: "middle",
                   height:        34,
                 }}
@@ -606,7 +660,9 @@ export default memo(function HeatmapChart({
   // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
   rowLabel = "Brigadir",
   labelWidth = LABEL_W,
-  // How a row KEY is spelled on screen: `(key, full) => string`. Keys stay the
+  // How a row KEY is spelled on screen: `(key, full, tl) => string` (`tl` is
+  // the grid's own name transliterator, so a module-level speller stays a
+  // stable reference for the memoised grid). Keys stay the
   // keys — `data`, sorting and the selection all go on using them — so this
   // only ever changes what the reader sees. It is called twice per row: once
   // for the CELL, which is clipped to `labelWidth`, and once with `full = true`
@@ -641,6 +697,12 @@ export default memo(function HeatmapChart({
   // they do. `managers` / `data` are not read.
   loading = false,
   loadingRows = 6,
+  // On a phone (below sm) the grid fits the SCREEN instead of the desktop's
+  // calibrated 14-day width: no blank pad columns, the days stretch when they
+  // all fit, and it opens scrolled to the LATEST day. Opt-in, so every other
+  // page reads exactly as before; from sm up it changes nothing at all. The
+  // bleed to the card's edges is the caller's — it owns the card's padding.
+  phoneFit = false,
 }) {
   const { labelColor } = useChartTheme();
   const { t } = useLang();
@@ -673,7 +735,7 @@ export default memo(function HeatmapChart({
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
     avgMode, onCycleAvg: cycleAvg, cellTitle,
     rowLabel, labelWidth, labelFor, pinnedRow, cellValue,
-    loading, loadingRows,
+    loading, loadingRows, phoneFit,
   };
 
   return (

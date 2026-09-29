@@ -14,3 +14,14 @@ export const shortPerson = (name) => {
   if (p.length < 2) return p[0] || "";
   return `${p[0][0].toUpperCase()}. ${p[1]}`;
 };
+
+// The other way round — the SURNAME kept whole and the given name down to an
+// initial: «Ortiqova Mohlaroyim Ziodullo Qizi» → «Ortiqova M.». A phone's name
+// column, where rows are sorted by surname and the surname is what tells two
+// of them apart (/leaders' day calendar, /zagruzka's grids). Applied after
+// `tl()`, and a single-word name is left as it is, like `shortPerson`.
+export const surnameInitial = (name) => {
+  const p = String(name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (p.length < 2) return p[0] || String(name ?? "");
+  return `${p[0]} ${p[1][0].toUpperCase()}.`;
+};
