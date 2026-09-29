@@ -5,6 +5,10 @@
     <cache-path
         name="shared"
         path="shared/" />
+    <!-- An app update handed to Android's installer (AppUpdates). -->
+    <cache-path
+        name="apk"
+        path="apk/" />
     <external-files-path
         name="downloads"
         path="Download/" />

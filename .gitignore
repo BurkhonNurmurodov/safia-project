@@ -121,3 +121,5 @@ graphify-out/
 
 # Antigravity
 .agents/
+# The published Android APK (services/android_release.py) — server state, never git.
+backend/data/

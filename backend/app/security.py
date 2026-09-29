@@ -75,6 +75,12 @@ _EXEMPT_PATHS = frozenset({
     "/api/auth/web/impersonate",
 })
 
+# Whole subtrees with no session:
+#   * /api/android/ — the Android app's own updates (routers/android.py): its
+#                     native code has no session, the release is public, and
+#                     the one write (publish) carries its own key.
+_EXEMPT_PREFIXES = ("/api/android/",)
+
 _INIT_DATA_HEADER = "X-Telegram-Init-Data"
 
 
@@ -147,7 +153,7 @@ def enforce_telegram_origin_global(request: Request) -> None:
     path = request.url.path
     if not path.startswith("/api/"):
         return
-    if path in _EXEMPT_PATHS:
+    if path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES):
         return
     _check_init_data(request)
 

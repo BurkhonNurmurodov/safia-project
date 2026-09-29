@@ -30,3 +30,4 @@ cp app/build/outputs/bundle/release/app-release.aab "$OUT/Safia-IMS-$VER.aab"
 # /.well-known/assetlinks.json, or production links stop opening in the app.
 "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$OUT/Safia-IMS-$VER.apk" | grep 'SHA-256'
 echo "Safia IMS $VER (versionCode $CODE) -> $OUT"
+echo "To offer it to every installed app: bash android/publish-release.sh"

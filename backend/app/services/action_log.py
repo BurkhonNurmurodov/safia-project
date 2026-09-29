@@ -412,6 +412,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
 
     # ── platform configuration ────────────────────────────────────────────────
     (("PUT",),    "/admin/settings",                           "config", "config.settings_saved"),
+    (("POST",),   "/api/android/publish",                      "config", "config.android_published"),
     (("PUT",),    "/api/production/trudoyomkost/autocall",      "config", "config.autocall_set"),
     (("PUT",),    "/api/admin/translations",                   "config", "config.translation_saved"),
     (("POST",),   "/api/admin/translations/keys",              "config", "config.translation_key_added"),

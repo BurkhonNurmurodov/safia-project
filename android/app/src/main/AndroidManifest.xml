@@ -14,6 +14,9 @@
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
+    <!-- The app's own updates (AppUpdates): the published APK is handed to
+         Android's installer, which asks the person to confirm. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Android 11+ package visibility: which app is the phone's browser — the
          one place a page of ours must open outside the app, and the failure

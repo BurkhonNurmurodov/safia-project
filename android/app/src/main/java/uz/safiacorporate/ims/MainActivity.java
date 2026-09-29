@@ -79,6 +79,8 @@ public class MainActivity extends ComponentActivity {
     private WebView web;
     private WebBundle bundle;
     private PageUpdates updates;
+    /** The APK's own updates; the main screen only (null on a session screen). */
+    private AppUpdates appUpdates;
     private final Runnable pagesReady = this::announcePages;
     private String bridgeScript;
     private boolean bridgeAtDocumentStart;
@@ -115,6 +117,7 @@ public class MainActivity extends ComponentActivity {
             return;
         }
         bridgeScript = WebBundle.readAsset(this, "app-bridge.js");
+        if (!isSession()) appUpdates = new AppUpdates(this, () -> siteLang);
 
         root = new FrameLayout(this);
         root.setBackgroundColor(DARK);
@@ -172,18 +175,21 @@ public class MainActivity extends ComponentActivity {
         // that was on top of this one took it.
         updates.setOnReady(pagesReady);
         updates.resume();
+        if (appUpdates != null) appUpdates.onResume();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         updates.pause();
+        if (appUpdates != null) appUpdates.onPause();
         CookieManager.getInstance().flush();
     }
 
     @Override
     protected void onDestroy() {
         updates.clearOnReady(pagesReady);
+        if (appUpdates != null) appUpdates.destroy();
         if (pendingFiles != null) pendingFiles.onReceiveValue(null);
         if (pendingCamera != null) pendingCamera.deny();
         if (web != null) {

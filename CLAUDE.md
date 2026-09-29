@@ -6443,22 +6443,49 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.3.0, versionCode 5).
+  **Raise `versionCode` on every release** (current: 1.4.0, versionCode 6).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
 - **Testing** is on the operator's Galaxy A16 over USB (`adb`), when it is
   plugged in with USB debugging on; the build Mac has no room for an
   emulator. Never type the operator's password into it.
-- **Distribution is by hand**: the APK is sent in Telegram; Android asks once
-  to allow installs from that app, and Play Protect may warn about an unknown
-  developer. Google Play needs a developer account, and Play App Signing
-  re-signs with Google's key — ADD its fingerprint to `ANDROID_ASSET_LINKS`.
+- **The APK updates itself from 1.4.0** (2026-09-29, the operator's pick
+  over Google Play). `AppUpdates.java` — main screen only, on resume, at most
+  every 30 min — asks `GET /api/android/latest`; a newer versionCode gets a
+  dialog («Yangilash» / «Keyinroq», the latter quiet for 12 h per version),
+  the file is downloaded into `cache/apk/`, checked against the published
+  SHA-256 and handed to Android's installer (`REQUEST_INSTALL_PACKAGES`; the
+  first time the app opens the «install unknown apps» setting and says why).
+  The person taps «Install» once — a sideloaded app can never replace itself
+  silently. **Phones on 1.3.0 or older must install 1.4.0 by hand once.**
+  - **The server holds ONE release**, on disk in `backend/data/android/`
+    (gitignored, survives the deploy's `reset --hard`): `<code>.apk` +
+    `latest.json`. `services/android_release.py` is THE definition;
+    `routers/android.py` serves `/latest`, `/app/{code}.apk` and
+    `/download` (a shareable link — hand it out instead of the file), all
+    PUBLIC (`security._EXEMPT_PREFIXES`).
+  - **Publishing is `bash android/publish-release.sh`**, run from the build
+    Mac after `build-release.sh` — NEVER a commit (19 MB a release would push
+    the repo past the cloud bundle's 100 MB within a few releases). It posts
+    the APK with `~/.safia-android/signing/publish.key`; the server keeps only
+    the key's SHA-256 (`PUBLISH_KEY_SHA256`), so nothing secret is in git and
+    nothing is configured on the server. Every upload is READ first (a
+    minimal binary-manifest + v2/v3 signing-block reader): refused unless it
+    is `uz.safiacorporate.ims`, not older than the published versionCode, the
+    same bytes if the same code, and signed with a certificate
+    `ANDROID_ASSET_LINKS` names — a wrongly signed APK would otherwise fail on
+    every phone after a 19 MB download each. Logged as
+    `config.android_published`. A new key = a new SHA-256 in code.
+  - Publishing is the release: every installed 1.4.0+ app offers it at its
+    next check. There is no staging.
+  - Google Play remains possible later: it needs a developer account, and
+    Play App Signing re-signs with Google's key — ADD its fingerprint to
+    `ANDROID_ASSET_LINKS` (which `publish` also reads).
 - Deliberately not built (yet): a leader checklist screen of the app's own
   (the proof camera is reachable only from the bot's buttons, which open in
-  Telegram), push notifications (Telegram stays the channel), an in-app "a
-  new APK exists" notice (the pages update themselves; the APK changes
-  rarely and is still handed out by hand), and the Fullscreen API on `/live`.
+  Telegram), push notifications (Telegram stays the channel), and the
+  Fullscreen API on `/live`.
 
 ## ARC tickets (`/arc`, page key `arc`)
 
