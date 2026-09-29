@@ -4298,6 +4298,44 @@ change does not undo them:
   hidden with `max-lg:hidden`, never `hidden lg:inline-flex` — its own
   `inline-flex` outranks `hidden`. Pager buttons are 36px below sm.
 
+## «Zagruzka foizi» on a phone (`/zagruzka`, 2026-09-29)
+
+Users reported the page unusable on a phone: the grids' 172px name column took
+over half the screen and left under two days in view, an invisible legend held
+~100px of nothing above every comparison table, and the latest days sat at the
+far right. The operator's constraint: **desktop is perfect and must not
+change** — every rule below applies below `sm` (640px, `useIsMobile`) only,
+and 768 / 1280 / 1440 were checked pixel-identical to before.
+
+- **`phoneFit` is an OPT-IN prop on `HeatmapChart` and `ComparisonTable`**
+  (only /zagruzka passes it; /zagruzka-cell and /workers are untouched). On a
+  phone it drops the desktop's blank pad columns, SNAPS the columns to the
+  screen (as many whole days as fit beside the names — all of them, stretched,
+  when they all fit — with the name column taking the remainder, so no sliver
+  of a day peeks out from under the names), opens the grid scrolled to the
+  LATEST day (re-aimed only when the period changes), and snaps swipes to whole
+  days (`scroll-snap`, padded by the sticky name column).
+- **Names are «Surname I.»** (`surnameInitial`, now in `utils/personName.js`)
+  in a 120px column, and a name too long for one line takes a second line in
+  the same 34px row — a touch screen has no tooltip to read a clipped name from.
+  `labelFor` is called `(key, full, tl)`, so a module-level speller stays a
+  stable reference for the memoised grids.
+- **The grids bleed to the card's edges** (the card's p-4), the name text
+  aligned with the card title at 16px.
+- **Comparison tables**: the D legend sits UNDER the grid and only in the D
+  view (appearing there moves no row); a value's button fills its whole
+  half-cell as the tap target; the P·A/D toggle stretches over the row and the
+  icon buttons (38px, meeting the toggle) wrap to their own line as a group
+  before anything runs off a 320px card. Heatmap cards without a toggle keep
+  their icons on the title's line.
+- **Fullscreen heatmap on a phone scrolls both ways** with its date row pinned
+  on top — left at its content height it ran past the screen and the last rows
+  were unreachable. (The same cut-off exists on desktop with many rows; not
+  touched, desktop being out of scope.)
+- Small print on the page is 11px on a phone (notes, legends, the tap hint,
+  grid headers); the toolbar's filter chips wrap (`chipsWrap`) instead of
+  being clipped.
+
 ## What is ON the `/leaders` tab strip
 
 From **2026-09-02** (the operator's call) the strip was five tabs; from
