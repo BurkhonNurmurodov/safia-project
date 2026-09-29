@@ -4311,10 +4311,21 @@ and 768 / 1280 / 1440 were checked pixel-identical to before.
   (only /zagruzka passes it; /zagruzka-cell and /workers are untouched). On a
   phone it drops the desktop's blank pad columns, SNAPS the columns to the
   screen (as many whole days as fit beside the names — all of them, stretched,
-  when they all fit — with the name column taking the remainder, so no sliver
-  of a day peeks out from under the names), opens the grid scrolled to the
-  LATEST day (re-aimed only when the period changes), and snaps swipes to whole
-  days (`scroll-snap`, padded by the sticky name column).
+  when they all fit — with the name column taking the remainder), opens the
+  grid scrolled to the LATEST day (re-aimed only when the period changes), and
+  snaps swipes to whole days (`scroll-snap`).
+- **On a phone the names are NOT a sticky column** — each grid is TWO tables
+  side by side (`renderTable(part)`: "names" beside a horizontal scroller of
+  "data"; desktop draws "all", one table, as before). Opened on the latest day,
+  a sticky name column sat over hidden days at rest, and a sticky cell is a
+  layer of its own that real devices can draw a frame late while scrolling —
+  the operator saw the days flash through the names. With nothing under the
+  names nothing can show through. The two halves keep one row pitch: the
+  names' cells carry the days' 1px rules (transparent), header rows are a
+  fixed 30 (+24) px so a selected day's underline cannot grow one half, and
+  the wrapper is `align-items: flex-start` (stretched to a fullscreen
+  wrapper's height the days half became a scroller of its own and slid out of
+  line). Never make those names sticky again.
 - **Names are «Surname I.»** (`surnameInitial`, now in `utils/personName.js`)
   in a 120px column, and a name too long for one line takes a second line in
   the same 34px row — a touch screen has no tooltip to read a clipped name from.
@@ -4328,10 +4339,10 @@ and 768 / 1280 / 1440 were checked pixel-identical to before.
   icon buttons (38px, meeting the toggle) wrap to their own line as a group
   before anything runs off a 320px card. Heatmap cards without a toggle keep
   their icons on the title's line.
-- **Fullscreen heatmap on a phone scrolls both ways** with its date row pinned
-  on top — left at its content height it ran past the screen and the last rows
-  were unreachable. (The same cut-off exists on desktop with many rows; not
-  touched, desktop being out of scope.)
+- **Fullscreen heatmap on a phone scrolls down inside the overlay** (the date
+  row scrolls with it, as inline) — left at its content height it ran past the
+  screen and the last rows were unreachable. (The same cut-off exists on
+  desktop with many rows; not touched, desktop being out of scope.)
 - Small print on the page is 11px on a phone (notes, legends, the tap hint,
   grid headers); the toolbar's filter chips wrap (`chipsWrap`) instead of
   being clipped.
