@@ -6799,12 +6799,32 @@ admin-only test screen: the goals are one JSON blob per profile in
   profile that never saved) are served from the query, never written back
   until something changes, and carry FIXED ids (`demo-3`, `demo-3-1`) so a
   reloaded or shared `/targets/demo-3` still resolves.
-- **Groups replace the status filter, the sort menu and the table view** (all
-  three removed on purpose — do not bring them back without asking): «Diqqat
+- **On the BOARD, groups replace the status filter and the sort menu** (both
+  removed on purpose — do not bring them back without asking): «Diqqat
   talab» (overdue · behind · at risk, worst first) → «Reja bo'yicha» →
   «Boshlanmagan» → «Erishilgan» (collapsed, remembered). `utils/targets.js`
   `GROUPS` is the one definition; the summary card above counts the goals the
   search and the area filter left, and names that count.
+- **The table came back as a TAB of its own, «Reyestr»** (2026-09-29, the
+  operator's request — the board is «Doska»). `SegmentedToggle asTabs` is the
+  page's FIRST row (`targets_view`), above the toolbar, because the search and
+  the area filter narrow both. `components/targets/GoalRegister.jsx` is the
+  table, one fact per column, reading left to right what · how it goes · when
+  · who and where · is anybody updating it: Maqsad (locked; FROZEN while it is
+  the first column, its edge an inset shadow because a collapsed border stays
+  behind when its cell sticks) · Holat · Bajarildi (the card's bar with the plan
+  tick) · Sur'at (done − today's plan in the card's own words, the plan under
+  it) · Natijalar* · Boshlanish* · Muddat (+ days left) · Mas'ul · Yo'nalish ·
+  Yangilangan (amber after a week or never) · a «Yangilash» row button, whose
+  word shows only while the card (`@container`) is ≥ 76rem. *Hidden by default
+  so the default set fits a 1280px screen; the `ColumnsPicker` in the card
+  header saves to ui-prefs `targets.register.cols`. Every header sorts
+  (`targets_reg_sort`; default status → the furthest behind → the nearest due,
+  which is also every tie-break), a value with no answer sinks whichever way a
+  column runs, and a sort on a column since hidden falls back to the default.
+  A row opens the goal (the title is the real link). Below `sm` it is a list
+  under a sort control, each row printing the fact it is sorted by. It computes
+  nothing `utils/targets` does not.
 - **Colour means STATUS only.** A goal's area is an icon + a word
   (`targetsUi.AREA_ICON`), never a colour — the categorical palette opens on
   red/green/yellow, and an on-track goal used to wear a red stripe.

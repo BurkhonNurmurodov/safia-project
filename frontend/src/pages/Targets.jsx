@@ -2,11 +2,15 @@
 //
 // A goal is a title, an owner, an area, a period and a list of KEY RESULTS,
 // each of five types (number · percent · currency · yes/no · task list). The
-// board answers one question first — which goals need somebody now — by
-// GROUPING them by status, most urgent first, with a one-card summary above
-// them. A card opens the goal's own page (/targets/:id); its «Update» button
-// opens one short dialog for all of the goal's results. `utils/targets.js` is
-// the one definition of every figure.
+// page is TWO views over the same goals, switched by the tabs on its first row
+// — the search and the area filter narrow both:
+//   «Doska»   answers one question first — which goals need somebody now — by
+//             GROUPING them by status, most urgent first, under three charts.
+//   «Reyestr» is every goal on one sortable table, one fact per column
+//             (components/targets/GoalRegister).
+// A card or a row opens the goal's own page (/targets/:id); «Update» opens one
+// short dialog for all of the goal's results. `utils/targets.js` is the one
+// definition of every figure.
 //
 // It is a TEST SCREEN: the goals live as a JSON blob per profile in
 // `/api/ui-prefs/targets_lab` (components/targets/useGoals), so they follow the
@@ -20,12 +24,14 @@ import {
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import SearchInput from "../components/ui/SearchInput";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import EmptyState from "../components/ui/EmptyState";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import GoalCard from "../components/targets/GoalCard";
+import GoalRegister from "../components/targets/GoalRegister";
 import GoalFormModal from "../components/targets/GoalFormModal";
 import UpdateProgressModal from "../components/targets/UpdateProgressModal";
 import SaveState from "../components/targets/SaveState";
@@ -115,6 +121,8 @@ export default function Targets() {
   }, [saveState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── view state (remembered, like every page's) ────────────────────────────
+  const [view, setView] = usePersistentState("targets_view", "board");
+  const tab = view === "register" ? "register" : "board";
   const [q, setQ] = usePersistentState("targets_q", "");
   const [cat, setCat] = usePersistentState("targets_cat", "");
   const [doneOpen, setDoneOpen] = usePersistentState("targets_done_open", false);
@@ -208,6 +216,17 @@ export default function Targets() {
     </Button>
   );
 
+  // The page's two views — its FIRST row, above the toolbar, because the search
+  // and the area filter under it narrow both.
+  const tabs = (
+    <div className="flex">
+      <SegmentedToggle
+        asTabs value={tab} onChange={setView} ariaLabel={t("targets.view.aria")}
+        options={[["board", t("targets.view.board")], ["register", t("targets.view.register")]]}
+      />
+    </div>
+  );
+
   let body;
   if (goals === null) {
     body = isError ? (
@@ -219,11 +238,18 @@ export default function Targets() {
       </div>
     ) : (
       <>
+        {tabs}
         <SkeletonBlock className="h-[38px] rounded-xl" />
-        <SkeletonBlock className="h-40 rounded-2xl" />
-        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => <SkeletonBlock key={i} className="h-60 rounded-2xl" />)}
-        </div>
+        {tab === "register" ? (
+          <SkeletonBlock className="h-[26rem] rounded-2xl" />
+        ) : (
+          <>
+            <SkeletonBlock className="h-40 rounded-2xl" />
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+              {Array.from({ length: 4 }).map((_, i) => <SkeletonBlock key={i} className="h-60 rounded-2xl" />)}
+            </div>
+          </>
+        )}
       </>
     );
   } else if (goals.length === 0) {
@@ -246,6 +272,7 @@ export default function Targets() {
   } else {
     body = (
       <>
+        {tabs}
         {/* ONE toolbar row: search grows on the left, the filter zone, the
             primary action pinned right. */}
         <div className="flex items-center gap-2">
@@ -264,6 +291,8 @@ export default function Targets() {
               action={anyFilter ? <Button variant="secondary" size="lg" onClick={clearFilters}>{t("targets.empty.clearFilters")}</Button> : null}
             />
           </div>
+        ) : tab === "register" ? (
+          <GoalRegister rows={shown} total={rows.length} today={today} t={t} onUpdate={setUpdating} />
         ) : (
           <>
             {/* ── the picture: how many in each state · who is ahead or behind · what is due when ── */}
