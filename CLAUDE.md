@@ -4322,8 +4322,7 @@ and 768 / 1280 / 1440 were checked pixel-identical to before.
   the operator saw the days flash through the names. With nothing under the
   names nothing can show through. The two halves keep one row pitch: the
   names' cells carry the days' 1px rules (transparent), header rows are a
-  fixed 30 (+24) px so a selected day's underline cannot grow one half, and
-  the wrapper is `align-items: flex-start` (stretched to a fullscreen
+  fixed 30 (+24) px, and the wrapper is `align-items: flex-start` (stretched to a fullscreen
   wrapper's height the days half became a scroller of its own and slid out of
   line). Never make those names sticky again.
 - **Names are «Surname I.»** (`surnameInitial`, now in `utils/personName.js`)
@@ -4344,8 +4343,8 @@ and 768 / 1280 / 1440 were checked pixel-identical to before.
   screen and the last rows were unreachable. (The same cut-off exists on
   desktop with many rows; not touched, desktop being out of scope.)
 - Small print on the page is 11px on a phone (notes, legends, the tap hint,
-  grid headers); the toolbar's filter chips wrap (`chipsWrap`) instead of
-  being clipped.
+  grid headers); the toolbar's filter chips wrap (`chipsWrap`, which the
+  template applies below md) instead of being clipped.
 
 ## What is ON the `/leaders` tab strip
 
